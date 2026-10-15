@@ -62,6 +62,7 @@ mod status;
 mod switcher;
 mod shared;
 mod transcript_reader;
+mod view_refs;
 mod window_frame;
 mod work_lens;
 

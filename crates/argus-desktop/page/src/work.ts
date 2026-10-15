@@ -20,7 +20,7 @@ import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
 import { $, el, type Child } from './dom.js';
 import { dragEdge } from './edge.js';
 import { flowsAction, flowsLens } from './flows.js';
-import { ticketLink } from './tickets.js';
+import { featureViewLink, ticketLink } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { recordAction, recordLens } from './record.js';
 import { state, type Editing } from './state.js';
@@ -377,6 +377,7 @@ function tickets(view: FeatureView): HTMLElement {
     'span',
     { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' },
     view.links.map(ticketLink),
+    view.views.map(featureViewLink),
     view.links.length > 0 &&
       el(
         'span',

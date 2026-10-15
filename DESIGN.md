@@ -473,7 +473,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
-| `agent_views` | which views agents showed, as the window holds them, which one their panel shows, and which wait on a refresh |
+| `agent_views` | which views agents showed, as the window holds them, which one their panel shows, which is open as a page, which name a feature, and which wait on a refresh |
+| `view_refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, and which paths it refuses |
 | `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, the question an action waits on, and the one open as a page |
 | `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension |
 | `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, and the answer or cancellation each sends back |

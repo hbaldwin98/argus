@@ -58,7 +58,7 @@ use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::page::{
     self, AddProjectGesture, Call, CaptureGesture, ConsoleGesture, ConsolePlace, DockGesture, Event, FeatureEdit, PageMouse,
-    ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
+    Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
 };
 use crate::palette;
 use crate::preferences::Chosen;
@@ -71,6 +71,7 @@ use crate::settings::{Backdrop, Settings, Theme};
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
 use crate::switcher::Switcher;
+use crate::view_refs::{self, Target};
 
 /// What to do with a thing the daemon made for this window, once the tree
 /// holds it.
@@ -128,6 +129,9 @@ pub struct Session {
     /// The stage an extension's page opened over, to go back to when it
     /// docks or goes.
     before_page: Option<Stage>,
+    /// A feature a reference in an agent's view named, to reveal once the
+    /// board of its repository has arrived: the number is only known there.
+    opening_feature: Option<(RepositoryId, i64)>,
     extension_keys: ExtensionKeys,
     extensions_sent: Sent<page::ExtensionsPage>,
     extension_dialogs: ExtensionDialogs,
@@ -207,6 +211,7 @@ impl Session {
             views: AgentViews::default(),
             extension_views: ExtensionViews::new(settings.extensions),
             before_page: None,
+            opening_feature: None,
             extension_keys: ExtensionKeys::default(),
             extensions_sent: Sent::default(),
             extension_dialogs: ExtensionDialogs::default(),
@@ -393,7 +398,9 @@ impl Session {
             }
             ServerMsg::ExtensionDialogWithdrawn { id } => self.extension_dialogs.withdrawn(id),
             ServerMsg::ViewClosed { pane, id } => {
-                self.views.closed(pane, &id);
+                if self.views.closed(pane, &id) {
+                    self.passing.push(Event::Notice { text: format!("{id} was closed") });
+                }
                 self.rail_changed = true;
             }
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
@@ -614,6 +621,14 @@ impl Session {
                 }
                 self.finish()
             }
+            Call::PopOutView { pane, id } => {
+                if self.views.pop_out(PaneId(pane), id) {
+                    self.docks.hide(&Panel::Views);
+                    self.show_view_page();
+                }
+                self.finish()
+            }
+            Call::OpenRef { pane, reference } => self.open_ref(pane.map(PaneId), reference),
             Call::HideViews => {
                 self.docks.hide(&Panel::Views);
                 self.finish()
@@ -1264,8 +1279,90 @@ impl Session {
         if self.docks.shows(&Panel::Views) {
             self.docks.hide(&Panel::Views);
         } else if !self.views.is_empty() {
+            self.views.end_pop_out();
             self.docks.show(&Panel::Views);
         }
+    }
+
+    /// An agent's view over the stage up, which it goes back to when the
+    /// view docks or closes. An extension's page gives way to it.
+    fn show_view_page(&mut self) {
+        if self.stage != Stage::View {
+            if self.stage != Stage::Extension {
+                self.before_page = Some(self.stage);
+            }
+            self.go(Stage::View);
+        }
+    }
+
+    /// Keeps the stage level with the view: one docked, closed, or left for
+    /// another stage is no longer a page, and the view stage is never up
+    /// with no view on it.
+    fn settle_view_page(&mut self) {
+        match (self.views.popped(), self.stage == Stage::View) {
+            (true, false) => self.views.end_pop_out(),
+            (false, true) => {
+                let back = self.before_page.take().unwrap_or(Stage::Workspace);
+                self.go(back);
+            }
+            _ => {}
+        }
+    }
+
+    /// A reference pressed in a view: what it points at is found from the
+    /// pane that showed the view, or from the checkout on screen when no
+    /// pane did. A reference that cannot be found is said so, and nothing
+    /// else happens.
+    fn open_ref(&mut self, from: Option<PaneId>, reference: Reference) -> Vec<ClientMsg> {
+        match view_refs::resolve(&reference, from, self.here().checkout, &self.tree) {
+            Err(text) => return self.note(text),
+            Ok(Target::Pane(pane)) => return self.go_to_pane(pane),
+            Ok(Target::Editor { checkout, path, line }) => {
+                let request_id = self.awaited.ask(Made::ShowOverStages);
+                let (external, command) = self.choices.editor();
+                self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external, command, request_id });
+            }
+            Ok(Target::History { checkout, sha }) => {
+                self.dialogs.open_history_at(checkout, &sha, &self.tree, || self.awaited.name(), &mut self.out);
+            }
+            Ok(Target::Feature { repository, number }) => {
+                if self.repository != Some(repository) {
+                    self.repository = Some(repository);
+                    self.rail_changed = true;
+                }
+                self.opening_feature = Some((repository, number));
+                self.go(Stage::Feature);
+            }
+        }
+        self.finish()
+    }
+
+    /// Reveals the feature a reference named, once the board of its
+    /// repository is here to say which one is numbered so. The person going
+    /// elsewhere meanwhile abandons it.
+    fn settle_feature_ref(&mut self) {
+        let Some((repository, number)) = self.opening_feature else {
+            return;
+        };
+        if self.stage != Stage::Feature || self.repository != Some(repository) {
+            self.opening_feature = None;
+            return;
+        }
+        let Some(board) = self.features.board().filter(|b| b.repositories.is_empty() || b.repositories.contains(&repository)) else {
+            return;
+        };
+        let slug = board.features.iter().find(|f| f.number == number).map(|f| f.slug.clone());
+        self.opening_feature = None;
+        match slug {
+            Some(slug) => self.features.reveal(&slug, &self.tree, &mut self.out),
+            None => self.passing.push(Event::Notice { text: format!("no feature #{number} in this repository") }),
+        }
+    }
+
+    /// Tells the Feature stage which views name its repository's features.
+    fn sync_feature_views(&mut self) {
+        let views = self.scope().map(|scope| self.views.linked(&self.tree, scope.repository)).unwrap_or_default();
+        self.features.set_views(views);
     }
 
     /// Opens an extension's view where it is: placed where its extension
@@ -1667,7 +1764,7 @@ impl Session {
     fn side_visible(&self, side: Side) -> bool {
         match side {
             Side::Workspace => {
-                !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console | Stage::Extension)
+                !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console | Stage::Extension | Stage::View)
                     && !self.console.fullscreen()
             }
             Side::First | Side::Second => self.console_place() != ConsolePlace::Hidden,
@@ -2446,6 +2543,7 @@ impl Session {
         self.docks.set_present(present);
         self.settle_console();
         self.settle_extension();
+        self.settle_view_page();
         // The session under the dialog's cursor is read once it is there,
         // however the cursor got there: a key, a filter, or the listing.
         if let Some(wanted) = self.recent.as_ref().and_then(|d| d.wants_read(&self.sessions, &self.tree)).cloned() {
@@ -2459,6 +2557,7 @@ impl Session {
         if self.status.is_connected() {
             self.features.refresh(scope.as_ref(), &mut self.out);
         }
+        self.settle_feature_ref();
         if self.status.daemon_can(FOCUS) {
             let view = self.view();
             if self.reported.as_ref() != Some(&view) {
@@ -2504,6 +2603,7 @@ impl Session {
         if std::mem::take(&mut self.rail_changed) {
             events.push(Event::Rail(Box::new(self.rail(now))));
         }
+        self.sync_feature_views();
         let scope = self.scope();
         if let Some(features) = self.features.take(scope.as_ref(), &self.tree, now) {
             events.push(Event::Features(Box::new(features)));
@@ -3763,7 +3863,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 109] = [
+    const CALLS: [&str; 111] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3859,6 +3959,8 @@ mod tests {
         r#"{"call":"drag_window"}"#,
         r#"{"call":"snap_layouts"}"#,
         r#"{"call":"open_view","pane":1,"id":"ci"}"#,
+        r#"{"call":"pop_out_view","pane":1,"id":"ci"}"#,
+        r#"{"call":"open_ref","pane":1,"reference":{"kind":"path","path":"src/lib.rs","line":3}}"#,
         r#"{"call":"hide_views"}"#,
         r#"{"call":"toggle_views"}"#,
         r#"{"call":"rail_width","width":320}"#,
@@ -4956,6 +5058,68 @@ mod tests {
 
     fn listed(s: &mut Session) -> Vec<String> {
         s.extensions_page().views.into_iter().map(|t| t.view).collect()
+    }
+
+    #[test]
+    fn a_path_in_a_view_opens_in_the_editor_of_the_pane_checkout_and_one_that_escapes_does_nothing() {
+        let mut s = session(Hello::this_build());
+        let path = |path: &str| Call::OpenRef { pane: Some(1), reference: Reference::Path { path: path.into(), line: Some(3) } };
+        let sent = s.call(path("src/lib.rs"));
+        assert!(
+            matches!(&sent[..], [ClientMsg::OpenInEditor { checkout: CheckoutId(100), path, line: Some(3), .. }] if path == "src/lib.rs"),
+            "{sent:?}"
+        );
+        for bad in ["../secrets", "/etc/passwd"] {
+            assert!(s.call(path(bad)).is_empty(), "{bad}");
+        }
+        assert!(notices(&mut s).iter().any(|t| t.contains("not a path inside the checkout")));
+    }
+
+    #[test]
+    fn a_reference_to_a_pane_that_is_gone_says_so_and_one_that_is_there_is_shown() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::OpenRef { pane: None, reference: Reference::Pane { pane: 99 } });
+        assert!(notices(&mut s).iter().any(|t| t.contains("gone")));
+        s.call(Call::OpenRef { pane: None, reference: Reference::Pane { pane: 2 } });
+        assert_eq!(s.shown.pane(), Some(PaneId(2)));
+    }
+
+    #[test]
+    fn a_commit_in_a_view_opens_the_history_of_the_pane_checkout() {
+        let mut s = session(Hello::this_build());
+        let sent = s.call(Call::OpenRef { pane: Some(3), reference: Reference::Commit { sha: "abc1234".into() } });
+        assert!(matches!(&sent[..], [ClientMsg::ListCommits { checkout: CheckoutId(200), .. }]), "{sent:?}");
+    }
+
+    #[test]
+    fn a_feature_in_a_view_is_shown_once_the_board_of_the_panes_repository_says_which_it_is() {
+        let mut s = session(without_focus());
+        s.call(Call::OpenRef { pane: Some(1), reference: Reference::Feature { number: 7 } });
+        assert_eq!(s.stage, Stage::Feature);
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        assert_eq!(s.features.peeked(), Some("trim"));
+        s.call(Call::OpenRef { pane: Some(1), reference: Reference::Feature { number: 99 } });
+        assert!(notices(&mut s).iter().any(|t| t.contains("no feature #99")));
+    }
+
+    #[test]
+    fn a_view_popped_out_is_a_page_over_the_stage_and_goes_back_when_docked_or_closed() {
+        let mut s = session(Hello::this_build());
+        agents_view(&mut s, 1);
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        assert_eq!(s.stage, Stage::View);
+        assert!(!s.docks.shows(&Panel::Views), "it is in the page, not also in a dock");
+        assert!(s.views.take(|_| None).unwrap().popped.is_some());
+
+        s.call(Call::OpenView { pane: 1, id: "ci".into() });
+        assert_eq!(s.stage, Stage::Workspace, "docking it goes back to the stage it opened over");
+        assert!(s.docks.shows(&Panel::Views));
+
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        s.receive(ServerMsg::ViewClosed { pane: PaneId(1), id: "ci".into() });
+        assert_eq!(s.stage, Stage::Workspace, "a view that closes is no page");
+        s.call(Call::PopOutView { pane: 1, id: "gone".into() });
+        assert_eq!(s.stage, Stage::Workspace, "a view the window does not hold opens nothing");
     }
 
     fn notices(s: &mut Session) -> Vec<String> {

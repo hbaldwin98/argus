@@ -18,7 +18,7 @@ import { call } from './tauri.js';
 import { ago } from './values.js';
 import { viewLink } from './viewlink.js';
 
-let shown: ViewsPage = { views: [], open: null };
+let shown: ViewsPage = { views: [], open: null, popped: null };
 
 /** Whether a dock shows the views now. */
 function viewsOut(): boolean {
@@ -41,6 +41,7 @@ export function drawViews(page: ViewsPage = shown): void {
     el('span', { class: 'vdot', 'aria-hidden': 'true' }),
     `${waiting} ${waiting === 1 ? 'view' : 'views'}`,
   );
+  drawPopped(page);
   if (!open) {
     panel.replaceChildren();
     return;
@@ -48,8 +49,26 @@ export function drawViews(page: ViewsPage = shown): void {
   // Keep the reader's place when the view comes again or another is added.
   const scroller = panel.querySelector('.vpanel-body');
   const top = scroller?.getAttribute('data-for') === key(open) ? scroller.scrollTop : 0;
-  panel.replaceChildren(tabs(page.views, open), header(open), body(open));
+  panel.replaceChildren(tabs(page.views, open), header(open, false), body(open));
   const fresh = panel.querySelector('.vpanel-body');
+  if (fresh) fresh.scrollTop = top;
+}
+
+/** The view open as a page over the stage: the header and body the panel
+ *  has, without its tabs. Rust says which one, and when there is none. */
+function drawPopped(page: ViewsPage): void {
+  const stage = $('vstage');
+  const popped =
+    page.popped &&
+    page.views.find((v) => v.pane === page.popped?.pane && v.view.id === page.popped?.id);
+  if (!popped) {
+    stage.replaceChildren();
+    return;
+  }
+  const scroller = stage.querySelector('.vpanel-body');
+  const top = scroller?.getAttribute('data-for') === key(popped) ? scroller.scrollTop : 0;
+  stage.replaceChildren(header(popped, true), body(popped));
+  const fresh = stage.querySelector('.vpanel-body');
   if (fresh) fresh.scrollTop = top;
 }
 
@@ -107,7 +126,7 @@ function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
   return draggable(strip, 'views', 'Views');
 }
 
-function header(v: PageView): HTMLElement {
+function header(v: PageView, popped: boolean): HTMLElement {
   const at = new Date(Number(v.at) * 1000).toISOString();
   const subject = v.subject;
   return el(
@@ -146,6 +165,18 @@ function header(v: PageView): HTMLElement {
             onclick: () => call('refresh_view', { pane: v.pane, id: v.view.id }),
           },
           'Refresh',
+        ),
+        el(
+          'button',
+          {
+            class: 'btn sm',
+            type: 'button',
+            title: popped ? 'Put the view back in its dock' : 'Open the view as a page',
+            // Opening it in the dock is what ends the page.
+            onclick: () =>
+              call(popped ? 'open_view' : 'pop_out_view', { pane: v.pane, id: v.view.id }),
+          },
+          popped ? 'Dock' : 'Pop out',
         ),
         el(
           'button',

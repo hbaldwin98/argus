@@ -13,7 +13,7 @@ use argus_protocol::{Changes, Decision, DecisionBoard, DiagramList, Feature, Pro
 
 use crate::features::{loudest_agent, word};
 use crate::flows_lens::{self, FlowCursor};
-use crate::page::{FeatureView, Lens, Link};
+use crate::page::{FeatureView, FeatureViewLink, Lens, Link};
 use crate::{record_lens, work_lens};
 
 pub struct Opened<'a> {
@@ -30,12 +30,15 @@ pub struct Opened<'a> {
     pub work: Option<WorkRef>,
     pub record: Option<i64>,
     pub flow: FlowCursor,
+    /// The views agents showed in this repository, each with the feature
+    /// number it names; the ones naming this feature are offered.
+    pub views: &'a [(i64, FeatureViewLink)],
     /// Seconds since the Unix epoch, for how long ago it was reconciled.
     pub now: u64,
 }
 
 pub fn build(opened: &Opened) -> FeatureView {
-    let Opened { feature, row, board, tasks, diagrams, tree, lens, work, record, flow, now } = *opened;
+    let Opened { feature, row, board, tasks, diagrams, tree, lens, work, record, flow, views, now } = *opened;
     let scoped = board.scoped(Some(&feature.slug));
     let empty = TaskList {
         project_name: String::new(),
@@ -63,6 +66,7 @@ pub fn build(opened: &Opened) -> FeatureView {
         agent: loudest_agent(&standing::panes_on(feature, tree)),
         brief: feature.body.clone(),
         links: feature.links.iter().map(Link::of).collect(),
+        views: views.iter().filter(|(number, _)| *number == feature.number).map(|(_, link)| link.clone()).collect(),
         reconciled: feature.reconciled.as_ref().map(|r| {
             format!("reconciled {} ago by {}", argus_protocol::ago(Some(r.at.max(0) as u64), now), r.by)
         }),
@@ -87,7 +91,15 @@ mod tests {
     use super::*;
     use crate::fixtures;
 
+    fn linked(number: i64, id: &str) -> (i64, FeatureViewLink) {
+        (number, FeatureViewLink { pane: 1, id: id.into(), title: id.into() })
+    }
+
     fn view(lens: Lens, tasks: Option<&TaskList>) -> FeatureView {
+        view_with(lens, tasks, &[])
+    }
+
+    fn view_with(lens: Lens, tasks: Option<&TaskList>, views: &[(i64, FeatureViewLink)]) -> FeatureView {
         let board = fixtures::open_board();
         let tree = fixtures::feature_tree();
         let rows = standing::feature_rows(&board, &tree);
@@ -105,8 +117,17 @@ mod tests {
             work: None,
             record: None,
             flow: FlowCursor::default(),
+            views,
             now: 2 * 3600,
         })
+    }
+
+    #[test]
+    fn the_header_offers_only_the_views_naming_this_feature() {
+        let views = [linked(7, "plan"), linked(8, "someone-elses"), linked(7, "estimate")];
+        let open = view_with(Lens::Work, None, &views);
+        assert_eq!(open.views.iter().map(|v| v.id.as_str()).collect::<Vec<_>>(), ["plan", "estimate"]);
+        assert!(view(Lens::Work, None).views.is_empty());
     }
 
     #[test]
@@ -163,6 +184,7 @@ mod tests {
                 work: None,
                 record: None,
                 flow: FlowCursor::default(),
+                views: &[],
                 now: 2 * 3600,
             })
         };

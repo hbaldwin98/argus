@@ -5021,6 +5021,38 @@ body.resizing:has(.brief-sash.held) {
 /* Agent views: diff and graph. */
 
 /* Agent views: references into Argus. */
+.vref {
+  border: 0;
+  margin: 0;
+  padding: 1px var(--sp-6);
+  border-radius: var(--r-xs);
+  background: var(--fill);
+  color: var(--ref);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vref:hover,
+.vref:focus-visible {
+  text-decoration: underline;
+}
+.vicode {
+  padding: 1px var(--sp-4);
+  border-radius: var(--r-xs);
+  background: var(--fill);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+/* A view popped out of its panel to a page: the panel's own header and
+   body, over the stage. */
+.vstage .vpanel-head {
+  cursor: default;
+}
 
 /* Agent views: live updates (a block changed since it was seen). */
 

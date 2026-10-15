@@ -8,13 +8,14 @@
 
 use std::collections::HashSet;
 
-use argus_protocol::{ClientMsg, PaneId, ShownView};
+use argus_protocol::{ClientMsg, PaneId, ProjectInfo, RepositoryId, ShownView};
 
 use argus_protocol::flow::{self, FlowRow};
 use argus_protocol::Block;
 
-use crate::page::{FlowLine, Link, PageDiagram, PageParticipant, PageView, ViewRef, ViewsPage};
+use crate::page::{FeatureViewLink, FlowLine, Link, PageDiagram, PageParticipant, PageView, ViewRef, ViewsPage};
 use crate::sent::Sent;
+use crate::view_refs;
 
 #[derive(Default)]
 pub struct AgentViews {
@@ -22,6 +23,9 @@ pub struct AgentViews {
     views: Vec<ShownView>,
     /// The view the panel shows; the newest while none is chosen.
     open: Option<(PaneId, String)>,
+    /// The view open as a page. It is the window's to hold, as the stage
+    /// is, and ends when the view closes.
+    popped: Option<(PaneId, String)>,
     refreshing: HashSet<(PaneId, String)>,
     sent: Sent<ViewsPage>,
 }
@@ -32,6 +36,7 @@ impl AgentViews {
     pub fn connected(&mut self, out: &mut Vec<ClientMsg>) {
         self.views.clear();
         self.refreshing.clear();
+        self.popped = None;
         out.push(ClientMsg::WatchViews);
     }
 
@@ -51,21 +56,62 @@ impl AgentViews {
         comes_out
     }
 
-    pub fn closed(&mut self, pane: PaneId, id: &str) {
+    /// A view closed, saying whether it was the one open as a page.
+    pub fn closed(&mut self, pane: PaneId, id: &str) -> bool {
         self.views.retain(|v| (v.pane, v.view.id.as_str()) != (pane, id));
         self.refreshing.remove(&(pane, id.to_string()));
         if self.open.as_ref().is_some_and(|(p, i)| (*p, i.as_str()) == (pane, id)) {
             self.open = None;
         }
+        let was_popped = self.popped.as_ref().is_some_and(|(p, i)| (*p, i.as_str()) == (pane, id));
+        if was_popped {
+            self.popped = None;
+        }
+        was_popped
     }
 
-    /// Chooses a view, saying whether the window holds it.
+    /// Chooses a view, saying whether the window holds it. The page it was
+    /// open as, if it was, is over: this is the way back to the dock.
     pub fn open(&mut self, pane: PaneId, id: String) -> bool {
         let held = self.find(pane, &id).is_some();
         if held {
             self.open = Some((pane, id));
+            self.popped = None;
         }
         held
+    }
+
+    /// Opens a view as a page, saying whether the window holds it.
+    pub fn pop_out(&mut self, pane: PaneId, id: String) -> bool {
+        let held = self.find(pane, &id).is_some();
+        if held {
+            self.open = Some((pane, id.clone()));
+            self.popped = Some((pane, id));
+        }
+        held
+    }
+
+    pub fn popped(&self) -> bool {
+        self.popped.is_some()
+    }
+
+    /// The page is over, because the person went to another stage.
+    pub fn end_pop_out(&mut self) {
+        self.popped = None;
+    }
+
+    /// The views that name a feature of `repository`, each with the number
+    /// it names, newest first. A view names a feature of the repository its
+    /// pane is in; nothing about the link is kept anywhere else.
+    pub fn linked(&self, tree: &[ProjectInfo], repository: RepositoryId) -> Vec<(i64, FeatureViewLink)> {
+        self.views
+            .iter()
+            .filter_map(|v| {
+                let number = v.view.feature?;
+                let (repo, _) = view_refs::locate(tree, v.pane)?;
+                (repo.id == repository).then(|| (number, FeatureViewLink { pane: v.pane.0, id: v.view.id.clone(), title: v.view.title.clone() }))
+            })
+            .collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -127,6 +173,7 @@ impl AgentViews {
                 .clone()
                 .or_else(|| self.views.first().map(|v| (v.pane, v.view.id.clone())))
                 .map(|(pane, id)| ViewRef { pane: pane.0, id }),
+            popped: self.popped.clone().map(|(pane, id)| ViewRef { pane: pane.0, id }),
         }
     }
 }
@@ -220,6 +267,47 @@ mod tests {
         assert_eq!(drawn.source, source);
         assert_eq!(drawn.participants.iter().map(|p| p.label.as_str()).collect::<Vec<_>>(), ["argus-hook", "argusd"]);
         assert!(matches!(&drawn.rows[1], FlowLine::Step { reply: true, number: 2, .. }));
+    }
+
+    #[test]
+    fn a_view_popped_out_is_a_page_until_it_goes_back_to_the_dock_or_closes() {
+        let mut views = AgentViews::default();
+        views.shown(shown(1, "a"), None, false);
+        views.shown(shown(1, "b"), None, false);
+        assert!(!views.pop_out(PaneId(1), "gone".into()), "only a view the window holds");
+        assert!(views.pop_out(PaneId(1), "a".into()));
+        let page = views.page(|_| None);
+        assert_eq!(page.popped, Some(ViewRef { pane: 1, id: "a".into() }));
+        assert_eq!(page.open, page.popped, "the dock's tab follows it");
+        assert!(views.open(PaneId(1), "a".into()));
+        assert_eq!(views.page(|_| None).popped, None, "opening it in the dock ends the page");
+        views.pop_out(PaneId(1), "b".into());
+        assert!(views.closed(PaneId(1), "b"), "closing says it was the page");
+        assert!(!views.popped());
+    }
+
+    #[test]
+    fn the_views_naming_a_feature_are_those_of_panes_in_its_repository() {
+        use crate::fixtures::{checkout, pane, project, repository};
+        use argus_protocol::{PaneKind, PaneStatus};
+        let agent = |id| pane(id, PaneKind::Agent, "claude", PaneStatus::Idle);
+        let tree = vec![project(1, "src", vec![
+            repository(10, "argus", None, vec![checkout(100, "main", true, vec![agent(1)]), checkout(101, "work", false, vec![agent(2)])]),
+            repository(11, "other", None, vec![checkout(110, "main", true, vec![agent(3)])]),
+        ])];
+        let mut views = AgentViews::default();
+        let mut name = |pane, id: &str, feature| {
+            let mut view = shown(pane, id);
+            view.view.feature = feature;
+            views.shown(view, None, false);
+        };
+        name(1, "plan", Some(7));
+        name(2, "from-a-worktree", Some(7));
+        name(3, "other-repository", Some(7));
+        name(1, "unlinked", None);
+        let linked = views.linked(&tree, RepositoryId(10));
+        let ids: Vec<_> = linked.iter().map(|(n, v)| (*n, v.id.as_str())).collect();
+        assert_eq!(ids, [(7, "from-a-worktree"), (7, "plan")], "newest first, every checkout of the repository");
     }
 
     #[test]

@@ -14,4 +14,8 @@ views: Array<PageView>,
  * The pane and id of the view the panel shows: the one chosen, else
  * the newest.
  */
-open: ViewRef | null, };
+open: ViewRef | null, 
+/**
+ * The view open as a page, when one is.
+ */
+popped: ViewRef | null, };

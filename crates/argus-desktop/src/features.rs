@@ -14,7 +14,7 @@ use argus_protocol::outline::WorkRef;
 
 use crate::feature_view::{self, Opened};
 use crate::flows_lens::FlowCursor;
-use crate::page::{self, AfterChoice, Agent, Features, Lens, Line, Link, Move, Peek};
+use crate::page::{self, AfterChoice, Agent, FeatureViewLink, Features, Lens, Line, Link, Move, Peek};
 
 /// The repository the index is about and how it is shown.
 pub struct Index<'a> {
@@ -35,6 +35,9 @@ pub struct Index<'a> {
     pub work: Option<WorkRef>,
     pub record: Option<i64>,
     pub flow: FlowCursor,
+    /// The views agents showed in this repository, each with the feature
+    /// number it names.
+    pub views: &'a [(i64, FeatureViewLink)],
     /// Seconds since the epoch, for how long ago a card last changed.
     pub now: u64,
 }
@@ -117,6 +120,7 @@ pub fn build(index: &Index) -> Features {
                 work: index.work,
                 record: index.record,
                 flow: index.flow,
+                views: index.views,
                 now: index.now,
             })
         });
@@ -351,6 +355,7 @@ mod tests {
             work: None,
             record: None,
             flow: FlowCursor::default(),
+            views: &[],
             now: 3 * 86_400 + 60,
         }
     }
