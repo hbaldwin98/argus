@@ -353,6 +353,34 @@ async fn a_pushed_board_names_its_repository_so_another_of_the_project_keeps_its
 }
 
 #[tokio::test]
+async fn a_read_of_a_features_tasks_or_diagrams_names_its_repository() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    real_repo(a.path());
+    real_repo(b.path());
+    let d = daemon_with_repositories(&[
+        a.path().to_str().unwrap(),
+        b.path().to_str().unwrap(),
+    ]);
+    let tree = d.snapshot();
+    let project = &tree[0];
+    let (repo_a, checkout_a) = (project.repositories[0].id, project.repositories[0].checkouts[0].id);
+    d.feature_action_for_client(project.id, checkout_a, open("only in a"))
+        .unwrap();
+    let slug = d.decision_board(project.id, checkout_a).unwrap().features[0].slug.clone();
+
+    let tasks = d
+        .part_action_for_client(project.id, checkout_a, &slug, argus_protocol::TaskAction::List)
+        .unwrap();
+    assert_eq!(tasks.repositories, [repo_a], "the daemon's read says whose board, not the dispatcher");
+    let diagrams = d
+        .part_action_for_client(project.id, checkout_a, &slug, argus_protocol::DiagramAction::List)
+        .unwrap();
+    assert_eq!(diagrams.repositories, [repo_a]);
+    close_all(&d);
+}
+
+#[tokio::test]
 async fn the_feature_endpoint_answers_a_change_with_the_board_and_a_bad_one_with_its_status() {
     let dir = tempfile::tempdir().unwrap();
     let (d, _, _, agent) = person_and_agent(dir.path());

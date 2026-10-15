@@ -57,12 +57,12 @@ impl FeaturePart for DiagramAction {
         Ok(())
     }
 
-    fn list(store: &Store, target: &BoardTarget) -> anyhow::Result<DiagramList> {
+    fn list(daemon: &Daemon, target: &BoardTarget) -> anyhow::Result<DiagramList> {
         Ok(DiagramList {
-            repositories: Vec::new(),
+            repositories: daemon.repositories_keyed(&target.key),
             project_name: target.project_name.clone(),
             feature: Some(target.feature.clone()),
-            diagrams: store.sequence_diagrams(&target.key, &target.feature)?,
+            diagrams: daemon.store.sequence_diagrams(&target.key, &target.feature)?,
         })
     }
 
@@ -76,15 +76,8 @@ impl FeaturePart for DiagramAction {
     }
 
     fn broadcast(daemon: &Daemon, target: &BoardTarget) {
-        let diagrams = daemon
-            .store
-            .sequence_diagrams(&target.key, &target.feature)
-            .unwrap_or_default();
-        let _ = daemon.diagrams_tx.send(DiagramList {
-            repositories: daemon.repositories_keyed(&target.key),
-            project_name: target.project_name.clone(),
-            feature: Some(target.feature.clone()),
-            diagrams,
-        });
+        if let Ok(list) = Self::list(daemon, target) {
+            let _ = daemon.diagrams_tx.send(list);
+        }
     }
 }

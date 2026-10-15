@@ -52,7 +52,10 @@ pub trait FeaturePart: Sized {
         at: i64,
         by: Author<'_>,
     ) -> anyhow::Result<()>;
-    fn list(store: &Store, target: &BoardTarget) -> anyhow::Result<Self::List>;
+    /// Names the repositories whose board this is, as a push does: a read
+    /// answered without them would be dropped by a client that keeps only
+    /// its own repository's lists.
+    fn list(daemon: &Daemon, target: &BoardTarget) -> anyhow::Result<Self::List>;
     /// The answer on a checkout that is on no feature.
     fn empty(project_name: String) -> Self::List;
     fn broadcast(daemon: &Daemon, target: &BoardTarget);
@@ -153,7 +156,7 @@ impl Daemon {
                 P::broadcast(self, &landed);
             }
         }
-        P::list(&self.store, target)
+        P::list(self, target)
     }
 
     /// Refuses a row that is not under the target's feature.
