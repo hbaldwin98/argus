@@ -239,6 +239,7 @@ to the type or its locking.
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
+| `review_queue` | when a review's diff is generated: one at a time across the daemon, and only the newest each client asked for |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
 | `pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |

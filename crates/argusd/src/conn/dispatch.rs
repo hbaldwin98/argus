@@ -12,7 +12,7 @@ pub(super) fn dispatch(
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
     subs: &mut Subscriptions,
-    review_task: &mut Option<tokio::task::JoinHandle<()>>,
+    reviews: &mut ReviewLane,
     viewer: ViewerId,
 ) -> anyhow::Result<()> {
     dispatch_pane(Box::new(msg), daemon, out_tx, subs, viewer)
@@ -20,7 +20,7 @@ pub(super) fn dispatch(
         .or_else(|msg| dispatch_panel(msg, daemon, out_tx))
         .or_else(|msg| dispatch_git(msg, daemon, out_tx))
         .or_else(|msg| dispatch_checkout_reads(msg, daemon, out_tx))
-        .or_else(|msg| dispatch_review(msg, daemon, out_tx, review_task))
+        .or_else(|msg| dispatch_review(msg, daemon, out_tx, reviews))
         .unwrap_or_else(|_| unreachable!("every client message is dispatched"))
 }
 
@@ -461,7 +461,7 @@ fn dispatch_review(
     msg: Box<ClientMsg>,
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    review_task: &mut Option<tokio::task::JoinHandle<()>>,
+    reviews: &mut ReviewLane,
 ) -> DispatchResult {
     let result = match *msg {
         ClientMsg::Review {
@@ -470,22 +470,12 @@ fn dispatch_review(
             base,
             commit,
         } => daemon.checkout_path(checkout).map(|path| {
-            if let Some(task) = review_task.take() {
-                task.abort();
-            }
             let out_tx = out_tx.clone();
-            *review_task = Some(tokio::spawn(async move {
-                let Ok(permit) = REVIEW_PERMIT.acquire().await else {
-                    return;
-                };
-                let generated = tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
-                    match commit.as_deref() {
-                        Some(rev) => crate::diff::generate_commit(&path, rev),
-                        None => crate::diff::generate(&path, base),
-                    }
-                })
-                .await;
+            let generate = move || match commit.as_deref() {
+                Some(rev) => crate::diff::generate_commit(&path, rev),
+                None => crate::diff::generate(&path, base),
+            };
+            reviews.submit(generate, move |generated| {
                 let message = match generated {
                     Ok(Ok(generated)) => ServerMsg::Review(argus_protocol::Review {
                         request_id,
@@ -510,7 +500,7 @@ fn dispatch_review(
                     },
                 };
                 let _ = out_tx.send(message);
-            }));
+            });
         }),
         ClientMsg::ReviewComment {
             checkout,
@@ -617,3 +607,6 @@ fn reply_with(
     });
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

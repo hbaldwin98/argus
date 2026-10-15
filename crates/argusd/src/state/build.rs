@@ -163,6 +163,7 @@ impl Daemon {
             plugin_root: std::sync::OnceLock::new(),
             paste_root: std::sync::OnceLock::new(),
             git,
+            reviews: Default::default(),
         });
         // Checkout rows are named after the branch occupying them, and that
         // name now comes from the cache. Reading HEAD is enough for a name;

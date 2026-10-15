@@ -385,6 +385,8 @@ pub struct Daemon {
     paste_root: std::sync::OnceLock<std::path::PathBuf>,
     /// Every read of Git the tree is kept level by. See `git_reads`.
     git: Arc<dyn git_reads::GitReads>,
+    /// The one turn at generating a review that every client waits on.
+    reviews: crate::review_queue::ReviewQueue,
 }
 
 /// A project as clients are shown it.
@@ -536,6 +538,11 @@ impl Daemon {
             .find(|c| same_path(&c.path, path))
             .map(|c| c.id);
         found
+    }
+
+    /// A client's place in the review queue, for as long as it holds it.
+    pub fn review_lane(&self) -> crate::review_queue::ReviewLane {
+        self.reviews.lane()
     }
 
     fn broadcast_workspaces(&self) {
