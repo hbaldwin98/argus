@@ -1,12 +1,15 @@
 // What the page asks of the window's Rust, and the channel its events come
-// down. Every command here is one in `src/commands.rs`, or for moving and
-// sizing the window `src/window_frame.rs`; the events are
-// `src/page.rs`'s, typed by the bindings `cargo test` writes.
-/** Sends a call. It answers nothing: what it changed comes back as events. */
-export function call(command, args) {
+// down. Every call is one `Call` of `src/page.rs`, which `src/commands.rs`
+// dispatches, and the events are that file's too: both are typed by the
+// bindings `cargo test` writes.
+function invoke(command, args) {
     window.__TAURI__.core.invoke(command, args).catch((err) => {
-        console.error(command, err);
+        console.error(command, args, err);
     });
+}
+/** Sends a call. It answers nothing: what it changed comes back as events. */
+export function call(name, args) {
+    invoke('call', { call: { call: name, ...args } });
 }
 /** Opens the page's channel; Rust sends everything it needs at once. */
 export function connect(receive) {
@@ -22,5 +25,5 @@ export function connect(receive) {
             console.error(err);
         }
     };
-    call('connect', { events });
+    invoke('connect', { events });
 }

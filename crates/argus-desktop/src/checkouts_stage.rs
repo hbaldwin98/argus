@@ -1,7 +1,7 @@
-//! What the Checkouts stage holds — whether it is open, whether branch rows
-//! show, the filter, the selected row — and what its gestures ask of the
-//! daemon. Like everything in the window it never predicts: a switched
-//! branch or a pull shows once the tree says so.
+//! What the Checkouts stage holds — whether branch rows show, the filter,
+//! the selected row — and what its gestures ask of the daemon. Whether the
+//! stage is up is the session's. Like everything in the window it never
+//! predicts: a switched branch or a pull shows once the tree says so.
 
 use argus_protocol::column::CheckoutRow;
 use argus_protocol::column_verbs::{force_delete, Verb};
@@ -12,7 +12,6 @@ use crate::page::{self, Confirm};
 
 #[derive(Default)]
 pub struct CheckoutsStage {
-    open: bool,
     branches_shown: bool,
     filter: String,
     /// The row the page chose, by key.
@@ -35,14 +34,6 @@ pub enum Opened {
 }
 
 impl CheckoutsStage {
-    pub fn is_open(&self) -> bool {
-        self.open
-    }
-
-    pub fn set_open(&mut self, open: bool) {
-        self.open = open;
-    }
-
     pub fn toggle_branches(&mut self) {
         self.branches_shown = !self.branches_shown;
     }

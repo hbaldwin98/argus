@@ -205,6 +205,7 @@ live in this crate and a contract written twice drifts in silence.
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
 | `review_session` | one review's exchange with the daemon, as both clients hold it: which sides were asked for and answered, the side on screen and when an empty one gives way, and who a comment can go to |
 | `history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
+| `awaited` | requests a client waits on the daemon to make something for, matched by the id it answers with, and which of the things made the tree now holds |
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
@@ -285,7 +286,7 @@ result of a request; `ui` is a pure function of it.
 | `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
-| `app/awaited` | requests waiting on something the daemon is making, and what to do with it once the tree holds it |
+| `app/awaited` | what the terminal client does with what the daemon made for it — focus the pane, select the row, start what was asked for in the new checkout — once `awaited` says the tree holds it |
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/showing` | what the daemon is told this client shows |
 | `app/views` | which surface the content area holds, and the fetches opening one makes |
@@ -319,7 +320,12 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | --- | --- |
 | `main` | startup: the runtime, the window, and running until it closes |
 | `daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
-| `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
+| `session` | what this window holds of the daemon and routes between its parts — the tree, the project and repository chosen on the rail, which stage is up — and which part each message and page call is for |
+| `status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
+| `shown` | the pane the window shows: its subscription and size on this connection, its view, whether it fills the window, and whether the leader waits on the next key |
+| `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
+| `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
+| `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once |
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
@@ -329,8 +335,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
 | `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, and the side and layout a review opens on |
-| `page` | what the page and the window's Rust say to each other |
-| `commands` | the calls the page makes, handed to the session |
+| `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
+| `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
 | `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, and the commands the palette runs |
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |

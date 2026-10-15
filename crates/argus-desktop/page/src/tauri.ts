@@ -1,13 +1,11 @@
 // What the page asks of the window's Rust, and the channel its events come
-// down. Every command here is one in `src/commands.rs`, or for moving and
-// sizing the window `src/window_frame.rs`; the events are
-// `src/page.rs`'s, typed by the bindings `cargo test` writes.
+// down. Every call is one `Call` of `src/page.rs`, which `src/commands.rs`
+// dispatches, and the events are that file's too: both are typed by the
+// bindings `cargo test` writes.
 
 import type { Channel as TauriChannel, invoke as tauriInvoke } from '@tauri-apps/api/core';
-import type { Action } from './bindings/Action';
+import type { Call } from './bindings/Call';
 import type { Event } from './bindings/Event';
-import type { PageKey } from './bindings/PageKey';
-import type { PageMouse } from './bindings/PageMouse';
 
 declare global {
   interface Window {
@@ -15,81 +13,21 @@ declare global {
   }
 }
 
-type None = Record<string, never>;
+/** A call's name, as `Call` tags it. */
+export type CallName = Call['call'];
 
-export interface Commands {
-  connect: { events: TauriChannel<Event> };
-  select: { pane: number };
-  resize: { rows: number; cols: number };
-  key: { key: PageKey };
-  text: { text: string };
-  paste: { text: string };
-  paste_clipboard: None;
-  wheel: { notches: number; at: [number, number] };
-  mouse: { gesture: PageMouse; button: number; at: [number, number] };
-  copy: { from: [number, number]; to: [number, number] };
-  spawn_shell: { checkout: number };
-  remove_checkout: { checkout: number };
-  close: { pane: number };
-  spawn_agent: { checkout: number; template: string };
-  focus: { focused: boolean };
-  select_project: { project: number };
-  toggle_repository: { repository: number };
-  choose_repository: { repository: number };
-  show_features: { open: boolean };
-  show_checkouts: { open: boolean };
-  show_composer: { open: boolean };
-  compose: { checkout: number; template: string | null; prompt: string | null };
-  select_checkout_row: { key: string };
-  filter_checkouts: { filter: string };
-  checkouts_action: { action: Action };
-  answer_checkouts: { yes: boolean };
-  new_worktree: { name: string | null };
-  open_review: { checkout: number };
-  review_action: { action: Action };
-  review_click: {
-    target:
-      | { on: 'file'; file: number }
-      | { on: 'row'; row: number; extend: boolean }
-      | { on: 'side'; staged: boolean }
-      | { on: 'recipient'; pane: number };
-  };
-  review_refresh: None;
-  review_jump: {
-    gesture:
-      | { on: 'query'; text: string }
-      | { on: 'step'; by: number }
-      | { on: 'choose' }
-      | { on: 'close' };
-  };
-  open_history: { checkout: number };
-  history_action: { action: Action; row: number | null };
-  filter_history: { filter: string };
-  review_comment: { body: string | null };
-  peek: { slug: string };
-  set_layout: { layout: 'list' | 'board' };
-  toggle_folded: None;
-  set_chime: { on: boolean };
-  hold: { slug: string; reason: string | null };
-  archive: { slug: string; archived: boolean };
-  go_to_pane: { pane: number };
-  palette: { open: boolean };
-  command: { action: Action };
-  go_to_checkout: { checkout: number };
-  go_to_feature: { slug: string };
-  reconnect: None;
-  minimize: None;
-  toggle_maximize: None;
-  close_window: None;
-  drag_window: None;
-  snap_layouts: None;
+/** What a call carries beside its name. */
+export type CallArgs<C extends CallName> = Omit<Extract<Call, { call: C }>, 'call'>;
+
+function invoke(command: string, args: Record<string, unknown>): void {
+  window.__TAURI__.core.invoke(command, args).catch((err: unknown) => {
+    console.error(command, args, err);
+  });
 }
 
 /** Sends a call. It answers nothing: what it changed comes back as events. */
-export function call<C extends keyof Commands>(command: C, args: Commands[C]): void {
-  window.__TAURI__.core.invoke(command, args).catch((err: unknown) => {
-    console.error(command, err);
-  });
+export function call<C extends CallName>(name: C, args: CallArgs<C>): void {
+  invoke('call', { call: { call: name, ...args } });
 }
 
 /** Opens the page's channel; Rust sends everything it needs at once. */
@@ -105,5 +43,5 @@ export function connect(receive: (event: Event) => void): void {
       console.error(err);
     }
   };
-  call('connect', { events });
+  invoke('connect', { events });
 }

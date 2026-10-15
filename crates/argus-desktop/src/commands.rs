@@ -1,4 +1,7 @@
-//! The calls the page makes, handed to the session.
+//! The two Tauri commands the page invokes: `connect`, which opens its
+//! channel, and `call`, which takes every [`Call`] and hands it to whatever
+//! answers it — the session, or for the clipboard, the window's frame and
+//! a reconnect, the part of the window that owns them.
 //!
 //! Each is `async` because Tauri runs a synchronous command on the UI
 //! thread, and none of them should hold the window while it takes a lock.
@@ -6,17 +9,13 @@
 
 use std::sync::Arc;
 
-use argus_protocol::{CheckoutId, PaneId, ProjectId, RepositoryId};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{State, WebviewWindow};
 
 use crate::clipboard;
-use crate::features::Layout;
-use crate::keymap::Action;
-use crate::keys::PageKey;
-use crate::page::{Event, PageMouse};
-use crate::session::{ReviewClick, ReviewJumpGesture};
+use crate::page::{Call, Event};
 use crate::shared::Shared;
+use crate::window_frame;
 
 type Answer = Result<(), String>;
 
@@ -29,63 +28,28 @@ pub async fn connect(shared: State<'_, Arc<Shared>>, events: Channel<Event>) -> 
 }
 
 #[tauri::command]
-pub async fn select(shared: State<'_, Arc<Shared>>, pane: u64) -> Answer {
-    shared.act(|s| s.select(PaneId(pane)));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn resize(shared: State<'_, Arc<Shared>>, rows: u16, cols: u16) -> Answer {
-    shared.act(|s| s.resize(rows, cols));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn key(shared: State<'_, Arc<Shared>>, key: PageKey) -> Answer {
-    if shared.read(|s| s.pastes(&key)) {
-        return paste_clipboard(shared).await;
+pub async fn call(shared: State<'_, Arc<Shared>>, window: WebviewWindow, call: Call) -> Answer {
+    match call {
+        Call::Key { key } if shared.read(|s| s.pastes(&key)) => paste_clipboard(&shared),
+        Call::PasteClipboard => paste_clipboard(&shared),
+        Call::Copy { from, to } => copy(&shared, from, to),
+        Call::Reconnect => shared.ask_reconnect(),
+        Call::Minimize => return window_frame::minimize(&window),
+        Call::ToggleMaximize => return window_frame::toggle_maximize(&window),
+        Call::CloseWindow => return window_frame::close(&window),
+        Call::DragWindow => return window_frame::drag(&window),
+        Call::SnapLayouts => return window_frame::snap_layouts(&window),
+        call => shared.act(|s| s.call(call)),
     }
-    shared.act(|s| s.key(&key));
     Ok(())
 }
 
-#[tauri::command]
-pub async fn text(shared: State<'_, Arc<Shared>>, text: String) -> Answer {
-    shared.act(|s| s.text(&text));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn paste(shared: State<'_, Arc<Shared>>, text: String) -> Answer {
-    shared.act(|s| s.paste(text));
-    Ok(())
-}
-
-/// The wheel over the pane, in notches (negative up), at the `[row, col]`
-/// under the pointer.
-#[tauri::command]
-pub async fn wheel(shared: State<'_, Arc<Shared>>, notches: i32, at: (u16, u16)) -> Answer {
-    shared.act(|s| s.wheel(notches, at));
-    Ok(())
-}
-
-/// A mouse gesture over the pane the page did not keep for a selection,
-/// at the `[row, col]` under the pointer.
-#[tauri::command]
-pub async fn mouse(shared: State<'_, Arc<Shared>>, gesture: PageMouse, button: u8, at: (u16, u16)) -> Answer {
-    shared.act(|s| s.mouse(gesture, button, at));
-    Ok(())
-}
-
-/// The paste key: the clipboard is read here, not by the page, so a paste
-/// needs no permission from the webview.
-#[tauri::command]
-pub async fn paste_clipboard(shared: State<'_, Arc<Shared>>) -> Answer {
+fn paste_clipboard(shared: &Shared) {
     // A picture first, as the terminal client does: a screenshot copied
     // from some apps carries a text form too, and the picture is the point.
     if let Some(png) = clipboard::read_image() {
         shared.act(|s| s.paste_file("clipboard.png".into(), png));
-        return Ok(());
+        return;
     }
     let files = clipboard::read_files();
     if !files.is_empty() {
@@ -96,276 +60,20 @@ pub async fn paste_clipboard(shared: State<'_, Arc<Shared>>) -> Answer {
                 Err(e) => shared.act(|s| s.note(format!("could not read {name}: {e}"))),
             }
         }
-        return Ok(());
+        return;
     }
     match clipboard::read() {
         Some(text) => shared.act(|s| s.paste(text)),
         None => shared.act(|s| s.note("nothing on the clipboard to paste")),
     }
-    Ok(())
 }
 
-/// A drag across the pane, `from` and `to` as `[row, col]`: the cells
-/// between them go on the clipboard.
-#[tauri::command]
-pub async fn copy(shared: State<'_, Arc<Shared>>, from: (u16, u16), to: (u16, u16)) -> Answer {
+fn copy(shared: &Shared, from: (u16, u16), to: (u16, u16)) {
     let text = shared.read(|s| s.selected_text(from, to));
     if text.is_empty() {
-        return Ok(());
+        return;
     }
     if let Err(e) = clipboard::write(&text) {
         shared.act(|s| s.note(format!("could not copy: {e}")));
     }
-    Ok(())
-}
-
-/// Starts an agent from the daemon's `template` on a checkout.
-#[tauri::command]
-pub async fn spawn_agent(shared: State<'_, Arc<Shared>>, checkout: u64, template: String) -> Answer {
-    shared.act(|s| s.spawn_agent(CheckoutId(checkout), template));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn spawn_shell(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
-    shared.act(|s| s.spawn_shell(CheckoutId(checkout)));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn close(shared: State<'_, Arc<Shared>>, pane: u64) -> Answer {
-    shared.act(|s| s.close(PaneId(pane)));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn focus(shared: State<'_, Arc<Shared>>, focused: bool) -> Answer {
-    shared.act(|s| s.focus(focused));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn select_project(shared: State<'_, Arc<Shared>>, project: u64) -> Answer {
-    shared.act(|s| s.select_project(ProjectId(project)));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn toggle_repository(shared: State<'_, Arc<Shared>>, repository: u64) -> Answer {
-    shared.act(|s| s.toggle_repository(RepositoryId(repository)));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn choose_repository(shared: State<'_, Arc<Shared>>, repository: u64) -> Answer {
-    shared.act(|s| s.choose_repository(RepositoryId(repository)));
-    Ok(())
-}
-
-/// `open` true shows the Feature stage, false goes back to the Workspace.
-#[tauri::command]
-pub async fn show_features(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
-    shared.act(|s| s.show_features(open));
-    Ok(())
-}
-
-/// `open` true shows the Checkouts stage, false goes back to the Workspace.
-#[tauri::command]
-pub async fn show_composer(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
-    shared.act(|s| s.show_composer(open));
-    Ok(())
-}
-
-/// The composer's start: a shell without a `template`, else an agent from
-/// it, opening with `prompt` when one was typed.
-#[tauri::command]
-pub async fn compose(
-    shared: State<'_, Arc<Shared>>,
-    checkout: u64,
-    template: Option<String>,
-    prompt: Option<String>,
-) -> Answer {
-    shared.act(|s| s.compose(CheckoutId(checkout), template, prompt));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn show_checkouts(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
-    shared.act(|s| s.show_checkouts(open));
-    Ok(())
-}
-
-/// A row of the Checkouts table chosen by its key.
-#[tauri::command]
-pub async fn select_checkout_row(shared: State<'_, Arc<Shared>>, key: String) -> Answer {
-    shared.act(|s| s.select_checkout_row(key));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn filter_checkouts(shared: State<'_, Arc<Shared>>, filter: String) -> Answer {
-    shared.act(|s| s.filter_checkouts(filter));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn open_review(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
-    shared.act(|s| s.open_review(CheckoutId(checkout)));
-    Ok(())
-}
-
-/// A key or button of the review dialog.
-#[tauri::command]
-pub async fn review_action(shared: State<'_, Arc<Shared>>, action: Action) -> Answer {
-    shared.act(|s| s.review_action(action));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn review_click(shared: State<'_, Arc<Shared>>, target: ReviewClick) -> Answer {
-    shared.act(|s| s.review_click(target));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn review_jump(shared: State<'_, Arc<Shared>>, gesture: ReviewJumpGesture) -> Answer {
-    shared.act(|s| s.review_jump(gesture));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn open_history(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
-    shared.act(|s| s.open_history(CheckoutId(checkout)));
-    Ok(())
-}
-
-/// A key of the history dialog, or with `row` a click on a row.
-#[tauri::command]
-pub async fn history_action(shared: State<'_, Arc<Shared>>, action: Action, row: Option<usize>) -> Answer {
-    shared.act(|s| s.history_action(action, row));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn filter_history(shared: State<'_, Arc<Shared>>, filter: String) -> Answer {
-    shared.act(|s| s.filter_history(filter));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn review_refresh(shared: State<'_, Arc<Shared>>) -> Answer {
-    shared.act(|s| s.review_refresh());
-    Ok(())
-}
-
-/// Sends the comment, or with no `body` puts the box away.
-#[tauri::command]
-pub async fn review_comment(shared: State<'_, Arc<Shared>>, body: Option<String>) -> Answer {
-    shared.act(|s| s.review_comment(body));
-    Ok(())
-}
-
-/// Asks whether to remove a worktree picked in the rail.
-#[tauri::command]
-pub async fn remove_checkout(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
-    shared.act(|s| s.remove_checkout(CheckoutId(checkout)));
-    Ok(())
-}
-
-/// The answer to the Checkouts stage's question.
-#[tauri::command]
-pub async fn answer_checkouts(shared: State<'_, Arc<Shared>>, yes: bool) -> Answer {
-    shared.act(|s| s.answer_checkouts(yes));
-    Ok(())
-}
-
-/// A worktree for the selected row, on the new branch `name` for a checkout.
-#[tauri::command]
-pub async fn new_worktree(shared: State<'_, Arc<Shared>>, name: Option<String>) -> Answer {
-    shared.act(|s| s.new_worktree(name));
-    Ok(())
-}
-
-/// A key or button of the Checkouts stage, acting on its selected row.
-#[tauri::command]
-pub async fn checkouts_action(shared: State<'_, Arc<Shared>>, action: Action) -> Answer {
-    shared.act(|s| s.checkouts_action(action));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn peek(shared: State<'_, Arc<Shared>>, slug: String) -> Answer {
-    shared.act(|s| s.peek(&slug));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn set_layout(shared: State<'_, Arc<Shared>>, layout: String) -> Answer {
-    let layout = Layout::from_word(&layout).ok_or_else(|| format!("no layout called {layout}"))?;
-    shared.act(|s| s.set_layout(layout));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn set_chime(shared: State<'_, Arc<Shared>>, on: bool) -> Answer {
-    shared.act(|s| s.set_chime(on));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn toggle_folded(shared: State<'_, Arc<Shared>>) -> Answer {
-    shared.act(|s| s.toggle_folded());
-    Ok(())
-}
-
-/// Holds a feature for `reason`, or lifts its hold when there is none.
-#[tauri::command]
-pub async fn hold(shared: State<'_, Arc<Shared>>, slug: String, reason: Option<String>) -> Answer {
-    shared.act(|s| s.hold(&slug, reason));
-    Ok(())
-}
-
-/// Archives a feature, accepting it, or reopens it with `archived` false.
-#[tauri::command]
-pub async fn archive(shared: State<'_, Arc<Shared>>, slug: String, archived: bool) -> Answer {
-    shared.act(|s| s.archive(&slug, archived));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn go_to_pane(shared: State<'_, Arc<Shared>>, pane: u64) -> Answer {
-    shared.act(|s| s.go_to_pane(PaneId(pane)));
-    Ok(())
-}
-
-/// The command palette opened, or with `open` false closed.
-#[tauri::command]
-pub async fn palette(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
-    shared.act(|s| s.palette(open));
-    Ok(())
-}
-
-/// A command chosen in the palette.
-#[tauri::command]
-pub async fn command(shared: State<'_, Arc<Shared>>, action: Action) -> Answer {
-    shared.act(|s| s.command(action));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn go_to_checkout(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
-    shared.act(|s| s.go_to_checkout(CheckoutId(checkout)));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn go_to_feature(shared: State<'_, Arc<Shared>>, slug: String) -> Answer {
-    shared.act(|s| s.go_to_feature(&slug));
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn reconnect(shared: State<'_, Arc<Shared>>) -> Answer {
-    shared.ask_reconnect();
-    Ok(())
 }

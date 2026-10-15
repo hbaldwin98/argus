@@ -2,6 +2,7 @@
 import type { Project } from "./Project";
 import type { ProjectChoice } from "./ProjectChoice";
 import type { Shown } from "./Shown";
+import type { Stage } from "./Stage";
 
 /**
  * Everything the rail, the stage header and the status bar's counts draw.
@@ -31,12 +32,7 @@ loaded: boolean,
 /**
  * The repository whose features the Feature stage reads.
  */
-repository: number | null, 
-/**
- * Which stage is up: the Workspace, the Feature or Checkouts stage,
- * or the composer (`new`).
- */
-stage: "workspace" | "feature" | "checkouts" | "new", 
+repository: number | null, stage: Stage, 
 /**
  * The pane fills the window: the rail and the stage's chrome are put
  * away until the leader and `f` again.

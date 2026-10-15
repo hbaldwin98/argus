@@ -1,6 +1,6 @@
 //! The window's frame: the system's title bar is put away and the page
 //! draws its own strip across the top, so the sidebar runs to the window's
-//! edge. These are the calls that strip makes to move and size the window.
+//! edge. These answer the calls that strip makes to move and size the window.
 //!
 //! macOS keeps its traffic lights over the page (the page leaves room for
 //! them); Windows and Linux get the page's own buttons. On Windows 11 the
@@ -38,35 +38,30 @@ fn border(theme: Theme) -> u32 {
     }
 }
 
-#[tauri::command]
-pub async fn minimize(window: WebviewWindow) -> Result<(), String> {
+pub fn minimize(window: &WebviewWindow) -> Result<(), String> {
     window.minimize().map_err(|err| err.to_string())
 }
 
-#[tauri::command]
-pub async fn toggle_maximize(window: WebviewWindow) -> Result<(), String> {
+pub fn toggle_maximize(window: &WebviewWindow) -> Result<(), String> {
     let maximized = window.is_maximized().map_err(|err| err.to_string())?;
     if maximized { window.unmaximize() } else { window.maximize() }.map_err(|err| err.to_string())
 }
 
 /// Closing the window ends the program, as the system's button would.
-#[tauri::command]
-pub async fn close_window(window: WebviewWindow) -> Result<(), String> {
+pub fn close(window: &WebviewWindow) -> Result<(), String> {
     window.close().map_err(|err| err.to_string())
 }
 
 /// A press on the strip's empty space: the system moves the window from
 /// here until the button is let go, snapping it to an edge as usual.
-#[tauri::command]
-pub async fn drag_window(window: WebviewWindow) -> Result<(), String> {
+pub fn drag(window: &WebviewWindow) -> Result<(), String> {
     window.start_dragging().map_err(|err| err.to_string())
 }
 
 /// Windows 11's snap layouts, which open over the system's maximize
 /// button on hover. A page's button is not the system's, so the hover asks
 /// for them by their key, Win-Z, which opens them by the window's corner.
-#[tauri::command]
-pub async fn snap_layouts(window: WebviewWindow) -> Result<(), String> {
+pub fn snap_layouts(window: &WebviewWindow) -> Result<(), String> {
     #[cfg(windows)]
     {
         window.set_focus().map_err(|err| err.to_string())?;

@@ -104,8 +104,8 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
 | `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
 | `screen` | a pane's screen as the page draws it: the grid the daemon's damage lands on, and the rows changed since the last frame |
 | `rail` | what the rail lists from the tree, and what a row says |
-| `page` | what the page and the window's Rust say to each other |
-| `commands` | the calls the page makes, handed to the session |
+| `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
+| `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
 | `keys` | a key the page reports, as the protocol's key |
 
 (Rename/merge only with a reason; the module rule is the repo's.)
@@ -186,10 +186,10 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
 
 One `Channel` from Rust to the page carries a tagged enum (`{"type": "status" | "rail" | "frame" |
 "clipboard", ...}`, camelCase fields). Calls from the page: `connect(events: Channel)` (replaces any
-previous channel; Rust sends status + rail at once, and a full frame if a pane is on screen),
-`select{pane}`, `resize{rows, cols}`, `key{key}` (`PageKey { key, code, ctrl, alt, shift, meta }`
-— `key` is `KeyboardEvent.key`), `text{text}`, `paste{text}`, `spawnShell{checkout}`,
-`focus{focused}`, `reconnect`.
+previous channel; Rust sends status + rail at once, and a full frame if a pane is on screen), and
+every other call as one `Call` enum tagged by `call` — `{"call": "select", "pane": 1}`,
+`{"call": "key", "key": PageKey}` and so on — through the single `call` command, the page typed by
+its generated binding.
 
 ### `commands` / `main`
 

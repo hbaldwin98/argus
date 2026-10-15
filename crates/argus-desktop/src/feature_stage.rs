@@ -1,6 +1,7 @@
-//! What the Feature stage holds — whether it is open, the repository's
-//! board, the feature under the cursor and its tasks, how each repository
-//! lays its index out — and what its messages and gestures change.
+//! What the Feature stage holds — the repository's board, the feature
+//! under the cursor and its tasks, how each repository lays its index out
+//! — and what its messages and gestures change. Whether the stage is up is
+//! the session's; it says when the board is wanted.
 //!
 //! The session says which repository the stage is about ([`Scope`]); this
 //! asks the daemon for that repository's board, keeps what arrives, and
@@ -31,9 +32,8 @@ pub struct Scope {
 }
 
 pub struct FeatureStage {
-    open: bool,
-    /// Another stage reads the board while this one is closed: the
-    /// Checkouts stage names each checkout's feature.
+    /// Something on screen reads the board: this stage, or the Checkouts
+    /// stage and the palette, which name features from it.
     board_wanted: bool,
     /// The repository whose board was asked for on this connection.
     asked: Option<RepositoryId>,
@@ -52,7 +52,6 @@ pub struct FeatureStage {
 impl FeatureStage {
     pub fn new(layouts: BTreeMap<String, String>) -> FeatureStage {
         FeatureStage {
-            open: false,
             board_wanted: false,
             asked: None,
             board: None,
@@ -64,15 +63,6 @@ impl FeatureStage {
             layouts_changed: false,
             changed: true,
         }
-    }
-
-    pub fn is_open(&self) -> bool {
-        self.open
-    }
-
-    pub fn set_open(&mut self, open: bool) {
-        self.open = open;
-        self.changed = true;
     }
 
     pub fn set_board_wanted(&mut self, wanted: bool) {
@@ -99,11 +89,11 @@ impl FeatureStage {
         self.changed = true;
     }
 
-    /// Asks for the scope's board when the stage is open and it has not
-    /// been asked for on this connection. A board for another repository
+    /// Asks for the scope's board when it is wanted and has not been asked
+    /// for on this connection. A board for another repository
     /// is dropped at once, so the index never shows the wrong one.
     pub fn refresh(&mut self, scope: Option<&Scope>, out: &mut Vec<ClientMsg>) {
-        if !self.open && !self.board_wanted {
+        if !self.board_wanted {
             return;
         }
         let Some(scope) = scope else {
@@ -336,7 +326,7 @@ mod tests {
     /// An open stage that has asked for and received the fixture board.
     fn loaded() -> (FeatureStage, Vec<ClientMsg>) {
         let mut stage = FeatureStage::new(BTreeMap::new());
-        stage.set_open(true);
+        stage.set_board_wanted(true);
         let mut out = Vec::new();
         stage.refresh(Some(&scope()), &mut out);
         stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
@@ -366,7 +356,7 @@ mod tests {
     #[test]
     fn a_board_not_asked_for_is_dropped() {
         let mut stage = FeatureStage::new(BTreeMap::new());
-        stage.set_open(true);
+        stage.set_board_wanted(true);
         let mut out = Vec::new();
         stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert!(!stage.everything(Some(&scope()), &[]).loaded, "nothing was asked");
@@ -380,7 +370,7 @@ mod tests {
     #[test]
     fn a_board_another_repository_of_the_project_was_pushed_is_dropped() {
         let mut stage = FeatureStage::new(BTreeMap::new());
-        stage.set_open(true);
+        stage.set_board_wanted(true);
         let mut out = Vec::new();
         stage.refresh(Some(&scope()), &mut out);
         let elsewhere = DecisionBoard { repositories: vec![RepositoryId(9)], ..fixtures::board() };

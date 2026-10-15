@@ -2,13 +2,137 @@
 //!
 //! Everything here crosses into `assets/app.js` as JSON, so a field's name
 //! is a contract with the script that reads it: the tests pin each shape.
-//! Rust sends events down one channel; the page's calls are in `commands`.
-//! `cargo test` writes each type as TypeScript into `page/src/bindings`, so
-//! the page is compiled against these definitions rather than a copy.
+//! Rust sends events down one channel, and the page makes every call as
+//! one [`Call`], which `commands` dispatches. `cargo test` writes each type
+//! as TypeScript into `page/src/bindings`, so the page is compiled against
+//! these definitions rather than a copy.
 
 use serde::{Deserialize, Serialize};
 
+use crate::features::Layout;
 use crate::keymap::{Action, Command, Group};
+use crate::keys::PageKey;
+
+/// Something the page asks of the window. It answers nothing: what a call
+/// changed reaches the page as events. Ids are the daemon's, as numbers.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(tag = "call", rename_all = "snake_case")]
+pub enum Call {
+    /// Puts a pane on screen.
+    Select { pane: u64 },
+    /// The rows and columns the page has room for.
+    Resize { rows: u16, cols: u16 },
+    Key { key: PageKey },
+    /// Text an input method composed.
+    Text { text: String },
+    Paste { text: String },
+    /// The paste key: the clipboard is read in Rust, not by the page, so a
+    /// paste needs no permission from the webview.
+    PasteClipboard,
+    /// The wheel over the pane, in notches (negative up), at the
+    /// `[row, col]` under the pointer.
+    Wheel { notches: i32, at: (u16, u16) },
+    /// A mouse gesture over the pane the page did not keep for a
+    /// selection, at the `[row, col]` under the pointer.
+    Mouse { gesture: PageMouse, button: u8, at: (u16, u16) },
+    /// A drag across the pane, `from` and `to` as `[row, col]`: the cells
+    /// between them go on the clipboard.
+    Copy { from: (u16, u16), to: (u16, u16) },
+    SpawnShell { checkout: u64 },
+    /// Starts an agent from the daemon's `template` on a checkout.
+    SpawnAgent { checkout: u64, template: String },
+    Close { pane: u64 },
+    /// The window gained or lost focus.
+    Focus { focused: bool },
+    SelectProject { project: u64 },
+    ToggleRepository { repository: u64 },
+    ChooseRepository { repository: u64 },
+    /// `open` true shows the Feature stage, false goes back to the Workspace.
+    ShowFeatures { open: bool },
+    /// `open` true shows the Checkouts stage, false goes back to the Workspace.
+    ShowCheckouts { open: bool },
+    /// `open` true shows the composer, false goes back to the Workspace.
+    ShowComposer { open: bool },
+    /// The composer's start: a shell without a `template`, else an agent
+    /// from it, opening with `prompt` when one was typed.
+    Compose { checkout: u64, template: Option<String>, prompt: Option<String> },
+    /// A row of the Checkouts table chosen by its key.
+    SelectCheckoutRow { key: String },
+    FilterCheckouts { filter: String },
+    /// A key or button of the Checkouts stage, acting on its selected row.
+    CheckoutsAction { action: Action },
+    /// Asks whether to remove a worktree picked in the rail.
+    RemoveCheckout { checkout: u64 },
+    /// The answer to the Checkouts stage's question.
+    AnswerCheckouts { yes: bool },
+    /// A worktree for the selected row, on the new branch `name` for a
+    /// checkout row; a branch row brings its own.
+    NewWorktree { name: Option<String> },
+    OpenReview { checkout: u64 },
+    /// A key or button of the review dialog.
+    ReviewAction { action: Action },
+    ReviewClick { target: ReviewClick },
+    ReviewRefresh,
+    /// Sends the comment, or with no `body` puts the box away.
+    ReviewComment { body: Option<String> },
+    ReviewJump { gesture: ReviewJumpGesture },
+    OpenHistory { checkout: u64 },
+    /// A key of the history dialog, or with `row` a click on a row.
+    HistoryAction { action: Action, row: Option<usize> },
+    FilterHistory { filter: String },
+    Peek { slug: String },
+    SetLayout { layout: Layout },
+    ToggleFolded,
+    SetChime { on: bool },
+    /// Holds a feature for `reason`, or lifts its hold when there is none.
+    Hold { slug: String, reason: Option<String> },
+    /// Archives a feature, accepting it, or reopens it with `archived` false.
+    Archive { slug: String, archived: bool },
+    /// Leaves the Feature stage for a pane working a feature.
+    GoToPane { pane: u64 },
+    /// The command palette opened, or with `open` false closed.
+    Palette { open: bool },
+    /// A command chosen in the palette.
+    Command { action: Action },
+    GoToCheckout { checkout: u64 },
+    GoToFeature { slug: String },
+    /// Heard only while the daemon is stopped.
+    Reconnect,
+    Minimize,
+    ToggleMaximize,
+    /// Closing the window ends the program, as the system's button would.
+    CloseWindow,
+    /// A press on the strip's empty space: the system moves the window
+    /// until the button is let go.
+    DragWindow,
+    /// A hover over the strip's maximize button, for Windows 11's snap
+    /// layouts.
+    SnapLayouts,
+}
+
+/// What a click in the review dialog landed on.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ReviewClick {
+    File { file: usize },
+    Row { row: usize, extend: bool },
+    Side { staged: bool },
+    Recipient { pane: u64 },
+}
+
+/// What was done in the review's jump field: a letter typed, a match
+/// stepped to, Enter, or Escape.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ReviewJumpGesture {
+    Query { text: String },
+    Step { by: isize },
+    Choose,
+    Close,
+}
 
 /// One message down the page's channel.
 #[derive(Debug, Clone, Serialize)]
@@ -92,10 +216,7 @@ pub struct Rail {
     pub loaded: bool,
     /// The repository whose features the Feature stage reads.
     pub repository: Option<u64>,
-    /// Which stage is up: the Workspace, the Feature or Checkouts stage,
-    /// or the composer (`new`).
-    #[cfg_attr(test, ts(type = "\"workspace\" | \"feature\" | \"checkouts\" | \"new\""))]
-    pub stage: &'static str,
+    pub stage: Stage,
     /// The pane fills the window: the rail and the stage's chrome are put
     /// away until the leader and `f` again.
     pub filled: bool,
@@ -179,6 +300,21 @@ pub struct Pane {
     pub status: &'static str,
     pub note: Option<String>,
     pub on: bool,
+}
+
+/// Which stage is up. One at a time: opening one puts the others away, and
+/// any of them over the Workspace keeps the pane on screen to come back to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum Stage {
+    #[default]
+    Workspace,
+    Feature,
+    Checkouts,
+    /// The composer: what to start, where, and its first message.
+    #[serde(rename = "new")]
+    Composer,
 }
 
 /// The pane on screen, as the stage's header names it.
@@ -790,7 +926,7 @@ mod tests {
             }),
             loaded: true,
             repository: Some(2),
-            stage: "workspace",
+            stage: Stage::Composer,
             filled: false,
             templates: vec!["claude".into()],
         };
@@ -803,6 +939,7 @@ mod tests {
         assert_eq!(repo["checkouts"][0]["git"], "clean");
         assert_eq!(value["shown"]["pane"], 4);
         assert_eq!(value["loaded"], true);
+        assert_eq!(value["stage"], "new");
     }
 
     #[test]
