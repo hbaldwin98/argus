@@ -401,15 +401,6 @@ impl Daemon {
             .collect()
     }
 
-    /// [`Self::repositories_keyed`] for the board a client named by its
-    /// checkout; empty for one that is not in the tree.
-    pub(crate) fn board_repositories(&self, project: ProjectId, checkout: CheckoutId) -> Vec<RepositoryId> {
-        match self.client_artifact_scope(project, checkout) {
-            Ok((_, key)) => self.repositories_keyed(&key),
-            Err(_) => Vec::new(),
-        }
-    }
-
     fn board_key(&self, path: &std::path::Path) -> String {
         if let Some(key) = self.board_keys.lock().unwrap().get(path) {
             return key.clone();

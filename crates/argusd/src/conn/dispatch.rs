@@ -138,9 +138,8 @@ fn dispatch_boards(
             let read = action.is_read();
             daemon
                 .part_action_for_client(project, checkout, &feature, action)
-                .map(|mut list| {
+                .map(|list| {
                     if read {
-                        list.repositories = daemon.board_repositories(project, checkout);
                         let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
                     }
                 })
@@ -166,9 +165,8 @@ fn dispatch_boards(
             let read = action.is_read();
             daemon
                 .part_action_for_client(project, checkout, &feature, action)
-                .map(|mut list| {
+                .map(|list| {
                     if read {
-                        list.repositories = daemon.board_repositories(project, checkout);
                         let _ = out_tx.send(ServerMsg::SequenceDiagrams(Box::new(list)));
                     }
                 })

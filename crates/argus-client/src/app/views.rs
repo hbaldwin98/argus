@@ -104,91 +104,55 @@ impl App {
         };
         self.leader_pending = false;
         // A client that attached after the last write has never been
-        // pushed a board, so opening the view is a fetch.
+        // pushed a board, so opening the view follows one.
         if changed && view == View::Feature {
-            self.ask_for_decisions();
-            self.ask_for_tasks();
+            self.follow_board();
         }
         if changed || from_tab {
             self.report(view.label());
         }
     }
 
-    /// Asks for the board of the project the rail is on. Sent on opening
-    /// the view and on `r`, because a client that attached after the last
-    /// write has never been pushed one.
-    pub(super) fn ask_for_decisions(&mut self) {
-        let (Some(project), Some(checkout)) = (
-            self.current_project().map(|project| project.id),
-            self.current_checkout().map(|checkout| checkout.id),
-        ) else {
-            self.board = None;
-            self.board_checkout = None;
-            return;
-        };
-        self.board_checkout = Some(checkout);
-        let _ = self.out.send(ClientMsg::GetDecisions { project, checkout });
-    }
-
-    /// Asks again when the board on screen is not the one the view should
-    /// be showing.
+    /// Follows the board of the repository the rail is on while the
+    /// Feature view is open.
     ///
-    /// Opening the view is a fetch, but the view can be open before there
-    /// is anything to fetch for: the client draws before the first board
-    /// arrives, and a workspace switch re-scopes the tree under whatever
-    /// is open. Called on every tree, and cheap when nothing has moved —
-    /// an adopted board carries the project's name, so the comparison
-    /// fails exactly once per change.
-    pub(super) fn refresh_board_if_stale(&mut self) {
+    /// Called on every tree, key and click, because any of them can move
+    /// the rail, and cheap when nothing has moved: the follower asks once
+    /// per repository per connection, and pushes keep it current between.
+    pub(super) fn follow_board(&mut self) {
         if self.view != View::Feature {
             return;
         }
-        let Some(name) = self.current_project().map(|p| p.name.clone()) else {
-            self.board = None;
-            return;
-        };
-        let checkout = self.current_checkout().map(|c| c.id);
-        if self.board.as_ref().map(|b| b.name.as_str()) != Some(name.as_str())
-            || checkout != self.board_checkout
-        {
-            self.ask_for_decisions();
+        let scope = self.board_scope();
+        let mut out = Vec::new();
+        if self.board_follower.follow(scope, &mut out) {
+            self.rescope_feature();
         }
-    }
-}
-
-impl App {
-    pub(super) fn ask_for_tasks(&mut self) {
-        let (Some(project), Some(checkout), Some(feature)) = (
-            self.board.as_ref().and_then(|b| b.project),
-            self.current_checkout().map(|checkout| checkout.id),
-            self.feature_slug(),
-        ) else {
-            self.tasks = None;
-            return;
-        };
-        let _ = self.out.send(ClientMsg::Task {
-            project,
-            checkout,
-            feature,
-            action: argus_protocol::TaskAction::List,
-        });
+        self.send_board_requests(out);
     }
 
-    pub(super) fn ask_for_diagrams(&mut self) {
-        let (Some(project), Some(checkout), Some(feature)) = (
-            self.board.as_ref().and_then(|b| b.project),
-            self.current_checkout().map(|checkout| checkout.id),
-            self.feature_slug(),
-        ) else {
-            self.diagrams = None;
-            return;
-        };
-        let _ = self.out.send(ClientMsg::SequenceDiagram {
-            project,
-            checkout,
-            feature,
-            action: argus_protocol::DiagramAction::List,
-        });
+    /// The repository the rail is on, named by the checkout under the
+    /// cursor, or by its primary when the cursor is on a branch: the board
+    /// is the repository's whichever checkout asks.
+    fn board_scope(&self) -> Option<argus_protocol::BoardScope> {
+        let project = self.current_project()?;
+        let repository = self.current_repository()?;
+        let checkout = self.current_checkout().or_else(|| {
+            let primary = repository.checkouts.iter().find(|checkout| checkout.primary);
+            primary.or_else(|| repository.checkouts.first())
+        })?;
+        Some(argus_protocol::BoardScope {
+            project: project.id,
+            project_name: project.name.clone(),
+            repository: repository.id,
+            checkout: checkout.id,
+        })
+    }
+
+    pub(super) fn send_board_requests(&self, out: Vec<ClientMsg>) {
+        for msg in out {
+            let _ = self.out.send(msg);
+        }
     }
 }
 

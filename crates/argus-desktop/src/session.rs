@@ -194,18 +194,12 @@ impl Session {
             ServerMsg::Restarting => self.passing.push(Event::Notice {
                 text: "argusd is restarting".into(),
             }),
-            ServerMsg::Decisions(board) => {
-                let scope = self.scope();
-                self.features.receive_board(*board, scope.as_ref(), &self.tree, &mut self.out);
-            }
+            ServerMsg::Decisions(board) => self.features.receive_board(*board, &self.tree, &mut self.out),
             ServerMsg::Templates(names) => {
                 self.agents.receive(names);
                 self.rail_changed = true;
             }
-            ServerMsg::Tasks(list) => {
-                let scope = self.scope();
-                self.features.receive_tasks(*list, scope.as_ref());
-            }
+            ServerMsg::Tasks(list) => self.features.receive_tasks(*list),
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
             _ => {}
@@ -666,8 +660,7 @@ impl Session {
     }
 
     fn peek(&mut self, slug: &str) -> Vec<ClientMsg> {
-        let scope = self.scope();
-        self.features.peek(slug, scope.as_ref(), &mut self.out);
+        self.features.peek(slug, &mut self.out);
         self.finish()
     }
 
@@ -678,8 +671,7 @@ impl Session {
     }
 
     fn toggle_folded(&mut self) -> Vec<ClientMsg> {
-        let scope = self.scope();
-        self.features.toggle_folded(scope.as_ref(), &self.tree, &mut self.out);
+        self.features.toggle_folded(&self.tree, &mut self.out);
         self.finish()
     }
 
@@ -916,8 +908,7 @@ impl Session {
     /// held and archived features shown if it is one of them.
     fn go_to_feature(&mut self, slug: &str) -> Vec<ClientMsg> {
         self.go(Stage::Feature);
-        let scope = self.scope();
-        self.features.reveal(slug, scope.as_ref(), &self.tree, &mut self.out);
+        self.features.reveal(slug, &self.tree, &mut self.out);
         self.finish()
     }
 
@@ -972,8 +963,7 @@ impl Session {
                 self.features.set_layout(other, scope.as_ref());
             }
             Action::Folded => {
-                let scope = self.scope();
-                self.features.toggle_folded(scope.as_ref(), &self.tree, &mut self.out);
+                self.features.toggle_folded(&self.tree, &mut self.out);
             }
             Action::Branches => {
                 self.go(Stage::Checkouts);

@@ -100,12 +100,12 @@ impl FeaturePart for TaskAction {
         Ok(())
     }
 
-    fn list(store: &Store, target: &BoardTarget) -> anyhow::Result<TaskList> {
+    fn list(daemon: &Daemon, target: &BoardTarget) -> anyhow::Result<TaskList> {
         Ok(TaskList {
-            repositories: Vec::new(),
+            repositories: daemon.repositories_keyed(&target.key),
             project_name: target.project_name.clone(),
             feature: Some(target.feature.clone()),
-            tasks: store.tasks(&target.key, &target.feature)?,
+            tasks: daemon.store.tasks(&target.key, &target.feature)?,
         })
     }
 
@@ -125,22 +125,15 @@ impl FeaturePart for TaskAction {
     /// stand, so a list that changed without the features following it
     /// would leave the row above the list contradicting the list.
     fn broadcast(daemon: &Daemon, target: &BoardTarget) {
-        let BoardTarget {
-            project_name,
-            key,
-            feature,
-        } = target;
-        let tasks = daemon.store.tasks(key, feature).unwrap_or_default();
-        let _ = daemon.tasks_tx.send(TaskList {
-            repositories: daemon.repositories_keyed(key),
-            project_name: project_name.clone(),
-            feature: Some(feature.clone()),
-            tasks,
-        });
+        // An unreadable list is not pushed as an empty one, which would
+        // blank every reader's board for a fault in reading it.
+        if let Ok(list) = Self::list(daemon, target) {
+            let _ = daemon.tasks_tx.send(list);
+        }
         daemon.broadcast_decisions(
-            project_name,
-            key,
-            daemon.store.decisions(key).unwrap_or_default(),
+            &target.project_name,
+            &target.key,
+            daemon.store.decisions(&target.key).unwrap_or_default(),
         );
     }
 }

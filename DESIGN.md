@@ -213,6 +213,7 @@ live in this crate and a contract written twice drifts in silence.
 | `adr` | how a decision reads as a record somebody can paste or correct |
 | `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
 | `flow` | the steps a sequence diagram's source says, in the order it says them |
+| `board_follower` | how a client follows one repository's board: when it asks for the board and the feature's lists, which pushes it keeps, and where the cursor lands on a feature, task or diagram when one is replaced |
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
 | `transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
@@ -1469,8 +1470,14 @@ that scope, each with its number, state and everything else above — with `Clie
 checkout ids; the daemon validates their relationship and resolves the durable board key. Boards are
 pushed with `ServerMsg::Decisions` whenever that scope changes, since a tree is meant to be
 watched being built and the daemon deliberately does not track which view a client has open; every
-board, task list and diagram list names the repositories in the tree it belongs to, and a client
-reading another drops it (`DecisionBoard::is_for`, shared by both clients). The project's name
+board, task list and diagram list names the repositories in the tree it belongs to — the daemon's
+read says so as its push does — and a client reading another drops it. Both clients follow a board
+through `argus_protocol::board_follower`: the board is asked for once per repository per
+connection, so another checkout of the same repository asks nothing, another repository drops the
+board at once rather than drawing the wrong one while its own is fetched, and a reconnect asks again
+while keeping what it holds; between those the pushes keep it current. Across a push the cursor
+stays on the same feature by slug and the same task or diagram by id, and one that is gone hands it
+to its parent or to whatever took its place. The project's name
 alone is not enough: every repository of a project shares it, and a write to one repository's board
 once replaced the board on screen for another. The daemon reads each repository's board key once
 and keeps it, so a push costs no repository opens. `DecisionBoard::scoped` is what narrows that to

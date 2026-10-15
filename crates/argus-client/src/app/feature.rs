@@ -70,13 +70,7 @@ impl App {
     /// The features the index lists, grouped by how they stand. Held and
     /// archived ones are folded away unless asked for.
     pub fn feature_rows(&self) -> Vec<FeatureRow> {
-        let Some(board) = self.board.as_ref() else {
-            return Vec::new();
-        };
-        argus_protocol::standing::feature_rows(board, &self.tree)
-            .into_iter()
-            .filter(|row| self.show_folded_features || !row.standing.folded())
-            .collect()
+        self.board_follower.listed(&self.tree, self.show_folded_features)
     }
 
     /// The live agent panes on the checkouts this feature is worked in.
@@ -96,16 +90,17 @@ impl App {
 
     pub fn selected_feature(&self) -> Option<&Feature> {
         let slug = self.feature_slug()?;
-        self.board
-            .as_ref()?
+        self.board_follower
+            .board()?
             .features
             .iter()
             .find(|f| f.slug == slug)
     }
 
-    /// Narrows the decisions and asks for the tasks of whichever feature
-    /// is selected. Called whenever the selection or the board changes,
-    /// since everything the stage draws hangs off it.
+    /// Narrows the decisions to whichever feature is selected and points
+    /// the follower at it, which asks for its lists when it moved. Called
+    /// whenever the selection or the board changes, since everything the
+    /// stage draws hangs off it.
     pub(crate) fn rescope_feature(&mut self) {
         let rows = self.feature_rows();
         if self.feature_sel >= rows.len() {
@@ -115,13 +110,24 @@ impl App {
             self.feature_open = false;
         }
         let slug = rows.get(self.feature_sel).map(|row| row.slug.clone());
+        let mut out = Vec::new();
+        self.board_follower.point(slug.as_deref(), &mut out);
+        self.send_board_requests(out);
         self.board_scoped = self
-            .board
-            .as_ref()
+            .board_follower
+            .board()
             .map(|board| board.scoped(slug.as_deref()));
-        self.ask_for_tasks();
-        self.ask_for_diagrams();
         self.clamp_feature_cursors();
+    }
+
+    /// Puts the index's cursor on the feature the follower settled on
+    /// after its list changed, held by slug rather than by place.
+    pub(super) fn land_on_feature(&mut self) {
+        let landed = self.board_follower.feature().map(str::to_string);
+        if let Some(at) = landed.and_then(|slug| self.feature_rows().iter().position(|row| row.slug == slug)) {
+            self.feature_sel = at;
+        }
+        self.rescope_feature();
     }
 
     /// Selects the feature a click landed on.
@@ -157,12 +163,11 @@ impl App {
     /// Shows or folds away the held and archived features, staying on the
     /// feature under the cursor when it is still listed.
     pub(super) fn toggle_folded_features(&mut self) {
-        let selected = self.feature_slug();
         self.show_folded_features = !self.show_folded_features;
-        self.feature_sel = selected
-            .and_then(|slug| self.feature_rows().iter().position(|row| row.slug == slug))
-            .unwrap_or(0);
-        self.rescope_feature();
+        let mut out = Vec::new();
+        self.board_follower.settle(&self.tree, self.show_folded_features, &mut out);
+        self.send_board_requests(out);
+        self.land_on_feature();
     }
 
     // ---- levels -------------------------------------------------------
@@ -219,9 +224,9 @@ impl App {
 
     /// Re-asks for everything the stage draws.
     pub(super) fn refresh_feature(&mut self) {
-        self.ask_for_decisions();
-        self.ask_for_tasks();
-        self.ask_for_diagrams();
+        let mut out = Vec::new();
+        self.board_follower.refresh(&mut out);
+        self.send_board_requests(out);
     }
 
     /// Moves the cursor in whatever has the keys.
@@ -262,8 +267,8 @@ impl App {
     // ---- the work lens -------------------------------------------------
 
     pub fn feature_tasks(&self) -> &[Task] {
-        self.tasks
-            .as_ref()
+        self.board_follower
+            .tasks()
             .filter(|list| list.feature == self.feature_slug())
             .map(|list| list.tasks.as_slice())
             .unwrap_or_default()
@@ -271,8 +276,8 @@ impl App {
 
     /// The selected feature's tasks with their parent/child topology.
     pub fn feature_task_rows(&self) -> Vec<TaskTreeRow<'_>> {
-        self.tasks
-            .as_ref()
+        self.board_follower
+            .tasks()
             .filter(|list| list.feature == self.feature_slug())
             .map(|list| list.tree_rows())
             .unwrap_or_default()
@@ -380,8 +385,8 @@ impl App {
     // ---- the flows lens -------------------------------------------------
 
     pub fn feature_diagrams(&self) -> &[SequenceDiagram] {
-        self.diagrams
-            .as_ref()
+        self.board_follower
+            .diagrams()
             .filter(|list| list.feature == self.feature_slug())
             .map(|list| list.diagrams.as_slice())
             .unwrap_or_default()

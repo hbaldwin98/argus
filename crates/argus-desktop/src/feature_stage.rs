@@ -3,16 +3,17 @@
 //! — and what its messages and gestures change. Whether the stage is up is
 //! the session's; it says when the board is wanted.
 //!
-//! The session says which repository the stage is about ([`Scope`]); this
-//! asks the daemon for that repository's board, keeps what arrives, and
-//! sends the stage's edits. Like everything in the window it never
-//! predicts: a hold or an archive shows once the pushed board says so.
+//! The session says which repository the stage is about ([`Scope`]); the
+//! protocol's `BoardFollower` decides when to ask for its board and which
+//! pushes to keep, as it does for the terminal client, and this sends the
+//! stage's edits. Like everything in the window it never predicts: a hold
+//! or an archive shows once the pushed board says so.
 
 use std::collections::BTreeMap;
 
 use argus_protocol::{
-    CheckoutId, ClientMsg, DecisionBoard, FeatureAction, ProjectId, ProjectInfo, RepositoryId,
-    TaskAction, TaskList,
+    BoardFollower, BoardScope, CheckoutId, ClientMsg, DecisionBoard, FeatureAction, ProjectId,
+    ProjectInfo, Received, RepositoryId, TaskList,
 };
 
 use crate::features::{self, Index, Layout};
@@ -31,17 +32,24 @@ pub struct Scope {
     pub key: String,
 }
 
+impl Scope {
+    fn board(&self) -> BoardScope {
+        BoardScope {
+            project: self.project,
+            project_name: self.project_name.clone(),
+            repository: self.repository,
+            checkout: self.checkout,
+        }
+    }
+}
+
 pub struct FeatureStage {
     /// Something on screen reads the board: this stage, or the Checkouts
     /// stage and the palette, which name features from it.
     board_wanted: bool,
-    /// The repository whose board was asked for on this connection.
-    asked: Option<RepositoryId>,
-    board: Option<DecisionBoard>,
-    /// The repository `board` is the board of.
-    board_for: Option<RepositoryId>,
-    peek: Option<String>,
-    peek_tasks: Option<TaskList>,
+    /// The board, the feature under the cursor, which is the one peeked
+    /// at, and its tasks.
+    board: BoardFollower,
     show_folded: bool,
     /// `Settings::layouts`: the session saves them with the rest.
     layouts: BTreeMap<String, String>,
@@ -53,11 +61,8 @@ impl FeatureStage {
     pub fn new(layouts: BTreeMap<String, String>) -> FeatureStage {
         FeatureStage {
             board_wanted: false,
-            asked: None,
-            board: None,
-            board_for: None,
-            peek: None,
-            peek_tasks: None,
+            // The window draws no sequence diagrams.
+            board: BoardFollower::new(false),
             show_folded: false,
             layouts,
             layouts_changed: false,
@@ -71,17 +76,17 @@ impl FeatureStage {
 
     /// The repository's board, once it has arrived.
     pub fn board(&self) -> Option<&DecisionBoard> {
-        self.board.as_ref()
+        self.board.board()
     }
 
     /// The feature under the stage's cursor.
     pub fn peeked(&self) -> Option<&str> {
-        self.peek.as_deref()
+        self.board.feature()
     }
 
     /// A new connection: whatever was asked of the last is asked again.
     pub fn forget_asked(&mut self) {
-        self.asked = None;
+        self.board.reconnected();
     }
 
     /// The tree changed: rows say which agents are on each feature.
@@ -89,85 +94,47 @@ impl FeatureStage {
         self.changed = true;
     }
 
-    /// Asks for the scope's board when it is wanted and has not been asked
-    /// for on this connection. A board for another repository
-    /// is dropped at once, so the index never shows the wrong one.
+    /// Follows the scope's board while something on screen reads it.
     pub fn refresh(&mut self, scope: Option<&Scope>, out: &mut Vec<ClientMsg>) {
         if !self.board_wanted {
             return;
         }
-        let Some(scope) = scope else {
-            if self.board.take().is_some() {
-                self.changed = true;
-            }
-            self.board_for = None;
-            self.asked = None;
-            return;
-        };
-        if self.asked == Some(scope.repository) {
-            return;
+        let asked = out.len();
+        if self.board.follow(scope.map(Scope::board), out) || out.len() > asked {
+            self.changed = true;
         }
-        // Kept across a reconnect while it is still this repository's, so
-        // the index does not blank while the same board is fetched again.
-        if self.board_for != Some(scope.repository) {
-            self.board = None;
-            self.board_for = None;
-            self.peek = None;
-            self.peek_tasks = None;
-        }
-        self.asked = Some(scope.repository);
-        self.changed = true;
-        out.push(ClientMsg::GetDecisions { project: scope.project, checkout: scope.checkout });
     }
 
-    /// A board, answered or pushed. Every client is pushed every board;
-    /// this keeps only the one it asked for, by the repositories it names
-    /// (`DecisionBoard::is_for`, which the terminal client asks too).
-    pub fn receive_board(&mut self, board: DecisionBoard, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
-        let Some(scope) = scope else {
-            return;
-        };
-        if self.asked != Some(scope.repository) || !board.is_for(&scope.project_name, scope.repository) {
-            return;
+    /// A board, answered or pushed: kept when it is the followed
+    /// repository's, which every client decides alike.
+    pub fn receive_board(&mut self, board: DecisionBoard, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        if self.board.receive_board(board, tree, self.show_folded, out) {
+            self.changed = true;
         }
-        self.board = Some(board);
-        self.board_for = Some(scope.repository);
-        self.changed = true;
-        self.settle_peek(scope, tree, out);
     }
 
-    pub fn receive_tasks(&mut self, list: TaskList, scope: Option<&Scope>) {
-        let ours = scope.is_some_and(|scope| list.is_for(&scope.project_name, scope.repository))
-            && list.feature.is_some()
-            && list.feature == self.peek;
-        if ours {
-            self.peek_tasks = Some(list);
+    pub fn receive_tasks(&mut self, list: TaskList) {
+        if let Received::Adopted { .. } = self.board.receive_tasks(list, None) {
             self.changed = true;
         }
     }
 
     /// Puts the cursor on a feature and asks for its tasks.
-    pub fn peek(&mut self, slug: &str, scope: Option<&Scope>, out: &mut Vec<ClientMsg>) {
-        let listed = self.board.as_ref().is_some_and(|b| b.features.iter().any(|f| f.slug == slug));
-        if !listed || self.peek.as_deref() == Some(slug) {
-            return;
-        }
-        self.peek = Some(slug.to_string());
-        self.peek_tasks = None;
+    pub fn peek(&mut self, slug: &str, out: &mut Vec<ClientMsg>) {
+        self.board.point(Some(slug), out);
         self.changed = true;
-        self.ask_tasks(scope, out);
     }
 
     /// Puts the cursor on a feature the index may be folding away, showing
     /// the folded ones first: a peek on a row the index hides would be
-    /// moved off it by the next board's `settle_peek`.
-    pub fn reveal(&mut self, slug: &str, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
-        let folded = self.board.as_ref().is_some_and(|board| features::is_folded(board, tree, slug));
+    /// moved off it by the next board.
+    pub fn reveal(&mut self, slug: &str, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        let folded = self.board().is_some_and(|board| features::is_folded(board, tree, slug));
         if folded && !self.show_folded {
             self.show_folded = true;
             self.changed = true;
         }
-        self.peek(slug, scope, out);
+        self.peek(slug, out);
     }
 
     /// How the scope's index is laid out, as remembered for it.
@@ -187,12 +154,10 @@ impl FeatureStage {
         self.changed = true;
     }
 
-    pub fn toggle_folded(&mut self, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+    pub fn toggle_folded(&mut self, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
         self.show_folded = !self.show_folded;
         self.changed = true;
-        if let Some(scope) = scope {
-            self.settle_peek(scope, tree, out);
-        }
+        self.board.settle(tree, self.show_folded, out);
     }
 
     /// Holds a feature with a reason, or lifts its hold with `None`.
@@ -250,43 +215,17 @@ impl FeatureStage {
         let layout = self.layout(scope);
         features::build(&Index {
             repository: scope.map_or("", |scope| scope.repository_name.as_str()),
-            board: self.board.as_ref(),
+            board: self.board.board(),
             tree,
             layout,
             show_folded: self.show_folded,
-            peek: self.peek.as_deref(),
-            peek_tasks: self.peek_tasks.as_ref(),
+            peek: self.board.feature(),
+            peek_tasks: self.board.tasks(),
         })
     }
 
-    fn settle_peek(&mut self, scope: &Scope, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
-        let Some(board) = &self.board else {
-            return;
-        };
-        let settled = features::settle_peek(board, tree, self.peek.as_deref(), self.show_folded);
-        if settled != self.peek {
-            self.peek = settled;
-            self.peek_tasks = None;
-            self.ask_tasks(Some(scope), out);
-        } else if self.peek_tasks.is_none() {
-            self.ask_tasks(Some(scope), out);
-        }
-    }
-
-    fn ask_tasks(&self, scope: Option<&Scope>, out: &mut Vec<ClientMsg>) {
-        let (Some(scope), Some(slug)) = (scope, &self.peek) else {
-            return;
-        };
-        out.push(ClientMsg::Task {
-            project: scope.project,
-            checkout: scope.checkout,
-            feature: slug.clone(),
-            action: TaskAction::List,
-        });
-    }
-
     fn has(&self, slug: &str) -> bool {
-        self.board.as_ref().is_some_and(|b| b.features.iter().any(|f| f.slug == slug))
+        self.board().is_some_and(|b| b.features.iter().any(|f| f.slug == slug))
     }
 }
 
@@ -329,7 +268,7 @@ mod tests {
         stage.set_board_wanted(true);
         let mut out = Vec::new();
         stage.refresh(Some(&scope()), &mut out);
-        stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
+        stage.receive_board(fixtures::board(), &fixtures::feature_tree(), &mut out);
         (stage, out)
     }
 
@@ -342,7 +281,7 @@ mod tests {
         assert!(again.is_empty(), "asked already on this connection");
         stage.forget_asked();
         stage.refresh(Some(&scope()), &mut again);
-        assert_eq!(names(&again), ["board 3"], "a new connection asks again");
+        assert_eq!(names(&again), ["board 3", "tasks trim"], "a new connection asks again");
     }
 
     #[test]
@@ -358,12 +297,12 @@ mod tests {
         let mut stage = FeatureStage::new(BTreeMap::new());
         stage.set_board_wanted(true);
         let mut out = Vec::new();
-        stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
+        stage.receive_board(fixtures::board(), &fixtures::feature_tree(), &mut out);
         assert!(!stage.everything(Some(&scope()), &[]).loaded, "nothing was asked");
 
         stage.refresh(Some(&scope()), &mut out);
         let other = DecisionBoard { name: "work".into(), ..fixtures::board() };
-        stage.receive_board(other, Some(&scope()), &fixtures::feature_tree(), &mut out);
+        stage.receive_board(other, &fixtures::feature_tree(), &mut out);
         assert!(!stage.everything(Some(&scope()), &[]).loaded, "another project's board");
     }
 
@@ -374,11 +313,11 @@ mod tests {
         let mut out = Vec::new();
         stage.refresh(Some(&scope()), &mut out);
         let elsewhere = DecisionBoard { repositories: vec![RepositoryId(9)], ..fixtures::board() };
-        stage.receive_board(elsewhere, Some(&scope()), &fixtures::feature_tree(), &mut out);
+        stage.receive_board(elsewhere, &fixtures::feature_tree(), &mut out);
         assert!(!stage.everything(Some(&scope()), &[]).loaded, "the same project, another repository");
 
         let ours = DecisionBoard { repositories: vec![RepositoryId(2)], ..fixtures::board() };
-        stage.receive_board(ours, Some(&scope()), &fixtures::feature_tree(), &mut out);
+        stage.receive_board(ours, &fixtures::feature_tree(), &mut out);
         assert!(stage.everything(Some(&scope()), &[]).loaded);
     }
 
@@ -396,29 +335,29 @@ mod tests {
     fn peeking_asks_for_that_features_tasks_and_keeps_only_them() {
         let (mut stage, _) = loaded();
         let mut out = Vec::new();
-        stage.peek("bump", Some(&scope()), &mut out);
+        stage.peek("bump", &mut out);
         assert_eq!(names(&out), ["tasks bump"]);
-        stage.peek("nowhere", Some(&scope()), &mut out);
+        stage.peek("nowhere", &mut out);
         assert_eq!(out.len(), 1, "a feature not on the board is not peeked");
 
-        stage.receive_tasks(fixtures::tasks("trim"), Some(&scope()));
-        assert!(stage.peek_tasks.is_none(), "trim's tasks are not bump's");
-        stage.receive_tasks(fixtures::tasks("bump"), Some(&scope()));
-        assert!(stage.peek_tasks.is_some());
+        stage.receive_tasks(fixtures::tasks("trim"));
+        assert!(stage.board.tasks().is_none(), "trim's tasks are not bump's");
+        stage.receive_tasks(fixtures::tasks("bump"));
+        assert!(stage.board.tasks().is_some());
     }
 
     #[test]
     fn an_archived_feature_revealed_is_listed_and_stays_peeked_past_the_next_board() {
         let (mut stage, _) = loaded();
         let mut out = Vec::new();
-        stage.reveal("old", Some(&scope()), &fixtures::feature_tree(), &mut out);
+        stage.reveal("old", &fixtures::feature_tree(), &mut out);
         assert_eq!(names(&out), ["tasks old"]);
-        stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
+        stage.receive_board(fixtures::board(), &fixtures::feature_tree(), &mut out);
         assert_eq!(stage.peeked(), Some("old"));
         assert!(stage.everything(Some(&scope()), &fixtures::feature_tree()).show_folded, "the index lists it");
 
         let (mut stage, _) = loaded();
-        stage.reveal("bump", Some(&scope()), &fixtures::feature_tree(), &mut out);
+        stage.reveal("bump", &fixtures::feature_tree(), &mut out);
         assert_eq!(stage.peeked(), Some("bump"));
         assert!(!stage.show_folded, "a listed feature leaves the folded ones folded");
     }
@@ -457,15 +396,15 @@ mod tests {
     }
 
     #[test]
-    fn showing_the_folded_keeps_the_cursor_and_hiding_them_moves_it_off() {
+    fn showing_the_folded_keeps_the_cursor_and_hiding_them_hands_it_to_a_neighbour() {
         let (mut stage, _) = loaded();
         let tree = fixtures::feature_tree();
         let mut out = Vec::new();
-        stage.toggle_folded(Some(&scope()), &tree, &mut out);
-        stage.peek("mouse", Some(&scope()), &mut out);
+        stage.toggle_folded(&tree, &mut out);
+        stage.peek("mouse", &mut out);
         out.clear();
-        stage.toggle_folded(Some(&scope()), &tree, &mut out);
-        assert_eq!(stage.peek.as_deref(), Some("trim"), "mouse is held, folded away again");
-        assert_eq!(names(&out), ["tasks trim"]);
+        stage.toggle_folded(&tree, &mut out);
+        assert_eq!(stage.peeked(), Some("ctrlc"), "mouse is held, folded away again");
+        assert_eq!(names(&out), ["tasks ctrlc"]);
     }
 }

@@ -23,6 +23,9 @@ fn feature(slug: &str) -> argus_protocol::Feature {
 #[test]
 fn feature_transfer_picker_offers_sibling_checkout_and_sends_its_id() {
     let mut h = Harness::new();
+    // Opened first: the view follows the repository's board, and the
+    // answer is what it keeps.
+    h.key(KeyCode::Char('2'));
     h.app.on_server_msg(ServerMsg::Decisions(Box::new(
         argus_protocol::DecisionBoard {
             repositories: Vec::new(),
@@ -33,7 +36,6 @@ fn feature_transfer_picker_offers_sibling_checkout_and_sends_its_id() {
             decisions: Vec::new(),
         },
     )));
-    h.key(KeyCode::Char('2'));
     h.sent();
     h.key(KeyCode::Char('m'));
 

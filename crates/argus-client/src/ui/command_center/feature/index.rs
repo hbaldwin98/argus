@@ -158,7 +158,7 @@ pub(super) fn render(f: &mut Frame, app: &mut App, area: Rect, repo: &str, th: T
     }
     // The one thing about the tracker map that waits on the person, so
     // the heading says so wherever the cursor is.
-    let draft = app.board.as_ref().and_then(|board| board.tracker_map.draft.as_ref());
+    let draft = app.board_follower.board().and_then(|board| board.tracker_map.draft.as_ref());
     if let Some(draft) = draft {
         let mut cue = vec![
             span(format!("tracker map drafted by {}", draft.by), th.warn),
@@ -195,7 +195,7 @@ pub(super) fn render(f: &mut Frame, app: &mut App, area: Rect, repo: &str, th: T
     if body.height == 0 {
         return;
     }
-    let folded_exist = app.board.as_ref().is_some_and(|board| {
+    let folded_exist = app.board_follower.board().is_some_and(|board| {
         board.features.len() > rows.len()
     });
     if rows.is_empty() && !folded_exist {

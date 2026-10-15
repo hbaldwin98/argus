@@ -45,7 +45,7 @@ impl App {
 
     pub fn on_key(&mut self, key: KeyEvent) {
         self.handle_key(key);
-        self.refresh_board_if_stale();
+        self.follow_board();
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
