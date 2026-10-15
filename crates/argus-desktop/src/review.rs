@@ -1,44 +1,31 @@
-//! What the review dialog holds — the checkout, its unstaged and staged
-//! sides, the diff on screen and the lines picked, and who a comment goes
-//! to, and the file being jumped to — and what its gestures ask of the
-//! daemon. The rows, the cursor and what a comment anchors to are
-//! `argus_protocol::review_view`'s, so a comment written here means what
-//! one written in the terminal client does.
+//! What the review dialog holds beyond the review itself — the checkout's
+//! name, the side and layout the person chose, the comment box and who it
+//! is addressed to, and the file being jumped to — and the page it draws.
+//! Which sides were asked for, which one shows, and whether a comment can
+//! go are `argus_protocol::review_session`'s, so the dialog behaves as the
+//! terminal client's review does.
 
 use argus_protocol::fuzzy::Fuzzy;
+use argus_protocol::review_session::{self, Answered, Comment, ReviewSession};
 use argus_protocol::review_view::{marker, ReviewView, Row};
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ChangeKind, ClientMsg, DiffLine, HighlightKind, LineKind, PaneId, PaneKind, Review,
-    ReviewBase,
+    CheckoutId, CheckoutInfo, ChangeKind, ClientMsg, DiffLine, HighlightKind, LineKind, PaneId, Review, ReviewBase,
 };
 
 use crate::page::{DiffRow, DiffSide, Recipient, ReviewFile, ReviewJump, ReviewPage};
 use crate::settings::ReviewLayout;
 
 pub struct ReviewDialog {
-    checkout: CheckoutId,
+    session: ReviewSession,
     name: String,
     branch: String,
-    base: ReviewBase,
-    /// The commit a review of one commit is of, as its oid.
-    commit: Option<String>,
-    split: bool,
-    unstaged: Option<ReviewView>,
-    staged: Option<ReviewView>,
-    of_commit: Option<ReviewView>,
-    /// Requests out, and the side each is for.
-    pending: Vec<(u64, ReviewBase)>,
-    /// Why a side could not be read, in place of its diff.
-    failed: Option<String>,
     composing: bool,
+    /// The agent picked to read a comment; the first live one until then.
     recipient: Option<PaneId>,
     /// The side and layout the person chose, which the next review opens
     /// on. Not always the side on screen: one that gave way from an empty
     /// side was not chosen.
     chosen: ReviewLayout,
-    /// Whether the side on screen is settled: until both sides are read
-    /// and nobody has picked one, an empty side may still give way.
-    settled: bool,
     jump: Option<Jump>,
 }
 
@@ -51,48 +38,34 @@ struct Jump {
 
 impl ReviewDialog {
     /// A review of `checkout`'s working changes, on the side and in the
-    /// layout last chosen. Both sides are asked for at once so the toggle
-    /// can say how many files each has, and an empty one can give way.
-    pub fn working(
-        checkout: &CheckoutInfo,
-        layout: ReviewLayout,
-        mut id: impl FnMut() -> u64,
-    ) -> (ReviewDialog, Vec<ClientMsg>) {
+    /// layout last chosen.
+    pub fn working(checkout: &CheckoutInfo, layout: ReviewLayout, id: impl FnMut() -> u64) -> (ReviewDialog, Vec<ClientMsg>) {
         let base = if layout.staged { ReviewBase::Staged } else { ReviewBase::Unstaged };
-        let mut dialog = ReviewDialog::new(checkout, base, None, layout);
-        let msgs = [ReviewBase::Unstaged, ReviewBase::Staged]
-            .into_iter()
-            .map(|base| dialog.ask(base, id()))
-            .collect();
-        (dialog, msgs)
+        let (session, msgs) = ReviewSession::working(checkout.id, base, layout.split, id);
+        (ReviewDialog::new(checkout, session, layout), msgs)
     }
 
     /// One commit against its first parent, where a comment records the
-    /// commit it was made on.
-    pub fn of_commit(checkout: &CheckoutInfo, commit: String, layout: ReviewLayout, id: u64) -> (ReviewDialog, ClientMsg) {
-        let mut dialog = ReviewDialog::new(checkout, ReviewBase::Commit, Some(commit), layout);
-        let msg = dialog.ask(ReviewBase::Commit, id);
-        (dialog, msg)
+    /// commit it was made on, opening on `file` when one was picked.
+    pub fn of_commit(
+        checkout: &CheckoutInfo,
+        commit: String,
+        file: Option<String>,
+        layout: ReviewLayout,
+        id: u64,
+    ) -> (ReviewDialog, ClientMsg) {
+        let (session, msg) = ReviewSession::of_commit(checkout.id, commit, file, layout.split, id);
+        (ReviewDialog::new(checkout, session, layout), msg)
     }
 
-    fn new(checkout: &CheckoutInfo, base: ReviewBase, commit: Option<String>, layout: ReviewLayout) -> ReviewDialog {
-        let recipient = agents(checkout).first().map(|r| PaneId(r.pane));
+    fn new(checkout: &CheckoutInfo, session: ReviewSession, layout: ReviewLayout) -> ReviewDialog {
         ReviewDialog {
-            checkout: checkout.id,
+            session,
             name: checkout.name.clone(),
             branch: checkout.git.as_ref().and_then(|g| g.branch.clone()).unwrap_or_default(),
-            base,
-            commit,
-            split: layout.split,
-            unstaged: None,
-            staged: None,
-            of_commit: None,
-            pending: Vec::new(),
-            failed: None,
             composing: false,
-            recipient,
+            recipient: None,
             chosen: layout,
-            settled: base == ReviewBase::Commit,
             jump: None,
         }
     }
@@ -102,117 +75,55 @@ impl ReviewDialog {
     }
 
     pub fn checkout(&self) -> CheckoutId {
-        self.checkout
-    }
-
-    fn ask(&mut self, base: ReviewBase, request_id: u64) -> ClientMsg {
-        self.pending.retain(|(_, b)| *b != base);
-        self.pending.push((request_id, base));
-        ClientMsg::Review { request_id, checkout: self.checkout, base, commit: self.commit.clone() }
+        self.session.checkout()
     }
 
     /// Reads the sides again: the agent kept working.
-    pub fn refresh(&mut self, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
-        self.failed = None;
-        let bases: Vec<ReviewBase> = match self.base {
-            ReviewBase::Commit => vec![ReviewBase::Commit],
-            _ => vec![ReviewBase::Unstaged, ReviewBase::Staged],
-        };
-        bases.into_iter().map(|base| self.ask(base, id())).collect()
+    pub fn refresh(&mut self, id: impl FnMut() -> u64) -> Vec<ClientMsg> {
+        self.session.refresh(id)
     }
 
     /// A diff the daemon read, kept only if this dialog asked for it.
-    pub fn receive(&mut self, review: Review) -> bool {
-        let Some(at) = self.pending.iter().position(|(id, _)| *id == review.request_id) else {
-            return false;
-        };
-        let (_, base) = self.pending.remove(at);
-        let mut view = ReviewView::new(review, self.split);
-        // A refresh keeps the place it was at, where that line still is.
-        if let Some(old) = self.side(base) {
-            let file = old.rows.get(old.sel).map(|r| r.file());
-            if let Some(file) = file.filter(|f| *f < view.review.files.len()) {
-                view.jump_to_file(file);
-            }
-        }
-        *self.side_mut(base) = Some(view);
-        self.settle();
-        true
+    pub fn receive(&mut self, review: Review) -> Answered {
+        self.session.receive(review)
     }
 
-    /// Never opens on an empty side: once both are read, a side with
-    /// nothing on it gives way to one with something, as the terminal
-    /// client's review does.
-    fn settle(&mut self) {
-        if self.settled {
-            return;
-        }
-        let other = self.base.next();
-        let (Some(here), Some(there)) = (self.side(self.base), self.side(other)) else {
-            return;
-        };
-        if here.review.files.is_empty() && !there.review.files.is_empty() {
-            self.base = other;
-        }
-        self.settled = true;
+    pub fn failed(&mut self, checkout: CheckoutId, request_id: u64, message: String) -> Answered {
+        self.session.failed(checkout, request_id, message)
     }
 
-    pub fn failed(&mut self, request_id: u64, message: String) -> bool {
-        let Some(at) = self.pending.iter().position(|(id, _)| *id == request_id) else {
-            return false;
-        };
-        self.pending.remove(at);
-        self.failed = Some(message);
-        true
-    }
-
-    fn side(&self, base: ReviewBase) -> Option<&ReviewView> {
-        match base {
-            ReviewBase::Unstaged => self.unstaged.as_ref(),
-            ReviewBase::Staged => self.staged.as_ref(),
-            ReviewBase::Commit => self.of_commit.as_ref(),
-        }
-    }
-
-    fn side_mut(&mut self, base: ReviewBase) -> &mut Option<ReviewView> {
-        match base {
-            ReviewBase::Unstaged => &mut self.unstaged,
-            ReviewBase::Staged => &mut self.staged,
-            ReviewBase::Commit => &mut self.of_commit,
-        }
+    fn view(&self) -> Option<&ReviewView> {
+        self.session.view()
     }
 
     fn view_mut(&mut self) -> Option<&mut ReviewView> {
-        self.side_mut(self.base).as_mut()
+        self.session.view_mut()
     }
 
-    /// `b`: the other side of the working changes. A commit has one.
-    pub fn switch_side(&mut self) {
-        if self.base != ReviewBase::Commit {
-            self.show_side(self.base.next() == ReviewBase::Staged);
-        }
+    /// `b`: the other side of the working changes.
+    pub fn switch_side(&mut self) -> Result<(), String> {
+        self.show_side(self.session.base().next() == ReviewBase::Staged)
     }
 
-    pub fn show_side(&mut self, staged: bool) {
-        if self.base != ReviewBase::Commit {
-            self.base = if staged { ReviewBase::Staged } else { ReviewBase::Unstaged };
-            self.composing = false;
-            self.settled = true;
-            self.chosen.staged = staged;
-            if let Some(jump) = &mut self.jump {
-                jump.at = 0;
-            }
+    pub fn show_side(&mut self, staged: bool) -> Result<(), String> {
+        let base = if staged { ReviewBase::Staged } else { ReviewBase::Unstaged };
+        if base == self.session.base() {
+            return Ok(());
         }
+        self.session.show_side(base)?;
+        self.composing = false;
+        self.chosen.staged = staged;
+        if let Some(jump) = &mut self.jump {
+            jump.at = 0;
+        }
+        Ok(())
     }
 
     /// `s`: both sides of a change side by side, or stacked.
     pub fn toggle_split(&mut self) {
-        self.split = !self.split;
-        self.chosen.split = self.split;
-        let split = self.split;
-        for view in [&mut self.unstaged, &mut self.staged, &mut self.of_commit].into_iter().flatten() {
-            view.set_split(split);
-        }
+        let split = !self.session.split();
+        self.session.set_split(split);
+        self.chosen.split = split;
     }
 
     pub fn move_by(&mut self, delta: isize) {
@@ -294,7 +205,7 @@ impl ReviewDialog {
     }
 
     fn jump_matches(&self) -> Vec<usize> {
-        match (&self.jump, self.side(self.base)) {
+        match (&self.jump, self.view()) {
             (Some(jump), Some(view)) => {
                 let paths: Vec<String> = view.review.files.iter().map(|f| f.path.clone()).collect();
                 Fuzzy::paths().filter(&jump.query, &paths)
@@ -306,12 +217,13 @@ impl ReviewDialog {
     /// `E`: where the editor opens — at the picked lines' first, else the
     /// cursor's line, else the top of the file on screen.
     pub fn editor_target(&self) -> Option<(CheckoutId, String, Option<u32>)> {
-        let view = self.side(self.base)?;
+        let view = self.view()?;
+        let checkout = self.session.checkout();
         if let Some(anchor) = view.anchor() {
-            return Some((self.checkout, anchor.path.clone(), anchor.preferred_start()));
+            return Some((checkout, anchor.path.clone(), anchor.preferred_start()));
         }
         let file = view.rows.get(view.sel)?.file();
-        Some((self.checkout, view.review.files.get(file)?.path.clone(), None))
+        Some((checkout, view.review.files.get(file)?.path.clone(), None))
     }
 
     /// `v`: starts a range at the cursor, or lets it go.
@@ -321,15 +233,10 @@ impl ReviewDialog {
         }
     }
 
-    /// `c`: the comment box, under the picked lines. Without an agent to
-    /// read it there is nobody to send it to.
-    pub fn compose(&mut self) -> Result<(), &'static str> {
-        if self.side(self.base).and_then(ReviewView::anchor).is_none() {
-            return Err("pick a line to comment on");
-        }
-        if self.recipient.is_none() {
-            return Err("no agent in this checkout to send it to");
-        }
+    /// `c`: the comment box, under the picked lines, when an agent is
+    /// there to read it.
+    pub fn compose(&mut self, checkout: Option<&CheckoutInfo>) -> Result<(), &'static str> {
+        self.session.can_comment(checkout)?;
         self.composing = true;
         Ok(())
     }
@@ -342,32 +249,40 @@ impl ReviewDialog {
         self.recipient = Some(pane);
     }
 
+    /// The agent a comment goes to: the one picked while it still runs,
+    /// else the first that does.
+    fn addressee(&self, checkout: Option<&CheckoutInfo>) -> Option<PaneId> {
+        let live: Vec<PaneId> = checkout.into_iter().flat_map(review_session::recipients).map(|p| p.id).collect();
+        self.recipient.filter(|p| live.contains(p)).or(live.first().copied())
+    }
+
     /// The comment, anchored to the picked lines and addressed to the
     /// chosen agent. The box stays open until the daemon says it is saved.
-    pub fn comment(&mut self, body: String) -> Result<ClientMsg, &'static str> {
-        let body = body.trim().to_owned();
-        if body.is_empty() {
-            return Err("the comment is empty");
+    pub fn comment(&self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
+        match self.session.comment(checkout, self.addressee(checkout), body)? {
+            Comment::Send(msg) => Ok(*msg),
+            // The page always names an addressee while an agent is live.
+            Comment::Choose(_) => Err("choose the agent to send it to"),
         }
-        let anchor = self.side(self.base).and_then(ReviewView::anchor).ok_or("pick a line to comment on")?;
-        let recipient = self.recipient.ok_or("no agent in this checkout to send it to")?;
-        Ok(ClientMsg::ReviewComment { checkout: self.checkout, recipient, anchor: Box::new(anchor), body })
     }
 
     /// The daemon saved the comment: the box closes and the pick with it.
     pub fn commented(&mut self) {
         self.composing = false;
-        if let Some(view) = self.view_mut() {
-            view.mark = None;
-        }
+        self.session.commented();
     }
 
     /// The dialog as the page draws it, given the checkout as the tree has
     /// it now (its agents may have come or gone).
     pub fn page(&self, checkout: Option<&CheckoutInfo>) -> ReviewPage {
-        let recipients = checkout.map(agents).unwrap_or_default();
-        let recipient = self.recipient.filter(|p| recipients.iter().any(|r| r.pane == p.0)).map(|p| p.0);
-        let view = self.side(self.base);
+        let recipients: Vec<Recipient> = checkout
+            .into_iter()
+            .flat_map(review_session::recipients)
+            .map(|p| Recipient { pane: p.id.0, title: p.title.clone() })
+            .collect();
+        let recipient = self.addressee(checkout).map(|p| p.0);
+        let base = self.session.base();
+        let view = self.view();
         let files: Vec<ReviewFile> = view.map(|v| v.review.files.iter().map(file).collect()).unwrap_or_default();
         let selected = view.and_then(|v| v.rows.get(v.sel)).map(|r| r.file());
         let (from, to) = view.map(ReviewView::selection).unwrap_or((0, 0));
@@ -376,37 +291,37 @@ impl ReviewDialog {
             (Some(v), Some(f)) => file_rows(v, f, Some(v.sel), picked),
             _ => Vec::new(),
         };
+        let failed = self.session.failure();
         let empty = match view {
-            _ if self.failed.is_some() => self.failed.clone(),
-            Some(v) if v.review.files.is_empty() => Some(match self.base {
+            _ if failed.is_some() => failed.map(str::to_owned),
+            Some(v) if v.review.files.is_empty() => Some(match base {
                 ReviewBase::Unstaged => format!("Nothing unstaged in {}.", self.name),
                 ReviewBase::Staged => format!("Nothing staged in {}.", self.name),
                 ReviewBase::Commit => "The commit changed nothing.".to_owned(),
             }),
             _ => None,
         };
-        let count = |base| self.side(base).map(|v: &ReviewView| v.review.files.len());
         ReviewPage {
             open: true,
-            checkout: self.checkout.0,
+            checkout: self.session.checkout().0,
             name: self.name.clone(),
             branch: self.branch.clone(),
-            base: match self.base {
+            base: match base {
                 ReviewBase::Unstaged => "unstaged",
                 ReviewBase::Staged => "staged",
                 ReviewBase::Commit => "commit",
             },
             commit: view.and_then(|v| v.review.commit.as_ref()).map(|c| format!("{}  {}", c.short, c.summary)),
-            unstaged: count(ReviewBase::Unstaged),
-            staged: count(ReviewBase::Staged),
-            split: self.split,
+            unstaged: self.session.files(ReviewBase::Unstaged),
+            staged: self.session.files(ReviewBase::Staged),
+            split: self.session.split(),
             added: files.iter().map(|f| f.added).sum(),
             removed: files.iter().map(|f| f.removed).sum(),
             files,
             file: selected,
             pick: view.filter(|v| v.mark.is_some() || self.composing).and_then(ReviewView::anchor).map(|a| pick_label(&a)),
             rows,
-            loading: view.is_none() && self.failed.is_none(),
+            loading: view.is_none() && failed.is_none(),
             empty,
             composing: self.composing,
             recipients,
@@ -431,15 +346,6 @@ pub fn file_rows(view: &ReviewView, file: usize, cursor: Option<usize>, picked: 
 
 pub fn files_of(view: &ReviewView) -> Vec<ReviewFile> {
     view.review.files.iter().map(file).collect()
-}
-
-/// The agents a comment from this checkout can go to.
-fn agents(checkout: &CheckoutInfo) -> Vec<Recipient> {
-    checkout
-        .listed_panes()
-        .filter(|p| p.kind == PaneKind::Agent)
-        .map(|p| Recipient { pane: p.id.0, title: p.title.clone() })
-        .collect()
 }
 
 fn file(diff: &argus_protocol::FileDiff) -> ReviewFile {
@@ -551,7 +457,7 @@ fn pick_label(anchor: &argus_protocol::ReviewAnchor) -> String {
 mod tests {
     use super::*;
     use crate::fixtures::{checkout, pane};
-    use argus_protocol::{FileDiff, Hunk, PaneStatus};
+    use argus_protocol::{FileDiff, Hunk, PaneKind, PaneStatus};
 
     fn line(kind: LineKind, old: Option<u32>, new: Option<u32>, text: &str) -> DiffLine {
         DiffLine { kind, old_lineno: old, new_lineno: new, text: text.into(), spans: Vec::new() }
@@ -584,10 +490,13 @@ mod tests {
         remembering(ReviewLayout::default())
     }
 
+    fn agent_checkout() -> CheckoutInfo {
+        checkout(100, "main", true, vec![pane(7, PaneKind::Agent, "claude", PaneStatus::Working)])
+    }
+
     fn remembering(layout: ReviewLayout) -> (ReviewDialog, Vec<ClientMsg>) {
-        let co = checkout(100, "main", true, vec![pane(7, PaneKind::Agent, "claude", PaneStatus::Working)]);
         let mut ids = 0;
-        ReviewDialog::working(&co, layout, || {
+        ReviewDialog::working(&agent_checkout(), layout, || {
             ids += 1;
             ids
         })
@@ -616,10 +525,11 @@ mod tests {
 
     #[test]
     fn an_empty_side_gives_way_to_the_other_once_both_are_read() {
+        // The remembered side is asked for first.
         let (mut d, _) = remembering(ReviewLayout { staged: true, split: false });
-        d.receive(nothing(2, ReviewBase::Staged));
+        d.receive(nothing(1, ReviewBase::Staged));
         assert_eq!(d.page(None).base, "staged", "the other side may be empty too");
-        d.receive(diff(1, ReviewBase::Unstaged));
+        d.receive(diff(2, ReviewBase::Unstaged));
         assert_eq!(d.page(None).base, "unstaged");
         assert!(d.chosen().staged, "giving way is not choosing");
     }
@@ -633,18 +543,19 @@ mod tests {
     }
 
     #[test]
-    fn a_side_picked_before_both_are_read_stays_picked() {
+    fn a_side_picked_before_it_is_read_still_gives_way_when_it_is_empty() {
         let (mut d, _) = dialog();
-        d.show_side(true);
+        d.show_side(true).unwrap();
         d.receive(nothing(2, ReviewBase::Staged));
         d.receive(diff(1, ReviewBase::Unstaged));
-        assert_eq!(d.page(None).base, "staged");
+        assert_eq!(d.page(None).base, "unstaged");
+        assert!(d.chosen().staged, "the pick is still what is remembered");
     }
 
     #[test]
     fn the_side_and_layout_picked_are_what_is_remembered() {
         let (mut d, _) = dialog();
-        d.switch_side();
+        d.switch_side().unwrap();
         d.toggle_split();
         assert_eq!(d.chosen(), ReviewLayout { staged: true, split: true });
     }
@@ -652,8 +563,8 @@ mod tests {
     #[test]
     fn a_commits_review_keeps_the_remembered_side_and_takes_the_layout() {
         let co = checkout(100, "main", true, Vec::new());
-        let (mut d, _) = ReviewDialog::of_commit(&co, "aaaa1".into(), ReviewLayout { staged: true, split: false }, 1);
-        d.switch_side();
+        let (mut d, _) = ReviewDialog::of_commit(&co, "aaaa1".into(), None, ReviewLayout { staged: true, split: false }, 1);
+        assert!(d.switch_side().is_err(), "a commit has one side");
         d.toggle_split();
         assert_eq!(d.chosen(), ReviewLayout { staged: true, split: true });
     }
@@ -705,8 +616,8 @@ mod tests {
             [ClientMsg::Review { base: ReviewBase::Unstaged, .. }, ClientMsg::Review { base: ReviewBase::Staged, .. }]
         ));
         assert!(d.page(None).loading);
-        assert!(!d.receive(diff(99, ReviewBase::Unstaged)), "an answer to someone else");
-        assert!(d.receive(diff(1, ReviewBase::Unstaged)));
+        assert_eq!(d.receive(diff(99, ReviewBase::Unstaged)), Answered::Stale, "an answer to someone else");
+        d.receive(diff(1, ReviewBase::Unstaged));
         let page = d.page(None);
         assert_eq!((page.unstaged, page.staged), (Some(1), None));
         assert_eq!(page.files[0].name, "brief.rs");
@@ -715,6 +626,7 @@ mod tests {
 
     #[test]
     fn a_picked_range_is_said_by_the_side_it_is_on_and_anchors_the_comment() {
+        let co = agent_checkout();
         let (mut d, _) = dialog();
         d.receive(diff(1, ReviewBase::Unstaged));
         d.move_by(1);
@@ -722,8 +634,8 @@ mod tests {
         assert_eq!(d.page(None).pick.as_deref(), Some("old line 2"), "a removal is on the old side");
         d.move_by(1);
         assert_eq!(d.page(None).pick.as_deref(), Some("new line 2"), "with an addition, the new side");
-        d.compose().unwrap();
-        let ClientMsg::ReviewComment { recipient, anchor, body, .. } = d.comment(" tidy ".into()).unwrap() else {
+        d.compose(Some(&co)).unwrap();
+        let ClientMsg::ReviewComment { recipient, anchor, body, .. } = d.comment(Some(&co), " tidy ").unwrap() else {
             panic!()
         };
         assert_eq!((recipient, body.as_str()), (PaneId(7), "tidy"));
@@ -731,22 +643,35 @@ mod tests {
     }
 
     #[test]
-    fn a_comment_needs_an_agent_and_words() {
+    fn a_comment_box_needs_an_agent_to_open() {
         let co = checkout(100, "main", true, Vec::new());
         let (mut d, _) = ReviewDialog::working(&co, ReviewLayout::default(), || 1);
         d.receive(diff(1, ReviewBase::Unstaged));
-        assert_eq!(d.compose(), Err("no agent in this checkout to send it to"));
-        let (mut d, _) = dialog();
-        d.receive(diff(1, ReviewBase::Unstaged));
-        assert!(d.comment("   ".into()).is_err());
+        assert_eq!(d.compose(Some(&co)), Err("no agent running in this checkout"));
+        assert!(!d.page(Some(&co)).composing);
     }
 
     #[test]
-    fn an_empty_side_says_so_rather_than_drawing_nothing() {
+    fn an_exited_agent_is_neither_offered_nor_sent_to() {
+        let mut co = agent_checkout();
+        co.panes.insert(0, pane(6, PaneKind::Agent, "gone", PaneStatus::Exited { code: Some(0) }));
         let (mut d, _) = dialog();
+        d.receive(diff(1, ReviewBase::Unstaged));
+        d.choose_recipient(PaneId(6));
+        let page = d.page(Some(&co));
+        assert_eq!(page.recipients.iter().map(|r| r.pane).collect::<Vec<_>>(), [7]);
+        assert_eq!(page.recipient, Some(7));
+        assert!(matches!(d.comment(Some(&co), "hi"), Ok(ClientMsg::ReviewComment { recipient: PaneId(7), .. })));
+    }
+
+    #[test]
+    fn switching_onto_an_empty_side_keeps_the_diff_and_says_why() {
+        let (mut d, _) = dialog();
+        d.receive(diff(1, ReviewBase::Unstaged));
         d.receive(nothing(2, ReviewBase::Staged));
-        d.switch_side();
-        assert_eq!(d.page(None).empty.as_deref(), Some("Nothing staged in main."));
+        assert_eq!(d.switch_side(), Err("nothing staged; still showing unstaged".into()));
+        assert_eq!(d.page(None).base, "unstaged");
+        assert!(!d.chosen().staged);
     }
 
     #[test]

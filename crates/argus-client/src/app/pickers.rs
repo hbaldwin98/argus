@@ -30,11 +30,11 @@ impl App {
         p.sel = (p.sel as isize + delta).clamp(0, last as isize) as usize;
     }
 
-    /// Puts a review up directly, for tests that must not disturb the
-    /// column selection by navigating to it.
+    /// Asks for a checkout's review the way `R` does, for tests that must
+    /// not disturb the column selection by navigating to it.
     #[cfg(test)]
     pub fn review_for_test(&mut self, checkout: CheckoutId) {
-        self.review_request.want_for_test(checkout, 1);
+        self.start_review(checkout);
     }
 
     pub fn open_settings(&mut self) {
@@ -51,8 +51,8 @@ impl App {
         if self.persist_settings {
             crate::settings::save(&self.settings);
         }
-        if let Some(view) = &mut self.review {
-            view.set_split(self.review_split);
+        if let Some(session) = &mut self.review {
+            session.set_split(self.review_split);
         }
         if self.review_split {
             self.report("split diff — s for unified");
@@ -139,10 +139,8 @@ impl App {
             let _ = self.out.send(ClientMsg::Kill { pane });
         }
         self.review = None;
-        self.review_request.clear();
         self.history = None;
         self.history_request.clear();
-        self.pending_history_file = None;
         self.diagram = None;
         self.overlay = None;
         self.leader_pending = false;
@@ -548,7 +546,7 @@ impl App {
     /// The changed files of the review that is already open — no round
     /// trip, since the diff is in hand.
     pub(super) fn open_change_picker(&mut self) {
-        let Some(view) = &self.review else { return };
+        let Some(view) = self.review_view() else { return };
         let items: Vec<String> = view
             .review
             .files
@@ -619,24 +617,15 @@ impl App {
                 let Some(idx) = picker.shown.get(picker.sel).copied() else {
                     return;
                 };
-                if let Some(view) = &mut self.review {
+                if let Some(view) = self.review_view_mut() {
                     view.jump_to_file(idx);
                 }
             }
-            PickerKind::ReviewRecipient {
-                panes,
-                checkout,
-                anchor,
-                body,
-            } => {
+            PickerKind::ReviewRecipient { panes, body } => {
                 let Some(pane) = picker.shown.get(picker.sel).and_then(|i| panes.get(*i)) else {
                     return;
                 };
-                if self.is_live_agent(*pane) {
-                    self.send_review_comment(*checkout, *pane, anchor.clone(), body.clone());
-                } else {
-                    self.report("that agent is no longer running");
-                }
+                self.send_comment(body.clone(), Some(*pane));
             }
             PickerKind::FeatureCheckout {
                 project,

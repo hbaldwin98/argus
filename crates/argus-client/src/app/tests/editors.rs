@@ -310,7 +310,7 @@ fn closing_a_diff_puts_you_back_on_the_checkout() {
     h.key(KeyCode::Esc);
 
     assert!(h.app.overlay.is_none());
-    assert!(h.app.review.is_none());
+    assert!(h.app.review_view().is_none());
     assert_eq!(h.app.focus, Focus::Checkouts);
 }
 
@@ -324,7 +324,7 @@ fn f12_also_gets_you_out_of_a_diff() {
     h.key(KeyCode::F(12));
 
     assert!(h.app.overlay.is_none());
-    assert!(h.app.review.is_none(), "and the diff goes with it");
+    assert!(h.app.review_view().is_none(), "and the diff goes with it");
 }
 
 #[test]
@@ -336,12 +336,12 @@ fn s_flips_the_open_diff_between_split_and_unified() {
     assert!(!h.app.review_split, "unified to begin with");
 
     h.key(KeyCode::Char('s'));
-    assert!(h.app.review.as_ref().unwrap().split, "the open view flips");
+    assert!(h.app.review_view().unwrap().split, "the open view flips");
     assert!(h.app.settings.review_split, "and is remembered");
     assert!(h.app.status.contains("split"), "{}", h.app.status);
 
     h.key(KeyCode::Char('s'));
-    assert!(!h.app.review.as_ref().unwrap().split);
+    assert!(!h.app.review_view().unwrap().split);
     assert!(!h.app.settings.review_split);
 }
 
@@ -357,6 +357,8 @@ fn the_next_diff_opens_the_way_the_last_one_was_left() {
     h.key(KeyCode::Esc);
 
     h.app.review_for_test(checkout);
-    h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
-    assert!(h.app.review.as_ref().unwrap().split);
+    let mut again = diff_of(checkout);
+    again.request_id = 3;
+    h.app.on_server_msg(ServerMsg::Review(again));
+    assert!(h.app.review_view().unwrap().split);
 }

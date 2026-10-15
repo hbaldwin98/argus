@@ -136,31 +136,39 @@ impl App {
         });
     }
 
-    /// Works from any column that still implies a checkout. `R` on a commit
-    /// refreshes that commit; otherwise this is the uncommitted sides.
+    /// Works from any column that still implies a checkout. `R` with a
+    /// review up reads it again — the commit it is of, or the working
+    /// changes of its checkout — and otherwise opens the selected one's.
     pub(super) fn open_review(&mut self) {
         self.note_review_return();
-        if let Some(oid) = self
+        let current = self.current_checkout().map(|c| c.id);
+        let next = &mut self.next_review_request;
+        if let Some(session) = self
             .review
-            .as_ref()
-            .and_then(|view| view.review.commit.as_ref())
-            .map(|commit| commit.oid.clone())
+            .as_mut()
+            .filter(|s| s.commit().is_some() || current.is_none_or(|c| c == s.checkout()))
         {
-            self.open_commit_review(oid, None);
+            let commit = session.commit().is_some();
+            let msgs = session.refresh(|| next_id(next));
+            self.ask_review(msgs, if commit { "loading commit…" } else { "loading diff…" });
             return;
         }
-        let Some(id) = self
-            .current_checkout()
-            .map(|c| c.id)
-            .or_else(|| self.review.as_ref().map(|v| v.review.checkout))
-        else {
-            self.report("nothing to review");
-            return;
-        };
+        match current {
+            Some(checkout) => self.start_review(checkout),
+            None => self.report("nothing to review"),
+        }
+    }
+
+    /// Asks for both sides of `checkout`'s working changes, opening on the
+    /// side last chosen.
+    pub(super) fn start_review(&mut self, checkout: CheckoutId) {
+        let next = &mut self.next_review_request;
+        let (session, msgs) =
+            ReviewSession::working(checkout, self.review_base, self.review_split, || next_id(next));
+        self.review = Some(session);
         self.history = None;
         self.history_request.clear();
-        self.review_fallback = None;
-        self.request_uncommitted(id);
+        self.ask_review(msgs, "loading diff…");
     }
 
     /// An overlay already up keeps the place it was opened from.
@@ -175,15 +183,11 @@ impl App {
         };
     }
 
-    pub(super) fn request_uncommitted(&mut self, id: CheckoutId) {
-        let request_id = self.review_request.request(id);
-        self.report("loading diff…");
-        let _ = self.out.send(ClientMsg::Review {
-            request_id,
-            checkout: id,
-            base: self.review_base,
-            commit: None,
-        });
+    fn ask_review(&mut self, msgs: Vec<ClientMsg>, loading: &str) {
+        self.report(loading);
+        for msg in msgs {
+            let _ = self.out.send(msg);
+        }
     }
 
     /// `H` from the tree, or from a review that is already up.
@@ -193,7 +197,7 @@ impl App {
             .current_checkout()
             .map(|c| c.id)
             .or_else(|| self.history.as_ref().map(|h| h.checkout))
-            .or_else(|| self.review.as_ref().map(|v| v.review.checkout))
+            .or_else(|| self.review.as_ref().map(|s| s.checkout()))
             .or_else(|| self.git_checkout())
         else {
             self.report("nothing to show history for");
@@ -239,36 +243,26 @@ impl App {
     }
 
     pub(super) fn open_commit_review(&mut self, oid: String, file: Option<String>) {
-        let Some(id) = self
+        let Some(checkout) = self
             .history
             .as_ref()
             .map(|h| h.checkout)
-            .or_else(|| self.review.as_ref().map(|v| v.review.checkout))
+            .or_else(|| self.review.as_ref().map(|s| s.checkout()))
         else {
             return;
         };
-        let request_id = self.review_request.request(id);
-        self.pending_history_file = file;
-        self.report("loading commit…");
-        let _ = self.out.send(ClientMsg::Review {
-            request_id,
-            checkout: id,
-            base: ReviewBase::Commit,
-            commit: Some(oid),
-        });
+        let id = next_id(&mut self.next_review_request);
+        let (session, msg) = ReviewSession::of_commit(checkout, oid, file, self.review_split, id);
+        self.review = Some(session);
+        self.ask_review(vec![msg], "loading commit…");
     }
 
     /// `h`/Left: back to history when a commit review was opened from it.
     /// Escape/`q` use [`Self::close_overlay`] and drop both.
     pub(super) fn close_review(&mut self) {
-        let from_history = self
-            .review
-            .as_ref()
-            .is_some_and(|v| v.review.commit.is_some())
+        let from_history = self.review.as_ref().is_some_and(|s| s.commit().is_some())
             && self.history.is_some();
         self.review = None;
-        self.review_request.clear();
-        self.pending_history_file = None;
         if from_history {
             self.overlay = Some(Overlay::History);
             self.focus = Focus::Review;
@@ -281,66 +275,37 @@ impl App {
         self.focus = self.review_return;
     }
 
-    pub(super) fn send_to_agent(&mut self, anchor: ReviewAnchor, body: String) {
-        let Some(checkout) = self.review.as_ref().map(|view| view.review.checkout) else {
+    /// The comment typed at the open review, to `to` or — with nobody
+    /// chosen — to the one live agent, or a choice between several.
+    pub(super) fn send_comment(&mut self, body: String, to: Option<PaneId>) {
+        let Some(session) = &self.review else {
             self.report("review is no longer open");
             return;
         };
-        let agents = self.review_agents();
-        match agents.as_slice() {
-            [] => self.report("no agent running in this checkout"),
-            [(pane, _)] => self.send_review_comment(checkout, *pane, anchor, body),
-            _ => {
+        let checkout = checkouts_in(&self.tree).find(|c| c.id == session.checkout());
+        match session.comment(checkout, to, &body) {
+            Ok(Comment::Send(msg)) => {
+                let _ = self.out.send(*msg);
+                self.report("saving comment…");
+            }
+            Ok(Comment::Choose(panes)) => {
+                let labels = panes
+                    .iter()
+                    .filter_map(|id| self.tree.panes().find(|p| p.id == *id))
+                    .map(|p| {
+                        let template = p.template.as_deref().unwrap_or("agent");
+                        format!("{}  {}  #{}", p.title, template, p.id.0)
+                    })
+                    .collect();
                 self.picker = Some(Picker::new(
-                    PickerKind::ReviewRecipient {
-                        panes: agents.iter().map(|(pane, _)| *pane).collect(),
-                        checkout,
-                        anchor,
-                        body,
-                    },
+                    PickerKind::ReviewRecipient { panes, body },
                     "send comment to",
-                    agents.into_iter().map(|(_, label)| label).collect(),
+                    labels,
                     0,
                 ));
             }
+            Err(refused) => self.report(refused),
         }
-    }
-
-    pub(super) fn send_review_comment(
-        &mut self,
-        checkout: CheckoutId,
-        recipient: PaneId,
-        anchor: ReviewAnchor,
-        body: String,
-    ) {
-        let _ = self.out.send(ClientMsg::ReviewComment {
-            checkout,
-            recipient,
-            anchor: Box::new(anchor),
-            body,
-        });
-        self.report("saving comment…");
-    }
-
-    /// Shells and exited agents are skipped: neither can receive a comment.
-    fn review_agents(&self) -> Vec<(PaneId, String)> {
-        let Some(checkout) = self.review.as_ref().map(|v| v.review.checkout) else {
-            return Vec::new();
-        };
-        checkouts_in(&self.tree)
-            .find(|c| c.id == checkout)
-            .into_iter()
-            .flat_map(|c| c.panes.iter())
-            .filter(|p| is_live_agent_pane(p))
-            .map(|p| {
-                let template = p.template.as_deref().unwrap_or("agent");
-                (p.id, format!("{}  {}  #{}", p.title, template, p.id.0))
-            })
-            .collect()
-    }
-
-    pub(super) fn is_live_agent(&self, pane: PaneId) -> bool {
-        self.tree.panes().any(|p| p.id == pane && is_live_agent_pane(p))
     }
 
     /// Where an editor opens for this app's host. An external editor is
@@ -445,4 +410,11 @@ impl App {
             self.focus = Focus::Panes;
         }
     }
+}
+
+/// Hands out `next` and moves it on, never to zero.
+fn next_id(next: &mut u64) -> u64 {
+    let id = *next;
+    *next = id.wrapping_add(1).max(1);
+    id
 }

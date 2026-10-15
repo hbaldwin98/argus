@@ -879,11 +879,11 @@ const FEATURE: Keymap = Keymap {
 /// Whether a diff is loaded. The keys that act on one are not taken
 /// without it, so the handler can see the key went nowhere and leave.
 fn has_review(app: &App) -> bool {
-    app.review.is_some()
+    app.review_view().is_some()
 }
 
 fn in_review(app: &mut App, act: impl FnOnce(&mut argus_protocol::review_view::ReviewView)) {
-    if let Some(view) = &mut app.review {
+    if let Some(view) = app.review_view_mut() {
         act(view);
     }
 }
@@ -891,9 +891,7 @@ fn in_review(app: &mut App, act: impl FnOnce(&mut argus_protocol::review_view::R
 /// A commit reached from the history overlay goes back to it rather than
 /// flipping a side that means nothing there.
 fn from_history(app: &App) -> bool {
-    app.review
-        .as_ref()
-        .is_some_and(|v| v.review.commit.is_some())
+    app.review.as_ref().is_some_and(|s| s.commit().is_some())
         && app.history.is_some()
 }
 

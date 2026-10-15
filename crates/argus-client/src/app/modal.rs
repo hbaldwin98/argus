@@ -42,8 +42,6 @@ pub enum PickerKind {
     /// Send a prepared review comment to one live agent pane.
     ReviewRecipient {
         panes: Vec<PaneId>,
-        checkout: CheckoutId,
-        anchor: ReviewAnchor,
         body: String,
     },
     /// Transfer one feature's assignment to another checkout in the same

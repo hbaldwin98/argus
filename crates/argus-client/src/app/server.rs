@@ -6,6 +6,7 @@
 //! before anyone can observe the new tree.
 
 use super::*;
+use argus_protocol::review_session::Answered;
 use argus_protocol::Hello;
 
 impl App {
@@ -154,6 +155,9 @@ impl App {
                 self.receive_review_failure(request_id, checkout, message);
             }
             ServerMsg::ReviewCommentSaved { id, delivered } => {
+                if let Some(session) = &mut self.review {
+                    session.commented();
+                }
                 if delivered {
                     self.report(format!("comment #{id} saved and sent"));
                 } else {
@@ -557,81 +561,49 @@ impl App {
     }
 
     fn receive_review(&mut self, review: argus_protocol::Review) {
-        if !self
-            .review_request
-            .take_if_wanted(review.checkout, review.request_id)
-        {
-            return;
-        }
-        let files = review.files.len();
-        let label = match &review.commit {
-            Some(c) => format!("{} {}", c.short, c.summary),
-            None => format!("vs {}", review.base.label()),
-        };
-        let mut view = ReviewView::new(review, self.review_split);
-        let uncommitted = view.review.commit.is_none();
-        if view.is_empty() {
-            if uncommitted && self.other_side_instead(view.review.checkout, view.review.base) {
-                return;
-            }
-            self.review = None;
-            self.pending_history_file = None;
-            if uncommitted {
-                self.report("no changes, staged or unstaged");
-            } else {
-                self.report(format!("no changes {label}"));
-            }
-            return;
-        }
-        let empty_side = self.review_fallback.take();
-        if let Some(path) = self.pending_history_file.take() {
-            if let Some(i) = view.review.files.iter().position(|f| f.path == path) {
-                view.jump_to_file(i);
-            }
-        }
-        self.review = Some(view);
-        self.overlay = Some(Overlay::Review);
-        self.pane_fullscreen = false;
-        self.focus = Focus::Review;
-        match empty_side {
-            Some(side) => self.report(format!(
-                "nothing {}; {files} changed {label}",
-                side.label()
-            )),
-            None => self.report(format!("{files} changed {label}")),
+        if let Some(session) = &mut self.review {
+            let answered = session.receive(review);
+            self.review_answered(answered);
         }
     }
 
-    /// An uncommitted side came back empty. With a diff of the other side
-    /// on screen, `b` asked for it: keep that diff and its side. With none,
-    /// try the other side once, so a checkout whose changes are all staged
-    /// opens on them — the side toggle lives inside the overlay, so an
-    /// empty side that refused to open it would be a dead end. False when
-    /// both sides are empty, with the side asked for first restored.
-    fn other_side_instead(&mut self, checkout: CheckoutId, asked: ReviewBase) -> bool {
-        let showing = self
-            .review
-            .as_ref()
-            .filter(|v| v.review.commit.is_none() && v.review.checkout == checkout)
-            .map(|v| v.review.base)
-            .filter(|&base| base != asked);
-        if let Some(showing) = showing {
-            self.review_base = showing;
-            self.report(format!(
-                "nothing {}; still showing {}",
-                asked.label(),
-                showing.label()
-            ));
-            return true;
+    /// What an answer came to, said and drawn. The review opens only once
+    /// there is something in it: an empty side gives way to the other
+    /// inside the session, and nothing on either says so instead.
+    fn review_answered(&mut self, answered: Answered) {
+        let label = |view: Option<&ReviewView>, base: ReviewBase| match view.and_then(|v| v.review.commit.as_ref()) {
+            Some(c) => format!("{} {}", c.short, c.summary),
+            None => format!("vs {}", base.label()),
+        };
+        match answered {
+            Answered::Stale | Answered::Waiting | Answered::Updated => {}
+            Answered::Shown { base, gave_way } => {
+                let view = self.review_view();
+                let files = view.map_or(0, |v| v.review.files.len());
+                let label = label(view, base);
+                self.overlay = Some(Overlay::Review);
+                self.pane_fullscreen = false;
+                self.focus = Focus::Review;
+                match gave_way {
+                    Some(side) => self.report(format!(
+                        "nothing {}; {files} changed {label}",
+                        side.label()
+                    )),
+                    None => self.report(format!("{files} changed {label}")),
+                }
+            }
+            Answered::Nothing => {
+                let commit = self.review.as_ref().is_some_and(|s| s.commit().is_some());
+                let label = label(self.review_view(), ReviewBase::Commit);
+                self.review = None;
+                if commit {
+                    self.report(format!("no changes {label}"));
+                } else {
+                    self.report("no changes, staged or unstaged");
+                }
+            }
+            Answered::Failed(message) => self.alert(format!("error: {message}")),
         }
-        if let Some(first) = self.review_fallback.take() {
-            self.review_base = first;
-            return false;
-        }
-        self.review_fallback = Some(asked);
-        self.review_base = asked.next();
-        self.request_uncommitted(checkout);
-        true
     }
 
     fn receive_commit_files(
@@ -677,8 +649,9 @@ impl App {
     }
 
     fn receive_review_failure(&mut self, request_id: u64, checkout: CheckoutId, message: String) {
-        if self.review_request.take_if_wanted(checkout, request_id) {
-            self.alert(format!("error: {message}"));
+        if let Some(session) = &mut self.review {
+            let answered = session.failed(checkout, request_id, message);
+            self.review_answered(answered);
         }
     }
 

@@ -20,7 +20,7 @@ fn the_arriving_diff_opens_the_viewer_and_takes_focus() {
     let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
     open_review(&mut h, diff_of(checkout));
 
-    assert!(h.app.review.is_some());
+    assert!(h.app.review_view().is_some());
     assert_eq!(h.app.focus, Focus::Review);
 }
 
@@ -37,12 +37,12 @@ fn a_diff_for_a_checkout_the_user_left_is_dropped() {
     h.app
         .on_server_msg(ServerMsg::Review(diff_of(CheckoutId(9999))));
     assert!(
-        h.app.review.is_none(),
+        h.app.review_view().is_none(),
         "not for the checkout we asked about"
     );
 
     h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
-    assert!(h.app.review.is_some());
+    assert!(h.app.review_view().is_some());
 }
 
 #[test]
@@ -55,12 +55,13 @@ fn only_the_exact_latest_review_request_is_accepted() {
     let checkout = h.app.current_checkout().unwrap().id;
 
     h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
-    assert!(h.app.review.is_none());
+    assert!(h.app.review_view().is_none());
 
+    // The second `R` read both sides again, as requests 3 and 4.
     let mut latest = diff_of(checkout);
-    latest.request_id = 2;
+    latest.request_id = 3;
     h.app.on_server_msg(ServerMsg::Review(latest));
-    assert!(h.app.review.is_some());
+    assert!(h.app.review_view().is_some());
 }
 
 #[test]
@@ -68,7 +69,7 @@ fn an_unsolicited_diff_never_hijacks_the_screen() {
     let mut h = Harness::new();
     let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
     h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
-    assert!(h.app.review.is_none());
+    assert!(h.app.review_view().is_none());
     assert_eq!(h.app.focus, Focus::Projects);
 }
 
@@ -96,7 +97,7 @@ fn a_clean_checkout_says_so_instead_of_opening_an_empty_viewer() {
     h.app
         .on_server_msg(ServerMsg::Review(nothing_on(checkout, Staged, 2)));
 
-    assert!(h.app.review.is_none());
+    assert!(h.app.review_view().is_none());
     assert_ne!(h.app.focus, Focus::Review);
     assert!(
         h.app.status.contains("no changes, staged or unstaged"),
@@ -112,16 +113,14 @@ fn an_empty_unstaged_side_opens_on_the_staged_changes_instead() {
     let mut h = Harness::new();
     let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
     open_review(&mut h, nothing_on(checkout, Unstaged, 1));
-    match &h.sent()[..] {
-        [ClientMsg::Review { base, .. }] => assert_eq!(*base, Staged),
-        other => panic!("expected one request for the staged side, got {other:?}"),
-    }
+    assert!(h.sent().is_empty(), "both sides were asked for at once");
+    assert_ne!(h.app.focus, Focus::Review, "not opened on nothing");
 
     let mut staged = diff_of(checkout);
     (staged.request_id, staged.base) = (2, Staged);
     h.app.on_server_msg(ServerMsg::Review(staged));
     assert_eq!(h.app.focus, Focus::Review);
-    assert_eq!(h.app.review.as_ref().unwrap().review.base, Staged);
+    assert_eq!(h.app.review_view().unwrap().review.base, Staged);
     assert!(h.app.status.contains("nothing unstaged"), "{}", h.app.status);
 }
 
@@ -129,13 +128,13 @@ fn an_empty_unstaged_side_opens_on_the_staged_changes_instead() {
 fn b_onto_an_empty_side_keeps_the_diff_on_screen() {
     use argus_protocol::ReviewBase::{Staged, Unstaged};
     let mut h = review_with_agent();
-    let checkout = h.app.review.as_ref().unwrap().review.checkout;
-    h.key(KeyCode::Char('b'));
-    h.sent();
+    let checkout = h.app.review_view().unwrap().review.checkout;
     h.app
         .on_server_msg(ServerMsg::Review(nothing_on(checkout, Staged, 2)));
+    h.key(KeyCode::Char('b'));
 
-    assert_eq!(h.app.review.as_ref().unwrap().review.base, Unstaged);
+    assert!(h.app.status.contains("nothing staged"), "{}", h.app.status);
+    assert_eq!(h.app.review_view().unwrap().review.base, Unstaged);
     assert_eq!(h.app.review_base, Unstaged);
     assert_eq!(h.app.focus, Focus::Review);
     assert!(h.sent().is_empty(), "no second request behind the user's back");
@@ -148,7 +147,9 @@ fn r_and_h_work_from_the_checkouts_stage() {
     let checkout = h.app.current_checkout().unwrap().id;
     h.key(KeyCode::Char('R'));
     match &h.sent()[..] {
-        [ClientMsg::Review { checkout: c, .. }] => assert_eq!(*c, checkout),
+        [ClientMsg::Review { checkout: c, .. }, ClientMsg::Review { checkout: d, .. }] => {
+            assert_eq!((*c, *d), (checkout, checkout))
+        }
         other => panic!("unexpected {other:?}"),
     }
     h.key(KeyCode::Char('H'));
@@ -179,7 +180,7 @@ fn esc_closes_the_review_and_lands_back_on_the_checkout() {
     open_review(&mut h, diff_of(checkout));
     h.key(KeyCode::Esc);
 
-    assert!(h.app.review.is_none());
+    assert!(h.app.review_view().is_none());
     assert_eq!(h.app.focus, Focus::Checkouts);
 }
 
@@ -197,7 +198,7 @@ fn navigation_keys_move_within_the_diff_not_the_tree() {
         before,
         "j belongs to the diff while it's up"
     );
-    let v = h.app.review.as_ref().unwrap();
+    let v = h.app.review_view().unwrap();
     assert_eq!(v.anchor().unwrap().text, vec!["+new"]);
 }
 
@@ -221,7 +222,7 @@ fn v_then_j_selects_a_range_of_lines() {
     h.key(KeyCode::Char('v'));
     h.key(KeyCode::Char('j'));
 
-    let a = h.app.review.as_ref().unwrap().anchor().unwrap();
+    let a = h.app.review_view().unwrap().anchor().unwrap();
     assert_eq!(a.path, "src/a.rs");
     assert_eq!(a.text, vec![" keep", "+new"]);
 }
@@ -256,7 +257,7 @@ fn c_opens_a_comment_prompt_anchored_to_the_cursor() {
 #[test]
 fn a_comment_is_typed_at_the_agent_and_submitted() {
     let mut h = review_with_agent();
-    let checkout = h.app.review.as_ref().unwrap().review.checkout;
+    let checkout = h.app.review_view().unwrap().review.checkout;
     h.key(KeyCode::Char('j'));
     h.key(KeyCode::Char('c'));
     h.keys("fix this");
@@ -348,9 +349,8 @@ fn a_comment_with_no_agent_to_read_it_says_so_and_sends_nothing() {
     let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
     open_review(&mut h, diff_of(checkout));
     h.key(KeyCode::Char('c'));
-    h.keys("hello");
-    h.key(KeyCode::Enter);
 
+    assert!(h.app.prompt.is_none(), "no box to type a comment nobody can read");
     assert!(h.sent().is_empty());
     assert!(h.app.status.contains("no agent"), "{}", h.app.status);
 }
@@ -373,7 +373,7 @@ fn escaping_the_comment_prompt_sends_nothing_and_leaves_the_review_up() {
 
     assert!(h.sent().is_empty());
     assert!(h.app.prompt.is_none());
-    assert!(h.app.review.is_some());
+    assert!(h.app.review_view().is_some());
     assert_eq!(h.app.focus, Focus::Review);
 }
 
@@ -507,20 +507,23 @@ fn e_opens_the_file_under_the_cursor_at_its_line() {
 fn opening_an_editor_gives_it_the_column_the_review_was_using() {
     let mut h = review_with_agent();
     h.key(KeyCode::Char('e'));
-    assert!(h.app.review.is_none());
+    assert!(h.app.review_view().is_none());
 }
 
 #[test]
-fn b_toggles_the_diff_side_and_asks_again() {
+fn b_shows_the_other_side_already_in_hand() {
+    use argus_protocol::ReviewBase::Staged;
     let mut h = review_with_agent();
+    let checkout = h.app.review_view().unwrap().review.checkout;
+    let mut staged = diff_of(checkout);
+    (staged.request_id, staged.base) = (2, Staged);
+    staged.files[0].path = "src/staged.rs".to_string();
+    h.app.on_server_msg(ServerMsg::Review(staged));
     h.key(KeyCode::Char('b'));
 
-    match &h.sent()[0] {
-        ClientMsg::Review { base, .. } => {
-            assert_eq!(*base, argus_protocol::ReviewBase::Staged)
-        }
-        other => panic!("unexpected {other:?}"),
-    }
+    assert!(h.sent().is_empty(), "both sides were read when the review opened");
+    assert_eq!(h.app.review_view().unwrap().review.files[0].path, "src/staged.rs");
+    assert_eq!(h.app.review_base, Staged);
 }
 
 #[test]
@@ -546,17 +549,16 @@ fn b_on_a_commit_review_leaves_the_side_setting_alone() {
     // change which side the next `R` opens on, with nothing on
     // screen to show that it happened.
     let mut h = Harness::new();
-    let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+    let checkout = open_history(&mut h);
+    h.key(KeyCode::Char('l'));
+    commit_files_arrive(&mut h, checkout, "aaaa111");
+    h.key(KeyCode::Char('l'));
+    h.sent();
     let mut review = diff_of(checkout);
     review.base = argus_protocol::ReviewBase::Commit;
-    review.commit = Some(argus_protocol::CommitInfo {
-        oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-        short: "aaaaaaa".into(),
-        summary: "fix the thing".into(),
-        author: "t".into(),
-        time: 0,
-    });
-    open_review(&mut h, review);
+    review.commit = Some(commit("aaaa111", "newest"));
+    h.app.on_server_msg(ServerMsg::Review(review));
+    assert!(matches!(h.app.overlay, Some(Overlay::Review)));
 
     h.key(KeyCode::Char('b'));
     assert_eq!(h.app.review_base, argus_protocol::ReviewBase::Unstaged);

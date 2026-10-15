@@ -334,15 +334,11 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('n') => self.prompt = None,
                 _ => {}
             },
-            Prompt::Comment { anchor, input } => match key.code {
+            Prompt::Comment { input, .. } => match key.code {
                 KeyCode::Enter => {
-                    let anchor = anchor.clone();
-                    let body = input.trim().to_string();
-                    let empty = input.trim().is_empty();
+                    let body = std::mem::take(input);
                     self.prompt = None;
-                    if !empty {
-                        self.send_to_agent(anchor, body);
-                    }
+                    self.send_comment(body, None);
                 }
                 KeyCode::Esc => self.prompt = None,
                 KeyCode::Backspace => {
@@ -695,20 +691,13 @@ impl App {
     /// Focus without a diff would trap every keystroke, so a key that finds
     /// nothing loaded to act on is the way out.
     fn on_key_review(&mut self, key: KeyEvent) {
-        if !self.press(key) && self.review.is_none() {
+        if !self.press(key) && self.review_view().is_none() {
             self.focus = Focus::Checkouts;
         }
     }
 
     /// The same diff again, fresh: the commit it was, or the working tree.
     pub(super) fn refresh_review(&mut self) {
-        if let Some(oid) = self
-            .review
-            .as_ref()
-            .and_then(|v| v.review.commit.as_ref().map(|c| c.oid.clone()))
-        {
-            return self.open_commit_review(oid, None);
-        }
         self.open_review();
     }
 
@@ -716,19 +705,25 @@ impl App {
         // The side toggle is meaningless on a commit, and flipping it here
         // would silently change which side the next uncommitted review
         // opens on.
-        if self
-            .review
-            .as_ref()
-            .is_some_and(|v| v.review.commit.is_some())
-        {
+        let Some(session) = self.review.as_mut().filter(|s| s.commit().is_none()) else {
             return;
+        };
+        match session.switch_side() {
+            Ok(()) => {
+                let base = session.base();
+                let files = session.files(base);
+                self.review_base = base;
+                match files {
+                    Some(n) => self.report(format!("{n} changed vs {}", base.label())),
+                    None => self.report(format!("loading {}…", base.label())),
+                }
+            }
+            Err(refused) => self.report(refused),
         }
-        self.review_base = self.review_base.next();
-        self.open_review();
     }
 
     pub(super) fn open_reviewed_line_in_editor(&mut self) {
-        let Some(v) = &self.review else {
+        let Some(v) = self.review_view() else {
             return;
         };
         let checkout = v.review.checkout;
@@ -749,7 +744,14 @@ impl App {
     }
 
     pub(super) fn comment_on_reviewed_lines(&mut self) {
-        let Some(anchor) = self.review.as_ref().and_then(|v| v.anchor()) else {
+        let Some(session) = &self.review else {
+            return;
+        };
+        let checkout = checkouts_in(&self.tree).find(|c| c.id == session.checkout());
+        if let Err(refused) = session.can_comment(checkout) {
+            return self.report(refused);
+        }
+        let Some(anchor) = self.review_view().and_then(|v| v.anchor()) else {
             return;
         };
         self.prompt = Some(Prompt::Comment {

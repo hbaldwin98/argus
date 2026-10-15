@@ -464,27 +464,60 @@ pub(super) fn diff_line(
 }
 
 pub(super) fn app_with_diff(split: bool, lines: Vec<argus_protocol::DiffLine>) -> App {
+    showing(split, None, lines)
+}
+
+/// A commit's review, opened from the history overlay still behind it.
+pub(super) fn app_with_commit_review() -> App {
+    let commit = argus_protocol::CommitInfo {
+        oid: "a".repeat(40),
+        short: "aaaaaaa".to_string(),
+        summary: "Wake a pane's pump on the byte".to_string(),
+        author: "hunt".to_string(),
+        time: 0,
+    };
+    let lines = vec![diff_line(argus_protocol::LineKind::Added, None, Some(11), "arrived")];
+    let mut app = showing(false, Some(commit), lines);
+    app.history = app_with_history().history;
+    app
+}
+
+/// `lines` as the review on screen, answered the way the daemon would.
+fn showing(
+    split: bool,
+    commit: Option<argus_protocol::CommitInfo>,
+    lines: Vec<argus_protocol::DiffLine>,
+) -> App {
+    use argus_protocol::review_session::ReviewSession;
     let mut app = app_with_tree();
     app.review_split = split;
-    app.review = Some(argus_protocol::review_view::ReviewView::new(
-        argus_protocol::Review {
-            request_id: 1,
-            checkout: CheckoutId(1),
-            base: argus_protocol::ReviewBase::Unstaged,
-            files: vec![argus_protocol::FileDiff {
-                path: "src/thing.rs".to_string(),
-                old_path: None,
-                kind: argus_protocol::ChangeKind::Modified,
-                hunks: vec![argus_protocol::Hunk {
-                    header: "@@ -10,3 +10,3 @@ fn f()".to_string(),
-                    lines,
-                }],
-                note: None,
+    let (mut session, base) = match &commit {
+        Some(c) => (
+            ReviewSession::of_commit(CheckoutId(1), c.oid.clone(), None, split, 1).0,
+            argus_protocol::ReviewBase::Commit,
+        ),
+        None => (
+            ReviewSession::working(CheckoutId(1), argus_protocol::ReviewBase::Unstaged, split, || 1).0,
+            argus_protocol::ReviewBase::Unstaged,
+        ),
+    };
+    session.receive(argus_protocol::Review {
+        request_id: 1,
+        checkout: CheckoutId(1),
+        base,
+        files: vec![argus_protocol::FileDiff {
+            path: "src/thing.rs".to_string(),
+            old_path: None,
+            kind: argus_protocol::ChangeKind::Modified,
+            hunks: vec![argus_protocol::Hunk {
+                header: "@@ -10,3 +10,3 @@ fn f()".to_string(),
+                lines,
             }],
-            commit: None,
-        },
-        split,
-    ));
+            note: None,
+        }],
+        commit,
+    });
+    app.review = Some(session);
     app.overlay = Some(Overlay::Review);
     app.focus = Focus::Review;
     app

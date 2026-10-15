@@ -203,6 +203,7 @@ live in this crate and a contract written twice drifts in silence.
 | `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
+| `review_session` | one review's exchange with the daemon, as both clients hold it: which sides were asked for and answered, the side on screen and when an empty one gives way, and who a comment can go to |
 | `history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
@@ -318,7 +319,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
-| `review` | what the review dialog holds — a checkout's unstaged and staged sides, the diff on screen, the lines picked, who a comment goes to and the file being jumped to — and what its gestures ask of the daemon |
+| `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — and which of its keys and buttons are the `column_verbs` it sends |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
@@ -1234,10 +1235,14 @@ Review shows uncommitted work split into the two sides Git itself keeps apart. `
 - `staged`: `HEAD` against the index — `git diff --cached`.
 
 The chosen side is a setting rather than a per-visit choice, and it survives closing and reopening
-the overlay. An empty side never strands anyone: the toggle lives inside the overlay, so a fresh
-review whose side is empty asks once for the other side and opens on that, and only when both are
-empty says so and opens nothing. `b` onto an empty side keeps the diff already on screen and its
-side. Closing a review or history returns the keys to where it was opened from, the rail or the
+the overlay. Both sides are asked for at once, the chosen one first, so one round trip settles
+what the review can show and `b` is a look at what is already in hand. An empty side never strands
+anyone: the toggle lives inside the overlay, so a side that comes back empty gives way to the other
+once it has said, and only when both are empty does the review say so and open nothing. Giving way
+is not choosing: the setting stays the side asked for. `b` onto a side known to be empty keeps the
+diff already on screen and its side. A refresh keeps the file the cursor was in, found by its path.
+Both clients hold this exchange as one `review_session`, so the terminal and the desktop window
+open, give way and refuse alike. Closing a review or history returns the keys to where it was opened from, the rail or the
 Checkouts stage.
 
 A third snapshot is one commit against its first parent, reached through the history overlay rather
@@ -1292,7 +1297,7 @@ it.
 
 The client supports line and file navigation, single-file range marking, a changed-file fuzzy
 picker, refresh, and opening the selected line in an editor. A comment records the review side,
-paths, separate old and new ranges, quoted diff text, and body. The client chooses among the live
+paths, separate old and new ranges, quoted diff text, and body. The client chooses among the live (never exited)
 agents in the checkout when necessary. The daemon validates that recipient, persists the comment
 under the checkout path, then sends a flattened one-line notification to the recipient: through
 its inbox when one is open, else typed into its PTY. A failed delivery does not discard the stored
