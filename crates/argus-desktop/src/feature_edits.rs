@@ -1,0 +1,253 @@
+//! What an edit to an open feature asks of the daemon: each gesture as the
+//! one message the terminal client sends for the same edit, in the
+//! protocol's words.
+//!
+//! A write is checked here only against the bounds `argus-protocol` sets,
+//! so a refusal is said at once rather than as the daemon's; the daemon
+//! checks it again. Nothing here changes what the window shows: the pushed
+//! board and tasks do, so a refused edit leaves the feature as it is.
+
+use argus_protocol::{
+    checked_task_body, checked_task_line, ClientMsg, DecisionBoard, DecisionChange, DecisionState,
+    DecisionText, DecisionWrite, FeatureAction, TaskAction, TaskList, TaskWrite, MAX_CRITERION_BYTES,
+    MAX_FEATURE_BODY_BYTES,
+};
+
+use crate::feature_stage::Scope;
+use crate::page::FeatureEdit;
+
+/// The feature an edit is to, and what is known of it.
+pub struct Target<'a> {
+    pub scope: &'a Scope,
+    pub slug: &'a str,
+    pub board: &'a DecisionBoard,
+    pub tasks: Option<&'a TaskList>,
+}
+
+/// The messages `edit` sends — none when it changes nothing — or why it
+/// cannot be sent.
+pub fn messages(edit: FeatureEdit, target: &Target) -> Result<Vec<ClientMsg>, String> {
+    let task = |action| ClientMsg::Task {
+        project: target.scope.project,
+        checkout: target.scope.checkout,
+        feature: target.slug.to_string(),
+        action,
+    };
+    let change = |change| ClientMsg::ChangeDecision {
+        project: target.scope.project,
+        checkout: target.scope.checkout,
+        feature: target.slug.to_string(),
+        change,
+    };
+    Ok(match edit {
+        FeatureEdit::Brief { body } => {
+            let feature = target.board.features.iter().find(|f| f.slug == target.slug).ok_or("that feature is gone")?;
+            if body.trim() == feature.body.trim() {
+                return Ok(Vec::new());
+            }
+            if body.trim().len() > MAX_FEATURE_BODY_BYTES {
+                return Err("a feature document is a brief, not a design document".into());
+            }
+            vec![ClientMsg::Feature {
+                project: target.scope.project,
+                checkout: target.scope.checkout,
+                action: FeatureAction::Rewrite { slug: target.slug.to_string(), body },
+            }]
+        }
+        FeatureEdit::Task { id, title, body } => {
+            let current = target.tasks.and_then(|list| list.tasks.iter().find(|t| t.id == id)).ok_or("that task is gone")?;
+            let mut out = Vec::new();
+            let title = TaskWrite { title, ..TaskWrite::default() }.checked()?.title;
+            if title != current.title {
+                out.push(task(TaskAction::Retitle { id, title }));
+            }
+            if checked_task_body(body.clone())? != current.body {
+                out.push(task(TaskAction::SetBody { id, body }));
+            }
+            out
+        }
+        FeatureEdit::AddCriterion { id, text } => {
+            vec![task(TaskAction::AddCriterion { id, text: checked_task_line(&text, MAX_CRITERION_BYTES)? })]
+        }
+        FeatureEdit::SetCriterion { id, index, done } => vec![task(TaskAction::SetCriterion { id, index, done })],
+        FeatureEdit::RemoveCriterion { id, index } => vec![task(TaskAction::RemoveCriterion { id, index })],
+        FeatureEdit::AddTask { parent, title } => {
+            vec![task(TaskAction::Add(TaskWrite { title, external: None, parent }.checked()?))]
+        }
+        FeatureEdit::AddDecision { under, task, line } => {
+            let (state, chose) = DecisionState::typed(&line);
+            let write = DecisionWrite { chose: chose.to_string(), under, task, state, ..DecisionWrite::default() };
+            vec![ClientMsg::Decide {
+                project: target.scope.project,
+                checkout: target.scope.checkout,
+                feature: target.slug.to_string(),
+                write: write.checked()?,
+            }]
+        }
+        FeatureEdit::Take { id, option } => {
+            let decision = open_decision(target, id)?;
+            let answer = decision.options.get(option).cloned().ok_or("that option is gone")?;
+            vec![change(DecisionChange::Resolve { id, answer, because: None })]
+        }
+        FeatureEdit::Answer { id, answer, because } => {
+            open_decision(target, id)?;
+            let answer = answer.trim().to_string();
+            if answer.is_empty() {
+                return Err("an answer has to say what was decided".into());
+            }
+            let because = because.map(|b| b.trim().to_string()).filter(|b| !b.is_empty());
+            vec![change(DecisionChange::Resolve { id, answer, because })]
+        }
+        FeatureEdit::Rewrite { id, document } => {
+            let text = DecisionText::from_markdown(&document).checked()?;
+            vec![change(DecisionChange::Rewrite { id, text })]
+        }
+        FeatureEdit::Withdraw { id, withdrawn } => {
+            vec![change(if withdrawn { DecisionChange::Withdraw { id } } else { DecisionChange::Restore { id } })]
+        }
+    })
+}
+
+fn open_decision<'a>(target: &Target<'a>, id: i64) -> Result<&'a argus_protocol::Decision, String> {
+    let decision = target.board.decisions.iter().find(|d| d.id == id).ok_or("that decision is gone")?;
+    if !decision.open() {
+        return Err("only an open decision is waiting on an answer".into());
+    }
+    Ok(decision)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fixtures;
+    use argus_protocol::{CheckoutId, ProjectId, RepositoryId};
+
+    fn scope() -> Scope {
+        Scope {
+            project: ProjectId(1),
+            project_name: "src".into(),
+            repository: RepositoryId(2),
+            repository_name: "argus".into(),
+            checkout: CheckoutId(3),
+            key: "/src/main".into(),
+        }
+    }
+
+    fn send(edit: FeatureEdit) -> Result<Vec<ClientMsg>, String> {
+        let mut board = fixtures::board();
+        board.decisions[1].options = vec!["Every standing decision".into(), "Only the binding ones".into()];
+        let tasks = fixtures::tasks("trim");
+        let scope = scope();
+        messages(edit, &Target { scope: &scope, slug: "trim", board: &board, tasks: Some(&tasks) })
+    }
+
+    fn one(edit: FeatureEdit) -> ClientMsg {
+        let mut out = send(edit).unwrap();
+        assert_eq!(out.len(), 1, "{out:?}");
+        out.remove(0)
+    }
+
+    #[test]
+    fn taking_an_option_resolves_the_decision_with_it() {
+        let ClientMsg::ChangeDecision { feature, change, .. } = one(FeatureEdit::Take { id: 2, option: 1 }) else {
+            panic!();
+        };
+        assert_eq!(feature, "trim");
+        assert_eq!(change, DecisionChange::Resolve { id: 2, answer: "Only the binding ones".into(), because: None });
+    }
+
+    #[test]
+    fn an_answer_in_words_resolves_it_and_only_an_open_one_takes_one() {
+        let ClientMsg::ChangeDecision { change, .. } = one(FeatureEdit::Answer {
+            id: 2,
+            answer: " The last five ".into(),
+            because: Some("  ".into()),
+        }) else {
+            panic!();
+        };
+        assert_eq!(change, DecisionChange::Resolve { id: 2, answer: "The last five".into(), because: None });
+        assert!(send(FeatureEdit::Answer { id: 1, answer: "x".into(), because: None }).is_err(), "D1 is made");
+        assert!(send(FeatureEdit::Answer { id: 2, answer: " ".into(), because: None }).is_err());
+    }
+
+    #[test]
+    fn a_rewritten_record_is_read_back_as_the_adr_it_was_edited_as() {
+        let document = "Name the feature\n\n## Context\nThe hook prints the brief.\n\n## Why\nIt is long.\n";
+        let ClientMsg::ChangeDecision { change: DecisionChange::Rewrite { id, text }, .. } =
+            one(FeatureEdit::Rewrite { id: 1, document: document.into() })
+        else {
+            panic!();
+        };
+        assert_eq!(id, 1);
+        assert_eq!((text.context.as_deref(), text.because.as_deref()), (Some("The hook prints the brief."), Some("It is long.")));
+        assert!(send(FeatureEdit::Rewrite { id: 1, document: "\n\n".into() }).is_err(), "nothing chosen");
+    }
+
+    #[test]
+    fn a_decision_is_withdrawn_or_restored_never_removed() {
+        let withdraw = one(FeatureEdit::Withdraw { id: 1, withdrawn: true });
+        assert!(matches!(withdraw, ClientMsg::ChangeDecision { change: DecisionChange::Withdraw { id: 1 }, .. }));
+        let restore = one(FeatureEdit::Withdraw { id: 1, withdrawn: false });
+        assert!(matches!(restore, ClientMsg::ChangeDecision { change: DecisionChange::Restore { id: 1 }, .. }));
+    }
+
+    #[test]
+    fn a_typed_decision_line_asks_a_question_or_records_one_made() {
+        let ClientMsg::Decide { write, .. } =
+            one(FeatureEdit::AddDecision { under: None, task: Some(4), line: "? Which route".into() })
+        else {
+            panic!();
+        };
+        assert_eq!((write.chose.as_str(), write.state, write.task), ("Which route", DecisionState::Open, Some(4)));
+        let ClientMsg::Decide { write, .. } =
+            one(FeatureEdit::AddDecision { under: Some(1), task: None, line: "The pane API".into() })
+        else {
+            panic!();
+        };
+        assert_eq!((write.state, write.under), (DecisionState::Accepted, Some(1)));
+    }
+
+    #[test]
+    fn a_task_edit_sends_only_what_changed() {
+        let same = send(FeatureEdit::Task { id: 1, title: "Serve the brief on demand".into(), body: String::new() }).unwrap();
+        assert!(same.is_empty());
+        let both = send(FeatureEdit::Task { id: 1, title: " Serve it ".into(), body: "Over the pane API.".into() }).unwrap();
+        let actions: Vec<_> = both
+            .iter()
+            .map(|m| match m {
+                ClientMsg::Task { action, .. } => action.clone(),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            actions,
+            [
+                TaskAction::Retitle { id: 1, title: "Serve it".into() },
+                TaskAction::SetBody { id: 1, body: "Over the pane API.".into() },
+            ]
+        );
+        assert!(send(FeatureEdit::Task { id: 1, title: "  ".into(), body: String::new() }).is_err());
+    }
+
+    #[test]
+    fn tasks_subtasks_and_criteria_are_added_by_id() {
+        let ClientMsg::Task { action, .. } = one(FeatureEdit::AddTask { parent: Some(1), title: "Wire the hook".into() }) else {
+            panic!();
+        };
+        assert_eq!(action, TaskAction::Add(TaskWrite { title: "Wire the hook".into(), external: None, parent: Some(1) }));
+        let ClientMsg::Task { action, .. } = one(FeatureEdit::AddCriterion { id: 3, text: " A test covers it ".into() }) else {
+            panic!();
+        };
+        assert_eq!(action, TaskAction::AddCriterion { id: 3, text: "A test covers it".into() });
+        assert!(send(FeatureEdit::AddCriterion { id: 3, text: String::new() }).is_err());
+    }
+
+    #[test]
+    fn an_unchanged_brief_sends_nothing_and_a_changed_one_replaces_it() {
+        assert!(send(FeatureEdit::Brief { body: "Why Trim context injection matters.".into() }).unwrap().is_empty());
+        let ClientMsg::Feature { action, .. } = one(FeatureEdit::Brief { body: "Name it, don't print it.".into() }) else {
+            panic!();
+        };
+        assert_eq!(action, FeatureAction::Rewrite { slug: "trim".into(), body: "Name it, don't print it.".into() });
+    }
+}

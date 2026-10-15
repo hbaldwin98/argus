@@ -2,7 +2,9 @@
 // as a board. Where a feature stands is read by Rust off the daemon's tree
 // and board; a hold or an archive is asked for and shows when the pushed
 // board says so. Only Held and Archived take a dropped card: the other
-// columns follow the work.
+// columns follow the work. A feature opened from the index is `work.ts`'s,
+// and a new one written as a note `capture.ts`'s; either is drawn here in
+// place of the index.
 
 import type { Action } from './bindings/Action';
 import type { Agent } from './bindings/Agent';
@@ -10,10 +12,12 @@ import type { FeatureRow } from './bindings/FeatureRow';
 import type { Features } from './bindings/Features';
 import type { Line } from './bindings/Line';
 import type { Peek } from './bindings/Peek';
+import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
+import { drawWork } from './work.js';
 
 type Group = FeatureRow['group'];
 
@@ -108,8 +112,17 @@ function empty(...body: Child[]): HTMLElement {
 
 export function drawFeatures(): void {
   if (state.rail.stage !== 'feature') return;
+  if (captureOpen()) {
+    drawCapture();
+    return;
+  }
   const stage = $('fstage');
   const f = state.features;
+  if (f?.open) {
+    drawWork();
+    return;
+  }
+  state.editing = null;
   if (!f || !f.repository) {
     stage.replaceChildren(
       empty(
@@ -136,8 +149,11 @@ export function drawFeatures(): void {
           { class: 'fg-muted' },
           'Agents open them with ',
           el('span', { class: 'mono fg' }, 'argus-hook feature open'),
+          ', or write one as a note with ',
+          keycap('N'),
           '.',
         ),
+        el('button', { class: 'btn primary', onclick: openCapture }, 'New feature'),
       ),
     );
     return;
@@ -209,6 +225,10 @@ function indexHead(f: Features): HTMLElement {
       el(
         'span',
         { class: 'meta' },
+        keycap('N'),
+        ' new · ',
+        keycap('Enter'),
+        ' open · ',
         keycap('V'),
         ' list or board · ',
         keycap('M'),
@@ -233,6 +253,7 @@ function indexHead(f: Features): HTMLElement {
           el('span', { class: 'fg-faint' }, String(folded)),
         ),
       seg,
+      el('button', { class: 'btn primary', onclick: openCapture }, 'New feature'),
     ),
   );
 }
@@ -273,6 +294,7 @@ function list(f: Features): HTMLElement {
           'aria-current': row.peeked ? 'true' : null,
           'data-slug': row.slug,
           onclick: () => call('peek', { slug: row.slug }),
+          ondblclick: () => call('open_feature', { slug: row.slug }),
           oncontextmenu: (e: MouseEvent) => {
             e.preventDefault();
             call('peek', { slug: row.slug });
@@ -388,6 +410,11 @@ function peekPanel(peek: Peek | null): HTMLElement {
     el(
       'div',
       { class: 'actions' },
+      el(
+        'button',
+        { class: 'btn primary', onclick: () => call('open_feature', { slug: peek.slug }) },
+        'Open',
+      ),
       el(
         'button',
         { class: 'btn', disabled: peek.pane == null, onclick: () => goToPane(peek.pane) },
@@ -825,6 +852,9 @@ export function featureAction(action: Action): boolean {
     case 'filter':
       document.getElementById('feature-filter')?.focus();
       return true;
+    case 'newFeature':
+      openCapture();
+      return true;
     default:
       break;
   }
@@ -846,6 +876,9 @@ export function featureAction(action: Action): boolean {
       return true;
     case 'goToPane':
       goToPane(row.agent?.pane ?? state.features?.peek?.pane);
+      return true;
+    case 'choose':
+      call('open_feature', { slug: row.slug });
       return true;
     default:
       return false;

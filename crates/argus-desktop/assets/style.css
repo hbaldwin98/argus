@@ -1909,6 +1909,196 @@ body.maximized .winbtn .restore {
 .pbar span {
   width: 0;
 }
+.pbar.wide {
+  width: 160px;
+}
+.head-row {
+  align-items: center;
+  gap: var(--sp-12);
+}
+.fhead .head-row:last-child {
+  padding-bottom: var(--sp-12);
+}
+.prose {
+  white-space: pre-wrap;
+  max-width: 860px;
+}
+.cell {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-12) var(--sp-16);
+  background: var(--bg-surface);
+}
+
+/* A feature written as one note: the note beside what it reads as. */
+.capture {
+  gap: var(--sp-20);
+  padding: var(--sp-16) var(--sp-20);
+  overflow: hidden;
+}
+.capture-note {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.capture-reads {
+  width: clamp(300px, 38%, 460px);
+  flex: none;
+  overflow-y: auto;
+}
+.note-box {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.note-box:focus-within {
+  border-color: var(--accent);
+}
+.note-gutter {
+  flex: none;
+  width: 36px;
+  padding: var(--sp-8) var(--sp-12) var(--sp-8) 0;
+  box-sizing: border-box;
+  font: var(--type-mono);
+  color: var(--fg-faint);
+  text-align: right;
+  overflow: hidden;
+  user-select: none;
+}
+.note-field {
+  flex: 1;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font: var(--type-mono);
+  padding: var(--sp-8) var(--sp-12) var(--sp-8) 0;
+  white-space: pre;
+  overflow: auto;
+}
+.note-field::placeholder {
+  color: var(--fg-faint);
+}
+.legend {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: var(--sp-4) var(--sp-12);
+}
+.nrow {
+  display: grid;
+  grid-template-columns: 18px 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-6);
+  min-height: 26px;
+}
+
+/* A feature opened from the index: its outline beside the row under the
+ * cursor. */
+.work-outline {
+  flex: 1.25;
+  min-width: 0;
+  padding: var(--sp-16) var(--sp-12);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  overflow-y: auto;
+}
+.work-outline > .label {
+  padding: 0 var(--sp-8) var(--sp-6);
+}
+.wrow {
+  display: grid;
+  grid-template-columns: 18px 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-6);
+  min-height: var(--control-h);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  padding: 0 var(--sp-8);
+  cursor: pointer;
+}
+.wrow.on {
+  background: var(--bg-selected);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.work-foot {
+  margin-top: auto;
+  padding: var(--sp-8) var(--sp-8) 0;
+  border-top: 1px solid var(--line);
+}
+.work-add {
+  padding: var(--sp-8);
+}
+.work-detail {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-16) var(--sp-20);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-16);
+  overflow-y: auto;
+}
+.detail-title {
+  margin-top: var(--sp-6);
+}
+.brief-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-12);
+}
+.brief-row > :first-child {
+  flex: 1;
+}
+.field.area {
+  height: auto;
+  min-height: 96px;
+  padding: var(--sp-8);
+  resize: vertical;
+  line-height: 1.5;
+}
+.field.area.tall {
+  min-height: 280px;
+  font: var(--type-mono);
+}
+.crit {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-8);
+}
+.crit .check {
+  flex: 1;
+}
+.icon.sm {
+  width: 20px;
+  height: 20px;
+}
+.option {
+  display: flex;
+  gap: var(--sp-12);
+  align-items: flex-start;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  padding: var(--sp-12);
+  cursor: pointer;
+}
+.option.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.option input {
+  accent-color: var(--accent);
+  margin: 3px 0 0;
+}
 
 /* The canvas's 270px columns are what its 1440px artboard leaves them, not a
  * fixed size: they share the window from that basis, and only below their

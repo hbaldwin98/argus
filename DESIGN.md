@@ -83,7 +83,7 @@ putting the sidebar away until the same keys again. The Feature stage
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `features`, `checkouts`, `review`, `history`, `sessions`, `projects`, `chime`, with `keys`, `dom`, `state`
+`palette`, `shortcuts`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `projects`, `chime`, with `keys`, `dom`, `state`
 and `tauri` beneath them),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
@@ -217,7 +217,7 @@ live in this crate and a contract written twice drifts in silence.
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
-| `capture` | how one note reads as a feature: its title, brief, tasks and decisions |
+| `capture` | how one note reads as a feature — its title, brief, tasks and decisions — and what writing it down asks of the daemon |
 | `adr` | how a decision reads as a record somebody can paste or correct |
 | `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
 | `flow` | the steps a sequence diagram's source says, in the order it says them |
@@ -350,8 +350,11 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its transcript fills the dialog — and what each session offers: its pane, a resume by the exact command named, or only its transcript |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — and which of its keys and buttons are the `column_verbs` it sends |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
-| `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
+| `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, whether it is opened and the outline row under its cursor, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
+| `feature_view` | what a feature opened from the index shows: its tasks and decisions as `outline` reads them, and the task or decision under the cursor in full |
+| `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it, checked against the protocol's bounds |
+| `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, and whether the board holds the feature it was sent as yet |
 | `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, and the side and layout a review opens on |
 | `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
 | `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |

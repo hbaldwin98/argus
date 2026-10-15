@@ -2,11 +2,15 @@
 // as a board. Where a feature stands is read by Rust off the daemon's tree
 // and board; a hold or an archive is asked for and shows when the pushed
 // board says so. Only Held and Archived take a dropped card: the other
-// columns follow the work.
+// columns follow the work. A feature opened from the index is `work.ts`'s,
+// and a new one written as a note `capture.ts`'s; either is drawn here in
+// place of the index.
+import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
+import { drawWork } from './work.js';
 const GROUP_LABEL = {
     active: 'Active',
     queued: 'Queued',
@@ -98,8 +102,17 @@ function empty(...body) {
 export function drawFeatures() {
     if (state.rail.stage !== 'feature')
         return;
+    if (captureOpen()) {
+        drawCapture();
+        return;
+    }
     const stage = $('fstage');
     const f = state.features;
+    if (f?.open) {
+        drawWork();
+        return;
+    }
+    state.editing = null;
     if (!f || !f.repository) {
         stage.replaceChildren(empty(icon('folder'), el('div', { class: 'type-title' }, 'No repository'), el('div', { class: 'fg-muted' }, 'Choose one on the left.')));
         return;
@@ -110,7 +123,7 @@ export function drawFeatures() {
         return;
     }
     if (!f.rows.length) {
-        stage.replaceChildren(head, empty(icon('folder'), el('div', { class: 'type-title' }, `No features in ${f.repository} yet`), el('div', { class: 'fg-muted' }, 'Agents open them with ', el('span', { class: 'mono fg' }, 'argus-hook feature open'), '.')));
+        stage.replaceChildren(head, empty(icon('folder'), el('div', { class: 'type-title' }, `No features in ${f.repository} yet`), el('div', { class: 'fg-muted' }, 'Agents open them with ', el('span', { class: 'mono fg' }, 'argus-hook feature open'), ', or write one as a note with ', keycap('N'), '.'), el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
         return;
     }
     stage.replaceChildren(head, f.layout === 'board' ? board() : list(f));
@@ -159,9 +172,9 @@ function indexHead(f) {
         'aria-checked': String(f.layout === layout),
         onclick: () => call('set_layout', { layout }),
     }, layout === 'list' ? 'List' : 'Board')));
-    return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Features'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('V'), ' list or board · ', keycap('M'), ' move to… · ', keycap('G'), ' go to its pane')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Features in ${f.repository}`), el('span', { class: 'meta' }, counts), el('span', { class: 'grow' }), filter, f.layout === 'list' &&
+    return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Features'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('N'), ' new · ', keycap('Enter'), ' open · ', keycap('V'), ' list or board · ', keycap('M'), ' move to… · ', keycap('G'), ' go to its pane')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Features in ${f.repository}`), el('span', { class: 'meta' }, counts), el('span', { class: 'grow' }), filter, f.layout === 'list' &&
         folded > 0 &&
-        el('button', { class: 'btn', onclick: () => call('toggle_folded', {}) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(folded))), seg));
+        el('button', { class: 'btn', onclick: () => call('toggle_folded', {}) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(folded))), seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
 }
 function list(f) {
     const rows = visibleRows();
@@ -178,6 +191,7 @@ function list(f) {
             'aria-current': row.peeked ? 'true' : null,
             'data-slug': row.slug,
             onclick: () => call('peek', { slug: row.slug }),
+            ondblclick: () => call('open_feature', { slug: row.slug }),
             oncontextmenu: (e) => {
                 e.preventDefault();
                 call('peek', { slug: row.slug });
@@ -213,7 +227,7 @@ function peekPanel(peek) {
     }
     const row = rowBySlug(peek.slug);
     return el('aside', { class: 'peek', 'aria-label': `Peek at #${peek.number}` }, el('div', null, el('div', { class: 'label' }, el('span', { class: 'fg-accent' }, `#${peek.number}`), el('span', { class: GROUP_CLASS[peek.standing] ?? '' }, peek.standing), el('span', { class: 'grow' }), peek.branch && el('span', { class: 'label-aside' }, `from ${peek.branch}`)), el('div', { class: 'peek-title' }, peek.title), peek.held && el('div', { class: 'fg-attention' }, `held: “${peek.held}”`), peek.brief && el('div', { class: 'fg-muted peek-brief' }, peek.brief)), peek.links.length > 0 &&
-        el('div', { class: 'actions' }, peek.links.map((link) => el('span', { class: 'track', title: link.url }, link.tracker, ' ', el('b', null, link.key)))), lines('Needs you', peek.needsYou, '?', NEEDS_YOU), lines('In flight', peek.inFlight, '◐', IN_FLIGHT), lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○', NEXT_UP), lines('Last decided', peek.lastDecided ? [peek.lastDecided] : [], '✓', LAST_DECIDED), el('div', { class: 'grow' }), el('div', { class: 'actions' }, el('button', { class: 'btn', disabled: peek.pane == null, onclick: () => goToPane(peek.pane) }, 'Go to its pane'), el('span', { class: 'grow' }), row && moveButtons(row)));
+        el('div', { class: 'actions' }, peek.links.map((link) => el('span', { class: 'track', title: link.url }, link.tracker, ' ', el('b', null, link.key)))), lines('Needs you', peek.needsYou, '?', NEEDS_YOU), lines('In flight', peek.inFlight, '◐', IN_FLIGHT), lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○', NEXT_UP), lines('Last decided', peek.lastDecided ? [peek.lastDecided] : [], '✓', LAST_DECIDED), el('div', { class: 'grow' }), el('div', { class: 'actions' }, el('button', { class: 'btn primary', onclick: () => call('open_feature', { slug: peek.slug }) }, 'Open'), el('button', { class: 'btn', disabled: peek.pane == null, onclick: () => goToPane(peek.pane) }, 'Go to its pane'), el('span', { class: 'grow' }), row && moveButtons(row)));
 }
 function moveButtons(row) {
     return [
@@ -517,6 +531,9 @@ export function featureAction(action) {
         case 'filter':
             document.getElementById('feature-filter')?.focus();
             return true;
+        case 'newFeature':
+            openCapture();
+            return true;
         default:
             break;
     }
@@ -541,6 +558,9 @@ export function featureAction(action) {
             return true;
         case 'goToPane':
             goToPane(row.agent?.pane ?? state.features?.peek?.pane);
+            return true;
+        case 'choose':
+            call('open_feature', { slug: row.slug });
             return true;
         default:
             return false;

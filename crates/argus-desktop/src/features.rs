@@ -4,11 +4,15 @@
 //!
 //! How a feature stands is `argus_protocol::standing`'s to say, so this
 //! window files a feature under the heading the terminal client does; this
-//! only turns those rows into what the page draws.
+//! only turns those rows into what the page draws. A feature opened from
+//! the index is `feature_view`'s.
 
 use argus_protocol::standing::{self, FeatureRow, Standing};
 use argus_protocol::{DecisionBoard, Feature, PaneInfo, ProjectInfo, TaskList, TaskState};
 
+use argus_protocol::outline::WorkRef;
+
+use crate::feature_view::{self, Opened};
 use crate::page::{self, Agent, Features, Line, Link, Move, Peek};
 
 /// The repository the index is about and how it is shown.
@@ -21,6 +25,9 @@ pub struct Index<'a> {
     /// The feature under the cursor, and its tasks once they arrived.
     pub peek: Option<&'a str>,
     pub peek_tasks: Option<&'a TaskList>,
+    /// Whether the peeked feature is opened, and the row its cursor is on.
+    pub opened: bool,
+    pub cursor: Option<WorkRef>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
@@ -85,6 +92,20 @@ pub fn build(index: &Index) -> Features {
             let feature = board.features.iter().find(|f| f.slug == row.slug)?;
             Some(peek(row, feature, board, index))
         });
+    features.open = index
+        .peek
+        .filter(|_| index.opened)
+        .and_then(|slug| Some((rows.iter().find(|row| row.slug == slug)?, board.features.iter().find(|f| f.slug == slug)?)))
+        .map(|(row, feature)| {
+            feature_view::build(&Opened {
+                feature,
+                row,
+                board,
+                tasks: index.peek_tasks,
+                tree: index.tree,
+                cursor: index.cursor,
+            })
+        });
     features
 }
 
@@ -114,7 +135,7 @@ fn page_row(row: &FeatureRow, feature: Option<&Feature>, index: &Index) -> page:
     }
 }
 
-fn loudest_agent(panes: &[&PaneInfo]) -> Option<Agent> {
+pub fn loudest_agent(panes: &[&PaneInfo]) -> Option<Agent> {
     let pane = panes.iter().max_by_key(|pane| pane.loudest_state().status.urgency())?;
     let status = pane.loudest_state().status;
     Some(Agent {
@@ -255,6 +276,8 @@ mod tests {
             show_folded: false,
             peek,
             peek_tasks: None,
+            opened: false,
+            cursor: None,
         }
     }
 
@@ -322,6 +345,19 @@ mod tests {
         assert_eq!(peek.next_up.as_ref().map(|l| l.label.as_str()), Some("2"));
         assert_eq!(peek.last_decided.as_ref().map(|l| l.label.as_str()), Some("D1"));
         assert_eq!(peek.links[0].key, "ENG-88");
+    }
+
+    #[test]
+    fn an_opened_feature_is_drawn_in_place_of_the_index() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        let tasks = fixtures::tasks("trim");
+        let mut idx = index(&board, &tree, Some("trim"));
+        idx.peek_tasks = Some(&tasks);
+        assert!(build(&idx).open.is_none(), "peeked, not opened");
+        idx.opened = true;
+        let open = build(&idx).open.unwrap();
+        assert_eq!((open.number, open.rows.len()), (7, 6));
     }
 
     #[test]

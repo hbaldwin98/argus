@@ -106,6 +106,10 @@ function receive(event) {
             state.features = event;
             drawFeatures();
             break;
+        case 'capture':
+            state.capture = event;
+            drawFeatures();
+            break;
         case 'chime':
             chime();
             break;

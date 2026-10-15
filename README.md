@@ -231,7 +231,16 @@ gives the rail back, `x` closes the pane, `Tab` reviews the pane's checkout, `1`
 the Workspace, the Feature and the Checkouts stage, `n` opens the composer, and a second `Ctrl-Space` sends one to the program. Outside a pane `1`, `2` and `3`
 open them directly, and the
 Feature stage takes `j`/`k`, Home/End, `v`, `z`, `/`, and on the feature under the cursor `m`,
-`h`, `A` and `g`. `Ctrl-V` (`Cmd-V` on a Mac), `Ctrl-Shift-V` and `Alt-V` paste, and
+`h`, `A` and `g`. `N` writes a new feature as one note — the first line its title, a paragraph its
+brief, `-` a task (indented, a subtask), `?` an open decision with its options indented beneath,
+`!` a decision made with its reason beneath — beside what the note reads as by the daemon's own
+grammar, naming any line it cannot place; `Ctrl-Enter` creates it, and it opens once the daemon
+has it. Enter opens the feature under the cursor: its tasks and decisions as one outline (`j`/`k`)
+beside the row under the cursor. There `e` edits a task's title and description or a decision as its
+record, `b` the brief, `a` adds a task, `s` a subtask or sub-decision, `d` raises a decision, `o`
+answers an open one in words (or pick one of its options and Take it), `x` withdraws a decision or
+restores it, and Escape goes back to the index. A task's done-when criteria are checked off, added and
+removed in place. `Ctrl-V` (`Cmd-V` on a Mac), `Ctrl-Shift-V` and `Alt-V` paste, and
 Shift-PageUp/PageDown page through the history.
 
 `Ctrl-K` (from a pane, the leader and `k`) opens the palette: one search over the window's commands,
