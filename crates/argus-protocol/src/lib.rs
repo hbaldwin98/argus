@@ -80,7 +80,7 @@ pub use features::{
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
 pub use extensions::{
-    CommandScope, ExtAction, ExtAnswer, ExtCommand, ExtDialog, ExtDialogKind, ExtEvent, ExtField, ExtItem,
+    CommandScope, ExtAction, ExtAnswer, ExtPlace, ExtCommand, ExtDialog, ExtDialogKind, ExtEvent, ExtField, ExtItem,
     ExtKey, ExtPane, ExtRow, ExtScope, ExtView, Refusals, Refused,
 };
 pub use focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, View};

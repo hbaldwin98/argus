@@ -57,6 +57,18 @@ pub struct ExtView {
     pub title: String,
     #[serde(default)]
     pub scope: ExtScope,
+    /// Where the desktop window first opens it: docked in the side panel
+    /// beside the agents' views, or as a page of its own. Only a default:
+    /// the person may move any view between the two, and the window keeps
+    /// their choice.
+    #[serde(default)]
+    pub place: ExtPlace,
+    /// One of [`EXT_ICONS`], by name, for its entry in the sidebar. A name
+    /// the window does not draw is drawn as a generic icon, so an extension
+    /// written for a newer window still shows; never an extension's own
+    /// image, which would be markup crossing.
+    #[serde(default)]
+    pub icon: Option<String>,
     pub columns: Vec<Column>,
     #[serde(default)]
     pub rows: Vec<ExtRow>,
@@ -78,6 +90,14 @@ impl ExtView {
         }
         if self.title.trim().is_empty() || self.title.len() > MAX_VIEW_TITLE_BYTES {
             return Err(format!("title: a view needs one, of at most {MAX_VIEW_TITLE_BYTES} bytes"));
+        }
+        if let Some(icon) = &self.icon {
+            let named = !icon.is_empty()
+                && icon.len() <= MAX_ICON_NAME
+                && icon.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+            if !named {
+                return Err(format!("icon: a name such as {:?}, one of {EXT_ICONS:?}", EXT_ICONS[0]));
+            }
         }
         if self.columns.is_empty() {
             return Err("columns: a view needs a column".into());
@@ -111,6 +131,23 @@ impl ExtView {
         Ok(ExtView { name: name.to_string(), ..self })
     }
 }
+
+/// Where the desktop window first opens a view.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtPlace {
+    /// Docked in the side panel the agents' views open in, beside the stage.
+    #[default]
+    Panel,
+    /// A page of its own, filling the stage.
+    Stage,
+}
+
+/// The icons a view may name, which the desktop window draws itself.
+pub const EXT_ICONS: &[&str] = &["box", "server", "database", "globe", "list", "rocket", "terminal", "gear"];
+
+/// The longest an icon's name may be.
+pub const MAX_ICON_NAME: usize = 32;
 
 /// Where a view's tab shows: always, or only while a repository or a
 /// checkout is the one chosen.
@@ -406,6 +443,8 @@ mod tests {
             name: "containers".into(),
             title: "Containers".into(),
             scope: ExtScope::Checkout(CheckoutId(9)),
+            place: ExtPlace::Stage,
+            icon: Some("box".into()),
             columns: vec![Column { title: "Name".into(), numeric: false }],
             rows,
             actions: vec![],
@@ -426,6 +465,27 @@ mod tests {
         assert!(containers(vec![row("web", vec![link])]).checked().unwrap_err().starts_with("rows[0][0]"));
         let many = containers((0..=MAX_TABLE_ROWS).map(|i| row(&i.to_string(), vec![text("a")])).collect());
         assert!(many.checked().unwrap_err().starts_with("rows: at most"));
+    }
+
+    #[test]
+    fn a_view_is_the_side_panels_unless_it_asks_for_a_stage() {
+        let bare: ExtView = serde_json::from_str(r#"{"name":"a","title":"A","columns":[{"title":"x"}]}"#).unwrap();
+        assert_eq!((bare.place, bare.icon), (ExtPlace::Panel, None), "an older publisher keeps its place");
+        let staged: ExtView =
+            serde_json::from_str(r#"{"name":"a","title":"A","place":"stage","icon":"server","columns":[{"title":"x"}]}"#)
+                .unwrap();
+        assert_eq!(staged.place, ExtPlace::Stage);
+        assert!(staged.checked().is_ok());
+    }
+
+    #[test]
+    fn an_icon_is_a_name_and_one_the_window_does_not_draw_is_still_taken() {
+        let with = |icon: &str| ExtView { icon: Some(icon.into()), ..containers(vec![]) };
+        assert!(with("box").checked().is_ok());
+        assert!(with("kubernetes").checked().is_ok(), "drawn as the generic icon");
+        for bad in ["", "<svg/>", "Box", &"x".repeat(33)] {
+            assert!(with(bad).checked().unwrap_err().starts_with("icon:"), "{bad}");
+        }
     }
 
     #[test]

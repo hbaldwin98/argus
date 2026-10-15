@@ -192,6 +192,21 @@ async fn a_view_that_breaks_a_limit_is_refused_whole_by_its_path() {
 }
 
 #[tokio::test]
+async fn a_views_place_and_icon_reach_the_clients_and_a_bad_icon_is_refused_by_its_path() {
+    let d = served();
+    let token = d.admit_extension("docker");
+    let staged = CONTAINERS.replacen(r#""title": "Containers","#, r#""title": "Containers", "place": "stage", "icon": "box","#, 1);
+    let (code, body) = request(&d, "PUT", "docker", ExtEndpoint::View, &token, &staged).await;
+    assert_eq!(code, 200, "{body}");
+    let published = &d.extension_views()[0];
+    assert_eq!((published.place, published.icon.as_deref()), (argus_protocol::ExtPlace::Stage, Some("box")));
+    let bad = CONTAINERS.replacen(r#""title": "Containers","#, r#""title": "Containers", "icon": "<svg/>","#, 1);
+    let (code, body) = request(&d, "PUT", "docker", ExtEndpoint::View, &token, &bad).await;
+    assert_eq!(code, 409);
+    assert!(body.starts_with("views[0].icon"), "{body}");
+}
+
+#[tokio::test]
 async fn an_action_key_the_view_keeps_is_refused_and_the_action_kept() {
     let d = served();
     d.admit_extension("docker");

@@ -513,7 +513,7 @@ It speaks JSON to these endpoints under its URL:
 
 | Request | Body | Answer |
 | --- | --- | --- |
-| `PUT view` | a view, or a list of them: `name`, `title`, `scope` (`"global"`, `{"repository": id}`, `{"checkout": id}`), `columns` (`{"title", "numeric"}`), `rows` (`key`, `cells` — one value each, as in an agent's view table, `{"kind": "text", "text": "web"}` — and `status`, a chip `{"label", "tone"}`), `actions` (`id`, `label`, `key`, `view_wide`, `confirm`) | the action keys refused |
+| `PUT view` | a view, or a list of them: `name`, `title`, `scope` (`"global"`, `{"repository": id}`, `{"checkout": id}`), `place` (`"panel"`, the default, or `"stage"`: where the desktop first opens it, docked or as a page; the person can move it), `icon` (one of `box`, `server`, `database`, `globe`, `list`, `rocket`, `terminal`, `gear`; any other name draws a generic icon), `columns` (`{"title", "numeric"}`), `rows` (`key`, `cells` — one value each, as in an agent's view table, `{"kind": "text", "text": "web"}` — and `status`, a chip `{"label", "tone"}`), `actions` (`id`, `label`, `key`, `view_wide`, `confirm`) | the action keys refused |
 | `PUT commands` | a list: `name`, `title`, `key` (`{"key": "d", "ctrl": true}`), `scope` (`"anywhere"`, `{"view": name}`, `"checkout"`, `"pane"`) | the command keys refused |
 | `POST dialog` | `title`, `kind` (`{"confirm": {"message"}}`, `{"prompt": {"message", "initial"}}`, `{"pick": {"message", "items": [{"key", "label"}]}}`, `{"form": {"fields": [{"name", "label", "initial"}]}}`), and `answers`, the id of the command it answers | `{"dialog": id}` |
 | `POST notice` | one line of text | |

@@ -2110,7 +2110,10 @@ Everything an extension says is declarative, in `argus_protocol::extensions`' ty
   pane API's status words because those say where an agent's turn is, and an extension's rows are
   containers and servers whose states only it can name; it picks the word and a `Tone` for what it
   means. Its scope is global, a repository's or a checkout's (by the daemon's ids, which a
-  command's context carries).
+  command's context carries). `place` (`panel` unless it says `stage`) is where a window first
+  opens it, docked or as a page, and only that: the person moves it between the two. `icon` names
+  one of `EXT_ICONS` for its sidebar entry, a name the window does not draw being drawn as a
+  generic icon; an extension never sends an image.
 - `PUT /extension/<name>/commands` — its commands, each with a title, an optional key and where
   the key is heard: anywhere (and through the leader from a pane), in one of its views, on a
   checkout row, or on a pane row.
