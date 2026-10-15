@@ -454,6 +454,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `work_lens` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key and a mark on each row changed since the last reconcile, and the task or decision under the cursor in full |
 | `link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — and what its gestures ask of the daemon |
 | `reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — and what its gestures ask of the daemon |
+| `tracker_dialogs` | the link and reconcile dialogs as the window holds them: which of the two is open and on which feature, closing it when the board loses that feature, the refusal only the link dialog hears, and what the page last heard of each |
 | `record_lens` | the Record lens: every decision in the order it was made, and a decision read as its record — what replaced it, what was turned down, and the ADR it copies as |
 | `flows_lens` | the Flows lens: a feature's flows, the one under the cursor as steps, and the step under the cursor with what binds it and what carries it out |
 | `sequence` | a flow's source as the sequence diagram the page draws: its lifelines in order, each step as an arrow between two of them, and the frames a branch draws |

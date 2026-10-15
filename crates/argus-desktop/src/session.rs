@@ -9,7 +9,8 @@
 //!
 //! Each subject keeps its own state and what the page last heard of it —
 //! the status bar (`status`), the panes on screen (`shown`), the agents
-//! offered (`agents`), the review and history (`dialogs`), the two stages
+//! offered (`agents`), the review and history (`dialogs`), the link and
+//! reconcile dialogs (`tracker_dialogs`), the two stages
 //! (`feature_stage`, `checkouts_stage`) and the note a new feature is
 //! written as (`capture_note`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
@@ -52,8 +53,6 @@ use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keymap::{self, Action};
-use crate::link_dialog::{self, LinkDialog};
-use crate::reconcile_dialog::{self, ReconcileDialog};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::page::{
@@ -71,6 +70,7 @@ use crate::settings::{Backdrop, Settings, Theme};
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
 use crate::switcher::Switcher;
+use crate::tracker_dialogs::{self, TrackerDialogs};
 
 /// What to do with a thing the daemon made for this window, once the tree
 /// holds it.
@@ -146,12 +146,7 @@ pub struct Session {
     /// A ticket a gesture asked to open in the browser, which the window
     /// opens once the change is made.
     opening: Option<String>,
-    /// The link dialog on the open feature, while open.
-    link: Option<LinkDialog>,
-    link_sent: Sent<page::LinkPage>,
-    /// The reconcile dialog on the open feature, while open.
-    reconciling: Option<ReconcileDialog>,
-    reconcile_sent: Sent<page::ReconcilePage>,
+    tracker_dialogs: TrackerDialogs,
     switcher: Switcher,
     /// The add-a-project dialog, while open.
     adding: Option<AddProject>,
@@ -220,10 +215,7 @@ impl Session {
             recent_sent: Sent::default(),
             copied: None,
             opening: None,
-            link: None,
-            link_sent: Sent::default(),
-            reconciling: None,
-            reconcile_sent: Sent::default(),
+            tracker_dialogs: TrackerDialogs::default(),
             switcher: Switcher::default(),
             adding: None,
             adding_sent: Sent::default(),
@@ -353,9 +345,7 @@ impl Session {
                 if let Some(note) = &mut self.capture {
                     note.refused();
                 }
-                if let Some(dialog) = &mut self.link {
-                    dialog.refused();
-                }
+                self.tracker_dialogs.refused();
                 self.passing.push(Event::Notice { text: message });
             }
             ServerMsg::Hello(hello) => self.status.greeted(hello),
@@ -365,7 +355,9 @@ impl Session {
             ServerMsg::Decisions(board) => {
                 self.features.receive_board(*board, &self.tree, &mut self.out);
                 self.capture_landed();
-                self.settle_tracker_dialogs();
+                if let Some(board) = self.features.board() {
+                    self.tracker_dialogs.settle(board);
+                }
             }
             ServerMsg::Templates(names) => self.agents.receive(names),
             ServerMsg::Tasks(list) => self.features.receive_tasks(*list),
@@ -681,90 +673,44 @@ impl Session {
 
     // ---- The tracker dialogs --------------------------------------------------
 
-    /// The feature open on the Feature stage, as the board has it.
-    fn opened_feature(&self, slug: &str) -> Option<&argus_protocol::Feature> {
-        self.features.board()?.features.iter().find(|f| f.slug == slug)
-    }
-
-    /// Opens the link dialog on the open feature, with `map` on the
-    /// repository's tracker map.
     fn open_link(&mut self, map: bool) {
-        let Some(slug) = self.features.opened().map(str::to_owned) else {
-            return self.passing.push(Event::Notice { text: "open a feature to link it to a ticket".into() });
-        };
-        let tracker_map = self.features.board().map(|b| b.tracker_map.clone()).unwrap_or_default();
-        self.reconciling = None;
-        self.link = Some(LinkDialog::new(&slug, map.then_some(&tracker_map)));
+        if let Err(text) = self.tracker_dialogs.open_link(self.features.opened(), self.features.board(), map) {
+            self.passing.push(Event::Notice { text: text.into() });
+        }
     }
 
     fn open_reconcile(&mut self) {
-        let Some(slug) = self.features.opened().map(str::to_owned) else {
-            return self.passing.push(Event::Notice { text: "open a feature to reconcile it with its tickets".into() });
-        };
-        let mut dialog = ReconcileDialog::new(&slug);
-        if let Some(feature) = self.opened_feature(&slug) {
-            dialog.settle(feature);
+        if let Err(text) = self.tracker_dialogs.open_reconcile(self.features.opened(), self.features.board()) {
+            self.passing.push(Event::Notice { text: text.into() });
         }
-        self.link = None;
-        self.reconciling = Some(dialog);
     }
 
     fn link_gesture(&mut self, gesture: page::LinkGesture) -> Vec<ClientMsg> {
-        let scope = self.scope();
-        let (Some(dialog), Some(board), Some(scope)) = (self.link.as_mut(), self.features.board(), scope) else {
-            return self.finish();
-        };
-        let Some(feature) = board.features.iter().find(|f| f.slug == dialog.slug()) else {
-            self.link = None;
-            return self.finish();
-        };
-        match dialog.gesture(gesture, feature, &board.tracker_map, &scope, &mut self.out) {
-            link_dialog::Then::Nothing => {}
-            link_dialog::Then::Close => self.link = None,
-            link_dialog::Then::Open(url) => self.opening = Some(url),
-            link_dialog::Then::Say(text) => self.passing.push(Event::Notice { text }),
+        if let Some(scope) = self.scope() {
+            let then = self.tracker_dialogs.link_gesture(gesture, self.features.board(), &scope, &mut self.out);
+            self.tracker_then(then);
         }
         self.finish()
     }
 
     fn reconcile_gesture(&mut self, gesture: page::ReconcileGesture) -> Vec<ClientMsg> {
-        let scope = self.scope();
-        let (Some(dialog), Some(board), Some(scope)) = (self.reconciling.as_mut(), self.features.board(), scope) else {
-            return self.finish();
-        };
-        let Some(feature) = board.features.iter().find(|f| f.slug == dialog.slug()) else {
-            self.reconciling = None;
-            return self.finish();
-        };
-        match dialog.gesture(gesture, feature, &self.tree, &scope, &mut self.out) {
-            reconcile_dialog::Then::Nothing => {}
-            reconcile_dialog::Then::Close => self.reconciling = None,
-            reconcile_dialog::Then::GoTo(pane) => {
-                self.reconciling = None;
-                let sent = self.go_to_pane(pane);
-                self.out.extend(sent);
-            }
-            reconcile_dialog::Then::Say(text) => self.passing.push(Event::Notice { text }),
+        if let Some(scope) = self.scope() {
+            let board = self.features.board();
+            let then = self.tracker_dialogs.reconcile_gesture(gesture, board, &self.tree, &scope, &mut self.out);
+            self.tracker_then(then);
         }
         self.finish()
     }
 
-    /// A pushed board: each tracker dialog follows its feature, and closes
-    /// with it.
-    fn settle_tracker_dialogs(&mut self) {
-        let Some(board) = self.features.board() else {
-            return;
-        };
-        let feature = |slug: &str| board.features.iter().find(|f| f.slug == slug);
-        match self.link.as_ref().map(|d| feature(d.slug())) {
-            Some(Some(f)) => self.link.as_mut().unwrap().settle(f),
-            Some(None) => self.link = None,
-            None => {}
-        }
-        match self.reconciling.as_ref().map(|d| feature(d.slug())) {
-            Some(Some(f)) => self.reconciling.as_mut().unwrap().settle(f),
-            Some(None) => self.reconciling = None,
-            None => {}
+    fn tracker_then(&mut self, then: tracker_dialogs::Then) {
+        match then {
+            tracker_dialogs::Then::Nothing => {}
+            tracker_dialogs::Then::Open(url) => self.opening = Some(url),
+            tracker_dialogs::Then::GoTo(pane) => {
+                let sent = self.go_to_pane(pane);
+                self.out.extend(sent);
+            }
+            tracker_dialogs::Then::Say(text) => self.passing.push(Event::Notice { text }),
         }
     }
 
@@ -2475,18 +2421,7 @@ impl Session {
         if let Some(page) = self.recent_sent.take(recent) {
             events.push(Event::Sessions(Box::new(page)));
         }
-        let board = self.features.board();
-        let feature = |slug: &str| board.and_then(|b| b.features.iter().find(|f| f.slug == slug));
-        let link = self.link.as_ref().and_then(|d| Some(d.page(feature(d.slug())?, &board?.tracker_map)));
-        if let Some(page) = self.link_sent.take(link) {
-            events.push(Event::Link(Box::new(page)));
-        }
-        let reconcile = self.reconciling.as_ref().zip(scope.as_ref()).and_then(|(d, scope)| {
-            Some(d.page(feature(d.slug())?, &self.tree, scope.repository, now))
-        });
-        if let Some(page) = self.reconcile_sent.take(reconcile) {
-            events.push(Event::Reconcile(Box::new(page)));
-        }
+        events.extend(self.tracker_dialogs.take(self.features.board(), &self.tree, scope.as_ref(), now));
         let repository = scope.as_ref().map_or("", |scope| scope.repository_name.as_str());
         let capture = self.capture.as_ref().map(|note| note.page(repository));
         if let Some(page) = self.capture_sent.take(capture) {
@@ -2528,8 +2463,7 @@ impl Session {
         self.choices.resend();
         self.dialogs.reload();
         self.recent_sent.forget();
-        self.link_sent.forget();
-        self.reconcile_sent.forget();
+        self.tracker_dialogs.reload();
         self.adding_sent.forget();
         self.capture_sent.forget();
         self.console_sent.forget();
