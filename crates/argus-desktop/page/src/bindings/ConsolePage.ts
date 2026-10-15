@@ -15,11 +15,20 @@ height: number,
  */
 tabs: Array<ConsoleTab>, 
 /**
- * The console whose screen the window's canvas is drawing. Only one
- * pane is on screen at a time, so while this is set the Workspace
- * stage has none.
+ * The console whose screen the window's canvas is drawing, on the
+ * first side. The canvas is the Workspace's or the console's, so
+ * while this is set the Workspace stage has none.
  */
 showing: number | null, 
+/**
+ * The console on the second side, while the console is split and
+ * has the canvas.
+ */
+beside: number | null, 
+/**
+ * Which of `showing` and `beside` has the keys, and is typed in.
+ */
+typing: number | null, 
 /**
  * The daemon takes `SpawnConsole`; an older one offers no "+".
  */

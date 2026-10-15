@@ -2421,6 +2421,60 @@ body.console-fullscreen #bar {
   display: flex;
   position: relative;
 }
+.csep {
+  width: 1px;
+  height: 16px;
+  margin: 0 var(--sp-4);
+  background: var(--line);
+}
+/* A side of the console: the whole of it, or half while it is split. */
+.cside {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cside + .cside {
+  border-left: 1px solid var(--line);
+}
+.cside > .terminal {
+  min-height: 0;
+}
+.thead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-right: var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+.thead.on {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.thead-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: 24px;
+  padding: 0 var(--sp-12);
+  border: 0;
+  background: transparent;
+  color: var(--fg-faint);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.thead.on .thead-pick {
+  color: var(--fg);
+}
+.thead .x {
+  width: 20px;
+  height: 20px;
+  color: var(--fg-faint);
+}
 .chip {
   display: inline-flex;
   align-items: center;

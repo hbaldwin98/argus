@@ -19,7 +19,7 @@ import { listen as listenToKeys, runOver } from './keymap.js';
 import { listen as listenToFrame } from './frame.js';
 import { drawPalette, openPalette } from './palette.js';
 import { addProjectOpen, drawAddProject, drawHeading } from './projects.js';
-import { screen } from './screen.js';
+import { drawFrame, screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
 
@@ -48,12 +48,13 @@ function receive(event: Event): void {
       drawChrome();
       break;
     case 'console': {
-      const before = state.console?.showing ?? null;
+      const before = state.console?.typing ?? null;
       state.console = event;
       screen.expect(state.rail.shown?.pane ?? event.showing);
       drawChrome();
-      // A console newly on the canvas takes the keys, as a pane does.
-      if (event.showing !== null && event.showing !== before) $('input').focus();
+      // A console newly on screen takes the keys, as a pane does, and so
+      // does a split side given them by a press on its header.
+      if (event.typing !== null && event.typing !== before) $('input').focus();
       break;
     }
     case 'rail': {
@@ -80,7 +81,7 @@ function receive(event: Event): void {
       break;
     }
     case 'frame':
-      screen.frame(event);
+      drawFrame(event);
       break;
     case 'clipboard':
       navigator.clipboard?.writeText(event.text).catch(() => {});

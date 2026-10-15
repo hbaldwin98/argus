@@ -13,7 +13,7 @@ import type { SettingChange } from './bindings/SettingChange';
 import type { Theme } from './bindings/Theme';
 import { $, el, icon, type Child } from './dom.js';
 import { actionFor } from './keymap.js';
-import { screen } from './screen.js';
+import { screens } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -68,7 +68,7 @@ export function applyLook(): void {
   if (chosen.theme === 'system') delete root.dataset.theme;
   else root.dataset.theme = chosen.theme;
   root.style.setProperty('--see', String(chosen.opacity / 100));
-  screen.retheme();
+  for (const s of screens) s.retheme();
 }
 
 /** The dialog's controls, kept to be updated in place. */

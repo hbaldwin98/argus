@@ -1,7 +1,10 @@
-// A pane's screen on a canvas: the rows Rust sends, drawn in the theme's
-// colours, and the room the terminal has reported back as rows and columns.
+// A pane's screen in its container: the rows Rust sends, drawn in the
+// theme's colours on canvases of its own, and the room the container has
+// reported back as rows and columns. There is one screen per side Rust
+// draws on: the window's canvas, which moves between the Workspace and the
+// console's first side, and the console's second side while it is split.
 // The rows are mirrored only so a theme or scale change can repaint them.
-import { $, ghosts } from './dom.js';
+import { $, el, ghosts } from './dom.js';
 import { call } from './tauri.js';
 // The terminal's type, as the design system's --type-mono gives it.
 const FONT_SIZE = 13;
@@ -19,19 +22,20 @@ function step(c) {
 function clamp(n, most) {
     return Math.max(0, Math.min(most - 1, n));
 }
-function canvas(id) {
-    const node = $(id);
-    if (!(node instanceof HTMLCanvasElement))
-        throw new Error(`#${id} is not a canvas`);
+function canvas() {
+    const node = el('canvas', { 'aria-hidden': 'true' });
     const context = node.getContext('2d');
     if (!context)
-        throw new Error(`#${id} draws nothing`);
+        throw new Error('a canvas that draws nothing');
     return [node, context];
 }
-function makeScreen() {
-    const [text, tctx] = canvas('text');
-    const [cursorCanvas, cctx] = canvas('cursor');
-    const terminal = $('terminal');
+function makeScreen(terminal, side) {
+    const [text, tctx] = canvas();
+    const [cursorCanvas, cctx] = canvas();
+    // Bars stand in for a pane until its first screen arrives.
+    const waiting = el('div', { class: 'term-skeleton', hidden: true });
+    waiting.replaceChildren(ghosts([[0.55], [0.8], [0.7], [0.85], [0.4], [0.75], [0.6]]));
+    terminal.prepend(waiting, text, cursorCanvas);
     let pane = null;
     let rows = 0;
     let cols = 0;
@@ -45,6 +49,9 @@ function makeScreen() {
     let selection = null;
     let parked = null;
     let mouse = false;
+    // Whether this side has the keys: the other side of a split draws its
+    // cursor hollow, as an unfocused window does.
+    let keyed = true;
     function measure() {
         const css = getComputedStyle(document.documentElement);
         fontFamily = css.getPropertyValue('--font-mono').trim() || 'monospace';
@@ -162,7 +169,7 @@ function makeScreen() {
             return;
         const x = cursor.col * cell.w;
         const y = cursor.row * cell.h;
-        const focused = document.activeElement === $('input') && document.hasFocus();
+        const focused = keyed && document.activeElement === $('input') && document.hasFocus();
         cctx.fillStyle = palette.fg;
         cctx.strokeStyle = palette.fg;
         if (cursor.shape === 'bar') {
@@ -187,9 +194,6 @@ function makeScreen() {
             drawRow(row);
         drawCursor();
     }
-    // Bars stand in for a pane until its first screen arrives.
-    const waiting = $('term-skeleton');
-    waiting.replaceChildren(ghosts([[0.55], [0.8], [0.7], [0.85], [0.4], [0.75], [0.6]]));
     function expect(next) {
         waiting.hidden = next === null || next === pane;
     }
@@ -218,7 +222,8 @@ function makeScreen() {
                 mirror[row] ??= [];
             size();
         }
-        if (resized || moved) {
+        // The Workspace's header names the first side's size.
+        if ((resized || moved) && side === 'first') {
             const label = document.getElementById('size');
             if (label)
                 label.textContent = sizeLabel();
@@ -257,7 +262,7 @@ function makeScreen() {
         const back = parked ? `↑ ${parked.offset}/${parked.depth} · ` : '';
         return `${back}${cols} × ${rows}`;
     }
-    // The room the terminal has, in cells. The daemon sizes a pane to the
+    // The room the side has, in cells. The daemon sizes a pane to the
     // client the person was last at, so the grid that comes back may differ.
     let sent = null;
     let resizeTimer;
@@ -280,7 +285,7 @@ function makeScreen() {
             if (sent && sent.rows === next.rows && sent.cols === next.cols)
                 return;
             sent = next;
-            call('resize', next);
+            call('resize', { side, ...next });
         }, 50);
     }
     function rescale() {
@@ -309,6 +314,8 @@ function makeScreen() {
         .catch(() => { })
         .then(rescale);
     new ResizeObserver(report).observe(terminal);
+    // A side appearing after it was hidden needs its room reported.
+    new MutationObserver(report).observe(terminal, { attributes: true, attributeFilter: ['hidden'] });
     watchScale();
     matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
         readPalette();
@@ -324,6 +331,34 @@ function makeScreen() {
         readPalette();
         repaint();
     }
-    return { frame, drawCursor, report, sizeLabel, cellAt, select, takesMouse, expect, retheme };
+    /** Whether this side has the keys, which its cursor shows. */
+    function key(on) {
+        if (keyed === on)
+            return;
+        keyed = on;
+        drawCursor();
+    }
+    return {
+        terminal,
+        pane: () => pane,
+        frame,
+        drawCursor,
+        report,
+        sizeLabel,
+        cellAt,
+        select,
+        takesMouse,
+        expect,
+        retheme,
+        key,
+    };
 }
-export const screen = makeScreen();
+/** The window's canvas: the Workspace's pane, or the console's first side. */
+export const screen = makeScreen($('terminal'), 'first');
+/** The console's second side, while it is split. */
+export const beside = makeScreen($('terminal-beside'), 'second');
+export const screens = [screen, beside];
+/** A frame goes to the side Rust says draws it. */
+export function drawFrame(f) {
+    (f.side === 'second' ? beside : screen).frame(f);
+}

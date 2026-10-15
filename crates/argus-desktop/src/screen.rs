@@ -10,7 +10,7 @@ use argus_protocol::pane_view::{Effect, PaneView, Redraw};
 use argus_protocol::{Cell, Color, Cursor, CursorShape, MouseTracking, PaneId, ServerMsg, BLANK};
 use unicode_width::UnicodeWidthChar;
 
-use crate::page::{Frame, FrameCursor, Parked, Segment, BOLD, ITALIC, REVERSE, UNDERLINE, WIDE};
+use crate::page::{Frame, FrameCursor, Parked, Segment, Side, BOLD, ITALIC, REVERSE, UNDERLINE, WIDE};
 
 pub struct Screen {
     view: PaneView,
@@ -86,6 +86,8 @@ impl Screen {
         };
         Some(Frame {
             pane: self.view.pane().0,
+            // Which side draws the screen is `shown`'s to say.
+            side: Side::First,
             rows,
             cols,
             full,

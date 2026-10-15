@@ -101,11 +101,12 @@ impl Shared {
         *lock(&self.page) = None;
     }
 
-    /// Sends the shown pane's changed rows, if any changed.
+    /// Sends the shown panes' changed rows, if any changed.
     pub fn tick(&self) {
         let mut session = lock(&self.session);
-        if let Some(frame) = session.take_frame() {
-            self.publish(vec![frame]);
+        let frames = session.take_frames();
+        if !frames.is_empty() {
+            self.publish(frames);
         }
     }
 

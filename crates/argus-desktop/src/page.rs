@@ -22,8 +22,9 @@ use crate::settings::{Backdrop, EditorMode, Preferences, Theme};
 pub enum Call {
     /// Puts a pane on screen.
     Select { pane: u64 },
-    /// The rows and columns the page has room for.
-    Resize { rows: u16, cols: u16 },
+    /// The rows and columns the page has room for on one side of the
+    /// screen.
+    Resize { side: Side, rows: u16, cols: u16 },
     Key { key: PageKey },
     /// Text an input method composed.
     Text { text: String },
@@ -31,9 +32,10 @@ pub enum Call {
     /// The paste key: the clipboard is read in Rust, not by the page, so a
     /// paste needs no permission from the webview.
     PasteClipboard,
-    /// The wheel over the pane, in notches (negative up), at the
-    /// `[row, col]` under the pointer.
-    Wheel { notches: i32, at: (u16, u16) },
+    /// The wheel over `pane`, in notches (negative up), at the
+    /// `[row, col]` under the pointer: either side of a split, whichever
+    /// has the keys.
+    Wheel { pane: u64, notches: i32, at: (u16, u16) },
     /// A mouse gesture over the pane the page did not keep for a
     /// selection, at the `[row, col]` under the pointer.
     Mouse { gesture: PageMouse, button: u8, at: (u16, u16) },
@@ -275,7 +277,8 @@ pub enum ConsoleGesture {
     /// Fullscreen beside the sidebar, or back to where it was.
     Fullscreen,
     Hide,
-    /// One of its tabs: that console on screen, with the keys.
+    /// One of its tabs, or a split side's header: that console on screen,
+    /// with the keys.
     Select { pane: u64 },
     /// "+": a new console, shown once the daemon has made it.
     Spawn,
@@ -283,6 +286,26 @@ pub enum ConsoleGesture {
     Close { pane: u64 },
     /// The sash let go at `height` CSS pixels.
     Height { height: u32 },
+    /// Splits the console in two, or puts the split away keeping the side
+    /// with the keys.
+    Split,
+    /// A split side's close: that side leaves the split, its console stays
+    /// a tab.
+    CloseSide { pane: u64 },
+}
+
+/// A side of the window's screen. The console splits it in two; anything
+/// else is drawn on the first.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum Side {
+    /// The window's one canvas, which moves between the Workspace and the
+    /// console's left side.
+    #[default]
+    First,
+    /// The console's right side, while it is split.
+    Second,
 }
 
 /// What was done in the review's jump field: a letter typed, a match
@@ -624,10 +647,15 @@ pub struct ConsolePage {
     pub height: u32,
     /// A tab per console the daemon holds, in the order they were started.
     pub tabs: Vec<ConsoleTab>,
-    /// The console whose screen the window's canvas is drawing. Only one
-    /// pane is on screen at a time, so while this is set the Workspace
-    /// stage has none.
+    /// The console whose screen the window's canvas is drawing, on the
+    /// first side. The canvas is the Workspace's or the console's, so
+    /// while this is set the Workspace stage has none.
     pub showing: Option<u64>,
+    /// The console on the second side, while the console is split and
+    /// has the canvas.
+    pub beside: Option<u64>,
+    /// Which of `showing` and `beside` has the keys, and is typed in.
+    pub typing: Option<u64>,
     /// The daemon takes `SpawnConsole`; an older one offers no "+".
     pub can_spawn: bool,
 }
@@ -640,7 +668,7 @@ pub struct ConsoleTab {
     pub title: String,
     #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
     pub status: &'static str,
-    /// The tab chosen: the one shown when the console has the canvas.
+    /// The tab chosen for one side: shown when the console has the canvas.
     pub on: bool,
 }
 
@@ -992,6 +1020,9 @@ pub struct PaletteFeature {
 #[serde(rename_all = "camelCase")]
 pub struct Frame {
     pub pane: u64,
+    /// The side drawing it, so a frame is never drawn in the other
+    /// side's canvas while the page has yet to hear the pane moved.
+    pub side: Side,
     pub rows: u16,
     pub cols: u16,
     /// Every row is in `lines`; anything the page held is stale.
@@ -1450,6 +1481,7 @@ mod tests {
     fn a_frame_sends_segments_as_arrays() {
         let event = Event::Frame(Frame {
             pane: 4,
+            side: Side::Second,
             rows: 2,
             cols: 10,
             full: true,
@@ -1462,7 +1494,7 @@ mod tests {
         assert_eq!(
             as_json(event),
             json!({
-                "type": "frame", "pane": 4, "rows": 2, "cols": 10, "full": true,
+                "type": "frame", "pane": 4, "side": "second", "rows": 2, "cols": 10, "full": true,
                 "cursor": {"row": 1, "col": 2, "visible": true, "shape": "bar"},
                 "alternateScreen": false,
                 "mouse": false,
