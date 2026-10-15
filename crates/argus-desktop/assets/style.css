@@ -1810,13 +1810,14 @@ body.maximized .winbtn .restore {
   flex: 1;
   min-width: 0;
   position: relative;
+  padding: var(--sp-6);
   overflow: hidden;
   cursor: text;
 }
 .terminal canvas {
   position: absolute;
-  left: 0;
-  top: 0;
+  left: var(--sp-6);
+  top: var(--sp-6);
 }
 .terminal textarea {
   position: absolute;
