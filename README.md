@@ -637,10 +637,16 @@ location. Typing filters the folders in the current directory.
 ### Views
 
 The stage beside the rail holds one view at a time: `1` Workspace (the selected pane's terminal),
-`2` Feature, and `3` Checkouts. The tab strip along the top names them and carries the
+`2` Feature, `3` Checkouts, and `4` Views. The tab strip along the top names them and carries the
 digit that opens each; clicking a tab does the same. Switching views never stops a pane.
 Drag the rail's right border to widen or narrow it; the width is saved to `client.toml` as
 `rail_width`.
+
+The Views stage lists what agents showed, then the saved views, one list. `j`/`k` scroll the open
+view, `n`/`p` move along the list, and `x` closes a shown view. A saved view is drawn with its
+scope, a `stale` mark and when it was built; `l` lists the views it links to, `Enter` opens the one
+under the cursor, and `Backspace` or `h` goes back along the links followed. `r` asks the agent that
+saved it to refresh it, and `s` marks it out of date.
 
 The Feature view opens on an index of the selected repository's features, grouped by how they
 stand — active, queued, done — with the one under the cursor peeked at beside the list. Held and

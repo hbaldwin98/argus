@@ -417,6 +417,8 @@ result of a request; `ui` is a pure function of it.
 | `app/consoles` | the shells that belong to no checkout: the daemon's list of them, which one the stage shows, and asking for another |
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/agent_views` | the views agents showed as this client holds them, newest first: which is open, how far it is scrolled, and the close and refresh requests that change nothing until the daemon answers |
+| `app/saved_views` | the saved views as the daemon sends them, which one the stage shows, the links offered from it and the trail of links followed to it, and the embeds drawn in place |
+| `app/view_links` | which saved views a view links to, in the order it names them, reached through values, `opens` and embeds at any depth |
 | `app/showing` | what the daemon is told this client shows |
 | `app/views` | which surface the content area holds, and the fetches opening one makes |
 | `app/feature` | where the Feature stage is — the index, a feature on a lens, the row under the cursor — and how the keys move between them |
@@ -2121,6 +2123,18 @@ views it holds. A link or embed to a view that is not saved is allowed and drawn
 check refuses a link whose id would not read back (empty, padded, past 64 bytes, a control
 character) and a view embedding its own id; a longer cycle cannot be seen from one view, so a
 client follows an embed at most `MAX_EMBED_DEPTH` (3) deep and draws a line instead.
+
+The terminal client draws the Views stage's saved views as a list after the live ones, with the
+open one as text under it. The embeds are expanded before anything is drawn, from the saved views
+the client holds, so a refresh of an embedded view shows in the views that embed it at once; an
+embed of a view already drawn above, a view not saved, or one past the depth is a line saying so.
+A link is drawn as its label and a `›`, which is also what marks a section, card, details, list
+item, stat or checklist item that opens a view. `l` on an open saved view lists the views it links
+to (its links, and the views it embeds); `Enter` opens the one under the cursor and pushes the
+view it left onto a trail, which `Backspace` or `h` pops. Choosing a view from the list starts the
+trail over. Nothing is predicted: a refresh or a stale mark is a request, and the view changes when
+the daemon sends it saved again. The terminal does not draw tree, graph, timeline or board blocks,
+so a link in one of them is reached by the link list alone.
 
 A view can offer buttons (`ViewAction`) on itself, a card, a row, a table's selected rows, or as a
 form's submit. Argus runs nothing for one: `ClientMsg::PressView` (under `VIEW_ACTIONS`) is relayed
