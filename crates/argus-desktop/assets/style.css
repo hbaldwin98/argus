@@ -774,6 +774,12 @@
 .git.clean {
   color: var(--fg-faint);
 }
+/* Several agents in one checkout: allowed, but never found out later. */
+.shared {
+  color: var(--attention);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
 .pane {
   display: flex;
   align-items: center;

@@ -160,6 +160,12 @@ function drawRail(): void {
           },
           el('span', { class: 'name', title: co.branch || null }, co.name),
           el('span', null, co.kind),
+          co.shared !== null &&
+            el(
+              'span',
+              { class: 'shared', title: `shared by ${co.shared} agents` },
+              `⚠${co.shared}`,
+            ),
           co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git),
           el(
             'button',

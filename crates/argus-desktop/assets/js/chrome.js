@@ -119,7 +119,8 @@ function drawRail() {
             rows.push(el('div', {
                 class: `co${coPicked ? ' picked' : ''}`,
                 onclick: () => pickRail(co.id, null),
-            }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
+            }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.shared !== null &&
+                el('span', { class: 'shared', title: `shared by ${co.shared} agents` }, `⚠${co.shared}`), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
                 class: `icon${railStart(co.id) ? ' hot' : ''}`,
                 title: 'Start a shell or an agent',
                 'aria-label': `Start a shell or an agent on ${repo.name} ${co.name}`,

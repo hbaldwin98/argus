@@ -41,11 +41,14 @@ function head(c) {
 function running(row) {
     if (!row.running.length)
         return el('span', { class: 'fg-faint' }, '—');
-    return row.running.flatMap((pane, i) => [
-        i > 0 && el('span', { class: 'fg-faint' }, ' · '),
-        el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'),
-        el('span', { class: `st ${pane.status}` }, pane.status),
-    ]);
+    return [
+        row.shared !== null && el('span', { class: 'shared' }, `⚠ shared by ${row.shared} `),
+        ...row.running.flatMap((pane, i) => [
+            i > 0 && el('span', { class: 'fg-faint' }, ' · '),
+            el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'),
+            el('span', { class: `st ${pane.status}` }, pane.status),
+        ]),
+    ];
 }
 function actions(row) {
     const open = el('button', { class: 'btn sm', onclick: () => call('checkouts_action', { action: 'choose' }) }, 'Open');

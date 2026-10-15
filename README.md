@@ -194,7 +194,10 @@ leaves the window open, and returns at once. The window reaches the same daemon 
 `argus bridge`, so it shows what the terminal client shows: the rail of projects, repositories,
 checkouts and panes, and one live pane that takes keys, pastes and resizes. `+` on a checkout opens a menu
 that starts a shell (`S`) or an agent from one of the daemon's templates (`A` for the first, the
-default; the arrows and Enter for the rest), and `×` on a pane, shown while it is pointed at and in
+default; the arrows and Enter for the rest). The template the window last started is listed first,
+and remembered across runs. A checkout several agents share says so: `⚠2` on its rail row, and
+"shared by 2" in the Checkouts tab. A project with `exclusive` set refuses a second agent there, and
+the window says which agent holds it. `×` on a pane, shown while it is pointed at and in
 the stage header, closes it. The Checkouts tab (`3`) lists the chosen repository's checkouts, and
 with `B` the branches without one: Enter opens a checkout on its first pane or switches the primary
 checkout to a branch, `F` fetches, `P` pulls, and `S`/`A` start a shell or the default agent in the
