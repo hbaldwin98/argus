@@ -234,7 +234,7 @@ impl Console {
 
     /// `on_screen` is what the window's sides draw; only the consoles
     /// among them are the console's to name.
-    pub fn page(&self, place: ConsolePlace, on_screen: OnScreen, can_spawn: bool) -> ConsolePage {
+    fn page(&self, place: ConsolePlace, on_screen: OnScreen, can_spawn: bool) -> ConsolePage {
         let ours = |pane: Option<PaneId>| pane.filter(|pane| self.holds(*pane)).map(|pane| pane.0);
         let showing = ours(on_screen.first);
         let beside = showing.and(ours(on_screen.second));

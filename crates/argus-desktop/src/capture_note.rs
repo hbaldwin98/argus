@@ -168,7 +168,7 @@ impl Capturing {
         self.note = None;
     }
 
-    pub fn note(&mut self) -> Option<&mut CaptureNote> {
+    pub fn get_mut(&mut self) -> Option<&mut CaptureNote> {
         self.note.as_mut()
     }
 

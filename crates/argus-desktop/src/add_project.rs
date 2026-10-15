@@ -353,6 +353,7 @@ impl Adding {
         self.dialog.as_mut()
     }
 
+    /// What the page has not heard of the dialog.
     pub fn take(&mut self) -> Option<Event> {
         let page = self.dialog.as_ref().map(AddProject::page);
         self.sent.take(page).map(|page| Event::AddProject(Box::new(page)))

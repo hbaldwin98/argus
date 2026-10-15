@@ -331,7 +331,7 @@ impl Session {
             // The note stays open to be fixed, and Create can be pressed
             // again; the reason is said like any other.
             ServerMsg::Error { message } => {
-                if let Some(note) = self.capture.note() {
+                if let Some(note) = self.capture.get_mut() {
                     note.refused();
                 }
                 self.tracker_dialogs.refused();
@@ -1707,13 +1707,13 @@ impl Session {
         match gesture {
             CaptureGesture::Open => self.open_capture(),
             CaptureGesture::Note { note } => {
-                if let Some(capture) = self.capture.note() {
+                if let Some(capture) = self.capture.get_mut() {
                     capture.write(note);
                 }
             }
             CaptureGesture::Create { note } => {
                 let scope = self.scope();
-                let (Some(capture), Some(scope)) = (self.capture.note(), scope) else {
+                let (Some(capture), Some(scope)) = (self.capture.get_mut(), scope) else {
                     return self.note("no repository to write the feature in");
                 };
                 if let Err(why) = capture.create(note, &scope, self.features.board(), &mut self.out) {
@@ -2380,7 +2380,8 @@ impl Session {
         // the rail says which pane the Workspace shows.
         let present = self.present();
         self.docks.set_present(present);
-        // A panel as its dock's tab names it.
+        // Inline, not a method: `take` borrows the docks mutably while the
+        // titles read the extension views.
         let (views, here) = (&self.extension_views, self.here());
         events.extend(self.docks.take(|panel| match panel {
             Panel::Console => "Console".into(),
@@ -2934,6 +2935,23 @@ mod tests {
             assert!(!s.events(0).iter().any(drawn), "the {name} is heard once");
             assert!(s.everything(0).iter().any(drawn), "the {name} is drawn again on a reloaded page");
         }
+    }
+
+    #[test]
+    fn a_reloaded_page_hears_the_console_the_docks_and_the_checkouts_table_again() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        let drawn = |events: &[Event]| {
+            let has = |f: fn(&Event) -> bool| events.iter().any(f);
+            [
+                has(|e| matches!(e, Event::Console(_))),
+                has(|e| matches!(e, Event::Docks(_))),
+                has(|e| matches!(e, Event::Checkouts(_))),
+            ]
+        };
+        assert_eq!(drawn(&s.events(0)), [true; 3]);
+        assert_eq!(drawn(&s.events(0)), [false; 3], "each is heard once");
+        assert_eq!(drawn(&s.everything(0)), [true; 3], "a reloaded page is sent all three");
     }
 
     #[test]
@@ -4282,13 +4300,14 @@ mod tests {
     }
 
     fn console_page(s: &mut Session) -> crate::console::ConsolePage {
+        s.console.reload();
         s.events(0)
             .into_iter()
             .find_map(|e| match e {
                 Event::Console(page) => Some(*page),
                 _ => None,
             })
-            .unwrap_or_else(|| s.console.page(s.console_place(), s.console_sides(), s.status.daemon_can(CONSOLES)))
+            .expect("a forgotten console is sent again")
     }
 
     fn console(s: &mut Session, gesture: ConsoleGesture) -> Vec<String> {

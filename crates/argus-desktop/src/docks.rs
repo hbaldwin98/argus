@@ -427,7 +427,7 @@ impl Docks {
     }
 
     /// The docks with the panels that exist now, each named by `title`.
-    pub fn page(&self, title: impl Fn(&Panel) -> String) -> DocksPage {
+    fn page(&self, title: impl Fn(&Panel) -> String) -> DocksPage {
         let dock = |dock: Dock| {
             let d = self.layout.dock(dock);
             DockPage {
