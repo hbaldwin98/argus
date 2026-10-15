@@ -602,7 +602,7 @@ function drawStage(): void {
       el('div', { class: 'cmd' }, 'argus init'),
     ];
   } else {
-    measure = 'pick';
+    measure = 'no-pane';
     body = [
       icon('terminal'),
       el('div', { class: 'type-title' }, 'Pick a pane'),

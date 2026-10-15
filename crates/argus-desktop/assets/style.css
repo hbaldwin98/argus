@@ -1660,7 +1660,7 @@ body.maximized .winbtn .restore {
 .empty-body.no-projects {
   max-width: 460px;
 }
-.empty-body.pick {
+.empty-body.no-pane {
   max-width: 440px;
 }
 .empty-icon {
