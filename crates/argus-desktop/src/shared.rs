@@ -14,6 +14,7 @@ use tauri::ipc::Channel;
 use tauri::AppHandle;
 use tokio::sync::{mpsc, Notify};
 
+use crate::clipboard;
 use crate::notifications;
 use crate::page::Event;
 use crate::session::Session;
@@ -49,6 +50,16 @@ impl Shared {
         let mut session = lock(&self.session);
         let msgs = change(&mut session);
         self.send(msgs);
+        // Written here rather than by the page, which may write only
+        // inside the gesture's own handler, and a key reaches Rust first.
+        if let Some(text) = session.take_copied() {
+            let said = match clipboard::write(&text) {
+                Ok(()) => format!("copied {text}"),
+                Err(e) => format!("could not copy: {e}"),
+            };
+            let msgs = session.note(said);
+            self.send(msgs);
+        }
         let events = session.events(now());
         self.publish(events);
         if let Some(settings) = session.take_settings() {

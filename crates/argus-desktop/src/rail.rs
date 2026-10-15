@@ -147,6 +147,8 @@ fn shown(tree: &[ProjectInfo], pane: PaneId) -> Option<page::Shown> {
                 agent: info.kind == PaneKind::Agent,
                 title: info.title.clone(),
                 status: status(info),
+                // The session's to say: the tree does not carry it.
+                resumed: None,
             });
         }
     }

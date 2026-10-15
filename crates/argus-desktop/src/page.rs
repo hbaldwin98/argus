@@ -96,10 +96,13 @@ pub enum Call {
     /// Opens a repository's recent agent sessions.
     OpenSessions { repository: u64 },
     /// A key or button of the sessions dialog, or with `row` a click on a
-    /// row.
+    /// row: a session's, or in the full transcript one of the person's
+    /// turns.
     SessionsAction { action: Action, row: Option<usize> },
     /// What the sessions dialog's search field says now.
     SearchSessions { search: String },
+    /// What the full transcript's find field says now.
+    FindInTranscript { find: String },
     /// The harness and checkout the sessions dialog's menus are set to;
     /// `None` is all of them.
     FilterSessions { harness: Option<String>, checkout: Option<String> },
@@ -685,6 +688,19 @@ pub struct Shown {
     pub title: String,
     #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
     pub status: &'static str,
+    /// The session this window resumed in it, while the pane lasts.
+    pub resumed: Option<Resumed>,
+}
+
+/// What a pane was resumed from, as its header says it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Resumed {
+    /// When the session was last written to, as RFC 3339.
+    pub at: Option<String>,
+    /// The turns it had before it was resumed.
+    pub turns: Option<u32>,
 }
 
 /// The Feature stage's index: one repository's features, as a list or a
@@ -1264,9 +1280,10 @@ pub struct SessionsPage {
     /// cannot list them.
     pub empty: Option<String>,
     pub rows: Vec<SessionRowView>,
+    /// `None` while the full transcript is open, which draws it instead.
     pub preview: Option<SessionPreview>,
-    /// The transcript fills the dialog, the list put away.
-    pub full: bool,
+    /// The full transcript, read in place of the list.
+    pub reader: Option<ReaderPage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1315,6 +1332,45 @@ pub struct SessionPreview {
     pub command: Option<String>,
     /// Why it cannot be resumed, when it offers only its transcript.
     pub why: Option<String>,
+    /// Its full transcript can be opened: not one its harness keeps none
+    /// of, or one gone missing.
+    pub readable: bool,
+}
+
+/// One session's transcript read whole: the preview's session with the
+/// person's turns to jump between and a find over what was said.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReaderPage {
+    pub session: SessionPreview,
+    pub repository: String,
+    /// When its transcript ends, as the harness wrote it.
+    pub ended: Option<String>,
+    pub turns: Option<u32>,
+    pub jumps: Vec<TurnJump>,
+    pub find: String,
+    /// The entries find matches, by their place in `session.entries`.
+    pub matches: Vec<usize>,
+    /// The match find is on.
+    pub found: Option<usize>,
+    /// The entry the last move went to, to scroll to whenever `moves`
+    /// changes.
+    pub target: Option<usize>,
+    pub moves: u32,
+}
+
+/// One of the person's turns, in the reader's jump list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct TurnJump {
+    /// Its place in the transcript's entries.
+    pub entry: usize,
+    /// Its first line.
+    pub text: String,
+    pub at: Option<String>,
+    pub on: bool,
 }
 
 /// One thing said or done in a session.
@@ -1329,6 +1385,8 @@ pub struct TranscriptLine {
     /// The tool's name; empty for a turn or a reply.
     pub tool: String,
     pub failed: bool,
+    /// When it happened, as the harness wrote it.
+    pub at: Option<String>,
 }
 
 /// A row of the diff: a hunk header, a note, a line, or in split view a
@@ -1550,6 +1608,7 @@ mod tests {
                 agent: true,
                 title: "claude".into(),
                 status: "working",
+                resumed: Some(Resumed { at: Some("2026-10-14T13:52:00Z".into()), turns: Some(48) }),
             }),
             loaded: true,
             repository: Some(2),
@@ -1567,6 +1626,7 @@ mod tests {
         assert_eq!(repo["checkouts"][0]["panes"][0]["status"], "working");
         assert_eq!(repo["checkouts"][0]["git"], "clean");
         assert_eq!(value["shown"]["pane"], 4);
+        assert_eq!(value["shown"]["resumed"], json!({"at": "2026-10-14T13:52:00Z", "turns": 48}));
         assert_eq!(value["loaded"], true);
         assert_eq!(value["stage"], "new");
         assert_eq!(value["workspaces"][0]["open"], true);

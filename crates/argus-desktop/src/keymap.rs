@@ -67,6 +67,9 @@ pub enum Place {
     History,
     /// The recent-sessions dialog while it is open, which holds the keys.
     Sessions,
+    /// A session's full transcript, open in place of that dialog's list,
+    /// which holds the keys until it closes.
+    Transcript,
     /// A field that filters the list under it, which holds every other key.
     Filter,
     /// The palette's search field while it is open, which holds the keys.
@@ -156,8 +159,14 @@ pub enum Action {
     OpenSessions,
     /// Resume the session under the cursor in a new pane.
     Resume,
-    /// The transcript fills the dialog, or gives the list back.
+    /// The session under the cursor's full transcript, read in place of
+    /// the list.
     Transcript,
+    /// The next or previous of the full transcript's find matches.
+    NextMatch,
+    PreviousMatch,
+    /// Put the session's id on the clipboard.
+    CopyId,
     /// Filter by the next harness the listing holds.
     FilterHarness,
     /// Filter by the next checkout the listing holds.
@@ -272,6 +281,7 @@ impl Place {
             Place::Jump => "Jumping to a file",
             Place::History => "History",
             Place::Sessions => "Recent sessions",
+            Place::Transcript => "A full transcript",
             Place::Filter => "A filter or search field",
             Place::Palette => "Palette",
         }
@@ -412,10 +422,20 @@ pub static BINDINGS: &[Binding] = &[
     bind(Sessions, &[Chord::key("End")], Last, "last session"),
     bind(Sessions, &[Chord::key("Enter")], Choose, "go to its pane, resume it, or read it whole"),
     bind(Sessions, &[Chord::key("r"), Chord::key("R")], Resume, "resume in a new pane"),
-    bind(Sessions, &[Chord::key("o"), Chord::key("O")], Transcript, "open the full transcript, and back"),
+    bind(Sessions, &[Chord::key("o"), Chord::key("O")], Action::Transcript, "open the full transcript"),
     bind(Sessions, &[Chord::key("/")], Filter, "search sessions"),
     bind(Sessions, &[Chord::key("h"), Chord::key("H")], FilterHarness, "filter by the next harness"),
     bind(Sessions, &[Chord::key("c"), Chord::key("C")], FilterCheckout, "filter by the next checkout"),
+    bind(Place::Transcript, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "your next turn"),
+    bind(Place::Transcript, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "your previous turn"),
+    bind(Place::Transcript, &[Chord::key("Home")], First, "your first turn"),
+    bind(Place::Transcript, &[Chord::key("End")], Last, "your last turn"),
+    bind(Place::Transcript, &[Chord::key("/"), Chord::key("f").ctrl()], Filter, "find in the transcript"),
+    bind(Place::Transcript, &[Chord::key("n")], NextMatch, "next match"),
+    bind(Place::Transcript, &[Chord::key("N")], PreviousMatch, "previous match"),
+    bind(Place::Transcript, &[Chord::key("y"), Chord::key("Y")], CopyId, "copy the session id"),
+    bind(Place::Transcript, &[Chord::key("r"), Chord::key("R")], Resume, "resume in a new pane"),
+    bind(Place::Transcript, &[Chord::key("Enter")], Choose, "go to its pane, while it runs"),
     bind(Place::Filter, &[Chord::key("Enter"), Chord::key("Escape")], Leave, "back to the list, filtered"),
     bind(Place::Palette, &[Chord::key("ArrowDown")], Next, "next result"),
     bind(Place::Palette, &[Chord::key("ArrowUp")], Previous, "previous result"),
@@ -453,7 +473,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
 ];
 
-const ORDER: [Place; 15] = [
+const ORDER: [Place; 16] = [
     Anywhere,
     Pane,
     Rail,
@@ -467,6 +487,7 @@ const ORDER: [Place; 15] = [
     Jump,
     History,
     Sessions,
+    Place::Transcript,
     Place::Filter,
     Place::Palette,
 ];
@@ -556,6 +577,7 @@ mod tests {
                 "Jumping to a file",
                 "History",
                 "Recent sessions",
+                "A full transcript",
                 "A filter or search field",
                 "Palette"
             ]
@@ -640,7 +662,7 @@ mod tests {
     /// typed into it.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 13] = [
+        let heard_together: [&[Place]; 14] = [
             &[Anywhere, Place::Feature, Card],
             &[Anywhere, Outline],
             &[Writing],
@@ -651,6 +673,7 @@ mod tests {
             &[Anywhere, Review],
             &[Anywhere, History],
             &[Anywhere, Sessions],
+            &[Anywhere, Place::Transcript],
             &[Jump],
             &[Place::Filter],
             &[Place::Palette],

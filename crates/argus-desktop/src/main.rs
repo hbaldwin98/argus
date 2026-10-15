@@ -48,6 +48,7 @@ mod shown;
 mod status;
 mod switcher;
 mod shared;
+mod transcript_reader;
 mod window_frame;
 
 use std::sync::Arc;

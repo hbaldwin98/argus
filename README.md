@@ -214,10 +214,14 @@ layout last chosen, unless that side has nothing and the other does. `H` opens i
 commits unfolding to their files, filtered with `/`, and any of them opened as a review. The clock
 on a repository's rail row opens its recent agent sessions across every checkout, live ones first:
 `j`/`k` move, `/` searches, `H` and `C` step the harness and checkout filters, and the transcript
-of the one under the cursor shows beside the list (`O` gives it the whole dialog). Enter goes to a
-live session's pane, and on an ended one resumes it in a new pane (`R`), by the command the footer
-names; a session from a removed worktree, or from a harness that cannot resume by id, offers only
-its transcript. The project heading at the top of the rail opens the switcher: every project with
+of the one under the cursor shows beside the list. `O` opens it in full in place of the list: your
+turns as a jump list (`j`/`k`), a find (`/`, then `n` and `N`), `Y` copying the session id, `R`
+resuming it, and Escape back to the list; a harness that keeps no transcript lists its sessions but
+has none to open. Enter goes to a live session's pane, and on an ended one resumes it in a new pane
+(`R`), by the command the footer names; the pane is selected under its checkout once the daemon
+has made it, and its header says when the session was last active and how many turns it had. A
+session from a removed worktree, or from a harness that cannot resume by id, offers only its
+transcript. The project heading at the top of the rail opens the switcher: every project with
 how many of its agents need you or are working, Add a project… (a folder of repositories, one
 repository, or a new one made with `git init`, previewing what it would add before anything is
 written, then a name and folders to skip), Switch workspace…, and Remove, which asks first and

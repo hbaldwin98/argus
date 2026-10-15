@@ -1,6 +1,7 @@
 // The window's frame around the stage: the sidebar and its nav, the strip's
 // words, the sidebar's foot, the empty stage, and notices that pass.
 import { drawCheckouts } from './checkouts.js';
+import { clock } from './clock.js';
 import { drawComposer } from './compose.js';
 import { drawConsole } from './console.js';
 import { $, el, ghosts, icon } from './dom.js';
@@ -378,7 +379,13 @@ function drawHead() {
         head.replaceChildren();
         return;
     }
-    head.replaceChildren(el('span', { class: 'crumbs' }, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout), el('span', { class: 'fg-faint' }, '/')), el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'), el('span', { class: 'type-heading head-title' }, shown.title), el('span', { class: `pill ${shown.status}` }, shown.status), el('span', { class: 'grow' }), el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()), closeButton(shown.pane, shown.title));
+    head.replaceChildren(el('span', { class: 'crumbs' }, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout), el('span', { class: 'fg-faint' }, '/')), el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'), el('span', { class: 'type-heading head-title' }, shown.title), el('span', { class: `pill ${shown.status}` }, shown.status), shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '', el('span', { class: 'grow' }), el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()), closeButton(shown.pane, shown.title));
+}
+/** What a pane this window resumed a session in was resumed from. */
+function resumedFrom(from) {
+    const at = clock(from.at);
+    const turns = from.turns === null ? null : `${from.turns} turn${from.turns === 1 ? '' : 's'} before`;
+    return [at ? `resumed from ${at}` : 'resumed', turns].filter((part) => part).join(' · ');
 }
 /** Ends the pane's program; the rail drops it when the daemon's tree does. */
 function closeButton(pane, title) {

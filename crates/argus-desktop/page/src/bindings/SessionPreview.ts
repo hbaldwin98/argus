@@ -36,4 +36,9 @@ command: string | null,
 /**
  * Why it cannot be resumed, when it offers only its transcript.
  */
-why: string | null, };
+why: string | null, 
+/**
+ * Its full transcript can be opened: not one its harness keeps none
+ * of, or one gone missing.
+ */
+readable: boolean, };

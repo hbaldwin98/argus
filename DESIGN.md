@@ -118,8 +118,8 @@ are the run's, since a restarted daemon's consoles are new shells under new ids.
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `settings`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `projects`, `chime`, with `keys`, `dom`, `state`
-and `tauri` beneath them),
+`palette`, `shortcuts`, `settings`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, with `keys`, `dom`, `state`,
+`clock` and `tauri` beneath them),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
@@ -386,8 +386,9 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `rail` | what the rail lists from the tree, and what a row says |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
-| `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers |
-| `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its transcript fills the dialog — and what each session offers: its pane, a resume by the exact command named, or only its transcript |
+| `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, among them what each pane it resumed a session in was resumed from |
+| `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its full transcript is open in place of the list — and what each session offers: its pane, a resume by the exact command named, or only its transcript |
+| `transcript_reader` | the full-transcript reader: the person's turns as a jump list and the one it is on, what find looks for and the match it is on, and the page it draws |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — and which of its keys and buttons are the `column_verbs` it sends |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, whether it is opened and the outline row under its cursor, each repository's layout — and what its messages and gestures change |
@@ -1256,6 +1257,18 @@ place. Enter on a live session goes to its pane. On an ended one it resumes the 
 pane on its checkout, by the command the footer names, and the pane is shown only once `Created`
 has named it and the tree holds it, so a refused resume leaves the dialog up. A session from a
 removed worktree, or from a harness with no `resume_id`, offers only its full transcript.
+
+The full transcript opens in place of the list (`O`, or Enter where there is nothing to resume): the
+session read whole as `ReadSession` returned it, the person's turns as a jump list, a find over
+what was said and the tools run, Copy session id and Resume. One whose read came back
+`NoTranscript` or `Missing` has nothing to open, and says why. A session from a removed worktree is
+read through the primary checkout it is listed under: a transcript is found by its id, and a
+`{project}` template matches any project directory, so the worktree being gone does not hide it.
+A pane resumed from the dialog says in its header when the session was last active and how many
+turns it had. The tree does not carry this: the desktop pairs the pane `Created` named in answer to
+its own `ResumeSession` with the daemon's listing of the session it asked to resume, which is a
+fact about its own request rather than a prediction. Another client, or the window restarted or
+reconnected, does not say it; it is forgotten with the pane.
 
 A `[[harness]]` block sets `transcript = "claude"` (a known format where its own harness keeps it —
 the form older configs wrote, for a wrapper around that CLI) or `transcript = { format = "…", path =
