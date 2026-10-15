@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::features::Layout;
 use crate::keymap::{Action, Command, Group};
 use crate::keys::PageKey;
+use crate::settings::{Backdrop, EditorMode, Preferences, Theme};
 
 /// Something the page asks of the window. It answers nothing: what a call
 /// changed reaches the page as events. Ids are the daemon's, as numbers.
@@ -104,6 +105,8 @@ pub enum Call {
     SetLayout { layout: Layout },
     ToggleFolded,
     SetChime { on: bool },
+    /// One choice in the Settings dialog, saved as it is made.
+    Setting { change: SettingChange },
     /// Holds a feature for `reason`, or lifts its hold when there is none.
     Hold { slug: String, reason: Option<String> },
     /// Archives a feature, accepting it, or reopens it with `archived` false.
@@ -137,6 +140,22 @@ pub enum Call {
     /// A hover over the strip's maximize button, for Windows 11's snap
     /// layouts.
     SnapLayouts,
+}
+
+/// One choice made in the Settings dialog.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "set")]
+pub enum SettingChange {
+    Theme { theme: Theme },
+    /// Percent, as the slider gives it.
+    Opacity { percent: u8 },
+    Backdrop { backdrop: Backdrop },
+    Editor { mode: EditorMode },
+    EditorCommand { command: String },
+    Notify { on: bool },
+    NotifyInBackground { only: bool },
+    FeatureLayout { layout: Layout },
 }
 
 /// What was done in the note a new feature is written as.
@@ -286,6 +305,9 @@ pub enum Event {
     Notice { text: String },
     /// An agent came to need the person somewhere they are not looking.
     Chime,
+    /// The Settings dialog's choices, whenever one changes: the page draws
+    /// its theme and opacity from them whether or not the dialog is open.
+    Settings(Box<SettingsPage>),
     /// Every binding, grouped as the shortcuts sheet lists them, and the
     /// palette's commands, sent once a page loads: the page dispatches from
     /// it outside a pane.
@@ -311,6 +333,29 @@ pub struct Status {
     pub alarm: Option<String>,
     /// Whether the window chimes, for the status bar's switch.
     pub chime: bool,
+}
+
+/// The Settings dialog: what is chosen, and what shows through the window
+/// on this machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsPage {
+    pub chosen: Preferences,
+    /// The least the opacity slider goes to.
+    pub min_opacity: u8,
+    /// The backdrops this machine draws, in the dialog's order; one it
+    /// cannot draw at all is left out.
+    pub backdrops: Vec<BackdropOffer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct BackdropOffer {
+    pub backdrop: Backdrop,
+    /// Why it is greyed out here, when it is.
+    pub unavailable: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -1278,6 +1323,36 @@ mod tests {
 
     fn as_json(event: Event) -> serde_json::Value {
         serde_json::to_value(event).unwrap()
+    }
+
+    #[test]
+    fn the_settings_event_carries_the_choices_and_what_can_show_through() {
+        let event = Event::Settings(Box::new(SettingsPage {
+            chosen: Preferences::default(),
+            min_opacity: 30,
+            backdrops: vec![BackdropOffer { backdrop: Backdrop::Mica, unavailable: Some("Mica needs Windows 11".into()) }],
+        }));
+        assert_eq!(
+            as_json(event),
+            json!({
+                "type": "settings",
+                "chosen": {
+                    "theme": "system", "opacity": 100, "backdrop": "clear", "editor": "floating",
+                    "editorCommand": "", "notify": true, "notifyInBackground": true, "featureLayout": "list"
+                },
+                "minOpacity": 30,
+                "backdrops": [{"backdrop": "mica", "unavailable": "Mica needs Windows 11"}]
+            })
+        );
+    }
+
+    #[test]
+    fn a_setting_names_what_it_sets() {
+        let read = |text: &str| serde_json::from_str::<SettingChange>(text).unwrap();
+        assert_eq!(read(r#"{"set":"theme","theme":"macchiato"}"#), SettingChange::Theme { theme: Theme::Macchiato });
+        assert_eq!(read(r#"{"set":"editor","mode":"separately"}"#), SettingChange::Editor { mode: EditorMode::Separately });
+        assert_eq!(read(r#"{"set":"notifyInBackground","only":false}"#), SettingChange::NotifyInBackground { only: false });
+        assert_eq!(read(r#"{"set":"featureLayout","layout":"board"}"#), SettingChange::FeatureLayout { layout: Layout::Board });
     }
 
     #[test]

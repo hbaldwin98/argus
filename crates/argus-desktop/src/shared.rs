@@ -1,17 +1,20 @@
 //! What the page's calls, the daemon's messages and the frame tick share:
-//! the session, the way out to the daemon, and the way to the page.
+//! the session, the way out to the daemon, the way to the page, and the
+//! app, which raises the system's notifications.
 //!
 //! Each change happens under the session's lock, and so do the messages it
 //! sends and the events it publishes, so two changes on two threads reach
 //! the daemon and the page in the order they were made.
 
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use argus_protocol::{ClientMsg, Hello, ServerMsg};
 use tauri::ipc::Channel;
+use tauri::AppHandle;
 use tokio::sync::{mpsc, Notify};
 
+use crate::notifications;
 use crate::page::Event;
 use crate::session::Session;
 use crate::settings::{self, Settings};
@@ -23,6 +26,9 @@ pub struct Shared {
     out: Mutex<Option<mpsc::UnboundedSender<ClientMsg>>>,
     /// The page's channel, while a page is loaded.
     page: Mutex<Option<Channel<Event>>>,
+    /// Set once the app is built: a tree that arrives before then raises
+    /// nothing, and the first tree is quiet anyway.
+    app: OnceLock<AppHandle>,
     reconnect: Notify,
 }
 
@@ -32,6 +38,7 @@ impl Shared {
             session: Mutex::new(Session::new(settings)),
             out: Mutex::new(None),
             page: Mutex::new(None),
+            app: OnceLock::new(),
             reconnect: Notify::new(),
         }
     }
@@ -47,6 +54,16 @@ impl Shared {
         if let Some(settings) = session.take_settings() {
             settings::save(&settings);
         }
+        let alerts = session.take_alerts();
+        if let Some(app) = self.app.get() {
+            for alert in &alerts {
+                notifications::show(app, alert);
+            }
+        }
+    }
+
+    pub fn set_app(&self, app: AppHandle) {
+        let _ = self.app.set(app);
     }
 
     /// Reads the session without changing it.

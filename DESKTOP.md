@@ -330,8 +330,8 @@ Settled while drawing the canvas, so the issues that build them start from here.
   (HUN-176).
 
 Still open: splits (two panes side by side) or one pane at a time; side panels or dialogs for
-reconcile and sessions; the settings' Connection section and whether desktop settings share
-`client.toml`; whether the "argusd was stopped" card centres in the window or in the stage; and
+reconcile and sessions; the settings' Connection section (desktop settings live in
+`desktop.json`, not `client.toml`: DESIGN.md §Configuration says why); whether the "argusd was stopped" card centres in the window or in the stage; and
 release packaging (.app/.msi/AppImage, signing, updates), which no issue tracks.
 
 ## Findings

@@ -6,7 +6,9 @@
 //! them); Windows and Linux get the page's own buttons. On Windows 11 the
 //! frame keeps the system's shadow, rounded corners and edge resizing.
 
-use tauri::{Theme, WebviewWindow, WebviewWindowBuilder, Wry};
+use tauri::{WebviewWindow, WebviewWindowBuilder, Wry};
+
+use crate::settings::Theme;
 
 /// Takes the system's title bar off a window about to be built.
 pub fn frameless<'a>(
@@ -19,22 +21,30 @@ pub fn frameless<'a>(
 }
 
 /// Tints the one-pixel border Windows 11 draws round a frameless window to
-/// the sidebar's colour; called again when the system's theme changes.
-pub fn paint(window: &WebviewWindow) {
-    let theme = window.theme().unwrap_or(Theme::Dark);
+/// the sidebar's colour in `theme`, as drawn (`system_dark` resolves
+/// following the system); called again when either changes.
+pub fn paint(window: &WebviewWindow, theme: Theme) {
+    let drawn = theme.resolve(system_dark(window));
     #[cfg(windows)]
     if let Ok(hwnd) = window.hwnd() {
-        dwm::border(hwnd.0, border(theme));
+        dwm::border(hwnd.0, border(drawn));
     }
     #[cfg(not(windows))]
-    let _ = theme;
+    let _ = drawn;
 }
 
-/// `--line` from `assets/style.css`, per theme: the rule beside the sidebar.
+pub fn system_dark(window: &WebviewWindow) -> bool {
+    window.theme().map_or(true, |theme| theme != tauri::Theme::Light)
+}
+
+/// `--line` from `assets/style.css`, per flavour: the rule beside the
+/// sidebar.
 fn border(theme: Theme) -> u32 {
     match theme {
-        Theme::Light => 0xccd0da,
-        _ => 0x313244,
+        Theme::Latte => 0xccd0da,
+        Theme::Macchiato => 0x363a4f,
+        Theme::Frappe => 0x414559,
+        Theme::Mocha | Theme::System => 0x313244,
     }
 }
 
@@ -132,7 +142,8 @@ mod tests {
     #[test]
     fn the_border_takes_the_line_colour_the_stylesheet_names() {
         let css = include_str!("../assets/style.css");
-        assert!(css.contains(&format!("--surface0: #{:06x};", border(Theme::Dark))));
-        assert!(css.contains(&format!("--surface0: #{:06x};", border(Theme::Light))));
+        for theme in [Theme::Mocha, Theme::Macchiato, Theme::Frappe, Theme::Latte] {
+            assert!(css.contains(&format!("--surface0: #{:06x};", border(theme))), "{theme:?}");
+        }
     }
 }

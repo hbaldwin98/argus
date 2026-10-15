@@ -1,0 +1,256 @@
+// The Settings dialog, and the look its choices give the window: the theme
+// on the document and the background's opacity as `--see`.
+//
+// Rust holds the choices (`src/preferences.rs`) and saves each as it is
+// made; the dialog draws what Rust sends back, and is updated in place
+// rather than rebuilt, so a slider being dragged or a command being typed
+// keeps its hold while the choices come back.
+import { $, el, icon } from './dom.js';
+import { actionFor } from './keymap.js';
+import { screen } from './screen.js';
+import { state } from './state.js';
+import { call } from './tauri.js';
+/** Each flavour's own colours for its card: base, mantle, accent, text. */
+const FLAVOURS = [
+    { theme: 'mocha', name: 'Mocha', colours: ['#1e1e2e', '#181825', '#cba6f7', '#a6adc8'] },
+    { theme: 'macchiato', name: 'Macchiato', colours: ['#24273a', '#1e2030', '#c6a0f6', '#a5adcb'] },
+    { theme: 'frappe', name: 'Frappé', colours: ['#303446', '#292c3c', '#ca9ee6', '#a5adce'] },
+    { theme: 'latte', name: 'Latte', colours: ['#eff1f5', '#e6e9ef', '#7a33d6', '#5c5f77'] },
+];
+const BACKDROPS = {
+    clear: 'Clear',
+    mica: 'Mica',
+    acrylic: 'Acrylic',
+};
+const EDITORS = [
+    ['floating', 'Floating'],
+    ['checkout', 'In the checkout'],
+    ['separately', 'Separately'],
+];
+const LAYOUTS = [
+    ['list', 'List'],
+    ['board', 'Board'],
+];
+const SECTIONS = ['Appearance', 'Editor', 'Notifications', 'Features', 'Connection'];
+const dark = matchMedia('(prefers-color-scheme: dark)');
+function set(change) {
+    call('setting', { change });
+}
+/** The flavour drawn: the one chosen, or the system's. */
+function drawn(theme) {
+    if (theme !== 'system')
+        return theme;
+    return dark.matches ? 'mocha' : 'latte';
+}
+/** Puts the chosen theme and opacity on the window. The theme is left off
+ *  the document when following the system, so the stylesheet's media
+ *  query decides. */
+export function applyLook() {
+    const chosen = state.settings?.chosen;
+    if (!chosen)
+        return;
+    const root = document.documentElement;
+    if (chosen.theme === 'system')
+        delete root.dataset.theme;
+    else
+        root.dataset.theme = chosen.theme;
+    root.style.setProperty('--see', String(chosen.opacity / 100));
+    screen.retheme();
+}
+/** The dialog's controls, kept to be updated in place. */
+let controls = null;
+/** What had the keys before the dialog, to give them back to. */
+let before = null;
+export function settingsOpen() {
+    return $('over').querySelector('.settings') !== null;
+}
+function toggle(label, onclick) {
+    return el('button', { class: 'toggle', role: 'switch', 'aria-label': label, onclick }, el('span', null));
+}
+function setToggle(node, on) {
+    node.classList.toggle('on', on);
+    node.setAttribute('aria-checked', String(on));
+}
+function segment(label, options, choose) {
+    const buttons = new Map();
+    const group = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': label }, options.map(([value, name]) => {
+        const button = el('button', { class: 'segb', role: 'radio', onclick: () => choose(value) }, name);
+        buttons.set(value, button);
+        return button;
+    }));
+    return [group, buttons];
+}
+function setSegment(buttons, chosen) {
+    for (const [value, button] of buttons) {
+        button.classList.toggle('on', value === chosen);
+        button.setAttribute('aria-checked', String(value === chosen));
+    }
+}
+function row(title, detail, control) {
+    return el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, title), detail && el('span', { class: 'meta' }, detail)), control);
+}
+function section(name, ...rows) {
+    return el('section', { class: 'stack-2', 'aria-label': name, id: `settings-${name.toLowerCase()}` }, el('div', { class: 'label' }, name), rows);
+}
+export function openSettings() {
+    const page = state.settings;
+    if (settingsOpen() || !page)
+        return;
+    before = document.activeElement;
+    const cards = new Map();
+    for (const flavour of FLAVOURS) {
+        const [base, mantle, accent, text] = flavour.colours;
+        const preview = el('span', { class: 'pv' }, el('span', { class: 'side' }), el('span', { class: 'lines' }, el('span', null), el('span', null)));
+        preview.style.background = base;
+        const [side, lines] = [...preview.children];
+        if (side)
+            side.style.background = mantle;
+        const [accentLine, textLine] = [...(lines?.children ?? [])];
+        if (accentLine)
+            accentLine.style.background = accent;
+        if (textLine)
+            textLine.style.background = text;
+        const card = el('button', {
+            class: 'themecard',
+            role: 'radio',
+            onclick: () => set({ set: 'theme', theme: flavour.theme }),
+        }, preview, el('span', { class: 'strong' }, flavour.name));
+        cards.set(flavour.theme, card);
+    }
+    const follow = toggle('Follow the system', () => {
+        const theme = state.settings?.chosen.theme ?? 'system';
+        // Leaving the system keeps the flavour it was drawing.
+        set({ set: 'theme', theme: theme === 'system' ? drawn('system') : 'system' });
+    });
+    const opacity = el('input', {
+        type: 'range',
+        min: String(page.minOpacity),
+        max: '100',
+        step: '1',
+        'aria-label': 'Background opacity',
+    });
+    opacity.addEventListener('input', () => {
+        set({ set: 'opacity', percent: Number(opacity.value) });
+    });
+    const percent = el('span', { class: 'n' });
+    const [backdropGroup, backdrops] = segment('What shows through', page.backdrops.map((offer) => [offer.backdrop, BACKDROPS[offer.backdrop]]), (backdrop) => set({ set: 'backdrop', backdrop }));
+    const backdropWhy = el('span', { class: 'meta' });
+    const backdropRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'What shows through'), el('span', { class: 'meta' }, 'Clear shows the desktop; Mica and Acrylic blur it'), backdropWhy), backdropGroup);
+    const [editorGroup, editors] = segment('Files open', EDITORS, (mode) => set({ set: 'editor', mode }));
+    const command = el('input', {
+        class: 'field mono',
+        placeholder: 'nvim',
+        'aria-label': 'Editor command',
+        autocomplete: 'off',
+        spellcheck: 'false',
+    });
+    command.addEventListener('input', () => set({ set: 'editorCommand', command: command.value }));
+    const notify = toggle('Notify when an agent needs you', () => set({ set: 'notify', on: !(state.settings?.chosen.notify ?? true) }));
+    const background = toggle('Only while this window is in the background', () => set({ set: 'notifyInBackground', only: !(state.settings?.chosen.notifyInBackground ?? true) }));
+    const [layoutGroup, layouts] = segment('Feature index layout', LAYOUTS, (layout) => set({ set: 'featureLayout', layout }));
+    controls = {
+        cards,
+        follow,
+        opacity,
+        percent,
+        backdrops,
+        backdropRow,
+        backdropWhy,
+        editors,
+        command,
+        notify,
+        background,
+        layouts,
+    };
+    const body = el('div', { class: 'settings-body' }, section('Appearance', el('div', { class: 'themecards', role: 'radiogroup', 'aria-label': 'Theme' }, [
+        ...cards.values(),
+    ]), row('Follow the system', 'Mocha when it is dark, Latte when it is light', follow), row('Background opacity', 'The desktop shows through the background; text and borders stay solid', el('div', { class: 'opacity' }, opacity, percent)), 
+    // Clear alone is no choice: where it is all this system draws, the
+    // row is left out.
+    page.backdrops.length > 1 ? backdropRow : null), section('Editor', row('Files open', 'A known GUI editor always opens on its own', editorGroup), row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command)), section('Notifications', row('When an agent needs you', 'A system notification naming the pane: waiting, needs-review or failed', notify), row('Only while this window is in the background', null, background)), section('Features', row('Feature index', 'Remembered per repository; this is what a new one opens as', layoutGroup)), section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')));
+    const nav = el('nav', { class: 'settings-nav', 'aria-label': 'Settings sections' }, SECTIONS.map((name) => el('button', {
+        class: 'frow',
+        onclick: () => {
+            document.getElementById(`settings-${name.toLowerCase()}`)?.scrollIntoView({
+                block: 'start',
+            });
+        },
+    }, name)));
+    const close = el('button', { class: 'icon', 'aria-label': 'Close settings', onclick: closeSettings }, icon('close'));
+    const dialog = el('section', {
+        class: 'dialog settings',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-labelledby': 'settings-title',
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'settings-title' }, 'Settings'), el('span', { class: 'meta' }, 'Saved as you change them'), close), el('div', { class: 'split' }, nav, body));
+    // Escape puts it away from any of its controls, a field included.
+    dialog.addEventListener('keydown', (e) => {
+        const action = actionFor(['anywhere'], e);
+        if (action === 'closeLayer' || action === 'settings') {
+            e.preventDefault();
+            e.stopPropagation();
+            closeSettings();
+        }
+    });
+    $('over').replaceChildren(el('div', {
+        class: 'scrim',
+        onmousedown: (e) => {
+            if (e.target === e.currentTarget)
+                closeSettings();
+        },
+    }, dialog));
+    drawSettings();
+    $('input').blur();
+    close.focus();
+}
+export function closeSettings() {
+    if (!settingsOpen())
+        return;
+    $('over').replaceChildren();
+    controls = null;
+    if (before instanceof HTMLElement)
+        before.focus();
+    before = null;
+}
+/** The choices Rust sent: the window's look always, and the dialog's
+ *  controls while it is open. */
+export function drawSettings() {
+    applyLook();
+    const page = state.settings;
+    if (!controls || !page || !settingsOpen())
+        return;
+    const { chosen } = page;
+    const shown = drawn(chosen.theme);
+    for (const [theme, card] of controls.cards) {
+        card.classList.toggle('on', theme === shown);
+        card.setAttribute('aria-checked', String(theme === shown));
+    }
+    setToggle(controls.follow, chosen.theme === 'system');
+    // A thumb being dragged is where the person has it already.
+    if (document.activeElement !== controls.opacity)
+        controls.opacity.value = String(chosen.opacity);
+    controls.percent.textContent = `${chosen.opacity}%`;
+    setSegment(controls.backdrops, chosen.backdrop);
+    const why = [];
+    for (const offer of page.backdrops) {
+        const button = controls.backdrops.get(offer.backdrop);
+        if (!button)
+            continue;
+        button.disabled = offer.unavailable !== null;
+        button.title = offer.unavailable ?? '';
+        if (offer.unavailable)
+            why.push(offer.unavailable);
+    }
+    controls.backdropWhy.textContent = why.join('. ');
+    controls.backdropWhy.hidden = why.length === 0;
+    setSegment(controls.editors, chosen.editor);
+    // A field being typed in is ahead of what came back.
+    if (document.activeElement !== controls.command)
+        controls.command.value = chosen.editorCommand;
+    setToggle(controls.notify, chosen.notify);
+    setToggle(controls.background, chosen.notifyInBackground);
+    controls.background.disabled = !chosen.notify;
+    setSegment(controls.layouts, chosen.featureLayout);
+}
+// Following the system, a change of its light or dark changes the cards.
+dark.addEventListener('change', () => drawSettings());

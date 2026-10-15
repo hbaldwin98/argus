@@ -32,6 +32,7 @@ export const state = {
     review: null,
     history: null,
     sessions: null,
+    settings: null,
     reviewDraft: '',
     filter: '',
     archivedOpen: false,

@@ -36,7 +36,7 @@ and speaks the protocol over the child's stdin and stdout, as `argus --host` doe
 connect-or-start lives only in the terminal client. It greets like any client, keeps the last tree
 on screen while it tries again every two seconds, and shows what the bridge printed when a try
 fails. After `Stopping` it does not reconnect until the person presses Reconnect: a client never
-starts again a daemon somebody stopped. The system's title bar is put away: a sidebar runs to the window's top edge with Search (the palette), New, and the Workspace, Features and Checkouts stages above the project's rail, the connection and the chime at its foot, and a strip across the stage names what it shows beside the window's own buttons (macOS keeps its traffic lights; on Windows 11 resting on maximize opens snap layouts). The project heading above the
+starts again a daemon somebody stopped. The system's title bar is put away: a sidebar runs to the window's top edge with Search (the palette), New, and the Workspace, Features and Checkouts stages above the project's rail, the connection, the chime and the settings at its foot, and a strip across the stage names what it shows beside the window's own buttons (macOS keeps its traffic lights; on Windows 11 resting on maximize opens snap layouts). The project heading above the
 rail opens the switcher: each project with how many of its agents need you or are working, then
 Add a project…, Switch workspace… (the daemon's, so every client follows), Connect to a host…
 (listed, for remote hosts after the MVP), and Remove, which asks first and leaves the folders alone.
@@ -78,12 +78,26 @@ pane, so from one the pane commands find nothing on screen, and a held or archiv
 unfolds the Feature index to it. `?` (in a pane, the leader and `?`) opens the shortcuts sheet,
 which is the table's groups drawn whole, opening with the rule that a pane has every key but the
 leader. Both are drawn over everything, a review included, and a pane's leader key reaches them as a
-`Run` event, since only the page draws them. The leader and `f` fill the window with the pane,
+`Run` event, since only the page draws them. So does the Settings dialog, `Ctrl-,` (in a pane, the
+leader and `,`), also in the palette and behind the gear at the sidebar's foot: the theme (Mocha,
+Macchiato, Frappé or Latte, or following the system as Mocha in the dark and Latte in the light),
+the background's opacity and what shows through it, where a file opens and the editor command, the
+system notification an agent coming to need you raises, and the layout a repository's Feature index
+opens as before it remembers its own. Each choice is a call that `preferences` holds and saves as it
+is made, and the page draws the look from what comes back. The window is always built transparent,
+since that can only be set as it is made, so the opacity is only the page's alpha on its large fills
+— the sidebar, the strip, the stages and the terminal's background — and never on text or borders,
+and moving it never rebuilds the window. What shows through is Clear, or on Windows Mica (Windows 11
+only, greyed out with the reason elsewhere) or Acrylic, which `backdrop` puts on and takes off the
+live window through `window-vibrancy`; elsewhere only Clear is offered. A notification names the
+pane, what came of it and where, for an agent turning waiting, needs-review or failed, never for the
+pane watched in a focused window, and by default only while the window is in the background: the
+window's version of the terminal client's bell, beside its chime. The leader and `f` fill the window with the pane,
 putting the sidebar away until the same keys again. The Feature stage
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `projects`, `chime`, with `keys`, `dom`, `state`
+`palette`, `shortcuts`, `settings`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `projects`, `chime`, with `keys`, `dom`, `state`
 and `tauri` beneath them),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
@@ -338,6 +352,9 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `switcher` | what the project switcher offers beyond the tree's projects — the daemon's workspaces — and the project waiting on a yes to be removed |
 | `add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — and what its gestures ask of the daemon |
 | `status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
+| `preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
+| `notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
+| `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
 | `shown` | the pane the window shows: its subscription and size on this connection, its view, whether it fills the window, and whether the leader waits on the next key |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
 | `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
@@ -355,7 +372,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `feature_view` | what a feature opened from the index shows: its tasks and decisions as `outline` reads them, and the task or decision under the cursor in full |
 | `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it, checked against the protocol's bounds |
 | `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, and whether the board holds the feature it was sent as yet |
-| `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, and the side and layout a review opens on |
+| `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, and the Settings dialog's choices |
 | `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
 | `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
@@ -523,7 +540,16 @@ follows the pane when a pane row or the terminal has focus; project and checkout
 Configuration uses `ARGUS_CONFIG_DIR` when set and the platform config directory otherwise.
 
 - `projects.toml` declares workspaces, projects, and agent templates. Argus only reads it.
-- `client.toml` stores theme, editor, and client layout settings.
+- `client.toml` stores the terminal client's theme, editor, and layout settings.
+- `desktop.json` stores the desktop window's: what it remembers (each repository's index layout, the
+  agent last started, the chime, the review's side and layout) and what its Settings dialog sets.
+  It is a file of its own rather than a section of `client.toml`. The two clients overlap only in
+  the editor mode and command and a theme's name, and even those part ways: the window's theme can
+  follow the system, which the terminal's cannot, and its notification is on by default where the
+  bell is off. Every terminal client writes its whole `client.toml` from the copy it loaded, so a
+  second writer's changes would be quietly undone by the next theme change in a terminal, and the
+  file would become a contract both binaries had to keep in `argus-protocol`. Each client keeps its
+  own, and an editor set in one is set again in the other.
 - `runtime.db` holds everything Argus writes: panes to relaunch, projects and repositories added
   from the TUI, projects and repositories removed from the panel, workspaces created at runtime,
   when each repository last had a pane close in it, and the daemon-wide selected workspace.
@@ -1912,7 +1938,8 @@ Floating panes close through leader-Escape, F12, clicking outside, or process ex
 floating editor kills it; closing a window over a listed pane only hides the window.
 
 Settings save immediately to `client.toml`. The client ships Catppuccin Mocha, Macchiato, Frappe,
-and Latte themes. `ARGUS_THEME` overrides the stored startup theme.
+and Latte themes. `ARGUS_THEME` overrides the stored startup theme. The desktop window keeps its own
+editor mode and command in `desktop.json` and sends them with each file it opens.
 
 ## Testing
 
