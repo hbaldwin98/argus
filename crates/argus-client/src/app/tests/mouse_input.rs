@@ -161,7 +161,7 @@ fn a_release_is_dropped_for_a_child_that_only_reports_presses() {
     laid_out(&mut h);
     let pane = h.app.column_pane().unwrap();
     wants_mouse(&mut h, pane);
-    h.app.grids.get_mut(&pane).unwrap().mouse.mode = argus_protocol::MouseMode::Press;
+    wants_mouse_mode(&mut h, pane, argus_protocol::MouseMode::Press);
     h.sent();
 
     h.app.on_mouse(MouseEvent {
@@ -185,7 +185,7 @@ fn dragging_in_a_shell_copies_from_its_visible_grid() {
     h.app.clipboard_write = accepts_copy;
     h.app.grids.insert(
         pane,
-        crate::grid::Grid::new(vec!["shell output"
+        crate::fixtures::pane_view(pane, vec!["shell output"
             .chars()
             .map(|ch| Cell {
                 ch: ch.to_string().into(),
@@ -209,7 +209,7 @@ fn dragging_in_a_shell_copies_from_its_visible_grid() {
             .selection
             .as_ref()
             .unwrap()
-            .text(h.app.grids[&pane].view()),
+            .text(h.app.grids[&pane].rows()),
         "shell"
     );
     assert!(!h
@@ -225,13 +225,15 @@ fn shift_drag_copies_locally_instead_of_reaching_a_mouse_aware_child() {
     let pane = h.app.column_pane().unwrap();
     wants_mouse(&mut h, pane);
     h.app.clipboard_write = accepts_copy;
-    h.app.grids.get_mut(&pane).unwrap().cells = vec!["abcdefgh"
-        .chars()
-        .map(|ch| Cell {
-            ch: ch.to_string().into(),
-            ..Default::default()
-        })
-        .collect()];
+    crate::fixtures::reshow(h.app.grids.get_mut(&pane).unwrap(), |shown| {
+        shown.cells = vec!["abcdefgh"
+            .chars()
+            .map(|ch| Cell {
+                ch: ch.to_string().into(),
+                ..Default::default()
+            })
+            .collect()];
+    });
     h.sent();
     let shifted = |kind| MouseEvent {
         kind,
@@ -264,7 +266,7 @@ fn a_shell_drag_keeps_its_release_after_leaving_the_pane() {
     h.app.clipboard_write = accepts_copy;
     h.app.grids.insert(
         pane,
-        crate::grid::Grid::new(vec![
+        crate::fixtures::pane_view(pane, vec![
             vec![
                 Cell {
                     ch: "x".into(),

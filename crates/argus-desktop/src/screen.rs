@@ -1,116 +1,52 @@
-//! A pane's screen as the page draws it: the grid the daemon's damage lands
-//! on, and the rows changed since the last frame.
+//! A pane's screen as the page draws it: the rows of the pane's view that
+//! changed since the last frame, as styled segments.
 //!
-//! A view parked above the live screen is drawn from rows the daemon read
-//! out of the pane's history, while damage keeps landing on the live grid
-//! underneath, so returning to the bottom is immediate. The parked rows are
-//! not re-read as output arrives: they are what the person scrolled up to
-//! read, and would otherwise move out from under them.
-//!
-//! The grid is decoded with the protocol's own `grid_from_runs`,
-//! `Scroll::apply` and `CellRun::apply`, never a copy in the page, so this
-//! window reads damage exactly as the terminal client does.
+//! What the view holds — the live grid, a view parked in the history, how
+//! the daemon's messages and the person's scrolling change them — is
+//! `argus_protocol::pane_view`'s, the same one the terminal client keeps,
+//! so this window reads damage and scrolls exactly as that client does.
 
-use argus_protocol::{grid_from_runs, Cell, Color, Cursor, CursorShape, MouseTracking, PaneId, ServerMsg, BLANK};
+use argus_protocol::pane_view::{Effect, PaneView, Redraw};
+use argus_protocol::{Cell, Color, Cursor, CursorShape, MouseTracking, PaneId, ServerMsg, BLANK};
 use unicode_width::UnicodeWidthChar;
 
 use crate::page::{Frame, FrameCursor, Parked, Segment, BOLD, ITALIC, REVERSE, UNDERLINE, WIDE};
 
-/// A view above the live screen: how far up, how far the history goes,
-/// the daemon's number for its first line, and the rows there.
-struct View {
-    offset: u32,
-    depth: u32,
-    top: Option<u64>,
-    grid: Vec<Vec<Cell>>,
-}
-
 pub struct Screen {
-    pane: PaneId,
-    rows: u16,
-    cols: u16,
-    grid: Vec<Vec<Cell>>,
-    cursor: Cursor,
-    alternate_screen: bool,
+    view: PaneView,
     /// Rows changed since the last frame.
     dirty: Vec<bool>,
-    /// Every row is to be sent: a new grid, or a page that holds nothing.
+    /// Every row is to be sent: a new grid, a view that moved, or a page
+    /// that holds nothing.
     full: bool,
-    cursor_moved: bool,
-    /// Whether the daemon has sent the grid yet; damage before it has
-    /// nothing to land on.
-    received: bool,
-    parked: Option<View>,
-    /// What mouse reports the child asked for.
-    mouse: MouseTracking,
+    /// The cursor and modes the last frame carried, so a frame goes out
+    /// when only they changed.
+    sent: Option<(Cursor, MouseTracking, bool)>,
 }
 
 impl Screen {
     pub fn new(pane: PaneId) -> Screen {
-        Screen {
-            pane,
-            rows: 0,
-            cols: 0,
-            grid: Vec::new(),
-            cursor: Cursor::default(),
-            alternate_screen: false,
-            dirty: Vec::new(),
-            full: false,
-            cursor_moved: false,
-            received: false,
-            parked: None,
-            mouse: MouseTracking::default(),
-        }
+        Screen { view: PaneView::new(pane), dirty: Vec::new(), full: false, sent: None }
     }
 
-    /// Applies a screen message for this pane. Returns false for anything
-    /// else, which is left alone.
-    pub fn apply(&mut self, msg: &ServerMsg) -> bool {
-        match msg {
-            ServerMsg::PaneRows { pane, rows, cols, runs, cursor, mouse, alternate_screen } if *pane == self.pane => {
-                self.replace(*rows, *cols, grid_from_runs(*rows, *cols, runs));
-                self.moved(*cursor, *mouse, *alternate_screen);
-            }
-            ServerMsg::PaneSnapshot { pane, rows, cols, cells, cursor, mouse, alternate_screen } if *pane == self.pane => {
-                self.replace(*rows, *cols, cells.clone());
-                self.moved(*cursor, *mouse, *alternate_screen);
-            }
-            ServerMsg::RowDamage { pane, scroll, runs, cursor, mouse, alternate_screen } if *pane == self.pane => {
-                if !self.received {
-                    return true;
-                }
-                // The scroll moves what the runs were diffed against, so it
-                // goes first, and every row it touched is redrawn.
-                if let Some(scroll) = scroll {
-                    scroll.apply(&mut self.grid);
-                    let bottom = (scroll.bottom as usize).min(self.dirty.len());
-                    let top = (scroll.top as usize).min(bottom);
-                    self.dirty[top..bottom].fill(true);
-                }
-                for run in runs {
-                    run.apply(&mut self.grid);
-                    self.mark(run.row);
-                }
-                self.moved(*cursor, *mouse, *alternate_screen);
-            }
-            ServerMsg::Damage { pane, spans, cursor, mouse, alternate_screen } if *pane == self.pane => {
-                if !self.received {
-                    return true;
-                }
-                for span in spans {
-                    let Some(row) = self.grid.get_mut(span.row as usize) else {
-                        continue;
-                    };
-                    for (slot, cell) in row.iter_mut().skip(span.col as usize).zip(&span.cells) {
-                        *slot = cell.clone();
-                    }
-                    self.mark(span.row);
-                }
-                self.moved(*cursor, *mouse, *alternate_screen);
-            }
-            _ => return false,
-        }
-        true
+    pub fn view(&self) -> &PaneView {
+        &self.view
+    }
+
+    /// Applies a message about this pane's view; `None` for anything else,
+    /// which is left alone.
+    pub fn receive(&mut self, msg: &ServerMsg) -> Option<Effect> {
+        let effect = self.view.receive(msg)?;
+        self.redraw(&effect.redraw);
+        Some(effect)
+    }
+
+    /// Runs a gesture on the view, keeping what it redraws for the next
+    /// frame and handing back what it asks.
+    pub fn gesture(&mut self, gesture: impl FnOnce(&mut PaneView) -> Effect) -> Effect {
+        let effect = gesture(&mut self.view);
+        self.redraw(&effect.redraw);
+        effect
     }
 
     /// Sends every row with the next frame: the page reloaded, or came back
@@ -119,117 +55,45 @@ impl Screen {
         self.full = true;
     }
 
-    pub fn rows(&self) -> u16 {
-        self.rows
-    }
-
-    pub fn alternate_screen(&self) -> bool {
-        self.alternate_screen
-    }
-
-    pub fn mouse(&self) -> MouseTracking {
-        self.mouse
-    }
-
-    /// How far up the view is parked, how deep the history was last said
-    /// to go, and the number of its first line; `None` while live.
-    pub fn parked(&self) -> Option<(u32, u32, Option<u64>)> {
-        self.parked.as_ref().map(|view| (view.offset, view.depth, view.top))
-    }
-
-    /// Parks the view `offset` lines up. Until the daemon's rows arrive it
-    /// shows what it showed, so the pane never blanks for a frame.
-    pub fn park(&mut self, offset: u32, top: Option<u64>) {
-        match &mut self.parked {
-            Some(view) => {
-                view.offset = offset;
-                view.top = top;
-            }
-            None => {
-                self.parked = Some(View { offset, depth: 0, top, grid: self.grid.clone() });
-                self.full = true;
-            }
-        }
-    }
-
-    /// Back on the live screen, drawn whole: whatever arrived while parked
-    /// is already on it.
-    pub fn unpark(&mut self) {
-        if self.parked.take().is_some() {
-            self.full = true;
-        }
-    }
-
-    /// The rows the daemon read from the history. Taken only while parked:
-    /// an answer arriving after the view went back to live is stale and
-    /// must not pull it up again. False when the daemon reached nothing
-    /// behind the live screen, which leaves the view live.
-    pub fn scrolled(&mut self, offset: u32, depth: u32, top: Option<u64>, mut grid: Vec<Vec<Cell>>) -> bool {
-        let Some(view) = &mut self.parked else {
-            return true;
-        };
-        if offset == 0 {
-            self.unpark();
-            return false;
-        }
-        grid.resize(self.rows as usize, vec![Cell::default(); self.cols as usize]);
-        *view = View { offset, depth, top, grid };
-        self.full = true;
-        true
-    }
-
     /// What changed since the last frame, or `None` when nothing did. A
     /// parked view sends only its own rows, and only when they change.
     pub fn take_frame(&mut self) -> Option<Frame> {
-        if !self.received {
+        if !self.view.received() {
             return None;
         }
-        if let Some(view) = &self.parked {
-            if !self.full {
-                return None;
-            }
-            self.full = false;
-            self.cursor_moved = false;
-            self.dirty.fill(false);
-            return Some(Frame {
-                pane: self.pane.0,
-                rows: self.rows,
-                cols: self.cols,
-                full: true,
-                cursor: FrameCursor { row: 0, col: 0, visible: false, shape: "block" },
-                alternate_screen: self.alternate_screen,
-                mouse: self.mouse.enabled(),
-                lines: (0..self.rows).map(|row| (row, segments(&view.grid[row as usize]))).collect(),
-                parked: Some(Parked { offset: view.offset, depth: view.depth.max(view.offset) }),
-            });
-        }
-        let any_row = self.full || self.dirty.iter().any(|d| *d);
-        if !any_row && !self.cursor_moved {
-            return None;
-        }
+        let (rows, cols) = self.view.size();
+        let modes = (self.view.cursor(), self.view.mouse(), self.view.alternate_screen());
+        let parked = self.view.parked();
+        let moved = parked.is_none() && self.sent != Some(modes);
         let full = self.full;
-        let lines = (0..self.rows)
+        if !full && !moved && !self.dirty.contains(&true) {
+            return None;
+        }
+        let drawn = self.view.rows();
+        let lines = (0..rows)
             .filter(|row| full || self.dirty[*row as usize])
-            .map(|row| (row, segments(&self.grid[row as usize])))
+            .map(|row| (row, segments(&drawn[row as usize])))
             .collect();
         self.full = false;
-        self.cursor_moved = false;
         self.dirty.fill(false);
+        self.sent = Some(modes);
+        let (cursor, mouse, alternate_screen) = modes;
+        // A parked view is history: the child's cursor is on the live
+        // screen, which is not the one drawn.
+        let cursor = match parked {
+            Some(_) => FrameCursor { row: 0, col: 0, visible: false, shape: "block" },
+            None => FrameCursor { row: cursor.row, col: cursor.col, visible: cursor.visible, shape: shape(cursor.shape) },
+        };
         Some(Frame {
-            pane: self.pane.0,
-            rows: self.rows,
-            cols: self.cols,
+            pane: self.view.pane().0,
+            rows,
+            cols,
             full,
-            cursor: FrameCursor {
-                row: self.cursor.row,
-                col: self.cursor.col,
-                visible: self.cursor.visible,
-                shape: shape(self.cursor.shape),
-            },
-            alternate_screen: self.alternate_screen,
-            mouse: self.mouse.enabled(),
+            cursor,
+            alternate_screen,
+            mouse: mouse.enabled(),
             lines,
-            parked: None,
+            parked: parked.map(|view| Parked { offset: view.offset, depth: view.depth }),
         })
     }
 
@@ -238,7 +102,7 @@ impl Screen {
     /// trailing blanks dropped, rows joined by newlines.
     pub fn text(&self, a: (u16, u16), b: (u16, u16)) -> String {
         let (start, end) = if a <= b { (a, b) } else { (b, a) };
-        let grid = self.parked.as_ref().map_or(&self.grid, |view| &view.grid);
+        let grid = self.view.rows();
         let last = (end.0 as usize).min(grid.len().saturating_sub(1));
         let mut lines = Vec::new();
         for (index, row) in grid.iter().enumerate().take(last + 1).skip(start.0 as usize) {
@@ -258,29 +122,21 @@ impl Screen {
         lines.join("\n")
     }
 
-    fn replace(&mut self, rows: u16, cols: u16, grid: Vec<Vec<Cell>>) {
-        self.rows = rows;
-        self.cols = cols;
-        self.grid = grid;
-        self.grid.resize(rows as usize, vec![Cell::default(); cols as usize]);
-        self.dirty = vec![false; rows as usize];
-        self.full = true;
-        self.received = true;
-    }
-
-    fn mark(&mut self, row: u16) {
-        if let Some(dirty) = self.dirty.get_mut(row as usize) {
-            *dirty = true;
+    fn redraw(&mut self, redraw: &Redraw) {
+        match redraw {
+            Redraw::Nothing => {}
+            Redraw::Rows(rows) => {
+                for row in rows {
+                    if let Some(dirty) = self.dirty.get_mut(*row as usize) {
+                        *dirty = true;
+                    }
+                }
+            }
+            Redraw::All => {
+                self.dirty = vec![false; self.view.size().0 as usize];
+                self.full = true;
+            }
         }
-    }
-
-    fn moved(&mut self, cursor: Cursor, mouse: MouseTracking, alternate_screen: bool) {
-        if cursor != self.cursor || alternate_screen != self.alternate_screen || mouse != self.mouse {
-            self.cursor_moved = true;
-        }
-        self.cursor = cursor;
-        self.mouse = mouse;
-        self.alternate_screen = alternate_screen;
     }
 }
 
@@ -398,33 +254,29 @@ mod tests {
     #[test]
     fn a_snapshot_sends_every_row_then_damage_only_the_rows_it_touched() {
         let mut screen = Screen::new(PANE);
-        screen.apply(&rows(Cursor::default(), &["one", "two", "three"], 8));
+        screen.receive(&rows(Cursor::default(), &["one", "two", "three"], 8));
         let first = screen.take_frame().unwrap();
         assert!(first.full);
         assert_eq!(lines(&first), [(0, "one".into()), (1, "two".into()), (2, "three".into())]);
 
         let run = CellRun::encode(1, 0, &row("TWO", 3));
-        screen.apply(&damage(None, vec![run], Cursor::default()));
+        screen.receive(&damage(None, vec![run], Cursor::default()));
         let next = screen.take_frame().unwrap();
         assert!(!next.full);
         assert_eq!(lines(&next), [(1, "TWO".into())]);
     }
 
     #[test]
-    fn a_scroll_lands_before_the_runs_and_redraws_its_region() {
+    fn a_scroll_redraws_its_region() {
         let mut screen = Screen::new(PANE);
-        screen.apply(&rows(Cursor::default(), &["a", "b", "c", "d"], 4));
+        screen.receive(&rows(Cursor::default(), &["a", "b", "c", "d"], 4));
         screen.take_frame();
 
         let scroll = Scroll { top: 0, bottom: 3, up: 1 };
         let run = CellRun::encode(2, 0, &row("new", 3));
-        screen.apply(&damage(Some(scroll), vec![run], Cursor::default()));
+        screen.receive(&damage(Some(scroll), vec![run], Cursor::default()));
         let frame = screen.take_frame().unwrap();
-        assert_eq!(
-            lines(&frame),
-            [(0, "b".into()), (1, "c".into()), (2, "new".into())],
-            "the run lands on the row the scroll opened"
-        );
+        assert_eq!(lines(&frame), [(0, "b".into()), (1, "c".into()), (2, "new".into())]);
     }
 
     #[test]
@@ -441,7 +293,7 @@ mod tests {
             mouse: MouseTracking::default(),
             alternate_screen: false,
         };
-        screen.apply(&msg);
+        screen.receive(&msg);
         let frame = screen.take_frame().unwrap();
         let segs = &frame.lines[0].1;
         assert_eq!(segs.len(), 3, "{segs:?}");
@@ -464,10 +316,10 @@ mod tests {
     #[test]
     fn a_cursor_that_only_moved_sends_a_frame_with_no_lines() {
         let mut screen = Screen::new(PANE);
-        screen.apply(&rows(Cursor::default(), &["x"], 4));
+        screen.receive(&rows(Cursor::default(), &["x"], 4));
         screen.take_frame();
         let moved = Cursor { col: 3, ..Cursor::default() };
-        screen.apply(&damage(None, Vec::new(), moved));
+        screen.receive(&damage(None, Vec::new(), moved));
         let frame = screen.take_frame().unwrap();
         assert!(frame.lines.is_empty());
         assert_eq!(frame.cursor.col, 3);
@@ -477,19 +329,19 @@ mod tests {
     fn nothing_changed_is_no_frame() {
         let mut screen = Screen::new(PANE);
         assert!(screen.take_frame().is_none(), "nothing received yet");
-        screen.apply(&rows(Cursor::default(), &["x"], 4));
+        screen.receive(&rows(Cursor::default(), &["x"], 4));
         screen.take_frame();
         assert!(screen.take_frame().is_none());
-        screen.apply(&damage(None, Vec::new(), Cursor::default()));
+        screen.receive(&damage(None, Vec::new(), Cursor::default()));
         assert!(screen.take_frame().is_none(), "the same cursor is no change");
     }
 
     #[test]
     fn a_fresh_grid_replaces_the_dimensions() {
         let mut screen = Screen::new(PANE);
-        screen.apply(&rows(Cursor::default(), &["x"], 4));
+        screen.receive(&rows(Cursor::default(), &["x"], 4));
         screen.take_frame();
-        screen.apply(&rows(Cursor::default(), &["a", "b"], 9));
+        screen.receive(&rows(Cursor::default(), &["a", "b"], 9));
         let frame = screen.take_frame().unwrap();
         assert_eq!((frame.rows, frame.cols, frame.full), (2, 9, true));
     }
@@ -506,7 +358,7 @@ mod tests {
             mouse: MouseTracking::default(),
             alternate_screen: false,
         };
-        screen.apply(&snapshot);
+        screen.receive(&snapshot);
         screen.take_frame();
         let spans = vec![CellSpan { row: 1, col: 1, cells: vec![cell("X")] }];
         let damage = ServerMsg::Damage {
@@ -516,21 +368,21 @@ mod tests {
             mouse: MouseTracking::default(),
             alternate_screen: false,
         };
-        screen.apply(&damage);
+        screen.receive(&damage);
         assert_eq!(lines(&screen.take_frame().unwrap()), [(1, "cX".into())]);
     }
 
     #[test]
     fn another_panes_screen_is_left_alone() {
         let mut screen = Screen::new(PaneId(99));
-        assert!(!screen.apply(&rows(Cursor::default(), &["x"], 4)));
+        assert!(screen.receive(&rows(Cursor::default(), &["x"], 4)).is_none());
         assert!(screen.take_frame().is_none());
     }
 
     #[test]
     fn a_refresh_sends_every_row_again() {
         let mut screen = Screen::new(PANE);
-        screen.apply(&rows(Cursor::default(), &["x", "y"], 4));
+        screen.receive(&rows(Cursor::default(), &["x", "y"], 4));
         screen.take_frame();
         screen.refresh();
         let frame = screen.take_frame().unwrap();
@@ -541,7 +393,7 @@ mod tests {
     #[test]
     fn a_backward_drag_copies_in_reading_order_without_trailing_blanks() {
         let mut screen = Screen::new(PANE);
-        screen.apply(&rows(Cursor::default(), &["abcdefgh", "ijkl"], 8));
+        screen.receive(&rows(Cursor::default(), &["abcdefgh", "ijkl"], 8));
         assert_eq!(screen.text((1, 3), (0, 1)), "bcdefgh\nijkl");
     }
 
@@ -550,7 +402,7 @@ mod tests {
         let mut screen = Screen::new(PANE);
         let mut cells = vec![cell("a"), cell("日"), cell(" "), cell("b")];
         cells.resize(6, Cell::default());
-        screen.apply(&ServerMsg::PaneSnapshot {
+        screen.receive(&ServerMsg::PaneSnapshot {
             pane: PANE,
             rows: 1,
             cols: 6,
@@ -565,23 +417,37 @@ mod tests {
     #[test]
     fn a_parked_view_draws_its_history_and_holds_still_under_live_output() {
         let mut screen = Screen::new(PANE);
-        screen.apply(&rows(Cursor::default(), &["live"], 8));
+        screen.receive(&rows(Cursor::default(), &["live"], 8));
         screen.take_frame();
-        screen.park(3, None);
-        screen.scrolled(3, 40, Some(7), vec![row("old", 8)]);
+        let _ = screen.gesture(|view| view.scroll(-3));
+        let history = ServerMsg::ScrollbackRows { pane: PANE, offset: 3, depth: 40, cells: vec![row("old", 8)] };
+        screen.receive(&history);
         let frame = screen.take_frame().unwrap();
         assert_eq!(frame.parked, Some(Parked { offset: 3, depth: 40 }));
         assert!(!frame.cursor.visible);
         assert_eq!(frame.lines[0].1[0].1.concat(), "old");
         assert_eq!(screen.text((0, 0), (0, 7)), "old");
 
-        screen.apply(&damage(None, vec![CellRun::encode(0, 0, &row("x", 1))], Cursor::default()));
+        screen.receive(&damage(None, vec![CellRun::encode(0, 0, &row("x", 1))], Cursor::default()));
         assert!(screen.take_frame().is_none(), "the parked rows do not move");
 
-        screen.unpark();
+        let _ = screen.gesture(PaneView::live);
         let frame = screen.take_frame().unwrap();
         assert!(frame.full && frame.parked.is_none());
         assert_eq!(frame.lines[0].1[0].1.concat(), "xive");
     }
-}
 
+    #[test]
+    fn a_parked_view_survives_a_screen_that_grew() {
+        // The parked rows were read at the old size; a frame drawn before
+        // the re-read must still cover every row.
+        let mut screen = Screen::new(PANE);
+        screen.receive(&rows(Cursor::default(), &["live"], 8));
+        let _ = screen.gesture(|view| view.scroll(-3));
+        screen.take_frame();
+        let resized = screen.receive(&rows(Cursor::default(), &["a", "b", "c"], 12)).unwrap();
+        assert!(matches!(resized.send, Some(argus_protocol::ClientMsg::Scrollback { offset: 3, .. })));
+        let frame = screen.take_frame().unwrap();
+        assert_eq!((frame.rows, frame.lines.len()), (3, 3));
+    }
+}

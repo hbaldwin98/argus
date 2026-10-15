@@ -32,7 +32,7 @@ use crate::app::{
 };
 use crate::brief::BriefMode;
 use crate::dirpicker::DirRow;
-use crate::grid::Grid;
+use argus_protocol::pane_view::PaneView;
 use argus_protocol::history_view::{HistoryRow, HistoryView};
 use argus_protocol::review_view::{ReviewView, Row};
 use crate::theme::Theme;

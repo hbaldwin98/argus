@@ -249,7 +249,7 @@ impl App {
     /// pane defaults to none, so nothing is forwarded until a snapshot has
     /// actually said otherwise.
     fn pane_mouse(&self, pane: PaneId) -> argus_protocol::MouseTracking {
-        self.grids.get(&pane).map(|g| g.mouse).unwrap_or_default()
+        self.grids.get(&pane).map(|view| view.mouse()).unwrap_or_default()
     }
 
     /// A pane without mouse reporting leaves left-drag to Argus. Shift is
@@ -290,7 +290,7 @@ impl App {
         let text = self
             .grids
             .get(&selection.pane)
-            .map(|grid| selection.text(grid.view()))
+            .map(|view| selection.text(view.rows()))
             .unwrap_or_default();
         if !selection.moved() || text.is_empty() {
             self.selection = None;
@@ -301,40 +301,22 @@ impl App {
         }
     }
 
-    /// Encode a mouse event for the child, or turn a wheel into a cursor
-    /// key when the child is on the alternate screen without mouse
-    /// reporting. That last path is xterm's alternate-scroll (DECSET 1007)
-    /// and what Claude, Codex, and Cursor Agent actually listen for.
+    /// Encode a mouse event for the child in the mode it asked for, or hand
+    /// a wheel notch to the pane's view, which decides between the child
+    /// and the history as the desktop window does.
     fn forward_mouse(&mut self, pane: PaneId, ev: &MouseEvent, area: Rect) {
-        if let Some(bytes) = encode_mouse(ev, area, self.pane_mouse(pane)) {
-            let _ = self.out.send(ClientMsg::Input { pane, bytes });
-            return;
-        }
-        if !self.grids.get(&pane).is_some_and(|g| g.alternate_screen) {
-            // The normal screen is the one with history behind it, so a
-            // wheel there moves this client's view rather than reaching the
-            // child at all. A shell prints and scrolls away; this is the
-            // only way back to what it said.
-            match ev.kind {
-                MouseEventKind::ScrollUp => {
-                    self.scroll_pane(pane, super::scroll::wheel_lines(true))
+        let notches = match ev.kind {
+            MouseEventKind::ScrollUp => -1,
+            MouseEventKind::ScrollDown => 1,
+            _ => {
+                if let Some(bytes) = encode_mouse(ev, area, self.pane_mouse(pane)) {
+                    let _ = self.out.send(ClientMsg::Input { pane, bytes });
                 }
-                MouseEventKind::ScrollDown => {
-                    self.scroll_pane(pane, super::scroll::wheel_lines(false))
-                }
-                _ => {}
+                return;
             }
-            return;
-        }
-        let code = match ev.kind {
-            MouseEventKind::ScrollUp => KeyCode::Up,
-            MouseEventKind::ScrollDown => KeyCode::Down,
-            _ => return,
         };
-        let bytes = encode_key(&KeyEvent::new(code, KeyModifiers::NONE));
-        if !bytes.is_empty() {
-            let _ = self.out.send(ClientMsg::Input { pane, bytes });
-        }
+        let at = (ev.row.saturating_sub(area.y), ev.column.saturating_sub(area.x));
+        self.wheel_pane(pane, notches, at);
     }
 
     pub fn resize_pane(&mut self, pane: PaneId, rows: u16, cols: u16) {

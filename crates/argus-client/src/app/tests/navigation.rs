@@ -453,7 +453,7 @@ fn damage_for_an_unsubscribed_pane_is_ignored() {
     let mut h = Harness::new();
     h.app.grids.insert(
         PaneId(100),
-        crate::grid::Grid::new(vec![vec![Cell::default()]]),
+        crate::fixtures::pane_view(PaneId(100), vec![vec![Cell::default()]]),
     );
     h.app.on_server_msg(ServerMsg::Damage {
         mouse: Default::default(),
@@ -469,7 +469,7 @@ fn damage_for_an_unsubscribed_pane_is_ignored() {
             }],
         }],
     });
-    assert_eq!(h.app.grids[&PaneId(100)].cells[0][0].ch, " ");
+    assert_eq!(h.app.grids[&PaneId(100)].rows()[0][0].ch, " ");
 }
 
 #[test]
@@ -497,7 +497,7 @@ fn damage_carries_the_childs_alternate_screen() {
     let mut h = Harness::new();
     h.app.grids.insert(
         PaneId(100),
-        crate::grid::Grid::new(vec![vec![Cell::default()]]),
+        crate::fixtures::pane_view(PaneId(100), vec![vec![Cell::default()]]),
     );
     h.app.on_server_msg(ServerMsg::Damage {
         mouse: Default::default(),
@@ -506,7 +506,7 @@ fn damage_carries_the_childs_alternate_screen() {
         cursor: Default::default(),
         spans: vec![],
     });
-    assert!(h.app.grids[&PaneId(100)].alternate_screen);
+    assert!(h.app.grids[&PaneId(100)].alternate_screen());
 }
 
 #[test]
@@ -520,13 +520,15 @@ fn reconnecting_asks_the_new_daemon_for_every_grid_on_screen() {
     h.keys("lll");
     h.sent();
     let pane = h.app.column_pane().expect("a pane is selected");
-    h.app.grids.get_mut(&pane).unwrap().cells = vec![vec![Cell::default()]];
+    crate::fixtures::reshow(h.app.grids.get_mut(&pane).unwrap(), |shown| {
+        shown.cells = vec![vec![Cell::default()]];
+    });
 
     let (tx, mut rx) = unbounded_channel();
     h.app.reconnect(tx);
 
     assert!(
-        h.app.grids[&pane].cells.is_empty(),
+        !h.app.grids[&pane].received(),
         "the stale grid survived the reconnect"
     );
     let resent: Vec<ClientMsg> = std::iter::from_fn(|| rx.try_recv().ok()).collect();

@@ -381,14 +381,10 @@ pub(super) fn app_scrolled_back(offset: u32, depth: u32, mark: char) -> App {
     app.focus = Focus::PaneContent;
     let pane = app.column_pane().expect("the fixture pane");
     let live = |c: char| vec![vec![cell(c); 30]; 5];
-    let mut grid = crate::grid::Grid::new(live('L'));
-    grid.scrollback = Some(crate::grid::Scrollback {
-        offset,
-        depth,
-        top: None,
-        cells: live(mark),
-    });
-    app.grids.insert(pane, grid);
+    let mut view = crate::fixtures::pane_view(pane, live('L'));
+    let _ = view.scroll(-(offset as i32));
+    let _ = view.receive(&argus_protocol::ServerMsg::ScrollbackRows { pane, offset, depth, cells: live(mark) });
+    app.grids.insert(pane, view);
     app
 }
 

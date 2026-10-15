@@ -1,4 +1,5 @@
-//! Parking a pane's view above its live screen.
+//! That the client hands its scroll gestures and the daemon's history
+//! to a pane's view; how the view behaves is `pane_view`'s, tested there.
 
 use super::*;
 #[test]
@@ -36,44 +37,7 @@ fn scrolling_back_draws_the_rows_the_daemon_answers_with() {
     answer_scrollback(&mut h, pane, 3, 500, 'H');
 
     assert_eq!(drawn_mark(&h, pane), "H");
-    assert!(h.app.grids[&pane].is_scrolled());
-}
-
-#[test]
-fn scrolling_back_down_to_the_bottom_returns_to_the_live_screen() {
-    let mut h = Harness::new();
-    let pane = live_pane(&mut h);
-    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
-    answer_scrollback(&mut h, pane, 3, 500, 'H');
-    h.sent();
-
-    h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
-
-    assert!(!h.app.grids[&pane].is_scrolled());
-    assert_eq!(drawn_mark(&h, pane), " ", "the live grid, still current");
-    assert!(
-        h.sent().is_empty(),
-        "the live screen is already streaming; asking for it again is waste"
-    );
-}
-
-#[test]
-fn scrolling_stops_at_the_depth_the_daemon_reported() {
-    let mut h = Harness::new();
-    let pane = live_pane(&mut h);
-    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
-    answer_scrollback(&mut h, pane, 3, 4, 'H');
-    h.sent();
-
-    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
-    assert_eq!(scrollback_asks(&mut h), [4]);
-
-    answer_scrollback(&mut h, pane, 4, 4, 'T');
-    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
-    assert!(
-        h.sent().is_empty(),
-        "already at the top: no point asking for rows that do not exist"
-    );
+    assert!(h.app.grids[&pane].parked().is_some());
 }
 
 #[test]
@@ -87,7 +51,7 @@ fn a_daemon_with_nothing_behind_the_screen_leaves_the_pane_live() {
 
     answer_scrollback(&mut h, pane, 0, 0, 'X');
 
-    assert!(!h.app.grids[&pane].is_scrolled());
+    assert!(h.app.grids[&pane].parked().is_none());
     assert_eq!(drawn_mark(&h, pane), " ");
 }
 
@@ -103,7 +67,7 @@ fn typing_snaps_a_scrolled_pane_back_to_the_live_screen() {
 
     h.key(KeyCode::Char('x'));
 
-    assert!(!h.app.grids[&pane].is_scrolled());
+    assert!(h.app.grids[&pane].parked().is_none());
     assert!(
         h.sent()
             .iter()
@@ -121,8 +85,8 @@ fn shift_page_up_pages_by_a_screen_and_leaves_the_child_its_own_keys() {
         .on_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::SHIFT));
     assert_eq!(
         scrollback_asks(&mut h),
-        [5],
-        "the content panel is six rows, paged with one line of overlap"
+        [2],
+        "the pane is three rows, paged with one line of overlap"
     );
 
     h.app
@@ -148,22 +112,6 @@ fn a_scrolled_pane_says_so_in_its_title() {
 }
 
 #[test]
-fn a_stale_answer_cannot_pull_a_pane_that_went_live_back_up() {
-    let mut h = Harness::new();
-    let pane = live_pane(&mut h);
-    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
-    h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
-    assert!(!h.app.grids[&pane].is_scrolled());
-
-    answer_scrollback(&mut h, pane, 3, 500, 'H');
-
-    assert!(
-        !h.app.grids[&pane].is_scrolled(),
-        "the request was abandoned before its answer arrived"
-    );
-}
-
-#[test]
 fn a_resize_re_reads_the_parked_rows_at_the_new_width() {
     // A snapshot is how a resize reaches the client. The parked rows are
     // the old width, and only a fresh read can replace them.
@@ -184,7 +132,7 @@ fn a_resize_re_reads_the_parked_rows_at_the_new_width() {
     });
 
     assert_eq!(scrollback_asks(&mut h), [3]);
-    assert!(h.app.grids[&pane].is_scrolled(), "and stays where it was");
+    assert!(h.app.grids[&pane].parked().is_some(), "and stays where it was");
 }
 
 #[test]
@@ -253,7 +201,7 @@ fn a_grid_sent_as_runs_is_the_grid_the_pane_draws() {
         alternate_screen: false,
     });
 
-    assert_eq!(h.app.grids[&pane].cells, cells);
+    assert_eq!(h.app.grids[&pane].live_rows(), cells);
 }
 
 #[test]
@@ -275,41 +223,5 @@ fn history_sent_as_runs_draws_the_same_as_history_sent_as_cells() {
     });
 
     assert_eq!(drawn_mark(&h, pane), "H");
-    assert!(h.app.grids[&pane].is_scrolled());
-}
-
-#[test]
-fn scrolling_a_numbered_view_further_asks_from_its_line() {
-    // Output kept coming while the view was parked, so an offset from the
-    // live screen would land somewhere else; the line number does not.
-    let mut h = Harness::new();
-    let pane = live_pane(&mut h);
-    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
-    h.app.on_server_msg(ServerMsg::ScrollbackRuns {
-        pane,
-        offset: 3,
-        depth: 500,
-        rows: 3,
-        cols: 4,
-        runs: Vec::new(),
-        top: Some(120),
-    });
-    h.sent();
-
-    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
-    h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
-    h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
-    let asked: Vec<(u32, Option<u64>)> = h
-        .sent()
-        .iter()
-        .filter_map(|m| match m {
-            ClientMsg::Scrollback { offset, top, .. } => Some((*offset, *top)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        asked,
-        [(6, Some(117)), (3, Some(120))],
-        "three lines older, back again, then the live screen asks for nothing"
-    );
+    assert!(h.app.grids[&pane].parked().is_some());
 }

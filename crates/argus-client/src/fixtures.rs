@@ -1,10 +1,48 @@
-//! Tree builders every test module shares, so a field added to the wire
-//! tree is filled in here rather than in every test that builds one.
+//! The builders every test module shares — the tree, and a pane's view as
+//! the daemon's messages leave it — so a field added to the wire is filled
+//! in here rather than in every test that builds one.
 
+use argus_protocol::pane_view::PaneView;
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo,
-    RepositoryId, RepositoryInfo,
+    Cell, CheckoutId, CheckoutInfo, Cursor, MouseTracking, PaneId, PaneInfo, PaneKind, PaneStatus,
+    ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg,
 };
+
+/// What a snapshot of a pane says.
+pub(crate) struct Shown {
+    pub cells: Vec<Vec<Cell>>,
+    pub cursor: Cursor,
+    pub mouse: MouseTracking,
+    pub alternate_screen: bool,
+}
+
+/// A view of `pane` showing `cells`, as the daemon's snapshot leaves it.
+pub(crate) fn pane_view(pane: PaneId, cells: Vec<Vec<Cell>>) -> PaneView {
+    let mut view = PaneView::new(pane);
+    reshow(&mut view, |shown| shown.cells = cells);
+    view
+}
+
+/// Changes what `view` shows the way the daemon would, with a snapshot:
+/// whatever `change` leaves alone stays as it was.
+pub(crate) fn reshow(view: &mut PaneView, change: impl FnOnce(&mut Shown)) {
+    let mut shown = Shown {
+        cells: view.live_rows().to_vec(),
+        cursor: view.cursor(),
+        mouse: view.mouse(),
+        alternate_screen: view.alternate_screen(),
+    };
+    change(&mut shown);
+    let _ = view.receive(&ServerMsg::PaneSnapshot {
+        pane: view.pane(),
+        rows: shown.cells.len() as u16,
+        cols: shown.cells.first().map_or(0, Vec::len) as u16,
+        cells: shown.cells,
+        cursor: shown.cursor,
+        mouse: shown.mouse,
+        alternate_screen: shown.alternate_screen,
+    });
+}
 
 pub(crate) fn pane_info(id: u64, kind: PaneKind, title: &str, status: PaneStatus) -> PaneInfo {
     PaneInfo {

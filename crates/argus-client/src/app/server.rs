@@ -34,7 +34,7 @@ impl App {
             // The entry doubles as the record that this pane has been
             // asked for; the snapshot replaces the placeholder.
             if let std::collections::hash_map::Entry::Vacant(slot) = self.grids.entry(id) {
-                slot.insert(Grid::new(Vec::new()));
+                slot.insert(PaneView::new(id));
                 let _ = self.out.send(ClientMsg::Subscribe { pane: id });
             }
         }
@@ -118,59 +118,19 @@ impl App {
                     .unwrap_or_default();
                 self.workspaces = list;
             }
-            ServerMsg::PaneSnapshot {
-                pane,
-                cells,
-                cursor,
-                mouse,
-                alternate_screen,
-                ..
-            } => {
-                let mut grid = Grid::with_cursor(cells, cursor, mouse);
-                grid.alternate_screen = alternate_screen;
-                self.receive_grid(pane, grid);
-            }
-            ServerMsg::PaneRows {
-                pane,
-                rows,
-                cols,
-                runs,
-                cursor,
-                mouse,
-                alternate_screen,
-            } => {
-                let cells = argus_protocol::grid_from_runs(rows, cols, &runs);
-                let mut grid = Grid::with_cursor(cells, cursor, mouse);
-                grid.alternate_screen = alternate_screen;
-                self.receive_grid(pane, grid);
-            }
-            ServerMsg::Damage {
-                pane,
-                spans,
-                cursor,
-                mouse,
-                alternate_screen,
-            } => {
-                if let Some(grid) = self.grids.get_mut(&pane) {
-                    grid.apply(&spans);
-                    grid.move_cursor(cursor);
-                    grid.mouse = mouse;
-                    grid.alternate_screen = alternate_screen;
-                }
-            }
-            ServerMsg::RowDamage {
-                pane,
-                scroll,
-                runs,
-                cursor,
-                mouse,
-                alternate_screen,
-            } => {
-                if let Some(grid) = self.grids.get_mut(&pane) {
-                    grid.apply_rows(scroll, &runs);
-                    grid.move_cursor(cursor);
-                    grid.mouse = mouse;
-                    grid.alternate_screen = alternate_screen;
+            // Only for a pane this client holds a view of: one it let go of
+            // meanwhile stays gone.
+            msg @ (ServerMsg::PaneSnapshot { .. }
+            | ServerMsg::PaneRows { .. }
+            | ServerMsg::Damage { .. }
+            | ServerMsg::RowDamage { .. }
+            | ServerMsg::ScrollbackRows { .. }
+            | ServerMsg::ScrollbackRuns { .. }) => {
+                let effect = PaneView::about(&msg)
+                    .and_then(|pane| self.grids.get_mut(&pane))
+                    .and_then(|view| view.receive(&msg));
+                if let Some(effect) = effect {
+                    self.take_view_effect(effect);
                 }
             }
             ServerMsg::Clipboard { text, .. } => {
@@ -179,26 +139,6 @@ impl App {
                 } else {
                     self.alert("could not write to the clipboard");
                 }
-            }
-            ServerMsg::ScrollbackRows {
-                pane,
-                offset,
-                depth,
-                cells,
-            } => {
-                self.receive_scrollback(pane, offset, depth, None, cells);
-            }
-            ServerMsg::ScrollbackRuns {
-                pane,
-                offset,
-                depth,
-                rows,
-                cols,
-                runs,
-                top,
-            } => {
-                let cells = argus_protocol::grid_from_runs(rows, cols, &runs);
-                self.receive_scrollback(pane, offset, depth, top, cells);
             }
             ServerMsg::PaneClosed { pane, code } => {
                 self.receive_pane_closed(pane, code);
@@ -406,22 +346,6 @@ impl App {
         match restore_position_by_id(self.feature_diagrams(), |d| d.id, was) {
             Some(at) => self.diagram_sel = at,
             None => self.clamp_feature_cursors(),
-        }
-    }
-
-    /// A pane's whole grid, in whichever form it came. Only for a pane this
-    /// client is holding a grid for: one it let go of meanwhile stays gone.
-    fn receive_grid(&mut self, pane: PaneId, grid: Grid) {
-        let Some(previous) = self.grids.get(&pane) else {
-            return;
-        };
-        // A snapshot is how a resize reaches the client, so a parked view
-        // has to be re-read: its rows are the old width and nothing else
-        // will replace them.
-        let parked = previous.scrollback.as_ref().map(|sb| (sb.offset, sb.top));
-        self.grids.insert(pane, grid);
-        if let Some((offset, top)) = parked {
-            self.park_pane(pane, offset, top);
         }
     }
 

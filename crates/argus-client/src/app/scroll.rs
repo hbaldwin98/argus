@@ -1,152 +1,53 @@
-//! Moving a pane's view up into what has already scrolled past.
+//! Which pane a scroll gesture moves, and how a parked pane says so.
 //!
-//! The daemon owns the history; this module owns only where the pane is
-//! parked in it. An offset is a request, and the rows arrive a frame later
-//! as `ScrollbackRows` — so nothing here waits for an answer, and a burst
-//! of wheel notches costs one request each rather than a stall apiece.
-//!
-//! While a pane is parked, its live grid keeps taking damage underneath.
-//! The parked rows are deliberately *not* refreshed as that arrives: they
-//! are what the operator scrolled up to read, and a pane still producing
-//! output would otherwise shift the text out from under them on every
-//! frame. Dropping back to the bottom shows the live screen, current.
-//!
-//! Scrolling further is asked by line — the number the daemon gave the
-//! view's first row — so it moves from the text on screen, however much
-//! output has pushed that text back meanwhile.
+//! What a gesture does to a pane's view — the wheel's decision between the
+//! child and the history, where the view parks, what it asks the daemon —
+//! is `argus_protocol::pane_view`'s, shared with the desktop window; this
+//! hands it the gesture and carries out what it answers.
 
 use super::*;
-use argus_protocol::Cell;
-
-/// Wheel notches move three lines, matching what terminals send for one
-/// detent of a physical wheel.
-const WHEEL_LINES: i32 = 3;
+use argus_protocol::pane_view::Effect;
 
 impl App {
-    /// Moves `pane`'s view by `delta` lines: negative up into history,
-    /// positive back down toward the live screen.
-    pub(super) fn scroll_pane(&mut self, pane: PaneId, delta: i32) {
-        let Some(grid) = self.grids.get(&pane) else {
-            return;
-        };
-        let current = grid.scrollback.as_ref().map_or(0, |sb| sb.offset);
-        // A pane that has never been scrolled has no depth reading yet, so
-        // the first request up is unbounded and the daemon's clamp decides
-        // where it lands. Every later one is bounded by what it answered.
-        let ceiling = grid
-            .scrollback
-            .as_ref()
-            .map_or(i64::MAX, |sb| i64::from(sb.depth));
-        let want = (i64::from(current) - i64::from(delta)).clamp(0, ceiling);
-        // Clamping at either end turns a run of wheel notches into the same
-        // offset over and over; only a move is worth a round trip.
-        if want == i64::from(current) {
-            return;
+    /// The wheel over `pane`, `notches` up when negative, at the cell `at`
+    /// (row, column) of the pane under the pointer.
+    pub(super) fn wheel_pane(&mut self, pane: PaneId, notches: i32, at: (u16, u16)) {
+        if let Some(effect) = self.grids.get_mut(&pane).map(|view| view.wheel(notches, at)) {
+            self.take_view_effect(effect);
         }
-        let top = grid
-            .scrollback
-            .as_ref()
-            .and_then(|sb| sb.top)
-            .map(|top| top.saturating_add_signed(i64::from(current) - want));
-        self.park_pane(pane, want as u32, top);
     }
 
     /// Moves `pane`'s view by whole screens, which is what Page Up/Down and
     /// the scrollback keys mean.
     pub(super) fn page_pane(&mut self, pane: PaneId, pages: i32) {
-        // One line of overlap, so paging keeps a line of context rather
-        // than jumping a clean screen and leaving nothing to line up on.
-        let height = i32::from(self.layout.terminal.inner.height).max(2) - 1;
-        self.scroll_pane(pane, pages.saturating_mul(height));
+        if let Some(effect) = self.grids.get_mut(&pane).map(|view| view.page(pages)) {
+            self.take_view_effect(effect);
+        }
     }
 
     /// Drops `pane` back onto the live screen, if it was anywhere else.
     /// Called wherever the operator's attention returns to the present:
     /// typing, pasting, or leaving the pane.
     pub(super) fn scroll_to_live(&mut self, pane: PaneId) {
-        if let Some(grid) = self.grids.get_mut(&pane) {
-            grid.scrollback = None;
+        if let Some(view) = self.grids.get_mut(&pane) {
+            let _ = view.live();
         }
     }
 
-    /// Parks `pane` at `offset` — or at line `top`, when the daemon has
-    /// numbered the view — and asks the daemon for the rows there. An
-    /// offset of zero is the live screen, which needs no request: the grid
-    /// underneath has been kept current the whole time.
-    pub(super) fn park_pane(&mut self, pane: PaneId, offset: u32, top: Option<u64>) {
-        let Some(grid) = self.grids.get_mut(&pane) else {
-            return;
-        };
-        if offset == 0 {
-            grid.scrollback = None;
-            return;
+    /// Sends what a pane's view asked and says what it said. Nothing is
+    /// redrawn by hand: every frame draws the views whole.
+    pub(super) fn take_view_effect(&mut self, effect: Effect) {
+        if let Some(msg) = effect.send {
+            let _ = self.out.send(msg);
         }
-        match &mut grid.scrollback {
-            Some(sb) => {
-                sb.offset = offset;
-                sb.top = top;
-            }
-            // Seeded from the live rows so the pane keeps drawing text for
-            // the frame before the answer lands.
-            None => {
-                grid.scrollback = Some(crate::grid::Scrollback {
-                    offset,
-                    depth: 0,
-                    top,
-                    cells: grid.cells.clone(),
-                })
-            }
-        }
-        let _ = self.out.send(ClientMsg::Scrollback { pane, offset, top });
-    }
-
-    /// The rows the daemon read, applied only if the pane is still parked.
-    /// A reply that arrives after the operator dropped back to live is
-    /// stale by definition and must not pull the view back up.
-    pub(super) fn receive_scrollback(
-        &mut self,
-        pane: PaneId,
-        offset: u32,
-        depth: u32,
-        top: Option<u64>,
-        cells: Vec<Vec<Cell>>,
-    ) {
-        let Some(grid) = self.grids.get_mut(&pane) else {
-            return;
-        };
-        let Some(sb) = grid.scrollback.as_mut() else {
-            return;
-        };
-        // The daemon clamps, so the offset it answers with can be
-        // shallower than the one asked for; its number is the truth about
-        // where these rows came from. Replies arrive in request order on
-        // one connection, so the newest is always the current one.
-        sb.depth = depth;
-        sb.offset = offset;
-        sb.top = top;
-        sb.cells = cells;
-        // Nothing behind the live screen — an empty buffer, or a
-        // full-screen child that keeps no history. There is no parked view
-        // to hold, so the pane is simply live.
-        if offset == 0 {
-            grid.scrollback = None;
-            self.report("nothing further back");
+        if let Some(note) = effect.note {
+            self.report(note);
         }
     }
 
     /// How a parked pane says so in its title: `↑ 120/4000`.
     pub fn scroll_indicator(&self) -> Option<String> {
-        let grid = self.column_pane().and_then(|id| self.grids.get(&id))?;
-        let sb = grid.scrollback.as_ref()?;
-        Some(format!("↑ {}/{}", sb.offset, sb.depth.max(sb.offset)))
-    }
-}
-
-/// Lines one wheel notch moves, signed for direction.
-pub(super) fn wheel_lines(up: bool) -> i32 {
-    if up {
-        -WHEEL_LINES
-    } else {
-        WHEEL_LINES
+        let parked = self.column_pane().and_then(|id| self.grids.get(&id))?.parked()?;
+        Some(format!("↑ {}/{}", parked.offset, parked.depth))
     }
 }

@@ -50,7 +50,7 @@ picture on it crosses as a file (`PasteFile`), and text has its line endings mad
 terminal client does (`argus_protocol::paste`).
 The wheel and Shift-PageUp/PageDown act as the terminal client's do: a child that asked for the
 mouse gets its wheel reports (`argus_protocol::mouse`), the normal screen parks the view in the
-pane's history (the parked rows held in `screen`, asked further by line, typing back to live), and a
+pane's history (the view held in `argus_protocol::pane_view`, asked further by line, typing back to live), and a
 full-screen child that asked for nothing gets a cursor key a notch. A press, release, drag or move over a child that
 asked for the mouse goes to it in the mode it asked for, and only Shift-drag selects there; the frame
 says whether it asked, so the page can tell a press for the child from the start of a selection. The stage header leads its size
@@ -198,6 +198,7 @@ live in this crate and a contract written twice drifts in silence.
 | `column` | the order a repository's checkouts column lists its rows: the main branch first, then the checkouts, then the branches without one while they are shown |
 | `keys` | the bytes a key press is to a pane's child, decided once so every client types the same thing |
 | `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
+| `pane_view` | a pane's view as a client holds it: the live grid, the view parked in its history, how the daemon's pane messages change them, and what a scroll gesture over the pane sends — the child's bytes, a request for history, or nothing |
 | `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
@@ -295,14 +296,14 @@ result of a request; `ui` is a pure function of it.
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
-| `grid`, `selection`, `pty_input`, `paste`, `clipboard` | a pane's screen, its selected text, and the input primitives |
+| `selection`, `pty_input`, `paste`, `clipboard` | a pane's selected text, and the input primitives |
 | `pty_input/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
 | `pty_input/mouse` | a terminal mouse event as the protocol's, relative to the pane's area |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
 | `browser` | opening a ticket's URL in the person's browser, or copying it where no browser is at hand |
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
-| `fixtures` | the tree builders every test module shares |
+| `fixtures` | the builders every test module shares: the tree, and a pane's view as the daemon's messages leave it |
 
 `argus-desktop` is the desktop window. It holds what it was sent and draws it; everything it knows
 of a pane, a checkout or the daemon came from the protocol, and the page only draws and reports.
@@ -312,7 +313,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `main` | startup: the runtime, the window, and running until it closes |
 | `daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
 | `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
-| `screen` | a pane's screen as the page draws it: the grid the daemon's damage lands on, and the rows changed since the last frame |
+| `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
 | `review` | what the review dialog holds — a checkout's unstaged and staged sides, the diff on screen, the lines picked, who a comment goes to and the file being jumped to — and what its gestures ask of the daemon |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
