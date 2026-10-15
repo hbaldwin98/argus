@@ -271,7 +271,12 @@ function commentBox(r: ReviewPage): HTMLElement {
         { class: 'btn', onclick: () => call('review_comment', { body: null }) },
         'Cancel',
       ),
-      el('button', { class: 'btn primary', onclick: send }, 'Comment ', keycap('Ctrl Enter')),
+      el(
+        'button',
+        { class: 'btn primary', onclick: send },
+        'Comment',
+        el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'),
+      ),
     ),
   );
 }

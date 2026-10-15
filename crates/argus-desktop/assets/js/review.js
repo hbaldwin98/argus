@@ -140,7 +140,7 @@ function commentBox(r) {
             class: `chipf${p.pane === r.recipient ? ' on' : ''}`,
             onclick: () => click({ on: 'recipient', pane: p.pane }),
         }, el('span', { class: 'glyph' }, '◆'), p.title))
-        : el('span', { class: 'chipf on' }, el('span', { class: 'glyph' }, '◆'), chosen?.title ?? ''), el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => call('review_comment', { body: null }) }, 'Cancel'), el('button', { class: 'btn primary', onclick: send }, 'Comment ', keycap('Ctrl Enter'))));
+        : el('span', { class: 'chipf on' }, el('span', { class: 'glyph' }, '◆'), chosen?.title ?? ''), el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => call('review_comment', { body: null }) }, 'Cancel'), el('button', { class: 'btn primary', onclick: send }, 'Comment', el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'))));
 }
 function send() {
     call('review_comment', { body: state.reviewDraft });
