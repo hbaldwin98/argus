@@ -27,7 +27,9 @@ const ICONS = {
     gear: 'gear',
 };
 function viewIcon(name) {
-    return icon((name !== null && ICONS[name]) || 'puzzle');
+    // Own keys only: `constructor` is a name the protocol lets through, and
+    // inherited it is no icon at all.
+    return icon((name !== null && Object.hasOwn(ICONS, name) && ICONS[name]) || 'puzzle');
 }
 /** The sidebar's Extensions: a fold after the built-in stages listing
  *  every view whose scope is where the person is. Nothing listed, it is

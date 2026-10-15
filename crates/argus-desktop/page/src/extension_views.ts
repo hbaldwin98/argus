@@ -34,7 +34,9 @@ const ICONS: Record<string, IconName> = {
 };
 
 function viewIcon(name: string | null): Element {
-  return icon((name !== null && ICONS[name]) || 'puzzle');
+  // Own keys only: `constructor` is a name the protocol lets through, and
+  // inherited it is no icon at all.
+  return icon((name !== null && Object.hasOwn(ICONS, name) && ICONS[name]) || 'puzzle');
 }
 
 /** The sidebar's Extensions: a fold after the built-in stages listing
