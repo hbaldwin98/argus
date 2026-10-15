@@ -5,6 +5,7 @@ import type { AddProjectPage } from './bindings/AddProjectPage';
 import type { CapturePage } from './bindings/CapturePage';
 import type { Checkouts } from './bindings/Checkouts';
 import type { Command } from './bindings/Command';
+import type { ConsolePage } from './bindings/ConsolePage';
 import type { Features } from './bindings/Features';
 import type { Group } from './bindings/Group';
 import type { Rail } from './bindings/Rail';
@@ -57,6 +58,8 @@ export const state: {
   sessions: SessionsPage | null;
   /** The Settings dialog's choices, which the window's look follows. */
   settings: SettingsPage | null;
+  /** Where the console is, its tabs, and whether the canvas is its. */
+  console: ConsolePage | null;
   /** The comment being written, kept across the dialog's redraws. */
   reviewDraft: string;
   /** What the index's filter says. */
@@ -101,6 +104,7 @@ export const state: {
   history: null,
   sessions: null,
   settings: null,
+  console: null,
   reviewDraft: '',
   filter: '',
   archivedOpen: false,

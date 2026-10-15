@@ -19,6 +19,7 @@ mod clipboard;
 mod checkouts;
 mod checkouts_stage;
 mod commands;
+mod console;
 mod daemon;
 mod dialogs;
 mod feature_edits;

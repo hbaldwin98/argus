@@ -14,8 +14,8 @@
 //! written as (`capture_note`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
 //! the project switcher (`switcher`) and the dialog adding a project
-//! (`add_project`), the Settings dialog's choices (`preferences`), and what
-//! the daemon is making
+//! (`add_project`), the Settings dialog's choices (`preferences`), the
+//! console (`console`), and what the daemon is making
 //! (`argus_protocol::awaited`). The session says which of them a message
 //! or gesture is for, and what one of them changing means for the rest.
 //!
@@ -33,13 +33,14 @@ use argus_protocol::pane_view::{Effect, PaneView};
 use argus_protocol::paste;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
-    RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, FOCUS, PASTE_FILE,
+    RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, CONSOLES, FOCUS, PASTE_FILE,
 };
 
 use crate::add_project::AddProject;
 use crate::agents::Agents;
 use crate::capture_note::CaptureNote;
 use crate::checkouts_stage::{CheckoutsStage, Opened};
+use crate::console::Console;
 use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
@@ -47,8 +48,8 @@ use crate::keymap::{self, Action};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::page::{
-    self, AddProjectGesture, Call, CaptureGesture, Event, FeatureEdit, PageMouse, ReviewClick, ReviewJumpGesture,
-    SettingChange, Stage,
+    self, AddProjectGesture, Call, CaptureGesture, ConsoleGesture, ConsolePlace, Event, FeatureEdit, PageMouse,
+    ReviewClick, ReviewJumpGesture, SettingChange, Stage,
 };
 use crate::palette;
 use crate::preferences::Chosen;
@@ -78,6 +79,8 @@ enum Made {
     Resumed,
     /// Put the added project on the rail, closing the dialog that added it.
     SelectProject,
+    /// Show the new console in the console, which shows itself for it.
+    ShowConsole,
 }
 
 pub struct Session {
@@ -97,6 +100,11 @@ pub struct Session {
     capture_sent: Sent<page::CapturePage>,
     checkouts: CheckoutsStage,
     shown: ShownPane,
+    console: Console,
+    console_sent: Sent<page::ConsolePage>,
+    /// The Workspace's pane while the console has the canvas, to give it
+    /// back to: only one pane is on screen at a time.
+    workspace_pane: Option<PaneId>,
     awaited: Awaited<Made>,
     agents: Agents,
     dialogs: Dialogs,
@@ -149,6 +157,9 @@ impl Session {
             capture_sent: Sent::default(),
             checkouts: CheckoutsStage::default(),
             shown: ShownPane::default(),
+            console: Console::new(settings.console),
+            console_sent: Sent::default(),
+            workspace_pane: None,
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             dialogs: Dialogs::new(settings.review),
@@ -237,6 +248,7 @@ impl Session {
         };
         match msg {
             ServerMsg::Tree(tree) => self.take_tree(tree),
+            ServerMsg::Consoles(panes) => self.take_consoles(panes),
             ServerMsg::PaneTelemetry { pane, telemetry } => {
                 // The rail says nothing of telemetry; the tree stays true.
                 self.tree.as_mut_slice().apply_telemetry(pane, telemetry);
@@ -318,15 +330,37 @@ impl Session {
             self.project = self.tree.first().map(|p| p.id);
         }
         // A pane that is gone is gone from the daemon's subscriptions too.
-        if self.shown.pane().is_some_and(|pane| self.project_of(pane).is_none()) {
+        // A console is not in the tree, and is let go by `take_consoles`.
+        if self.shown.pane().is_some_and(|pane| self.project_of(pane).is_none() && !self.console.holds(pane)) {
             self.shown.gone();
         }
         self.settle_made();
     }
 
-    /// Acts on whatever the daemon made that the tree now holds.
+    /// The daemon's consoles, after its greeting and after every tree. A
+    /// console on screen that ended hands the canvas to the tab chosen in
+    /// its place, or back to the Workspace's pane when none is left.
+    fn take_consoles(&mut self, panes: Vec<argus_protocol::PaneInfo>) {
+        self.console.receive(panes);
+        let ended = self.shown.pane().filter(|&pane| self.project_of(pane).is_none() && !self.console.holds(pane));
+        if ended.is_some() {
+            self.shown.gone();
+            match self.console.chosen() {
+                Some(next) => self.show_console(next),
+                None => self.give_back(),
+            }
+        }
+        self.settle_made();
+    }
+
+    /// Acts on whatever the daemon made that the tree, or the consoles
+    /// beside it, now hold.
     fn settle_made(&mut self) {
-        for (created, then) in self.awaited.settle(&self.tree) {
+        let (tree, console) = (&self.tree, &self.console);
+        let seen = |created: Created| {
+            argus_protocol::awaited::holds(tree, created) || matches!(created, Created::Pane(pane) if console.holds(pane))
+        };
+        for (created, then) in self.awaited.settle_by(seen) {
             match (created, then) {
                 (Created::Pane(pane), Made::Show | Made::ShowOverStages) => {
                     self.show_made(pane, then == Made::ShowOverStages);
@@ -342,6 +376,7 @@ impl Session {
                     self.adding = None;
                     self.choose_project(project);
                 }
+                (Created::Pane(pane), Made::ShowConsole) => self.show_console(pane),
                 _ => {}
             }
         }
@@ -435,6 +470,7 @@ impl Session {
             Call::Command { action } => self.command(action),
             Call::GoToCheckout { checkout } => self.go_to_checkout(CheckoutId(checkout)),
             Call::GoToFeature { slug } => self.go_to_feature(&slug),
+            Call::Console { gesture } => self.console_gesture(gesture),
             Call::PasteClipboard
             | Call::Copy { .. }
             | Call::Reconnect
@@ -456,6 +492,8 @@ impl Session {
         self.finish()
     }
 
+    /// Puts a checkout's pane on the canvas. The console cannot show it, so
+    /// it leaves the Console stage and fullscreen for the Workspace.
     fn show(&mut self, pane: PaneId) {
         let Some(project) = self.project_of(pane) else {
             return;
@@ -463,12 +501,23 @@ impl Session {
         if self.shown.show(pane, &mut self.out) {
             self.project = Some(project);
             self.repository = None;
+            self.workspace_pane = None;
+            self.console.set_fullscreen(false);
+            if self.stage == Stage::Console {
+                self.stage = Stage::Workspace;
+            }
             self.rail_changed = true;
         }
     }
 
+    /// Lets the Workspace's pane go, as choosing another project does. The
+    /// console's own pane is no project's, and stays.
     fn hide(&mut self) {
-        self.shown.hide(&mut self.out);
+        if self.console_showing() {
+            self.workspace_pane = None;
+        } else {
+            self.shown.hide(&mut self.out);
+        }
         self.rail_changed = true;
     }
 
@@ -504,6 +553,9 @@ impl Session {
     fn run(&mut self, action: Action) {
         match action {
             Action::Leader => self.input(argus_protocol::keys::encode(&Key::new(KeyCode::Char(' '), Mods::CTRL))),
+            // A console has no sidebar of its own to put away: filling the
+            // window is its fullscreen.
+            Action::Fill if self.console_showing() => self.toggle_console_fullscreen(),
             Action::Fill => {
                 self.shown.toggle_fill();
                 self.rail_changed = true;
@@ -513,10 +565,14 @@ impl Session {
                     self.kill(pane);
                 }
             }
-            Action::Workspace => self.leave_stages(),
+            Action::Workspace => self.back_to_workspace(),
             Action::Feature => self.go(Stage::Feature),
             Action::Checkouts => self.go(Stage::Checkouts),
             Action::Compose => self.go(Stage::Composer),
+            Action::Console => self.open_console_tab(),
+            Action::ToggleConsole => self.toggle_console(),
+            Action::ConsoleFullscreen => self.toggle_console_fullscreen(),
+            Action::NewConsole => self.spawn_console(),
             Action::OpenReview => {
                 if let Some(checkout) = self.view().checkout {
                     self.review_checkout(checkout);
@@ -691,7 +747,7 @@ impl Session {
     }
 
     fn kill(&mut self, pane: PaneId) {
-        if self.project_of(pane).is_some() {
+        if self.project_of(pane).is_some() || self.console.holds(pane) {
             self.out.push(ClientMsg::Kill { pane });
         }
     }
@@ -817,10 +873,162 @@ impl Session {
         self.go(Stage::Workspace);
     }
 
+    /// The Workspace asked for by its key or its nav: its pane comes back
+    /// on the canvas, even from a console docked under it.
+    fn back_to_workspace(&mut self) {
+        self.console.set_fullscreen(false);
+        self.leave_stages();
+        if self.console_showing() && self.workspace_pane.is_some() {
+            self.give_back();
+        }
+    }
+
     /// Shows the Feature stage, or goes back to the Workspace.
     fn show_features(&mut self, open: bool) -> Vec<ClientMsg> {
-        self.go(if open { Stage::Feature } else { Stage::Workspace });
+        if open {
+            self.go(Stage::Feature);
+        } else {
+            self.back_to_workspace();
+        }
         self.finish()
+    }
+
+    // ---- The console ---------------------------------------------------------
+
+    fn console_gesture(&mut self, gesture: ConsoleGesture) -> Vec<ClientMsg> {
+        match gesture {
+            ConsoleGesture::Toggle => self.toggle_console(),
+            ConsoleGesture::Tab => self.open_console_tab(),
+            ConsoleGesture::Dock => self.dock_console(),
+            ConsoleGesture::Fullscreen => self.toggle_console_fullscreen(),
+            ConsoleGesture::Hide => self.hide_console(),
+            ConsoleGesture::Select { pane } => self.show_console(PaneId(pane)),
+            ConsoleGesture::Spawn => self.spawn_console(),
+            ConsoleGesture::Close { pane } => {
+                if self.console.holds(PaneId(pane)) {
+                    self.out.push(ClientMsg::Kill { pane: PaneId(pane) });
+                }
+            }
+            ConsoleGesture::Height { height } => self.console.set_height(height),
+        }
+        self.finish()
+    }
+
+    /// Whether the canvas is drawing a console rather than the Workspace's
+    /// pane.
+    fn console_showing(&self) -> bool {
+        self.shown.pane().is_some_and(|pane| self.console.holds(pane))
+    }
+
+    /// Puts a console on the canvas, showing the console docked if it was
+    /// hidden: a console asked for is one the person means to type into.
+    fn show_console(&mut self, pane: PaneId) {
+        if !self.console.choose(pane) {
+            return;
+        }
+        if self.console.place(self.stage) == ConsolePlace::Hidden {
+            self.console.set_docked(true);
+            if self.stage == Stage::Composer {
+                self.stage = Stage::Workspace;
+            }
+        }
+        let workspace = self.shown.pane().filter(|&shown| self.project_of(shown).is_some());
+        if self.shown.show(pane, &mut self.out) && workspace.is_some() {
+            self.workspace_pane = workspace;
+        }
+        self.rail_changed = true;
+    }
+
+    /// The canvas goes back to the Workspace's pane, or to nothing when it
+    /// has ended.
+    fn give_back(&mut self) {
+        match self.workspace_pane.take().filter(|&pane| self.project_of(pane).is_some()) {
+            Some(pane) => {
+                self.shown.show(pane, &mut self.out);
+            }
+            None => self.shown.hide(&mut self.out),
+        }
+        self.rail_changed = true;
+    }
+
+    /// The console takes the canvas: its chosen tab, or a new console when
+    /// there is none yet.
+    fn console_takes(&mut self) {
+        match self.console.chosen() {
+            Some(pane) => self.show_console(pane),
+            None => self.spawn_console(),
+        }
+    }
+
+    /// Asks the daemon for a console, shown once the daemon says it exists.
+    fn spawn_console(&mut self) {
+        if !self.status.daemon_can(CONSOLES) {
+            self.passing.push(Event::Notice {
+                text: "argusd is too old to start a console: run `argus server restart`".into(),
+            });
+            return;
+        }
+        let request_id = self.awaited.ask(Made::ShowConsole);
+        self.out.push(ClientMsg::SpawnConsole { request_id });
+    }
+
+    fn toggle_console(&mut self) {
+        match self.console.place(self.stage) {
+            ConsolePlace::Hidden => self.dock_console(),
+            _ => self.hide_console(),
+        }
+    }
+
+    /// Docked under the stage: from hidden, from the Console stage, or out
+    /// of fullscreen.
+    fn dock_console(&mut self) {
+        self.console.set_fullscreen(false);
+        self.console.set_docked(true);
+        if matches!(self.stage, Stage::Console | Stage::Composer) {
+            self.go(Stage::Workspace);
+        }
+        self.console_takes();
+    }
+
+    /// Hidden wherever it was; the canvas goes back as `finish` settles it.
+    fn hide_console(&mut self) {
+        self.console.set_fullscreen(false);
+        self.console.set_docked(false);
+        if self.stage == Stage::Console {
+            self.go(Stage::Workspace);
+        }
+        self.rail_changed = true;
+    }
+
+    fn open_console_tab(&mut self) {
+        self.console.set_fullscreen(false);
+        self.go(Stage::Console);
+        self.console_takes();
+    }
+
+    /// Fullscreen beside the sidebar, and back to where it was entered from.
+    fn toggle_console_fullscreen(&mut self) {
+        if self.console.fullscreen() {
+            self.console.set_fullscreen(false);
+        } else {
+            if self.console.place(self.stage) == ConsolePlace::Hidden {
+                self.console.set_docked(true);
+                if self.stage == Stage::Composer {
+                    self.go(Stage::Workspace);
+                }
+            }
+            self.console.set_fullscreen(true);
+            self.console_takes();
+        }
+        self.rail_changed = true;
+    }
+
+    /// A hidden console gives the canvas back, however it came to be
+    /// hidden: its key, the composer, or leaving the Console stage.
+    fn settle_console(&mut self) {
+        if self.console.place(self.stage) == ConsolePlace::Hidden && self.console_showing() {
+            self.give_back();
+        }
     }
 
     /// Shows the composer, or goes back to the Workspace.
@@ -1269,10 +1477,17 @@ impl Session {
         self.on_screen().filter(|_| self.focused)
     }
 
-    /// The shown pane while the Workspace is up. A stage keeps the pane to
-    /// come back to, but hides it and takes its keys away.
+    /// The shown pane while the Workspace is up, or a console while the
+    /// console is not hidden. A stage keeps the pane to come back to, but
+    /// hides it and takes its keys away.
     fn on_screen(&self) -> Option<PaneId> {
-        self.shown.pane().filter(|_| !matches!(self.stage, Stage::Feature | Stage::Checkouts))
+        let pane = self.shown.pane()?;
+        let visible = if self.console.holds(pane) {
+            self.console.place(self.stage) != ConsolePlace::Hidden
+        } else {
+            !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console) && !self.console.fullscreen()
+        };
+        visible.then_some(pane)
     }
 
     /// One choice in the Settings dialog. The page draws the look from
@@ -1314,7 +1529,11 @@ impl Session {
             | Action::Checkouts
             | Action::Compose
             | Action::Shortcuts
-            | Action::Settings => self.run(action),
+            | Action::Settings
+            | Action::Console
+            | Action::ToggleConsole
+            | Action::ConsoleFullscreen
+            | Action::NewConsole => self.run(action),
             Action::Fill | Action::Close if self.on_screen().is_none() => {
                 self.passing.push(Event::Notice { text: "no pane is on screen".into() });
             }
@@ -1386,17 +1605,19 @@ impl Session {
 
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
-        // All five, not short-circuited: each flag is cleared as it is read.
+        // All six, not short-circuited: each flag is cleared as it is read.
         let layouts = self.features.take_layouts_changed();
         let agent = self.agents.take_changed();
         let chime = self.status.take_chime_changed();
         let review = self.dialogs.take_layout_changed();
+        let console = self.console.take_unsaved();
         let chosen = self.choices.take_unsaved();
-        (layouts || agent || chime || review || chosen).then(|| Settings {
+        (layouts || agent || chime || review || console || chosen).then(|| Settings {
             layouts: self.features.layouts().clone(),
             last_agent: self.agents.last().cloned(),
             chime: self.status.chimes(),
             review: self.dialogs.layout(),
+            console: self.console.layout(),
             preferences: self.choices.get().clone(),
         })
     }
@@ -1443,6 +1664,7 @@ impl Session {
 
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
+        self.settle_console();
         // The session under the dialog's cursor is read once it is there,
         // however the cursor got there: a key, a filter, or the listing.
         if let Some(wanted) = self.recent.as_ref().and_then(|d| d.wants_read(&self.sessions, &self.tree)).cloned() {
@@ -1485,6 +1707,12 @@ impl Session {
         }
         if let Some(page) = self.choices.take() {
             events.push(Event::Settings(Box::new(page)));
+        }
+        // Before the rail, so the page knows which pane the canvas is for
+        // when the rail says the Workspace has none.
+        let console = self.console.page(self.stage, self.shown.pane(), self.status.daemon_can(CONSOLES));
+        if let Some(page) = self.console_sent.take(Some(console)) {
+            events.push(Event::Console(Box::new(page)));
         }
         if std::mem::take(&mut self.rail_changed) {
             events.push(Event::Rail(Box::new(self.rail(now))));
@@ -1530,6 +1758,7 @@ impl Session {
         self.recent_sent.forget();
         self.adding_sent.forget();
         self.capture_sent.forget();
+        self.console_sent.forget();
         // A page that has just loaded has no palette open.
         self.palette = false;
         self.palette_sent.forget();
@@ -1563,7 +1792,7 @@ impl Session {
         let mut rail = rail::build(&self.tree, &choices, self.loaded);
         rail.repository = self.chosen_repository().map(|r| r.id.0);
         rail.stage = self.stage;
-        rail.filled = self.shown.filled() && self.stage == Stage::Workspace && self.shown.pane().is_some();
+        rail.filled = self.shown.filled() && self.stage == Stage::Workspace && self.on_screen().is_some() && !self.console_showing();
         rail.templates = self.agents.offered();
         rail.workspaces = self.switcher.workspaces();
         rail.removing = self.switcher.removing(&self.tree);
@@ -1885,13 +2114,16 @@ mod tests {
         let mut s = session(without_focus());
         let first = s.events(0);
         assert!(
-            matches!(first.as_slice(), [Event::Status(_), Event::Settings(_), Event::Rail(_), Event::Features(_)]),
+            matches!(
+                first.as_slice(),
+                [Event::Status(_), Event::Settings(_), Event::Console(_), Event::Rail(_), Event::Features(_)]
+            ),
             "{first:?}"
         );
         assert!(s.events(0).is_empty());
         s.toggle_repository(RepositoryId(10));
         assert!(matches!(s.events(0).as_slice(), [Event::Rail(_)]));
-        assert_eq!(s.everything(0).len(), 6, "a fresh page hears it all, the keymap first");
+        assert_eq!(s.everything(0).len(), 7, "a fresh page hears it all, the keymap first");
     }
 
 
@@ -2578,7 +2810,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 70] = [
+    const CALLS: [&str; 73] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -2643,6 +2875,9 @@ mod tests {
         r#"{"call":"command","action":"fill"}"#,
         r#"{"call":"go_to_checkout","checkout":100}"#,
         r#"{"call":"go_to_feature","slug":"trim"}"#,
+        r#"{"call":"console","gesture":{"on":"tab"}}"#,
+        r#"{"call":"console","gesture":{"on":"height","height":300}}"#,
+        r#"{"call":"console","gesture":{"on":"close","pane":1}}"#,
         r#"{"call":"reconnect"}"#,
         r#"{"call":"minimize"}"#,
         r#"{"call":"toggle_maximize"}"#,
@@ -3007,5 +3242,179 @@ mod tests {
 
         s.receive(with_tree(tree().into_iter().take(1).collect()));
         assert_eq!(s.rail(0).projects.len(), 1);
+    }
+
+    // ---- The console -------------------------------------------------------
+
+    fn consoles(ids: &[u64]) -> ServerMsg {
+        ServerMsg::Consoles(ids.iter().map(|&id| pane(id, PaneKind::Shell, "pwsh", PaneStatus::Idle)).collect())
+    }
+
+    /// A session showing pane 1 on the Workspace, beside a daemon holding
+    /// consoles 8 and 9.
+    fn with_consoles() -> Session {
+        let mut s = session(Hello::this_build());
+        s.resize(30, 100);
+        s.select(PaneId(1));
+        s.receive(consoles(&[8, 9]));
+        s
+    }
+
+    fn console_page(s: &mut Session) -> page::ConsolePage {
+        s.events(0)
+            .into_iter()
+            .find_map(|e| match e {
+                Event::Console(page) => Some(*page),
+                _ => None,
+            })
+            .unwrap_or_else(|| s.console.page(s.stage, s.shown.pane(), s.status.daemon_can(CONSOLES)))
+    }
+
+    fn console(s: &mut Session, gesture: ConsoleGesture) -> Vec<String> {
+        names(&s.call(Call::Console { gesture }))
+    }
+
+    #[test]
+    fn the_desktop_reads_the_daemons_consoles_as_tabs() {
+        let mut s = with_consoles();
+        let page = console_page(&mut s);
+        assert_eq!(page.place, ConsolePlace::Hidden, "hidden until asked for");
+        assert_eq!(page.tabs.iter().map(|t| (t.pane, t.on)).collect::<Vec<_>>(), [(8, true), (9, false)]);
+        assert_eq!(page.showing, None, "the Workspace keeps the canvas");
+        assert!(page.can_spawn);
+        assert_eq!(s.rail(0).shown.map(|p| p.pane), Some(1), "a console is no project's pane");
+    }
+
+    #[test]
+    fn showing_the_console_docks_it_and_moves_the_canvas_into_it() {
+        let mut s = with_consoles();
+        let sent = leader_then(&mut s, "`");
+        assert_eq!(names(&sent)[..2], ["unsubscribe 1", "subscribe 8"]);
+        let page = console_page(&mut s);
+        assert_eq!((page.place, page.showing), (ConsolePlace::Docked, Some(8)));
+        assert_eq!(s.stage, Stage::Workspace, "docked under the stage it was on");
+        assert_eq!(s.on_screen(), Some(PaneId(8)), "the keys are the console's");
+
+        assert_eq!(console(&mut s, ConsoleGesture::Select { pane: 9 })[..2], ["unsubscribe 8", "subscribe 9"]);
+        assert_eq!(console(&mut s, ConsoleGesture::Hide)[..2], ["unsubscribe 9", "subscribe 1"], "the Workspace's pane comes back");
+        let page = console_page(&mut s);
+        assert_eq!((page.place, page.showing), (ConsolePlace::Hidden, None));
+    }
+
+    #[test]
+    fn a_pane_chosen_on_the_rail_takes_the_canvas_back_and_the_console_stays_docked() {
+        let mut s = with_consoles();
+        console(&mut s, ConsoleGesture::Toggle);
+        assert_eq!(names(&s.select(PaneId(2)))[..2], ["unsubscribe 8", "subscribe 2"]);
+        let page = console_page(&mut s);
+        assert_eq!((page.place, page.showing), (ConsolePlace::Docked, None));
+        console(&mut s, ConsoleGesture::Select { pane: 8 });
+        assert_eq!(names(&leader_then(&mut s, "1"))[..2], ["unsubscribe 8", "subscribe 2"], "1 is the Workspace's pane");
+    }
+
+    #[test]
+    fn four_opens_the_console_stage_and_another_stage_docks_or_hides_it() {
+        let mut s = with_consoles();
+        leader_then(&mut s, "4");
+        assert_eq!(s.stage, Stage::Console);
+        let page = console_page(&mut s);
+        assert_eq!((page.place, page.showing), (ConsolePlace::Tab, Some(8)));
+        assert_eq!(s.rail(0).stage, Stage::Console, "the sidebar marks it");
+
+        leader_then(&mut s, "2");
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Hidden, "never docked");
+        assert_eq!(s.shown.pane(), Some(PaneId(1)), "a hidden console gives the canvas back");
+
+        console(&mut s, ConsoleGesture::Tab);
+        console(&mut s, ConsoleGesture::Dock);
+        assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
+    }
+
+    #[test]
+    fn fullscreen_covers_the_stage_and_leaving_it_returns_to_where_it_was() {
+        let mut s = with_consoles();
+        leader_then(&mut s, "4");
+        leader_then(&mut s, "z");
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Fullscreen);
+        leader_then(&mut s, "z");
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Tab);
+
+        leader_then(&mut s, "1");
+        console(&mut s, ConsoleGesture::Fullscreen);
+        let page = console_page(&mut s);
+        assert_eq!((page.place, page.showing), (ConsolePlace::Fullscreen, Some(8)), "from hidden, the console's tab");
+        console(&mut s, ConsoleGesture::Fullscreen);
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked, "out of fullscreen it is docked, not hidden again");
+
+        console(&mut s, ConsoleGesture::Fullscreen);
+        s.select(PaneId(2));
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked, "a checkout's pane is not the console's to fill");
+        assert_eq!(s.on_screen(), Some(PaneId(2)));
+    }
+
+    #[test]
+    fn plus_asks_the_daemon_and_the_tab_appears_only_when_its_consoles_say_so() {
+        let mut s = with_consoles();
+        let sent = s.call(Call::Console { gesture: ConsoleGesture::Spawn });
+        let [ClientMsg::SpawnConsole { request_id }] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        let request_id = *request_id;
+        s.receive(ServerMsg::Created { request_id, created: Some(Created::Pane(PaneId(10))) });
+        assert_eq!(console_page(&mut s).tabs.len(), 2, "nothing is predicted");
+        assert_eq!(s.shown.pane(), Some(PaneId(1)));
+
+        let sent = s.receive(consoles(&[8, 9, 10]));
+        assert_eq!(names(&sent)[..2], ["unsubscribe 1", "subscribe 10"]);
+        let page = console_page(&mut s);
+        assert_eq!((page.place, page.showing), (ConsolePlace::Docked, Some(10)), "a new console shows itself");
+    }
+
+    #[test]
+    fn showing_a_console_when_there_is_none_asks_for_one() {
+        let mut s = session(Hello::this_build());
+        let sent = s.call(Call::Console { gesture: ConsoleGesture::Tab });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::SpawnConsole { .. })), "{:?}", names(&sent));
+        assert!(console_page(&mut s).tabs.is_empty());
+    }
+
+    #[test]
+    fn closing_a_tab_ends_that_console_and_the_canvas_falls_back() {
+        let mut s = with_consoles();
+        console(&mut s, ConsoleGesture::Select { pane: 9 });
+        assert_eq!(console(&mut s, ConsoleGesture::Close { pane: 9 }), ["Kill { pane: PaneId(9) }"]);
+        assert_eq!(console(&mut s, ConsoleGesture::Close { pane: 1 }), Vec::<String>::new(), "a checkout's pane is not a tab");
+        assert_eq!(s.shown.pane(), Some(PaneId(9)), "until the daemon says it ended");
+
+        s.receive(with_tree(tree()));
+        assert_eq!(s.shown.pane(), Some(PaneId(9)), "the tree never held it");
+        assert_eq!(names(&s.receive(consoles(&[8])))[..2], ["subscribe 8", "resize 8 30x100"]);
+        assert_eq!(names(&s.receive(consoles(&[])))[..2], ["subscribe 1", "resize 1 30x100"], "the last one gives the canvas back");
+    }
+
+    #[test]
+    fn the_docked_console_and_its_height_are_saved() {
+        let mut s = with_consoles();
+        s.take_settings();
+        console(&mut s, ConsoleGesture::Toggle);
+        console(&mut s, ConsoleGesture::Height { height: 333 });
+        let saved = s.take_settings().expect("saved");
+        assert_eq!(saved.console, crate::settings::ConsoleLayout { docked: true, height: 333 });
+        console(&mut s, ConsoleGesture::Fullscreen);
+        assert!(s.take_settings().is_none(), "fullscreen lasts the run");
+
+        let mut again = Session::new(saved);
+        again.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
+        let page = console_page(&mut again);
+        assert_eq!((page.place, page.height), (ConsolePlace::Docked, 333));
+    }
+
+    #[test]
+    fn an_older_daemon_is_not_asked_for_a_console() {
+        let mut s = session(without_focus());
+        assert!(console(&mut s, ConsoleGesture::Spawn).is_empty());
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old"))));
+        assert!(!console_page(&mut s).can_spawn);
     }
 }

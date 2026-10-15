@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use argus_protocol::{
     grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Focus, Hello, PaneId,
-    ServerMsg, CELL_RUNS, PANE_TELEMETRY,
+    ServerMsg, CELL_RUNS, CONSOLES, PANE_TELEMETRY,
 };
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
@@ -121,6 +121,7 @@ where
                     subs.runs = hello.can(CELL_RUNS);
                     peer = Some(hello.clone());
                 }
+                let greeted = matches!(&cmsg, ClientMsg::Hello(_));
                 let shutdown_reason = handle_client_msg(
                     cmsg,
                     &daemon,
@@ -129,6 +130,11 @@ where
                     &mut reviews,
                     viewer,
                 );
+                // The tree went before the greeting; the consoles could
+                // not, and they follow the daemon's own greeting.
+                if greeted && peer.as_ref().is_some_and(|p| p.can(CONSOLES)) {
+                    let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
+                }
                 if let Some(reason) = shutdown_reason {
                     // The writer owns the other end of this signal and
                     // sends it only after the acknowledgement frame is
@@ -145,6 +151,9 @@ where
                     }
                 }
                 let _ = out_tx.send(ServerMsg::Tree(tree));
+                if peer.as_ref().is_some_and(|p| p.can(CONSOLES)) {
+                    let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
+                }
             }
             // Lagging only means several changes were missed, and the
             // focus is read whole either way.
@@ -782,6 +791,7 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));
+        assert!(matches!(next(&mut client).await, ServerMsg::Consoles(_)));
 
         daemon.report_pane_telemetry(pane, None, opus());
 
@@ -793,6 +803,74 @@ mod tests {
             other => panic!("expected the one record, got {other:?}"),
         }
         let _ = daemon.close_pane(pane);
+    }
+
+    /// The consoles in the next message, which must be them.
+    async fn next_consoles(client: &mut tokio::io::DuplexStream) -> Vec<argus_protocol::PaneInfo> {
+        match next(client).await {
+            ServerMsg::Consoles(consoles) => consoles,
+            other => panic!("expected the consoles, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_client_that_takes_consoles_is_sent_them_after_each_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        let mut client = connect_to(daemon.clone()).await;
+        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(Hello::this_build()))
+            .await
+            .unwrap();
+        assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));
+        assert!(next_consoles(&mut client).await.is_empty(), "none started yet");
+
+        let console = daemon.spawn_console().unwrap();
+        assert!(matches!(next(&mut client).await, ServerMsg::Tree(_)));
+        let consoles = next_consoles(&mut client).await;
+        assert_eq!(consoles.iter().map(|c| (c.id, c.kind)).collect::<Vec<_>>(), [(console, argus_protocol::PaneKind::Shell)]);
+
+        daemon.close_pane(console).unwrap();
+        assert!(matches!(next(&mut client).await, ServerMsg::Tree(_)));
+        assert!(next_consoles(&mut client).await.is_empty(), "closing takes it out");
+    }
+
+    #[tokio::test]
+    async fn a_client_that_does_not_take_consoles_is_never_sent_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        let mut client = connect_to(daemon.clone()).await;
+        let older = Hello {
+            capabilities: Vec::new(),
+            ..Hello::this_build()
+        };
+        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(older)).await.unwrap();
+        assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));
+
+        let console = daemon.spawn_console().unwrap();
+        daemon.close_pane(console).unwrap();
+        assert!(matches!(next(&mut client).await, ServerMsg::Tree(_)));
+        assert!(matches!(next(&mut client).await, ServerMsg::Tree(_)), "no consoles between the trees");
+    }
+
+    #[tokio::test]
+    async fn a_console_belongs_to_no_checkout_but_is_a_pane_like_any_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        let console = daemon.spawn_console().unwrap();
+
+        let in_tree = daemon
+            .snapshot()
+            .iter()
+            .flat_map(|p| &p.repositories)
+            .flat_map(|r| &r.checkouts)
+            .any(|c| c.panes.iter().any(|p| p.id == console));
+        assert!(!in_tree, "a console is in no checkout");
+        assert!(daemon.subscribe_pane(console).is_ok(), "its screen can be watched");
+        assert!(daemon.write_pane(console, b"\r").is_ok(), "and typed into");
+
+        daemon.close_pane(console).unwrap();
+        assert!(daemon.consoles().is_empty());
+        assert!(daemon.subscribe_pane(console).is_err(), "a closed console is gone");
     }
 
     #[tokio::test]

@@ -170,6 +170,14 @@ pub enum Action {
     Settings,
     /// Leave a filter field, giving the list it filtered the keys.
     Leave,
+    /// The Console stage: the console fills the stage.
+    Console,
+    /// Show the console docked, or hide it wherever it is.
+    ToggleConsole,
+    /// The console fills the window but the sidebar's projects, and back.
+    ConsoleFullscreen,
+    /// A new console: a shell in the home directory.
+    NewConsole,
 }
 
 #[derive(Debug, Serialize)]
@@ -289,6 +297,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Anywhere, &[Chord::key("1")], Workspace, "Workspace"),
     bind(Anywhere, &[Chord::key("2")], Feature, "Feature"),
     bind(Anywhere, &[Chord::key("3")], Action::Checkouts, "Checkouts"),
+    bind(Anywhere, &[Chord::key("4")], Action::Console, "Console"),
+    bind(Anywhere, &[Chord::key("`")], ToggleConsole, "show or hide the console"),
     bind(Anywhere, &[Chord::key("n").ctrl()], Compose, "start a shell or an agent"),
     bind(Anywhere, &[Chord::key("Escape")], CloseLayer, "close the menu or dialog"),
     bind(Anywhere, &[Chord::key("k").ctrl()], Action::Palette, "search actions, panes, features and checkouts"),
@@ -300,6 +310,9 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("2").after_leader()], Feature, "Feature"),
     bind(Pane, &[Chord::key("x").after_leader()], Close, "close the pane, ending its program"),
     bind(Pane, &[Chord::key("3").after_leader()], Action::Checkouts, "Checkouts"),
+    bind(Pane, &[Chord::key("4").after_leader()], Action::Console, "Console"),
+    bind(Pane, &[Chord::key("`").after_leader()], ToggleConsole, "show or hide the console"),
+    bind(Pane, &[Chord::key("z").after_leader()], ConsoleFullscreen, "the console fills the window, and back"),
     bind(Pane, &[Chord::key("n").after_leader()], Compose, "start a shell or an agent"),
     bind(Pane, &[Chord::key("Tab").after_leader()], OpenReview, "review the pane's checkout"),
     bind(Pane, PASTE, Paste, "paste"),
@@ -410,6 +423,10 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Workspace, Some(Anywhere), "Go to the Workspace"),
     (Action::Feature, Some(Anywhere), "Go to the Feature stage"),
     (Action::Checkouts, Some(Anywhere), "Go to the Checkouts stage"),
+    (Action::Console, Some(Anywhere), "Go to the Console"),
+    (ToggleConsole, Some(Anywhere), "Show or hide the console"),
+    (ConsoleFullscreen, Some(Pane), "Console fullscreen beside the sidebar, and back"),
+    (NewConsole, None, "Start a console shell in the home directory"),
     (Compose, Some(Anywhere), "Start a shell or an agent…"),
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
     (Action::Settings, Some(Anywhere), "Open the settings"),
@@ -802,6 +819,30 @@ mod tests {
         assert_eq!(in_pane(&page("j"), true), None, "the Feature stage's key is not a pane's");
         assert_eq!(in_pane(&page("Tab"), true), Some(OpenReview));
         assert_eq!(in_pane(&page("Tab"), false), None, "a tab is typed");
+    }
+
+    /// The console is the fourth stage's key, and from a pane its show,
+    /// hide and fullscreen go through the leader like every window key.
+    #[test]
+    fn the_console_opens_with_4_and_shows_hides_and_fills_after_the_leader() {
+        let anywhere = |key: &str| {
+            BINDINGS
+                .iter()
+                .filter(|b| b.place == Anywhere)
+                .find(|b| b.chords.iter().any(|c| c.matches(&page(key))))
+                .map(|b| b.action)
+        };
+        assert_eq!(anywhere("4"), Some(Action::Console));
+        assert_eq!(anywhere("`"), Some(ToggleConsole));
+        assert_eq!(in_pane(&page("4"), true), Some(Action::Console));
+        assert_eq!(in_pane(&page("`"), true), Some(ToggleConsole));
+        assert_eq!(in_pane(&page("z"), true), Some(ConsoleFullscreen));
+        for key in ["4", "`", "z"] {
+            assert_eq!(in_pane(&page(key), false), None, "{key} is typed");
+        }
+        for action in [Action::Console, ToggleConsole, ConsoleFullscreen, NewConsole] {
+            assert!(is_command(action), "{action:?} is in the palette");
+        }
     }
 
     #[test]

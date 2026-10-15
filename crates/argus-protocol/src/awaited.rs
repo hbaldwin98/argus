@@ -77,9 +77,15 @@ impl<Then> Awaited<Then> {
     /// Everything made that `tree` holds, to act on now; the rest waits for
     /// a later tree.
     pub fn settle(&mut self, tree: &[ProjectInfo]) -> Vec<(Created, Then)> {
-        let (held, waiting) = std::mem::take(&mut self.made).into_iter().partition(|(created, _)| holds(tree, *created));
+        self.settle_by(|created| holds(tree, created))
+    }
+
+    /// Everything made that `held` says the client can now see. For what
+    /// travels beside the tree rather than in it, such as a console.
+    pub fn settle_by(&mut self, held: impl Fn(Created) -> bool) -> Vec<(Created, Then)> {
+        let (seen, waiting) = std::mem::take(&mut self.made).into_iter().partition(|(created, _)| held(*created));
         self.made = waiting;
-        held
+        seen
     }
 }
 

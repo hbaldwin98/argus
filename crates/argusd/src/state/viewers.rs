@@ -117,7 +117,7 @@ impl Daemon {
     ) -> anyhow::Result<()> {
         {
             let inner = self.inner.lock().unwrap();
-            if find_pane_ref(&inner.projects, pane).is_none() {
+            if find_any_pane_ref(&inner, pane).is_none() {
                 anyhow::bail!("no such pane");
             }
         }
@@ -211,7 +211,7 @@ impl Daemon {
         };
         let inner = self.inner.lock().unwrap();
         let p =
-            find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+            find_any_pane_ref(&inner, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         p.runtime.resize(rows, cols)?;
         // Only once it took. Recording a size the pty rejected would make
         // every later request agreeing with it a no-op.
@@ -239,14 +239,14 @@ impl Daemon {
     ) -> anyhow::Result<pty::Scrolled> {
         let inner = self.inner.lock().unwrap();
         let p =
-            find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+            find_any_pane_ref(&inner, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         Ok(p.runtime.scrollback(offset, top))
     }
 
     pub fn subscribe_pane(&self, pane: PaneId) -> anyhow::Result<PaneSubscription> {
         let inner = self.inner.lock().unwrap();
         let p =
-            find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+            find_any_pane_ref(&inner, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         Ok(p.runtime.snapshot_and_subscribe())
     }
 }

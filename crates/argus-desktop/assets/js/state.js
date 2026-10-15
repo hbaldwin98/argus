@@ -33,6 +33,7 @@ export const state = {
     history: null,
     sessions: null,
     settings: null,
+    console: null,
     reviewDraft: '',
     filter: '',
     archivedOpen: false,

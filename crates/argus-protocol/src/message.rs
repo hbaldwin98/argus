@@ -18,7 +18,7 @@ use crate::sessions::{Resume, Session};
 use crate::transcript::Conversation;
 use crate::tasks::{TaskAction, TaskList};
 use crate::tracker_links::MapChange;
-use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo};
+use crate::tree::{AgentTelemetry, PaneInfo, ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -98,6 +98,13 @@ pub enum ClientMsg {
         /// Names the request, so the daemon can answer with what it made
         /// ([`ServerMsg::Created`]). Zero, the default, asks for no answer:
         /// what a client that predates it sends.
+        #[serde(default)]
+        request_id: u64,
+    },
+    /// Spawn a console: a shell in the home directory that belongs to no
+    /// checkout. Only to a daemon that listed `CONSOLES`.
+    SpawnConsole {
+        /// Names the request, as for [`ClientMsg::SpawnShell`].
         #[serde(default)]
         request_id: u64,
     },
@@ -429,6 +436,10 @@ pub enum ServerMsg {
     Hello(Hello),
     /// Full project/checkout/pane tree, sent on connect and after any change.
     Tree(Vec<ProjectInfo>),
+    /// Every console, whole, after each tree. Only to a client that listed
+    /// `CONSOLES`. Apart from the tree because a console belongs to no
+    /// project, and every client reads the tree as projects.
+    Consoles(Vec<PaneInfo>),
     /// One agent's telemetry, whole, after it reported. Only to a client
     /// that listed `PANE_TELEMETRY`; any other is sent the whole tree,
     /// which carries the same record.

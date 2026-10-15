@@ -169,7 +169,7 @@ fn resolve(path: &str) -> PathBuf {
         .unwrap_or(expanded)
 }
 
-fn home_dir() -> PathBuf {
+pub(crate) fn home_dir() -> PathBuf {
     directories::UserDirs::new()
         .map(|d| d.home_dir().to_path_buf())
         .or_else(|| std::env::current_dir().ok())

@@ -141,6 +141,7 @@ mod tests {
                 checkout: CheckoutId(2),
                 request_id: 1,
             },
+            ClientMsg::SpawnConsole { request_id: 3 },
             ClientMsg::SpawnAgent {
                 checkout: CheckoutId(2),
                 template: "claude".to_string(),
@@ -282,6 +283,28 @@ mod tests {
         assert_eq!(git.changed_files, 3);
         assert_eq!((git.staged, git.unstaged), (1, 2));
         assert_eq!(c.panes[0].status, PaneStatus::Waiting);
+    }
+
+    #[tokio::test]
+    async fn consoles_survive_the_wire() {
+        let sent = ServerMsg::Consoles(vec![PaneInfo {
+            id: PaneId(9),
+            kind: PaneKind::Shell,
+            title: "shell".to_string(),
+            status: PaneStatus::Idle,
+            note: None,
+            template: None,
+            children: Vec::new(),
+            telemetry: Default::default(),
+            background: false,
+            since: None,
+            live: false,
+        }]);
+        let ServerMsg::Consoles(consoles) = roundtrip(&sent).await else {
+            panic!("variant changed across the wire");
+        };
+        assert_eq!(consoles.len(), 1);
+        assert_eq!((consoles[0].id, consoles[0].kind), (PaneId(9), PaneKind::Shell));
     }
 
     #[tokio::test]

@@ -2314,6 +2314,133 @@ body.filled .rail {
   display: none;
 }
 
+/* ---- The console ------------------------------------------------------- */
+
+/* Docked under the Workspace, Feature or Checkouts stage, as tall as its
+   sash leaves it; the Console stage and fullscreen give it the stage. */
+.console {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  background: var(--bg-sunken);
+}
+body.console-tab .console,
+body.console-fullscreen .console {
+  flex: 1;
+  border-top: 0;
+}
+/* Fullscreen keeps the sidebar's projects and the strip's window buttons;
+   the stages, their nav and the sidebar's foot are put away. */
+body.console-fullscreen #body,
+body.console-fullscreen #fstage,
+body.console-fullscreen #cstage,
+body.console-fullscreen #nstage,
+body.console-fullscreen .navs,
+body.console-fullscreen #bar {
+  display: none;
+}
+.sash {
+  flex: none;
+  height: 5px;
+  margin-top: -3px;
+  cursor: row-resize;
+  position: relative;
+  z-index: 2;
+}
+.sash span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 2px;
+  height: 1px;
+}
+.sash:hover span {
+  background: var(--accent);
+  height: 2px;
+  top: 1px;
+}
+.chead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 var(--sp-8) 0 var(--sp-16);
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--line);
+}
+.ctabs {
+  display: flex;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin-left: var(--sp-8);
+  overflow: hidden;
+}
+.ctab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+  min-width: 0;
+}
+.ctab:hover {
+  background: var(--fill);
+}
+.ctab.on {
+  background: var(--bg-surface);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.ctab-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  min-width: 0;
+  height: var(--icon-btn);
+  padding: 0 var(--sp-4) 0 var(--sp-12);
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ctab.on .ctab-pick {
+  color: var(--fg);
+}
+.ctab .x {
+  width: 20px;
+  height: 20px;
+  color: var(--fg-faint);
+}
+.cbody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: 20px;
+  padding: 0 var(--sp-6);
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.chip:hover {
+  background: var(--fill);
+}
+.chip.on {
+  color: var(--accent);
+}
+
 /* ---- The Checkouts stage ---------------------------------------------- */
 
 .ctable-wrap {
@@ -2994,6 +3121,7 @@ body.filled .rail {
   background: var(--see-surface);
 }
 .stage-body,
+.console,
 .board {
   background: var(--see-sunken);
 }

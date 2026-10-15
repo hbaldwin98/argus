@@ -2,6 +2,7 @@
 // words, the sidebar's foot, the empty stage, and notices that pass.
 import { drawCheckouts } from './checkouts.js';
 import { drawComposer } from './compose.js';
+import { drawConsole } from './console.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { drawFeatures } from './features.js';
 import { chordsFor, keycaps, presses } from './keys.js';
@@ -20,6 +21,7 @@ export function drawChrome() {
     drawFeatures();
     drawCheckouts();
     drawComposer();
+    drawConsole();
     drawNav();
     drawHeading();
     drawRemoving();
@@ -42,6 +44,7 @@ function drawNav() {
         ['workspace', 'workspace'],
         ['feature', 'feature'],
         ['checkouts', 'checkouts'],
+        ['console', 'console'],
     ]) {
         const nav = $(`nav-${name}`);
         nav.classList.toggle('on', stage === name);
@@ -53,7 +56,12 @@ function drawNav() {
     }
     $('nav-search-keys').replaceChildren(keycaps(chordsFor('palette', 'anywhere')));
 }
-const STAGE_NAME = { feature: 'Features', checkouts: 'Checkouts', new: 'New' };
+const STAGE_NAME = {
+    feature: 'Features',
+    checkouts: 'Checkouts',
+    new: 'New',
+    console: 'Console',
+};
 /** The repository the Feature and Checkouts stages read. */
 function chosenRepository() {
     const { project, repository } = state.rail;
@@ -354,10 +362,13 @@ export function startAction(action) {
 /** The strip's words: the pane on screen, or the stage and the
  *  repository it reads. */
 function drawHead() {
-    const { shown, stage } = state.rail;
+    const { shown } = state.rail;
+    // Fullscreen, the console is what the strip names, whichever stage is
+    // under it.
+    const stage = state.console?.place === 'fullscreen' ? 'console' : state.rail.stage;
     const head = $('head');
     if (stage !== 'workspace') {
-        const repository = chosenRepository();
+        const repository = stage === 'console' ? null : chosenRepository();
         head.replaceChildren(el('span', { class: 'type-heading' }, STAGE_NAME[stage]), repository
             ? el('span', { class: 'crumbs' }, el('span', { class: 'fg-faint' }, '·'), repository)
             : '');
@@ -397,7 +408,7 @@ function drawBar() {
         }
         if (working > 0)
             tallies.push(el('span', { class: 'fg-accent' }, `⋮ ${working} working`));
-        line.push(dot(), el('span', { class: 'grow' }, 'Connected'), chimeSwitch(), settingsButton());
+        line.push(dot(), el('span', { class: 'grow' }, 'Connected'), consoleChip(), chimeSwitch(), settingsButton());
     }
     else if (connection === 'connecting') {
         line.push(dot('var(--attention)'), el('span', { class: 'grow' }, 'Connecting'), settingsButton());
@@ -407,6 +418,22 @@ function drawBar() {
     }
     const shown = connection === 'connected' && alarm;
     $('bar').replaceChildren(tallies.length > 0 ? el('div', { class: 'bar-row' }, tallies) : '', shown ? el('div', { class: 'bar-alarm fg-attention' }, alarm) : '', el('div', { class: 'bar-row' }, line));
+}
+/** The console's way back when hidden, and its count of consoles. */
+function consoleChip() {
+    const page = state.console;
+    const shown = !!page && page.place !== 'hidden';
+    const count = page?.tabs.length ?? 0;
+    const keys = chordsFor('toggleConsole', 'anywhere')
+        .map((chord) => presses(chord).join(' '))
+        .join(', ');
+    const words = shown ? 'Hide the console' : 'Show the console';
+    return el('button', {
+        class: `chip${shown ? ' on' : ''}`,
+        title: keys ? `${words} (${keys})` : words,
+        'aria-pressed': String(shown),
+        onclick: () => call('console', { gesture: { on: 'toggle' } }),
+    }, el('span', { class: 'mono' }, '›_'), count > 0 ? String(count) : '');
 }
 function chimeSwitch() {
     const on = state.status.chime;
@@ -435,7 +462,8 @@ function drawStage() {
     const { connection, detail } = state.status;
     const { loaded, project, shown } = state.rail;
     const empty = $('empty');
-    $('terminal').hidden = !shown;
+    // The console may have the canvas while the Workspace has no pane.
+    $('terminal').hidden = !shown && state.console?.showing == null;
     $('body').classList.toggle('held', connection === 'stopped');
     empty.hidden = !!shown;
     if (shown)

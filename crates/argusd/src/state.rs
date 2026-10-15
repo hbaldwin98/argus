@@ -301,6 +301,10 @@ struct Workspace {
 struct Inner {
     workspaces: Vec<Workspace>,
     projects: Vec<Project>,
+    /// Shells that belong to no checkout, in the order they were started.
+    /// Outside every workspace, so switching one never hides them, and not
+    /// recorded for the next run.
+    consoles: Vec<Pane>,
     ids: IdGen,
     /// Exactly one workspace is open at a time, daemon-global. Panes in the
     /// others keep running; they are just not in the tree clients render.
@@ -433,38 +437,7 @@ fn project_info(p: &Project, used: &HashMap<PathBuf, u64>) -> ProjectInfo {
                                 .and_then(|status| status.branch.clone())
                                 .unwrap_or_else(|| c.name.clone()),
                             path: c.path.to_string_lossy().to_string(),
-                            panes: c
-                                .panes
-                                .iter()
-                                .map(|pane| PaneInfo {
-                                    id: pane.id,
-                                    kind: pane.kind,
-                                    title: pane.title.clone(),
-                                    status: pane.status,
-                                    note: pane.note.clone(),
-                                    template: pane.template.clone(),
-                                    children: pane
-                                        .children
-                                        .iter()
-                                        .map(|c| argus_protocol::ChildAgentInfo {
-                                            label: c
-                                                .label
-                                                .clone()
-                                                .unwrap_or_else(|| "agent".to_string()),
-                                            status: c.status,
-                                            note: c.note.clone(),
-                                        })
-                                        .collect(),
-                                    telemetry: pane.telemetry.clone(),
-                                    background: pane.background,
-                                    since: pane
-                                        .status_since
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .ok()
-                                        .map(|d| d.as_secs()),
-                                    live: pane.inbox.is_some(),
-                                })
-                                .collect(),
+                            panes: c.panes.iter().map(pane_info).collect(),
                             git,
                             primary: c.primary,
                         }
@@ -472,6 +445,34 @@ fn project_info(p: &Project, used: &HashMap<PathBuf, u64>) -> ProjectInfo {
                     .collect(),
             })
             .collect(),
+    }
+}
+
+fn pane_info(pane: &Pane) -> PaneInfo {
+    PaneInfo {
+        id: pane.id,
+        kind: pane.kind,
+        title: pane.title.clone(),
+        status: pane.status,
+        note: pane.note.clone(),
+        template: pane.template.clone(),
+        children: pane
+            .children
+            .iter()
+            .map(|c| argus_protocol::ChildAgentInfo {
+                label: c.label.clone().unwrap_or_else(|| "agent".to_string()),
+                status: c.status,
+                note: c.note.clone(),
+            })
+            .collect(),
+        telemetry: pane.telemetry.clone(),
+        background: pane.background,
+        since: pane
+            .status_since
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs()),
+        live: pane.inbox.is_some(),
     }
 }
 
@@ -508,6 +509,13 @@ impl Daemon {
             .filter(|p| p.workspace == open)
             .map(|p| project_info(p, &inner.used))
             .collect()
+    }
+
+    /// Every console, in the order they were started. Sent beside each
+    /// tree rather than carried by the broadcast, so a change to a console
+    /// rides the tree's broadcast and nothing else.
+    pub fn consoles(&self) -> Vec<PaneInfo> {
+        self.inner.lock().unwrap().consoles.iter().map(pane_info).collect()
     }
 
     pub fn subscribe_tree(&self) -> broadcast::Receiver<Vec<ProjectInfo>> {

@@ -4,4 +4,4 @@
  * Which stage is up. One at a time: opening one puts the others away, and
  * any of them over the Workspace keeps the pane on screen to come back to.
  */
-export type Stage = "workspace" | "feature" | "checkouts" | "new";
+export type Stage = "workspace" | "feature" | "checkouts" | "new" | "console";

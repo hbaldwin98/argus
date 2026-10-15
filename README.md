@@ -243,6 +243,16 @@ restores it, and Escape goes back to the index. A task's done-when criteria are 
 removed in place. `Ctrl-V` (`Cmd-V` on a Mac), `Ctrl-Shift-V` and `Alt-V` paste, and
 Shift-PageUp/PageDown page through the history.
 
+The console is shells that belong to no checkout: each starts in your home directory, and every
+window shows the same ones, since they are the daemon's. `4` (from a pane, the leader and `4`), or
+Console in the sidebar, gives it the stage; `` ` `` (from a pane, the leader and `` ` ``), or the `›_`
+beside the connection, shows it docked under the Workspace, Feature and Checkouts stages or hides it,
+and its sash sets its height; the leader and `z` fills the window with it, all but the sidebar's
+projects. A tab per console, `+` for another and a tab's `✕` to end one. One pane is on screen at a
+time, so a console typed in takes the screen from the Workspace's pane, and choosing that pane takes
+it back. Whether it is docked and its height are kept in `desktop.json`; the consoles last as long
+as the daemon.
+
 `Ctrl-K` (from a pane, the leader and `k`) opens the palette: one search over the window's commands,
 the project's panes and checkouts and the chosen repository's features, each with its key or its
 status beside it. A leading `>` searches only commands, `#` only features. `?` (from a pane, the
@@ -317,7 +327,7 @@ The directory may contain:
 | --- | --- |
 | `projects.toml` | Workspaces, projects, repositories, agent templates, and harnesses. Yours to edit; Argus only reads it |
 | `client.toml` | Editor, theme, layout, pane-view, and notification preferences |
-| `desktop.json` | The desktop window's own: each repository's feature layout, whether it chimes when an agent needs you, and its settings (theme, opacity, editor, notifications). Kept apart from `client.toml`, so each client's editor and theme are set in it |
+| `desktop.json` | The desktop window's own: each repository's feature layout, whether it chimes when an agent needs you, whether the console is docked and how tall, and its settings (theme, opacity, editor, notifications). Kept apart from `client.toml`, so each client's editor and theme are set in it |
 | `runtime.db` | Everything Argus writes: panes to relaunch, projects and repositories added or removed from the TUI, workspaces created at runtime, and the last workspace open |
 
 The daemon watches `projects.toml` and reloads project and agent-template changes. Existing panes

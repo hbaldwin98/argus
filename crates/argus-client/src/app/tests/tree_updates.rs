@@ -41,6 +41,16 @@ fn an_empty_tree_leaves_nothing_selected_and_nothing_subscribed() {
 }
 
 #[test]
+fn consoles_leave_the_projects_and_the_selection_alone() {
+    let mut h = Harness::new();
+    h.keys("lllj");
+    let before = (h.app.current_project().map(|p| p.id), h.app.column_pane());
+    h.app.on_server_msg(ServerMsg::Consoles(vec![pane(900, "shell")]));
+    // The terminal client lists no consoles yet: decoding one changes nothing.
+    assert_eq!((h.app.current_project().map(|p| p.id), h.app.column_pane()), before);
+}
+
+#[test]
 fn templates_arrive_out_of_band() {
     let (tx, _rx) = unbounded_channel();
     let mut app = App::new(tx);
