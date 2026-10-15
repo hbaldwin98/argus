@@ -121,8 +121,9 @@ are the run's, since a restarted daemon's consoles are new shells under new ids.
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `settings`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, with `keys`, `dom`, `state`,
-`clock` and `tauri` beneath them),
+`palette`, `shortcuts`, `settings`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, with `keys`, `dom`, `state`,
+`clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
+`markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code` — and `viewlink`),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
@@ -293,6 +294,7 @@ to the type or its locking.
 | `state/tree` | finding your way around the tree |
 | `state/features` | which feature a checkout is on, and the one path a change to a feature takes, with who asked as a parameter |
 | `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
+| `state/views` | which views agents have shown, per pane, and which go when |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
@@ -408,6 +410,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
+| `agent_views` | which views agents showed, as the window holds them, which one is out in the side panel, and which wait on a refresh |
+| `opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
 | `logging` | where the window's own diagnostics go |
 | `window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
 | `fixtures` | the tree builders the test modules share |
@@ -1866,6 +1870,35 @@ by leaving the editor, only approved with `A` as it then reads, edits included, 
 `D`. Approval carries the text the person read rather than naming the draft, so an agent that
 redrafts in between cannot have its newer text approved unseen, and the store refuses an approval or
 a turn-down when no draft is waiting.
+
+An agent can show the person what it read from a tracker, or from anywhere else it can reach, as a
+view. It writes an `AgentView` as JSON — an id, a title, an optional status chip, an optional
+subject URL, and blocks of text, fields, tables, lists, stats, code, Mermaid and callouts, which it
+translates from what its own tools returned — and runs `argus-hook view show --stdin`, which posts
+it to the pane API's `view` endpoint; `view close <id>` takes one down. Argus still talks to no
+tracker, and the page draws strings as text, never as markup. The daemon checks every limit in
+`AgentView::checked` (256 KiB of JSON, 200 table rows, four levels of nesting, and an `http` or
+`https` subject) and answers a refusal with a `409` carrying the block's path, `blocks[2].rows`, in
+words the agent can act on; a body past the size limit is refused with a `413` before it is parsed.
+What it keeps it stamps with the pane that sent it and the time it arrived, and with the subject
+read as a tracker link. Views are held in the daemon's memory only (`state/views`) and never reach
+the store, so nothing read from a ticket outlives the agent's next look at it or the daemon's
+restart. A pane holds eight: showing an id it already has replaces that view in its place, and a
+ninth drops the pane's oldest. A pane's views go with it when it is closed. Only a client that sent
+`ClientMsg::WatchViews` is sent them — every view held now, oldest first, then `ViewShown` and
+`ViewClosed` as they change. The person closes one with `ClientMsg::CloseView`. A refresh is a request
+to the agent, not a read by Argus: `ClientMsg::RefreshView` sends the agent a message, through its
+harness's inbox or typed in as a review comment is, asking it to read the source again and show the
+view anew with the same id, and the view stays as it is until it does.
+
+The desktop window watches views when the daemon offers them (`AGENT_VIEWS`); the terminal client
+never asks. A view opens in a side panel beside the stage, so the rail and the stage stay in sight and
+the pane shrinks to fit rather than being covered. It opens by itself only when it comes from the pane
+on screen and the panel is not already showing one; otherwise a tab at the window's edge counts the
+views waiting and brings the newest out. The panel has a tab per view, newest first, says who read it
+and how long ago, and offers Refresh, which waits for the agent to show it again, and Close, which
+takes it down for every client. Every string is drawn as text, Markdown included; a link opens
+through `opener` in the system's browser and only when it is `http` or `https`.
 
 `m` transfers the selected feature's active checkout association to another checkout in the same
 repository over `FeatureAction::Transfer`, sent on the source checkout's board. The daemon validates both runtime ids, removes the

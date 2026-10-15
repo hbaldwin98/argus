@@ -322,15 +322,17 @@ fn value_ok(value: &Value, path: &str) -> Result<(), String> {
     }
 }
 
-/// The page hands a link to the system's opener, which would as happily
-/// run a `file:` URL.
-fn web_url(url: &str) -> Result<(), &'static str> {
+/// Whether a client may hand `url` to the system's opener, which would as
+/// happily run a `file:` URL. The daemon refuses any other link in a view,
+/// and the client asks again before it opens one.
+pub fn is_web_url(url: &str) -> bool {
     let lower = url.trim().to_ascii_lowercase();
-    if lower.starts_with("https://") || lower.starts_with("http://") {
-        Ok(())
-    } else {
-        Err("a link is an http or https URL")
-    }
+    (lower.starts_with("https://") || lower.starts_with("http://"))
+        && !url.trim().chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+fn web_url(url: &str) -> Result<(), &'static str> {
+    if is_web_url(url) { Ok(()) } else { Err("a link is an http or https URL") }
 }
 
 #[cfg(test)]

@@ -833,7 +833,7 @@ pub struct Link {
 }
 
 /// The views agents showed, and the one open in the side panel.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ViewsPage {

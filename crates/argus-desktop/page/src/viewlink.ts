@@ -13,18 +13,7 @@ export function viewLink(url: string, ...label: Child[]): HTMLElement {
     event.stopPropagation();
     call('open_url', { url });
   };
-  return el(
-    'a',
-    {
-      class: 'vlink',
-      role: 'link',
-      tabindex: '0',
-      title: url,
-      onclick: open,
-      onkeydown: (event: KeyboardEvent) => {
-        if (event.key === 'Enter') open(event);
-      },
-    },
-    label,
-  );
+  // A button rather than an anchor: it takes Enter and Space without a
+  // key handler of its own, and there is no href for the webview to follow.
+  return el('button', { class: 'vlink', type: 'button', title: url, onclick: open }, label);
 }

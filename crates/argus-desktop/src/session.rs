@@ -15,7 +15,8 @@
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
 //! the project switcher (`switcher`) and the dialog adding a project
 //! (`add_project`), the Settings dialog's choices (`preferences`), the
-//! console (`console`), and what the daemon is making
+//! console (`console`), the views agents showed (`agent_views`), and what
+//! the daemon is making
 //! (`argus_protocol::awaited`). The session says which of them a message
 //! or gesture is for, and what one of them changing means for the rest.
 //!
@@ -33,10 +34,11 @@ use argus_protocol::pane_view::{Effect, PaneView};
 use argus_protocol::paste;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
-    RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, CONSOLES, FOCUS, PASTE_FILE,
+    RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, CONSOLES, FOCUS, PASTE_FILE,
 };
 
 use crate::add_project::AddProject;
+use crate::agent_views::AgentViews;
 use crate::agents::Agents;
 use crate::capture_note::CaptureNote;
 use crate::checkouts_stage::{CheckoutsStage, Opened};
@@ -110,6 +112,7 @@ pub struct Session {
     workspace_pane: Option<PaneId>,
     awaited: Awaited<Made>,
     agents: Agents,
+    views: AgentViews,
     dialogs: Dialogs,
     sessions: Sessions,
     /// The recent-sessions dialog, while open.
@@ -168,6 +171,7 @@ impl Session {
             workspace_pane: None,
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
+            views: AgentViews::default(),
             dialogs: Dialogs::new(settings.review),
             sessions: Sessions::default(),
             recent: None,
@@ -233,6 +237,9 @@ impl Session {
             dialog.reconnected(self.awaited.name(), &mut self.out);
         }
         self.shown.reconnected(&mut self.out);
+        if self.status.daemon_can(AGENT_VIEWS) {
+            self.views.connected(&mut self.out);
+        }
         self.finish()
     }
 
@@ -311,6 +318,8 @@ impl Session {
                 self.rail_changed = true;
             }
             ServerMsg::Tasks(list) => self.features.receive_tasks(*list),
+            ServerMsg::ViewShown(view) => self.views.shown(*view, self.shown.pane()),
+            ServerMsg::ViewClosed { pane, id } => self.views.closed(pane, &id),
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
             _ => {}
@@ -499,11 +508,23 @@ impl Session {
             | Call::CloseWindow
             | Call::DragWindow
             | Call::SnapLayouts
-            | Call::OpenView { .. }
-            | Call::HideViews
-            | Call::RefreshView { .. }
-            | Call::CloseView { .. }
             | Call::OpenUrl { .. } => self.finish(),
+            Call::OpenView { pane, id } => {
+                self.views.open(PaneId(pane), id);
+                self.finish()
+            }
+            Call::HideViews => {
+                self.views.hide();
+                self.finish()
+            }
+            Call::RefreshView { pane, id } => {
+                self.views.refresh(PaneId(pane), id, &mut self.out);
+                self.finish()
+            }
+            Call::CloseView { pane, id } => {
+                self.views.close(PaneId(pane), id, &mut self.out);
+                self.finish()
+            }
         }
     }
 
@@ -1906,6 +1927,10 @@ impl Session {
                 events.push(Event::Checkouts(Box::new(table)));
             }
         }
+        let tree = &self.tree;
+        if let Some(page) = self.views.take(|pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
+            events.push(Event::Views(Box::new(page)));
+        }
         events.append(&mut self.passing);
         events
     }
@@ -1920,6 +1945,7 @@ impl Session {
         self.adding_sent.forget();
         self.capture_sent.forget();
         self.console_sent.forget();
+        self.views.forget();
         // A page that has just loaded has no palette open.
         self.palette = false;
         self.palette_sent.forget();
@@ -2299,6 +2325,32 @@ mod tests {
         assert_eq!(s.everything(0).len(), 7, "a fresh page hears it all, the keymap first");
     }
 
+    #[test]
+    fn a_window_asks_for_views_only_of_a_daemon_that_has_them_and_draws_what_comes() {
+        let mut quiet = Session::default();
+        let sent = quiet.connected(Some(without_focus()), None, vec![with_tree(tree())]);
+        assert!(!sent.iter().any(|m| matches!(m, ClientMsg::WatchViews)));
+
+        let mut s = Session::default();
+        let sent = s.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::WatchViews)));
+        s.events(0);
+        let view = argus_protocol::AgentView {
+            id: "ci".into(),
+            title: "CI on main".into(),
+            status: None,
+            subject: None,
+            blocks: Vec::new(),
+        };
+        s.receive(ServerMsg::ViewShown(Box::new(argus_protocol::ShownView { pane: PaneId(1), at: 5, subject: None, view })));
+        let events = s.events(0);
+        let Some(Event::Views(page)) = events.iter().find(|e| matches!(e, Event::Views(_))) else {
+            panic!("{events:?}");
+        };
+        assert_eq!((page.views[0].from.as_str(), page.views[0].view.id.as_str()), ("claude", "ci"));
+        let asked = s.call(Call::RefreshView { pane: 1, id: "ci".into() });
+        assert!(matches!(&asked[..], [ClientMsg::RefreshView { pane: PaneId(1), id }] if id == "ci"));
+    }
 
     fn chimes(s: &mut Session) -> usize {
         s.events(0).iter().filter(|e| matches!(e, Event::Chime)).count()

@@ -26,6 +26,10 @@ pub(super) const FILES: &[(&str, &str)] = &[
         "references/diagrams.md",
         include_str!("../../skills/argus/references/diagrams.md"),
     ),
+    (
+        "references/views.md",
+        include_str!("../../skills/argus/references/views.md"),
+    ),
 ];
 /// Files earlier versions installed, removed when still Argus-managed.
 pub(super) const RETIRED: &[&str] = &["references/work.md"];

@@ -12,6 +12,7 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod add_project;
+mod agent_views;
 mod agents;
 mod backdrop;
 mod capture_note;
@@ -33,6 +34,7 @@ mod history;
 mod keys;
 mod logging;
 mod notifications;
+mod opener;
 mod page;
 mod palette;
 mod preferences;

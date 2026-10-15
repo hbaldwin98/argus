@@ -71,5 +71,8 @@ diagrams. Only when you are about to change one of them, read its reference:
 - [references/decisions.md](references/decisions.md): recording choices, superseding them, and raising one that is the human's as an open question.
 - [references/diagrams.md](references/diagrams.md): recording an interaction flow as Mermaid.
 
+To show the person a ticket, a CI run or a query's rows in the desktop window,
+read [references/views.md](references/views.md) first.
+
 Keep those records relevant to the requested work. Answering a question does not
 require creating a feature or tasks.

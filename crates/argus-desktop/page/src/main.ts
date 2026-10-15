@@ -22,6 +22,7 @@ import { addProjectOpen, drawAddProject, drawHeading } from './projects.js';
 import { drawFrame, screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
+import { drawViews, openNewestView } from './views.js';
 
 /** Whether the pane had the keys when a dialog opened over it. */
 let paneHadKeys = false;
@@ -121,6 +122,9 @@ function receive(event: Event): void {
       state.capture = event;
       drawFeatures();
       break;
+    case 'views':
+      drawViews(event);
+      break;
     case 'chime':
       chime();
       break;
@@ -166,6 +170,7 @@ document.addEventListener('mousedown', (e) => {
   if (e.target instanceof Node && !$('rail').contains(e.target)) unpickRail();
 });
 $('reconnect').addEventListener('click', reconnect);
+$('views-tab').addEventListener('click', openNewestView);
 $('nav-search').addEventListener('click', openPalette);
 $('nav-new').addEventListener('click', () => call('show_composer', { open: true }));
 $('nav-workspace').addEventListener('click', () => call('show_features', { open: false }));

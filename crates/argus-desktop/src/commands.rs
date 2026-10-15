@@ -1,8 +1,9 @@
 //! The two Tauri commands the page invokes: `connect`, which opens its
 //! channel, and `call`, which takes every [`Call`] and hands it to whatever
 //! answers it — the session, or for the clipboard, the window's frame and
-//! a reconnect, the part of the window that owns them. A setting is the
-//! session's, and the window's frame, backdrop and zoom follow it.
+//! a reconnect and a view's links, the part of the window that owns them.
+//! A setting is the session's, and the window's frame, backdrop and zoom
+//! follow it.
 //!
 //! Each is `async` because Tauri runs a synchronous command on the UI
 //! thread, and none of them should hold the window while it takes a lock.
@@ -15,6 +16,7 @@ use tauri::{State, WebviewWindow};
 
 use crate::backdrop;
 use crate::clipboard;
+use crate::opener;
 use crate::page::{Call, Event, SettingChange};
 use crate::shared::Shared;
 use crate::window_frame;
@@ -42,6 +44,11 @@ pub async fn call(shared: State<'_, Arc<Shared>>, window: WebviewWindow, call: C
         Call::CloseWindow => return window_frame::close(&window),
         Call::DragWindow => return window_frame::drag(&window),
         Call::SnapLayouts => return window_frame::snap_layouts(&window),
+        Call::OpenUrl { url } => {
+            if let Err(said) = opener::open(&url) {
+                shared.act(|s| s.note(said));
+            }
+        }
         Call::Setting { change } => {
             let look = matches!(change, SettingChange::Theme { .. } | SettingChange::Backdrop { .. });
             shared.act(|s| s.call(Call::Setting { change }));
