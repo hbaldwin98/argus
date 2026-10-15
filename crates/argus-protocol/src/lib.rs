@@ -9,12 +9,16 @@
 
 pub mod adr;
 pub mod agent_view;
+pub mod view_check;
 pub mod view_patch;
+pub mod view_press;
+pub mod view_tree;
 pub mod ago;
 pub mod artifacts;
 pub mod awaited;
 pub mod board_follower;
 pub mod capture;
+pub mod checkout_path;
 pub mod cell;
 pub mod column;
 pub mod column_verbs;
@@ -57,13 +61,19 @@ pub mod tree;
 
 pub use ago::ago;
 pub use agent_view::{
-    AgentView, Answer, AnswerValue, Block, BoardCard, BoardColumn, ChartShape, CheckItem, Chip, Column, Field,
-    FormField, FormInput, GraphDirection, GraphEdge, GraphNode, GridMin, Item, LogLevel, LogLine, MatrixCell,
-    RowAlign, RowItem, RowSelect, Series, ShownView, Stat, Tab, TimelineEvent, Tone, TreeNode, Value,
-    ViewAction, ViewChange, ViewPress, MAX_BLOCK_DEPTH, MAX_CHART_POINTS, MAX_CHART_SERIES, MAX_FORM_FIELDS,
-    MAX_GRAPH_NODES, MAX_LOG_LINES, MAX_TABLE_ROWS, MAX_TREE_DEPTH, MAX_TREE_NODES, MAX_VIEWS_PER_PANE,
-    MAX_VIEW_BYTES, MAX_VIEW_ID_BYTES, MAX_VIEW_ACTIONS, MAX_VIEW_TITLE_BYTES, MIN_REFRESH_SECS,
+    AgentView, Block, BoardCard, BoardColumn, ChartShape, CheckItem, Chip, Column, Field, FormField, FormInput,
+    GraphDirection, GraphEdge, GraphNode, GridMin, Item, LogLevel, LogLine, MatrixCell, RowAlign, RowItem,
+    RowSelect, Series, ShownView, Stat, Tab, TimelineEvent, Tone, TreeNode, Value, ViewChange,
 };
+pub use checkout_path::is_checkout_relative;
+pub use view_check::{
+    is_web_url, MAX_BLOCK_DEPTH, MAX_CHART_POINTS, MAX_CHART_SERIES, MAX_FORM_FIELDS, MAX_GRAPH_EDGES,
+    MAX_GRAPH_NODES, MAX_LOG_LINES, MAX_TABLE_ROWS, MAX_TREE_DEPTH, MAX_TREE_NODES, MAX_TREND_POINTS,
+    MAX_VIEWS_PER_PANE, MAX_VIEW_ACTIONS, MAX_VIEW_BYTES, MAX_VIEW_ID_BYTES, MAX_VIEW_NUMBER,
+    MAX_VIEW_TITLE_BYTES, MIN_REFRESH_SECS,
+};
+pub use view_press::{find_action, press_request, Answer, AnswerValue, ViewAction, ViewPress, MAX_ANSWER_BYTES};
+pub use view_tree::Slot;
 pub use artifacts::ArtifactScope;
 pub use board_follower::{BoardFollower, BoardScope, Received};
 pub use cell::{

@@ -65,7 +65,9 @@ pub const FOCUS: &str = "focus";
 /// `ServerMsg::ViewShown` and `ServerMsg::ViewClosed` from the daemon.
 pub const AGENT_VIEWS: &str = "agent-views";
 
-/// `ClientMsg::PressView`: a press of an action an agent put in a view.
+/// `ClientMsg::PressView`: a press of an action an agent put in a view, and
+/// `ServerMsg::ViewPressFailed` to the client that pressed when the agent
+/// could not be told of it.
 pub const VIEW_ACTIONS: &str = "view-actions";
 
 /// `ClientMsg::ListSessions`, `ClientMsg::ReadSession`,

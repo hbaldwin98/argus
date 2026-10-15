@@ -748,6 +748,29 @@ fn a_view_and_the_watches_take_effect_through_dispatch() {
 }
 
 #[test]
+fn a_press_that_cannot_be_relayed_is_answered_to_the_client_that_pressed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let press = argus_protocol::ViewPress {
+        view: "ci".into(),
+        action: "rerun".into(),
+        rows: vec![],
+        form: None,
+        answers: vec![],
+    };
+
+    h.send(ClientMsg::PressView { pane: argus_protocol::PaneId(7), press });
+
+    match h.replies().as_slice() {
+        [ServerMsg::ViewPressFailed { pane, view, action, reason }] => {
+            assert_eq!((pane.0, view.as_str(), action.as_str()), (7, "ci", "rerun"));
+            assert!(!reason.is_empty());
+        }
+        other => panic!("expected the failure, got {other:?}"),
+    }
+}
+
+#[test]
 fn a_greeting_is_answered_then_followed_by_what_the_client_takes() {
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());

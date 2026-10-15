@@ -113,7 +113,12 @@ pub(super) fn dispatch(
             Ok(())
         }
         ClientMsg::PressView { pane, press } => {
-            daemon.press_view(pane, press);
+            let (view, action) = (press.view.clone(), press.action.clone());
+            // The press is the person's, so a refusal is theirs to read
+            // rather than a line in the daemon's log.
+            if let Err(reason) = daemon.press_view(pane, press) {
+                let _ = out_tx.send(ServerMsg::ViewPressFailed { pane, view, action, reason });
+            }
             Ok(())
         }
         ClientMsg::OpenInEditor {

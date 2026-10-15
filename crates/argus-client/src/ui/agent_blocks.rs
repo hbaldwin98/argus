@@ -195,6 +195,7 @@ fn one(block: &Block, width: usize, depth: usize, th: Theme, out: &mut Vec<Line<
             nested(blocks, Span::raw("  "), width, depth, th, out);
         }
         Block::Row { items, .. } => row(items, width, th, out),
+        Block::Unknown => out.push(Line::from(muted("a block this Argus cannot draw — it needs a newer Argus", th))),
         Block::Divider => out.push(Line::from(Span::styled(
             "─".repeat(width),
             Style::default().fg(th.edge),

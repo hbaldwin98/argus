@@ -25,7 +25,7 @@ subject: string | null,
 feature: number | null, 
 /**
  * Ask the agent to read the view again this often, in seconds, while
- * it is held; at least [`MIN_REFRESH_SECS`].
+ * it is held; at least [`MIN_REFRESH_SECS`](crate::view_check::MIN_REFRESH_SECS).
  */
 refresh_every: number | null, 
 /**

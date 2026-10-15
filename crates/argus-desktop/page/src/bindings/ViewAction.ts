@@ -8,7 +8,7 @@ import type { Tone } from "./Tone";
  */
 export type ViewAction = { 
 /**
- * The agent's name for it, sent back on a press.
+ * The agent's name for it, sent back on a press. Unique in its view.
  */
 id: string, label: string, tone: Tone, 
 /**

@@ -310,7 +310,11 @@ live in this crate and a contract written twice drifts in silence.
 | `board_follower` | how a client follows one repository's board: when it asks for the board and the feature's lists, which pushes it keeps, and where the cursor lands on a feature, task or diagram when one is replaced |
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
-| `agent_view` | what a view an agent shows in the desktop is made of: its blocks and values, its actions and what a press of one sends back, the limits it keeps, and the change an agent sends to show, patch or close one |
+| `agent_view` | what a view an agent shows is made of — its blocks and values and the change an agent sends to show, patch or close one — as the desktop and the terminal client both draw it |
+| `view_check` | whether a view keeps its limits (sizes, depth, counts, bounded numbers, unique and printable ids, web links, checkout-relative paths, kinds this Argus knows), and where it does not, the path that names the fault |
+| `view_tree` | how the blocks of a view nest: the lists inside each container, and what a patch path and the desktop page each call them |
+| `view_press` | what a press of a view's action carries back, which of it the view offered, and the one line the agent is told of it |
+| `checkout_path` | whether a path an agent wrote stays inside the checkout it is read against |
 | `view_patch` | how a patch replaces one block of a held view: the block path an agent names it by, and the view with that block swapped |
 | `transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
 | `sessions` | a repository's agent sessions as listed: the harness and id that resume each, its checkout or the removed worktree it ran in, title, times and turns, and the pane running it |
@@ -346,6 +350,7 @@ to the type or its locking.
 | `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
 | `state/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, and what the agent is told at each turn |
 | `state/views` | which views agents have shown, per pane, and which go when |
+| `state/view_timers` | which views are being asked to refresh, and the task that asks |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
@@ -2005,7 +2010,7 @@ it to the pane API's `view` endpoint; `view close <id>` takes one down. Argus st
 tracker, and the page draws strings as text, never as markup. The daemon checks every limit in
 `AgentView::checked` (256 KiB of JSON, 200 table rows, four levels of nesting, and an `http` or
 `https` subject) and answers a refusal with a `409` carrying the block's path, `blocks[2].rows`, in
-words the agent can act on; a body past the size limit is refused with a `413` before it is parsed.
+words the agent can act on; a body past the size limit is refused with a `413` before it is parsed. The same check refuses a number past 1e15 in magnitude (a finite one near the top of `f64` hangs a chart's axis), a control character in any id or label the agent is later typed, two actions sharing an id, a path that leaves the checkout (`checkout_path`), and a block or value kind this Argus does not know. A client decoding what the daemon sent keeps such a kind as `Unknown` and says it needs a newer Argus.
 What it keeps it stamps with the pane that sent it and the time it arrived, and with the subject
 read as a tracker link. Views are held in the daemon's memory only (`state/views`) and never reach
 the store, so nothing read from a ticket outlives the agent's next look at it or the daemon's
@@ -2022,12 +2027,12 @@ form's submit. Argus runs nothing for one: `ClientMsg::PressView` (under `VIEW_A
 to the agent as one line, as a refresh is, naming the action, the selected row keys and a form's
 answers as JSON. The daemon relays it only when the held view offers that action id, and keeps only
 the row keys of a table that carries it and the answers of the form it submits, so the agent hears
-nothing its own view could not have produced. The pressed button waits until the agent shows the
+nothing its own view could not have produced. Row keys and answers count once, an answer must be of the kind its field takes and inside its options and range, and text is cut at 4 KiB (`ViewPress::offered_by`). A press that cannot be relayed — the view is gone, it no longer offers the action, or its agent is not running — is answered to the client that pressed with `ServerMsg::ViewPressFailed`, so the button does not wait on an agent that was never asked. The pressed button waits until the agent shows the
 view again. `ViewChange::Patch` (`argus-hook view patch <id> <path> --stdin`) replaces one block
 by the path refusals name blocks by (`view_patch`), and the daemon shows the whole view anew, so a
 progress bar or a log tail moves without the view being sent again. A view's `refresh_every` (at
 least a minute) has the daemon ask its agent for a refresh that often while the view is held; showing
-it again restarts the timer, and closing it or losing its pane stops it. A view's `feature` offers
+it again keeps the timer while the interval is unchanged and restarts it when it changed, a patch never touches it, and closing the view or losing its pane stops it. A view's `feature` offers
 it from that feature's header too; nothing about it is stored.
 
 The desktop window watches views when the daemon offers them (`AGENT_VIEWS`); the terminal client

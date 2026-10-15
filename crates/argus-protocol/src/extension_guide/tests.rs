@@ -9,7 +9,8 @@ use serde::Serialize;
 use serde_json::Value as Json;
 
 use super::*;
-use crate::agent_view::{value_ok, Value};
+use crate::agent_view::Value;
+use crate::view_check::value_ok;
 use crate::extension_keys::{action_key_refusal, command_key_refusal};
 use crate::extensions::{
     CommandScope, ExtAbout, ExtAnswer, ExtCommand, ExtDialog, ExtDialogKind, ExtDialogRaised, ExtEvent, ExtPane,
@@ -81,6 +82,7 @@ fn value_kind(value: &Value) -> usize {
         Value::Commit { .. } => 16,
         Value::Feature { .. } => 17,
         Value::Pane { .. } => 18,
+        Value::Unknown => 19,
     }
 }
 

@@ -9,6 +9,8 @@ repository.workspace = true
 tokio = { workspace = true }
 serde = { workspace = true }
 rmp-serde = { workspace = true }
+# Writes the press request an agent is told of, whose rows and answers it parses.
+serde_json = { workspace = true }
 compact_str = { workspace = true }
 directories = { workspace = true }
 thiserror = { workspace = true }
@@ -20,5 +22,3 @@ ts-rs = { version = "12.0.1", optional = true }
 [features]
 ts = ["dep:ts-rs"]
 
-[dev-dependencies]
-serde_json = { workspace = true }

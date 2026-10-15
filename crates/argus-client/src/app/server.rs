@@ -298,6 +298,9 @@ impl App {
             ServerMsg::Focus(_) => {}
             ServerMsg::ViewShown(shown) => self.agent_views.shown(*shown),
             ServerMsg::ViewClosed { pane, id } => self.agent_views.closed(pane, &id),
+            // Sent only to a client that pressed a view's action, which
+            // this one cannot yet.
+            ServerMsg::ViewPressFailed { .. } => {}
             // Sent only to a client that listed extensions, which this
             // does not yet.
             ServerMsg::ExtensionViews(_)
