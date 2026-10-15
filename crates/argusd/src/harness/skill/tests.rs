@@ -180,8 +180,13 @@ fn the_instructions_ask_for_context_only_where_no_hook_prints_it() {
             "{}: {instructions}",
             harness.name
         );
+        // The skill's path is the checkout's, as long as the machine makes
+        // it (a macOS temporary directory is far longer than a Windows
+        // one), so the budget is on the words around it.
+        let words = instructions.replace(&checkout.path().display().to_string(), "");
+        assert_ne!(words, instructions, "{}: names the skill in the checkout", harness.name);
         assert!(
-            instructions.len() < 400,
+            words.len() < 400,
             "{}: it sits in every request of a session: {instructions}",
             harness.name
         );
