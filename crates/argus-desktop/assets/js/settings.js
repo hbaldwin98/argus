@@ -1,5 +1,6 @@
 // The Settings dialog, and the look its choices give the window: the theme
-// on the document and the background's opacity as `--see`.
+// on the document, the background's opacity as `--see` and the font in
+// front of `--font-mono`'s bundled faces.
 //
 // Rust holds the choices (`src/preferences.rs`) and saves each as it is
 // made; the dialog draws what Rust sends back, and is updated in place
@@ -55,6 +56,12 @@ export function applyLook() {
     else
         root.dataset.theme = chosen.theme;
     root.style.setProperty('--see', String(chosen.opacity / 100));
+    // Rust leaves no quote in the name to end it early.
+    const font = chosen.font && `"${chosen.font}", var(--font-mono-bundled)`;
+    if (font)
+        root.style.setProperty('--font-mono', font);
+    else
+        root.style.removeProperty('--font-mono');
     for (const s of screens)
         s.retheme();
 }
@@ -137,6 +144,14 @@ export function openSettings() {
     const [backdropGroup, backdrops] = segment('What shows through', page.backdrops.map((offer) => [offer.backdrop, BACKDROPS[offer.backdrop]]), (backdrop) => set({ set: 'backdrop', backdrop }));
     const backdropWhy = el('span', { class: 'meta' });
     const backdropRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'What shows through'), el('span', { class: 'meta' }, 'Clear shows the desktop; Mica and Acrylic blur it'), backdropWhy), backdropGroup);
+    const font = el('input', {
+        class: 'field mono',
+        placeholder: 'JetBrains Mono',
+        'aria-label': 'Font',
+        autocomplete: 'off',
+        spellcheck: 'false',
+    });
+    font.addEventListener('input', () => set({ set: 'font', family: font.value }));
     const [editorGroup, editors] = segment('Files open', EDITORS, (mode) => set({ set: 'editor', mode }));
     const command = el('input', {
         class: 'field mono',
@@ -157,6 +172,7 @@ export function openSettings() {
         backdrops,
         backdropRow,
         backdropWhy,
+        font,
         editors,
         command,
         notify,
@@ -168,7 +184,7 @@ export function openSettings() {
     ]), row('Follow the system', 'Mocha when it is dark, Latte when it is light', follow), row('Background opacity', 'The desktop shows through the background; text and borders stay solid', el('div', { class: 'opacity' }, opacity, percent)), 
     // Clear alone is no choice: where it is all this system draws, the
     // row is left out.
-    page.backdrops.length > 1 ? backdropRow : null), section('Editor', row('Files open', 'A known GUI editor always opens on its own', editorGroup), row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command)), section('Notifications', row('When an agent needs you', 'A system notification naming the pane: waiting, needs-review or failed', notify), row('Only while this window is in the background', null, background)), section('Features', row('Feature index', 'Remembered per repository; this is what a new one opens as', layoutGroup)), section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')));
+    page.backdrops.length > 1 ? backdropRow : null, row('Font', 'An installed font for panes and code, a Nerd Font for its icons; empty uses JetBrains Mono', font)), section('Editor', row('Files open', 'A known GUI editor always opens on its own', editorGroup), row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command)), section('Notifications', row('When an agent needs you', 'A system notification naming the pane: waiting, needs-review or failed', notify), row('Only while this window is in the background', null, background)), section('Features', row('Feature index', 'Remembered per repository; this is what a new one opens as', layoutGroup)), section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')));
     const nav = el('nav', { class: 'settings-nav', 'aria-label': 'Settings sections' }, SECTIONS.map((name) => el('button', {
         class: 'frow',
         onclick: () => {
@@ -244,6 +260,8 @@ export function drawSettings() {
     }
     controls.backdropWhy.textContent = why.join('. ');
     controls.backdropWhy.hidden = why.length === 0;
+    if (document.activeElement !== controls.font)
+        controls.font.value = chosen.font;
     setSegment(controls.editors, chosen.editor);
     // A field being typed in is ahead of what came back.
     if (document.activeElement !== controls.command)

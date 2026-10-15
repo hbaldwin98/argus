@@ -28,6 +28,7 @@ impl Chosen {
         // A hand-edited file is held to the same bounds as the slider.
         now.opacity = now.opacity.clamp(MIN_OPACITY, 100);
         now.zoom = now.zoom.clamp(ZOOM_STEPS[0], ZOOM_STEPS[ZOOM_STEPS.len() - 1]);
+        now.font = family_name(&now.font);
         if !backdrop::can_draw(now.backdrop) {
             now.backdrop = Backdrop::Clear;
         }
@@ -63,6 +64,7 @@ impl Chosen {
             SettingChange::Notify { on } => next.notify = on,
             SettingChange::NotifyInBackground { only } => next.notify_in_background = only,
             SettingChange::FeatureLayout { layout } => next.feature_layout = layout,
+            SettingChange::Font { family } => next.font = family_name(&family),
         }
         if next != self.now {
             self.now = next;
@@ -122,6 +124,19 @@ impl Chosen {
     pub fn take_unsaved(&mut self) -> bool {
         std::mem::take(&mut self.unsaved)
     }
+}
+
+/// A font family as the page can quote it in CSS: the page puts it inside
+/// quotes in front of the bundled faces, so a quote, backslash or
+/// semicolon could end the name and the declaration with it, and the
+/// whole stack would be dropped for the browser's default face.
+fn family_name(typed: &str) -> String {
+    typed
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\'' | '\\' | ';' | '{' | '}') && !c.is_control())
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
@@ -203,6 +218,17 @@ mod tests {
         assert_eq!(choices.editor(), (true, Some("code -w".into())));
         choices.change(SettingChange::Editor { mode: EditorMode::Checkout }).unwrap();
         assert!(!choices.editor().0, "a pane, which the daemon floats");
+    }
+
+    #[test]
+    fn a_font_family_keeps_nothing_that_could_end_its_quotes() {
+        let mut choices = Chosen::new(Preferences::default());
+        choices.change(SettingChange::Font { family: "  JetBrainsMono Nerd Font ".into() }).unwrap();
+        assert_eq!(choices.get().font, "JetBrainsMono Nerd Font");
+        choices.change(SettingChange::Font { family: "x'; color: red; }\\\"".into() }).unwrap();
+        assert_eq!(choices.get().font, "x color: red");
+        let choices = Chosen::new(Preferences { font: "Fira\"Code".into(), ..Preferences::default() });
+        assert_eq!(choices.get().font, "FiraCode", "a hand-edited file too");
     }
 
     #[test]

@@ -227,6 +227,7 @@ pub enum SettingChange {
     Notify { on: bool },
     NotifyInBackground { only: bool },
     FeatureLayout { layout: Layout },
+    Font { family: String },
 }
 
 /// What was done in the note a new feature is written as.
@@ -2205,7 +2206,7 @@ mod tests {
                 "chosen": {
                     "theme": "system", "opacity": 100, "backdrop": "clear", "editor": "floating",
                     "editorCommand": "", "notify": true, "notifyInBackground": true, "featureLayout": "list",
-                    "zoom": 100
+                    "font": "", "zoom": 100
                 },
                 "minOpacity": 30,
                 "backdrops": [{"backdrop": "mica", "unavailable": "Mica needs Windows 11"}]

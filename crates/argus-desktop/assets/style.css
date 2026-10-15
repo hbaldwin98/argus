@@ -207,10 +207,24 @@
   font-display: block;
   src: url('fonts/JetBrainsMono-BoldItalic.woff2') format('woff2');
 }
+/* Nerd Font icons live in the Private Use Area, which JetBrains Mono and
+   no system font fills: without this a prompt's or editor's icons are
+   boxes (fonts/NerdFonts-LICENSE.txt). Behind the text face, so it draws
+   only what that face lacks. */
+@font-face {
+  font-family: 'Symbols Nerd Font Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
+}
 
 :root {
   --font-ui: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  --font-mono-bundled:
+    'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas, monospace;
+  /* The Settings dialog's font goes in front of the bundled ones (settings.ts). */
+  --font-mono: var(--font-mono-bundled);
   --fs-2xs: 10px;
   --fs-xs: 11px;
   --fs-sm: 12px;

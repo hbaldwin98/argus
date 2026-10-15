@@ -1,5 +1,6 @@
 // The Settings dialog, and the look its choices give the window: the theme
-// on the document and the background's opacity as `--see`.
+// on the document, the background's opacity as `--see` and the font in
+// front of `--font-mono`'s bundled faces.
 //
 // Rust holds the choices (`src/preferences.rs`) and saves each as it is
 // made; the dialog draws what Rust sends back, and is updated in place
@@ -68,6 +69,10 @@ export function applyLook(): void {
   if (chosen.theme === 'system') delete root.dataset.theme;
   else root.dataset.theme = chosen.theme;
   root.style.setProperty('--see', String(chosen.opacity / 100));
+  // Rust leaves no quote in the name to end it early.
+  const font = chosen.font && `"${chosen.font}", var(--font-mono-bundled)`;
+  if (font) root.style.setProperty('--font-mono', font);
+  else root.style.removeProperty('--font-mono');
   for (const s of screens) s.retheme();
 }
 
@@ -80,6 +85,7 @@ let controls: {
   backdrops: Map<Backdrop, HTMLButtonElement>;
   backdropRow: HTMLElement;
   backdropWhy: HTMLElement;
+  font: HTMLInputElement;
   editors: Map<EditorMode, HTMLButtonElement>;
   command: HTMLInputElement;
   notify: HTMLButtonElement;
@@ -228,6 +234,15 @@ export function openSettings(): void {
     backdropGroup,
   );
 
+  const font = el('input', {
+    class: 'field mono',
+    placeholder: 'JetBrains Mono',
+    'aria-label': 'Font',
+    autocomplete: 'off',
+    spellcheck: 'false',
+  });
+  font.addEventListener('input', () => set({ set: 'font', family: font.value }));
+
   const [editorGroup, editors] = segment('Files open', EDITORS, (mode) =>
     set({ set: 'editor', mode }),
   );
@@ -258,6 +273,7 @@ export function openSettings(): void {
     backdrops,
     backdropRow,
     backdropWhy,
+    font,
     editors,
     command,
     notify,
@@ -282,6 +298,11 @@ export function openSettings(): void {
       // Clear alone is no choice: where it is all this system draws, the
       // row is left out.
       page.backdrops.length > 1 ? backdropRow : null,
+      row(
+        'Font',
+        'An installed font for panes and code, a Nerd Font for its icons; empty uses JetBrains Mono',
+        font,
+      ),
     ),
     section(
       'Editor',
@@ -410,6 +431,7 @@ export function drawSettings(): void {
   }
   controls.backdropWhy.textContent = why.join('. ');
   controls.backdropWhy.hidden = why.length === 0;
+  if (document.activeElement !== controls.font) controls.font.value = chosen.font;
   setSegment(controls.editors, chosen.editor);
   // A field being typed in is ahead of what came back.
   if (document.activeElement !== controls.command) controls.command.value = chosen.editorCommand;

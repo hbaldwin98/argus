@@ -98,6 +98,12 @@ pub struct Preferences {
     /// The index a repository opens as before it remembers its own.
     #[serde(default)]
     pub feature_layout: Layout,
+    /// The family of an installed font the panes and every monospaced
+    /// line are drawn in, in front of the bundled JetBrains Mono and Nerd
+    /// Font symbols, which still draw what it lacks. Empty draws the
+    /// bundled ones alone.
+    #[serde(default)]
+    pub font: String,
     /// How large the whole window is drawn, panes and all, in percent: set
     /// by the zoom keys rather than the dialog, and kept like its choices.
     #[serde(default = "actual_size")]
@@ -177,6 +183,7 @@ impl Default for Preferences {
             notify: true,
             notify_in_background: true,
             feature_layout: Layout::default(),
+            font: String::new(),
             zoom: actual_size(),
         }
     }
@@ -314,6 +321,7 @@ mod tests {
             notify: false,
             notify_in_background: false,
             feature_layout: Layout::Board,
+            font: "Iosevka Term".into(),
             zoom: 125,
         };
         save_to(&path, &settings).unwrap();

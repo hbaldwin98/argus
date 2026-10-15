@@ -88,10 +88,13 @@ leader. Both are drawn over everything, a review included, and a pane's leader k
 `Run` event, since only the page draws them. So does the Settings dialog, `Ctrl-,` (in a pane, the
 leader and `,`), also in the palette and behind the gear at the sidebar's foot: the theme (Mocha,
 Macchiato, Frappé or Latte, or following the system as Mocha in the dark and Latte in the light),
-the background's opacity and what shows through it, where a file opens and the editor command, the
-system notification an agent coming to need you raises, and the layout a repository's Feature index
-opens as before it remembers its own. Each choice is a call that `preferences` holds and saves as it
-is made, and the page draws the look from what comes back. The window is always built transparent,
+the background's opacity and what shows through it, the font, where a file opens and the editor
+command, the system notification an agent coming to need you raises, and the layout a repository's
+Feature index opens as before it remembers its own. Each choice is a call that `preferences` holds
+and saves as it is made, and the page draws the look from what comes back. The font is the family of
+one installed on the machine, put in front of the bundled JetBrains Mono and Symbols Nerd Font Mono,
+so the panes draw a prompt's or an editor's Nerd Font icons whichever text face is chosen; a pane
+re-measures its cells when it changes. The window is always built transparent,
 since that can only be set as it is made, so the opacity is only the page's alpha on its large fills
 — the sidebar, the strip, the stages and the terminal's background — and never on text or borders,
 and moving it never rebuilds the window. What shows through is Clear, or on Windows Mica (Windows 11

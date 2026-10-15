@@ -49,6 +49,11 @@ function canvas(): [HTMLCanvasElement, CanvasRenderingContext2D] {
   return [node, context];
 }
 
+function chosenFamily(): string {
+  const css = getComputedStyle(document.documentElement);
+  return css.getPropertyValue('--font-mono').trim() || 'monospace';
+}
+
 function makeScreen(terminal: HTMLElement, side: Side) {
   const [text, tctx] = canvas();
   const [cursorCanvas, cctx] = canvas();
@@ -75,8 +80,7 @@ function makeScreen(terminal: HTMLElement, side: Side) {
   let keyed = true;
 
   function measure(): void {
-    const css = getComputedStyle(document.documentElement);
-    fontFamily = css.getPropertyValue('--font-mono').trim() || 'monospace';
+    fontFamily = chosenFamily();
     tctx.font = `${FONT_SIZE}px ${fontFamily}`;
     const m = tctx.measureText('M'.repeat(100));
     const ascent = m.fontBoundingBoxAscent || FONT_SIZE * 0.8;
@@ -309,6 +313,16 @@ function makeScreen(terminal: HTMLElement, side: Side) {
     }, 50);
   }
 
+  // A canvas never asks for a web font, and `load` does not wait for one
+  // nothing has used, so the grid would be measured in the fallback face.
+  function loadFaces(): void {
+    const faces = ['', '700 ', 'italic ', 'italic 700 '];
+    const family = chosenFamily();
+    void Promise.all(faces.map((face) => document.fonts.load(`${face}${FONT_SIZE}px ${family}`)))
+      .catch(() => {})
+      .then(rescale);
+  }
+
   function rescale(): void {
     measure();
     readPalette();
@@ -334,12 +348,7 @@ function makeScreen(terminal: HTMLElement, side: Side) {
   measure();
   readPalette();
   window.addEventListener('load', rescale);
-  // A canvas never asks for a web font, and `load` does not wait for one
-  // nothing has used, so the grid would be measured in the fallback face.
-  const faces = ['', '700 ', 'italic ', 'italic 700 '];
-  void Promise.all(faces.map((face) => document.fonts.load(`${face}${FONT_SIZE}px ${fontFamily}`)))
-    .catch(() => {})
-    .then(rescale);
+  loadFaces();
   new ResizeObserver(report).observe(terminal);
   // A side appearing after it was hidden needs its room reported.
   new MutationObserver(report).observe(terminal, { attributes: true, attributeFilter: ['hidden'] });
@@ -356,9 +365,12 @@ function makeScreen(terminal: HTMLElement, side: Side) {
   }
 
   /** The theme changed under the canvas: its colours are read again. */
+  /** The theme's colours, and the Settings dialog's font, which changes
+   *  the cell and so how many fit. */
   function retheme(): void {
     readPalette();
     repaint();
+    if (chosenFamily() !== fontFamily) loadFaces();
   }
 
   /** Whether this side has the keys, which its cursor shows. */

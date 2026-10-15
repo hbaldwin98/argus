@@ -35,6 +35,13 @@ notifyInBackground: boolean,
  */
 featureLayout: Layout, 
 /**
+ * The family of an installed font the panes and every monospaced
+ * line are drawn in, in front of the bundled JetBrains Mono and Nerd
+ * Font symbols, which still draw what it lacks. Empty draws the
+ * bundled ones alone.
+ */
+font: string, 
+/**
  * How large the whole window is drawn, panes and all, in percent: set
  * by the zoom keys rather than the dialog, and kept like its choices.
  */
