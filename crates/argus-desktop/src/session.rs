@@ -165,9 +165,9 @@ pub struct Session {
     alerts: Vec<Alert>,
     /// The view last reported, so an unchanged one is not sent again.
     reported: Option<View>,
-    /// The rail draws from nearly everything here, so whatever changes it
-    /// says so, and it is built once when the page is next told.
-    rail_changed: bool,
+    /// The rail draws from nearly everything here, so it is built each
+    /// time the page is told and sent only when it differs.
+    rail_sent: Sent<page::Rail>,
     passing: Vec<Event>,
     out: Vec<ClientMsg>,
 }
@@ -233,7 +233,7 @@ impl Session {
             choices: Chosen::new(settings.preferences),
             alerts: Vec::new(),
             reported: None,
-            rail_changed: true,
+            rail_sent: Sent::default(),
             passing: Vec::new(),
             out: Vec::new(),
         }
@@ -327,10 +327,7 @@ impl Session {
                 self.awaited.answer(request_id, created);
                 self.settle_made();
             }
-            ServerMsg::Workspaces(workspaces) => {
-                self.switcher.receive_workspaces(workspaces);
-                self.rail_changed = true;
-            }
+            ServerMsg::Workspaces(workspaces) => self.switcher.receive_workspaces(workspaces),
             ServerMsg::Directories(listing) => {
                 if let Some(dialog) = &mut self.adding {
                     dialog.listed(listing, || self.awaited.name(), &mut self.out);
@@ -370,10 +367,7 @@ impl Session {
                 self.capture_landed();
                 self.settle_tracker_dialogs();
             }
-            ServerMsg::Templates(names) => {
-                self.agents.receive(names);
-                self.rail_changed = true;
-            }
+            ServerMsg::Templates(names) => self.agents.receive(names),
             ServerMsg::Tasks(list) => self.features.receive_tasks(*list),
             ServerMsg::ViewShown(view) => {
                 // Whatever the views' dock shows is not taken from under
@@ -381,7 +375,6 @@ impl Session {
                 if self.views.shown(*view, self.shown.pane(), self.docks.dock_out(&Panel::Views)) {
                     self.docks.show(&Panel::Views);
                 }
-                self.rail_changed = true;
             }
             ServerMsg::ExtensionViews(views) => self.extension_views.receive(views),
             ServerMsg::ExtensionCommands(commands) => self.extension_keys.receive(commands),
@@ -392,10 +385,7 @@ impl Session {
                 self.extension_dialogs.asked(extension, id, dialog, prompted);
             }
             ServerMsg::ExtensionDialogWithdrawn { id } => self.extension_dialogs.withdrawn(id),
-            ServerMsg::ViewClosed { pane, id } => {
-                self.views.closed(pane, &id);
-                self.rail_changed = true;
-            }
+            ServerMsg::ViewClosed { pane, id } => self.views.closed(pane, &id),
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
@@ -417,7 +407,6 @@ impl Session {
         self.alerts.extend(notifications::alerts(&changes, &tree, self.choices.get(), &looking));
         self.tree = tree;
         self.loaded = true;
-        self.rail_changed = true;
         self.features.tree_changed();
         if !self.tree.iter().any(|p| Some(p.id) == self.project) {
             self.project = self.tree.first().map(|p| p.id);
@@ -448,7 +437,6 @@ impl Session {
             if self.console.chosen().is_some() {
                 self.console_on_screen(self.shown.pane().filter(|_| !typing));
             }
-            self.rail_changed = true;
         }
         self.settle_made();
     }
@@ -496,8 +484,8 @@ impl Session {
         // Read off the tree, not the request: a refused or mistaken spawn
         // never becomes the one offered first.
         let template = info.template.clone().filter(|_| info.kind == argus_protocol::PaneKind::Agent);
-        if template.is_some_and(|template| self.agents.started(&template)) {
-            self.rail_changed = true;
+        if let Some(template) = template {
+            self.agents.started(&template);
         }
         if over_stages {
             self.leave_stages();
@@ -624,17 +612,14 @@ impl Session {
             }
             Call::RailWidth { width } => {
                 self.rail_width.set(width);
-                self.rail_changed = true;
                 self.finish()
             }
             Call::OutlineWidth { width } => {
                 self.outline_width.set(width);
-                self.rail_changed = true;
                 self.finish()
             }
             Call::BriefHeight { height } => {
                 self.brief_height.set(height);
-                self.rail_changed = true;
                 self.finish()
             }
             Call::RefreshView { pane, id } => {
@@ -818,7 +803,6 @@ impl Session {
             if self.stage == Stage::Console {
                 self.stage = Stage::Workspace;
             }
-            self.rail_changed = true;
         }
     }
 
@@ -826,7 +810,6 @@ impl Session {
     /// console's own panes are no project's, and stay.
     fn hide(&mut self) {
         self.shown.close(Side::Workspace, &mut self.out);
-        self.rail_changed = true;
     }
 
     fn resize(&mut self, side: Side, rows: u16, cols: u16) -> Vec<ClientMsg> {
@@ -873,7 +856,6 @@ impl Session {
             Action::Fill if self.console_typing() => self.toggle_console_fullscreen(),
             Action::Fill => {
                 self.shown.toggle_fill();
-                self.rail_changed = true;
             }
             Action::Close => {
                 if let Some(pane) = self.shown.pane() {
@@ -1121,9 +1103,7 @@ impl Session {
     }
 
     fn remove_project(&mut self, project: ProjectId) -> Vec<ClientMsg> {
-        if self.switcher.ask_remove(project, &self.tree) {
-            self.rail_changed = true;
-        }
+        self.switcher.ask_remove(project, &self.tree);
         self.finish()
     }
 
@@ -1131,7 +1111,6 @@ impl Session {
     /// does, and a refusal is said as a notice.
     fn answer_remove_project(&mut self, yes: bool) -> Vec<ClientMsg> {
         self.out.extend(self.switcher.answer(yes));
-        self.rail_changed = true;
         self.finish()
     }
 
@@ -1174,7 +1153,6 @@ impl Session {
         if !self.toggled.remove(&repository) {
             self.toggled.insert(repository);
         }
-        self.rail_changed = true;
         self.finish()
     }
 
@@ -1182,7 +1160,6 @@ impl Session {
         if !self.folded.remove(&checkout) {
             self.folded.insert(checkout);
         }
-        self.rail_changed = true;
         self.finish()
     }
 
@@ -1202,7 +1179,6 @@ impl Session {
             self.toggle_repository(repository);
         }
         self.repository = Some(repository);
-        self.rail_changed = true;
         self.finish()
     }
 
@@ -1210,10 +1186,7 @@ impl Session {
 
     /// Puts `stage` up, and whichever was up away.
     fn go(&mut self, stage: Stage) {
-        if self.stage != stage {
-            self.stage = stage;
-            self.rail_changed = true;
-        }
+        self.stage = stage;
     }
 
     /// Leaves whichever stage is open for the Workspace.
@@ -1563,7 +1536,6 @@ impl Session {
             }
             self.console_on_screen(Some(pane));
         }
-        self.rail_changed = true;
     }
 
     /// Whatever the console has chosen goes on screen: its tab on the
@@ -1585,7 +1557,6 @@ impl Session {
         if !keys.is_some_and(|pane| self.shown.focus(pane)) {
             self.shown.focus(first);
         }
-        self.rail_changed = true;
     }
 
     /// Splits the console: its second side shows the first tab on neither
@@ -1637,7 +1608,6 @@ impl Session {
             let keys = if self.console_typing() { keep } else { self.shown.pane().unwrap_or(keep) };
             self.console_on_screen(Some(keys));
         }
-        self.rail_changed = true;
     }
 
     /// The next pane on screen takes the keys, in the order they are
@@ -1652,7 +1622,6 @@ impl Session {
         let next = at.map_or(0, |at| (at + 1) % visible.len());
         if let Some(&pane) = visible.get(next) {
             self.shown.focus(pane);
-            self.rail_changed = true;
         }
     }
 
@@ -1673,7 +1642,6 @@ impl Session {
         if let Some(pane) = self.shown.on(Side::Workspace) {
             self.shown.focus(pane);
         }
-        self.rail_changed = true;
     }
 
     /// The console comes on screen with the keys: its chosen tabs, or a
@@ -1727,7 +1695,6 @@ impl Session {
         if self.stage == Stage::Console {
             self.go(Stage::Workspace);
         }
-        self.rail_changed = true;
     }
 
     fn open_console_tab(&mut self) {
@@ -1750,7 +1717,6 @@ impl Session {
             self.console.set_fullscreen(true);
             self.console_takes();
         }
-        self.rail_changed = true;
     }
 
     /// A hidden console lets its panes go and gives the keys back,
@@ -1911,10 +1877,7 @@ impl Session {
     }
 
     fn open_on_row(&mut self, repository: RepositoryId, checkout: CheckoutId) {
-        if self.repository != Some(repository) {
-            self.repository = Some(repository);
-            self.rail_changed = true;
-        }
+        self.repository = Some(repository);
         self.go(Stage::Checkouts);
         self.checkouts.select(format!("c{}", checkout.0));
     }
@@ -2500,8 +2463,8 @@ impl Session {
         if let Some(page) = self.console_sent.take(Some(console)) {
             events.push(Event::Console(Box::new(page)));
         }
-        if std::mem::take(&mut self.rail_changed) {
-            events.push(Event::Rail(Box::new(self.rail(now))));
+        if let Some(rail) = self.rail_sent.take(Some(self.rail(now))) {
+            events.push(Event::Rail(Box::new(rail)));
         }
         let scope = self.scope();
         if let Some(features) = self.features.take(scope.as_ref(), &self.tree, now) {
@@ -2577,7 +2540,7 @@ impl Session {
         // A page that has just loaded has no palette open.
         self.palette = false;
         self.palette_sent.forget();
-        self.rail_changed = true;
+        self.rail_sent.forget();
         self.shown.refresh();
         let mut events = vec![Event::Keymap { groups: keymap::groups(), commands: keymap::commands() }];
         events.append(&mut self.events(now));
@@ -2983,6 +2946,24 @@ mod tests {
         s.toggle_repository(RepositoryId(10));
         assert!(matches!(s.events(0).as_slice(), [Event::Rail(_)]));
         assert_eq!(s.everything(0).len(), 8, "a fresh page hears it all, the keymap first");
+    }
+
+    #[test]
+    fn the_rail_is_sent_again_only_when_it_differs() {
+        let mut s = session(without_focus());
+        let mut next = tree();
+        next[0].repositories.push(repository(11, "dotfiles", Some(0), vec![checkout(110, "main", true, vec![])]));
+        s.receive(with_tree(next.clone()));
+        let used = |events: &[Event]| {
+            events.iter().find_map(|e| match e {
+                Event::Rail(rail) => Some(rail.project.as_ref()?.repositories.iter().find(|r| r.id == 11)?.used.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(used(&s.events(60)), Some(Some("1m".into())));
+        s.receive(with_tree(next));
+        assert_eq!(used(&s.events(90)), None, "the same tree, and the same minute, is not sent again");
+        assert_eq!(used(&s.events(7_200)), Some(Some("2h".into())), "but an age that moved on is");
     }
 
     #[test]
@@ -3652,7 +3633,7 @@ mod tests {
         let events = s.events(0);
         assert!(events.iter().any(|e| matches!(e, Event::Notice { text } if text == refusal)));
         s.receive(with_tree(tree()));
-        assert_eq!(offered(&mut s), ["claude", "codex"], "a refused agent is not the last one started");
+        assert_eq!(s.rail(0).templates, ["claude", "codex"], "a refused agent is not the last one started");
         assert!(s.take_settings().is_none());
     }
 
