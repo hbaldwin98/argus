@@ -39,6 +39,7 @@ use crate::theme::Theme;
 use argus_protocol::CursorShape;
 
 mod agent_blocks;
+mod agent_tone;
 mod agent_values;
 mod card;
 mod command_center;
@@ -54,7 +55,8 @@ mod text;
 mod views;
 
 use agent_blocks::block_lines;
-use agent_values::{chip_span, duration_text, one_line};
+use agent_tone::chip_span;
+use agent_values::duration_text;
 use card::*;
 use command_center::*;
 use help::*;

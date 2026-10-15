@@ -299,8 +299,11 @@ impl App {
             ServerMsg::ViewShown(shown) => self.agent_views.shown(*shown),
             ServerMsg::ViewClosed { pane, id } => self.agent_views.closed(pane, &id),
             // Sent only to a client that pressed a view's action, which
-            // this one cannot yet.
-            ServerMsg::ViewPressFailed { .. } => {}
+            // this one cannot yet; should one arrive, the refusal is the
+            // user's to read.
+            ServerMsg::ViewPressFailed { action, reason, .. } => {
+                self.alert(format!("{action} failed: {reason}"));
+            }
             // Sent only to a client that listed extensions, which this
             // does not yet.
             ServerMsg::ExtensionViews(_)
@@ -695,5 +698,21 @@ mod tests {
         app.on_server_msg(ServerMsg::Stopping);
 
         assert!(app.should_quit);
+    }
+
+    #[test]
+    fn a_refused_press_is_shown_as_an_alert_with_its_reason() {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(tx);
+
+        app.on_server_msg(ServerMsg::ViewPressFailed {
+            pane: PaneId(1),
+            view: "run".into(),
+            action: "retry".into(),
+            reason: "the agent has gone".into(),
+        });
+
+        assert!(app.status_alert);
+        assert!(app.status.contains("the agent has gone"), "{}", app.status);
     }
 }

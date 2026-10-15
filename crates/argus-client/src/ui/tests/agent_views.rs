@@ -64,7 +64,10 @@ fn a_ticket() -> serde_json::Value {
                 { "at": "2026-10-14T09:30:01Z", "level": "error", "text": "token reused" },
                 { "level": "info", "text": "retrying" } ] },
             { "kind": "divider" },
-            { "kind": "chart", "x": ["a", "b"], "series": [] }
+            { "kind": "chart", "x": ["a", "b"], "series": [] },
+            { "kind": "hologram", "depth": 3 },
+            { "kind": "fields", "fields": [
+                { "label": "Future", "value": { "kind": "hologram" } } ] }
         ]
     })
 }
@@ -137,6 +140,8 @@ fn every_block_the_terminal_draws_reads_as_text() {
         "│     clear();",
         "ERROR token reused",
         "chart — open in the desktop",
+        "needs a newer Argus to show",
+        "(needs a newer Argus)",
     ] {
         assert!(out.contains(expected), "missing {expected:?}:\n{out}");
     }

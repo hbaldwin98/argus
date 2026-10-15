@@ -415,8 +415,9 @@ result of a request; `ui` is a pure function of it.
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/checkouts`, `ui/command_center/agent_views` | one stage each, with the hit-test that shares its layout |
 | `ui/command_center/feature/index`, `ui/command_center/feature/work`, `ui/command_center/feature/record`, `ui/command_center/feature/flows`, `ui/command_center/feature/capture` | what fills the Feature stage's frame: the index of features, each of the three lenses, and the note a feature is written as |
 | `ui/agent_blocks` | an agent view's blocks as styled lines of a width, and which kinds are left to the desktop |
-| `ui/agent_values` | what an agent view's tones and values read as in a terminal: a tone as a theme role, a value as styled text, and words wrapped to a width |
-| `ui/text` | fitting text to a width |
+| `ui/agent_tone` | how an agent view's tones read as theme roles, and the chip drawn through them |
+| `ui/agent_values` | what each kind of agent view value reads as in a terminal: styled text on a line, or wrapped lines for a long text |
+| `ui/text` | fitting text to a width: ellipsis, wrapping a field or prose, one-lining |
 | `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
 | `ui/views` | the tab strip naming the four stages, and which tab a click lands on |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
