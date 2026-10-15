@@ -25,7 +25,7 @@ pub(crate) struct BoardAddress {
     /// path, so repositories cannot alias.
     pub key: String,
     /// The repositories in the tree whose board this is: what a pushed board
-    /// names so each client keeps only its own. None for a workspace board,
+    /// names so each client keeps only its own. Empty for a workspace board,
     /// which is never pushed.
     pub repositories: Vec<RepositoryId>,
     /// The checkout the request comes from, which is what a feature pointer
