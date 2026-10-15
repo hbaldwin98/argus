@@ -76,3 +76,11 @@ read [references/views.md](references/views.md) first.
 
 Keep those records relevant to the requested work. Answering a question does not
 require creating a feature or tasks.
+
+## Extensions
+
+To build an Argus extension, or find out what a running one does, ask the
+`argus` CLI rather than guessing: `argus extension guide` walks through
+building one step by step and then gives the full reference;
+`argus extension list` and `argus extension show NAME` describe the ones
+running now.

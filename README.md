@@ -504,27 +504,20 @@ dir = "~/argus-extensions"            # where it runs; the config directory by d
 env = { DOCKER_HOST = "unix:///var/run/docker.sock" }
 ```
 
-The daemon starts each one with `ARGUS_HOOK_URL` (its own base, `…/extension/<name>`),
-`ARGUS_HOOK_TOKEN` (a token of its own, sent as `Authorization: Bearer`) and `ARGUS_EXTENSION`;
-starts it again when it exits, waiting longer each time up to a minute; and ends it when the daemon
-stops. Its output goes to `extension-<name>.log` in the config directory. While it is down its
-tabs, keys and dialogs are gone. The blocks are read when the daemon starts.
+The blocks are read when the daemon starts, so restart it after changing one. Its output goes to
+`extension-<name>.log` in the config directory.
 
-It speaks JSON to these endpoints under its URL:
+How to write one, from an empty file to a running extension and then every endpoint, field, event
+and limit, is printed by the `argus` binary itself, so it matches the build you run:
 
-| Request | Body | Answer |
-| --- | --- | --- |
-| `PUT view` | a view, or a list of them: `name`, `title`, `scope` (`"global"`, `{"repository": id}`, `{"checkout": id}`), `place` (`"panel"`, the default, or `"stage"`: where the desktop first opens it, docked or as a page; the person can move it), `icon` (one of `box`, `server`, `database`, `globe`, `list`, `rocket`, `terminal`, `gear`; any other name draws a generic icon), `columns` (`{"title", "numeric"}`), `rows` (`key`, `cells` — one value each, as in an agent's view table, `{"kind": "text", "text": "web"}` — and `status`, a chip `{"label", "tone"}`), `actions` (`id`, `label`, `key`, `view_wide`, `confirm`) | the action keys refused |
-| `PUT commands` | a list: `name`, `title`, `key` (`{"key": "d", "ctrl": true}`), `scope` (`"anywhere"`, `{"view": name}`, `"checkout"`, `"pane"`) | the command keys refused |
-| `POST dialog` | `title`, `kind` (`{"confirm": {"message"}}`, `{"prompt": {"message", "initial"}}`, `{"pick": {"message", "items": [{"key", "label"}]}}`, `{"form": {"fields": [{"name", "label", "initial"}]}}`), and `answers`, the id of the command it answers | `{"dialog": id}` |
-| `POST notice` | one line of text | |
-| `POST pane` | `checkout` (none for a console) and `run`, a command typed into the new shell | `{"pane": id}` |
-| `GET events` | | server-sent events: `{"event": "action", "view", "action", "row"}`, `{"event": "command", "command", "id", "context"}`, `{"event": "answer", "dialog", "answer"}`, `{"event": "cancel", "dialog"}` |
+```sh
+argus extension guide         # the walkthrough, then the reference
+argus extension list          # the extensions running, and what each publishes
+argus extension show docker   # one of them: its own guide, its commands and its views
+```
 
-A key Argus already binds where the extension's would be heard — the leader, the digits, or any key
-on the shortcuts sheet — or one another extension took first, is refused: the command or action is
-kept without it, and the reason is in the answer and on the status bar. `scripts/docker-extension.py`
-is a small example.
+`list` and `show` ask the daemon, and take `--host HOST` before `extension` for another
+machine's. `scripts/docker-extension.py` is a fuller example.
 
 In the desktop window, every view an extension publishes is listed under **Extensions** in the
 sidebar, after Workspace, Features, Checkouts and Console, while its scope matches. A view opens as
