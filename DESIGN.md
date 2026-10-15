@@ -135,9 +135,10 @@ in `desktop.json`; fullscreen, the split and the tabs chosen are the run's, sinc
 daemon's consoles are new shells under new ids. The Feature stage
 has them while it is open, and another pane brings them back for good.
 
-Which stage is up is `session`'s own state, one `page::Stage` every move goes through `go` to set,
-so a stage moved always redraws the rail. Its callers hand the keys on and put fullscreen away
-themselves, since half the ways out of fullscreen move no stage.
+Which stage is up is `session`'s own state, one `page::Stage` set through `go`; the rail goes to
+the page whenever it differs from the last one sent, so no move has to say it changed it. `go`'s
+callers hand the keys on and put fullscreen away themselves, since half the ways out of fullscreen
+move no stage.
 
 The docks (`docks`) are the stage's left, right and bottom edges; the sidebar keeps the window's
 own left edge, so the left dock is between it and the stage, and the bottom dock is under the stage
