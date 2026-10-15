@@ -9,11 +9,14 @@
 use super::*;
 use argus_protocol::{GitStatus, PaneKind, PaneStatus, TaskState};
 
+mod agent_views;
 mod checkouts;
 mod feature;
 mod rail;
 mod workspace;
 
+pub(crate) use agent_views::agent_view_at;
+use agent_views::render_agent_views;
 pub(crate) use checkouts::checkout_at;
 use checkouts::render_checkouts;
 pub(crate) use feature::feature_hit_at;
@@ -94,6 +97,7 @@ pub(super) fn render_command_center(
     }
 
     app.layout.checkouts = Panel::default();
+    app.layout.agent_views = Panel::default();
     app.layout.terminal = Panel::default();
 
     match app.view {
@@ -105,6 +109,11 @@ pub(super) fn render_command_center(
         View::Checkouts => {
             forget_feature_view(app);
             render_checkouts(f, app, stage, th);
+            None
+        }
+        View::AgentViews => {
+            forget_feature_view(app);
+            render_agent_views(f, app, stage, th);
             None
         }
     }

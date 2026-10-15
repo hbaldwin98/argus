@@ -76,6 +76,11 @@ impl App {
         // A daemon newly reached has been told nothing.
         self.reports_view = daemon.is_some_and(|d| d.can(argus_protocol::FOCUS));
         self.view_sent = None;
+        // A daemon newly reached replays every view it holds to a watcher.
+        self.agent_views.connected();
+        if daemon.is_some_and(|d| d.can(argus_protocol::AGENT_VIEWS)) {
+            let _ = self.out.send(ClientMsg::WatchViews);
+        }
         self.offer_consoles(daemon.is_some_and(|d| d.can(argus_protocol::CONSOLES)));
         let Some(daemon) = daemon else {
             self.report(format!("{argusd} predates this client; {fix} to update it"));
@@ -291,8 +296,8 @@ impl App {
             ServerMsg::Restarting => {}
             // Sent only to a client watching the focus, which this is not.
             ServerMsg::Focus(_) => {}
-            // Views are the desktop's; this client never sends WatchViews.
-            ServerMsg::ViewShown(_) | ServerMsg::ViewClosed { .. } => {}
+            ServerMsg::ViewShown(shown) => self.agent_views.shown(*shown),
+            ServerMsg::ViewClosed { pane, id } => self.agent_views.closed(pane, &id),
             // Sent only to a client that listed extensions, which this
             // does not yet.
             ServerMsg::ExtensionViews(_)

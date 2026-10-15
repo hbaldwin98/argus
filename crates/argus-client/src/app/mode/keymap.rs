@@ -259,6 +259,7 @@ impl Mode {
             Mode::Overlay(OverlayMode::Pane) | Mode::Pane => &PANE,
             Mode::Stage(View::Checkouts) => &CHECKOUTS,
             Mode::Stage(View::Feature) => &FEATURE,
+            Mode::Stage(View::AgentViews) => &AGENT_VIEWS,
             // The workspace stage is the rail and the live pane; with the
             // keys on neither it is still the rail's keys that apply.
             Mode::Stage(View::Workspace) | Mode::Rail => &RAIL,
@@ -299,11 +300,18 @@ const TO_CHECKOUTS: Binding = Binding::new(
 )
 .help_only();
 
+const TO_AGENT_VIEWS: Binding = Binding::new(
+    "4",
+    "views — what agents showed, drawn as text",
+    &[(&[Char('4')], |app| app.open_view(View::AgentViews))],
+)
+.help_only();
+
 /// The stages only take the digits: switching workspace, host or theme is
 /// the rail's, where the keys go back to whenever the workspace is shown.
 const VIEWS: Group = Group {
     title: "the view",
-    bindings: &[TO_WORKSPACE, TO_FEATURE, TO_CHECKOUTS],
+    bindings: &[TO_WORKSPACE, TO_FEATURE, TO_CHECKOUTS, TO_AGENT_VIEWS],
 };
 
 // --- the rail -------------------------------------------------------------
@@ -483,6 +491,7 @@ const RAIL: Keymap = Keymap {
                 TO_WORKSPACE,
                 TO_FEATURE,
                 TO_CHECKOUTS,
+                TO_AGENT_VIEWS,
                 Binding::new("t", "theme", &[(&[Char('t')], App::open_theme_picker)]).help_only(),
                 Binding::new(
                     "w",
@@ -572,6 +581,76 @@ const CHECKOUTS: Keymap = Keymap {
                 )
                 .help_only(),
                 Binding::note("↑ ↓ + !", "state: ahead, behind, staged, unstaged"),
+                Binding::new(
+                    "esc  q",
+                    "back to the workspace",
+                    &[(&[Esc, Char('q')], |app| app.open_view(View::Workspace))],
+                )
+                .hints(&[Hint::new("q workspace", 3).narrow("q")]),
+            ],
+        },
+        &VIEWS,
+    ],
+    gap: ROOMY,
+};
+
+/// What agents showed. `j`/`k` scroll the open view and `n`/`p` change
+/// which one is open: scrolling is what most keypresses here are, and the
+/// list is short.
+const AGENT_VIEWS: Keymap = Keymap {
+    groups: &[
+        &Group {
+            title: "views",
+            bindings: &[
+                Binding::new(
+                    "j / k",
+                    "scroll the open view",
+                    &[
+                        (&[Char('j'), Down], |app| app.agent_views.scroll_by(1)),
+                        (&[Char('k'), Up], |app| app.agent_views.scroll_by(-1)),
+                    ],
+                )
+                .hints(&[Hint::new("j/k scroll", 3).narrow("j/k")]),
+                Binding::new(
+                    "n / p",
+                    "next view, previous view",
+                    &[
+                        (&[Char('n'), Right, Char('l')], |app| app.agent_views.step(1)),
+                        (&[Char('p'), Left, Char('h')], |app| app.agent_views.step(-1)),
+                    ],
+                )
+                .hints(&[Hint::new("n/p view", 2).narrow("n/p")]),
+                Binding::new(
+                    "pgdn / pgup",
+                    "a page at a time",
+                    &[
+                        (&[PageDown, Char(' ')], |app| app.agent_views.page_by(1)),
+                        (&[PageUp], |app| app.agent_views.page_by(-1)),
+                    ],
+                )
+                .help_only(),
+                Binding::new(
+                    "g / G",
+                    "top, bottom",
+                    &[
+                        (&[Char('g'), Home], |app| app.agent_views.scroll = 0),
+                        (&[Char('G'), End], |app| app.agent_views.scroll_to_end()),
+                    ],
+                )
+                .help_only(),
+                Binding::new(
+                    "r",
+                    "ask the agent to read it again",
+                    &[(&[Char('r')], App::refresh_open_view)],
+                )
+                .hints(&[Hint::new("r refresh", 1)]),
+                Binding::new(
+                    "x",
+                    "close the view",
+                    &[(&[Char('x')], App::close_open_view)],
+                )
+                .hints(&[Hint::new("x close", 1)]),
+                Binding::note("click", "open that view; the wheel scrolls it"),
                 Binding::new(
                     "esc  q",
                     "back to the workspace",

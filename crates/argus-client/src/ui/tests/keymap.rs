@@ -67,6 +67,7 @@ fn modes() -> Vec<(&'static str, Vec<App>)> {
     vec![
         ("the rail", rail),
         ("the checkouts stage", vec![stage(View::Checkouts)]),
+        ("the views stage", vec![stage(View::AgentViews)]),
         ("the feature stage", feature.into()),
         (
             "a diff",

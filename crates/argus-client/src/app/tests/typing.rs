@@ -145,6 +145,7 @@ fn an_image_on_the_clipboard_crosses_as_a_file_not_as_its_text() {
     h.keys("llll");
     h.sent();
     h.app.greeted(Some(&argus_protocol::Hello::this_build()));
+    h.sent();
     h.app.clipboard = || Some("https://example.com/shot".to_string());
     h.app.clipboard_image = || Some(b"\x89PNG...".to_vec());
 
@@ -187,6 +188,7 @@ fn an_image_is_not_pasted_where_only_text_goes() {
     h.keys("llll");
     h.sent();
     h.app.greeted(Some(&argus_protocol::Hello::this_build()));
+    h.sent();
     h.app.prompt = Some(Prompt::EditorCommand { input: String::new() });
     h.app.clipboard = || Some("typed".to_string());
     h.app.clipboard_image = || Some(vec![1, 2, 3]);
@@ -210,6 +212,7 @@ fn an_image_dropped_on_the_terminal_crosses_as_the_file() {
     h.keys("llll");
     h.sent();
     h.app.greeted(Some(&argus_protocol::Hello::this_build()));
+    h.sent();
 
     h.app.on_paste(format!("'{}'", shot.display()));
 
@@ -229,6 +232,7 @@ fn an_image_dropped_from_another_machine_is_pasted_as_typed_and_the_fix_named() 
     h.keys("llll");
     h.sent();
     h.app.greeted(Some(&argus_protocol::Hello::this_build()));
+    h.sent();
 
     h.app.on_paste("C:\\Users\\me\\Pictures\\shot.png".to_string());
 

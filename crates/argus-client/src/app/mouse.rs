@@ -129,6 +129,22 @@ impl App {
                 }
                 return;
             }
+            if self.view == View::AgentViews {
+                match ev.kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        self.focus = Focus::View;
+                        if let Some(index) =
+                            crate::ui::command_center_agent_view_at(self, ev.column, ev.row)
+                        {
+                            self.agent_views.choose(index);
+                        }
+                    }
+                    MouseEventKind::ScrollUp => self.agent_views.scroll_by(-3),
+                    MouseEventKind::ScrollDown => self.agent_views.scroll_by(3),
+                    _ => {}
+                }
+                return;
+            }
             if self.view != View::Feature {
                 return;
             }
