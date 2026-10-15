@@ -2,10 +2,10 @@
 // methods and the clipboard work as they do anywhere else; the mouse over
 // each screen; and the window's focus, which says whether this window's
 // view is the person's.
+import { keyedScreen } from './console.js';
 import { $ } from './dom.js';
 import { actionFor } from './keymap.js';
 import { screen, screens } from './screen.js';
-import { state } from './state.js';
 import { call } from './tauri.js';
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);
 const MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);
@@ -13,12 +13,8 @@ function drawCursors() {
     for (const s of screens)
         s.drawCursor();
 }
-/** Whether `s` is the side with the keys: the first, unless the console
- *  says its second has them. */
 function keyed(s) {
-    const page = state.console;
-    const second = page?.beside != null && page.typing === page.beside;
-    return s === screen ? !second : second;
+    return s === keyedScreen();
 }
 export function listen() {
     const input = $('input');
@@ -72,8 +68,8 @@ export function listen() {
     // A drag selects, and letting go copies, as in the terminal client. A
     // child that asked for the mouse gets its presses, drags and moves
     // instead, as Rust encodes them for its mode; Shift-drag still selects.
-    // Rust sends these to the pane with the keys, which a press on the
-    // other side of a split hands over first.
+    // Rust sends these to the pane with the keys, which a press on another
+    // screen — the Workspace's, or a side of the console — hands over first.
     let on = screen;
     let anchor = null;
     let moved = false;
@@ -89,8 +85,12 @@ export function listen() {
             e.preventDefault();
             input.focus();
             const pane = s.pane();
-            if (!keyed(s) && pane !== null)
-                call('console', { gesture: { on: 'select', pane } });
+            if (!keyed(s) && pane !== null) {
+                if (s === screen)
+                    call('select', { pane });
+                else
+                    call('console', { gesture: { on: 'select', pane } });
+            }
             for (const other of screens)
                 if (other !== s)
                     other.select(null);

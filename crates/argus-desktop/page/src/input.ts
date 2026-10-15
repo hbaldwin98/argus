@@ -3,10 +3,10 @@
 // each screen; and the window's focus, which says whether this window's
 // view is the person's.
 
+import { keyedScreen } from './console.js';
 import { $ } from './dom.js';
 import { actionFor } from './keymap.js';
 import { type Screen, screen, screens } from './screen.js';
-import { state } from './state.js';
 import { call } from './tauri.js';
 
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);
@@ -16,12 +16,8 @@ function drawCursors(): void {
   for (const s of screens) s.drawCursor();
 }
 
-/** Whether `s` is the side with the keys: the first, unless the console
- *  says its second has them. */
 function keyed(s: Screen): boolean {
-  const page = state.console;
-  const second = page?.beside != null && page.typing === page.beside;
-  return s === screen ? !second : second;
+  return s === keyedScreen();
 }
 
 export function listen(): void {
@@ -73,8 +69,8 @@ export function listen(): void {
   // A drag selects, and letting go copies, as in the terminal client. A
   // child that asked for the mouse gets its presses, drags and moves
   // instead, as Rust encodes them for its mode; Shift-drag still selects.
-  // Rust sends these to the pane with the keys, which a press on the
-  // other side of a split hands over first.
+  // Rust sends these to the pane with the keys, which a press on another
+  // screen — the Workspace's, or a side of the console — hands over first.
   let on: Screen = screen;
   let anchor: [number, number] | null = null;
   let moved = false;
@@ -95,7 +91,10 @@ export function listen(): void {
       e.preventDefault();
       input.focus();
       const pane = s.pane();
-      if (!keyed(s) && pane !== null) call('console', { gesture: { on: 'select', pane } });
+      if (!keyed(s) && pane !== null) {
+        if (s === screen) call('select', { pane });
+        else call('console', { gesture: { on: 'select', pane } });
+      }
       for (const other of screens) if (other !== s) other.select(null);
       on = s;
       const at = s.cellAt(e.clientX, e.clientY);

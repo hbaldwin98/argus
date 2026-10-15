@@ -111,9 +111,6 @@ pub struct Session {
     shown: ShownPane,
     console: Console,
     console_sent: Sent<page::ConsolePage>,
-    /// The Workspace's pane while the console has the canvas, to give it
-    /// back to: the canvas is the Workspace's or the console's.
-    workspace_pane: Option<PaneId>,
     awaited: Awaited<Made>,
     agents: Agents,
     views: AgentViews,
@@ -184,7 +181,6 @@ impl Session {
             shown: ShownPane::default(),
             console: Console::new(settings.console),
             console_sent: Sent::default(),
-            workspace_pane: None,
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
@@ -406,19 +402,21 @@ impl Session {
 
     /// The daemon's consoles, after its greeting and after every tree. A
     /// console on screen that ended hands its side to what the console
-    /// chose in its place — the other side of a split, or another tab — or
-    /// the canvas back to the Workspace's pane when none is left.
+    /// chose in its place — the other side of a split, or another tab —
+    /// and keys it held go to the console's other side, or else the
+    /// Workspace's pane.
     fn take_consoles(&mut self, panes: Vec<argus_protocol::PaneInfo>) {
         self.console.receive(panes);
         let ended = self.ended();
         if !ended.is_empty() {
+            let typing = self.console_typing();
             for pane in ended {
                 self.shown.gone(pane, &mut self.out);
             }
-            match self.console.chosen() {
-                Some(_) => self.console_on_screen(None),
-                None => self.give_back(),
+            if self.console.chosen().is_some() {
+                self.console_on_screen(self.shown.pane().filter(|_| !typing));
             }
+            self.rail_changed = true;
         }
         self.settle_made();
     }
@@ -651,16 +649,21 @@ impl Session {
         self.finish()
     }
 
-    /// Puts a checkout's pane on the canvas. The console cannot show it, so
-    /// it leaves the Console stage and fullscreen for the Workspace.
+    /// Puts a checkout's pane on the Workspace with the keys, beside a
+    /// docked console that stays. The Console stage and fullscreen cover
+    /// the Workspace, so it leaves them.
     fn show(&mut self, pane: PaneId) {
         let Some(project) = self.project_of(pane) else {
             return;
         };
-        if self.shown.show(pane, &mut self.out) {
+        let changed = self.shown.show_on(Side::Workspace, pane, &mut self.out);
+        let keyed = self.shown.keys() != Side::Workspace;
+        self.shown.focus(pane);
+        if changed {
             self.project = Some(project);
             self.repository = None;
-            self.workspace_pane = None;
+        }
+        if changed || keyed {
             self.console.set_fullscreen(false);
             if self.stage == Stage::Console {
                 self.stage = Stage::Workspace;
@@ -670,13 +673,9 @@ impl Session {
     }
 
     /// Lets the Workspace's pane go, as choosing another project does. The
-    /// console's own pane is no project's, and stays.
+    /// console's own panes are no project's, and stay.
     fn hide(&mut self) {
-        if self.console_showing() {
-            self.workspace_pane = None;
-        } else {
-            self.shown.hide(&mut self.out);
-        }
+        self.shown.close(Side::Workspace, &mut self.out);
         self.rail_changed = true;
     }
 
@@ -721,7 +720,7 @@ impl Session {
             Action::Leader => self.input(argus_protocol::keys::encode(&Key::new(KeyCode::Char(' '), Mods::CTRL))),
             // A console has no sidebar of its own to put away: filling the
             // window is its fullscreen.
-            Action::Fill if self.console_showing() => self.toggle_console_fullscreen(),
+            Action::Fill if self.console_typing() => self.toggle_console_fullscreen(),
             Action::Fill => {
                 self.shown.toggle_fill();
                 self.rail_changed = true;
@@ -1047,14 +1046,12 @@ impl Session {
         self.go(Stage::Workspace);
     }
 
-    /// The Workspace asked for by its key or its nav: its pane comes back
-    /// on the canvas, even from a console docked under it.
+    /// The Workspace asked for by its key or its nav: its pane takes the
+    /// keys back, even from a console docked under it.
     fn back_to_workspace(&mut self) {
         self.console.set_fullscreen(false);
         self.leave_stages();
-        if self.console_showing() && self.workspace_pane.is_some() {
-            self.give_back();
-        }
+        self.give_back();
     }
 
     /// Shows the Feature stage, or goes back to the Workspace.
@@ -1074,7 +1071,7 @@ impl Session {
     /// on screen, else that repository's own.
     fn here(&self) -> Here {
         let repository = self.chosen_repository();
-        let shown = self.shown.pane().and_then(|pane| {
+        let shown = self.shown.on(Side::Workspace).and_then(|pane| {
             self.tree.iter().flat_map(|p| &p.repositories).flat_map(|r| &r.checkouts).find(|c| c.panes.iter().any(|p| p.id == pane))
         });
         let checkout = shown.or_else(|| repository.and_then(|r| r.checkouts.iter().find(|c| c.primary)));
@@ -1254,10 +1251,14 @@ impl Session {
         self.finish()
     }
 
-    /// Whether the canvas is drawing a console rather than the Workspace's
-    /// pane.
-    fn console_showing(&self) -> bool {
-        self.shown.pane().is_some_and(|pane| self.console.holds(pane))
+    /// Whether the keys are a console's rather than the Workspace's pane's.
+    fn console_typing(&self) -> bool {
+        self.shown.keys() != Side::Workspace
+    }
+
+    /// Whether the console's sides are on screen.
+    fn console_on(&self) -> bool {
+        self.shown.on(Side::First).is_some()
     }
 
     /// A hidden console is shown docked for a console asked for: one the
@@ -1279,7 +1280,7 @@ impl Session {
             return;
         }
         self.reveal_console();
-        let showing = self.console_showing();
+        let showing = self.console_on();
         if !(showing && self.shown.focus(pane)) {
             if showing && self.shown.keys() == Side::Second {
                 self.console.set_beside(pane);
@@ -1292,15 +1293,15 @@ impl Session {
     }
 
     /// Whatever the console has chosen goes on screen: its tab on the
-    /// first side and the split's on the second. `keys` takes the keys, or
-    /// else the pane that had them if it is still there, or else the first.
+    /// first side and the split's on the second. `keys` takes the keys —
+    /// the Workspace's pane among them — or else the console's pane that
+    /// had them if it is still there, or else the first.
     fn console_on_screen(&mut self, keys: Option<PaneId>) {
         let Some(first) = self.console.chosen() else {
             return;
         };
-        let keys = keys.or(self.shown.pane());
-        let workspace = self.shown.on(Side::First).filter(|&pane| self.project_of(pane).is_some());
-        let moved = self.shown.show_on(Side::First, first, &mut self.out);
+        let keys = keys.or(self.shown.pane().filter(|_| self.console_typing()));
+        self.shown.show_on(Side::First, first, &mut self.out);
         match self.console.beside() {
             Some(second) => {
                 self.shown.show_on(Side::Second, second, &mut self.out);
@@ -1309,9 +1310,6 @@ impl Session {
         }
         if !keys.is_some_and(|pane| self.shown.focus(pane)) {
             self.shown.focus(first);
-        }
-        if moved && workspace.is_some() {
-            self.workspace_pane = workspace;
         }
         self.rail_changed = true;
     }
@@ -1322,7 +1320,7 @@ impl Session {
     /// the console. The split is the run's, never `desktop.json`'s.
     fn toggle_split(&mut self) {
         if let (Some(first), Some(second)) = (self.console.chosen(), self.console.beside()) {
-            let keyed = self.shown.pane().filter(|_| self.console_showing());
+            let keyed = self.shown.pane().filter(|_| self.console_typing());
             self.close_side(if keyed == Some(second) { first } else { second });
             return;
         }
@@ -1361,37 +1359,51 @@ impl Session {
             _ => return,
         };
         self.console.unsplit(keep);
-        if self.console_showing() {
-            self.console_on_screen(Some(keep));
+        if self.console_on() {
+            let keys = if self.console_typing() { keep } else { self.shown.pane().unwrap_or(keep) };
+            self.console_on_screen(Some(keys));
         }
         self.rail_changed = true;
     }
 
-    /// The other side of the split takes the keys.
+    /// The next pane on screen takes the keys, in the order they are
+    /// drawn: the Workspace's, then the console's sides.
     fn other_side(&mut self) {
-        if !self.console_showing() {
-            return;
-        }
-        if let Some(other) = self.shown.on(crate::shown::other(self.shown.keys())) {
-            self.shown.focus(other);
+        let visible: Vec<PaneId> = [Side::Workspace, Side::First, Side::Second]
+            .into_iter()
+            .filter(|&side| self.side_visible(side))
+            .filter_map(|side| self.shown.on(side))
+            .collect();
+        let at = visible.iter().position(|&pane| Some(pane) == self.shown.pane());
+        let next = at.map_or(0, |at| (at + 1) % visible.len());
+        if let Some(&pane) = visible.get(next) {
+            self.shown.focus(pane);
             self.rail_changed = true;
         }
     }
 
-    /// The canvas goes back to the Workspace's pane, or to nothing when it
-    /// has ended.
-    fn give_back(&mut self) {
-        match self.workspace_pane.take().filter(|&pane| self.project_of(pane).is_some()) {
-            Some(pane) => {
-                self.shown.show(pane, &mut self.out);
+    /// Whether `side` is drawn: the Workspace's while no stage covers it,
+    /// and the console's while it is not hidden.
+    fn side_visible(&self, side: Side) -> bool {
+        match side {
+            Side::Workspace => {
+                !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console | Stage::Extension)
+                    && !self.console.fullscreen()
             }
-            None => self.shown.hide(&mut self.out),
+            Side::First | Side::Second => self.console.place(self.stage) != ConsolePlace::Hidden,
+        }
+    }
+
+    /// The keys go back to the Workspace's pane, when it has one.
+    fn give_back(&mut self) {
+        if let Some(pane) = self.shown.on(Side::Workspace) {
+            self.shown.focus(pane);
         }
         self.rail_changed = true;
     }
 
-    /// The console takes the canvas: its chosen tabs, or a new console
-    /// when there is none yet.
+    /// The console comes on screen with the keys: its chosen tabs, or a
+    /// new console when there is none yet.
     fn console_takes(&mut self) {
         match self.console.chosen() {
             Some(_) => {
@@ -1433,7 +1445,8 @@ impl Session {
         self.console_takes();
     }
 
-    /// Hidden wherever it was; the canvas goes back as `finish` settles it.
+    /// Hidden wherever it was; its panes go and the keys go back as
+    /// `finish` settles it.
     fn hide_console(&mut self) {
         self.console.set_fullscreen(false);
         self.console.set_docked(false);
@@ -1466,10 +1479,13 @@ impl Session {
         self.rail_changed = true;
     }
 
-    /// A hidden console gives the canvas back, however it came to be
-    /// hidden: its key, the composer, or leaving the Console stage.
+    /// A hidden console lets its panes go and gives the keys back,
+    /// however it came to be hidden: its key, the composer, or leaving the
+    /// Console stage.
     fn settle_console(&mut self) {
-        if self.console.place(self.stage) == ConsolePlace::Hidden && self.console_showing() {
+        if self.console.place(self.stage) == ConsolePlace::Hidden && self.console_on() {
+            self.shown.close(Side::Second, &mut self.out);
+            self.shown.close(Side::First, &mut self.out);
             self.give_back();
         }
     }
@@ -1935,18 +1951,11 @@ impl Session {
         self.on_screen().filter(|_| self.focused)
     }
 
-    /// The shown pane while the Workspace is up, or a console while the
-    /// console is not hidden. A stage keeps the pane to come back to, but
-    /// hides it and takes its keys away.
+    /// The pane with the keys, while its side is drawn. A stage keeps the
+    /// Workspace's pane to come back to, but hides it and takes its keys
+    /// away.
     fn on_screen(&self) -> Option<PaneId> {
-        let pane = self.shown.pane()?;
-        let visible = if self.console.holds(pane) {
-            self.console.place(self.stage) != ConsolePlace::Hidden
-        } else {
-            !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console | Stage::Extension)
-                && !self.console.fullscreen()
-        };
-        visible.then_some(pane)
+        self.shown.pane().filter(|_| self.side_visible(self.shown.keys()))
     }
 
     /// One choice in the Settings dialog. The page draws the look from
@@ -2109,7 +2118,7 @@ impl Session {
     fn chosen_repository(&self) -> Option<&argus_protocol::RepositoryInfo> {
         let project = self.current_project()?;
         let by_id = |id: RepositoryId| project.repositories.iter().find(|r| r.id == id);
-        let holding_shown = self.shown.pane().and_then(|pane| {
+        let holding_shown = self.shown.on(Side::Workspace).and_then(|pane| {
             project
                 .repositories
                 .iter()
@@ -2186,9 +2195,9 @@ impl Session {
         if let Some(page) = self.choices.take() {
             events.push(Event::Settings(Box::new(page)));
         }
-        // Before the rail, so the page knows which pane the canvas is for
-        // when the rail says the Workspace has none.
-        let console = self.console.page(self.stage, self.console_on_canvas(), self.status.daemon_can(CONSOLES));
+        // Before the rail, so the page knows which side has the keys when
+        // the rail says which pane the Workspace shows.
+        let console = self.console.page(self.stage, self.console_sides(), self.status.daemon_can(CONSOLES));
         if let Some(page) = self.console_sent.take(Some(console)) {
             events.push(Event::Console(Box::new(page)));
         }
@@ -2275,7 +2284,7 @@ impl Session {
         self.shown.take_frames().into_iter().map(Event::Frame).collect()
     }
 
-    fn console_on_canvas(&self) -> OnScreen {
+    fn console_sides(&self) -> OnScreen {
         OnScreen {
             first: self.shown.on(Side::First),
             second: self.shown.on(Side::Second),
@@ -2286,14 +2295,14 @@ impl Session {
     fn rail(&self, now: u64) -> page::Rail {
         let choices = Choices {
             project: self.project,
-            shown: self.shown.pane(),
+            shown: self.shown.on(Side::Workspace),
             toggled: &self.toggled,
             now,
         };
         let mut rail = rail::build(&self.tree, &choices, self.loaded);
         rail.repository = self.chosen_repository().map(|r| r.id.0);
         rail.stage = self.stage;
-        rail.filled = self.shown.filled() && self.stage == Stage::Workspace && self.on_screen().is_some() && !self.console_showing();
+        rail.filled = self.shown.filled() && self.stage == Stage::Workspace && self.on_screen().is_some() && !self.console_typing();
         rail.templates = self.agents.offered();
         rail.workspaces = self.switcher.workspaces();
         let panes = rail.project.iter_mut().flat_map(|p| &mut p.repositories).flat_map(|r| &mut r.checkouts);
@@ -2381,7 +2390,7 @@ mod tests {
     #[test]
     fn selecting_subscribes_then_sizes_and_another_unsubscribes_the_first() {
         let mut s = session(without_focus());
-        s.resize(Side::First, 30, 100);
+        s.resize(Side::Workspace, 30, 100);
         assert_eq!(names(&s.select(PaneId(1))), ["subscribe 1", "resize 1 30x100"]);
         assert_eq!(names(&s.select(PaneId(1))), Vec::<String>::new(), "already shown");
         assert_eq!(
@@ -2400,7 +2409,7 @@ mod tests {
     #[test]
     fn a_reconnect_subscribes_the_shown_pane_again_at_its_size() {
         let mut s = session(without_focus());
-        s.resize(Side::First, 30, 100);
+        s.resize(Side::Workspace, 30, 100);
         s.select(PaneId(1));
         s.connecting(None);
         let sent = s.connected(Some(without_focus()), None, vec![with_tree(tree())]);
@@ -3906,7 +3915,7 @@ mod tests {
     /// consoles 8 and 9.
     fn with_consoles() -> Session {
         let mut s = session(Hello::this_build());
-        s.resize(Side::First, 30, 100);
+        s.resize(Side::Workspace, 30, 100);
         s.select(PaneId(1));
         s.receive(consoles(&[8, 9]));
         s
@@ -3919,7 +3928,7 @@ mod tests {
                 Event::Console(page) => Some(*page),
                 _ => None,
             })
-            .unwrap_or_else(|| s.console.page(s.stage, s.console_on_canvas(), s.status.daemon_can(CONSOLES)))
+            .unwrap_or_else(|| s.console.page(s.stage, s.console_sides(), s.status.daemon_can(CONSOLES)))
     }
 
     fn console(s: &mut Session, gesture: ConsoleGesture) -> Vec<String> {
@@ -3932,36 +3941,47 @@ mod tests {
         let page = console_page(&mut s);
         assert_eq!(page.place, ConsolePlace::Hidden, "hidden until asked for");
         assert_eq!(page.tabs.iter().map(|t| (t.pane, t.on)).collect::<Vec<_>>(), [(8, true), (9, false)]);
-        assert_eq!(page.showing, None, "the Workspace keeps the canvas");
+        assert_eq!(page.showing, None, "nothing on the console's screen");
         assert!(page.can_spawn);
         assert_eq!(s.rail(0).shown.map(|p| p.pane), Some(1), "a console is no project's pane");
     }
 
     #[test]
-    fn showing_the_console_docks_it_and_moves_the_canvas_into_it() {
+    fn showing_the_console_docks_it_beside_the_workspaces_pane_with_the_keys() {
         let mut s = with_consoles();
         let sent = leader_then(&mut s, "`");
-        assert_eq!(names(&sent)[..2], ["unsubscribe 1", "subscribe 8"]);
+        assert_eq!(names(&sent)[..1], ["subscribe 8"], "the Workspace's pane stays subscribed");
         let page = console_page(&mut s);
-        assert_eq!((page.place, page.showing), (ConsolePlace::Docked, Some(8)));
+        assert_eq!((page.place, page.showing, page.typing), (ConsolePlace::Docked, Some(8), Some(8)));
         assert_eq!(s.stage, Stage::Workspace, "docked under the stage it was on");
         assert_eq!(s.on_screen(), Some(PaneId(8)), "the keys are the console's");
+        assert_eq!(s.shown.panes(), [PaneId(1), PaneId(8)], "the agent and the console both on screen");
+        assert_eq!(s.rail(0).shown.map(|p| p.pane), Some(1), "the Workspace still shows its pane");
 
         assert_eq!(console(&mut s, ConsoleGesture::Select { pane: 9 })[..2], ["unsubscribe 8", "subscribe 9"]);
-        assert_eq!(console(&mut s, ConsoleGesture::Hide)[..2], ["unsubscribe 9", "subscribe 1"], "the Workspace's pane comes back");
+        assert_eq!(console(&mut s, ConsoleGesture::Hide)[..1], ["unsubscribe 9"]);
+        assert_eq!(s.on_screen(), Some(PaneId(1)), "the keys go back to the Workspace's pane");
         let page = console_page(&mut s);
         assert_eq!((page.place, page.showing), (ConsolePlace::Hidden, None));
     }
 
     #[test]
-    fn a_pane_chosen_on_the_rail_takes_the_canvas_back_and_the_console_stays_docked() {
+    fn a_pane_chosen_on_the_rail_takes_the_keys_and_the_console_stays_docked_beside_it() {
         let mut s = with_consoles();
         console(&mut s, ConsoleGesture::Toggle);
-        assert_eq!(names(&s.select(PaneId(2)))[..2], ["unsubscribe 8", "subscribe 2"]);
+        assert_eq!(names(&s.select(PaneId(2)))[..2], ["unsubscribe 1", "subscribe 2"]);
         let page = console_page(&mut s);
-        assert_eq!((page.place, page.showing), (ConsolePlace::Docked, None));
+        assert_eq!((page.place, page.showing, page.typing), (ConsolePlace::Docked, Some(8), None));
+        assert_eq!(typed(&mut s), ["input 2 [97]"]);
+
         console(&mut s, ConsoleGesture::Select { pane: 8 });
-        assert_eq!(names(&leader_then(&mut s, "1"))[..2], ["unsubscribe 8", "subscribe 2"], "1 is the Workspace's pane");
+        assert_eq!(typed(&mut s), ["input 8 [97]"]);
+        assert!(names(&s.select(PaneId(2))).iter().all(|m| m.starts_with("view")), "already shown: only the keys move");
+        assert_eq!(s.on_screen(), Some(PaneId(2)));
+
+        console(&mut s, ConsoleGesture::Select { pane: 8 });
+        assert!(names(&leader_then(&mut s, "1")).iter().all(|m| m.starts_with("view")), "1 gives the Workspace's pane the keys");
+        assert_eq!(s.on_screen(), Some(PaneId(2)));
     }
 
     #[test]
@@ -3975,7 +3995,7 @@ mod tests {
 
         leader_then(&mut s, "2");
         assert_eq!(console_page(&mut s).place, ConsolePlace::Hidden, "never docked");
-        assert_eq!(s.shown.pane(), Some(PaneId(1)), "a hidden console gives the canvas back");
+        assert_eq!(s.shown.pane(), Some(PaneId(1)), "a hidden console gives the keys back");
 
         console(&mut s, ConsoleGesture::Tab);
         console(&mut s, ConsoleGesture::Dock);
@@ -4018,7 +4038,8 @@ mod tests {
         assert_eq!(s.shown.pane(), Some(PaneId(1)));
 
         let sent = s.receive(consoles(&[8, 9, 10]));
-        assert_eq!(names(&sent)[..2], ["unsubscribe 1", "subscribe 10"]);
+        assert_eq!(names(&sent)[..1], ["subscribe 10"]);
+        assert_eq!(s.shown.panes(), [PaneId(1), PaneId(10)]);
         let page = console_page(&mut s);
         assert_eq!((page.place, page.showing), (ConsolePlace::Docked, Some(10)), "a new console shows itself");
     }
@@ -4032,7 +4053,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_a_tab_ends_that_console_and_the_canvas_falls_back() {
+    fn closing_a_tab_ends_that_console_and_its_keys_fall_back() {
         let mut s = with_consoles();
         console(&mut s, ConsoleGesture::Select { pane: 9 });
         assert_eq!(console(&mut s, ConsoleGesture::Close { pane: 9 }), ["Kill { pane: PaneId(9) }"]);
@@ -4041,8 +4062,10 @@ mod tests {
 
         s.receive(with_tree(tree()));
         assert_eq!(s.shown.pane(), Some(PaneId(9)), "the tree never held it");
-        assert_eq!(names(&s.receive(consoles(&[8])))[..2], ["subscribe 8", "resize 8 30x100"]);
-        assert_eq!(names(&s.receive(consoles(&[])))[..2], ["subscribe 1", "resize 1 30x100"], "the last one gives the canvas back");
+        assert_eq!(names(&s.receive(consoles(&[8])))[..1], ["subscribe 8"]);
+        assert_eq!(s.shown.pane(), Some(PaneId(8)), "the tab before it, with the keys");
+        assert!(names(&s.receive(consoles(&[]))).iter().all(|m| !m.starts_with("subscribe")));
+        assert_eq!(s.shown.pane(), Some(PaneId(1)), "the last one gives the keys back");
     }
 
     #[test]
@@ -4128,7 +4151,7 @@ mod tests {
         s.select(PaneId(1));
         s.receive(consoles(&[8]));
         let sent = s.call(Call::Command { action: Action::SplitConsole });
-        assert_eq!(names(&sent)[..2], ["unsubscribe 1", "subscribe 8"], "the console takes the canvas first");
+        assert_eq!(names(&sent)[..1], ["subscribe 8"], "the console comes up beside the Workspace's pane first");
         let [.., ClientMsg::SpawnConsole { request_id }, _] = sent.as_slice() else {
             panic!("{:?}", names(&sent));
         };
@@ -4147,7 +4170,12 @@ mod tests {
         assert_eq!(sides(&mut s), (Some(8), Some(9), Some(8)));
         assert_eq!(typed(&mut s), ["input 8 [97]"]);
         leader_then(&mut s, "o");
-        assert_eq!(sides(&mut s), (Some(8), Some(9), Some(9)), "the leader and o: the other side");
+        assert_eq!(sides(&mut s), (Some(8), Some(9), Some(9)), "the leader and o: the next pane on screen");
+        leader_then(&mut s, "o");
+        assert_eq!((sides(&mut s).2, s.on_screen()), (None, Some(PaneId(1))), "round to the Workspace's");
+        leader_then(&mut s, "o");
+        assert_eq!(sides(&mut s).2, Some(8));
+        leader_then(&mut s, "o");
 
         s.receive(consoles(&[8, 9, 10]));
         let sent = console(&mut s, ConsoleGesture::Select { pane: 10 });
@@ -4181,6 +4209,11 @@ mod tests {
         let sent = s.receive(consoles(&[9]));
         assert_eq!(names(&sent)[..1], ["resize 9 30x50"], "the second side's moves over");
         assert_eq!(sides(&mut s), (Some(9), None, Some(9)));
+
+        let mut s = split();
+        s.select(PaneId(1));
+        s.receive(consoles(&[8]));
+        assert_eq!((sides(&mut s), s.on_screen()), ((Some(8), None, None), Some(PaneId(1))), "the Workspace keeps its keys");
     }
 
     #[test]
@@ -4232,14 +4265,14 @@ mod tests {
     }
 
     #[test]
-    fn the_split_waits_out_a_pane_on_the_canvas_and_a_hidden_console() {
+    fn the_split_stays_beside_a_checkouts_pane_and_waits_out_a_hidden_console() {
         let mut s = split();
-        s.select(PaneId(2));
-        assert_eq!(s.shown.panes(), [PaneId(2)], "a checkout's pane takes the canvas alone");
-        assert_eq!(sides(&mut s), (None, None, None));
+        assert_eq!(names(&s.select(PaneId(2)))[..2], ["unsubscribe 1", "subscribe 2"]);
+        assert_eq!(s.shown.panes(), [PaneId(2), PaneId(8), PaneId(9)], "the split stays beside it");
+        assert_eq!(sides(&mut s), (Some(8), Some(9), None), "the keys are the Workspace's");
         let sent = console(&mut s, ConsoleGesture::Select { pane: 9 });
-        assert_eq!(sent[..3], ["unsubscribe 2", "subscribe 8", "resize 8 30x50"]);
-        assert_eq!(sides(&mut s), (Some(8), Some(9), Some(9)), "the split comes back, the tab picked with the keys");
+        assert!(sent.iter().all(|m| m.starts_with("view")), "nothing subscribed: {sent:?}");
+        assert_eq!(sides(&mut s), (Some(8), Some(9), Some(9)), "the tab picked takes the keys");
         console(&mut s, ConsoleGesture::Hide);
         leader_then(&mut s, "`");
         assert_eq!(sides(&mut s), (Some(8), Some(9), Some(8)));

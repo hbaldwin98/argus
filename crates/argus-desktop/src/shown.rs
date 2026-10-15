@@ -1,14 +1,15 @@
-//! The panes this window shows: one, or two side by side while the console
-//! is split, each with its subscription, size and view on this connection;
-//! which of them has the keys; whether the one shown fills the window; and
-//! whether the leader is waiting on the next key typed.
+//! The panes this window shows — the Workspace's, and the console's one or
+//! two sides — each with its subscription, size and view on this
+//! connection; which of them has the keys; whether the Workspace's fills
+//! the window; and whether the leader is waiting on the next key typed.
 //!
 //! Which panes are shown is the window's own choice, as the terminal
 //! client's selection is; the session checks the tree or the consoles hold
 //! one before asking. The daemon sizes each pane on its own, so each side
 //! has its own room and asks its own size, sent only when it changes on
-//! this connection. A lone pane is always on the first side: that is the
-//! canvas the Workspace and the console hand between them.
+//! this connection. The Workspace's side never lends its screen to the
+//! console: an agent and a docked console are both on screen, and the keys
+//! are handed between them.
 
 use argus_protocol::pane_view::{Effect, PaneView};
 use argus_protocol::{ClientMsg, MouseTracking, PaneId, ServerMsg};
@@ -59,26 +60,22 @@ impl Slot {
 
 #[derive(Default)]
 pub struct ShownPane {
-    /// The first side, then the second.
-    sides: [Slot; 2],
+    /// The Workspace's, then the console's first and second.
+    sides: [Slot; 3],
     keys: Side,
-    /// The person asked for the pane to fill the window.
+    /// The person asked for the Workspace's pane to fill the window.
     filled: bool,
     /// The leader was pressed in the pane: the next key is the window's.
     leader: bool,
 }
 
+const SIDES: [Side; 3] = [Side::Workspace, Side::First, Side::Second];
+
 fn at(side: Side) -> usize {
     match side {
-        Side::First => 0,
-        Side::Second => 1,
-    }
-}
-
-pub fn other(side: Side) -> Side {
-    match side {
-        Side::First => Side::Second,
-        Side::Second => Side::First,
+        Side::Workspace => 0,
+        Side::First => 1,
+        Side::Second => 2,
     }
 }
 
@@ -96,40 +93,34 @@ impl ShownPane {
         self.keys
     }
 
-    /// Every pane on screen, the first side's first.
+    /// Every pane on screen, the Workspace's first.
     pub fn panes(&self) -> Vec<PaneId> {
         self.sides.iter().filter_map(|slot| slot.pane).collect()
     }
 
     fn side_of(&self, pane: PaneId) -> Option<Side> {
-        [Side::First, Side::Second].into_iter().find(|&side| self.on(side) == Some(pane))
-    }
-
-    /// Shows `pane` alone, with the keys, letting any other go. False when
-    /// it already was the one shown.
-    pub fn show(&mut self, pane: PaneId, out: &mut Vec<ClientMsg>) -> bool {
-        let split = self.on(Side::Second).is_some();
-        let changed = self.show_on(Side::First, pane, out);
-        self.close(Side::Second, out);
-        changed || split
+        SIDES.into_iter().find(|&side| self.on(side) == Some(pane))
     }
 
     /// Shows `pane` on `side`, letting the one there go. A pane already on
-    /// the other side moves over with its screen rather than subscribing
-    /// twice. False when it was there already.
+    /// the console's other side moves over with its screen rather than
+    /// subscribing twice. False when it was there already.
     pub fn show_on(&mut self, side: Side, pane: PaneId, out: &mut Vec<ClientMsg>) -> bool {
         if self.on(side) == Some(pane) {
             return false;
         }
         // As in the terminal client, filling and the leader are for the
         // pane they were asked on.
-        self.filled = false;
-        self.leader = false;
+        if side == Side::Workspace {
+            self.filled = false;
+        }
+        if side == self.keys {
+            self.leader = false;
+        }
         self.sides[at(side)].clear(true, out);
-        if self.on(other(side)) == Some(pane) {
-            self.move_over(other(side), side, out);
-        } else {
-            self.sides[at(side)].subscribe(pane, out);
+        match self.side_of(pane) {
+            Some(from) => self.move_over(from, side, out),
+            None => self.sides[at(side)].subscribe(pane, out),
         }
         true
     }
@@ -150,8 +141,9 @@ impl ShownPane {
         to.send_size(out);
     }
 
-    /// Lets `side`'s pane go. When the first side goes the second's pane
-    /// moves over to it, and either way the first has the keys.
+    /// Lets `side`'s pane go. When the console's first side goes its second
+    /// moves over to it. Keys left on nothing go to the console's first
+    /// side, or else the Workspace's.
     pub fn close(&mut self, side: Side, out: &mut Vec<ClientMsg>) {
         self.drop_side(side, true, out);
     }
@@ -163,13 +155,20 @@ impl ShownPane {
         self.sides[at(side)].clear(unsubscribe, out);
         if side == Side::First && self.on(Side::Second).is_some() {
             self.move_over(Side::Second, Side::First, out);
+            if self.keys == Side::Second {
+                self.keys = Side::First;
+            }
         }
-        self.keys = Side::First;
-        self.filled = false;
-        self.leader = false;
+        if side == Side::Workspace {
+            self.filled = false;
+        }
+        if self.pane().is_none() {
+            self.keys = [Side::First, Side::Workspace].into_iter().find(|&s| self.on(s).is_some()).unwrap_or_default();
+            self.leader = false;
+        }
     }
 
-    /// Gives the keys to the side showing `pane`; false when neither does.
+    /// Gives the keys to the side showing `pane`; false when none does.
     pub fn focus(&mut self, pane: PaneId) -> bool {
         let Some(side) = self.side_of(pane) else {
             return false;
@@ -179,17 +178,6 @@ impl ShownPane {
             self.leader = false;
         }
         true
-    }
-
-    /// Shows nothing. As in the terminal client, filling is for the pane it
-    /// was asked on: another pane comes back with the rail beside it.
-    pub fn hide(&mut self, out: &mut Vec<ClientMsg>) {
-        for slot in &mut self.sides {
-            slot.clear(true, out);
-        }
-        self.keys = Side::First;
-        self.filled = false;
-        self.leader = false;
     }
 
     /// The tree or the consoles no longer hold `pane`, and the daemon's
@@ -253,7 +241,7 @@ impl ShownPane {
 
     /// Each side's changed rows, named for the side that draws them.
     pub fn take_frames(&mut self) -> Vec<Frame> {
-        let sides = [Side::First, Side::Second].into_iter().zip(&mut self.sides);
+        let sides = SIDES.into_iter().zip(&mut self.sides);
         sides
             .filter_map(|(side, slot)| Some(Frame { side, ..slot.screen.as_mut()?.take_frame()? }))
             .collect()
@@ -319,11 +307,11 @@ mod tests {
     #[test]
     fn showing_subscribes_then_sizes_and_another_unsubscribes_the_first() {
         let mut shown = ShownPane::default();
-        assert!(sent(|out| shown.resize(Side::First, 30, 100, out)).is_empty(), "nothing shown to size");
-        assert_eq!(sent(|out| { shown.show(PaneId(1), out); }), ["subscribe 1", "resize 1 30x100"]);
-        assert!(!shown.show(PaneId(1), &mut Vec::new()), "already shown");
+        assert!(sent(|out| shown.resize(Side::Workspace, 30, 100, out)).is_empty(), "nothing shown to size");
+        assert_eq!(sent(|out| { shown.show_on(Side::Workspace, PaneId(1), out); }), ["subscribe 1", "resize 1 30x100"]);
+        assert!(!shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new()), "already shown");
         assert_eq!(
-            sent(|out| { shown.show(PaneId(2), out); }),
+            sent(|out| { shown.show_on(Side::Workspace, PaneId(2), out); }),
             ["unsubscribe 1", "subscribe 2", "resize 2 30x100"]
         );
     }
@@ -331,17 +319,17 @@ mod tests {
     #[test]
     fn a_resize_is_sent_only_when_the_size_changes() {
         let mut shown = ShownPane::default();
-        shown.show(PaneId(1), &mut Vec::new());
-        assert_eq!(sent(|out| shown.resize(Side::First, 30, 100, out)), ["resize 1 30x100"]);
-        assert!(sent(|out| shown.resize(Side::First, 30, 100, out)).is_empty());
-        assert_eq!(sent(|out| shown.resize(Side::First, 31, 100, out)), ["resize 1 31x100"]);
+        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
+        assert_eq!(sent(|out| shown.resize(Side::Workspace, 30, 100, out)), ["resize 1 30x100"]);
+        assert!(sent(|out| shown.resize(Side::Workspace, 30, 100, out)).is_empty());
+        assert_eq!(sent(|out| shown.resize(Side::Workspace, 31, 100, out)), ["resize 1 31x100"]);
     }
 
     #[test]
     fn a_reconnect_subscribes_again_at_the_same_size() {
         let mut shown = ShownPane::default();
-        shown.resize(Side::First, 30, 100, &mut Vec::new());
-        shown.show(PaneId(1), &mut Vec::new());
+        shown.resize(Side::Workspace, 30, 100, &mut Vec::new());
+        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
         assert_eq!(sent(|out| shown.reconnected(out)), ["subscribe 1", "resize 1 30x100"]);
         shown.gone(PaneId(1), &mut Vec::new());
         assert!(sent(|out| shown.reconnected(out)).is_empty(), "nothing to come back to");
@@ -352,71 +340,94 @@ mod tests {
         let mut shown = ShownPane::default();
         shown.await_leader();
         assert!(!shown.leader_waiting(), "no pane to type into");
-        shown.show(PaneId(1), &mut Vec::new());
+        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
         shown.toggle_fill();
         shown.await_leader();
         assert!(shown.leader_waiting());
-        shown.show(PaneId(2), &mut Vec::new());
+        shown.show_on(Side::Workspace, PaneId(2), &mut Vec::new());
         assert!(!shown.filled() && !shown.leader_waiting());
     }
 
-    /// Pane 1 on the first side at 30x50 and pane 2 on the second at
-    /// 30x49, the first with the keys.
+    /// Pane 1 on the Workspace at 20x100, and the console split with pane
+    /// 2 on its first side at 10x50 and pane 3 on its second at 10x49; the
+    /// Workspace has the keys.
     fn split(shown: &mut ShownPane) {
         let mut out = Vec::new();
-        shown.resize(Side::First, 30, 50, &mut out);
-        shown.resize(Side::Second, 30, 49, &mut out);
-        shown.show(PaneId(1), &mut out);
-        shown.show_on(Side::Second, PaneId(2), &mut out);
+        shown.resize(Side::Workspace, 20, 100, &mut out);
+        shown.resize(Side::First, 10, 50, &mut out);
+        shown.resize(Side::Second, 10, 49, &mut out);
+        shown.show_on(Side::Workspace, PaneId(1), &mut out);
+        shown.show_on(Side::First, PaneId(2), &mut out);
+        shown.show_on(Side::Second, PaneId(3), &mut out);
     }
 
     #[test]
-    fn each_side_is_sized_to_its_own_room() {
+    fn the_workspace_and_the_console_are_on_screen_at_once_each_at_its_size() {
         let mut shown = ShownPane::default();
-        shown.resize(Side::First, 30, 100, &mut Vec::new());
-        shown.show(PaneId(1), &mut Vec::new());
-        assert_eq!(sent(|out| shown.resize(Side::First, 30, 50, out)), ["resize 1 30x50"]);
-        assert!(sent(|out| shown.resize(Side::Second, 30, 49, out)).is_empty(), "nothing beside yet");
-        assert_eq!(sent(|out| { shown.show_on(Side::Second, PaneId(2), out); }), ["subscribe 2", "resize 2 30x49"]);
-        assert_eq!(sent(|out| shown.resize(Side::Second, 20, 49, out)), ["resize 2 20x49"], "the first is left alone");
-        assert_eq!(shown.panes(), [PaneId(1), PaneId(2)]);
+        shown.resize(Side::Workspace, 20, 100, &mut Vec::new());
+        shown.resize(Side::First, 10, 100, &mut Vec::new());
+        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
+        assert_eq!(sent(|out| { shown.show_on(Side::First, PaneId(2), out); }), ["subscribe 2", "resize 2 10x100"], "the agent stays");
+        assert_eq!(sent(|out| shown.resize(Side::First, 10, 50, out)), ["resize 2 10x50"]);
+        assert!(sent(|out| shown.resize(Side::Second, 10, 49, out)).is_empty(), "nothing beside yet");
+        assert_eq!(sent(|out| { shown.show_on(Side::Second, PaneId(3), out); }), ["subscribe 3", "resize 3 10x49"]);
+        assert_eq!(shown.panes(), [PaneId(1), PaneId(2), PaneId(3)]);
+        assert_eq!(shown.pane(), Some(PaneId(1)), "showing does not take the keys");
     }
 
     #[test]
     fn the_keys_follow_the_side_they_are_given_to() {
         let mut shown = ShownPane::default();
         split(&mut shown);
-        assert_eq!(shown.pane(), Some(PaneId(1)), "showing beside does not take the keys");
-        assert!(shown.focus(PaneId(2)));
-        assert_eq!((shown.keys(), shown.pane()), (Side::Second, Some(PaneId(2))));
-        assert!(!shown.focus(PaneId(9)), "on neither side");
+        assert!(shown.focus(PaneId(3)));
+        assert_eq!((shown.keys(), shown.pane()), (Side::Second, Some(PaneId(3))));
+        assert!(!shown.focus(PaneId(9)), "on no side");
+        assert_eq!(shown.pane(), Some(PaneId(3)));
+        assert!(shown.focus(PaneId(1)));
+        assert_eq!(shown.keys(), Side::Workspace);
+    }
+
+    #[test]
+    fn the_first_side_going_moves_the_second_over_at_its_size_with_its_keys() {
+        let mut shown = ShownPane::default();
+        split(&mut shown);
+        shown.focus(PaneId(3));
+        assert_eq!(sent(|out| shown.close(Side::First, out)), ["unsubscribe 2", "resize 3 10x50"]);
+        assert_eq!((shown.panes(), shown.pane()), (vec![PaneId(1), PaneId(3)], Some(PaneId(3))));
+
+        let mut shown = ShownPane::default();
+        split(&mut shown);
+        assert!(sent(|out| shown.gone(PaneId(3), out)).is_empty(), "the daemon let it go");
+        assert_eq!((shown.panes(), shown.pane()), (vec![PaneId(1), PaneId(2)], Some(PaneId(1))), "the Workspace kept its keys");
+    }
+
+    #[test]
+    fn keys_left_on_nothing_go_to_the_console_or_else_the_workspace() {
+        let mut shown = ShownPane::default();
+        split(&mut shown);
+        shown.close(Side::Workspace, &mut Vec::new());
         assert_eq!(shown.pane(), Some(PaneId(2)));
+        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
+        shown.close(Side::Second, &mut Vec::new());
+        shown.close(Side::First, &mut Vec::new());
+        assert_eq!(shown.pane(), Some(PaneId(1)));
     }
 
     #[test]
-    fn the_first_side_going_moves_the_second_over_at_its_size() {
+    fn a_console_chosen_for_the_other_side_moves_rather_than_subscribing_again() {
         let mut shown = ShownPane::default();
         split(&mut shown);
-        shown.focus(PaneId(2));
-        assert_eq!(sent(|out| shown.close(Side::First, out)), ["unsubscribe 1", "resize 2 30x50"]);
-        assert_eq!((shown.panes(), shown.keys()), (vec![PaneId(2)], Side::First));
-
-        let mut shown = ShownPane::default();
-        split(&mut shown);
-        assert!(sent(|out| shown.gone(PaneId(2), out)).is_empty(), "the daemon let it go");
-        assert_eq!(shown.panes(), [PaneId(1)]);
+        assert_eq!(sent(|out| { shown.show_on(Side::First, PaneId(3), out); }), ["unsubscribe 2", "resize 3 10x50"]);
+        assert_eq!(shown.panes(), [PaneId(1), PaneId(3)]);
     }
 
     #[test]
-    fn showing_one_pane_puts_the_split_away() {
+    fn a_console_shown_or_closed_leaves_the_workspace_filled() {
         let mut shown = ShownPane::default();
-        split(&mut shown);
-        assert_eq!(
-            sent(|out| { shown.show(PaneId(3), out); }),
-            ["unsubscribe 1", "subscribe 3", "resize 3 30x50", "unsubscribe 2"]
-        );
-        let mut shown = ShownPane::default();
-        split(&mut shown);
-        assert_eq!(sent(|out| { shown.show(PaneId(2), out); }), ["unsubscribe 1", "resize 2 30x50"], "moved, not subscribed again");
+        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
+        shown.toggle_fill();
+        shown.show_on(Side::First, PaneId(2), &mut Vec::new());
+        shown.close(Side::First, &mut Vec::new());
+        assert!(shown.filled());
     }
 }

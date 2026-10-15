@@ -607,8 +607,7 @@ function drawStage(): void {
   const { connection, detail } = state.status;
   const { loaded, project, shown } = state.rail;
   const empty = $('empty');
-  // The console may have the canvas while the Workspace has no pane.
-  $('terminal').hidden = !shown && state.console?.showing == null;
+  $('terminal').hidden = !shown;
   $('body').classList.toggle('held', connection === 'stopped');
   empty.hidden = !!shown;
   if (shown) return;

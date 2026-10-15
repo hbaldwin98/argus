@@ -1,8 +1,8 @@
 // A pane's screen in its container: the rows Rust sends, drawn in the
 // theme's colours on canvases of its own, and the room the container has
 // reported back as rows and columns. There is one screen per side Rust
-// draws on: the window's canvas, which moves between the Workspace and the
-// console's first side, and the console's second side while it is split.
+// draws on: the Workspace's, and the console's first and second, so an
+// agent and a docked console are drawn at once.
 // The rows are mirrored only so a theme or scale change can repaint them.
 import { $, el, ghosts } from './dom.js';
 import { dragging } from './edge.js';
@@ -223,8 +223,8 @@ function makeScreen(terminal, side) {
                 mirror[row] ??= [];
             size();
         }
-        // The Workspace's header names the first side's size.
-        if ((resized || moved) && side === 'first') {
+        // The Workspace's header names its pane's size.
+        if ((resized || moved) && side === 'workspace') {
             const label = document.getElementById('size');
             if (label)
                 label.textContent = sizeLabel();
@@ -360,12 +360,19 @@ function makeScreen(terminal, side) {
         key,
     };
 }
-/** The window's canvas: the Workspace's pane, or the console's first side. */
-export const screen = makeScreen($('terminal'), 'first');
+/** The Workspace's pane. */
+export const screen = makeScreen($('terminal'), 'workspace');
+/** The console's first side, the whole of it when it is not split. */
+export const consoleScreen = makeScreen($('terminal-console'), 'first');
 /** The console's second side, while it is split. */
 export const beside = makeScreen($('terminal-beside'), 'second');
-export const screens = [screen, beside];
+export const screens = [screen, consoleScreen, beside];
+export function onSide(side) {
+    if (side === 'first')
+        return consoleScreen;
+    return side === 'second' ? beside : screen;
+}
 /** A frame goes to the side Rust says draws it. */
 export function drawFrame(f) {
-    (f.side === 'second' ? beside : screen).frame(f);
+    onSide(f.side).frame(f);
 }

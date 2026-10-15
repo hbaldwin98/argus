@@ -1,12 +1,13 @@
 // The console: a tab per console the daemon holds, its buttons, the sash
-// it is resized by while docked, and its sides — the window's one canvas
-// on the first, and the second screen beside it while it is split, each
-// headed by its console. Rust decides where the console is, which panes
-// its sides draw and which has the keys (`src/console.rs`); this draws
-// that and reports what was pressed.
+// it is resized by while docked, and its sides — a screen of its own on
+// the first, under the Workspace's, and the second beside it while it is
+// split, each headed by its console. Rust decides where the console is,
+// which panes its sides draw and which has the keys (`src/console.rs`);
+// this draws that, puts the keys' text area in the screen that has them,
+// and reports what was pressed.
 import { $, el, icon } from './dom.js';
 import { chordsFor, presses } from './keys.js';
-import { beside, screen } from './screen.js';
+import { beside, consoleScreen, screen } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 function gesture(g) {
@@ -115,34 +116,39 @@ function drawSideHead(id, pane) {
         onclick: () => gesture({ on: 'closeSide', pane: tab.pane }),
     }, icon('close')));
 }
-/** The canvas and its keys go where the pane they draw is shown: on the
- *  console's first side while it draws a console, and in the Workspace
- *  otherwise. The second side shows only while the console is split. */
+/** The screen with the keys: a console side the console says is typed
+ *  in, else the Workspace's. */
+export function keyedScreen() {
+    const page = state.console;
+    if (page?.typing == null)
+        return screen;
+    if (page.typing === page.beside)
+        return beside;
+    return page.typing === page.showing ? consoleScreen : screen;
+}
+/** The console's sides show while it draws a console, the second only
+ *  while it is split, and the keys' text area goes into whichever screen
+ *  has them, keeping its focus across the move. */
 export function placeTerminal() {
-    const terminal = $('terminal');
     const page = state.console;
     const inConsole = page?.showing != null && page.place !== 'hidden';
     const split = inConsole && page?.beside != null;
-    const home = inConsole ? $('console-first') : $('body');
-    if (terminal.parentElement !== home) {
-        const hadKeys = document.activeElement === $('input');
-        if (inConsole)
-            home.append(terminal);
-        else
-            home.prepend(terminal);
-        if (hadKeys)
-            $('input').focus();
-    }
     $('console-first').hidden = !inConsole;
     $('console-second').hidden = !split;
     drawSideHead('console-first-head', page?.showing ?? null);
     drawSideHead('console-second-head', page?.beside ?? null);
+    consoleScreen.expect(inConsole ? (page?.showing ?? null) : null);
     beside.expect(split ? (page?.beside ?? null) : null);
-    // The keys are the first side's unless the console says the second has
-    // them; the Workspace's pane is always on the first.
-    const second = split && page?.typing != null && page.typing === page.beside;
-    screen.key(!second);
-    beside.key(second);
+    const keyed = keyedScreen();
+    for (const s of [screen, consoleScreen, beside])
+        s.key(s === keyed);
+    const input = $('input');
+    if (input.parentElement !== keyed.terminal) {
+        const hadKeys = document.activeElement === input;
+        keyed.terminal.append(input);
+        if (hadKeys)
+            input.focus();
+    }
     const empty = $('console-empty');
     empty.hidden = inConsole;
     if (inConsole || !page)

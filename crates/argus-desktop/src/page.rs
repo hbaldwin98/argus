@@ -370,15 +370,17 @@ pub enum ConsoleGesture {
     CloseSide { pane: u64 },
 }
 
-/// A side of the window's screen. The console splits it in two; anything
-/// else is drawn on the first.
+/// A screen the window draws a pane on: the Workspace's, and the console's
+/// two sides beneath it, so an agent and a docked console are on screen at
+/// once.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
-    /// The window's one canvas, which moves between the Workspace and the
-    /// console's left side.
+    /// The Workspace's pane, a checkout's.
     #[default]
+    Workspace,
+    /// The console's left side, the whole of it when it is not split.
     First,
     /// The console's right side, while it is split.
     Second,

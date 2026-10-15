@@ -87,7 +87,7 @@ impl Screen {
         Some(Frame {
             pane: self.view.pane().0,
             // Which side draws the screen is `shown`'s to say.
-            side: Side::First,
+            side: Side::Workspace,
             rows,
             cols,
             full,

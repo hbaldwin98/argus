@@ -50,7 +50,6 @@ function receive(event) {
         case 'console': {
             const before = state.console?.typing ?? null;
             state.console = event;
-            screen.expect(state.rail.shown?.pane ?? event.showing);
             drawChrome();
             // A console newly on screen takes the keys, as a pane does, and so
             // does a split side given them by a press on its header.
@@ -61,7 +60,7 @@ function receive(event) {
         case 'rail': {
             const before = state.rail;
             state.rail = event;
-            screen.expect(event.shown?.pane ?? state.console?.showing ?? null);
+            screen.expect(event.shown?.pane ?? null);
             drawChrome();
             document.body.classList.toggle('filled', event.filled);
             // A pane newly on screen takes the keys, however it got there: a

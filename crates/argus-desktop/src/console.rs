@@ -345,7 +345,7 @@ mod tests {
                 .join(" ")
         };
         for stage in [Stage::Workspace, Stage::Console, Stage::Composer] {
-            // A hidden console never keeps the canvas: the session gives it back.
+            // A hidden console lets its panes go: the session closes its sides.
             let on_screen = if console.place(stage) == ConsolePlace::Hidden { OnScreen::default() } else { alone(6) };
             let page = console.page(stage, on_screen, true);
             println!("{stage:?} stage: console {:?}, {}px", page.place, page.height);
@@ -354,7 +354,8 @@ mod tests {
                 continue;
             }
             println!("  ›_ Console  {}  +   [|] split", tabs(&page));
-            println!("  canvas: {}", page.showing.map_or("the Workspace's pane".into(), |p| format!("console {p}")));
+            let under = if page.place == ConsolePlace::Docked { ", under the Workspace's pane" } else { "" };
+            println!("  screen: {}", page.showing.map_or("none".into(), |p| format!("console {p}{under}")));
         }
         console.set_fullscreen(true);
         println!("fullscreen: {:?}", console.page(Stage::Feature, OnScreen::default(), true).place);
@@ -372,7 +373,7 @@ mod tests {
             format!("{keys} › {title} (console {pane}) ✕")
         };
         println!("  ┌ {:<34}┬ {}", side(page.showing), side(page.beside));
-        let (first, second) = ("first side's canvas", "second side's canvas");
+        let (first, second) = ("first side's screen", "second side's screen");
         println!("  │ {first:<34}│ {second}");
     }
 }
