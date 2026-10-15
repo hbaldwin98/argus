@@ -1,5 +1,5 @@
-//! The panes that were open when the daemon last stopped, so the next
-//! run can bring them back.
+//! The panes and consoles that were open when the daemon last stopped, so
+//! the next run can bring them back.
 
 use super::*;
 
@@ -59,5 +59,30 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Records that `count` consoles are running, in place of what was.
+    pub fn save_consoles(&self, count: usize) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM console_pane", [])?;
+        {
+            let mut stmt = tx.prepare("INSERT INTO console_pane (seq) VALUES (?1)")?;
+            for seq in 0..count {
+                stmt.execute([seq as i64])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// How many consoles were running when the daemon last stopped.
+    pub fn consoles(&self) -> Result<usize> {
+        if std::env::var_os(NO_RESTORE).is_some() {
+            return Ok(0);
+        }
+        let conn = self.conn();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM console_pane", [], |r| r.get(0))?;
+        Ok(count as usize)
     }
 }

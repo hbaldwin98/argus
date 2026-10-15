@@ -490,3 +490,14 @@ CREATE INDEX seen_session_ended ON seen_session (ended);
 pub(super) const SCHEMA_V24: &str = r#"
 ALTER TABLE project_overlay ADD COLUMN exclude TEXT NOT NULL DEFAULT '';
 "#;
+
+/// The consoles running when the daemon last stopped, one row each in the
+/// order they were started. A console is a shell in the home directory, so
+/// how many there were is all a restart has to bring back. A table of its
+/// own rather than a nullable `pane.checkout_path`: every pane there is
+/// restored into its checkout, and none of that reads a console.
+pub(super) const SCHEMA_V25: &str = r#"
+CREATE TABLE console_pane (
+    seq INTEGER PRIMARY KEY
+);
+"#;

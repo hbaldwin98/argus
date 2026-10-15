@@ -727,6 +727,24 @@ pub(super) fn saved_panes() -> Vec<crate::store::SessionPane> {
     crate::store::Store::open().unwrap().panes().unwrap()
 }
 
+pub(super) fn saved_consoles() -> usize {
+    crate::store::Store::open().unwrap().consoles().unwrap()
+}
+
+/// Writes the store as a previous daemon running `count` consoles would.
+pub(super) fn record_consoles(count: usize) {
+    crate::store::Store::open()
+        .unwrap()
+        .save_consoles(count)
+        .unwrap();
+}
+
+pub(super) fn close_consoles(d: &Daemon) {
+    for p in d.consoles() {
+        let _ = d.close_pane(p.id);
+    }
+}
+
 // --- resuming a conversation --------------------------------------------
 
 /// How many panes are currently holding a reopened conversation. Not

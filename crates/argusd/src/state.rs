@@ -58,7 +58,7 @@ pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;
 use hook_server::{gen_token, valid_session_id};
-use session::{agent_args, first_message, nothing_to_resume, Resumed};
+use session::{agent_args, first_message, nothing_to_resume, Recorded, Resumed};
 use tree::*;
 
 use crate::config::{self, AgentConfig, ConfigFile};
@@ -302,8 +302,7 @@ struct Inner {
     workspaces: Vec<Workspace>,
     projects: Vec<Project>,
     /// Shells that belong to no checkout, in the order they were started.
-    /// Outside every workspace, so switching one never hides them, and not
-    /// recorded for the next run.
+    /// Outside every workspace, so switching one never hides them.
     consoles: Vec<Pane>,
     ids: IdGen,
     /// Exactly one workspace is open at a time, daemon-global. Panes in the
@@ -361,7 +360,7 @@ pub struct Daemon {
     /// nothing it keeps — telemetry, a child's status — writes nothing.
     /// Held across computing and saving, which also keeps two recordings
     /// from landing in the opposite order to the states they read.
-    recorded: StdMutex<Option<Vec<crate::store::SessionPane>>>,
+    recorded: StdMutex<Recorded>,
     /// Runtime state that outlives this run. Which store a daemon holds is
     /// what decides whether it persists at all: `new` gives it one that
     /// lives and dies with the process, so a daemon built in a test cannot

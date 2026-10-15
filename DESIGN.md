@@ -114,7 +114,7 @@ with them; the wheel scrolls the side under it. A side's `✕`, the split button
 side with the keys), or a side's console ending puts the split away, the other side filling the
 console. A checkout's pane on the canvas leaves the split waiting for the console's return. Whether
 it is docked and its height are saved in `desktop.json`; fullscreen, the split and the tabs chosen
-are the run's, since the consoles end with the daemon. The Feature stage
+are the run's, since a restarted daemon's consoles are new shells under new ids. The Feature stage
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
@@ -663,7 +663,9 @@ list of its own beside the projects, outside every workspace. Screens, sizes, ke
 it as they find any pane; what only an agent does looks in the checkouts alone. Clients read every
 pane as part of a project, so the consoles do not travel in the tree: a client that greeted with
 `consoles` is sent `ServerMsg::Consoles` after the daemon's greeting and after every tree, and may
-send `ClientMsg::SpawnConsole`. A console is not recorded for the next run.
+send `ClientMsg::SpawnConsole`. How many consoles are running is recorded beside the panes, in a
+`console_pane` table of its own so that every `pane` row keeps its checkout, and a restart starts
+that many fresh shells in the home directory; a console whose shell has exited is not counted.
 
 An agent whose process exits leaves its row as `Exited` unless its template sets `restart`:
 `on-failure` starts it again on a non-zero exit, `always` on any exit, and `never` — the default —

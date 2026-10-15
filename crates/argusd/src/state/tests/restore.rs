@@ -173,6 +173,7 @@ fn the_escape_hatch_starts_clean() {
     let dir = tempfile::tempdir().unwrap();
     with_temp_config(|_| {
         record(&[(PaneKind::Shell, "shell")], dir.path());
+        record_consoles(1);
 
         let env = crate::store::NO_RESTORE_LOCK
             .lock()
@@ -186,6 +187,58 @@ fn the_escape_hatch_starts_clean() {
         assert!(d.snapshot()[0].repositories[0].checkouts[0]
             .panes
             .is_empty());
+        assert!(d.consoles().is_empty());
+    });
+}
+
+#[tokio::test]
+async fn running_consoles_are_written_down_and_a_closed_one_is_not() {
+    let dir = tempfile::tempdir().unwrap();
+    with_temp_config(|_| {
+        let d = daemon_for_restore(dir.path());
+        let first = d.spawn_console().unwrap();
+        d.spawn_console().unwrap();
+        assert_eq!(saved_consoles(), 2);
+
+        d.close_pane(first).unwrap();
+        assert_eq!(saved_consoles(), 1);
+
+        close_consoles(&d);
+    });
+}
+
+#[tokio::test]
+async fn consoles_come_back_after_a_restart_beside_the_panes() {
+    // Both are read before either starts: a spawn records what is
+    // running, and a console restored first must not write over the panes.
+    let dir = tempfile::tempdir().unwrap();
+    with_temp_config(|_| {
+        record(&[(PaneKind::Shell, "shell")], dir.path());
+        record_consoles(2);
+
+        let d = daemon_for_restore(dir.path());
+        d.restore_session();
+
+        assert_eq!(d.consoles().len(), 2);
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts[0].panes.len(), 1);
+        assert_eq!(saved_panes().len(), 1);
+        assert_eq!(saved_consoles(), 2);
+
+        close_all(&d);
+        close_consoles(&d);
+    });
+}
+
+#[tokio::test]
+async fn a_console_whose_shell_exited_is_not_brought_back() {
+    let dir = tempfile::tempdir().unwrap();
+    with_temp_config(|_| {
+        let d = daemon_for_restore(dir.path());
+        let console = d.spawn_console().unwrap();
+        d.mark_pane_exited(console, Some(0));
+        assert_eq!(saved_consoles(), 0);
+
+        close_consoles(&d);
     });
 }
 

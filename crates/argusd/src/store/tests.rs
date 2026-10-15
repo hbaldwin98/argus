@@ -161,11 +161,23 @@ fn the_escape_hatch_reads_nothing_back() {
     let s = store();
     s.save_panes(&[pane("/repo", PaneKind::Shell, "shell")])
         .unwrap();
+    s.save_consoles(2).unwrap();
     let _env = NO_RESTORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var(NO_RESTORE, "1");
     let out = s.panes();
+    let consoles = s.consoles();
     std::env::remove_var(NO_RESTORE);
     assert!(out.unwrap().is_empty());
+    assert_eq!(consoles.unwrap(), 0);
+}
+
+#[test]
+fn the_consoles_recorded_are_the_last_count_given() {
+    let s = store();
+    assert_eq!(s.consoles().unwrap(), 0);
+    s.save_consoles(3).unwrap();
+    s.save_consoles(2).unwrap();
+    assert_eq!(s.consoles().unwrap(), 2);
 }
 
 #[test]

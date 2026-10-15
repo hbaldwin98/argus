@@ -170,7 +170,7 @@ impl Daemon {
             hook_port: std::sync::atomic::AtomicU16::new(0),
             hook_token: gen_token(),
             restoring: std::sync::atomic::AtomicBool::new(false),
-            recorded: StdMutex::new(None),
+            recorded: StdMutex::new(Recorded::default()),
             store,
             restart_attempts: StdMutex::new(HashMap::new()),
             board_keys: StdMutex::new(HashMap::new()),

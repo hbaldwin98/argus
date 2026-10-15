@@ -253,7 +253,8 @@ the screen from the Workspace's pane, and choosing that pane takes it back. The 
 a pane, the leader and `\`) shows two consoles side by side; a click on a side's header or screen
 (from a pane, the leader and `o`) gives it the keys, a tab picked replaces the side with the keys,
 and a side's `✕` takes it out of the split, its console staying a tab. Whether it is docked and its
-height are kept in `desktop.json`; the split lasts the run, and the consoles as long as the daemon.
+height are kept in `desktop.json`; the split lasts the run. A daemon restarted starts as many
+consoles again as were running, each a fresh shell in the home directory.
 
 `Ctrl-K` (from a pane, the leader and `k`) opens the palette: one search over the window's commands,
 the project's panes and checkouts and the chosen repository's features, each with its key or its

@@ -85,6 +85,14 @@ pub(super) struct Resumed {
 /// all; a false negative costs a dead row.
 pub(super) const RESUME_GRACE: Duration = Duration::from_secs(5);
 
+/// What the store was last given, each part on its own so a console
+/// starting does not rewrite every pane.
+#[derive(Default)]
+pub(super) struct Recorded {
+    panes: Option<Vec<crate::store::SessionPane>>,
+    consoles: Option<usize>,
+}
+
 impl Daemon {
     /// What is running, in a form that survives ids being reissued.
     pub(super) fn session_panes(&self) -> Vec<crate::store::SessionPane> {
@@ -115,16 +123,33 @@ impl Daemon {
         }
         let mut recorded = self.recorded.lock().unwrap();
         let panes = self.session_panes();
-        if recorded.as_ref() == Some(&panes) {
-            return;
+        if recorded.panes.as_ref() != Some(&panes) {
+            // A title or status changing is the session still running.
+            self.saw_sessions(&panes);
+            match self.store.save_panes(&panes) {
+                Ok(()) => recorded.panes = Some(panes),
+                // Left as it was, so the next broadcast tries again.
+                Err(e) => tracing::warn!("could not record the session: {e}"),
+            }
         }
-        // A title or status changing is the session still running.
-        self.saw_sessions(&panes);
-        match self.store.save_panes(&panes) {
-            Ok(()) => *recorded = Some(panes),
-            // Left as it was, so the next broadcast tries again.
-            Err(e) => tracing::warn!("could not record the session: {e}"),
+        let consoles = self.running_consoles();
+        if recorded.consoles != Some(consoles) {
+            match self.store.save_consoles(consoles) {
+                Ok(()) => recorded.consoles = Some(consoles),
+                Err(e) => tracing::warn!("could not record the consoles: {e}"),
+            }
         }
+    }
+
+    /// The consoles still running. One whose shell has exited stays as a
+    /// row until it is closed, but there is nothing in it to bring back.
+    fn running_consoles(&self) -> usize {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .consoles
+            .iter()
+            .filter(|pane| !matches!(pane.status, PaneStatus::Exited { .. }))
+            .count()
     }
 
     /// Starts again whatever was running when the daemon last stopped, and
@@ -133,13 +158,43 @@ impl Daemon {
     /// Failures are per pane and never fatal: a template that has since
     /// stopped working should cost you that pane, not the whole session.
     pub fn restore_session(self: &Arc<Self>) {
-        let saved = match self.store.panes() {
-            Ok(panes) => panes,
-            Err(e) => {
-                tracing::warn!("could not read what was running: {e}");
-                return;
-            }
-        };
+        // Both read before anything starts: a spawn records what is
+        // running, which would write over what is still to be read.
+        let consoles = self.store.consoles().unwrap_or_else(|e| {
+            tracing::warn!("could not read which consoles were running: {e}");
+            0
+        });
+        let saved = self.store.panes().unwrap_or_else(|e| {
+            tracing::warn!("could not read what was running: {e}");
+            Vec::new()
+        });
+        self.restore_consoles(consoles);
+        self.restore_panes(saved);
+    }
+
+    /// Starts `count` consoles again, each a fresh shell in the home
+    /// directory, as a console always is.
+    fn restore_consoles(self: &Arc<Self>, count: usize) {
+        if count == 0 {
+            return;
+        }
+        self.restoring
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let restored = (0..count)
+            .filter(|_| match self.spawn_console() {
+                Ok(_) => true,
+                Err(e) => {
+                    tracing::warn!("could not restore a console: {e}");
+                    false
+                }
+            })
+            .count();
+        self.restoring
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        tracing::info!("restored {restored} of {count} consoles");
+    }
+
+    fn restore_panes(self: &Arc<Self>, saved: Vec<crate::store::SessionPane>) {
         if saved.is_empty() {
             return;
         }

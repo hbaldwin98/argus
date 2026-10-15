@@ -8,8 +8,9 @@
 //! tab appears once the daemon says the console exists and goes once it
 //! says it ended. Whether it is docked and its height are remembered in
 //! `desktop.json`; fullscreen, the split and the tabs chosen last as long
-//! as the run, since the consoles themselves end with the daemon and a
-//! split kept for the next run would rarely find its two. Which panes are
+//! as the run: a daemon restarted brings its consoles back as new shells
+//! under new ids, so a split kept for the next run would not find its two.
+//! Which panes are
 //! on screen, and which has the keys, is `shown`'s, and the session
 //! decides when they move here; this module only says what the console
 //! would show.
