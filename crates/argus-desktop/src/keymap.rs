@@ -48,6 +48,12 @@ pub enum Place {
     Feature,
     /// The feature under the cursor, in the list or on the board.
     Card,
+    /// A feature opened from the index: its outline and the row under the
+    /// cursor.
+    Outline,
+    /// A note or an edit being written in the Feature stage, whose text
+    /// field holds every other key.
+    Writing,
     /// The Checkouts stage's table.
     Checkouts,
     /// A checkout's + menu while it is open, which holds the keys.
@@ -91,6 +97,25 @@ pub enum Action {
     Hold,
     Archive,
     GoToPane,
+    /// A new feature, written as one note.
+    NewFeature,
+    /// Create the note's feature, or save the edit being written.
+    Save,
+    /// Edit what the cursor is on: a task's title and description, or a
+    /// decision as its record.
+    Edit,
+    /// Edit the open feature's brief.
+    Brief,
+    AddTask,
+    /// A subtask under the task at the cursor, or a sub-decision under the
+    /// decision.
+    Under,
+    /// Raise a decision under the task at the cursor.
+    Decide,
+    /// Answer the open decision at the cursor in words.
+    Answer,
+    /// Withdraw the decision at the cursor, or restore it.
+    Withdraw,
     StartShell,
     /// The daemon's default agent: its first template.
     StartAgent,
@@ -218,6 +243,8 @@ impl Place {
             Place::Rail => "Rail",
             Place::Feature => "Feature",
             Place::Card => "Board card",
+            Place::Outline => "An open feature",
+            Place::Writing => "Writing a note or an edit",
             Place::Checkouts => "Checkouts",
             Place::Start => "A checkout's + menu",
             Place::Review => "Review",
@@ -244,7 +271,7 @@ const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'s
 }
 
 use Action::*;
-use Place::{Anywhere, Card, History, Pane, Rail, Review, Sessions, Start};
+use Place::{Anywhere, Card, History, Outline, Pane, Rail, Review, Sessions, Start, Writing};
 use Place::Checkouts as CheckoutsTable;
 
 pub static BINDINGS: &[Binding] = &[
@@ -281,10 +308,27 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Feature, &[Chord::key("v"), Chord::key("V")], Layout, "list or board"),
     bind(Place::Feature, &[Chord::key("z")], Folded, "show held and archived, or fold them"),
     bind(Place::Feature, &[Chord::key("/")], Filter, "filter by title or number"),
+    bind(Place::Feature, &[Chord::key("N")], NewFeature, "write a new feature as one note"),
+    bind(Card, &[Chord::key("Enter")], Choose, "open it"),
     bind(Card, &[Chord::key("m"), Chord::key("M")], Move, "move to…"),
     bind(Card, &[Chord::key("h"), Chord::key("H")], Hold, "hold, or lift its hold"),
     bind(Card, &[Chord::key("A")], Archive, "archive, or reopen"),
     bind(Card, &[Chord::key("g"), Chord::key("G")], GoToPane, "go to its agent's pane"),
+    bind(Outline, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next task or decision"),
+    bind(Outline, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous task or decision"),
+    bind(Outline, &[Chord::key("Home")], First, "first row"),
+    bind(Outline, &[Chord::key("End")], Last, "last row"),
+    bind(Outline, &[Chord::key("e"), Chord::key("E")], Edit, "edit the task, or the decision as its record"),
+    bind(Outline, &[Chord::key("b"), Chord::key("B")], Brief, "edit the brief"),
+    bind(Outline, &[Chord::key("a"), Chord::key("A")], AddTask, "new task"),
+    bind(Outline, &[Chord::key("s"), Chord::key("S")], Under, "a subtask or sub-decision under it"),
+    bind(Outline, &[Chord::key("d"), Chord::key("D")], Decide, "raise a decision under the task"),
+    bind(Outline, &[Chord::key("o"), Chord::key("O")], Answer, "answer the open decision in words"),
+    bind(Outline, &[Chord::key("x"), Chord::key("X")], Withdraw, "withdraw the decision, or restore it"),
+    bind(Outline, &[Chord::key("g"), Chord::key("G")], GoToPane, "go to its agent's pane"),
+    bind(Writing, &[Chord::key("Enter").ctrl()], Save, "create the feature, or save the edit"),
+    bind(Writing, &[Chord::key("Enter")], Choose, "save a one-line field"),
+    bind(Writing, &[Chord::key("Escape")], CloseLayer, "discard what was written"),
     bind(CheckoutsTable, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next row"),
     bind(CheckoutsTable, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
     bind(CheckoutsTable, &[Chord::key("Home")], First, "first row"),
@@ -362,10 +406,24 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Branches, Some(CheckoutsTable), "Show or hide the branches no checkout is on"),
     (Layout, Some(Place::Feature), "Show the features as a list or a board"),
     (Folded, Some(Place::Feature), "Show held and archived features, or fold them"),
+    (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
 ];
 
-const ORDER: [Place; 11] =
-    [Anywhere, Pane, Rail, Place::Feature, Card, CheckoutsTable, Start, Review, History, Sessions, Place::Palette];
+const ORDER: [Place; 13] = [
+    Anywhere,
+    Pane,
+    Rail,
+    Place::Feature,
+    Card,
+    Outline,
+    Writing,
+    CheckoutsTable,
+    Start,
+    Review,
+    History,
+    Sessions,
+    Place::Palette,
+];
 
 /// The table as the sheet lists it: a group per place, in the sheet's order.
 pub fn groups() -> Vec<Group> {
@@ -444,6 +502,8 @@ mod tests {
                 "Rail",
                 "Feature",
                 "Board card",
+                "An open feature",
+                "Writing a note or an edit",
                 "Checkouts",
                 "A checkout's + menu",
                 "Review",
@@ -517,8 +577,10 @@ mod tests {
     /// field hears only its own: the rest are typed into it.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 9] = [
+        let heard_together: [&[Place]; 11] = [
             &[Anywhere, Place::Feature, Card],
+            &[Anywhere, Outline],
+            &[Writing],
             &[Pane],
             &[Anywhere, Rail],
             &[Anywhere, CheckoutsTable],
@@ -597,6 +659,29 @@ mod tests {
             "Escape closes it, as every dialog"
         );
         assert!(commands().iter().any(|c| c.action == OpenSessions), "the palette opens it");
+    }
+
+    /// The note and the edits are text fields: Ctrl-Enter saves and
+    /// Escape discards, and every other key is typed. An open feature hears
+    /// its own keys and Anywhere's, so its j and k move its outline, not
+    /// the index under it.
+    #[test]
+    fn a_note_saves_with_ctrl_enter_and_an_open_feature_has_its_own_keys() {
+        let find = |place: Place, key: &PageKey| {
+            BINDINGS
+                .iter()
+                .filter(|b| b.place == place)
+                .find(|b| b.chords.iter().any(|c| c.matches(key)))
+                .map(|b| b.action)
+        };
+        assert_eq!(find(Writing, &PageKey { ctrl: true, ..page("Enter") }), Some(Save));
+        assert_eq!(find(Writing, &page("Escape")), Some(CloseLayer));
+        assert_eq!(find(Place::Feature, &PageKey { shift: true, ..page("N") }), Some(NewFeature));
+        assert_eq!(find(Card, &page("Enter")), Some(Choose));
+        for (key, action) in [("j", Next), ("e", Edit), ("a", AddTask), ("s", Under), ("d", Decide), ("o", Answer), ("x", Withdraw)] {
+            assert_eq!(find(Outline, &page(key)), Some(action), "{key}");
+        }
+        assert!(commands().iter().any(|c| c.action == NewFeature && !c.chords.is_empty()), "the palette writes one too");
     }
 
     #[test]

@@ -13,13 +13,16 @@
 
 mod add_project;
 mod agents;
+mod capture_note;
 mod clipboard;
 mod checkouts;
 mod checkouts_stage;
 mod commands;
 mod daemon;
 mod dialogs;
+mod feature_edits;
 mod feature_stage;
+mod feature_view;
 mod features;
 #[cfg(test)]
 mod fixtures;

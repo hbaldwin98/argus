@@ -1,13 +1,15 @@
 //! What the Feature stage holds — the repository's board, the feature
-//! under the cursor and its tasks, how each repository lays its index out
+//! under the cursor and its tasks, whether that feature is opened and the
+//! row its outline's cursor is on, how each repository lays its index out
 //! — and what its messages and gestures change. Whether the stage is up is
 //! the session's; it says when the board is wanted.
 //!
 //! The session says which repository the stage is about ([`Scope`]); the
 //! protocol's `BoardFollower` decides when to ask for its board and which
 //! pushes to keep, as it does for the terminal client, and this sends the
-//! stage's edits. Like everything in the window it never predicts: a hold
-//! or an archive shows once the pushed board says so.
+//! stage's edits, `feature_edits` saying what each edit to an opened
+//! feature asks. Like everything in the window it never predicts: a hold,
+//! an archive or an answered question shows once the pushed board says so.
 
 use std::collections::BTreeMap;
 
@@ -16,8 +18,12 @@ use argus_protocol::{
     ProjectInfo, Received, RepositoryId, TaskList,
 };
 
+use argus_protocol::outline::WorkRef;
+
+use crate::feature_edits::{self, Target};
+use crate::feature_view;
 use crate::features::{self, Index, Layout};
-use crate::page;
+use crate::page::{self, FeatureEdit, WorkAt};
 
 /// Which repository the stage reads, and how to address its board.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +57,11 @@ pub struct FeatureStage {
     /// at, and its tasks.
     board: BoardFollower,
     show_folded: bool,
+    /// The feature under the cursor is opened, drawn in place of the index.
+    opened: bool,
+    /// The opened feature's outline row under its cursor; `None` is its
+    /// first.
+    cursor: Option<WorkRef>,
     /// `Settings::layouts`: the session saves them with the rest.
     layouts: BTreeMap<String, String>,
     layouts_changed: bool,
@@ -64,6 +75,8 @@ impl FeatureStage {
             // The window draws no sequence diagrams.
             board: BoardFollower::new(false),
             show_folded: false,
+            opened: false,
+            cursor: None,
             layouts,
             layouts_changed: false,
             changed: true,
@@ -121,8 +134,46 @@ impl FeatureStage {
 
     /// Puts the cursor on a feature and asks for its tasks.
     pub fn peek(&mut self, slug: &str, out: &mut Vec<ClientMsg>) {
+        if self.board.feature() != Some(slug) {
+            self.cursor = None;
+        }
         self.board.point(Some(slug), out);
         self.changed = true;
+    }
+
+    /// Opens a feature to read and edit, or with `None` goes back to the
+    /// index, still peeking at the one that was open.
+    pub fn open(&mut self, slug: Option<&str>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        match slug {
+            Some(slug) if self.has(slug) => {
+                self.reveal(slug, tree, out);
+                self.opened = true;
+            }
+            Some(_) => return,
+            None => self.opened = false,
+        }
+        self.changed = true;
+    }
+
+    /// Whether a feature is opened, and its slug.
+    pub fn opened(&self) -> Option<&str> {
+        self.board.feature().filter(|_| self.opened)
+    }
+
+    /// Puts the opened feature's cursor on a row of its outline.
+    pub fn select(&mut self, at: WorkAt) {
+        self.cursor = Some(feature_view::work_ref(at));
+        self.changed = true;
+    }
+
+    /// Sends an edit to the opened feature, or says why it cannot be sent.
+    pub fn edit(&self, edit: FeatureEdit, scope: Option<&Scope>, out: &mut Vec<ClientMsg>) -> Result<(), String> {
+        let (Some(scope), Some(slug), Some(board)) = (scope, self.opened(), self.board()) else {
+            return Err("no feature is open to edit".into());
+        };
+        let target = Target { scope, slug, board, tasks: self.board.tasks() };
+        out.extend(feature_edits::messages(edit, &target)?);
+        Ok(())
     }
 
     /// Puts the cursor on a feature the index may be folding away, showing
@@ -221,6 +272,8 @@ impl FeatureStage {
             show_folded: self.show_folded,
             peek: self.board.feature(),
             peek_tasks: self.board.tasks(),
+            opened: self.opened,
+            cursor: self.cursor,
         })
     }
 
@@ -380,6 +433,35 @@ mod tests {
                 "move old Open",
             ]
         );
+    }
+
+    #[test]
+    fn an_opened_feature_takes_its_edits_to_the_daemon_and_changes_nothing_here() {
+        let (mut stage, _) = loaded();
+        let mut out = Vec::new();
+        let refused = stage.edit(FeatureEdit::Withdraw { id: 1, withdrawn: true }, Some(&scope()), &mut out);
+        assert!(refused.is_err() && out.is_empty(), "nothing is open");
+
+        stage.open(Some("trim"), &fixtures::feature_tree(), &mut out);
+        assert_eq!(stage.opened(), Some("trim"));
+        stage.receive_tasks(fixtures::tasks("trim"));
+        stage.select(WorkAt::Decision { id: 2 });
+        let before = stage.everything(Some(&scope()), &fixtures::feature_tree());
+        stage.edit(FeatureEdit::Withdraw { id: 2, withdrawn: true }, Some(&scope()), &mut out).unwrap();
+        assert!(matches!(out.last(), Some(ClientMsg::ChangeDecision { .. })));
+        assert_eq!(stage.everything(Some(&scope()), &fixtures::feature_tree()), before, "the push is what changes it");
+        assert_eq!(before.open.unwrap().decision.unwrap().id, 2);
+
+        stage.open(None, &fixtures::feature_tree(), &mut out);
+        assert_eq!((stage.opened(), stage.peeked()), (None, Some("trim")), "back on the index, still peeking");
+    }
+
+    #[test]
+    fn a_feature_not_on_the_board_does_not_open() {
+        let (mut stage, _) = loaded();
+        let mut out = Vec::new();
+        stage.open(Some("nowhere"), &fixtures::feature_tree(), &mut out);
+        assert_eq!(stage.opened(), None);
     }
 
     #[test]

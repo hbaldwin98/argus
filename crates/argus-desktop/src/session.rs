@@ -10,7 +10,8 @@
 //! Each subject keeps its own state and what the page last heard of it —
 //! the status bar (`status`), the pane on screen (`shown`), the agents
 //! offered (`agents`), the review and history (`dialogs`), the two stages
-//! (`feature_stage`, `checkouts_stage`), a repository's past agent
+//! (`feature_stage`, `checkouts_stage`) and the note a new feature is
+//! written as (`capture_note`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
 //! the project switcher (`switcher`) and the dialog adding a project
 //! (`add_project`), and what the daemon is making
@@ -36,13 +37,16 @@ use argus_protocol::{
 
 use crate::add_project::AddProject;
 use crate::agents::Agents;
+use crate::capture_note::CaptureNote;
 use crate::checkouts_stage::{CheckoutsStage, Opened};
 use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keymap::{self, Action};
 use crate::keys::{self, PageKey};
-use crate::page::{self, AddProjectGesture, Call, Event, PageMouse, ReviewClick, ReviewJumpGesture, Stage};
+use crate::page::{
+    self, AddProjectGesture, Call, CaptureGesture, Event, FeatureEdit, PageMouse, ReviewClick, ReviewJumpGesture, Stage,
+};
 use crate::palette;
 use crate::rail::{self, Choices};
 use crate::sent::Sent;
@@ -84,6 +88,9 @@ pub struct Session {
     toggled: HashSet<RepositoryId>,
     stage: Stage,
     features: FeatureStage,
+    /// The note a new feature is being written as, while open.
+    capture: Option<CaptureNote>,
+    capture_sent: Sent<page::CapturePage>,
     checkouts: CheckoutsStage,
     shown: ShownPane,
     awaited: Awaited<Made>,
@@ -127,6 +134,8 @@ impl Session {
             toggled: HashSet::new(),
             stage: Stage::Workspace,
             features: FeatureStage::new(settings.layouts),
+            capture: None,
+            capture_sent: Sent::default(),
             checkouts: CheckoutsStage::default(),
             shown: ShownPane::default(),
             awaited: Awaited::default(),
@@ -249,12 +258,22 @@ impl Session {
             ServerMsg::Clipboard { pane, text } if Some(pane) == self.shown.pane() => {
                 self.passing.push(Event::Clipboard { text });
             }
-            ServerMsg::Error { message } => self.passing.push(Event::Notice { text: message }),
+            // The note stays open to be fixed, and Create can be pressed
+            // again; the reason is said like any other.
+            ServerMsg::Error { message } => {
+                if let Some(note) = &mut self.capture {
+                    note.refused();
+                }
+                self.passing.push(Event::Notice { text: message });
+            }
             ServerMsg::Hello(hello) => self.status.greeted(hello),
             ServerMsg::Restarting => self.passing.push(Event::Notice {
                 text: "argusd is restarting".into(),
             }),
-            ServerMsg::Decisions(board) => self.features.receive_board(*board, &self.tree, &mut self.out),
+            ServerMsg::Decisions(board) => {
+                self.features.receive_board(*board, &self.tree, &mut self.out);
+                self.capture_landed();
+            }
             ServerMsg::Templates(names) => {
                 self.agents.receive(names);
                 self.rail_changed = true;
@@ -389,6 +408,13 @@ impl Session {
             Call::SetChime { on } => self.set_chime(on),
             Call::Hold { slug, reason } => self.hold(&slug, reason),
             Call::Archive { slug, archived } => self.archive(&slug, archived),
+            Call::Capture { gesture } => self.capture_gesture(gesture),
+            Call::OpenFeature { slug } => self.open_feature(slug.as_deref()),
+            Call::SelectWork { at } => {
+                self.features.select(at);
+                self.finish()
+            }
+            Call::EditFeature { edit } => self.edit_feature(edit),
             Call::GoToPane { pane } => self.go_to_pane(PaneId(pane)),
             Call::Palette { open } => self.palette(open),
             Call::Command { action } => self.command(action),
@@ -826,6 +852,63 @@ impl Session {
         self.finish()
     }
 
+    /// A gesture in the note a new feature is written as. Create waits on
+    /// the board: the note closes only once a pushed board holds the
+    /// feature it became, which then opens.
+    fn capture_gesture(&mut self, gesture: CaptureGesture) -> Vec<ClientMsg> {
+        match gesture {
+            CaptureGesture::Open => self.open_capture(),
+            CaptureGesture::Note { note } => {
+                if let Some(capture) = &mut self.capture {
+                    capture.write(note);
+                }
+            }
+            CaptureGesture::Create { note } => {
+                let scope = self.scope();
+                let (Some(capture), Some(scope)) = (self.capture.as_mut(), scope) else {
+                    return self.note("no repository to write the feature in");
+                };
+                if let Err(why) = capture.create(note, &scope, self.features.board(), &mut self.out) {
+                    self.passing.push(Event::Notice { text: why });
+                }
+            }
+            CaptureGesture::Discard => self.capture = None,
+        }
+        self.finish()
+    }
+
+    fn open_capture(&mut self) {
+        if self.scope().is_none() {
+            self.passing.push(Event::Notice { text: "choose a repository to write a feature in".into() });
+            return;
+        }
+        self.go(Stage::Feature);
+        self.capture.get_or_insert_with(CaptureNote::new);
+    }
+
+    /// The note became a feature on the board: it closes, and the feature
+    /// opens.
+    fn capture_landed(&mut self) {
+        let landed = self.capture.as_ref().zip(self.features.board()).and_then(|(note, board)| note.landed(board));
+        if let Some(slug) = landed {
+            self.capture = None;
+            self.features.open(Some(&slug), &self.tree, &mut self.out);
+        }
+    }
+
+    fn open_feature(&mut self, slug: Option<&str>) -> Vec<ClientMsg> {
+        self.features.open(slug, &self.tree, &mut self.out);
+        self.finish()
+    }
+
+    fn edit_feature(&mut self, edit: FeatureEdit) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        if let Err(why) = self.features.edit(edit, scope.as_ref(), &mut self.out) {
+            self.passing.push(Event::Notice { text: why });
+        }
+        self.finish()
+    }
+
     /// Leaves the Feature stage for a pane working a feature.
     fn go_to_pane(&mut self, pane: PaneId) -> Vec<ClientMsg> {
         if self.project_of(pane).is_some() {
@@ -1207,6 +1290,7 @@ impl Session {
             Action::Folded => {
                 self.features.toggle_folded(&self.tree, &mut self.out);
             }
+            Action::NewFeature => self.open_capture(),
             Action::Branches => {
                 self.go(Stage::Checkouts);
                 self.checkouts.toggle_branches();
@@ -1369,6 +1453,11 @@ impl Session {
         if let Some(page) = self.recent_sent.take(recent) {
             events.push(Event::Sessions(Box::new(page)));
         }
+        let repository = scope.as_ref().map_or("", |scope| scope.repository_name.as_str());
+        let capture = self.capture.as_ref().map(|note| note.page(repository));
+        if let Some(page) = self.capture_sent.take(capture) {
+            events.push(Event::Capture(Box::new(page)));
+        }
         let adding = self.adding.as_ref().map(AddProject::page);
         if let Some(page) = self.adding_sent.take(adding) {
             events.push(Event::AddProject(Box::new(page)));
@@ -1394,6 +1483,7 @@ impl Session {
         self.dialogs.reload();
         self.recent_sent.forget();
         self.adding_sent.forget();
+        self.capture_sent.forget();
         // A page that has just loaded has no palette open.
         self.palette = false;
         self.palette_sent.forget();
@@ -1836,6 +1926,62 @@ mod tests {
             panic!("the rail says which stage is open");
         };
         assert_eq!((rail.stage, rail.repository), (Stage::Feature, Some(10)));
+    }
+
+    fn capture_page(s: &mut Session) -> Option<page::CapturePage> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::Capture(page) => Some(*page),
+            _ => None,
+        })
+    }
+
+    /// The note stays up after Create until the pushed board holds the
+    /// feature it became, which then opens; a refusal leaves it to fix.
+    #[test]
+    fn a_note_becomes_the_feature_the_board_says_it_made_and_opens_it() {
+        let mut s = session(without_focus());
+        s.run_command(Action::NewFeature);
+        s.finish();
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        let page = capture_page(&mut s).expect("the note opens");
+        assert!(page.open && s.stage == Stage::Feature);
+
+        let note = "Bring the readers back\n- Restore them\n? Where is the transcript\n  - a key\n";
+        s.call(Call::Capture { gesture: CaptureGesture::Note { note: note.into() } });
+        let page = capture_page(&mut s).unwrap();
+        assert_eq!((page.title.as_str(), page.tasks.len(), page.blocked), ("Bring the readers back", 1, None));
+
+        let sent = s.call(Call::Capture { gesture: CaptureGesture::Create { note: note.into() } });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::Feature { action: argus_protocol::FeatureAction::Capture { .. }, .. })));
+        assert!(capture_page(&mut s).unwrap().creating);
+        s.receive(ServerMsg::Error { message: "a feature with that title exists".into() });
+        assert!(!capture_page(&mut s).unwrap().creating, "refused: still open, to send again");
+
+        s.call(Call::Capture { gesture: CaptureGesture::Create { note: note.into() } });
+        let mut board = crate::fixtures::board();
+        board.features.push(argus_protocol::Feature {
+            number: 11,
+            slug: "readers".into(),
+            title: "Bring the readers back".into(),
+            ..argus_protocol::Feature::default()
+        });
+        s.receive(ServerMsg::Decisions(Box::new(board)));
+        assert!(!capture_page(&mut s).unwrap().open, "the note is done with");
+        assert_eq!(s.features.opened(), Some("readers"));
+    }
+
+    #[test]
+    fn an_edit_to_an_open_feature_is_sent_and_a_refused_one_is_said() {
+        let mut s = session(without_focus());
+        s.show_features(true);
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        s.call(Call::OpenFeature { slug: Some("trim".into()) });
+        let sent = s.call(Call::EditFeature { edit: FeatureEdit::Withdraw { id: 1, withdrawn: true } });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::ChangeDecision { .. })));
+        s.events(0);
+        let sent = s.call(Call::EditFeature { edit: FeatureEdit::Take { id: 1, option: 0 } });
+        assert!(sent.is_empty(), "D1 is not open");
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { .. })));
     }
 
     #[test]
@@ -2335,7 +2481,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 62] = [
+    const CALLS: [&str; 69] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -2387,6 +2533,13 @@ mod tests {
         r#"{"call":"set_chime","on":false}"#,
         r#"{"call":"hold","slug":"trim","reason":"waiting"}"#,
         r#"{"call":"archive","slug":"trim","archived":true}"#,
+        r#"{"call":"capture","gesture":{"on":"open"}}"#,
+        r#"{"call":"capture","gesture":{"on":"note","note":"Title - a task"}}"#,
+        r#"{"call":"capture","gesture":{"on":"create","note":"Title - a task"}}"#,
+        r#"{"call":"capture","gesture":{"on":"discard"}}"#,
+        r#"{"call":"open_feature","slug":"trim"}"#,
+        r#"{"call":"select_work","at":{"kind":"decision","id":2}}"#,
+        r#"{"call":"edit_feature","edit":{"on":"take","id":2,"option":0}}"#,
         r#"{"call":"go_to_pane","pane":1}"#,
         r#"{"call":"palette","open":true}"#,
         r#"{"call":"command","action":"fill"}"#,

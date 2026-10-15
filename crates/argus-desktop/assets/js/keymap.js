@@ -1,6 +1,7 @@
 // The keys pressed outside a pane, looked up in the keymap Rust sends
 // (`src/keymap.rs`) and run here. A pane's keys go to Rust whole, and its
 // leader is dispatched there.
+import { captureOpen, discardCapture } from './capture.js';
 import { answerNo, checkoutsAction } from './checkouts.js';
 import { focusHistoryFilter, historyOpen } from './history.js';
 import { reviewOpen } from './review.js';
@@ -13,6 +14,7 @@ import { addProjectOpen, answerRemoveNo } from './projects.js';
 import { closeSheet, openSheet, sheetOpen, toggleSheet } from './shortcuts.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
+import { leaveWork, workAction, workOpen } from './work.js';
 /** `Chord::matches` again: the page decides before Rust hears the key. */
 function matches(chord, e) {
     return (e.key === chord.key &&
@@ -40,9 +42,20 @@ function run(action) {
         // A question the stage asked is answered no, not only put away.
         if (answerNo() || answerRemoveNo())
             return true;
-        if (layerOpen)
+        if (layerOpen) {
             closeLayer();
-        return layerOpen;
+            return true;
+        }
+        // The note discards, and an open feature goes back to the index.
+        if (state.rail.stage === 'feature' && captureOpen()) {
+            discardCapture();
+            return true;
+        }
+        if (workOpen()) {
+            leaveWork();
+            return true;
+        }
+        return false;
     }
     // A menu or dialog over the stage holds the keys until it closes.
     if (layerOpen)
@@ -63,7 +76,9 @@ function run(action) {
             call('show_composer', { open: true });
             return true;
         default:
-            return state.rail.stage === 'checkouts' ? checkoutsAction(action) : featureAction(action);
+            if (state.rail.stage === 'checkouts')
+                return checkoutsAction(action);
+            return workOpen() ? workAction(action) : featureAction(action);
     }
 }
 /** Opens the palette or the sheet, for a key here or one Rust heard in a
@@ -163,8 +178,16 @@ export function listen() {
                 e.preventDefault();
             return;
         }
+        // An open feature hears its own keys: its j and k move its outline,
+        // not the index under it. The note's field holds every key but the
+        // stage switches and Escape.
+        let feature = ['anywhere', 'feature', 'card'];
+        if (captureOpen())
+            feature = ['anywhere'];
+        else if (workOpen())
+            feature = ['anywhere', 'outline'];
         const places = state.rail.stage === 'feature'
-            ? ['anywhere', 'feature', 'card']
+            ? feature
             : state.rail.stage === 'checkouts'
                 ? ['anywhere', 'checkouts']
                 : ['anywhere'];

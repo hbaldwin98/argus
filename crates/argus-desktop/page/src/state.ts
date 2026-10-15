@@ -2,6 +2,7 @@
 // view state that is the page's own — a menu open, a filter typed.
 
 import type { AddProjectPage } from './bindings/AddProjectPage';
+import type { CapturePage } from './bindings/CapturePage';
 import type { Checkouts } from './bindings/Checkouts';
 import type { Command } from './bindings/Command';
 import type { Features } from './bindings/Features';
@@ -13,10 +14,26 @@ import type { SessionsPage } from './bindings/SessionsPage';
 import type { Palette } from './bindings/Palette';
 import type { Status } from './bindings/Status';
 
+/** A form being written over an open feature, and what it holds so far: one
+ *  at a time, kept across the redraws a push makes. */
+export type Editing =
+  | { what: 'brief'; text: string }
+  | { what: 'task'; id: number; title: string; body: string }
+  | { what: 'record'; id: number; text: string }
+  | { what: 'answer'; id: number; text: string; because: string }
+  | { what: 'criterion'; id: number; text: string }
+  | { what: 'addTask'; parent: number | null; text: string }
+  | { what: 'addDecision'; under: number | null; task: number | null; text: string };
+
 export const state: {
   status: Status;
   rail: Rail;
   features: Features | null;
+  /** The note a new feature is being written as. */
+  capture: CapturePage | null;
+  editing: Editing | null;
+  /** The option picked on an open decision, before it is taken. */
+  chosen: { id: number; option: number } | null;
   /** Every binding, as `src/keymap.rs` groups them. */
   keymap: Group[];
   /** What the palette offers to run, from the same table. */
@@ -65,6 +82,9 @@ export const state: {
     removing: null,
   },
   features: null,
+  capture: null,
+  editing: null,
+  chosen: null,
   keymap: [],
   commands: [],
   palette: null,

@@ -108,6 +108,15 @@ pub enum Call {
     Hold { slug: String, reason: Option<String> },
     /// Archives a feature, accepting it, or reopens it with `archived` false.
     Archive { slug: String, archived: bool },
+    /// A gesture in the note a new feature is written as.
+    Capture { gesture: CaptureGesture },
+    /// Opens a feature from the index to read and edit, or with no `slug`
+    /// goes back to the index.
+    OpenFeature { slug: Option<String> },
+    /// Puts the open feature's cursor on a row of its outline.
+    SelectWork { at: WorkAt },
+    /// An edit to the open feature, sent to the daemon as it stands.
+    EditFeature { edit: FeatureEdit },
     /// Leaves the Feature stage for a pane working a feature.
     GoToPane { pane: u64 },
     /// The command palette opened, or with `open` false closed.
@@ -128,6 +137,63 @@ pub enum Call {
     /// A hover over the strip's maximize button, for Windows 11's snap
     /// layouts.
     SnapLayouts,
+}
+
+/// What was done in the note a new feature is written as.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum CaptureGesture {
+    /// An empty note, on the repository the Feature stage reads.
+    Open,
+    /// What the note says now, to be read as the daemon will read it.
+    Note { note: String },
+    /// Create, with the note as it is when pressed: calls need not arrive
+    /// in the order sent, so the last `Note` may come after.
+    Create { note: String },
+    /// Puts the note away unsent.
+    Discard,
+}
+
+/// A row of an open feature's outline, by the id a write names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum WorkAt {
+    Task { id: i64 },
+    Decision { id: i64 },
+}
+
+/// One edit to the open feature. Each names what it changes by id, so an
+/// edit means the row it was made on whatever the cursor did since.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum FeatureEdit {
+    /// The brief, whole.
+    Brief { body: String },
+    /// A task's title and description as the form holds them; only what
+    /// changed is sent.
+    Task { id: i64, title: String, body: String },
+    AddCriterion { id: i64, text: String },
+    /// Checks a criterion off, or takes that back. `index` is into the
+    /// task's criteria as they were drawn.
+    SetCriterion { id: i64, index: usize, done: bool },
+    RemoveCriterion { id: i64, index: usize },
+    /// A task, under `parent` or at the top.
+    AddTask { parent: Option<i64>, title: String },
+    /// A decision typed on one line — `?` for a question, `~` for an answer
+    /// turned down — under another decision, or raised under a task.
+    AddDecision { under: Option<i64>, task: Option<i64>, line: String },
+    /// Answers an open decision with one of its options, by index.
+    Take { id: i64, option: usize },
+    /// Answers an open decision in words.
+    Answer { id: i64, answer: String, because: Option<String> },
+    /// A decision's record, as the ADR document it is edited as.
+    Rewrite { id: i64, document: String },
+    /// Withdraws a decision, or restores one withdrawn. Never removed: a
+    /// withdrawn decision stays on the record.
+    Withdraw { id: i64, withdrawn: bool },
 }
 
 /// What a click in the review dialog landed on.
@@ -198,6 +264,9 @@ pub enum Event {
     // and every other one would otherwise be sized to carry them.
     Features(Box<Features>),
     Checkouts(Box<Checkouts>),
+    /// The note a new feature is written as, whole, whenever it changes;
+    /// `open` false once it closes.
+    Capture(Box<CapturePage>),
     /// The review dialog, whole, whenever it changes; `open` false once
     /// it closes.
     Review(Box<ReviewPage>),
@@ -493,6 +562,8 @@ pub struct Features {
     /// them as columns.
     pub rows: Vec<FeatureRow>,
     pub peek: Option<Peek>,
+    /// The feature opened from the index, drawn in place of it.
+    pub open: Option<FeatureView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -590,6 +661,154 @@ pub struct Line {
     pub text: String,
     /// Said under it in small type: the agent and branch, a state.
     pub aside: Option<String>,
+}
+
+/// A feature opened from the index: its header, its tasks and the
+/// decisions raised under them as one outline, and the row under the cursor
+/// in full.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureView {
+    pub slug: String,
+    pub number: i64,
+    pub title: String,
+    #[cfg_attr(test, ts(type = "\"new\" | \"queued\" | \"active\" | \"done\" | \"held\" | \"archived\""))]
+    pub standing: &'static str,
+    pub branch: Option<String>,
+    pub agent: Option<Agent>,
+    pub brief: String,
+    pub tasks_done: usize,
+    pub tasks_total: usize,
+    pub decided: usize,
+    pub open: usize,
+    /// Whether its tasks have arrived; until then the outline says so.
+    pub loaded: bool,
+    pub rows: Vec<WorkRow>,
+    /// The row under the cursor, whichever it is.
+    pub task: Option<TaskDetail>,
+    pub decision: Option<DecisionDetail>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkRow {
+    pub at: WorkAt,
+    /// `2.1` for a task, `D3` for a decision.
+    pub label: String,
+    pub depth: usize,
+    pub text: String,
+    /// A task's `todo`, `doing` or `done`; a decision's `open`,
+    /// `accepted`, `rejected`, `withdrawn` or `superseded`.
+    #[cfg_attr(test, ts(type = "\"todo\" | \"doing\" | \"done\" | \"open\" | \"accepted\" | \"rejected\" | \"withdrawn\" | \"superseded\""))]
+    pub state: &'static str,
+    /// The open decision holding this task up.
+    pub waits_on: Option<String>,
+    pub on: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct TaskDetail {
+    pub id: i64,
+    pub label: String,
+    pub title: String,
+    pub body: String,
+    #[cfg_attr(test, ts(type = "\"todo\" | \"doing\" | \"done\""))]
+    pub state: &'static str,
+    /// The task it is under, as `2 · Serve the brief`.
+    pub parent: Option<String>,
+    /// What done means for it, each checked off as it lands.
+    pub criteria: Vec<Criterion>,
+    /// The standing decisions it is built on.
+    pub bound_by: Vec<Line>,
+    /// Oldest first: who left it and when, then what it says.
+    pub notes: Vec<Line>,
+    /// The open decision holding it up.
+    pub waits_on: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Criterion {
+    pub text: String,
+    pub done: bool,
+}
+
+/// A decision as its record reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionDetail {
+    pub id: i64,
+    pub label: String,
+    pub chose: String,
+    #[cfg_attr(test, ts(type = "\"open\" | \"accepted\" | \"rejected\" | \"withdrawn\" | \"superseded\""))]
+    pub state: &'static str,
+    /// Withdrawn, so its button restores it.
+    pub withdrawn: bool,
+    /// The task it was raised under, as `task 3`.
+    pub raised_under: Option<String>,
+    pub context: Option<String>,
+    pub detail: Option<String>,
+    pub because: Option<String>,
+    pub over: Option<String>,
+    /// Each as it is written: `+` a gain, `-` a cost.
+    pub consequences: Vec<String>,
+    /// The answers an open one is choosing between.
+    pub options: Vec<String>,
+    /// The tasks carrying it out.
+    pub carried_out_by: Vec<Line>,
+    /// The record as it is edited: every section, the empty ones too.
+    pub document: String,
+}
+
+/// The note a new feature is written as, and what the daemon's own reading
+/// of it makes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CapturePage {
+    pub open: bool,
+    /// The repository it is written in, for the heading.
+    pub repository: String,
+    /// The note as the window last heard it, for a page that reloaded.
+    pub note: String,
+    pub title: String,
+    pub brief: Option<String>,
+    /// Every task at every depth, in the order a reader meets them.
+    pub tasks: Vec<NoteRow>,
+    pub decisions: Vec<NoteDecision>,
+    /// One-based lines the grammar found no place for.
+    pub unread: Vec<usize>,
+    /// Why it cannot be created yet; `None` when it is ready.
+    pub blocked: Option<String>,
+    /// Sent, and waiting on the board to hold it.
+    pub creating: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NoteRow {
+    pub label: String,
+    pub depth: usize,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NoteDecision {
+    pub label: String,
+    pub text: String,
+    /// A question, with `options`; else made, with `because`.
+    pub open: bool,
+    pub options: Vec<String>,
+    pub because: Option<String>,
 }
 
 /// What the command palette can go to while it is open.
