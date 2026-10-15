@@ -29,7 +29,7 @@ fn session_ids_are_validated_without_restricting_cli_specific_syntax() {
 }
 
 /// A daemon holding one live agent pane, and that pane's id.
-async fn daemon_with_an_agent(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
+async fn daemon_with_an_agent(dir: &std::path::Path) -> (ScriptedDaemon, PaneId) {
     let d = daemon_with_fake_claude(dir);
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     (d, pane)
@@ -43,7 +43,7 @@ async fn an_agent_can_rename_its_own_row() {
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     assert_eq!(pane_info(&d, pane).title, "claude");
 
-    d.set_pane_title(pane, "fixing the pty deadlock");
+    d.report_pane_title(pane, None, "fixing the pty deadlock");
     assert_eq!(pane_info(&d, pane).title, "fixing the pty deadlock");
 
     d.close_pane(pane).unwrap();
@@ -57,7 +57,7 @@ async fn an_agent_spawned_inside_a_pane_reports_as_a_child_of_it() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "parent-session");
-    d.set_pane_title(pane, "fixing the pty deadlock");
+    d.report_pane_title(pane, None, "fixing the pty deadlock");
     d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None, false);
 
     d.report_pane_title(pane, Some("child-session"), "reading the hook table");
@@ -103,7 +103,7 @@ async fn an_exited_parent_forgets_its_children() {
     d.report_pane_status(pane, Some("child-session"), PaneStatus::Waiting, None, false);
     assert_eq!(pane_info(&d, pane).children.len(), 1);
 
-    d.clone().mark_pane_exited(pane, Some(1));
+    d.exit(pane, Some(1));
 
     let info = pane_info(&d, pane);
     assert_eq!(info.status, PaneStatus::Exited { code: Some(1) });
@@ -142,25 +142,20 @@ async fn a_child_that_goes_quiet_stops_being_listed() {
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "parent-session");
     d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None, false);
-    d.report_pane_status(pane, Some("live-child"), PaneStatus::Working, None, false);
-    d.report_pane_status(pane, Some("dead-child"), PaneStatus::Working, None, false);
+    d.report_pane_title(pane, Some("live-child"), "still talking");
+    d.report_pane_title(pane, Some("dead-child"), "gone quiet");
 
-    // Age one of them past the silence the sweep allows.
-    {
-        let mut inner = d.inner.lock().unwrap();
-        let p = find_pane(&mut inner.projects, pane).unwrap();
-        let child = p
-            .children
-            .iter_mut()
-            .find(|c| c.session_id == "dead-child")
-            .unwrap();
-        child.at = std::time::Instant::now() - CHILD_SILENCE - Duration::from_secs(1);
-    }
+    d.advance(CHILD_SILENCE - Duration::from_secs(1));
+    d.report_pane_status(pane, Some("live-child"), PaneStatus::Working, None, false);
+    d.drop_silent_children();
+    assert_eq!(pane_info(&d, pane).children.len(), 2, "quiet, but not for long enough");
+
+    d.advance(Duration::from_secs(1));
     d.drop_silent_children();
 
     let listed = pane_info(&d, pane).children;
     assert_eq!(listed.len(), 1, "the quiet one is gone");
-    assert_eq!(listed[0].label, "agent");
+    assert_eq!(listed[0].label, "still talking");
 
     d.close_pane(pane).unwrap();
 }
@@ -322,7 +317,7 @@ async fn an_empty_rename_leaves_the_row_alone() {
     // Better the agent's name than a blank row.
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
-    d.set_pane_title(pane, "   \n  ");
+    d.report_pane_title(pane, None, "   \n  ");
     assert_eq!(pane_info(&d, pane).title, "claude");
     d.close_pane(pane).unwrap();
 }
@@ -334,8 +329,9 @@ async fn a_stalled_pane_says_what_it_is_stalled_on() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
 
-    d.set_pane_hook_status(
+    d.report_pane_status(
         pane,
+        None,
         PaneStatus::Waiting,
         Some("needs the staging password".to_string()),
         false,
@@ -354,7 +350,7 @@ async fn a_pane_in_the_tree_says_when_its_status_last_changed() {
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     let started = pane_info(&d, pane).since.expect("a pane is in a state from its start");
 
-    d.set_pane_hook_status(pane, PaneStatus::Waiting, None, false);
+    d.report_pane_status(pane, None, PaneStatus::Waiting, None, false);
     assert!(pane_info(&d, pane).since.is_some_and(|since| since >= started));
 
     d.close_pane(pane).unwrap();
@@ -367,8 +363,8 @@ async fn the_note_goes_away_with_the_state_it_explained() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
 
-    d.set_pane_hook_status(pane, PaneStatus::Waiting, Some("needs a password".into()), false);
-    d.set_pane_hook_status(pane, PaneStatus::Working, None, false);
+    d.report_pane_status(pane, None, PaneStatus::Waiting, Some("needs a password".into()), false);
+    d.report_pane_status(pane, None, PaneStatus::Working, None, false);
 
     let info = pane_info(&d, pane);
     assert_eq!(info.status, PaneStatus::Working);
@@ -383,8 +379,9 @@ async fn a_failure_keeps_the_pane_alive_and_says_why() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
 
-    d.set_pane_hook_status(
+    d.report_pane_status(
         pane,
+        None,
         PaneStatus::Failed,
         Some("cargo test won't build".into()),
         false,
@@ -407,12 +404,12 @@ async fn automatic_idle_does_not_erase_an_explicit_completion_state() {
         PaneStatus::Done,
         PaneStatus::Failed,
     ] {
-        d.set_pane_hook_status(pane, status, Some("still relevant".into()), false);
-        d.set_pane_hook_status(pane, PaneStatus::Idle, None, false);
+        d.report_pane_status(pane, None, status, Some("still relevant".into()), false);
+        d.report_pane_status(pane, None, PaneStatus::Idle, None, false);
         let info = pane_info(&d, pane);
         assert_eq!(info.status, status);
         assert_eq!(info.note.as_deref(), Some("still relevant"));
-        d.set_pane_hook_status(pane, PaneStatus::Working, None, false);
+        d.report_pane_status(pane, None, PaneStatus::Working, None, false);
     }
 
     d.close_pane(pane).unwrap();
@@ -423,7 +420,7 @@ async fn an_agent_that_exits_leaves_its_row_alone_by_default() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
 
-    d.mark_pane_exited(pane, Some(1));
+    d.exit(pane, Some(1));
 
     let panes = panes_of(&d);
     assert_eq!(panes.len(), 1);
@@ -438,7 +435,7 @@ async fn on_failure_starts_the_agent_again_and_a_clean_exit_does_not() {
     let checkout = only_checkout(&d);
     let first = d.spawn_agent(checkout, "claude").unwrap();
 
-    d.mark_pane_exited(first, Some(1));
+    d.exit(first, Some(1));
 
     let panes = panes_of(&d);
     assert_eq!(panes.len(), 1, "the dead row is replaced, not joined");
@@ -446,7 +443,7 @@ async fn on_failure_starts_the_agent_again_and_a_clean_exit_does_not() {
     assert_ne!(second, first, "a new pane is running");
     assert_ne!(panes[0].status, PaneStatus::Exited { code: Some(1) });
 
-    d.mark_pane_exited(second, Some(0));
+    d.exit(second, Some(0));
 
     let panes = panes_of(&d);
     assert_eq!(panes[0].id, second, "a clean exit is the agent finishing");
@@ -461,7 +458,7 @@ async fn always_starts_the_agent_again_however_it_ended() {
     let checkout = only_checkout(&d);
     let first = d.spawn_agent(checkout, "claude").unwrap();
 
-    d.mark_pane_exited(first, Some(0));
+    d.exit(first, Some(0));
 
     let panes = panes_of(&d);
     assert_eq!(panes.len(), 1);
@@ -478,7 +475,7 @@ async fn a_cli_that_dies_on_every_start_is_left_where_the_operator_can_read_it()
     let mut pane = d.spawn_agent(checkout, "claude").unwrap();
 
     for _ in 0..6 {
-        d.mark_pane_exited(pane, Some(1));
+        d.exit(pane, Some(1));
         pane = panes_of(&d)[0].id;
     }
 
@@ -493,6 +490,40 @@ async fn a_cli_that_dies_on_every_start_is_left_where_the_operator_can_read_it()
 }
 
 #[tokio::test]
+async fn keystrokes_reach_a_running_pane_and_not_an_exited_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = daemon_with_an_agent(dir.path()).await;
+
+    d.write_pane(pane, b"ls\r").unwrap();
+    assert_eq!(d.processes.written(pane), b"ls\r");
+
+    d.exit(pane, Some(0));
+    assert!(d.write_pane(pane, b"pwd\r").is_err());
+    assert_eq!(d.processes.written(pane), b"ls\r");
+    d.close_pane(pane).unwrap();
+    assert!(d.processes.killed(pane), "closing ends what the pane ran");
+}
+
+#[tokio::test]
+async fn restarts_far_enough_apart_are_not_a_loop() {
+    // A long-running agent that ends now and then is somebody's work
+    // finishing, not a CLI dying on start, however many times it happens.
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::Always);
+    let mut pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+
+    for _ in 0..6 {
+        d.advance(Duration::from_secs(61));
+        d.exit(pane, Some(1));
+        let panes = panes_of(&d);
+        assert_eq!(panes.len(), 1);
+        assert_ne!(panes[0].id, pane, "started again");
+        pane = panes[0].id;
+    }
+    close_all(&d);
+}
+
+#[tokio::test]
 async fn closing_a_pane_is_never_a_restart() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::Always);
@@ -502,7 +533,7 @@ async fn closing_a_pane_is_never_a_restart() {
     d.close_pane(pane).unwrap();
     // Whatever the process does on its way out arrives after the row
     // has already gone.
-    d.mark_pane_exited(pane, Some(1));
+    d.exit(pane, Some(1));
 
     assert!(panes_of(&d).is_empty(), "closing means closing");
 }
@@ -512,9 +543,9 @@ async fn a_report_never_resurrects_an_exited_pane() {
     // A Stop hook racing a crash must not relabel a dead row as idle.
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
-    d.mark_pane_exited(pane, Some(1));
+    d.exit(pane, Some(1));
 
-    d.set_pane_hook_status(pane, PaneStatus::Idle, Some("all done".into()), false);
+    d.report_pane_status(pane, None, PaneStatus::Idle, Some("all done".into()), false);
 
     let info = pane_info(&d, pane);
     assert_eq!(info.status, PaneStatus::Exited { code: Some(1) });
@@ -527,9 +558,9 @@ async fn a_report_never_resurrects_an_exited_pane() {
 async fn a_rename_will_not_relabel_a_dead_row() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
-    d.mark_pane_exited(pane, Some(0));
+    d.exit(pane, Some(0));
 
-    d.set_pane_title(pane, "still working on it");
+    d.report_pane_title(pane, None, "still working on it");
     assert_eq!(pane_info(&d, pane).title, "claude");
 
     d.close_pane(pane).unwrap();
@@ -553,6 +584,16 @@ async fn every_agent_pane_is_handed_the_hook_environment() {
         .unwrap();
     assert!(url.contains(&port.to_string()));
     assert!(parse_pane_path("/pane/1/title").is_some());
+
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    let started = d.processes.started(pane).unwrap();
+    assert_eq!(started.program.as_deref(), Some("echo"));
+    assert_eq!(started.args, ["hi"]);
+    assert_eq!(started.cwd, dir.path());
+    assert!(
+        started.env.iter().any(|(k, v)| k == argus_protocol::URL_VAR && v.contains(&port.to_string())),
+        "the pane itself is started with it"
+    );
 }
 
 #[tokio::test]
@@ -670,9 +711,10 @@ fn status_arriving_before_pane_registration_is_retained() {
         .unwrap()
         .insert(pane, PendingStart::default());
 
-    d.set_pane_hook_status(pane, PaneStatus::Working, None, false);
-    d.set_pane_hook_status(
+    d.report_pane_status(pane, None, PaneStatus::Working, None, false);
+    d.report_pane_status(
         pane,
+        None,
         PaneStatus::Waiting,
         Some(" needs the database password ".to_string()),
         false,
@@ -696,8 +738,8 @@ fn title_arriving_before_pane_registration_is_retained() {
         .unwrap()
         .insert(pane, PendingStart::default());
 
-    d.set_pane_title(pane, "starting up");
-    d.set_pane_title(pane, " fixing the pty deadlock ");
+    d.report_pane_title(pane, None, "starting up");
+    d.report_pane_title(pane, None, " fixing the pty deadlock ");
 
     assert_eq!(
         d.starting_agents.lock().unwrap()[&pane].title.as_deref(),
@@ -760,6 +802,45 @@ fn a_working_pending_parent_keeps_ownership_from_a_child() {
 }
 
 #[test]
+fn a_session_claim_racing_the_parents_turn_never_takes_a_working_row() {
+    // The claim used to read the owner, then the status, then write, each
+    // under its own hold of the locks. A parent starting its turn in
+    // between had its row taken by the nested agent while it worked. Either
+    // order is fine on its own; what must never be seen is the newcomer
+    // owning a row the parent has just set working.
+    let d = daemon_with_primary("/repo");
+    let pane = PaneId(42);
+    for _ in 0..500 {
+        d.starting_agents.lock().unwrap().insert(
+            pane,
+            PendingStart {
+                harness_session_id: Some("parent-session".to_string()),
+                ..PendingStart::default()
+            },
+        );
+        let start = std::sync::Barrier::new(2);
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                start.wait();
+                d.set_pane_session_id(pane, "nested-session");
+            });
+            s.spawn(|| {
+                start.wait();
+                d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None, false);
+            });
+        });
+
+        let starting = d.starting_agents.lock().unwrap();
+        let pending = &starting[&pane];
+        let working = pending.status.as_ref().is_some_and(|(s, _)| *s == PaneStatus::Working);
+        assert!(
+            !(working && pending.harness_session_id.as_deref() == Some("nested-session")),
+            "the nested agent took the row its parent is working in"
+        );
+    }
+}
+
+#[test]
 fn pending_parent_lifecycle_changes_clear_children() {
     let d = daemon_with_primary("/repo");
     let pane = PaneId(42);
@@ -792,8 +873,8 @@ async fn startup_reports_outrank_saved_restore_metadata() {
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.restoring
         .store(true, std::sync::atomic::Ordering::Relaxed);
-    d.set_pane_hook_status(pane, PaneStatus::Working, Some("new turn".to_string()), false);
-    d.set_pane_title(pane, "current task");
+    d.report_pane_status(pane, None, PaneStatus::Working, Some("new turn".to_string()), false);
+    d.report_pane_title(pane, None, "current task");
 
     d.restore_pane_metadata(
         pane,
@@ -822,7 +903,7 @@ async fn startup_reports_outrank_saved_restore_metadata() {
 async fn saved_restore_metadata_does_not_resurrect_an_exited_pane() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
-    d.mark_pane_exited(pane, Some(1));
+    d.exit(pane, Some(1));
 
     d.restore_pane_metadata(
         pane,

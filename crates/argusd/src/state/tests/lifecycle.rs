@@ -4,17 +4,11 @@
 
 use super::*;
 
-/// A daemon whose claude template runs `cat`, which keeps a pane running
-/// until something ends it.
-fn running_claude(dir: &std::path::Path, restart: crate::config::Restart) -> Arc<Daemon> {
+/// A daemon whose claude panes keep running until something ends them.
+fn running_claude(dir: &std::path::Path, restart: crate::config::Restart) -> ScriptedDaemon {
     let mut config = fake_claude_config(dir);
-    config.agents[0].cmd = if cfg!(windows) {
-        vec!["cmd".to_string(), "/K".to_string()]
-    } else {
-        vec!["cat".to_string()]
-    };
     config.agents[0].restart = restart;
-    Daemon::new(config)
+    ScriptedDaemon::new(config)
 }
 
 /// Shows `pane` at a size, as a client would, and checks the pane holds
@@ -60,7 +54,7 @@ async fn a_restarted_agent_leaves_nothing_of_its_old_pane_behind() {
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     shown(&d, pane);
 
-    d.mark_pane_exited(pane, Some(0));
+    d.exit(pane, Some(0));
 
     let panes = panes_of(&d);
     assert_eq!(panes.len(), 1);
@@ -78,7 +72,7 @@ async fn a_failed_resume_leaves_nothing_of_its_old_pane_behind() {
         .unwrap();
     shown(&d, pane);
 
-    d.mark_pane_exited(pane, Some(1));
+    d.exit(pane, Some(1));
 
     let panes = panes_of(&d);
     assert_eq!(panes.len(), 1);

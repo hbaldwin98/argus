@@ -24,7 +24,13 @@ impl Daemon {
     }
 
     pub fn with_store(config: ConfigFile, store: crate::store::Store) -> Arc<Self> {
-        Self::assemble(config, store, Arc::new(git_reads::SystemGit))
+        Self::with_ports(
+            config,
+            store,
+            Arc::new(git_reads::SystemGit),
+            Arc::new(processes::Pty),
+            Arc::new(clock::SystemClock),
+        )
     }
 
     /// A test daemon whose Git reads answer what the test scripts, and the
@@ -34,13 +40,24 @@ impl Daemon {
         let git = Arc::new(git_reads::ScriptedGit::default());
         let store = crate::store::Store::in_memory()
             .expect("an in-memory runtime store needs nothing that can fail");
-        (Self::assemble(config, store, git.clone()), git)
+        let daemon = Self::with_ports(
+            config,
+            store,
+            git.clone(),
+            Arc::new(processes::Pty),
+            Arc::new(clock::SystemClock),
+        );
+        (daemon, git)
     }
 
-    fn assemble(
+    /// A daemon over the Git, processes and clock it is handed: the disk,
+    /// the pty and the system's for a real one, scripted ones for a test.
+    pub(super) fn with_ports(
         config: ConfigFile,
         store: crate::store::Store,
         git: Arc<dyn git_reads::GitReads>,
+        processes: Arc<dyn processes::Processes>,
+        clock: Arc<dyn clock::Clock>,
     ) -> Arc<Self> {
         let mut ids = IdGen::default();
 
@@ -164,6 +181,8 @@ impl Daemon {
             paste_root: std::sync::OnceLock::new(),
             git,
             reviews: Default::default(),
+            processes,
+            clock,
         });
         // Checkout rows are named after the branch occupying them, and that
         // name now comes from the cache. Reading HEAD is enough for a name;
