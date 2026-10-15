@@ -4168,3 +4168,268 @@ body.resizing {
   cursor: col-resize;
   user-select: none;
 }
+
+/* ---- An open feature's lenses ------------------------------------------ */
+
+/* The header's tickets: chips the tracker dialogs add their buttons to. */
+.chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-6);
+  margin-left: auto;
+}
+.lens-keys {
+  align-self: center;
+}
+.wtext {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-width: 0;
+}
+.wtext > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.struck {
+  text-decoration: line-through;
+}
+.rrow {
+  display: grid;
+  grid-template-columns: 18px 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-6);
+  min-height: var(--control-h);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  padding: 0 var(--sp-8);
+  cursor: pointer;
+}
+.rrow.on,
+.steprow.on {
+  background: var(--bg-selected);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.record-foot {
+  padding: var(--sp-8);
+}
+.flows-list .frow {
+  min-height: var(--control-h);
+  cursor: pointer;
+}
+.steps-label {
+  padding: var(--sp-12) var(--sp-8) var(--sp-4);
+}
+.steprow {
+  display: grid;
+  grid-template-columns: 24px minmax(80px, 150px) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-6);
+  min-height: 28px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  padding: 0 var(--sp-8);
+  cursor: pointer;
+}
+.steprow.branch {
+  cursor: default;
+  min-height: 22px;
+}
+.steprow .route {
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.step-detail {
+  padding: var(--sp-12) var(--sp-8) 0;
+}
+.flow-picture .seq-holder {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-12);
+}
+
+/* A sequence diagram: calls solid, replies dashed, the selected step lit. */
+.seq {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.seq .life {
+  stroke: var(--line-strong);
+  stroke-dasharray: 3 4;
+}
+.seq .lhead rect {
+  fill: var(--bg-surface);
+  stroke: var(--line-strong);
+}
+.seq .lhead text {
+  fill: var(--fg);
+  font-weight: 600;
+}
+.seq .smsg {
+  cursor: pointer;
+}
+.seq .smsg .line {
+  stroke: var(--fg-muted);
+  stroke-width: 1.4;
+  fill: none;
+}
+.seq .smsg.reply .line {
+  stroke-dasharray: 5 4;
+}
+.seq .smsg .hit {
+  stroke: transparent;
+  stroke-width: 16;
+  fill: none;
+}
+.seq .lhead-solid {
+  fill: var(--fg-muted);
+}
+.seq .lhead-open {
+  stroke: var(--fg-muted);
+  stroke-width: 1.4;
+  fill: none;
+}
+.seq .mtext {
+  fill: var(--fg-muted);
+}
+.seq .sbadge {
+  fill: var(--fill);
+  stroke: var(--line-strong);
+}
+.seq .btext {
+  fill: var(--fg-faint);
+  font-size: 10px;
+}
+.seq .smsg.on .line,
+.seq .smsg.on .head-open {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.seq .smsg.on .head-solid,
+.seq .smsg.on .sbadge {
+  fill: var(--accent);
+}
+.seq .smsg.on .btext {
+  fill: var(--fg-on-accent);
+}
+.seq .smsg.on .mtext {
+  fill: var(--fg);
+  font-weight: 600;
+}
+.seq .frame {
+  fill: none;
+  stroke: var(--line-strong);
+}
+.seq .ftab {
+  fill: var(--fill);
+  stroke: var(--line-strong);
+}
+.seq .fkind {
+  fill: var(--fg);
+  font-weight: 700;
+}
+.seq .ftext {
+  fill: var(--fg-faint);
+}
+.seq .farm {
+  stroke: var(--line-strong);
+  stroke-dasharray: 4 4;
+}
+.seq .drop-guide {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+/* The diagram expanded over the window, the steps beside it. */
+.expanded {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+}
+.expanded-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  padding: var(--sp-8) var(--sp-16);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.flow-switch {
+  width: auto;
+  max-width: 280px;
+}
+.seq-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+.seq-legend .lg {
+  display: inline-block;
+  width: 20px;
+  border-top: 2px solid var(--fg-muted);
+  margin-left: var(--sp-8);
+}
+.seq-legend .lg.reply {
+  border-top-style: dashed;
+}
+.seq-legend .lg.self {
+  width: 10px;
+  height: 7px;
+  border: 2px solid var(--fg-muted);
+  border-left: 0;
+}
+.btn.on {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.expanded-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.expanded-canvas {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--sp-16);
+  background: var(--bg-sunken);
+}
+.expanded .seq .smsg {
+  cursor: ns-resize;
+}
+.expanded .seq .lhead {
+  cursor: ew-resize;
+}
+.expanded-canvas.dragging .seq {
+  cursor: grabbing;
+}
+.expanded-panel {
+  width: 340px;
+  flex: none;
+  border-left: 1px solid var(--line);
+  padding: var(--sp-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-12);
+  overflow-y: auto;
+}

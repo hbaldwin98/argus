@@ -22,6 +22,7 @@ export const state = {
     capture: null,
     editing: null,
     chosen: null,
+    expanded: null,
     keymap: [],
     commands: [],
     palette: null,

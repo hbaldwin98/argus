@@ -13,6 +13,7 @@ import { focusSessionsSearch, readerOpen, sessionsOpen } from './sessions.js';
 import { focusTranscriptFind } from './transcript.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
+import { expandedOpen } from './sequence.js';
 import { closeLayer, featureAction } from './features.js';
 import { closePalette, openPalette } from './palette.js';
 import { addProjectOpen, answerRemoveNo } from './projects.js';
@@ -33,11 +34,13 @@ function matches(chord: Chord, e: KeyboardEvent): boolean {
   );
 }
 
-/** What `e` does in `places`, leaving aside keys pressed after the leader. */
+/** What `e` does in `places`, leaving aside keys pressed after the leader.
+ *  The places are asked in the order given, so one listed first may take a
+ *  key from one after it: an open feature's digits are its lenses. */
 export function actionFor(places: Place[], e: KeyboardEvent): Action | null {
-  for (const group of state.keymap) {
-    if (!places.includes(group.place)) continue;
-    for (const binding of group.bindings) {
+  for (const place of places) {
+    const group = state.keymap.find((g) => g.place === place);
+    for (const binding of group?.bindings ?? []) {
       if (binding.chords.some((chord) => !chord.leader && matches(chord, e))) return binding.action;
     }
   }
@@ -224,12 +227,14 @@ export function listen(): void {
       if (action && (railAction(action) || run(action))) e.preventDefault();
       return;
     }
-    // An open feature hears its own keys: its j and k move its outline,
-    // not the index under it. The note's field holds every key but the
-    // stage switches and Escape.
+    // An open feature hears its own keys before Anywhere's: its j and k
+    // move its lens, not the index under it, and its digits are the lenses.
+    // Its expanded diagram hears its own over that. The note's field holds
+    // every key but the stage switches and Escape.
     let feature: Place[] = ['anywhere', 'feature', 'card'];
     if (captureOpen()) feature = ['anywhere'];
-    else if (workOpen()) feature = ['anywhere', 'outline'];
+    else if (workOpen() && expandedOpen()) feature = ['diagram', 'outline', 'anywhere'];
+    else if (workOpen()) feature = ['outline', 'anywhere'];
     const places: Place[] =
       state.rail.stage === 'feature'
         ? feature

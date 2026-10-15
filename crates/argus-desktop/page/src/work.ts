@@ -1,19 +1,27 @@
-// A feature opened from the index: its tasks and the decisions raised under
-// them as one outline, the row under the cursor in full beside it, and the
-// edits a person makes to them in place. Every edit is sent as it stands and
-// the form closes; what the feature says changes only when the daemon's
-// pushed board and tasks do, so a refused edit leaves it as it was.
+// A feature opened from the index: its header, the lens it is read through,
+// and the Work lens — its tasks and the decisions raised under them as one
+// outline, the row under the cursor in full beside it, and the edits a
+// person makes to them in place. The Record and Flows lenses are
+// `record.ts`'s and `flows.ts`'s, and the forms here are theirs too. Every
+// edit is sent as it stands and the form closes; what the feature says
+// changes only when the daemon's pushed board, tasks and flows do, so a
+// refused edit leaves it as it was.
 
 import type { Action } from './bindings/Action';
 import type { DecisionDetail } from './bindings/DecisionDetail';
 import type { FeatureEdit } from './bindings/FeatureEdit';
 import type { FeatureView } from './bindings/FeatureView';
+import type { Lens } from './bindings/Lens';
 import type { Line } from './bindings/Line';
 import type { TaskDetail } from './bindings/TaskDetail';
 import type { WorkRow } from './bindings/WorkRow';
+import { notice } from './chrome.js';
+import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
 import { $, el, type Child } from './dom.js';
-import { ticketLinks } from './tickets.js';
+import { flowsAction, flowsLens } from './flows.js';
+import { ticketLink } from './tickets.js';
 import { actionFor } from './keymap.js';
+import { recordAction, recordLens } from './record.js';
 import { state, type Editing } from './state.js';
 import { call } from './tauri.js';
 
@@ -28,11 +36,17 @@ const TASK_MARK: Record<string, [string, string]> = {
   superseded: ['⊘', 'fg-faint'],
 };
 
-function edit(change: FeatureEdit): void {
+export const LENSES: { lens: Lens; name: string; key: string }[] = [
+  { lens: 'work', name: 'Work', key: '1' },
+  { lens: 'record', name: 'Record', key: '2' },
+  { lens: 'flows', name: 'Flows', key: '3' },
+];
+
+export function edit(change: FeatureEdit): void {
   call('edit_feature', { edit: change });
 }
 
-function begin(editing: Editing): void {
+export function begin(editing: Editing): void {
   state.editing = editing;
   drawWork();
 }
@@ -80,13 +94,25 @@ function send(editing: Editing): void {
         edit({ on: 'addDecision', under: editing.under, task: editing.task, line: editing.text });
       }
       break;
+    case 'supersede':
+      if (editing.text.trim()) edit({ on: 'supersede', id: editing.id, line: editing.text });
+      break;
+    case 'addFlow':
+      if (editing.text.trim()) edit({ on: 'addFlow', title: editing.text });
+      break;
+    case 'flow':
+      edit({ on: 'flow', id: editing.id, title: editing.title, source: editing.text });
+      break;
+    case 'step':
+      edit({ on: 'stepText', diagram: editing.diagram, step: editing.step, text: editing.text });
+      break;
   }
 }
 
 /** A text field of the form being written: its keys are the keymap's
  *  Writing place, and what it holds is kept in `state.editing` so a push
  *  that redraws the feature does not lose it. */
-function field(
+export function field(
   id: string,
   value: string,
   multiline: boolean,
@@ -113,10 +139,11 @@ function field(
     ? el('textarea', { class: 'field area', id, placeholder, oninput, onkeydown })
     : el('input', { class: 'field', id, placeholder, oninput, onkeydown });
   node.value = value;
+  node.dataset.editing = '';
   return node;
 }
 
-function formButtons(saveLabel: string): HTMLElement {
+export function formButtons(saveLabel: string): HTMLElement {
   return el(
     'div',
     { class: 'actions' },
@@ -134,40 +161,61 @@ function formButtons(saveLabel: string): HTMLElement {
 
 export function drawWork(): void {
   const view = state.features?.open;
-  if (!view) return;
+  if (!view) {
+    closeExpanded();
+    return;
+  }
   const stage = $('fstage');
   // A redraw replaces the fields; the one being typed in keeps its caret.
   const active = document.activeElement;
   const focused =
     (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) &&
-    stage.contains(active)
+    (stage.contains(active) || active.closest('.expanded'))
       ? { id: active.id, start: active.selectionStart, end: active.selectionEnd }
       : null;
   if (!stillThere(view)) state.editing = null;
-  stage.replaceChildren(head(view), el('div', { class: 'split' }, outline(view), detail(view)));
+  if (view.lens !== 'flows') closeExpanded();
+  let body: HTMLElement;
+  if (view.lens === 'record') body = recordLens(view);
+  else if (view.lens === 'flows') body = flowsLens(view);
+  else body = el('div', { class: 'split' }, outline(view), detail(view));
+  stage.replaceChildren(head(view), body);
+  drawExpanded();
   const again = focused?.id ? document.getElementById(focused.id) : null;
   if (again instanceof HTMLInputElement || again instanceof HTMLTextAreaElement) {
     again.focus();
     again.setSelectionRange(focused?.start ?? null, focused?.end ?? null);
   } else {
-    const first = stage.querySelector<HTMLElement>('[data-editing]');
+    const first = document.querySelector<HTMLElement>('[data-editing]');
     if (first instanceof HTMLInputElement || first instanceof HTMLTextAreaElement) {
       first.focus();
       first.setSelectionRange(first.value.length, first.value.length);
     }
   }
-  stage.querySelector('.wrow.on')?.scrollIntoView({ block: 'nearest' });
+  stage.querySelector('.wrow.on, .rrow.on, .steprow.on')?.scrollIntoView({ block: 'nearest' });
 }
 
 /** Whether the form being written is still about something on screen. */
 function stillThere(view: FeatureView): boolean {
   const editing = state.editing;
-  if (!editing || editing.what === 'brief' || editing.what === 'addTask') return true;
-  const id =
-    editing.what === 'addDecision'
-      ? (editing.under ?? editing.task)
-      : (editing as { id: number }).id;
-  return id === null || view.rows.some((row) => row.at.id === id);
+  if (!editing) return true;
+  const onRow = (id: number | null): boolean =>
+    id === null || view.rows.some((row) => row.at.id === id);
+  switch (editing.what) {
+    case 'brief':
+    case 'addTask':
+    case 'addFlow':
+      return true;
+    case 'addDecision':
+      return onRow(editing.under ?? editing.task);
+    case 'flow':
+    case 'step': {
+      const id = editing.what === 'flow' ? editing.id : editing.diagram;
+      return view.flows?.flows.some((flow) => flow.id === id) ?? false;
+    }
+    default:
+      return onRow(editing.id);
+  }
 }
 
 function head(view: FeatureView): HTMLElement {
@@ -188,7 +236,6 @@ function head(view: FeatureView): HTMLElement {
       (text) => (editing.text = text),
       'What is being built, and why',
     );
-    area.dataset.editing = '';
     brief = el('div', { class: 'stack-6 brief-edit' }, area, formButtons('Save the brief'));
   } else {
     brief = el(
@@ -204,6 +251,7 @@ function head(view: FeatureView): HTMLElement {
       ),
     );
   }
+  const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
   return el(
     'div',
     { class: 'fhead' },
@@ -212,9 +260,11 @@ function head(view: FeatureView): HTMLElement {
       { class: 'crumbs' },
       el('button', { class: 'crumb', onclick: closeFeature }, 'Features'),
       el('span', { class: 'fg-faint' }, '›'),
-      el('span', { class: 'fg' }, `#${view.number}`),
+      el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`),
+      el('span', { class: 'fg-faint' }, '›'),
+      el('span', { class: 'fg' }, lensName),
       el('span', { class: 'grow' }),
-      el('span', { class: 'meta' }, el('span', { class: 'kbd' }, 'Esc'), ' back to features'),
+      el('span', { class: 'meta' }, keycap('Esc'), ' back to features'),
     ),
     el(
       'div',
@@ -232,7 +282,6 @@ function head(view: FeatureView): HTMLElement {
         view.standing,
       ),
       el('span', { class: 'grow' }),
-      ticketLinks(view.links),
       el(
         'span',
         { class: 'meta' },
@@ -255,26 +304,68 @@ function head(view: FeatureView): HTMLElement {
         { class: 'meta' },
         parts.flatMap((part, i): Child[] => (i ? [' · ', part] : [part])),
       ),
-      el('span', { class: 'grow' }),
-      el(
-        'span',
-        { class: 'meta' },
-        keycap('E'),
-        ' edit · ',
-        keycap('A'),
-        ' task · ',
-        keycap('S'),
-        ' under it · ',
-        keycap('D'),
-        ' decision · ',
-        keycap('B'),
-        ' brief',
+      tickets(view),
+    ),
+    el(
+      'div',
+      { class: 'lens', role: 'tablist', 'aria-label': 'Lens' },
+      LENSES.map(({ lens, name, key }) =>
+        el(
+          'button',
+          {
+            class: `lt${view.lens === lens ? ' on' : ''}`,
+            role: 'tab',
+            'aria-selected': String(view.lens === lens),
+            onclick: () => setLens(lens),
+          },
+          name,
+          keycap(key),
+        ),
       ),
+      el('span', { class: 'grow' }),
+      el('span', { class: 'meta lens-keys' }, lensKeys(view.lens)),
     ),
   );
 }
 
-function keycap(key: string): HTMLElement {
+/** The tickets the feature is linked to, each opening the view an agent
+ *  showed of it when one waits (`tickets.ts`). Linking and reconciling are
+ *  the tracker dialogs', which add their buttons to this row. */
+function tickets(view: FeatureView): HTMLElement {
+  return el(
+    'span',
+    { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' },
+    view.links.map(ticketLink),
+  );
+}
+
+function lensKeys(lens: Lens): Child[] {
+  const keys: [string, string][] =
+    lens === 'record'
+      ? [
+          ['E', 'edit'],
+          ['U', 'supersede'],
+          ['Y', 'copy as ADR'],
+          ['D', 'decision'],
+        ]
+      : lens === 'flows'
+        ? [
+            ['F', 'expand'],
+            ['D', 'bind'],
+            ['E', 'source'],
+            ['A', 'flow'],
+          ]
+        : [
+            ['E', 'edit'],
+            ['A', 'task'],
+            ['S', 'under it'],
+            ['D', 'decision'],
+            ['B', 'brief'],
+          ];
+  return keys.flatMap(([key, what], i): Child[] => [i ? ' · ' : null, keycap(key), ` ${what}`]);
+}
+
+export function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);
 }
 
@@ -327,8 +418,12 @@ function outline(view: FeatureView): HTMLElement {
   return section;
 }
 
+export function stateMark(word: string): [string, string] {
+  return TASK_MARK[word] ?? ['·', 'fg-faint'];
+}
+
 function workRow(row: WorkRow): HTMLElement {
-  const [mark, tone] = TASK_MARK[row.state] ?? ['·', 'fg-faint'];
+  const [mark, tone] = stateMark(row.state);
   const decision = row.at.kind === 'decision';
   const quiet =
     row.state === 'done' ||
@@ -355,7 +450,12 @@ function workRow(row: WorkRow): HTMLElement {
       },
       row.label,
     ),
-    el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text),
+    el(
+      'span',
+      { class: 'wtext' },
+      el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text),
+      row.key && el('span', { class: 'tkey' }, row.key),
+    ),
     aside,
   );
   node.style.paddingLeft = `${8 + row.depth * 20}px`;
@@ -378,7 +478,7 @@ function adding(
     if (editing.under !== null) what = `Sub-decision under ${label(editing.under)}`;
     else if (editing.task !== null) what = `Decision raised under task ${label(editing.task)}`;
     else what = 'Decision on the feature';
-    placeholder = '? a question still open, ~ an answer turned down, or what was decided';
+    placeholder = DECISION_LINE;
   }
   const input = field(
     'edit-add',
@@ -387,7 +487,6 @@ function adding(
     (text) => (editing.text = text),
     placeholder,
   );
-  input.dataset.editing = '';
   return el(
     'div',
     { class: 'stack-4 work-add' },
@@ -396,6 +495,9 @@ function adding(
     formButtons('Add'),
   );
 }
+
+export const DECISION_LINE =
+  '? a question still open, ~ an answer turned down, or what was decided';
 
 function detail(view: FeatureView): HTMLElement {
   if (view.task) return taskDetail(view, view.task);
@@ -407,11 +509,11 @@ function detail(view: FeatureView): HTMLElement {
   );
 }
 
-function titled(label: string, ...body: Child[]): HTMLElement {
+export function titled(label: string, ...body: Child[]): HTMLElement {
   return el('div', { class: 'stack-4' }, el('div', { class: 'label' }, label), body);
 }
 
-function lineList(lines: Line[], mark: string, tone: string): HTMLElement[] {
+export function lineList(lines: Line[], mark: string, tone: string): HTMLElement[] {
   return lines.map((line) =>
     el(
       'div',
@@ -460,7 +562,6 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
       (text) => (editing.title = text),
       'The task, in a line',
     );
-    title.dataset.editing = '';
     const body = field(
       'edit-task-body',
       editing.body,
@@ -468,6 +569,7 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
       (text) => (editing.body = text),
       'What it is, and anything the one doing it should know',
     );
+    delete body.dataset.editing;
     return el(
       'article',
       { class: 'work-detail', 'aria-label': `Task ${task.label}` },
@@ -512,7 +614,6 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
       (text) => (editing.text = text),
       'One checkable line',
     );
-    input.dataset.editing = '';
     addCriterion = el('div', { class: 'stack-4' }, input, formButtons('Add'));
   }
   return el(
@@ -575,7 +676,10 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
   );
 }
 
-function decisionDetail(decision: DecisionDetail): HTMLElement {
+/** A decision read as its record, in either lens: what made it necessary,
+ *  what was decided and why, what it costs and buys, what was turned down,
+ *  and what carries it out — or an open one's options to take. */
+export function decisionDetail(decision: DecisionDetail): HTMLElement {
   const editing = state.editing;
   const open = decision.state === 'open';
   const tone = open ? 'fg-attention' : decision.state === 'accepted' ? 'fg-ok' : 'fg-faint';
@@ -588,16 +692,21 @@ function decisionDetail(decision: DecisionDetail): HTMLElement {
       el('span', { class: `mono ${tone}` }, decision.label),
       el('span', { class: tone }, decision.state),
       el('span', { class: 'grow' }),
-      decision.raisedUnder &&
-        el('span', { class: 'label-aside' }, `raised under ${decision.raisedUnder}`),
+      el(
+        'span',
+        { class: 'label-aside' },
+        decision.raisedUnder ? `raised under ${decision.raisedUnder} · ` : '',
+        decision.by,
+      ),
     ),
     el('div', { class: 'type-title detail-title' }, decision.chose),
+    decision.supersededBy &&
+      el('div', { class: 'meta' }, `Superseded by ${decision.supersededBy}: kept on the record.`),
     decision.withdrawn &&
       el('div', { class: 'meta' }, 'Withdrawn: kept on the record, and no longer shown to agents.'),
   );
   if (editing?.what === 'record' && editing.id === decision.id) {
     const area = field('edit-record', editing.text, true, (text) => (editing.text = text), '');
-    area.dataset.editing = '';
     area.classList.add('mono', 'tall');
     return el(
       'article',
@@ -622,7 +731,6 @@ function decisionDetail(decision: DecisionDetail): HTMLElement {
       (text) => (editing.text = text),
       'What was decided',
     );
-    answer.dataset.editing = '';
     const because = field(
       'edit-because',
       editing.because,
@@ -630,6 +738,7 @@ function decisionDetail(decision: DecisionDetail): HTMLElement {
       (text) => (editing.because = text),
       'Why, if it needs saying',
     );
+    delete because.dataset.editing;
     return el(
       'article',
       { class: 'work-detail', 'aria-label': `Decision ${decision.label}` },
@@ -638,6 +747,27 @@ function decisionDetail(decision: DecisionDetail): HTMLElement {
       titled('Because', because),
       el('div', { class: 'meta' }, 'The options not taken stay listed as rejected.'),
       formButtons('Answer it'),
+    );
+  }
+  if (editing?.what === 'supersede' && editing.id === decision.id) {
+    const line = field(
+      'edit-supersede',
+      editing.text,
+      false,
+      (text) => (editing.text = text),
+      DECISION_LINE,
+    );
+    return el(
+      'article',
+      { class: 'work-detail', 'aria-label': `Decision ${decision.label}` },
+      top,
+      titled(`What takes ${decision.label}'s place`, line),
+      el(
+        'div',
+        { class: 'meta' },
+        `${decision.label} stays on the record, dimmed, with what replaced it.`,
+      ),
+      formButtons('Supersede'),
     );
   }
   const body: Child[] = [top];
@@ -659,8 +789,25 @@ function decisionDetail(decision: DecisionDetail): HTMLElement {
         ),
       );
     }
-    if (decision.over)
-      body.push(titled('Considered', el('div', { class: 'fg-muted prose' }, decision.over)));
+  }
+  if (decision.over || decision.considered.length) {
+    body.push(
+      titled(
+        'Considered',
+        decision.over && el('div', { class: 'fg-muted prose' }, decision.over),
+        decision.considered.map((line) =>
+          el(
+            'div',
+            null,
+            el('span', { class: 'fg-faint' }, '✕ '),
+            el('span', { class: 'mono fg-faint' }, line.label),
+            ' ',
+            el('span', { class: 'fg-muted struck' }, line.text),
+            line.aside && el('div', { class: 'meta indented' }, `rejected: ${line.aside}`),
+          ),
+        ),
+      ),
+    );
   }
   if (decision.carriedOutBy.length)
     body.push(titled('Carried out by', lineList(decision.carriedOutBy, '·', 'fg-faint')));
@@ -692,8 +839,7 @@ function decisionDetail(decision: DecisionDetail): HTMLElement {
         ),
       ],
       el('span', { class: 'grow' }),
-      open && el('span', { class: 'meta' }, 'The others stay listed as rejected.'),
-      el('button', { class: 'btn', onclick: () => editRow() }, 'Edit record'),
+      el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'),
       el(
         'button',
         {
@@ -702,6 +848,13 @@ function decisionDetail(decision: DecisionDetail): HTMLElement {
         },
         'Sub-decision',
       ),
+      !decision.supersededBy &&
+        el(
+          'button',
+          { class: 'btn', onclick: () => begin({ what: 'supersede', id: decision.id, text: '' }) },
+          'Supersede…',
+        ),
+      el('button', { class: 'btn', onclick: () => copyRecord(decision) }, 'Copy as ADR'),
       el(
         'button',
         {
@@ -752,14 +905,31 @@ function options(decision: DecisionDetail): HTMLElement {
   );
 }
 
+export function editDecision(decision: DecisionDetail): void {
+  begin({ what: 'record', id: decision.id, text: decision.document });
+}
+
+export function copyRecord(decision: DecisionDetail): void {
+  navigator.clipboard
+    ?.writeText(decision.adr)
+    .then(() => notice(`Copied ${decision.label} as ADR markdown.`))
+    .catch(() => notice('The clipboard refused the record.'));
+}
+
 // ---- Keys --------------------------------------------------------------------
 
 function closeFeature(): void {
   state.editing = null;
+  closeExpanded();
   call('open_feature', { slug: null });
 }
 
-function goToPane(view: FeatureView): void {
+export function setLens(lens: Lens): void {
+  state.editing = null;
+  call('set_lens', { lens });
+}
+
+export function goToPane(view: FeatureView): void {
   if (view.agent) call('go_to_pane', { pane: view.agent.pane });
 }
 
@@ -770,8 +940,7 @@ function editRow(): void {
   if (!view) return;
   if (view.task)
     begin({ what: 'task', id: view.task.id, title: view.task.title, body: view.task.body });
-  else if (view.decision)
-    begin({ what: 'record', id: view.decision.id, text: view.decision.document });
+  else if (view.decision) editDecision(view.decision);
   else begin({ what: 'brief', text: view.brief });
 }
 
@@ -780,16 +949,43 @@ export function workOpen(): boolean {
 }
 
 /** Escape on an open feature: the form being written goes first, then the
- *  feature, back to the index. */
+ *  expanded diagram, then the feature, back to the index. */
 export function leaveWork(): void {
   if (state.editing) cancel();
-  else closeFeature();
+  else if (state.expanded) {
+    closeExpanded();
+    drawWork();
+  } else closeFeature();
 }
 
-/** Runs an open feature's binding, saying whether it had anything to do. */
+/** Runs an open feature's binding, saying whether it had anything to do:
+ *  the lens keys and the ones every lens shares here, the rest by the lens
+ *  read. */
 export function workAction(action: Action): boolean {
   const view = state.features?.open;
   if (!view) return false;
+  switch (action) {
+    case 'workLens':
+      setLens('work');
+      return true;
+    case 'recordLens':
+      setLens('record');
+      return true;
+    case 'flowsLens':
+      setLens('flows');
+      return true;
+    case 'brief':
+      begin({ what: 'brief', text: view.brief });
+      return true;
+    case 'goToPane':
+      goToPane(view);
+      return true;
+    default:
+      break;
+  }
+  if (state.expanded) return diagramAction(action);
+  if (view.lens === 'record') return recordAction(view, action);
+  if (view.lens === 'flows') return flowsAction(view, action);
   const at = view.rows.findIndex((row) => row.on);
   const selectAt = (i: number): void => {
     const row = view.rows[Math.max(0, Math.min(view.rows.length - 1, i))];
@@ -811,9 +1007,6 @@ export function workAction(action: Action): boolean {
     case 'edit':
       editRow();
       return true;
-    case 'brief':
-      begin({ what: 'brief', text: view.brief });
-      return true;
     case 'addTask':
       begin({ what: 'addTask', parent: null, text: '' });
       return true;
@@ -825,18 +1018,28 @@ export function workAction(action: Action): boolean {
     case 'decide':
       begin({ what: 'addDecision', under: null, task: view.task?.id ?? null, text: '' });
       return true;
+    default:
+      return view.decision ? decisionAction(view.decision, action) : false;
+  }
+}
+
+/** The keys a decision answers wherever it is read. */
+export function decisionAction(decision: DecisionDetail, action: Action): boolean {
+  switch (action) {
     case 'answer':
-      if (view.decision?.state === 'open') {
-        begin({ what: 'answer', id: view.decision.id, text: '', because: '' });
+      if (decision.state === 'open') {
+        begin({ what: 'answer', id: decision.id, text: '', because: '' });
       }
       return true;
     case 'withdraw':
-      if (view.decision) {
-        edit({ on: 'withdraw', id: view.decision.id, withdrawn: !view.decision.withdrawn });
-      }
+      edit({ on: 'withdraw', id: decision.id, withdrawn: !decision.withdrawn });
       return true;
-    case 'goToPane':
-      goToPane(view);
+    case 'supersede':
+      if (decision.supersededBy) notice(`${decision.label} is superseded already.`);
+      else begin({ what: 'supersede', id: decision.id, text: '' });
+      return true;
+    case 'copyRecord':
+      copyRecord(decision);
       return true;
     default:
       return false;

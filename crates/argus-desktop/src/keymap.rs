@@ -51,9 +51,12 @@ pub enum Place {
     Feature,
     /// The feature under the cursor, in the list or on the board.
     Card,
-    /// A feature opened from the index: its outline and the row under the
-    /// cursor.
+    /// A feature opened from the index: the lens it is read through and the
+    /// row under the cursor. Heard before Anywhere, so its digits are the
+    /// lenses rather than the stages, as in the terminal client.
     Outline,
+    /// A flow's sequence diagram expanded over the window.
+    Diagram,
     /// A field being written in — a feature's note or an edit, a message
     /// to an agent, a review comment, a name or a reason — which holds
     /// every other key.
@@ -127,6 +130,27 @@ pub enum Action {
     Answer,
     /// Withdraw the decision at the cursor, or restore it.
     Withdraw,
+    /// Read the open feature as work, as a record of its decisions, or as
+    /// its flows.
+    WorkLens,
+    RecordLens,
+    FlowsLens,
+    /// Record a decision that takes the place of the one at the cursor.
+    Supersede,
+    /// Put the decision at the cursor on the clipboard as ADR markdown.
+    CopyRecord,
+    /// The selected flow's diagram over the whole window.
+    Expand,
+    NextFlow,
+    PreviousFlow,
+    /// The expanded diagram sized to the window.
+    Fit,
+    /// Show or hide the steps beside the expanded diagram.
+    StepsPanel,
+    /// Move the step at the cursor up or down the flow, as dragging its
+    /// arrow does.
+    Earlier,
+    Later,
     StartShell,
     /// The daemon's default agent: its first template.
     StartAgent,
@@ -285,6 +309,7 @@ impl Place {
             Place::Feature => "Feature",
             Place::Card => "Board card",
             Place::Outline => "An open feature",
+            Place::Diagram => "An expanded diagram",
             Place::Writing => "Writing in a field",
             Place::Checkouts => "Checkouts",
             Place::Start => "A checkout's + menu",
@@ -334,7 +359,7 @@ const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'s
 }
 
 use Action::*;
-use Place::{Anywhere, Card, History, Jump, Outline, Pane, Rail, Review, Sessions, Start, Window, Writing};
+use Place::{Anywhere, Card, Diagram, History, Jump, Outline, Pane, Rail, Review, Sessions, Start, Window, Writing};
 use Place::Checkouts as CheckoutsTable;
 
 pub static BINDINGS: &[Binding] = &[
@@ -391,18 +416,39 @@ pub static BINDINGS: &[Binding] = &[
     bind(Card, &[Chord::key("h"), Chord::key("H")], Hold, "hold, or lift its hold"),
     bind(Card, &[Chord::key("A")], Archive, "archive, or reopen"),
     bind(Card, &[Chord::key("g"), Chord::key("G")], GoToPane, "go to its agent's pane"),
-    bind(Outline, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next task or decision"),
-    bind(Outline, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous task or decision"),
+    bind(Outline, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next row"),
+    bind(Outline, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
     bind(Outline, &[Chord::key("Home")], First, "first row"),
     bind(Outline, &[Chord::key("End")], Last, "last row"),
-    bind(Outline, &[Chord::key("e"), Chord::key("E")], Edit, "edit the task, or the decision as its record"),
+    bind(Outline, &[Chord::key("e"), Chord::key("E")], Edit, "edit the task, the decision as its record, or the flow as its source"),
     bind(Outline, &[Chord::key("b"), Chord::key("B")], Brief, "edit the brief"),
-    bind(Outline, &[Chord::key("a"), Chord::key("A")], AddTask, "new task"),
+    bind(Outline, &[Chord::key("a"), Chord::key("A")], AddTask, "new task, or a flow on the Flows lens"),
     bind(Outline, &[Chord::key("s"), Chord::key("S")], Under, "a subtask or sub-decision under it"),
-    bind(Outline, &[Chord::key("d"), Chord::key("D")], Decide, "raise a decision under the task"),
+    bind(Outline, &[Chord::key("d"), Chord::key("D")], Decide, "raise a decision under the task, or bind the step to one"),
     bind(Outline, &[Chord::key("o"), Chord::key("O")], Answer, "answer the open decision in words"),
     bind(Outline, &[Chord::key("x"), Chord::key("X")], Withdraw, "withdraw the decision, or restore it"),
     bind(Outline, &[Chord::key("g"), Chord::key("G")], GoToPane, "go to its agent's pane"),
+    bind(Outline, &[Chord::key("1")], WorkLens, "read it as work"),
+    bind(Outline, &[Chord::key("2")], Action::RecordLens, "read it as a record of its decisions"),
+    bind(Outline, &[Chord::key("3")], Action::FlowsLens, "read its flows"),
+    bind(Outline, &[Chord::key("u"), Chord::key("U")], Supersede, "supersede the decision with a new one"),
+    bind(Outline, &[Chord::key("y"), Chord::key("Y")], CopyRecord, "copy the decision as ADR markdown"),
+    bind(Outline, &[Chord::key("f"), Chord::key("F")], Expand, "expand the flow's diagram"),
+    bind(Outline, &[Chord::key("l"), Chord::key("ArrowRight")], NextFlow, "next flow"),
+    bind(Outline, &[Chord::key("h"), Chord::key("ArrowLeft")], PreviousFlow, "previous flow"),
+    bind(Diagram, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next step"),
+    bind(Diagram, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous step"),
+    bind(Diagram, &[Chord::key("l"), Chord::key("ArrowRight")], NextFlow, "next flow"),
+    bind(Diagram, &[Chord::key("h"), Chord::key("ArrowLeft")], PreviousFlow, "previous flow"),
+    bind(Diagram, &[Chord::key("+"), Chord::key("=")], ZoomIn, "zoom the diagram in"),
+    bind(Diagram, &[Chord::key("-")], ZoomOut, "zoom the diagram out"),
+    bind(Diagram, &[Chord::key("0")], ZoomReset, "the diagram at 100%"),
+    bind(Diagram, &[Chord::key("f"), Chord::key("F")], Fit, "fit the diagram to the window"),
+    bind(Diagram, &[Chord::key("p"), Chord::key("P")], StepsPanel, "show or hide the steps"),
+    bind(Diagram, &[Chord::key("e"), Chord::key("E")], Edit, "edit the step's flow as its source"),
+    bind(Diagram, &[Chord::key("d"), Chord::key("D")], Decide, "bind the step to a decision"),
+    bind(Diagram, &[Chord::key("K")], Earlier, "move the step up the flow"),
+    bind(Diagram, &[Chord::key("J")], Later, "move the step down the flow"),
     bind(Writing, &[Chord::key("Enter").ctrl(), Chord::key("Enter").meta()], Save, "create, send or save what is written"),
     bind(Writing, &[Chord::key("Enter")], Choose, "save a one-line field"),
     bind(Writing, &[Chord::key("Escape")], CloseLayer, "discard what was written"),
@@ -511,7 +557,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
 ];
 
-const ORDER: [Place; 17] = [
+const ORDER: [Place; 18] = [
     Anywhere,
     Pane,
     Window,
@@ -519,6 +565,7 @@ const ORDER: [Place; 17] = [
     Place::Feature,
     Card,
     Outline,
+    Diagram,
     Writing,
     CheckoutsTable,
     Start,
@@ -610,6 +657,7 @@ mod tests {
                 "Feature",
                 "Board card",
                 "An open feature",
+                "An expanded diagram",
                 "Writing in a field",
                 "Checkouts",
                 "A checkout's + menu",
@@ -700,11 +748,16 @@ mod tests {
     /// and an open + menu hears only its own and Anywhere's. The palette's
     /// field hears only its own, as every text field does: the rest are
     /// typed into it.
+    ///
+    /// The one deliberate overlap is an open feature's lens digits, which
+    /// the page hears before Anywhere's stage digits.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 14] = [
+        let lens = |b: &&Binding| b.place == Outline && matches!(b.action, WorkLens | Action::RecordLens | Action::FlowsLens);
+        let heard_together: [&[Place]; 15] = [
             &[Anywhere, Place::Feature, Card],
             &[Anywhere, Outline],
+            &[Anywhere, Diagram],
             &[Writing],
             &[Pane],
             &[Anywhere, Rail],
@@ -721,7 +774,7 @@ mod tests {
         for places in heard_together {
             let chords: Vec<&Chord> = BINDINGS
                 .iter()
-                .filter(|b| places.contains(&b.place))
+                .filter(|b| places.contains(&b.place) && !lens(b))
                 .flat_map(|b| b.chords)
                 .collect();
             for (i, chord) in chords.iter().enumerate() {
@@ -810,6 +863,31 @@ mod tests {
             assert_eq!(find(Outline, &page(key)), Some(action), "{key}");
         }
         assert!(commands().iter().any(|c| c.action == NewFeature && !c.chords.is_empty()), "the palette writes one too");
+    }
+
+    /// Inside a feature the digits are its lenses, as in the terminal
+    /// client; Anywhere still has them as the stages, which the tab strip
+    /// answers to a click, and the lens keys shadow nothing else.
+    #[test]
+    fn inside_an_open_feature_the_digits_are_its_lenses() {
+        let find = |place: Place, key: &str| {
+            BINDINGS
+                .iter()
+                .filter(|b| b.place == place)
+                .find(|b| b.chords.iter().any(|c| c.matches(&page(key))))
+                .map(|b| b.action)
+        };
+        assert_eq!(find(Outline, "1"), Some(WorkLens));
+        assert_eq!(find(Outline, "2"), Some(Action::RecordLens));
+        assert_eq!(find(Outline, "3"), Some(Action::FlowsLens));
+        assert_eq!(find(Anywhere, "2"), Some(Action::Feature));
+        assert_eq!(find(Outline, "4"), None, "the console's digit still reaches it");
+        assert_eq!(find(Outline, "u"), Some(Supersede));
+        assert_eq!(find(Outline, "y"), Some(CopyRecord));
+        assert_eq!(find(Outline, "F"), Some(Expand));
+        for (key, action) in [("j", Next), ("+", ZoomIn), ("-", ZoomOut), ("0", ZoomReset), ("f", Fit), ("p", StepsPanel), ("d", Decide)] {
+            assert_eq!(find(Diagram, key), Some(action), "{key}");
+        }
     }
 
     /// A key the page compared by hand would run without being on the

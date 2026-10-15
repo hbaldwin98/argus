@@ -7,6 +7,7 @@
 // place of the index.
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
+import { closeExpanded } from './sequence.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { ticketLinks } from './tickets.js';
 import { actionFor } from './keymap.js';
@@ -80,15 +81,18 @@ function agentLine(agent) {
 function after(row) {
     return el('span', { class: 'mono' }, row.after.map((n) => `#${n}`).join(', '));
 }
-/** What a row says under its title: why it is where it is. */
+/** What a row says under its title: why it is where it is, or what comes
+ *  next and how its agent is doing. */
 function rowNote(row) {
     if (row.held) {
         return el('span', null, el('span', { class: 'fg-faint' }, 'held: '), `“${row.held}”`);
     }
     if (row.after.length)
         return el('span', null, el('span', { class: 'fg-faint' }, 'after '), after(row));
-    if (row.agent)
-        return agentLine(row.agent);
+    const next = row.next &&
+        el('span', { class: 'next' }, el('span', { class: 'fg-faint' }, 'next '), el('span', { class: 'mono fg-faint' }, row.next.label), ` ${row.next.text}`);
+    if (next || row.agent)
+        return [next, next && row.agent && ' · ', row.agent && agentLine(row.agent)];
     if (row.standing === 'new')
         return el('span', { class: 'fg-faint' }, 'nothing written yet');
     if (row.group === 'done') {
@@ -102,8 +106,10 @@ function empty(...body) {
     return el('div', { class: 'empty' }, el('div', { class: 'empty-body' }, body));
 }
 export function drawFeatures() {
-    if (state.rail.stage !== 'feature')
+    if (state.rail.stage !== 'feature') {
+        closeExpanded();
         return;
+    }
     if (captureOpen()) {
         drawCapture();
         return;
@@ -115,6 +121,7 @@ export function drawFeatures() {
         return;
     }
     state.editing = null;
+    closeExpanded();
     if (!f || !f.repository) {
         stage.replaceChildren(empty(icon('folder'), el('div', { class: 'type-title' }, 'No repository'), el('div', { class: 'fg-muted' }, 'Choose one on the left.')));
         return;
@@ -228,7 +235,29 @@ function peekPanel(peek) {
         return el('aside', { class: 'peek', 'aria-label': 'Peek' }, el('div', { class: 'meta' }, 'Choose a feature to peek at it.'));
     }
     const row = rowBySlug(peek.slug);
-    return el('aside', { class: 'peek', 'aria-label': `Peek at #${peek.number}` }, el('div', null, el('div', { class: 'label' }, el('span', { class: 'fg-accent' }, `#${peek.number}`), el('span', { class: GROUP_CLASS[peek.standing] ?? '' }, peek.standing), el('span', { class: 'grow' }), peek.branch && el('span', { class: 'label-aside' }, `from ${peek.branch}`)), el('div', { class: 'peek-title' }, peek.title), peek.held && el('div', { class: 'fg-attention' }, `held: “${peek.held}”`), peek.brief && el('div', { class: 'fg-muted peek-brief' }, peek.brief)), ticketLinks(peek.links), lines('Needs you', peek.needsYou, '?', NEEDS_YOU), lines('In flight', peek.inFlight, '◐', IN_FLIGHT), lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○', NEXT_UP), lines('Last decided', peek.lastDecided ? [peek.lastDecided] : [], '✓', LAST_DECIDED), el('div', { class: 'grow' }), el('div', { class: 'actions' }, el('button', { class: 'btn primary', onclick: () => call('open_feature', { slug: peek.slug }) }, 'Open'), el('button', { class: 'btn', disabled: peek.pane == null, onclick: () => goToPane(peek.pane) }, 'Go to its pane'), el('span', { class: 'grow' }), row && moveButtons(row)));
+    return el('aside', { class: 'peek', 'aria-label': `Peek at #${peek.number}` }, el('div', null, el('div', { class: 'label' }, el('span', { class: 'fg-accent' }, `#${peek.number}`), el('span', { class: GROUP_CLASS[peek.standing] ?? '' }, peek.standing), el('span', { class: 'grow' }), peek.branch && el('span', { class: 'label-aside' }, `from ${peek.branch}`)), el('div', { class: 'peek-title' }, peek.title), peek.held && el('div', { class: 'fg-attention' }, `held: “${peek.held}”`), peek.brief && el('div', { class: 'fg-muted peek-brief' }, peek.brief)), ticketLinks(peek.links), lines('Needs you', peek.needsYou, '?', NEEDS_YOU), lines('In flight', peek.inFlight, '◐', IN_FLIGHT), lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○', NEXT_UP), lines('Last decided', peek.lastDecided ? [peek.lastDecided] : [], '✓', LAST_DECIDED), el('div', { class: 'grow' }), el('div', { class: 'actions' }, el('button', { class: 'btn primary', onclick: () => call('open_feature', { slug: peek.slug }) }, 'Open'), el('button', { class: 'btn', disabled: peek.pane == null, onclick: () => goToPane(peek.pane) }, 'Go to its pane'), el('span', { class: 'grow' }), row && moveButtons(row), el('button', {
+        class: 'btn',
+        disabled: !peek.after.length,
+        onclick: (e) => afterMenu(peek, e.clientX, e.clientY),
+    }, 'After…')));
+}
+/** The features the peeked one may come after, ticked where it does
+ *  already; choosing one says so, or takes it back. */
+function afterMenu(peek, x, y) {
+    const menu = el('div', { class: 'menu', role: 'menu', 'aria-label': `#${peek.number} comes after` }, el('div', { class: 'mlabel' }, `#${peek.number} comes after…`), peek.after.map((choice) => el('button', {
+        class: 'mi',
+        role: 'menuitemcheckbox',
+        'aria-checked': String(choice.waits),
+        onclick: () => {
+            closeLayer();
+            call('wait', { slug: peek.slug, on: choice.slug, waits: !choice.waits });
+        },
+    }, el('span', { class: choice.waits ? 'fg-ok' : 'fg-faint' }, choice.waits ? '✓' : ' '), el('span', { class: 'mono fg-faint' }, `#${choice.number}`), el('span', { class: 'grow' }, choice.title), choice.waits && el('span', { class: 'meta' }, 'take back'))));
+    $('layer').replaceChildren(menu);
+    const box = menu.getBoundingClientRect();
+    menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
+    menu.style.top = `${Math.min(y, window.innerHeight - box.height - 8)}px`;
+    menu.querySelector('.mi')?.focus();
 }
 function moveButtons(row) {
     return [
@@ -309,7 +338,7 @@ function card(row) {
                 };
             }
         },
-    }, el('span', { class: 'krow' }, el('span', { class: `n${row.peeked ? ' fg-accent' : ''}` }, `#${row.number}`), el('span', { class: 'grow' }), corner), el('span', { class: 'kttl' }, row.title), work, row.agent && el('span', { class: 'krow meta' }, agentLine(row.agent)), row.held && el('span', { class: 'meta' }, `held: “${row.held}”`));
+    }, el('span', { class: 'krow' }, el('span', { class: `n${row.peeked ? ' fg-accent' : ''}` }, `#${row.number}`), el('span', { class: 'grow' }), corner), el('span', { class: 'kttl' }, row.title), work, row.agent && el('span', { class: 'krow meta' }, agentLine(row.agent)), row.held && el('span', { class: 'meta' }, `held: “${row.held}”`), el('span', { class: 'kfoot' }, row.footer));
     return node;
 }
 // ---- Dragging a card -------------------------------------------------------

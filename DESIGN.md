@@ -123,7 +123,7 @@ are the run's, since a restarted daemon's consoles are new shells under new ids.
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `settings`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
+`palette`, `shortcuts`, `settings`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
 `markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and
 `tickets` for a feature's ticket links),
@@ -262,7 +262,7 @@ live in this crate and a contract written twice drifts in silence.
 | `capture` | how one note reads as a feature — its title, brief, tasks and decisions — and what writing it down asks of the daemon |
 | `adr` | how a decision reads as a record somebody can paste or correct |
 | `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
-| `flow` | the steps a sequence diagram's source says, in the order it says them, and the lifelines they run between, and the source rewritten to bind a step, move it, or move a lifeline |
+| `flow` | the steps a sequence diagram's source says, in the order it says them, the lifelines they run between, and the source rewritten to bind a step, retell it, move it, or move a lifeline |
 | `board_follower` | how a client follows one repository's board: when it asks for the board and the feature's lists, which pushes it keeps, and where the cursor lands on a feature, task or diagram when one is replaced |
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
@@ -1763,6 +1763,23 @@ of it the same way, where the first line is a row rather than a title.
 
 The client still predicts nothing. Marking a task done sends the move and draws the mark when the
 pushed list says so; the one optimistic write the old view made is gone with it.
+
+The desktop window's Feature stage is the same object read the same way, built in Rust off the
+same `outline`, `standing` and `flow` (`feature_view` and a module per lens). Its index is a list
+grouped Active, Queued, Done — held and archived folded behind a toggle — beside a peek, or a board
+(`V`, remembered per repository in `desktop.json`) whose columns run Queued, Active, Done, then
+Archived and Held, each card's footer saying how it came to stand there and how long since the
+feature or a decision on it changed: the board keeps no history of moves, so that is the latest
+moment it can name. Only Held and Archived take a dropped card, a hold asking why, and each drop
+has its key (`H`, `Shift-A`) and its Move to… item; the peek's After… sets what a feature comes
+after. Inside a feature its header names the tickets it is linked to, and `1`, `2`, `3` are the
+lenses, heard before the stages' digits. The Record lens lists every decision as the tree it was
+made in, struck through once superseded or rejected; `u` supersedes the one under the cursor and
+`y` copies it as the ADR `adr` writes. The Flows lens draws the selected flow as an SVG beside its
+steps, and `F` expands it over the window with a flow switcher, zoom, Fit and the steps beside it.
+There a step's arrow dragged up or down, `J`/`K`, or a lifeline dragged sideways is sent as the
+flow's source rewritten by `flow` (`DiagramAction::Rewrite`), and the diagram moves when the pushed
+list says it did; no message names a step or a participant, since a flow is only its Mermaid.
 
 ### Sequence diagrams
 

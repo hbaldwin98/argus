@@ -1,11 +1,18 @@
-// A feature opened from the index: its tasks and the decisions raised under
-// them as one outline, the row under the cursor in full beside it, and the
-// edits a person makes to them in place. Every edit is sent as it stands and
-// the form closes; what the feature says changes only when the daemon's
-// pushed board and tasks do, so a refused edit leaves it as it was.
+// A feature opened from the index: its header, the lens it is read through,
+// and the Work lens — its tasks and the decisions raised under them as one
+// outline, the row under the cursor in full beside it, and the edits a
+// person makes to them in place. The Record and Flows lenses are
+// `record.ts`'s and `flows.ts`'s, and the forms here are theirs too. Every
+// edit is sent as it stands and the form closes; what the feature says
+// changes only when the daemon's pushed board, tasks and flows do, so a
+// refused edit leaves it as it was.
+import { notice } from './chrome.js';
+import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
 import { $, el } from './dom.js';
-import { ticketLinks } from './tickets.js';
+import { flowsAction, flowsLens } from './flows.js';
+import { ticketLink } from './tickets.js';
 import { actionFor } from './keymap.js';
+import { recordAction, recordLens } from './record.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 const TASK_MARK = {
@@ -18,10 +25,15 @@ const TASK_MARK = {
     withdrawn: ['⊘', 'fg-faint'],
     superseded: ['⊘', 'fg-faint'],
 };
-function edit(change) {
+export const LENSES = [
+    { lens: 'work', name: 'Work', key: '1' },
+    { lens: 'record', name: 'Record', key: '2' },
+    { lens: 'flows', name: 'Flows', key: '3' },
+];
+export function edit(change) {
     call('edit_feature', { edit: change });
 }
-function begin(editing) {
+export function begin(editing) {
     state.editing = editing;
     drawWork();
 }
@@ -69,12 +81,26 @@ function send(editing) {
                 edit({ on: 'addDecision', under: editing.under, task: editing.task, line: editing.text });
             }
             break;
+        case 'supersede':
+            if (editing.text.trim())
+                edit({ on: 'supersede', id: editing.id, line: editing.text });
+            break;
+        case 'addFlow':
+            if (editing.text.trim())
+                edit({ on: 'addFlow', title: editing.text });
+            break;
+        case 'flow':
+            edit({ on: 'flow', id: editing.id, title: editing.title, source: editing.text });
+            break;
+        case 'step':
+            edit({ on: 'stepText', diagram: editing.diagram, step: editing.step, text: editing.text });
+            break;
     }
 }
 /** A text field of the form being written: its keys are the keymap's
  *  Writing place, and what it holds is kept in `state.editing` so a push
  *  that redraws the feature does not lose it. */
-function field(id, value, multiline, keep, placeholder) {
+export function field(id, value, multiline, keep, placeholder) {
     const onkeydown = (e) => {
         const action = actionFor(['writing'], e);
         if (action === 'save' || (action === 'choose' && !multiline)) {
@@ -96,49 +122,74 @@ function field(id, value, multiline, keep, placeholder) {
         ? el('textarea', { class: 'field area', id, placeholder, oninput, onkeydown })
         : el('input', { class: 'field', id, placeholder, oninput, onkeydown });
     node.value = value;
+    node.dataset.editing = '';
     return node;
 }
-function formButtons(saveLabel) {
+export function formButtons(saveLabel) {
     return el('div', { class: 'actions' }, el('button', { class: 'btn primary', onclick: save }, saveLabel, el('span', { class: 'kbd on-accent' }, 'Ctrl Enter')), el('button', { class: 'btn', onclick: cancel }, 'Cancel'));
 }
 // ---- Drawing -----------------------------------------------------------------
 export function drawWork() {
     const view = state.features?.open;
-    if (!view)
+    if (!view) {
+        closeExpanded();
         return;
+    }
     const stage = $('fstage');
     // A redraw replaces the fields; the one being typed in keeps its caret.
     const active = document.activeElement;
     const focused = (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) &&
-        stage.contains(active)
+        (stage.contains(active) || active.closest('.expanded'))
         ? { id: active.id, start: active.selectionStart, end: active.selectionEnd }
         : null;
     if (!stillThere(view))
         state.editing = null;
-    stage.replaceChildren(head(view), el('div', { class: 'split' }, outline(view), detail(view)));
+    if (view.lens !== 'flows')
+        closeExpanded();
+    let body;
+    if (view.lens === 'record')
+        body = recordLens(view);
+    else if (view.lens === 'flows')
+        body = flowsLens(view);
+    else
+        body = el('div', { class: 'split' }, outline(view), detail(view));
+    stage.replaceChildren(head(view), body);
+    drawExpanded();
     const again = focused?.id ? document.getElementById(focused.id) : null;
     if (again instanceof HTMLInputElement || again instanceof HTMLTextAreaElement) {
         again.focus();
         again.setSelectionRange(focused?.start ?? null, focused?.end ?? null);
     }
     else {
-        const first = stage.querySelector('[data-editing]');
+        const first = document.querySelector('[data-editing]');
         if (first instanceof HTMLInputElement || first instanceof HTMLTextAreaElement) {
             first.focus();
             first.setSelectionRange(first.value.length, first.value.length);
         }
     }
-    stage.querySelector('.wrow.on')?.scrollIntoView({ block: 'nearest' });
+    stage.querySelector('.wrow.on, .rrow.on, .steprow.on')?.scrollIntoView({ block: 'nearest' });
 }
 /** Whether the form being written is still about something on screen. */
 function stillThere(view) {
     const editing = state.editing;
-    if (!editing || editing.what === 'brief' || editing.what === 'addTask')
+    if (!editing)
         return true;
-    const id = editing.what === 'addDecision'
-        ? (editing.under ?? editing.task)
-        : editing.id;
-    return id === null || view.rows.some((row) => row.at.id === id);
+    const onRow = (id) => id === null || view.rows.some((row) => row.at.id === id);
+    switch (editing.what) {
+        case 'brief':
+        case 'addTask':
+        case 'addFlow':
+            return true;
+        case 'addDecision':
+            return onRow(editing.under ?? editing.task);
+        case 'flow':
+        case 'step': {
+            const id = editing.what === 'flow' ? editing.id : editing.diagram;
+            return view.flows?.flows.some((flow) => flow.id === id) ?? false;
+        }
+        default:
+            return onRow(editing.id);
+    }
 }
 function head(view) {
     const editing = state.editing;
@@ -152,7 +203,6 @@ function head(view) {
     let brief;
     if (editing?.what === 'brief') {
         const area = field('edit-brief', editing.text, true, (text) => (editing.text = text), 'What is being built, and why');
-        area.dataset.editing = '';
         brief = el('div', { class: 'stack-6 brief-edit' }, area, formButtons('Save the brief'));
     }
     else {
@@ -160,13 +210,49 @@ function head(view) {
             ? el('div', { class: 'fg-muted prose' }, view.brief)
             : el('div', { class: 'fg-faint' }, 'No brief yet.'), el('button', { class: 'btn sm', onclick: () => begin({ what: 'brief', text: view.brief }) }, 'Edit brief'));
     }
-    return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, `#${view.number}`), el('span', { class: 'grow' }), el('span', { class: 'meta' }, el('span', { class: 'kbd' }, 'Esc'), ' back to features')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), el('span', { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` }, view.standing), el('span', { class: 'grow' }), ticketLinks(view.links), el('span', { class: 'meta' }, view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)], view.branch && view.agent && ' · ', view.agent && [
+    const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
+    return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, lensName), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('Esc'), ' back to features')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), el('span', { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` }, view.standing), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)], view.branch && view.agent && ' · ', view.agent && [
         el('span', { class: 'glyph' }, '◆'),
         ` ${view.agent.title} `,
         el('span', { class: `st ${view.agent.status}` }, view.agent.status),
-    ])), brief, el('div', { class: 'actions head-row' }, el('span', { class: 'pbar wide' }, progress), el('span', { class: 'meta' }, parts.flatMap((part, i) => (i ? [' · ', part] : [part]))), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('E'), ' edit · ', keycap('A'), ' task · ', keycap('S'), ' under it · ', keycap('D'), ' decision · ', keycap('B'), ' brief')));
+    ])), brief, el('div', { class: 'actions head-row' }, el('span', { class: 'pbar wide' }, progress), el('span', { class: 'meta' }, parts.flatMap((part, i) => (i ? [' · ', part] : [part]))), tickets(view)), el('div', { class: 'lens', role: 'tablist', 'aria-label': 'Lens' }, LENSES.map(({ lens, name, key }) => el('button', {
+        class: `lt${view.lens === lens ? ' on' : ''}`,
+        role: 'tab',
+        'aria-selected': String(view.lens === lens),
+        onclick: () => setLens(lens),
+    }, name, keycap(key))), el('span', { class: 'grow' }), el('span', { class: 'meta lens-keys' }, lensKeys(view.lens))));
 }
-function keycap(key) {
+/** The tickets the feature is linked to, each opening the view an agent
+ *  showed of it when one waits (`tickets.ts`). Linking and reconciling are
+ *  the tracker dialogs', which add their buttons to this row. */
+function tickets(view) {
+    return el('span', { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' }, view.links.map(ticketLink));
+}
+function lensKeys(lens) {
+    const keys = lens === 'record'
+        ? [
+            ['E', 'edit'],
+            ['U', 'supersede'],
+            ['Y', 'copy as ADR'],
+            ['D', 'decision'],
+        ]
+        : lens === 'flows'
+            ? [
+                ['F', 'expand'],
+                ['D', 'bind'],
+                ['E', 'source'],
+                ['A', 'flow'],
+            ]
+            : [
+                ['E', 'edit'],
+                ['A', 'task'],
+                ['S', 'under it'],
+                ['D', 'decision'],
+                ['B', 'brief'],
+            ];
+    return keys.flatMap(([key, what], i) => [i ? ' · ' : null, keycap(key), ` ${what}`]);
+}
+export function keycap(key) {
     return el('span', { class: 'kbd' }, key);
 }
 function outline(view) {
@@ -187,8 +273,11 @@ function outline(view) {
     }, '+ Decision')));
     return section;
 }
+export function stateMark(word) {
+    return TASK_MARK[word] ?? ['·', 'fg-faint'];
+}
 function workRow(row) {
-    const [mark, tone] = TASK_MARK[row.state] ?? ['·', 'fg-faint'];
+    const [mark, tone] = stateMark(row.state);
     const decision = row.at.kind === 'decision';
     const quiet = row.state === 'done' ||
         row.state === 'withdrawn' ||
@@ -208,7 +297,7 @@ function workRow(row) {
         ondblclick: () => editRow(),
     }, el('span', { class: tone }, mark), el('span', {
         class: `n${decision && row.state !== 'open' ? ' fg-ref' : ''}${row.state === 'open' ? ' fg-attention' : ''}`,
-    }, row.label), el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text), aside);
+    }, row.label), el('span', { class: 'wtext' }, el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text), row.key && el('span', { class: 'tkey' }, row.key)), aside);
     node.style.paddingLeft = `${8 + row.depth * 20}px`;
     return node;
 }
@@ -228,12 +317,12 @@ function adding(view, editing) {
             what = `Decision raised under task ${label(editing.task)}`;
         else
             what = 'Decision on the feature';
-        placeholder = '? a question still open, ~ an answer turned down, or what was decided';
+        placeholder = DECISION_LINE;
     }
     const input = field('edit-add', editing.text, false, (text) => (editing.text = text), placeholder);
-    input.dataset.editing = '';
     return el('div', { class: 'stack-4 work-add' }, el('div', { class: 'label' }, what), input, formButtons('Add'));
 }
+export const DECISION_LINE = '? a question still open, ~ an answer turned down, or what was decided';
 function detail(view) {
     if (view.task)
         return taskDetail(view, view.task);
@@ -241,10 +330,10 @@ function detail(view) {
         return decisionDetail(view.decision);
     return el('article', { class: 'work-detail' }, el('div', { class: 'meta' }, 'Choose a task or a decision to read it here.'));
 }
-function titled(label, ...body) {
+export function titled(label, ...body) {
     return el('div', { class: 'stack-4' }, el('div', { class: 'label' }, label), body);
 }
-function lineList(lines, mark, tone) {
+export function lineList(lines, mark, tone) {
     return lines.map((line) => el('div', null, el('span', { class: tone }, `${mark} `), el('span', { class: 'mono fg-ref' }, line.label), ' ', el('span', { class: 'fg-muted' }, line.text)));
 }
 function taskDetail(view, task) {
@@ -257,8 +346,8 @@ function taskDetail(view, task) {
     const top = el('div', null, el('div', { class: 'label' }, el('span', { class: 'fg-accent' }, `Task ${task.label}`), task.parent && el('span', { class: 'label-aside' }, `under ${task.parent}`)), el('div', { class: 'type-title detail-title' }, task.title), el('div', { class: 'meta' }, el('span', { class: task.state === 'doing' ? 'fg-attention' : task.state === 'done' ? 'fg-ok' : '' }, stateWord[task.state]), task.waitsOn && el('span', { class: 'fg-danger' }, ` · waits on ${task.waitsOn}`)));
     if (editing?.what === 'task' && editing.id === task.id) {
         const title = field('edit-task-title', editing.title, false, (text) => (editing.title = text), 'The task, in a line');
-        title.dataset.editing = '';
         const body = field('edit-task-body', editing.body, true, (text) => (editing.body = text), 'What it is, and anything the one doing it should know');
+        delete body.dataset.editing;
         return el('article', { class: 'work-detail', 'aria-label': `Task ${task.label}` }, el('div', { class: 'label fg-accent' }, `Editing task ${task.label}`), titled('Title', title), titled('Description', body), formButtons('Save the task'));
     }
     const criteria = task.criteria.map((criterion, index) => el('div', { class: 'crit' }, el('label', { class: 'check' }, el('input', {
@@ -274,7 +363,6 @@ function taskDetail(view, task) {
     let addCriterion = null;
     if (editing?.what === 'criterion' && editing.id === task.id) {
         const input = field('edit-criterion', editing.text, false, (text) => (editing.text = text), 'One checkable line');
-        input.dataset.editing = '';
         addCriterion = el('div', { class: 'stack-4' }, input, formButtons('Add'));
     }
     return el('article', { class: 'work-detail', 'aria-label': `Task ${task.label}` }, top, titled('Description', task.body
@@ -288,24 +376,30 @@ function taskDetail(view, task) {
     }, 'Raise a decision'), el('span', { class: 'grow' }), view.agent &&
         el('button', { class: 'btn primary', onclick: () => goToPane(view) }, 'Go to pane')));
 }
-function decisionDetail(decision) {
+/** A decision read as its record, in either lens: what made it necessary,
+ *  what was decided and why, what it costs and buys, what was turned down,
+ *  and what carries it out — or an open one's options to take. */
+export function decisionDetail(decision) {
     const editing = state.editing;
     const open = decision.state === 'open';
     const tone = open ? 'fg-attention' : decision.state === 'accepted' ? 'fg-ok' : 'fg-faint';
-    const top = el('div', null, el('div', { class: 'label' }, el('span', { class: `mono ${tone}` }, decision.label), el('span', { class: tone }, decision.state), el('span', { class: 'grow' }), decision.raisedUnder &&
-        el('span', { class: 'label-aside' }, `raised under ${decision.raisedUnder}`)), el('div', { class: 'type-title detail-title' }, decision.chose), decision.withdrawn &&
+    const top = el('div', null, el('div', { class: 'label' }, el('span', { class: `mono ${tone}` }, decision.label), el('span', { class: tone }, decision.state), el('span', { class: 'grow' }), el('span', { class: 'label-aside' }, decision.raisedUnder ? `raised under ${decision.raisedUnder} · ` : '', decision.by)), el('div', { class: 'type-title detail-title' }, decision.chose), decision.supersededBy &&
+        el('div', { class: 'meta' }, `Superseded by ${decision.supersededBy}: kept on the record.`), decision.withdrawn &&
         el('div', { class: 'meta' }, 'Withdrawn: kept on the record, and no longer shown to agents.'));
     if (editing?.what === 'record' && editing.id === decision.id) {
         const area = field('edit-record', editing.text, true, (text) => (editing.text = text), '');
-        area.dataset.editing = '';
         area.classList.add('mono', 'tall');
         return el('article', { class: 'work-detail', 'aria-label': `Decision ${decision.label}` }, el('div', { class: 'label fg-accent' }, `Editing ${decision.label} as its record`), area, el('div', { class: 'meta' }, 'The first line is the decision. Each ', el('span', { class: 'mono' }, '## section'), ' is a part of the record; under Consequences, + is a gain and - a cost.'), formButtons('Save the record'));
     }
     if (editing?.what === 'answer' && editing.id === decision.id) {
         const answer = field('edit-answer', editing.text, true, (text) => (editing.text = text), 'What was decided');
-        answer.dataset.editing = '';
         const because = field('edit-because', editing.because, false, (text) => (editing.because = text), 'Why, if it needs saying');
+        delete because.dataset.editing;
         return el('article', { class: 'work-detail', 'aria-label': `Decision ${decision.label}` }, top, titled('Answer', answer), titled('Because', because), el('div', { class: 'meta' }, 'The options not taken stay listed as rejected.'), formButtons('Answer it'));
+    }
+    if (editing?.what === 'supersede' && editing.id === decision.id) {
+        const line = field('edit-supersede', editing.text, false, (text) => (editing.text = text), DECISION_LINE);
+        return el('article', { class: 'work-detail', 'aria-label': `Decision ${decision.label}` }, top, titled(`What takes ${decision.label}'s place`, line), el('div', { class: 'meta' }, `${decision.label} stays on the record, dimmed, with what replaced it.`), formButtons('Supersede'));
     }
     const body = [top];
     if (decision.context)
@@ -320,8 +414,9 @@ function decisionDetail(decision) {
         if (decision.consequences.length) {
             body.push(titled('Consequences', decision.consequences.map((line) => el('div', { class: line.startsWith('+') ? 'fg-ok' : 'fg-attention' }, line))));
         }
-        if (decision.over)
-            body.push(titled('Considered', el('div', { class: 'fg-muted prose' }, decision.over)));
+    }
+    if (decision.over || decision.considered.length) {
+        body.push(titled('Considered', decision.over && el('div', { class: 'fg-muted prose' }, decision.over), decision.considered.map((line) => el('div', null, el('span', { class: 'fg-faint' }, '✕ '), el('span', { class: 'mono fg-faint' }, line.label), ' ', el('span', { class: 'fg-muted struck' }, line.text), line.aside && el('div', { class: 'meta indented' }, `rejected: ${line.aside}`)))));
     }
     if (decision.carriedOutBy.length)
         body.push(titled('Carried out by', lineList(decision.carriedOutBy, '·', 'fg-faint')));
@@ -339,10 +434,11 @@ function decisionDetail(decision) {
             class: 'btn',
             onclick: () => begin({ what: 'answer', id: decision.id, text: '', because: '' }),
         }, 'Answer in words…'),
-    ], el('span', { class: 'grow' }), open && el('span', { class: 'meta' }, 'The others stay listed as rejected.'), el('button', { class: 'btn', onclick: () => editRow() }, 'Edit record'), el('button', {
+    ], el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'), el('button', {
         class: 'btn',
         onclick: () => begin({ what: 'addDecision', under: decision.id, task: null, text: '' }),
-    }, 'Sub-decision'), el('button', {
+    }, 'Sub-decision'), !decision.supersededBy &&
+        el('button', { class: 'btn', onclick: () => begin({ what: 'supersede', id: decision.id, text: '' }) }, 'Supersede…'), el('button', { class: 'btn', onclick: () => copyRecord(decision) }, 'Copy as ADR'), el('button', {
         class: 'btn',
         onclick: () => edit({ on: 'withdraw', id: decision.id, withdrawn: !decision.withdrawn }),
     }, decision.withdrawn ? 'Restore' : 'Withdraw')));
@@ -366,12 +462,26 @@ function options(decision) {
         }), el('span', { class: 'stack-2' }, el('span', { class: 'meta' }, `Option ${index + 1}`), el('span', { class: 'strong' }, option)));
     }));
 }
+export function editDecision(decision) {
+    begin({ what: 'record', id: decision.id, text: decision.document });
+}
+export function copyRecord(decision) {
+    navigator.clipboard
+        ?.writeText(decision.adr)
+        .then(() => notice(`Copied ${decision.label} as ADR markdown.`))
+        .catch(() => notice('The clipboard refused the record.'));
+}
 // ---- Keys --------------------------------------------------------------------
 function closeFeature() {
     state.editing = null;
+    closeExpanded();
     call('open_feature', { slug: null });
 }
-function goToPane(view) {
+export function setLens(lens) {
+    state.editing = null;
+    call('set_lens', { lens });
+}
+export function goToPane(view) {
     if (view.agent)
         call('go_to_pane', { pane: view.agent.pane });
 }
@@ -384,7 +494,7 @@ function editRow() {
     if (view.task)
         begin({ what: 'task', id: view.task.id, title: view.task.title, body: view.task.body });
     else if (view.decision)
-        begin({ what: 'record', id: view.decision.id, text: view.decision.document });
+        editDecision(view.decision);
     else
         begin({ what: 'brief', text: view.brief });
 }
@@ -392,18 +502,49 @@ export function workOpen() {
     return state.rail.stage === 'feature' && state.features?.open != null;
 }
 /** Escape on an open feature: the form being written goes first, then the
- *  feature, back to the index. */
+ *  expanded diagram, then the feature, back to the index. */
 export function leaveWork() {
     if (state.editing)
         cancel();
+    else if (state.expanded) {
+        closeExpanded();
+        drawWork();
+    }
     else
         closeFeature();
 }
-/** Runs an open feature's binding, saying whether it had anything to do. */
+/** Runs an open feature's binding, saying whether it had anything to do:
+ *  the lens keys and the ones every lens shares here, the rest by the lens
+ *  read. */
 export function workAction(action) {
     const view = state.features?.open;
     if (!view)
         return false;
+    switch (action) {
+        case 'workLens':
+            setLens('work');
+            return true;
+        case 'recordLens':
+            setLens('record');
+            return true;
+        case 'flowsLens':
+            setLens('flows');
+            return true;
+        case 'brief':
+            begin({ what: 'brief', text: view.brief });
+            return true;
+        case 'goToPane':
+            goToPane(view);
+            return true;
+        default:
+            break;
+    }
+    if (state.expanded)
+        return diagramAction(action);
+    if (view.lens === 'record')
+        return recordAction(view, action);
+    if (view.lens === 'flows')
+        return flowsAction(view, action);
     const at = view.rows.findIndex((row) => row.on);
     const selectAt = (i) => {
         const row = view.rows[Math.max(0, Math.min(view.rows.length - 1, i))];
@@ -426,9 +567,6 @@ export function workAction(action) {
         case 'edit':
             editRow();
             return true;
-        case 'brief':
-            begin({ what: 'brief', text: view.brief });
-            return true;
         case 'addTask':
             begin({ what: 'addTask', parent: null, text: '' });
             return true;
@@ -441,18 +579,29 @@ export function workAction(action) {
         case 'decide':
             begin({ what: 'addDecision', under: null, task: view.task?.id ?? null, text: '' });
             return true;
+        default:
+            return view.decision ? decisionAction(view.decision, action) : false;
+    }
+}
+/** The keys a decision answers wherever it is read. */
+export function decisionAction(decision, action) {
+    switch (action) {
         case 'answer':
-            if (view.decision?.state === 'open') {
-                begin({ what: 'answer', id: view.decision.id, text: '', because: '' });
+            if (decision.state === 'open') {
+                begin({ what: 'answer', id: decision.id, text: '', because: '' });
             }
             return true;
         case 'withdraw':
-            if (view.decision) {
-                edit({ on: 'withdraw', id: view.decision.id, withdrawn: !view.decision.withdrawn });
-            }
+            edit({ on: 'withdraw', id: decision.id, withdrawn: !decision.withdrawn });
             return true;
-        case 'goToPane':
-            goToPane(view);
+        case 'supersede':
+            if (decision.supersededBy)
+                notice(`${decision.label} is superseded already.`);
+            else
+                begin({ what: 'supersede', id: decision.id, text: '' });
+            return true;
+        case 'copyRecord':
+            copyRecord(decision);
             return true;
         default:
             return false;

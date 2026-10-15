@@ -25,7 +25,15 @@ export type Editing =
   | { what: 'answer'; id: number; text: string; because: string }
   | { what: 'criterion'; id: number; text: string }
   | { what: 'addTask'; parent: number | null; text: string }
-  | { what: 'addDecision'; under: number | null; task: number | null; text: string };
+  | { what: 'addDecision'; under: number | null; task: number | null; text: string }
+  | { what: 'supersede'; id: number; text: string }
+  | { what: 'addFlow'; text: string }
+  | { what: 'flow'; id: number; title: string; text: string }
+  | { what: 'step'; diagram: number; step: number; text: string };
+
+/** The selected flow's diagram over the whole window: how it is sized, and
+ *  whether the steps are listed beside it. The page's own, like a filter. */
+export type Expanded = { zoom: number; fit: boolean; panel: boolean };
 
 export const state: {
   status: Status;
@@ -36,6 +44,8 @@ export const state: {
   editing: Editing | null;
   /** The option picked on an open decision, before it is taken. */
   chosen: { id: number; option: number } | null;
+  /** The flow's diagram expanded over the window, while it is. */
+  expanded: Expanded | null;
   /** Every binding, as `src/keymap.rs` groups them. */
   keymap: Group[];
   /** What the palette offers to run, from the same table. */
@@ -91,6 +101,7 @@ export const state: {
   capture: null,
   editing: null,
   chosen: null,
+  expanded: null,
   keymap: [],
   commands: [],
   palette: null,

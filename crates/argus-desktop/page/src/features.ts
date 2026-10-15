@@ -14,6 +14,7 @@ import type { Line } from './bindings/Line';
 import type { Peek } from './bindings/Peek';
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
+import { closeExpanded } from './sequence.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
 import { ticketLinks } from './tickets.js';
 import { actionFor } from './keymap.js';
@@ -92,14 +93,25 @@ function after(row: FeatureRow): HTMLElement {
   return el('span', { class: 'mono' }, row.after.map((n) => `#${n}`).join(', '));
 }
 
-/** What a row says under its title: why it is where it is. */
+/** What a row says under its title: why it is where it is, or what comes
+ *  next and how its agent is doing. */
 function rowNote(row: FeatureRow): Child {
   if (row.held) {
     return el('span', null, el('span', { class: 'fg-faint' }, 'held: '), `“${row.held}”`);
   }
   if (row.after.length)
     return el('span', null, el('span', { class: 'fg-faint' }, 'after '), after(row));
-  if (row.agent) return agentLine(row.agent);
+  const next =
+    row.next &&
+    el(
+      'span',
+      { class: 'next' },
+      el('span', { class: 'fg-faint' }, 'next '),
+      el('span', { class: 'mono fg-faint' }, row.next.label),
+      ` ${row.next.text}`,
+    );
+  if (next || row.agent)
+    return [next, next && row.agent && ' · ', row.agent && agentLine(row.agent)];
   if (row.standing === 'new') return el('span', { class: 'fg-faint' }, 'nothing written yet');
   if (row.group === 'done') {
     return el('span', { class: 'fg-faint' }, 'every task done · archive it to accept it');
@@ -113,7 +125,10 @@ function empty(...body: Child[]): HTMLElement {
 }
 
 export function drawFeatures(): void {
-  if (state.rail.stage !== 'feature') return;
+  if (state.rail.stage !== 'feature') {
+    closeExpanded();
+    return;
+  }
   if (captureOpen()) {
     drawCapture();
     return;
@@ -125,6 +140,7 @@ export function drawFeatures(): void {
     return;
   }
   state.editing = null;
+  closeExpanded();
   if (!f || !f.repository) {
     stage.replaceChildren(
       empty(
@@ -411,8 +427,50 @@ function peekPanel(peek: Peek | null): HTMLElement {
       ),
       el('span', { class: 'grow' }),
       row && moveButtons(row),
+      el(
+        'button',
+        {
+          class: 'btn',
+          disabled: !peek.after.length,
+          onclick: (e: MouseEvent) => afterMenu(peek, e.clientX, e.clientY),
+        },
+        'After…',
+      ),
     ),
   );
+}
+
+/** The features the peeked one may come after, ticked where it does
+ *  already; choosing one says so, or takes it back. */
+function afterMenu(peek: Peek, x: number, y: number): void {
+  const menu = el(
+    'div',
+    { class: 'menu', role: 'menu', 'aria-label': `#${peek.number} comes after` },
+    el('div', { class: 'mlabel' }, `#${peek.number} comes after…`),
+    peek.after.map((choice) =>
+      el(
+        'button',
+        {
+          class: 'mi',
+          role: 'menuitemcheckbox',
+          'aria-checked': String(choice.waits),
+          onclick: () => {
+            closeLayer();
+            call('wait', { slug: peek.slug, on: choice.slug, waits: !choice.waits });
+          },
+        },
+        el('span', { class: choice.waits ? 'fg-ok' : 'fg-faint' }, choice.waits ? '✓' : ' '),
+        el('span', { class: 'mono fg-faint' }, `#${choice.number}`),
+        el('span', { class: 'grow' }, choice.title),
+        choice.waits && el('span', { class: 'meta' }, 'take back'),
+      ),
+    ),
+  );
+  $('layer').replaceChildren(menu);
+  const box = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - box.height - 8)}px`;
+  menu.querySelector<HTMLElement>('.mi')?.focus();
 }
 
 function moveButtons(row: FeatureRow): HTMLElement[] {
@@ -557,6 +615,7 @@ function card(row: FeatureRow): HTMLElement {
     work,
     row.agent && el('span', { class: 'krow meta' }, agentLine(row.agent)),
     row.held && el('span', { class: 'meta' }, `held: “${row.held}”`),
+    el('span', { class: 'kfoot' }, row.footer),
   );
   return node;
 }
