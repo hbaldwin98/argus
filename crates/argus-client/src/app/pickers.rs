@@ -7,6 +7,7 @@
 //! cursor and the one that confirms is how you act on the wrong row.
 
 use super::*;
+use argus_protocol::column_verbs::Verb;
 
 impl App {
     /// Opens the directory browser at wherever the daemon thinks a browse
@@ -190,15 +191,11 @@ impl App {
                         base: c.id,
                         input: String::new(),
                     });
-                } else if let Some(branch) = self.current_branch_row().map(str::to_string) {
+                } else if self.current_branch_row().is_some() {
                     // The name is not the question here — this branch is —
                     // so there is nothing to prompt for.
-                    let Some(base) = self.primary_checkout().map(|c| c.id) else {
-                        return;
-                    };
-                    let _ = self.out.send(ClientMsg::CreateWorktree {
-                        checkout: base,
-                        branch,
+                    self.send_row_verb(Verb::NewWorktree {
+                        name: None,
                         request_id: 0,
                     });
                 }
@@ -226,10 +223,9 @@ impl App {
     /// repositories, or a checkout. No-op in the pane columns — a pane is
     /// killed with `x`, not removed.
     ///
-    /// Removing a checkout is refused client-side for the primary one — the
-    /// repo the user already had, not Argus's to delete — so there's no
-    /// round-trip just to be told no (the daemon refuses it too, as defense
-    /// in depth).
+    /// A checkouts row's refusals — the primary checkout, the main branch,
+    /// a remote-only branch — are said here rather than after a round-trip
+    /// (the daemon refuses the primary too, as defense in depth).
     pub(super) fn remove_prompt(&mut self) {
         let (target, label) = match self.acting_focus() {
             Focus::Projects => {
@@ -244,38 +240,26 @@ impl App {
                 };
                 (RemoveTarget::Repository(r.id), r.name.clone())
             }
-            // Deleting a remote branch is a push, which is not what `D`
-            // does anywhere else in this column.
-            Focus::Checkouts if self.current_remote_row().is_some() => {
-                self.report("that branch is on the remote; nothing here deletes it");
-                return;
-            }
-            // A branch row has no directory to remove, so `D` there is
-            // about the branch itself.
-            Focus::Checkouts if self.current_branch_row().is_some() => {
-                let branch = self.current_branch_row().unwrap().to_string();
-                let Some(checkout) = self.primary_checkout().map(|c| c.id) else {
-                    self.report("no checkout to delete the branch from");
-                    return;
-                };
-                (
-                    RemoveTarget::Branch {
-                        checkout,
-                        branch: branch.clone(),
-                        force: false,
-                    },
-                    branch,
-                )
-            }
+            // What `D` on a checkouts row sends, or why it sends nothing,
+            // is `column_verbs`'s; this only asks before sending it.
             Focus::Checkouts => {
-                let Some(c) = self.current_checkout() else {
+                let Some(row) = self.selected_checkout_row() else {
                     return;
                 };
-                if c.primary {
-                    self.report("can't remove the primary checkout");
+                let Some(label) = self.checkout_row_label(row) else {
                     return;
+                };
+                match self.row_verb(Verb::Remove) {
+                    Some(Ok(msg)) => match RemoveTarget::of(msg) {
+                        Some(target) => (target, label),
+                        None => return,
+                    },
+                    Some(Err(refusal)) => {
+                        self.report(refusal);
+                        return;
+                    }
+                    None => return,
                 }
-                (RemoveTarget::Checkout(c.id), c.name.clone())
             }
             _ => return,
         };
@@ -727,21 +711,9 @@ impl App {
                         prompt: None,
                         request_id,
                     });
-                } else if let Some(branch) = self.current_branch_row().map(str::to_string) {
-                    let Some(base) = self.primary_checkout().map(|c| c.id) else {
-                        self.report("no checkout to branch from");
-                        return;
-                    };
-                    // The worktree first, then the agent in it once the
-                    // daemon says which checkout it made.
+                } else {
                     let template = name.to_string();
-                    let request_id = self.awaited.ask(Then::SpawnAgent { template });
-                    let _ = self.out.send(ClientMsg::CreateWorktree {
-                        checkout: base,
-                        branch,
-                        request_id,
-                    });
-                    self.report("creating worktree…");
+                    self.branch_worktree_then(Then::SpawnAgent { template });
                 }
             }
             PickerKind::Host { hosts, .. } => {

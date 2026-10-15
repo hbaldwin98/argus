@@ -315,12 +315,12 @@ impl App {
                 branch,
                 commits,
             } => {
+                let forced = argus_protocol::column_verbs::force_delete(checkout, branch.clone());
+                let Some(target) = RemoveTarget::of(forced) else {
+                    return;
+                };
                 self.prompt = Some(Prompt::ConfirmRemove {
-                    target: RemoveTarget::Branch {
-                        checkout,
-                        branch: branch.clone(),
-                        force: true,
-                    },
+                    target,
                     label: branch,
                     lost: commits,
                 });

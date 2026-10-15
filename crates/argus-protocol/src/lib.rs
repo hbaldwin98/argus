@@ -13,6 +13,7 @@ pub mod artifacts;
 pub mod capture;
 pub mod cell;
 pub mod column;
+pub mod column_verbs;
 pub mod damage;
 pub mod decisions;
 pub mod diagrams;
@@ -105,6 +106,7 @@ pub use tracker_links::{
     MAX_LINK_KEY_BYTES, MAX_LINK_TRACKER_BYTES, MAX_LINK_URL_BYTES, MAX_TRACKER_MAP_BYTES,
 };
 pub use column::CheckoutRow;
+pub use column_verbs::Verb;
 pub use tree::{
     AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneState, PaneStatus,
     ProjectInfo, RepositoryInfo, WorkspaceInfo,
