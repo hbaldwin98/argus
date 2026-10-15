@@ -5,8 +5,10 @@ import type { Stat } from './bindings/Stat';
 import { toneClass } from './chip.js';
 import { spark } from './chart.js';
 import { el } from './dom.js';
+import { opensMark } from './savedlink.js';
+import type { ViewCtx } from './viewctx.js';
 
-export function stats(list: readonly Stat[]): HTMLElement {
+export function stats(list: readonly Stat[], ctx: ViewCtx): HTMLElement {
   return el(
     'div',
     { class: 'vstats' },
@@ -14,7 +16,7 @@ export function stats(list: readonly Stat[]): HTMLElement {
       el(
         'div',
         { class: `vstat ${toneClass(s.tone)}` },
-        el('span', { class: 'vstat-label' }, s.label),
+        el('span', { class: 'vstat-label' }, s.label, opensMark(s.opens, ctx)),
         el('span', { class: 'vstat-value' }, s.value),
         s.delta != null
           ? el(

@@ -76,9 +76,9 @@ function drop(panel: Panel, target: Target): void {
 }
 
 /** The console has the Console stage and an extension's view its page;
- *  the agents' views are only ever docked. */
+ *  the agents' views and the saved views are only ever docked. */
 function hasStage(panel: Panel): boolean {
-  return panel !== 'views';
+  return panel !== 'views' && !panel.startsWith('saved:');
 }
 
 function box(id: string): Box {

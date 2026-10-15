@@ -1,13 +1,15 @@
 // A checklist view block: what is done and what is not.
 
 import { el } from './dom.js';
+import { opensMark } from './savedlink.js';
+import type { ViewCtx } from './viewctx.js';
 import type { Block } from './bindings/Block';
 
 const CHECK =
   '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5l3 3 5-6"></path></svg>';
 
 /** Read-only: the agent keeps the list, the person only reads it. */
-export function checklist(block: Extract<Block, { kind: 'checklist' }>): HTMLElement {
+export function checklist(block: Extract<Block, { kind: 'checklist' }>, ctx: ViewCtx): HTMLElement {
   const done = block.items.filter((item) => item.done).length;
   return el(
     'div',
@@ -26,6 +28,7 @@ export function checklist(block: Extract<Block, { kind: 'checklist' }>): HTMLEle
           box,
           el('span', { class: 'sr-only' }, item.done ? 'Done: ' : 'Not done: '),
           el('span', { class: 'vcheck-label' }, item.label),
+          opensMark(item.opens, ctx),
           item.note && el('span', { class: 'vcheck-note' }, item.note),
         );
       }),

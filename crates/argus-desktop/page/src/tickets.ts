@@ -5,7 +5,10 @@
 
 import type { FeatureViewLink } from './bindings/FeatureViewLink';
 import type { Link } from './bindings/Link';
+import type { PageSaved } from './bindings/PageSaved';
 import { el } from './dom.js';
+import { forFeature } from './saved_logic.js';
+import { state } from './state.js';
 import { call } from './tauri.js';
 import { viewOf } from './views.js';
 
@@ -49,6 +52,31 @@ export function featureViewLink(link: FeatureViewLink): HTMLElement {
       },
     },
     el('b', null, link.title),
+    el('span', { class: 'vdot', 'aria-hidden': 'true' }),
+  );
+}
+
+/** The saved views scoped or attached to feature `number` of the chosen
+ *  repository, each opening its panel. */
+export function savedFeatureLinks(number: number): HTMLElement[] {
+  return forFeature(state.saved?.views ?? [], state.rail.repository, number).map(savedFeatureLink);
+}
+
+function savedFeatureLink(view: PageSaved): HTMLElement {
+  return el(
+    'button',
+    {
+      class: view.stale ? 'track viewed stale' : 'track viewed',
+      type: 'button',
+      title: view.stale
+        ? 'A saved view of this feature, out of date'
+        : 'A saved view of this feature',
+      onclick: (event: MouseEvent) => {
+        event.stopPropagation();
+        call('open_saved_view', { id: view.id, from: null });
+      },
+    },
+    el('b', null, view.view.title),
     el('span', { class: 'vdot', 'aria-hidden': 'true' }),
   );
 }

@@ -5,16 +5,20 @@ import type { Item } from './bindings/Item';
 import { chip } from './chip.js';
 import { el } from './dom.js';
 import { markdown } from './markdown.js';
+import { opensMark } from './savedlink.js';
 import { ago, person } from './values.js';
 import type { ViewCtx } from './viewctx.js';
 
 export function list(items: readonly Item[], ctx: ViewCtx | null = null): HTMLElement {
-  void ctx;
   if (items.length === 0) return el('div', { class: 'vlist vlist-empty' }, 'Nothing yet');
-  return el('div', { class: 'vlist' }, items.map(row));
+  return el(
+    'div',
+    { class: 'vlist' },
+    items.map((item) => row(item, ctx)),
+  );
 }
 
-function row(item: Item): HTMLElement {
+function row(item: Item, ctx: ViewCtx | null): HTMLElement {
   const event = item.who == null;
   const meta = [
     item.who != null ? person(item.who) : null,
@@ -28,7 +32,13 @@ function row(item: Item): HTMLElement {
     el(
       'div',
       { class: 'vlist-main' },
-      el('div', { class: 'vlist-meta' }, item.title != null && event ? titleOf(item) : null, meta),
+      el(
+        'div',
+        { class: 'vlist-meta' },
+        item.title != null && event ? titleOf(item) : null,
+        meta,
+        opensMark(item.opens, ctx),
+      ),
       item.title != null && !event ? titleOf(item) : null,
       item.body ? el('div', { class: 'vlist-body' }, markdown(item.body)) : null,
     ),

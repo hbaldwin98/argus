@@ -3,11 +3,13 @@
 import { toneClass } from './chip.js';
 import { el } from './dom.js';
 import { markdown } from './markdown.js';
+import { opensMark } from './savedlink.js';
+import type { ViewCtx } from './viewctx.js';
 import { ago } from './values.js';
 import type { Block } from './bindings/Block';
 import type { TimelineEvent } from './bindings/TimelineEvent';
 
-function event(e: TimelineEvent, lane: string | null): HTMLElement {
+function event(e: TimelineEvent, lane: string | null, ctx: ViewCtx): HTMLElement {
   return el(
     'div',
     { class: `vtl-event ${toneClass(e.tone)}` },
@@ -18,13 +20,13 @@ function event(e: TimelineEvent, lane: string | null): HTMLElement {
       'div',
       { class: 'vtl-main' },
       lane != null && el('div', { class: 'vtl-lane-tag' }, lane),
-      el('div', { class: 'vtl-title' }, e.title),
+      el('div', { class: 'vtl-title' }, e.title, opensMark(e.opens, ctx)),
       e.body && el('div', { class: 'vtl-body' }, markdown(e.body)),
     ),
   );
 }
 
-export function timeline(block: Extract<Block, { kind: 'timeline' }>): HTMLElement {
+export function timeline(block: Extract<Block, { kind: 'timeline' }>, ctx: ViewCtx): HTMLElement {
   const lanes: string[] = [];
   for (const e of block.events) {
     if (e.lane != null && !lanes.includes(e.lane)) lanes.push(e.lane);
@@ -33,7 +35,7 @@ export function timeline(block: Extract<Block, { kind: 'timeline' }>): HTMLEleme
     return el(
       'div',
       { class: 'vtl' },
-      block.events.map((e) => event(e, null)),
+      block.events.map((e) => event(e, null, ctx)),
     );
   }
   // One row per event, so row N of every lane is one step of the story and
@@ -44,7 +46,7 @@ export function timeline(block: Extract<Block, { kind: 'timeline' }>): HTMLEleme
   const rows = block.events.map((e) => {
     const own = e.lane ?? lanes[0]!;
     return lanes.map((lane) =>
-      lane === own ? event(e, own) : el('div', { class: 'vtl-gap', 'aria-hidden': 'true' }),
+      lane === own ? event(e, own, ctx) : el('div', { class: 'vtl-gap', 'aria-hidden': 'true' }),
     );
   });
   return el(

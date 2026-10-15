@@ -26,6 +26,7 @@ import { call, connect } from './tauri.js';
 import { drawViews, openNewestView } from './views.js';
 import { drawExtensionDialog } from './dialogs.js';
 import { drawExtensionConfirm, drawExtensionPanels } from './extension_views.js';
+import { drawSavedNav, drawSavedPanels } from './saved_views.js';
 /** Whether the pane had the keys when a dialog opened over it. */
 let paneHadKeys = false;
 /** A dialog opened from a pane (leader-Tab) takes the keys from it, and
@@ -54,6 +55,8 @@ function receive(event) {
             state.docks = event;
             drawDocks();
             drawViews();
+            // Which saved panel is out marks its entry in the sidebar.
+            drawSavedNav();
             break;
         case 'console': {
             const before = state.console?.typing ?? null;
@@ -153,6 +156,13 @@ function receive(event) {
         case 'views':
             drawViews(event);
             // A ticket link says when a view of it waits.
+            drawFeatures();
+            break;
+        case 'savedViews':
+            state.saved = event;
+            drawSavedPanels();
+            drawSavedNav();
+            // The views of a feature are listed on its stage.
             drawFeatures();
             break;
         case 'chime':

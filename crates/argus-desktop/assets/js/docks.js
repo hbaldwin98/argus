@@ -9,6 +9,7 @@ import { $, el } from './dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
 import { extensionElement, extensionOnStage } from './extension_views.js';
+import { savedElement } from './saved_views.js';
 import { contextMenu } from './menu.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -52,6 +53,8 @@ function element(panel) {
         return state.console?.place === 'docked' ? $('console') : null;
     if (panel === 'views')
         return $('views');
+    if (panel.startsWith('saved:'))
+        return savedElement(panel);
     return extensionOnStage(panel) ? null : extensionElement(panel);
 }
 /** Puts each dock's shown panel in it and parks the rest; the console on

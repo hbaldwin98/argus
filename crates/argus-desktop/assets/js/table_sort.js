@@ -42,6 +42,8 @@ function sortKey(v) {
             return v.number;
         case 'pane':
             return (v.label ?? String(v.pane)).toLowerCase();
+        case 'view':
+            return (v.label ?? v.id).toLowerCase();
         case 'empty':
         case 'unknown':
             return '';

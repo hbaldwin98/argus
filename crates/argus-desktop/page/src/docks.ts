@@ -13,6 +13,7 @@ import { $, el, type IconName } from './dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
 import { extensionElement, extensionOnStage } from './extension_views.js';
+import { savedElement } from './saved_views.js';
 import { contextMenu, type MenuItem } from './menu.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -62,6 +63,7 @@ export function moveItems(panel: Panel, docked: boolean): MenuItem[] {
 function element(panel: Panel): HTMLElement | null {
   if (panel === 'console') return state.console?.place === 'docked' ? $('console') : null;
   if (panel === 'views') return $('views');
+  if (panel.startsWith('saved:')) return savedElement(panel);
   return extensionOnStage(panel) ? null : extensionElement(panel);
 }
 

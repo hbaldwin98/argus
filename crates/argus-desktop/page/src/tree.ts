@@ -2,6 +2,7 @@
 
 import { chip } from './chip.js';
 import { el, icon } from './dom.js';
+import { opensMark } from './savedlink.js';
 import { value } from './values.js';
 import type { Block } from './bindings/Block';
 import type { TreeNode } from './bindings/TreeNode';
@@ -53,6 +54,7 @@ function rows(
           )
         : el('span', { class: 'vtree-chev', 'aria-hidden': 'true' }),
       el('span', { class: 'vtree-label' }, node.label),
+      opensMark(node.opens, ctx),
       node.value && el('span', { class: 'vtree-value' }, value(node.value, ctx)),
       node.chip && el('span', { class: 'vtree-chip' }, chip(node.chip)),
     );

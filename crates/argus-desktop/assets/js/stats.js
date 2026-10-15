@@ -3,8 +3,9 @@
 import { toneClass } from './chip.js';
 import { spark } from './chart.js';
 import { el } from './dom.js';
-export function stats(list) {
-    return el('div', { class: 'vstats' }, list.map((s) => el('div', { class: `vstat ${toneClass(s.tone)}` }, el('span', { class: 'vstat-label' }, s.label), el('span', { class: 'vstat-value' }, s.value), s.delta != null
+import { opensMark } from './savedlink.js';
+export function stats(list, ctx) {
+    return el('div', { class: 'vstats' }, list.map((s) => el('div', { class: `vstat ${toneClass(s.tone)}` }, el('span', { class: 'vstat-label' }, s.label, opensMark(s.opens, ctx)), el('span', { class: 'vstat-value' }, s.value), s.delta != null
         ? el('span', { class: s.tone === 'neutral' ? 'vstat-delta muted' : 'vstat-delta' }, s.delta)
         : null, s.trend.length > 0 ? spark(s.trend, s.tone) : null)));
 }

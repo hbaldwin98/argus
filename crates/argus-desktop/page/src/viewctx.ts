@@ -4,6 +4,7 @@
 // tab, an opened row) across a redraw.
 
 import type { PageDiagram } from './bindings/PageDiagram';
+import type { SavedColumn } from './bindings/SavedColumn';
 
 /** A diagram block's source as Rust read it, to draw. */
 export type Drawn = (source: string) => PageDiagram | undefined;
@@ -24,6 +25,22 @@ export interface ViewCtx {
   /** The paths, under the view (`2`, `1.0.3`), of the blocks that changed
    *  since the person saw them; those are drawn marked. */
   changed?: ReadonlySet<string>;
+  /** The column of a saved panel this is drawn in, which a link followed
+   *  here gets its target the column after. Absent in an agent's view and
+   *  an extension's table, whose links open a panel of their own. */
+  saved?: SavedColumn;
+  /** The saved views being drawn, outermost first: set for a saved view,
+   *  whose actions and references are not an agent pane's. An embed of one
+   *  of these is a cycle. */
+  chain?: readonly string[];
+  /** How many embeds were followed to reach this view. */
+  depth?: number;
+}
+
+/** The pane whose agent showed the view, for a reference in it to be read
+ *  against; a saved view or an extension's table has none. */
+export function paneOf(ctx: ViewCtx | null): number | null {
+  return ctx && !ctx.chain ? ctx.pane : null;
 }
 
 /** The context of the block at `index` under `ctx`. */

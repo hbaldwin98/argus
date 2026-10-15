@@ -4,6 +4,7 @@ import type { Block } from './bindings/Block';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { el } from './dom.js';
+import { opensMark } from './savedlink.js';
 import type { ViewCtx } from './viewctx.js';
 
 /** Which details are open, by the block's path. The agent's `open` is only
@@ -19,6 +20,7 @@ export function details(block: Extract<Block, { kind: 'details' }>, ctx: ViewCtx
       'summary',
       { class: 'vdetails-summary' },
       el('span', { class: 'vdetails-text' }, block.summary),
+      opensMark(block.opens, ctx),
       block.chip ? chip(block.chip) : null,
     ),
     el('div', { class: 'vdetails-body' }, blocks(block.blocks, ctx)),

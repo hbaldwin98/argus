@@ -4,6 +4,8 @@ import { chip, toneClass } from './chip.js';
 import { el } from './dom.js';
 import { progressValue } from './progress.js';
 import { refValue } from './refs.js';
+import { savedLink } from './savedlink.js';
+import { paneOf } from './viewctx.js';
 import { viewLink } from './viewlink.js';
 const SHOWN_PEOPLE = 3;
 // Avatar tints are drawn from the tones so they follow the theme.
@@ -113,7 +115,9 @@ export function value(v, ctx = null) {
         case 'commit':
         case 'feature':
         case 'pane':
-            return refValue(v, ctx?.pane ?? null);
+            return refValue(v, paneOf(ctx));
+        case 'view':
+            return savedLink(v.id, v.label, ctx);
         case 'empty':
             return el('span', { class: 'vempty' }, '—');
         case 'unknown':

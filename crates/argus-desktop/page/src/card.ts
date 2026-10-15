@@ -6,6 +6,7 @@ import type { Block } from './bindings/Block';
 import { blocks } from './blocks.js';
 import { chip, toneClass } from './chip.js';
 import { el } from './dom.js';
+import { opensMark } from './savedlink.js';
 import type { ViewCtx } from './viewctx.js';
 
 /** A non-neutral tone only tints the border: the card stays readable in
@@ -17,6 +18,7 @@ export function card(block: Extract<Block, { kind: 'card' }>, ctx: ViewCtx): HTM
           'div',
           { class: 'vcard-head' },
           block.title != null ? el('span', { class: 'vcard-title' }, block.title) : null,
+          opensMark(block.opens, ctx),
           block.chip ? chip(block.chip) : null,
         )
       : null;

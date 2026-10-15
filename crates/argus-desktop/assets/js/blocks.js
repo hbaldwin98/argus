@@ -11,6 +11,7 @@ import { code } from './code.js';
 import { details } from './details.js';
 import { diagram } from './diagram.js';
 import { el } from './dom.js';
+import { embed } from './embed.js';
 import { fields } from './fields.js';
 import { form } from './form.js';
 import { graph } from './graph.js';
@@ -22,6 +23,7 @@ import { matrix } from './matrix.js';
 import { patch } from './patch.js';
 import { progress } from './progress.js';
 import { row } from './row.js';
+import { opensMark } from './savedlink.js';
 import { stats } from './stats.js';
 import { table } from './table.js';
 import { timeline } from './timeline.js';
@@ -44,7 +46,7 @@ function one(block, ctx) {
 function draw(block, ctx) {
     switch (block.kind) {
         case 'section':
-            return el('section', { class: 'vsection' }, el('div', { class: 'label' }, block.heading), blocks(block.blocks, ctx));
+            return el('section', { class: 'vsection' }, el('div', { class: 'label' }, block.heading, opensMark(block.opens, ctx)), blocks(block.blocks, ctx));
         case 'columns':
             return el('div', { class: 'vcolumns' }, block.columns.map((column, i) => blocks(column, at(ctx, i))));
         case 'tabs':
@@ -58,7 +60,7 @@ function draw(block, ctx) {
         case 'list':
             return list(block.items, ctx);
         case 'stats':
-            return stats(block.stats);
+            return stats(block.stats, ctx);
         case 'code':
             return code(block.lang, block.text);
         // Read in Rust with the rest of the view; a source it could not read
@@ -77,6 +79,8 @@ function draw(block, ctx) {
             return details(block, ctx);
         case 'row':
             return row(block, ctx);
+        case 'embed':
+            return embed(block.view, ctx);
         case 'divider':
             return el('hr', { class: 'vdivider' });
         case 'chart':
@@ -84,17 +88,17 @@ function draw(block, ctx) {
         case 'progress':
             return progress(block);
         case 'timeline':
-            return timeline(block);
+            return timeline(block, ctx);
         case 'tree':
             return tree(block, ctx);
         case 'graph':
-            return graph(block);
+            return graph(block, ctx);
         case 'diff':
             return patch(block);
         case 'matrix':
             return matrix(block);
         case 'checklist':
-            return checklist(block);
+            return checklist(block, ctx);
         case 'log':
             return log(block, ctx);
         case 'board':

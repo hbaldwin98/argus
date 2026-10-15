@@ -40,6 +40,8 @@ export function cellText(v: Value): string {
       return `#${v.number}`;
     case 'pane':
       return v.label ?? `pane ${v.pane}`;
+    case 'view':
+      return v.label ?? v.id;
     case 'empty':
     case 'unknown':
       return '';

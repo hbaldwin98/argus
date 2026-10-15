@@ -46,7 +46,10 @@ export function actionButton(
       form: extra.form ?? null,
       answers: [...(extra.answers ?? [])],
     };
-    call('press_view', { pane: ctx.pane, press: sent });
+    // A saved view has no pane: the daemon relays the press to whichever
+    // agent last saved it.
+    if (ctx.chain) call('press_saved_view', { id: ctx.id, press: sent });
+    else call('press_view', { pane: ctx.pane, press: sent });
   };
 
   const ask = (open: boolean): void => {

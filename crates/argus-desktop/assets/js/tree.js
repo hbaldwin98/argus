@@ -1,6 +1,7 @@
 // A tree view block: nested nodes that fold.
 import { chip } from './chip.js';
 import { el, icon } from './dom.js';
+import { opensMark } from './savedlink.js';
 import { value } from './values.js';
 // Which nodes the person opened or folded, keyed by the node's place under
 // its view. A view is redrawn whole, so this is the page's alone to keep;
@@ -33,7 +34,7 @@ function rows(nodes, ctx, prefix, depth) {
                     fold(button.closest('.vtree-node'), now);
                 },
             }, icon(open ? 'down' : 'right'))
-            : el('span', { class: 'vtree-chev', 'aria-hidden': 'true' }), el('span', { class: 'vtree-label' }, node.label), node.value && el('span', { class: 'vtree-value' }, value(node.value, ctx)), node.chip && el('span', { class: 'vtree-chip' }, chip(node.chip)));
+            : el('span', { class: 'vtree-chev', 'aria-hidden': 'true' }), el('span', { class: 'vtree-label' }, node.label), opensMark(node.opens, ctx), node.value && el('span', { class: 'vtree-value' }, value(node.value, ctx)), node.chip && el('span', { class: 'vtree-chip' }, chip(node.chip)));
         const children = branch
             ? el('div', { class: 'vtree-children' }, rows(node.children, ctx, key, depth + 1))
             : null;

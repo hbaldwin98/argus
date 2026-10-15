@@ -5,6 +5,7 @@
 import { toneClass } from './chip.js';
 import { el } from './dom.js';
 import { clip, layout } from './graph_layout.js';
+import { openSaved, savedView } from './savedlink.js';
 const SVG = 'http://www.w3.org/2000/svg';
 const NAMED = 6;
 let instances = 0;
@@ -36,7 +37,7 @@ function describe(block) {
     const more = block.edges.length > NAMED ? ', and more' : '';
     return `Graph of ${block.nodes.length} nodes and ${block.edges.length} edges${links ? `: ${links}${more}` : ''}`;
 }
-export function graph(block) {
+export function graph(block, ctx) {
     if (block.nodes.length === 0) {
         return el('div', { class: 'vg' }, el('div', { class: 'vg-empty' }, 'Nothing to draw'));
     }
@@ -77,6 +78,22 @@ export function graph(block) {
         if (!p)
             return;
         const g = svgEl('g', {}, `vg-node ${toneClass(n.tone)}`);
+        const opens = n.opens;
+        if (opens != null) {
+            // Reachable by keyboard as a link is: focusable, Enter or Space follows.
+            const open = () => openSaved(opens, ctx);
+            g.setAttribute('class', `vg-node vg-opens ${toneClass(n.tone)}`);
+            g.setAttribute('role', 'link');
+            g.setAttribute('tabindex', '0');
+            g.setAttribute('aria-label', `${n.label}: open ${savedView(opens)?.view.title ?? opens}`);
+            g.addEventListener('click', open);
+            g.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ')
+                    return;
+                event.preventDefault();
+                open();
+            });
+        }
         g.appendChild(svgEl('rect', { x: p.x, y: p.y, width: p.w, height: p.h, rx: 6 }, 'vg-box'));
         g.appendChild(text(p.x + p.w / 2, p.y + p.h / 2, n.label, 'vg-name'));
         svg.appendChild(g);

@@ -7,7 +7,8 @@ import { chip, toneClass } from './chip.js';
 import { el } from './dom.js';
 import { progressValue } from './progress.js';
 import { refValue } from './refs.js';
-import type { ViewCtx } from './viewctx.js';
+import { savedLink } from './savedlink.js';
+import { paneOf, type ViewCtx } from './viewctx.js';
 import { viewLink } from './viewlink.js';
 
 const SHOWN_PEOPLE = 3;
@@ -136,7 +137,9 @@ export function value(v: Value, ctx: ViewCtx | null = null): HTMLElement {
     case 'commit':
     case 'feature':
     case 'pane':
-      return refValue(v, ctx?.pane ?? null);
+      return refValue(v, paneOf(ctx));
+    case 'view':
+      return savedLink(v.id, v.label, ctx);
     case 'empty':
       return el('span', { class: 'vempty' }, '—');
     case 'unknown':

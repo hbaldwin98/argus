@@ -6,6 +6,7 @@ import { drawComposer } from './compose.js';
 import { drawConsole } from './console.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extension_views.js';
+import { drawSavedNav } from './saved_views.js';
 import { drawFeatures } from './features.js';
 import { chordsFor, keycaps, presses } from './keys.js';
 import { contextMenu } from './menu.js';
@@ -68,6 +69,7 @@ function drawNav() {
     }
     $('nav-search-keys').replaceChildren(keycaps(chordsFor('palette', 'anywhere')));
     drawExtensionNav();
+    drawSavedNav();
 }
 const STAGE_NAME = {
     feature: 'Features',

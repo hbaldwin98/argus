@@ -3,6 +3,7 @@
 import { chip } from './chip.js';
 import { el } from './dom.js';
 import { markdown } from './markdown.js';
+import { opensMark } from './savedlink.js';
 import { value } from './values.js';
 import type { Block } from './bindings/Block';
 import type { BoardCard } from './bindings/BoardCard';
@@ -16,6 +17,7 @@ function card(c: BoardCard, ctx: ViewCtx): HTMLElement {
       'div',
       { class: 'vboard-card-head' },
       el('span', { class: 'vboard-card-title' }, c.title),
+      opensMark(c.opens, ctx),
       c.chip && chip(c.chip),
     ),
     c.value && el('div', { class: 'vboard-card-value' }, value(c.value, ctx)),

@@ -58,9 +58,9 @@ function drop(panel, target) {
         call('extension_mode', { panel, page: true });
 }
 /** The console has the Console stage and an extension's view its page;
- *  the agents' views are only ever docked. */
+ *  the agents' views and the saved views are only ever docked. */
 function hasStage(panel) {
-    return panel !== 'views';
+    return panel !== 'views' && !panel.startsWith('saved:');
 }
 function box(id) {
     return $(id).getBoundingClientRect();

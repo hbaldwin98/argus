@@ -41,6 +41,7 @@ export const state = {
     console: null,
     docks: null,
     extensions: null,
+    saved: null,
     reviewDraft: '',
     filter: '',
     archivedOpen: false,

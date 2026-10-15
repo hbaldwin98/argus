@@ -12,6 +12,7 @@ import type { Features } from './bindings/Features';
 import type { Group } from './bindings/Group';
 import type { KeyLayer } from './bindings/KeyLayer';
 import type { Rail } from './bindings/Rail';
+import type { SavedViewsPage } from './bindings/SavedViewsPage';
 import type { ReviewPage } from './bindings/ReviewPage';
 import type { HistoryPage } from './bindings/HistoryPage';
 import type { SessionsPage } from './bindings/SessionsPage';
@@ -79,6 +80,8 @@ export const state: {
   docks: DocksPage | null;
   /** What the extensions put in the window: views, commands, keys. */
   extensions: ExtensionsPage | null;
+  /** The views agents saved, and the columns of each panel showing them. */
+  saved: SavedViewsPage | null;
   /** The comment being written, kept across the dialog's redraws. */
   reviewDraft: string;
   /** What the index's filter says. */
@@ -129,6 +132,7 @@ export const state: {
   console: null,
   docks: null,
   extensions: null,
+  saved: null,
   reviewDraft: '',
   filter: '',
   archivedOpen: false,

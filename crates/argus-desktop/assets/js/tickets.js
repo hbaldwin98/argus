@@ -3,6 +3,8 @@
 // more than the tracker's page at a glance, and the tracker is a click away
 // from there. Without one it opens the ticket in the browser.
 import { el } from './dom.js';
+import { forFeature } from './saved_logic.js';
+import { state } from './state.js';
 import { call } from './tauri.js';
 import { viewOf } from './views.js';
 export function ticketLink(link) {
@@ -36,6 +38,24 @@ export function featureViewLink(link) {
             call('open_view', { pane: link.pane, id: link.id });
         },
     }, el('b', null, link.title), el('span', { class: 'vdot', 'aria-hidden': 'true' }));
+}
+/** The saved views scoped or attached to feature `number` of the chosen
+ *  repository, each opening its panel. */
+export function savedFeatureLinks(number) {
+    return forFeature(state.saved?.views ?? [], state.rail.repository, number).map(savedFeatureLink);
+}
+function savedFeatureLink(view) {
+    return el('button', {
+        class: view.stale ? 'track viewed stale' : 'track viewed',
+        type: 'button',
+        title: view.stale
+            ? 'A saved view of this feature, out of date'
+            : 'A saved view of this feature',
+        onclick: (event) => {
+            event.stopPropagation();
+            call('open_saved_view', { id: view.id, from: null });
+        },
+    }, el('b', null, view.view.title), el('span', { class: 'vdot', 'aria-hidden': 'true' }));
 }
 export function ticketLinks(links) {
     return links.length > 0 && el('span', { class: 'actions tickets' }, links.map(ticketLink));
