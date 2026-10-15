@@ -1,4 +1,5 @@
-// STUB: the values agent replaces this file.
+// A status pill. An agent picks a tone, a meaning, and the page owns the hue,
+// so a view looks the same in every theme whoever wrote it.
 
 import type { Chip } from './bindings/Chip';
 import type { Tone } from './bindings/Tone';
