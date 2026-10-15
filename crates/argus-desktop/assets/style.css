@@ -2583,3 +2583,120 @@ body.filled .rail {
 .tline.tool.failed .ttool {
   color: var(--danger);
 }
+
+/* ---- Projects: the switcher and the add dialog ---------------------------- */
+
+.projmenu .projects-menu {
+  top: 100%;
+  width: min(272px, calc(var(--rail-w) - 16px));
+}
+.projbtn .ellipsis {
+  min-width: 0;
+}
+.mi.sub {
+  padding-left: var(--sp-24);
+}
+.mi.danger {
+  color: var(--danger);
+}
+.add-dialog {
+  width: min(820px, calc(100vw - 32px));
+  max-height: min(720px, 94vh);
+}
+.ap-head {
+  align-items: center;
+}
+.ap-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-16) var(--sp-20);
+}
+.ap-body .seg {
+  align-self: flex-start;
+}
+.ap-path {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--sp-6);
+}
+.ap-path .field {
+  width: auto;
+  min-width: 0;
+}
+.ap-split {
+  display: flex;
+  gap: var(--sp-16);
+  height: 300px;
+  flex: none;
+}
+.ap-folders {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.drow2 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  padding: var(--sp-4) var(--sp-8);
+  cursor: pointer;
+  min-width: 0;
+}
+.drow2:hover {
+  background: var(--bg-selected);
+}
+.ap-note {
+  padding: var(--sp-8);
+}
+.ap-outcome {
+  width: 300px;
+  flex: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+.ap-found {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  overflow: auto;
+  min-height: 0;
+  max-height: 180px;
+}
+.setrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-16);
+  padding-top: var(--sp-12);
+  border-top: 1px solid var(--line);
+}
+.setrow .field {
+  width: 300px;
+  max-width: 50%;
+}
+@media (max-width: 640px) {
+  .ap-split {
+    flex-direction: column;
+    height: auto;
+  }
+  .ap-folders {
+    max-height: 220px;
+  }
+  .ap-outcome {
+    width: auto;
+  }
+}

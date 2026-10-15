@@ -36,7 +36,14 @@ and speaks the protocol over the child's stdin and stdout, as `argus --host` doe
 connect-or-start lives only in the terminal client. It greets like any client, keeps the last tree
 on screen while it tries again every two seconds, and shows what the bridge printed when a try
 fails. After `Stopping` it does not reconnect until the person presses Reconnect: a client never
-starts again a daemon somebody stopped. The system's title bar is put away: a sidebar runs to the window's top edge with Search (the palette), New, and the Workspace, Features and Checkouts stages above the project's rail, the connection and the chime at its foot, and a strip across the stage names what it shows beside the window's own buttons (macOS keeps its traffic lights; on Windows 11 resting on maximize opens snap layouts). The rail is a tree: a heading per
+starts again a daemon somebody stopped. The system's title bar is put away: a sidebar runs to the window's top edge with Search (the palette), New, and the Workspace, Features and Checkouts stages above the project's rail, the connection and the chime at its foot, and a strip across the stage names what it shows beside the window's own buttons (macOS keeps its traffic lights; on Windows 11 resting on maximize opens snap layouts). The project heading above the
+rail opens the switcher: each project with how many of its agents need you or are working, then
+Add a project…, Switch workspace… (the daemon's, so every client follows), Connect to a host…
+(listed, for remote hosts after the MVP), and Remove, which asks first and leaves the folders alone.
+Add a project is a dialog over a folder browsed on the daemon's machine (`ListDirectories`): a folder
+of repositories, one repository, or a new one made with `git init`, with what the daemon's scan would
+add (`PreviewProject`) beside the folders, then a name and folders to skip; it stays up until the
+daemon has made the project and a tree holds it, and a refusal is said in it. The rail is a tree: a heading per
 repository, a branch row per checkout with its + on hover, and the checkout's panes nested under it
 as a status dot and a title, saying only what needs a look or has ended; quiet repositories nobody
 opened fold under one row. New (`Ctrl-N`, in a pane the leader and `n`) is the composer, a stage
@@ -76,7 +83,7 @@ putting the sidebar away until the same keys again. The Feature stage
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `features`, `checkouts`, `review`, `history`, `sessions`, `chime`, with `keys`, `dom`, `state`
+`palette`, `shortcuts`, `features`, `checkouts`, `review`, `history`, `sessions`, `projects`, `chime`, with `keys`, `dom`, `state`
 and `tauri` beneath them),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
@@ -328,6 +335,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `main` | startup: the runtime, the window, and running until it closes |
 | `daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
 | `session` | what this window holds of the daemon and routes between its parts — the tree, the project and repository chosen on the rail, which stage is up — and which part each message and page call is for |
+| `switcher` | what the project switcher offers beyond the tree's projects — the daemon's workspaces — and the project waiting on a yes to be removed |
+| `add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — and what its gestures ask of the daemon |
 | `status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
 | `shown` | the pane the window shows: its subscription and size on this connection, its view, whether it fills the window, and whether the leader waits on the next key |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
@@ -585,7 +594,13 @@ Projects without a workspace use `default`. A project may set `root`, `repos`, o
 reached both ways is one repository, and the two lists are joined with `repos` first. When no
 agents are configured, `claude`, `codex`, `opencode`, `pi`, `agy`, and `agent` templates are supplied. Adding a project
 at runtime records the directory given as its `root`, in the open workspace, so what it holds is
-discovered again on each start rather than frozen into the record.
+discovered again on each start rather than frozen into the record. `AddProject` may also carry a
+name, folders to skip (kept with the project as its `exclude`, so a restart scans as the add did),
+and `init`, which makes the directory a repository first as `i` does. A second project of one name
+is refused, since the store keys a project's added repositories and its hiding by name.
+`PreviewProject` answers with what the same scan would find under a folder, with its depth and its
+built-in skips, and writes nothing: the desktop's add dialog lists it before anything is added. A
+client sends either only to a daemon listing the `add-project` capability.
 
 ## Panes and terminal state
 

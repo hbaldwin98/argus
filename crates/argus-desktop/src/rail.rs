@@ -34,6 +34,7 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
                 id: project.id.0,
                 name: project.name.clone(),
                 needs_you: statuses(project).filter(|s| s.needs_you()).count(),
+                working: statuses(project).filter(|s| *s == PaneStatus::Working).count(),
             })
             .collect(),
         project: tree
@@ -49,6 +50,8 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         stage: page::Stage::Workspace,
         filled: false,
         templates: Vec::new(),
+        workspaces: Vec::new(),
+        removing: None,
     }
 }
 
@@ -250,8 +253,8 @@ mod tests {
         let rail = build(&tree, &choices(&toggled), true);
         assert_eq!((rail.needs_you, rail.working), (2, 1));
         assert_eq!(rail.project.unwrap().needs_you, 1);
-        let choices: Vec<_> = rail.projects.iter().map(|p| (p.name.as_str(), p.needs_you)).collect();
-        assert_eq!(choices, [("src", 1), ("work", 1)]);
+        let choices: Vec<_> = rail.projects.iter().map(|p| (p.name.as_str(), p.needs_you, p.working)).collect();
+        assert_eq!(choices, [("src", 1, 1), ("work", 1, 0)], "the switcher says who needs you and who is working");
     }
 
     #[test]
