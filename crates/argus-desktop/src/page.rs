@@ -155,6 +155,9 @@ pub enum Call {
     RefreshView { pane: u64, id: String },
     /// Closes a view for every client.
     CloseView { pane: u64, id: String },
+    /// A link in a view, for the system's opener; Rust opens only an
+    /// `http` or `https` one.
+    OpenUrl { url: String },
 }
 
 /// One choice made in the Settings dialog.

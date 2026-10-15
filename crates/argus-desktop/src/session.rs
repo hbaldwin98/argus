@@ -502,7 +502,8 @@ impl Session {
             | Call::OpenView { .. }
             | Call::HideViews
             | Call::RefreshView { .. }
-            | Call::CloseView { .. } => self.finish(),
+            | Call::CloseView { .. }
+            | Call::OpenUrl { .. } => self.finish(),
         }
     }
 
@@ -2982,7 +2983,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 80] = [
+    const CALLS: [&str; 81] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3063,6 +3064,7 @@ mod tests {
         r#"{"call":"hide_views"}"#,
         r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
         r#"{"call":"close_view","pane":1,"id":"ci"}"#,
+        r#"{"call":"open_url","url":"https://example.com"}"#,
     ];
 
     /// Each call reads as the page writes it and goes through the session,
