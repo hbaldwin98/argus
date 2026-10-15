@@ -258,9 +258,10 @@ async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
 
 #[tokio::test]
 async fn every_git_mutation_reports_its_refusal() {
-    // These seven arms share one helper, so this is the test that says
-    // the helper is wired to all of them: a bogus checkout has to come
-    // back as a message rather than as a keypress that did nothing.
+    // Seven of these go through `spawn_reporting` and DeleteBranch through
+    // a task of its own, so this is the test that says each is wired to
+    // report: a bogus id has to come back as a message rather than as a
+    // keypress that did nothing.
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
     let gone = CheckoutId(9999);
@@ -288,16 +289,25 @@ async fn every_git_mutation_reports_its_refusal() {
             request_id: 0,
         },
         ClientMsg::RemoveCheckout { checkout: gone },
+        // Refused before any subprocess, as a relative path.
+        ClientMsg::InitRepository {
+            project: argus_protocol::ProjectId(9999),
+            path: "nope".into(),
+            request_id: 0,
+        },
     ];
     let expected = sent.len();
     for msg in sent {
         h.send(msg);
     }
 
+    let mut errors = Vec::new();
     for _ in 0..expected {
-        let error = h.error().await;
-        assert!(error.contains("no such checkout"), "{error}");
+        errors.push(h.error().await);
     }
+    let gone = errors.iter().filter(|e| e.contains("no such checkout")).count();
+    assert_eq!(gone, expected - 1, "{errors:?}");
+    assert!(errors.iter().any(|e| e.contains("must be absolute")), "{errors:?}");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -332,12 +342,12 @@ async fn subscribing_sends_a_snapshot_and_arms_the_damage_stream() {
         Some(ServerMsg::PaneSnapshot { .. })
     ));
     assert!(
-        h.subs.tasks.contains_key(&pane),
+        h.conn.subs.tasks.contains_key(&pane),
         "damage must flow after a subscribe"
     );
 
     h.send(ClientMsg::Unsubscribe { pane });
-    assert!(!h.subs.tasks.contains_key(&pane));
+    assert!(!h.conn.subs.tasks.contains_key(&pane));
 
     let _ = h.daemon.close_pane(pane);
 }
@@ -358,7 +368,7 @@ async fn history_is_answered_in_the_form_the_client_reads() {
         Some(ServerMsg::ScrollbackRows { .. })
     ));
 
-    h.subs.runs = true;
+    h.conn.subs.runs = true;
     h.send(ClientMsg::Scrollback {
         pane,
         offset: 1,
@@ -378,7 +388,7 @@ async fn subscribing_to_a_pane_that_is_gone_is_an_error_not_a_panic() {
     let mut h = Harness::new(dir.path());
     h.send(ClientMsg::Subscribe { pane: PaneId(9999) });
     assert!(!h.error().await.is_empty());
-    assert!(h.subs.tasks.is_empty());
+    assert!(h.conn.subs.tasks.is_empty());
 }
 
 #[tokio::test]
@@ -563,7 +573,7 @@ async fn two_panes_stream_at_once() {
 
     h.send(ClientMsg::Subscribe { pane: a });
     h.send(ClientMsg::Subscribe { pane: b });
-    assert_eq!(h.subs.tasks.len(), 2);
+    assert_eq!(h.conn.subs.tasks.len(), 2);
 
     // Both snapshots arrive, and neither subscription displaced the
     // other.
@@ -578,8 +588,8 @@ async fn two_panes_stream_at_once() {
     assert!(panes.contains(&a) && panes.contains(&b), "{panes:?}");
 
     h.send(ClientMsg::Unsubscribe { pane: a });
-    assert_eq!(h.subs.tasks.len(), 1, "only the one named is dropped");
-    assert!(h.subs.tasks.contains_key(&b));
+    assert_eq!(h.conn.subs.tasks.len(), 1, "only the one named is dropped");
+    assert!(h.conn.subs.tasks.contains_key(&b));
 
     let _ = h.daemon.close_pane(a);
     let _ = h.daemon.close_pane(b);
@@ -594,7 +604,7 @@ async fn subscribing_twice_to_one_pane_does_not_double_up() {
 
     h.send(ClientMsg::Subscribe { pane });
     h.send(ClientMsg::Subscribe { pane });
-    assert_eq!(h.subs.tasks.len(), 1);
+    assert_eq!(h.conn.subs.tasks.len(), 1);
 
     let _ = h.daemon.close_pane(pane);
 }
@@ -718,4 +728,54 @@ fn a_description_of_the_extensions_is_answered_to_the_client_that_asked() {
     let described = described.expect("the description is answered");
     assert_eq!(described.len(), 1);
     assert_eq!((described[0].name.as_str(), described[0].about.as_ref()), ("docker", Some(&about)));
+}
+
+#[test]
+fn a_view_and_the_watches_take_effect_through_dispatch() {
+    // These were once caught by the loop before dispatch, and dispatch
+    // panicked on any it was handed.
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+
+    h.send(ClientMsg::View(argus_protocol::View { active: true, ..Default::default() }));
+    assert!(h.daemon.focus_in(&h.daemon.snapshot()).is_some(), "the view is taken");
+
+    h.send(ClientMsg::WatchFocus);
+    assert!(matches!(h.replies().as_slice(), [ServerMsg::Focus(Some(_))]));
+    assert!(h.conn.focus_watch.is_some());
+
+    h.send(ClientMsg::WatchViews);
+    assert!(h.replies().is_empty(), "no views to replay");
+    assert!(h.conn.agent_views.is_some());
+}
+
+#[test]
+fn a_greeting_is_answered_then_followed_by_what_the_client_takes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+
+    assert!(!h.send(ClientMsg::Hello(argus_protocol::Hello::this_build())));
+
+    assert!(matches!(
+        h.replies().as_slice(),
+        [
+            ServerMsg::Hello(_),
+            ServerMsg::Consoles(_),
+            ServerMsg::ExtensionViews(_),
+            ServerMsg::ExtensionCommands(_),
+        ]
+    ));
+    assert!(h.conn.subs.runs);
+    assert!(h.conn.peer.is_some());
+}
+
+#[test]
+fn a_greeting_without_extensions_is_sent_none_of_theirs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let hello = argus_protocol::Hello::this_build().without(argus_protocol::EXTENSIONS);
+
+    h.send(ClientMsg::Hello(hello));
+
+    assert!(matches!(h.replies().as_slice(), [ServerMsg::Hello(_), ServerMsg::Consoles(_)]));
 }
