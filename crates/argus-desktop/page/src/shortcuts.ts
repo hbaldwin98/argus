@@ -62,7 +62,7 @@ export function openSheet(): void {
         el(
           'div',
           { class: 'sheet-rule' },
-          'Inside a pane every key goes to the pane, except ',
+          'Inside a pane every key goes to the pane, except those listed under Everywhere and ',
           el('span', { class: 'kbd' }, lead),
           ': the key after it is the window’s, and ',
           el('span', { class: 'kbd' }, lead),

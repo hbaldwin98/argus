@@ -122,6 +122,9 @@ fn open_window(app: &mut tauri::App, shared: &Arc<Shared>) -> tauri::Result<()> 
         .transparent(true)
         .build()?;
     commands::dress(&window, shared);
+    if let Err(err) = commands::scale(&window, shared) {
+        tracing::warn!("could not zoom the window: {err}");
+    }
     let painted = window.clone();
     let shared = shared.clone();
     window.on_window_event(move |event| {

@@ -69,7 +69,10 @@ shortcuts sheet's groups), what it does and what it is called. A key in a pane g
 dispatches it from the table; the table crosses to the page once it loads, and the page dispatches
 every other key from it, a text field's Enter and Escape included, so a key cannot be run by one and
 missing from what the sheet and the palette are drawn from; a test fails a page module that reads a
-key's name itself. In a pane every
+key's name itself. A binding of the Everywhere place, the zoom keys', is heard by the page before
+anything else, a pane and a text field included, and so is bound nowhere else. The zoom is the
+webview's own rather than the page's CSS, so a pane's cells grow with the rest and its grid refits
+to the new size; it steps as a browser's does and is kept in `desktop.json`. In a pane every other
 key is the program's except the leader, `Ctrl-Space` as in the terminal client: the key after it is
 the window's, one nothing binds is dropped, and a second leader sends one through. `Ctrl-K` (in a
 pane, the leader and `k`) opens the palette, one fuzzy search over the table's commands and the
@@ -582,7 +585,8 @@ Configuration uses `ARGUS_CONFIG_DIR` when set and the platform config directory
 - `projects.toml` declares workspaces, projects, and agent templates. Argus only reads it.
 - `client.toml` stores the terminal client's theme, editor, and layout settings.
 - `desktop.json` stores the desktop window's: what it remembers (each repository's index layout, the
-  agent last started, the chime, the review's side and layout) and what its Settings dialog sets.
+  agent last started, the chime, the review's side and layout, the zoom) and what its Settings
+  dialog sets.
   It is a file of its own rather than a section of `client.toml`. The two clients overlap only in
   the editor mode and command and a theme's name, and even those part ways: the window's theme can
   follow the system, which the terminal's cannot, and its notification is on by default where the

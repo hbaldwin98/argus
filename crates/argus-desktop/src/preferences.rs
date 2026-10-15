@@ -1,6 +1,7 @@
 //! The Settings dialog's choices as the window holds them: each change the
-//! page makes, held to what this machine can draw, and whether the page has
-//! heard them and the file has kept them since they changed.
+//! page makes and each step of the zoom keys, held to what this machine can
+//! draw, and whether the page has heard them and the file has kept them
+//! since they changed.
 //!
 //! Every choice here is the window's own and touches no daemon, so a change
 //! takes effect as it is made; the page still draws the choices from what
@@ -9,6 +10,10 @@
 use crate::backdrop;
 use crate::page::{SettingChange, SettingsPage};
 use crate::settings::{Backdrop, EditorMode, Preferences, MIN_OPACITY};
+
+/// The zoom keys' steps, in percent: a browser's, so a step feels as it
+/// does there, and text at either end is still readable.
+const ZOOM_STEPS: [u16; 11] = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200];
 
 pub struct Chosen {
     now: Preferences,
@@ -22,6 +27,7 @@ impl Chosen {
     pub fn new(mut now: Preferences) -> Chosen {
         // A hand-edited file is held to the same bounds as the slider.
         now.opacity = now.opacity.clamp(MIN_OPACITY, 100);
+        now.zoom = now.zoom.clamp(ZOOM_STEPS[0], ZOOM_STEPS[ZOOM_STEPS.len() - 1]);
         if !backdrop::can_draw(now.backdrop) {
             now.backdrop = Backdrop::Clear;
         }
@@ -64,6 +70,30 @@ impl Chosen {
             self.unsaved = true;
         }
         Ok(())
+    }
+
+    /// One step larger; a zoom between steps, from a hand-edited file,
+    /// goes to the next one up.
+    pub fn zoom_in(&mut self) {
+        let next = ZOOM_STEPS.iter().copied().find(|&s| s > self.now.zoom);
+        self.set_zoom(next.unwrap_or(self.now.zoom));
+    }
+
+    pub fn zoom_out(&mut self) {
+        let next = ZOOM_STEPS.iter().rev().copied().find(|&s| s < self.now.zoom);
+        self.set_zoom(next.unwrap_or(self.now.zoom));
+    }
+
+    pub fn reset_zoom(&mut self) {
+        self.set_zoom(100);
+    }
+
+    /// Unheard by the page, which never draws the zoom: the window does.
+    fn set_zoom(&mut self, percent: u16) {
+        if percent != self.now.zoom {
+            self.now.zoom = percent;
+            self.unsaved = true;
+        }
     }
 
     /// What an editor opened from the window is asked as: whether it runs
@@ -128,6 +158,40 @@ mod tests {
         assert_eq!(choices.get().opacity, 100);
         choices.change(SettingChange::Opacity { percent: 55 }).unwrap();
         assert_eq!(choices.get().opacity, 55);
+    }
+
+    #[test]
+    fn the_zoom_steps_as_a_browser_does_and_stops_at_either_end() {
+        let mut choices = Chosen::new(Preferences::default());
+        choices.zoom_in();
+        assert_eq!(choices.get().zoom, 110);
+        assert!(choices.take_unsaved(), "kept for the next run");
+        for _ in 0..20 {
+            choices.zoom_in();
+        }
+        assert_eq!(choices.get().zoom, 200);
+        choices.take_unsaved();
+        choices.zoom_in();
+        assert!(!choices.take_unsaved(), "no step past the end is a change");
+        choices.reset_zoom();
+        choices.zoom_out();
+        assert_eq!(choices.get().zoom, 90);
+        for _ in 0..20 {
+            choices.zoom_out();
+        }
+        assert_eq!(choices.get().zoom, 50);
+    }
+
+    #[test]
+    fn a_hand_edited_zoom_is_held_to_the_steps_ends_and_steps_onto_them() {
+        let choices = Chosen::new(Preferences { zoom: 900, ..Preferences::default() });
+        assert_eq!(choices.get().zoom, 200);
+        let mut choices = Chosen::new(Preferences { zoom: 103, ..Preferences::default() });
+        choices.zoom_in();
+        assert_eq!(choices.get().zoom, 110);
+        let mut choices = Chosen::new(Preferences { zoom: 103, ..Preferences::default() });
+        choices.zoom_out();
+        assert_eq!(choices.get().zoom, 100);
     }
 
     #[test]

@@ -40,6 +40,9 @@ pub enum Place {
     Anywhere,
     /// In a pane, where `session` dispatches; everywhere else the page does.
     Pane,
+    /// Everywhere, a pane, a text field and an open dialog included: the
+    /// page hears these before anything else can.
+    Window,
     /// A checkout or pane clicked in the sidebar, which holds the keys
     /// until a click elsewhere: the terminal client's rail cursor, where a
     /// pane is closed with a bare x rather than typed into.
@@ -191,6 +194,11 @@ pub enum Action {
     SplitConsole,
     /// The split's other side takes the keys.
     OtherSide,
+    /// The whole window larger or smaller, the panes' text with the rest,
+    /// or back to its own size.
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
 }
 
 #[derive(Debug, Serialize)]
@@ -270,6 +278,7 @@ impl Place {
         match self {
             Place::Anywhere => "Anywhere",
             Place::Pane => "In a pane",
+            Place::Window => "Everywhere",
             Place::Rail => "Sidebar",
             Place::Feature => "Feature",
             Place::Card => "Board card",
@@ -299,12 +308,31 @@ const PASTE: &[Chord] = if cfg!(target_os = "macos") {
     &[Chord::key("v").ctrl(), Chord::key("V").ctrl(), Chord::key("v").alt()]
 };
 
+/// The command key on a Mac, as its browsers zoom; Ctrl elsewhere, as
+/// terminals size their text, which takes Ctrl-minus from a pane's program.
+/// `+` is `=` shifted, and the keypad's own.
+const ZOOM_IN: &[Chord] = if cfg!(target_os = "macos") {
+    &[Chord::key("=").meta(), Chord::key("+").meta()]
+} else {
+    &[Chord::key("=").ctrl(), Chord::key("+").ctrl()]
+};
+const ZOOM_OUT: &[Chord] = if cfg!(target_os = "macos") {
+    &[Chord::key("-").meta()]
+} else {
+    &[Chord::key("-").ctrl()]
+};
+const ZOOM_RESET: &[Chord] = if cfg!(target_os = "macos") {
+    &[Chord::key("0").meta()]
+} else {
+    &[Chord::key("0").ctrl()]
+};
+
 const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'static str) -> Binding {
     Binding { chords, place, action, label }
 }
 
 use Action::*;
-use Place::{Anywhere, Card, History, Jump, Outline, Pane, Rail, Review, Sessions, Start, Writing};
+use Place::{Anywhere, Card, History, Jump, Outline, Pane, Rail, Review, Sessions, Start, Window, Writing};
 use Place::Checkouts as CheckoutsTable;
 
 pub static BINDINGS: &[Binding] = &[
@@ -337,6 +365,9 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("k").ctrl().after_leader(), Chord::key("k").after_leader()], Action::Palette, "search actions, panes, features and checkouts"),
     bind(Pane, &[Chord::key("?").after_leader()], Shortcuts, "these shortcuts"),
     bind(Pane, &[Chord::key(",").after_leader()], Action::Settings, "settings"),
+    bind(Window, ZOOM_IN, ZoomIn, "larger"),
+    bind(Window, ZOOM_OUT, ZoomOut, "smaller"),
+    bind(Window, ZOOM_RESET, ZoomReset, "the usual size"),
     bind(Rail, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next checkout or pane"),
     bind(Rail, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous checkout or pane"),
     bind(Rail, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell on its checkout"),
@@ -458,6 +489,9 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Compose, Some(Anywhere), "Start a shell or an agent…"),
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
     (Action::Settings, Some(Anywhere), "Open the settings"),
+    (ZoomIn, Some(Window), "Zoom in"),
+    (ZoomOut, Some(Window), "Zoom out"),
+    (ZoomReset, Some(Window), "Reset the zoom"),
     (Fill, Some(Pane), "Fill the window with the pane, and back"),
     (Close, Some(Pane), "Close the pane, ending its program"),
     (StartShell, Some(CheckoutsTable), "Start a shell on this checkout"),
@@ -473,9 +507,10 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
 ];
 
-const ORDER: [Place; 16] = [
+const ORDER: [Place; 17] = [
     Anywhere,
     Pane,
+    Window,
     Rail,
     Place::Feature,
     Card,
@@ -566,6 +601,7 @@ mod tests {
             [
                 "Anywhere",
                 "In a pane",
+                "Everywhere",
                 "Sidebar",
                 "Feature",
                 "Board card",
@@ -824,6 +860,33 @@ mod tests {
         assert_eq!(find(Place::Filter, &page("Enter")), Some(Leave));
         assert_eq!(find(Place::Filter, &page("Escape")), Some(Leave));
         assert_eq!(find(Place::Filter, &page("j")), None, "a j is typed");
+    }
+
+    /// The page hears the window's keys before any place, a pane's
+    /// program and a text field included, so no place may want them too.
+    #[test]
+    fn the_zoom_keys_are_the_windows_wherever_the_keys_are() {
+        let window: Vec<&Chord> = BINDINGS.iter().filter(|b| b.place == Window).flat_map(|b| b.chords).collect();
+        for binding in BINDINGS.iter().filter(|b| b.place != Window) {
+            for chord in binding.chords {
+                assert!(!window.contains(&chord), "{chord:?} is the window's, not {}'s", binding.label);
+            }
+        }
+        let modifier = |key: &str| {
+            let key = page(key);
+            if cfg!(target_os = "macos") { PageKey { meta: true, ..key } } else { PageKey { ctrl: true, ..key } }
+        };
+        let action = |key: PageKey| {
+            BINDINGS.iter().filter(|b| b.place == Window).find(|b| b.chords.iter().any(|c| c.matches(&key))).map(|b| b.action)
+        };
+        assert_eq!(action(modifier("=")), Some(ZoomIn));
+        assert_eq!(action(PageKey { shift: true, ..modifier("+") }), Some(ZoomIn));
+        assert_eq!(action(modifier("-")), Some(ZoomOut));
+        assert_eq!(action(modifier("0")), Some(ZoomReset));
+        assert_eq!(action(page("-")), None, "a minus is typed");
+        for zoom in [ZoomIn, ZoomOut, ZoomReset] {
+            assert!(is_command(zoom), "{zoom:?} is in the palette");
+        }
     }
 
     #[test]

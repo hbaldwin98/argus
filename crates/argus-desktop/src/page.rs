@@ -1504,7 +1504,8 @@ mod tests {
                 "type": "settings",
                 "chosen": {
                     "theme": "system", "opacity": 100, "backdrop": "clear", "editor": "floating",
-                    "editorCommand": "", "notify": true, "notifyInBackground": true, "featureLayout": "list"
+                    "editorCommand": "", "notify": true, "notifyInBackground": true, "featureLayout": "list",
+                    "zoom": 100
                 },
                 "minOpacity": 30,
                 "backdrops": [{"backdrop": "mica", "unavailable": "Mica needs Windows 11"}]

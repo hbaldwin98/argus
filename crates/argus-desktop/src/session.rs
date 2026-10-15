@@ -1651,6 +1651,12 @@ impl Session {
         (chosen.theme, chosen.backdrop)
     }
 
+    /// How large the window is drawn, in percent, which `commands` puts
+    /// on the webview.
+    pub fn zoom(&self) -> u16 {
+        self.choices.get().zoom
+    }
+
     /// The notifications the last trees raised, for the system to show.
     pub fn take_alerts(&mut self) -> Vec<Alert> {
         std::mem::take(&mut self.alerts)
@@ -1697,6 +1703,9 @@ impl Session {
                 self.features.toggle_folded(&self.tree, &mut self.out);
             }
             Action::NewFeature => self.open_capture(),
+            Action::ZoomIn => self.choices.zoom_in(),
+            Action::ZoomOut => self.choices.zoom_out(),
+            Action::ZoomReset => self.choices.reset_zoom(),
             Action::Branches => {
                 self.go(Stage::Checkouts);
                 self.checkouts.toggle_branches();

@@ -135,6 +135,19 @@ function notTheirs(action: Action): boolean {
 }
 
 export function listen(): void {
+  // The window's keys come first, while the event is still on its way
+  // down: a pane's text area, a field or a dialog never hears them.
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      const action = actionFor(['window'], e);
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      call('command', { action });
+    },
+    { capture: true },
+  );
   document.addEventListener('keydown', (e) => {
     // A text field takes its own keys, and the pane's text area sends its
     // keys to Rust.

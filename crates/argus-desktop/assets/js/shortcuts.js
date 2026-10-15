@@ -30,7 +30,7 @@ export function openSheet() {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'sheet-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'sheet-title' }, 'Keyboard shortcuts'), close), el('div', { class: 'sheet-rule' }, 'Inside a pane every key goes to the pane, except ', el('span', { class: 'kbd' }, lead), ': the key after it is the window’s, and ', el('span', { class: 'kbd' }, lead), ' twice sends one through.'), el('div', { class: 'sheet-body' }, groups))));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'sheet-title' }, 'Keyboard shortcuts'), close), el('div', { class: 'sheet-rule' }, 'Inside a pane every key goes to the pane, except those listed under Everywhere and ', el('span', { class: 'kbd' }, lead), ': the key after it is the window’s, and ', el('span', { class: 'kbd' }, lead), ' twice sends one through.'), el('div', { class: 'sheet-body' }, groups))));
     // The sheet holds the keys while open; Escape or ? puts it away.
     $('input').blur();
     close.focus();

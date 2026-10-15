@@ -33,4 +33,9 @@ notifyInBackground: boolean,
 /**
  * The index a repository opens as before it remembers its own.
  */
-featureLayout: Layout, };
+featureLayout: Layout, 
+/**
+ * How large the whole window is drawn, panes and all, in percent: set
+ * by the zoom keys rather than the dialog, and kept like its choices.
+ */
+zoom: number, };

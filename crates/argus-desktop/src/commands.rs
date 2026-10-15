@@ -2,7 +2,7 @@
 //! channel, and `call`, which takes every [`Call`] and hands it to whatever
 //! answers it — the session, or for the clipboard, the window's frame and
 //! a reconnect, the part of the window that owns them. A setting is the
-//! session's, and the window's frame and backdrop follow its look.
+//! session's, and the window's frame, backdrop and zoom follow it.
 //!
 //! Each is `async` because Tauri runs a synchronous command on the UI
 //! thread, and none of them should hold the window while it takes a lock.
@@ -31,6 +31,7 @@ pub async fn connect(shared: State<'_, Arc<Shared>>, events: Channel<Event>) -> 
 
 #[tauri::command]
 pub async fn call(shared: State<'_, Arc<Shared>>, window: WebviewWindow, call: Call) -> Answer {
+    let zoom = shared.read(|s| s.zoom());
     match call {
         Call::Key { key } if shared.read(|s| s.pastes(&key)) => paste_clipboard(&shared),
         Call::PasteClipboard => paste_clipboard(&shared),
@@ -50,7 +51,18 @@ pub async fn call(shared: State<'_, Arc<Shared>>, window: WebviewWindow, call: C
         }
         call => shared.act(|s| s.call(call)),
     }
+    if shared.read(|s| s.zoom()) != zoom {
+        return scale(&window, &shared);
+    }
     Ok(())
+}
+
+/// Draws the whole page at the zoom chosen. The webview's own zoom rather
+/// than the page's CSS, so the panes' cells grow with everything else: the
+/// page sees a new pixel ratio and size, and refits each pane's grid.
+pub fn scale(window: &WebviewWindow, shared: &Shared) -> Answer {
+    let zoom = shared.read(|s| s.zoom());
+    window.set_zoom(f64::from(zoom) / 100.0).map_err(|e| e.to_string())
 }
 
 /// Paints the window's frame and puts its backdrop on, as the look chosen
