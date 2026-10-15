@@ -146,6 +146,11 @@ impl Daemon {
         let (diagrams_tx, _) = broadcast::channel(32);
         let (views_tx, _) = broadcast::channel(16);
         let (agent_views_tx, _) = broadcast::channel(64);
+        let (saved_views_tx, _) = broadcast::channel(64);
+        let saved_views = saved_views::Held::load(store.saved_views().unwrap_or_else(|e| {
+            tracing::warn!("could not read the saved views: {e}");
+            Vec::new()
+        }));
         let (extensions_tx, _) = broadcast::channel(64);
         let daemon = Arc::new(Daemon {
             inner: StdMutex::new(Inner {
@@ -170,6 +175,8 @@ impl Daemon {
             diagrams_tx,
             agent_views: StdMutex::new(Default::default()),
             agent_views_tx,
+            saved_views: StdMutex::new(saved_views),
+            saved_views_tx,
             templates: StdMutex::new(templates),
             harnesses,
             hook_port: std::sync::atomic::AtomicU16::new(0),

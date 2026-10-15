@@ -181,6 +181,10 @@ pub enum Endpoint {
     /// A [`crate::ViewChange`]: a view to show in the desktop, or one to
     /// close.
     View,
+    /// A [`crate::SavedViewChange`]: a view to keep in the store and offer
+    /// from the Views section, or the read, list, delete or stale mark of
+    /// one already kept.
+    SavedView,
 }
 
 impl Endpoint {
@@ -209,6 +213,7 @@ impl Endpoint {
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
             Endpoint::Inbox => Cow::Borrowed("inbox"),
             Endpoint::View => Cow::Borrowed("view"),
+            Endpoint::SavedView => Cow::Borrowed("saved-view"),
         }
     }
 }
@@ -250,6 +255,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "telemetry" => Endpoint::Telemetry,
         "inbox" => Endpoint::Inbox,
         "view" => Endpoint::View,
+        "saved-view" => Endpoint::SavedView,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -468,6 +474,7 @@ mod tests {
             Endpoint::Telemetry,
             Endpoint::Inbox,
             Endpoint::View,
+            Endpoint::SavedView,
             Endpoint::TrackerMap,
             Endpoint::Reconcile,
         ];

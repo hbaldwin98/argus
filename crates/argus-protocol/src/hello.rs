@@ -39,6 +39,7 @@ pub const CAPABILITIES: &[&str] = &[
     VIEW_ACTIONS,
     DESCRIBE_EXTENSIONS,
     RENAME_PANE,
+    SAVED_VIEWS,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
@@ -105,6 +106,13 @@ pub const DESCRIBE_EXTENSIONS: &str = "describe-extensions";
 /// `ClientMsg::RenamePane`: a person naming a pane or a console from a
 /// client.
 pub const RENAME_PANE: &str = "rename-pane";
+
+/// Saved views: `ClientMsg::WatchSavedViews`, `ClientMsg::RefreshSavedView`,
+/// `ClientMsg::MarkSavedViewStale`, `ClientMsg::DeleteSavedView` and
+/// `ClientMsg::PressSavedView` from a client, `ServerMsg::SavedViews`,
+/// `ServerMsg::SavedViewChanged`, `ServerMsg::SavedViewRemoved` and
+/// `ServerMsg::SavedViewFailed` from the daemon.
+pub const SAVED_VIEWS: &str = "saved-views";
 
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

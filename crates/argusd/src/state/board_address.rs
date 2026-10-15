@@ -168,7 +168,7 @@ impl Daemon {
 
     /// The repositories in the tree whose board is the one filed under
     /// `key`. More than one when a repository is listed twice.
-    fn repositories_keyed(&self, key: &str) -> Vec<RepositoryId> {
+    pub(super) fn repositories_keyed(&self, key: &str) -> Vec<RepositoryId> {
         let paths: Vec<(RepositoryId, PathBuf)> = {
             let inner = self.inner.lock().unwrap();
             inner
@@ -192,7 +192,7 @@ impl Daemon {
             .collect()
     }
 
-    fn board_key(&self, path: &std::path::Path) -> String {
+    pub(super) fn board_key(&self, path: &std::path::Path) -> String {
         if let Some(key) = self.board_keys.lock().unwrap().get(path) {
             return key.clone();
         }

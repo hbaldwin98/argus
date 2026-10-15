@@ -65,6 +65,7 @@ impl Daemon {
                     daemon.refresh_git_status(only_active);
                     daemon.refresh_branches();
                     let _ = daemon.tree_tx.send(daemon.snapshot());
+                    daemon.push_saved_views();
                 })
                 .await;
             }
@@ -318,6 +319,7 @@ impl Daemon {
                             daemon.refresh_git_status(false);
                             daemon.refresh_branches();
                             let _ = daemon.tree_tx.send(daemon.snapshot());
+                            daemon.push_saved_views();
                         })
                         .await;
                     }

@@ -45,6 +45,7 @@ mod follow;
 mod diagrams;
 mod tasks;
 mod reconcile;
+mod saved_views;
 mod tracker_map;
 mod view_timers;
 mod views;
@@ -355,6 +356,10 @@ pub struct Daemon {
     /// is locked, so a watcher's replay and the events after it do not cross.
     agent_views: StdMutex<views::Views>,
     agent_views_tx: broadcast::Sender<views::ViewEvent>,
+    /// The views agents kept, and what clients were last told of them.
+    /// Changes are sent while this is locked, as the agents' are.
+    saved_views: StdMutex<saved_views::Held>,
+    saved_views_tx: broadcast::Sender<ServerMsg>,
     /// Agent templates, replaceable: `reload_config` swaps them, and every
     /// start looks its template up by name at the time it runs.
     templates: StdMutex<Vec<AgentConfig>>,
@@ -570,6 +575,7 @@ impl Daemon {
         // file is never more than one spawn or close out of date.
         self.record_session();
         let _ = self.tree_tx.send(self.snapshot());
+        self.push_saved_views();
     }
 
     /// The checkout at `path`, whatever workspace it is in.

@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use argus_protocol::{
     grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Focus, Hello, PaneId,
-    ServerMsg, CELL_RUNS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, PANE_TELEMETRY,
+    ServerMsg, CELL_RUNS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, PANE_TELEMETRY, SAVED_VIEWS,
 };
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
@@ -180,6 +180,17 @@ where
             // cannot name, so it is replayed the views as they stand; a
             // view closed in the gap is the one thing that replay cannot
             // say, and the next change to it will.
+            // A watcher that fell behind is sent the list whole, which
+            // replaces what it held, so a removal it missed goes with it.
+            event = next_view_event(&mut conn.saved_views) => match event {
+                Ok(msg) => {
+                    let _ = out_tx.send(msg);
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    conn.saved_views = Some(replay_saved_views(&daemon, &out_tx));
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
             event = next_view_event(&mut conn.agent_views) => match event {
                 Ok(msg) => {
                     let _ = out_tx.send(msg);
@@ -221,6 +232,17 @@ fn replay_views(
     rx
 }
 
+/// Every saved view as it stands, sent to the client, and the receiver
+/// that carries each change after.
+fn replay_saved_views(
+    daemon: &Daemon,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) -> broadcast::Receiver<ServerMsg> {
+    let (all, rx) = daemon.watch_saved_views();
+    let _ = out_tx.send(ServerMsg::SavedViews(all));
+    rx
+}
+
 /// Every extension's views and commands, whole.
 fn send_extensions(daemon: &Daemon, out_tx: &mpsc::UnboundedSender<ServerMsg>) {
     let _ = out_tx.send(ServerMsg::ExtensionViews(daemon.extension_views()));
@@ -241,6 +263,8 @@ struct Connection {
     /// Subscribed only when the client asks, so one that never does is
     /// never sent a view.
     agent_views: Option<broadcast::Receiver<ServerMsg>>,
+    /// The same for saved views, subscribed when the client asks.
+    saved_views: Option<broadcast::Receiver<ServerMsg>>,
     /// What the client said it can take: nothing until it greets, and
     /// nothing for good from a client that never does.
     peer: Option<Hello>,
@@ -254,6 +278,7 @@ impl Connection {
             reviews: daemon.review_lane(),
             focus_watch: None,
             agent_views: None,
+            saved_views: None,
             peer: None,
         }
     }

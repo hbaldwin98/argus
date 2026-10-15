@@ -320,6 +320,7 @@ live in this crate and a contract written twice drifts in silence.
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
 | `agent_view` | what a view an agent shows is made of — its blocks and values and the change an agent sends to show, patch or close one — as the desktop and the terminal client both draw it |
 | `view_check` | whether a view keeps its limits (sizes, depth, counts, bounded numbers, unique and printable ids, web links, checkout-relative paths, kinds this Argus knows), and where it does not, the path that names the fault |
+| `saved_view` | what a saved view is: its body, its scope, and the metadata an agent refreshes it from (recipe, sources, the commit it was built at, stale); what an agent writes to save one and reads back; and the line an agent is typed to refresh one |
 | `view_tree` | how the blocks of a view nest: the lists inside each container, and what a patch path and the desktop page each call them |
 | `view_press` | what a press of a view's action carries back, which of it the view offered, and the one line the agent is told of it |
 | `checkout_path` | whether a path an agent wrote stays inside the checkout it is read against |
@@ -360,6 +361,7 @@ to the type or its locking.
 | `state/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, side by side in one apply, and what the agent is told at each turn |
 | `state/views` | which views agents have shown, per pane, and which go when |
 | `state/view_timers` | which views are being asked to refresh, and the task that asks |
+| `state/saved_views` | the views agents kept: saving, marking stale, deleting, refreshing and pressing them, which of them an agent may reach, what each client is told as the rows or the tree change, and the staleness read off the tree |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and which lists its change pushes |
 | `state/board_address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
 | `state/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
@@ -377,6 +379,7 @@ to the type or its locking.
 | `harness/transcript/glance` | how much of a transcript a listing reads: a short one whole, a long one at its two ends |
 | `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi`, `harness/transcript/neutral` | one transcript format each: which of its records are a turn, a reply or a tool call, and what they say of the session |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
+| `store/saved_views` | the saved views as stored: one row per view, the features it is attached to, and what removing a feature does to them |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
 | `store/reconcile` | a feature's reconcile with its tickets as stored: the one under way and the last one carried out |
 | `store/capture` | a whole note written down as a feature, in one transaction |
@@ -727,6 +730,12 @@ been removed; the tables are still created on the way up from an older store, an
 Schema v5 adds `decision`, keyed by project name: one row per recorded decision, with `parent` a
 self-reference rather than a foreign key, since a board is read whole and reassembled by a reader
 that already has to survive a parent it cannot see.
+
+Schema v27 adds `saved_view` (id, the board key and feature number it is filed under, JSON body and
+sources, recipe, when and at which commit it was built, the checkout it was saved from, the stale
+mark, the pane that saved it) and `saved_view_feature` (the features a view is attached to, by board
+key and number). Neither refers to a feature by foreign key; `remove_feature` clears them as it
+clears the other rows that name one.
 
 `session.json`, `excluded-repos`, and `open-workspace` are read once, on the first start that finds
 them, and renamed to `*.imported` afterwards. A `session.json` that will not parse is left where it
@@ -2050,6 +2059,67 @@ ninth drops the pane's oldest. A pane's views go with it when it is closed. Only
 to the agent, not a read by Argus: `ClientMsg::RefreshView` sends the agent a message, through its
 harness's inbox or typed in as a review comment is, asking it to read the source again and show the
 view anew with the same id, and the view stays as it is until it does.
+
+A view can be kept. `argus-hook view save --stdin` takes a `SavedViewWrite` — the view, a `scope`, the
+`features` it is attached to, a `recipe` (at most 4 KiB, how to build it again) and up to 32
+`sources` (`file`, `commit`, `url`, `note`; a `url` is metadata and is never fetched) — and the
+daemon stores it as a `SavedView`, under the view's `id`, which is unique across the whole store.
+Saving an id again replaces the view in place: there are no versions. `view saved` lists what the
+pane's repository and the global scope hold, `view get <id>` prints the stored record in the shape
+`save` takes back, `view stale <id>` and `view delete <id>` do what they say. All five go through one
+pane API endpoint, `saved-view`, which takes a `SavedViewChange` and answers JSON; the ephemeral
+`view` endpoint and `state/views` are untouched, so a shown view still lives and dies with its
+agent. The save is checked like a shown view (`AgentView::checked`) and by `SavedViewWrite::checked`
+(recipe, source kinds and their own rules, a feature number from 1, at most 16 attached features),
+and refused with the limit's words. The store keeps 500 at most; a save of a new id past that is
+refused with a reason, and a save over an id already kept always lands.
+
+Scope says where a client offers a view, never who may read it: a person sees them all. `Global`
+belongs to no repository, `Repository` to one, `Feature` to one feature of one. A view is filed under
+the repository's board key (the string its features are filed under), not its `RepositoryId`, which
+is handed out afresh on every start; the daemon names the id when it sends the view, and does not
+send a view whose repository is not in the tree (it keeps it, and sends it when the repository
+returns). A feature is named by its number on that board, which is never reused. Attachments are
+rows of their own (`saved_view_feature`), so a view may be attached to features of several
+repositories; a save replaces the attachments of the saver's repository and leaves the rest. Removing
+a feature, in the same transaction, drops it from every attachment and moves a view scoped to it up
+to its repository. An agent reaches the views of its own repository and the global ones; saving over
+an id that belongs to another scope's board, or turning a global view into a repository's or back, is
+refused, so one agent cannot overwrite another repository's work by choosing the same name — delete
+it first to re-scope.
+
+`built_at` and `built_commit` are the daemon's: the time of the save, and HEAD of the saving pane's
+checkout read from Git at that moment (`None` outside a repository). A view is **stale** when the
+person or an agent marked it (`MarkSavedViewStale`, `view stale`; kept in the store and cleared by
+the next save), or when the saving checkout's HEAD, as the tree last read it, is another commit than
+`built_commit`. Only the HEAD move is checked: whether a `file` source changed would be a diff per
+view on every status poll, and the head moving is the signal the tree already carries. The check is
+a comparison against memory, run beside each tree broadcast and each Git poll; the daemon holds
+the rows and, per client-visible view, remembers what it last sent (a revision, the resolved scope
+and features, the stale flag), so an unchanged tree sends nothing and the move of one checkout
+sends one `SavedViewChanged`. The moved-HEAD flag is derived and never stored.
+
+A client under `SAVED_VIEWS` sends `WatchSavedViews` and is answered with `SavedViews` (every
+view), then `SavedViewChanged` and `SavedViewRemoved` as they change; a watcher that lags is sent
+the list whole. `RefreshSavedView` types one line to the agent that last saved the view, through its
+inbox as a refresh of a shown view is: the id, title, recipe and sources, and the command to save it
+again. `PressSavedView` relays a button press to that agent against what the view offers, as
+`PressView` does. The pane that saved a view is remembered in the store and forgotten when a daemon
+starts, as the other pane ids are, so a view nobody has saved since the restart answers a refresh
+with `SavedViewFailed`, a sentence saying so. Every refusal of a request about a saved view
+(it is gone, the agent is not running) is a `SavedViewFailed` to the client that asked, and only to a
+client that listed the capability; the messages themselves are ignored from one that did not.
+
+Any element can link to a saved view. `Value::View { id, label }` is a reference value beside
+`Path`, `Commit`, `Feature` and `Pane`, so every field, table cell, row item and extension table
+cell can carry one; the elements drawn from plain text — section, card, details, list item, stat,
+tree node, graph node, timeline event, checklist item, board card — take `opens: <id>`, absent from
+the JSON when unset. `Block::Embed { view }` draws another saved view's blocks in place; it is a leaf,
+the embedded body is never copied into the embedding view, and a client resolves it from the saved
+views it holds. A link or embed to a view that is not saved is allowed and drawn as missing. The
+check refuses a link whose id would not read back (empty, padded, past 64 bytes, a control
+character) and a view embedding its own id; a longer cycle cannot be seen from one view, so a
+client follows an embed at most `MAX_EMBED_DEPTH` (3) deep and draws a line instead.
 
 A view can offer buttons (`ViewAction`) on itself, a card, a row, a table's selected rows, or as a
 form's submit. Argus runs nothing for one: `ClientMsg::PressView` (under `VIEW_ACTIONS`) is relayed

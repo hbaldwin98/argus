@@ -451,6 +451,23 @@ pub enum ClientMsg {
     /// refresh is asked of it, and the view stays as it is until it shows
     /// it again.
     PressView { pane: PaneId, press: crate::view_press::ViewPress },
+    /// Start being sent the saved views: every one now, as one
+    /// [`ServerMsg::SavedViews`], and each change after. Only to a daemon
+    /// that listed `SAVED_VIEWS`.
+    WatchSavedViews,
+    /// Ask the agent that last saved a view to build it again and save it
+    /// anew. The view stays as it is until it does. Refused with a
+    /// [`ServerMsg::SavedViewFailed`] when that agent is not running.
+    RefreshSavedView { id: String },
+    /// The person says a saved view is out of date. Cleared by the next save.
+    MarkSavedViewStale { id: String },
+    /// The person deletes a saved view. Links and embeds that name it are
+    /// left to draw as missing.
+    DeleteSavedView { id: String },
+    /// A press of an action in a saved view (`id`, or one embedded in it),
+    /// relayed to the agent that last saved it as [`ClientMsg::PressView`]
+    /// is, against what the view offers.
+    PressSavedView { id: String, press: crate::view_press::ViewPress },
     /// An action taken in an extension's view, on `row` unless the action
     /// is view-wide. Forwarded to the extension as it stands; the view
     /// changes only when the extension publishes it again. Only to a daemon
@@ -731,6 +748,18 @@ pub enum ServerMsg {
     /// waiting on an agent that was never asked. `reason` is a sentence for
     /// them.
     ViewPressFailed { pane: PaneId, view: String, action: String, reason: String },
+    /// Every saved view, whole, to a client that sent
+    /// [`ClientMsg::WatchSavedViews`]. Replaces what it held.
+    SavedViews(Vec<crate::saved_view::SavedView>),
+    /// A saved view that was saved, changed or marked stale; replaces the
+    /// one with its id.
+    SavedViewChanged(Box<crate::saved_view::SavedView>),
+    /// A saved view that was deleted.
+    SavedViewRemoved { id: String },
+    /// A request about a saved view that was refused: it is gone, or its
+    /// agent is not running to be asked. Sent only to the client that
+    /// asked; `reason` is a sentence for the person.
+    SavedViewFailed { id: String, reason: String },
     /// Every view every running extension publishes, whole, after the
     /// daemon's greeting and whenever one changes. Only to a client that
     /// listed `EXTENSIONS`.

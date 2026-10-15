@@ -2521,3 +2521,123 @@ fn a_note_that_cannot_be_written_whole_writes_nothing() {
     let next = s.add_feature("argus", &feature("the next"), None, None, 1, None).unwrap();
     assert_eq!(next.number, 1, "and the number it would have had is not spent");
 }
+
+fn kept_view(id: &str, board: Option<&str>) -> StoredView {
+    StoredView {
+        id: id.into(),
+        board: board.map(str::to_string),
+        feature: None,
+        attached: Vec::new(),
+        recipe: Some("read the lockfile".into()),
+        sources: vec![argus_protocol::ViewSource::File { path: "Cargo.lock".into() }],
+        built_at: 10,
+        built_commit: Some("abc1234".into()),
+        checkout: Some("/src/argus".into()),
+        stale: false,
+        saved_by: Some(PaneId(4)),
+        view: argus_protocol::AgentView { id: id.into(), title: "Deps".into(), ..Default::default() },
+    }
+}
+
+#[test]
+fn a_saved_view_round_trips_and_is_overwritten_in_place() {
+    let s = store();
+    let mut view = kept_view("deps", Some("argus"));
+    view.feature = Some(2);
+    view.attached = vec![("argus".into(), 3), ("other".into(), 1)];
+    s.save_view(&view).unwrap();
+
+    assert_eq!(s.saved_views().unwrap(), [view.clone()]);
+
+    view.view.title = "Newer".into();
+    view.attached = vec![("argus".into(), 5)];
+    view.stale = true;
+    s.save_view(&view).unwrap();
+    let kept = s.saved_views().unwrap();
+    assert_eq!(kept.len(), 1, "no versions");
+    assert_eq!((kept[0].view.title.as_str(), kept[0].attached.clone(), kept[0].stale), ("Newer", view.attached, true));
+}
+
+#[test]
+fn the_store_holds_no_more_than_the_limit_and_still_takes_a_save_over_one_it_has() {
+    let s = store();
+    for n in 0..argus_protocol::MAX_SAVED_VIEWS {
+        s.save_view(&kept_view(&format!("v{n}"), None)).unwrap();
+    }
+    let refused = s.save_view(&kept_view("one-more", None)).unwrap_err().to_string();
+    assert!(refused.contains("delete one"), "{refused}");
+    s.save_view(&kept_view("v7", None)).unwrap();
+    assert!(s.delete_saved_view("v0").unwrap());
+    s.save_view(&kept_view("one-more", None)).unwrap();
+}
+
+#[test]
+fn marking_and_deleting_a_saved_view_say_whether_it_was_there() {
+    let s = store();
+    s.save_view(&kept_view("deps", None)).unwrap();
+    assert!(s.mark_saved_view_stale("deps", true).unwrap());
+    assert!(s.saved_views().unwrap()[0].stale);
+    assert!(!s.mark_saved_view_stale("nope", true).unwrap());
+    assert!(s.delete_saved_view("deps").unwrap());
+    assert!(!s.delete_saved_view("deps").unwrap());
+    assert!(s.saved_views().unwrap().is_empty());
+}
+
+#[test]
+fn a_restart_forgets_which_pane_saved_a_view() {
+    let s = store();
+    s.save_view(&kept_view("deps", None)).unwrap();
+    s.forget_panes().unwrap();
+    assert_eq!(s.saved_views().unwrap()[0].saved_by, None);
+}
+
+#[test]
+fn removing_a_feature_leaves_its_views_in_the_repository_and_lets_go_of_the_others() {
+    let s = store();
+    let a = s.add_feature("argus", &feature("dark mode"), None, None, 1, None).unwrap();
+    let b = s.add_feature("argus", &feature("light mode"), None, None, 2, None).unwrap();
+    let mut scoped = kept_view("scoped", Some("argus"));
+    scoped.feature = Some(a.number);
+    scoped.attached = vec![("argus".into(), a.number), ("argus".into(), b.number)];
+    s.save_view(&scoped).unwrap();
+
+    s.remove_feature("argus", &a.slug).unwrap();
+
+    let kept = &s.saved_views().unwrap()[0];
+    assert_eq!((kept.board.as_deref(), kept.feature), (Some("argus"), None));
+    assert_eq!(kept.attached, [("argus".to_string(), b.number)]);
+}
+
+#[test]
+fn migrating_a_v26_store_adds_the_saved_view_tables_and_keeps_what_it_had() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+    {
+        let conn = Connection::open(&path).unwrap();
+        for step in [
+            schema::SCHEMA_V1, schema::SCHEMA_V2, schema::SCHEMA_V3, schema::SCHEMA_V4, schema::SCHEMA_V5,
+            schema::SCHEMA_V6, schema::SCHEMA_V7, schema::SCHEMA_V8, schema::SCHEMA_V9, schema::SCHEMA_V10,
+            schema::SCHEMA_V11, schema::SCHEMA_V12, schema::SCHEMA_V13, schema::SCHEMA_V14, schema::SCHEMA_V15,
+            schema::SCHEMA_V16, schema::SCHEMA_V17, schema::SCHEMA_V18, schema::SCHEMA_V19, schema::SCHEMA_V20,
+            schema::SCHEMA_V21, schema::SCHEMA_V22, schema::SCHEMA_V23, schema::SCHEMA_V24, schema::SCHEMA_V25,
+            schema::SCHEMA_V26,
+        ] {
+            conn.execute_batch(step).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO feature (project, slug, title, body, at, state, number)
+             VALUES ('argus', 'remote', 'Remote', '', 1, 'open', 1)",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 26).unwrap();
+    }
+
+    let s = Store::open_at(&path).unwrap();
+
+    assert_eq!(s.features("argus").unwrap().len(), 1);
+    assert!(s.saved_views().unwrap().is_empty());
+    s.save_view(&kept_view("deps", Some("argus"))).unwrap();
+    let version: i64 = s.conn().pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+    assert_eq!(version, SCHEMA_VERSION);
+}

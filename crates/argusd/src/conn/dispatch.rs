@@ -121,6 +121,40 @@ pub(super) fn dispatch(
             }
             Ok(())
         }
+        // Saved views are the store's, so there is no pane to name: the id
+        // is. Each message needs the capability that brought it, and a
+        // client that never listed it is told nothing back.
+        ClientMsg::WatchSavedViews if conn.can(SAVED_VIEWS) => {
+            conn.saved_views = Some(replay_saved_views(daemon, out_tx));
+            Ok(())
+        }
+        ClientMsg::RefreshSavedView { id } if conn.can(SAVED_VIEWS) => {
+            if let Err(reason) = daemon.refresh_saved_view(&id) {
+                let _ = out_tx.send(ServerMsg::SavedViewFailed { id, reason });
+            }
+            Ok(())
+        }
+        ClientMsg::MarkSavedViewStale { id } if conn.can(SAVED_VIEWS) => {
+            if let Err(reason) = daemon.mark_saved_view_stale(&id) {
+                let _ = out_tx.send(ServerMsg::SavedViewFailed { id, reason });
+            }
+            Ok(())
+        }
+        ClientMsg::DeleteSavedView { id } if conn.can(SAVED_VIEWS) => daemon.delete_saved_view(&id).map(|_| ()),
+        ClientMsg::PressSavedView { id, press } if conn.can(SAVED_VIEWS) => {
+            if let Err(reason) = daemon.press_saved_view(&id, press) {
+                let _ = out_tx.send(ServerMsg::SavedViewFailed { id, reason });
+            }
+            Ok(())
+        }
+        ClientMsg::WatchSavedViews
+        | ClientMsg::RefreshSavedView { .. }
+        | ClientMsg::MarkSavedViewStale { .. }
+        | ClientMsg::DeleteSavedView { .. }
+        | ClientMsg::PressSavedView { .. } => {
+            tracing::debug!("a client sent a saved-view message without listing SAVED_VIEWS");
+            Ok(())
+        }
         ClientMsg::OpenInEditor {
             checkout,
             path,

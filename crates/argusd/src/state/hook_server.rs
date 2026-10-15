@@ -80,6 +80,8 @@ fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
         Some((_, Endpoint::Reconcile)) => argus_protocol::reconcile::MAX_PROPOSAL_BYTES,
         // The view's own bound, so the 413 is the refusal of a dump.
         Some((_, Endpoint::View)) => argus_protocol::MAX_VIEW_BYTES,
+        // The view's bound, and room for what it was built from.
+        Some((_, Endpoint::SavedView)) => argus_protocol::MAX_VIEW_BYTES + 128 * 1024,
         _ => MAX_BODY,
     }
 }
@@ -303,6 +305,12 @@ async fn handle_hook_request(
                 },
                 Err(error) => {
                     HookResponse::text(400, "Bad Request", format!("not a view change: {error}"))
+                }
+            },
+            Some((pane, Endpoint::SavedView)) => match serde_json::from_slice(&body) {
+                Ok(change) => json_reply(daemon.saved_view_for_agent(pane, change)),
+                Err(error) => {
+                    HookResponse::text(400, "Bad Request", format!("not a saved view change: {error}"))
                 }
             },
             _ => HookResponse::empty(200, "OK"),

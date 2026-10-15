@@ -235,6 +235,15 @@ pub fn repository_common_dir(path: &Path) -> Option<PathBuf> {
     Some(resolve_commondir(&git_dir))
 }
 
+/// The commit HEAD is on, as its hex id; `None` for a path that is no
+/// repository or one with no commit yet. What a saved view records as the
+/// commit it was built at, and the same id the tree's status polls report.
+pub fn head_oid(path: &Path) -> Option<String> {
+    let repo = git2::Repository::open(path).ok()?;
+    let head = repo.head().ok()?.peel_to_commit().ok()?;
+    Some(head.id().to_string())
+}
+
 /// Reads `<git_dir>/commondir` when present — a linked worktree's
 /// worktree-private directory names its shared directory there, relative to
 /// itself — and falls back to `git_dir` unchanged for an ordinary

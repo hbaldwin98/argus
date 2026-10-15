@@ -518,3 +518,39 @@ CREATE TABLE feature_reconcile (
     PRIMARY KEY (project, slug)
 ) WITHOUT ROWID;
 "#;
+
+/// Views an agent kept, and the features they are attached to.
+///
+/// A view is filed under its repository's board key, the string the
+/// repository's features are filed under, because a repository id is handed
+/// out fresh on every start; `board` is NULL for a view that belongs to no
+/// repository, and `feature` (a feature's number on that board) is set only
+/// for a view scoped to one. `body` and `sources` are JSON, read and
+/// written whole. `checkout` is where the saving pane was, so the commit
+/// the view was built at can be compared with that checkout's HEAD later.
+/// `saved_by_pane` is cleared when a daemon starts, as the other pane ids
+/// are. As with `feature_wait`, the feature is not a foreign key, and
+/// removing a feature clears what points at it.
+pub(super) const SCHEMA_V27: &str = r#"
+CREATE TABLE saved_view (
+    id            TEXT    PRIMARY KEY,
+    board         TEXT,
+    feature       INTEGER,
+    recipe        TEXT,
+    sources       TEXT    NOT NULL DEFAULT '[]',
+    body          TEXT    NOT NULL,
+    built_at      INTEGER NOT NULL,
+    built_commit  TEXT,
+    checkout      TEXT,
+    stale         INTEGER NOT NULL DEFAULT 0,
+    saved_by_pane INTEGER
+) WITHOUT ROWID;
+
+CREATE TABLE saved_view_feature (
+    view   TEXT    NOT NULL,
+    board  TEXT    NOT NULL,
+    number INTEGER NOT NULL,
+    PRIMARY KEY (view, board, number)
+) WITHOUT ROWID;
+CREATE INDEX saved_view_feature_target ON saved_view_feature (board, number);
+"#;

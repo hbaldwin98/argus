@@ -17,6 +17,7 @@ mod reconcile;
 mod reconcile_tickets;
 mod reload;
 mod restore;
+mod saved_views;
 mod scripted;
 
 use super::*;

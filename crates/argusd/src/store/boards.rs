@@ -337,6 +337,13 @@ impl Store {
     pub fn remove_feature(&self, project: &str, slug: &str) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        let number: Option<i64> = tx
+            .query_row(
+                "SELECT number FROM feature WHERE project = ?1 AND slug = ?2",
+                rusqlite::params![project, slug],
+                |r| r.get(0),
+            )
+            .optional()?;
         let changed = tx.execute(
             "DELETE FROM feature WHERE project = ?1 AND slug = ?2",
             rusqlite::params![project, slug],
@@ -377,6 +384,11 @@ impl Store {
             "DELETE FROM feature_scope WHERE project = ?1 AND slug = ?2",
             rusqlite::params![project, slug],
         )?;
+        // The views kept for it stay: scoped to the repository now, and no
+        // longer attached to it.
+        if let Some(number) = number {
+            super::saved_views::release_feature(&tx, project, number)?;
+        }
         tx.execute(
             "DELETE FROM artifact_feature_scope WHERE artifact_scope = ?1 AND slug = ?2",
             rusqlite::params![project, slug],
@@ -1040,7 +1052,8 @@ impl Store {
     pub(super) fn forget_panes(&self) -> Result<()> {
         self.conn().execute_batch(
             "UPDATE task SET claimed_pane = NULL WHERE claimed_pane IS NOT NULL;
-             UPDATE task_note SET pane = NULL WHERE pane IS NOT NULL;",
+             UPDATE task_note SET pane = NULL WHERE pane IS NOT NULL;
+             UPDATE saved_view SET saved_by_pane = NULL WHERE saved_by_pane IS NOT NULL;",
         )?;
         Ok(())
     }

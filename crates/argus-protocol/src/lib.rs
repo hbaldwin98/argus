@@ -52,6 +52,7 @@ pub mod reconcile;
 pub mod review;
 pub mod review_session;
 pub mod review_view;
+pub mod saved_view;
 pub mod sessions;
 pub mod standing;
 pub mod tasks;
@@ -74,6 +75,11 @@ pub use view_check::{
     MAX_VIEW_TITLE_BYTES, MIN_REFRESH_SECS,
 };
 pub use view_press::{find_action, press_request, Answer, AnswerValue, ViewAction, ViewPress, MAX_ANSWER_BYTES};
+pub use saved_view::{
+    refresh_request as saved_view_refresh_request, FeatureRef, SavedView, SavedViewChange, SavedViewEntry,
+    SavedViewRecord, SavedViewWrite, ViewScope, ViewSource, WriteScope, MAX_ATTACHED_FEATURES, MAX_EMBED_DEPTH,
+    MAX_RECIPE_BYTES, MAX_SAVED_VIEWS, MAX_SOURCE_BYTES, MAX_VIEW_SOURCES,
+};
 pub use view_tree::Slot;
 pub use artifacts::ArtifactScope;
 pub use board_follower::{BoardFollower, BoardScope, Received};
@@ -109,7 +115,7 @@ pub use held_tree::{transitions, HeldTree, Lineage, Transition};
 pub use hello::{
     ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
-    RENAME_PANE,
+    RENAME_PANE, SAVED_VIEWS,
 };
 pub use hook::{
     endpoint_url, extension_path, extension_prefix, extension_url, parse_extension_path, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,

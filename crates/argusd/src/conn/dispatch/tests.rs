@@ -843,3 +843,58 @@ fn only_a_greeting_that_takes_extensions_and_dialogs_is_put_a_dialog() {
         assert_eq!(askable(&h), asks, "{hello:?}");
     }
 }
+
+#[test]
+fn the_saved_view_messages_take_effect_only_for_a_client_that_listed_the_capability() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+
+    h.send(ClientMsg::WatchSavedViews);
+    h.send(ClientMsg::MarkSavedViewStale { id: "deps".into() });
+    assert!(h.conn.saved_views.is_none(), "a client that never greeted is not watching");
+    assert!(h.replies().is_empty(), "and is not answered");
+
+    h.send(ClientMsg::Hello(argus_protocol::Hello::this_build().without(argus_protocol::SAVED_VIEWS)));
+    h.replies();
+    h.send(ClientMsg::WatchSavedViews);
+    h.send(ClientMsg::DeleteSavedView { id: "deps".into() });
+    assert!(h.conn.saved_views.is_none());
+    assert!(h.replies().is_empty(), "one that greeted without it is no different");
+}
+
+#[test]
+fn watching_saved_views_replays_them_and_a_refused_request_is_answered_to_the_asker() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::Hello(argus_protocol::Hello::this_build()));
+    h.replies();
+
+    h.send(ClientMsg::WatchSavedViews);
+    assert!(matches!(h.replies().as_slice(), [ServerMsg::SavedViews(all)] if all.is_empty()));
+    assert!(h.conn.saved_views.is_some());
+
+    let press = argus_protocol::ViewPress {
+        view: "deps".into(),
+        action: "rerun".into(),
+        rows: vec![],
+        form: None,
+        answers: vec![],
+    };
+    for msg in [
+        ClientMsg::RefreshSavedView { id: "deps".into() },
+        ClientMsg::MarkSavedViewStale { id: "deps".into() },
+        ClientMsg::PressSavedView { id: "deps".into(), press },
+    ] {
+        h.send(msg);
+        match h.replies().as_slice() {
+            [ServerMsg::SavedViewFailed { id, reason }] => {
+                assert_eq!(id, "deps");
+                assert!(!reason.is_empty());
+            }
+            other => panic!("expected the failure, got {other:?}"),
+        }
+    }
+    // Deleting what is not there is not a failure: it is gone either way.
+    h.send(ClientMsg::DeleteSavedView { id: "deps".into() });
+    assert!(h.replies().is_empty());
+}

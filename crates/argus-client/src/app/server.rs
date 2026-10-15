@@ -304,6 +304,12 @@ impl App {
             ServerMsg::ViewPressFailed { action, reason, .. } => {
                 self.alert(format!("{action} failed: {reason}"));
             }
+            // MINIMAL STUB (saved views): this client does not list
+            // SAVED_VIEWS yet, so the daemon sends none of these.
+            ServerMsg::SavedViews(_)
+            | ServerMsg::SavedViewChanged(_)
+            | ServerMsg::SavedViewRemoved { .. }
+            | ServerMsg::SavedViewFailed { .. } => {}
             // Sent only to a client that listed extensions, which this
             // does not yet.
             ServerMsg::ExtensionViews(_)
