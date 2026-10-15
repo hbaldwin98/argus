@@ -235,7 +235,7 @@ impl AgentView {
     /// URL as a linked ticket's are.
     pub fn subject_link(&self) -> Option<TrackerLink> {
         let url = self.subject.clone()?;
-        crate::tracker_links::LinkWrite { url, tracker: None, key: None }.checked().ok()
+        crate::tracker_links::LinkWrite { url, ..Default::default() }.checked().ok()
     }
 }
 

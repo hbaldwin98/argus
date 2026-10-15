@@ -300,6 +300,7 @@ fn link(tracker: &str, key: &str, url: &str) -> TrackerLink {
         tracker: tracker.into(),
         key: key.into(),
         url: url.into(),
+        role: String::new(),
     }
 }
 

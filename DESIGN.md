@@ -265,6 +265,7 @@ live in this crate and a contract written twice drifts in silence.
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
+| `reconcile` | reconciling a feature with its tickets: what an agent proposes to carry between Argus and each tracker, which lines the person ticks and in what words, and what changed on Argus's side since the last one was carried out |
 | `capture` | how one note reads as a feature — its title, brief, tasks and decisions — and what writing it down asks of the daemon |
 | `adr` | how a decision reads as a record somebody can paste or correct |
 | `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
@@ -305,6 +306,7 @@ to the type or its locking.
 | `state/tree` | finding your way around the tree |
 | `state/features` | which feature a checkout is on, and the one path a change to a feature takes, with who asked as a parameter |
 | `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
+| `state/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, and what the agent is told at each turn |
 | `state/views` | which views agents have shown, per pane, and which go when |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
@@ -322,6 +324,7 @@ to the type or its locking.
 | `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi`, `harness/transcript/neutral` | one transcript format each: which of its records are a turn, a reply or a tool call, and what they say of the session |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
+| `store/reconcile` | a feature's reconcile with its tickets as stored: the one under way and the last one carried out |
 | `store/capture` | a whole note written down as a feature, in one transaction |
 | `store/panel`, `store/session` | runtime changes to the panel and when each repository was last used, and the panes to bring back after a restart |
 | `store/seen_sessions` | the sessions Argus saw agents run under a harness that keeps no transcript — title, checkout, first and last seen — so one still lists once its pane is gone |
@@ -1911,6 +1914,28 @@ by leaving the editor, only approved with `A` as it then reads, edits included, 
 `D`. Approval carries the text the person read rather than naming the draft, so an agent that
 redrafts in between cannot have its newer text approved unseen, and the store refuses an approval or
 a turn-down when no draft is waiting.
+
+A link also carries its role (schema v26, `feature_link.role`): a few of the person's words saying
+what the ticket is to the feature, `the PM's ticket`, given with `--role` or in the desktop's link
+dialog, and rewritten by linking the key again.
+
+A feature is reconciled with its tickets by an agent, never by Argus (`reconcile`, `state/reconcile`;
+schema v26, `feature_reconcile`). The person asks with `ClientMsg::Reconcile` and
+`ReconcileAction::Ask`, naming a live agent in the repository and saying what to bring in and send
+out; the daemon tells the agent through `notify`, on one line, to read the map, the feature and the
+tickets, write nothing, and propose. The agent posts a `ReconcileChange::Propose` to the pane API's
+`reconcile` endpoint (`argus-hook reconcile propose --stdin`): lines, each going into Argus or out to
+one tracker, with the exact text it writes and the call it will make, and what it noticed outside
+the ask, which is listed and never acted on. Every line starts unticked. `CarryOut` sends the lines
+the person ticked in the words they ticked them, perhaps edited; the daemon keeps them as `carrying`
+and tells the agent, which reads them with `argus-hook reconcile` and carries out those and nothing
+else. Nothing more is ticked or proposed until it reports with `argus-hook reconcile report`; a line
+named `--failed` comes back unticked with what the tracker said, and the rest are done with.
+`Discard` turns a proposal down or takes back an ask. Reporting records the reconcile as carried out
+(`Reconciled`) with how the feature's tasks and decisions stood, as a mark per row of its title or
+answer and state; `reconcile::Changes` compares the rows now with it, which is the "N changes since"
+a client shows and the dot on each task or decision changed since. Argus keeps the proposal's words
+only while it is under way, and keeps nothing read from a tracker after it.
 
 An agent can show the person what it read from a tracker, or from anywhere else it can reach, as a
 view. It writes an `AgentView` as JSON — an id, a title, an optional status chip, an optional

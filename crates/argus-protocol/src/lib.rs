@@ -41,6 +41,7 @@ pub mod outline;
 pub mod pane_view;
 pub mod paste;
 pub mod paths;
+pub mod reconcile;
 pub mod review;
 pub mod review_session;
 pub mod review_view;
@@ -120,7 +121,12 @@ pub use tasks::{
 };
 pub use tracker_links::{
     checked_map, LinkWrite, MapChange, MapDraft, TrackerLink, TrackerMap, MAX_FEATURE_LINKS,
-    MAX_LINK_KEY_BYTES, MAX_LINK_TRACKER_BYTES, MAX_LINK_URL_BYTES, MAX_TRACKER_MAP_BYTES,
+    MAX_LINK_KEY_BYTES, MAX_LINK_ROLE_BYTES, MAX_LINK_TRACKER_BYTES, MAX_LINK_URL_BYTES,
+    MAX_TRACKER_MAP_BYTES,
+};
+pub use reconcile::{
+    Changes, Failed, Noticed, ProposalWrite, ProposedLine, Reconcile, ReconcileAction, ReconcileChange,
+    Reconciled, Seen, Ticked,
 };
 pub use column::CheckoutRow;
 pub use column_verbs::Verb;

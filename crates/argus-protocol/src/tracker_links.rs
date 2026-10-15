@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 pub const MAX_LINK_URL_BYTES: usize = 2048;
 pub const MAX_LINK_KEY_BYTES: usize = 100;
 pub const MAX_LINK_TRACKER_BYTES: usize = 40;
+/// What a ticket is to the feature, said in a few words: `the PM's ticket`.
+pub const MAX_LINK_ROLE_BYTES: usize = 80;
 /// A feature is one piece of work; past this many tickets it is a project.
 pub const MAX_FEATURE_LINKS: usize = 20;
 
@@ -33,6 +35,10 @@ pub struct TrackerLink {
     /// What the browser opens. Always `http` or `https`: the client hands it
     /// to the system's opener, which would as happily run a `file:` URL.
     pub url: String,
+    /// Why it is linked, in the person's words: `the work`, `the PM's
+    /// ticket`. Empty when nobody said.
+    #[serde(default)]
+    pub role: String,
 }
 
 /// A link as it is asked for: a URL, and the tracker or key when the person
@@ -42,6 +48,8 @@ pub struct LinkWrite {
     pub url: String,
     pub tracker: Option<String>,
     pub key: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 impl LinkWrite {
@@ -76,7 +84,11 @@ impl LinkWrite {
         if tracker.len() > MAX_LINK_TRACKER_BYTES {
             return Err("a tracker's name is a word or two");
         }
-        Ok(TrackerLink { tracker, key, url })
+        let role = self.role.map(|r| r.split_whitespace().collect::<Vec<_>>().join(" ")).unwrap_or_default();
+        if role.len() > MAX_LINK_ROLE_BYTES || role.chars().any(char::is_control) {
+            return Err("a link's role is a few words: what the ticket is to the feature");
+        }
+        Ok(TrackerLink { tracker, key, url, role })
     }
 }
 
@@ -226,6 +238,7 @@ mod tests {
             url: "https://tracker.example/t/1234".into(),
             tracker: Some(" Shortcut ".into()),
             key: Some("SC-1234".into()),
+            role: None,
         }
         .checked()
         .unwrap();
@@ -254,6 +267,18 @@ mod tests {
         assert_eq!(checked_map("Linear: a feature is an issue\n\n").unwrap(), "Linear: a feature is an issue");
         assert!(checked_map("a\u{1b}[2Jb").is_err());
         assert!(checked_map(&"x".repeat(MAX_TRACKER_MAP_BYTES + 1)).is_err());
+    }
+
+    #[test]
+    fn a_role_says_in_a_few_words_why_the_ticket_is_linked() {
+        let write = |role: &str| LinkWrite {
+            url: "https://acme.atlassian.net/browse/ARG-142".into(),
+            role: Some(role.into()),
+            ..LinkWrite::default()
+        };
+        assert_eq!(write("  the PM's\nticket ").checked().unwrap().role, "the PM's ticket");
+        assert_eq!(write(" ").checked().unwrap().role, "", "no role is no role");
+        assert!(write(&"word ".repeat(30)).checked().is_err());
     }
 
     #[test]

@@ -190,6 +190,12 @@ fn dispatch_boards(
             checkout,
             change,
         } => daemon.change_tracker_map_for_client(project, checkout, change),
+        ClientMsg::Reconcile {
+            project,
+            checkout,
+            slug,
+            action,
+        } => daemon.reconcile_for_client(project, checkout, &slug, action),
         msg => return Err(Box::new(msg)),
     };
     Ok(result)

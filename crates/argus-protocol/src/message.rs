@@ -19,6 +19,7 @@ use crate::diagrams::{DiagramAction, DiagramList};
 use crate::sessions::{Resume, Session};
 use crate::transcript::Conversation;
 use crate::tasks::{TaskAction, TaskList};
+use crate::reconcile::ReconcileAction;
 use crate::tracker_links::MapChange;
 use crate::tree::{AgentTelemetry, PaneInfo, ProjectInfo, WorkspaceInfo};
 
@@ -228,6 +229,15 @@ pub enum ClientMsg {
         project: ProjectId,
         checkout: CheckoutId,
         change: MapChange,
+    },
+    /// Ask an agent to reconcile a feature with its tickets, carry out the
+    /// lines of its proposal the person ticked, or turn it down. Answered
+    /// by the board push, or an `Error` saying why not.
+    Reconcile {
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: String,
+        action: ReconcileAction,
     },
     /// Read or change one feature's tasks, in the same words an agent
     /// uses. Scoped to the feature, unlike the decision board: a task means

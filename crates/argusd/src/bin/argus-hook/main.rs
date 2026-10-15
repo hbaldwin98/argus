@@ -35,6 +35,9 @@
 //! argus-hook diagram drop 3                          # removes diagram #3
 //! argus-hook tracker-map                             # how this repo maps to its trackers
 //! argus-hook tracker-map draft --stdin               # proposes one; the person approves it
+//! argus-hook reconcile                               # the reconcile the person asked for
+//! argus-hook reconcile propose --stdin               # its lines as JSON, all unticked
+//! argus-hook reconcile report --failed 1 "403"       # the ticked lines are carried out
 //! argus-hook view show --stdin                       # shows the person a view, as JSON on stdin
 //! argus-hook view close eng-1                        # takes it down
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
@@ -81,8 +84,9 @@
 //! The commands live in modules by what they talk about: `board` for the
 //! shared work an agent reads and writes, `installed` for the form a
 //! harness's hook config runs, `transport` for how either reaches the
-//! daemon, `view` for what an agent shows the person, and `transcript` for the
-//! one file written without it.
+//! daemon, `view` for what an agent shows the person, `reconcile` for a
+//! feature's reconcile with its tickets, and `transcript` for the one file
+//! written without it.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -106,6 +110,7 @@ mod board;
 mod context;
 mod inbox;
 mod installed;
+mod reconcile;
 mod telemetry;
 mod transcript;
 mod transport;
@@ -146,7 +151,7 @@ fn main() {
 
 /// The commands that read or write a feature board, which may name the
 /// feature they are about rather than take the one the checkout is on.
-const BOARD_COMMANDS: &[&str] = &["feature", "task", "diagram", "decisions", "decide"];
+const BOARD_COMMANDS: &[&str] = &["feature", "task", "diagram", "decisions", "decide", "reconcile"];
 
 type NamedHandler = fn(&[&str]);
 
@@ -163,6 +168,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("task", task),
     ("diagram", diagram),
     ("tracker-map", tracker_map),
+    ("reconcile", reconcile::reconcile),
     ("view", view),
     ("decisions", decisions),
     ("decide", decide),

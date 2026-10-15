@@ -169,6 +169,10 @@ pub enum Endpoint {
     /// The board's tracker map, read; with a body, an agent's draft of it,
     /// which waits for the person and changes nothing until they approve.
     TrackerMap,
+    /// A [`crate::ReconcileChange`] to the feature's reconcile with its
+    /// tickets: the read, a proposal, or the report of what was carried
+    /// out.
+    Reconcile,
     /// A partial [`crate::AgentTelemetry`] report, as JSON.
     Telemetry,
     /// `GET`, held open: the [`crate::InboxItem`]s for the agent, as
@@ -201,6 +205,7 @@ impl Endpoint {
             Endpoint::Tasks => Cow::Borrowed("tasks"),
             Endpoint::Diagrams => Cow::Borrowed("diagrams"),
             Endpoint::TrackerMap => Cow::Borrowed("tracker-map"),
+            Endpoint::Reconcile => Cow::Borrowed("reconcile"),
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
             Endpoint::Inbox => Cow::Borrowed("inbox"),
             Endpoint::View => Cow::Borrowed("view"),
@@ -241,6 +246,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "tasks" => Endpoint::Tasks,
         "diagrams" => Endpoint::Diagrams,
         "tracker-map" => Endpoint::TrackerMap,
+        "reconcile" => Endpoint::Reconcile,
         "telemetry" => Endpoint::Telemetry,
         "inbox" => Endpoint::Inbox,
         "view" => Endpoint::View,
@@ -459,6 +465,7 @@ mod tests {
             Endpoint::Inbox,
             Endpoint::View,
             Endpoint::TrackerMap,
+            Endpoint::Reconcile,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all
@@ -489,6 +496,7 @@ mod tests {
             "/pane/3/decisions"
         );
         assert_eq!(pane_path(PaneId(3), Endpoint::Decide), "/pane/3/decide");
+        assert_eq!(pane_path(PaneId(3), Endpoint::Reconcile), "/pane/3/reconcile");
         assert_eq!(
             pane_path(PaneId(3), Endpoint::Status(Report::NeedsReview)),
             "/pane/3/status/needs-review"

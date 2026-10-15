@@ -12,6 +12,7 @@ mod lifecycle;
 mod pane_api;
 mod pastes;
 mod reconcile;
+mod reconcile_tickets;
 mod reload;
 mod restore;
 mod scripted;

@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::capture::Capture;
 use crate::decisions::Decision;
 use crate::ids::{CheckoutId, ProjectId};
+use crate::reconcile::{Reconcile, Reconciled};
 use crate::tasks::TaskCounts;
 use crate::tracker_links::{LinkWrite, TrackerLink};
 
@@ -147,6 +148,13 @@ pub struct Feature {
     /// The tickets it is linked to, in the order they were linked.
     #[serde(default)]
     pub links: Vec<TrackerLink>,
+    /// The reconcile with its tickets under way: asked of an agent,
+    /// proposed, or being carried out.
+    #[serde(default)]
+    pub reconcile: Option<Reconcile>,
+    /// The last reconcile carried out, which "changed since" counts from.
+    #[serde(default)]
+    pub reconciled: Option<Reconciled>,
 }
 
 impl Feature {

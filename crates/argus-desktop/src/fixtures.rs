@@ -83,7 +83,7 @@ pub fn board() -> argus_protocol::DecisionBoard {
             Feature {
                 tasks: counts(3, 1, 3),
                 checkouts: vec!["/src/main".into()],
-                links: vec![TrackerLink { tracker: "Linear".into(), key: "ENG-88".into(), url: "https://linear.app/x/ENG-88".into() }],
+                links: vec![TrackerLink { tracker: "Linear".into(), key: "ENG-88".into(), url: "https://linear.app/x/ENG-88".into(), role: "the work".into() }],
                 ..feature(7, "trim", "Trim context injection")
             },
             Feature { waits_on: vec!["trim".into()], tasks: counts(5, 0, 0), ..feature(8, "bump", "The ratatui bump") },

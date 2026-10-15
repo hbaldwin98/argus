@@ -98,6 +98,7 @@ accepted. Lift a hold when its reason has gone.
 ```sh
 "$ARGUS_HOOK" feature link <slug> <ticket-url>                # tracker and key read from the URL
 "$ARGUS_HOOK" feature link <slug> <url> --tracker Shortcut --key SC-12
+"$ARGUS_HOOK" feature link <slug> <url> --role "the PM's ticket"   # why it is linked
 "$ARGUS_HOOK" feature unlink <slug> <key>
 ```
 
@@ -124,6 +125,36 @@ or sync anything, and follow it. When asked to write one, draft it from what
 you can read of the trackers: the draft waits beside the map until the human
 approves it with `M` on the feature index, and until then the map that stands
 is the one to follow. Draft only when asked.
+
+### Reconciling a feature with its tickets
+
+```sh
+"$ARGUS_HOOK" reconcile --feature <slug>                  # what was asked, and where it stands
+"$ARGUS_HOOK" reconcile propose --feature <slug> --stdin  # your proposal, as JSON
+"$ARGUS_HOOK" reconcile report --feature <slug> --failed 1 "403 from Jira"
+```
+
+The person asks for a reconcile in the desktop window, and Argus tells you
+what they asked. Read the map, the feature and the tickets with your own
+tools, write nothing anywhere, then propose. A proposal is one line per
+change, each a single direction:
+
+```json
+{"asked": "put D2 on the Jira ticket",
+ "lines": [{"to": "Jira", "key": "ARG-142", "does": "comment with decision D2",
+            "why": "D2 is accepted", "text": "Decision D2 (accepted): ...",
+            "call": "Jira add comment\n  issue ARG-142\n  body the text above"}],
+ "noticed": [{"key": "ENG-93", "text": "title differs in Linear"}]}
+```
+
+`to` is `Argus` for a change brought into Argus, else the tracker written to.
+`text` is the exact text the line writes and `call` the call you will make.
+Propose only within the ask; list anything else you saw under `noticed`, and
+never act on it. Every line starts unticked. When the person ticks lines Argus
+tells you; `reconcile` then lists exactly those, in the words the person may
+have edited. Carry out those and nothing else, then `report`, naming each
+line that failed with what the tracker said. Asked without a desktop, propose
+the same way: a person can tick only what was proposed.
 
 ## Accepting a feature
 

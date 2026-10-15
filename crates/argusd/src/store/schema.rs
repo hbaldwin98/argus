@@ -501,3 +501,20 @@ CREATE TABLE console_pane (
     seq INTEGER PRIMARY KEY
 );
 "#;
+
+/// What a ticket is to the feature, in the person's words, and each
+/// feature's reconcile with its tickets: the one under way and the last one
+/// carried out, each a JSON document because both are read and written
+/// whole. The one under way holds the words of an agent's proposed lines,
+/// which go with it when it is carried out or turned down; the last one
+/// carried out holds only how Argus's own rows stood then.
+pub(super) const SCHEMA_V26: &str = r#"
+ALTER TABLE feature_link ADD COLUMN role TEXT NOT NULL DEFAULT '';
+CREATE TABLE feature_reconcile (
+    project    TEXT NOT NULL,
+    slug       TEXT NOT NULL,
+    reconcile  TEXT,
+    reconciled TEXT,
+    PRIMARY KEY (project, slug)
+) WITHOUT ROWID;
+"#;

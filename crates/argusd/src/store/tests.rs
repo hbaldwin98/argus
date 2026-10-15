@@ -1772,6 +1772,7 @@ fn ticket(tracker: &str, key: &str) -> TrackerLink {
         tracker: tracker.into(),
         key: key.into(),
         url: format!("https://tracker.example/{key}"),
+        role: String::new(),
     }
 }
 
@@ -1833,6 +1834,67 @@ fn removing_a_feature_clears_its_links() {
         s.features("argus").unwrap()[0].links.is_empty(),
         "a feature opened later under the same name starts with no links"
     );
+}
+
+#[test]
+fn a_links_role_is_kept_and_relinking_rewrites_it() {
+    let s = store();
+    s.add_feature("argus", &feature("remote"), None, None, 1, None)
+        .unwrap();
+    let mut link = ticket("Jira", "ARG-142");
+    link.role = "the PM's ticket".into();
+    s.link_feature("argus", "remote", &link).unwrap();
+    assert_eq!(s.features("argus").unwrap()[0].links[0].role, "the PM's ticket");
+    link.role = "the story".into();
+    s.link_feature("argus", "remote", &link).unwrap();
+    assert_eq!(s.features("argus").unwrap()[0].links, [link]);
+}
+
+fn under_way(proposed: bool) -> argus_protocol::Reconcile {
+    argus_protocol::Reconcile {
+        asked: "pull ENG-88's sub-issues".into(),
+        pane: PaneId(32),
+        by: "pane #32".into(),
+        at: 5,
+        proposed,
+        lines: Vec::new(),
+        noticed: Vec::new(),
+        carrying: Vec::new(),
+    }
+}
+
+#[test]
+fn a_reconcile_under_way_and_the_last_carried_out_ride_on_the_feature() {
+    let s = store();
+    s.add_feature("argus", &feature("remote"), None, None, 1, None)
+        .unwrap();
+    assert_eq!(s.reconcile("argus", "remote").unwrap(), (None, None));
+    s.set_reconcile("argus", "remote", Some(&under_way(false))).unwrap();
+    let read = &s.features("argus").unwrap()[0];
+    assert_eq!((read.reconcile.as_ref(), read.reconciled.as_ref()), (Some(&under_way(false)), None));
+
+    let carried = argus_protocol::Reconciled { at: 9, by: "pane #32".into(), seen: Vec::new() };
+    s.finish_reconcile("argus", "remote", None, &carried).unwrap();
+    assert_eq!(s.reconcile("argus", "remote").unwrap(), (None, Some(carried.clone())));
+    s.set_reconcile("argus", "remote", Some(&under_way(true))).unwrap();
+    assert_eq!(
+        s.reconcile("argus", "remote").unwrap(),
+        (Some(under_way(true)), Some(carried)),
+        "a new ask keeps the last reconcile carried out"
+    );
+    assert!(s.set_reconcile("argus", "gone", None).is_err());
+}
+
+#[test]
+fn removing_a_feature_clears_its_reconcile() {
+    let s = store();
+    s.add_feature("argus", &feature("remote"), None, None, 1, None)
+        .unwrap();
+    s.set_reconcile("argus", "remote", Some(&under_way(true))).unwrap();
+    s.remove_feature("argus", "remote").unwrap();
+    s.add_feature("argus", &feature("remote"), None, None, 2, None)
+        .unwrap();
+    assert_eq!(s.reconcile("argus", "remote").unwrap(), (None, None));
 }
 
 #[test]

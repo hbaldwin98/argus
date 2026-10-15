@@ -77,6 +77,7 @@ fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
         // Room for a map at its bound, as UTF-8 that the server refuses
         // past it in words rather than as a body cut off.
         Some((_, Endpoint::TrackerMap)) => argus_protocol::MAX_TRACKER_MAP_BYTES + 1024,
+        Some((_, Endpoint::Reconcile)) => argus_protocol::reconcile::MAX_PROPOSAL_BYTES,
         // The view's own bound, so the 413 is the refusal of a dump.
         Some((_, Endpoint::View)) => argus_protocol::MAX_VIEW_BYTES,
         _ => MAX_BODY,
@@ -284,6 +285,10 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Diagrams)) => {
                 diagrams_response(&daemon, pane, reporter.as_deref(), &body, filing)
             }
+            Some((pane, Endpoint::Reconcile)) => match decode(&body, "reconcile change") {
+                Ok(change) => json_reply(daemon.reconcile_for_agent(pane, change, filing)),
+                Err(refusal) => refusal,
+            },
             Some((pane, Endpoint::TrackerMap)) => json_reply(daemon.tracker_map_for_agent(
                 pane,
                 &String::from_utf8_lossy(&body),

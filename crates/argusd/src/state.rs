@@ -41,6 +41,7 @@ mod features;
 mod follow;
 mod diagrams;
 mod tasks;
+mod reconcile;
 mod tracker_map;
 mod views;
 mod git_ops;

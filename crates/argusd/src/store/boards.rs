@@ -200,6 +200,8 @@ impl Store {
                 waits_on: Vec::new(),
                 links: Vec::new(),
                 number: r.get(9)?,
+                reconcile: None,
+                reconciled: None,
             })
         })?;
         let mut features = rows.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -221,11 +223,11 @@ impl Store {
         }
 
         let mut stmt = conn.prepare(
-            "SELECT slug, tracker, key, url FROM feature_link WHERE project = ?1 ORDER BY slug, place",
+            "SELECT slug, tracker, key, url, role FROM feature_link WHERE project = ?1 ORDER BY slug, place",
         )?;
         let links = stmt
             .query_map(rusqlite::params![project], |r| {
-                let link = TrackerLink { tracker: r.get(1)?, key: r.get(2)?, url: r.get(3)? };
+                let link = TrackerLink { tracker: r.get(1)?, key: r.get(2)?, url: r.get(3)?, role: r.get(4)? };
                 Ok((r.get::<_, String>(0)?, link))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -235,6 +237,7 @@ impl Store {
                 feature.links.push(link);
             }
         }
+        super::reconcile::attach(&conn, project, &mut features)?;
 
         // Two grouped reads rather than a join per row. Both are what makes
         // a feature list say anything without being opened: the checkouts
@@ -367,6 +370,10 @@ impl Store {
             rusqlite::params![project, slug],
         )?;
         tx.execute(
+            "DELETE FROM feature_reconcile WHERE project = ?1 AND slug = ?2",
+            rusqlite::params![project, slug],
+        )?;
+        tx.execute(
             "DELETE FROM feature_scope WHERE project = ?1 AND slug = ?2",
             rusqlite::params![project, slug],
         )?;
@@ -493,8 +500,8 @@ impl Store {
     }
 
     /// Links a feature to a ticket. Linking a key it already has replaces
-    /// that link's tracker and URL and keeps its place, so correcting a
-    /// mistyped URL is the same command as making the link.
+    /// that link's tracker, URL and role and keeps its place, so correcting
+    /// a mistyped URL is the same command as making the link.
     pub fn link_feature(&self, project: &str, slug: &str, link: &TrackerLink) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -516,12 +523,13 @@ impl Store {
             anyhow::bail!("{slug} is linked to {MAX_FEATURE_LINKS} tickets already; unlink one first");
         }
         tx.execute(
-            "INSERT INTO feature_link (project, slug, key, tracker, url, place)
-             VALUES (?1, ?2, ?3, ?4, ?5,
+            "INSERT INTO feature_link (project, slug, key, tracker, url, role, place)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6,
                      (SELECT COALESCE(MAX(place), 0) + 1 FROM feature_link
                       WHERE project = ?1 AND slug = ?2))
-             ON CONFLICT(project, slug, key) DO UPDATE SET tracker = excluded.tracker, url = excluded.url",
-            rusqlite::params![project, slug, link.key, link.tracker, link.url],
+             ON CONFLICT(project, slug, key) DO UPDATE
+                 SET tracker = excluded.tracker, url = excluded.url, role = excluded.role",
+            rusqlite::params![project, slug, link.key, link.tracker, link.url, link.role],
         )?;
         tx.commit()?;
         Ok(())

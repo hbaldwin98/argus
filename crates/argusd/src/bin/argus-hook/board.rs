@@ -401,7 +401,7 @@ fn parse_link_args(args: &[&str]) -> Result<LinkWrite, String> {
     let mut index = 0;
     while index < args.len() {
         match args[index] {
-            flag @ ("--tracker" | "--key") => {
+            flag @ ("--tracker" | "--key" | "--role") => {
                 index += 1;
                 let start = index;
                 while index < args.len() && !args[index].starts_with("--") {
@@ -411,10 +411,10 @@ fn parse_link_args(args: &[&str]) -> Result<LinkWrite, String> {
                     return Err(format!("{flag} needs something after it"));
                 }
                 let value = Some(args[start..index].join(" "));
-                if flag == "--tracker" {
-                    link.tracker = value;
-                } else {
-                    link.key = value;
+                match flag {
+                    "--tracker" => link.tracker = value,
+                    "--key" => link.key = value,
+                    _ => link.role = value,
                 }
             }
             url if link.url.is_empty() => {
@@ -838,7 +838,15 @@ pub(super) fn format_feature(board: &FeatureBoard) -> String {
     }
     lines.extend(parked_lines(current, &board.features));
     for link in &current.links {
-        lines.push(format!("Linked to {} {}: {}", link.tracker, link.key, link.url));
+        let role = if link.role.is_empty() { String::new() } else { format!(" ({})", link.role) };
+        lines.push(format!("Linked to {} {}{role}: {}", link.tracker, link.key, link.url));
+    }
+    if let Some(reconcile) = &current.reconcile {
+        lines.push(format!(
+            "A reconcile with its tickets is under way ({}, {}); `argus-hook reconcile` reads it.",
+            reconcile.stage().as_str(),
+            reconcile.by
+        ));
     }
     if !current.body.trim().is_empty() {
         lines.push(String::new());
