@@ -9,12 +9,13 @@ import { value } from './values.js';
 export type TableBlock = Extract<Block, { kind: 'table' }>;
 
 /** What an extension's view adds to a table: a key per row, the one
- *  selected, what a click on a row does, and what the selected row offers
- *  at its end. An agent's table has none of it. */
+ *  selected, what a click and a double-click on a row do, and what the
+ *  selected row offers on a line under it. An agent's table has none of it. */
 export interface RowPicks {
   keys: readonly string[];
   selected: string | null;
   select: (key: string) => void;
+  activate: ((key: string) => void) | null;
   trailing: ((key: string) => Child) | null;
 }
 
@@ -53,6 +54,11 @@ function sortKey(v: Value): number | string {
   }
 }
 
+function classes(col: TableBlock['columns'][number]): string | null {
+  const names = [col.numeric && 'vtable-num', col.optional && 'vtable-optional'];
+  return names.filter(Boolean).join(' ') || null;
+}
+
 function compare(a: number | string, b: number | string): number {
   if (typeof a === 'number' && typeof b === 'number') {
     // An unparseable date is NaN; keep those last rather than scrambling.
@@ -73,11 +79,16 @@ export function table(block: TableBlock, picks: RowPicks | null = null): HTMLEle
     const tr = el(
       'tr',
       picks && key !== null
-        ? { class: on ? 'on' : null, 'aria-selected': String(on), onclick: () => picks.select(key) }
+        ? {
+            class: on ? 'on' : null,
+            'aria-selected': String(on),
+            onclick: () => picks.select(key),
+            ondblclick: picks.activate && (() => picks.activate?.(key)),
+          }
         : null,
       block.columns.map((col, c) => {
         const cell = cells[c];
-        const td = el('td', { class: col.numeric ? 'vtable-num' : null });
+        const td = el('td', { class: classes(col) });
         if (cell) {
           td.appendChild(value(cell));
           // Long text truncates in CSS, so the full text rides along as a tooltip.
@@ -88,16 +99,28 @@ export function table(block: TableBlock, picks: RowPicks | null = null): HTMLEle
         }
         return td;
       }),
-      picks?.trailing &&
-        el('td', { class: 'row-actions' }, on && key !== null && picks.trailing(key)),
     );
-    return { tr, cells, index };
+    // A row of its own, so a long run of buttons wraps instead of widening
+    // the table, and moves with its row when the table is sorted.
+    const actions =
+      on && key !== null && picks?.trailing
+        ? el(
+            'tr',
+            { class: 'row-actions' },
+            el(
+              'td',
+              { colspan: String(block.columns.length) },
+              el('div', { class: 'row-actions-bar' }, picks.trailing(key)),
+            ),
+          )
+        : null;
+    return { tr, actions, cells, index };
   });
 
   const body = el(
     'tbody',
     null,
-    rows.map((r) => r.tr),
+    rows.map((r) => [r.tr, r.actions]),
   );
   const headers: HTMLTableCellElement[] = [];
 
@@ -119,7 +142,7 @@ export function table(block: TableBlock, picks: RowPicks | null = null): HTMLEle
     const sign = direction === 'ascending' ? 1 : -1;
     const keyed = rows.map((r) => ({ r, key: r.cells[c] ? sortKey(r.cells[c]) : '' }));
     keyed.sort((x, y) => sign * compare(x.key, y.key) || x.r.index - y.r.index);
-    body.append(...keyed.map((k) => k.r.tr));
+    body.append(...keyed.flatMap((k) => (k.r.actions ? [k.r.tr, k.r.actions] : [k.r.tr])));
     mark(active, direction);
   };
 
@@ -129,7 +152,7 @@ export function table(block: TableBlock, picks: RowPicks | null = null): HTMLEle
     block.columns.map((col, c) => {
       const th = el(
         'th',
-        { scope: 'col', class: col.numeric ? 'vtable-num' : null },
+        { scope: 'col', class: classes(col) },
         el(
           'button',
           { type: 'button', class: 'vtable-sort', onclick: () => sortBy(c) },
@@ -140,7 +163,6 @@ export function table(block: TableBlock, picks: RowPicks | null = null): HTMLEle
       headers.push(th);
       return th;
     }),
-    picks?.trailing && el('th', null, el('span', { class: 'sr-only' }, 'Actions')),
   );
   // The agent says it sorted this column but not which way, so "other"
   // rather than a descending we would be guessing at.

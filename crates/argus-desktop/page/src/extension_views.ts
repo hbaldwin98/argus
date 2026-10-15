@@ -161,9 +161,12 @@ function header(view: ExtTable): HTMLElement {
       'div',
       { class: 'vpanel-meta' },
       el('span', { class: 'meta' }, `from ${view.extension}`),
-      el('span', { class: 'grow' }),
-      wide.map((action) => actionButton(action, 'btn sm')),
-      modeButton(!view.page),
+      el(
+        'span',
+        { class: 'vpanel-acts' },
+        wide.map((action) => actionButton(action, 'btn sm')),
+        modeButton(!view.page),
+      ),
     ),
   );
 }
@@ -176,7 +179,10 @@ function asBlock(view: ExtTable): TableBlock {
     status ? [row.status ? { kind: 'chip', chip: row.status } : { kind: 'empty' }] : [];
   return {
     kind: 'table',
-    columns: [...(status ? [{ title: 'Status', numeric: false }] : []), ...view.columns],
+    columns: [
+      ...(status ? [{ title: 'Status', numeric: false, optional: false }] : []),
+      ...view.columns,
+    ],
     rows: view.rows.map((row) => [...lead(row), ...row.cells]),
     sorted_by: null,
     total: null,
@@ -195,6 +201,9 @@ function body(view: ExtTable): HTMLElement {
       keys: view.rows.map((row) => row.key),
       selected: view.selected,
       select: (row) => call('select_extension_row', { key: row }),
+      // The row rides along, so the default is taken on the row clicked
+      // whether or not its select has landed yet.
+      activate: view.default ? (row) => call('extension_default', { row }) : null,
       trailing: perRow.length ? () => perRow.map((a) => actionButton(a, 'btn sm')) : null,
     }),
   );

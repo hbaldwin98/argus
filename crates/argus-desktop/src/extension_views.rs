@@ -218,6 +218,11 @@ impl ExtensionViews {
         }
     }
 
+    /// The id of the view open's default row action, when it names one.
+    pub fn default_action(&self, here: &Here) -> Option<String> {
+        self.shown(here)?.default.clone()
+    }
+
     /// The person answered the question: a yes is what it asked about.
     pub fn answer(&mut self, yes: bool) -> Option<ClientMsg> {
         let (_, msg) = self.open.as_mut()?.confirm.take()?;
@@ -281,6 +286,7 @@ impl ExtensionViews {
                 .collect(),
             selected: self.selected_in(view),
             confirm: self.open.as_ref().and_then(|o| o.confirm.as_ref()).map(|(c, _)| c.clone()),
+            default: view.default.clone(),
         })
     }
 }

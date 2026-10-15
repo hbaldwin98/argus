@@ -99,6 +99,8 @@ export const state: {
     removing: null,
     width: null,
     viewsWidth: null,
+    outlineWidth: null,
+    briefHeight: null,
   },
   features: null,
   capture: null,

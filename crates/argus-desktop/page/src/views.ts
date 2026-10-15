@@ -1,6 +1,6 @@
 // The side panel the views agents showed open in, beside whatever stage is
-// up so the rail and the stage stay in sight, and the tab at the window's
-// edge that brings it back. Rust holds the views and which one is open;
+// up so the rail and the stage stay in sight, and the button in the title
+// strip that brings it back. Rust holds the views and which one is open;
 // the panel draws them and says what was pressed.
 
 import type { Link } from './bindings/Link';
@@ -14,6 +14,7 @@ import {
   extensionPanel,
   extensionTabs,
   extensionViewCount,
+  extensionViewFocused,
   openFirstExtensionView,
 } from './extension_views.js';
 import { call } from './tauri.js';
@@ -38,7 +39,10 @@ export function drawViews(page: ViewsPage = shown): void {
   $('views').hidden = !open && !extension;
   launcher.hidden = Boolean(open) || Boolean(extension) || waiting === 0;
   if (extension) {
+    // Replaced, the view would drop the keys a click in it gave it.
+    const had = extensionViewFocused();
     panel.replaceChildren(tabs(page.views, null), ...extension);
+    if (had) document.getElementById('extension-view')?.focus();
     return;
   }
   if (!open) {
@@ -122,27 +126,30 @@ function header(v: PageView): HTMLElement {
         v.from ? `read by ${v.from} · ${ago(at)}` : ago(at),
         v.refreshing ? ' · asked to read it again' : '',
       ),
-      el('span', { class: 'grow' }),
       el(
-        'button',
-        {
-          class: 'btn sm',
-          type: 'button',
-          disabled: v.refreshing,
-          title: 'Ask the agent to read it again',
-          onclick: () => call('refresh_view', { pane: v.pane, id: v.view.id }),
-        },
-        'Refresh',
-      ),
-      el(
-        'button',
-        {
-          class: 'btn sm',
-          type: 'button',
-          title: 'Close this view for every window',
-          onclick: () => call('close_view', { pane: v.pane, id: v.view.id }),
-        },
-        'Close',
+        'span',
+        { class: 'vpanel-acts' },
+        el(
+          'button',
+          {
+            class: 'btn sm',
+            type: 'button',
+            disabled: v.refreshing,
+            title: 'Ask the agent to read it again',
+            onclick: () => call('refresh_view', { pane: v.pane, id: v.view.id }),
+          },
+          'Refresh',
+        ),
+        el(
+          'button',
+          {
+            class: 'btn sm',
+            type: 'button',
+            title: 'Close this view for every window',
+            onclick: () => call('close_view', { pane: v.pane, id: v.view.id }),
+          },
+          'Close',
+        ),
       ),
     ),
   );
@@ -179,13 +186,13 @@ export function viewsWidth(width: number | null): void {
 export function listenToViewsEdge(): void {
   const panel = $('views');
   dragEdge($('views-sash'), panel, {
-    widthAt: (x) => panel.getBoundingClientRect().right - x,
+    sizeAt: (x) => panel.getBoundingClientRect().right - x,
     draw: viewsWidth,
     report: (width) => call('views_width', { width }),
   });
 }
 
-/** Brings the newest view out, from the tab at the window's edge. */
+/** Brings the newest view out, from the title strip's button. */
 export function openNewestView(): void {
   const newest = shown.views[0];
   if (newest) call('open_view', { pane: newest.pane, id: newest.view.id });

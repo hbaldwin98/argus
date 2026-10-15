@@ -405,8 +405,9 @@ its scope holds, and opens it docked in the side panel or as a page.
   `"stage"` opens it as a page. The person can move it, and the window remembers their choice.
 - `icon` is one of {{EXT_ICONS}}. Any other name of lowercase letters, digits and dashes, at most
   {{MAX_ICON_NAME}} bytes, is drawn as a generic icon.
-- `columns` are `{"title", "numeric"}`; a numeric column is aligned right. A view needs at least
-  one.
+- `columns` are `{"title", "numeric", "optional"}`; a numeric column is aligned right, and an
+  optional one is dropped where the table is too narrow for every column, before it scrolls
+  sideways. A view needs at least one.
 - `rows` are at most {{MAX_TABLE_ROWS}}. Each row has:
   - `key`, unique in the view, which an action on the row names.
   - `cells`, one value per column in order.
@@ -418,6 +419,9 @@ its scope holds, and opens it docked in the side panel or as a page.
   - `confirm`, a question asked before the action is sent.
   - `help`, one line of at most {{MAX_HELP_BYTES}} bytes saying what it does, for
     `argus extension show`.
+- `default` is the `id` of a row action that a double-click on a row, or Enter on the selected one,
+  sends for that row, as its key would. What it means for the row's state is the extension's to
+  decide: a stopped service's start, a running one's logs.
 
 The answer lists the action keys refused, by `VIEW/ACTION`. The action stays, without its key:
 

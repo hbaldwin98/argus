@@ -1964,7 +1964,7 @@ view anew with the same id, and the view stays as it is until it does.
 The desktop window watches views when the daemon offers them (`AGENT_VIEWS`); the terminal client
 never asks. A view opens in a side panel beside the stage, so the rail and the stage stay in sight and
 the pane shrinks to fit rather than being covered. It opens by itself only when it comes from the pane
-on screen and the panel is not already showing one; otherwise a tab at the window's edge counts the
+on screen and the panel is not already showing one; otherwise a button in the title strip counts the
 views waiting and brings the newest out. The panel has a tab per view, newest first, says who read it
 and how long ago, and offers Refresh, which waits for the agent to show it again, and Close, which
 takes it down for every client. Its left edge drags it wider or narrower, between 360 and 1200 pixels, kept
@@ -2217,11 +2217,13 @@ kept per view in `desktop.json`, across its extension republishing or restarting
 to the stage the page opened over. A view has no digit, the digits being the built-in stages': it is
 reached from the sidebar, its Tab and Enter included, from the palette's Go to, and the shortcuts
 sheet says so under its extension's heading. Docked, it is a tab of the side panel and counted on
-the launcher at the window's edge with the agents' views; it takes the panel's body from an agent's
+the launcher in the title strip with the agents' views; it takes the panel's body from an agent's
 view and gives it back when an agent's is chosen, and an agent's view arriving never takes the
 panel from it. Either way it is drawn by the agent table's renderer (`table.ts`, `values.ts`), a
-row's status leading it as a chip, with the selected row marked and its actions at its end,
-view-wide actions in its header. A page has the keys while it is up; docked, a click in it gives
+row's status leading it as a chip, with the selected row marked and its actions on a wrapping line
+under it, view-wide actions in its header, and a column marked optional dropped when the table is
+narrow. A double-click on a row, or Enter on the selected one, sends the view's `default` action
+for it. A page has the keys while it is up; docked, a click in it gives
 it them: `j`/`k` move the row, and each action's key runs it. An action that asks first asks in the
 dialog the Checkouts stage asks before a removal in, and an action is sent as it stands — the table
 changes when the extension publishes again. A view taken away, or out of scope where the person now

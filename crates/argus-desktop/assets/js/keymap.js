@@ -130,7 +130,11 @@ function run(action) {
             if (state.rail.stage === 'checkouts')
                 return checkoutsAction(action);
             if (state.rail.stage === 'extension') {
-                const moves = action === 'next' || action === 'previous' || action === 'first' || action === 'last';
+                const moves = action === 'next' ||
+                    action === 'previous' ||
+                    action === 'first' ||
+                    action === 'last' ||
+                    action === 'choose';
                 if (moves)
                     call('extension_key', { action });
                 return moves;

@@ -2148,7 +2148,7 @@ select option::checkmark {
 /* A feature opened from the index: its outline beside the row under the
  * cursor. */
 .work-outline {
-  flex: 1.25;
+  flex: var(--outline-flex, 1.25);
   min-width: 0;
   padding: var(--sp-16) var(--sp-12);
   border-right: 1px solid var(--line);
@@ -2206,6 +2206,16 @@ select option::checkmark {
 }
 .brief-row > :first-child {
   flex: 1;
+}
+/* The header never scrolls, so a long brief scrolls in itself rather than
+   push the lenses and the work under them off the window. */
+.brief-row > .prose {
+  max-height: var(--brief-h, min(30vh, 240px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.brief-edit .field.area {
+  max-height: 45vh;
 }
 .field.area {
   height: auto;
@@ -3505,6 +3515,15 @@ body.console-fullscreen #bar {
   gap: var(--sp-8);
   flex-wrap: wrap;
 }
+/* The buttons wrap as one right-aligned group, so on a narrow panel they
+   stack under the meta rather than scatter across two lines. */
+.vpanel-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-8);
+  margin-left: auto;
+}
 .vpanel-meta .vlink .track {
   cursor: pointer;
 }
@@ -3540,25 +3559,27 @@ body.console-fullscreen #bar {
 .vtabs-bar {
   border-bottom: 1px solid var(--line);
 }
+/* In the title strip, before the window's buttons, where it covers nothing. */
 .vlauncher {
-  position: absolute;
-  right: 0;
-  top: 96px;
-  z-index: 3;
+  flex: none;
+  align-self: center;
+  margin-right: var(--sp-8);
   display: inline-flex;
   align-items: center;
   gap: var(--sp-6);
+  height: 24px;
   border: 1px solid var(--line-strong);
-  border-right: 0;
-  border-radius: var(--r-md) 0 0 var(--r-md);
+  border-radius: var(--r-md);
   background: var(--bg-chrome);
   color: var(--fg);
   font: inherit;
   font-size: var(--fs-sm);
   font-weight: 600;
-  padding: var(--sp-6) var(--sp-12);
+  padding: 0 var(--sp-8);
   cursor: pointer;
-  box-shadow: var(--shadow-pop);
+}
+.vlauncher:hover {
+  background: var(--fill);
 }
 .vlauncher[hidden] {
   display: none;
@@ -3798,6 +3819,13 @@ body.console-fullscreen #bar {
 .vtable {
   overflow-x: auto;
   max-width: 100%;
+  container-type: inline-size;
+}
+/* A column its author marked optional gives way before the table scrolls. */
+@container (max-width: 560px) {
+  .vtable-optional {
+    display: none;
+  }
 }
 .vtable-table {
   width: 100%;
@@ -4216,6 +4244,32 @@ body.resizing {
   cursor: col-resize;
   user-select: none;
 }
+body.resizing:has(.brief-sash.held) {
+  cursor: row-resize;
+}
+
+/* An open feature's edges: between the outline and the detail, and under
+   the brief, whose sizes Rust keeps as it does the rail's. */
+.split-sash {
+  flex: none;
+  width: 6px;
+  margin: 0 -3px;
+  z-index: 2;
+  cursor: col-resize;
+}
+.brief-sash {
+  height: 6px;
+  margin: calc(-1 * var(--sp-8)) 0 -4px;
+  cursor: row-resize;
+}
+.split-sash:hover,
+.split-sash.held {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.brief-sash:hover,
+.brief-sash.held {
+  box-shadow: inset 0 -2px 0 0 var(--accent);
+}
 
 /* ---- An open feature's lenses ------------------------------------------ */
 
@@ -4499,12 +4553,20 @@ body.resizing {
 .ext-body .vtable-table tr.on td:first-child {
   box-shadow: inset 3px 0 0 var(--accent);
 }
-.ext-body .row-actions {
-  white-space: nowrap;
-  text-align: right;
+/* The selected row's actions, on a row of their own under it that wraps,
+   so the table is never widened by every button side by side. */
+.vtable-table tr.row-actions > td {
+  height: auto;
+  padding: var(--sp-4) var(--sp-8) var(--sp-8);
+  white-space: normal;
+  background: var(--bg-selected);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
-.ext-body .row-actions .btn + .btn {
-  margin-left: var(--sp-6);
+.row-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-6);
 }
 
 /* An extension's question: over the window's top and never a scrim, so one
@@ -4523,6 +4585,8 @@ body.resizing {
   pointer-events: auto;
   width: min(480px, calc(100vw - 32px));
 }
+/* `.dbody` is the diff's: monospace, unpadded and sunken, which a
+   question laid over a live pane must not be. */
 .ext-dialog .dbody {
   display: flex;
   flex-direction: column;

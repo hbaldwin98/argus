@@ -34,6 +34,10 @@ function sortKey(v) {
             return '';
     }
 }
+function classes(col) {
+    const names = [col.numeric && 'vtable-num', col.optional && 'vtable-optional'];
+    return names.filter(Boolean).join(' ') || null;
+}
 function compare(a, b) {
     if (typeof a === 'number' && typeof b === 'number') {
         // An unparseable date is NaN; keep those last rather than scrambling.
@@ -51,10 +55,15 @@ export function table(block, picks = null) {
         const key = picks?.keys[index] ?? null;
         const on = key !== null && key === picks?.selected;
         const tr = el('tr', picks && key !== null
-            ? { class: on ? 'on' : null, 'aria-selected': String(on), onclick: () => picks.select(key) }
+            ? {
+                class: on ? 'on' : null,
+                'aria-selected': String(on),
+                onclick: () => picks.select(key),
+                ondblclick: picks.activate && (() => picks.activate?.(key)),
+            }
             : null, block.columns.map((col, c) => {
             const cell = cells[c];
-            const td = el('td', { class: col.numeric ? 'vtable-num' : null });
+            const td = el('td', { class: classes(col) });
             if (cell) {
                 td.appendChild(value(cell));
                 // Long text truncates in CSS, so the full text rides along as a tooltip.
@@ -64,11 +73,15 @@ export function table(block, picks = null) {
                 }
             }
             return td;
-        }), picks?.trailing &&
-            el('td', { class: 'row-actions' }, on && key !== null && picks.trailing(key)));
-        return { tr, cells, index };
+        }));
+        // A row of its own, so a long run of buttons wraps instead of widening
+        // the table, and moves with its row when the table is sorted.
+        const actions = on && key !== null && picks?.trailing
+            ? el('tr', { class: 'row-actions' }, el('td', { colspan: String(block.columns.length) }, el('div', { class: 'row-actions-bar' }, picks.trailing(key))))
+            : null;
+        return { tr, actions, cells, index };
     });
-    const body = el('tbody', null, rows.map((r) => r.tr));
+    const body = el('tbody', null, rows.map((r) => [r.tr, r.actions]));
     const headers = [];
     const mark = (active, dir) => {
         headers.forEach((th, c) => {
@@ -87,14 +100,14 @@ export function table(block, picks = null) {
         const sign = direction === 'ascending' ? 1 : -1;
         const keyed = rows.map((r) => ({ r, key: r.cells[c] ? sortKey(r.cells[c]) : '' }));
         keyed.sort((x, y) => sign * compare(x.key, y.key) || x.r.index - y.r.index);
-        body.append(...keyed.map((k) => k.r.tr));
+        body.append(...keyed.flatMap((k) => (k.r.actions ? [k.r.tr, k.r.actions] : [k.r.tr])));
         mark(active, direction);
     };
     const head = el('tr', null, block.columns.map((col, c) => {
-        const th = el('th', { scope: 'col', class: col.numeric ? 'vtable-num' : null }, el('button', { type: 'button', class: 'vtable-sort', onclick: () => sortBy(c) }, col.title, el('span', { class: 'vtable-arrow', 'aria-hidden': 'true' })));
+        const th = el('th', { scope: 'col', class: classes(col) }, el('button', { type: 'button', class: 'vtable-sort', onclick: () => sortBy(c) }, col.title, el('span', { class: 'vtable-arrow', 'aria-hidden': 'true' })));
         headers.push(th);
         return th;
-    }), picks?.trailing && el('th', null, el('span', { class: 'sr-only' }, 'Actions')));
+    }));
     // The agent says it sorted this column but not which way, so "other"
     // rather than a descending we would be guessing at.
     mark(active, 'other');

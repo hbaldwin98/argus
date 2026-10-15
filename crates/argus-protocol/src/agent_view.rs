@@ -120,6 +120,10 @@ pub struct Column {
     /// Aligned right, in figures.
     #[serde(default)]
     pub numeric: bool,
+    /// Dropped where the table is too narrow for every column, so the ones
+    /// that matter fit without scrolling sideways.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 /// A comment, an event, a commit.
@@ -350,8 +354,8 @@ mod tests {
     fn table(rows: Vec<Vec<Value>>) -> Block {
         Block::Table {
             columns: vec![
-                Column { title: "Run".into(), numeric: false },
-                Column { title: "Took".into(), numeric: true },
+                Column { title: "Run".into(), numeric: false, optional: false },
+                Column { title: "Took".into(), numeric: true, optional: false },
             ],
             rows,
             sorted_by: None,

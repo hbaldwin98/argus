@@ -9,6 +9,7 @@
 import { notice } from './chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
 import { $, el } from './dom.js';
+import { dragEdge } from './edge.js';
 import { flowsAction, flowsLens } from './flows.js';
 import { ticketLink } from './tickets.js';
 import { actionFor } from './keymap.js';
@@ -151,8 +152,10 @@ export function drawWork() {
         body = recordLens(view);
     else if (view.lens === 'flows')
         body = flowsLens(view);
-    else
-        body = el('div', { class: 'split' }, outline(view), detail(view));
+    else {
+        const side = outline(view);
+        body = el('div', { class: 'split' }, side, outlineSash(side), detail(view));
+    }
     stage.replaceChildren(head(view), body);
     drawExpanded();
     const again = focused?.id ? document.getElementById(focused.id) : null;
@@ -206,9 +209,11 @@ function head(view) {
         brief = el('div', { class: 'stack-6 brief-edit' }, area, formButtons('Save the brief'));
     }
     else {
-        brief = el('div', { class: 'brief-row' }, view.brief
-            ? el('div', { class: 'fg-muted prose' }, view.brief)
-            : el('div', { class: 'fg-faint' }, 'No brief yet.'), el('button', { class: 'btn sm', onclick: () => begin({ what: 'brief', text: view.brief }) }, 'Edit brief'));
+        const text = view.brief ? el('div', { class: 'fg-muted prose' }, view.brief) : null;
+        brief = [
+            el('div', { class: 'brief-row' }, text ?? el('div', { class: 'fg-faint' }, 'No brief yet.'), el('button', { class: 'btn sm', onclick: () => begin({ what: 'brief', text: view.brief }) }, 'Edit brief')),
+            text && briefSash(text),
+        ];
     }
     const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
     return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, lensName), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('Esc'), ' back to features')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), el('span', { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` }, view.standing), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)], view.branch && view.agent && ' · ', view.agent && [
@@ -274,6 +279,53 @@ function lensKeys(lens) {
 }
 export function keycap(key) {
     return el('span', { class: 'kbd' }, key);
+}
+/** The sizes the person dragged the outline and the brief to, or the
+ *  stylesheet's own. */
+export function featureEdges(width, height) {
+    const root = document.documentElement.style;
+    if (width === null)
+        root.removeProperty('--outline-flex');
+    else
+        root.setProperty('--outline-flex', `0 0 ${width}px`);
+    if (height === null)
+        root.removeProperty('--brief-h');
+    else
+        root.setProperty('--brief-h', `${height}px`);
+}
+/** The edge between the outline and the detail; a double-click gives back
+ *  the usual split. */
+function outlineSash(side) {
+    const sash = el('div', {
+        class: 'split-sash',
+        role: 'separator',
+        'aria-orientation': 'vertical',
+        'aria-label': 'Resize the outline',
+        title: 'Drag to resize; double-click for the usual width',
+    });
+    dragEdge(sash, side, {
+        sizeAt: (x) => x - side.getBoundingClientRect().left,
+        draw: (width) => featureEdges(width, state.rail.briefHeight),
+        report: (width) => call('outline_width', { width }),
+    });
+    return sash;
+}
+/** The edge under the brief, past which it scrolls. */
+function briefSash(text) {
+    const sash = el('div', {
+        class: 'brief-sash',
+        role: 'separator',
+        'aria-orientation': 'horizontal',
+        'aria-label': 'Resize the brief',
+        title: 'Drag to resize; double-click for the usual height',
+    });
+    dragEdge(sash, text, {
+        vertical: true,
+        sizeAt: (y) => y - text.getBoundingClientRect().top,
+        draw: (height) => featureEdges(state.rail.outlineWidth, height),
+        report: (height) => call('brief_height', { height }),
+    });
+    return sash;
 }
 function outline(view) {
     const section = el('section', { class: 'work-outline', 'aria-label': 'Outline' }, el('div', { class: 'label' }, el('span', null, 'Outline'), el('span', { class: 'grow' }), el('span', null, 'tasks and the decisions raised under them')));

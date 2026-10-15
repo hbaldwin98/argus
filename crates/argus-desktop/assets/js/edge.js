@@ -1,5 +1,5 @@
-// Dragging a side column's edge — the rail's, the views panel's — to make
-// it wider or narrower. The column follows the pointer at most once a
+// Dragging an edge — the rail's, the views panel's, an open feature's
+// outline's and brief's — to make what it bounds bigger or smaller. The column follows the pointer at most once a
 // frame, keeps the point it was grabbed at under the pointer, and holds
 // the width it was let go at until Rust sends back the one it keeps; the
 // pane beside it reports its size once, when the drag ends (`screen`).
@@ -12,15 +12,17 @@ export function dragEdge(sash, column, edge) {
         if (e.button !== 0)
             return;
         e.preventDefault();
+        const at = (m) => (edge.vertical ? m.clientY : m.clientX);
+        const box = column.getBoundingClientRect();
         // Where in the edge it was grabbed, so the column does not jump to put
         // its border under the pointer.
-        const offset = column.getBoundingClientRect().width - edge.widthAt(e.clientX);
-        let width = Math.round(edge.widthAt(e.clientX) + offset);
+        const offset = (edge.vertical ? box.height : box.width) - edge.sizeAt(at(e));
+        let width = Math.round(edge.sizeAt(at(e)) + offset);
         let frame = 0;
         document.body.classList.add('resizing');
         sash.classList.add('held');
         const move = (m) => {
-            width = Math.round(edge.widthAt(m.clientX) + offset);
+            width = Math.round(edge.sizeAt(at(m)) + offset);
             if (frame)
                 return;
             frame = requestAnimationFrame(() => {

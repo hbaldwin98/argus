@@ -181,7 +181,12 @@ pub fn shown(extension: &ExtDescription) -> String {
         let columns: Vec<String> = view
             .columns
             .iter()
-            .map(|c| if c.numeric { format!("{} (numeric)", c.title) } else { c.title.clone() })
+            .map(|c| match (c.numeric, c.optional) {
+                (true, true) => format!("{} (numeric, optional)", c.title),
+                (true, false) => format!("{} (numeric)", c.title),
+                (false, true) => format!("{} (optional)", c.title),
+                (false, false) => c.title.clone(),
+            })
             .collect();
         let _ = writeln!(out, "Columns: {}", columns.join(", "));
         if view.actions.is_empty() {
@@ -191,6 +196,7 @@ pub fn shown(extension: &ExtDescription) -> String {
         for action in &view.actions {
             let key = action.key.as_deref().map_or("no key".to_string(), |k| format!("key {k}"));
             let on = if action.view_wide { "on the view" } else { "on the selected row" };
+            let on = if view.default.as_ref() == Some(&action.id) { format!("{on}; the default") } else { on.to_string() };
             let confirm = action.confirm.as_deref().map(|q| format!("; asks {q:?} first")).unwrap_or_default();
             let _ = writeln!(out, "- `{}`: {} ({key}; {on}{confirm})", action.id, action.label);
             if let Some(help) = &action.help {
@@ -230,8 +236,8 @@ mod tests {
                 place: ExtPlace::Stage,
                 icon: Some("box".into()),
                 columns: vec![
-                    Column { title: "Name".into(), numeric: false },
-                    Column { title: "CPU".into(), numeric: true },
+                    Column { title: "Name".into(), numeric: false, optional: false },
+                    Column { title: "CPU".into(), numeric: true, optional: true },
                 ],
                 rows: Vec::new(),
                 actions: vec![ExtAction {
@@ -242,6 +248,7 @@ mod tests {
                     confirm: Some("Restart it?".into()),
                     help: Some("docker restart, on the selected container.".into()),
                 }],
+                default: Some("restart".into()),
             }],
         }
     }
@@ -274,9 +281,9 @@ mod tests {
         assert!(text.starts_with("# docker\n\nDocker containers\n\nPress r to restart.\n"), "{text}");
         assert!(text.contains("- `up`: Start a compose service (key Alt S; heard on a checkout row)\n  Asks which"), "{text}");
         assert!(text.contains("### `containers`: Containers\n\nshown in repository 4; opens as a page; icon `box`"), "{text}");
-        assert!(text.contains("Columns: Name, CPU (numeric)"), "{text}");
+        assert!(text.contains("Columns: Name, CPU (numeric, optional)"), "{text}");
         assert!(
-            text.contains("- `restart`: Restart (key r; on the selected row; asks \"Restart it?\" first)\n  docker restart"),
+            text.contains("- `restart`: Restart (key r; on the selected row; the default; asks \"Restart it?\" first)\n  docker restart"),
             "{text}"
         );
     }

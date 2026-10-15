@@ -169,6 +169,10 @@ pub enum Call {
     RailWidth { width: Option<u32> },
     /// The same, for the views panel's edge.
     ViewsWidth { width: Option<u32> },
+    /// The same, for the edge between an open feature's outline and detail.
+    OutlineWidth { width: Option<u32> },
+    /// The same, for the edge under an open feature's brief.
+    BriefHeight { height: Option<u32> },
     /// Asks the agent that showed a view to read it again.
     RefreshView { pane: u64, id: String },
     /// Closes a view for every client.
@@ -178,6 +182,8 @@ pub enum Call {
     SelectExtensionRow { key: String },
     /// One of the view's actions, by its id, on its selected row.
     ExtensionAction { action: String },
+    /// The view's default action on `row`, selected first: a double-click.
+    ExtensionDefault { row: String },
     /// A key of the view's own, moving its selection.
     ExtensionKey { action: Action },
     /// The answer to the question an action asked first.
@@ -605,6 +611,9 @@ pub struct Rail {
     pub width: Option<u32>,
     /// The width the person dragged the views panel to, likewise.
     pub views_width: Option<u32>,
+    /// An open feature's outline width and brief height, likewise.
+    pub outline_width: Option<u32>,
+    pub brief_height: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2076,6 +2085,8 @@ pub struct ExtTable {
     pub selected: Option<String>,
     /// The question an action asks before it is sent.
     pub confirm: Option<ExtConfirm>,
+    /// The row action a double-click or Enter on a row takes.
+    pub default: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -2310,6 +2321,8 @@ mod tests {
             removing: Some(Removing { project: 1, name: "src".into(), repositories: 1, panes: 0 }),
             width: Some(320),
             views_width: None,
+            outline_width: None,
+            brief_height: None,
         };
         let value = as_json(Event::Rail(Box::new(rail)));
         assert_eq!(value["type"], "rail");

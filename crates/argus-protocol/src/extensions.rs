@@ -92,6 +92,10 @@ pub struct ExtView {
     pub rows: Vec<ExtRow>,
     #[serde(default)]
     pub actions: Vec<ExtAction>,
+    /// The id of the row action a double-click or Enter on a row takes, as
+    /// its key would; the extension decides what it means for the row.
+    #[serde(default)]
+    pub default: Option<String>,
 }
 
 impl ExtView {
@@ -146,6 +150,11 @@ impl ExtView {
                 return Err(format!("actions[{a}].id: each action needs an id of its own, not {:?}", action.id));
             }
             help_ok(&action.help, &format!("actions[{a}].help"))?;
+        }
+        if let Some(default) = &self.default {
+            if !self.actions.iter().any(|a| &a.id == default && !a.view_wide) {
+                return Err(format!("default: the id of one of the view's row actions, not {default:?}"));
+            }
         }
         Ok(ExtView { name: name.to_string(), ..self })
     }
@@ -541,10 +550,31 @@ mod tests {
             scope: ExtScope::Checkout(CheckoutId(9)),
             place: ExtPlace::Stage,
             icon: Some("box".into()),
-            columns: vec![Column { title: "Name".into(), numeric: false }],
+            columns: vec![Column { title: "Name".into(), numeric: false, optional: false }],
             rows,
             actions: vec![],
+            default: None,
         }
+    }
+
+    #[test]
+    fn a_views_default_names_one_of_its_row_actions() {
+        let action = |id: &str, view_wide: bool| ExtAction {
+            id: id.into(),
+            label: id.into(),
+            key: None,
+            view_wide,
+            confirm: None,
+            help: None,
+        };
+        let with = |default: &str| ExtView {
+            actions: vec![action("start", false), action("prune", true)],
+            default: Some(default.into()),
+            ..containers(vec![])
+        };
+        assert!(with("start").checked().is_ok());
+        assert!(with("prune").checked().unwrap_err().starts_with("default:"), "view-wide");
+        assert!(with("nope").checked().unwrap_err().starts_with("default:"), "no such action");
     }
 
     fn row(key: &str, cells: Vec<Value>) -> ExtRow {

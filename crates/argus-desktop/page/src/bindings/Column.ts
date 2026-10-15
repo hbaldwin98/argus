@@ -4,4 +4,9 @@ export type Column = { title: string,
 /**
  * Aligned right, in figures.
  */
-numeric: boolean, };
+numeric: boolean, 
+/**
+ * Dropped where the table is too narrow for every column, so the ones
+ * that matter fit without scrolling sideways.
+ */
+optional: boolean, };

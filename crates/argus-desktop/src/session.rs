@@ -129,6 +129,8 @@ pub struct Session {
     extension_dialog_sent: Sent<page::ExtDialogPage>,
     rail_width: DraggedWidth,
     views_width: DraggedWidth,
+    outline_width: DraggedWidth,
+    brief_height: DraggedWidth,
     dialogs: Dialogs,
     sessions: Sessions,
     /// The recent-sessions dialog, while open.
@@ -204,6 +206,8 @@ impl Session {
             extension_dialog_sent: Sent::default(),
             rail_width: DraggedWidth::new(dragged_width::RAIL, settings.rail_width),
             views_width: DraggedWidth::new(dragged_width::VIEWS, settings.views_width),
+            outline_width: DraggedWidth::new(dragged_width::OUTLINE, settings.outline_width),
+            brief_height: DraggedWidth::new(dragged_width::BRIEF, settings.brief_height),
             dialogs: Dialogs::new(settings.review),
             sessions: Sessions::default(),
             recent: None,
@@ -619,6 +623,16 @@ impl Session {
                 self.rail_changed = true;
                 self.finish()
             }
+            Call::OutlineWidth { width } => {
+                self.outline_width.set(width);
+                self.rail_changed = true;
+                self.finish()
+            }
+            Call::BriefHeight { height } => {
+                self.brief_height.set(height);
+                self.rail_changed = true;
+                self.finish()
+            }
             Call::RefreshView { pane, id } => {
                 self.views.refresh(PaneId(pane), id, &mut self.out);
                 self.finish()
@@ -629,6 +643,10 @@ impl Session {
                 self.finish()
             }
             Call::ExtensionAction { action } => self.extension_action(&action),
+            Call::ExtensionDefault { row } => {
+                self.extension_views.select(row);
+                self.extension_default()
+            }
             Call::ExtensionKey { action } => self.extension_key(action),
             Call::AnswerExtension { yes } => {
                 if let Some(msg) = self.extension_views.answer(yes) {
@@ -1330,9 +1348,20 @@ impl Session {
             Action::Previous => self.extension_views.step(&here, -1),
             Action::First => self.extension_views.select_end(&here, false),
             Action::Last => self.extension_views.select_end(&here, true),
+            Action::Choose => return self.extension_default(),
             _ => {}
         }
         self.finish()
+    }
+
+    /// The view's default action on its selected row; a view without one
+    /// leaves Enter and a double-click doing nothing, said nowhere.
+    fn extension_default(&mut self) -> Vec<ClientMsg> {
+        let here = self.here();
+        match self.extension_views.default_action(&here) {
+            Some(action) => self.extension_action(&action),
+            None => self.finish(),
+        }
     }
 
     /// Runs an extension's command with where the person is: the row the
@@ -2235,7 +2264,11 @@ impl Session {
         let chime = self.status.take_chime_changed();
         let review = self.dialogs.take_layout_changed();
         let console = self.console.take_unsaved();
-        let rail = self.rail_width.take_unsaved() | self.views_width.take_unsaved() | self.extension_views.take_unsaved();
+        let rail = self.rail_width.take_unsaved()
+            | self.views_width.take_unsaved()
+            | self.outline_width.take_unsaved()
+            | self.brief_height.take_unsaved()
+            | self.extension_views.take_unsaved();
         let chosen = self.choices.take_unsaved();
         (layouts || agent || chime || review || console || rail || chosen).then(|| Settings {
             layouts: self.features.layouts().clone(),
@@ -2245,6 +2278,8 @@ impl Session {
             console: self.console.layout(),
             rail_width: self.rail_width.get(),
             views_width: self.views_width.get(),
+            outline_width: self.outline_width.get(),
+            brief_height: self.brief_height.get(),
             extensions: self.extension_views.layout(),
             preferences: self.choices.get().clone(),
         })
@@ -2468,6 +2503,8 @@ impl Session {
         rail.removing = self.switcher.removing(&self.tree);
         rail.width = self.rail_width.get();
         rail.views_width = self.views_width.get();
+        rail.outline_width = self.outline_width.get();
+        rail.brief_height = self.brief_height.get();
         if let Some(shown) = &mut rail.shown {
             shown.resumed = self.sessions.resumed_from(PaneId(shown.pane)).cloned();
         }
@@ -3597,7 +3634,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 102] = [
+    const CALLS: [&str; 105] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3675,6 +3712,7 @@ mod tests {
         r#"{"call":"open_extension_view","extension":"docker","view":"containers"}"#,
         r#"{"call":"select_extension_row","key":"web"}"#,
         r#"{"call":"extension_action","action":"restart"}"#,
+        r#"{"call":"extension_default","row":"web"}"#,
         r#"{"call":"extension_key","action":"next"}"#,
         r#"{"call":"answer_extension","yes":false}"#,
         r#"{"call":"extension_command","extension":"docker","command":"up","checkout":100,"pane":null}"#,
@@ -3692,6 +3730,8 @@ mod tests {
         r#"{"call":"toggle_views"}"#,
         r#"{"call":"rail_width","width":320}"#,
         r#"{"call":"views_width","width":700}"#,
+        r#"{"call":"outline_width","width":480}"#,
+        r#"{"call":"brief_height","height":160}"#,
         r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
         r#"{"call":"close_view","pane":1,"id":"ci"}"#,
         r#"{"call":"open_link","map":false}"#,
@@ -4304,12 +4344,14 @@ mod tests {
     }
 
     #[test]
-    fn the_side_columns_keep_the_widths_they_were_dragged_to_across_runs() {
+    fn a_dragged_edge_keeps_its_size_across_runs() {
         let mut s = session(without_focus());
         s.take_settings();
         s.events(0);
         s.call(Call::RailWidth { width: Some(360) });
         s.call(Call::ViewsWidth { width: Some(9_000) });
+        s.call(Call::OutlineWidth { width: Some(480) });
+        s.call(Call::BriefHeight { height: Some(1) });
         let rail = s.events(0).into_iter().find_map(|e| match e {
             Event::Rail(rail) => Some(rail),
             _ => None,
@@ -4318,6 +4360,8 @@ mod tests {
         let saved = s.take_settings().expect("saved");
         assert_eq!(saved.rail_width, Some(360));
         assert_eq!(saved.views_width, Some(dragged_width::VIEWS.max), "held to its bounds");
+        assert_eq!(saved.outline_width, Some(480));
+        assert_eq!(saved.brief_height, Some(dragged_width::BRIEF.min), "a brief keeps a line or two");
 
         let mut again = Session::new(saved);
         again.connected(Some(without_focus()), None, vec![with_tree(tree())]);
@@ -4543,6 +4587,26 @@ mod tests {
         ), "{sent:?}");
         let open = extensions_page(&mut s).unwrap().open.unwrap();
         assert_eq!(open.rows.len(), 2, "the view is as the extension last said");
+    }
+
+    #[test]
+    fn a_double_click_or_enter_takes_the_views_default_action_on_its_row() {
+        let mut s = session(Hello::this_build());
+        let json = r#"[{"extension": "docker", "name": "containers", "title": "Containers", "columns": [{"title": "Name"}],
+            "rows": [{"key": "web", "cells": [{"kind": "text", "text": "web"}]}, {"key": "db", "cells": [{"kind": "text", "text": "db"}]}],
+            "actions": [{"id": "start", "label": "Start"}], "default": "start"}]"#;
+        s.receive(ServerMsg::ExtensionViews(serde_json::from_str(json).unwrap()));
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        let sent = s.call(Call::ExtensionDefault { row: "db".into() });
+        assert!(matches!(
+            sent.as_slice(),
+            [ClientMsg::ExtensionAction { row: Some(row), action, .. }] if row == "db" && action == "start"
+        ), "{sent:?}");
+        let sent = s.call(Call::ExtensionKey { action: Action::Choose });
+        assert!(matches!(sent.as_slice(), [ClientMsg::ExtensionAction { row: Some(row), .. }] if row == "db"), "{sent:?}");
+
+        s.receive(containers(&["web"]));
+        assert!(s.call(Call::ExtensionKey { action: Action::Choose }).is_empty(), "no default, nothing sent");
     }
 
     #[test]

@@ -1,12 +1,12 @@
 // The side panel the views agents showed open in, beside whatever stage is
-// up so the rail and the stage stay in sight, and the tab at the window's
-// edge that brings it back. Rust holds the views and which one is open;
+// up so the rail and the stage stay in sight, and the button in the title
+// strip that brings it back. Rust holds the views and which one is open;
 // the panel draws them and says what was pressed.
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { $, el, icon } from './dom.js';
 import { dragEdge } from './edge.js';
-import { extensionPanel, extensionTabs, extensionViewCount, openFirstExtensionView, } from './extension_views.js';
+import { extensionPanel, extensionTabs, extensionViewCount, extensionViewFocused, openFirstExtensionView, } from './extension_views.js';
 import { call } from './tauri.js';
 import { ago } from './values.js';
 import { viewLink } from './viewlink.js';
@@ -26,7 +26,11 @@ export function drawViews(page = shown) {
     $('views').hidden = !open && !extension;
     launcher.hidden = Boolean(open) || Boolean(extension) || waiting === 0;
     if (extension) {
+        // Replaced, the view would drop the keys a click in it gave it.
+        const had = extensionViewFocused();
         panel.replaceChildren(tabs(page.views, null), ...extension);
+        if (had)
+            document.getElementById('extension-view')?.focus();
         return;
     }
     if (!open) {
@@ -65,7 +69,7 @@ function header(v) {
     const at = new Date(Number(v.at) * 1000).toISOString();
     const subject = v.subject;
     return el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading' }, v.view.title), v.view.status && chip(v.view.status)), el('div', { class: 'vpanel-meta' }, subject &&
-        viewLink(subject.url, el('span', { class: 'track' }, subject.tracker, ' ', el('b', null, subject.key))), el('span', { class: 'meta', title: new Date(at).toLocaleString() }, v.from ? `read by ${v.from} · ${ago(at)}` : ago(at), v.refreshing ? ' · asked to read it again' : ''), el('span', { class: 'grow' }), el('button', {
+        viewLink(subject.url, el('span', { class: 'track' }, subject.tracker, ' ', el('b', null, subject.key))), el('span', { class: 'meta', title: new Date(at).toLocaleString() }, v.from ? `read by ${v.from} · ${ago(at)}` : ago(at), v.refreshing ? ' · asked to read it again' : ''), el('span', { class: 'vpanel-acts' }, el('button', {
         class: 'btn sm',
         type: 'button',
         disabled: v.refreshing,
@@ -76,7 +80,7 @@ function header(v) {
         type: 'button',
         title: 'Close this view for every window',
         onclick: () => call('close_view', { pane: v.pane, id: v.view.id }),
-    }, 'Close')));
+    }, 'Close'))));
 }
 function body(v) {
     const drawn = (source) => v.diagrams.find((d) => d.source === source);
@@ -101,12 +105,12 @@ export function viewsWidth(width) {
 export function listenToViewsEdge() {
     const panel = $('views');
     dragEdge($('views-sash'), panel, {
-        widthAt: (x) => panel.getBoundingClientRect().right - x,
+        sizeAt: (x) => panel.getBoundingClientRect().right - x,
         draw: viewsWidth,
         report: (width) => call('views_width', { width }),
     });
 }
-/** Brings the newest view out, from the tab at the window's edge. */
+/** Brings the newest view out, from the title strip's button. */
 export function openNewestView() {
     const newest = shown.views[0];
     if (newest)

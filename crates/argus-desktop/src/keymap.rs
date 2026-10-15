@@ -568,6 +568,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Extension, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
     bind(Place::Extension, &[Chord::key("Home")], First, "first row"),
     bind(Place::Extension, &[Chord::key("End")], Last, "last row"),
+    bind(Place::Extension, &[Chord::key("Enter")], Choose, "the view's default action on the row"),
     bind(Place::Extension, &[Chord::key(">")], ExtensionPage, "open it as a page"),
     bind(Place::Extension, &[Chord::key("<")], ExtensionDock, "dock it to the side panel"),
     bind(Place::Link, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next linked ticket"),

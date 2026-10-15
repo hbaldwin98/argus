@@ -51,6 +51,12 @@ pub struct Settings {
     /// The views panel's width as the person dragged it, likewise.
     #[serde(default)]
     pub views_width: Option<u32>,
+    /// An open feature's task outline's width, likewise.
+    #[serde(default)]
+    pub outline_width: Option<u32>,
+    /// An open feature's brief's height, likewise; past it the brief scrolls.
+    #[serde(default)]
+    pub brief_height: Option<u32>,
     /// Whether the sidebar's Extensions are unfolded, and where the person
     /// chose each extension's view opens.
     #[serde(default)]
@@ -234,6 +240,8 @@ impl Default for Settings {
             console: ConsoleLayout::default(),
             rail_width: None,
             views_width: None,
+            outline_width: None,
+            brief_height: None,
             extensions: ExtensionsLayout::default(),
             preferences: Preferences::default(),
         }

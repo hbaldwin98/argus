@@ -1,6 +1,7 @@
-//! A width the person dragged one of the window's side columns to — the
-//! rail, the views panel — held to what leaves the column usable and the
-//! stage room, and whether it changed since it was saved.
+//! A size the person dragged one of the window's edges to — the rail's and
+//! the views panel's widths, an open feature's outline width and its brief's
+//! height — held to what leaves it usable and the rest room, and whether it
+//! changed since it was saved.
 //!
 //! Undragged it is `None`, and the page's own width stands, which may
 //! narrow in a small window; once dragged, the person's width is kept as
@@ -8,6 +9,8 @@
 
 pub const RAIL: Bounds = Bounds { min: 200, max: 560 };
 pub const VIEWS: Bounds = Bounds { min: 360, max: 1200 };
+pub const OUTLINE: Bounds = Bounds { min: 220, max: 1200 };
+pub const BRIEF: Bounds = Bounds { min: 40, max: 900 };
 
 #[derive(Debug, Clone, Copy)]
 pub struct Bounds {

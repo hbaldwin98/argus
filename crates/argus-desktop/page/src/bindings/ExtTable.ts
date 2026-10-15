@@ -20,4 +20,8 @@ selected: string | null,
 /**
  * The question an action asks before it is sent.
  */
-confirm: ExtConfirm | null, };
+confirm: ExtConfirm | null, 
+/**
+ * The row action a double-click or Enter on a row takes.
+ */
+default: string | null, };
