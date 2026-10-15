@@ -6,8 +6,9 @@
   "scripts": {
     "build": "tsc -p . && node -e \"require('node:fs').rmSync('../assets/js/bindings', { recursive: true, force: true })\"",
     "lint": "oxlint",
-    "fmt": "cd .. && oxfmt -c page/.oxfmtrc.json page/src assets/style.css",
-    "check": "npm run build && oxlint --deny-warnings && cd .. && oxfmt -c page/.oxfmtrc.json --check page/src assets/style.css"
+    "fmt": "cd .. && oxfmt -c page/.oxfmtrc.json page/src page/test assets/style.css",
+    "check": "npm run build && oxlint --deny-warnings && cd .. && oxfmt -c page/.oxfmtrc.json --check page/src page/test assets/style.css",
+    "test": "node --test \"test/**/*.test.mjs\""
   },
   "devDependencies": {
     "@tauri-apps/api": "2.12.3",

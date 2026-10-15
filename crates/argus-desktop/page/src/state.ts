@@ -10,6 +10,7 @@ import type { DocksPage } from './bindings/DocksPage';
 import type { ExtensionsPage } from './bindings/ExtensionsPage';
 import type { Features } from './bindings/Features';
 import type { Group } from './bindings/Group';
+import type { KeyLayer } from './bindings/KeyLayer';
 import type { Rail } from './bindings/Rail';
 import type { ReviewPage } from './bindings/ReviewPage';
 import type { HistoryPage } from './bindings/HistoryPage';
@@ -52,6 +53,8 @@ export const state: {
   keymap: Group[];
   /** What the palette offers to run, from the same table. */
   commands: Command[];
+  /** Who has a key outside a pane, the first up of them, in this order. */
+  layers: KeyLayer[];
   /** What the palette can go to, while it is open. */
   palette: Palette | null;
   /** The project switcher's menu, and its workspaces unfolded. */
@@ -111,6 +114,7 @@ export const state: {
   expanded: null,
   keymap: [],
   commands: [],
+  layers: [],
   palette: null,
   menuOpen: false,
   workspacesOpen: false,

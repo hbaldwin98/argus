@@ -12,6 +12,7 @@ import type { Features } from "./Features";
 import type { Frame } from "./Frame";
 import type { Group } from "./Group";
 import type { HistoryPage } from "./HistoryPage";
+import type { KeyLayer } from "./KeyLayer";
 import type { LinkPage } from "./LinkPage";
 import type { Palette } from "./Palette";
 import type { Rail } from "./Rail";
@@ -25,4 +26,4 @@ import type { ViewsPage } from "./ViewsPage";
 /**
  * One message down the page's channel.
  */
-export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "capture" } & CapturePage | { "type": "review" } & ReviewPage | { "type": "history" } & HistoryPage | { "type": "sessions" } & SessionsPage | { "type": "addProject" } & AddProjectPage | { "type": "console" } & ConsolePage | { "type": "docks" } & DocksPage | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "views" } & ViewsPage | { "type": "link" } & LinkPage | { "type": "reconcile" } & ReconcilePage | { "type": "chime" } | { "type": "settings" } & SettingsPage | { "type": "keymap", groups: Array<Group>, commands: Array<Command>, } | { "type": "palette" } & Palette | { "type": "run", action: Action, } | { "type": "extensions" } & ExtensionsPage | { "type": "extensionDialog" } & ExtDialogPage;
+export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "capture" } & CapturePage | { "type": "review" } & ReviewPage | { "type": "history" } & HistoryPage | { "type": "sessions" } & SessionsPage | { "type": "addProject" } & AddProjectPage | { "type": "console" } & ConsolePage | { "type": "docks" } & DocksPage | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "views" } & ViewsPage | { "type": "link" } & LinkPage | { "type": "reconcile" } & ReconcilePage | { "type": "chime" } | { "type": "settings" } & SettingsPage | { "type": "keymap", groups: Array<Group>, commands: Array<Command>, layers: Array<KeyLayer>, } | { "type": "palette" } & Palette | { "type": "run", action: Action, } | { "type": "extensions" } & ExtensionsPage | { "type": "extensionDialog" } & ExtDialogPage;

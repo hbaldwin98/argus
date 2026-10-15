@@ -1,5 +1,5 @@
 //! The window's keys, said once: each binding's keys, where it works, what
-//! it does and what it is called.
+//! it does and what it is called, and which layer of the page hears them.
 //!
 //! Dispatch reads this table on both sides — `session` for a key pressed in
 //! a pane, the page for one pressed anywhere else — and it crosses to the
@@ -295,6 +295,61 @@ pub struct Command {
     pub label: &'static str,
     pub place: Option<Place>,
     pub chords: &'static [Chord],
+}
+
+/// What can hold the keys on the page, outside a pane, while it is up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum Layer {
+    /// A text field, the pane's text area among them.
+    Field,
+    /// An extension's question, while something in it has the focus.
+    ExtensionDialog,
+    Settings,
+    /// The shortcuts sheet, over everything.
+    Sheet,
+    AddProject,
+    Link,
+    Reconcile,
+    Review,
+    History,
+    /// A session's full transcript, open in place of the sessions list.
+    Transcript,
+    Sessions,
+    /// A checkout's + menu.
+    Start,
+    /// An extension's view, once a click there gives it the keys.
+    Extension,
+    /// A row picked in the sidebar.
+    Rail,
+    /// A menu or a question over the stage.
+    Menu,
+    /// The Feature stage's note, a new feature being written.
+    Capture,
+    /// An open feature's flow diagram, expanded.
+    Diagram,
+    /// An open feature.
+    Outline,
+    /// The Feature stage's index.
+    Features,
+    Checkouts,
+    /// An extension's view as the page.
+    ExtensionPage,
+    /// Any other stage.
+    Stage,
+}
+
+/// A layer, the places it hears in the order it asks them, and whether it
+/// takes the keys from a pane it opens over.
+#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct KeyLayer {
+    pub layer: Layer,
+    /// None for a layer that answers its own keys.
+    pub places: Option<&'static [Place]>,
+    pub takes_from_pane: bool,
 }
 
 impl Chord {
@@ -660,6 +715,48 @@ const ORDER: [Place; 22] = [
     Place::Reconcile,
 ];
 
+const fn layer(layer: Layer, places: Option<&'static [Place]>, takes_from_pane: bool) -> KeyLayer {
+    KeyLayer { layer, places, takes_from_pane }
+}
+
+/// Who has a key pressed outside a pane: the first layer up in this order,
+/// which crosses to the page with the keymap. The page's own dispatch
+/// (`page/src/focus.ts`) has a handler for each layer and no order of its
+/// own, so a dialog added here cannot be heard under the one it opens over.
+///
+/// An extension's view clicked passes on a key it has no use for, to the
+/// next layer up; every other layer holds what it hears.
+pub static LAYERS: &[KeyLayer] = &[
+    layer(Layer::Field, None, false),
+    layer(Layer::ExtensionDialog, None, false),
+    layer(Layer::Settings, None, false),
+    layer(Layer::Sheet, Some(&[Anywhere]), false),
+    // A dialog over a pane, opened by leader-Tab, has to take the keys
+    // from the pane's text area, or the pane would go on hearing them.
+    layer(Layer::AddProject, None, true),
+    layer(Layer::Link, Some(&[Anywhere, Place::Link]), true),
+    layer(Layer::Reconcile, Some(&[Anywhere, Place::Reconcile]), true),
+    layer(Layer::Review, Some(&[Anywhere, Review]), true),
+    layer(Layer::History, Some(&[Anywhere, History]), true),
+    layer(Layer::Transcript, Some(&[Anywhere, Place::Transcript]), true),
+    layer(Layer::Sessions, Some(&[Anywhere, Sessions]), true),
+    layer(Layer::Start, Some(&[Anywhere, Start]), false),
+    layer(Layer::Extension, Some(&[Place::Extension]), false),
+    layer(Layer::Rail, Some(&[Anywhere, Rail]), false),
+    // Only its Escape: `menu` steps through its items before this hears.
+    layer(Layer::Menu, Some(&[Anywhere, Menu]), false),
+    // The note's field holds every key but the stage switches and Escape.
+    layer(Layer::Capture, Some(&[Anywhere]), false),
+    // An open feature hears its own keys before Anywhere's, so its digits
+    // are its lenses, and its expanded diagram hears its own over those.
+    layer(Layer::Diagram, Some(&[Diagram, Outline, Anywhere]), false),
+    layer(Layer::Outline, Some(&[Outline, Anywhere]), false),
+    layer(Layer::Features, Some(&[Anywhere, Place::Feature, Card]), false),
+    layer(Layer::Checkouts, Some(&[Anywhere, CheckoutsTable]), false),
+    layer(Layer::ExtensionPage, Some(&[Anywhere, Place::Extension]), false),
+    layer(Layer::Stage, Some(&[Anywhere]), false),
+];
+
 /// The table as the sheet lists it: a group per place, in the sheet's order.
 pub fn groups() -> Vec<Group> {
     ORDER
@@ -829,48 +926,68 @@ mod tests {
         assert!(is_command(Action::Settings), "and the palette lists it");
     }
 
-    /// The page hears Anywhere, Feature and Card together, so a key may
-    /// be bound once among them; a pane's keys are a table of their own,
-    /// and an open + menu hears only its own and Anywhere's. The palette's
-    /// field hears only its own, as every text field does: the rest are
-    /// typed into it.
+    /// Each layer of the page hears its places together, so a key may be
+    /// bound once among them. A pane's keys are a table of their own, and
+    /// a text field, the palette's among them, hears only its own place's:
+    /// the rest are typed into it.
     ///
-    /// The one deliberate overlap is an open feature's lens digits, which
-    /// the page hears before Anywhere's stage digits.
+    /// Two overlaps are deliberate, and each only with the place that
+    /// takes the key heard first: an open feature's lens digits over
+    /// Anywhere's stage digits, and an expanded diagram's keys over the
+    /// open feature's under it, since the diagram covers the outline whose
+    /// j, k and d would otherwise move a row no one can see.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
         let lens = |b: &&Binding| b.place == Outline && matches!(b.action, WorkLens | Action::RecordLens | Action::FlowsLens);
-        let heard_together: [&[Place]; 19] = [
-            &[Anywhere, Place::Feature, Card],
-            &[Anywhere, Outline],
-            &[Anywhere, Diagram],
-            &[Writing],
-            &[Pane],
-            &[Anywhere, Rail],
-            &[Anywhere, CheckoutsTable],
-            &[Anywhere, Start],
-            &[Anywhere, Menu],
-            &[Anywhere, Review],
-            &[Anywhere, History],
-            &[Anywhere, Sessions],
-            &[Anywhere, Place::Transcript],
-            &[Jump],
-            &[Place::Filter],
-            &[Place::Palette],
-            &[Place::Extension],
-            &[Anywhere, Place::Link],
-            &[Anywhere, Place::Reconcile],
-        ];
-        for places in heard_together {
-            let chords: Vec<&Chord> = BINDINGS
+        let shadows = [(Diagram, Outline)];
+        let alone: [&[Place]; 5] = [&[Writing], &[Pane], &[Jump], &[Place::Filter], &[Place::Palette]];
+        for places in LAYERS.iter().filter_map(|l| l.places).chain(alone) {
+            let heard: Vec<(Place, &Chord)> = places
                 .iter()
-                .filter(|b| places.contains(&b.place) && !lens(b))
-                .flat_map(|b| b.chords)
+                .flat_map(|&place| BINDINGS.iter().filter(move |b| b.place == place && !lens(b)))
+                .flat_map(|b| b.chords.iter().map(move |chord| (b.place, chord)))
                 .collect();
-            for (i, chord) in chords.iter().enumerate() {
-                assert!(!chords[i + 1..].contains(chord), "{chord:?} is bound twice");
+            for (i, (first, chord)) in heard.iter().enumerate() {
+                for (then, again) in &heard[i + 1..] {
+                    assert!(
+                        chord != again || shadows.contains(&(*first, *then)),
+                        "{chord:?} is bound in {first:?} and in {then:?}, heard together in {places:?}"
+                    );
+                }
             }
         }
+    }
+
+    /// The page falls through to the stage, so it is last and always
+    /// hears something; a layer listed twice would be a second order.
+    #[test]
+    fn every_layer_is_ordered_once_and_the_stage_comes_last() {
+        for (i, layer) in LAYERS.iter().enumerate() {
+            assert!(LAYERS[i + 1..].iter().all(|l| l.layer != layer.layer), "{:?} is listed twice", layer.layer);
+        }
+        let last = LAYERS.last().unwrap();
+        assert_eq!(last.layer, Layer::Stage);
+        assert_eq!(last.places, Some(&[Anywhere][..]));
+    }
+
+    #[test]
+    fn the_layers_cross_to_the_page_in_camel_case() {
+        let value = serde_json::to_value(LAYERS).unwrap();
+        assert_eq!(value[0], serde_json::json!({ "layer": "field", "places": null, "takesFromPane": false }));
+        assert_eq!(value[5]["places"], serde_json::json!(["anywhere", "link"]));
+    }
+
+    /// The page blurs a pane's text area when one of these opens, so a
+    /// flag flipped here changes which dialogs a pane keeps typing under.
+    /// The transcript is listed because it opens only inside the sessions
+    /// dialog, which already took the keys.
+    #[test]
+    fn only_the_dialogs_take_the_keys_from_a_pane() {
+        let taking: Vec<Layer> = LAYERS.iter().filter(|l| l.takes_from_pane).map(|l| l.layer).collect();
+        assert_eq!(
+            taking,
+            [Layer::AddProject, Layer::Link, Layer::Reconcile, Layer::Review, Layer::History, Layer::Transcript, Layer::Sessions]
+        );
     }
 
     /// As in the terminal client's rail: j and k move the pick, s and a

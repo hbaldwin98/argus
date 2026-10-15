@@ -119,6 +119,11 @@ jobs:
       - name: Compile, lint and check formatting
         run: npm run check
 
+      # Node strips the types from the modules that import nothing but
+      # types, so those run as written; the rest touch the document on load.
+      - name: Test the page's DOM-free modules
+        run: npm test
+
       - name: Check the committed page is what its sources compile to
         shell: bash
         run: |

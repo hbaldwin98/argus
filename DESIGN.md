@@ -71,10 +71,16 @@ shortcuts sheet's groups), what it does and what it is called. A key in a pane g
 dispatches it from the table; the table crosses to the page once it loads, and the page dispatches
 every other key from it, a text field's Enter and Escape included, so a key cannot be run by one and
 missing from what the sheet and the palette are drawn from; a test fails a page module that reads a
-key's name itself. A binding of the Everywhere place, the zoom keys', is heard by the page before
-anything else, a pane and a text field included, and so is bound nowhere else. The zoom is the
-webview's own rather than the page's CSS, so a pane's cells grow with the rest and its grid refits
-to the new size; it steps as a browser's does and is kept in `desktop.json`. In a pane every other
+key's name itself. Who has a key outside a pane is the table's too: an ordered list of layers — a
+text field, each dialog, the sidebar's pick, a menu over the stage, each stage — each with the places
+it hears in order and whether it takes the keys from a pane it opens over. The first layer up has
+the key, Escape puts away the first thing it finds in the same order, and the page (`focus`) holds a
+handler per layer but no order of its own, so a dialog is added in one place and a test checks every
+layer's places for a key bound twice. A binding of the Everywhere place, the zoom keys', is heard by
+the page before anything else, a pane and a text field included, and so is bound nowhere else. The
+zoom is the webview's own rather than the page's CSS, so a pane's cells grow with the rest and its
+grid refits to the new size; it steps as a browser's does and is kept in `desktop.json`.
+In a pane every other
 key is the program's except the leader, `Ctrl-Space` as in the terminal client: the key after it is
 the window's, one nothing binds is dropped, and a second leader sends one through. `Ctrl-K` (in a
 pane, the leader and `k`) opens the palette, one fuzzy search over the table's commands and the
@@ -163,7 +169,7 @@ the dock it left shows the tab before it, or closes once empty. A `desktop.json`
 docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `drag`, `screen`, `input`, `keymap`,
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `drag`, `screen`, `input`, `keymap`, `focus` (which layer has a key),
 `palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
 `markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and
@@ -472,7 +478,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call`; a surface that keeps what it last sent defines its own page and gestures, which these name |
 | `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
-| `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, and the commands the palette runs |
+| `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, the commands the palette runs, and the order of the layers that hold the keys outside a pane |
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
