@@ -1916,9 +1916,49 @@ body.maximized .winbtn .restore {
   font-weight: 600;
   cursor: pointer;
 }
-.pick select option {
+/* A select's list drawn as a .menu rather than by the system: WebView2's
+ * Chromium styles it under `base-select`, and a webview without it
+ * (WebKitGTK, WKWebView) ignores the rule and keeps the native list. */
+select,
+::picker(select) {
+  appearance: base-select;
+}
+select::picker-icon {
+  color: var(--fg-faint);
+  transition: rotate 0.15s;
+}
+select:open::picker-icon {
+  rotate: 180deg;
+}
+::picker(select) {
+  margin-block: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
   background: var(--bg-surface);
   color: var(--fg);
+  box-shadow: var(--shadow-pop);
+}
+select option {
+  gap: var(--sp-8);
+  min-height: var(--control-h);
+  padding: 0 var(--sp-8);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+}
+select option:hover,
+select option:focus-visible {
+  background: var(--fill);
+  outline: 0;
+}
+select option:checked {
+  background: var(--bg-selected);
+}
+select option::checkmark {
+  color: var(--accent);
 }
 .kbd.on-accent {
   color: var(--fg-on-accent);
