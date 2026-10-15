@@ -3,7 +3,8 @@
 
 use argus_protocol::{DiagramAction, DiagramList};
 
-use super::board_parts::{Author, BoardTarget, FeaturePart};
+use super::asker::Asker;
+use super::board_parts::{BoardTarget, FeaturePart};
 use super::*;
 use crate::store::Store;
 
@@ -40,29 +41,29 @@ impl FeaturePart for DiagramAction {
         key: &str,
         feature: &str,
         at: i64,
-        by: Author<'_>,
+        by: Asker<'_>,
     ) -> anyhow::Result<()> {
         match self {
             DiagramAction::List => {}
             DiagramAction::Add(write) => {
                 let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-                store.add_sequence_diagram(key, feature, &write, at, by.session)?;
+                store.add_sequence_diagram(key, feature, &write, at, by.session())?;
             }
             DiagramAction::Rewrite { id, write } => {
                 let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-                store.rewrite_sequence_diagram(key, feature, id, &write, at, by.session)?;
+                store.rewrite_sequence_diagram(key, feature, id, &write, at, by.session())?;
             }
             DiagramAction::Remove { id } => store.remove_sequence_diagram(key, feature, id)?,
         }
         Ok(())
     }
 
-    fn list(daemon: &Daemon, target: &BoardTarget) -> anyhow::Result<DiagramList> {
+    fn list(daemon: &Daemon, target: &BoardTarget<'_>) -> anyhow::Result<DiagramList> {
         Ok(DiagramList {
-            repositories: daemon.repositories_keyed(&target.key),
-            project_name: target.project_name.clone(),
+            repositories: target.address.repositories.clone(),
+            project_name: target.address.project_name.clone(),
             feature: Some(target.feature.clone()),
-            diagrams: daemon.store.sequence_diagrams(&target.key, &target.feature)?,
+            diagrams: daemon.store.sequence_diagrams(&target.address.key, &target.feature)?,
         })
     }
 
@@ -75,7 +76,10 @@ impl FeaturePart for DiagramAction {
         }
     }
 
-    fn broadcast(daemon: &Daemon, target: &BoardTarget) {
+    fn broadcast(daemon: &Daemon, target: &BoardTarget<'_>) {
+        if !target.address.is_pushed() {
+            return;
+        }
         if let Ok(list) = Self::list(daemon, target) {
             let _ = daemon.diagrams_tx.send(list);
         }

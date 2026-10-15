@@ -16,7 +16,8 @@
 
 use argus_protocol::{TaskAction, TaskList, TaskPlace};
 
-use super::board_parts::{Author, BoardTarget, FeaturePart};
+use super::asker::Asker;
+use super::board_parts::{BoardTarget, FeaturePart};
 use super::*;
 use crate::store::Store;
 
@@ -68,16 +69,16 @@ impl FeaturePart for TaskAction {
         key: &str,
         feature: &str,
         at: i64,
-        by: Author<'_>,
+        by: Asker<'_>,
     ) -> anyhow::Result<()> {
         match self {
             TaskAction::List => {}
             TaskAction::Add(write) => {
                 let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-                store.add_task(key, feature, &write, at, by.session)?;
+                store.add_task(key, feature, &write, at, by.session())?;
             }
             TaskAction::Move { id, state } => {
-                store.move_task(key, id, state, by.session, by.pane)?
+                store.move_task(key, id, state, by.session(), by.pane())?
             }
             TaskAction::Retitle { id, title } => store.retitle_task(key, id, &title)?,
             TaskAction::SetBody { id, body } => store.set_task_body(key, id, body)?,
@@ -94,18 +95,18 @@ impl FeaturePart for TaskAction {
                 store.remove_task_criterion(key, id, index)?
             }
             TaskAction::Note { id, text } => {
-                store.add_task_note(key, id, &text, at, by.session, by.pane)?
+                store.add_task_note(key, id, &text, at, by.session(), by.pane())?
             }
         }
         Ok(())
     }
 
-    fn list(daemon: &Daemon, target: &BoardTarget) -> anyhow::Result<TaskList> {
+    fn list(daemon: &Daemon, target: &BoardTarget<'_>) -> anyhow::Result<TaskList> {
         Ok(TaskList {
-            repositories: daemon.repositories_keyed(&target.key),
-            project_name: target.project_name.clone(),
+            repositories: target.address.repositories.clone(),
+            project_name: target.address.project_name.clone(),
             feature: Some(target.feature.clone()),
-            tasks: daemon.store.tasks(&target.key, &target.feature)?,
+            tasks: daemon.store.tasks(&target.address.key, &target.feature)?,
         })
     }
 
@@ -124,16 +125,18 @@ impl FeaturePart for TaskAction {
     /// The features go with it. Every feature row carries how its tasks
     /// stand, so a list that changed without the features following it
     /// would leave the row above the list contradicting the list.
-    fn broadcast(daemon: &Daemon, target: &BoardTarget) {
+    fn broadcast(daemon: &Daemon, target: &BoardTarget<'_>) {
+        if !target.address.is_pushed() {
+            return;
+        }
         // An unreadable list is not pushed as an empty one, which would
         // blank every reader's board for a fault in reading it.
         if let Ok(list) = Self::list(daemon, target) {
             let _ = daemon.tasks_tx.send(list);
         }
         daemon.broadcast_decisions(
-            &target.project_name,
-            &target.key,
-            daemon.store.decisions(&target.key).unwrap_or_default(),
+            target.address,
+            daemon.store.decisions(&target.address.key).unwrap_or_default(),
         );
     }
 }

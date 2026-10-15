@@ -77,7 +77,7 @@ impl Daemon {
         pane: PaneId,
         change: ViewChange,
     ) -> anyhow::Result<()> {
-        self.agent_scope(pane)?;
+        self.agent_checkout(pane)?;
         match change {
             ViewChange::Show { view } => self.show_view(pane, view),
             ViewChange::Close { id } => {
