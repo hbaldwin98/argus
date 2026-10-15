@@ -92,13 +92,17 @@ async fn a_deleted_worktree_leaves_nothing_of_its_panes_behind() {
     let dir = tempfile::tempdir().unwrap();
     let worktree = dir.path().join("wt");
     std::fs::create_dir(&worktree).unwrap();
-    let d = running_claude(dir.path(), Default::default());
-    d.reconcile_worktrees_with(|_| vec![dir.path().to_path_buf(), worktree.clone()]);
+    let (d, git) = Daemon::scripted(running_claude_config(dir.path()));
+    let (primary, listed) = (dir.path().to_path_buf(), worktree.clone());
+    git.lists_worktrees(move |_| vec![primary.clone(), listed.clone()]);
+    d.reconcile_worktrees();
     let checkout = d.checkout_at(&worktree).expect("the worktree joined the tree");
     let pane = d.spawn_agent(checkout, "claude").unwrap();
     shown(&d, pane);
 
-    d.reconcile_worktrees_with(|_| vec![dir.path().to_path_buf()]);
+    let primary = dir.path().to_path_buf();
+    git.lists_worktrees(move |_| vec![primary.clone()]);
+    d.reconcile_worktrees();
 
     assert!(d.checkout_at(&worktree).is_none(), "the worktree left the tree");
     assert_nothing_left_of(&d, pane);

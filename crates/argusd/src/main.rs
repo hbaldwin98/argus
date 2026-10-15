@@ -20,6 +20,7 @@ mod logging;
 mod pastes;
 mod paths;
 mod pty;
+mod review_queue;
 mod state;
 mod store;
 mod watch;

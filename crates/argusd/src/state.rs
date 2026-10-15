@@ -5,7 +5,8 @@
 //! constructing one, `panes` for a pane's lifecycle, `agents` for what an
 //! agent reports about itself, `viewers` for what each client shows (the
 //! size it asks a pty for, and the view that says where the person is),
-//! `git_ops` for the writes to Git, `sync` for the polls and
+//! `git_ops` for the writes to Git, `git_reads` for the port its reads
+//! go through, `sync` for the polls and
 //! watchers that keep the tree level with the disk, `panel` for the rows
 //! the user adds and removes, `workspaces` for which scope is open,
 //! `hook_server` for the
@@ -37,6 +38,7 @@ mod diagrams;
 mod tasks;
 mod tracker_map;
 mod git_ops;
+mod git_reads;
 mod hook_server;
 mod inbox;
 mod panel;
@@ -381,6 +383,10 @@ pub struct Daemon {
     /// Where a file pasted into a pane is kept (see `pastes`); unset until
     /// `main` names it, so a daemon built in a test takes no files.
     paste_root: std::sync::OnceLock<std::path::PathBuf>,
+    /// Every read of Git the tree is kept level by. See `git_reads`.
+    git: Arc<dyn git_reads::GitReads>,
+    /// The one turn at generating a review that every client waits on.
+    reviews: crate::review_queue::ReviewQueue,
 }
 
 /// A project as clients are shown it.
@@ -532,6 +538,11 @@ impl Daemon {
             .find(|c| same_path(&c.path, path))
             .map(|c| c.id);
         found
+    }
+
+    /// A client's place in the review queue, for as long as it holds it.
+    pub fn review_lane(&self) -> crate::review_queue::ReviewLane {
+        self.reviews.lane()
     }
 
     fn broadcast_workspaces(&self) {

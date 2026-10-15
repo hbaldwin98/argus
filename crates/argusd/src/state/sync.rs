@@ -82,13 +82,12 @@ impl Daemon {
     /// sweep in front of the next key. Results are matched back by id: the
     /// tree can be rearranged while the lock is down.
     pub fn refresh_git_status(&self, only_active: bool) {
-        self.refresh_git_status_with(only_active, crate::git::status);
+        self.refresh_git_status_by(only_active, |path| self.git.status(path));
     }
 
-    /// The sweep itself, with the status read injected so tests can state
-    /// what git would have said — including that it could not say anything.
-    /// Production always passes `git::status`.
-    pub(super) fn refresh_git_status_with(
+    /// The sweep itself, by whichever read is enough: startup names rows
+    /// from HEAD alone.
+    pub(super) fn refresh_git_status_by(
         &self,
         only_active: bool,
         read: impl Fn(&std::path::Path) -> Option<GitStatus>,
@@ -416,7 +415,7 @@ impl Daemon {
             return;
         };
         // Read first, take the lock second — same reason as the sweep above.
-        let status = crate::git::status(&path);
+        let status = self.git.status(&path);
         let mut inner = self.inner.lock().unwrap();
         if let Some(c) = find_checkout(&mut inner.projects, checkout) {
             c.git = status;
@@ -430,14 +429,6 @@ impl Daemon {
     /// `remove_checkout`. Runs on the same blocking-pool tick as the git
     /// status poll (§4 Level 2, §11 worktree auto-discovery).
     pub(super) fn reconcile_worktrees(&self) {
-        self.reconcile_worktrees_with(crate::git::list_worktrees);
-        self.ensure_local_ignores();
-    }
-
-    /// The reconciliation itself, with the worktree listing injected so
-    /// tests can drive it without a real repo (and without waiting on the
-    /// `git` binary). Production always passes `git::list_worktrees`.
-    pub(super) fn reconcile_worktrees_with(&self, list: impl Fn(&std::path::Path) -> Vec<PathBuf>) {
         let mut orphaned_panes: Vec<Pane> = Vec::new();
         {
             let mut guard = self.inner.lock().unwrap();
@@ -452,7 +443,7 @@ impl Daemon {
                     else {
                         continue;
                     };
-                    let listed = list(&primary_path);
+                    let listed = self.git.list_worktrees(&primary_path);
                     if listed.is_empty() {
                         continue;
                     }
@@ -494,25 +485,21 @@ impl Daemon {
         for pane in orphaned_panes {
             self.retire_pane(pane);
         }
+        self.ensure_local_ignores();
     }
 
     /// Looks under each project's root again, so a repository cloned into
     /// it — or deleted out of it — reaches the tree without restarting the
     /// daemon. `reconcile_worktrees` does the same job one level further
     /// down, for a repository's checkouts.
+    /// Reports whether anything changed.
     pub(super) fn reconcile_repositories(&self) -> bool {
-        let changed = self.reconcile_repositories_with(crate::git::discover_repositories_within);
+        let changed = self.match_repositories_to_roots();
         self.ensure_local_ignores();
         changed
     }
 
-    /// The reconciliation itself, with the scan injected so tests can state
-    /// what is on disk instead of building it. Reports whether anything
-    /// changed. Production always passes `git::discover_repositories`.
-    pub(super) fn reconcile_repositories_with(
-        &self,
-        discover: impl Fn(&std::path::Path, &crate::git::Scan) -> Vec<PathBuf>,
-    ) -> bool {
+    fn match_repositories_to_roots(&self) -> bool {
         // Scanning happens between the two locks and never inside one, for
         // the same reason `add_project` scans before taking it.
         let roots: Vec<(ProjectId, PathBuf, crate::git::Scan)> = {
@@ -528,7 +515,7 @@ impl Daemon {
         }
         let scanned: Vec<(ProjectId, Vec<PathBuf>)> = roots
             .into_iter()
-            .map(|(id, root, scan)| (id, discover(&root, &scan)))
+            .map(|(id, root, scan)| (id, self.git.discover_repositories(&root, &scan)))
             .collect();
 
         let mut changed = false;

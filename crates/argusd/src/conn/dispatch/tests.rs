@@ -1,0 +1,475 @@
+//! What each client message does, sent the way a connection hands it
+//! on, through a connection with no socket.
+
+use super::*;
+use crate::conn::tests::Harness;
+use argus_protocol::{CheckoutId, PaneId, ReviewBase};
+
+#[test]
+fn a_named_request_is_answered_with_what_it_made() {
+    let dir = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::AddProject {
+        path: other.path().to_string_lossy().to_string(),
+        request_id: 3,
+    });
+
+    let made = h.replies().into_iter().find_map(|reply| match reply {
+        ServerMsg::Created {
+            request_id: 3,
+            created: Some(argus_protocol::Created::Project(id)),
+        } => Some(id),
+        _ => None,
+    });
+    let made = made.expect("the named request is answered");
+    assert!(h.daemon.snapshot().iter().any(|p| p.id == made));
+}
+
+#[test]
+fn an_unnamed_request_is_not_answered() {
+    // What a client from before named requests sends: it could not
+    // read the answer, so it is never sent one.
+    let dir = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::AddProject {
+        path: other.path().to_string_lossy().to_string(),
+        request_id: 0,
+    });
+    assert!(!h
+        .replies()
+        .iter()
+        .any(|reply| matches!(reply, ServerMsg::Created { .. })));
+}
+
+#[tokio::test]
+async fn a_refused_named_request_is_answered_with_nothing_and_still_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::SpawnShell {
+        checkout: CheckoutId(9999),
+        request_id: 8,
+    });
+    let answer = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+        .await
+        .expect("an answer should arrive");
+    assert!(
+        matches!(
+            answer,
+            Some(ServerMsg::Created {
+                request_id: 8,
+                created: None
+            })
+        ),
+        "{answer:?}"
+    );
+    let error = h.error().await;
+    assert!(error.contains("no such checkout"), "{error}");
+}
+
+#[tokio::test]
+async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
+    use argus_protocol::{Capture, DecisionChange, DecisionState, DecisionWrite};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let (project, checkout) = (h.daemon.snapshot()[0].id, h.checkout());
+    let mut boards = h.daemon.subscribe_decisions();
+    let mut lists = h.daemon.subscribe_tasks();
+
+    let note = "Bound the queue\nRefuse when full.\n- measure the backlog\n? which bound\n  a count";
+    h.send(ClientMsg::CaptureFeature {
+        project,
+        checkout,
+        into: None,
+        capture: Box::new(Capture::parse(note)),
+    });
+    let board = boards.try_recv().expect("the feature a note opened is pushed");
+    let feature = board.features[0].clone();
+    assert_eq!((feature.number, feature.body.as_str()), (1, "Refuse when full."));
+    let question = board.decisions[0].clone();
+    assert!(question.open() && question.options == ["a count"]);
+    let list = lists.try_recv().expect("and so are its tasks");
+    assert_eq!((list.feature.as_deref(), list.tasks.len()), (Some(feature.slug.as_str()), 1));
+
+    h.send(ClientMsg::CaptureFeature {
+        project,
+        checkout,
+        into: Some(feature.slug.clone()),
+        capture: Box::new(Capture::parse("any first line\n- drain it")),
+    });
+    let board = boards.try_recv().unwrap();
+    assert_eq!(board.features.len(), 1, "a note added to a feature opens none");
+    assert_eq!(board.features[0].title, "Bound the queue");
+    assert_eq!(lists.try_recv().unwrap().tasks.len(), 2);
+
+    h.send(ClientMsg::Decide {
+        project,
+        checkout,
+        feature: feature.slug.clone(),
+        write: DecisionWrite {
+            chose: "refuse rather than drop".into(),
+            state: DecisionState::Rejected,
+            task: Some(list.tasks[0].id),
+            ..Default::default()
+        },
+    });
+    let board = boards.try_recv().unwrap();
+    assert_eq!(board.decisions[1].state, DecisionState::Rejected);
+    assert_eq!(board.decisions[1].task, Some(list.tasks[0].id));
+
+    h.send(ClientMsg::ChangeDecision {
+        project,
+        checkout,
+        feature: feature.slug.clone(),
+        change: DecisionChange::Resolve {
+            id: question.id,
+            answer: "a count".into(),
+            because: None,
+        },
+    });
+    assert!(boards.try_recv().unwrap().decisions[0].stands());
+    assert!(h.replies().is_empty(), "each is answered by the push, to every client");
+
+    // A refusal is reported and pushes nothing: the panel keeps
+    // showing what is true.
+    h.send(ClientMsg::ChangeDecision {
+        project,
+        checkout,
+        feature: feature.slug.clone(),
+        change: DecisionChange::Resolve {
+            id: question.id,
+            answer: "a byte size".into(),
+            because: None,
+        },
+    });
+    let error = h.error().await;
+    assert!(error.contains("not an open question"), "{error}");
+    h.send(ClientMsg::CaptureFeature {
+        project,
+        checkout,
+        into: None,
+        capture: Box::new(Capture::parse("Half a note\nstray prose\n- a task\n  stray prose")),
+    });
+    let error = h.error().await;
+    assert!(error.contains("some lines read as nothing"), "{error}");
+    h.send(ClientMsg::Decide {
+        project,
+        checkout: CheckoutId(9999),
+        feature: feature.slug,
+        write: DecisionWrite { chose: "x".into(), ..Default::default() },
+    });
+    let error = h.error().await;
+    assert!(error.contains("checkout is not in this project"), "{error}");
+    assert!(boards.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn every_git_mutation_reports_its_refusal() {
+    // These seven arms share one helper, so this is the test that says
+    // the helper is wired to all of them: a bogus checkout has to come
+    // back as a message rather than as a keypress that did nothing.
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let gone = CheckoutId(9999);
+    let branch = || "nope".to_string();
+
+    let sent = [
+        ClientMsg::SwitchBranch {
+            checkout: gone,
+            branch: branch(),
+        },
+        ClientMsg::CreateBranch {
+            checkout: gone,
+            branch: branch(),
+        },
+        ClientMsg::DeleteBranch {
+            checkout: gone,
+            branch: branch(),
+            force: false,
+        },
+        ClientMsg::Fetch { checkout: gone },
+        ClientMsg::Pull { checkout: gone },
+        ClientMsg::CreateWorktree {
+            checkout: gone,
+            branch: branch(),
+            request_id: 0,
+        },
+        ClientMsg::RemoveCheckout { checkout: gone },
+    ];
+    let expected = sent.len();
+    for msg in sent {
+        h.send(msg);
+    }
+
+    for _ in 0..expected {
+        let error = h.error().await;
+        assert!(error.contains("no such checkout"), "{error}");
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_blocked_pane_launch_does_not_block_the_connection_task() {
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let started = std::time::Instant::now();
+
+    dispatch::spawn_pane(&tx, 0, || {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        Ok(PaneId(1))
+    })
+    .unwrap();
+
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(100),
+        "pane launch held the connection task for {:?}",
+        started.elapsed()
+    );
+}
+
+#[tokio::test]
+async fn subscribing_sends_a_snapshot_and_arms_the_damage_stream() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    let pane = h.daemon.spawn_shell(checkout).unwrap();
+
+    h.send(ClientMsg::Subscribe { pane });
+
+    assert!(matches!(
+        h.replies().first(),
+        Some(ServerMsg::PaneSnapshot { .. })
+    ));
+    assert!(
+        h.subs.tasks.contains_key(&pane),
+        "damage must flow after a subscribe"
+    );
+
+    h.send(ClientMsg::Unsubscribe { pane });
+    assert!(!h.subs.tasks.contains_key(&pane));
+
+    let _ = h.daemon.close_pane(pane);
+}
+
+#[tokio::test]
+async fn history_is_answered_in_the_form_the_client_reads() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let pane = h.daemon.spawn_shell(h.checkout()).unwrap();
+
+    h.send(ClientMsg::Scrollback {
+        pane,
+        offset: 1,
+        top: None,
+    });
+    assert!(matches!(
+        h.replies().first(),
+        Some(ServerMsg::ScrollbackRows { .. })
+    ));
+
+    h.subs.runs = true;
+    h.send(ClientMsg::Scrollback {
+        pane,
+        offset: 1,
+        top: None,
+    });
+    assert!(matches!(
+        h.replies().first(),
+        Some(ServerMsg::ScrollbackRuns { rows, top: Some(_), .. }) if *rows > 0
+    ), "and numbers its first row, for the next request to ask by");
+
+    let _ = h.daemon.close_pane(pane);
+}
+
+#[tokio::test]
+async fn subscribing_to_a_pane_that_is_gone_is_an_error_not_a_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::Subscribe { pane: PaneId(9999) });
+    assert!(!h.error().await.is_empty());
+    assert!(h.subs.tasks.is_empty());
+}
+
+#[tokio::test]
+async fn a_review_request_answers_with_that_checkouts_diff() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
+    std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+    drop(repo);
+
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    h.send(ClientMsg::Review {
+        request_id: 42,
+        checkout,
+        base: ReviewBase::Unstaged,
+        commit: None,
+    });
+
+    // The diff runs on a blocking thread, so the reply is not immediate.
+    let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+        .await
+        .expect("the diff should arrive")
+        .expect("channel open");
+    match reply {
+        ServerMsg::Review(r) => {
+            assert_eq!(r.checkout, checkout);
+            assert_eq!(r.request_id, 42);
+            assert_eq!(r.base, ReviewBase::Unstaged);
+            assert_eq!(r.files[0].path, "a.txt");
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_new_review_replaces_an_older_queued_review() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    // Another client's review holds the daemon's turn until released.
+    let mut other = h.daemon.review_lane();
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let (started, mut generating) = tokio::sync::mpsc::unbounded_channel::<()>();
+    other.submit(
+        move || {
+            let _ = started.send(());
+            let _ = held.recv();
+        },
+        |_| {},
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(5), generating.recv())
+        .await
+        .expect("the other review takes the turn");
+
+    for request_id in [1, 2] {
+        h.send(ClientMsg::Review {
+            request_id,
+            checkout,
+            base: ReviewBase::Unstaged,
+            commit: None,
+        });
+    }
+    release.send(()).unwrap();
+
+    let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+        .await
+        .expect("the newest diff should arrive")
+        .expect("channel open");
+    assert!(matches!(
+        reply,
+        ServerMsg::Review(argus_protocol::Review { request_id: 2, .. })
+    ));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), h.rx.recv())
+            .await
+            .is_err(),
+        "the replaced review should not run"
+    );
+}
+
+#[tokio::test]
+async fn a_review_of_a_checkout_that_is_gone_errors_without_spawning_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::Review {
+        request_id: 1,
+        checkout: CheckoutId(9999),
+        base: ReviewBase::Unstaged,
+        commit: None,
+    });
+    assert!(h.error().await.contains("no such checkout"));
+}
+
+#[tokio::test]
+async fn input_and_resize_for_a_dead_pane_do_not_take_the_connection_down() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::Input {
+        pane: PaneId(9999),
+        bytes: b"hello".to_vec(),
+    });
+    h.send(ClientMsg::Resize {
+        pane: PaneId(9999),
+        rows: 10,
+        cols: 40,
+    });
+    assert_eq!(h.replies().len(), 2, "one error each, and still running");
+}
+
+#[tokio::test]
+async fn opening_an_editor_on_a_path_outside_the_checkout_is_refused_here_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    h.send(ClientMsg::OpenInEditor {
+        checkout,
+        path: "../escape.rs".to_string(),
+        line: None,
+        external: false,
+        command: None,
+        request_id: 0,
+    });
+    let error = h.error().await;
+    assert!(error.contains("inside the checkout"), "{error}");
+}
+
+#[tokio::test]
+async fn switching_to_a_workspace_that_does_not_exist_is_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::OpenWorkspace {
+        workspace: argus_protocol::WorkspaceId(9999),
+    });
+    assert!(!h.error().await.is_empty());
+}
+
+#[tokio::test]
+async fn two_panes_stream_at_once() {
+    // A floating editor must not cost the client sight of the agent
+    // behind it, so one connection carries more than one subscription.
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    let a = h.daemon.spawn_shell(checkout).unwrap();
+    let b = h.daemon.spawn_shell(checkout).unwrap();
+
+    h.send(ClientMsg::Subscribe { pane: a });
+    h.send(ClientMsg::Subscribe { pane: b });
+    assert_eq!(h.subs.tasks.len(), 2);
+
+    // Both snapshots arrive, and neither subscription displaced the
+    // other.
+    let panes: Vec<PaneId> = h
+        .replies()
+        .into_iter()
+        .filter_map(|m| match m {
+            ServerMsg::PaneSnapshot { pane, .. } => Some(pane),
+            _ => None,
+        })
+        .collect();
+    assert!(panes.contains(&a) && panes.contains(&b), "{panes:?}");
+
+    h.send(ClientMsg::Unsubscribe { pane: a });
+    assert_eq!(h.subs.tasks.len(), 1, "only the one named is dropped");
+    assert!(h.subs.tasks.contains_key(&b));
+
+    let _ = h.daemon.close_pane(a);
+    let _ = h.daemon.close_pane(b);
+}
+
+#[tokio::test]
+async fn subscribing_twice_to_one_pane_does_not_double_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    let pane = h.daemon.spawn_shell(checkout).unwrap();
+
+    h.send(ClientMsg::Subscribe { pane });
+    h.send(ClientMsg::Subscribe { pane });
+    assert_eq!(h.subs.tasks.len(), 1);
+
+    let _ = h.daemon.close_pane(pane);
+}

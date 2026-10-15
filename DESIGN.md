@@ -225,9 +225,10 @@ to the type or its locking.
 | `state/build` | turning what the config declares into the tree the daemon runs on |
 | `state/panes` | a pane's lifecycle: spawned, restarted, written to, and retired — the one way out of the tree every removal takes |
 | `state/agents` | what an agent reports about itself, and what it is told |
-| `state/follow` | which checkout an agent pane belongs to: the one its agent works in, moved to when the agent says so or a turn ends in another worktree |
+| `state/follow` | which checkout an agent pane belongs to: the one its agent works in, moved to when the agent says so or a status report says its turn ended in another worktree |
 | `state/viewers` | what each client is showing: the one pty size reconciled out of what they all ask for, and the view of the client the person was last at |
 | `state/git_ops` | the writes to Git |
+| `state/git_reads` | the port the tree's reads of Git go through — status, HEAD, worktrees, a root's repositories — so a test can script what Git answers |
 | `state/sync` | the polls and watchers that keep the tree level with the disk |
 | `state/panel` | the rows the user adds and removes by hand |
 | `state/workspaces` | which scope is open, daemon-wide |
@@ -239,6 +240,7 @@ to the type or its locking.
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
+| `review_queue` | when a review's diff is generated: one at a time across the daemon, and only the newest each client asked for |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
 | `pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |

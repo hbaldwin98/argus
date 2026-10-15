@@ -16,28 +16,31 @@ use super::*;
 use crate::config::ProjectConfig;
 use argus_protocol::{parse_pane_path, Endpoint, ReviewAnchor, ReviewBase};
 use super::agents::clean_title;
+use super::git_reads::ScriptedGit;
 use super::session::RESUME_GRACE;
 
 /// A daemon with one project whose primary checkout is `primary`, and no
-/// panes. Nothing here touches disk: `Daemon::new` only expands paths,
-/// and every test below injects its own worktree listing.
+/// panes.
 pub(super) fn daemon_with_primary(primary: &str) -> Arc<Daemon> {
-    Daemon::new(ConfigFile {
-        workspaces: Vec::new(),
-        projects: vec![ProjectConfig {
-            name: "proj".to_string(),
-            root: None,
-            repos: vec![primary.to_string()],
-            workspace: None,
-            ..Default::default()
-        }],
-        agents: Vec::new(),
-        harnesses: Vec::new(),
-    })
+    daemon_with_repositories(&[primary])
 }
 
 pub(super) fn daemon_with_repositories(repositories: &[&str]) -> Arc<Daemon> {
-    Daemon::new(ConfigFile {
+    Daemon::new(repositories_config(repositories))
+}
+
+/// The same daemon over paths that need not exist, with its Git reads
+/// scripted by the test.
+pub(super) fn scripted_primary(primary: &str) -> (Arc<Daemon>, Arc<ScriptedGit>) {
+    scripted_repositories(&[primary])
+}
+
+pub(super) fn scripted_repositories(repositories: &[&str]) -> (Arc<Daemon>, Arc<ScriptedGit>) {
+    Daemon::scripted(repositories_config(repositories))
+}
+
+fn repositories_config(repositories: &[&str]) -> ConfigFile {
+    ConfigFile {
         workspaces: Vec::new(),
         projects: vec![ProjectConfig {
             name: "proj".to_string(),
@@ -48,7 +51,7 @@ pub(super) fn daemon_with_repositories(repositories: &[&str]) -> Arc<Daemon> {
         }],
         agents: Vec::new(),
         harnesses: Vec::new(),
-    })
+    }
 }
 
 pub(super) fn checkout_paths(d: &Daemon) -> Vec<String> {
@@ -176,7 +179,20 @@ pub(super) fn real_repo(dir: &std::path::Path) -> git2::Repository {
 /// A project that finds its repositories under `root`, with `repos`
 /// naming any that are also written down outright.
 pub(super) fn daemon_rooted_at(root: &std::path::Path, repos: &[&str]) -> Arc<Daemon> {
-    Daemon::new(ConfigFile {
+    Daemon::new(rooted_config(root, repos))
+}
+
+/// The same, built from a real scan of `root`, with every later scan
+/// answered as the test scripts.
+pub(super) fn scripted_rooted_at(
+    root: &std::path::Path,
+    repos: &[&str],
+) -> (Arc<Daemon>, Arc<ScriptedGit>) {
+    Daemon::scripted(rooted_config(root, repos))
+}
+
+fn rooted_config(root: &std::path::Path, repos: &[&str]) -> ConfigFile {
+    ConfigFile {
         workspaces: Vec::new(),
         projects: vec![ProjectConfig {
             name: "proj".to_string(),
@@ -187,7 +203,7 @@ pub(super) fn daemon_rooted_at(root: &std::path::Path, repos: &[&str]) -> Arc<Da
         }],
         agents: Vec::new(),
         harnesses: Vec::new(),
-    })
+    }
 }
 
 /// Whether `projects.toml` declares any project, ignoring the
@@ -295,13 +311,17 @@ pub(super) fn daemon_with_fake_claude(dir: &std::path::Path) -> Arc<Daemon> {
 /// has exited takes no session claim, so a test that claims one on an agent
 /// that exits at once is decided by which happens first.
 pub(super) fn daemon_with_running_claude(dir: &std::path::Path) -> Arc<Daemon> {
+    Daemon::new(running_claude_config(dir))
+}
+
+pub(super) fn running_claude_config(dir: &std::path::Path) -> ConfigFile {
     let mut config = fake_claude_config(dir);
     config.agents[0].cmd = if cfg!(windows) {
         vec!["cmd".to_string(), "/K".to_string()]
     } else {
         vec!["cat".to_string()]
     };
-    Daemon::new(config)
+    config
 }
 
 pub(super) fn fake_claude_config(dir: &std::path::Path) -> ConfigFile {

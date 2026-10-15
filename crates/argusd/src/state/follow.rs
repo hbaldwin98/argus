@@ -5,6 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
+use argus_protocol::Report;
+
 use super::*;
 
 impl Daemon {
@@ -12,41 +14,46 @@ impl Daemon {
     /// repository of its project: `argus-hook checkout`, which an agent runs
     /// from wherever it now works — often a worktree it made a moment ago,
     /// before the poll that would have found it.
-    pub(super) fn move_agent_into(&self, pane: PaneId, directory: &Path) -> anyhow::Result<()> {
-        self.move_agent_into_with(pane, directory, crate::git::list_worktrees)
-    }
-
-    pub(super) fn move_agent_into_with(
+    ///
+    /// A CLI started inside the pane is not its owner, and its ask is
+    /// dropped rather than refused: the row follows the agent Argus started
+    /// in it, and the child has nothing to correct.
+    pub(super) fn move_agent_into(
         &self,
         pane: PaneId,
+        reporter: Option<&str>,
         directory: &Path,
-        list: impl Fn(&Path) -> Vec<PathBuf>,
     ) -> anyhow::Result<()> {
+        if self.child_of(pane, reporter).is_some() {
+            return Ok(());
+        }
         let destination = self
-            .discovered_checkout_containing(pane, directory, Reach::Project, list)
+            .discovered_checkout_containing(pane, directory, Reach::Project)
             .ok_or_else(|| {
                 anyhow::anyhow!("{} is not inside a checkout of this project", directory.display())
             })?;
         self.move_agent_to_checkout(pane, &destination)
     }
 
-    /// Follows the pane's own agent into the worktree its turn ended in.
+    /// Follows the pane's own agent into the worktree a status report says
+    /// it is in, when that report is the end of a turn.
     ///
-    /// Only a directory that changed since the last turn moves the row, so a
-    /// person who moved it by hand is not overruled by an agent still
-    /// sitting where it was. Only the agent's own repository counts: a turn
-    /// that ends after reading another repository has not moved there.
-    pub(super) fn follow_agent_directory(&self, pane: PaneId, reporter: Option<&str>, directory: &Path) {
-        self.follow_agent_directory_with(pane, reporter, directory, crate::git::list_worktrees)
-    }
-
-    pub(super) fn follow_agent_directory_with(
+    /// A turn's end, not its tool calls: an agent that steps into another
+    /// worktree to look at something has not moved there. Only a directory
+    /// that changed since the last turn moves the row, so a person who moved
+    /// it by hand is not overruled by an agent still sitting where it was.
+    /// Only the agent's own repository counts: a turn that ends after
+    /// reading another repository has not moved there.
+    pub(super) fn follow_status_report(
         &self,
         pane: PaneId,
         reporter: Option<&str>,
-        directory: &Path,
-        list: impl Fn(&Path) -> Vec<PathBuf>,
+        report: Report,
+        directory: Option<&Path>,
     ) {
+        let (Report::Idle, Some(directory)) = (report, directory) else {
+            return;
+        };
         if self.child_of(pane, reporter).is_some() {
             return;
         }
@@ -64,7 +71,7 @@ impl Daemon {
             return;
         }
         let Some(destination) =
-            self.discovered_checkout_containing(pane, directory, Reach::Repository, list)
+            self.discovered_checkout_containing(pane, directory, Reach::Repository)
         else {
             return;
         };
@@ -82,9 +89,8 @@ impl Daemon {
         pane: PaneId,
         directory: &Path,
         reach: Reach,
-        list: impl Fn(&Path) -> Vec<PathBuf>,
     ) -> Option<PathBuf> {
-        self.reconcile_worktrees_with(list);
+        self.reconcile_worktrees();
         let inner = self.inner.lock().unwrap();
         checkout_containing(&inner.projects, pane, directory, reach)
     }

@@ -20,12 +20,13 @@ fn snapshot_keeps_configured_repositories_separate() {
 
 #[test]
 fn reconciliation_is_isolated_per_repository() {
-    let d = daemon_with_repositories(&["/first", "/second"]);
-    d.reconcile_worktrees_with(|primary| match primary.to_string_lossy().as_ref() {
+    let (d, git) = scripted_repositories(&["/first", "/second"]);
+    git.lists_worktrees(|primary| match primary.to_string_lossy().as_ref() {
         "/first" => listing(&["/first", "/first/wt-a"]),
         "/second" => listing(&["/second", "/second/wt-b"]),
         _ => Vec::new(),
     });
+    d.reconcile_worktrees();
 
     let tree = d.snapshot();
     let first = &tree[0].repositories[0].checkouts;
@@ -36,11 +37,12 @@ fn reconciliation_is_isolated_per_repository() {
     assert_eq!(second.len(), 2);
     assert!(second.iter().any(|c| c.path == "/second/wt-b"));
 
-    d.reconcile_worktrees_with(|primary| match primary.to_string_lossy().as_ref() {
+    git.lists_worktrees(|primary| match primary.to_string_lossy().as_ref() {
         "/first" => listing(&["/first"]),
         "/second" => listing(&["/second", "/second/wt-b"]),
         _ => Vec::new(),
     });
+    d.reconcile_worktrees();
     let tree = d.snapshot();
     assert_eq!(tree[0].repositories[0].checkouts.len(), 1);
     assert_eq!(tree[0].repositories[1].checkouts.len(), 2);
@@ -48,8 +50,9 @@ fn reconciliation_is_isolated_per_repository() {
 
 #[test]
 fn reconcile_adds_a_worktree_created_outside_argus() {
-    let d = daemon_with_primary("/repo");
-    d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/.argus/worktrees/feat"]));
+    let (d, git) = scripted_primary("/repo");
+    git.lists_worktrees(|_| listing(&["/repo", "/repo/.argus/worktrees/feat"]));
+    d.reconcile_worktrees();
 
     let paths = checkout_paths(&d);
     assert_eq!(
@@ -62,8 +65,9 @@ fn reconcile_adds_a_worktree_created_outside_argus() {
 
 #[test]
 fn discovered_worktree_is_not_primary_and_primary_stays_primary() {
-    let d = daemon_with_primary("/repo");
-    d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+    let (d, git) = scripted_primary("/repo");
+    git.lists_worktrees(|_| listing(&["/repo", "/repo/wt"]));
+    d.reconcile_worktrees();
 
     let checkouts: Vec<_> = d
         .snapshot()
@@ -82,9 +86,10 @@ fn discovered_worktree_is_not_primary_and_primary_stays_primary() {
 
 #[test]
 fn reconcile_is_idempotent() {
-    let d = daemon_with_primary("/repo");
+    let (d, git) = scripted_primary("/repo");
     for _ in 0..3 {
-        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+        git.lists_worktrees(|_| listing(&["/repo", "/repo/wt"]));
+        d.reconcile_worktrees();
     }
     assert_eq!(
         checkout_paths(&d).len(),
@@ -95,11 +100,13 @@ fn reconcile_is_idempotent() {
 
 #[test]
 fn reconcile_drops_a_worktree_removed_outside_argus() {
-    let d = daemon_with_primary("/repo");
-    d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+    let (d, git) = scripted_primary("/repo");
+    git.lists_worktrees(|_| listing(&["/repo", "/repo/wt"]));
+    d.reconcile_worktrees();
     assert_eq!(checkout_paths(&d).len(), 2);
 
-    d.reconcile_worktrees_with(|_| listing(&["/repo"]));
+    git.lists_worktrees(|_| listing(&["/repo"]));
+    d.reconcile_worktrees();
     assert_eq!(checkout_paths(&d), vec!["/repo".to_string()]);
 }
 
@@ -108,10 +115,12 @@ fn an_empty_listing_never_wipes_the_tree() {
     // `git::list_worktrees` returns empty when the path isn't a repo or
     // the `git` binary is missing — that must mean "nothing to
     // reconcile", never "every worktree was removed".
-    let d = daemon_with_primary("/repo");
-    d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+    let (d, git) = scripted_primary("/repo");
+    git.lists_worktrees(|_| listing(&["/repo", "/repo/wt"]));
+    d.reconcile_worktrees();
 
-    d.reconcile_worktrees_with(|_| Vec::new());
+    git.lists_worktrees(|_| Vec::new());
+    d.reconcile_worktrees();
     assert_eq!(checkout_paths(&d).len(), 2, "empty listing must be a no-op");
 }
 
@@ -119,8 +128,9 @@ fn an_empty_listing_never_wipes_the_tree() {
 fn reconcile_never_removes_the_primary_checkout() {
     // Even if git somehow stops listing it — a moved/renamed repo dir —
     // the configured checkout is the user's, not ours to drop.
-    let d = daemon_with_primary("/repo");
-    d.reconcile_worktrees_with(|_| listing(&["/somewhere/else"]));
+    let (d, git) = scripted_primary("/repo");
+    git.lists_worktrees(|_| listing(&["/somewhere/else"]));
+    d.reconcile_worktrees();
     assert!(
         checkout_paths(&d).contains(&"/repo".to_string()),
         "primary must survive a listing that omits it"
@@ -129,8 +139,9 @@ fn reconcile_never_removes_the_primary_checkout() {
 
 #[test]
 fn discovered_checkouts_get_distinct_ids() {
-    let d = daemon_with_primary("/repo");
-    d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/a", "/repo/b"]));
+    let (d, git) = scripted_primary("/repo");
+    git.lists_worktrees(|_| listing(&["/repo", "/repo/a", "/repo/b"]));
+    d.reconcile_worktrees();
 
     let ids: Vec<_> = d
         .snapshot()
@@ -168,11 +179,13 @@ fn worktree_display_name_falls_back_to_the_directory_name() {
 /// user for a tick.
 #[test]
 fn a_status_read_that_failed_does_not_erase_the_branch_we_knew() {
-    let d = daemon_with_primary("/repo");
-    d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
-    d.refresh_git_status_with(false, |path| {
+    let (d, git) = scripted_primary("/repo");
+    git.lists_worktrees(|_| listing(&["/repo", "/repo/wt"]));
+    d.reconcile_worktrees();
+    git.reads_status(|path| {
         Some(status_on(if path.ends_with("wt") { "dev" } else { "main" }))
     });
+    d.refresh_git_status(false);
 
     let worktree = d.snapshot()[0].repositories[0]
         .checkouts
@@ -191,7 +204,8 @@ fn a_status_read_that_failed_does_not_erase_the_branch_we_knew() {
     );
 
     // git is mid-switch and cannot answer.
-    d.refresh_git_status_with(false, |_| None);
+    git.reads_status(|_| None);
+    d.refresh_git_status(false);
 
     let c = d.snapshot()[0].repositories[0]
         .checkouts
@@ -215,13 +229,15 @@ fn a_status_read_that_failed_does_not_erase_the_branch_we_knew() {
 /// forever: the slow, unfiltered beat still reaches it.
 #[test]
 fn an_active_only_sweep_leaves_a_paneless_checkout_stale() {
-    let d = daemon_with_primary("/repo");
-    d.refresh_git_status_with(false, |_| Some(status_on("main")));
+    let (d, git) = scripted_primary("/repo");
+    git.reads_status(|_| Some(status_on("main")));
+    d.refresh_git_status(false);
 
     // Only ever reads for checkouts with a pane open; "/repo" has none.
-    d.refresh_git_status_with(true, |path| {
+    git.reads_status(|path| {
         panic!("an active-only sweep must not read {}", path.display())
     });
+    d.refresh_git_status(true);
 
     let c = d.snapshot()[0].repositories[0].checkouts[0].clone();
     assert_eq!(
@@ -235,18 +251,21 @@ fn an_active_only_sweep_leaves_a_paneless_checkout_stale() {
 /// the branch that now occupies it.
 #[test]
 fn a_branch_switched_outside_argus_renames_the_row_it_happened_in() {
-    let d = daemon_with_primary("/repo");
-    d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
-    d.refresh_git_status_with(false, |path| {
+    let (d, git) = scripted_primary("/repo");
+    git.lists_worktrees(|_| listing(&["/repo", "/repo/wt"]));
+    d.reconcile_worktrees();
+    git.reads_status(|path| {
         Some(status_on(if path.ends_with("wt") { "dev" } else { "main" }))
     });
-    d.refresh_git_status_with(false, |path| {
+    d.refresh_git_status(false);
+    git.reads_status(|path| {
         Some(status_on(if path.ends_with("wt") {
             "spike"
         } else {
             "main"
         }))
     });
+    d.refresh_git_status(false);
 
     let names: Vec<String> = d.snapshot()[0].repositories[0]
         .checkouts
@@ -263,9 +282,10 @@ fn a_branch_switched_outside_argus_renames_the_row_it_happened_in() {
 
 #[test]
 fn reconcile_result_is_visible_to_tree_subscribers() {
-    let d = daemon_with_primary("/repo");
+    let (d, git) = scripted_primary("/repo");
     let mut rx = d.subscribe_tree();
-    d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+    git.lists_worktrees(|_| listing(&["/repo", "/repo/wt"]));
+    d.reconcile_worktrees();
     d.broadcast_tree();
 
     let tree = rx
@@ -451,12 +471,13 @@ fn a_repository_cloned_into_a_root_arrives_on_the_next_scan() {
     // The reason the root is remembered at all rather than resolved once
     // and thrown away.
     let dir = tempfile::tempdir().unwrap();
-    let d = daemon_rooted_at(dir.path(), &[]);
+    let (d, git) = scripted_rooted_at(dir.path(), &[]);
     assert!(repository_names(&d).is_empty(), "nothing there yet");
 
-    let cloned = dir.path().join("orion");
+    let cloned = listing(&[&dir.path().join("orion").to_string_lossy()]);
+    git.discovers(move |_, _| cloned.clone());
     assert!(
-        d.reconcile_repositories_with(|_, _| listing(&[&cloned.to_string_lossy()])),
+        d.reconcile_repositories(),
         "the tree changed, so clients need telling"
     );
 
@@ -485,13 +506,15 @@ async fn a_scan_leaves_the_repositories_it_already_knew_about_alone() {
     std::fs::create_dir(&child).unwrap();
     let _repo = real_repo(&child);
 
-    let d = daemon_rooted_at(dir.path(), &[]);
+    let (d, git) = scripted_rooted_at(dir.path(), &[]);
     let before = d.snapshot();
     let repository = before[0].repositories[0].clone();
     let pane = d.spawn_shell(repository.checkouts[0].id).unwrap();
 
+    let found = listing(&[&child.to_string_lossy()]);
+    git.discovers(move |_, _| found.clone());
     assert!(
-        !d.reconcile_repositories_with(|_, _| listing(&[&child.to_string_lossy()])),
+        !d.reconcile_repositories(),
         "nothing changed, so nothing should be broadcast"
     );
 
@@ -509,9 +532,10 @@ fn a_discovered_repository_that_leaves_the_root_leaves_the_project() {
     let child = dir.path().join("orion");
     std::fs::create_dir(&child).unwrap();
     let _repo = real_repo(&child);
-    let d = daemon_rooted_at(dir.path(), &[]);
+    let (d, git) = scripted_rooted_at(dir.path(), &[]);
 
-    assert!(d.reconcile_repositories_with(|_, _| Vec::new()));
+    git.discovers(|_, _| Vec::new());
+    assert!(d.reconcile_repositories());
     assert!(repository_names(&d).is_empty());
 }
 
@@ -524,12 +548,13 @@ async fn a_repository_holding_panes_survives_a_scan_that_cannot_find_it() {
     let child = dir.path().join("orion");
     std::fs::create_dir(&child).unwrap();
     let _repo = real_repo(&child);
-    let d = daemon_rooted_at(dir.path(), &[]);
+    let (d, git) = scripted_rooted_at(dir.path(), &[]);
     let pane = d
         .spawn_shell(d.snapshot()[0].repositories[0].checkouts[0].id)
         .unwrap();
 
-    assert!(!d.reconcile_repositories_with(|_, _| Vec::new()));
+    git.discovers(|_, _| Vec::new());
+    assert!(!d.reconcile_repositories());
     assert_eq!(
         repository_names(&d),
         vec!["orion"],
@@ -537,7 +562,7 @@ async fn a_repository_holding_panes_survives_a_scan_that_cannot_find_it() {
     );
 
     d.close_pane(pane).unwrap();
-    assert!(d.reconcile_repositories_with(|_, _| Vec::new()));
+    assert!(d.reconcile_repositories());
     assert!(repository_names(&d).is_empty(), "and gone once it is empty");
 }
 
@@ -550,16 +575,18 @@ fn a_repository_named_outright_survives_a_scan_that_cannot_find_it() {
     let plain = dir.path().join("scratch");
     std::fs::create_dir(&plain).unwrap();
 
-    let d = daemon_rooted_at(dir.path(), &[&plain.to_string_lossy()]);
-    assert!(!d.reconcile_repositories_with(|_, _| Vec::new()));
+    let (d, git) = scripted_rooted_at(dir.path(), &[&plain.to_string_lossy()]);
+    git.discovers(|_, _| Vec::new());
+    assert!(!d.reconcile_repositories());
     assert_eq!(repository_names(&d), vec!["scratch"]);
 }
 
 #[test]
 fn a_project_without_a_root_is_never_scanned() {
-    let d = daemon_with_repositories(&["/configured"]);
+    let (d, git) = scripted_repositories(&["/configured"]);
+    git.discovers(|_, _| panic!("a rootless project has nothing to scan"));
     assert!(
-        !d.reconcile_repositories_with(|_, _| panic!("a rootless project has nothing to scan")),
+        !d.reconcile_repositories(),
         "and nothing changed"
     );
 }
@@ -684,7 +711,7 @@ fn a_repository_named_by_hand_is_not_a_scan_result_and_no_scan_removes_it() {
 
         // A scan of the root finds only what is under it, which the
         // added repository never was.
-        assert!(!d.reconcile_repositories_with(crate::git::discover_repositories_within));
+        assert!(!d.reconcile_repositories());
         assert_eq!(repository_names(&d), vec!["orion", "notes"]);
     });
 }
