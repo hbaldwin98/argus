@@ -14,6 +14,7 @@
 
 use std::collections::HashSet;
 
+use argus_protocol::column_verbs::Verb;
 use argus_protocol::keys::{Key, KeyCode, Mods};
 use argus_protocol::mouse::{self, MouseButton, MouseEvent, MouseKind};
 use argus_protocol::paste;
@@ -30,7 +31,7 @@ use crate::page::{Connection, Event, PageMouse, Status};
 use crate::palette;
 use crate::settings::{ReviewLayout, Settings};
 use crate::rail::{self, Choices};
-use crate::checkouts_stage::{CheckoutsStage, Deleting, Opened};
+use crate::checkouts_stage::{CheckoutsStage, Opened};
 use crate::history::{HistoryDialog, Then};
 use crate::review::ReviewDialog;
 use crate::screen::Screen;
@@ -1120,29 +1121,28 @@ impl Session {
     /// `x` on a checkout in the rail: the Checkouts stage opens on its row
     /// and asks, since its question is the stage's and is drawn there.
     pub fn remove_checkout(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
-        let Some((repository, info)) = self.in_project(checkout) else {
+        let Some(repo) = self.in_project(checkout) else {
             return self.finish();
         };
-        if let Err(text) = self.checkouts.ask_remove(&info) {
+        if let Err(text) = self.checkouts.ask_remove(&repo, checkout) {
             return self.note(text);
         }
-        self.open_on_row(repository, checkout);
+        self.open_on_row(repo.id, checkout);
         self.finish()
     }
 
     /// A checkout chosen in the palette: the Checkouts stage opens on its
     /// row, where its keys are.
     pub fn go_to_checkout(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
-        if let Some((repository, _)) = self.in_project(checkout) {
+        if let Some(argus_protocol::RepositoryInfo { id: repository, .. }) = self.in_project(checkout) {
             self.open_on_row(repository, checkout);
         }
         self.finish()
     }
 
     /// A checkout of the rail's project, and the repository holding it.
-    fn in_project(&self, checkout: CheckoutId) -> Option<(RepositoryId, argus_protocol::CheckoutInfo)> {
-        let repo = self.current_project()?.repositories.iter().find(|r| r.checkouts.iter().any(|c| c.id == checkout))?;
-        Some((repo.id, repo.checkouts.iter().find(|c| c.id == checkout)?.clone()))
+    fn in_project(&self, checkout: CheckoutId) -> Option<argus_protocol::RepositoryInfo> {
+        self.current_project()?.repositories.iter().find(|r| r.checkouts.iter().any(|c| c.id == checkout)).cloned()
     }
 
     fn open_on_row(&mut self, repository: RepositoryId, checkout: CheckoutId) {
@@ -1156,8 +1156,8 @@ impl Session {
 
     /// The answer to the stage's question: a yes does what it asked about.
     pub fn answer_checkouts(&mut self, yes: bool) -> Vec<ClientMsg> {
-        if let Some(deleting) = self.checkouts.answer(yes) {
-            self.out.push(deletion(deleting));
+        if let Some(msg) = self.checkouts.answer(yes) {
+            self.out.push(msg);
         }
         self.finish()
     }
@@ -1168,12 +1168,10 @@ impl Session {
         let Some(repo) = self.chosen_repository().cloned() else {
             return self.finish();
         };
-        match self.checkouts.new_worktree(&repo, name) {
-            Ok((checkout, branch)) => {
-                let request_id = self.next_request();
-                self.out.push(ClientMsg::CreateWorktree { checkout, branch, request_id });
-            }
-            Err(text) => self.passing.push(Event::Notice { text: text.to_owned() }),
+        let request_id = self.next_request();
+        match self.checkouts.act(&repo, Verb::NewWorktree { name: name.as_deref(), request_id }) {
+            Ok(msg) => self.out.push(msg),
+            Err(text) => self.passing.push(Event::Notice { text }),
         }
         self.finish()
     }
@@ -1204,17 +1202,15 @@ impl Session {
                     self.leave_stages();
                     self.show(pane);
                 }
-                Some(Opened::Switch { checkout, branch }) => self.out.push(ClientMsg::SwitchBranch { checkout, branch }),
+                Some(Opened::Send(msg)) => self.out.push(*msg),
                 Some(Opened::Say(text)) => self.passing.push(Event::Notice { text }),
                 None => {}
             },
             Action::Fetch | Action::Pull => {
-                if let Some(checkout) = self.checkouts.where_git_runs(&repo) {
-                    self.out.push(if action == Action::Fetch {
-                        ClientMsg::Fetch { checkout }
-                    } else {
-                        ClientMsg::Pull { checkout }
-                    });
+                let verb = if action == Action::Fetch { Verb::Fetch } else { Verb::Pull };
+                match self.checkouts.act(&repo, verb) {
+                    Ok(msg) => self.out.push(msg),
+                    Err(text) => self.passing.push(Event::Notice { text }),
                 }
             }
             Action::OpenReview => match self.checkouts.checkout(&repo) {
@@ -1226,7 +1222,7 @@ impl Session {
                 None => self.passing.push(Event::Notice { text: "a branch's history opens from a checkout of it".into() }),
             },
             Action::Delete => match self.checkouts.delete(&repo) {
-                Ok(Some(deleting)) => self.out.push(deletion(deleting)),
+                Ok(Some(msg)) => self.out.push(msg),
                 Ok(None) => {}
                 Err(text) => self.passing.push(Event::Notice { text }),
             },
@@ -1603,13 +1599,6 @@ pub enum ReviewJumpGesture {
     Step { by: isize },
     Choose,
     Close,
-}
-
-fn deletion(deleting: Deleting) -> ClientMsg {
-    match deleting {
-        Deleting::Branch { checkout, branch, force } => ClientMsg::DeleteBranch { checkout, branch, force },
-        Deleting::Checkout(checkout) => ClientMsg::RemoveCheckout { checkout },
-    }
 }
 
 /// What to say of a daemon from another build than this window, as the

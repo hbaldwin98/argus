@@ -142,16 +142,13 @@ impl App {
     /// you switch to, or make a worktree of, is `feature`, and git is left
     /// to notice that it comes from `origin/feature`.
     pub fn current_branch_row(&self) -> Option<&str> {
-        let r = self.current_repository()?;
-        match self.selected_checkout_row()? {
-            CheckoutRow::Branch(i) => r.branches.get(i).map(String::as_str),
-            CheckoutRow::Remote(i) => r.remote_branches.get(i).and_then(|b| local_name(b)),
-            CheckoutRow::Checkout(_) => None,
-        }
+        self.current_repository()?
+            .row_branch(self.selected_checkout_row()?)
     }
 
-    /// The same row as `origin/feature`, for the places that have to care
-    /// which side of the remote it is on.
+    /// The same row as `origin/feature`, which only a test still asks for:
+    /// what a remote-only row allows is `column_verbs`'s to say.
+    #[cfg(test)]
     pub fn current_remote_row(&self) -> Option<&str> {
         match self.selected_checkout_row()? {
             CheckoutRow::Remote(i) => self
@@ -266,15 +263,6 @@ impl App {
         if let Some(index) = found {
             self.sel_checkout = index;
         }
-    }
-
-    /// The checkout a repository-wide action runs in: its primary one,
-    /// which is where a branch without a directory would be switched to.
-    pub(super) fn primary_checkout(&self) -> Option<&CheckoutInfo> {
-        self.current_repository()?
-            .checkouts
-            .iter()
-            .find(|c| c.primary)
     }
 
     pub fn current_pane(&self) -> Option<&PaneInfo> {

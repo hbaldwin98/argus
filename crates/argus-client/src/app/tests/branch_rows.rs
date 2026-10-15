@@ -169,6 +169,25 @@ fn the_harder_question_can_still_be_declined() {
 }
 
 #[test]
+fn d_on_the_main_branch_is_refused_rather_than_asked() {
+    let mut h = Harness::new();
+    let r = &mut h.app.tree[0].repositories[0];
+    r.branches = vec!["trunk".to_string()];
+    r.default_branch = Some("trunk".to_string());
+    h.checkouts_stage();
+    h.key(KeyCode::Char('B'));
+    h.key(KeyCode::Char('k'));
+    assert_eq!(h.app.current_branch_row(), Some("trunk"));
+    h.sent();
+
+    h.key(KeyCode::Char('D'));
+
+    assert!(h.app.prompt.is_none(), "nothing to confirm");
+    assert_eq!(h.app.status, "trunk is the main branch and stays");
+    assert!(h.sent().is_empty());
+}
+
+#[test]
 fn a_remote_only_branch_is_offered_under_the_name_it_would_have_here() {
     let mut h = harness_on_a_remote_branch_row();
 

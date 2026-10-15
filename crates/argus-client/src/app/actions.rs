@@ -6,6 +6,7 @@
 //! refused action leaves the panel showing what is actually true.
 
 use super::*;
+use argus_protocol::column_verbs::Verb;
 
 impl App {
     /// Shows or hides the branches that have no checkout. The main branch
@@ -25,33 +26,46 @@ impl App {
     /// changes, so it is safe to press from any row; what changes is which
     /// branches the column can show you.
     pub(super) fn fetch(&mut self) {
-        let Some(checkout) = self.git_checkout() else {
-            self.report("no checkout to fetch in");
-            return;
-        };
-        let _ = self.out.send(ClientMsg::Fetch { checkout });
-        self.report("fetching…");
+        if self.send_row_verb(Verb::Fetch) {
+            self.report("fetching…");
+        }
     }
 
     /// `P` moves the selected checkout up to its upstream, fast-forward
     /// only. On a branch row that is the primary checkout, which is the
     /// same checkout every other repository-wide action uses.
     pub(super) fn pull(&mut self) {
-        let Some(checkout) = self.git_checkout() else {
-            self.report("no checkout to pull into");
-            return;
-        };
-        let _ = self.out.send(ClientMsg::Pull { checkout });
-        self.report("pulling…");
+        if self.send_row_verb(Verb::Pull) {
+            self.report("pulling…");
+        }
     }
 
-    /// The checkout a git command runs in: the selected one, or the
-    /// repository's primary when the selection is a branch with no
-    /// directory of its own.
+    /// `verb` on the selected checkouts-column row, as `column_verbs`
+    /// decides it: sent, or its refusal reported. False when nothing went.
+    pub(super) fn send_row_verb(&mut self, verb: Verb) -> bool {
+        match self.row_verb(verb) {
+            Some(Ok(msg)) => {
+                let _ = self.out.send(msg);
+                true
+            }
+            Some(Err(refusal)) => {
+                self.report(refusal);
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// The checkout git runs in for the selected row.
     fn git_checkout(&self) -> Option<CheckoutId> {
-        self.current_checkout()
-            .or_else(|| self.primary_checkout())
-            .map(|c| c.id)
+        self.current_repository()?
+            .git_runs_in(self.selected_checkout_row()?)
+    }
+
+    /// What `verb` on the selected row comes to; `None` with no row.
+    pub(super) fn row_verb(&self, verb: Verb) -> Option<Result<ClientMsg, String>> {
+        let repo = self.current_repository()?;
+        Some(repo.act(self.selected_checkout_row()?, verb))
     }
 
     /// Sends the edited brief if it has changed since the last write.
@@ -371,14 +385,9 @@ impl App {
     /// The daemon refuses this when that checkout is dirty and says so; the
     /// answer there is `n`, which gives the branch a worktree instead.
     pub(super) fn switch_primary_to_selected_branch(&mut self) {
-        let Some(branch) = self.current_branch_row().map(str::to_string) else {
-            return;
-        };
-        let Some(checkout) = self.primary_checkout().map(|c| c.id) else {
-            self.report("this repository has no primary checkout");
-            return;
-        };
-        let _ = self.out.send(ClientMsg::SwitchBranch { checkout, branch });
+        if self.current_branch_row().is_some() {
+            self.send_row_verb(Verb::Switch);
+        }
     }
 
     /// Starts a shell in the selected checkout. On a branch row, which has
@@ -394,20 +403,25 @@ impl App {
             });
             return;
         }
-        let Some(branch) = self.current_branch_row().map(str::to_string) else {
+        self.branch_worktree_then(Then::SpawnShell);
+    }
+
+    /// Gives the selected branch row a worktree, and does `then` in it once
+    /// the daemon says which checkout it made.
+    pub(super) fn branch_worktree_then(&mut self, then: Then) {
+        if self.current_branch_row().is_none() {
             return;
-        };
-        let Some(base) = self.primary_checkout().map(|c| c.id) else {
-            self.report("no checkout to branch from");
+        }
+        // Refused before it is named, so a request nobody sends waits for
+        // no answer.
+        if let Some(Err(refusal)) = self.row_verb(Verb::NewWorktree { name: None, request_id: 0 }) {
+            self.report(refusal);
             return;
-        };
-        let request_id = self.awaited.ask(Then::SpawnShell);
-        let _ = self.out.send(ClientMsg::CreateWorktree {
-            checkout: base,
-            branch,
-            request_id,
-        });
-        self.report("creating worktree…");
+        }
+        let request_id = self.awaited.ask(then);
+        if self.send_row_verb(Verb::NewWorktree { name: None, request_id }) {
+            self.report("creating worktree…");
+        }
     }
 
     pub(super) fn kill_selected(&mut self) {

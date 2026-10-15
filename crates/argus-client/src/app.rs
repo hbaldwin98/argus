@@ -61,8 +61,6 @@ mod server;
 mod showing;
 mod views;
 
-use argus_protocol::column::local_name;
-
 /// The tree flattened to its checkouts. Written once because several
 /// questions are this plus a `find`; its panes are [`HeldTree::panes`].
 fn checkouts_in(tree: &[ProjectInfo]) -> impl Iterator<Item = &CheckoutInfo> {

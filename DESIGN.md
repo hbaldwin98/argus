@@ -196,6 +196,7 @@ live in this crate and a contract written twice drifts in silence.
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
 | `ago` | how long ago something happened, as every client says it |
 | `column` | the order a repository's checkouts column lists its rows: the main branch first, then the checkouts, then the branches without one while they are shown |
+| `column_verbs` | what a row of that column allows: the request each verb on it sends — remove, new worktree, switch, fetch, pull — or the words it is refused in, which checkout git runs in, and what a yes to the forced deletion sends |
 | `keys` | the bytes a key press is to a pane's child, decided once so every client types the same thing |
 | `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
 | `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
@@ -316,7 +317,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `rail` | what the rail lists from the tree, and what a row says |
 | `review` | what the review dialog holds — a checkout's unstaged and staged sides, the diff on screen, the lines picked, who a comment goes to and the file being jumped to — and what its gestures ask of the daemon |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
-| `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row — and what its keys and buttons ask of the daemon |
+| `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — and which of its keys and buttons are the `column_verbs` it sends |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
