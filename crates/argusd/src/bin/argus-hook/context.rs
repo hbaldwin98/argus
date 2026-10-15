@@ -13,19 +13,23 @@ use super::*;
 /// Prints `preface` (the harness's instructions, when a hook passes them)
 /// and then the live context.
 pub(super) fn context(preface: &[&str]) {
-    let preface = preface.join(" ");
-    let body = context_message(&env_url(), &env_token());
-    let text = [preface.trim(), body.as_str()]
-        .into_iter()
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n\n");
+    let text = context_text(preface, &env_url(), &env_token());
     if text.is_empty() {
         return;
     }
     let mut out = std::io::stdout();
     let _ = writeln!(out, "{text}");
     let _ = out.flush();
+}
+
+pub(super) fn context_text(preface: &[&str], base_url: &str, token: &str) -> String {
+    let preface = preface.join(" ");
+    let body = context_message(base_url, token);
+    [preface.trim(), body.as_str()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 pub(super) fn context_message(base_url: &str, token: &str) -> String {
@@ -126,6 +130,17 @@ fn open_task_count(list: &TaskList) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_inherited_bootstrap_is_printed_as_data_without_a_daemon() {
+        let text = "Load `C:\\work with spaces\\SKILL.md`.\nLiteral: $(exit 9) `exit 9` \"quoted\" %PATH%.";
+        assert_eq!(context_text(&[text], "", ""), text);
+    }
+
+    #[test]
+    fn outside_argus_there_is_nothing_to_print() {
+        assert_eq!(context_text(&[""], "", ""), "");
+    }
 
     fn tasks() -> TaskList {
         serde_json::from_str(

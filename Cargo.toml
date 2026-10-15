@@ -58,6 +58,15 @@ tree-sitter-md = "0.5"
 windows-sys = "0.61"
 libc = "0.2"
 
+# Full debug info made each argusd test binary's .pdb about 180 MB, and
+# linking it dominated a rebuild. Line tables keep file and line in panics
+# and backtraces; a debugger session wants `debug = true` back locally.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 opt-level = 3
 lto = true

@@ -407,6 +407,30 @@ fn codex_hook_content_stays_stable_across_panes_and_daemon_boots() {
         second["commandWindows"],
         r#"& $env:ARGUS_HOOK ($env:ARGUS_HOOK_URL + '/status/idle') $env:ARGUS_HOOK_TOKEN "--session-id-from-stdin" "session_id" "--owns-session""#
     );
+    #[cfg(unix)]
+    assert_eq!(
+        run_hook_command(context["command"].as_str().unwrap()),
+        INSTRUCTIONS_COMMAND,
+        "a helper path with a space stays one word"
+    );
+}
+
+/// Runs a hook command line through `sh` with `$ARGUS_HOOK` naming a
+/// stand-in at a path with a space in it, and returns what it was given.
+#[cfg(unix)]
+fn run_hook_command(command: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let helper = dir.path().join("argus hook");
+    std::fs::write(&helper, "#!/bin/sh\nprintf '%s' \"$*\"\n").unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let output = std::process::Command::new("sh")
+        .args(["-c", command])
+        .env(argus_protocol::HELPER_VAR, &helper)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    String::from_utf8(output.stdout).unwrap()
 }
 
 #[test]
