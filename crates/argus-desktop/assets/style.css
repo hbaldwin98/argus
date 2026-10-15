@@ -2786,11 +2786,12 @@ body.console-fullscreen #bar {
   height: var(--sp-44);
   border: 0;
   border-bottom: 1px solid var(--line);
-  border-radius: 0;
+  /* The dialog's inner corners, so the focus ring follows its curve
+     instead of being clipped square by it. */
+  border-radius: calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0 0;
   background: var(--bg-surface);
   font-size: var(--fs-lg);
   padding: 0 var(--sp-16);
-  outline: none;
 }
 .palette-results {
   overflow-y: auto;
