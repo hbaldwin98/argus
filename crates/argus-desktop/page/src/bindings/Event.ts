@@ -4,6 +4,7 @@ import type { AddProjectPage } from "./AddProjectPage";
 import type { CapturePage } from "./CapturePage";
 import type { Checkouts } from "./Checkouts";
 import type { Command } from "./Command";
+import type { ConsolePage } from "./ConsolePage";
 import type { Features } from "./Features";
 import type { Frame } from "./Frame";
 import type { Group } from "./Group";
@@ -18,4 +19,4 @@ import type { Status } from "./Status";
 /**
  * One message down the page's channel.
  */
-export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "capture" } & CapturePage | { "type": "review" } & ReviewPage | { "type": "history" } & HistoryPage | { "type": "sessions" } & SessionsPage | { "type": "addProject" } & AddProjectPage | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "chime" } | { "type": "settings" } & SettingsPage | { "type": "keymap", groups: Array<Group>, commands: Array<Command>, } | { "type": "palette" } & Palette | { "type": "run", action: Action, };
+export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "capture" } & CapturePage | { "type": "review" } & ReviewPage | { "type": "history" } & HistoryPage | { "type": "sessions" } & SessionsPage | { "type": "addProject" } & AddProjectPage | { "type": "console" } & ConsolePage | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "chime" } | { "type": "settings" } & SettingsPage | { "type": "keymap", groups: Array<Group>, commands: Array<Command>, } | { "type": "palette" } & Palette | { "type": "run", action: Action, };

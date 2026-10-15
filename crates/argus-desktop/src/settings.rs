@@ -1,7 +1,7 @@
 //! What the window remembers between runs: how each repository's feature
 //! index is laid out, which agent it last started, whether an agent coming
-//! to need you chimes, the side and layout a review opens on, and what the
-//! Settings dialog sets.
+//! to need you chimes, the side and layout a review opens on, whether the
+//! console is docked and how tall, and what the Settings dialog sets.
 //!
 //! Its own file beside the config, `desktop.json`, rather than a section
 //! of the terminal client's `client.toml` (DESIGN.md §Configuration says
@@ -38,6 +38,11 @@ pub struct Settings {
     /// made again on each visit.
     #[serde(default)]
     pub review: ReviewLayout,
+    /// Whether the console is docked under the stages, and how tall: kept
+    /// here rather than in the webview's storage, which every window of
+    /// one instance shares and no other file of the window's is in.
+    #[serde(default)]
+    pub console: ConsoleLayout,
     /// What the Settings dialog sets, flat in the file beside the rest.
     #[serde(flatten)]
     pub preferences: Preferences,
@@ -166,6 +171,27 @@ pub struct ReviewLayout {
     pub split: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConsoleLayout {
+    /// Hidden until first shown: a window that never opens a console is
+    /// not given one.
+    #[serde(default)]
+    pub docked: bool,
+    /// In CSS pixels, held by `console` to what the stage leaves room for.
+    #[serde(default = "console_height")]
+    pub height: u32,
+}
+
+impl Default for ConsoleLayout {
+    fn default() -> Self {
+        ConsoleLayout { docked: false, height: console_height() }
+    }
+}
+
+fn console_height() -> u32 {
+    280
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Settings {
@@ -173,6 +199,7 @@ impl Default for Settings {
             last_agent: None,
             chime: true,
             review: ReviewLayout::default(),
+            console: ConsoleLayout::default(),
             preferences: Preferences::default(),
         }
     }
@@ -234,6 +261,7 @@ mod tests {
         settings.last_agent = Some("codex".into());
         settings.chime = false;
         settings.review = ReviewLayout { staged: true, split: true };
+        settings.console = ConsoleLayout { docked: true, height: 412 };
         settings.preferences = Preferences {
             theme: Theme::Frappe,
             opacity: 70,
@@ -269,6 +297,7 @@ mod tests {
         assert_eq!(loaded.last_agent, None);
         assert!(loaded.chime);
         assert_eq!(loaded.review, ReviewLayout::default(), "unstaged and unified, as before");
+        assert_eq!(loaded.console, ConsoleLayout { docked: false, height: 280 }, "no console until one is asked for");
         assert_eq!(loaded.preferences, Preferences::default());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

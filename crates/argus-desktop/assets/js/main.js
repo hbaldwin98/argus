@@ -4,6 +4,7 @@
 import { chime, listen as listenForSound } from './chime.js';
 import { closeStart, drawChrome, notice, railPicked, reconnect, unpickRail } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
+import { listen as listenToConsole } from './console.js';
 import { clearComposer, focusComposer } from './compose.js';
 import { $ } from './dom.js';
 import { drawHistory, historyOpen } from './history.js';
@@ -43,10 +44,20 @@ function receive(event) {
             state.status = event;
             drawChrome();
             break;
+        case 'console': {
+            const before = state.console?.showing ?? null;
+            state.console = event;
+            screen.expect(state.rail.shown?.pane ?? event.showing);
+            drawChrome();
+            // A console newly on the canvas takes the keys, as a pane does.
+            if (event.showing !== null && event.showing !== before)
+                $('input').focus();
+            break;
+        }
         case 'rail': {
             const before = state.rail;
             state.rail = event;
-            screen.expect(event.shown?.pane ?? null);
+            screen.expect(event.shown?.pane ?? state.console?.showing ?? null);
             drawChrome();
             document.body.classList.toggle('filled', event.filled);
             // A pane newly on screen takes the keys, however it got there: a
@@ -137,6 +148,7 @@ listenToInput();
 listenForSound();
 listenToKeys();
 listenToFeatures();
+listenToConsole();
 document.addEventListener('click', (e) => {
     // A click anywhere but its own items closes a checkout's + menu.
     closeStart();
@@ -159,5 +171,6 @@ $('nav-new').addEventListener('click', () => call('show_composer', { open: true 
 $('nav-workspace').addEventListener('click', () => call('show_features', { open: false }));
 $('nav-feature').addEventListener('click', () => call('show_features', { open: true }));
 $('nav-checkouts').addEventListener('click', () => call('show_checkouts', { open: true }));
+$('nav-console').addEventListener('click', () => call('console', { gesture: { on: 'tab' } }));
 drawChrome();
 connect(receive);

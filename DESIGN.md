@@ -95,10 +95,20 @@ live window through `window-vibrancy`; elsewhere only Clear is offered. A notifi
 pane, what came of it and where, for an agent turning waiting, needs-review or failed, never for the
 pane watched in a focused window, and by default only while the window is in the background: the
 window's version of the terminal client's bell, beside its chime. The leader and `f` fill the window with the pane,
-putting the sidebar away until the same keys again. The Feature stage
+putting the sidebar away until the same keys again. The console (`console`) is a fourth place in
+the nav, keyed 4 (in a pane, the leader and 4): the daemon's consoles (`ServerMsg::Consoles`) as
+tabs, `+` asking for one (`SpawnConsole`) that appears once the daemon's consoles hold it, and a
+tab's close ending it. It is docked under the Workspace, Feature and Checkouts stages with a sash
+to resize it, fills the stage as the Console, fills all but the sidebar's projects fullscreen (the
+leader and `z`; the nav and the sidebar's foot are put away, the strip stays for the window's
+buttons), or is hidden, a `›_` in the sidebar's foot and `` ` `` (the leader and `` ` ``) showing it
+again. One pane is on screen at a time, so the one canvas and its text area move between the
+Workspace and the console: a console shown takes them, the Workspace's pane coming back when the
+console hides or that pane is chosen. Whether it is docked and its height are saved in
+`desktop.json`; fullscreen and the tab chosen are the run's. The Feature stage
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `screen`, `input`, `keymap`,
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
 `palette`, `shortcuts`, `settings`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `projects`, `chime`, with `keys`, `dom`, `state`
 and `tauri` beneath them),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
@@ -358,6 +368,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
 | `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
 | `shown` | the pane the window shows: its subscription and size on this connection, its view, whether it fills the window, and whether the leader waits on the next key |
+| `console` | where the console is — docked, the Console stage, fullscreen or hidden — how tall it is docked, the daemon's consoles and the tab chosen, and the page it draws |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
 | `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
 | `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once |
@@ -374,7 +385,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `feature_view` | what a feature opened from the index shows: its tasks and decisions as `outline` reads them, and the task or decision under the cursor in full |
 | `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it, checked against the protocol's bounds |
 | `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, and whether the board holds the feature it was sent as yet |
-| `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, and the Settings dialog's choices |
+| `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, whether the console is docked and its height, and the Settings dialog's choices |
 | `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
 | `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |

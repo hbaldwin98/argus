@@ -82,6 +82,18 @@ function run(action: Action): boolean {
     case 'compose':
       call('show_composer', { open: true });
       return true;
+    case 'console':
+      call('console', { gesture: { on: 'tab' } });
+      return true;
+    case 'toggleConsole':
+      call('console', { gesture: { on: 'toggle' } });
+      return true;
+    case 'consoleFullscreen':
+      call('console', { gesture: { on: 'fullscreen' } });
+      return true;
+    case 'newConsole':
+      call('console', { gesture: { on: 'spawn' } });
+      return true;
     default:
       if (state.rail.stage === 'checkouts') return checkoutsAction(action);
       return workOpen() ? workAction(action) : featureAction(action);
@@ -114,6 +126,8 @@ function notTheirs(action: Action): boolean {
     action === 'feature' ||
     action === 'checkouts' ||
     action === 'compose' ||
+    action === 'console' ||
+    action === 'toggleConsole' ||
     action === 'palette' ||
     action === 'settings'
   );

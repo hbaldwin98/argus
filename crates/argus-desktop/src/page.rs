@@ -128,6 +128,8 @@ pub enum Call {
     Command { action: Action },
     GoToCheckout { checkout: u64 },
     GoToFeature { slug: String },
+    /// A gesture on the console: its tabs, its buttons, its sash.
+    Console { gesture: ConsoleGesture },
     /// Heard only while the daemon is stopped.
     Reconnect,
     Minimize,
@@ -259,6 +261,30 @@ pub enum AddKind {
     New,
 }
 
+/// What was done to the console.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ConsoleGesture {
+    /// Shows it docked, or hides it wherever it is.
+    Toggle,
+    /// The Console stage: the console fills the stage.
+    Tab,
+    /// Docked under the stage, from the Console stage or fullscreen.
+    Dock,
+    /// Fullscreen beside the sidebar, or back to where it was.
+    Fullscreen,
+    Hide,
+    /// One of its tabs: that console on screen, with the keys.
+    Select { pane: u64 },
+    /// "+": a new console, shown once the daemon has made it.
+    Spawn,
+    /// A tab's close: the daemon ends that console.
+    Close { pane: u64 },
+    /// The sash let go at `height` CSS pixels.
+    Height { height: u32 },
+}
+
 /// What was done in the review's jump field: a letter typed, a match
 /// stepped to, Enter, or Escape.
 #[derive(Debug, Clone, Deserialize)]
@@ -298,6 +324,8 @@ pub enum Event {
     /// The add-a-project dialog, whole, whenever it changes; `open` false
     /// once it closes.
     AddProject(Box<AddProjectPage>),
+    /// The console, whole, whenever it changes.
+    Console(Box<ConsolePage>),
     /// Text a pane's child put on the clipboard (OSC 52).
     Clipboard { text: String },
     /// Something the daemon said that passes: a refused request's reason.
@@ -565,6 +593,55 @@ pub enum Stage {
     /// The composer: what to start, where, and its first message.
     #[serde(rename = "new")]
     Composer,
+    /// The console fills the stage.
+    Console,
+}
+
+/// Where the console is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum ConsolePlace {
+    /// Only the sidebar's foot says it is there.
+    #[default]
+    Hidden,
+    /// Under the Workspace, Feature or Checkouts stage.
+    Docked,
+    /// The Console stage.
+    Tab,
+    /// The whole window but the sidebar's projects: the stages' nav and
+    /// the sidebar's foot are put away.
+    Fullscreen,
+}
+
+/// The console as the page draws it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ConsolePage {
+    pub place: ConsolePlace,
+    /// Docked, in CSS pixels.
+    pub height: u32,
+    /// A tab per console the daemon holds, in the order they were started.
+    pub tabs: Vec<ConsoleTab>,
+    /// The console whose screen the window's canvas is drawing. Only one
+    /// pane is on screen at a time, so while this is set the Workspace
+    /// stage has none.
+    pub showing: Option<u64>,
+    /// The daemon takes `SpawnConsole`; an older one offers no "+".
+    pub can_spawn: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ConsoleTab {
+    pub pane: u64,
+    pub title: String,
+    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
+    pub status: &'static str,
+    /// The tab chosen: the one shown when the console has the canvas.
+    pub on: bool,
 }
 
 /// The pane on screen, as the stage's header names it.
