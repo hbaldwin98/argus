@@ -333,6 +333,9 @@ impl Daemon {
     }
 
     pub fn mark_pane_exited(self: &Arc<Self>, pane: PaneId, code: Option<i32>) {
+        if self.extension_console_exited(pane, code) {
+            return;
+        }
         let (retry, restart) = {
             let mut inner = self.inner.lock().unwrap();
             match find_pane_with_checkout(&mut inner.projects, pane) {
@@ -479,6 +482,11 @@ impl Daemon {
     /// and removes it from the tree entirely, so a closed pane actually
     /// disappears instead of lingering as a dead row the user can't clear.
     pub fn close_pane(&self, pane: PaneId) -> anyhow::Result<()> {
+        // Refused, not ignored, so the person is told why nothing closed:
+        // the extension owns the console's life, and it ends with the view.
+        if let Some((extension, view)) = self.extension_console_owner(pane) {
+            anyhow::bail!("this console is {extension}'s view {view}; it ends when the view does");
+        }
         let (removed, orphaned_checkout, used) = {
             let mut inner = self.inner.lock().unwrap();
             // Closing is what makes a repository quiet, so its time is when

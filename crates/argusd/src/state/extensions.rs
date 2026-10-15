@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use argus_protocol::extension_keys::{action_key_refusal, command_key_refusal};
 use argus_protocol::extensions::{MAX_COMMANDS, MAX_ITEMS, MAX_NOTICE_CHARS, MAX_VIEWS};
 use argus_protocol::{
-    CommandScope, ExtAbout, ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtDialogKind, ExtEvent, ExtPane, ExtView,
+    CommandScope, ConsoleEnd, ExtAbout, ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtDialogKind, ExtEvent, ExtPane, ExtView,
     Refusals, Refused,
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -83,7 +83,7 @@ impl Daemon {
         self.extensions_tx.subscribe()
     }
 
-    fn tell_extensions(&self, news: ExtensionNews) {
+    pub(super) fn tell_extensions(&self, news: ExtensionNews) {
         let _ = self.extensions_tx.send(news);
     }
 
@@ -112,6 +112,7 @@ impl Daemon {
         let Some(gone) = self.extensions.lock().unwrap().extensions.remove(name) else {
             return;
         };
+        self.end_consoles_of(name);
         for dialog in gone.dialogs {
             self.tell_extensions(ExtensionNews::Withdrawn { viewer: dialog.viewer, id: dialog.id });
         }
@@ -160,7 +161,12 @@ impl Daemon {
     /// a limit, which is refused by its path (`views[1].rows[3][0]`). An
     /// action key the view keeps, or one already taken in the view, is
     /// dropped from the action and said in the answer; the action is kept.
-    pub fn publish_views(&self, name: &str, views: Vec<ExtView>) -> anyhow::Result<Refusals> {
+    ///
+    /// A console view is started (or kept running, when it asks for what
+    /// already runs) before anything is replaced, so one that cannot start
+    /// refuses the whole publish and leaves the views, and the consoles
+    /// running them, as they were.
+    pub fn publish_views(self: &Arc<Self>, name: &str, views: Vec<ExtView>) -> anyhow::Result<Refusals> {
         if views.len() > MAX_VIEWS {
             anyhow::bail!("views: at most {MAX_VIEWS}");
         }
@@ -173,8 +179,16 @@ impl Daemon {
             checked.push(view);
         }
         let mut views = checked;
+        let before = self.extensions.lock().unwrap().get(name)?.views.clone();
+        let started = self.start_consoles(name, &before, &mut views)?;
         let mut refusals = Refusals::default();
         let mut registry = self.extensions.lock().unwrap();
+        // Gone since the consoles started: they were its, and go with it.
+        if let Err(error) = registry.get(name) {
+            drop(registry);
+            self.abandon_consoles(&started);
+            return Err(error);
+        }
         let extension = registry.get(name)?;
         for view in &mut views {
             view.extension = name.to_string();
@@ -197,11 +211,32 @@ impl Daemon {
                 }
             }
         }
+        let events = extension.events.as_ref().map(|(_, tx)| tx);
+        let ended = self.settle_consoles(name, &extension.views, &mut views, events);
         extension.views = views;
         drop(registry);
+        for pane in ended {
+            self.retire_pane(pane);
+        }
         self.tell_refusals(name, &refusals);
         self.tell_extensions(ExtensionNews::Views);
         Ok(refusals)
+    }
+
+    /// Records on `name`'s view that its console `pane` ended with `code`,
+    /// tells the extension, and has clients read the views again. Nothing
+    /// when the view has since been published anew or gone: that ending is
+    /// no longer the view's.
+    pub(super) fn record_console_end(&self, name: &str, view: &str, pane: PaneId, code: Option<i32>) {
+        let mut registry = self.extensions.lock().unwrap();
+        let Some(extension) = registry.extensions.get_mut(name) else { return };
+        let console = extension.views.iter_mut().find(|v| v.name == view).and_then(|v| v.console.as_mut());
+        let Some(console) = console.filter(|c| c.pane == Some(pane) && c.ended.is_none()) else { return };
+        console.ended = Some(ConsoleEnd { code });
+        // An extension that is not listening misses it; the view says it.
+        let _ = Self::send_extension(extension, name, ExtEvent::ConsoleEnded { view: view.to_string(), code });
+        drop(registry);
+        self.tell_extensions(ExtensionNews::Views);
     }
 
     /// Replaces every command `name` adds. A key Argus keeps, another

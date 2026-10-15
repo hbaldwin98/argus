@@ -35,6 +35,7 @@ mod board_parts;
 mod build;
 mod clock;
 mod decisions;
+mod extension_consoles;
 mod extension_host;
 mod extensions;
 mod features;
@@ -311,6 +312,9 @@ struct Inner {
     /// Shells that belong to no checkout, in the order they were started.
     /// Outside every workspace, so switching one never hides them.
     consoles: Vec<Pane>,
+    /// The panes running extensions' console views. Apart from `consoles`
+    /// because they are no tab of the person's and are not brought back.
+    extension_consoles: Vec<extension_consoles::HeldConsole>,
     ids: IdGen,
     /// Exactly one workspace is open at a time, daemon-global. Panes in the
     /// others keep running; they are just not in the tree clients render.
