@@ -33,9 +33,10 @@ loaded: boolean,
  */
 repository: number | null, 
 /**
- * `workspace` or `feature`.
+ * Which stage is up: the Workspace, the Feature or Checkouts stage,
+ * or the composer (`new`).
  */
-stage: "workspace" | "feature" | "checkouts", 
+stage: "workspace" | "feature" | "checkouts" | "new", 
 /**
  * The pane fills the window: the rail and the stage's chrome are put
  * away until the leader and `f` again.

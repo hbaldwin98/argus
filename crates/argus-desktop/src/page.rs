@@ -92,8 +92,9 @@ pub struct Rail {
     pub loaded: bool,
     /// The repository whose features the Feature stage reads.
     pub repository: Option<u64>,
-    /// `workspace` or `feature`.
-    #[cfg_attr(test, ts(type = "\"workspace\" | \"feature\" | \"checkouts\""))]
+    /// Which stage is up: the Workspace, the Feature or Checkouts stage,
+    /// or the composer (`new`).
+    #[cfg_attr(test, ts(type = "\"workspace\" | \"feature\" | \"checkouts\" | \"new\""))]
     pub stage: &'static str,
     /// The pane fills the window: the rail and the stage's chrome are put
     /// away until the leader and `f` again.

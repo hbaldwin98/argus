@@ -144,6 +144,7 @@ mod tests {
             ClientMsg::SpawnAgent {
                 checkout: CheckoutId(2),
                 template: "claude".to_string(),
+                prompt: Some("fix the build".to_string()),
                 request_id: 2,
             },
             ClientMsg::Kill { pane: PaneId(1) },

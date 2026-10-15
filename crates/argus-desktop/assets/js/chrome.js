@@ -1,10 +1,10 @@
-// The window's frame around the stage: the rail, the stage tabs, the pane
-// header, the status bar, the empty stage, and notices that pass.
+// The window's frame around the stage: the sidebar and its nav, the strip's
+// words, the sidebar's foot, the empty stage, and notices that pass.
 import { drawCheckouts } from './checkouts.js';
+import { drawComposer } from './compose.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { drawFeatures } from './features.js';
 import { chordsFor, keycaps } from './keys.js';
-import { openPalette } from './palette.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -12,20 +12,13 @@ const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 export function drawChrome() {
     const stopped = state.status.connection === 'stopped';
     const stage = state.rail.stage;
-    for (const [id, on] of [
-        ['tab-workspace', stage === 'workspace'],
-        ['tab-feature', stage === 'feature'],
-        ['tab-checkouts', stage === 'checkouts'],
-    ]) {
-        $(id).classList.toggle('on', on);
-        $(id).setAttribute('aria-selected', String(on));
-    }
     $('fstage').hidden = stage !== 'feature';
     $('cstage').hidden = stage !== 'checkouts';
     $('body').hidden = stage !== 'workspace';
     drawFeatures();
     drawCheckouts();
-    drawTabsMeta();
+    drawComposer();
+    drawNav();
     drawHeading();
     drawRail();
     drawHead();
@@ -37,12 +30,31 @@ export function drawChrome() {
         $(id).classList.toggle('held', stopped);
     $('stopped').hidden = !stopped;
 }
-/** The Feature and Checkouts stages name the repository they read, at
- *  the tabs' end. */
-function drawTabsMeta() {
-    const { project, repository, stage } = state.rail;
-    const chosen = project?.repositories.find((repo) => repo.id === repository);
-    $('tabs-meta').textContent = stage !== 'workspace' && chosen ? chosen.name : '';
+/** The sidebar's way between stages, each with its key from the keymap,
+ *  and Search with the palette's. */
+function drawNav() {
+    const stage = state.rail.stage;
+    for (const [name, action] of [
+        ['new', 'compose'],
+        ['workspace', 'workspace'],
+        ['feature', 'feature'],
+        ['checkouts', 'checkouts'],
+    ]) {
+        const nav = $(`nav-${name}`);
+        nav.classList.toggle('on', stage === name);
+        if (stage === name)
+            nav.setAttribute('aria-current', 'page');
+        else
+            nav.removeAttribute('aria-current');
+        $(`nav-${name}-keys`).replaceChildren(keycaps(chordsFor(action, 'anywhere')));
+    }
+    $('nav-search-keys').replaceChildren(keycaps(chordsFor('palette', 'anywhere')));
+}
+const STAGE_NAME = { feature: 'Features', checkouts: 'Checkouts', new: 'New' };
+/** The repository the Feature and Checkouts stages read. */
+function chosenRepository() {
+    const { project, repository } = state.rail;
+    return project?.repositories.find((repo) => repo.id === repository)?.name ?? null;
 }
 export function drawHeading() {
     const { project, projects } = state.rail;
@@ -83,6 +95,19 @@ function statusColour(word) {
         return 'var(--accent)';
     return null;
 }
+/** The few words a pane row says beside its dot: only what asks for a
+ *  look, or that it has ended. Working shows in the dot alone. */
+const PANE_WORD = {
+    waiting: 'needs you',
+    'needs-review': 'review',
+    failed: 'failed',
+    exited: 'exited',
+};
+/** A quiet repository nobody opened or chose folds under one row, so the
+ *  sidebar is the work in hand; unfolding them is the page's own view. */
+function folded(repo) {
+    return repo.quiet && !repo.open && repo.id !== state.rail.repository;
+}
 function drawRail() {
     const rail = $('rail');
     const { project, loaded } = state.rail;
@@ -101,53 +126,83 @@ function drawRail() {
         rail.replaceChildren(el('div', { class: 'empty-rail' }, 'No projects yet.'));
         return;
     }
+    const quiet = project.repositories.filter(folded).length;
     const rows = [];
     for (const repo of project.repositories) {
-        if (repo.divider)
-            rows.push(el('div', { class: 'rule', 'aria-hidden': 'true' }));
-        const colour = statusColour(repo.status);
-        const statusDot = colour ? el('span', { class: 'rdot' }) : null;
-        if (statusDot && colour)
-            statusDot.style.background = colour;
-        const chosen = repo.id === state.rail.repository;
-        rows.push(el('div', { class: `repo${repo.quiet ? ' quiet' : ''}${chosen ? ' sel' : ''}` }, el('button', {
-            class: 'repobtn',
-            'aria-expanded': String(repo.open),
-            'aria-current': chosen ? 'true' : null,
-            onclick: () => call('choose_repository', { repository: repo.id }),
-        }, el('span', { class: 'chev' }, icon(repo.open ? 'down' : 'right')), statusDot, el('span', { class: 'rname ttl' }, repo.name), el('span', { class: 'cnt' }, repo.used ?? (repo.panes || '')))));
+        if (folded(repo) && !state.quietOpen)
+            continue;
+        rows.push(repoRow(repo));
         for (const co of repo.checkouts) {
-            const coPicked = state.railPick?.checkout === co.id && state.railPick.pane === null;
-            rows.push(el('div', {
-                class: `co${coPicked ? ' picked' : ''}`,
-                onclick: () => pickRail(co.id, null),
-            }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.shared !== null &&
-                el('span', { class: 'shared', title: `shared by ${co.shared} agents` }, `⚠${co.shared}`), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
-                class: `icon${railStart(co.id) ? ' hot' : ''}`,
-                title: 'Start a shell or an agent',
-                'aria-label': `Start a shell or an agent on ${repo.name} ${co.name}`,
-                'aria-expanded': String(railStart(co.id)),
-                onclick: (e) => {
-                    e.stopPropagation();
-                    toggleStart(co.id, 'rail');
-                },
-            }, icon('plus')), railStart(co.id) && startMenu(`${repo.name} ${co.name}`, co.id)));
-            for (const pane of co.panes) {
-                rows.push(el('div', { class: 'pane-row' }, el('button', {
-                    class: `pane${pane.on ? ' on' : ''}${state.railPick?.pane === pane.id ? ' picked' : ''} ${pane.status}`,
-                    title: pane.note,
-                    'aria-current': pane.on ? 'true' : null,
-                    // The pane comes on screen, but the keys stay in the rail
-                    // until Enter or a click on the terminal, so x closes it.
-                    onclick: () => {
-                        pickRail(co.id, pane.id);
-                        call('select', { pane: pane.id });
-                    },
-                }, el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'), el('span', { class: 'ttl' }, pane.title), el('span', { class: `st ${pane.status}` }, pane.status)), closeButton(pane.id, pane.title)));
+            rows.push(checkoutRow(repo.name, co));
+            if (co.panes.length > 0) {
+                rows.push(el('div', { class: 'nest' }, co.panes.map((pane) => paneRow(co.id, pane))));
             }
         }
     }
+    if (quiet > 0)
+        rows.push(quietFold(quiet));
     rail.replaceChildren(...rows);
+}
+function quietFold(quiet) {
+    const words = state.quietOpen
+        ? 'Fold the quiet repositories'
+        : `${quiet} quiet ${quiet === 1 ? 'repository' : 'repositories'}`;
+    return el('button', {
+        class: 'nav quiet-fold',
+        'aria-expanded': String(state.quietOpen),
+        onclick: () => {
+            state.quietOpen = !state.quietOpen;
+            drawRail();
+        },
+    }, el('span', { class: 'ic' }, icon(state.quietOpen ? 'down' : 'right')), el('span', { class: 'fg-muted' }, words));
+}
+function repoRow(repo) {
+    const colour = statusColour(repo.status);
+    const statusDot = colour ? el('span', { class: 'rdot' }) : null;
+    if (statusDot && colour)
+        statusDot.style.background = colour;
+    const chosen = repo.id === state.rail.repository;
+    return el('div', { class: `repo${repo.quiet ? ' quiet' : ''}${chosen ? ' sel' : ''}` }, el('button', {
+        class: 'repobtn',
+        'aria-expanded': String(repo.open),
+        'aria-current': chosen ? 'true' : null,
+        onclick: () => call('choose_repository', { repository: repo.id }),
+    }, el('span', { class: 'chev' }, icon(repo.open ? 'down' : 'right')), el('span', { class: 'rname ttl' }, repo.name), statusDot, el('span', { class: 'cnt' }, repo.used ?? (repo.panes || ''))));
+}
+function checkoutRow(repository, co) {
+    const picked = state.railPick?.checkout === co.id && state.railPick.pane === null;
+    const open = railStart(co.id);
+    const where = co.kind === 'main' ? 'main checkout' : 'worktree';
+    return el('div', {
+        class: `co${picked ? ' picked' : ''}${open ? ' hot' : ''}`,
+        title: co.branch ? `${where} on ${co.branch}` : where,
+        onclick: () => pickRail(co.id, null),
+    }, icon('branch'), el('span', { class: 'name ttl' }, co.name), co.shared !== null &&
+        el('span', { class: 'shared', title: `shared by ${co.shared} agents` }, `⚠${co.shared}`), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
+        class: `icon${open ? ' hot' : ''}`,
+        title: 'Start a shell or an agent',
+        'aria-label': `Start a shell or an agent on ${repository} ${co.name}`,
+        'aria-expanded': String(open),
+        onclick: (e) => {
+            e.stopPropagation();
+            toggleStart(co.id, 'rail');
+        },
+    }, icon('plus')), open && startMenu(`${repository} ${co.name}`, co.id));
+}
+function paneRow(checkout, pane) {
+    const word = PANE_WORD[pane.status];
+    const picked = state.railPick?.pane === pane.id;
+    return el('div', { class: 'pane-row' }, el('button', {
+        class: `pane${pane.on ? ' on' : ''}${picked ? ' picked' : ''}${pane.agent ? '' : ' sh'} ${pane.status}`,
+        title: pane.note ?? `${pane.agent ? 'agent' : 'shell'}, ${pane.status}`,
+        'aria-current': pane.on ? 'true' : null,
+        // The pane comes on screen, but the keys stay in the rail
+        // until Enter or a click on the terminal, so x closes it.
+        onclick: () => {
+            pickRail(checkout, pane.id);
+            call('select', { pane: pane.id });
+        },
+    }, el('span', { class: `sdot ${pane.status}`, 'aria-hidden': 'true' }), el('span', { class: 'ttl' }, pane.title), el('span', { class: `st ${pane.status}` }, word ?? el('span', { class: 'sr-only' }, pane.status))), closeButton(pane.id, pane.title));
 }
 // ---- The rail's picked row -------------------------------------------------
 function pickRail(checkout, pane) {
@@ -320,12 +375,22 @@ export function startAction(action) {
             return false;
     }
 }
+/** The strip's words: the pane on screen, or the stage and the
+ *  repository it reads. */
 function drawHead() {
-    const shown = state.rail.shown;
+    const { shown, stage } = state.rail;
     const head = $('head');
-    head.hidden = !shown || state.rail.stage !== 'workspace';
-    if (!shown)
+    if (stage !== 'workspace') {
+        const repository = chosenRepository();
+        head.replaceChildren(el('span', { class: 'type-heading' }, STAGE_NAME[stage]), repository
+            ? el('span', { class: 'crumbs' }, el('span', { class: 'fg-faint' }, '·'), repository)
+            : '');
         return;
+    }
+    if (!shown) {
+        head.replaceChildren();
+        return;
+    }
     head.replaceChildren(el('span', { class: 'crumbs' }, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout), el('span', { class: 'fg-faint' }, '/')), el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'), el('span', { class: 'type-heading head-title' }, shown.title), el('span', { class: `pill ${shown.status}` }, shown.status), el('span', { class: 'grow' }), el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()), closeButton(shown.pane, shown.title));
 }
 /** Ends the pane's program; the rail drops it when the daemon's tree does. */
@@ -343,38 +408,29 @@ function dot(colour) {
         node.style.background = colour;
     return node;
 }
+/** The sidebar's foot: the tallies that need a look, a daemon's alarm,
+ *  and the connection with the chime beside it. */
 function drawBar() {
     const { connection, alarm } = state.status;
     const { needsYou, working } = state.rail;
-    const left = [];
-    const right = [];
+    const tallies = [];
+    const line = [];
     if (connection === 'connected') {
         if (needsYou > 0) {
-            left.push(el('span', { class: 'fg-attention strong' }, `▲ ${needsYou} need you`));
+            tallies.push(el('span', { class: 'fg-attention strong' }, `▲ ${needsYou} need you`));
         }
         if (working > 0)
-            left.push(el('span', { class: 'fg-accent' }, `⋮ ${working} working`));
-        if (alarm)
-            left.push(el('span', { class: 'fg-attention' }, alarm));
-        right.push(chimeSwitch(), el('span', { class: 'actions' }, dot(), 'Connected'));
+            tallies.push(el('span', { class: 'fg-accent' }, `⋮ ${working} working`));
+        line.push(dot(), el('span', { class: 'grow' }, 'Connected'), chimeSwitch());
     }
     else if (connection === 'connecting') {
-        left.push(el('span', { class: 'actions' }, dot('var(--attention)'), 'Connecting'));
+        line.push(dot('var(--attention)'), el('span', { class: 'grow' }, 'Connecting'));
     }
     else {
-        left.push(el('span', { class: 'actions' }, dot('var(--fg-faint)'), 'Stopped'));
-        right.push(el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'));
+        line.push(dot('var(--fg-faint)'), el('span', { class: 'grow' }, 'Stopped'), el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'));
     }
-    // The palette's key, from the keymap, where the eye looks for help.
-    const palette = chordsFor('palette', 'anywhere');
-    if (palette.length) {
-        right.unshift(el('button', {
-            class: 'hint',
-            title: 'Search actions, panes, features and checkouts',
-            onclick: openPalette,
-        }, keycaps(palette), 'Commands'));
-    }
-    $('bar').replaceChildren(...left, el('span', { class: 'grow' }), ...right);
+    const shown = connection === 'connected' && alarm;
+    $('bar').replaceChildren(tallies.length > 0 ? el('div', { class: 'bar-row' }, tallies) : '', shown ? el('div', { class: 'bar-alarm fg-attention' }, alarm) : '', el('div', { class: 'bar-row' }, line));
 }
 function chimeSwitch() {
     const on = state.status.chime;

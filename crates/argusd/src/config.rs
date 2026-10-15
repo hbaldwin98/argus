@@ -148,6 +148,10 @@ pub struct HarnessConfig {
     /// `{session_id}` is replaced with the captured ID and passed as argv.
     #[serde(default)]
     pub resume_id: Vec<String>,
+    /// Arguments that hand a new conversation its first message. Every
+    /// occurrence of `{prompt}` is replaced with the message, as argv.
+    #[serde(default)]
+    pub first_message: Vec<String>,
     /// Optional workspace rule markdown file to install into checkout.
     #[serde(default)]
     pub rule_file: Option<String>,
@@ -285,6 +289,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             plugin_dir: None,
             resume: c.resume,
             resume_id: c.resume_id,
+            first_message: c.first_message,
             command_string: false,
             bake_command: false,
             rule_file: c.rule_file.map(PathBuf::from),
@@ -370,6 +375,7 @@ const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or mor
 #
 # resume = ["--continue"]   # legacy: reopen the last conversation
 # resume_id = ["--resume", "{session_id}"] # reopen one exact conversation
+# first_message = ["{prompt}"] # start a new conversation with a message
 #
 # [harness.events]
 # turn_start = "working"

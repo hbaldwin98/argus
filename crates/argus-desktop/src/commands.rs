@@ -171,6 +171,25 @@ pub async fn show_features(shared: State<'_, Arc<Shared>>, open: bool) -> Answer
 
 /// `open` true shows the Checkouts stage, false goes back to the Workspace.
 #[tauri::command]
+pub async fn show_composer(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
+    shared.act(|s| s.show_composer(open));
+    Ok(())
+}
+
+/// The composer's start: a shell without a `template`, else an agent from
+/// it, opening with `prompt` when one was typed.
+#[tauri::command]
+pub async fn compose(
+    shared: State<'_, Arc<Shared>>,
+    checkout: u64,
+    template: Option<String>,
+    prompt: Option<String>,
+) -> Answer {
+    shared.act(|s| s.compose(CheckoutId(checkout), template, prompt));
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn show_checkouts(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
     shared.act(|s| s.show_checkouts(open));
     Ok(())

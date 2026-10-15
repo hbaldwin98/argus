@@ -162,6 +162,11 @@ pub struct Harness {
     pub resume: Vec<String>,
     /// Exact resume argv template. `{session_id}` is expanded without a shell.
     pub resume_id: Vec<String>,
+    /// How this CLI is handed a new conversation's first message, appended
+    /// to the template's `cmd`; `{prompt}` is expanded without a shell.
+    /// Empty means it takes none, and a start that brings one is refused
+    /// rather than started without it.
+    pub first_message: Vec<String>,
     /// Command hooks accept one shell command string, unlike Claude's
     /// `command` plus `args` shape.
     pub command_string: bool,
@@ -253,6 +258,7 @@ impl Harness {
             plugin_dir: None,
             resume: Vec::new(),
             resume_id: Vec::new(),
+            first_message: Vec::new(),
             command_string: false,
             bake_command: false,
             rule_file: None,
@@ -294,6 +300,7 @@ impl Harness {
             // checkout's directory.
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--resume".to_string(), "{session_id}".to_string()],
+            first_message: vec!["{prompt}".to_string()],
             command_string: false,
             bake_command: false,
             rule_file: None,
@@ -327,6 +334,7 @@ impl Harness {
             plugin_dir: None,
             resume: vec!["resume".to_string(), "--last".to_string()],
             resume_id: vec!["resume".to_string(), "{session_id}".to_string()],
+            first_message: vec!["{prompt}".to_string()],
             command_string: true,
             bake_command: false,
             rule_file: None,
@@ -361,6 +369,7 @@ impl Harness {
             plugin_dir: None,
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--session".to_string(), "{session_id}".to_string()],
+            first_message: vec!["--prompt".to_string(), "{prompt}".to_string()],
             command_string: false,
             bake_command: false,
             rule_file: None,
@@ -391,6 +400,7 @@ impl Harness {
             plugin_dir: None,
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--session".to_string(), "{session_id}".to_string()],
+            first_message: vec!["{prompt}".to_string()],
             command_string: false,
             bake_command: false,
             rule_file: None,
@@ -422,6 +432,7 @@ impl Harness {
             plugin_dir: None,
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--conversation".to_string(), "{session_id}".to_string()],
+            first_message: Vec::new(),
             command_string: false,
             bake_command: false,
             rule_file: Some(PathBuf::from(".agents").join("rules").join("argus.md")),
@@ -463,6 +474,7 @@ impl Harness {
             plugin_dir: None,
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--resume".to_string(), "{session_id}".to_string()],
+            first_message: vec!["{prompt}".to_string()],
             command_string: true,
             // Cursor spawns hooks without the pane environment, so env-based
             // routing never reaches the daemon; title updates from the shell

@@ -74,7 +74,7 @@ async fn a_failed_resume_leaves_nothing_of_its_old_pane_behind() {
     let dir = tempfile::tempdir().unwrap();
     let d = running_claude(dir.path(), Default::default());
     let pane = d
-        .start_agent(only_checkout(&d), "claude", Start::Resuming, None)
+        .start_agent(only_checkout(&d), "claude", Start::Resuming, None, None)
         .unwrap();
     shown(&d, pane);
 

@@ -32,7 +32,7 @@ mod screen;
 mod session;
 mod settings;
 mod shared;
-mod title_bar;
+mod window_frame;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -79,6 +79,8 @@ fn main() {
             commands::choose_repository,
             commands::show_features,
             commands::show_checkouts,
+            commands::show_composer,
+            commands::compose,
             commands::select_checkout_row,
             commands::filter_checkouts,
             commands::checkouts_action,
@@ -106,6 +108,11 @@ fn main() {
             commands::go_to_checkout,
             commands::go_to_feature,
             commands::reconnect,
+            window_frame::minimize,
+            window_frame::toggle_maximize,
+            window_frame::close_window,
+            window_frame::drag_window,
+            window_frame::snap_layouts,
         ])
         .on_page_load(|webview, payload| {
             if payload.event() == PageLoadEvent::Started {
@@ -134,7 +141,8 @@ fn main() {
 }
 
 fn open_window(app: &mut tauri::App) -> tauri::Result<()> {
-    let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()));
+    let window = window_frame::frameless(builder)
         .title("Argus")
         .inner_size(1200.0, 800.0)
         .min_inner_size(720.0, 480.0)
@@ -144,11 +152,11 @@ fn open_window(app: &mut tauri::App) -> tauri::Result<()> {
         // Tauri's own handler would swallow drops the page will want.
         .disable_drag_drop_handler()
         .build()?;
-    title_bar::paint(&window);
+    window_frame::paint(&window);
     let painted = window.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::ThemeChanged(_) = event {
-            title_bar::paint(&painted);
+            window_frame::paint(&painted);
         }
     });
     Ok(())

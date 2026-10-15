@@ -862,7 +862,4 @@ export function listen(): void {
       closeLayer();
     }
   });
-
-  $('tab-workspace').addEventListener('click', () => call('show_features', { open: false }));
-  $('tab-feature').addEventListener('click', () => call('show_features', { open: true }));
 }

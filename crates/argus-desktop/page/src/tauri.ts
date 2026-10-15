@@ -1,5 +1,6 @@
 // What the page asks of the window's Rust, and the channel its events come
-// down. Every command here is one in `src/commands.rs`; the events are
+// down. Every command here is one in `src/commands.rs`, or for moving and
+// sizing the window `src/window_frame.rs`; the events are
 // `src/page.rs`'s, typed by the bindings `cargo test` writes.
 
 import type { Channel as TauriChannel, invoke as tauriInvoke } from '@tauri-apps/api/core';
@@ -37,6 +38,8 @@ export interface Commands {
   choose_repository: { repository: number };
   show_features: { open: boolean };
   show_checkouts: { open: boolean };
+  show_composer: { open: boolean };
+  compose: { checkout: number; template: string | null; prompt: string | null };
   select_checkout_row: { key: string };
   filter_checkouts: { filter: string };
   checkouts_action: { action: Action };
@@ -75,6 +78,11 @@ export interface Commands {
   go_to_checkout: { checkout: number };
   go_to_feature: { slug: string };
   reconnect: None;
+  minimize: None;
+  toggle_maximize: None;
+  close_window: None;
+  drag_window: None;
+  snap_layouts: None;
 }
 
 /** Sends a call. It answers nothing: what it changed comes back as events. */

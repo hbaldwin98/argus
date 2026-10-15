@@ -26,7 +26,7 @@ unicode-width = "0.2"
 
 # The title bar's colour, set through DWM.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Graphics_Dwm"] }
+windows-sys = { workspace = true, features = ["Win32_Graphics_Dwm", "Win32_UI_Input_KeyboardAndMouse"] }
 
 # A Linux desktop is as likely Wayland as X11 now, as the terminal client
 # found.

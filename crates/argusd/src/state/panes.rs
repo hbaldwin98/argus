@@ -118,14 +118,26 @@ impl Daemon {
         Ok(id)
     }
 
-    /// Starts a new agent, and with it a new conversation. What the user
-    /// gets from the template picker.
+    /// Starts a new agent, and with it a new conversation.
+    #[cfg(test)]
     pub fn spawn_agent(
         self: &Arc<Self>,
         checkout: CheckoutId,
         template_name: &str,
     ) -> anyhow::Result<PaneId> {
-        self.start_agent(checkout, template_name, Start::Fresh, None)
+        self.spawn_agent_asking(checkout, template_name, None)
+    }
+
+    /// Starts a new agent, and with it a new conversation, opening with
+    /// `prompt` when there is one. What the template picker and the desktop
+    /// window's composer ask for.
+    pub fn spawn_agent_asking(
+        self: &Arc<Self>,
+        checkout: CheckoutId,
+        template_name: &str,
+        prompt: Option<&str>,
+    ) -> anyhow::Result<PaneId> {
+        self.start_agent(checkout, template_name, Start::Fresh, None, prompt)
     }
 
     pub(super) fn start_agent(
@@ -134,6 +146,7 @@ impl Daemon {
         template_name: &str,
         start: Start,
         harness_session_id: Option<String>,
+        prompt: Option<&str>,
     ) -> anyhow::Result<PaneId> {
         let template = self
             .templates
@@ -145,6 +158,13 @@ impl Daemon {
             .ok_or_else(|| anyhow::anyhow!("no such agent template: {template_name}"))?;
         let Some((program, rest)) = template.cmd.split_first() else {
             anyhow::bail!("agent template {template_name} has an empty cmd");
+        };
+        // Before anything is started or installed: a refused message leaves
+        // nothing behind.
+        let opening = match prompt {
+            Some(prompt) => first_message(&self.harness_for(&template).first_message, prompt)
+                .ok_or_else(|| anyhow::anyhow!("{template_name} cannot be started with a message"))?,
+            None => Vec::new(),
         };
 
         let path = {
@@ -200,13 +220,14 @@ impl Daemon {
             env.push(entry);
         }
 
-        let (args, resuming) = agent_args(
+        let (mut args, resuming) = agent_args(
             rest,
             &harness.resume,
             &harness.resume_id,
             start,
             harness_session_id.as_deref(),
         );
+        args.extend(opening);
 
         let spec = pty::Spawn::Program {
             program: program.clone(),
@@ -317,7 +338,7 @@ impl Daemon {
                 r.template
             );
             self.remove_pane(pane);
-            if let Err(e) = self.start_agent(r.checkout, &r.template, Start::Fresh, None) {
+            if let Err(e) = self.start_agent(r.checkout, &r.template, Start::Fresh, None, None) {
                 tracing::warn!("could not start {} after a failed resume: {e}", r.template);
             }
             return;
@@ -326,7 +347,7 @@ impl Daemon {
         if let Some((checkout, template)) = restart {
             if self.restarts(&template, code, checkout) {
                 self.remove_pane(pane);
-                if let Err(e) = self.start_agent(checkout, &template, Start::Fresh, None) {
+                if let Err(e) = self.start_agent(checkout, &template, Start::Fresh, None, None) {
                     tracing::warn!("could not restart {template}: {e}");
                 }
                 return;

@@ -91,6 +91,7 @@ impl App {
                 let _ = self.out.send(ClientMsg::SpawnAgent {
                     checkout: id,
                     template: template.clone(),
+                    prompt: None,
                     request_id,
                 });
                 true

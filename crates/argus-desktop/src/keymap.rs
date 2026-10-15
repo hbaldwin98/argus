@@ -68,6 +68,8 @@ pub enum Place {
 pub enum Action {
     Workspace,
     Feature,
+    /// The composer: a shell or an agent, where, and its first message.
+    Compose,
     CloseLayer,
     /// The leader itself, sent to the program.
     Leader,
@@ -236,6 +238,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Anywhere, &[Chord::key("1")], Workspace, "Workspace"),
     bind(Anywhere, &[Chord::key("2")], Feature, "Feature"),
     bind(Anywhere, &[Chord::key("3")], Action::Checkouts, "Checkouts"),
+    bind(Anywhere, &[Chord::key("n").ctrl()], Compose, "start a shell or an agent"),
     bind(Anywhere, &[Chord::key("Escape")], CloseLayer, "close the menu or dialog"),
     bind(Anywhere, &[Chord::key("k").ctrl()], Action::Palette, "search actions, panes, features and checkouts"),
     bind(Anywhere, &[Chord::key("?")], Shortcuts, "these shortcuts"),
@@ -245,6 +248,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("2").after_leader()], Feature, "Feature"),
     bind(Pane, &[Chord::key("x").after_leader()], Close, "close the pane, ending its program"),
     bind(Pane, &[Chord::key("3").after_leader()], Action::Checkouts, "Checkouts"),
+    bind(Pane, &[Chord::key("n").after_leader()], Compose, "start a shell or an agent"),
     bind(Pane, &[Chord::key("Tab").after_leader()], OpenReview, "review the pane's checkout"),
     bind(Pane, PASTE, Paste, "paste"),
     bind(Pane, &[Chord::key("PageUp").shift()], PageUp, "back through the history"),
@@ -321,6 +325,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Workspace, Some(Anywhere), "Go to the Workspace"),
     (Action::Feature, Some(Anywhere), "Go to the Feature stage"),
     (Action::Checkouts, Some(Anywhere), "Go to the Checkouts stage"),
+    (Compose, Some(Anywhere), "Start a shell or an agent…"),
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
     (Fill, Some(Pane), "Fill the window with the pane, and back"),
     (Close, Some(Pane), "Close the pane, ending its program"),

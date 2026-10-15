@@ -91,8 +91,14 @@ pub struct Session {
     palette_sent: Option<crate::page::Palette>,
     /// A pane the daemon made for us that no tree has carried yet.
     made: Option<PaneId>,
-    /// The made pane is that editor's.
+    /// The made pane is that editor's, or the composer's.
     made_editor: bool,
+    /// The composer is the stage: what to start, where, and its first
+    /// message. A start from it leaves it once the pane is made, so a
+    /// refused one keeps the composer and what was typed.
+    composing: bool,
+    /// The composer's start, by its request.
+    composed: Option<u64>,
     focused: bool,
     /// The leader was pressed in the pane: the next key is the window's.
     leader: bool,
@@ -150,6 +156,8 @@ impl Session {
             palette_sent: None,
             made: None,
             made_editor: false,
+            composing: false,
+            composed: None,
             focused: true,
             leader: false,
             filled: false,
@@ -240,7 +248,8 @@ impl Session {
                 self.asked.remove(at);
                 match created {
                     Some(Created::Pane(pane)) => {
-                        self.made_editor = self.editor.take_if(|id| *id == request_id).is_some();
+                        self.made_editor = self.editor.take_if(|id| *id == request_id).is_some()
+                            || self.composed.take_if(|id| *id == request_id).is_some();
                         self.made = Some(pane);
                         self.show_made();
                     }
@@ -502,6 +511,7 @@ impl Session {
             Action::Workspace => self.leave_stages(),
             Action::Feature => self.open_features(true),
             Action::Checkouts => self.open_checkouts(true),
+            Action::Compose => self.open_composer(),
             Action::OpenReview => {
                 if let Some(checkout) = self.view().checkout {
                     self.review_checkout(checkout);
@@ -675,10 +685,27 @@ impl Session {
     /// Asks for an agent from one of the daemon's templates on a checkout,
     /// shown once it exists as a shell is.
     pub fn spawn_agent(&mut self, checkout: CheckoutId, template: String) -> Vec<ClientMsg> {
+        self.spawn_agent_asking(checkout, template, None)
+    }
+
+    /// An agent whose conversation opens with `prompt`, from the composer;
+    /// an empty message starts it idle, as `spawn_agent` does.
+    pub fn spawn_agent_asking(
+        &mut self,
+        checkout: CheckoutId,
+        template: String,
+        prompt: Option<String>,
+    ) -> Vec<ClientMsg> {
         if !self.templates.contains(&template) {
             return self.note(format!("argusd has no agent template called {template}"));
         }
-        self.spawn(checkout, |request_id| ClientMsg::SpawnAgent { checkout, template, request_id })
+        let prompt = prompt.filter(|text| !text.trim().is_empty());
+        self.spawn(checkout, |request_id| ClientMsg::SpawnAgent {
+            checkout,
+            template,
+            prompt,
+            request_id,
+        })
     }
 
     fn spawn(&mut self, checkout: CheckoutId, ask: impl FnOnce(u64) -> ClientMsg) -> Vec<ClientMsg> {
@@ -785,6 +812,9 @@ impl Session {
             self.checkouts.set_open(false);
             self.rail_changed = true;
         }
+        if open {
+            self.compose_open(false);
+        }
         if self.features.is_open() != open {
             self.features.set_open(open);
             self.rail_changed = true;
@@ -837,6 +867,46 @@ impl Session {
             self.checkouts.set_open(false);
             self.rail_changed = true;
         }
+        self.compose_open(false);
+    }
+
+    // ---- The composer --------------------------------------------------------
+
+    /// Shows the composer, or goes back to the Workspace.
+    pub fn show_composer(&mut self, open: bool) -> Vec<ClientMsg> {
+        if open {
+            self.open_composer();
+        } else {
+            self.leave_stages();
+        }
+        self.finish()
+    }
+
+    fn open_composer(&mut self) {
+        self.open_features(false);
+        self.open_checkouts(false);
+        self.compose_open(true);
+    }
+
+    fn compose_open(&mut self, open: bool) {
+        if self.composing != open {
+            self.composing = open;
+            self.rail_changed = true;
+        }
+    }
+
+    /// The composer's start: a shell, or an agent from `template` opening
+    /// with `prompt`. The composer stays up until the daemon makes the pane.
+    pub fn compose(&mut self, checkout: CheckoutId, template: Option<String>, prompt: Option<String>) -> Vec<ClientMsg> {
+        let before = self.last_request;
+        let sent = match template {
+            Some(template) => self.spawn_agent_asking(checkout, template, prompt),
+            None => self.spawn_shell(checkout),
+        };
+        if self.last_request != before {
+            self.composed = Some(self.last_request);
+        }
+        sent
     }
 
     /// Shows the Checkouts stage, or goes back to the Workspace.
@@ -848,6 +918,7 @@ impl Session {
     fn open_checkouts(&mut self, open: bool) {
         if open {
             self.open_features(false);
+            self.compose_open(false);
         }
         if self.checkouts.is_open() != open {
             self.checkouts.set_open(open);
@@ -1232,7 +1303,9 @@ impl Session {
             return false;
         }
         match action {
-            Action::Workspace | Action::Feature | Action::Checkouts | Action::Shortcuts => self.run(action),
+            Action::Workspace | Action::Feature | Action::Checkouts | Action::Compose | Action::Shortcuts => {
+                self.run(action)
+            }
             Action::Fill | Action::Close if self.on_screen().is_none() => {
                 self.passing.push(Event::Notice { text: "no pane is on screen".into() });
             }
@@ -1484,14 +1557,16 @@ impl Session {
         };
         let mut rail = rail::build(&self.tree, &choices, self.loaded);
         rail.repository = self.chosen_repository().map(|r| r.id.0);
-        rail.stage = if self.features.is_open() {
+        rail.stage = if self.composing {
+            "new"
+        } else if self.features.is_open() {
             "feature"
         } else if self.checkouts.is_open() {
             "checkouts"
         } else {
             "workspace"
         };
-        rail.filled = self.filled && !self.features.is_open() && self.shown.is_some();
+        rail.filled = self.filled && rail.stage == "workspace" && self.shown.is_some();
         rail.templates = self.agents();
         rail
     }
@@ -2293,7 +2368,7 @@ mod tests {
         let mut s = session(without_focus());
         s.receive(ServerMsg::Templates(vec!["claude".into()]));
         let sent = s.spawn_agent(CheckoutId(100), "claude".into());
-        let Some(ClientMsg::SpawnAgent { checkout, template, request_id }) = sent.first() else {
+        let Some(ClientMsg::SpawnAgent { checkout, template, request_id, .. }) = sent.first() else {
             panic!("{sent:?}");
         };
         assert_eq!((*checkout, template.as_str()), (CheckoutId(100), "claude"));
@@ -2303,6 +2378,50 @@ mod tests {
         s.events(0);
         assert!(s.spawn_agent(CheckoutId(100), "nobody".into()).is_empty());
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("nobody"))));
+    }
+
+    #[test]
+    fn the_composer_stays_up_until_the_daemon_makes_its_pane() {
+        let mut s = session(without_focus());
+        s.receive(ServerMsg::Templates(vec!["claude".into()]));
+        s.show_composer(true);
+        assert_eq!(s.rail(0).stage, "new");
+
+        let sent = s.compose(CheckoutId(100), Some("claude".into()), Some("fix the build".into()));
+        let Some(ClientMsg::SpawnAgent { prompt, request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        assert_eq!(prompt.as_deref(), Some("fix the build"));
+        assert_eq!(s.rail(0).stage, "new", "a refused start keeps what was typed");
+
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(2))) });
+        assert_eq!((s.rail(0).stage, s.shown), ("workspace", Some(PaneId(2))));
+    }
+
+    #[test]
+    fn an_empty_message_starts_the_agent_idle() {
+        let mut s = session(without_focus());
+        s.receive(ServerMsg::Templates(vec!["claude".into()]));
+        let sent = s.compose(CheckoutId(100), Some("claude".into()), Some("  \n".into()));
+        assert!(matches!(sent.first(), Some(ClientMsg::SpawnAgent { prompt: None, .. })), "{sent:?}");
+    }
+
+    #[test]
+    fn the_composer_starts_a_shell_without_a_template() {
+        let mut s = session(without_focus());
+        let sent = s.compose(CheckoutId(100), None, Some("ignored".into()));
+        assert!(matches!(sent.first(), Some(ClientMsg::SpawnShell { checkout: CheckoutId(100), .. })), "{sent:?}");
+    }
+
+    #[test]
+    fn another_stage_puts_the_composer_away() {
+        let mut s = session(without_focus());
+        s.show_composer(true);
+        s.show_checkouts(true);
+        assert_eq!(s.rail(0).stage, "checkouts");
+        s.show_composer(true);
+        s.show_features(false);
+        assert_eq!(s.rail(0).stage, "workspace");
     }
 
     fn offered(s: &mut Session) -> Vec<String> {

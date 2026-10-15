@@ -61,6 +61,9 @@ function run(action: Action): boolean {
     case 'checkouts':
       call('show_checkouts', { open: true });
       return true;
+    case 'compose':
+      call('show_composer', { open: true });
+      return true;
     default:
       return state.rail.stage === 'checkouts' ? checkoutsAction(action) : featureAction(action);
   }
@@ -81,7 +84,11 @@ export function runOver(action: Action): void {
 /** The keys a review or history dialog does not answer, open over it. */
 function notTheirs(action: Action): boolean {
   return (
-    action === 'workspace' || action === 'feature' || action === 'checkouts' || action === 'palette'
+    action === 'workspace' ||
+    action === 'feature' ||
+    action === 'checkouts' ||
+    action === 'compose' ||
+    action === 'palette'
   );
 }
 

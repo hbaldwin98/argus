@@ -4,13 +4,15 @@
 import { chime, listen as listenForSound } from './chime.js';
 import { closeStart, drawChrome, drawHeading, notice, railPicked, reconnect, unpickRail, } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
+import { clearComposer, focusComposer } from './compose.js';
 import { $ } from './dom.js';
 import { drawHistory, historyOpen } from './history.js';
 import { drawReview, reviewOpen } from './review.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { listen as listenToKeys, runOver } from './keymap.js';
-import { drawPalette } from './palette.js';
+import { listen as listenToFrame } from './frame.js';
+import { drawPalette, openPalette } from './palette.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
@@ -50,6 +52,13 @@ function receive(event) {
             // Feature stage lets the keys go to the stage. A row picked in the
             // rail keeps them, the pane it shows or the one after a close.
             const shown = event.shown && event.shown.pane !== before.shown?.pane;
+            // The composer's start was made: its draft is done with.
+            if (before.stage === 'new' && event.stage === 'workspace' && shown)
+                clearComposer();
+            if (event.stage !== before.stage && event.stage === 'new') {
+                focusComposer();
+                return;
+            }
             if (event.stage !== before.stage && event.stage === 'feature')
                 $('input').blur();
             else if (railPicked())
@@ -102,6 +111,7 @@ function receive(event) {
             break;
     }
 }
+listenToFrame();
 listenToInput();
 listenForSound();
 listenToKeys();
@@ -120,6 +130,10 @@ document.addEventListener('mousedown', (e) => {
         unpickRail();
 });
 $('reconnect').addEventListener('click', reconnect);
-$('tab-checkouts').addEventListener('click', () => call('show_checkouts', { open: true }));
+$('nav-search').addEventListener('click', openPalette);
+$('nav-new').addEventListener('click', () => call('show_composer', { open: true }));
+$('nav-workspace').addEventListener('click', () => call('show_features', { open: false }));
+$('nav-feature').addEventListener('click', () => call('show_features', { open: true }));
+$('nav-checkouts').addEventListener('click', () => call('show_checkouts', { open: true }));
 drawChrome();
 connect(receive);

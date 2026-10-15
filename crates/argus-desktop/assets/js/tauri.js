@@ -1,5 +1,6 @@
 // What the page asks of the window's Rust, and the channel its events come
-// down. Every command here is one in `src/commands.rs`; the events are
+// down. Every command here is one in `src/commands.rs`, or for moving and
+// sizing the window `src/window_frame.rs`; the events are
 // `src/page.rs`'s, typed by the bindings `cargo test` writes.
 /** Sends a call. It answers nothing: what it changed comes back as events. */
 export function call(command, args) {

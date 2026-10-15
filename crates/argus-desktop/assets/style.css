@@ -696,18 +696,14 @@
   background: var(--fill);
   color: var(--attention);
 }
+/* The rail as the sidebar's tree: a quiet heading per repository, a
+   small branch row per checkout, and its panes nested under it, each a
+   status dot and a title. */
 .repo {
   display: flex;
   align-items: center;
-  gap: var(--sp-6);
-  padding: 0 var(--sp-8) 0 var(--sp-8);
-  min-height: var(--control-h);
-}
-.repo.sel {
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-.repo.sel .rname {
-  font-weight: 700;
+  margin-top: var(--sp-12);
+  padding: 0 var(--sp-8);
 }
 .repobtn {
   flex: 1;
@@ -716,19 +712,31 @@
   align-items: center;
   gap: var(--sp-6);
   border: 0;
+  border-radius: var(--r-sm);
   background: transparent;
-  color: var(--fg);
+  color: var(--fg-muted);
   font: inherit;
+  font-size: var(--fs-sm);
   font-weight: 600;
-  padding: 0;
-  height: var(--control-h);
+  padding: 0 var(--sp-4);
+  height: 28px;
   cursor: pointer;
   text-align: left;
+}
+.repobtn:hover {
+  color: var(--fg);
+}
+.repo.sel .repobtn {
+  color: var(--fg);
+}
+.repo.sel .chev {
+  color: var(--accent);
 }
 .chev {
   width: 14px;
   flex: none;
   color: var(--fg-faint);
+  display: inline-flex;
 }
 .rdot {
   width: 7px;
@@ -742,11 +750,6 @@
   color: var(--fg-faint);
   font-weight: 400;
 }
-.rule {
-  height: 1px;
-  background: var(--line);
-  margin: var(--sp-8) var(--sp-16);
-}
 .quiet .repobtn {
   color: var(--fg-faint);
   font-weight: 400;
@@ -755,15 +758,31 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--sp-8);
-  padding: var(--sp-2) var(--sp-8) var(--sp-2) var(--sp-32);
+  gap: var(--sp-6);
+  margin: 0 var(--sp-8);
+  padding: 0 var(--sp-4) 0 var(--sp-16);
+  border-radius: var(--r-sm);
+  color: var(--fg-faint);
+  font-size: var(--fs-xs);
+  min-height: var(--control-h-sm);
+  cursor: pointer;
+}
+.co:hover {
   color: var(--fg-muted);
-  font-size: var(--fs-sm);
-  min-height: var(--icon-btn);
 }
 .co .name {
-  color: var(--ref);
   font-family: var(--font-mono);
+}
+.co .icon {
+  width: 20px;
+  height: 20px;
+  visibility: hidden;
+}
+.co:hover .icon,
+.co:focus-within .icon,
+.co.picked .icon,
+.co.hot .icon {
+  visibility: visible;
 }
 .git {
   margin-left: auto;
@@ -780,30 +799,70 @@
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
+.nest {
+  margin: 0 var(--sp-8) var(--sp-4) 22px;
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--line);
+}
 .pane {
   display: flex;
   align-items: center;
-  gap: var(--sp-8);
+  gap: var(--sp-12);
   width: 100%;
   box-sizing: border-box;
   border: 0;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--fg);
   font: inherit;
+  font-size: var(--fs-md);
   text-align: left;
-  padding: var(--sp-4) var(--sp-12) var(--sp-4) var(--sp-44);
+  padding: 0 var(--sp-8) 0 var(--sp-12);
   cursor: pointer;
-  min-height: 28px;
+  height: 32px;
+}
+.pane:hover {
+  background: var(--fill);
+}
+.pane.sh {
+  color: var(--fg-muted);
 }
 .pane.on {
   background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--accent);
+  color: var(--fg);
+}
+.sdot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--fg-faint);
+}
+.sdot.working {
+  border-color: var(--accent);
+  border-right-color: transparent;
+  animation: spin 1s linear infinite;
+}
+.sdot.waiting,
+.sdot.needs-review,
+.sdot.failed {
+  border-color: var(--attention);
+  background: var(--attention);
+}
+.sdot.exited,
+.sdot.done {
+  border: 0;
+  height: 1.5px;
+  background: var(--fg-faint);
+  border-radius: 1px;
+}
+.quiet-fold {
+  margin: var(--sp-12) var(--sp-8) 0;
+  width: calc(100% - var(--sp-16));
 }
 /* The rail's picked row, which holds the keys: ringed, so it reads apart
    from the pane on screen. */
-.co {
-  cursor: pointer;
-}
 .co.picked,
 .pane.picked {
   outline: 1px solid var(--accent);
@@ -861,34 +920,6 @@
   flex-direction: column;
   position: relative;
 }
-.tabs {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  height: var(--header-h);
-  box-sizing: border-box;
-  padding: 0 var(--sp-16);
-  border-bottom: 1px solid var(--line);
-}
-.tab {
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-weight: 600;
-  padding: 0 var(--sp-12);
-  height: var(--control-h);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-8);
-}
-.tab.on {
-  background: var(--fill);
-  color: var(--fg);
-}
 .head {
   display: flex;
   align-items: center;
@@ -910,17 +941,6 @@
   font: inherit;
   padding: 0;
   cursor: pointer;
-}
-.bar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-12);
-  padding: var(--sp-4) var(--sp-12);
-  border-top: 1px solid var(--line);
-  background: var(--bg-chrome);
-  font: var(--type-small);
-  color: var(--fg-muted);
-  min-height: 20px;
 }
 .term {
   flex: 1;
@@ -1397,19 +1417,6 @@ button:focus-visible,
   color: var(--fg);
   background: var(--fill);
 }
-.co .icon {
-  margin-left: var(--sp-2);
-}
-.repo .cnt {
-  margin-right: var(--sp-4);
-}
-.tab[disabled] {
-  color: var(--fg-faint);
-  cursor: default;
-}
-.bar .actions {
-  align-items: center;
-}
 .bar .icon {
   width: 20px;
   height: 20px;
@@ -1433,6 +1440,157 @@ button:focus-visible,
 }
 .projbtn .label-aside {
   text-transform: none;
+}
+
+/* The sidebar runs to the window's top edge: its brand row is the title
+   bar's left end, and the system's own bar is gone. macOS draws its three
+   buttons over the row's start. */
+.rail .brand {
+  border-bottom: 0;
+  user-select: none;
+}
+body.mac .rail .brand {
+  padding-left: 80px;
+}
+.navs {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-8) var(--sp-8);
+  border-bottom: 1px solid var(--line);
+}
+.search,
+.nav {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+.search {
+  gap: var(--sp-8);
+  height: 34px;
+  margin-bottom: var(--sp-6);
+  padding: 0 var(--sp-8) 0 var(--sp-12);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg-faint);
+}
+.search:hover {
+  color: var(--fg-muted);
+}
+.nav {
+  gap: var(--sp-12);
+  height: 32px;
+  padding: 0 var(--sp-8);
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+}
+.nav:hover {
+  background: var(--fill);
+}
+.nav.on {
+  background: var(--bg-selected);
+}
+.nav .ic {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+}
+.nav.on .ic {
+  color: var(--accent);
+}
+.search .kbd,
+.nav .kbd {
+  visibility: hidden;
+}
+.search .kbd,
+.navs:hover .kbd,
+.navs:focus-within .kbd {
+  visibility: visible;
+}
+
+/* The sidebar's foot: what needs a look, and the connection. */
+.bar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-8) var(--sp-16);
+  border-top: 1px solid var(--line);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-height: var(--control-h-sm);
+}
+.bar-alarm {
+  overflow-wrap: anywhere;
+}
+
+/* The stage's strip: the pane or stage it shows, and the window's buttons
+   at the right, as tall as the strip so the corner is theirs to the edge. */
+.strip {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  height: var(--header-h);
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+}
+.strip .head {
+  flex: 1;
+  min-width: 0;
+  padding: 0 var(--sp-8) 0 var(--sp-16);
+  border-bottom: 0;
+}
+.winbtns {
+  flex: none;
+  display: flex;
+}
+body.mac .winbtns {
+  display: none;
+}
+.winbtn {
+  width: 46px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: default;
+}
+.winbtn:hover {
+  background: var(--fill);
+  color: var(--fg);
+}
+.winbtn.shut:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+.winbtn .restore,
+body.maximized .winbtn .max {
+  display: none;
+}
+body.maximized .winbtn .restore {
+  display: inline;
 }
 
 /* The stage holds the header and a body: the terminal, or an empty state. */
@@ -1527,12 +1685,11 @@ button:focus-visible,
   pointer-events: auto;
 }
 
-/* A notice passes along the bottom of the window, above the status bar,
- * on whichever stage is showing. */
+/* A notice passes along the bottom of the stage, on whichever is showing. */
 .notice {
   position: absolute;
   left: calc(50% + var(--rail-w) / 2);
-  bottom: var(--sp-44);
+  bottom: var(--sp-24);
   transform: translateX(-50%);
   z-index: 2;
   max-width: 70%;
@@ -1545,14 +1702,6 @@ button:focus-visible,
   color: var(--fg);
 }
 
-.pane.working .st {
-  animation: breathe 1.6s ease-in-out infinite;
-}
-@keyframes breathe {
-  50% {
-    opacity: 0.5;
-  }
-}
 @media (max-width: 900px) {
   :root {
     --rail-w: 220px;
@@ -1562,9 +1711,127 @@ button:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .ghost,
   .spinner,
-  .pane.working .st {
+  .sdot.working {
     animation: none;
   }
+}
+
+.nav .ic.new {
+  background: var(--fill);
+  color: var(--fg);
+  border-radius: 50%;
+}
+
+/* ---- The composer ------------------------------------------------------ */
+
+.nstage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: var(--sp-24);
+}
+.compose {
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-16);
+  margin-top: -60px;
+}
+.compose-title {
+  font: var(--type-display);
+  text-align: center;
+}
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-12);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--bg-chrome);
+  padding: var(--sp-12);
+}
+.composer:focus-within {
+  border-color: var(--accent);
+}
+.composer textarea {
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font: var(--type-body);
+  font-size: var(--fs-lg);
+  line-height: 1.5;
+  min-height: 96px;
+  padding: var(--sp-4);
+}
+.composer textarea::placeholder {
+  color: var(--fg-faint);
+}
+.compose-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  flex-wrap: wrap;
+}
+.pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: var(--control-h);
+  box-sizing: border-box;
+  padding: 0 var(--sp-4) 0 var(--sp-8);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  color: var(--fg-muted);
+}
+.pick:focus-within {
+  border-color: var(--accent);
+}
+.pick-glyph {
+  display: inline-flex;
+  color: var(--fg-faint);
+}
+.pick select {
+  max-width: 200px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.pick select option {
+  background: var(--bg-surface);
+  color: var(--fg);
+}
+.kbd.on-accent {
+  color: var(--fg-on-accent);
+  border-color: var(--fg-on-accent);
+}
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+.compose-note {
+  padding: 0 var(--sp-4);
+}
+.compose-where {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-16);
+  text-align: center;
+}
+.compose-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
 }
 
 /* ---- The Feature stage ----------------------------------------------- */
@@ -1748,10 +2015,9 @@ button:focus-visible,
   user-select: none;
   touch-action: none;
 }
-/* Ctrl-Space f: the pane fills the window, the rail and the stage's chrome put away. */
-body.filled .rail,
-body.filled .tabs,
-body.filled .head {
+/* Ctrl-Space f: the pane fills the window, the sidebar put away. The strip
+   stays: it holds the window's buttons. */
+body.filled .rail {
   display: none;
 }
 

@@ -192,13 +192,17 @@ argus desktop
 It starts `argus-desktop` from beside `argus`, or from `PATH`, detached so closing the terminal
 leaves the window open, and returns at once. The window reaches the same daemon through
 `argus bridge`, so it shows what the terminal client shows: the rail of projects, repositories,
-checkouts and panes, and one live pane that takes keys, pastes and resizes. `+` on a checkout opens a menu
+checkouts and panes, and one live pane that takes keys, pastes and resizes. It draws its own title
+bar: the sidebar runs to the top of the window with Search, New and the three stages above the
+rail, the connection and the chime at its foot. New (`Ctrl-N`) opens the composer: pick the
+repository, checkout and agent, type the agent's first message, and `Ctrl-Enter` starts it, or
+Shell starts a shell there instead. `+` on a checkout opens a menu
 that starts a shell (`S`) or an agent from one of the daemon's templates (`A` for the first, the
 default; the arrows and Enter for the rest). The template the window last started is listed first,
 and remembered across runs. A checkout several agents share says so: `⚠2` on its rail row, and
-"shared by 2" in the Checkouts tab. A project with `exclusive` set refuses a second agent there, and
+"shared by 2" on the Checkouts stage. A project with `exclusive` set refuses a second agent there, and
 the window says which agent holds it. `×` on a pane, shown while it is pointed at and in
-the stage header, closes it. The Checkouts tab (`3`) lists the chosen repository's checkouts, and
+the stage header, closes it. The Checkouts stage (`3`) lists the chosen repository's checkouts, and
 with `B` the branches without one: Enter opens a checkout on its first pane or switches the primary
 checkout to a branch, `F` fetches, `P` pulls, and `S`/`A` start a shell or the default agent in the
 selected checkout. `N` gives a branch row a worktree, or a checkout a new branch in one; `D`
@@ -213,7 +217,7 @@ again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the
 program except the leader, `Ctrl-Space`: after it, `f` fills the window with the pane and again
 gives the rail back, `x` closes the pane, `Tab` reviews the pane's checkout, `1`, `2` and `3` open
-the Workspace, the Feature and the Checkouts stage, and a second `Ctrl-Space` sends one to the program. Outside a pane `1`, `2` and `3`
+the Workspace, the Feature and the Checkouts stage, `n` opens the composer, and a second `Ctrl-Space` sends one to the program. Outside a pane `1`, `2` and `3`
 open them directly, and the
 Feature stage takes `j`/`k`, Home/End, `v`, `z`, `/`, and on the feature under the cursor `m`,
 `h`, `A` and `g`. `Ctrl-V` (`Cmd-V` on a Mac), `Ctrl-Shift-V` and `Alt-V` paste, and
