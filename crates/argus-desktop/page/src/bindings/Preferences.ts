@@ -2,6 +2,7 @@
 import type { Backdrop } from "./Backdrop";
 import type { EditorMode } from "./EditorMode";
 import type { Layout } from "./Layout";
+import type { SavedLinks } from "./SavedLinks";
 import type { Theme } from "./Theme";
 
 /**
@@ -33,7 +34,7 @@ notifyInBackground: boolean,
 /**
  * The index a repository opens as before it remembers its own.
  */
-featureLayout: Layout, 
+featureLayout: Layout, savedLinks: SavedLinks, 
 /**
  * The family of an installed font the panes and every monospaced
  * line are drawn in, in front of the bundled JetBrains Mono and Nerd

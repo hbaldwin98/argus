@@ -33,7 +33,18 @@ const LAYOUTS = [
     ['list', 'List'],
     ['board', 'Board'],
 ];
-const SECTIONS = ['Appearance', 'Editor', 'Notifications', 'Features', 'Connection'];
+const LINKS = [
+    ['dialog', 'Dialog'],
+    ['column', 'Column'],
+];
+const SECTIONS = [
+    'Appearance',
+    'Editor',
+    'Notifications',
+    'Features',
+    'Views',
+    'Connection',
+];
 const dark = matchMedia('(prefers-color-scheme: dark)');
 function set(change) {
     call('setting', { change });
@@ -168,6 +179,7 @@ export function openSettings() {
     const notify = toggle('Notify when an agent needs you', () => set({ set: 'notify', on: !(state.settings?.chosen.notify ?? true) }));
     const background = toggle('Only while this window is in the background', () => set({ set: 'notifyInBackground', only: !(state.settings?.chosen.notifyInBackground ?? true) }));
     const [layoutGroup, layouts] = segment('Feature index layout', LAYOUTS, (layout) => set({ set: 'featureLayout', layout }));
+    const [linksGroup, links] = segment('Links in a saved view open', LINKS, (opens) => set({ set: 'savedLinks', opens }));
     controls = {
         cards,
         follow,
@@ -185,13 +197,14 @@ export function openSettings() {
         notify,
         background,
         layouts,
+        links,
     };
     const body = el('div', { class: 'settings-body' }, section('Appearance', el('div', { class: 'themecards', role: 'radiogroup', 'aria-label': 'Theme' }, [
         ...cards.values(),
     ]), row('Follow the system', 'Mocha when it is dark, Latte when it is light', follow), row('Background opacity', 'The desktop shows through the background; text and borders stay solid', el('div', { class: 'opacity' }, opacity, percent)), 
     // Clear alone is no choice: where it is all this system draws, the
     // row is left out.
-    page.backdrops.length > 1 ? backdropRow : null, fontRow, uiFontRow), section('Editor', row('Files open', 'A known GUI editor always opens on its own', editorGroup), row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command)), section('Notifications', row('When an agent needs you', 'A system notification naming the pane: waiting, needs-review or failed', notify), row('Only while this window is in the background', null, background)), section('Features', row('Feature index', 'Remembered per repository; this is what a new one opens as', layoutGroup)), section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')));
+    page.backdrops.length > 1 ? backdropRow : null, fontRow, uiFontRow), section('Editor', row('Files open', 'A known GUI editor always opens on its own', editorGroup), row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command)), section('Notifications', row('When an agent needs you', 'A system notification naming the pane: waiting, needs-review or failed', notify), row('Only while this window is in the background', null, background)), section('Features', row('Feature index', 'Remembered per repository; this is what a new one opens as', layoutGroup)), section('Views', row('Links in a saved view open', 'A dialog over the stage, or the next column beside the view', linksGroup)), section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')));
     const nav = el('nav', { class: 'settings-nav', 'aria-label': 'Settings sections' }, SECTIONS.map((name) => el('button', {
         class: 'frow',
         onclick: () => {
@@ -312,6 +325,7 @@ export function drawSettings() {
     setToggle(controls.background, chosen.notifyInBackground);
     controls.background.disabled = !chosen.notify;
     setSegment(controls.layouts, chosen.featureLayout);
+    setSegment(controls.links, chosen.savedLinks);
 }
 // Following the system, a change of its light or dark changes the cards.
 dark.addEventListener('change', () => drawSettings());

@@ -540,7 +540,13 @@ them. One opens as a panel docked on the right, which is moved and dragged like 
 others. A link in a view (a `view` value, or an arrow beside a heading, card, list item and the
 like) opens its target as a new column beside the one it was followed in, and a panel of several
 scrolls sideways; a column's `✕` closes it and its pop-out button makes it a panel of its own. The
-`✕` on the panel's header or on its dock tab closes the whole panel. A
+`✕` on the panel's header or on its dock tab closes the whole panel.
+
+A link followed inside a saved view opens its target as a dialog floating over the stage, so the
+view it came from keeps its dock. Drag a dialog by its header and resize it by its bottom-right
+corner; the window remembers where. Its dock menu docks it, and the same menu on a docked view
+(or a column's dialog button) floats it. To have links open as the next column instead, set
+**Settings → Views → Links in a saved view open** to **Column**. A
 column's header offers **Refresh** (asks the agent that saved it to build it again), **Mark stale**,
 **Delete** and **Details**: what it was built from. The Feature stage lists the saved views scoped or
 attached to the open feature beside its tickets.

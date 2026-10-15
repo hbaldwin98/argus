@@ -105,6 +105,8 @@ window.addEventListener(
 export function draggable<T extends HTMLElement>(handle: T, panel: Panel, title: string): T {
   handle.addEventListener('mousedown', (down) => {
     if (down.button !== 0) return;
+    // A dialog's header moves the dialog (`floats`); its dock menu docks it.
+    if (handle.closest('.float')) return;
     const pressed =
       down.target instanceof Element ? down.target.closest('button, input, textarea, a') : null;
     if (pressed && pressed !== handle) return;

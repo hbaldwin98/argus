@@ -69,7 +69,7 @@ use crate::dragged_width::{self, DraggedWidth};
 use crate::sent::Sent;
 use crate::sessions::Sessions;
 use crate::sessions_dialog::{Recent, SessionsDialog, Then as SessionsThen};
-use crate::settings::{Backdrop, Settings, Theme};
+use crate::settings::{Backdrop, SavedLinks, Settings, Theme};
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
 use crate::switcher::Switcher;
@@ -634,6 +634,19 @@ impl Session {
                 if let Panel::Saved(owner) = panel {
                     if self.saved.close_column(&owner, column) == Closed::Panel {
                         self.docks.forget(&Panel::Saved(owner));
+                    }
+                }
+                self.finish()
+            }
+            Call::FloatSavedColumn { panel, column } => {
+                if let Panel::Saved(owner) = panel {
+                    match column {
+                        0 => self.docks.float(&Panel::Saved(owner)),
+                        _ => {
+                            if let Some(id) = self.saved.pop_out(&owner, column) {
+                                self.float_saved(id);
+                            }
+                        }
                     }
                 }
                 self.finish()
@@ -1318,17 +1331,37 @@ impl Session {
             self.passing.push(Event::Notice { text: format!("no saved view {id}") });
             return self.finish();
         }
+        let columns = self.choices.get().saved_links == SavedLinks::Column;
         match from {
-            Some(SavedColumn { panel: Panel::Saved(owner), column }) if self.saved.follow(&owner, column, id.clone()) => {
+            Some(SavedColumn { panel: Panel::Saved(owner), column }) if columns && self.saved.follow(&owner, column, id.clone()) => {
                 self.show_saved(owner);
             }
+            Some(SavedColumn { panel: Panel::Saved(_), .. }) if !columns => match self.placed_panel(&id) {
+                Some(placed) => self.show_saved(placed),
+                None => self.float_saved(id),
+            },
             _ => {
-                let showing = self.saved.showing(&id);
-                let placed = showing.iter().find(|panel| self.docks.place_of(&Panel::Saved((*panel).clone())).is_some());
-                self.show_saved(placed.cloned().unwrap_or(id));
+                let placed = self.placed_panel(&id);
+                self.show_saved(placed.unwrap_or(id));
             }
         }
         self.finish()
+    }
+
+    /// The placed saved panel showing the view `id`, the one named for it
+    /// first.
+    fn placed_panel(&self, id: &str) -> Option<String> {
+        let showing = self.saved.showing(id);
+        showing.into_iter().find(|panel| self.docks.place_of(&Panel::Saved(panel.clone())).is_some())
+    }
+
+    /// Brings out the saved panel named `owner` as a dialog in front,
+    /// floating it the first time.
+    fn float_saved(&mut self, owner: String) {
+        self.saved.open(&owner);
+        let panel = Panel::Saved(owner);
+        self.docks.place(&panel, Place::Float);
+        self.docks.show(&panel);
     }
 
     /// Brings out the saved panel named `owner`, placing it on the right
@@ -1612,6 +1645,9 @@ impl Session {
                 _ => self.docks.hide(&panel),
             },
             DockGesture::Size { dock, size } => self.docks.set_size(dock, size),
+            DockGesture::Float { panel } => self.docks.float(&panel),
+            DockGesture::Bounds { panel, bounds } => self.docks.set_bounds(&panel, bounds),
+            DockGesture::Raise { panel } => self.docks.raise(&panel),
         }
         self.finish()
     }
@@ -2672,12 +2708,14 @@ impl Session {
         events
     }
 
-    /// The saved views' panels the docks hold, by the id each is named with.
+    /// The saved views' panels the docks hold, docked or floating, by the
+    /// id each is named with.
     fn placed_saved(&self) -> Vec<String> {
         let layout = self.docks.layout();
         [&layout.left, &layout.right, &layout.bottom]
             .into_iter()
             .flat_map(|dock| &dock.tabs)
+            .chain(layout.floating.iter().map(|f| &f.panel))
             .filter_map(|panel| match panel {
                 Panel::Saved(id) => Some(id.clone()),
                 _ => None,
@@ -2771,6 +2809,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::docks::FloatBounds;
     use crate::fixtures::{checkout, pane, project, repository};
     use crate::link_dialog::LinkPage;
     use argus_protocol::{PaneKind, PaneStatus};
@@ -4004,7 +4043,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 121] = [
+    const CALLS: [&str; 122] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
@@ -4115,6 +4154,7 @@ mod tests {
         r#"{"call":"open_saved_view","id":"plan","from":{"panel":"saved:plan","column":0}}"#,
         r#"{"call":"close_saved_column","panel":"saved:plan","column":1}"#,
         r#"{"call":"pop_out_saved_column","panel":"saved:plan","column":1}"#,
+        r#"{"call":"float_saved_column","panel":"saved:plan","column":1}"#,
         r#"{"call":"refresh_saved_view","id":"plan"}"#,
         r#"{"call":"mark_saved_view_stale","id":"plan"}"#,
         r#"{"call":"delete_saved_view","id":"plan"}"#,
@@ -5592,6 +5632,7 @@ mod tests {
     #[test]
     fn following_a_link_in_a_column_puts_the_target_after_it_and_drops_what_followed() {
         let mut s = with_saved(&["a", "b", "c", "d"]);
+        s.set(SettingChange::SavedLinks { opens: SavedLinks::Column });
         open_saved(&mut s, "a");
         follow(&mut s, "a", 0, "b");
         follow(&mut s, "a", 1, "c");
@@ -5604,6 +5645,7 @@ mod tests {
     #[test]
     fn a_link_from_an_agents_view_or_an_extension_cell_opens_a_panel_or_brings_out_the_one_showing_it() {
         let mut s = with_saved(&["a", "b"]);
+        s.set(SettingChange::SavedLinks { opens: SavedLinks::Column });
         // The page sends the same call from both, with no column.
         let call: Call = serde_json::from_str(r#"{"call": "open_saved_view", "id": "b", "from": null}"#).unwrap();
         s.call(call);
@@ -5622,6 +5664,7 @@ mod tests {
     #[test]
     fn popping_a_column_out_makes_it_a_panel_of_its_own_and_leaves_the_rest() {
         let mut s = with_saved(&["a", "b", "c"]);
+        s.set(SettingChange::SavedLinks { opens: SavedLinks::Column });
         open_saved(&mut s, "a");
         follow(&mut s, "a", 0, "b");
         follow(&mut s, "a", 1, "c");
@@ -5634,8 +5677,52 @@ mod tests {
     }
 
     #[test]
+    fn a_link_in_a_saved_view_opens_a_dialog_unless_links_open_columns() {
+        let mut s = with_saved(&["a", "b", "c"]);
+        open_saved(&mut s, "a");
+        follow(&mut s, "a", 0, "b");
+        assert_eq!(columns(&mut s, "a"), ["a"], "the panel it came from keeps its columns");
+        assert_eq!(s.docks.place_of(&saved_panel("b")), Some(Place::Float));
+        assert!(s.docks.shows(&saved_panel("a")), "and its dock");
+        follow(&mut s, "b", 0, "a");
+        assert_eq!(s.docks.place_of(&saved_panel("a")), Some(Place::Dock(Dock::Right)), "a view open already is brought out where it is");
+        s.docks.reload();
+        let page = docks_page(&mut s).unwrap();
+        assert_eq!(page.floating.iter().map(|f| f.title.as_str()).collect::<Vec<_>>(), ["Title of b"]);
+        assert!(saved_page(&mut s).unwrap().panels.iter().any(|p| p.panel == saved_panel("b")), "its columns are drawn");
+        s.set(SettingChange::SavedLinks { opens: SavedLinks::Column });
+        follow(&mut s, "a", 0, "c");
+        assert_eq!(columns(&mut s, "a"), ["a", "c"]);
+        assert_eq!(s.docks.place_of(&saved_panel("c")), None);
+    }
+
+    #[test]
+    fn a_column_or_a_whole_panel_floats_and_a_dialog_docks_again_by_its_menu() {
+        let mut s = with_saved(&["a", "b"]);
+        s.set(SettingChange::SavedLinks { opens: SavedLinks::Column });
+        open_saved(&mut s, "a");
+        follow(&mut s, "a", 0, "b");
+        s.call(Call::FloatSavedColumn { panel: saved_panel("a"), column: 1 });
+        assert_eq!(columns(&mut s, "a"), ["a"]);
+        assert_eq!(s.docks.place_of(&saved_panel("b")), Some(Place::Float));
+        s.call(Call::FloatSavedColumn { panel: saved_panel("a"), column: 0 });
+        assert_eq!(s.docks.place_of(&saved_panel("a")), Some(Place::Float));
+        docks(&mut s, DockGesture::Bounds { panel: saved_panel("a"), bounds: FloatBounds { x: 10, y: 20, width: 600, height: 400 } });
+        let saved = s.take_settings().expect("saved").docks.unwrap();
+        assert_eq!(saved.floating.last().map(|f| (f.panel.clone(), f.bounds.x)), Some((saved_panel("a"), 10)), "the file keeps it");
+        docks(&mut s, DockGesture::Raise { panel: saved_panel("b") });
+        s.docks.reload();
+        assert_eq!(docks_page(&mut s).unwrap().floating.last().map(|f| f.panel.clone()), Some(saved_panel("b")));
+        docks(&mut s, DockGesture::Move { panel: saved_panel("b"), dock: Dock::Left });
+        assert_eq!(s.docks.place_of(&saved_panel("b")), Some(Place::Dock(Dock::Left)));
+        s.call(Call::CloseSavedColumn { panel: saved_panel("a"), column: 0 });
+        assert_eq!(s.docks.place_of(&saved_panel("a")), None, "a dialog's close takes it");
+    }
+
+    #[test]
     fn closing_a_column_leaves_the_panel_and_closing_the_first_takes_it_from_the_docks() {
         let mut s = with_saved(&["a", "b"]);
+        s.set(SettingChange::SavedLinks { opens: SavedLinks::Column });
         open_saved(&mut s, "a");
         follow(&mut s, "a", 0, "b");
         s.call(Call::CloseSavedColumn { panel: saved_panel("a"), column: 1 });
@@ -5649,6 +5736,7 @@ mod tests {
     #[test]
     fn a_deleted_view_takes_its_panel_with_it_and_a_refusal_is_said() {
         let mut s = with_saved(&["a", "b"]);
+        s.set(SettingChange::SavedLinks { opens: SavedLinks::Column });
         open_saved(&mut s, "a");
         follow(&mut s, "a", 0, "b");
         s.receive(ServerMsg::SavedViewRemoved { id: "b".into() });

@@ -107,6 +107,8 @@ pub struct Preferences {
     /// The index a repository opens as before it remembers its own.
     #[serde(default)]
     pub feature_layout: Layout,
+    #[serde(default)]
+    pub saved_links: SavedLinks,
     /// The family of an installed font the panes and every monospaced
     /// line are drawn in, in front of the bundled JetBrains Mono and Nerd
     /// Font symbols, which still draw what it lacks. Empty draws the
@@ -170,6 +172,18 @@ pub enum Backdrop {
     Acrylic,
 }
 
+/// Where a link followed inside a saved view opens its target.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum SavedLinks {
+    /// A dialog over the stage, so the view it came from keeps its dock.
+    #[default]
+    Dialog,
+    /// The next column of the panel it was followed in.
+    Column,
+}
+
 /// Where a file opened from the window opens: the terminal client's three
 /// editor modes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +210,7 @@ impl Default for Preferences {
             notify: true,
             notify_in_background: true,
             feature_layout: Layout::default(),
+            saved_links: SavedLinks::default(),
             font: String::new(),
             ui_font: String::new(),
             zoom: actual_size(),
@@ -365,6 +380,7 @@ mod tests {
             notify: false,
             notify_in_background: false,
             feature_layout: Layout::Board,
+            saved_links: SavedLinks::Column,
             font: "Iosevka Term".into(),
             ui_font: "Inter".into(),
             zoom: 125,

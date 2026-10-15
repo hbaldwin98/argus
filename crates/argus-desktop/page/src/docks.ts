@@ -2,7 +2,7 @@
 // against, each showing one of its tabs, sized by its sash. Rust decides
 // which dock holds each panel, which it shows and how big it is
 // (`src/docks.rs`); this puts each panel's element where that says — its
-// dock, the stage, or parked out of sight — draws a dock's tabs while it
+// dock, the stage, a dialog (`floats`), or parked out of sight — draws a dock's tabs while it
 // holds more than one, and reports a tab picked, closed, a panel moved or
 // a sash let go.
 
@@ -13,6 +13,7 @@ import { $, el, icon, type IconName } from './dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
 import { extensionElement, extensionOnStage } from './extension_views.js';
+import { drawFloats } from './floats.js';
 import { savedElement } from './saved_views.js';
 import { contextMenu, type MenuItem } from './menu.js';
 import { closesOnMiddle } from './middle.js';
@@ -48,14 +49,25 @@ export function dockWords(dock: Dock): string {
 }
 
 /** A menu's items moving `panel` to each dock, the one it is shown in
- *  marked. */
+ *  marked, and for a saved view, floating it as a dialog. */
 export function moveItems(panel: Panel, docked: boolean): MenuItem[] {
   const own = dockOf(panel);
-  return DOCKS.map((dock) => ({
+  const items: MenuItem[] = DOCKS.map((dock) => ({
     label: dockWords(dock),
     run: () => call('docks', { gesture: { on: 'move', panel, dock } }),
     disabled: docked && dock === own && 'here',
   }));
+  if (!panel.startsWith('saved:')) return items;
+  const floating = state.docks?.floating.some((f) => f.panel === panel) ?? false;
+  return [
+    ...items,
+    'sep',
+    {
+      label: 'Float as a dialog',
+      run: () => call('docks', { gesture: { on: 'float', panel } }),
+      disabled: floating && 'here',
+    },
+  ];
 }
 
 /** The panel's element on screen in a dock, or `null` while it is on the
@@ -94,6 +106,7 @@ export function drawDocks(): void {
     if (size) box.style[dock === 'bottom' ? 'height' : 'width'] = `${size}px`;
   }
   $('dock-bottom-sash').hidden = $('dock-bottom').hidden;
+  drawFloats(state.docks?.floating ?? [], element);
   const consoleEl = $('console');
   if (!kept.has(consoleEl)) {
     const onStage = state.console?.place === 'tab' || state.console?.place === 'fullscreen';

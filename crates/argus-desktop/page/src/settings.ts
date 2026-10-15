@@ -10,6 +10,7 @@
 import type { Backdrop } from './bindings/Backdrop';
 import type { EditorMode } from './bindings/EditorMode';
 import type { Layout } from './bindings/Layout';
+import type { SavedLinks } from './bindings/SavedLinks';
 import type { SettingChange } from './bindings/SettingChange';
 import type { Theme } from './bindings/Theme';
 import { $, el, icon, type Child } from './dom.js';
@@ -46,7 +47,19 @@ const LAYOUTS: [Layout, string][] = [
   ['board', 'Board'],
 ];
 
-const SECTIONS = ['Appearance', 'Editor', 'Notifications', 'Features', 'Connection'] as const;
+const LINKS: [SavedLinks, string][] = [
+  ['dialog', 'Dialog'],
+  ['column', 'Column'],
+];
+
+const SECTIONS = [
+  'Appearance',
+  'Editor',
+  'Notifications',
+  'Features',
+  'Views',
+  'Connection',
+] as const;
 
 const dark = matchMedia('(prefers-color-scheme: dark)');
 
@@ -101,6 +114,7 @@ let controls: {
   notify: HTMLButtonElement;
   background: HTMLButtonElement;
   layouts: Map<Layout, HTMLButtonElement>;
+  links: Map<SavedLinks, HTMLButtonElement>;
 } | null = null;
 
 /** What had the keys before the dialog, to give them back to. */
@@ -298,6 +312,9 @@ export function openSettings(): void {
   const [layoutGroup, layouts] = segment('Feature index layout', LAYOUTS, (layout) =>
     set({ set: 'featureLayout', layout }),
   );
+  const [linksGroup, links] = segment('Links in a saved view open', LINKS, (opens) =>
+    set({ set: 'savedLinks', opens }),
+  );
 
   controls = {
     cards,
@@ -316,6 +333,7 @@ export function openSettings(): void {
     notify,
     background,
     layouts,
+    links,
   };
 
   const body = el(
@@ -358,6 +376,14 @@ export function openSettings(): void {
         'Feature index',
         'Remembered per repository; this is what a new one opens as',
         layoutGroup,
+      ),
+    ),
+    section(
+      'Views',
+      row(
+        'Links in a saved view open',
+        'A dialog over the stage, or the next column beside the view',
+        linksGroup,
       ),
     ),
     section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')),
@@ -516,6 +542,7 @@ export function drawSettings(): void {
   setToggle(controls.background, chosen.notifyInBackground);
   controls.background.disabled = !chosen.notify;
   setSegment(controls.layouts, chosen.featureLayout);
+  setSegment(controls.links, chosen.savedLinks);
 }
 
 // Following the system, a change of its light or dark changes the cards.

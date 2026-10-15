@@ -1,5 +1,6 @@
 //! Where each panel sits: which dock — left, right or bottom — holds it
-//! among that dock's tabs, or whether it opens as a page on the stage;
+//! among that dock's tabs, whether it opens as a page on the stage, or
+//! floats over the stage as a dialog, where and how big, in what order;
 //! which tab each dock shows, whether each dock is open, and how big;
 //! whether that changed since `desktop.json` kept it, and what the page
 //! last heard of it.
@@ -36,6 +37,12 @@ pub enum DockGesture {
     /// A dock's sash let go at `size` CSS pixels: the bottom's height, or
     /// a side's width.
     Size { dock: Dock, size: u32 },
+    /// The panel out of its dock, floating over the stage as a dialog.
+    Float { panel: Panel },
+    /// A dialog let go after it was moved or resized.
+    Bounds { panel: Panel, bounds: FloatBounds },
+    /// A dialog pressed: it comes in front of the others.
+    Raise { panel: Panel },
 }
 
 /// The edges of the stage a panel docks against. The sidebar keeps the
@@ -99,6 +106,13 @@ impl Panel {
     fn has_page(&self) -> bool {
         matches!(self, Panel::Extension(_))
     }
+
+    /// Whether the panel can float as a dialog: a saved view, read beside
+    /// the one it was reached from without taking a dock from it. The
+    /// console's terminal and the panels with a home stay docked.
+    fn floats(&self) -> bool {
+        matches!(self, Panel::Saved(_))
+    }
 }
 
 impl fmt::Display for Panel {
@@ -140,11 +154,46 @@ impl Panel {
     }
 }
 
-/// Where a panel is: in a dock, or a page of its own on the stage.
+/// Where a panel is: in a dock, a page of its own on the stage, or a
+/// dialog floating over it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Place {
     Dock(Dock),
     Stage,
+    Float,
+}
+
+/// Where a dialog sits over the work area and how big it is, in CSS
+/// pixels from the area's top left. The page keeps a dialog on screen when
+/// it draws one the window has since shrunk past.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FloatBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// A dialog smaller than this shows a header and little under it.
+pub const FLOAT_MIN: (u32, u32) = (280, 160);
+const FLOAT_FIRST: FloatBounds = FloatBounds { x: 96, y: 64, width: 560, height: 520 };
+/// How far each dialog opened sits from the one in front before it, so a
+/// new one never hides the last exactly.
+const FLOAT_STEP: i32 = 28;
+
+impl FloatBounds {
+    fn held(self) -> FloatBounds {
+        FloatBounds { width: self.width.max(FLOAT_MIN.0), height: self.height.max(FLOAT_MIN.1), ..self }
+    }
+}
+
+/// A dialog as it is kept.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Floating {
+    pub panel: Panel,
+    pub bounds: FloatBounds,
 }
 
 /// A bottom dock too short for a prompt, or a side one too narrow for a
@@ -193,6 +242,9 @@ pub struct DocksLayout {
     /// The panels the person opens as pages, in no dock.
     #[serde(default)]
     pub staged: Vec<Panel>,
+    /// The dialogs, back to front.
+    #[serde(default)]
+    pub floating: Vec<Floating>,
 }
 
 fn side() -> DockLayout {
@@ -206,7 +258,7 @@ fn bottom() -> DockLayout {
 /// Every dock closed: a window that never opens a panel is not given one.
 impl Default for DocksLayout {
     fn default() -> Self {
-        DocksLayout { left: side(), right: side(), bottom: bottom(), staged: Vec::new() }
+        DocksLayout { left: side(), right: side(), bottom: bottom(), staged: Vec::new(), floating: Vec::new() }
     }
 }
 
@@ -231,6 +283,7 @@ impl DocksLayout {
     /// tab before it, and closes once it holds nothing.
     fn lift(&mut self, panel: &Panel) {
         self.staged.retain(|p| p != panel);
+        self.floating.retain(|f| &f.panel != panel);
         for dock in DOCKS {
             let d = self.dock_mut(dock);
             let Some(at) = d.tabs.iter().position(|p| p == panel) else { continue };
@@ -263,6 +316,16 @@ pub struct DockPage {
     pub size: u32,
 }
 
+/// A dialog as the page draws it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FloatPage {
+    pub panel: Panel,
+    pub title: String,
+    pub bounds: FloatBounds,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -270,6 +333,8 @@ pub struct DocksPage {
     pub left: DockPage,
     pub right: DockPage,
     pub bottom: DockPage,
+    /// The dialogs of the panels that exist now, back to front.
+    pub floating: Vec<FloatPage>,
 }
 
 pub struct Docks {
@@ -304,6 +369,14 @@ impl Docks {
             placed.push(panel.clone());
             first
         });
+        layout.floating.retain(|f| {
+            let first = !placed.contains(&f.panel) && f.panel.floats();
+            placed.push(f.panel.clone());
+            first
+        });
+        for f in &mut layout.floating {
+            f.bounds = f.bounds.held();
+        }
         for panel in [Panel::Console, Panel::Views] {
             if !layout.staged.contains(&panel) && !DOCKS.iter().any(|&d| layout.dock(d).tabs.contains(&panel)) {
                 let home = panel.home().expect("the console and the views have a home");
@@ -329,6 +402,9 @@ impl Docks {
         if self.layout.staged.contains(panel) {
             return Some(Place::Stage);
         }
+        if self.layout.floating.iter().any(|f| &f.panel == panel) {
+            return Some(Place::Float);
+        }
         DOCKS.into_iter().find(|&dock| self.layout.dock(dock).tabs.contains(panel)).map(Place::Dock)
     }
 
@@ -346,10 +422,11 @@ impl Docks {
         if self.place_of(panel).is_some() {
             return;
         }
-        self.change(|layout| match place {
-            Place::Dock(dock) => layout.dock_mut(dock).tabs.push(panel.clone()),
-            Place::Stage => layout.staged.push(panel.clone()),
-        });
+        match place {
+            Place::Dock(dock) => self.change(|layout| layout.dock_mut(dock).tabs.push(panel.clone())),
+            Place::Stage => self.change(|layout| layout.staged.push(panel.clone())),
+            Place::Float => self.float(panel),
+        }
     }
 
     /// The tab a dock shows: the one chosen while it exists, else the
@@ -363,8 +440,11 @@ impl Docks {
         d.active.as_ref().filter(present).or_else(|| d.tabs.iter().find(present))
     }
 
-    /// Whether the panel is on screen in its dock.
+    /// Whether the panel is on screen in its dock, or as a dialog.
     pub fn shows(&self, panel: &Panel) -> bool {
+        if self.place_of(panel) == Some(Place::Float) {
+            return self.present.contains(panel);
+        }
         self.dock_of(panel).is_some_and(|dock| self.shown_in(dock) == Some(panel))
     }
 
@@ -373,9 +453,10 @@ impl Docks {
         self.dock_of(panel).is_some_and(|dock| self.shown_in(dock).is_some())
     }
 
-    /// Opens the panel's dock on the panel's tab; a page has no dock to
-    /// open.
+    /// Opens the panel's dock on the panel's tab, or brings its dialog in
+    /// front; a page has no dock to open.
     pub fn show(&mut self, panel: &Panel) {
+        self.raise(panel);
         let Some(dock) = self.dock_of(panel) else { return };
         self.change(|layout| {
             let d = layout.dock_mut(dock);
@@ -413,6 +494,46 @@ impl Docks {
                 layout.staged.push(panel.clone());
             });
         }
+    }
+
+    /// Makes the panel a dialog over the stage, in front, a step down and
+    /// right of the dialog in front before it. Only a saved view floats.
+    pub fn float(&mut self, panel: &Panel) {
+        if !panel.floats() || self.place_of(panel) == Some(Place::Float) {
+            self.raise(panel);
+            return;
+        }
+        let bounds = match self.layout.floating.last() {
+            Some(top) => FloatBounds { x: top.bounds.x + FLOAT_STEP, y: top.bounds.y + FLOAT_STEP, ..top.bounds },
+            None => FLOAT_FIRST,
+        };
+        self.change(|layout| {
+            layout.lift(panel);
+            layout.floating.push(Floating { panel: panel.clone(), bounds });
+        });
+    }
+
+    /// Where a dialog was moved or resized to, no smaller than a header
+    /// and a little under it.
+    pub fn set_bounds(&mut self, panel: &Panel, bounds: FloatBounds) {
+        self.change(|layout| {
+            if let Some(f) = layout.floating.iter_mut().find(|f| &f.panel == panel) {
+                f.bounds = bounds.held();
+            }
+        });
+    }
+
+    /// Brings a dialog in front of the others.
+    pub fn raise(&mut self, panel: &Panel) {
+        let floating = &self.layout.floating;
+        let Some(at) = floating.iter().position(|f| &f.panel == panel) else { return };
+        if at + 1 == floating.len() {
+            return;
+        }
+        self.change(|layout| {
+            let f = layout.floating.remove(at);
+            layout.floating.push(f);
+        });
     }
 
     /// Takes the panel out of wherever it is placed, for good: a saved
@@ -464,7 +585,14 @@ impl Docks {
                 size: d.size,
             }
         };
-        DocksPage { left: dock(Dock::Left), right: dock(Dock::Right), bottom: dock(Dock::Bottom) }
+        let floating = self
+            .layout
+            .floating
+            .iter()
+            .filter(|f| self.present.contains(&f.panel))
+            .map(|f| FloatPage { panel: f.panel.clone(), title: title(&f.panel), bounds: f.bounds })
+            .collect();
+        DocksPage { left: dock(Dock::Left), right: dock(Dock::Right), bottom: dock(Dock::Bottom), floating }
     }
 
     fn change(&mut self, f: impl FnOnce(&mut DocksLayout)) {
@@ -618,6 +746,10 @@ mod tests {
             right: DockLayout { tabs: vec![Panel::Console], active: Some(Panel::Console), open: true, size: 600 },
             bottom: DockLayout { open: true, ..bottom() },
             staged: vec![Panel::Views, images(), images()],
+            floating: vec![
+                Floating { panel: plan(), bounds: FloatBounds { x: 0, y: 0, width: 1, height: 1 } },
+                Floating { panel: images(), bounds: FLOAT_FIRST },
+            ],
         });
         assert_eq!(docks.dock_of(&Panel::Console), Some(Dock::Left), "the first dock keeps it");
         assert!(docks.shows(&Panel::Console), "its only tab is the one shown");
@@ -625,6 +757,35 @@ mod tests {
         assert_eq!(docks.layout().right.tabs, [Panel::Views], "the views are never a page, and go home");
         assert!(!docks.layout().bottom.open, "nothing in it");
         assert_eq!(docks.layout().staged, [images()]);
+        assert_eq!(docks.place_of(&plan()), Some(Place::Float));
+        assert_eq!(docks.layout().floating.len(), 1, "an extension's view placed twice, and not one that floats");
+        assert_eq!(docks.layout().floating[0].bounds, FloatBounds { x: 0, y: 0, width: FLOAT_MIN.0, height: FLOAT_MIN.1 });
+    }
+
+    #[test]
+    fn a_saved_view_floats_as_a_dialog_each_one_stepped_from_the_last_and_the_one_shown_in_front() {
+        let mut docks = docks();
+        let other = Panel::Saved("other".into());
+        docks.set_present(vec![Panel::Console, Panel::Views, plan(), other.clone()]);
+        docks.place(&plan(), Place::Dock(Dock::Right));
+        docks.show(&plan());
+        docks.float(&plan());
+        assert_eq!(docks.place_of(&plan()), Some(Place::Float));
+        assert_eq!(docks.layout().right.tabs, [Panel::Views], "it left its dock");
+        assert!(docks.shows(&plan()), "a dialog of a view that exists is on screen");
+        docks.place(&other, Place::Float);
+        let at = |d: &Docks| d.page(|p| p.to_string()).floating.iter().map(|f| (f.panel.clone(), f.bounds.x)).collect::<Vec<_>>();
+        assert_eq!(at(&docks), [(plan(), FLOAT_FIRST.x), (other.clone(), FLOAT_FIRST.x + FLOAT_STEP)]);
+        docks.show(&plan());
+        assert_eq!(at(&docks)[1].0, plan(), "shown, it comes in front");
+        docks.set_bounds(&plan(), FloatBounds { x: -5, y: 40, width: 10, height: 900 });
+        assert_eq!(docks.layout().floating[1].bounds, FloatBounds { x: -5, y: 40, width: FLOAT_MIN.0, height: 900 });
+        docks.move_to(&plan(), Dock::Left);
+        assert_eq!((docks.dock_of(&plan()), docks.layout().floating.len()), (Some(Dock::Left), 1), "docked, a dialog no more");
+        docks.float(&Panel::Console);
+        assert_eq!(docks.dock_of(&Panel::Console), Some(Dock::Bottom), "the console never floats");
+        docks.forget(&other);
+        assert!(docks.layout().floating.is_empty());
     }
 
     #[test]

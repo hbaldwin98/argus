@@ -137,6 +137,13 @@ function header(p, i, view, ctx) {
         el('button', {
             class: 'icon',
             type: 'button',
+            title: 'Open as a dialog',
+            'aria-label': 'Open as a dialog',
+            onclick: () => call('float_saved_column', { panel: p.panel, column: i }),
+        }, icon('box')), i > 0 &&
+        el('button', {
+            class: 'icon',
+            type: 'button',
             title: 'Pop out into a panel of its own',
             'aria-label': 'Pop out into a panel of its own',
             onclick: () => call('pop_out_saved_column', { panel: p.panel, column: i }),
@@ -300,5 +307,7 @@ function filterButton(label, here) {
 /** Whether a dock shows the panel now. */
 function shownIn(panel) {
     const docks = state.docks;
-    return !!docks && [docks.left, docks.right, docks.bottom].some((d) => d.shown === panel);
+    return (!!docks &&
+        ([docks.left, docks.right, docks.bottom].some((d) => d.shown === panel) ||
+            docks.floating.some((f) => f.panel === panel)));
 }

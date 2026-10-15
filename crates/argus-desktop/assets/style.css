@@ -2468,9 +2468,62 @@ body.filled .rail {
 /* Under the strip: the stage between the left and right docks, and the
    bottom dock under the stage alone. */
 .work {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
+}
+/* The dialogs, over the stage and the docks. The layer lets the pointer
+   through to what is under it; a dialog takes it back. */
+.floats {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  overflow: hidden;
+}
+.float {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+  overflow: hidden;
+  pointer-events: auto;
+}
+.float > .vpanel {
+  flex: 1;
+  min-height: 0;
+}
+.float .saved-head {
+  cursor: move;
+}
+body.float-moving,
+body.float-moving * {
+  user-select: none;
+}
+/* The corner a dialog is resized by. */
+.float-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    var(--line-strong) 50%,
+    var(--line-strong) 60%,
+    transparent 60%,
+    transparent 75%,
+    var(--line-strong) 75%,
+    var(--line-strong) 85%,
+    transparent 85%
+  );
 }
 .center {
   flex: 1;

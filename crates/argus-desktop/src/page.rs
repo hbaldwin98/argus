@@ -27,7 +27,7 @@ use crate::link_dialog::{LinkGesture, LinkPage};
 use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
 use crate::sessions_dialog::{SessionPreview, SessionsPage};
 use crate::saved_views::{SavedColumn, SavedViewsPage};
-use crate::settings::{Backdrop, EditorMode, Preferences, Theme};
+use crate::settings::{Backdrop, EditorMode, Preferences, SavedLinks, Theme};
 
 /// Something the page asks of the window. It answers nothing: what a call
 /// changed reaches the page as events. Ids are the daemon's, as numbers.
@@ -218,6 +218,8 @@ pub enum Call {
     CloseSavedColumn { panel: Panel, column: usize },
     /// Takes a column out of a saved panel's trail to be a panel of its own.
     PopOutSavedColumn { panel: Panel, column: usize },
+    /// The same, as a dialog; the first column floats its whole panel.
+    FloatSavedColumn { panel: Panel, column: usize },
     /// Asks the agent that last saved a view to build it again.
     RefreshSavedView { id: String },
     MarkSavedViewStale { id: String },
@@ -276,6 +278,7 @@ pub enum SettingChange {
     Notify { on: bool },
     NotifyInBackground { only: bool },
     FeatureLayout { layout: Layout },
+    SavedLinks { opens: SavedLinks },
     Font { family: String },
     UiFont { family: String },
 }
@@ -1772,6 +1775,7 @@ mod tests {
                 "chosen": {
                     "theme": "system", "opacity": 100, "backdrop": "clear", "editor": "floating",
                     "editorCommand": "", "notify": true, "notifyInBackground": true, "featureLayout": "list",
+                    "savedLinks": "dialog",
                     "font": "", "uiFont": "", "zoom": 100
                 },
                 "minOpacity": 30,

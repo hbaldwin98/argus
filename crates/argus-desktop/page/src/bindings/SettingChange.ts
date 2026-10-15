@@ -2,9 +2,10 @@
 import type { Backdrop } from "./Backdrop";
 import type { EditorMode } from "./EditorMode";
 import type { Layout } from "./Layout";
+import type { SavedLinks } from "./SavedLinks";
 import type { Theme } from "./Theme";
 
 /**
  * One choice made in the Settings dialog.
  */
-export type SettingChange = { "set": "theme", theme: Theme, } | { "set": "opacity", percent: number, } | { "set": "backdrop", backdrop: Backdrop, } | { "set": "editor", mode: EditorMode, } | { "set": "editorCommand", command: string, } | { "set": "notify", on: boolean, } | { "set": "notifyInBackground", only: boolean, } | { "set": "featureLayout", layout: Layout, } | { "set": "font", family: string, } | { "set": "uiFont", family: string, };
+export type SettingChange = { "set": "theme", theme: Theme, } | { "set": "opacity", percent: number, } | { "set": "backdrop", backdrop: Backdrop, } | { "set": "editor", mode: EditorMode, } | { "set": "editorCommand", command: string, } | { "set": "notify", on: boolean, } | { "set": "notifyInBackground", only: boolean, } | { "set": "featureLayout", layout: Layout, } | { "set": "savedLinks", opens: SavedLinks, } | { "set": "font", family: string, } | { "set": "uiFont", family: string, };

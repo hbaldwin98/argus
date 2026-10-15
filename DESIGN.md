@@ -170,7 +170,7 @@ the dock it left shows the tab before it, or closes once empty. A `desktop.json`
 docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `drag`, `screen`, `input`, `keymap`, `focus` (which layer has a key),
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `drag`, `screen`, `input`, `keymap`, `focus` (which layer has a key),
 `palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `middle` (a middle click closing the tab or row it lands on), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
@@ -465,7 +465,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `fonts` | which font families this machine has installed, by every name the webview might know each by, and which are monospaced, for the Settings dialog to offer |
 | `shown` | the panes the window shows — the Workspace's, one per side of the console, and one per extension console view on screen — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
 | `console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, the page it draws and the gestures it takes, and what the page last heard |
-| `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, or whether it is a page; which tab each dock shows of the panels that exist, whether it is open and how big, whether that changed since it was saved, the page and gestures of the docks, and what the page last heard |
+| `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, whether it is a page, or a dialog floating over the stage with where it sits, how big, and which is in front; which tab each dock shows of the panels that exist, whether it is open and how big, whether that changed since it was saved, the page and gestures of the docks, and what the page last heard |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
 | `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
 | `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once, or of something always on screen, so it hears only what differs |
@@ -2157,7 +2157,13 @@ feature or all, a stale one marked. A view another of its scope links to (`view_
 under the first that does, folded, so the views saved to be reached from one do not crowd its group;
 views that only reach each other are cut at the first. The window says which (`PageSaved::under`)
 and the page draws the folds. A saved panel's `✕`, its dock tab's `✕` and a middle click on either
-close the panel, not the dock; the Feature stage lists those scoped or attached to the open
+close the panel, not the dock. A saved panel can also float as a dialog over the stage (`Place::Float`),
+moved by its header, resized by its corner and brought in front when pressed, the docks keeping
+where and how big in `desktop.json`; its dock menu docks it again or floats a docked one, and a
+column's dialog button takes that column out into one. A link followed inside a saved view opens
+its target as a dialog by default, so the view it came from keeps its dock, or brings out the panel
+already showing it; the Settings dialog's Views section (`saved_links`) makes it the next column
+instead; the Feature stage lists those scoped or attached to the open
 feature beside its tickets. Nothing is predicted: refreshing, marking and deleting are requests,
 and the column changes when the daemon sends the view saved again or gone.
 

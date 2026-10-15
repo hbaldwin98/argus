@@ -66,6 +66,7 @@ impl Chosen {
             SettingChange::Notify { on } => next.notify = on,
             SettingChange::NotifyInBackground { only } => next.notify_in_background = only,
             SettingChange::FeatureLayout { layout } => next.feature_layout = layout,
+            SettingChange::SavedLinks { opens } => next.saved_links = opens,
             SettingChange::Font { family } => next.font = family_name(&family),
             SettingChange::UiFont { family } => next.ui_font = family_name(&family),
         }
