@@ -4143,22 +4143,24 @@ body.console-fullscreen #bar {
   cursor: col-resize;
 }
 .views-sash:hover,
-body.resizing .views-sash {
+.views-sash.held {
   box-shadow: inset 3px 0 0 -1px var(--accent);
 }
 /* The rail's edge, dragged to make it wider or narrower. */
+/* Inside the rail, whose overflow is hidden: half outside, its line was
+   cut off. */
 .rail-sash {
   position: absolute;
   top: 0;
-  right: -3px;
+  right: 0;
   bottom: 0;
   width: 6px;
   z-index: 4;
   cursor: col-resize;
 }
 .rail-sash:hover,
-body.resizing .rail-sash {
-  box-shadow: inset -3px 0 0 -1px var(--accent);
+.rail-sash.held {
+  box-shadow: inset -2px 0 0 0 var(--accent);
 }
 /* While the edge is held the pointer stays a resize arrow, and nothing it
    passes over is selected. */

@@ -9,7 +9,7 @@ import type { ViewsPage } from './bindings/ViewsPage';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { $, el, icon } from './dom.js';
-import { state } from './state.js';
+import { dragEdge } from './edge.js';
 import { call } from './tauri.js';
 import { ago } from './values.js';
 import { viewLink } from './viewlink.js';
@@ -156,32 +156,15 @@ export function viewsWidth(width: number | null): void {
   else root.setProperty('--views-w', `${width}px`);
 }
 
-/** The panel's left edge: the panel follows the pointer while it is held,
- *  and the width is reported once it is let go, for Rust to hold to its
- *  bounds, keep and send back. A double-click gives back the usual width. */
+/** The panel's left edge, for Rust to hold to its bounds, keep and send
+ *  back; a double-click gives back the usual width. */
 export function listenToViewsEdge(): void {
-  const sash = $('views-sash');
-  sash.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    const right = $('views').getBoundingClientRect().right;
-    let width = Math.round(right - e.clientX);
-    document.body.classList.add('resizing');
-    const move = (m: MouseEvent): void => {
-      width = Math.round(right - m.clientX);
-      viewsWidth(width);
-    };
-    const up = (): void => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      document.body.classList.remove('resizing');
-      viewsWidth(state.rail.viewsWidth);
-      call('views_width', { width: Math.max(0, width) });
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
+  const panel = $('views');
+  dragEdge($('views-sash'), panel, {
+    widthAt: (x) => panel.getBoundingClientRect().right - x,
+    draw: viewsWidth,
+    report: (width) => call('views_width', { width }),
   });
-  sash.addEventListener('dblclick', () => call('views_width', { width: null }));
 }
 
 /** Brings the newest view out, from the tab at the window's edge. */

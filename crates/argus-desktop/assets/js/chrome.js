@@ -10,6 +10,7 @@ import { chordsFor, keycaps, presses } from './keys.js';
 import { drawHeading, drawRemoving } from './projects.js';
 import { screen } from './screen.js';
 import { openSettings } from './settings.js';
+import { dragEdge } from './edge.js';
 import { state } from './state.js';
 import { viewsWidth } from './views.js';
 import { call } from './tauri.js';
@@ -514,31 +515,15 @@ function railWidth(width) {
     else
         root.setProperty('--rail-w', `${width}px`);
 }
-/** The rail's edge: the rail follows the pointer while it is held, and the
- *  width is reported once it is let go, for Rust to hold to its bounds,
- *  keep and send back. A double-click gives back the usual width. */
+/** The rail's right edge, for Rust to hold to its bounds, keep and send
+ *  back; a double-click gives back the usual width. */
 export function listenToRailEdge() {
-    const sash = $('rail-sash');
-    sash.addEventListener('mousedown', (e) => {
-        if (e.button !== 0)
-            return;
-        e.preventDefault();
-        const left = sash.parentElement?.getBoundingClientRect().left ?? 0;
-        let width = Math.round(e.clientX - left);
-        document.body.classList.add('resizing');
-        const move = (m) => {
-            width = Math.round(m.clientX - left);
-            railWidth(width);
-        };
-        const up = () => {
-            window.removeEventListener('mousemove', move);
-            window.removeEventListener('mouseup', up);
-            document.body.classList.remove('resizing');
-            railWidth(state.rail.width);
-            call('rail_width', { width: Math.max(0, width) });
-        };
-        window.addEventListener('mousemove', move);
-        window.addEventListener('mouseup', up);
+    const rail = $('rail-sash').parentElement;
+    if (!rail)
+        return;
+    dragEdge($('rail-sash'), rail, {
+        widthAt: (x) => x - rail.getBoundingClientRect().left,
+        draw: railWidth,
+        report: (width) => call('rail_width', { width }),
     });
-    sash.addEventListener('dblclick', () => call('rail_width', { width: null }));
 }

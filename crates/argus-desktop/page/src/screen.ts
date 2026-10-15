@@ -11,6 +11,7 @@ import type { Parked } from './bindings/Parked';
 import type { Segment } from './bindings/Segment';
 import type { Side } from './bindings/Side';
 import { $, el, ghosts } from './dom.js';
+import { dragging } from './edge.js';
 import { call } from './tauri.js';
 
 // The terminal's type, as the design system's --type-mono gives it.
@@ -287,6 +288,12 @@ function makeScreen(terminal: HTMLElement, side: Side) {
       // and the pane takes the size of the client last in use. The resize
       // observer reports again once it is laid out.
       if (terminal.hidden || !terminal.clientWidth || !terminal.clientHeight) return;
+      // A column's edge being dragged would reflow the pane at every
+      // step; it is measured once the edge is let go.
+      if (dragging()) {
+        report();
+        return;
+      }
       const style = getComputedStyle(terminal);
       const w =
         terminal.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);

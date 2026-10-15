@@ -5,6 +5,7 @@
 // console's first side, and the console's second side while it is split.
 // The rows are mirrored only so a theme or scale change can repaint them.
 import { $, el, ghosts } from './dom.js';
+import { dragging } from './edge.js';
 import { call } from './tauri.js';
 // The terminal's type, as the design system's --type-mono gives it.
 const FONT_SIZE = 13;
@@ -275,6 +276,12 @@ function makeScreen(terminal, side) {
             // observer reports again once it is laid out.
             if (terminal.hidden || !terminal.clientWidth || !terminal.clientHeight)
                 return;
+            // A column's edge being dragged would reflow the pane at every
+            // step; it is measured once the edge is let go.
+            if (dragging()) {
+                report();
+                return;
+            }
             const style = getComputedStyle(terminal);
             const w = terminal.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
             const h = terminal.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
