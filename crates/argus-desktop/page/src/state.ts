@@ -38,6 +38,11 @@ export const state: {
   filter: string;
   /** Whether the board's archived column is unfolded. */
   archivedOpen: boolean;
+  /** Whether the rail shows the quiet repositories it folds. */
+  quietOpen: boolean;
+  /** The composer's draft: its picks and message, kept across redraws
+   *  until a pane it started is made. */
+  compose: { checkout: number | null; template: string | null; text: string };
 } = {
   status: { connection: 'connecting', detail: null, alarm: null, chime: true },
   rail: {
@@ -65,4 +70,6 @@ export const state: {
   reviewDraft: '',
   filter: '',
   archivedOpen: false,
+  quietOpen: false,
+  compose: { checkout: null, template: null, text: '' },
 };

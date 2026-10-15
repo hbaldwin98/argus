@@ -360,6 +360,22 @@ fn a_new_agent_is_a_new_conversation() {
 }
 
 #[test]
+fn a_first_message_is_one_argument_however_it_is_worded() {
+    // No shell between the composer and the agent: spaces and quotes in
+    // the message stay inside the one argument.
+    let opening = first_message(
+        &["--prompt".to_string(), "{prompt}".to_string()],
+        "fix the \"build\"; then rest",
+    );
+    assert_eq!(opening, Some(vec!["--prompt".to_string(), "fix the \"build\"; then rest".to_string()]));
+}
+
+#[test]
+fn a_harness_without_a_first_message_refuses_one() {
+    assert_eq!(first_message(&[], "hello"), None);
+}
+
+#[test]
 fn a_restored_agent_is_asked_to_continue_where_it_left_off() {
     let (args, resuming) = agent_args(
         &["--model".to_string(), "opus".to_string()],
@@ -475,7 +491,7 @@ async fn a_resume_with_nothing_behind_it_comes_back_as_a_fresh_agent() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_fake_claude(dir.path());
     let pane = d
-        .start_agent(only_checkout(&d), "claude", Start::Resuming, None)
+        .start_agent(only_checkout(&d), "claude", Start::Resuming, None, None)
         .unwrap();
 
     d.mark_pane_exited(pane, Some(1));
@@ -502,7 +518,7 @@ async fn an_agent_that_starts_and_fails_again_is_left_alone() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_fake_claude(dir.path());
     let pane = d
-        .start_agent(only_checkout(&d), "claude", Start::Resuming, None)
+        .start_agent(only_checkout(&d), "claude", Start::Resuming, None, None)
         .unwrap();
 
     d.mark_pane_exited(pane, Some(1));
@@ -537,7 +553,7 @@ async fn quitting_a_restored_agent_leaves_it_quit() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_fake_claude(dir.path());
     let pane = d
-        .start_agent(only_checkout(&d), "claude", Start::Resuming, None)
+        .start_agent(only_checkout(&d), "claude", Start::Resuming, None, None)
         .unwrap();
 
     d.mark_pane_exited(pane, Some(0));

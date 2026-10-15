@@ -36,7 +36,13 @@ and speaks the protocol over the child's stdin and stdout, as `argus --host` doe
 connect-or-start lives only in the terminal client. It greets like any client, keeps the last tree
 on screen while it tries again every two seconds, and shows what the bridge printed when a try
 fails. After `Stopping` it does not reconnect until the person presses Reconnect: a client never
-starts again a daemon somebody stopped. It shows one pane at a time; the daemon sizes a pane to the
+starts again a daemon somebody stopped. The system's title bar is put away: a sidebar runs to the window's top edge with Search (the palette), New, and the Workspace, Features and Checkouts stages above the project's rail, the connection and the chime at its foot, and a strip across the stage names what it shows beside the window's own buttons (macOS keeps its traffic lights; on Windows 11 resting on maximize opens snap layouts). The rail is a tree: a heading per
+repository, a branch row per checkout with its + on hover, and the checkout's panes nested under it
+as a status dot and a title, saying only what needs a look or has ended; quiet repositories nobody
+opened fold under one row. New (`Ctrl-N`, in a pane the leader and `n`) is the composer, a stage
+of its own: the chosen repository, a checkout and an agent picked beside a message that becomes
+the agent's first prompt, or a shell there. It stays up until the daemon makes the pane, so a
+refused start keeps what was typed. It shows one pane at a time; the daemon sizes a pane to the
 client the person was last at, so a window and a terminal client on one pane each fill while in use.
 A drag across the pane selects and letting go copies; the text is read from the window's grid in Rust,
 and the clipboard is written and read there too (Ctrl-V, Ctrl-Shift-V, Alt-V), not by the page. A
@@ -66,10 +72,10 @@ unfolds the Feature index to it. `?` (in a pane, the leader and `?`) opens the s
 which is the table's groups drawn whole, opening with the rule that a pane has every key but the
 leader. Both are drawn over everything, a review included, and a pane's leader key reaches them as a
 `Run` event, since only the page draws them. The leader and `f` fill the window with the pane,
-putting the rail, the tabs and the stage header away until the same keys again. The Feature stage
+putting the sidebar away until the same keys again. The Feature stage
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `screen`, `input`, `keymap`,
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `screen`, `input`, `keymap`,
 `palette`, `shortcuts`, `features`, `chime`, with `keys`, `dom`, `state` and `tauri` beneath them),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
@@ -323,7 +329,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `logging` | where the window's own diagnostics go |
-| `title_bar` | the native title bar's colour, tinted to the page's chrome on Windows 11 |
+| `window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
 | `fixtures` | the tree builders the test modules share |
 
 ## Views
@@ -768,7 +774,7 @@ Transitions into `Waiting`, `NeedsReview`, or `Failed` also put the pane or chil
 bar. A client can optionally ring its terminal bell for those transitions when the pane is not the
 active input pane; notifications default to off and are saved in `client.toml`. The desktop window
 chimes for the same transitions unless the pane is on screen in a focused window. Its chime is on
-by default, switched from the status bar, and saved in `desktop.json`.
+by default, switched from the sidebar's foot, and saved in `desktop.json`.
 
 When the client itself runs in a Herdr pane, it reports one aggregate `argus` agent for the open
 workspace. Its message names that workspace and groups every live pane by harness, with each pane's
@@ -796,7 +802,10 @@ cases: OpenCode has no hook table, while pi exposes lifecycle events through pro
 extensions. Both modules read `ARGUS_HOOK_URL` and `ARGUS_HOOK_TOKEN` at run time rather than having
 a pane baked into them. A harness also carries
 `resume`, the legacy arguments that continue the last conversation, and `resume_id`, an exact argv
-template containing `{session_id}`. Both are used only when a recorded pane is restored. Claude
+template containing `{session_id}`. Both are used only when a recorded pane is restored. A third,
+`first_message`, is the argv that opens a new conversation with a message (`{prompt}`, expanded
+without a shell): `SpawnAgent` carries an optional `prompt`, which the desktop composer sends, and
+a harness with no `first_message` refuses the start rather than dropping what was typed. Claude
 Code, Codex, OpenCode, pi, AGY, Cursor Agent (`agent`) and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
 adapter (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`) whose command reads routing from the pane environment, so its content hash stays
 stable after the user trusts it. On Windows, Codex runs `commandWindows` through PowerShell, so those strings use `& $env:ARGUS_HOOK` rather than cmd-style `%VAR%` quoting, and build hook URLs with `($env:ARGUS_HOOK_URL + '/status/…')` so Constrained Language mode does not treat `/status` as division. Codex requires the user to trust project hooks before it runs. AGY uses
@@ -1027,7 +1036,9 @@ On daemon startup:
 
 Exact templates are Claude `--resume {session_id}`, Codex `resume {session_id}`, OpenCode and pi
 `--session {session_id}`, and AGY `--conversation {session_id}`. Their legacy broad forms are `--continue`, `resume --last`, and
-`--continue`; `generic` has neither. A `[[harness]]` block sets `resume_id`, `resume`, and an
+`--continue`; `generic` has neither. A first message is the prompt as the last argument for
+Claude, Codex, pi and Cursor Agent, and `--prompt {prompt}` for OpenCode; AGY and `generic` take
+none. A `[[harness]]` block sets `resume_id`, `resume`, `first_message`, and an
 event-level `session_id` stdin JSON key. Replacing a built-in gives up all of its defaults.
 
 This is relaunch, not process reattachment. PIDs are not stored. Captured IDs are nonempty, bounded,

@@ -82,11 +82,12 @@ fn dispatch_pane(
         ClientMsg::SpawnAgent {
             checkout,
             template,
+            prompt,
             request_id,
         } => {
             let daemon = daemon.clone();
             spawn_pane(out_tx, request_id, move || {
-                daemon.spawn_agent(checkout, &template)
+                daemon.spawn_agent_asking(checkout, &template, prompt.as_deref())
             })
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),

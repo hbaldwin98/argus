@@ -89,6 +89,11 @@ pub enum ClientMsg {
     SpawnAgent {
         checkout: CheckoutId,
         template: String,
+        /// The new conversation's first message, handed to the agent the way
+        /// its harness takes one. A daemon whose harness takes none refuses
+        /// the start rather than dropping the message.
+        #[serde(default)]
+        prompt: Option<String>,
         /// Names the request, so the daemon can answer with what it made
         /// ([`ServerMsg::Created`]). Zero, the default, asks for no answer:
         /// what a client that predates it sends.

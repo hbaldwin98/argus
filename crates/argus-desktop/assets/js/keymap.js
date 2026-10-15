@@ -57,6 +57,9 @@ function run(action) {
         case 'checkouts':
             call('show_checkouts', { open: true });
             return true;
+        case 'compose':
+            call('show_composer', { open: true });
+            return true;
         default:
             return state.rail.stage === 'checkouts' ? checkoutsAction(action) : featureAction(action);
     }
@@ -75,7 +78,11 @@ export function runOver(action) {
 }
 /** The keys a review or history dialog does not answer, open over it. */
 function notTheirs(action) {
-    return (action === 'workspace' || action === 'feature' || action === 'checkouts' || action === 'palette');
+    return (action === 'workspace' ||
+        action === 'feature' ||
+        action === 'checkouts' ||
+        action === 'compose' ||
+        action === 'palette');
 }
 export function listen() {
     document.addEventListener('keydown', (e) => {

@@ -46,6 +46,7 @@ fn flat_harness() -> Harness {
         plugin_dir: None,
         resume: Vec::new(),
         resume_id: Vec::new(),
+        first_message: Vec::new(),
         command_string: false,
         bake_command: false,
         rule_file: None,
@@ -80,6 +81,17 @@ fn the_built_in_harnesses_know_how_to_be_continued() {
     assert_eq!(Harness::pi().resume_id, ["--session", "{session_id}"]);
     assert_eq!(Harness::agy().resume_id, ["--conversation", "{session_id}"]);
     assert_eq!(Harness::agent().resume_id, ["--resume", "{session_id}"]);
+}
+
+#[test]
+fn each_known_cli_is_handed_a_first_message_its_own_way() {
+    assert_eq!(Harness::claude().first_message, ["{prompt}"]);
+    assert_eq!(Harness::codex().first_message, ["{prompt}"]);
+    assert_eq!(Harness::opencode().first_message, ["--prompt", "{prompt}"]);
+    assert_eq!(Harness::pi().first_message, ["{prompt}"]);
+    assert_eq!(Harness::agent().first_message, ["{prompt}"]);
+    assert!(Harness::agy().first_message.is_empty(), "its CLI's way is not known");
+    assert!(Harness::generic().first_message.is_empty());
 }
 
 #[test]

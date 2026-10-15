@@ -45,6 +45,15 @@ pub(super) fn agent_args(
     }
     (args, true)
 }
+/// The arguments that open a new conversation with `prompt`, from the
+/// harness's `first_message`; `None` when it takes no message.
+pub(super) fn first_message(template: &[String], prompt: &str) -> Option<Vec<String>> {
+    if template.is_empty() {
+        return None;
+    }
+    Some(template.iter().map(|arg| arg.replace("{prompt}", prompt)).collect())
+}
+
 /// Whether a resumed agent's exit reads as "there was no conversation to
 /// continue" rather than as an agent the user is done with.
 ///
@@ -189,7 +198,7 @@ impl Daemon {
                             Start::Resuming
                         }
                     };
-                    self.start_agent(checkout, pane.template(), start, session_id)
+                    self.start_agent(checkout, pane.template(), start, session_id, None)
                 }
                 _ => self.spawn_shell(checkout),
             };

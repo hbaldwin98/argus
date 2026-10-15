@@ -53,7 +53,7 @@ pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;
 use hook_server::{gen_token, valid_session_id};
-use session::{agent_args, nothing_to_resume, Resumed};
+use session::{agent_args, first_message, nothing_to_resume, Resumed};
 use tree::*;
 
 use crate::config::{self, AgentConfig, ConfigFile};

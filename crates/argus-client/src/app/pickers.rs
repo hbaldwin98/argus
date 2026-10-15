@@ -724,6 +724,7 @@ impl App {
                     let _ = self.out.send(ClientMsg::SpawnAgent {
                         checkout,
                         template,
+                        prompt: None,
                         request_id,
                     });
                 } else if let Some(branch) = self.current_branch_row().map(str::to_string) {

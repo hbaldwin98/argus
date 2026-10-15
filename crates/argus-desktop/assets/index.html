@@ -9,25 +9,54 @@
 <body>
 <div class="app">
   <div class="split">
-    <nav class="rail" aria-label="Projects">
-      <div class="brand">
+    <nav class="rail" aria-label="Argus">
+      <div class="brand drag">
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="fg-accent"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"></circle><circle cx="8" cy="8" r="2.2" fill="currentColor"></circle></svg>
         <span class="wordmark">Argus</span>
       </div>
+      <div class="navs">
+        <button class="search" id="nav-search">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
+          <span class="grow">Search</span>
+          <span id="nav-search-keys"></span>
+        </button>
+        <button class="nav" id="nav-new">
+          <span class="ic new"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg></span>
+          <span class="grow">New</span>
+          <span id="nav-new-keys"></span>
+        </button>
+        <button class="nav" id="nav-workspace">
+          <span class="ic"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="2"></rect><path d="M5 7l2 1.5L5 10M8.5 10.5H11"></path></svg></span>
+          <span class="grow">Workspace</span>
+          <span id="nav-workspace-keys"></span>
+        </button>
+        <button class="nav" id="nav-feature">
+          <span class="ic"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h8M6 8h8M6 12h8"></path><path d="M2 4l1 1 1.5-2M2 8l1 1 1.5-2"></path><circle cx="3" cy="12" r="0.8"></circle></svg></span>
+          <span class="grow">Features</span>
+          <span id="nav-feature-keys"></span>
+        </button>
+        <button class="nav" id="nav-checkouts">
+          <span class="ic"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4.5" cy="3.5" r="1.5"></circle><circle cx="4.5" cy="12.5" r="1.5"></circle><circle cx="11.5" cy="5.5" r="1.5"></circle><path d="M4.5 5v6M11.5 7c0 3-7 2-7 4"></path></svg></span>
+          <span class="grow">Checkouts</span>
+          <span id="nav-checkouts-keys"></span>
+        </button>
+      </div>
       <div class="projmenu" id="heading"></div>
       <div class="rail-list" id="rail"></div>
+      <footer class="bar" id="bar"></footer>
     </nav>
     <main class="stage">
-      <div class="tabs" role="tablist" aria-label="Stage">
-        <button class="tab on" role="tab" aria-selected="true" id="tab-workspace">Workspace<span class="kbd">1</span></button>
-        <button class="tab" role="tab" aria-selected="false" id="tab-feature">Feature<span class="kbd">2</span></button>
-        <button class="tab" role="tab" aria-selected="false" id="tab-checkouts">Checkouts<span class="kbd">3</span></button>
-        <span class="grow"></span>
-        <span class="meta" id="tabs-meta"></span>
+      <div class="strip drag" id="strip">
+        <div class="head" id="head"></div>
+        <div class="winbtns" id="winbtns">
+          <button class="winbtn" id="win-min" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor"></path></svg></button>
+          <button class="winbtn" id="win-max" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" fill="none" stroke="currentColor"><rect class="max" x="0.5" y="0.5" width="9" height="9"></rect><path class="restore" d="M2.5 2.5V0.5h7v7h-2M0.5 2.5h7v7h-7z"></path></svg></button>
+          <button class="winbtn shut" id="win-close" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"></path></svg></button>
+        </div>
       </div>
       <div class="fstage" id="fstage" hidden></div>
       <div class="fstage cstage" id="cstage" hidden></div>
-      <div class="head" id="head" hidden></div>
+      <div class="nstage" id="nstage" hidden></div>
       <div class="stage-body" id="body">
         <div class="terminal" id="terminal" hidden>
           <div class="term-skeleton" id="term-skeleton" hidden></div>
@@ -39,7 +68,6 @@
       </div>
     </main>
   </div>
-  <footer class="bar" id="bar"></footer>
   <div class="notice" id="notice" role="status" hidden></div>
   <div class="review-layer" id="history" hidden></div>
   <div class="review-layer" id="review" hidden></div>
