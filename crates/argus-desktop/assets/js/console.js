@@ -9,6 +9,7 @@ import { DOCK_ICON, dockOf, dockWords, drawDocks, moveItems } from './docks.js';
 import { $, el, icon } from './dom.js';
 import { chordsFor, presses } from './keys.js';
 import { contextMenu, openMenu } from './menu.js';
+import { closesOnMiddle } from './middle.js';
 import { renameDialog } from './rename.js';
 import { beside, consoleScreen, keyedViewScreen, screen, screens } from './screen.js';
 import { state } from './state.js';
@@ -69,7 +70,7 @@ function drawHead() {
     const dock = dockOf('console') ?? 'bottom';
     const split = page.beside !== null;
     const onScreen = (pane) => pane === page.showing || pane === page.beside;
-    $('console-head').replaceChildren(el('span', { class: 'label' }, 'Console'), el('div', { class: 'ctabs', role: 'tablist' }, page.tabs.map((tab) => el('div', {
+    $('console-head').replaceChildren(el('span', { class: 'label' }, 'Console'), el('div', { class: 'ctabs', role: 'tablist' }, page.tabs.map((tab) => closesOnMiddle(el('div', {
         class: `ctab${tab.on ? ' on' : ''}${onScreen(tab.pane) ? ' live' : ''}`,
         oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, false)),
     }, el('button', {
@@ -83,7 +84,7 @@ function drawHead() {
         title: 'Close',
         'aria-label': `Close ${tab.title}`,
         onclick: () => gesture({ on: 'close', pane: tab.pane }),
-    }, icon('close'))))), page.canSpawn
+    }, icon('close'))), () => gesture({ on: 'close', pane: tab.pane })))), page.canSpawn
         ? el('button', {
             class: 'icon',
             title: 'New console',

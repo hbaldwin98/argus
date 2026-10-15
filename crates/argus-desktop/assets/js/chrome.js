@@ -10,6 +10,7 @@ import { drawSavedNav } from './saved_views.js';
 import { drawFeatures } from './features.js';
 import { chordsFor, keycaps, presses } from './keys.js';
 import { contextMenu } from './menu.js';
+import { closesOnMiddle } from './middle.js';
 import { drawHeading, drawRemoving } from './projects.js';
 import { renameDialog } from './rename.js';
 import { screen } from './screen.js';
@@ -249,7 +250,7 @@ export function paneMenu(pane, title, first = []) {
 function paneRow(checkout, pane) {
     const word = PANE_WORD[pane.status];
     const picked = state.railPick?.pane === pane.id;
-    return el('div', {
+    const row = el('div', {
         class: 'pane-row',
         oncontextmenu: contextMenu(pane.title, () => paneMenu(pane.id, pane.title, [
             {
@@ -275,6 +276,7 @@ function paneRow(checkout, pane) {
             class: 'pane-views',
             title: `${pane.views} ${pane.views === 1 ? 'view' : 'views'} from this agent`,
         }, `${pane.views}`), el('span', { class: `st ${pane.status}` }, word ?? el('span', { class: 'sr-only' }, pane.status))), closeButton(pane.id, pane.title));
+    return closesOnMiddle(row, () => call('close', { pane: pane.id }));
 }
 // ---- The rail's picked row -------------------------------------------------
 function pickRail(checkout, pane) {

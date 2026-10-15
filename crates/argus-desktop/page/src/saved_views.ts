@@ -13,11 +13,12 @@ import { actionButton } from './actions.js';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { DOCK_ICON, dockOf, moveItems } from './docks.js';
+import { closesOnMiddle } from './middle.js';
 import { draggable } from './drag.js';
 import { $, el, icon } from './dom.js';
 import { openMenu } from './menu.js';
 import { savedCtx } from './saved_ctx.js';
-import { grouped } from './saved_logic.js';
+import { count, grouped, nested, type Nested } from './saved_logic.js';
 import { savedView } from './savedlink.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -94,14 +95,16 @@ function fill(p: SavedPanel): void {
 }
 
 /** The strip across the panel: draggable like any panel's header, with the
- *  dock menu and the dock's hide. */
+ *  dock menu and the panel's close, which takes it out of its dock with its
+ *  columns rather than hiding the dock and every tab in it. */
 function panelHead(p: SavedPanel): HTMLElement {
   const first = savedView(p.columns[0] ?? '');
   const title = first?.view.title ?? 'Saved view';
+  const close = (): void => call('close_saved_column', { panel: p.panel, column: 0 });
   const strip = el(
     'div',
     { class: 'vpanel-tabs saved-head', role: 'toolbar', 'aria-label': 'Saved view' },
-    el('span', { class: 'ttl' }, title),
+    el('span', { class: 'ttl', title }, title),
     p.columns.length > 1 && el('span', { class: 'meta' }, `${p.columns.length} columns`),
     el('span', { class: 'grow' }),
     el(
@@ -124,14 +127,14 @@ function panelHead(p: SavedPanel): HTMLElement {
       {
         class: 'icon',
         type: 'button',
-        title: 'Hide',
-        'aria-label': `Hide ${title}`,
-        onclick: () => call('docks', { gesture: { on: 'hide', panel: p.panel } }),
+        title: 'Close',
+        'aria-label': `Close ${title}`,
+        onclick: close,
       },
       icon('close'),
     ),
   );
-  return draggable(strip, p.panel, title);
+  return closesOnMiddle(draggable(strip, p.panel, title), close);
 }
 
 function column(p: SavedPanel, i: number, id: string): HTMLElement {
@@ -190,25 +193,28 @@ function header(p: SavedPanel, i: number, view: PageSaved, ctx: ViewCtx): HTMLEl
   return el(
     'div',
     { class: 'vpanel-head' },
-    el(
-      'div',
-      { class: 'vpanel-title' },
-      el('span', { class: 'type-heading grow' }, view.view.title),
-      view.view.status && chip(view.view.status),
-      view.stale && chip({ label: 'stale', tone: 'warn' }),
-      i > 0 &&
-        el(
-          'button',
-          {
-            class: 'icon',
-            type: 'button',
-            title: 'Pop out into a panel of its own',
-            'aria-label': 'Pop out into a panel of its own',
-            onclick: () => call('pop_out_saved_column', { panel: p.panel, column: i }),
-          },
-          icon('expand'),
-        ),
-      closeButton(p, i),
+    closesOnMiddle(
+      el(
+        'div',
+        { class: 'vpanel-title' },
+        el('span', { class: 'type-heading grow' }, view.view.title),
+        view.view.status && chip(view.view.status),
+        view.stale && chip({ label: 'stale', tone: 'warn' }),
+        i > 0 &&
+          el(
+            'button',
+            {
+              class: 'icon',
+              type: 'button',
+              title: 'Pop out into a panel of its own',
+              'aria-label': 'Pop out into a panel of its own',
+              onclick: () => call('pop_out_saved_column', { panel: p.panel, column: i }),
+            },
+            icon('expand'),
+          ),
+        closeButton(p, i),
+      ),
+      () => call('close_saved_column', { panel: p.panel, column: i }),
     ),
     el(
       'div',
@@ -366,6 +372,8 @@ function metadata(view: PageSaved): HTMLElement {
  *  about where the person is. The page's own. */
 let listed = true;
 let hereOnly = true;
+/** The views whose linked views are unfolded under them, by id. */
+const navOpen = new Set<string>();
 
 /** The sidebar's Views: a fold after the Extensions listing the saved
  *  views grouped by scope, those about where the person is by default. With
@@ -401,7 +409,12 @@ export function drawSavedNav(): void {
     ),
     el(
       'div',
-      { class: 'nav-nest', role: 'group', 'aria-label': 'Saved views', hidden: !listed },
+      {
+        class: 'nav-nest nav-saved-list',
+        role: 'group',
+        'aria-label': 'Saved views',
+        hidden: !listed,
+      },
       el(
         'div',
         { class: 'nav-filter', role: 'group', 'aria-label': 'Which saved views' },
@@ -411,32 +424,69 @@ export function drawSavedNav(): void {
       groups.length === 0 && el('div', { class: 'meta nav-empty' }, 'None about here'),
       groups.map((group) => [
         el('div', { class: 'nav-group meta' }, group.label),
-        group.views.map((v) =>
-          draggable(
-            el(
-              'button',
-              {
-                class: `nav nav-sub${open.has(v.id) ? ' on' : ''}`,
-                type: 'button',
-                title: `${v.view.title} · ${v.scope.label}${v.stale ? ' · stale' : ''}`,
-                onclick: () => call('open_saved_view', { id: v.id, from: null }),
-              },
-              el('span', { class: 'grow ttl' }, v.view.title),
-              v.stale &&
-                el('span', {
-                  class: 'vstale-dot',
-                  title: 'stale',
-                  role: 'img',
-                  'aria-label': 'stale',
-                }),
-            ),
-            `saved:${v.id}`,
-            v.view.title,
-          ),
-        ),
+        nested(group.views).map((node) => navRow(node, open)),
       ]),
     ),
   );
+}
+
+/** A view's row in the sidebar, and the views listed under it behind a
+ *  fold, so the ones saved to be reached from it do not crowd the group. */
+function navRow(node: Nested, open: ReadonlySet<string>): HTMLElement[] {
+  const v = node.view;
+  const inner = count(node);
+  const folded = !navOpen.has(v.id);
+  const line = el(
+    'div',
+    { class: 'nav-saved' },
+    draggable(
+      el(
+        'button',
+        {
+          class: `nav nav-sub${open.has(v.id) ? ' on' : ''}`,
+          type: 'button',
+          title: `${v.view.title} · ${v.scope.label}${v.stale ? ' · stale' : ''}`,
+          onclick: () => call('open_saved_view', { id: v.id, from: null }),
+        },
+        el('span', { class: 'grow ttl' }, v.view.title),
+        v.stale &&
+          el('span', {
+            class: 'vstale-dot',
+            title: 'stale',
+            role: 'img',
+            'aria-label': 'stale',
+          }),
+      ),
+      `saved:${v.id}`,
+      v.view.title,
+    ),
+    inner > 0 &&
+      el(
+        'button',
+        {
+          class: 'nav-twist',
+          type: 'button',
+          'aria-expanded': String(!folded),
+          title: `${folded ? 'Show' : 'Hide'} the ${inner} ${inner === 1 ? 'view' : 'views'} listed under it`,
+          onclick: () => {
+            if (folded) navOpen.add(v.id);
+            else navOpen.delete(v.id);
+            drawSavedNav();
+          },
+        },
+        el('span', { class: 'meta' }, String(inner)),
+        icon(folded ? 'right' : 'down'),
+      ),
+  );
+  if (inner === 0 || folded) return [line];
+  return [
+    line,
+    el(
+      'div',
+      { class: 'nav-nest', role: 'group', 'aria-label': `Linked from ${v.view.title}` },
+      node.inner.map((n) => navRow(n, open)),
+    ),
+  ];
 }
 
 function filterButton(label: string, here: boolean): HTMLElement {

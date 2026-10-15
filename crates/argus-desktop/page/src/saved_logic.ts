@@ -1,6 +1,6 @@
 // The rules for saved views that need no document: whether an embed is
-// drawn, how the sidebar groups and filters the list, and which views a
-// feature's stage offers. Kept apart so node can test them.
+// drawn, how the sidebar groups, nests and filters the list, and which
+// views a feature's stage offers. Kept apart so node can test them.
 
 import type { PageSaved } from './bindings/PageSaved';
 
@@ -53,6 +53,30 @@ export function grouped(views: readonly PageSaved[], hereOnly: boolean): Group[]
     else groups.push({ label: view.scope.label, views: [view] });
   }
   return groups;
+}
+
+export interface Nested {
+  view: PageSaved;
+  /** The views listed under it, each with its own. */
+  inner: Nested[];
+}
+
+/** A group's views as the sidebar lists them: each under the view Rust
+ *  named in `under`, in order. One whose `under` the group does not show,
+ *  filtered out or of another scope, stands at the top instead. */
+export function nested(views: readonly PageSaved[]): Nested[] {
+  const nodes = new Map(views.map((view) => [view.id, { view, inner: [] as Nested[] }]));
+  const top: Nested[] = [];
+  for (const node of nodes.values()) {
+    const parent = node.view.under === null ? undefined : nodes.get(node.view.under);
+    (parent ? parent.inner : top).push(node);
+  }
+  return top;
+}
+
+/** How many views a node holds under it, at every depth. */
+export function count(node: Nested): number {
+  return node.inner.reduce((n, inner) => n + 1 + count(inner), 0);
 }
 
 /** The views scoped to or attached to feature `number` of `repository`. */

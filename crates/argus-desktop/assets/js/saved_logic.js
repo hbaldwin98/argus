@@ -1,6 +1,6 @@
 // The rules for saved views that need no document: whether an embed is
-// drawn, how the sidebar groups and filters the list, and which views a
-// feature's stage offers. Kept apart so node can test them.
+// drawn, how the sidebar groups, nests and filters the list, and which
+// views a feature's stage offers. Kept apart so node can test them.
 /** How many views deep an embed is followed. This is
  *  `argus_protocol::MAX_EMBED_DEPTH` written a second time, since the page
  *  draws without asking Rust; a drift costs a line saying "too deep" at the
@@ -40,6 +40,22 @@ export function grouped(views, hereOnly) {
             groups.push({ label: view.scope.label, views: [view] });
     }
     return groups;
+}
+/** A group's views as the sidebar lists them: each under the view Rust
+ *  named in `under`, in order. One whose `under` the group does not show,
+ *  filtered out or of another scope, stands at the top instead. */
+export function nested(views) {
+    const nodes = new Map(views.map((view) => [view.id, { view, inner: [] }]));
+    const top = [];
+    for (const node of nodes.values()) {
+        const parent = node.view.under === null ? undefined : nodes.get(node.view.under);
+        (parent ? parent.inner : top).push(node);
+    }
+    return top;
+}
+/** How many views a node holds under it, at every depth. */
+export function count(node) {
+    return node.inner.reduce((n, inner) => n + 1 + count(inner), 0);
 }
 /** The views scoped to or attached to feature `number` of `repository`. */
 export function forFeature(views, repository, number) {

@@ -1,9 +1,16 @@
 // The saved views' rules under node: when an embed is drawn, how the
-// sidebar groups and filters, and which views a feature offers.
+// sidebar groups, nests and filters, and which views a feature offers.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { embedVerdict, forFeature, grouped, MAX_EMBED_DEPTH } from '../src/saved_logic.ts';
+import {
+  count,
+  embedVerdict,
+  forFeature,
+  grouped,
+  MAX_EMBED_DEPTH,
+  nested,
+} from '../src/saved_logic.ts';
 
 const held = (ids) => (id) => ids.includes(id);
 
@@ -59,4 +66,25 @@ test("a feature's stage offers the views scoped or attached to that feature of i
     ['a'],
   );
   assert.deepEqual(forFeature(views, null, 7), []);
+});
+
+const under = (id, parent) => ({ id, under: parent });
+const shape = (nodes) => nodes.map((n) => [n.view.id, shape(n.inner)]);
+
+test('the sidebar lists a view under the one Rust names, at any depth, in order', () => {
+  const top = nested([under('a', null), under('b', 'a'), under('c', 'b'), under('d', 'a')]);
+  assert.deepEqual(shape(top), [
+    [
+      'a',
+      [
+        ['b', [['c', []]]],
+        ['d', []],
+      ],
+    ],
+  ]);
+  assert.equal(count(top[0]), 3);
+});
+
+test('a view whose parent is filtered out stands at the top', () => {
+  assert.deepEqual(shape(nested([under('b', 'a'), under('c', 'b')])), [['b', [['c', []]]]]);
 });

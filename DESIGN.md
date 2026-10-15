@@ -171,7 +171,7 @@ docks keeps its console docked at the bottom as tall as it was, its views panel'
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `drag`, `screen`, `input`, `keymap`, `focus` (which layer has a key),
-`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
+`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `middle` (a middle click closing the tab or row it lands on), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types and the page and gesture types each surface's module keeps beside it
@@ -323,6 +323,7 @@ live in this crate and a contract written twice drifts in silence.
 | `view_check` | whether a view keeps its limits (sizes, depth, counts, bounded numbers, unique and printable ids, web links, checkout-relative paths, kinds this Argus knows), and where it does not, the path that names the fault |
 | `saved_view` | what a saved view is: its body, its scope, and the metadata an agent refreshes it from (recipe, sources, the commit it was built at, stale); what an agent writes to save one and reads back; and the line an agent is typed to refresh one |
 | `view_tree` | how the blocks of a view nest: the lists inside each container, and what a patch path and the desktop page each call them |
+| `view_links` | which saved views a view links to, in the order it names them, reached through values, `opens` and embeds at any depth: the terminal's links list and the desktop's nesting of a linked view under the view that names it |
 | `view_press` | what a press of a view's action carries back, which of it the view offered, and the one line the agent is told of it |
 | `checkout_path` | whether a path an agent wrote stays inside the checkout it is read against |
 | `view_patch` | how a patch replaces one block of a held view: the block path an agent names it by, and the view with that block swapped |
@@ -419,7 +420,6 @@ result of a request; `ui` is a pure function of it.
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/agent_views` | the views agents showed as this client holds them, newest first: which is open, how far it is scrolled, and the close and refresh requests that change nothing until the daemon answers |
 | `app/saved_views` | the saved views as the daemon sends them, which one the stage shows, the links offered from it and the trail of links followed to it, and the embeds drawn in place |
-| `app/view_links` | which saved views a view links to, in the order it names them, reached through values, `opens` and embeds at any depth |
 | `app/showing` | what the daemon is told this client shows |
 | `app/views` | which surface the content area holds, and the fetches opening one makes |
 | `app/feature` | where the Feature stage is — the index, a feature on a lens, the row under the cursor — and how the keys move between them |
@@ -2153,7 +2153,11 @@ draws the held view's blocks in a frame with its title and an Open link, a cycle
 missing view being a line saying so, as the terminal draws them. A press inside a saved view goes
 as `PressSavedView`, and a reference in one is read against the checkout on screen. The sidebar
 lists them under Views, grouped by scope, filtered to those about the chosen repository and open
-feature or all, a stale one marked; the Feature stage lists those scoped or attached to the open
+feature or all, a stale one marked. A view another of its scope links to (`view_links`) is listed
+under the first that does, folded, so the views saved to be reached from one do not crowd its group;
+views that only reach each other are cut at the first. The window says which (`PageSaved::under`)
+and the page draws the folds. A saved panel's `✕`, its dock tab's `✕` and a middle click on either
+close the panel, not the dock; the Feature stage lists those scoped or attached to the open
 feature beside its tickets. Nothing is predicted: refreshing, marking and deleting are requests,
 and the column changes when the daemon sends the view saved again or gone.
 

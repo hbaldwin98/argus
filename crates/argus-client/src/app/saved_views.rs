@@ -6,9 +6,8 @@
 //! until it says so. Which view is open, where it is scrolled and the trail
 //! are this client's own.
 
-use argus_protocol::{Block, ClientMsg, SavedView, MAX_EMBED_DEPTH};
+use argus_protocol::{linked_views, Block, ClientMsg, SavedView, MAX_EMBED_DEPTH};
 
-use super::view_links::linked_views;
 use super::*;
 
 #[derive(Default)]

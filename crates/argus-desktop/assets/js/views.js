@@ -10,6 +10,7 @@ import { DOCK_ICON, dockOf, moveItems } from './docks.js';
 import { draggable } from './drag.js';
 import { $, el, icon } from './dom.js';
 import { openMenu } from './menu.js';
+import { closesOnMiddle } from './middle.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { ago } from './values.js';
@@ -65,14 +66,23 @@ function key(v) {
     return `${v.pane}/${v.view.id}`;
 }
 function tabs(views, open) {
-    const strip = el('div', { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' }, views.map((v) => el('button', {
-        class: `vpanel-tab${v === open ? ' on' : ''}`,
-        role: 'tab',
-        type: 'button',
-        'aria-selected': String(v === open),
-        title: v.from ? `${v.view.title} · from ${v.from}` : v.view.title,
-        onclick: () => call('open_view', { pane: v.pane, id: v.view.id }),
-    }, v.refreshing && el('span', { class: 'vspin', 'aria-label': 'refreshing' }), v.unseen && el('span', { class: 'vnew', role: 'img', 'aria-label': 'changed' }), el('span', { class: 'ttl' }, v.view.title))), el('span', { class: 'grow' }), el('button', {
+    const strip = el('div', { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' }, views.map((v) => {
+        const close = () => call('close_view', { pane: v.pane, id: v.view.id });
+        return closesOnMiddle(el('div', { class: `vpanel-tab${v === open ? ' on' : ''}` }, el('button', {
+            class: 'vpanel-tab-pick',
+            role: 'tab',
+            type: 'button',
+            'aria-selected': String(v === open),
+            title: v.from ? `${v.view.title} · from ${v.from}` : v.view.title,
+            onclick: () => call('open_view', { pane: v.pane, id: v.view.id }),
+        }, v.refreshing && el('span', { class: 'vspin', 'aria-label': 'refreshing' }), v.unseen && el('span', { class: 'vnew', role: 'img', 'aria-label': 'changed' }), el('span', { class: 'ttl' }, v.view.title)), el('button', {
+            class: 'icon x',
+            type: 'button',
+            title: 'Close this view for every window',
+            'aria-label': `Close ${v.view.title}`,
+            onclick: close,
+        }, icon('close'))), close);
+    }), el('span', { class: 'grow' }), el('button', {
         class: 'icon',
         type: 'button',
         title: 'Move to another dock',

@@ -1,11 +1,12 @@
 //! Which saved views a view links to, in the order it names them: what the
-//! links list offers while a saved view is open.
+//! terminal's links list offers while a saved view is open, and what the
+//! desktop's sidebar nests a linked view under.
 //!
 //! A link can sit on any value, on the plain-text elements that take `opens`,
 //! or on an embed. The walk reaches every one of them, including the kinds
-//! the terminal leaves to the desktop, so a link there is still offered here.
+//! the terminal leaves to the desktop, so a link there is still offered there.
 
-use argus_protocol::{Block, RowItem, TreeNode, Value};
+use crate::agent_view::{Block, RowItem, TreeNode, Value};
 
 /// The ids a view links to, each once, in the order the view reads.
 pub fn linked_views(blocks: &[Block]) -> Vec<String> {

@@ -21,4 +21,10 @@ builtAt: number, builtCommit: string | null, stale: boolean, view: AgentView, di
 /**
  * A refresh was asked for and the agent has not saved the view again.
  */
-refreshing: boolean, pressed: Array<string>, };
+refreshing: boolean, pressed: Array<string>, 
+/**
+ * The view the sidebar lists this one under: the first in the list's
+ * order, in the same scope, that links to it. `None` for a view at
+ * the top of its group.
+ */
+under: string | null, };

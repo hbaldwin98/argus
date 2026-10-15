@@ -68,7 +68,6 @@ mod saved_views;
 mod scroll;
 mod server;
 mod showing;
-mod view_links;
 mod views;
 
 fn state_word(status: PaneStatus) -> &'static str {

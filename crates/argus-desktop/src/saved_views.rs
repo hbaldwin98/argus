@@ -263,16 +263,51 @@ impl SavedViews {
                     diagrams: agent_views::diagrams(&v.view.blocks),
                     refreshing: self.refreshing.contains(&v.id),
                     pressed: self.pressed.get(&v.id).cloned().unwrap_or_default(),
+                    under: None,
                 };
                 (rank, saved)
             })
             .collect();
         views.sort_by(|(a, x), (b, y)| (a, &x.scope.label, &x.view.title).cmp(&(b, &y.scope.label, &y.view.title)));
+        let mut views: Vec<PageSaved> = views.into_iter().map(|(_, v)| v).collect();
+        nest(&mut views);
         SavedViewsPage {
-            views: views.into_iter().map(|(_, v)| v).collect(),
+            views,
             panels: placed.iter().map(|panel| SavedPanel { panel: Panel::Saved(panel.clone()), columns: self.columns(panel) }).collect(),
             can_press,
         }
+    }
+}
+
+/// Sets each view's `under`, so a view saved to be reached from another
+/// waits under it in the sidebar rather than crowding its group. Only
+/// within a scope, so a view is never listed under another group's
+/// label. Views that only reach each other, in a ring, would have no top;
+/// the ring is cut at its first member in the list's order.
+fn nest(views: &mut [PageSaved]) {
+    let links: Vec<Vec<String>> = views.iter().map(|v| argus_protocol::linked_views(&v.view.blocks)).collect();
+    let mut under: Vec<Option<usize>> = (0..views.len())
+        .map(|i| {
+            (0..views.len()).find(|&p| {
+                p != i && views[p].scope.label == views[i].scope.label && links[p].contains(&views[i].id)
+            })
+        })
+        .collect();
+    for start in 0..views.len() {
+        let mut ring = vec![start];
+        let mut at = start;
+        while let Some(parent) = under[at] {
+            if let Some(pos) = ring.iter().position(|&r| r == parent) {
+                let cut = *ring[pos..].iter().min().unwrap();
+                under[cut] = None;
+                break;
+            }
+            ring.push(parent);
+            at = parent;
+        }
+    }
+    for (i, parent) in under.into_iter().enumerate() {
+        views[i].under = parent.map(|p| views[p].id.clone());
     }
 }
 
@@ -367,6 +402,10 @@ pub struct PageSaved {
     /// A refresh was asked for and the agent has not saved the view again.
     pub refreshing: bool,
     pub pressed: Vec<String>,
+    /// The view the sidebar lists this one under: the first in the list's
+    /// order, in the same scope, that links to it. `None` for a view at
+    /// the top of its group.
+    pub under: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -514,6 +553,46 @@ mod tests {
         assert_eq!(here(&page), ["all", "repo", "attached", "seven"]);
         assert_eq!(here(&at(Some(8))), ["all", "repo"], "another feature is open");
         assert_eq!(here(&at(Some(7))), ["all", "repo", "attached", "seven"]);
+    }
+
+    fn linking(id: &str, to: &[&str]) -> SavedView {
+        let mut view = saved(id, ViewScope::Global);
+        view.view.blocks = to.iter().map(|t| argus_protocol::Block::Embed { view: t.to_string() }).collect();
+        view
+    }
+
+    fn under(views: &SavedViews) -> Vec<(String, Option<String>)> {
+        let page = views.page(Whereabouts::default(), &[], &[], true);
+        page.views.into_iter().map(|v| (v.id, v.under)).collect()
+    }
+
+    #[test]
+    fn a_view_another_links_to_is_listed_under_the_first_that_does() {
+        let mut views = SavedViews::default();
+        views.receive_all(vec![linking("a", &["b", "c"]), linking("b", &["c"]), linking("c", &[]), linking("d", &["d"])]);
+        let s = |x: &str| Some(x.to_string());
+        assert_eq!(
+            under(&views),
+            [("a".into(), None), ("b".into(), s("a")), ("c".into(), s("a")), ("d".into(), None)],
+            "a link to itself nests nothing"
+        );
+    }
+
+    #[test]
+    fn views_that_only_reach_each_other_keep_the_first_at_the_top() {
+        let mut views = SavedViews::default();
+        views.receive_all(vec![linking("a", &["b"]), linking("b", &["c"]), linking("c", &["a"])]);
+        let s = |x: &str| Some(x.to_string());
+        assert_eq!(under(&views), [("a".into(), None), ("b".into(), s("a")), ("c".into(), s("b"))]);
+    }
+
+    #[test]
+    fn a_view_is_not_nested_under_one_of_another_scope() {
+        let mut views = SavedViews::default();
+        let mut sub = linking("sub", &[]);
+        sub.scope = ViewScope::Repository { repository: RepositoryId(99) };
+        views.receive_all(vec![linking("top", &["sub"]), sub]);
+        assert_eq!(under(&views), [("top".into(), None), ("sub".into(), None)]);
     }
 
     #[test]

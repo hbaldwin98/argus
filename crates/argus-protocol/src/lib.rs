@@ -10,6 +10,7 @@
 pub mod adr;
 pub mod agent_view;
 pub mod view_check;
+pub mod view_links;
 pub mod view_patch;
 pub mod view_press;
 pub mod view_tree;
@@ -81,6 +82,7 @@ pub use saved_view::{
     MAX_RECIPE_BYTES, MAX_SAVED_VIEWS, MAX_SOURCE_BYTES, MAX_VIEW_SOURCES,
 };
 pub use view_tree::Slot;
+pub use view_links::linked_views;
 pub use artifacts::ArtifactScope;
 pub use board_follower::{BoardFollower, BoardScope, Received};
 pub use cell::{

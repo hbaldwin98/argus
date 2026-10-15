@@ -12,6 +12,7 @@ import { DOCK_ICON, dockOf, dockWords, drawDocks, moveItems } from './docks.js';
 import { $, el, icon } from './dom.js';
 import { chordsFor, presses } from './keys.js';
 import { contextMenu, type MenuItem, openMenu } from './menu.js';
+import { closesOnMiddle } from './middle.js';
 import { renameDialog } from './rename.js';
 import { type Screen, beside, consoleScreen, keyedViewScreen, screen, screens } from './screen.js';
 import { state } from './state.js';
@@ -85,35 +86,38 @@ function drawHead(): void {
       'div',
       { class: 'ctabs', role: 'tablist' },
       page.tabs.map((tab) =>
-        el(
-          'div',
-          {
-            class: `ctab${tab.on ? ' on' : ''}${onScreen(tab.pane) ? ' live' : ''}`,
-            oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, false)),
-          },
+        closesOnMiddle(
           el(
-            'button',
+            'div',
             {
-              class: 'ctab-pick',
-              role: 'tab',
-              'aria-selected': String(tab.on),
-              title: `shell, ${tab.status}`,
-              onclick: () => gesture({ on: 'select', pane: tab.pane }),
+              class: `ctab${tab.on ? ' on' : ''}${onScreen(tab.pane) ? ' live' : ''}`,
+              oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, false)),
             },
-            el('span', { class: 'glyph sh' }, '›'),
-            el('span', { class: 'ttl' }, tab.title),
-            el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' }),
+            el(
+              'button',
+              {
+                class: 'ctab-pick',
+                role: 'tab',
+                'aria-selected': String(tab.on),
+                title: `shell, ${tab.status}`,
+                onclick: () => gesture({ on: 'select', pane: tab.pane }),
+              },
+              el('span', { class: 'glyph sh' }, '›'),
+              el('span', { class: 'ttl' }, tab.title),
+              el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' }),
+            ),
+            el(
+              'button',
+              {
+                class: 'icon x',
+                title: 'Close',
+                'aria-label': `Close ${tab.title}`,
+                onclick: () => gesture({ on: 'close', pane: tab.pane }),
+              },
+              icon('close'),
+            ),
           ),
-          el(
-            'button',
-            {
-              class: 'icon x',
-              title: 'Close',
-              'aria-label': `Close ${tab.title}`,
-              onclick: () => gesture({ on: 'close', pane: tab.pane }),
-            },
-            icon('close'),
-          ),
+          () => gesture({ on: 'close', pane: tab.pane }),
         ),
       ),
     ),
