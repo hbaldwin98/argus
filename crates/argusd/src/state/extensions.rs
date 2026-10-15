@@ -14,18 +14,14 @@
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
 use argus_protocol::extension_keys::{action_key_refusal, command_key_refusal};
-use argus_protocol::extensions::{MAX_COMMANDS, MAX_ITEMS, MAX_VIEWS};
+use argus_protocol::extensions::{MAX_COMMANDS, MAX_ITEMS, MAX_NOTICE_CHARS, MAX_VIEWS};
 use argus_protocol::{
-    CommandScope, ExtAnswer, ExtCommand, ExtDialog, ExtDialogKind, ExtEvent, ExtPane, ExtView, Refusals,
-    Refused,
+    CommandScope, ExtAbout, ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtDialogKind, ExtEvent, ExtPane, ExtView,
+    Refusals, Refused,
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::*;
-
-/// The longest notice an extension may put on the status bar, which has one
-/// line for it.
-const MAX_NOTICE: usize = 300;
 
 /// How many commands an extension is remembered to have been sent, for a
 /// dialog answering one to find the client that ran it.
@@ -44,6 +40,7 @@ struct Extension {
     token: String,
     views: Vec<ExtView>,
     commands: Vec<ExtCommand>,
+    about: Option<ExtAbout>,
     /// The stream its events go down, by the generation of the connection
     /// holding it: the newest replaces an older one, as a pane's inbox does.
     events: Option<(u64, UnboundedSender<ExtEvent>)>,
@@ -100,6 +97,7 @@ impl Daemon {
             token: token.clone(),
             views: Vec::new(),
             commands: Vec::new(),
+            about: None,
             events: None,
             dialogs: Vec::new(),
             runs: VecDeque::new(),
@@ -138,6 +136,19 @@ impl Daemon {
     pub fn extension_views(&self) -> Vec<ExtView> {
         let registry = self.extensions.lock().unwrap();
         registry.extensions.values().flat_map(|e| e.views.iter().cloned()).collect()
+    }
+
+    /// Every running extension, published anything or not, in the order of
+    /// their names, for `argus extension list` and `show`.
+    pub fn describe_extensions(&self) -> Vec<ExtDescription> {
+        let registry = self.extensions.lock().unwrap();
+        let described = registry.extensions.iter().map(|(name, extension)| ExtDescription {
+            name: name.clone(),
+            about: extension.about.clone(),
+            commands: extension.commands.clone(),
+            views: extension.views.iter().map(|view| ExtView { rows: Vec::new(), ..view.clone() }).collect(),
+        });
+        described.collect()
     }
 
     pub fn extension_commands(&self) -> Vec<ExtCommand> {
@@ -196,13 +207,18 @@ impl Daemon {
     /// Replaces every command `name` adds. A key Argus keeps, another
     /// extension's, or one of its own view's actions' is refused with the
     /// reason, and the command is kept without it.
-    pub fn publish_commands(&self, name: &str, mut commands: Vec<ExtCommand>) -> anyhow::Result<Refusals> {
+    pub fn publish_commands(&self, name: &str, commands: Vec<ExtCommand>) -> anyhow::Result<Refusals> {
         if commands.len() > MAX_COMMANDS {
-            anyhow::bail!("at most {MAX_COMMANDS} commands");
+            anyhow::bail!("commands: at most {MAX_COMMANDS}");
         }
+        let mut commands = commands
+            .into_iter()
+            .enumerate()
+            .map(|(i, command)| command.checked().map_err(|e| anyhow::anyhow!("commands[{i}].{e}")))
+            .collect::<anyhow::Result<Vec<_>>>()?;
         for (i, command) in commands.iter().enumerate() {
-            if command.name.is_empty() || commands[..i].iter().any(|c| c.name == command.name) {
-                anyhow::bail!("each command needs a name of its own, not {:?}", command.name);
+            if commands[..i].iter().any(|c| c.name == command.name) {
+                anyhow::bail!("commands[{i}].name: {:?} is another command's", command.name);
             }
         }
         let mut refusals = Refusals::default();
@@ -253,10 +269,18 @@ impl Daemon {
         }
     }
 
+    /// What `name` says it is, replacing what it said before. Told to no
+    /// client: it is read when asked for.
+    pub fn publish_about(&self, name: &str, about: ExtAbout) -> anyhow::Result<()> {
+        let about = about.checked().map_err(anyhow::Error::msg)?;
+        self.extensions.lock().unwrap().get(name)?.about = Some(about);
+        Ok(())
+    }
+
     pub fn extension_notice(&self, name: &str, text: &str) -> anyhow::Result<()> {
         self.extensions.lock().unwrap().get(name)?;
         let line = text.lines().next().unwrap_or("").trim();
-        let text: String = line.chars().take(MAX_NOTICE).collect();
+        let text: String = line.chars().take(MAX_NOTICE_CHARS).collect();
         self.tell_extensions(ExtensionNews::Notice { extension: name.to_string(), text });
         Ok(())
     }

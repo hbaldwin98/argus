@@ -2174,6 +2174,14 @@ Everything an extension says is declarative, in `argus_protocol::extensions`' ty
   `argus focus` prints it), and each dialog's answer or cancellation. The newest connection takes
   over, as a pane's inbox does, and an action sent while none is open is refused to the person in
   words rather than lost.
+- `PUT /extension/<name>/about` — what it is: a one-line summary and a Markdown guide to using it.
+
+What an extension says it is, with the optional one-line `help` of each command and action, is for
+whoever reads it, a person or an agent, and not for a window to draw: the daemon holds it in memory
+until the extension goes and sends it to no client unasked. `argus extension list` and
+`argus extension show` ask for it with `DescribeExtensions`, which a daemon that listed
+`describe-extensions` answers with every running extension, its views without their rows, to that
+client alone; so they read the daemon there under `--host`, as the window does.
 
 An extension's key never shadows a key Argus binds, the leader, or the digits that open the stages,
 so the shortcuts sheet stays the one account of what a key does. The daemon decides when the key is

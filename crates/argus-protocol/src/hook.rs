@@ -344,16 +344,19 @@ pub enum ExtEndpoint {
     Pane,
     /// `GET`, held open: what the person did, as server-sent events.
     Events,
+    /// `PUT`: what the extension is, for `argus extension show`.
+    About,
 }
 
 impl ExtEndpoint {
-    pub const ALL: [ExtEndpoint; 6] = [
+    pub const ALL: [ExtEndpoint; 7] = [
         ExtEndpoint::View,
         ExtEndpoint::Commands,
         ExtEndpoint::Dialog,
         ExtEndpoint::Notice,
         ExtEndpoint::Pane,
         ExtEndpoint::Events,
+        ExtEndpoint::About,
     ];
 
     pub fn suffix(self) -> &'static str {
@@ -364,6 +367,7 @@ impl ExtEndpoint {
             ExtEndpoint::Notice => "notice",
             ExtEndpoint::Pane => "pane",
             ExtEndpoint::Events => "events",
+            ExtEndpoint::About => "about",
         }
     }
 
@@ -371,7 +375,7 @@ impl ExtEndpoint {
     /// republishes after a restart says the same thing it said before.
     pub fn method(self) -> &'static str {
         match self {
-            ExtEndpoint::View | ExtEndpoint::Commands => "PUT",
+            ExtEndpoint::View | ExtEndpoint::Commands | ExtEndpoint::About => "PUT",
             ExtEndpoint::Events => "GET",
             ExtEndpoint::Dialog | ExtEndpoint::Notice | ExtEndpoint::Pane => "POST",
         }

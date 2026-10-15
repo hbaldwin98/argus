@@ -81,15 +81,16 @@ pub use features::{
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
 pub use extensions::{
-    CommandScope, ExtAction, ExtAnswer, ExtPlace, ExtCommand, ExtDialog, ExtDialogKind, ExtEvent, ExtField, ExtItem,
-    ExtKey, ExtPane, ExtRow, ExtScope, ExtView, Refusals, Refused,
+    CommandScope, ExtAbout, ExtAction, ExtAnswer, ExtPlace, ExtCommand, ExtDescription, ExtDialog, ExtDialogKind,
+    ExtDialogRaised, ExtEvent, ExtField, ExtItem, ExtKey, ExtPane, ExtPaneOpened, ExtRow, ExtScope, ExtView,
+    Refusals, Refused,
 };
 pub use focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, View};
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use held_tree::{transitions, HeldTree, Transition};
 pub use hello::{
     ADD_PROJECT, AGENT_VIEWS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
-    PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS,
+    PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
 };
 pub use hook::{
     endpoint_url, extension_path, extension_prefix, extension_url, parse_extension_path, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,

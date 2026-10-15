@@ -36,6 +36,7 @@ pub const CAPABILITIES: &[&str] = &[
     EXTENSIONS,
     EXTENSION_DIALOGS,
     AGENT_VIEWS,
+    DESCRIBE_EXTENSIONS,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
@@ -88,6 +89,11 @@ pub const EXTENSIONS: &str = "extensions";
 /// `ClientMsg::ExtensionDialogAnswer` back. Apart from [`EXTENSIONS`] because a
 /// dialog goes to one client, and only one that can ask it may be chosen.
 pub const EXTENSION_DIALOGS: &str = "extension-dialogs";
+
+/// `ClientMsg::DescribeExtensions` and its answer: what each running
+/// extension is and publishes, for `argus extension list` and `show`.
+/// Apart from [`EXTENSIONS`] because a client asking need draw none of it.
+pub const DESCRIBE_EXTENSIONS: &str = "describe-extensions";
 
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

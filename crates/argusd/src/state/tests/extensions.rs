@@ -101,7 +101,7 @@ fn view(json: &str) -> ExtView {
 }
 
 fn command(name: &str, key: Option<ExtKey>, scope: CommandScope) -> ExtCommand {
-    ExtCommand { extension: String::new(), name: name.into(), title: name.into(), key, scope }
+    ExtCommand { extension: String::new(), name: name.into(), title: name.into(), key, scope, help: None }
 }
 
 #[tokio::test]
@@ -376,6 +376,69 @@ async fn an_extension_that_goes_takes_its_tabs_keys_and_dialogs_with_it() {
     assert!(told.iter().any(|n| matches!(n, ExtensionNews::Withdrawn { viewer, id } if *viewer == window && *id == dialog)));
     assert!(told.iter().any(|n| matches!(n, ExtensionNews::Views)));
     assert!(told.iter().any(|n| matches!(n, ExtensionNews::Commands)));
+}
+
+#[tokio::test]
+async fn a_command_whose_help_breaks_its_limit_is_refused_by_its_path() {
+    let d = served();
+    let token = d.admit_extension("docker");
+    let body = r#"[{"name": "up", "title": "Up", "help": "one\ntwo"}]"#;
+    let (code, answer) = request(&d, "PUT", "docker", ExtEndpoint::Commands, &token, body).await;
+    assert_eq!((code, answer.as_str()), (409, "commands[0].help: one line of at most 200 bytes"));
+    let twice = r#"[{"name": "up", "title": "Up"}, {"name": "up", "title": "Again"}]"#;
+    let (code, answer) = request(&d, "PUT", "docker", ExtEndpoint::Commands, &token, twice).await;
+    assert_eq!((code, answer.as_str()), (409, r#"commands[1].name: "up" is another command's"#));
+    assert!(d.extension_commands().is_empty());
+}
+
+#[tokio::test]
+async fn what_an_extension_says_it_is_is_held_until_it_goes() {
+    let d = served();
+    let token = d.admit_extension("docker");
+    let about = r#"{"summary": "Docker containers", "guide": "Press r to restart."}"#;
+    let (code, body) = request(&d, "PUT", "docker", ExtEndpoint::About, &token, about).await;
+    assert_eq!(code, 200, "{body}");
+    let described = d.describe_extensions();
+    assert_eq!(described[0].about.as_ref().map(|a| a.summary.as_str()), Some("Docker containers"));
+
+    let (code, body) = request(&d, "PUT", "docker", ExtEndpoint::About, &token, r#"{"summary": ""}"#).await;
+    assert_eq!((code, body.as_str()), (409, "summary: one line of at most 200 bytes"));
+    let (code, _) = request(&d, "PUT", "docker", ExtEndpoint::About, &token, "[]").await;
+    assert_eq!(code, 400);
+
+    d.retire_extension("docker");
+    d.admit_extension("docker");
+    assert_eq!(d.describe_extensions()[0].about, None, "a restart starts from nothing");
+}
+
+#[tokio::test]
+async fn a_dialog_and_a_pane_are_answered_with_their_ids() {
+    let d = served();
+    let token = d.admit_extension("docker");
+    d.extension_asker(d.new_viewer(), true);
+    let dialog = r#"{"title": "Restart", "kind": {"confirm": {"message": "sure?"}}}"#;
+    let (code, body) = request(&d, "POST", "docker", ExtEndpoint::Dialog, &token, dialog).await;
+    assert_eq!(code, 200, "{body}");
+    let raised: argus_protocol::ExtDialogRaised = serde_json::from_str(&body).unwrap();
+    assert!(raised.dialog > 0);
+}
+
+#[tokio::test]
+async fn a_description_holds_each_running_extension_without_its_rows() {
+    let d = served();
+    d.admit_extension("docker");
+    d.admit_extension("idle");
+    d.publish_views("docker", vec![view(CONTAINERS)]).unwrap();
+    d.publish_commands("docker", vec![command("up", None, CommandScope::Anywhere)]).unwrap();
+
+    let described = d.describe_extensions();
+
+    let names: Vec<&str> = described.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["docker", "idle"], "one that published nothing is still running");
+    assert_eq!(described[0].commands[0].name, "up");
+    assert_eq!(described[0].views[0].name, "containers");
+    assert!(described[0].views[0].rows.is_empty(), "what it shows is not what it is");
+    assert_eq!(described[0].views[0].actions.len(), 2);
 }
 
 #[tokio::test]

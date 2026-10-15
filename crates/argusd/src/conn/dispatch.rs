@@ -21,7 +21,7 @@ pub(super) fn dispatch(
         .or_else(|msg| dispatch_checkout_reads(msg, daemon, out_tx))
         .or_else(|msg| dispatch_sessions(msg, daemon, out_tx))
         .or_else(|msg| dispatch_review(msg, daemon, out_tx, reviews))
-        .or_else(|msg| dispatch_extensions(msg, daemon, viewer))
+        .or_else(|msg| dispatch_extensions(msg, daemon, out_tx, viewer))
         .unwrap_or_else(|_| unreachable!("every client message is dispatched"))
 }
 
@@ -575,9 +575,18 @@ fn dispatch_review(
 }
 
 /// What the person did with what an extension published, on its way to
-/// the extension.
-fn dispatch_extensions(msg: Box<ClientMsg>, daemon: &Arc<Daemon>, viewer: ViewerId) -> DispatchResult {
+/// the extension, and what the extensions are, for `argus extension`.
+fn dispatch_extensions(
+    msg: Box<ClientMsg>,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    viewer: ViewerId,
+) -> DispatchResult {
     let result = match *msg {
+        ClientMsg::DescribeExtensions => {
+            let _ = out_tx.send(ServerMsg::ExtensionsDescribed(daemon.describe_extensions()));
+            Ok(())
+        }
         ClientMsg::ExtensionAction { extension, view, row, action } => daemon.extension_action(&extension, &view, row, &action),
         ClientMsg::ExtensionCommand { extension, command, context } => {
             daemon.extension_command(viewer, &extension, &command, &context)

@@ -312,10 +312,6 @@ async fn handle_hook_request(
     Ok(())
 }
 
-/// Room for a few views each as large as an agent's may be; past it the
-/// extension is dumping, not choosing what to show.
-const MAX_EXTENSION_BODY: usize = 4 * argus_protocol::MAX_VIEW_BYTES;
-
 /// One request to an extension's half of the pane API, from reading its
 /// body to writing the answer; the event stream is held open.
 async fn serve_extension<R, W>(
@@ -331,7 +327,8 @@ where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
 {
-    use argus_protocol::ExtEndpoint;
+    use argus_protocol::extensions::MAX_EXTENSION_BODY;
+    use argus_protocol::{ExtDialogRaised, ExtEndpoint, ExtPaneOpened};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let too_large = headers.content_length > MAX_EXTENSION_BODY;
@@ -357,12 +354,19 @@ where
                 Err(refusal) => refusal,
             },
             ExtEndpoint::Dialog => match decode::<argus_protocol::ExtDialog>(&body, "dialog") {
-                Ok(dialog) => json_reply(daemon.raise_dialog(name, dialog).map(|id| serde_json::json!({ "dialog": id }))),
+                Ok(dialog) => json_reply(daemon.raise_dialog(name, dialog).map(|dialog| ExtDialogRaised { dialog })),
                 Err(refusal) => refusal,
             },
             ExtEndpoint::Notice => match daemon.extension_notice(name, &String::from_utf8_lossy(&body)) {
                 Ok(()) => HookResponse::empty(200, "OK"),
                 Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+            },
+            ExtEndpoint::About => match decode::<argus_protocol::ExtAbout>(&body, "summary and guide") {
+                Ok(about) => match daemon.publish_about(name, about) {
+                    Ok(()) => HookResponse::empty(200, "OK"),
+                    Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+                },
+                Err(refusal) => refusal,
             },
             ExtEndpoint::Pane => match decode::<argus_protocol::ExtPane>(&body, "pane") {
                 Ok(pane) => {
@@ -370,7 +374,7 @@ where
                     let opened = tokio::task::spawn_blocking(move || daemon.open_extension_pane(&name, pane))
                         .await
                         .unwrap_or_else(|error| Err(error.into()));
-                    json_reply(opened.map(|pane| serde_json::json!({ "pane": pane.0 })))
+                    json_reply(opened.map(|pane| ExtPaneOpened { pane }))
                 }
                 Err(refusal) => refusal,
             },

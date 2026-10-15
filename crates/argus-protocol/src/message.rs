@@ -9,7 +9,7 @@ use crate::agent_view::ShownView;
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::damage::{CellRun, Scroll};
 use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
-use crate::extensions::{ExtAnswer, ExtCommand, ExtDialog, ExtView};
+use crate::extensions::{ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtView};
 use crate::features::FeatureAction;
 use crate::focus::{Focus, View};
 use crate::hello::Hello;
@@ -465,6 +465,10 @@ pub enum ClientMsg {
         dialog: u64,
         answer: Option<ExtAnswer>,
     },
+    /// Ask what each running extension is and publishes, answered with one
+    /// [`ServerMsg::ExtensionsDescribed`]. Only to a daemon that listed
+    /// `DESCRIBE_EXTENSIONS`.
+    DescribeExtensions,
     /// This client's greeting: the first message it sends, and the only one
     /// it sends before knowing the daemon can take more than the floor. A
     /// daemon from before the handshake hangs up on it, which is how the
@@ -737,6 +741,9 @@ pub enum ServerMsg {
     ExtensionDialogWithdrawn {
         id: u64,
     },
+    /// Every running extension, to the client that sent
+    /// [`ClientMsg::DescribeExtensions`] and to no other.
+    ExtensionsDescribed(Vec<ExtDescription>),
     /// The daemon accepted a restart request and will exit after this frame
     /// reaches the client.
     Restarting,
@@ -916,5 +923,28 @@ mod tests {
                 "{created:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_description_of_the_extensions_survives_the_wire() {
+        let about = crate::ExtAbout { summary: "Docker containers".into(), guide: Some("# Docker".into()) };
+        let described = vec![crate::ExtDescription {
+            name: "docker".into(),
+            about: Some(about),
+            commands: vec![ExtCommand {
+                extension: "docker".into(),
+                name: "up".into(),
+                title: "Start a service".into(),
+                key: Some(crate::ExtKey { alt: true, ..crate::ExtKey::plain("s") }),
+                scope: crate::CommandScope::Checkout,
+                help: Some("docker compose up -d, for one service".into()),
+            }],
+            views: Vec::new(),
+        }];
+        let bytes = wire(&ServerMsg::ExtensionsDescribed(described.clone()));
+        let read: ServerMsg = rmp_serde::from_slice(&bytes).unwrap();
+        assert!(matches!(read, ServerMsg::ExtensionsDescribed(read) if read == described));
+        let asked: ClientMsg = rmp_serde::from_slice(&wire(&ClientMsg::DescribeExtensions)).unwrap();
+        assert!(matches!(asked, ClientMsg::DescribeExtensions));
     }
 }

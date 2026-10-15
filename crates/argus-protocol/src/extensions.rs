@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_view::{self, Chip, Column, Value, MAX_TABLE_ROWS, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES};
 use crate::focus::Focus;
-use crate::ids::{CheckoutId, RepositoryId};
+use crate::ids::{CheckoutId, PaneId, RepositoryId};
 
 /// The longest an extension's name may be. It names the extension in a URL
 /// and on a tab, so it is kept to something a person would type.
@@ -29,6 +29,24 @@ pub const MAX_VIEWS: usize = 16;
 pub const MAX_COMMANDS: usize = 64;
 pub const MAX_ACTIONS: usize = 32;
 pub const MAX_ITEMS: usize = 500;
+
+/// The longest request an extension may send. Room for a few views each as
+/// large as an agent's may be; past it the extension is dumping, not
+/// choosing what to show.
+pub const MAX_EXTENSION_BODY: usize = 4 * agent_view::MAX_VIEW_BYTES;
+
+/// The longest notice, in characters: the status bar has one line for it,
+/// so a longer one is cut rather than refused.
+pub const MAX_NOTICE_CHARS: usize = 300;
+
+/// The longest line an extension may say what it is in, and what a command
+/// or an action does: a line, as a palette's subtitle is.
+pub const MAX_SUMMARY_BYTES: usize = 200;
+pub const MAX_HELP_BYTES: usize = 200;
+
+/// The longest guide an extension may give to using it: a page or two of
+/// Markdown, which `argus extension show` prints whole.
+pub const MAX_ABOUT_GUIDE_BYTES: usize = 16 * 1024;
 
 /// Whether `name` may name an extension: lowercase letters, digits and
 /// dashes, starting with a letter or digit, so it is a URL segment and a
@@ -127,6 +145,7 @@ impl ExtView {
             if action.id.is_empty() || self.actions[..a].iter().any(|other| other.id == action.id) {
                 return Err(format!("actions[{a}].id: each action needs an id of its own, not {:?}", action.id));
             }
+            help_ok(&action.help, &format!("actions[{a}].help"))?;
         }
         Ok(ExtView { name: name.to_string(), ..self })
     }
@@ -191,6 +210,10 @@ pub struct ExtAction {
     /// The question asked before it is sent, when it cannot be taken back.
     #[serde(default)]
     pub confirm: Option<String>,
+    /// What it does, in a line, for whoever reads the extension through
+    /// `argus extension show`.
+    #[serde(default)]
+    pub help: Option<String>,
 }
 
 /// A command an extension adds to the palette, and to the keys when it
@@ -207,6 +230,55 @@ pub struct ExtCommand {
     pub key: Option<ExtKey>,
     #[serde(default)]
     pub scope: CommandScope,
+    /// What it does, in a line, as an action's help says.
+    #[serde(default)]
+    pub help: Option<String>,
+}
+
+impl ExtCommand {
+    /// The command if it keeps the limits, or what is wrong with it by its
+    /// field. Whether its name is another command's is the daemon's to say,
+    /// which holds the whole list.
+    pub fn checked(self) -> Result<ExtCommand, String> {
+        if self.name.is_empty() {
+            return Err("name: a command needs a name".into());
+        }
+        help_ok(&self.help, "help")?;
+        Ok(self)
+    }
+}
+
+/// Whether a command's or an action's help is one line within its limit.
+fn help_ok(help: &Option<String>, path: &str) -> Result<(), String> {
+    match help {
+        Some(help) if help.len() > MAX_HELP_BYTES || help.contains('\n') => {
+            Err(format!("{path}: one line of at most {MAX_HELP_BYTES} bytes"))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// What an extension says it is: a line for a listing, and a Markdown guide
+/// to using it. Held by the daemon, in memory, for `argus extension show`
+/// and the agent reading it there; no window draws it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtAbout {
+    pub summary: String,
+    #[serde(default)]
+    pub guide: Option<String>,
+}
+
+impl ExtAbout {
+    pub fn checked(self) -> Result<ExtAbout, String> {
+        let summary = self.summary.trim();
+        if summary.is_empty() || summary.len() > MAX_SUMMARY_BYTES || summary.contains('\n') {
+            return Err(format!("summary: one line of at most {MAX_SUMMARY_BYTES} bytes"));
+        }
+        if self.guide.as_ref().is_some_and(|guide| guide.len() > MAX_ABOUT_GUIDE_BYTES) {
+            return Err(format!("guide: at most {MAX_ABOUT_GUIDE_BYTES} bytes"));
+        }
+        Ok(ExtAbout { summary: summary.to_string(), ..self })
+    }
 }
 
 /// Where a command's key is heard, and so what it acts on.
@@ -364,6 +436,30 @@ pub struct ExtPane {
     pub checkout: Option<CheckoutId>,
     #[serde(default)]
     pub run: Option<String>,
+}
+
+/// One running extension as `argus extension show` reads it: what it says
+/// it is, and what it publishes. Its views come without their rows, which
+/// are what it shows this second rather than what it is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtDescription {
+    pub name: String,
+    pub about: Option<ExtAbout>,
+    pub commands: Vec<ExtCommand>,
+    pub views: Vec<ExtView>,
+}
+
+/// What the daemon answers a dialog with: the id its answer or its
+/// cancellation will name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtDialogRaised {
+    pub dialog: u64,
+}
+
+/// What the daemon answers a pane with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtPaneOpened {
+    pub pane: PaneId,
 }
 
 /// What the daemon answers a put of commands with: the keys it would not
@@ -530,6 +626,41 @@ mod tests {
         assert!(ExtAnswer::Form(values.clone()).fits(&form));
         values.insert("other".to_string(), String::new());
         assert!(!ExtAnswer::Form(values).fits(&form));
+    }
+
+    #[test]
+    fn help_is_one_line_within_its_limit() {
+        let command = |help: &str| ExtCommand {
+            extension: String::new(),
+            name: "up".into(),
+            title: "Up".into(),
+            key: None,
+            scope: CommandScope::Anywhere,
+            help: Some(help.into()),
+        };
+        assert!(command("starts a compose service").checked().is_ok());
+        assert_eq!(command("two\nlines").checked().unwrap_err(), "help: one line of at most 200 bytes");
+        assert!(command(&"x".repeat(MAX_HELP_BYTES + 1)).checked().is_err());
+        let action = ExtAction {
+            id: "restart".into(),
+            label: "Restart".into(),
+            key: None,
+            view_wide: false,
+            confirm: None,
+            help: Some("x".repeat(MAX_HELP_BYTES + 1)),
+        };
+        let view = ExtView { actions: vec![action], ..containers(vec![]) };
+        assert!(view.checked().unwrap_err().starts_with("actions[0].help:"));
+    }
+
+    #[test]
+    fn about_is_a_line_and_a_guide_within_their_limits() {
+        let about: ExtAbout = serde_json::from_str(r#"{"summary": " Docker containers "}"#).unwrap();
+        assert_eq!(about.checked().unwrap(), ExtAbout { summary: "Docker containers".into(), guide: None });
+        let blank = ExtAbout { summary: " ".into(), guide: None };
+        assert!(blank.checked().unwrap_err().starts_with("summary:"));
+        let long = ExtAbout { summary: "s".into(), guide: Some("g".repeat(MAX_ABOUT_GUIDE_BYTES + 1)) };
+        assert!(long.checked().unwrap_err().starts_with("guide:"));
     }
 
     #[test]

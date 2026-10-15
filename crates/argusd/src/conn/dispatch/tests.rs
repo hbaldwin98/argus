@@ -666,3 +666,22 @@ async fn a_repositorys_sessions_and_what_one_said_are_answered_to_the_asker() {
     h.send(ClientMsg::ListSessions { request_id: 5, repository: RepositoryId(9999) });
     assert!(h.error().await.contains("no such repository"));
 }
+
+#[test]
+fn a_description_of_the_extensions_is_answered_to_the_client_that_asked() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.daemon.admit_extension("docker");
+    let about = argus_protocol::ExtAbout { summary: "Docker containers".into(), guide: None };
+    h.daemon.publish_about("docker", about.clone()).unwrap();
+
+    h.send(ClientMsg::DescribeExtensions);
+
+    let described = h.replies().into_iter().find_map(|reply| match reply {
+        ServerMsg::ExtensionsDescribed(described) => Some(described),
+        _ => None,
+    });
+    let described = described.expect("the description is answered");
+    assert_eq!(described.len(), 1);
+    assert_eq!((described[0].name.as_str(), described[0].about.as_ref()), ("docker", Some(&about)));
+}
