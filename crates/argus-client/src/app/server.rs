@@ -76,6 +76,7 @@ impl App {
         // A daemon newly reached has been told nothing.
         self.reports_view = daemon.is_some_and(|d| d.can(argus_protocol::FOCUS));
         self.view_sent = None;
+        self.offer_consoles(daemon.is_some_and(|d| d.can(argus_protocol::CONSOLES)));
         let Some(daemon) = daemon else {
             self.report(format!("{argusd} predates this client; {fix} to update it"));
             return;
@@ -114,9 +115,7 @@ impl App {
             ServerMsg::Templates(names) => {
                 self.templates = names;
             }
-            // The desktop window's for now; the terminal client lists no
-            // consoles yet.
-            ServerMsg::Consoles(_) => {}
+            ServerMsg::Consoles(consoles) => self.receive_consoles(consoles),
             ServerMsg::Workspaces(list) => {
                 self.open_workspace = list
                     .iter()

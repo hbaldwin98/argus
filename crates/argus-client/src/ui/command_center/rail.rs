@@ -1,7 +1,7 @@
 //! The contextual rail: the project heading, the selected project's
-//! repositories with the open ones' checkouts and panes, and the divider
-//! between the active repositories and the quiet ones, with the hit-tests
-//! that map a click back onto a row.
+//! repositories with the open ones' checkouts and panes, the divider
+//! between the active repositories and the quiet ones, and the consoles at
+//! its foot, with the hit-tests that map a click back onto a row.
 
 use super::*;
 
@@ -12,6 +12,11 @@ const RIGHT_PAD: usize = 2;
 /// The rail row a click landed on. The project heading is drawn above the
 /// list, so it is hit-tested on its own ([`project_header_at`]).
 pub(crate) fn rail_target_at(app: &App, x: u16, y: u16) -> Option<RailRow> {
+    let consoles = app.layout.consoles;
+    if contains(consoles.inner, x, y) {
+        let index = consoles.first + usize::from(y - consoles.inner.y);
+        return (index < app.consoles.len()).then_some(RailRow::Console(index));
+    }
     match list_row_at(app, x, y)? {
         ListRow::Rail(row) => Some(row),
         ListRow::Child(pane, _) => Some(RailRow::Pane(pane)),
@@ -62,6 +67,9 @@ fn list_rows(app: &App) -> Vec<ListRow> {
                 rows.extend((0..children).map(|child| ListRow::Child(pane, child)));
             }
             RailRow::Checkout(..) => rows.push(ListRow::Rail(row)),
+            // Drawn at the foot instead, where scrolling the repositories
+            // never takes them off screen.
+            RailRow::Console(_) => {}
         }
     }
     rows
@@ -100,15 +108,37 @@ pub(super) fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme
         height: inner.height - heading.height,
         ..inner
     };
-    render_repositories(f, app, list, th);
+    let foot = consoles_height(app, list.height);
+    render_repositories(
+        f,
+        app,
+        Rect {
+            height: list.height - foot,
+            ..list
+        },
+        th,
+    );
+    render_consoles(
+        f,
+        app,
+        Rect {
+            y: list.bottom() - foot,
+            height: foot,
+            ..list
+        },
+        th,
+    );
     // The rule under the heading meets the border from the left only: the
     // stage's own heading rule is a row lower, so a tee facing right would
-    // point at nothing.
-    if list.y < area.bottom() && area.width > 0 {
-        f.render_widget(
-            Paragraph::new(Span::styled("┤", Style::default().fg(th.edge))),
-            Rect::new(area.right() - 1, list.y, 1, 1),
-        );
+    // point at nothing. The consoles' rule meets it the same way.
+    let consoles_rule = (app.layout.consoles.outer.height > 0).then_some(app.layout.consoles.outer.y);
+    for y in [Some(list.y), consoles_rule].into_iter().flatten() {
+        if y < area.bottom() && area.width > 0 {
+            f.render_widget(
+                Paragraph::new(Span::styled("┤", Style::default().fg(th.edge))),
+                Rect::new(area.right() - 1, y, 1, 1),
+            );
+        }
     }
     // Repository rows are the rail's interactive interior, while the whole
     // rail remains its hit target and geometry landmark.
@@ -200,7 +230,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         };
         let on_cursor = matches!(*row, ListRow::Rail(row) if cursor == Some(row));
         let line = match *row {
-            ListRow::Rail(RailRow::Project) => continue,
+            ListRow::Rail(RailRow::Project | RailRow::Console(_)) => continue,
             ListRow::Divider => Line::styled(
                 format!(" {}", "─".repeat(width.saturating_sub(1 + RIGHT_PAD))),
                 Style::default().fg(th.edge),
@@ -334,6 +364,112 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         );
     }
     app.layout.rail = Panel {
+        outer: area,
+        inner: rows_area,
+        first,
+    };
+}
+
+/// How many of the rail's `height` rows under its heading the consoles
+/// take: their rule and a row each — or one saying how to start one — up to
+/// half, so the repositories keep the rail. None from a daemon that keeps
+/// no consoles, since there is nothing it could start.
+fn consoles_height(app: &App, height: u16) -> u16 {
+    if !app.consoles_offered {
+        return 0;
+    }
+    let wanted = 1 + app.consoles.len().max(1);
+    let room = usize::from(height / 2);
+    if room < 2 {
+        return 0;
+    }
+    wanted.min(room) as u16
+}
+
+/// The consoles, under a rule naming them. They are rows of the rail like
+/// any pane's — the cursor walks on into them past the last repository —
+/// drawn apart because they belong to no project.
+fn render_consoles(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    if area.height < 2 {
+        app.layout.consoles = Panel::default();
+        return;
+    }
+    let width = area.width as usize;
+    let label = " consoles ";
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("─", Style::default().fg(th.edge)),
+            Span::styled(label, Style::default().fg(th.dim)),
+            Span::styled(
+                "─".repeat(width.saturating_sub(1 + label.chars().count())),
+                Style::default().fg(th.edge),
+            ),
+        ]))
+        .style(Style::default().bg(th.bg)),
+        Rect { height: 1, ..area },
+    );
+    let rows_area = Rect {
+        y: area.y + 1,
+        height: area.height - 1,
+        ..area
+    };
+    if app.consoles.is_empty() {
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("  c", Style::default().fg(th.accent)),
+                Span::styled(" starts one", Style::default().fg(th.dim)),
+            ]))
+            .style(Style::default().bg(th.bg)),
+            Rect { height: 1, ..rows_area },
+        );
+        app.layout.consoles = Panel {
+            outer: area,
+            inner: rows_area,
+            first: 0,
+        };
+        return;
+    }
+    // The cursor's row and the console on the stage are one row here: a
+    // console is only on the stage while the cursor is on it or typing in it.
+    let shown = app.console_index();
+    let first = scrolled_to_show(
+        app.layout.consoles.first,
+        shown,
+        rows_area.height as usize,
+        app.consoles.len(),
+    );
+    let drawn = app.consoles.iter().enumerate().skip(first).take(rows_area.height as usize);
+    for (screen, (index, console)) in drawn.enumerate() {
+        let lit = shown == Some(index);
+        let status = console.loudest_state().status;
+        let color = status_color(status, th);
+        let word = status_word(status);
+        let title_width = width.saturating_sub(4 + word.chars().count() + RIGHT_PAD);
+        let line = Line::from(vec![
+            Span::styled(if lit { "▌ " } else { "  " }, Style::default().fg(th.accent)),
+            Span::styled(
+                format!("{} ", status_glyph(app, status, "›")),
+                Style::default().fg(color),
+            ),
+            Span::styled(
+                format!("{:<title_width$}", ellipsize_text(&console.title, title_width)),
+                Style::default()
+                    .fg(if lit { th.text } else { th.muted })
+                    .add_modifier(bold_when(lit)),
+            ),
+            Span::styled(word, Style::default().fg(color)),
+        ]);
+        let fill = if lit { th.surface_focus } else { th.bg };
+        f.render_widget(
+            Paragraph::new(line).style(Style::default().bg(fill)),
+            Rect {
+                y: rows_area.y + screen as u16,
+                height: 1,
+                ..rows_area
+            },
+        );
+    }
+    app.layout.consoles = Panel {
         outer: area,
         inner: rows_area,
         first,

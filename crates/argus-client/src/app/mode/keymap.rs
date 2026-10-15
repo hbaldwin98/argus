@@ -328,6 +328,15 @@ fn on_panes(app: &App) -> bool {
     )
 }
 
+fn on_console(app: &App) -> bool {
+    app.current_console().is_some()
+}
+
+/// A pane row of the tree: what needs a checkout is offered only there.
+fn on_tree_pane(app: &App) -> bool {
+    on_panes(app) && !on_console(app)
+}
+
 /// The bar is per row rather than one list of everything: it cannot hold
 /// every key at once, and most of them only apply somewhere, so each hint
 /// says which rows it is offered on and how long it lasts there.
@@ -371,14 +380,25 @@ const RAIL: Keymap = Keymap {
         &Group {
             title: "the thing under the cursor",
             bindings: &[
-                Binding::new("s", "a shell here", &[(&[Char('s')], App::spawn_shell)]).hints(&[
+                Binding::new(
+                    "s",
+                    "a shell here; on a console, another console",
+                    &[(&[Char('s')], App::spawn_shell)],
+                )
+                .hints(&[
                     Hint::new("s shell", 1).when(on_repositories),
                     Hint::new("s shell", 0).when(on_panes),
                 ]),
                 Binding::new("a", "an agent here", &[(&[Char('a')], App::open_picker)]).hints(&[
                     Hint::new("a agent", 2).when(on_repositories),
-                    Hint::new("a agent", 1).when(on_panes),
+                    Hint::new("a agent", 1).when(on_tree_pane),
                 ]),
+                Binding::new(
+                    "c",
+                    "a console — a shell in your home directory, in no checkout",
+                    &[(&[Char('c')], App::spawn_console)],
+                )
+                .hints(&[Hint::new("c console", 1).when(on_console)]),
                 Binding::new(
                     "b",
                     "switch branch",
@@ -413,7 +433,9 @@ const RAIL: Keymap = Keymap {
                     "review the diff",
                     &[(&[Char('R'), Tab], App::open_review)],
                 )
-                .hints(&[Hint::new("R review", 2).when(|app| on_checkouts(app) || on_panes(app))]),
+                .hints(&[
+                    Hint::new("R review", 2).when(|app| on_checkouts(app) || on_tree_pane(app))
+                ]),
                 Binding::new("H", "history", &[(&[Char('H')], App::open_history)])
                     .hints(&[Hint::new("H history", 1).when(on_checkouts)]),
                 Binding::new("n", "add one", &[(&[Char('n')], App::new_prompt)]).hints(&[

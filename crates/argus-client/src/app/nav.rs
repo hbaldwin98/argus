@@ -18,7 +18,18 @@ impl App {
             .and_then(|p| p.repositories.get(self.sel_repository))
     }
 
+    /// `None` while a console is on the stage: it belongs to no checkout,
+    /// and what acts on one — review, history, an agent, git — must not
+    /// reach the checkout the tree's selection was left on behind it.
     pub fn current_checkout(&self) -> Option<&CheckoutInfo> {
+        if self.current_console().is_some() {
+            return None;
+        }
+        self.tree_checkout()
+    }
+
+    /// The checkout the tree's selection names, console or not.
+    fn tree_checkout(&self) -> Option<&CheckoutInfo> {
         match self.selected_checkout_row()? {
             CheckoutRow::Checkout(i) => self.current_repository()?.checkouts.get(i),
             CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
@@ -265,12 +276,19 @@ impl App {
         }
     }
 
+    /// The pane on the stage: the console picked on the rail, or the tree's.
     pub fn current_pane(&self) -> Option<&PaneInfo> {
-        self.current_checkout()
-            .and_then(|c| c.listed_panes().nth(self.sel_pane))
+        self.current_console().or_else(|| {
+            self.tree_checkout()
+                .and_then(|c| c.listed_panes().nth(self.sel_pane))
+        })
     }
 
+    /// Where the pane on the stage sits in the tree; `None` for a console.
     pub fn pane_location(&self) -> Option<PaneLocation> {
+        if self.current_console().is_some() {
+            return None;
+        }
         self.current_pane()?;
         Some(PaneLocation {
             project: self.sel_project,
@@ -323,6 +341,7 @@ impl App {
         if !valid {
             return false;
         }
+        self.forget_console();
         self.sel_project = location.project;
         self.sel_repository = location.repository;
         let repository = self
@@ -376,7 +395,7 @@ impl App {
     /// shows this pane's content alongside the project/checkout columns,
     /// it never takes over the whole screen.
     pub(super) fn visible_pane_count(&self) -> usize {
-        self.current_checkout()
+        self.tree_checkout()
             .map(|c| c.listed_panes().count())
             .unwrap_or(0)
     }
@@ -439,6 +458,7 @@ impl App {
             return;
         };
 
+        self.forget_console();
         self.sel_project = next.0;
         self.sel_repository = next.1;
         self.sel_checkout = self.checkout_row_of(next.2).unwrap_or(0);
@@ -465,6 +485,7 @@ impl App {
             .position(|&index| index == self.sel_checkout)
             .unwrap_or(0) as i32;
         let next = (here + delta).clamp(0, visible.len() as i32 - 1) as usize;
+        self.forget_console();
         self.sel_checkout = visible[next];
         self.clamp();
     }
@@ -516,6 +537,7 @@ impl App {
     /// list out from under the rail needs it: the old indices refer to rows
     /// that are no longer there.
     pub(super) fn reset_navigation(&mut self) {
+        self.forget_console();
         self.sel_project = 0;
         self.sel_repository = 0;
         self.sel_checkout = self.home_checkout_row();

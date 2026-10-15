@@ -607,3 +607,88 @@ fn a_click_on_the_rule_lands_on_nothing() {
 
     assert_eq!(app.rail_cursor(), Some(crate::app::RailRow::Repository(0)));
 }
+
+/// The fixture with a daemon that keeps consoles, running `titles`.
+fn with_consoles(titles: &[&str]) -> App {
+    let mut app = command_center();
+    app.greeted(Some(&argus_protocol::Hello::this_build()));
+    let consoles = titles
+        .iter()
+        .zip(900..)
+        .map(|(title, id)| pane_info(id, PaneKind::Shell, title, PaneStatus::Idle))
+        .collect();
+    app.on_server_msg(argus_protocol::ServerMsg::Consoles(consoles));
+    app
+}
+
+#[test]
+fn the_consoles_sit_at_the_foot_of_the_rail_under_their_rule() {
+    let mut app = with_consoles(&["zsh", "pwsh"]);
+    let text = rail_lines(&mut app, 120, 30);
+    let foot = app.layout.consoles;
+    let rule = usize::from(foot.outer.y);
+
+    assert_eq!(foot.outer.bottom(), app.layout.rail.outer.bottom(), "{}", text.join("\n"));
+    assert_eq!(app.layout.rail.inner.bottom(), foot.outer.y, "the repositories end where it starts");
+    assert!(text[rule].contains("consoles"), "{}", text.join("\n"));
+    assert!(text[rule + 1].contains("zsh"), "{}", text.join("\n"));
+    assert!(text[rule + 2].contains("pwsh"), "{}", text.join("\n"));
+}
+
+#[test]
+fn a_daemon_without_consoles_draws_no_section_for_them() {
+    let mut app = command_center();
+    let text = rail_lines(&mut app, 120, 30).join("\n");
+    assert!(!text.contains("consoles"), "{text}");
+    assert_eq!(app.layout.consoles.outer.height, 0);
+}
+
+#[test]
+fn with_no_console_running_the_foot_says_how_to_start_one() {
+    let mut app = with_consoles(&[]);
+    let text = rail_lines(&mut app, 120, 30).join("\n");
+    assert!(text.contains("consoles"), "{text}");
+    assert!(text.contains("c starts one"), "{text}");
+}
+
+#[test]
+fn a_click_on_a_console_shows_it_and_lights_its_row() {
+    let mut app = with_consoles(&["zsh", "pwsh"]);
+    draw_at(&mut app, 120, 30);
+    let (x, y) = (app.layout.consoles.inner.x + 2, app.layout.consoles.inner.y + 1);
+    click(&mut app, x, y);
+
+    assert_eq!(app.column_pane(), Some(argus_protocol::PaneId(901)));
+    assert_eq!(app.rail_cursor(), Some(crate::app::RailRow::Console(1)));
+    let th = app.theme;
+    let buf = draw_at(&mut app, 120, 30);
+    let bg = |row: u16| buf.cell((x + 4, app.layout.consoles.inner.y + row)).map(|c| c.bg);
+    assert_eq!(bg(1), Some(th.surface_focus));
+    assert_ne!(bg(0), Some(th.surface_focus));
+    let text = lines(&buf).join("\n");
+    assert!(text.contains("console / pwsh"), "the stage's crumb names it:\n{text}");
+}
+
+#[test]
+fn many_consoles_take_no_more_than_half_the_rail() {
+    let titles: Vec<String> = (0..30).map(|i| format!("console-{i}")).collect();
+    let titles: Vec<&str> = titles.iter().map(String::as_str).collect();
+    let mut app = with_consoles(&titles);
+    draw_at(&mut app, 120, 30);
+    let below_heading = app.layout.rail.outer.height - 1;
+    assert!(app.layout.consoles.outer.height <= below_heading / 2);
+    assert!(app.layout.rail.inner.height > 0, "the repositories keep rows");
+}
+
+/// The rail with consoles at its foot, one of them on the stage:
+/// `cargo test -p argus dump_rail_consoles -- --ignored --nocapture`.
+#[test]
+#[ignore = "prints a frame for eyeballing; asserts nothing"]
+fn dump_rail_consoles() {
+    let mut app = with_consoles(&["zsh", "pwsh", "build watcher"]);
+    app.consoles[2].status = PaneStatus::Waiting;
+    app.choose_rail_row(crate::app::RailRow::Console(1));
+    for line in lines(&draw_at(&mut app, 100, 24)) {
+        println!("|{line}");
+    }
+}

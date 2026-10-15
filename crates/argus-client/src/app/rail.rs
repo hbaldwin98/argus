@@ -1,6 +1,9 @@
 //! What the rail lists, in what order, which repositories are open, and
 //! what choosing a row does.
 //!
+//! The consoles come last, after every repository: they belong to no
+//! project, so they are the same rows whichever project the rail is on.
+//!
 //! The renderer draws these rows, a click lands on one of them, and `j`/`k`
 //! walk them — so the order on screen is the order the cursor moves in,
 //! and everything a click reaches the keys reach too. The cursor is not
@@ -22,6 +25,8 @@ pub enum RailRow {
     /// Checkouts stage lists every one.
     Checkout(usize, usize),
     Pane(PaneLocation),
+    /// A console, by its place in the daemon's list of them.
+    Console(usize),
 }
 
 impl App {
@@ -62,6 +67,12 @@ impl App {
 
     /// Every row the rail draws, in the order the cursor walks them.
     pub fn rail_rows(&self) -> Vec<RailRow> {
+        let mut rows = self.tree_rail_rows();
+        rows.extend((0..self.consoles.len()).map(RailRow::Console));
+        rows
+    }
+
+    fn tree_rail_rows(&self) -> Vec<RailRow> {
         let Some(project) = self.current_project() else {
             return Vec::new();
         };
@@ -99,7 +110,10 @@ impl App {
             Focus::Checkouts => self
                 .selected_checkout_index()
                 .map(|checkout| RailRow::Checkout(self.sel_repository, checkout)),
-            Focus::Panes => self.pane_location().map(RailRow::Pane),
+            Focus::Panes => match self.console_index() {
+                Some(console) => Some(RailRow::Console(console)),
+                None => self.pane_location().map(RailRow::Pane),
+            },
             _ => None,
         }
     }
@@ -145,6 +159,10 @@ impl App {
                 self.focus = Focus::Panes;
                 self.clamp();
             }
+            RailRow::Console(console) => {
+                self.open_view(View::Workspace);
+                self.pick_console(console);
+            }
         }
     }
 
@@ -186,7 +204,7 @@ impl App {
                     self.put_rail_cursor(RailRow::Pane(pane));
                 }
             }
-            RailRow::Pane(_) => {
+            RailRow::Pane(_) | RailRow::Console(_) => {
                 self.open_view(View::Workspace);
                 self.focus = Focus::PaneContent;
             }
@@ -195,8 +213,12 @@ impl App {
 
     /// `h`/Esc: up to the row this one hangs under. On an open repository
     /// it folds that first, since nothing else closes one from the keys.
+    /// A console hangs under nothing, so on one this stays put.
     pub(super) fn leave_rail_row(&mut self) {
         if self.focus == Focus::Repositories && self.fold_selected_repository() {
+            return;
+        }
+        if self.current_console().is_some() {
             return;
         }
         self.focus = match self.focus {
@@ -210,7 +232,12 @@ impl App {
     /// Puts the cursor on `row` without opening anything: stepping past a
     /// repository does not expand it, or walking the list would unfold
     /// every row it crossed.
-    fn put_rail_cursor(&mut self, row: RailRow) {
+    pub(super) fn put_rail_cursor(&mut self, row: RailRow) {
+        if let RailRow::Console(console) = row {
+            self.pick_console(console);
+            return;
+        }
+        self.forget_console();
         match row {
             RailRow::Project => self.focus = Focus::Projects,
             RailRow::Repository(repository) => {
@@ -231,6 +258,7 @@ impl App {
                 self.select_pane_location(location);
                 self.focus = Focus::Panes;
             }
+            RailRow::Console(_) => {}
         }
         self.clamp();
     }

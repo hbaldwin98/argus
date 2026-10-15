@@ -3,6 +3,7 @@
 
 mod branch_rows;
 mod brief_editing;
+mod consoles;
 mod editors;
 mod modes;
 mod mouse_input;
@@ -324,6 +325,7 @@ pub(super) fn laid_out(h: &mut Harness) {
             inner: Rect::new(0, 2, 31, 6),
             first: 0,
         },
+        consoles: Panel::default(),
         checkouts: Panel::default(),
         terminal: panel(48, 20),
         features: Panel::default(),

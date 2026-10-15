@@ -10,7 +10,8 @@
 //! between columns, `input` for keys, `mouse` for the pointer, `scroll`
 //! for a pane parked in its history, `actions` for what is asked of the
 //! daemon, `pickers` for the modal layers, `server` for what arrives
-//! back, and `showing` for what the daemon is told this client shows.
+//! back, `showing` for what the daemon is told this client shows, and
+//! `consoles` for the shells that belong to no checkout.
 
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, HeldTree, PaneId, PaneInfo, PaneState,
@@ -46,6 +47,7 @@ pub use views::View;
 mod actions;
 mod awaited;
 mod board_writes;
+mod consoles;
 mod feature;
 use awaited::Then;
 mod input;
@@ -175,6 +177,16 @@ pub struct App {
     /// What the host picker asked for, until the run loop takes it.
     pub host_request: Option<HostRequest>,
     pub tree: Vec<ProjectInfo>,
+    /// The shells that belong to no checkout, as the daemon last listed
+    /// them. Beside the tree because they are not in it: see [`consoles`].
+    pub consoles: Vec<PaneInfo>,
+    /// Whether the daemon keeps consoles (`CONSOLES`). False until it
+    /// greets, and for a daemon from before them: the rail draws no section
+    /// and `c` says why.
+    pub consoles_offered: bool,
+    /// The console picked on the rail, by id. Read through
+    /// [`App::current_console`], which says when it is the one on the stage.
+    console: Option<PaneId>,
     pub templates: Vec<String>,
     /// Every workspace, not just the open one — the picker lists them all,
     /// and their pane counts are how an agent working in a workspace you
@@ -418,6 +430,9 @@ impl App {
             }],
             host_request: None,
             tree: Vec::new(),
+            consoles: Vec::new(),
+            consoles_offered: false,
+            console: None,
             templates: Vec::new(),
             workspaces: Vec::new(),
             open_workspace: String::new(),

@@ -224,6 +224,7 @@ fn forget_feature_view(app: &mut App) {
 /// can see.
 fn forget_rail_and_stages(app: &mut App) {
     app.layout.rail = Panel::default();
+    app.layout.consoles = Panel::default();
     app.layout.checkouts = Panel::default();
 }
 
@@ -271,7 +272,11 @@ fn render_terminal(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Optio
 
 /// `project / checkout / pane` for the fullscreen terminal's title, which
 /// doubles as the breadcrumb telling you where in the tree it came from.
+/// A console came from no tree, so its breadcrumb is just that it is one.
 fn content_title(app: &App) -> String {
+    if let Some(console) = app.current_console() {
+        return format!("console › {}", console.title);
+    }
     match (
         app.current_project(),
         app.current_repository(),

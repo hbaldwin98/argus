@@ -56,14 +56,22 @@ impl App {
         }
     }
 
-    /// The checkout git runs in for the selected row.
+    /// The checkout git runs in for the selected row. A console is a row
+    /// with no checkout behind it.
     fn git_checkout(&self) -> Option<CheckoutId> {
+        if self.current_console().is_some() {
+            return None;
+        }
         self.current_repository()?
             .git_runs_in(self.selected_checkout_row()?)
     }
 
-    /// What `verb` on the selected row comes to; `None` with no row.
+    /// What `verb` on the selected row comes to; `None` with no row, or
+    /// with a console's.
     pub(super) fn row_verb(&self, verb: Verb) -> Option<Result<ClientMsg, String>> {
+        if self.current_console().is_some() {
+            return None;
+        }
         let repo = self.current_repository()?;
         Some(repo.act(self.selected_checkout_row()?, verb))
     }
@@ -358,7 +366,13 @@ impl App {
     /// no directory of its own, the branch is given a worktree first and
     /// the shell starts there once the daemon says which checkout it made —
     /// as `a` does for an agent.
+    /// A shell where the cursor is: in its checkout, or, on a console's
+    /// row, another console.
     pub(super) fn spawn_shell(&mut self) {
+        if self.current_console().is_some() {
+            self.spawn_console();
+            return;
+        }
         if let Some(checkout) = self.current_checkout().map(|c| c.id) {
             let request_id = self.awaited.ask(Then::FocusPane { floating: false });
             let _ = self.out.send(ClientMsg::SpawnShell {

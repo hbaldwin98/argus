@@ -26,6 +26,16 @@ fn modes() -> Vec<(&'static str, Vec<App>)> {
         app.focus = focus;
         app
     });
+    // A console's row, which offers what a pane of no checkout can do.
+    let mut on_console = app_with_tree();
+    on_console.on_server_msg(argus_protocol::ServerMsg::Consoles(vec![pane_info(
+        900,
+        PaneKind::Shell,
+        "console",
+        PaneStatus::Idle,
+    )]));
+    on_console.choose_rail_row(crate::app::RailRow::Console(0));
+    let rail: Vec<App> = rail.into_iter().chain([on_console]).collect();
     let stage = |view: View| {
         let mut app = app_with_tree();
         app.open_view(view);
@@ -55,7 +65,7 @@ fn modes() -> Vec<(&'static str, Vec<App>)> {
     };
 
     vec![
-        ("the rail", rail.into()),
+        ("the rail", rail),
         ("the checkouts stage", vec![stage(View::Checkouts)]),
         ("the feature stage", feature.into()),
         (

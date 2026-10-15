@@ -560,10 +560,11 @@ location. Typing filters the folders in the current directory.
 
 | Key | Action |
 | --- | --- |
-| `j` / `k`, arrows | Move along the rail — the project, its repositories, and the open repositories' checkouts and panes — in the order it is drawn |
-| `l`, Right, Enter | Open the repository and move into it, go to the checkout's first pane, or type into the pane |
+| `j` / `k`, arrows | Move along the rail — the project, its repositories, the open repositories' checkouts and panes, then the consoles at its foot — in the order it is drawn |
+| `l`, Right, Enter | Open the repository and move into it, go to the checkout's first pane, or type into the pane or console |
 | `h`, Left, Escape | Up to the row this one hangs under; on an open repository, fold it first |
-| `s` | Start a shell — on a branch row, in a new worktree for that branch |
+| `s` | Start a shell — on a branch row, in a new worktree for that branch; on a console, another console |
+| `c` | Start a console: a shell in your home directory that belongs to no checkout, listed under *consoles* at the foot of the rail once the daemon runs it, and typed into straight away. A daemon from before consoles draws no such section, and `c` says to restart it |
 | `a` | Choose and start an agent — on a branch row, in a new worktree for that branch |
 | `n` | Add a project on the project heading, a repository on a repository row, or a worktree on a checkout — or, in the Checkouts stage, give a branch row a worktree |
 | `i` | On a repository row, make a repository that does not exist yet: browse to where it should go, name it, and Argus creates the directory, runs `git init` in it, and adds it to the project. An empty name uses the chosen directory itself, which is how a folder that is already there gets initialized |
@@ -580,7 +581,7 @@ location. Typing filters the folders in the current directory.
 | `N` | Jump to the next pane, or parent of a child, waiting, failed, or ready for review |
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |
-| `x` | Kill the selected pane |
+| `x` | Kill the selected pane or console |
 | `q` | Detach the client |
 
 ### Views
