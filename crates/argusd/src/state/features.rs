@@ -291,12 +291,14 @@ impl Daemon {
                 let slug = self.store.capture_feature(key, into.as_deref(), &capture, at)?;
                 // The tasks as well as the board: a client holding the
                 // feature's list open is owed the rows a note just added.
-                let _ = self.tasks_tx.send(argus_protocol::TaskList {
-                    repositories: address.repositories.clone(),
-                    project_name: address.project_name.clone(),
-                    tasks: self.store.tasks(key, &slug)?,
-                    feature: Some(slug),
-                });
+                if address.is_pushed() {
+                    let _ = self.tasks_tx.send(argus_protocol::TaskList {
+                        repositories: address.repositories.clone(),
+                        project_name: address.project_name.clone(),
+                        tasks: self.store.tasks(key, &slug)?,
+                        feature: Some(slug),
+                    });
+                }
             }
         }
         self.broadcast_decisions(address, self.store.decisions(key)?);

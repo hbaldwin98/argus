@@ -266,6 +266,9 @@ impl Daemon {
     /// seeing it built up while the work happens. It names the repositories
     /// it is the board of, and a client reading another drops it.
     pub(super) fn broadcast_decisions(&self, address: &BoardAddress, decisions: Vec<Decision>) {
+        if !address.is_pushed() {
+            return;
+        }
         let features = self.store.features(&address.key).unwrap_or_default();
         let _ = self.decisions_tx.send(DecisionBoard {
             repositories: address.repositories.clone(),

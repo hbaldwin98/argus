@@ -77,6 +77,9 @@ impl FeaturePart for DiagramAction {
     }
 
     fn broadcast(daemon: &Daemon, target: &BoardTarget<'_>) {
+        if !target.address.is_pushed() {
+            return;
+        }
         if let Ok(list) = Self::list(daemon, target) {
             let _ = daemon.diagrams_tx.send(list);
         }

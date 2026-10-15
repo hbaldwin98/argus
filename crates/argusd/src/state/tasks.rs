@@ -126,6 +126,9 @@ impl FeaturePart for TaskAction {
     /// stand, so a list that changed without the features following it
     /// would leave the row above the list contradicting the list.
     fn broadcast(daemon: &Daemon, target: &BoardTarget<'_>) {
+        if !target.address.is_pushed() {
+            return;
+        }
         // An unreadable list is not pushed as an empty one, which would
         // blank every reader's board for a fault in reading it.
         if let Ok(list) = Self::list(daemon, target) {

@@ -18,13 +18,15 @@ use super::*;
 /// its own.
 #[derive(Debug, Clone)]
 pub(crate) struct BoardAddress {
+    pub scope: ArtifactScope,
     pub project: ProjectId,
     pub project_name: String,
     /// Opaque durable board identity. The separator cannot occur in a Git
     /// path, so repositories cannot alias.
     pub key: String,
     /// The repositories in the tree whose board this is: what a pushed board
-    /// names so each client keeps only its own.
+    /// names so each client keeps only its own. A workspace board is every
+    /// repository's in the workspace.
     pub repositories: Vec<RepositoryId>,
     /// The checkout the request comes from, which is what a feature pointer
     /// is kept against. A client's is the one it has selected.
@@ -32,6 +34,17 @@ pub(crate) struct BoardAddress {
 }
 
 impl BoardAddress {
+    /// Whether a client can be showing this board, and so whether a change
+    /// to it is pushed.
+    ///
+    /// A client holds only repository boards, and a push names the
+    /// repositories it is for rather than the board it is: pushed under its
+    /// repositories, a workspace board would replace each one's own board
+    /// on screen.
+    pub fn is_pushed(&self) -> bool {
+        self.scope == ArtifactScope::RepositoryBranch
+    }
+
     /// The checkout a pointer change or an origin is recorded against.
     pub fn checkout(&self) -> anyhow::Result<&std::path::Path> {
         self.checkout_path
@@ -44,6 +57,7 @@ impl BoardAddress {
 struct AgentPlace {
     project: ProjectId,
     project_name: String,
+    workspace: WorkspaceId,
     workspace_name: String,
     checkout_path: PathBuf,
 }
@@ -67,15 +81,23 @@ impl Daemon {
         scope: ArtifactScope,
     ) -> anyhow::Result<BoardAddress> {
         let place = self.agent_place(pane)?;
-        let key = match scope {
-            ArtifactScope::RepositoryBranch => path_artifact_key(&place.checkout_path),
-            ArtifactScope::Workspace => format!("workspace\0{}", place.workspace_name),
+        let (key, repositories) = match scope {
+            ArtifactScope::RepositoryBranch => {
+                let key = path_artifact_key(&place.checkout_path);
+                let repositories = self.repositories_keyed(&key);
+                (key, repositories)
+            }
+            ArtifactScope::Workspace => (
+                format!("workspace\0{}", place.workspace_name),
+                self.repositories_in(place.workspace),
+            ),
         };
         Ok(BoardAddress {
+            scope,
             project: place.project,
             project_name: place.project_name,
-            repositories: self.repositories_keyed(&key),
             key,
+            repositories,
             checkout_path: Some(place.checkout_path),
         })
     }
@@ -106,6 +128,7 @@ impl Daemon {
                     return Ok(AgentPlace {
                         project: project.id,
                         project_name: project.name.clone(),
+                        workspace: project.workspace,
                         workspace_name,
                         checkout_path: checkout.path.clone(),
                     });
@@ -139,6 +162,7 @@ impl Daemon {
         };
         let key = path_artifact_key(&checkout_path);
         Ok(BoardAddress {
+            scope: ArtifactScope::RepositoryBranch,
             project: project_id,
             project_name,
             repositories: self.repositories_keyed(&key),
@@ -170,6 +194,17 @@ impl Daemon {
             .into_iter()
             .filter(|(_, path)| self.board_key(path) == key)
             .map(|(id, _)| id)
+            .collect()
+    }
+
+    fn repositories_in(&self, workspace: WorkspaceId) -> Vec<RepositoryId> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .projects
+            .iter()
+            .filter(|project| project.workspace == workspace)
+            .flat_map(|project| &project.repositories)
+            .map(|repository| repository.id)
             .collect()
     }
 

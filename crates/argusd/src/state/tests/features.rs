@@ -352,6 +352,51 @@ async fn a_pushed_board_names_its_repository_so_another_of_the_project_keeps_its
 }
 
 #[tokio::test]
+async fn a_workspace_write_leaves_every_repositorys_board_on_screen_alone() {
+    // A push says which repositories it is for, not which board it is, and
+    // a client holds only its repository's board: a workspace board pushed
+    // under its repositories would replace each one's own.
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let d = daemon_with_two_agent_checkouts(first.path(), second.path());
+    let tree = d.snapshot();
+    let project = &tree[0];
+    let agent = d
+        .spawn_agent(project.repositories[0].checkouts[0].id, "claude")
+        .unwrap();
+    let address = d.address_for_agent(agent, ArtifactScope::Workspace).unwrap();
+    assert_eq!(
+        address.repositories,
+        [project.repositories[0].id, project.repositories[1].id],
+        "a workspace board is every repository's in it"
+    );
+    let mut boards = d.subscribe_decisions();
+    let mut tasks = d.subscribe_tasks();
+
+    d.feature_action_for_agent(agent, None, open("workspace migration"), ArtifactScope::Workspace)
+        .unwrap();
+    d.part_action_for_agent(
+        agent,
+        None,
+        TaskAction::Add(TaskWrite {
+            title: "update both crates".into(),
+            external: None,
+            parent: None,
+        }),
+        ArtifactScope::Workspace,
+    )
+    .unwrap();
+
+    assert!(boards.try_recv().is_err(), "no board is pushed for a workspace write");
+    assert!(tasks.try_recv().is_err(), "nor a task list");
+    let shown = d
+        .decision_board(project.id, project.repositories[1].checkouts[0].id)
+        .unwrap();
+    assert!(shown.features.is_empty(), "and the repository's own board is untouched");
+    close_all(&d);
+}
+
+#[tokio::test]
 async fn a_read_of_a_features_tasks_or_diagrams_names_its_repository() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
