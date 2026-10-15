@@ -167,7 +167,7 @@ When it does not run:
 
 | What you see | Why, and what to do |
 | --- | --- |
-| Not in `argus extension list`, and the log empty or missing | The program could not start: often `python3` where Windows has `python`. `argusd.log` says `could not start extension hello`. Fix `command`, restart. |
+| Not in `argus extension list`; its log says the interpreter was not found, or is empty | The program could not start: often `python3` where Windows has `python` (Windows' stand-in prints `Python was not found`). `argusd.log` says `extension hello exited`, or `could not start extension hello`, again and again. Fix `command`, restart. |
 | Not in the list, and no log at all | The block was skipped (bad `name`, a name used twice, no `command`), or the daemon was not restarted. `argusd.log` says which. |
 | In the list now and then, with a traceback in its log | It keeps exiting, and the daemon keeps restarting it, waiting longer each time up to a minute. Read the traceback. |
 | `HTTP Error 409: Conflict` in the log | A put broke a rule. The answer's body names the field, such as `views[0].rows[1].key: each row needs a key of its own, not "web"`; print `error.read()` to see it. Nothing of that put was taken. |
