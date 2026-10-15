@@ -24,7 +24,8 @@ fn typing_a_brief_saves_it_on_leaving_insert_mode() {
 
     assert!(matches!(
         h.sent().as_slice(),
-        [ClientMsg::SetFeatureBody { slug, body, .. }] if slug == "pty" && body == "hello"
+        [ClientMsg::Feature { action: argus_protocol::FeatureAction::Rewrite { slug, body }, .. }]
+            if slug == "pty" && body == "hello"
     ));
     assert_eq!(h.app.brief.as_ref().unwrap().mode, BriefMode::View);
     assert!(matches!(h.app.overlay, Some(Overlay::Brief)), "still open");
@@ -56,7 +57,7 @@ fn q_saves_and_closes_the_window() {
     assert!(h.app.overlay.is_none());
     assert!(matches!(
         h.sent().as_slice(),
-        [ClientMsg::SetFeatureBody { body, .. }] if body == "start!?"
+        [ClientMsg::Feature { action: argus_protocol::FeatureAction::Rewrite { body, .. }, .. }] if body == "start!?"
     ));
 }
 

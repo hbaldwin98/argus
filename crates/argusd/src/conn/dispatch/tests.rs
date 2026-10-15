@@ -70,7 +70,7 @@ async fn a_refused_named_request_is_answered_with_nothing_and_still_reported() {
 
 #[tokio::test]
 async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
-    use argus_protocol::{Capture, DecisionChange, DecisionState, DecisionWrite};
+    use argus_protocol::{Capture, DecisionChange, DecisionState, DecisionWrite, FeatureAction};
 
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
@@ -79,11 +79,13 @@ async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
     let mut lists = h.daemon.subscribe_tasks();
 
     let note = "Bound the queue\nRefuse when full.\n- measure the backlog\n? which bound\n  a count";
-    h.send(ClientMsg::CaptureFeature {
+    h.send(ClientMsg::Feature {
         project,
         checkout,
-        into: None,
-        capture: Box::new(Capture::parse(note)),
+        action: FeatureAction::Capture {
+            into: None,
+            capture: Box::new(Capture::parse(note)),
+        },
     });
     let board = boards.try_recv().expect("the feature a note opened is pushed");
     let feature = board.features[0].clone();
@@ -93,11 +95,13 @@ async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
     let list = lists.try_recv().expect("and so are its tasks");
     assert_eq!((list.feature.as_deref(), list.tasks.len()), (Some(feature.slug.as_str()), 1));
 
-    h.send(ClientMsg::CaptureFeature {
+    h.send(ClientMsg::Feature {
         project,
         checkout,
-        into: Some(feature.slug.clone()),
-        capture: Box::new(Capture::parse("any first line\n- drain it")),
+        action: FeatureAction::Capture {
+            into: Some(feature.slug.clone()),
+            capture: Box::new(Capture::parse("any first line\n- drain it")),
+        },
     });
     let board = boards.try_recv().unwrap();
     assert_eq!(board.features.len(), 1, "a note added to a feature opens none");
@@ -146,11 +150,13 @@ async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
     });
     let error = h.error().await;
     assert!(error.contains("not an open question"), "{error}");
-    h.send(ClientMsg::CaptureFeature {
+    h.send(ClientMsg::Feature {
         project,
         checkout,
-        into: None,
-        capture: Box::new(Capture::parse("Half a note\nstray prose\n- a task\n  stray prose")),
+        action: FeatureAction::Capture {
+            into: None,
+            capture: Box::new(Capture::parse("Half a note\nstray prose\n- a task\n  stray prose")),
+        },
     });
     let error = h.error().await;
     assert!(error.contains("some lines read as nothing"), "{error}");

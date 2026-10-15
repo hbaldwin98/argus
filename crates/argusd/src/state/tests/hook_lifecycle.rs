@@ -2,7 +2,7 @@
 //! running in it, and their removal when the last one leaves.
 
 use super::*;
-use argus_protocol::{ArtifactScope, DecisionWrite, LinkWrite, TaskAction, TaskWrite};
+use argus_protocol::{ArtifactScope, DecisionWrite, TaskAction, TaskWrite};
 #[tokio::test]
 async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
     let dir = tempfile::tempdir().unwrap();
@@ -259,24 +259,6 @@ async fn closing_a_shell_pane_does_not_disturb_an_agents_hooks() {
 
 // --- features and the decision board ------------------------------------
 
-/// Opens a feature and points the pane's checkout at it, which every
-/// decision now needs: a decision with nowhere to be filed is the pile
-/// this scoping exists to end.
-fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
-    let board = d
-        .open_feature_for_agent(
-            agent,
-            None,
-            argus_protocol::FeatureWrite {
-                title: title.into(),
-                body: None,
-            },
-            ArtifactScope::default(),
-        )
-        .unwrap();
-    board.current.expect("opening a feature works on it")
-}
-
 #[tokio::test]
 async fn a_withdrawn_decision_leaves_what_agents_read_and_stays_in_the_history() {
     use argus_protocol::DecisionChange;
@@ -344,146 +326,6 @@ async fn a_withdrawn_decision_leaves_what_agents_read_and_stays_in_the_history()
 }
 
 #[tokio::test]
-async fn an_agent_corrects_a_feature_it_opened_and_drops_it_once_empty() {
-    let dir = tempfile::tempdir().unwrap();
-    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    let slug = open_feature(&d, agent, "mistaken work");
-    let feature_of = |d: &Daemon| {
-        d.feature_board_for_agent(agent, ArtifactScope::default())
-            .unwrap()
-            .features
-            .into_iter()
-            .find(|f| f.slug == slug)
-    };
-
-    d.retitle_feature_for_agent(agent, &slug, "corrected work", ArtifactScope::default())
-        .unwrap();
-    d.rewrite_feature_for_agent(agent, &slug, "what it is for", ArtifactScope::default())
-        .unwrap();
-    let feature = feature_of(&d).expect("still there, same slug");
-    assert_eq!(feature.title, "corrected work");
-    assert_eq!(feature.body, "what it is for");
-
-    d.part_action_for_agent(
-        agent,
-        None,
-        TaskAction::Add(TaskWrite {
-            title: "someone's task".into(),
-            external: None,
-            parent: None,
-        }),
-        ArtifactScope::default(),
-    )
-    .unwrap();
-    let refused = d
-        .drop_feature_for_agent(agent, &slug, ArtifactScope::default())
-        .unwrap_err();
-    assert!(refused.to_string().contains("1 task"), "{refused}");
-    assert!(feature_of(&d).is_some(), "work under it is not an agent's to delete whole");
-
-    let task = d
-        .part_action_for_agent(agent, None, TaskAction::List, ArtifactScope::default())
-        .unwrap()
-        .tasks[0]
-        .id;
-    d.part_action_for_agent(agent, None, TaskAction::Remove { id: task }, ArtifactScope::default())
-        .unwrap();
-    d.drop_feature_for_agent(agent, &slug, ArtifactScope::default())
-        .unwrap();
-    assert!(feature_of(&d).is_none(), "empty, it goes");
-
-    d.close_pane(agent).unwrap();
-}
-
-#[tokio::test]
-async fn an_agent_holds_a_feature_and_orders_it_after_another_and_takes_both_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    let first = open_feature(&d, agent, "the handshake");
-    let later = open_feature(&d, agent, "remote hosts");
-    let feature_of = |d: &Daemon, slug: &str| {
-        d.feature_board_for_agent(agent, ArtifactScope::default())
-            .unwrap()
-            .features
-            .into_iter()
-            .find(|f| f.slug == slug)
-            .unwrap()
-    };
-
-    d.hold_feature_for_agent(
-        agent,
-        &later,
-        Some("until the user answers"),
-        ArtifactScope::default(),
-    )
-    .unwrap();
-    d.wait_feature_for_agent(agent, &later, &first, true, ArtifactScope::default())
-        .unwrap();
-    let held = feature_of(&d, &later);
-    assert_eq!(held.held.as_deref(), Some("until the user answers"));
-    assert_eq!(held.waits_on, [first.as_str()]);
-
-    d.hold_feature_for_agent(agent, &later, None, ArtifactScope::default())
-        .unwrap();
-    d.wait_feature_for_agent(agent, &later, &first, false, ArtifactScope::default())
-        .unwrap();
-    let released = feature_of(&d, &later);
-    assert_eq!((released.held, released.waits_on), (None, Vec::<String>::new()));
-    assert!(
-        d.wait_feature_for_agent(agent, &later, &later, true, ArtifactScope::default())
-            .is_err()
-    );
-
-    d.close_pane(agent).unwrap();
-}
-
-#[tokio::test]
-async fn an_agent_links_a_feature_to_tickets_and_takes_a_link_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    let slug = open_feature(&d, agent, "trim context");
-    let link = |url: &str| LinkChange::Link(LinkWrite { url: url.into(), ..LinkWrite::default() });
-
-    d.link_feature_for_agent(
-        agent,
-        &slug,
-        link("https://linear.app/acme/issue/ENG-88/trim"),
-        ArtifactScope::default(),
-    )
-    .unwrap();
-    let board = d
-        .link_feature_for_agent(
-            agent,
-            &slug,
-            link("https://acme.atlassian.net/browse/ARG-142"),
-            ArtifactScope::default(),
-        )
-        .unwrap();
-    let keys: Vec<_> = board.features[0].links.iter().map(|l| l.key.as_str()).collect();
-    assert_eq!(keys, ["ENG-88", "ARG-142"], "the board it answers with shows the link");
-
-    assert!(
-        d.link_feature_for_agent(agent, &slug, link("file:///etc/passwd"), ArtifactScope::default())
-            .is_err(),
-        "only a web URL is a link"
-    );
-    let board = d
-        .link_feature_for_agent(
-            agent,
-            &slug,
-            LinkChange::Unlink("eng-88".into()),
-            ArtifactScope::default(),
-        )
-        .unwrap();
-    assert_eq!(board.features[0].links.len(), 1);
-
-    d.close_pane(agent).unwrap();
-}
-
-#[tokio::test]
 async fn an_agents_tracker_map_is_a_draft_until_the_person_approves_it() {
     use argus_protocol::MapChange;
 
@@ -507,52 +349,6 @@ async fn an_agents_tracker_map_is_a_draft_until_the_person_approves_it() {
 
     let long = "x".repeat(argus_protocol::MAX_TRACKER_MAP_BYTES + 1);
     assert!(d.tracker_map_for_agent(agent, &long, scope).is_err());
-    d.close_pane(agent).unwrap();
-}
-
-#[tokio::test]
-async fn an_agent_told_to_accept_a_feature_is_recorded_as_the_one_who_did() {
-    // Acceptance is a person's call; an agent carrying it out must not
-    // make the history say the person moved it themselves.
-    let dir = tempfile::tempdir().unwrap();
-    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    let slug = open_feature(&d, agent, "finished work");
-    let state_of = |d: &Daemon| {
-        d.feature_board_for_agent(agent, ArtifactScope::default())
-            .unwrap()
-            .features
-            .into_iter()
-            .find(|f| f.slug == slug)
-            .unwrap()
-            .state
-    };
-
-    d.move_feature_for_agent(
-        agent,
-        Some("session-1"),
-        &slug,
-        argus_protocol::FeatureState::Done,
-        ArtifactScope::default(),
-    )
-    .unwrap();
-    assert_eq!(state_of(&d), argus_protocol::FeatureState::Done);
-    let key = d.agent_scope(agent).unwrap();
-    let key = key.artifact_key(ArtifactScope::default());
-    let accepted = d.store.feature_events(key, &slug).unwrap();
-    let last = accepted.last().unwrap();
-    assert_eq!((last.actor.as_str(), last.session.as_deref()), ("agent", Some("session-1")));
-
-    d.move_feature_for_agent(
-        agent,
-        None,
-        &slug,
-        argus_protocol::FeatureState::Open,
-        ArtifactScope::default(),
-    )
-    .unwrap();
-    assert_eq!(state_of(&d), argus_protocol::FeatureState::Open, "reopen undoes it");
-
     d.close_pane(agent).unwrap();
 }
 
@@ -647,19 +443,20 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
     );
 
     let shared = d
-        .open_feature_for_agent(
+        .feature_action_for_agent(
             first_agent,
             None,
-            argus_protocol::FeatureWrite {
+            argus_protocol::FeatureAction::Open(argus_protocol::FeatureWrite {
                 title: "workspace migration".into(),
                 body: None,
-            },
+            }),
             ArtifactScope::Workspace,
         )
         .unwrap()
         .current
         .unwrap();
-    d.select_feature_for_agent(second_agent, &shared, ArtifactScope::Workspace)
+    let select = argus_protocol::FeatureAction::Select { slug: shared };
+    d.feature_action_for_agent(second_agent, None, select, ArtifactScope::Workspace)
         .unwrap();
     d.record_agent_decision(
         first_agent,
@@ -699,50 +496,6 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
         )
         .unwrap();
     assert_eq!(tasks.tasks[0].title, "update both crates");
-    close_all(&d);
-}
-
-#[tokio::test]
-async fn repository_features_cross_branches_and_can_transfer_assignment() {
-    let dir = tempfile::tempdir().unwrap();
-    let _repo = real_repo(dir.path());
-    let d = daemon_with_fake_claude(dir.path());
-    let project = d.snapshot()[0].id;
-    let source_checkout = only_checkout(&d);
-    d.create_worktree(source_checkout, "topic".to_string())
-        .await
-        .unwrap();
-    let destination_checkout = d.snapshot()[0].repositories[0]
-        .checkouts
-        .iter()
-        .find(|checkout| checkout.id != source_checkout)
-        .unwrap()
-        .id;
-    let source_agent = d.spawn_agent(source_checkout, "claude").unwrap();
-    let destination_agent = d.spawn_agent(destination_checkout, "claude").unwrap();
-
-    let slug = open_feature(&d, source_agent, "shared work");
-    let destination_board = d
-        .feature_board_for_agent(destination_agent, ArtifactScope::default())
-        .unwrap();
-    assert_eq!(destination_board.features.len(), 1);
-    assert_eq!(destination_board.current, None);
-
-    d.transfer_feature_for_client(project, source_checkout, destination_checkout, &slug)
-        .unwrap();
-    let source_board = d
-        .feature_board_for_agent(source_agent, ArtifactScope::default())
-        .unwrap();
-    let destination_board = d
-        .feature_board_for_agent(destination_agent, ArtifactScope::default())
-        .unwrap();
-    assert_eq!(source_board.current, None);
-    assert_eq!(destination_board.current.as_deref(), Some(slug.as_str()));
-    assert_eq!(destination_board.features[0].checkouts.len(), 1);
-    assert!(destination_board.features[0].checkouts[0].contains("topic"));
-    assert!(d
-        .transfer_feature_for_client(project, source_checkout, destination_checkout, &slug)
-        .is_err());
     close_all(&d);
 }
 
@@ -844,42 +597,6 @@ async fn an_agent_reads_its_own_features_decisions_and_not_the_projects() {
             .decisions
             .len(),
         2
-    );
-    close_all(&d);
-}
-
-#[tokio::test]
-async fn a_feature_document_grows_and_a_checkout_can_go_back_to_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let d = daemon_with_fake_claude(dir.path());
-    let checkout = only_checkout(&d);
-    let agent = d.spawn_agent(checkout, "claude").unwrap();
-
-    let first = open_feature(&d, agent, "notes storage");
-    d.append_to_feature_for_agent(
-        agent,
-        "the key has to outlive the ids",
-        ArtifactScope::default(),
-    )
-    .unwrap();
-    open_feature(&d, agent, "the pty deadlock");
-
-    let board = d
-        .select_feature_for_agent(agent, &first, ArtifactScope::default())
-        .unwrap();
-    assert_eq!(board.current.as_deref(), Some(first.as_str()));
-    let document = &board
-        .features
-        .iter()
-        .find(|f| f.slug == first)
-        .unwrap()
-        .body;
-    assert_eq!(document, "the key has to outlive the ids");
-
-    assert!(
-        d.select_feature_for_agent(agent, "no-such-feature", ArtifactScope::default())
-            .is_err(),
-        "a checkout cannot be pointed at a feature that does not exist"
     );
     close_all(&d);
 }
@@ -1106,40 +823,6 @@ async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
         1,
         "only the one that was accepted"
     );
-    close_all(&d);
-}
-
-#[tokio::test]
-async fn a_person_accepts_a_feature_and_can_take_it_back() {
-    use argus_protocol::FeatureState;
-
-    let dir = tempfile::tempdir().unwrap();
-    let d = daemon_with_fake_claude(dir.path());
-    let checkout = only_checkout(&d);
-    let project = d.snapshot()[0].id;
-    let agent = d.spawn_agent(checkout, "claude").unwrap();
-    let slug = open_feature(&d, agent, "streaming the pty");
-
-    let state_of = |slug: &str| {
-        d.decision_board(project, checkout)
-            .unwrap()
-            .features
-            .iter()
-            .find(|f| f.slug == slug)
-            .map(|f| f.state)
-            .unwrap()
-    };
-    assert_eq!(state_of(&slug), FeatureState::Open);
-
-    d.move_feature_for_client(project, checkout, &slug, FeatureState::Done, None)
-        .unwrap();
-    assert_eq!(state_of(&slug), FeatureState::Done);
-
-    // And it is reversible, which is the other half of a state a person
-    // sets: an acceptance made in error must not need a new feature.
-    d.move_feature_for_client(project, checkout, &slug, FeatureState::Open, None)
-        .unwrap();
-    assert_eq!(state_of(&slug), FeatureState::Open);
     close_all(&d);
 }
 
@@ -1715,41 +1398,3 @@ async fn a_person_decides_and_changes_decisions_only_under_the_feature_they_name
     close_all(&d);
 }
 
-#[tokio::test]
-async fn a_pushed_board_names_its_repository_so_another_of_the_project_keeps_its_own() {
-    let a = tempfile::tempdir().unwrap();
-    let b = tempfile::tempdir().unwrap();
-    real_repo(a.path());
-    real_repo(b.path());
-    let d = daemon_with_repositories(&[
-        a.path().to_str().unwrap(),
-        b.path().to_str().unwrap(),
-    ]);
-    let tree = d.snapshot();
-    let project = &tree[0];
-    let checkout_of = |index: usize| {
-        let repository = &project.repositories[index];
-        (repository.id, repository.checkouts[0].id)
-    };
-    let (repo_a, checkout_a) = checkout_of(0);
-    let (repo_b, checkout_b) = checkout_of(1);
-    let mut rx = d.subscribe_decisions();
-
-    d.open_feature_for_client(
-        project.id,
-        checkout_a,
-        argus_protocol::FeatureWrite { title: "only in a".into(), body: None },
-    )
-    .unwrap();
-
-    let pushed = rx.try_recv().expect("the write is pushed");
-    assert_eq!(pushed.repositories, [repo_a]);
-    assert!(pushed.is_for(&project.name, repo_a));
-    assert!(
-        !pushed.is_for(&project.name, repo_b),
-        "a client reading b's board keeps it, though the project's name matches"
-    );
-    let asked = d.decision_board(project.id, checkout_b).unwrap();
-    assert_eq!(asked.repositories, [repo_b], "an answer names its repository too");
-    assert!(asked.features.is_empty());
-}

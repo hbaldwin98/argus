@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::state::FeaturePart;
-use crate::state::LinkChange;
 use argus_protocol::Created;
 
 pub(super) fn dispatch(
@@ -123,34 +122,11 @@ fn dispatch_boards(
                 let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
             })
         }
-        ClientMsg::OpenFeature {
+        ClientMsg::Feature {
             project,
             checkout,
-            write,
-        } => daemon.open_feature_for_client(project, checkout, write),
-        ClientMsg::RenameFeature {
-            project,
-            checkout,
-            slug,
-            title,
-        } => daemon.rename_feature_for_client(project, checkout, &slug, &title),
-        ClientMsg::RemoveFeature {
-            project,
-            checkout,
-            slug,
-        } => daemon.remove_feature_for_client(project, checkout, &slug),
-        ClientMsg::TransferFeature {
-            project,
-            source,
-            destination,
-            slug,
-        } => daemon.transfer_feature_for_client(project, source, destination, &slug),
-        ClientMsg::SetFeatureBody {
-            project,
-            checkout,
-            slug,
-            body,
-        } => daemon.set_feature_body_for_client(project, checkout, &slug, body),
+            action,
+        } => daemon.feature_action_for_client(project, checkout, action),
         ClientMsg::Task {
             project,
             checkout,
@@ -181,12 +157,6 @@ fn dispatch_boards(
             feature,
             change,
         } => daemon.change_decision_for_client(project, checkout, &feature, change),
-        ClientMsg::CaptureFeature {
-            project,
-            checkout,
-            into,
-            capture,
-        } => daemon.capture_feature_for_client(project, checkout, into.as_deref(), *capture),
         ClientMsg::SequenceDiagram {
             project,
             checkout,
@@ -203,43 +173,11 @@ fn dispatch_boards(
                     }
                 })
         }
-        ClientMsg::MoveFeature {
-            project,
-            checkout,
-            slug,
-            state,
-            detail,
-        } => daemon.move_feature_for_client(project, checkout, &slug, state, detail),
-        ClientMsg::HoldFeature {
-            project,
-            checkout,
-            slug,
-            reason,
-        } => daemon.hold_feature_for_client(project, checkout, &slug, reason.as_deref()),
-        ClientMsg::LinkFeature {
-            project,
-            checkout,
-            slug,
-            link,
-        } => daemon.link_feature_for_client(project, checkout, &slug, LinkChange::Link(link)),
-        ClientMsg::UnlinkFeature {
-            project,
-            checkout,
-            slug,
-            key,
-        } => daemon.link_feature_for_client(project, checkout, &slug, LinkChange::Unlink(key)),
         ClientMsg::TrackerMap {
             project,
             checkout,
             change,
         } => daemon.change_tracker_map_for_client(project, checkout, change),
-        ClientMsg::WaitFeature {
-            project,
-            checkout,
-            slug,
-            on,
-            waits,
-        } => daemon.wait_feature_for_client(project, checkout, &slug, &on, waits),
         msg => return Err(Box::new(msg)),
     };
     Ok(result)

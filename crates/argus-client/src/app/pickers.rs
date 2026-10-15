@@ -640,11 +640,13 @@ impl App {
                 else {
                     return;
                 };
-                let _ = self.out.send(ClientMsg::TransferFeature {
+                let _ = self.out.send(ClientMsg::Feature {
                     project: *project,
-                    source: *source,
-                    destination: *destination,
-                    slug: slug.clone(),
+                    checkout: *source,
+                    action: argus_protocol::FeatureAction::Transfer {
+                        slug: slug.clone(),
+                        to: *destination,
+                    },
                 });
             }
             PickerKind::Ticket { urls } => {
@@ -679,12 +681,15 @@ impl App {
                 let (Some(on), Some(waits)) = (others.get(index), waited.get(index)) else {
                     return;
                 };
-                let _ = self.out.send(ClientMsg::WaitFeature {
+                let (slug, on) = (slug.clone(), on.clone());
+                let _ = self.out.send(ClientMsg::Feature {
                     project: *project,
                     checkout: *checkout,
-                    slug: slug.clone(),
-                    on: on.clone(),
-                    waits: !waits,
+                    action: if *waits {
+                        argus_protocol::FeatureAction::Unwait { slug, on }
+                    } else {
+                        argus_protocol::FeatureAction::Wait { slug, on }
+                    },
                 });
             }
             PickerKind::Agent => {

@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 
 use argus_protocol::{
-    CheckoutId, ClientMsg, DecisionBoard, FeatureState, ProjectId, ProjectInfo, RepositoryId,
+    CheckoutId, ClientMsg, DecisionBoard, FeatureAction, ProjectId, ProjectInfo, RepositoryId,
     TaskAction, TaskList,
 };
 
@@ -209,11 +209,14 @@ impl FeatureStage {
     pub fn hold(&self, slug: &str, reason: Option<String>, scope: Option<&Scope>, out: &mut Vec<ClientMsg>) {
         if let Some(scope) = scope.filter(|_| self.has(slug)) {
             let reason = reason.map(|r| r.trim().to_string()).filter(|r| !r.is_empty());
-            out.push(ClientMsg::HoldFeature {
+            let slug = slug.to_string();
+            out.push(ClientMsg::Feature {
                 project: scope.project,
                 checkout: scope.checkout,
-                slug: slug.to_string(),
-                reason,
+                action: match reason {
+                    Some(reason) => FeatureAction::Hold { slug, reason },
+                    None => FeatureAction::Unhold { slug },
+                },
             });
         }
     }
@@ -221,12 +224,11 @@ impl FeatureStage {
     /// Archives a feature, which is accepting it, or reopens one archived.
     pub fn archive(&self, slug: &str, archived: bool, scope: Option<&Scope>, out: &mut Vec<ClientMsg>) {
         if let Some(scope) = scope.filter(|_| self.has(slug)) {
-            out.push(ClientMsg::MoveFeature {
+            let (slug, detail) = (slug.to_string(), None);
+            out.push(ClientMsg::Feature {
                 project: scope.project,
                 checkout: scope.checkout,
-                slug: slug.to_string(),
-                state: if archived { FeatureState::Done } else { FeatureState::Open },
-                detail: None,
+                action: if archived { FeatureAction::Done { slug, detail } } else { FeatureAction::Reopen { slug, detail } },
             });
         }
     }
@@ -319,8 +321,13 @@ mod tests {
             .map(|m| match m {
                 ClientMsg::GetDecisions { checkout, .. } => format!("board {checkout}"),
                 ClientMsg::Task { feature, .. } => format!("tasks {feature}"),
-                ClientMsg::HoldFeature { slug, reason, .. } => format!("hold {slug} {reason:?}"),
-                ClientMsg::MoveFeature { slug, state, .. } => format!("move {slug} {state:?}"),
+                ClientMsg::Feature { action, .. } => match action {
+                    FeatureAction::Hold { slug, reason } => format!("hold {slug} {:?}", Some(reason)),
+                    FeatureAction::Unhold { slug } => format!("hold {slug} None"),
+                    FeatureAction::Done { slug, .. } => format!("move {slug} Done"),
+                    FeatureAction::Reopen { slug, .. } => format!("move {slug} Open"),
+                    other => format!("{other:?}"),
+                },
                 other => format!("{other:?}"),
             })
             .collect()

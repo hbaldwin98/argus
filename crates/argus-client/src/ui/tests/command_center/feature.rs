@@ -187,7 +187,7 @@ fn v_archives_the_feature_and_brings_an_archived_one_back() {
 
     assert!(matches!(
         sent(&mut rx).as_slice(),
-        [ClientMsg::MoveFeature { slug, state: FeatureState::Done, .. }] if slug == "trim"
+        [ClientMsg::Feature { action: argus_protocol::FeatureAction::Done { slug, .. }, .. }] if slug == "trim"
     ));
 }
 
@@ -372,7 +372,7 @@ fn a_pasted_ticket_url_links_the_feature_and_is_not_predicted() {
     let links: Vec<_> = sent(&mut rx)
         .into_iter()
         .filter_map(|msg| match msg {
-            ClientMsg::LinkFeature { slug, link, .. } => Some((slug, link.url)),
+            ClientMsg::Feature { action: argus_protocol::FeatureAction::Link { slug, link }, .. } => Some((slug, link.url)),
             _ => None,
         })
         .collect();
@@ -390,7 +390,7 @@ fn a_ticket_url_that_is_no_link_is_said_at_once_and_never_sent() {
     type_in(&mut app, "ENG-88");
     key(&mut app, KeyCode::Enter);
     assert!(app.status.contains("http or https"), "{}", app.status);
-    assert!(!sent(&mut rx).iter().any(|msg| matches!(msg, ClientMsg::LinkFeature { .. })));
+    assert!(!sent(&mut rx).iter().any(|msg| matches!(msg, ClientMsg::Feature { action: argus_protocol::FeatureAction::Link { .. }, .. })));
 }
 
 // ---- the tracker map ---------------------------------------------------------
@@ -983,7 +983,8 @@ fn a_feature_is_written_as_one_note_and_sent_whole() {
     app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
 
     let msgs = sent(&mut rx);
-    let [ClientMsg::CaptureFeature { into: None, capture, .. }] = msgs.as_slice() else {
+    let [ClientMsg::Feature { action: argus_protocol::FeatureAction::Capture { into: None, capture }, .. }] = msgs.as_slice()
+    else {
         panic!("{msgs:?}");
     };
     assert_eq!(capture.title, "Ship the cap");
@@ -1028,7 +1029,7 @@ fn i_writes_more_of_an_open_feature_as_a_note() {
 
     assert!(matches!(
         sent(&mut rx).as_slice(),
-        [ClientMsg::CaptureFeature { into: Some(slug), capture, .. }]
+        [ClientMsg::Feature { action: argus_protocol::FeatureAction::Capture { into: Some(slug), capture }, .. }]
             if slug == "trim" && capture.tasks.len() == 1
     ));
 }

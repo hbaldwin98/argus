@@ -14,8 +14,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::capture::Capture;
 use crate::decisions::Decision;
-use crate::ids::ProjectId;
+use crate::ids::{CheckoutId, ProjectId};
 use crate::tasks::TaskCounts;
 use crate::tracker_links::{LinkWrite, TrackerLink};
 
@@ -196,31 +197,49 @@ impl FeatureWrite {
     }
 }
 
-/// What an agent asks a feature endpoint to do.
+/// A change to a feature, in the one set of words an agent's helper and a
+/// person's client both use.
 ///
-/// One message rather than four endpoints because all four are the same
-/// thing from the daemon's side: a change to which feature this checkout is
-/// working on, or to that feature's document.
+/// One vocabulary because the change is the same whoever asks; what
+/// differs by who asked — the moves only one side makes, and how a move is
+/// recorded — is the daemon's to decide, beside its one apply path, rather
+/// than encoded in two message sets that drift.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FeatureAction {
-    /// Opens a feature and makes it this checkout's.
+    /// Opens a feature. An agent's becomes its checkout's; a person's is
+    /// work not yet started, with no checkout pointed at it.
     Open(FeatureWrite),
-    /// Points this checkout at an existing feature.
+    /// Points the agent's checkout at an existing feature.
     Select { slug: String },
-    /// Appends a paragraph to the current feature's document.
+    /// Appends a paragraph to the agent's current feature's document.
     Append { text: String },
     /// Accepts a feature as done. Acceptance is a person's call; an agent
     /// makes this move only when told to, and it is recorded as the
     /// agent's, so the history says who carried the word out.
-    Done { slug: String },
+    Done {
+        slug: String,
+        /// What the person said about it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+    },
     /// Takes a feature back from done, the undoing of `Done`.
-    Reopen { slug: String },
-    /// Renames a feature, its slug staying what it was.
+    Reopen {
+        slug: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+    },
+    /// Renames a feature, its slug staying what it was: every decision,
+    /// task and checkout scope points at the slug.
     Retitle { slug: String, title: String },
     /// Replaces a feature's brief outright: how what an agent appended is
-    /// taken back.
+    /// taken back. Whole-body rather than append-only, because the brief is
+    /// prose with no structure to protect, and a document nobody can
+    /// correct rots.
     Rewrite { slug: String, body: String },
-    /// Removes a feature with nothing under it: the undoing of `Open`.
+    /// Removes a feature, its tasks and any checkout pointed at it: the
+    /// undoing of `Open`. Its decisions survive as unfiled, since they
+    /// record what was believed at the time, and that outlives the feature
+    /// it was believed about.
     Drop { slug: String },
     /// Holds a feature, saying why, so nobody picks it up while the reason
     /// stands.
@@ -235,6 +254,18 @@ pub enum FeatureAction {
     Link { slug: String, link: LinkWrite },
     /// Takes back a `Link`, naming the ticket by its key.
     Unlink { slug: String, key: String },
+    /// Moves a feature's assignment from the checkout the request names to
+    /// `to`, another checkout of the same repository.
+    Transfer { slug: String, to: CheckoutId },
+    /// Writes a whole note down as a feature — its title and brief, the
+    /// tasks under it and the decisions it already holds — in one
+    /// transaction, so a note is never half a feature. With `into`, the
+    /// note's tasks and decisions are added to that feature, and its title
+    /// and brief are left as they are.
+    Capture {
+        into: Option<String>,
+        capture: Box<Capture>,
+    },
 }
 
 /// One state change, in the order they happened.

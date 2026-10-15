@@ -393,9 +393,8 @@ fn decide_response(
     }
 }
 
-/// Answers with the board as it stands afterwards, because every one of
-/// these changes what the next `decide` from this checkout is filed under
-/// — the agent has to be able to see where it now is.
+/// Answers with the board as it stands afterwards; the daemon's
+/// `feature_action_for_agent` says why.
 fn feature_response(
     daemon: &Arc<Daemon>,
     source: PaneId,
@@ -403,61 +402,10 @@ fn feature_response(
     body: &[u8],
     filing: super::features::Filing,
 ) -> HookResponse {
-    use argus_protocol::FeatureAction;
-    use super::LinkChange;
-
-    let action: FeatureAction = match decode(body, "feature change") {
-        Ok(action) => action,
-        Err(refusal) => return refusal,
-    };
-    json_reply(match action {
-        FeatureAction::Open(write) => {
-            daemon.open_feature_for_agent(source, session, write, filing.scope)
-        }
-        FeatureAction::Select { slug } => {
-            daemon.select_feature_for_agent(source, &slug, filing.scope)
-        }
-        FeatureAction::Append { text } => daemon.append_to_feature_for_agent(source, &text, filing),
-        FeatureAction::Done { slug } => daemon.move_feature_for_agent(
-            source,
-            session,
-            &slug,
-            argus_protocol::FeatureState::Done,
-            filing.scope,
-        ),
-        FeatureAction::Reopen { slug } => daemon.move_feature_for_agent(
-            source,
-            session,
-            &slug,
-            argus_protocol::FeatureState::Open,
-            filing.scope,
-        ),
-        FeatureAction::Retitle { slug, title } => {
-            daemon.retitle_feature_for_agent(source, &slug, &title, filing.scope)
-        }
-        FeatureAction::Rewrite { slug, body } => {
-            daemon.rewrite_feature_for_agent(source, &slug, &body, filing.scope)
-        }
-        FeatureAction::Drop { slug } => daemon.drop_feature_for_agent(source, &slug, filing.scope),
-        FeatureAction::Hold { slug, reason } => {
-            daemon.hold_feature_for_agent(source, &slug, Some(&reason), filing.scope)
-        }
-        FeatureAction::Unhold { slug } => {
-            daemon.hold_feature_for_agent(source, &slug, None, filing.scope)
-        }
-        FeatureAction::Wait { slug, on } => {
-            daemon.wait_feature_for_agent(source, &slug, &on, true, filing.scope)
-        }
-        FeatureAction::Unwait { slug, on } => {
-            daemon.wait_feature_for_agent(source, &slug, &on, false, filing.scope)
-        }
-        FeatureAction::Link { slug, link } => {
-            daemon.link_feature_for_agent(source, &slug, LinkChange::Link(link), filing.scope)
-        }
-        FeatureAction::Unlink { slug, key } => {
-            daemon.link_feature_for_agent(source, &slug, LinkChange::Unlink(key), filing.scope)
-        }
-    })
+    match decode::<argus_protocol::FeatureAction>(body, "feature change") {
+        Ok(action) => json_reply(daemon.feature_action_for_agent(source, session, action, filing)),
+        Err(refusal) => refusal,
+    }
 }
 
 /// Every change to the current feature's task list, and the read.

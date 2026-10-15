@@ -100,9 +100,9 @@ pub(super) fn feature_message(rest: &[&str], base_url: &str, token: &str) -> Str
                 return format!("could not change feature: {verb} wants the slug of a feature");
             };
             let (action, said) = if verb == "done" {
-                (FeatureAction::Done { slug: slug.to_string() }, "accepted as done")
+                (FeatureAction::Done { slug: slug.to_string(), detail: None }, "accepted as done")
             } else {
-                (FeatureAction::Reopen { slug: slug.to_string() }, "open again")
+                (FeatureAction::Reopen { slug: slug.to_string(), detail: None }, "open again")
             };
             let answer = write_feature(action, base_url, token);
             if answer.starts_with("could not") {

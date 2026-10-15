@@ -7,16 +7,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::damage::{CellRun, Scroll};
-use crate::capture::Capture;
 use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
-use crate::features::{FeatureState, FeatureWrite};
+use crate::features::FeatureAction;
 use crate::focus::{Focus, View};
 use crate::hello::Hello;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
 use crate::tasks::{TaskAction, TaskList};
-use crate::tracker_links::{LinkWrite, MapChange};
+use crate::tracker_links::MapChange;
 use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,40 +169,14 @@ pub enum ClientMsg {
         project: ProjectId,
         checkout: CheckoutId,
     },
-    /// Accept a feature, or reopen one that was accepted.
-    ///
-    /// The only state there is: everything the old columns claimed is now
-    /// read off the panes on the feature's checkouts and the state of its
-    /// tasks. An agent makes the same move only on a person's word
-    /// (`FeatureAction::Done`). The answer is the pushed board every client
-    /// already receives.
-    MoveFeature {
+    /// Change a feature, in the same words an agent uses. `checkout` is
+    /// the one whose board the person is looking at — and, for a transfer,
+    /// the one the feature moves from. The answer is the pushed board every
+    /// client already receives.
+    Feature {
         project: ProjectId,
         checkout: CheckoutId,
-        slug: String,
-        state: FeatureState,
-        detail: Option<String>,
-    },
-    /// Hold a feature with a reason, or lift its hold with `None`.
-    HoldFeature {
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: String,
-        reason: Option<String>,
-    },
-    /// Link a feature to a ticket in one of the team's trackers.
-    LinkFeature {
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: String,
-        link: LinkWrite,
-    },
-    /// Take a feature's link to the ticket with this key away.
-    UnlinkFeature {
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: String,
-        key: String,
+        action: FeatureAction,
     },
     /// Write the repository's tracker map, or approve or turn down the
     /// draft an agent proposed for it.
@@ -211,60 +184,6 @@ pub enum ClientMsg {
         project: ProjectId,
         checkout: CheckoutId,
         change: MapChange,
-    },
-    /// Record that a feature comes after another, or take that back.
-    WaitFeature {
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: String,
-        on: String,
-        waits: bool,
-    },
-    /// Open a feature from the board.
-    ///
-    /// The human's equivalent of `argus-hook feature open`, and the only
-    /// difference is that it records no origin checkout: a feature a
-    /// person wrote down was not cut anywhere yet.
-    OpenFeature {
-        project: ProjectId,
-        checkout: CheckoutId,
-        write: FeatureWrite,
-    },
-    /// Rename a feature. The title only — the slug is frozen at creation,
-    /// because every decision, task and checkout scope points at it.
-    RenameFeature {
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: String,
-        title: String,
-    },
-    /// Remove a feature, its tasks, and any checkout pointed at it.
-    ///
-    /// Its decisions survive as unfiled: the board is append-only because
-    /// it records what was believed at the time, and that outlives the
-    /// feature it was believed about.
-    RemoveFeature {
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: String,
-    },
-    /// Move a feature's current assignment between checkouts in one repository.
-    TransferFeature {
-        project: ProjectId,
-        source: CheckoutId,
-        destination: CheckoutId,
-        slug: String,
-    },
-    /// Replace a feature's brief.
-    ///
-    /// Whole-body, unlike `argus-hook feature note`, which appends. The
-    /// append rule protected a tree structure the brief does not have: it
-    /// is prose, and a document nobody can correct rots.
-    SetFeatureBody {
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: String,
-        body: String,
     },
     /// Read or change one feature's tasks, in the same words an agent
     /// uses. Scoped to the feature, unlike the decision board: a task means
@@ -291,17 +210,6 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         feature: String,
         change: DecisionChange,
-    },
-    /// Write a whole note down as a feature: its title and brief, the tasks
-    /// under it and the decisions it already holds, in one transaction so
-    /// a note is never half a feature. With `into`, the note's tasks and
-    /// decisions are added to that feature, and its title and brief are
-    /// left as they are.
-    CaptureFeature {
-        project: ProjectId,
-        checkout: CheckoutId,
-        into: Option<String>,
-        capture: Box<Capture>,
     },
     /// Read or change one feature's sequence diagrams. A read is answered
     /// with [`ServerMsg::SequenceDiagrams`]; a write is pushed like tasks.
