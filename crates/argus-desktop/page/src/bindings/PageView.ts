@@ -20,6 +20,11 @@ at: number,
  */
 refreshing: boolean, 
 /**
+ * Actions of the view pressed and not yet answered by the agent showing
+ * it again, by id.
+ */
+pressed: Array<string>, 
+/**
  * The ticket it is of, if the agent named one.
  */
 subject: Link | null, view: AgentView, 

@@ -16,6 +16,9 @@ export interface ViewCtx {
   /** The block's path under the view, `pane/id.2.0`. */
   path: string;
   drawn: Drawn;
+  /** Ids of the view's actions pressed and not yet answered by the agent
+   *  showing the view again; their buttons wait. */
+  pressed?: readonly string[];
 }
 
 /** The context of the block at `index` under `ctx`. */

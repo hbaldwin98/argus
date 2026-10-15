@@ -6,7 +6,8 @@
 //! pane's removal, is the end of its views.
 
 use argus_protocol::{
-    AgentView, PaneId, ServerMsg, ShownView, ViewChange, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES,
+    AgentView, AnswerValue, Block, PaneId, RowItem, ServerMsg, ShownView, ViewAction, ViewChange,
+    ViewPress, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES,
 };
 use tokio::sync::broadcast;
 
@@ -145,8 +146,18 @@ impl Daemon {
 
     /// Tells the agent that showed a view which of its actions the person
     /// pressed. A view that is not held is ignored, as a refresh of one is.
-    pub fn press_view(&self, pane: PaneId, press: argus_protocol::ViewPress) {
-        let _ = (pane, press);
+    ///
+    /// An action the view does not offer is dropped, not relayed: what is
+    /// typed to the agent must be something its own view said, never text a
+    /// client made up.
+    pub fn press_view(&self, pane: PaneId, press: ViewPress) {
+        let Some(shown) = self.agent_views.lock().unwrap().get(pane, &press.view).cloned() else {
+            return;
+        };
+        let Some(action) = find_action(&shown.view, &press.action) else {
+            return;
+        };
+        self.notify(pane, &press_request(&shown.view, action, &press));
     }
 
     /// Called as a pane leaves the tree: its views go with it.
@@ -173,9 +184,146 @@ fn refresh_request(view: &AgentView) -> String {
     )
 }
 
+/// The view's action with this id, wherever the view offers one.
+fn find_action<'a>(view: &'a AgentView, id: &str) -> Option<&'a ViewAction> {
+    let header = view.actions.iter().find(|a| a.id == id);
+    header.or_else(|| find_in(&view.blocks, id))
+}
+
+fn find_in<'a>(blocks: &'a [Block], id: &str) -> Option<&'a ViewAction> {
+    for block in blocks {
+        let own: &[ViewAction] = match block {
+            Block::Card { actions, .. } | Block::Table { actions, .. } => actions,
+            Block::Form { submit, .. } => std::slice::from_ref(submit),
+            _ => &[],
+        };
+        if let Some(found) = own.iter().find(|a| a.id == id) {
+            return Some(found);
+        }
+        if let Block::Row { items, .. } = block {
+            let mut acts = items.iter().filter_map(|i| match i {
+                RowItem::Action { action } => Some(action),
+                RowItem::Value { .. } => None,
+            });
+            if let Some(found) = acts.find(|a| a.id == id) {
+                return Some(found);
+            }
+        }
+        if let Some(found) = block.nested().into_iter().find_map(|inner| find_in(inner, id)) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Control characters made spaces, since the request may be typed into a
+/// terminal where a newline sends it early and an escape does worse.
+fn plain(text: &str) -> String {
+    text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
+}
+
+/// The same, through every string of `value`, keys included.
+fn plain_json(value: serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::String(s) => Value::String(plain(&s)),
+        Value::Array(items) => Value::Array(items.into_iter().map(plain_json).collect()),
+        Value::Object(map) => Value::Object(map.into_iter().map(|(k, v)| (plain(&k), plain_json(v))).collect()),
+        other => other,
+    }
+}
+
+/// One line, like [`refresh_request`]. The rows and answers are JSON, so
+/// the agent can parse them.
+fn press_request(view: &AgentView, action: &ViewAction, press: &ViewPress) -> String {
+    let mut text = format!(
+        "The person pressed `{action_id}` (\"{label}\") in the view `{id}`.",
+        action_id = plain(&action.id),
+        label = plain(&action.label),
+        id = plain(&view.id),
+    );
+    if !press.rows.is_empty() {
+        let rows = plain_json(serde_json::json!(press.rows));
+        text.push_str(&format!(" Selected rows: {rows}."));
+    }
+    if let Some(form) = &press.form {
+        let answers: serde_json::Map<String, serde_json::Value> = press
+            .answers
+            .iter()
+            .map(|a| {
+                let value = match &a.value {
+                    AnswerValue::Text(t) => serde_json::json!(t),
+                    AnswerValue::Number(n) => serde_json::json!(n),
+                    AnswerValue::Bool(b) => serde_json::json!(b),
+                };
+                (a.name.clone(), value)
+            })
+            .collect();
+        let answers = plain_json(serde_json::Value::Object(answers));
+        text.push_str(&format!(" Form `{}` answers: {answers}.", plain(form)));
+    }
+    text.push_str(&format!(
+        " Do what it asks with your own tools, then show the view again with \
+         `argus-hook view show --stdin`, same id `{}`, so the person sees it done.",
+        plain(&view.id),
+    ));
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn action(id: &str) -> ViewAction {
+        ViewAction { id: id.into(), label: format!("label {id}"), tone: Default::default(), confirm: None }
+    }
+
+    fn press(action: &str) -> ViewPress {
+        ViewPress { view: "t".into(), action: action.into(), rows: vec![], form: None, answers: vec![] }
+    }
+
+    #[test]
+    fn an_action_is_found_wherever_the_view_offers_it() {
+        let mut view = shown(1, "t").view;
+        view.actions = vec![action("head")];
+        let card = Block::Card {
+            title: None,
+            chip: None,
+            tone: Default::default(),
+            blocks: vec![Block::Form { id: "f".into(), fields: vec![], submit: action("send") }],
+            actions: vec![action("card")],
+        };
+        let row = Block::Row {
+            align: Default::default(),
+            items: vec![RowItem::Action { action: action("inrow") }],
+        };
+        view.blocks = vec![Block::Section { heading: "s".into(), blocks: vec![card, row] }];
+        for id in ["head", "card", "send", "inrow"] {
+            assert_eq!(find_action(&view, id).map(|a| a.id.as_str()), Some(id));
+        }
+        assert!(find_action(&view, "rm-rf").is_none());
+    }
+
+    #[test]
+    fn a_press_request_stays_on_one_line_and_carries_rows_and_answers() {
+        let view = shown(1, "t").view;
+        let mut act = action("ship");
+        act.label = "Ship\nit".into();
+        let mut p = press("ship");
+        p.rows = vec!["r1".into(), "r\n2".into()];
+        p.form = Some("f".into());
+        p.answers = vec![
+            argus_protocol::Answer { name: "note".into(), value: AnswerValue::Text("a\nb\u{1b}[0m".into()) },
+            argus_protocol::Answer { name: "n".into(), value: AnswerValue::Number(3.0) },
+            argus_protocol::Answer { name: "ok".into(), value: AnswerValue::Bool(true) },
+        ];
+        let text = press_request(&view, &act, &p);
+        assert!(!text.chars().any(char::is_control), "{text:?}");
+        assert!(text.contains("`ship`") && text.contains("`t`") && text.contains("Ship it"), "{text}");
+        assert!(text.contains(r#"["r1","r 2"]"#), "{text}");
+        assert!(text.contains(r#""n":3.0"#) && text.contains(r#""ok":true"#), "{text}");
+        assert!(text.contains("view show --stdin"), "{text}");
+    }
 
     fn shown(pane: u64, id: &str) -> ShownView {
         ShownView {

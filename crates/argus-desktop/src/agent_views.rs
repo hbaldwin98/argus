@@ -6,9 +6,9 @@
 //! changed. Only which one is chosen, and that a refresh is pending, are
 //! the window's own; whether the panel is on screen is `docks`'s.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use argus_protocol::{ClientMsg, PaneId, ShownView};
+use argus_protocol::{ClientMsg, PaneId, ShownView, ViewPress};
 
 use argus_protocol::flow::{self, FlowRow};
 use argus_protocol::Block;
@@ -23,6 +23,8 @@ pub struct AgentViews {
     /// The view the panel shows; the newest while none is chosen.
     open: Option<(PaneId, String)>,
     refreshing: HashSet<(PaneId, String)>,
+    /// Action ids pressed in a view and not answered by its being shown again.
+    pressed: HashMap<(PaneId, String), Vec<String>>,
     sent: Sent<ViewsPage>,
 }
 
@@ -32,6 +34,7 @@ impl AgentViews {
     pub fn connected(&mut self, out: &mut Vec<ClientMsg>) {
         self.views.clear();
         self.refreshing.clear();
+        self.pressed.clear();
         out.push(ClientMsg::WatchViews);
     }
 
@@ -42,6 +45,7 @@ impl AgentViews {
     pub fn shown(&mut self, view: ShownView, on_screen: Option<PaneId>, out: bool) -> bool {
         let key = (view.pane, view.view.id.clone());
         self.refreshing.remove(&key);
+        self.pressed.remove(&key);
         self.views.retain(|v| (v.pane, v.view.id.as_str()) != (key.0, key.1.as_str()));
         let comes_out = !out && on_screen == Some(view.pane);
         if comes_out {
@@ -54,6 +58,7 @@ impl AgentViews {
     pub fn closed(&mut self, pane: PaneId, id: &str) {
         self.views.retain(|v| (v.pane, v.view.id.as_str()) != (pane, id));
         self.refreshing.remove(&(pane, id.to_string()));
+        self.pressed.remove(&(pane, id.to_string()));
         if self.open.as_ref().is_some_and(|(p, i)| (*p, i.as_str()) == (pane, id)) {
             self.open = None;
         }
@@ -81,6 +86,19 @@ impl AgentViews {
         if self.find(pane, &id).is_some() {
             out.push(ClientMsg::RefreshView { pane, id: id.clone() });
             self.refreshing.insert((pane, id));
+        }
+    }
+
+    /// Sends a press and holds its action as pending until the agent shows
+    /// the view again: the page disables the button meanwhile, and the view
+    /// itself is left as it was.
+    pub fn press(&mut self, pane: PaneId, press: ViewPress, out: &mut Vec<ClientMsg>) {
+        if self.find(pane, &press.view).is_some() {
+            let pending = self.pressed.entry((pane, press.view.clone())).or_default();
+            if !pending.contains(&press.action) {
+                pending.push(press.action.clone());
+            }
+            out.push(ClientMsg::PressView { pane, press });
         }
     }
 
@@ -117,6 +135,7 @@ impl AgentViews {
                     from: title(v.pane).unwrap_or_default(),
                     at: v.at,
                     refreshing: self.refreshing.contains(&(v.pane, v.view.id.clone())),
+                    pressed: self.pressed.get(&(v.pane, v.view.id.clone())).cloned().unwrap_or_default(),
                     subject: v.subject.as_ref().map(Link::of),
                     view: v.view.clone(),
                     diagrams: diagrams(&v.view.blocks),
@@ -269,6 +288,44 @@ mod tests {
         assert!(views.page(|_| None).views[0].refreshing);
         views.shown(shown(1, "ci"), None, false);
         assert!(!views.page(|_| None).views[0].refreshing);
+    }
+
+    fn press(view: &str, action: &str) -> ViewPress {
+        ViewPress { view: view.into(), action: action.into(), rows: vec![], form: None, answers: vec![] }
+    }
+
+    #[test]
+    fn a_pressed_action_is_pending_until_its_view_is_shown_again_or_closed_or_reconnected() {
+        let mut views = AgentViews::default();
+        views.shown(shown(1, "ci"), None, false);
+        let mut out = Vec::new();
+        views.press(PaneId(1), press("ci", "retry"), &mut out);
+        views.press(PaneId(1), press("ci", "retry"), &mut out);
+        views.press(PaneId(1), press("ci", "stop"), &mut out);
+        assert_eq!(out.len(), 3, "each press is sent");
+        assert!(matches!(&out[0], ClientMsg::PressView { pane: PaneId(1), press } if press.action == "retry"));
+        assert_eq!(views.page(|_| None).views[0].pressed, ["retry", "stop"]);
+        views.shown(shown(1, "ci"), None, false);
+        assert!(views.page(|_| None).views[0].pressed.is_empty());
+
+        views.press(PaneId(1), press("ci", "retry"), &mut out);
+        views.closed(PaneId(1), "ci");
+        views.shown(shown(1, "ci"), None, false);
+        assert!(views.page(|_| None).views[0].pressed.is_empty());
+
+        views.press(PaneId(1), press("ci", "retry"), &mut out);
+        views.connected(&mut out);
+        views.shown(shown(1, "ci"), None, false);
+        assert!(views.pressed.is_empty());
+    }
+
+    #[test]
+    fn nothing_is_sent_for_a_press_in_a_view_this_window_does_not_hold() {
+        let mut views = AgentViews::default();
+        let mut out = Vec::new();
+        views.press(PaneId(1), press("gone", "retry"), &mut out);
+        assert!(out.is_empty());
+        assert!(views.pressed.is_empty());
     }
 
     #[test]

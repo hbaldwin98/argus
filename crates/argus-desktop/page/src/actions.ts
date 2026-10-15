@@ -20,13 +20,24 @@ export interface PressWith {
 /** What the page sends Rust for a press; the agent hears it as it is. */
 export type Press = ViewPress;
 
-/** A button for `action` in the view `ctx` is in: a press tells the agent. */
+/** The confirmations that are open, by button. A view is redrawn whole when
+ *  anything in it changes, and a question the person is answering must not
+ *  vanish under them. */
+const asking = new Set<string>();
+
+/** A button for `action` in the view `ctx` is in: a press tells the agent,
+ *  after asking when the action has a `confirm`. While its press is
+ *  unanswered the button waits, disabled, with a spinner. */
 export function actionButton(
   action: ViewAction,
   ctx: ViewCtx,
   with_: () => PressWith = () => ({}),
 ): HTMLElement {
-  const press = (): void => {
+  const key = `${ctx.path}|${action.id}`;
+  const slot = el('span', { class: 'vact' });
+  const draw = (): void => slot.replaceChildren(asking.has(key) ? question() : button());
+
+  const send = (): void => {
     const extra = with_();
     const sent: Press = {
       view: ctx.id,
@@ -37,5 +48,48 @@ export function actionButton(
     };
     call('press_view', { pane: ctx.pane, press: sent });
   };
-  return el('button', { class: 'btn sm', type: 'button', onclick: press }, action.label);
+
+  const ask = (open: boolean): void => {
+    if (open) asking.add(key);
+    else asking.delete(key);
+    draw();
+  };
+
+  const button = (): HTMLElement => {
+    const waiting = ctx.pressed?.includes(action.id) ?? false;
+    return el(
+      'button',
+      {
+        class: `btn sm vtone-${action.tone}`,
+        type: 'button',
+        disabled: waiting,
+        onclick: () => (action.confirm ? ask(true) : send()),
+      },
+      waiting && el('span', { class: 'vspin', 'aria-label': 'waiting for the agent' }),
+      action.label,
+    );
+  };
+
+  const question = (): HTMLElement =>
+    el(
+      'span',
+      { class: 'vconfirm', role: 'group', 'aria-label': action.confirm ?? '' },
+      el('span', { class: 'vconfirm-q' }, action.confirm),
+      el(
+        'button',
+        {
+          class: `btn sm vtone-${action.tone}`,
+          type: 'button',
+          onclick: () => {
+            ask(false);
+            send();
+          },
+        },
+        'Yes',
+      ),
+      el('button', { class: 'btn sm', type: 'button', onclick: () => ask(false) }, 'No'),
+    );
+
+  draw();
+  return slot;
 }

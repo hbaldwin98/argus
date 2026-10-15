@@ -1206,6 +1206,9 @@ pub struct PageView {
     pub at: i64,
     /// A refresh was asked for and the agent has not shown it again yet.
     pub refreshing: bool,
+    /// Actions of the view pressed and not yet answered by the agent showing
+    /// it again, by id.
+    pub pressed: Vec<String>,
     /// The ticket it is of, if the agent named one.
     pub subject: Option<Link>,
     pub view: argus_protocol::AgentView,
