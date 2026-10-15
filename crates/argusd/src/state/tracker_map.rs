@@ -21,12 +21,21 @@ impl Daemon {
         artifact_scope: ArtifactScope,
     ) -> anyhow::Result<TrackerMap> {
         let address = self.address_for_agent(pane_id, artifact_scope)?;
+        let by = Asker::Agent {
+            pane: pane_id,
+            session: None,
+        };
+        self.agent_tracker_map(&address, by, draft)
+    }
+
+    pub(in crate::state) fn agent_tracker_map(
+        &self,
+        address: &BoardAddress,
+        by: Asker<'_>,
+        draft: &str,
+    ) -> anyhow::Result<TrackerMap> {
         if !draft.trim().is_empty() {
-            let by = Asker::Agent {
-                pane: pane_id,
-                session: None,
-            };
-            self.change_tracker_map(&address, by, MapChange::Write(draft.to_string()))?;
+            self.change_tracker_map(address, by, MapChange::Write(draft.to_string()))?;
         }
         self.store.tracker_map(&address.key)
     }
@@ -45,7 +54,7 @@ impl Daemon {
     /// One change to the map, and the push. A person's write is the map;
     /// an agent's is a draft beside it, and what becomes of a draft is the
     /// person's to say.
-    fn change_tracker_map(
+    pub(in crate::state) fn change_tracker_map(
         &self,
         address: &BoardAddress,
         by: Asker<'_>,

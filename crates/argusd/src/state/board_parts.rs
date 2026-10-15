@@ -62,14 +62,9 @@ pub struct BoardTarget<'a> {
 }
 
 impl Daemon {
-    /// A change from an agent, applied to the feature its checkout is on,
-    /// answered with the list as it stands afterwards — an agent that has
-    /// just added three tasks needs the ids they were given before it can
-    /// take one up.
-    ///
-    /// Refused when the checkout is on no feature, for the same reason a
-    /// decision is: a row with nothing to be under is the pile all of this
-    /// exists to end. A read there is an empty list rather than an error.
+    /// A change from an agent, answered with the list as it stands
+    /// afterwards — an agent that has just added three tasks needs the ids
+    /// they were given before it can take one up.
     pub fn part_action_for_agent<P: FeaturePart>(
         &self,
         pane_id: PaneId,
@@ -79,9 +74,29 @@ impl Daemon {
     ) -> anyhow::Result<P::List> {
         let filing = filing.into();
         let address = self.address_for_agent(pane_id, filing.scope)?;
-        let Some(feature) = self.feature_for_agent(&address, &filing)? else {
+        let by = Asker::Agent {
+            pane: pane_id,
+            session,
+        };
+        self.agent_part_action(&address, by, filing.feature.as_deref(), action)
+    }
+
+    /// An agent's change, applied to the feature it names or else the one
+    /// its checkout is on.
+    ///
+    /// Refused when the checkout is on no feature, for the same reason a
+    /// decision is: a row with nothing to be under is the pile all of this
+    /// exists to end. A read there is an empty list rather than an error.
+    pub(in crate::state) fn agent_part_action<P: FeaturePart>(
+        &self,
+        address: &BoardAddress,
+        by: Asker<'_>,
+        named: Option<&str>,
+        action: P,
+    ) -> anyhow::Result<P::List> {
+        let Some(feature) = self.feature_for_agent(address, named)? else {
             if action.is_read() {
-                return Ok(P::empty(address.project_name));
+                return Ok(P::empty(address.project_name.clone()));
             }
             if action.is_add() {
                 anyhow::bail!(
@@ -92,14 +107,7 @@ impl Daemon {
             }
             anyhow::bail!("this checkout is not on a feature yet");
         };
-        let target = BoardTarget {
-            address: &address,
-            feature,
-        };
-        let by = Asker::Agent {
-            pane: pane_id,
-            session,
-        };
+        let target = BoardTarget { address, feature };
         self.apply_part(&target, action, by)
     }
 
@@ -122,7 +130,7 @@ impl Daemon {
 
     /// Applies one change and answers with the list afterwards. Every
     /// change is also pushed, so a client that did not ask still sees it.
-    fn apply_part<P: FeaturePart>(
+    pub(in crate::state) fn apply_part<P: FeaturePart>(
         &self,
         target: &BoardTarget<'_>,
         action: P,

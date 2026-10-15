@@ -33,13 +33,21 @@ impl Daemon {
         checkout: CheckoutId,
     ) -> anyhow::Result<DecisionBoard> {
         let address = self.address_for_client(project, checkout)?;
+        self.decision_board_at(&address)
+    }
+
+    /// The whole board, as a client draws it.
+    pub(in crate::state) fn decision_board_at(
+        &self,
+        address: &BoardAddress,
+    ) -> anyhow::Result<DecisionBoard> {
         Ok(DecisionBoard {
-            project: Some(project),
+            project: Some(address.project),
             features: self.store.features(&address.key)?,
             tracker_map: self.store.tracker_map(&address.key)?,
             decisions: self.store.decisions(&address.key)?,
-            name: address.project_name,
-            repositories: address.repositories,
+            name: address.project_name.clone(),
+            repositories: address.repositories.clone(),
         })
     }
 
@@ -59,16 +67,18 @@ impl Daemon {
     ) -> anyhow::Result<DecisionBoard> {
         let filing = filing.into();
         let address = self.address_for_agent(pane_id, filing.scope)?;
-        self.agent_decisions(&address, &filing)
+        self.agent_decisions(&address, filing.feature.as_deref())
     }
 
-    fn agent_decisions(
+    /// The decisions of the feature an agent names, or else the one its
+    /// checkout is on.
+    pub(in crate::state) fn agent_decisions(
         &self,
         address: &BoardAddress,
-        filing: &Filing,
+        named: Option<&str>,
     ) -> anyhow::Result<DecisionBoard> {
         let key = address.key.as_str();
-        let feature = self.feature_for_agent(address, filing)?;
+        let feature = self.feature_for_agent(address, named)?;
         // A withdrawn decision stays on the board for people reading its
         // history; an agent reads the rest. That includes a question still
         // open and an answer turned down, each carrying its state: what an
@@ -101,9 +111,10 @@ impl Daemon {
     ) -> anyhow::Result<DecisionBoard> {
         let filing = filing.into();
         let address = self.address_for_agent(pane_id, filing.scope)?;
-        let feature = self.feature_for_agent(&address, &filing)?;
+        let named = filing.feature.as_deref();
+        let feature = self.feature_for_agent(&address, named)?;
         self.change_decision(&address, feature.as_deref(), change)?;
-        self.agent_decisions(&address, &filing)
+        self.agent_decisions(&address, named)
     }
 
     /// Changes one decision from the feature view, which names its feature
@@ -125,7 +136,7 @@ impl Daemon {
     /// The decision has to be under the feature the request is about, as
     /// every write naming a row does: an id from a list that has since
     /// moved on must not reach into some other feature's history.
-    fn change_decision(
+    pub(in crate::state) fn change_decision(
         &self,
         address: &BoardAddress,
         feature: Option<&str>,
@@ -180,7 +191,7 @@ impl Daemon {
     ) -> anyhow::Result<Decision> {
         let filing = filing.into();
         let address = self.address_for_agent(pane_id, filing.scope)?;
-        let feature = self.feature_for_agent(&address, &filing)?;
+        let feature = self.feature_for_agent(&address, filing.feature.as_deref())?;
         let by = Asker::Agent {
             pane: pane_id,
             session,
@@ -206,7 +217,7 @@ impl Daemon {
     /// board now holds it. An agent's is attributed to its session and the
     /// checkout it was made in; a person's to neither, since it was made
     /// looking at the board, not from inside a working tree.
-    fn add_decision(
+    pub(in crate::state) fn add_decision(
         &self,
         address: &BoardAddress,
         by: Asker<'_>,

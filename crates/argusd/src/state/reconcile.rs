@@ -17,7 +17,7 @@ use super::*;
 /// One turn of a reconcile, in whichever vocabulary it was asked in: an
 /// agent's read, proposal or report, or the person's ask, ticked lines or
 /// turning down.
-enum Turn {
+pub(in crate::state) enum Turn {
     Agent(ReconcileChange),
     Person(ReconcileAction),
 }
@@ -33,7 +33,7 @@ impl Daemon {
     ) -> anyhow::Result<Feature> {
         let filing = filing.into();
         let address = self.address_for_agent(pane_id, filing.scope)?;
-        let Some(slug) = self.feature_for_agent(&address, &filing)? else {
+        let Some(slug) = self.feature_for_agent(&address, filing.feature.as_deref())? else {
             anyhow::bail!("this checkout is on no feature; name one with --feature <slug>");
         };
         let by = Asker::Agent {
@@ -62,7 +62,7 @@ impl Daemon {
     /// Who may take which turn is this match, side by side: an agent
     /// reads, proposes and reports; the person asks an agent, ticks the
     /// lines it may carry out and turns a proposal down.
-    fn apply_reconcile(
+    pub(in crate::state) fn apply_reconcile(
         &self,
         address: &BoardAddress,
         by: Asker<'_>,

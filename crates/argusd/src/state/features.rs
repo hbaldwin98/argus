@@ -60,7 +60,7 @@ impl Daemon {
         self.feature_board(&address, filing.feature.as_deref())
     }
 
-    fn feature_board(
+    pub(in crate::state) fn feature_board(
         &self,
         address: &BoardAddress,
         named: Option<&str>,
@@ -176,7 +176,7 @@ impl Daemon {
     ///   its session, and say nothing: what was said is the person's;
     /// - an agent drops only a feature with nothing under it;
     /// - `Transfer` and `Capture` are the view's.
-    fn apply_feature(
+    pub(in crate::state) fn apply_feature(
         &self,
         address: &BoardAddress,
         by: Asker<'_>,
@@ -397,14 +397,15 @@ impl Daemon {
         Ok((source_checkout.path.clone(), destination_checkout.path.clone()))
     }
 
-    /// The feature the next decision from this pane is filed under.
-    pub(super) fn feature_for_agent(
+    /// The feature an agent's request is about: the one it names, or else
+    /// the one its checkout is on.
+    pub(in crate::state) fn feature_for_agent(
         &self,
         address: &BoardAddress,
-        filing: &Filing,
+        named: Option<&str>,
     ) -> anyhow::Result<Option<String>> {
         let features = self.store.features(&address.key)?;
-        self.board_feature(address, &features, filing.feature.as_deref())
+        self.board_feature(address, &features, named)
     }
 
     /// The branch a checkout is on, as the last git poll saw it.
