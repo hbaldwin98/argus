@@ -271,12 +271,13 @@ pub struct App {
     pub history: Option<HistoryView>,
     /// The feature or task brief being read or written, if one is open.
     pub brief: Option<BriefView>,
-    /// The decision board of the project the board view is showing, and
-    /// which row of it is selected. Held on the app rather than created
-    /// with the view, because the daemon pushes a changed board whether or
-    /// not anyone is looking at it — a tree is meant to be watched being
-    /// built.
-    pub board: Option<argus_protocol::DecisionBoard>,
+    /// The board of the repository the Feature view reads, and the task
+    /// and diagram lists of the feature on screen: when each is asked for
+    /// and which pushes are kept, by the rule the desktop window follows
+    /// too. Held on the app rather than created with the view, because the
+    /// daemon pushes a changed board whether or not anyone is looking at
+    /// it — a tree is meant to be watched being built.
+    pub board_follower: argus_protocol::BoardFollower,
     /// The decisions narrowed to the feature on screen. Kept rather than
     /// derived per frame because the rows a renderer walks borrow from it.
     pub board_scoped: Option<argus_protocol::DecisionBoard>,
@@ -287,8 +288,6 @@ pub struct App {
     /// meant they could disagree about which feature you were reading —
     /// which is exactly what they did.
     pub feature_sel: usize,
-    /// The checkout the last board request was scoped to.
-    pub board_checkout: Option<CheckoutId>,
     /// Whether the held and archived features are listed. Neither is work
     /// to pick up, so the index folds them away until asked.
     pub show_folded_features: bool,
@@ -313,10 +312,6 @@ pub struct App {
     /// The selected flow as last drawn, kept so a frame does not render
     /// Mermaid again to draw what has not changed.
     pub flow_drawn: Option<(i64, crate::diagram::DiagramView)>,
-    /// The task list of the selected feature. `None` until one arrives,
-    /// which is not the same as a feature with no tasks.
-    pub tasks: Option<argus_protocol::TaskList>,
-    pub diagrams: Option<argus_protocol::DiagramList>,
     pub diagram_sel: usize,
     /// The sequence diagram open in the overlay, if any.
     pub diagram: Option<crate::diagram::DiagramView>,
@@ -467,10 +462,9 @@ impl App {
             review: None,
             history: None,
             brief: None,
-            board: None,
+            board_follower: argus_protocol::BoardFollower::new(true),
             board_scoped: None,
             feature_sel: 0,
-            board_checkout: None,
             show_folded_features: false,
             feature_open: false,
             lens: Lens::default(),
@@ -482,8 +476,6 @@ impl App {
             folded: Default::default(),
             capture: None,
             flow_drawn: None,
-            tasks: None,
-            diagrams: None,
             diagram_sel: 0,
             diagram: None,
             line: None,

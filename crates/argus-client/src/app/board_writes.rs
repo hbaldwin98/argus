@@ -89,7 +89,7 @@ impl App {
     /// The project and checkout every board write is addressed to, and the
     /// feature it is about.
     fn board_target(&self) -> Option<(ProjectId, CheckoutId, String)> {
-        let project = self.board.as_ref()?.project?;
+        let project = self.board_follower.board()?.project?;
         let checkout = self.current_checkout()?.id;
         Some((project, checkout, self.feature_slug()?))
     }
@@ -146,7 +146,7 @@ impl App {
         if text.is_empty() {
             return;
         }
-        let Some(project) = self.board.as_ref().and_then(|b| b.project) else {
+        let Some(project) = self.board_follower.board().and_then(|b| b.project) else {
             return;
         };
         let Some(checkout) = self.current_checkout().map(|checkout| checkout.id) else {
@@ -240,7 +240,7 @@ impl App {
     /// Starts a feature as one note. It needs no checkout and no agent:
     /// this is a person writing down work that has not begun.
     pub(super) fn begin_capture(&mut self) {
-        let Some(project) = self.board.as_ref().and_then(|b| b.project) else {
+        let Some(project) = self.board_follower.board().and_then(|b| b.project) else {
             return;
         };
         self.open_capture(project, None);
@@ -385,7 +385,7 @@ impl App {
     /// needs the person, and it is never saved by leaving the editor, only
     /// approved or turned down in so many words.
     pub(super) fn open_tracker_map(&mut self) {
-        let Some(board) = &self.board else {
+        let Some(board) = self.board_follower.board() else {
             return;
         };
         let Some(project) = board.project else {
@@ -470,7 +470,7 @@ impl App {
     /// task's brief gets: both are prose a human reads and corrects.
     pub(super) fn open_feature_brief(&mut self) {
         let (Some(project), Some(feature)) = (
-            self.board.as_ref().and_then(|b| b.project),
+            self.board_follower.board().and_then(|b| b.project),
             self.selected_feature(),
         ) else {
             return self.report("no feature selected");

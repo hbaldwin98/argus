@@ -11,6 +11,7 @@ pub mod adr;
 pub mod ago;
 pub mod artifacts;
 pub mod awaited;
+pub mod board_follower;
 pub mod capture;
 pub mod cell;
 pub mod column;
@@ -49,6 +50,7 @@ pub mod tree;
 
 pub use ago::ago;
 pub use artifacts::ArtifactScope;
+pub use board_follower::{BoardFollower, BoardScope, Received};
 pub use cell::{
     Cell, CellSpan, Color, Cursor, CursorShape, MouseEncoding, MouseMode, MouseTracking,
     BLANK,

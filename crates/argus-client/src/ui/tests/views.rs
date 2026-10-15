@@ -159,7 +159,7 @@ fn a_board_opened_before_the_tree_arrived_is_asked_for_when_it_does() {
     // The view is reachable before the first tree lands, and asking then
     // means asking about a project the client does not have yet.
     app.open_view(View::Feature);
-    assert!(app.board.is_none());
+    assert!(app.board_follower.board().is_none());
 
     app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
 
@@ -168,6 +168,23 @@ fn a_board_opened_before_the_tree_arrived_is_asked_for_when_it_does() {
         asked |= matches!(msg, argus_protocol::ClientMsg::GetDecisions { .. });
     }
     assert!(asked, "the board is asked for without anyone pressing r");
+}
+
+#[test]
+fn a_reconnect_asks_for_the_board_again_and_keeps_it_on_screen_meanwhile() {
+    // Whatever was pushed while the daemon was away was pushed to nobody.
+    let (mut app, _old) = feature_stage();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.reconnect(tx);
+    assert!(app.board_follower.board().is_some());
+
+    app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
+
+    let asked: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter(|msg| matches!(msg, argus_protocol::ClientMsg::GetDecisions { .. } | argus_protocol::ClientMsg::Task { .. }))
+        .collect();
+    assert_eq!(asked.len(), 2, "the board and the feature's tasks: {asked:?}");
+    assert_eq!(app.feature_slug().as_deref(), Some("trim"));
 }
 
 #[test]
@@ -325,17 +342,20 @@ fn the_first_frame_of_a_session_is_already_settled() {
 }
 
 #[test]
-fn moving_to_another_checkout_asks_for_that_checkouts_features() {
+fn moving_to_another_checkout_of_the_repository_keeps_its_board_and_asks_nothing() {
+    // The board is the repository's whichever checkout names it, so a
+    // second ask would only fetch the board already on screen.
     let (mut app, mut rx) = feature_stage();
     while rx.try_recv().is_ok() {}
     app.sel_checkout = 1;
     let other = app.current_checkout().unwrap().id;
     app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
 
-    let asked = std::iter::from_fn(|| rx.try_recv().ok()).any(|msg| {
-        matches!(msg, argus_protocol::ClientMsg::GetDecisions { checkout, .. } if checkout == other)
-    });
-    assert!(asked, "the feature list follows the selected checkout");
+    let asked = std::iter::from_fn(|| rx.try_recv().ok())
+        .any(|msg| matches!(msg, argus_protocol::ClientMsg::GetDecisions { .. }));
+    assert!(!asked);
+    assert!(app.board_follower.board().is_some());
+    assert_eq!(app.board_follower.scope().map(|scope| scope.checkout), Some(other), "what it asks next names it");
 }
 
 #[test]

@@ -22,7 +22,7 @@ impl App {
     pub fn on_mouse(&mut self, ev: MouseEvent) {
         self.handle_mouse(ev);
         // A click on the rail can move the checkout the feature view reads.
-        self.refresh_board_if_stale();
+        self.follow_board();
     }
 
     fn handle_mouse(&mut self, ev: MouseEvent) {

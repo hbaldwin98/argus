@@ -327,7 +327,7 @@ pub(super) fn render_feature_stage(f: &mut Frame, app: &mut App, area: Rect, th:
     let repo = app
         .current_repository()
         .map(|r| r.name.clone())
-        .or_else(|| app.board.as_ref().map(|b| b.name.clone()))
+        .or_else(|| app.board_follower.board().map(|b| b.name.clone()))
         .unwrap_or_else(|| "features".into());
     let crumbs = crumbs(app, &repo);
     let mut trail = vec![Span::raw("  ")];

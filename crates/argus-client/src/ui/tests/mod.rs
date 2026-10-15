@@ -209,6 +209,7 @@ pub(super) fn feature_stage() -> (
         .position(|row| row.slug == "trim")
         .expect("the fixture's active feature");
     app.feature_sel = at;
+    app.rescope_feature();
     app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(feature_board(Some(project)))));
     app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(feature_tasks())));
     app.on_server_msg(argus_protocol::ServerMsg::SequenceDiagrams(Box::new(
@@ -227,6 +228,13 @@ pub(super) fn feature_stage() -> (
         },
     )));
     (app, rx)
+}
+
+/// Pushes the board on screen again, changed, as an agent's write would.
+pub(super) fn push_board(app: &mut App, change: impl FnOnce(&mut argus_protocol::DecisionBoard)) {
+    let mut board = app.board_follower.board().expect("a board on screen").clone();
+    change(&mut board);
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(board)));
 }
 
 /// Feature #7 open on its work lens.

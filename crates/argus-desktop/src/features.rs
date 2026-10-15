@@ -88,21 +88,6 @@ pub fn build(index: &Index) -> Features {
     features
 }
 
-/// The slug of the feature the index would put the cursor on: the peeked
-/// one while it is still listed, else the first listed.
-pub fn settle_peek(board: &DecisionBoard, tree: &[ProjectInfo], peek: Option<&str>, show_folded: bool) -> Option<String> {
-    let listed: Vec<FeatureRow> = standing::feature_rows(board, tree)
-        .into_iter()
-        .filter(|row| show_folded || !row.standing.folded())
-        .collect();
-    if let Some(slug) = peek {
-        if listed.iter().any(|row| row.slug == slug) {
-            return Some(slug.to_string());
-        }
-    }
-    listed.first().map(|row| row.slug.clone())
-}
-
 /// Whether the index lists `slug` only with held and archived features shown.
 pub fn is_folded(board: &DecisionBoard, tree: &[ProjectInfo], slug: &str) -> bool {
     standing::feature_rows(board, tree).iter().any(|row| row.slug == slug && row.standing.folded())
@@ -337,16 +322,6 @@ mod tests {
         assert_eq!(peek.next_up.as_ref().map(|l| l.label.as_str()), Some("2"));
         assert_eq!(peek.last_decided.as_ref().map(|l| l.label.as_str()), Some("D1"));
         assert_eq!(peek.links[0].key, "ENG-88");
-    }
-
-    #[test]
-    fn the_cursor_stays_on_its_feature_while_listed_and_else_takes_the_first() {
-        let board = fixtures::board();
-        let tree = fixtures::feature_tree();
-        assert_eq!(settle_peek(&board, &tree, Some("bump"), false).as_deref(), Some("bump"));
-        assert_eq!(settle_peek(&board, &tree, Some("mouse"), false).as_deref(), Some("trim"), "held is folded");
-        assert_eq!(settle_peek(&board, &tree, Some("mouse"), true).as_deref(), Some("mouse"));
-        assert_eq!(settle_peek(&board, &tree, None, false).as_deref(), Some("trim"));
     }
 
     #[test]

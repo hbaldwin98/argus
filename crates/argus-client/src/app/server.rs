@@ -7,7 +7,7 @@
 
 use super::*;
 use argus_protocol::review_session::Answered;
-use argus_protocol::Hello;
+use argus_protocol::{Hello, Received};
 
 impl App {
     /// Subscribes to everything currently on screen and drops the rest.
@@ -60,6 +60,9 @@ impl App {
     pub fn reconnect(&mut self, out: UnboundedSender<ClientMsg>) {
         self.out = out;
         self.grids.clear();
+        // Pushed while the daemon was away means pushed to nobody: the
+        // next tree asks for the board again.
+        self.board_follower.reconnected();
         self.sync_subscription();
     }
 
@@ -288,68 +291,37 @@ impl App {
 
     /// Adopted only when it is the board on screen: every client is told
     /// about every project's board, because the daemon does not track which
-    /// view anyone has open.
+    /// view anyone has open. The follower decides, as it does for the
+    /// desktop window, and settles the feature by slug, so a board arriving
+    /// while an agent writes does not move the reader to another feature.
     fn receive_decisions(&mut self, board: argus_protocol::DecisionBoard) {
-        if !self.reads_board_of(|project, repository| board.is_for(project, repository)) {
+        let row = self.selected_work();
+        let mut out = Vec::new();
+        if !self.board_follower.receive_board(board, &self.tree, self.show_folded_features, &mut out) {
             return;
         }
-        // Held by slug across the swap: a board arriving while an agent
-        // writes must not move the reader to another feature's tree.
-        let was = self.current_feature_row().map(|row| row.slug);
-        let row = self.selected_work();
-        self.board = Some(board);
-        if let Some(at) = was.and_then(|slug| {
-            self.feature_rows()
-                .iter()
-                .position(|row| row.slug == slug)
-        }) {
-            self.feature_sel = at;
-        }
-        self.rescope_feature();
+        self.send_board_requests(out);
+        self.land_on_feature();
         self.keep_selection(row);
     }
 
-    /// Whether what was pushed is from the board on screen: the current
-    /// repository's, in the current project. `argus_protocol`'s `is_for`
-    /// decides, so every client keeps the same pushes.
-    fn reads_board_of(&self, is_for: impl Fn(&str, RepositoryId) -> bool) -> bool {
-        match (self.current_project(), self.current_repository()) {
-            (Some(project), Some(repository)) => is_for(&project.name, repository.id),
-            _ => false,
-        }
-    }
-
+    /// Held by id across the swap, so a task reordered or moved under the
+    /// cursor is still the task under the cursor: a card you have to go
+    /// looking for reads as having been lost.
     fn receive_tasks(&mut self, list: argus_protocol::TaskList) {
-        // A push for a feature the view is not on is another client's
-        // business, exactly as a board for another project is. Feature
-        // slugs are only unique inside that project, so both scopes have to
-        // agree before installing it.
-        let ours = self.reads_board_of(|project, repository| list.is_for(project, repository))
-            && self.feature_slug() == list.feature;
-        if !ours {
-            return;
+        let on = self.selected_work();
+        if let Received::Adopted { lands } = self.board_follower.receive_tasks(list, on) {
+            self.keep_selection(lands);
         }
-        // Held by id across the swap, so a task reordered or moved under
-        // the cursor is still the task under the cursor: a card you have
-        // to go looking for reads as having been lost.
-        let was = self.selected_work();
-        let mut list = list;
-        list.tasks = list.tasks_in_tree_order();
-        self.tasks = Some(list);
-        self.keep_selection(was);
     }
 
     fn receive_diagrams(&mut self, list: argus_protocol::DiagramList) {
-        let ours = self.reads_board_of(|project, repository| list.is_for(project, repository))
-            && self.feature_slug() == list.feature;
-        if !ours {
-            return;
-        }
-        let was = self.selected_diagram().map(|d| d.id);
-        self.diagrams = Some(list);
-        match restore_position_by_id(self.feature_diagrams(), |d| d.id, was) {
-            Some(at) => self.diagram_sel = at,
-            None => self.clamp_feature_cursors(),
+        let on = self.selected_diagram().map(|d| d.id);
+        if let Received::Adopted { lands } = self.board_follower.receive_diagrams(list, on) {
+            match lands.and_then(|id| self.feature_diagrams().iter().position(|d| d.id == id)) {
+                Some(at) => self.diagram_sel = at,
+                None => self.clamp_feature_cursors(),
+            }
         }
     }
 
@@ -430,8 +402,17 @@ impl App {
             }
         }
         // Last, because it asks about the project the selection has just
-        // landed on rather than the one it started the tree on.
-        self.refresh_board_if_stale();
+        // landed on rather than the one it started the tree on. A tree
+        // regroups the index — an agent arriving makes a feature active —
+        // so the cursor is settled on its feature by slug, not left on a
+        // place another feature has moved into.
+        self.follow_board();
+        if self.view == View::Feature {
+            let mut out = Vec::new();
+            self.board_follower.settle(&self.tree, self.show_folded_features, &mut out);
+            self.send_board_requests(out);
+            self.land_on_feature();
+        }
     }
 
     /// Alerts, and rings the bell if asked to, for each pane that came to
@@ -674,14 +655,6 @@ impl App {
         self.status.clear();
         self.status_alert = false;
     }
-}
-
-/// Finds the row a previously selected id now occupies in a freshly
-/// installed list, so a reordered or moved row does not cost the reader
-/// their place. `None` means the id is gone (or there was none to begin
-/// with) and the caller should fall back to clamping the old index.
-fn restore_position_by_id<T>(items: &[T], id: impl Fn(&T) -> i64, was: Option<i64>) -> Option<usize> {
-    was.and_then(|id_val| items.iter().position(|item| id(item) == id_val))
 }
 
 #[cfg(test)]

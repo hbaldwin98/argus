@@ -162,10 +162,10 @@ fn the_peek_shows_what_needs_you_what_is_in_flight_and_the_last_decision() {
 #[test]
 fn held_and_archived_features_are_folded_until_z() {
     let (mut app, _rx) = feature_stage();
-    let board = app.board.as_mut().unwrap();
-    board.features[0].state = FeatureState::Done;
-    board.features[2].held = Some("until the release".into());
-    app.rescope_feature();
+    push_board(&mut app, |board| {
+        board.features[0].state = FeatureState::Done;
+        board.features[2].held = Some("until the release".into());
+    });
 
     assert_eq!(app.feature_rows().len(), 1);
     assert!(screen(&mut app).contains("held and archived features are folded"));
@@ -194,8 +194,7 @@ fn v_archives_the_feature_and_brings_an_archived_one_back() {
 #[test]
 fn a_repository_with_no_features_says_what_one_is_and_how_to_start_one() {
     let (mut app, _rx) = feature_stage();
-    app.board.as_mut().unwrap().features.clear();
-    app.rescope_feature();
+    push_board(&mut app, |board| board.features.clear());
 
     let text = screen(&mut app);
 
@@ -213,7 +212,7 @@ fn a_board_for_another_project_is_dropped_rather_than_drawn() {
 
     app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(board)));
 
-    assert_eq!(app.board.as_ref().unwrap().features.len(), 3);
+    assert_eq!(app.board_follower.board().unwrap().features.len(), 3);
 }
 
 #[test]
@@ -227,11 +226,11 @@ fn a_board_for_another_repository_of_the_project_is_dropped_too() {
     board.features.truncate(1);
 
     app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(board.clone())));
-    assert_eq!(app.board.as_ref().unwrap().features.len(), 3, "another repository's");
+    assert_eq!(app.board_follower.board().unwrap().features.len(), 3, "another repository's");
 
     board.repositories = vec![ours];
     app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(board)));
-    assert_eq!(app.board.as_ref().unwrap().features.len(), 1, "this repository's is taken");
+    assert_eq!(app.board_follower.board().unwrap().features.len(), 1, "this repository's is taken");
 }
 
 // ---- levels ----------------------------------------------------------------
@@ -307,12 +306,13 @@ fn link(tracker: &str, key: &str, url: &str) -> TrackerLink {
 /// Feature #7 open, linked to a Linear issue and a Jira story.
 fn linked() -> (App, tokio::sync::mpsc::UnboundedReceiver<ClientMsg>) {
     let (mut app, rx) = reading();
-    let board = app.board.as_mut().unwrap();
-    let trim = board.features.iter_mut().find(|f| f.slug == "trim").unwrap();
-    trim.links = vec![
-        link("Linear", "ENG-88", "https://linear.app/acme/issue/ENG-88/trim"),
-        link("Jira", "ARG-142", "https://acme.atlassian.net/browse/ARG-142"),
-    ];
+    push_board(&mut app, |board| {
+        let trim = board.features.iter_mut().find(|f| f.slug == "trim").unwrap();
+        trim.links = vec![
+            link("Linear", "ENG-88", "https://linear.app/acme/issue/ENG-88/trim"),
+            link("Jira", "ARG-142", "https://acme.atlassian.net/browse/ARG-142"),
+        ];
+    });
     (app, rx)
 }
 
@@ -346,9 +346,10 @@ fn t_opens_the_only_ticket_and_offers_a_choice_of_several() {
     key(&mut app, KeyCode::Enter);
     assert_eq!(app.status, "no browser here; copied https://acme.atlassian.net/browse/ARG-142");
 
-    let board = app.board.as_mut().unwrap();
-    let trim = board.features.iter_mut().find(|f| f.slug == "trim").unwrap();
-    trim.links.truncate(1);
+    push_board(&mut app, |board| {
+        let trim = board.features.iter_mut().find(|f| f.slug == "trim").unwrap();
+        trim.links.truncate(1);
+    });
     press(&mut app, 't');
     assert!(app.picker.is_none(), "one ticket: no question");
     assert_eq!(app.status, "no browser here; copied https://linear.app/acme/issue/ENG-88/trim");
@@ -400,10 +401,12 @@ const DRAFT: &str = "Linear: a feature is an issue\nJira: a feature is a story";
 /// The index, with a draft of the tracker map waiting from pane #32.
 fn drafted() -> (App, tokio::sync::mpsc::UnboundedReceiver<ClientMsg>) {
     let (mut app, mut rx) = feature_stage();
-    app.board.as_mut().unwrap().tracker_map = argus_protocol::TrackerMap {
-        body: "Linear: issues".into(),
-        draft: Some(argus_protocol::MapDraft { body: DRAFT.into(), by: "pane #32".into(), at: 1 }),
-    };
+    push_board(&mut app, |board| {
+        board.tracker_map = argus_protocol::TrackerMap {
+            body: "Linear: issues".into(),
+            draft: Some(argus_protocol::MapDraft { body: DRAFT.into(), by: "pane #32".into(), at: 1 }),
+        };
+    });
     sent(&mut rx);
     (app, rx)
 }
@@ -451,7 +454,7 @@ fn a_draft_is_approved_as_it_reads_in_the_editor_and_not_predicted() {
     press(&mut app, 'A');
     assert_eq!(map_changes(&mut rx), [MapChange::Approve(format!("{DRAFT}\nGitHub: never"))]);
     assert!(app.brief.is_none() || app.overlay.is_none(), "the editor closes");
-    assert_eq!(app.board.as_ref().unwrap().tracker_map.body, "Linear: issues", "the board waits");
+    assert_eq!(app.board_follower.board().unwrap().tracker_map.body, "Linear: issues", "the board waits");
 }
 
 #[test]
@@ -667,13 +670,15 @@ fn the_cursor_stays_on_its_row_when_the_tasks_under_it_are_replaced() {
 #[test]
 fn a_new_feature_offers_the_keys_that_put_the_first_thing_in_it() {
     let (mut app, _rx) = reading();
-    let board = app.board.as_mut().unwrap();
-    board.decisions.clear();
-    board.features[1].body.clear();
-    board.features[1].tasks = Default::default();
-    board.features[1].checkouts.clear();
-    app.tasks.as_mut().unwrap().tasks.clear();
-    app.rescope_feature();
+    push_board(&mut app, |board| {
+        board.decisions.clear();
+        board.features[1].body.clear();
+        board.features[1].tasks = Default::default();
+        board.features[1].checkouts.clear();
+    });
+    let mut tasks = app.board_follower.tasks().unwrap().clone();
+    tasks.tasks.clear();
+    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(tasks)));
 
     let text = screen(&mut app);
 
@@ -788,8 +793,7 @@ fn a_decision_is_withdrawn_rather_than_removed_and_x_again_restores_it() {
         [ClientMsg::ChangeDecision { change: DecisionChange::Withdraw { id: 1 }, .. }]
     ));
 
-    app.board.as_mut().unwrap().decisions[0].withdrawn_at = Some(9);
-    app.rescope_feature();
+    push_board(&mut app, |board| board.decisions[0].withdrawn_at = Some(9));
     sent(&mut rx);
     press(&mut app, 'x');
     assert!(matches!(

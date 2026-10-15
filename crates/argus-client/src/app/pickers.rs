@@ -424,7 +424,7 @@ impl App {
     /// this gesture changes where its work is active rather than moving data.
     pub(super) fn open_feature_checkout_picker(&mut self) {
         let (Some(project), Some(source), Some(slug)) = (
-            self.board.as_ref().and_then(|board| board.project),
+            self.board_follower.board().and_then(|board| board.project),
             self.current_checkout().map(|checkout| checkout.id),
             self.feature_slug(),
         ) else {
@@ -469,10 +469,10 @@ impl App {
     /// so a wait can be taken back from the same list.
     pub(super) fn open_feature_wait_picker(&mut self) {
         let (Some(project), Some(checkout), Some(feature), Some(board)) = (
-            self.board.as_ref().and_then(|board| board.project),
+            self.board_follower.board().and_then(|board| board.project),
             self.current_checkout().map(|checkout| checkout.id),
             self.selected_feature(),
-            self.board.as_ref(),
+            self.board_follower.board(),
         ) else {
             self.report("no feature selected");
             return;
@@ -520,7 +520,7 @@ impl App {
         let (Some(_), Some(here), Some(board)) = (
             self.selected_task(),
             self.feature_slug(),
-            self.board.as_ref(),
+            self.board_follower.board(),
         ) else {
             self.report("no task selected");
             return;
