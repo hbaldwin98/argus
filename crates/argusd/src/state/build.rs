@@ -149,6 +149,7 @@ impl Daemon {
             inner: StdMutex::new(Inner {
                 workspaces,
                 projects,
+                consoles: Vec::new(),
                 ids,
                 open,
                 excluded,

@@ -90,6 +90,10 @@ fn dispatch_pane(
                 daemon.spawn_agent_asking(checkout, &template, prompt.as_deref())
             })
         }
+        ClientMsg::SpawnConsole { request_id } => {
+            let daemon = daemon.clone();
+            spawn_pane(out_tx, request_id, move || daemon.spawn_console())
+        }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
         ClientMsg::OpenInEditor {
             checkout,

@@ -172,6 +172,13 @@ pub(super) fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
     panes(projects).find(|p| p.id == id)
 }
 
+/// A pane in a checkout or among the consoles: for what is asked of any
+/// pty, such as its screen, its size and its keyboard. What only an agent
+/// does looks in the checkouts alone, since a console is a shell.
+pub(super) fn find_any_pane_ref(inner: &Inner, id: PaneId) -> Option<&Pane> {
+    find_pane_ref(&inner.projects, id).or_else(|| inner.consoles.iter().find(|p| p.id == id))
+}
+
 /// The agent already working in this checkout, if its project allows only
 /// one. `None` when the project has not asked for that, or when nothing is
 /// running there — sharing a checkout is otherwise allowed, and merely

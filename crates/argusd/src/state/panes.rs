@@ -48,6 +48,25 @@ impl Daemon {
         Ok(id)
     }
 
+    /// A shell in the home directory that belongs to no checkout.
+    pub fn spawn_console(self: &Arc<Self>) -> anyhow::Result<PaneId> {
+        let id = PaneId(self.inner.lock().unwrap().ids.alloc());
+        let daemon = self.clone();
+        let runtime = self.processes.start(
+            id,
+            &crate::browse::home_dir(),
+            pty::Spawn::DefaultShell,
+            Box::new(move |code| daemon.mark_pane_exited(id, code)),
+        )?;
+        self.inner
+            .lock()
+            .unwrap()
+            .consoles
+            .push(Pane::new(id, PaneKind::Shell, "shell".to_string(), runtime));
+        self.broadcast_tree();
+        Ok(id)
+    }
+
     /// Opens `rel_path` (repo-relative) in the user's editor as a pane.
     pub fn spawn_editor(
         self: &Arc<Self>,
@@ -333,7 +352,15 @@ impl Daemon {
                         restart,
                     )
                 }
-                None => (None, None),
+                // A console is a shell: it ends as its row says, with nothing
+                // to resume or restart.
+                None => {
+                    if let Some(p) = inner.consoles.iter_mut().find(|p| p.id == pane) {
+                        p.status = PaneStatus::Exited { code };
+                        p.status_since = std::time::SystemTime::now();
+                    }
+                    (None, None)
+                }
             }
         };
 
@@ -470,7 +497,14 @@ impl Daemon {
                 .as_ref()
                 .map(|(_, path)| path.clone())
                 .filter(|path| !checkout_has_agent(&inner.projects, path));
-            (taken.map(|(p, _)| p), orphaned, used)
+            let removed = match taken {
+                Some((p, _)) => Some(p),
+                None => {
+                    let at = inner.consoles.iter().position(|p| p.id == pane);
+                    at.map(|at| inner.consoles.remove(at))
+                }
+            };
+            (removed, orphaned, used)
         };
         let removed = removed.ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         self.retire_pane(removed);
@@ -542,7 +576,7 @@ impl Daemon {
     /// can outlast the lookup that found it.
     pub(super) fn pane_input(&self, pane: PaneId) -> Option<Arc<dyn processes::Keyboard>> {
         let inner = self.inner.lock().unwrap();
-        let pane = find_pane_ref(&inner.projects, pane)?;
+        let pane = find_any_pane_ref(&inner, pane)?;
         (!matches!(pane.status, PaneStatus::Exited { .. })).then(|| pane.runtime.input())
     }
 

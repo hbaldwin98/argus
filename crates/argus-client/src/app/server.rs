@@ -114,6 +114,9 @@ impl App {
             ServerMsg::Templates(names) => {
                 self.templates = names;
             }
+            // The desktop window's for now; the terminal client lists no
+            // consoles yet.
+            ServerMsg::Consoles(_) => {}
             ServerMsg::Workspaces(list) => {
                 self.open_workspace = list
                     .iter()

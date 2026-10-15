@@ -638,6 +638,13 @@ client sends either only to a daemon listing the `add-project` capability.
 Shells, agents, and editors use the same PTY primitive. Editors exist in daemon state while open
 but are omitted from the normal pane list and counts.
 
+A console is a shell that belongs to no checkout: it starts in the home directory and lives in a
+list of its own beside the projects, outside every workspace. Screens, sizes, keys and closing find
+it as they find any pane; what only an agent does looks in the checkouts alone. Clients read every
+pane as part of a project, so the consoles do not travel in the tree: a client that greeted with
+`consoles` is sent `ServerMsg::Consoles` after the daemon's greeting and after every tree, and may
+send `ClientMsg::SpawnConsole`. A console is not recorded for the next run.
+
 An agent whose process exits leaves its row as `Exited` unless its template sets `restart`:
 `on-failure` starts it again on a non-zero exit, `always` on any exit, and `never` — the default —
 leaves the row alone. A pane closed by the operator is removed before it is killed, so closing is
