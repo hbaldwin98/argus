@@ -378,23 +378,23 @@ impl Daemon {
             .iter()
             .find(|candidate| candidate.id == address.project)
             .ok_or_else(|| anyhow::anyhow!("no such project"))?;
-        let (repository, source_checkout) = project
+        let holding_source = |repository: &&Repository| {
+            repository.checkouts.iter().any(|checkout| checkout.path == source)
+        };
+        if !project.repositories.iter().any(|repository| holding_source(&repository)) {
+            anyhow::bail!("source checkout is not in this project");
+        }
+        // A repository listed twice has a checkout at the source path in
+        // each listing; the one meant is the listing the destination is in.
+        let destination_checkout = project
             .repositories
             .iter()
+            .filter(holding_source)
             .find_map(|repository| {
-                repository
-                    .checkouts
-                    .iter()
-                    .find(|checkout| checkout.path == source)
-                    .map(|checkout| (repository, checkout))
+                repository.checkouts.iter().find(|checkout| checkout.id == destination)
             })
-            .ok_or_else(|| anyhow::anyhow!("source checkout is not in this project"))?;
-        let destination_checkout = repository
-            .checkouts
-            .iter()
-            .find(|checkout| checkout.id == destination)
             .ok_or_else(|| anyhow::anyhow!("destination checkout is not in the source repository"))?;
-        Ok((source_checkout.path.clone(), destination_checkout.path.clone()))
+        Ok((source.to_path_buf(), destination_checkout.path.clone()))
     }
 
     /// The feature an agent's request is about: the one it names, or else
