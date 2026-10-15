@@ -1,6 +1,9 @@
-//! A client's copy of the tree: every pane in it, an agent's telemetry
-//! applied to it between trees, and which panes changed state from the
-//! copy before.
+//! A client's copy of the tree, and finding things in it: every pane and
+//! checkout, where a pane or checkout sits, an agent's telemetry applied
+//! between trees, and which panes changed state from the copy before.
+//!
+//! Every query here counts editors: a pane is found by searching its
+//! checkout's panes, whether or not the checkout lists it as a row.
 //!
 //! Here beside the tree rather than in the terminal client, so that any
 //! client holding a copy reads what changed as the terminal does: two
@@ -8,16 +11,36 @@
 
 use std::collections::HashMap;
 
-use crate::ids::PaneId;
-use crate::tree::{AgentTelemetry, PaneInfo, PaneState, PaneStatus, ProjectInfo};
+use crate::ids::{CheckoutId, PaneId};
+use crate::tree::{AgentTelemetry, CheckoutInfo, PaneInfo, PaneState, PaneStatus, ProjectInfo, RepositoryInfo};
 
-/// A tree a client holds: the open workspace's projects.
+/// Where a checkout sits: everything above it, so a caller that found it
+/// by id need not walk the tree again for its names.
+#[derive(Debug, Clone, Copy)]
+pub struct Lineage<'a> {
+    pub project: &'a ProjectInfo,
+    pub repository: &'a RepositoryInfo,
+    pub checkout: &'a CheckoutInfo,
+}
+
+/// A client's copy of the tree (the open workspace's projects), and finding
+/// things in it.
 pub trait HeldTree {
-    /// Every pane, editors included: a pane is a pane to be found whether
-    /// or not the checkout lists it.
-    fn panes(&self) -> impl Iterator<Item = &PaneInfo>;
+    fn checkouts(&self) -> impl Iterator<Item = &CheckoutInfo>;
+
+    fn panes(&self) -> impl Iterator<Item = &PaneInfo> {
+        self.checkouts().flat_map(|checkout| checkout.panes.iter())
+    }
 
     fn panes_mut(&mut self) -> impl Iterator<Item = &mut PaneInfo>;
+
+    fn checkout(&self, id: CheckoutId) -> Option<&CheckoutInfo> {
+        self.checkouts().find(|checkout| checkout.id == id)
+    }
+
+    fn lineage_of_checkout(&self, id: CheckoutId) -> Option<Lineage<'_>>;
+
+    fn lineage_of_pane(&self, id: PaneId) -> Option<(Lineage<'_>, &PaneInfo)>;
 
     /// Applies `ServerMsg::PaneTelemetry`. Returns whether the tree
     /// changed; a pane not in it yet is skipped, since the tree that brings
@@ -35,11 +58,10 @@ pub trait HeldTree {
 }
 
 impl HeldTree for [ProjectInfo] {
-    fn panes(&self) -> impl Iterator<Item = &PaneInfo> {
+    fn checkouts(&self) -> impl Iterator<Item = &CheckoutInfo> {
         self.iter()
             .flat_map(|project| project.repositories.iter())
             .flat_map(|repository| repository.checkouts.iter())
-            .flat_map(|checkout| checkout.panes.iter())
     }
 
     fn panes_mut(&mut self) -> impl Iterator<Item = &mut PaneInfo> {
@@ -48,6 +70,25 @@ impl HeldTree for [ProjectInfo] {
             .flat_map(|repository| repository.checkouts.iter_mut())
             .flat_map(|checkout| checkout.panes.iter_mut())
     }
+
+    fn lineage_of_checkout(&self, id: CheckoutId) -> Option<Lineage<'_>> {
+        lineages(self).find(|lineage| lineage.checkout.id == id)
+    }
+
+    fn lineage_of_pane(&self, id: PaneId) -> Option<(Lineage<'_>, &PaneInfo)> {
+        lineages(self).find_map(|lineage| {
+            let pane = lineage.checkout.panes.iter().find(|pane| pane.id == id)?;
+            Some((lineage, pane))
+        })
+    }
+}
+
+fn lineages(tree: &[ProjectInfo]) -> impl Iterator<Item = Lineage<'_>> {
+    tree.iter().flat_map(|project| {
+        project.repositories.iter().flat_map(move |repository| {
+            repository.checkouts.iter().map(move |checkout| Lineage { project, repository, checkout })
+        })
+    })
 }
 
 /// A pane whose loudest state is not the one it had in the last tree.
@@ -145,6 +186,71 @@ mod tests {
             vec![editor],
         ]);
         assert_eq!(ids(tree.as_slice()), [1, 2, 3], "editors are panes too");
+    }
+
+    #[test]
+    fn every_checkout_is_walked_and_found_in_every_project() {
+        let tree = projects(vec![vec![], vec![], vec![]]);
+        let walked: Vec<u64> = tree.checkouts().map(|checkout| checkout.id.0).collect();
+        assert_eq!(walked, [0, 1, 2]);
+        assert_eq!(tree.checkout(CheckoutId(2)).unwrap().path, "/r2");
+    }
+
+    #[test]
+    fn an_editor_pane_is_placed_under_its_checkout() {
+        let mut editor = pane(3, PaneStatus::Idle);
+        editor.kind = PaneKind::Editor;
+        let tree = projects(vec![vec![pane(1, PaneStatus::Idle)], vec![pane(2, PaneStatus::Idle), editor]]);
+
+        let (lineage, pane) = tree.lineage_of_pane(PaneId(3)).expect("editors are placed too");
+        assert_eq!(pane.id, PaneId(3));
+        assert_eq!(lineage.project.id, ProjectId(1));
+        assert_eq!(lineage.repository.id, RepositoryId(1));
+        assert_eq!(lineage.checkout.id, CheckoutId(1));
+    }
+
+    #[test]
+    fn a_checkout_lineage_names_everything_above_it() {
+        let tree = projects(vec![vec![], vec![]]);
+        let lineage = tree.lineage_of_checkout(CheckoutId(1)).unwrap();
+        assert_eq!(
+            (lineage.project.name.as_str(), lineage.repository.name.as_str(), lineage.checkout.path.as_str()),
+            ("p1", "r1", "/r1")
+        );
+    }
+
+    #[test]
+    fn a_lineage_names_the_repository_and_checkout_that_hold_it() {
+        let mut tree = projects(vec![vec![]]);
+        let first = tree[0].repositories[0].clone();
+        let checkout = |id: u64, panes: Vec<PaneInfo>| CheckoutInfo {
+            id: CheckoutId(id),
+            name: format!("c{id}"),
+            path: format!("/c{id}"),
+            panes,
+            git: None,
+            primary: false,
+        };
+        tree[0].repositories.push(RepositoryInfo {
+            id: RepositoryId(7),
+            name: "second".into(),
+            checkouts: vec![checkout(10, vec![pane(1, PaneStatus::Idle)]), checkout(11, vec![pane(2, PaneStatus::Idle)])],
+            ..first
+        });
+
+        let lineage = tree.lineage_of_checkout(CheckoutId(11)).unwrap();
+        assert_eq!((lineage.repository.id, lineage.checkout.id), (RepositoryId(7), CheckoutId(11)));
+        let (lineage, found) = tree.lineage_of_pane(PaneId(2)).unwrap();
+        assert_eq!(found.id, PaneId(2));
+        assert_eq!((lineage.repository.id, lineage.checkout.id), (RepositoryId(7), CheckoutId(11)));
+    }
+
+    #[test]
+    fn a_missing_id_is_found_nowhere() {
+        let tree = projects(vec![vec![pane(1, PaneStatus::Idle)]]);
+        assert!(tree.checkout(CheckoutId(9)).is_none());
+        assert!(tree.lineage_of_checkout(CheckoutId(9)).is_none());
+        assert!(tree.lineage_of_pane(PaneId(9)).is_none());
     }
 
     #[test]

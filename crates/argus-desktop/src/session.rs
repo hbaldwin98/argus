@@ -971,13 +971,7 @@ impl Session {
     }
 
     fn spawn(&mut self, checkout: CheckoutId, then: Made, ask: impl FnOnce(u64) -> ClientMsg) -> Vec<ClientMsg> {
-        let exists = self
-            .tree
-            .iter()
-            .flat_map(|p| &p.repositories)
-            .flat_map(|r| &r.checkouts)
-            .any(|c| c.id == checkout);
-        if exists {
+        if self.tree.checkout(checkout).is_some() {
             let request_id = self.awaited.ask(then);
             self.out.push(ask(request_id));
         }
@@ -1154,9 +1148,11 @@ impl Session {
     /// on screen, else that repository's own.
     fn here(&self) -> Here {
         let repository = self.chosen_repository();
-        let shown = self.shown.on(Side::Workspace).and_then(|pane| {
-            self.tree.iter().flat_map(|p| &p.repositories).flat_map(|r| &r.checkouts).find(|c| c.panes.iter().any(|p| p.id == pane))
-        });
+        let shown = self
+            .shown
+            .on(Side::Workspace)
+            .and_then(|pane| self.tree.lineage_of_pane(pane))
+            .map(|(lineage, _)| lineage.checkout);
         let checkout = shown.or_else(|| repository.and_then(|r| r.checkouts.iter().find(|c| c.primary)));
         Here { repository: repository.map(|r| r.id), checkout: checkout.map(|c| c.id) }
     }
@@ -1772,7 +1768,7 @@ impl Session {
     /// `x` on a checkout in the rail: the Checkouts stage opens on its row
     /// and asks, since its question is the stage's and is drawn there.
     fn remove_checkout(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
-        let Some(repo) = self.in_project(checkout) else {
+        let Some(repo) = self.in_project(checkout).cloned() else {
             return self.finish();
         };
         if let Err(text) = self.checkouts.ask_remove(&repo, checkout) {
@@ -1785,15 +1781,17 @@ impl Session {
     /// A checkout chosen in the palette: the Checkouts stage opens on its
     /// row, where its keys are.
     fn go_to_checkout(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
-        if let Some(argus_protocol::RepositoryInfo { id: repository, .. }) = self.in_project(checkout) {
+        if let Some(repository) = self.in_project(checkout).map(|r| r.id) {
             self.open_on_row(repository, checkout);
         }
         self.finish()
     }
 
     /// A checkout of the rail's project, and the repository holding it.
-    fn in_project(&self, checkout: CheckoutId) -> Option<argus_protocol::RepositoryInfo> {
-        self.current_project()?.repositories.iter().find(|r| r.checkouts.iter().any(|c| c.id == checkout)).cloned()
+    fn in_project(&self, checkout: CheckoutId) -> Option<&argus_protocol::RepositoryInfo> {
+        let project = self.current_project()?.id;
+        let lineage = self.tree.lineage_of_checkout(checkout).filter(|lineage| lineage.project.id == project)?;
+        Some(lineage.repository)
     }
 
     fn open_on_row(&mut self, repository: RepositoryId, checkout: CheckoutId) {
@@ -2245,12 +2243,7 @@ impl Session {
 
     fn shown_checkout(&self) -> Option<CheckoutId> {
         let pane = self.on_screen()?;
-        self.tree
-            .iter()
-            .flat_map(|p| &p.repositories)
-            .flat_map(|r| &r.checkouts)
-            .find(|c| c.panes.iter().any(|p| p.id == pane))
-            .map(|c| c.id)
+        self.tree.lineage_of_pane(pane).map(|(lineage, _)| lineage.checkout.id)
     }
 
     /// The settings, when a change asks for them to be saved.
@@ -2292,12 +2285,12 @@ impl Session {
     fn chosen_repository(&self) -> Option<&argus_protocol::RepositoryInfo> {
         let project = self.current_project()?;
         let by_id = |id: RepositoryId| project.repositories.iter().find(|r| r.id == id);
-        let holding_shown = self.shown.on(Side::Workspace).and_then(|pane| {
-            project
-                .repositories
-                .iter()
-                .find(|r| r.checkouts.iter().any(|c| c.panes.iter().any(|p| p.id == pane)))
-        });
+        let holding_shown = self
+            .shown
+            .on(Side::Workspace)
+            .and_then(|pane| self.tree.lineage_of_pane(pane))
+            .filter(|(lineage, _)| lineage.project.id == project.id)
+            .map(|(lineage, _)| lineage.repository);
         let (active, _) = project.repositories_by_activity();
         self.repository
             .and_then(by_id)
@@ -2496,15 +2489,7 @@ impl Session {
     }
 
     fn project_of(&self, pane: PaneId) -> Option<ProjectId> {
-        self.tree
-            .iter()
-            .find(|p| {
-                p.repositories
-                    .iter()
-                    .flat_map(|r| &r.checkouts)
-                    .any(|c| c.panes.iter().any(|p| p.id == pane))
-            })
-            .map(|p| p.id)
+        self.tree.lineage_of_pane(pane).map(|(lineage, _)| lineage.project.id)
     }
 }
 

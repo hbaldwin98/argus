@@ -10,8 +10,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::held_tree::HeldTree;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId};
-use crate::tree::{CheckoutInfo, PaneInfo, PaneKind, ProjectInfo, RepositoryInfo};
+use crate::tree::{CheckoutInfo, PaneInfo, PaneKind, ProjectInfo};
 
 /// What one client is showing, by the daemon's ids. Each is the selection
 /// at its depth; a client on the project heading has no checkout.
@@ -87,15 +88,12 @@ impl Focus {
     /// rather than by the checkout the view names beside it — an agent can
     /// move to another checkout, and the client's ids follow a tree later.
     pub fn of(view: &View, workspace: &str, tree: &[ProjectInfo]) -> Focus {
-        let at_pane = view.pane.and_then(|id| place_pane(tree, id));
+        let at_pane = view.pane.and_then(|id| tree.lineage_of_pane(id)).map(|(lineage, pane)| {
+            (lineage.project, Some(lineage.repository), Some(lineage.checkout), Some(pane))
+        });
         let at_checkout = || {
-            let id = view.checkout?;
-            tree.iter().find_map(|project| {
-                project.repositories.iter().find_map(|repository| {
-                    let checkout = repository.checkouts.iter().find(|c| c.id == id)?;
-                    Some((project, Some(repository), Some(checkout), None))
-                })
-            })
+            let lineage = tree.lineage_of_checkout(view.checkout?)?;
+            Some((lineage.project, Some(lineage.repository), Some(lineage.checkout), None))
         };
         let at_project = || {
             let id = view.project?;
@@ -127,25 +125,6 @@ impl Focus {
             pane: pane.map(focus_pane),
         }
     }
-}
-
-type Placed<'a> = (
-    &'a ProjectInfo,
-    Option<&'a RepositoryInfo>,
-    Option<&'a CheckoutInfo>,
-    Option<&'a PaneInfo>,
-);
-
-/// The pane `id`, with everything above it.
-fn place_pane(tree: &[ProjectInfo], id: PaneId) -> Option<Placed<'_>> {
-    tree.iter().find_map(|project| {
-        project.repositories.iter().find_map(|repository| {
-            repository.checkouts.iter().find_map(|checkout| {
-                let pane = checkout.panes.iter().find(|pane| pane.id == id)?;
-                Some((project, Some(repository), Some(checkout), Some(pane)))
-            })
-        })
-    })
 }
 
 fn focus_checkout(checkout: &CheckoutInfo) -> FocusCheckout {
@@ -181,7 +160,7 @@ fn focus_pane(pane: &PaneInfo) -> FocusPane {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::{AgentTelemetry, GitStatus, PaneStatus};
+    use crate::tree::{AgentTelemetry, GitStatus, PaneStatus, RepositoryInfo};
 
     fn pane(id: u64, status: PaneStatus) -> PaneInfo {
         PaneInfo {

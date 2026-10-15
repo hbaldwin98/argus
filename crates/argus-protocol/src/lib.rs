@@ -88,7 +88,7 @@ pub use extensions::{
 };
 pub use focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, View};
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
-pub use held_tree::{transitions, HeldTree, Transition};
+pub use held_tree::{transitions, HeldTree, Lineage, Transition};
 pub use hello::{
     ADD_PROJECT, AGENT_VIEWS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,

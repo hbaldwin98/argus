@@ -6,7 +6,7 @@
 //! also keep it to a window in the background, where the chime is easiest
 //! to miss and a notification is the only thing on screen.
 
-use argus_protocol::{PaneId, PaneStatus, ProjectInfo, Transition};
+use argus_protocol::{HeldTree, PaneId, PaneStatus, ProjectInfo, Transition};
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
@@ -53,10 +53,8 @@ pub fn alerts(transitions: &[Transition<'_>], tree: &[ProjectInfo], chosen: &Pre
 
 /// `repository / checkout`, where the pane runs.
 fn place(tree: &[ProjectInfo], pane: PaneId) -> Option<String> {
-    tree.iter().flat_map(|p| &p.repositories).find_map(|repo| {
-        let checkout = repo.checkouts.iter().find(|c| c.panes.iter().any(|p| p.id == pane))?;
-        Some(format!("{} / {}", repo.name, checkout.name))
-    })
+    let (lineage, _) = tree.lineage_of_pane(pane)?;
+    Some(format!("{} / {}", lineage.repository.name, lineage.checkout.name))
 }
 
 fn capitalise(text: &str) -> String {
