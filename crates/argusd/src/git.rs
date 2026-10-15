@@ -868,13 +868,29 @@ mod tests {
         for _ in 0..200 {
             let _ = list_worktrees(dir.path());
         }
-        // 200 process spawns would take far longer than this on any
-        // platform; in-process libgit2 calls are microseconds each.
-        assert!(
-            before.elapsed() < std::time::Duration::from_secs(2),
-            "200 listings took {:?} — that smells like process spawning",
-            before.elapsed()
-        );
+        let listing = before.elapsed() / 200;
+
+        // Measured against spawning git on the same machine under the same
+        // load, not a fixed time: a CI runner busy with the rest of the
+        // suite ran 200 listings past a two-second bound with no child in
+        // sight. A listing that spawned would cost at least one spawn.
+        let before = std::time::Instant::now();
+        let spawned = (0..5).all(|_| {
+            std::process::Command::new("git")
+                .arg("--version")
+                .stdout(std::process::Stdio::null())
+                .status()
+                .is_ok()
+        });
+        let spawn = before.elapsed() / 5;
+        if spawned {
+            assert!(
+                listing * 4 < spawn,
+                "a listing took {listing:?} and spawning git {spawn:?}: that smells like process spawning"
+            );
+        } else {
+            assert!(listing < std::time::Duration::from_millis(25), "a listing took {listing:?}");
+        }
     }
 
     #[test]
