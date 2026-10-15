@@ -5,7 +5,7 @@
 import { keyedScreen } from './console.js';
 import { $ } from './dom.js';
 import { actionFor } from './keymap.js';
-import { screen, screens } from './screen.js';
+import { screen, screens, watchScreens } from './screen.js';
 import { call } from './tauri.js';
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);
 const MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);
@@ -80,14 +80,17 @@ export function listen() {
         call('mouse', { gesture, button, at });
     };
     const moving = (at) => !last || last[0] !== at[0] || last[1] !== at[1];
-    for (const s of screens) {
+    const attach = (s) => {
         s.terminal.addEventListener('mousedown', (e) => {
             e.preventDefault();
             input.focus();
             const pane = s.pane();
             if (!keyed(s) && pane !== null) {
+                const side = s.side();
                 if (s === screen)
                     call('select', { pane });
+                else if (typeof side === 'object' && side !== null)
+                    call('focus_view', { pane });
                 else
                     call('console', { gesture: { on: 'select', pane } });
             }
@@ -131,7 +134,8 @@ export function listen() {
             wheel -= notches;
             call('wheel', { pane, notches, at: s.cellAt(e.clientX, e.clientY) });
         }, { passive: false });
-    }
+    };
+    watchScreens(attach);
     window.addEventListener('mousemove', (e) => {
         if (held !== null) {
             const at = on.cellAt(e.clientX, e.clientY);

@@ -446,7 +446,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
 | `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
 | `fonts` | which font families this machine has installed, by every name the webview might know each by, and which are monospaced, for the Settings dialog to offer |
-| `shown` | the panes the window shows — the Workspace's, and one per side of the console — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
+| `shown` | the panes the window shows — the Workspace's, one per side of the console, and one per extension console view on screen — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
 | `console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, and the page it draws |
 | `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, or whether it is a page; which tab each dock shows of the panels that exist, whether it is open and how big, and whether that changed since it was saved |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
@@ -2332,6 +2332,21 @@ way. Later ones wait behind the first, Escape or Cancel sends the cancellation, 
 withdrawing one takes it down. The terminal client does not greet with `extensions`, so it is sent
 none of this: agent views are the desktop's, and which of their blocks a terminal could draw is a
 decision of its own.
+
+A view that is a console (`ExtView.console`) has a terminal where the table would be, in its dock or
+as a page, drawn by the console's own renderer with the same keys, wheel, selection and paste. The
+window gives each such view on screen a screen of its own (`Side::View(n)` in `shown`, beside the
+Workspace's and the console's two) and subscribes the pane the daemon names in
+`ServerMsg::ExtensionViews` while the view is on screen: docked and shown, or the page that is up. A
+view that goes off screen or away lets its pane go; one published again after it ended names a new
+pane, and the old one is let go as the new is subscribed. The pane is in neither the tree nor the
+consoles, so the window counts it held by its view, and a close never kills it: the extension owns
+its lifetime. A press on its screen gives it the keys, as one on the console does, and a page that
+is a console has them the moment it is up; the leader and Escape behave as in the console. Before
+the daemon names a pane the body says Starting; an ended console keeps its last screen under a
+strip saying Ended (exit N) or Ended by a signal, with the view's view-wide actions — Restart,
+say — beside it. A new connection drops these screens, the new daemon's pane ids being its own,
+until its views name them. Row selection and the default action do not apply to it.
 
 ## Editors and overlays
 

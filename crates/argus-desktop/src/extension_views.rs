@@ -10,10 +10,10 @@
 
 use std::collections::BTreeMap;
 
-use argus_protocol::{CheckoutId, ClientMsg, ExtPlace, ExtScope, ExtView, RepositoryId};
+use argus_protocol::{CheckoutId, ClientMsg, ExtPlace, ExtScope, ExtView, PaneId, RepositoryId};
 
 use crate::docks::{Dock, Panel, Place};
-use crate::page::{ExtConfirm, ExtTab, ExtTable, ExtTableAction, ExtTableRow};
+use crate::page::{ExtConfirm, ExtConsoleEnd, ExtTab, ExtTable, ExtTableAction, ExtTableConsole, ExtTableRow};
 use crate::settings::ExtensionsLayout;
 
 /// Where the person is, which decides the views a scoped one is listed in.
@@ -254,6 +254,18 @@ impl ExtensionViews {
             .collect()
     }
 
+    /// The console views on screen, as `on` says, each by its name and the
+    /// pane the daemon runs it in, once it has. The window keeps one screen
+    /// for each; a view that is off screen costs the daemon nothing to send.
+    pub fn consoles_on(&self, here: &Here, on: impl Fn(&Panel) -> bool) -> Vec<(String, Option<PaneId>)> {
+        self.views
+            .iter()
+            .filter(|v| here.holds(v.scope))
+            .filter(|v| on(&Panel::extension(&v.extension, &v.name)))
+            .filter_map(|v| Some((format!("{}/{}", v.extension, v.name), v.console.as_ref()?.pane)))
+            .collect()
+    }
+
     /// The view `panel` names, as its dock or the page draws it.
     pub fn table(&self, panel: &Panel, here: &Here, page: bool) -> Option<ExtTable> {
         let view = self.get(panel, here)?;
@@ -276,6 +288,12 @@ impl ExtensionViews {
                 .collect(),
             selected: self.selected_in(panel, view),
             default: view.default.clone(),
+            // The window fills in its screen and keys: only it knows them.
+            console: view.console.as_ref().map(|c| ExtTableConsole {
+                pane: c.pane.map(|p| p.0),
+                ended: c.ended.map(|e| ExtConsoleEnd { code: e.code }),
+                ..ExtTableConsole::default()
+            }),
         })
     }
 }

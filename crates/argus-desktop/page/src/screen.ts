@@ -1,8 +1,9 @@
 // A pane's screen in its container: the rows Rust sends, drawn in the
 // theme's colours on canvases of its own, and the room the container has
 // reported back as rows and columns. There is one screen per side Rust
-// draws on: the Workspace's, and the console's first and second, so an
-// agent and a docked console are drawn at once.
+// draws on: the Workspace's, the console's first and second, and one for
+// each extension console view on screen, so an agent and a docked console
+// are drawn at once.
 // The rows are mirrored only so a theme or scale change can repaint them.
 
 import type { Frame } from './bindings/Frame';
@@ -54,7 +55,10 @@ function chosenFamily(): string {
   return css.getPropertyValue('--font-mono').trim() || 'monospace';
 }
 
-function makeScreen(terminal: HTMLElement, side: Side) {
+// `side` is the screen Rust draws on; an extension console view's has none
+// until the window gives it one, and is given another if it comes back.
+function makeScreen(terminal: HTMLElement, first: Side | null) {
+  let side = first;
   const [text, tctx] = canvas();
   const [cursorCanvas, cctx] = canvas();
   // Bars stand in for a pane until its first screen arrives.
@@ -291,7 +295,9 @@ function makeScreen(terminal: HTMLElement, side: Side) {
       // no room to report: measuring it would size the pane to one cell,
       // and the pane takes the size of the client last in use. The resize
       // observer reports again once it is laid out.
-      if (terminal.hidden || !terminal.clientWidth || !terminal.clientHeight) return;
+      if (side === null || terminal.hidden || !terminal.clientWidth || !terminal.clientHeight) {
+        return;
+      }
       // A column's edge being dragged would reflow the pane at every
       // step; it is measured once the edge is let go.
       if (dragging()) {
@@ -373,6 +379,21 @@ function makeScreen(terminal: HTMLElement, side: Side) {
     if (chosenFamily() !== fontFamily) loadFaces();
   }
 
+  /** Draws on `next` from now on, reporting the room it has there; Rust
+   *  sends the screen whole once it hears. */
+  function bind(next: Side | null): void {
+    if (JSON.stringify(next) === JSON.stringify(side)) return;
+    side = next;
+    sent = null;
+    if (next === null) {
+      pane = null;
+      mirror = [];
+      selection = null;
+    } else {
+      report();
+    }
+  }
+
   /** Whether this side has the keys, which its cursor shows. */
   function key(on: boolean): void {
     if (keyed === on) return;
@@ -383,6 +404,8 @@ function makeScreen(terminal: HTMLElement, side: Side) {
   return {
     terminal,
     pane: (): number | null => pane,
+    side: (): Side | null => side,
+    bind,
     frame,
     drawCursor,
     report,
@@ -404,14 +427,56 @@ export const screen = makeScreen($('terminal'), 'workspace');
 export const consoleScreen = makeScreen($('terminal-console'), 'first');
 /** The console's second side, while it is split. */
 export const beside = makeScreen($('terminal-beside'), 'second');
-export const screens: readonly Screen[] = [screen, consoleScreen, beside];
+/** Every screen, the extension console views' too as they are made. */
+export const screens: Screen[] = [screen, consoleScreen, beside];
 
-export function onSide(side: Side): Screen {
+type Watcher = (s: Screen) => void;
+const watchers: Watcher[] = [];
+
+/** Calls `watch` with every screen there is and every one made after. */
+export function watchScreens(watch: Watcher): void {
+  watchers.push(watch);
+  for (const s of screens) watch(s);
+}
+
+/** Extension console views' screens, by the number Rust gave the side. */
+const views = new Map<number, Screen>();
+
+/** A screen in an extension console view's `terminal`. It draws nowhere
+ *  until `bindView` gives it the side Rust drew the view on. */
+export function viewScreen(terminal: HTMLElement): Screen {
+  const s = makeScreen(terminal, null);
+  screens.push(s);
+  for (const watch of watchers) watch(s);
+  return s;
+}
+
+/** Draws `s` on `side`, or nowhere when its view is not on screen. */
+export function bindView(s: Screen, side: Side | null): void {
+  for (const [n, v] of views) if (v === s) views.delete(n);
+  if (side !== null && typeof side === 'object') views.set(side.view, s);
+  s.bind(side !== null && typeof side === 'object' ? side : null);
+}
+
+/** The extension console view with the keys, which Rust says. */
+let keyedView: Screen | null = null;
+
+export function keyView(s: Screen | null): void {
+  keyedView = s;
+}
+
+export function keyedViewScreen(): Screen | null {
+  return keyedView;
+}
+
+export function onSide(side: Side): Screen | null {
+  if (typeof side === 'object') return views.get(side.view) ?? null;
   if (side === 'first') return consoleScreen;
   return side === 'second' ? beside : screen;
 }
 
-/** A frame goes to the side Rust says draws it. */
+/** A frame goes to the side Rust says draws it; one for a view the page has
+ *  yet to draw is dropped, as Rust sends the screen whole when it is. */
 export function drawFrame(f: Frame): void {
-  onSide(f.side).frame(f);
+  onSide(f.side)?.frame(f);
 }

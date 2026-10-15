@@ -26,6 +26,9 @@ pub enum Call {
     /// The rows and columns the page has room for on one side of the
     /// screen.
     Resize { side: Side, rows: u16, cols: u16 },
+    /// A press on an extension console's screen: it takes the keys, as a
+    /// click on the console does.
+    FocusView { pane: u64 },
     Key { key: PageKey },
     /// Text an input method composed.
     Text { text: String },
@@ -480,6 +483,9 @@ pub enum Side {
     First,
     /// The console's right side, while it is split.
     Second,
+    /// The screen of an extension's console view, numbered as the window
+    /// gives them out: one for each such view on screen, however many.
+    View(u8),
 }
 
 /// What was done in the review's jump field: a letter typed, a match
@@ -2182,6 +2188,35 @@ pub struct ExtTable {
     pub selected: Option<String>,
     /// The row action a double-click or Enter on a row takes.
     pub default: Option<String>,
+    /// Set for a view that is a console: the page draws a terminal where
+    /// the table would be, and the columns and rows are empty.
+    pub console: Option<ExtTableConsole>,
+}
+
+/// A console view as the page draws it. What the daemon says of it is here
+/// as it said it; the screen and the keys are the window's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtTableConsole {
+    /// The screen drawing it, once the window has given it one; until then
+    /// the page has nowhere to send a size.
+    pub side: Option<Side>,
+    /// The pane running it, which the daemon fills in a moment after it
+    /// takes the view.
+    pub pane: Option<u64>,
+    /// How it ended, while its last screen stays up.
+    pub ended: Option<ExtConsoleEnd>,
+    /// This console's screen has the keys.
+    pub keyed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtConsoleEnd {
+    /// The exit code; none when a signal ended it.
+    pub code: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
