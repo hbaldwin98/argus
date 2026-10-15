@@ -11,6 +11,7 @@ import { $ } from './dom.js';
 import { drawHistory, historyOpen } from './history.js';
 import { drawReview, reviewOpen } from './review.js';
 import { drawSessions, sessionsOpen } from './sessions.js';
+import { drawSettings } from './settings.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { listen as listenToKeys, runOver } from './keymap.js';
@@ -111,6 +112,10 @@ function receive(event: Event): void {
       break;
     case 'chime':
       chime();
+      break;
+    case 'settings':
+      state.settings = event;
+      drawSettings();
       break;
     case 'keymap':
       state.keymap = event.groups;

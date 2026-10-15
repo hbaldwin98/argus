@@ -11,6 +11,7 @@ import type { Rail } from './bindings/Rail';
 import type { ReviewPage } from './bindings/ReviewPage';
 import type { HistoryPage } from './bindings/HistoryPage';
 import type { SessionsPage } from './bindings/SessionsPage';
+import type { SettingsPage } from './bindings/SettingsPage';
 import type { Palette } from './bindings/Palette';
 import type { Status } from './bindings/Status';
 
@@ -54,6 +55,8 @@ export const state: {
   review: ReviewPage | null;
   history: HistoryPage | null;
   sessions: SessionsPage | null;
+  /** The Settings dialog's choices, which the window's look follows. */
+  settings: SettingsPage | null;
   /** The comment being written, kept across the dialog's redraws. */
   reviewDraft: string;
   /** What the index's filter says. */
@@ -97,6 +100,7 @@ export const state: {
   review: null,
   history: null,
   sessions: null,
+  settings: null,
   reviewDraft: '',
   filter: '',
   archivedOpen: false,

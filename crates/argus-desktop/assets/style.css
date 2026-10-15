@@ -55,7 +55,7 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme='mocha']) {
+  :root:not([data-theme]) {
     color-scheme: light;
     --crust: #dce0e8;
     --mantle: #e6e9ef;
@@ -95,7 +95,50 @@
   }
 }
 
+/* Macchiato and Frappe are the palette layer alone: the semantic names
+ * above read it wherever it is redeclared. */
+:root[data-theme='macchiato'] {
+  --crust: #181926;
+  --mantle: #1e2030;
+  --base: #24273a;
+  --surface0: #363a4f;
+  --surface1: #494d64;
+  --overlay: #939ab7;
+  --subtext: #a5adcb;
+  --text: #cad3f5;
+  --mauve: #c6a0f6;
+  --blue: #8aadf4;
+  --green: #a6da95;
+  --yellow: #eed49f;
+  --red: #ed8796;
+  --peach: #f5a97f;
+  --teal: #8bd5ca;
+  --lilac: #33324b;
+  --fg-on-accent: #181926;
+}
+
+:root[data-theme='frappe'] {
+  --crust: #232634;
+  --mantle: #292c3c;
+  --base: #303446;
+  --surface0: #414559;
+  --surface1: #51576d;
+  --overlay: #949cbb;
+  --subtext: #a5adce;
+  --text: #c6d0f5;
+  --mauve: #ca9ee6;
+  --blue: #8caaee;
+  --green: #a6d189;
+  --yellow: #e5c890;
+  --red: #e78284;
+  --peach: #ef9f76;
+  --teal: #81c8be;
+  --lilac: #3e3d54;
+  --fg-on-accent: #232634;
+}
+
 :root[data-theme='latte'] {
+  color-scheme: light;
   --crust: #dce0e8;
   --mantle: #e6e9ef;
   --base: #eff1f5;
@@ -231,7 +274,7 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme='mocha']) {
+  :root:not([data-theme]) {
     --ansi-0: #5c5f77;
     --ansi-1: #d20f39;
     --ansi-2: #40a02b;
@@ -249,6 +292,44 @@
     --ansi-14: #179299;
     --ansi-15: #bcc0cc;
   }
+}
+
+:root[data-theme='macchiato'] {
+  --ansi-0: #494d64;
+  --ansi-1: #ed8796;
+  --ansi-2: #a6da95;
+  --ansi-3: #eed49f;
+  --ansi-4: #8aadf4;
+  --ansi-5: #f5bde6;
+  --ansi-6: #8bd5ca;
+  --ansi-7: #b8c0e0;
+  --ansi-8: #5b6078;
+  --ansi-9: #ed8796;
+  --ansi-10: #a6da95;
+  --ansi-11: #eed49f;
+  --ansi-12: #8aadf4;
+  --ansi-13: #f5bde6;
+  --ansi-14: #8bd5ca;
+  --ansi-15: #a5adcb;
+}
+
+:root[data-theme='frappe'] {
+  --ansi-0: #51576d;
+  --ansi-1: #e78284;
+  --ansi-2: #a6d189;
+  --ansi-3: #e5c890;
+  --ansi-4: #8caaee;
+  --ansi-5: #f4b8e4;
+  --ansi-6: #81c8be;
+  --ansi-7: #b5bfe2;
+  --ansi-8: #626880;
+  --ansi-9: #e78284;
+  --ansi-10: #a6d189;
+  --ansi-11: #e5c890;
+  --ansi-12: #8caaee;
+  --ansi-13: #f4b8e4;
+  --ansi-14: #81c8be;
+  --ansi-15: #a5adce;
 }
 
 :root[data-theme='latte'] {
@@ -1361,8 +1442,20 @@ body {
   height: 100%;
   margin: 0;
 }
+/* The background opacity setting. The window is always transparent, and
+ * `--see` (0 to 1, from `settings.ts`) is the alpha of its large fills and
+ * of nothing else, so text, borders and controls stay solid while the
+ * desktop, or Mica or Acrylic, shows through. The body paints nothing and
+ * each region paints its own fill once, so two see-through fills stack
+ * only where the board's well sits on its stage. */
+:root {
+  --see: 1;
+  --see-chrome: color-mix(in srgb, var(--bg-chrome) calc(var(--see) * 100%), transparent);
+  --see-surface: color-mix(in srgb, var(--bg-surface) calc(var(--see) * 100%), transparent);
+  --see-sunken: color-mix(in srgb, var(--bg-sunken) calc(var(--see) * 100%), transparent);
+}
 body {
-  background: var(--bg-surface);
+  background: transparent;
   color: var(--fg);
   font: var(--type-body);
   overflow: hidden;
@@ -2889,4 +2982,158 @@ body.filled .rail {
   .ap-outcome {
     width: auto;
   }
+}
+
+/* The see-through fills, after every rule that paints these regions. */
+.rail {
+  background: var(--see-chrome);
+}
+.strip,
+.fstage,
+.nstage {
+  background: var(--see-surface);
+}
+.stage-body,
+.board {
+  background: var(--see-sunken);
+}
+
+/* ---- The Settings dialog ----------------------------------------------- */
+
+.settings {
+  width: min(960px, 94vw);
+  height: min(700px, 88vh);
+}
+.settings .split {
+  min-height: 0;
+}
+.settings-nav {
+  width: 200px;
+  flex: none;
+  border-right: 1px solid var(--line);
+  padding: var(--sp-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.settings-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--sp-16) var(--sp-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-24);
+}
+.settings .setrow {
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+  padding: var(--sp-12) 0;
+}
+.settings .setrow .field {
+  width: 260px;
+}
+.settings .placeholder {
+  color: var(--fg-faint);
+}
+.themecards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-12);
+}
+.themecard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  width: 150px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  padding: var(--sp-8);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.themecard.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.themecard:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+/* A flavour's own colours, whatever the window is drawn in. */
+.themecard .pv {
+  height: 56px;
+  border-radius: var(--r-sm);
+  display: flex;
+  gap: var(--sp-4);
+  padding: var(--sp-6);
+  box-sizing: border-box;
+}
+.pv .side {
+  width: 24px;
+  border-radius: 3px;
+}
+.pv .lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.pv .lines span {
+  height: 6px;
+  border-radius: 3px;
+}
+.pv .lines span:first-child {
+  width: 60%;
+}
+.toggle {
+  width: 34px;
+  height: 20px;
+  flex: none;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--fill);
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+}
+.toggle span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+}
+.toggle.on {
+  background: var(--accent);
+}
+.toggle.on span {
+  left: 16px;
+  background: var(--fg-on-accent);
+}
+.toggle:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.segb:disabled {
+  cursor: default;
+  color: var(--fg-disabled);
+}
+.opacity {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+}
+.opacity input {
+  width: 200px;
+  accent-color: var(--accent);
+}
+.opacity .n {
+  width: 4ch;
+  text-align: right;
 }

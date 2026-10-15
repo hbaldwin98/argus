@@ -11,6 +11,7 @@ import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
 import { closePalette, openPalette } from './palette.js';
 import { addProjectOpen, answerRemoveNo } from './projects.js';
+import { closeSettings, openSettings, settingsOpen } from './settings.js';
 import { closeSheet, openSheet, sheetOpen, toggleSheet } from './shortcuts.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -63,6 +64,7 @@ function run(action) {
     switch (action) {
         case 'palette':
         case 'shortcuts':
+        case 'settings':
             runOver(action);
             return true;
         case 'workspace':
@@ -81,16 +83,24 @@ function run(action) {
             return workOpen() ? workAction(action) : featureAction(action);
     }
 }
-/** Opens the palette or the sheet, for a key here or one Rust heard in a
- *  pane: one over the other would leave two holding the keys. */
+/** Opens the palette, the sheet or the settings, for a key here or one
+ *  Rust heard in a pane: one over another would leave two holding the
+ *  keys. */
 export function runOver(action) {
     if (action === 'palette') {
         closeSheet();
+        closeSettings();
         openPalette();
     }
     else if (action === 'shortcuts') {
         closePalette();
+        closeSettings();
         toggleSheet();
+    }
+    else if (action === 'settings') {
+        closePalette();
+        closeSheet();
+        openSettings();
     }
 }
 /** The keys a dialog does not answer, open over it. */
@@ -99,7 +109,8 @@ function notTheirs(action) {
         action === 'feature' ||
         action === 'checkouts' ||
         action === 'compose' ||
-        action === 'palette');
+        action === 'palette' ||
+        action === 'settings');
 }
 export function listen() {
     document.addEventListener('keydown', (e) => {
@@ -107,6 +118,9 @@ export function listen() {
         // keys to Rust.
         const typing = e.target instanceof Element && e.target.closest('input, textarea, [contenteditable]');
         if (typing)
+            return;
+        // The settings answer their own keys, Escape among them.
+        if (settingsOpen())
             return;
         // The sheet is over everything and holds the keys until put away.
         if (sheetOpen()) {

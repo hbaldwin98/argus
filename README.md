@@ -194,7 +194,7 @@ leaves the window open, and returns at once. The window reaches the same daemon 
 `argus bridge`, so it shows what the terminal client shows: the rail of projects, repositories,
 checkouts and panes, and one live pane that takes keys, pastes and resizes. It draws its own title
 bar: the sidebar runs to the top of the window with Search, New and the three stages above the
-rail, the connection and the chime at its foot. New (`Ctrl-N`) opens the composer: pick the
+rail, the connection, the chime and the settings at its foot. New (`Ctrl-N`) opens the composer: pick the
 repository, checkout and agent, type the agent's first message, and `Ctrl-Enter` starts it, or
 Shell starts a shell there instead. `+` on a checkout opens a menu
 that starts a shell (`S`) or an agent from one of the daemon's templates (`A` for the first, the
@@ -247,6 +247,13 @@ Shift-PageUp/PageDown page through the history.
 the project's panes and checkouts and the chosen repository's features, each with its key or its
 status beside it. A leading `>` searches only commands, `#` only features. `?` (from a pane, the
 leader and `?`) opens the shortcuts sheet, every key grouped by where it works.
+
+`Ctrl-,` (from a pane, the leader and `,`) opens the settings, saved as each one changes: the theme
+or following the system, the background's opacity and, on Windows, whether Mica or Acrylic shows
+through it, where a file opens and the editor command (empty uses `$VISUAL`, then `$EDITOR`), a
+system notification naming the pane when an agent needs you (by default only while the window is
+in the background), and whether a repository's Feature index opens as a list or a board until it
+remembers its own.
 
 ## Install on `PATH`
 
@@ -310,7 +317,7 @@ The directory may contain:
 | --- | --- |
 | `projects.toml` | Workspaces, projects, repositories, agent templates, and harnesses. Yours to edit; Argus only reads it |
 | `client.toml` | Editor, theme, layout, pane-view, and notification preferences |
-| `desktop.json` | The desktop window's own: each repository's feature layout, and whether it chimes when an agent needs you |
+| `desktop.json` | The desktop window's own: each repository's feature layout, whether it chimes when an agent needs you, and its settings (theme, opacity, editor, notifications). Kept apart from `client.toml`, so each client's editor and theme are set in it |
 | `runtime.db` | Everything Argus writes: panes to relaunch, projects and repositories added or removed from the TUI, workspaces created at runtime, and the last workspace open |
 
 The daemon watches `projects.toml` and reloads project and agent-template changes. Existing panes

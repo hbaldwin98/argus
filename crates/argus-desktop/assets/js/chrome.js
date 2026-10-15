@@ -4,9 +4,10 @@ import { drawCheckouts } from './checkouts.js';
 import { drawComposer } from './compose.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { drawFeatures } from './features.js';
-import { chordsFor, keycaps } from './keys.js';
+import { chordsFor, keycaps, presses } from './keys.js';
 import { drawHeading, drawRemoving } from './projects.js';
 import { screen } from './screen.js';
+import { openSettings } from './settings.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 const LOUD = new Set(['waiting', 'needs-review', 'failed']);
@@ -384,7 +385,7 @@ function dot(colour) {
     return node;
 }
 /** The sidebar's foot: the tallies that need a look, a daemon's alarm,
- *  and the connection with the chime beside it. */
+ *  and the connection with the chime and the settings beside it. */
 function drawBar() {
     const { connection, alarm } = state.status;
     const { needsYou, working } = state.rail;
@@ -396,13 +397,13 @@ function drawBar() {
         }
         if (working > 0)
             tallies.push(el('span', { class: 'fg-accent' }, `⋮ ${working} working`));
-        line.push(dot(), el('span', { class: 'grow' }, 'Connected'), chimeSwitch());
+        line.push(dot(), el('span', { class: 'grow' }, 'Connected'), chimeSwitch(), settingsButton());
     }
     else if (connection === 'connecting') {
-        line.push(dot('var(--attention)'), el('span', { class: 'grow' }, 'Connecting'));
+        line.push(dot('var(--attention)'), el('span', { class: 'grow' }, 'Connecting'), settingsButton());
     }
     else {
-        line.push(dot('var(--fg-faint)'), el('span', { class: 'grow' }, 'Stopped'), el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'));
+        line.push(dot('var(--fg-faint)'), el('span', { class: 'grow' }, 'Stopped'), el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'), settingsButton());
     }
     const shown = connection === 'connected' && alarm;
     $('bar').replaceChildren(tallies.length > 0 ? el('div', { class: 'bar-row' }, tallies) : '', shown ? el('div', { class: 'bar-alarm fg-attention' }, alarm) : '', el('div', { class: 'bar-row' }, line));
@@ -417,6 +418,18 @@ function chimeSwitch() {
         'aria-pressed': String(on),
         onclick: () => call('set_chime', { on: !on }),
     }, icon(on ? 'bell' : 'bell-off'));
+}
+/** The way to the settings, named with its key from the keymap. */
+function settingsButton() {
+    const keys = chordsFor('settings', 'anywhere')
+        .map((chord) => presses(chord).join(' '))
+        .join(', ');
+    return el('button', {
+        class: 'icon',
+        title: keys ? `Settings (${keys})` : 'Settings',
+        'aria-label': 'Settings',
+        onclick: openSettings,
+    }, icon('gear'));
 }
 function drawStage() {
     const { connection, detail } = state.status;

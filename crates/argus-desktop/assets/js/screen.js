@@ -319,6 +319,11 @@ function makeScreen() {
     function takesMouse() {
         return mouse && !parked;
     }
-    return { frame, drawCursor, report, sizeLabel, cellAt, select, takesMouse, expect };
+    /** The theme changed under the canvas: its colours are read again. */
+    function retheme() {
+        readPalette();
+        repaint();
+    }
+    return { frame, drawCursor, report, sizeLabel, cellAt, select, takesMouse, expect, retheme };
 }
 export const screen = makeScreen();
