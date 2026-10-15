@@ -1166,8 +1166,13 @@ The neutral format is one JSON object per line, each a `transcript::Entry`:
 
 `at` (RFC 3339), `summary` and `failed` are optional; a `title` line names the session, the last
 one winning; a line of any other `kind` is skipped, as a client skips an entry of a kind it does not
-know. It is what `argus-hook` would write for a harness that reports its turns, and the serde shape
-of the protocol's entry, so it cannot drift from what a client is sent.
+know. It is the serde shape of the protocol's entry, so it cannot drift from what a client is sent,
+and what `argus-hook transcript FILE KIND …` appends for a harness that keeps no transcript of its
+own: `user`, `agent` and `title` take the text from the arguments or, with `--stdin`, from stdin,
+and `tool NAME SUMMARY…` takes `--failed`. Each line is stamped with the time in RFC 3339 UTC,
+written in one call so hooks running at once do not interleave, and a leading `~` in `FILE` is the
+home directory, for a hook config that runs it with no shell. It talks to no daemon: the file is
+the harness's, and its `[[harness]]` block names the same path as its neutral `transcript`.
 
 ## Git and checkouts
 

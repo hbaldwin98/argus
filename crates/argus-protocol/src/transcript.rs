@@ -115,6 +115,30 @@ pub enum Conversation {
     Read(Transcript),
 }
 
+/// A time, given in seconds since the Unix epoch, written as RFC 3339 in
+/// UTC: the spelling every harness gives an entry's `at`, and so the one
+/// Argus gives the times it writes itself — a neutral line `argus-hook`
+/// appends, or what Argus saw of a session no transcript records.
+pub fn rfc3339(secs: u64) -> String {
+    let (days, rest) = (secs / 86_400, secs % 86_400);
+    // Days to a civil date, after Howard Hinnant's `civil_from_days`.
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        rest / 3600,
+        rest % 3600 / 60,
+        rest % 60
+    )
+}
+
 /// `text`, cut to at most `max` bytes on a character boundary, with an
 /// ellipsis saying so.
 pub fn clip(text: &str, max: usize) -> String {
@@ -156,6 +180,13 @@ mod tests {
         assert_eq!(one_line("cargo  test\n  --workspace"), "cargo test --workspace");
         let long = "x ".repeat(200);
         assert!(one_line(&long).chars().count() <= MAX_SUMMARY_CHARS + 1);
+    }
+
+    #[test]
+    fn a_time_argus_writes_is_rfc3339_in_utc() {
+        assert_eq!(rfc3339(0), "1970-01-01T00:00:00Z");
+        assert_eq!(rfc3339(951_782_400), "2000-02-29T00:00:00Z");
+        assert_eq!(rfc3339(1_791_968_400), "2026-10-14T09:00:00Z");
     }
 
     #[test]
