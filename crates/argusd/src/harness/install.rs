@@ -83,8 +83,23 @@ impl Harness {
             std::fs::create_dir_all(parent)?;
         }
 
+        let before = std::fs::read_to_string(&path).ok();
         let mut root = read_settings(&path);
         let root_obj = root.as_object_mut().expect("just normalized to an object");
+        // A running Claude Code stops firing a session's hooks for good once
+        // the file they came from changes, so a second agent starting in
+        // this checkout must not rewrite the block the first is reporting
+        // through. Only the baked pane would differ, and the helper routes
+        // by the pane its process inherited, so the block keeps the pane it
+        // already names. A runner that inherits nothing is routed by that
+        // pane alone, and gets the newest agent's.
+        let pane = match self.bake_command {
+            false => root_obj
+                .get(&self.hooks_key)
+                .and_then(|hooks| seated_pane(hooks, port))
+                .unwrap_or(pane),
+            true => pane,
+        };
         if let Some(version) = self.settings_version {
             root_obj.entry("version").or_insert_with(|| json!(version));
         }
@@ -156,7 +171,10 @@ impl Harness {
             }
         }
 
-        std::fs::write(&path, serde_json::to_string_pretty(&root)?)?;
+        let after = serde_json::to_string_pretty(&root)?;
+        if before.as_deref() != Some(after.as_str()) {
+            std::fs::write(&path, after)?;
+        }
         Ok(())
     }
 
@@ -391,6 +409,21 @@ pub(super) fn is_managed_item(item: &Value) -> bool {
         Some(Value::Array(inner)) => !inner.is_empty() && inner.iter().all(names_helper),
         _ => names_helper(item),
     }
+}
+
+/// The pane a managed block on `port`'s listener already reports for, read
+/// from the first URL argument of any of its entries.
+fn seated_pane(hooks: &Value, port: u16) -> Option<PaneId> {
+    let entries = hooks.as_object()?.values().filter_map(Value::as_array).flatten();
+    let entries = entries.flat_map(|item| match item.get("hooks") {
+        Some(Value::Array(inner)) => inner.iter().collect(),
+        _ => vec![item],
+    });
+    entries.filter(|entry| names_helper(entry)).find_map(|entry| {
+        let url = entry.get("args")?.get(0)?.as_str()?;
+        let url = argus_protocol::parse_pane_url(url)?;
+        (url.port == port).then_some(url.pane)
+    })
 }
 
 pub(super) fn remove_managed(value: &mut Value) -> bool {

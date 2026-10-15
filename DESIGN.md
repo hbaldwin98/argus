@@ -1042,6 +1042,10 @@ contains only environment references and remains identical across boots. Argus a
 harness and skill file, and `.argus` (the default worktree root), to the repository's local `.git/info/exclude`; this changes no tracked file,
 never enters a commit, and is refreshed whenever a checkout is discovered. Hook files are checkout-wide;
 the helper uses or rebases to a valid`ARGUS_HOOK_URL`, so each process still routes to its own pane.
+So a second agent starting in a checkout leaves the block as the first wrote it, keeping the pane it
+names, and a write that would change nothing is skipped: Claude Code stops firing a running
+session's hooks once their file changes, which left the first agent's row reading as working after
+its turn ended. Cursor, whose runner inherits no pane, is the exception and is pointed at the newest.
 The helper reads hook stdin once and can extract both a note and a configured
 top-level session ID key. Claude captures`session_id` at SessionStart. OpenCode's plugin tags root
 and child reports with their session IDs; only a root claims `/session`, and a newly created root

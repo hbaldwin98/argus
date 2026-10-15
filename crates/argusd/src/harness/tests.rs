@@ -462,6 +462,39 @@ fn reinstalling_replaces_rather_than_appends() {
 }
 
 #[test]
+fn a_second_agent_in_a_checkout_leaves_the_first_agents_hooks_unwritten() {
+    // Claude Code stops running a session's hooks once their file changes,
+    // so the agent already in the checkout would go silent mid-turn and its
+    // row would read as working forever.
+    let dir = tempfile::tempdir().unwrap();
+    let h = Harness::claude();
+    h.install(dir.path(), PaneId(1), 5555, "tok").unwrap();
+    let path = h.settings_path(dir.path()).unwrap();
+    let first = std::fs::read_to_string(&path).unwrap();
+
+    let mut readonly = std::fs::metadata(&path).unwrap().permissions();
+    readonly.set_readonly(true);
+    std::fs::set_permissions(&path, readonly.clone()).unwrap();
+    let second = h.install(dir.path(), PaneId(2), 5555, "tok");
+    #[allow(clippy::permissions_set_readonly_false)]
+    readonly.set_readonly(false);
+    std::fs::set_permissions(&path, readonly).unwrap();
+
+    second.expect("the file must not be written again");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), first);
+}
+
+#[test]
+fn a_runner_that_inherits_no_pane_is_pointed_at_the_newest_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = Harness::agent();
+    h.install(dir.path(), PaneId(1), 5555, "tok").unwrap();
+    h.install(dir.path(), PaneId(2), 5555, "tok").unwrap();
+    let raw = std::fs::read_to_string(h.settings_path(dir.path()).unwrap()).unwrap();
+    assert!(raw.contains("/pane/2/") && !raw.contains("/pane/1/"), "{raw}");
+}
+
+#[test]
 fn recovers_from_a_corrupt_settings_file() {
     let dir = tempfile::tempdir().unwrap();
     let claude = dir.path().join(".claude");
