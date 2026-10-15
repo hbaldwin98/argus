@@ -3,6 +3,7 @@
 
 mod branches;
 mod features;
+mod agent_views;
 mod follow;
 mod hook_lifecycle;
 mod inbox;

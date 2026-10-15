@@ -34,7 +34,7 @@ async fn screen_shows(d: &Daemon, pane: PaneId, text: &str, limit: Duration) -> 
 
 /// Opens the pane's inbox over the pane API as `session`, returning the
 /// stream positioned after the response head, and the status line.
-async fn open_inbox(
+pub(super) async fn open_inbox(
     d: &Arc<Daemon>,
     pane: PaneId,
     session: &str,
@@ -61,7 +61,7 @@ async fn open_inbox(
 }
 
 /// The next item the inbox carries, skipping its heartbeats.
-async fn next_item(reader: &mut BufReader<tokio::net::TcpStream>) -> InboxItem {
+pub(super) async fn next_item(reader: &mut BufReader<tokio::net::TcpStream>) -> InboxItem {
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let mut line = String::new();

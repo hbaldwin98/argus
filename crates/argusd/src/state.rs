@@ -39,6 +39,7 @@ mod follow;
 mod diagrams;
 mod tasks;
 mod tracker_map;
+mod views;
 mod git_ops;
 mod git_reads;
 mod hook_server;
@@ -338,6 +339,10 @@ pub struct Daemon {
     /// One feature's task list, whole for the same reason.
     tasks_tx: broadcast::Sender<argus_protocol::TaskList>,
     diagrams_tx: broadcast::Sender<argus_protocol::DiagramList>,
+    /// What agents have shown, in memory only. Changes are sent while this
+    /// is locked, so a watcher's replay and the events after it do not cross.
+    agent_views: StdMutex<views::Views>,
+    agent_views_tx: broadcast::Sender<views::ViewEvent>,
     /// Agent templates, replaceable: `reload_config` swaps them, and every
     /// start looks its template up by name at the time it runs.
     templates: StdMutex<Vec<AgentConfig>>,

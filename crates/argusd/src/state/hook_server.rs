@@ -76,6 +76,8 @@ fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
         // Room for a map at its bound, as UTF-8 that the server refuses
         // past it in words rather than as a body cut off.
         Some((_, Endpoint::TrackerMap)) => argus_protocol::MAX_TRACKER_MAP_BYTES + 1024,
+        // The view's own bound, so the 413 is the refusal of a dump.
+        Some((_, Endpoint::View)) => argus_protocol::MAX_VIEW_BYTES,
         _ => MAX_BODY,
     }
 }
@@ -183,6 +185,14 @@ async fn handle_hook_request(
     let mut body = vec![0u8; if too_large { 0 } else { content_length }];
     if !body.is_empty() {
         let _ = reader.read_exact(&mut body).await;
+    } else if too_large && authorized {
+        // Read past what is refused, within reason: closing on a body a
+        // client is still sending resets the connection, and the client
+        // sees that rather than the refusal. A body as big as a view's
+        // bound is the case that matters.
+        const DRAIN: u64 = 4 * 1024 * 1024;
+        let unread = (&mut reader).take((content_length as u64).min(DRAIN));
+        let _ = tokio::io::copy(&mut { unread }, &mut tokio::io::sink()).await;
     }
 
     let response = if !authorized {
@@ -274,6 +284,17 @@ async fn handle_hook_request(
                 &String::from_utf8_lossy(&body),
                 filing.scope,
             )),
+            // The parse error rides along: an agent that sent a block kind
+            // the schema lacks needs to be told which.
+            Some((pane, Endpoint::View)) => match serde_json::from_slice(&body) {
+                Ok(change) => match daemon.change_view_for_agent(pane, change) {
+                    Ok(()) => HookResponse::empty(200, "OK"),
+                    Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+                },
+                Err(error) => {
+                    HookResponse::text(400, "Bad Request", format!("not a view change: {error}"))
+                }
+            },
             _ => HookResponse::empty(200, "OK"),
         }
     };

@@ -466,6 +466,7 @@ impl Daemon {
     /// only `close_pane` takes them out.
     pub(super) fn retire_pane(&self, pane: Pane) {
         self.forget_pane_sizes(pane.id);
+        self.drop_views_of(pane.id);
         if let Some(root) = self.paste_root.get() {
             crate::pastes::forget(root, pane.id);
         }

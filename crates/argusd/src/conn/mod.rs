@@ -76,6 +76,9 @@ where
     let mut views_rx = daemon.subscribe_views();
     // Set once the client asks to be told where the person is working.
     let mut focus_watch: Option<FocusWatch> = None;
+    // Subscribed only when the client asks, so one that never does is
+    // never sent a view.
+    let mut agent_views_rx: Option<broadcast::Receiver<ServerMsg>> = None;
     let mut subs = Subscriptions::new(frames_tx);
     let mut reviews = daemon.review_lane();
     // What the client said it can take: nothing until it greets, and
@@ -113,6 +116,14 @@ where
                         let watch = focus_watch.insert(FocusWatch::default());
                         let focus = daemon.focus_in(&daemon.snapshot());
                         let _ = out_tx.send(watch.first(focus));
+                        continue;
+                    }
+                    ClientMsg::WatchViews => {
+                        let (shown, rx) = daemon.watch_views();
+                        for view in shown {
+                            let _ = out_tx.send(ServerMsg::ViewShown(Box::new(view)));
+                        }
+                        agent_views_rx = Some(rx);
                         continue;
                     }
                     _ => {}
@@ -193,10 +204,39 @@ where
             Ok(list) = diagrams_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::SequenceDiagrams(Box::new(list)));
             }
+            // Only for a watcher. One that fell behind lost changes it
+            // cannot name, so it is replayed the views as they stand; a
+            // view closed in the gap is the one thing that replay cannot
+            // say, and the next change to it will.
+            event = next_view_event(&mut agent_views_rx) => match event {
+                Ok(msg) => {
+                    let _ = out_tx.send(msg);
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let (shown, rx) = daemon.watch_views();
+                    for view in shown {
+                        let _ = out_tx.send(ServerMsg::ViewShown(Box::new(view)));
+                    }
+                    agent_views_rx = Some(rx);
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
         }
     }
     daemon.release_viewer(viewer);
     reader.abort();
+}
+
+/// The next change to the views, or never for a connection that is not
+/// watching them. A `select!` branch's future is built whether or not its
+/// guard holds, so the absence has to be a future that does not finish.
+async fn next_view_event(
+    watch: &mut Option<broadcast::Receiver<ServerMsg>>,
+) -> Result<ServerMsg, broadcast::error::RecvError> {
+    match watch {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 /// What a connection watching the focus was last sent, so a tree that
@@ -766,6 +806,114 @@ mod tests {
         let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
         let pane = daemon.spawn_shell(checkout).unwrap();
         (daemon, pane)
+    }
+
+    /// A daemon with one agent pane that stays running.
+    fn daemon_with_an_agent(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
+        let daemon = Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                root: None,
+                repos: vec![dir.to_string_lossy().to_string()],
+                workspace: None,
+                ..Default::default()
+            }],
+            agents: vec![crate::config::AgentConfig {
+                name: "agent".to_string(),
+                cmd: if cfg!(windows) {
+                    vec!["cmd".to_string(), "/K".to_string()]
+                } else {
+                    vec!["cat".to_string()]
+                },
+                env: Default::default(),
+                harness: None,
+                restart: Default::default(),
+            }],
+            harnesses: Vec::new(),
+        });
+        let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
+        let pane = daemon.spawn_agent(checkout, "agent").unwrap();
+        (daemon, pane)
+    }
+
+    fn view_change(id: &str) -> argus_protocol::ViewChange {
+        argus_protocol::ViewChange::Show {
+            view: argus_protocol::AgentView {
+                id: id.into(),
+                title: id.into(),
+                status: None,
+                subject: None,
+                blocks: Vec::new(),
+            },
+        }
+    }
+
+    /// The next view message, past the trees around it.
+    async fn next_view(client: &mut tokio::io::DuplexStream) -> ServerMsg {
+        loop {
+            let msg = next(client).await;
+            if matches!(msg, ServerMsg::ViewShown(_) | ServerMsg::ViewClosed { .. }) {
+                return msg;
+            }
+        }
+    }
+
+    fn shown_id(msg: ServerMsg) -> String {
+        match msg {
+            ServerMsg::ViewShown(shown) => shown.view.id,
+            other => panic!("expected a shown view, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_watcher_is_replayed_the_views_and_sent_each_change_after() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, pane) = daemon_with_an_agent(dir.path());
+        for id in ["a", "b"] {
+            daemon.change_view_for_agent(pane, view_change(id)).unwrap();
+        }
+        let mut watcher = connect_to(daemon.clone()).await;
+        argus_protocol::write_msg(&mut watcher, &ClientMsg::WatchViews).await.unwrap();
+        assert_eq!(shown_id(next_view(&mut watcher).await), "a");
+        assert_eq!(shown_id(next_view(&mut watcher).await), "b");
+
+        daemon.change_view_for_agent(pane, view_change("c")).unwrap();
+        assert_eq!(shown_id(next_view(&mut watcher).await), "c");
+
+        // The person closing one, from this client or another.
+        let mut other = connect_to(daemon.clone()).await;
+        let close = ClientMsg::CloseView { pane, id: "a".into() };
+        argus_protocol::write_msg(&mut other, &close).await.unwrap();
+        match next_view(&mut watcher).await {
+            ServerMsg::ViewClosed { pane: p, id } => assert_eq!((p, id.as_str()), (pane, "a")),
+            other => panic!("expected the close, got {other:?}"),
+        }
+        let _ = daemon.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn a_client_that_does_not_watch_is_never_sent_a_view() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, pane) = daemon_with_an_agent(dir.path());
+        let mut client = connect_to(daemon.clone()).await;
+        daemon.change_view_for_agent(pane, view_change("a")).unwrap();
+        // Anything at all, to have something arrive after the view.
+        let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
+        let second = daemon.spawn_shell(checkout).unwrap();
+        loop {
+            match next(&mut client).await {
+                ServerMsg::ViewShown(_) | ServerMsg::ViewClosed { .. } => {
+                    panic!("a view reached a client that never asked")
+                }
+                ServerMsg::Tree(tree) if tree.iter().any(|p| {
+                    p.repositories.iter().flat_map(|r| &r.checkouts).flat_map(|c| &c.panes).any(|p| p.id == second)
+                }) => break,
+                _ => {}
+            }
+        }
+        let _ = daemon.close_pane(pane);
+        let _ = daemon.close_pane(second);
     }
 
     fn opus() -> argus_protocol::AgentTelemetry {

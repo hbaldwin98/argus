@@ -35,6 +35,8 @@
 //! argus-hook diagram drop 3                          # removes diagram #3
 //! argus-hook tracker-map                             # how this repo maps to its trackers
 //! argus-hook tracker-map draft --stdin               # proposes one; the person approves it
+//! argus-hook view show --stdin                       # shows the person a view, as JSON on stdin
+//! argus-hook view close eng-1                        # takes it down
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
 //! argus-hook transcript ~/.herdr/s1.jsonl user "tidy the notes"   # a neutral transcript line
 //! argus-hook transcript ~/.herdr/s1.jsonl tool shell "npm run lint" --failed
@@ -79,7 +81,8 @@
 //! The commands live in modules by what they talk about: `board` for the
 //! shared work an agent reads and writes, `installed` for the form a
 //! harness's hook config runs, `transport` for how either reaches the
-//! daemon, and `transcript` for the one file written without it.
+//! daemon, `view` for what an agent shows the person, and `transcript` for the
+//! one file written without it.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -106,11 +109,13 @@ mod installed;
 mod telemetry;
 mod transcript;
 mod transport;
+mod view;
 
 use board::*;
 use installed::*;
 use telemetry::*;
 use transport::*;
+use view::view;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -158,6 +163,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("task", task),
     ("diagram", diagram),
     ("tracker-map", tracker_map),
+    ("view", view),
     ("decisions", decisions),
     ("decide", decide),
     ("telemetry", telemetry),

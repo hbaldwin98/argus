@@ -145,6 +145,7 @@ impl Daemon {
         let (tasks_tx, _) = broadcast::channel(32);
         let (diagrams_tx, _) = broadcast::channel(32);
         let (views_tx, _) = broadcast::channel(16);
+        let (agent_views_tx, _) = broadcast::channel(64);
         let daemon = Arc::new(Daemon {
             inner: StdMutex::new(Inner {
                 workspaces,
@@ -165,6 +166,8 @@ impl Daemon {
             decisions_tx,
             tasks_tx,
             diagrams_tx,
+            agent_views: StdMutex::new(Default::default()),
+            agent_views_tx,
             templates: StdMutex::new(templates),
             harnesses,
             hook_port: std::sync::atomic::AtomicU16::new(0),
