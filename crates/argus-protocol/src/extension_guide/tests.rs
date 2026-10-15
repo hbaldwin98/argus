@@ -104,6 +104,7 @@ fn event_kind(event: &ExtEvent) -> usize {
         ExtEvent::Answer { answer: ExtAnswer::Picked(_), .. } => 4,
         ExtEvent::Answer { answer: ExtAnswer::Form(_), .. } => 5,
         ExtEvent::Cancel { .. } => 6,
+        ExtEvent::ConsoleEnded { .. } => 7,
     }
 }
 
@@ -199,7 +200,7 @@ fn every_json_example_reads_as_the_type_it_shows() {
     assert!(read_blocks > 20, "only {read_blocks} blocks read");
     assert_eq!(values.len(), 19, "every value kind is shown");
     assert_eq!(dialogs.len(), 4, "every dialog kind is shown");
-    assert_eq!(events.len(), 7, "every event, and every kind of answer, is shown");
+    assert_eq!(events.len(), 8, "every event, and every kind of answer, is shown");
 }
 
 /// A Python literal of the walkthrough's as JSON: its booleans and `None`

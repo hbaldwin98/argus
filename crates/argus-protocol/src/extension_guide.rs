@@ -11,6 +11,7 @@
 
 use crate::agent_view::Tone;
 use crate::view_check::{MAX_TABLE_ROWS, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES};
+use crate::ext_console::{MAX_CONSOLE_ARGS, MAX_CONSOLE_ARG_BYTES, MAX_CONSOLE_ENV};
 use crate::extension_keys::{KEPT, STAGE_KEYS};
 use crate::extensions::{
     ExtKey, EXT_ICONS, MAX_ABOUT_GUIDE_BYTES, MAX_ACTIONS, MAX_COMMANDS, MAX_EXTENSION_BODY, MAX_EXTENSION_NAME,
@@ -74,6 +75,9 @@ fn fills() -> Vec<(&'static str, String)> {
         ("MAX_ABOUT_GUIDE_BYTES", MAX_ABOUT_GUIDE_BYTES.to_string()),
         ("MAX_ITEMS", MAX_ITEMS.to_string()),
         ("MAX_NOTICE_CHARS", MAX_NOTICE_CHARS.to_string()),
+        ("MAX_CONSOLE_ARGS", MAX_CONSOLE_ARGS.to_string()),
+        ("MAX_CONSOLE_ARG_BYTES", MAX_CONSOLE_ARG_BYTES.to_string()),
+        ("MAX_CONSOLE_ENV", MAX_CONSOLE_ENV.to_string()),
         ("EXT_ICONS", code_list(EXT_ICONS.iter().map(|icon| icon.to_string()))),
         ("TONES", code_list(TONES.iter().map(|tone| tone_name(*tone).to_string()))),
         ("KEPT_KEYS", code_list(kept.map(|key| spoken(&key)))),

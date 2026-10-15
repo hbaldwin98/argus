@@ -426,6 +426,33 @@ its scope holds, and opens it docked in the side panel or as a page.
   sends for that row, as its key would. What it means for the row's state is the extension's to
   decide: a stopped service's start, a running one's logs.
 
+A view can be a console instead of a table: a command the daemon runs in a terminal of its own,
+which the person reads and types into as into any console. Name the program and its arguments; they
+are run as they are, not through a shell, so name one when you want one:
+
+```json view
+{
+  "name": "dev",
+  "title": "Dev server",
+  "scope": {"checkout": 9},
+  "place": "bottom",
+  "icon": "terminal",
+  "console": {"command": ["npm", "run", "dev"], "cwd": "web", "env": {"PORT": "3000"}},
+  "actions": [{"id": "restart", "label": "Restart", "view_wide": true, "help": "Starts the dev server again."}]
+}
+```
+
+- `command` is the program and at most {{MAX_CONSOLE_ARGS}} arguments, each at most
+  {{MAX_CONSOLE_ARG_BYTES}} bytes.
+- `cwd` is relative to the root of the view's scope: the checkout, the repository's primary
+  checkout, or the person's home directory for a global view. No `..`, nothing absolute.
+- `env` is at most {{MAX_CONSOLE_ENV}} variables, set on top of the daemon's own.
+- A console view has no `columns`, `rows` or `default`, and its actions are view-wide.
+- The daemon starts it when the view is published and ends it when the view goes or the extension
+  stops. Publishing it again unchanged leaves it running; a changed `command`, `cwd` or `env` starts
+  it anew. When it ends you are sent `console_ended` (see `GET events`) and its last screen stays;
+  publish the view again to start it again.
+
 The answer lists the action keys refused, by `VIEW/ACTION`. The action stays, without its key:
 
 ```json refusals
@@ -662,6 +689,12 @@ A dialog closed without an answer: the person cancelled it, or the window asking
 {"event": "cancel", "dialog": 7}
 ```
 
+A console view's command ended; `code` is `null` when a signal ended it:
+
+```json event
+{"event": "console_ended", "view": "dev", "code": 1}
+```
+
 ## Limits
 
 | What | At most |
@@ -680,6 +713,8 @@ A dialog closed without an answer: the person cancelled it, or the window asking
 | The about guide | {{MAX_ABOUT_GUIDE_BYTES}} bytes |
 | A pick's items, or a form's fields | {{MAX_ITEMS}} |
 | A notice | {{MAX_NOTICE_CHARS}} characters, one line; the rest is cut, not refused |
+| A console's command | {{MAX_CONSOLE_ARGS}} arguments of {{MAX_CONSOLE_ARG_BYTES}} bytes each |
+| A console's environment | {{MAX_CONSOLE_ENV}} variables |
 
 Past any limit but the notice's, the whole put is refused with a `409` naming the path, and what
 was published before stays.

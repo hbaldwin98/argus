@@ -283,6 +283,7 @@ live in this crate and a contract written twice drifts in silence.
 | `held_tree` | a client's copy of the tree: every pane in it, telemetry applied to it between trees, and which panes changed state from the copy before |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses — an extension's endpoints among them |
 | `extensions` | what an extension publishes for Argus to draw — its views, commands and dialogs — and what the person does with them on the way back |
+| `ext_console` | what an extension's console view runs and where — its command, working directory and environment as the extension asks, and the pane and ending the daemon reports |
 | `extension_keys` | which keys an extension may bind, and the words a refused one is refused in: the keys Argus keeps where an extension's would be heard |
 | `extension_guide` | how to build an extension from nothing, as `argus extension guide` prints it: a walkthrough, then the reference, its examples read through the types and its limits filled from the constants |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |

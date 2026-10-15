@@ -242,6 +242,7 @@ mod tests {
                     Column { title: "CPU".into(), numeric: true, optional: true },
                 ],
                 rows: Vec::new(),
+                console: None,
                 actions: vec![ExtAction {
                     id: "restart".into(),
                     label: "Restart".into(),

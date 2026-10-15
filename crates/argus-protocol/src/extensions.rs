@@ -88,9 +88,16 @@ pub struct ExtView {
     /// image, which would be markup crossing.
     #[serde(default)]
     pub icon: Option<String>,
+    /// A table's columns; none when the view is a console.
+    #[serde(default)]
     pub columns: Vec<Column>,
     #[serde(default)]
     pub rows: Vec<ExtRow>,
+    /// The view is this console rather than a table. It may still carry
+    /// view-wide actions, a Restart say, but no columns, rows or row
+    /// actions.
+    #[serde(default)]
+    pub console: Option<crate::ext_console::ExtConsole>,
     #[serde(default)]
     pub actions: Vec<ExtAction>,
     /// The id of the row action a double-click or Enter on a row takes, as
@@ -122,8 +129,16 @@ impl ExtView {
                 return Err(format!("icon: a name such as {:?}, one of {EXT_ICONS:?}", EXT_ICONS[0]));
             }
         }
-        if self.columns.is_empty() {
-            return Err("columns: a view needs a column".into());
+        if let Some(console) = &self.console {
+            console.check("console")?;
+            if !self.columns.is_empty() || !self.rows.is_empty() {
+                return Err("console: a console view has no columns or rows".into());
+            }
+            if let Some(a) = self.actions.iter().position(|a| !a.view_wide) {
+                return Err(format!("actions[{a}]: a console view's actions are view-wide"));
+            }
+        } else if self.columns.is_empty() {
+            return Err("columns: a view needs a column, or a console".into());
         }
         if self.rows.len() > MAX_TABLE_ROWS {
             return Err(format!("rows: at most {MAX_TABLE_ROWS}; show the ones that matter"));
@@ -508,11 +523,37 @@ pub enum ExtEvent {
     /// A dialog closed without an answer: by the person, or because the
     /// window asking went.
     Cancel { dialog: u64 },
+    /// A console view's command ended; `code` is `None` when a signal
+    /// ended it. Publishing the view again starts it anew.
+    ConsoleEnded { view: String, code: Option<i32> },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_view_is_a_table_or_a_console_but_not_both() {
+        let json = r#"{"name": "dev", "title": "Dev server", "console": {"command": ["npm", "run", "dev"]},
+                       "actions": [{"id": "restart", "label": "Restart", "view_wide": true}]}"#;
+        let view: ExtView = serde_json::from_str(json).unwrap();
+        assert!(view.clone().checked().is_ok());
+        let mut both = view.clone();
+        both.columns = vec![Column { title: "x".into(), numeric: false, optional: false }];
+        assert!(both.checked().unwrap_err().starts_with("console:"));
+        let mut row_action = view.clone();
+        row_action.actions[0].view_wide = false;
+        assert!(row_action.checked().unwrap_err().contains("view-wide"));
+        let mut neither = view;
+        neither.console = None;
+        assert!(neither.checked().unwrap_err().starts_with("columns:"));
+    }
+
+    #[test]
+    fn a_console_ending_is_an_event() {
+        let event: ExtEvent = serde_json::from_str(r#"{"event": "console_ended", "view": "dev", "code": 1}"#).unwrap();
+        assert_eq!(event, ExtEvent::ConsoleEnded { view: "dev".into(), code: Some(1) });
+    }
 
     #[test]
     fn an_extensions_name_is_a_url_segment() {
@@ -560,6 +601,7 @@ mod tests {
             icon: Some("box".into()),
             columns: vec![Column { title: "Name".into(), numeric: false, optional: false }],
             rows,
+            console: None,
             actions: vec![],
             default: None,
         }
