@@ -39,12 +39,15 @@ fn a_parked_pane_does_not_take_the_hardware_cursor() {
     // one being drawn. Placing it here points at unrelated history.
     let mut app = app_scrolled_back(120, 4000, 'H');
     let pane = app.column_pane().unwrap();
-    app.grids.get_mut(&pane).unwrap().cursor = argus_protocol::Cursor {
-        row: 1,
-        col: 1,
-        visible: true,
-        ..Default::default()
-    };
+    crate::fixtures::reshow(app.grids.get_mut(&pane).unwrap(), |shown| {
+        shown.cursor = argus_protocol::Cursor {
+            row: 1,
+            col: 1,
+            visible: true,
+            ..Default::default()
+        };
+    });
+    assert!(app.grids[&pane].parked().is_some(), "still parked");
     draw(&mut app);
     assert_eq!(app.layout.cursor, None);
 }

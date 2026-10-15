@@ -4,7 +4,7 @@ use super::*;
 use argus_protocol::PaneId;
 
 pub(super) struct TermView<'a> {
-    grid: Option<&'a Grid>,
+    grid: Option<&'a PaneView>,
     pane: Option<PaneId>,
     selection: Option<&'a crate::selection::TerminalSelection>,
 }
@@ -24,7 +24,7 @@ pub struct CursorPlacement {
 
 pub(super) fn render_term(
     f: &mut Frame,
-    grid: Option<&Grid>,
+    grid: Option<&PaneView>,
     area: Rect,
     focused: bool,
     pane: Option<PaneId>,
@@ -50,30 +50,31 @@ pub(super) fn render_term(
 /// the cursor at a coordinate the drawn rows don't reach puts it in empty
 /// space — better to skip a frame than to point at nothing.
 pub(super) fn term_cursor(
-    grid: Option<&Grid>,
+    grid: Option<&PaneView>,
     area: Rect,
     focused: bool,
 ) -> Option<CursorPlacement> {
     // A parked view is history: the child's cursor belongs to the live
     // screen, which is not the one being drawn.
-    let grid = grid.filter(|grid| focused && grid.cursor.visible && !grid.is_scrolled())?;
-    let rows = grid.view().len();
-    let cols = grid.view().first().map_or(0, Vec::len);
-    let row = usize::from(grid.cursor.row);
-    let col = usize::from(grid.cursor.col);
+    let grid = grid.filter(|grid| focused && grid.cursor().visible && grid.parked().is_none())?;
+    let cursor = grid.cursor();
+    let rows = grid.rows().len();
+    let cols = grid.rows().first().map_or(0, Vec::len);
+    let row = usize::from(cursor.row);
+    let col = usize::from(cursor.col);
     if row >= rows.min(usize::from(area.height)) || col >= cols.min(usize::from(area.width)) {
         return None;
     }
     Some(CursorPlacement {
-        position: Position::new(area.x + grid.cursor.col, area.y + grid.cursor.row),
-        shape: grid.cursor.shape,
+        position: Position::new(area.x + cursor.col, area.y + cursor.row),
+        shape: cursor.shape,
     })
 }
 
 impl Widget for TermView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let Some(grid) = self.grid else { return };
-        for (r, row) in grid.view().iter().enumerate() {
+        for (r, row) in grid.rows().iter().enumerate() {
             if r as u16 >= area.height {
                 break;
             }

@@ -179,7 +179,7 @@ pub(super) fn drag(x: u16, y: u16) -> MouseEvent {
 }
 
 pub(super) fn drawn_mark(h: &Harness, pane: PaneId) -> String {
-    h.app.grids[&pane].view()[0][0].ch.to_string()
+    h.app.grids[&pane].rows()[0][0].ch.to_string()
 }
 
 pub(super) fn only_default() -> Vec<argus_protocol::WorkspaceInfo> {
@@ -341,25 +341,33 @@ pub(super) fn laid_out(h: &mut Harness) {
 /// forwarded to a child that hasn't, so any test about forwarding has to
 /// establish this first.
 pub(super) fn wants_mouse(h: &mut Harness, pane: PaneId) {
-    let grid = h
+    wants_mouse_mode(h, pane, argus_protocol::MouseMode::ButtonMotion);
+}
+
+/// Say that `pane`'s child has asked for SGR mouse reporting in `mode`.
+pub(super) fn wants_mouse_mode(h: &mut Harness, pane: PaneId, mode: argus_protocol::MouseMode) {
+    let view = h
         .app
         .grids
         .entry(pane)
-        .or_insert_with(|| crate::grid::Grid::new(Vec::new()));
-    grid.mouse = argus_protocol::MouseTracking {
-        mode: argus_protocol::MouseMode::ButtonMotion,
-        encoding: argus_protocol::MouseEncoding::Sgr,
-    };
+        .or_insert_with(|| argus_protocol::pane_view::PaneView::new(pane));
+    crate::fixtures::reshow(view, |shown| {
+        shown.mouse = argus_protocol::MouseTracking {
+            mode,
+            encoding: argus_protocol::MouseEncoding::Sgr,
+        };
+    });
 }
 
 /// Say that `pane`'s child is drawing on the alternate screen without
 /// mouse reporting — Claude, Codex, and Cursor Agent's usual mode.
 pub(super) fn on_alt_screen(h: &mut Harness, pane: PaneId) {
-    h.app
+    let view = h
+        .app
         .grids
         .entry(pane)
-        .or_insert_with(|| crate::grid::Grid::new(Vec::new()))
-        .alternate_screen = true;
+        .or_insert_with(|| argus_protocol::pane_view::PaneView::new(pane));
+    crate::fixtures::reshow(view, |shown| shown.alternate_screen = true);
 }
 
 // --- briefs --------------------------------------------------------------
@@ -515,7 +523,7 @@ pub(super) fn live_pane(h: &mut Harness) -> PaneId {
     let pane = h.app.column_pane().unwrap();
     h.app.grids.insert(
         pane,
-        crate::grid::Grid::new(vec![vec![Cell::default(); 4]; 3]),
+        crate::fixtures::pane_view(pane, vec![vec![Cell::default(); 4]; 3]),
     );
     h.sent();
     pane

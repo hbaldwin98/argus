@@ -33,6 +33,7 @@ pub mod memory;
 pub mod message;
 pub mod mouse;
 pub mod outline;
+pub mod pane_view;
 pub mod paste;
 pub mod paths;
 pub mod review;

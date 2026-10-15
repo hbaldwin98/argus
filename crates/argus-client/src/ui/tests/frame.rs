@@ -103,7 +103,8 @@ fn a_focused_terminal_places_the_hardware_cursor_at_the_child_cursor() {
     app.focus = Focus::PaneContent;
     app.grids.insert(
         PaneId(100),
-        Grid::with_cursor(
+        with_cursor(
+            PaneId(100),
             vec![vec![Default::default(); 4]; 3],
             argus_protocol::Cursor {
                 row: 1,
@@ -136,7 +137,8 @@ fn an_overlay_whose_cursor_is_hidden_does_not_leave_the_column_cursor_on_top_of_
     app.focus = Focus::PaneContent;
     app.grids.insert(
         PaneId(100),
-        Grid::with_cursor(
+        with_cursor(
+            PaneId(100),
             vec![vec![Default::default(); 40]; 10],
             argus_protocol::Cursor {
                 row: 1,
@@ -149,7 +151,8 @@ fn an_overlay_whose_cursor_is_hidden_does_not_leave_the_column_cursor_on_top_of_
     );
     app.grids.insert(
         PaneId(101),
-        Grid::with_cursor(
+        with_cursor(
+            PaneId(101),
             vec![vec![Default::default(); 40]; 10],
             argus_protocol::Cursor {
                 row: 1,
@@ -182,7 +185,8 @@ fn a_prompt_takes_the_cursor_away_from_the_pane_behind_it() {
     app.focus = Focus::PaneContent;
     app.grids.insert(
         PaneId(100),
-        Grid::with_cursor(
+        with_cursor(
+            PaneId(100),
             vec![vec![Default::default(); 40]; 10],
             argus_protocol::Cursor {
                 row: 1,
@@ -211,7 +215,8 @@ fn a_cursor_past_the_end_of_the_grid_is_not_drawn() {
     // the cursor by the area alone points it at rows that were never
     // drawn.
     let area = Rect::new(0, 0, 80, 40);
-    let grid = Grid::with_cursor(
+    let grid = with_cursor(
+        PaneId(100),
         vec![vec![Default::default(); 80]; 24],
         argus_protocol::Cursor {
             row: 30,
@@ -228,7 +233,8 @@ fn a_cursor_past_the_end_of_the_grid_is_not_drawn() {
 #[test]
 fn a_cursor_inside_both_the_grid_and_the_area_is_drawn() {
     let area = Rect::new(3, 5, 80, 40);
-    let grid = Grid::with_cursor(
+    let grid = with_cursor(
+        PaneId(100),
         vec![vec![Default::default(); 80]; 24],
         argus_protocol::Cursor {
             row: 7,
@@ -248,7 +254,8 @@ fn a_cursor_inside_both_the_grid_and_the_area_is_drawn() {
 #[test]
 fn an_unfocused_or_hidden_cursor_is_not_drawn() {
     let area = Rect::new(0, 0, 80, 40);
-    let visible = Grid::with_cursor(
+    let visible = with_cursor(
+        PaneId(100),
         vec![vec![Default::default(); 80]; 24],
         argus_protocol::Cursor {
             row: 1,
@@ -258,7 +265,8 @@ fn an_unfocused_or_hidden_cursor_is_not_drawn() {
         },
         Default::default(),
     );
-    let hidden = Grid::with_cursor(
+    let hidden = with_cursor(
+        PaneId(100),
         vec![vec![Default::default(); 80]; 24],
         argus_protocol::Cursor {
             row: 1,
@@ -693,4 +701,19 @@ fn a_detail_line_starts_under_its_own_name() {
 {under:?}"
         );
     }
+}
+
+/// A view of `pane` showing `cells` with its child's cursor at `cursor`.
+fn with_cursor(
+    pane: PaneId,
+    cells: Vec<Vec<argus_protocol::Cell>>,
+    cursor: argus_protocol::Cursor,
+    mouse: argus_protocol::MouseTracking,
+) -> PaneView {
+    let mut view = crate::fixtures::pane_view(pane, cells);
+    crate::fixtures::reshow(&mut view, |shown| {
+        shown.cursor = cursor;
+        shown.mouse = mouse;
+    });
+    view
 }

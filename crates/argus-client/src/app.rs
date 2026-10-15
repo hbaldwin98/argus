@@ -24,7 +24,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::brief::{BriefMode, BriefTarget, BriefView};
 use crate::dirpicker::{DirAction, DirPicker, DirTarget};
 use argus_protocol::fuzzy::Fuzzy;
-use crate::grid::Grid;
+use argus_protocol::pane_view::PaneView;
 use argus_protocol::history_view::{Drill, HistoryView};
 use crate::pty_input::{encode_key, encode_mouse, is_leader};
 use argus_protocol::review_view::ReviewView;
@@ -209,7 +209,7 @@ pub struct App {
     /// Every pane being streamed, and the screen of each. More than one,
     /// because a floating editor must not cost you sight of the agent
     /// running behind it.
-    pub grids: std::collections::HashMap<PaneId, Grid>,
+    pub grids: std::collections::HashMap<PaneId, PaneView>,
     pub leader_pending: bool,
     /// Whether the selected pane temporarily owns the main content area.
     /// This is view state only; the renderer's existing live-pane sizing
