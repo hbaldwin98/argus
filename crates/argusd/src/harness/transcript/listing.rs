@@ -135,13 +135,30 @@ fn place(cwd: &str, checkouts: &[PathBuf], root: Option<&Path>) -> Option<Place>
             .max_by_key(|(_, checkout)| checkout.components().count())
             .map(|(i, _)| Place::Checkout(i));
     }
+    worktree_place(&at, checkouts, root).then(|| Place::Removed(cwd.to_string()))
+}
+
+/// Whether `path`, a directory a session ran in, was a worktree of the
+/// repository that is gone: by the same rule a transcript's directory is
+/// placed, so a session Argus only saw is dimmed where a transcribed one
+/// would be.
+pub fn removed_worktree(path: &Path, places: &Places) -> bool {
+    let at = canonical(path);
+    let checkouts: Vec<PathBuf> = places.checkouts.iter().map(|(_, path)| canonical(path)).collect();
+    let root = places.worktree_root.as_deref().map(canonical);
+    !at.exists() && worktree_place(&at, &checkouts, root.as_deref())
+}
+
+/// Whether `at` is where the repository puts worktrees: below the
+/// worktree root, or a tool's `.<tool>/worktrees` in a checkout.
+fn worktree_place(at: &Path, checkouts: &[PathBuf], root: Option<&Path>) -> bool {
     let in_root = root.is_some_and(|root| at.starts_with(root) && at != root);
     let in_tools = checkouts.iter().any(|checkout| {
         let mut rest = at.strip_prefix(checkout).into_iter().flat_map(Path::components);
         let tool = rest.next().is_some_and(|c| c.as_os_str().to_string_lossy().starts_with('.'));
         tool && rest.next().is_some_and(|c| c.as_os_str() == "worktrees") && rest.next().is_some()
     });
-    (in_root || in_tools).then(|| Place::Removed(cwd.to_string()))
+    in_root || in_tools
 }
 
 /// `path` canonical as far as it exists, the rest as spelled: a removed
