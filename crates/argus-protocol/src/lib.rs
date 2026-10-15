@@ -10,6 +10,7 @@
 pub mod adr;
 pub mod ago;
 pub mod artifacts;
+pub mod awaited;
 pub mod capture;
 pub mod cell;
 pub mod column;

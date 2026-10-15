@@ -14,6 +14,7 @@
 
 use std::collections::HashSet;
 
+use argus_protocol::awaited::Awaited;
 use argus_protocol::column_verbs::Verb;
 use argus_protocol::keys::{Key, KeyCode, Mods};
 use argus_protocol::pane_view::{Effect, PaneView};
@@ -37,10 +38,19 @@ use crate::history::{HistoryDialog, Then};
 use crate::review::ReviewDialog;
 use crate::screen::Screen;
 
-/// The most spawn requests held unanswered. A daemon older than the answer
-/// never sends one, and a request nobody will answer should not be carried
-/// for the rest of the session.
-const MAX_ASKED: usize = 32;
+/// What to do with a thing the daemon made for this window, once the tree
+/// holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Made {
+    /// Show the new pane.
+    Show,
+    /// Show the new pane, leaving whichever stage is up: the editor E asked
+    /// for from the review, or the composer's start, which stays up until
+    /// the pane is made so a refused one keeps what was typed.
+    ShowOverStages,
+    /// Select the new worktree's row in the Checkouts stage.
+    SelectRow,
+}
 
 pub struct Session {
     tree: Vec<ProjectInfo>,
@@ -62,9 +72,7 @@ pub struct Session {
     capacity: Option<(u16, u16)>,
     /// The size last asked for the shown pane on this connection.
     sized: Option<(u16, u16)>,
-    last_request: u64,
-    /// Spawns asked for and not yet answered.
-    asked: Vec<u64>,
+    awaited: Awaited<Made>,
     /// The agent templates the daemon offers, in its order.
     templates: Vec<String>,
     /// The template of the agent this window last started, once the tree
@@ -81,22 +89,12 @@ pub struct Session {
     /// The side and layout a review opens on, as last chosen.
     review_layout: ReviewLayout,
     review_layout_changed: bool,
-    /// An editor asked for from the review: its pane leaves the stages
-    /// when it is shown, since E was pressed to look at it.
-    editor: Option<u64>,
     /// The command palette is open, so what it can go to is sent.
     palette: bool,
     palette_sent: Option<crate::page::Palette>,
-    /// A pane the daemon made for us that no tree has carried yet.
-    made: Option<PaneId>,
-    /// The made pane is that editor's, or the composer's.
-    made_editor: bool,
     /// The composer is the stage: what to start, where, and its first
-    /// message. A start from it leaves it once the pane is made, so a
-    /// refused one keeps the composer and what was typed.
+    /// message.
     composing: bool,
-    /// The composer's start, by its request.
-    composed: Option<u64>,
     focused: bool,
     /// The leader was pressed in the pane: the next key is the window's.
     leader: bool,
@@ -137,8 +135,7 @@ impl Session {
             screen: None,
             capacity: None,
             sized: None,
-            last_request: 0,
-            asked: Vec::new(),
+            awaited: Awaited::default(),
             templates: Vec::new(),
             last_agent: settings.last_agent,
             last_agent_changed: false,
@@ -149,13 +146,9 @@ impl Session {
             history_sent: None,
             review_layout,
             review_layout_changed: false,
-            editor: None,
             palette: false,
             palette_sent: None,
-            made: None,
-            made_editor: false,
             composing: false,
-            composed: None,
             focused: true,
             leader: false,
             filled: false,
@@ -208,7 +201,7 @@ impl Session {
         // A new connection knows nothing this window asked of the last.
         self.sized = None;
         self.reported = None;
-        self.asked.clear();
+        self.awaited.forget_asked();
         self.features.forget_asked();
         for msg in opening {
             self.apply(msg);
@@ -239,22 +232,8 @@ impl Session {
                 self.tree.as_mut_slice().apply_telemetry(pane, telemetry);
             }
             ServerMsg::Created { request_id, created } => {
-                let Some(at) = self.asked.iter().position(|id| *id == request_id) else {
-                    return;
-                };
-                self.asked.remove(at);
-                match created {
-                    Some(Created::Pane(pane)) => {
-                        self.made_editor = self.editor.take_if(|id| *id == request_id).is_some()
-                            || self.composed.take_if(|id| *id == request_id).is_some();
-                        self.made = Some(pane);
-                        self.show_made();
-                    }
-                    // A worktree made from the Checkouts stage is the row it
-                    // lands on.
-                    Some(Created::Checkout(checkout)) => self.checkouts.select(format!("c{}", checkout.0)),
-                    _ => {}
-                }
+                self.awaited.answer(request_id, created);
+                self.settle_made();
             }
             ServerMsg::Review(review) => {
                 let taken = self.history.as_mut().is_some_and(|h| h.receive_diff(review.clone()));
@@ -355,13 +334,25 @@ impl Session {
                 self.sized = None;
             }
         }
-        self.show_made();
+        self.settle_made();
     }
 
-    fn show_made(&mut self) {
-        let Some(pane) = self.made else {
-            return;
-        };
+    /// Acts on whatever the daemon made that the tree now holds.
+    fn settle_made(&mut self) {
+        for (created, then) in self.awaited.settle(&self.tree) {
+            match (created, then) {
+                (Created::Pane(pane), Made::Show | Made::ShowOverStages) => {
+                    self.show_made(pane, then == Made::ShowOverStages);
+                }
+                // A worktree made from the Checkouts stage is the row it
+                // lands on.
+                (Created::Checkout(checkout), Made::SelectRow) => self.checkouts.select(format!("c{}", checkout.0)),
+                _ => {}
+            }
+        }
+    }
+
+    fn show_made(&mut self, pane: PaneId, over_stages: bool) {
         let Some(info) = self.pane_info(pane) else {
             return;
         };
@@ -373,8 +364,7 @@ impl Session {
             self.last_agent_changed = true;
             self.rail_changed = true;
         }
-        self.made = None;
-        if std::mem::take(&mut self.made_editor) {
+        if over_stages {
             self.leave_stages();
         }
         self.show(pane);
@@ -625,28 +615,29 @@ impl Session {
 
     /// Asks for a shell on a checkout, shown once it exists.
     pub fn spawn_shell(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
-        self.spawn(checkout, |request_id| ClientMsg::SpawnShell { checkout, request_id })
+        self.spawn(checkout, Made::Show, |request_id| ClientMsg::SpawnShell { checkout, request_id })
     }
 
     /// Asks for an agent from one of the daemon's templates on a checkout,
     /// shown once it exists as a shell is.
     pub fn spawn_agent(&mut self, checkout: CheckoutId, template: String) -> Vec<ClientMsg> {
-        self.spawn_agent_asking(checkout, template, None)
+        self.spawn_agent_asking(checkout, template, None, Made::Show)
     }
 
     /// An agent whose conversation opens with `prompt`, from the composer;
     /// an empty message starts it idle, as `spawn_agent` does.
-    pub fn spawn_agent_asking(
+    fn spawn_agent_asking(
         &mut self,
         checkout: CheckoutId,
         template: String,
         prompt: Option<String>,
+        then: Made,
     ) -> Vec<ClientMsg> {
         if !self.templates.contains(&template) {
             return self.note(format!("argusd has no agent template called {template}"));
         }
         let prompt = prompt.filter(|text| !text.trim().is_empty());
-        self.spawn(checkout, |request_id| ClientMsg::SpawnAgent {
+        self.spawn(checkout, then, |request_id| ClientMsg::SpawnAgent {
             checkout,
             template,
             prompt,
@@ -654,7 +645,7 @@ impl Session {
         })
     }
 
-    fn spawn(&mut self, checkout: CheckoutId, ask: impl FnOnce(u64) -> ClientMsg) -> Vec<ClientMsg> {
+    fn spawn(&mut self, checkout: CheckoutId, then: Made, ask: impl FnOnce(u64) -> ClientMsg) -> Vec<ClientMsg> {
         let exists = self
             .tree
             .iter()
@@ -662,7 +653,7 @@ impl Session {
             .flat_map(|r| &r.checkouts)
             .any(|c| c.id == checkout);
         if exists {
-            let request_id = self.next_request();
+            let request_id = self.awaited.ask(then);
             self.out.push(ask(request_id));
         }
         self.finish()
@@ -670,18 +661,7 @@ impl Session {
 
     /// Names a request answered by its own message rather than `Created`.
     fn fresh_id(&mut self) -> u64 {
-        self.last_request = self.last_request.wrapping_add(1).max(1);
-        self.last_request
-    }
-
-    /// Names a request whose answer this window waits for.
-    fn next_request(&mut self) -> u64 {
-        self.last_request = self.last_request.wrapping_add(1).max(1);
-        if self.asked.len() == MAX_ASKED {
-            self.asked.remove(0);
-        }
-        self.asked.push(self.last_request);
-        self.last_request
+        self.awaited.name()
     }
 
     /// Ends a pane's program and removes it. The pane stays on screen until
@@ -844,15 +824,10 @@ impl Session {
     /// The composer's start: a shell, or an agent from `template` opening
     /// with `prompt`. The composer stays up until the daemon makes the pane.
     pub fn compose(&mut self, checkout: CheckoutId, template: Option<String>, prompt: Option<String>) -> Vec<ClientMsg> {
-        let before = self.last_request;
-        let sent = match template {
-            Some(template) => self.spawn_agent_asking(checkout, template, prompt),
-            None => self.spawn_shell(checkout),
-        };
-        if self.last_request != before {
-            self.composed = Some(self.last_request);
+        match template {
+            Some(template) => self.spawn_agent_asking(checkout, template, prompt, Made::ShowOverStages),
+            None => self.spawn(checkout, Made::ShowOverStages, |request_id| ClientMsg::SpawnShell { checkout, request_id }),
         }
-        sent
     }
 
     /// Shows the Checkouts stage, or goes back to the Workspace.
@@ -997,8 +972,7 @@ impl Session {
             return;
         };
         self.review = None;
-        let request_id = self.next_request();
-        self.editor = Some(request_id);
+        let request_id = self.awaited.ask(Made::ShowOverStages);
         self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external: false, command: None, request_id });
     }
 
@@ -1121,7 +1095,7 @@ impl Session {
         let Some(repo) = self.chosen_repository().cloned() else {
             return self.finish();
         };
-        let request_id = self.next_request();
+        let request_id = self.awaited.ask(Made::SelectRow);
         match self.checkouts.act(&repo, Verb::NewWorktree { name: name.as_deref(), request_id }) {
             Ok(msg) => self.out.push(msg),
             Err(text) => self.passing.push(Event::Notice { text }),
