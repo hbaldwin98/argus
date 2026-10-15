@@ -39,6 +39,7 @@ pub fn system_dark(window: &WebviewWindow) -> bool {
 
 /// `--line` from `assets/style.css`, per flavour: the rule beside the
 /// sidebar.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn border(theme: Theme) -> u32 {
     match theme {
         Theme::Latte => 0xccd0da,
