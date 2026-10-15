@@ -3,6 +3,7 @@
 // cursor. Rust holds the list and the diffs (`src/history.rs`); the page
 // draws them and says what was pressed.
 import { $, el, ghosts, icon } from './dom.js';
+import { actionFor } from './keymap.js';
 import { diffRow } from './review.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -59,7 +60,7 @@ function filterField(filter) {
         },
         onkeydown: (e) => {
             // The list has the keys back, filtered.
-            if (e.key === 'Escape' || e.key === 'Enter') {
+            if (actionFor(['filter'], e) === 'leave') {
                 e.preventDefault();
                 e.target.blur();
             }

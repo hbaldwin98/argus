@@ -40,9 +40,9 @@ pub enum Place {
     Anywhere,
     /// In a pane, where `session` dispatches; everywhere else the page does.
     Pane,
-    /// A checkout or pane clicked in the rail, which holds the keys until
-    /// a click elsewhere: the terminal client's rail cursor, where a pane
-    /// is closed with a bare x rather than typed into.
+    /// A checkout or pane clicked in the sidebar, which holds the keys
+    /// until a click elsewhere: the terminal client's rail cursor, where a
+    /// pane is closed with a bare x rather than typed into.
     Rail,
     /// The Feature stage's index.
     Feature,
@@ -51,8 +51,9 @@ pub enum Place {
     /// A feature opened from the index: its outline and the row under the
     /// cursor.
     Outline,
-    /// A note or an edit being written in the Feature stage, whose text
-    /// field holds every other key.
+    /// A field being written in — a feature's note or an edit, a message
+    /// to an agent, a review comment, a name or a reason — which holds
+    /// every other key.
     Writing,
     /// The Checkouts stage's table.
     Checkouts,
@@ -60,10 +61,14 @@ pub enum Place {
     Start,
     /// The review dialog while it is open, which holds the keys.
     Review,
+    /// The review's jump-to-a-file field, which holds every other key.
+    Jump,
     /// The history dialog while it is open, which holds the keys.
     History,
     /// The recent-sessions dialog while it is open, which holds the keys.
     Sessions,
+    /// A field that filters the list under it, which holds every other key.
+    Filter,
     /// The palette's search field while it is open, which holds the keys.
     Palette,
 }
@@ -163,6 +168,8 @@ pub enum Action {
     Shortcuts,
     /// Open the Settings dialog.
     Settings,
+    /// Leave a filter field, giving the list it filtered the keys.
+    Leave,
 }
 
 #[derive(Debug, Serialize)]
@@ -242,16 +249,18 @@ impl Place {
         match self {
             Place::Anywhere => "Anywhere",
             Place::Pane => "In a pane",
-            Place::Rail => "Rail",
+            Place::Rail => "Sidebar",
             Place::Feature => "Feature",
             Place::Card => "Board card",
             Place::Outline => "An open feature",
-            Place::Writing => "Writing a note or an edit",
+            Place::Writing => "Writing in a field",
             Place::Checkouts => "Checkouts",
             Place::Start => "A checkout's + menu",
             Place::Review => "Review",
+            Place::Jump => "Jumping to a file",
             Place::History => "History",
             Place::Sessions => "Recent sessions",
+            Place::Filter => "A filter or search field",
             Place::Palette => "Palette",
         }
     }
@@ -273,7 +282,7 @@ const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'s
 }
 
 use Action::*;
-use Place::{Anywhere, Card, History, Outline, Pane, Rail, Review, Sessions, Start, Writing};
+use Place::{Anywhere, Card, History, Jump, Outline, Pane, Rail, Review, Sessions, Start, Writing};
 use Place::Checkouts as CheckoutsTable;
 
 pub static BINDINGS: &[Binding] = &[
@@ -330,7 +339,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Outline, &[Chord::key("o"), Chord::key("O")], Answer, "answer the open decision in words"),
     bind(Outline, &[Chord::key("x"), Chord::key("X")], Withdraw, "withdraw the decision, or restore it"),
     bind(Outline, &[Chord::key("g"), Chord::key("G")], GoToPane, "go to its agent's pane"),
-    bind(Writing, &[Chord::key("Enter").ctrl()], Save, "create the feature, or save the edit"),
+    bind(Writing, &[Chord::key("Enter").ctrl(), Chord::key("Enter").meta()], Save, "create, send or save what is written"),
     bind(Writing, &[Chord::key("Enter")], Choose, "save a one-line field"),
     bind(Writing, &[Chord::key("Escape")], CloseLayer, "discard what was written"),
     bind(CheckoutsTable, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next row"),
@@ -365,6 +374,10 @@ pub static BINDINGS: &[Binding] = &[
     bind(Review, &[Chord::key("s"), Chord::key("S")], Split, "split or unified"),
     bind(Review, &[Chord::key("p").ctrl()], Filter, "jump to a file"),
     bind(Review, &[Chord::key("e"), Chord::key("E")], OpenEditor, "open in your editor"),
+    bind(Jump, &[Chord::key("ArrowDown"), Chord::key("n").ctrl()], Next, "next file"),
+    bind(Jump, &[Chord::key("ArrowUp"), Chord::key("p").ctrl()], Previous, "previous file"),
+    bind(Jump, &[Chord::key("Enter")], Choose, "open the file"),
+    bind(Jump, &[Chord::key("Escape")], CloseLayer, "close the jump, keeping the review"),
     bind(History, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next row"),
     bind(History, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
     bind(History, &[Chord::key("Home")], First, "newest"),
@@ -384,6 +397,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Sessions, &[Chord::key("/")], Filter, "search sessions"),
     bind(Sessions, &[Chord::key("h"), Chord::key("H")], FilterHarness, "filter by the next harness"),
     bind(Sessions, &[Chord::key("c"), Chord::key("C")], FilterCheckout, "filter by the next checkout"),
+    bind(Place::Filter, &[Chord::key("Enter"), Chord::key("Escape")], Leave, "back to the list, filtered"),
     bind(Place::Palette, &[Chord::key("ArrowDown")], Next, "next result"),
     bind(Place::Palette, &[Chord::key("ArrowUp")], Previous, "previous result"),
     bind(Place::Palette, &[Chord::key("Enter")], Choose, "run it, or go to it"),
@@ -414,7 +428,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
 ];
 
-const ORDER: [Place; 13] = [
+const ORDER: [Place; 15] = [
     Anywhere,
     Pane,
     Rail,
@@ -425,8 +439,10 @@ const ORDER: [Place; 13] = [
     CheckoutsTable,
     Start,
     Review,
+    Jump,
     History,
     Sessions,
+    Place::Filter,
     Place::Palette,
 ];
 
@@ -504,16 +520,18 @@ mod tests {
             [
                 "Anywhere",
                 "In a pane",
-                "Rail",
+                "Sidebar",
                 "Feature",
                 "Board card",
                 "An open feature",
-                "Writing a note or an edit",
+                "Writing in a field",
                 "Checkouts",
                 "A checkout's + menu",
                 "Review",
+                "Jumping to a file",
                 "History",
                 "Recent sessions",
+                "A filter or search field",
                 "Palette"
             ]
         );
@@ -593,10 +611,11 @@ mod tests {
     /// The page hears Anywhere, Feature and Card together, so a key may
     /// be bound once among them; a pane's keys are a table of their own,
     /// and an open + menu hears only its own and Anywhere's. The palette's
-    /// field hears only its own: the rest are typed into it.
+    /// field hears only its own, as every text field does: the rest are
+    /// typed into it.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 11] = [
+        let heard_together: [&[Place]; 13] = [
             &[Anywhere, Place::Feature, Card],
             &[Anywhere, Outline],
             &[Writing],
@@ -607,6 +626,8 @@ mod tests {
             &[Anywhere, Review],
             &[Anywhere, History],
             &[Anywhere, Sessions],
+            &[Jump],
+            &[Place::Filter],
             &[Place::Palette],
         ];
         for places in heard_together {
@@ -701,6 +722,60 @@ mod tests {
             assert_eq!(find(Outline, &page(key)), Some(action), "{key}");
         }
         assert!(commands().iter().any(|c| c.action == NewFeature && !c.chords.is_empty()), "the palette writes one too");
+    }
+
+    /// A key the page compared by hand would run without being on the
+    /// sheet, so no page module but `keymap` reads a key's name; `input`
+    /// hands a pane's keys to Rust whole, which runs them from this table.
+    #[test]
+    fn the_page_reads_keys_only_through_the_keymap() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/page/src");
+        let mut read = 0;
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+            if !name.ends_with(".ts") || name == "keymap.ts" || name == "input.ts" {
+                continue;
+            }
+            read += 1;
+            let source = std::fs::read_to_string(&path).unwrap();
+            for (n, line) in source.lines().enumerate() {
+                // A modifier alone is a click's too (shift extends a pick),
+                // so the name of the key is what gives a keypress away.
+                let by_hand = line.contains("keyCode")
+                    || ["e.key", "event.key"].iter().any(|k| {
+                        line.match_indices(k).any(|(i, _)| {
+                            !line[..i].ends_with(|c: char| c.is_alphanumeric() || c == '_' || c == '.')
+                        })
+                    });
+                assert!(!by_hand, "{name}:{} reads a key by hand: {}", n + 1, line.trim());
+            }
+        }
+        assert!(read > 10, "read only {read} page modules from {dir}");
+    }
+
+    /// The fields' own keys are on the sheet: a message or a comment sends
+    /// with Ctrl- or Cmd-Enter, the review's jump steps as in fzf, and a
+    /// filter gives its list the keys back.
+    #[test]
+    fn a_fields_keys_are_listed_where_it_is_typed_in() {
+        let find = |place: Place, key: &PageKey| {
+            BINDINGS
+                .iter()
+                .filter(|b| b.place == place)
+                .find(|b| b.chords.iter().any(|c| c.matches(key)))
+                .map(|b| b.action)
+        };
+        assert_eq!(find(Writing, &PageKey { meta: true, ..page("Enter") }), Some(Save));
+        assert_eq!(find(Writing, &page("Enter")), Some(Choose));
+        assert_eq!(find(Jump, &PageKey { ctrl: true, ..page("n") }), Some(Next));
+        assert_eq!(find(Jump, &PageKey { ctrl: true, ..page("p") }), Some(Previous));
+        assert_eq!(find(Jump, &page("ArrowDown")), Some(Next));
+        assert_eq!(find(Jump, &page("Escape")), Some(CloseLayer));
+        assert_eq!(find(Jump, &page("n")), None, "a bare n is typed");
+        assert_eq!(find(Place::Filter, &page("Enter")), Some(Leave));
+        assert_eq!(find(Place::Filter, &page("Escape")), Some(Leave));
+        assert_eq!(find(Place::Filter, &page("j")), None, "a j is typed");
     }
 
     #[test]

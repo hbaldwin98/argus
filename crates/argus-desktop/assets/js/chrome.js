@@ -301,7 +301,7 @@ export function startMenu(name, checkout) {
                 e.stopPropagation();
                 start(checkout, item.agent);
             },
-        }, el('span', { class: `glyph${item.agent ? '' : ' sh'}` }, item.agent ? '◆' : '›'), el('span', { class: 'grow' }, item.label), i === 0 && el('span', { class: 'kbd' }, 'S'), i === 1 && el('span', { class: 'kbd' }, 'A')),
+        }, el('span', { class: `glyph${item.agent ? '' : ' sh'}` }, item.agent ? '◆' : '›'), el('span', { class: 'grow' }, item.label), i < 2 && keycaps(chordsFor(i === 0 ? 'startShell' : 'startAgent', 'start').slice(0, 1))),
     ]));
 }
 export function startOpen() {

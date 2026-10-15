@@ -4,6 +4,7 @@
 // what each session offers (`src/sessions_dialog.rs`); the page draws them
 // and says what was pressed.
 import { $, el, ghosts, icon } from './dom.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 function keycap(key) {
@@ -94,7 +95,7 @@ function searchField(search) {
         },
         onkeydown: (e) => {
             // The list has the keys back, filtered.
-            if (e.key === 'Escape' || e.key === 'Enter') {
+            if (actionFor(['filter'], e) === 'leave') {
                 e.preventDefault();
                 e.target.blur();
             }

@@ -9,6 +9,7 @@ import type { AddProjectPage } from './bindings/AddProjectPage';
 import type { ProjectChoice } from './bindings/ProjectChoice';
 import type { Removing } from './bindings/Removing';
 import { $, el, ghosts, icon, type Child } from './dom.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -357,7 +358,7 @@ function pathRow(a: AddProjectPage): HTMLElement {
       class: 'field mono grow',
       spellcheck: 'false',
       onkeydown: (e: KeyboardEvent) => {
-        if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+        if (actionFor(['writing'], e) === 'choose' && e.target instanceof HTMLInputElement) {
           e.preventDefault();
           call('add_project', { gesture: { on: 'browse', path: e.target.value } });
         }
@@ -476,7 +477,7 @@ function addDialog(a: AddProjectPage): HTMLElement {
         onkeydown: (e: KeyboardEvent) => {
           // The dialog holds the keys: none reach the stage under it.
           e.stopPropagation();
-          if (e.key === 'Escape') {
+          if (actionFor(['anywhere'], e) === 'closeLayer') {
             e.preventDefault();
             closeAdd();
           }
