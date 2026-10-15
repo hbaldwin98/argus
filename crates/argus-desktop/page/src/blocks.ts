@@ -105,9 +105,9 @@ function one(block: Block, ctx: ViewCtx): HTMLElement {
     case 'checklist':
       return checklist(block);
     case 'log':
-      return log(block);
+      return log(block, ctx);
     case 'board':
-      return board(block);
+      return board(block, ctx);
     case 'form':
       return form(block, ctx);
   }
