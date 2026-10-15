@@ -57,7 +57,7 @@ pub fn sessions(harnesses: &[(String, Source)], places: &Places) -> Vec<Session>
             }
         }
     }
-    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.sort_by_key(|f| std::cmp::Reverse(f.0));
 
     // Compared canonical, as a harness records the directory it ran in
     // however the shell spelled it.

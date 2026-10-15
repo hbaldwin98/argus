@@ -209,7 +209,7 @@ fn with_seen(mut listed: Vec<Session>, seen: Vec<SeenSession>, places: &Places) 
         });
     }
     // Stable, so two sessions written the same millisecond keep their order.
-    listed.sort_by(|a, b| b.modified.cmp(&a.modified));
+    listed.sort_by_key(|s| std::cmp::Reverse(s.modified));
     listed.truncate(MAX_SESSIONS);
     listed
 }
