@@ -300,6 +300,9 @@ impl App {
             | ServerMsg::ExtensionNotice { .. }
             | ServerMsg::ExtensionDialog { .. }
             | ServerMsg::ExtensionDialogWithdrawn { .. } => {}
+            // The answer to `argus extension`, which asks on a connection
+            // of its own.
+            ServerMsg::ExtensionsDescribed(_) => {}
             ServerMsg::Stopping => self.should_quit = true,
         }
     }

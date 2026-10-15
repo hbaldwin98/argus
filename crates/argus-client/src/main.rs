@@ -16,6 +16,7 @@ mod clipboard;
 mod desktop;
 mod dirpicker;
 mod dropped;
+mod extension;
 mod focus;
 mod herdr;
 mod hosts;
@@ -70,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Bridge => return bridge::run().await,
         Command::Desktop => return desktop::run(),
         Command::Focus { watch } => return focus::run(watch).await,
+        Command::Extension { ask, host } => return extension::run(ask, host).await,
         Command::Tui => None,
         Command::Host(host) => Some(host),
     };
@@ -107,6 +109,9 @@ enum Command {
     Host(String),
     /// Where the person is working, as JSON: once, or a line per change.
     Focus { watch: bool },
+    /// The guide to building an extension, or what the running ones are,
+    /// from the daemon here or on an ssh host.
+    Extension { ask: extension::Ask, host: Option<String> },
 }
 
 fn parse_command(args: &[String]) -> anyhow::Result<Command> {
@@ -125,9 +130,25 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
             Ok(Command::Focus { watch: true })
         }
         [flag, host] if flag == "--host" && !host.is_empty() => Ok(Command::Host(host.clone())),
+        [word, rest @ ..] if word == "extension" => extension_command(rest, None),
+        [flag, host, word, rest @ ..] if flag == "--host" && !host.is_empty() && word == "extension" => {
+            extension_command(rest, Some(host.clone()))
+        }
         _ => Err(anyhow::anyhow!(
             "usage: argus [--host HOST | init [DIR] | server (restart | stop) | focus [--watch] \
-             | desktop | bridge]"
+             | desktop | bridge | [--host HOST] extension (guide | list | show NAME)]"
+        )),
+    }
+}
+
+fn extension_command(rest: &[String], host: Option<String>) -> anyhow::Result<Command> {
+    match extension::parse(rest) {
+        Some(ask) => Ok(Command::Extension { ask, host }),
+        None => Err(anyhow::anyhow!(
+            "usage: argus [--host HOST] extension (guide | list | show NAME)\n  \
+             guide      how to build an extension, step by step, then the reference\n  \
+             list       the extensions running, with what each publishes\n  \
+             show NAME  one running extension's own guide, commands and views"
         )),
     }
 }
@@ -624,6 +645,22 @@ mod tests {
         );
         assert!(parse_command(&["--host".to_string()]).is_err());
         assert!(parse_command(&["--host".to_string(), String::new()]).is_err());
+    }
+
+    #[test]
+    fn extension_reads_here_or_under_a_host() {
+        let args = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            parse_command(&args(&["extension", "list"])).unwrap(),
+            Command::Extension { ask: extension::Ask::List, host: None }
+        );
+        assert_eq!(
+            parse_command(&args(&["--host", "devbox", "extension", "show", "docker"])).unwrap(),
+            Command::Extension { ask: extension::Ask::Show("docker".into()), host: Some("devbox".into()) }
+        );
+        let usage = parse_command(&args(&["extension"])).unwrap_err().to_string();
+        assert!(usage.contains("guide") && usage.contains("show NAME"), "{usage}");
+        assert!(parse_command(&args(&["--host", "devbox", "focus"])).is_err());
     }
 
     #[test]

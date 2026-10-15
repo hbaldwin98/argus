@@ -345,7 +345,9 @@ result of a request; `ui` is a pure function of it.
 | `sibling` | starting another of Argus's executables, found beside this one, so it outlives this process |
 | `desktop` | the `argus desktop` command: opening the desktop window beside this terminal client |
 | `bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
-| `focus` | the `argus focus` command: where the person is working, as JSON, once or on every change || `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
+| `focus` | the `argus focus` command: where the person is working, as JSON, once or on every change |
+| `extension` | the `argus extension` command: the guide to building one, and the running extensions listed or one shown whole, as the daemon here or under `--host` describes them |
+| `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
 | `remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
 | `ssh_hosts` | the hosts the user's ssh config names, for the host picker |
 | `app` | the model: the tree, the selection, and which modal is up |
