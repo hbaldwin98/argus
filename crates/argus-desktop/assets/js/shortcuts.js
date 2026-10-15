@@ -1,6 +1,7 @@
 // The shortcuts sheet: every binding of the keymap Rust sends, under the
 // heading of where it works, so it lists exactly the keys dispatch runs.
 import { $, el } from './dom.js';
+import { extensionSheetGroups } from './extension_views.js';
 import { keycaps, leader } from './keys.js';
 import { state } from './state.js';
 /** What had the keys before the sheet, to give them back to. */
@@ -30,7 +31,7 @@ export function openSheet() {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'sheet-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'sheet-title' }, 'Keyboard shortcuts'), close), el('div', { class: 'sheet-rule' }, 'Inside a pane every key goes to the pane, except those listed under Everywhere and ', el('span', { class: 'kbd' }, lead), ': the key after it is the window’s, and ', el('span', { class: 'kbd' }, lead), ' twice sends one through.'), el('div', { class: 'sheet-body' }, groups))));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'sheet-title' }, 'Keyboard shortcuts'), close), el('div', { class: 'sheet-rule' }, 'Inside a pane every key goes to the pane, except those listed under Everywhere and ', el('span', { class: 'kbd' }, lead), ': the key after it is the window’s, and ', el('span', { class: 'kbd' }, lead), ' twice sends one through.'), el('div', { class: 'sheet-body' }, groups, extensionSheetGroups()))));
     // The sheet holds the keys while open; Escape or ? puts it away.
     $('input').blur();
     close.focus();

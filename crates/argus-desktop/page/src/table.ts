@@ -3,10 +3,20 @@
 
 import type { Block } from './bindings/Block';
 import type { Value } from './bindings/Value';
-import { el } from './dom.js';
+import { el, type Child } from './dom.js';
 import { value } from './values.js';
 
 export type TableBlock = Extract<Block, { kind: 'table' }>;
+
+/** What an extension's view adds to a table: a key per row, the one
+ *  selected, what a click on a row does, and what the selected row offers
+ *  at its end. An agent's table has none of it. */
+export interface RowPicks {
+  keys: readonly string[];
+  selected: string | null;
+  select: (key: string) => void;
+  trailing: ((key: string) => Child) | null;
+}
 
 type Direction = 'ascending' | 'descending';
 
@@ -54,13 +64,17 @@ function compare(a: number | string, b: number | string): number {
   return String(a).localeCompare(String(b));
 }
 
-export function table(block: TableBlock): HTMLElement {
+export function table(block: TableBlock, picks: RowPicks | null = null): HTMLElement {
   if (block.rows.length === 0) return el('div', { class: 'vtable-empty' }, 'No rows');
 
   const rows = block.rows.map((cells, index) => {
+    const key = picks?.keys[index] ?? null;
+    const on = key !== null && key === picks?.selected;
     const tr = el(
       'tr',
-      null,
+      picks && key !== null
+        ? { class: on ? 'on' : null, 'aria-selected': String(on), onclick: () => picks.select(key) }
+        : null,
       block.columns.map((col, c) => {
         const cell = cells[c];
         const td = el('td', { class: col.numeric ? 'vtable-num' : null });
@@ -74,6 +88,8 @@ export function table(block: TableBlock): HTMLElement {
         }
         return td;
       }),
+      picks?.trailing &&
+        el('td', { class: 'row-actions' }, on && key !== null && picks.trailing(key)),
     );
     return { tr, cells, index };
   });
@@ -124,6 +140,7 @@ export function table(block: TableBlock): HTMLElement {
       headers.push(th);
       return th;
     }),
+    picks?.trailing && el('th', null, el('span', { class: 'sr-only' }, 'Actions')),
   );
   // The agent says it sorted this column but not which way, so "other"
   // rather than a descending we would be guessing at.

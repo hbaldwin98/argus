@@ -6,20 +6,32 @@ import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { $, el, icon } from './dom.js';
 import { dragEdge } from './edge.js';
+import { extensionPanel, extensionTabs, extensionViewCount, openFirstExtensionView, } from './extension_views.js';
 import { call } from './tauri.js';
 import { ago } from './values.js';
 import { viewLink } from './viewlink.js';
 let shown = { views: [], open: null };
-export function drawViews(page) {
+/** Draws the panel from the agents' views `page`, or from the ones last
+ *  sent when an extension's changed; an extension's view out takes the
+ *  panel's body, beside the same tabs. */
+export function drawViews(page = shown) {
     shown = page;
     const panel = $('views-inner');
     const launcher = $('views-tab');
-    const open = page.open && page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
-    $('views').hidden = !open;
-    launcher.hidden = Boolean(open) || page.views.length === 0;
+    const extension = extensionPanel();
+    const open = !extension &&
+        page.open &&
+        page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
+    const waiting = page.views.length + extensionViewCount();
+    $('views').hidden = !open && !extension;
+    launcher.hidden = Boolean(open) || Boolean(extension) || waiting === 0;
+    if (extension) {
+        panel.replaceChildren(tabs(page.views, null), ...extension);
+        return;
+    }
     if (!open) {
         panel.replaceChildren();
-        launcher.replaceChildren(el('span', { class: 'vdot', 'aria-hidden': 'true' }), `${page.views.length} ${page.views.length === 1 ? 'view' : 'views'}`);
+        launcher.replaceChildren(el('span', { class: 'vdot', 'aria-hidden': 'true' }), `${waiting} ${waiting === 1 ? 'view' : 'views'}`);
         return;
     }
     // Keep the reader's place when the view comes again or another is added.
@@ -41,7 +53,7 @@ function tabs(views, open) {
         'aria-selected': String(v === open),
         title: v.from ? `${v.view.title} · from ${v.from}` : v.view.title,
         onclick: () => call('open_view', { pane: v.pane, id: v.view.id }),
-    }, v.refreshing && el('span', { class: 'vspin', 'aria-label': 'refreshing' }), el('span', { class: 'ttl' }, v.view.title))), el('span', { class: 'grow' }), el('button', {
+    }, v.refreshing && el('span', { class: 'vspin', 'aria-label': 'refreshing' }), el('span', { class: 'ttl' }, v.view.title))), extensionTabs(), el('span', { class: 'grow' }), el('button', {
         class: 'icon',
         type: 'button',
         'aria-label': 'Hide the views',
@@ -99,4 +111,6 @@ export function openNewestView() {
     const newest = shown.views[0];
     if (newest)
         call('open_view', { pane: newest.pane, id: newest.view.id });
+    else
+        openFirstExtensionView();
 }

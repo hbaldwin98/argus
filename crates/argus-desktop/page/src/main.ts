@@ -31,6 +31,8 @@ import { drawFrame, screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
 import { drawViews, listenToViewsEdge, openNewestView } from './views.js';
+import { drawExtensionDialog } from './dialogs.js';
+import { drawExtensionConfirm } from './extension_views.js';
 
 /** Whether the pane had the keys when a dialog opened over it. */
 let paneHadKeys = false;
@@ -129,6 +131,14 @@ function receive(event: Event): void {
     case 'capture':
       state.capture = event;
       drawFeatures();
+      break;
+    case 'extensions':
+      state.extensions = event;
+      drawViews();
+      drawExtensionConfirm();
+      break;
+    case 'extensionDialog':
+      drawExtensionDialog(event);
       break;
     case 'views':
       drawViews(event);

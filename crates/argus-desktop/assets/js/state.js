@@ -37,6 +37,7 @@ export const state = {
     sessions: null,
     settings: null,
     console: null,
+    extensions: null,
     reviewDraft: '',
     filter: '',
     archivedOpen: false,

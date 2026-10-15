@@ -80,6 +80,9 @@ pub enum Place {
     Filter,
     /// The palette's search field while it is open, which holds the keys.
     Palette,
+    /// An extension's view out in the side panel, once a click there gives
+    /// it the keys: these, and the view's own action keys.
+    Extension,
 }
 
 /// What a binding does. The page runs those of the places it dispatches,
@@ -320,6 +323,7 @@ impl Place {
             Place::Transcript => "A full transcript",
             Place::Filter => "A filter or search field",
             Place::Palette => "Palette",
+            Place::Extension => "An extension's view",
         }
     }
 }
@@ -522,6 +526,10 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Palette, &[Chord::key("ArrowUp")], Previous, "previous result"),
     bind(Place::Palette, &[Chord::key("Enter")], Choose, "run it, or go to it"),
     bind(Place::Palette, &[Chord::key("Escape")], CloseLayer, "close the palette"),
+    bind(Place::Extension, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next row"),
+    bind(Place::Extension, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
+    bind(Place::Extension, &[Chord::key("Home")], First, "first row"),
+    bind(Place::Extension, &[Chord::key("End")], Last, "last row"),
 ];
 
 /// What the palette offers to run, in its order, each with the place whose
@@ -557,7 +565,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
 ];
 
-const ORDER: [Place; 18] = [
+const ORDER: [Place; 19] = [
     Anywhere,
     Pane,
     Window,
@@ -576,6 +584,7 @@ const ORDER: [Place; 18] = [
     Place::Transcript,
     Place::Filter,
     Place::Palette,
+    Place::Extension,
 ];
 
 /// The table as the sheet lists it: a group per place, in the sheet's order.
@@ -667,7 +676,8 @@ mod tests {
                 "Recent sessions",
                 "A full transcript",
                 "A filter or search field",
-                "Palette"
+                "Palette",
+                "An extension's view"
             ]
         );
     }
@@ -754,7 +764,7 @@ mod tests {
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
         let lens = |b: &&Binding| b.place == Outline && matches!(b.action, WorkLens | Action::RecordLens | Action::FlowsLens);
-        let heard_together: [&[Place]; 15] = [
+        let heard_together: [&[Place]; 16] = [
             &[Anywhere, Place::Feature, Card],
             &[Anywhere, Outline],
             &[Anywhere, Diagram],
@@ -770,6 +780,7 @@ mod tests {
             &[Jump],
             &[Place::Filter],
             &[Place::Palette],
+            &[Place::Extension],
         ];
         for places in heard_together {
             let chords: Vec<&Chord> = BINDINGS
@@ -968,6 +979,42 @@ mod tests {
         assert_eq!(action(page("-")), None, "a minus is typed");
         for zoom in [ZoomIn, ZoomOut, ZoomReset] {
             assert!(is_command(zoom), "{zoom:?} is in the palette");
+        }
+    }
+
+    /// The daemon refuses an extension's key from `extension_keys` without
+    /// knowing this table, so every key the window binds where an
+    /// extension's command is heard — outside a text field, after the
+    /// leader included — must be on that list, and the keys an extension's
+    /// view keeps for itself are ones no action may take.
+    #[test]
+    fn every_key_the_window_keeps_is_one_the_daemon_refuses_an_extension() {
+        use argus_protocol::extension_keys::{action_key_refusal, command_key_refusal};
+        let heard = |place: Place| !matches!(place, Writing | Jump | Place::Filter | Place::Palette | Place::Extension);
+        let mut missing = Vec::new();
+        for binding in BINDINGS.iter().filter(|b| heard(b.place)) {
+            // A pane's own keys go to its program; an extension's is heard
+            // there only after the leader, where the pane's leader keys are.
+            for chord in binding.chords.iter().filter(|c| binding.place != Pane || c.leader) {
+                if chord.meta {
+                    continue;
+                }
+                let press = argus_protocol::ExtKey {
+                    key: chord.key.to_string(),
+                    ctrl: chord.ctrl,
+                    alt: chord.alt,
+                    shift: chord.shift,
+                };
+                if command_key_refusal(&press).is_none() {
+                    missing.push(format!("{} ({})", press.spoken(), binding.label));
+                }
+            }
+        }
+        assert!(missing.is_empty(), "not in extension_keys::KEPT: {missing:?}");
+        for binding in BINDINGS.iter().filter(|b| b.place == Place::Extension) {
+            for chord in binding.chords.iter().filter(|c| c.key.chars().count() == 1) {
+                assert!(action_key_refusal(chord.key).is_some(), "an action could take {}", chord.key);
+            }
         }
     }
 

@@ -171,6 +171,21 @@ pub enum Call {
     RefreshView { pane: u64, id: String },
     /// Closes a view for every client.
     CloseView { pane: u64, id: String },
+    /// Brings an extension's view out in the side panel.
+    OpenExtensionView { extension: String, view: String },
+    SelectExtensionRow { key: String },
+    /// One of the view's actions, by its id, on its selected row.
+    ExtensionAction { action: String },
+    /// A key of the view's own, moving its selection.
+    ExtensionKey { action: Action },
+    /// The answer to the question an action asked first.
+    AnswerExtension { yes: bool },
+    /// An extension's command, by its key or from the palette; `checkout`
+    /// and `pane` are the rail's picked row, which only the page knows.
+    ExtensionCommand { extension: String, command: String, checkout: Option<u64>, pane: Option<u64> },
+    /// The answer to an extension's dialog, or `None` when it was put
+    /// away without one.
+    AnswerDialog { dialog: u64, answer: Option<argus_protocol::ExtAnswer> },
     /// A link in a view, for the system's opener; Rust opens only an
     /// `http` or `https` one.
     OpenUrl { url: String },
@@ -428,6 +443,11 @@ pub enum Event {
     /// A key pressed in a pane, or a command chosen in the palette, for
     /// something only the page draws: the palette or the shortcuts sheet.
     Run { action: Action },
+    /// What the extensions put in the window, whole, whenever it changes.
+    Extensions(Box<ExtensionsPage>),
+    /// The question an extension puts to this window, whole, whenever it
+    /// changes; `open` false once none is left.
+    ExtensionDialog(Box<ExtDialogPage>),
 }
 
 /// The connection, as the status bar and the empty stage show it.
@@ -1788,6 +1808,141 @@ pub const UNDERLINE: u8 = 4;
 pub const REVERSE: u8 = 8;
 /// One cell twice as wide as the rest; its spacer is not sent.
 pub const WIDE: u8 = 16;
+
+/// What the running extensions put in the window: the views listed where
+/// the person is, the one out in the side panel, their commands, and their
+/// keys as the sheet lists them.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionsPage {
+    pub views: Vec<ExtTab>,
+    /// The view out in the side panel, which takes it from the agents'.
+    pub open: Option<ExtTable>,
+    pub commands: Vec<ExtCommandPage>,
+    /// A heading of the sheet per extension.
+    pub groups: Vec<ExtGroup>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtTab {
+    pub extension: String,
+    pub view: String,
+    pub title: String,
+}
+
+/// An extension's view as the panel draws it: its table, the row selected,
+/// and what can be done.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtTable {
+    pub extension: String,
+    pub view: String,
+    pub title: String,
+    pub columns: Vec<argus_protocol::Column>,
+    pub rows: Vec<ExtTableRow>,
+    pub actions: Vec<ExtTableAction>,
+    /// The selected row's key.
+    pub selected: Option<String>,
+    /// The question an action asks before it is sent.
+    pub confirm: Option<ExtConfirm>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtTableRow {
+    pub key: String,
+    pub cells: Vec<argus_protocol::Value>,
+    pub status: Option<argus_protocol::Chip>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtTableAction {
+    pub id: String,
+    pub label: String,
+    pub key: Option<String>,
+    pub view_wide: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtConfirm {
+    /// The action's label, for the yes button.
+    pub label: String,
+    pub question: String,
+}
+
+/// A command an extension added: what the palette calls it, its key, and
+/// where that key is heard.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtCommandPage {
+    pub extension: String,
+    pub command: String,
+    pub title: String,
+    pub chords: Vec<ExtChord>,
+    #[cfg_attr(test, ts(type = "\"anywhere\" | \"view\" | \"checkout\" | \"pane\""))]
+    pub scope: &'static str,
+    /// The view its key is heard in, for one scoped to a view.
+    pub view: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtGroup {
+    pub title: String,
+    pub bindings: Vec<ExtBinding>,
+}
+
+/// One key an extension added, shaped as a keymap binding is so the sheet
+/// draws it with the same keycaps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtBinding {
+    pub label: String,
+    pub chords: Vec<ExtChord>,
+}
+
+/// A key as `keymap::Chord` crosses, owned: an extension's are not known
+/// until it says them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtChord {
+    pub key: String,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub meta: bool,
+    pub leader: bool,
+}
+
+/// The question an extension puts to this window.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtDialogPage {
+    pub open: bool,
+    pub extension: String,
+    pub id: u64,
+    pub dialog: Option<argus_protocol::ExtDialog>,
+    /// It answers a command the person ran here: it takes the keys. One
+    /// raised on its own waits for a click, so a pane being typed in keeps
+    /// them.
+    pub prompted: bool,
+    /// How many more wait behind it.
+    pub waiting: usize,
+}
 
 #[cfg(test)]
 mod tests {

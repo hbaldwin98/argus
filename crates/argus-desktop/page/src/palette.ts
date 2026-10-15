@@ -8,6 +8,7 @@
 
 import type { Command } from './bindings/Command';
 import { $, el } from './dom.js';
+import { extensionResults } from './extension_views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './keys.js';
 import { state } from './state.js';
@@ -156,6 +157,7 @@ function everything(): Result[] {
   const palette = state.palette;
   return [
     ...state.commands.map(commandResult),
+    ...extensionResults(),
     ...(palette?.panes ?? []).map((pane): Result => ({
       group: 'Panes',
       key: `pane ${pane.id}`,

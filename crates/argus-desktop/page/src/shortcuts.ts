@@ -2,6 +2,7 @@
 // heading of where it works, so it lists exactly the keys dispatch runs.
 
 import { $, el } from './dom.js';
+import { extensionSheetGroups } from './extension_views.js';
 import { keycaps, leader } from './keys.js';
 import { state } from './state.js';
 
@@ -68,7 +69,7 @@ export function openSheet(): void {
           el('span', { class: 'kbd' }, lead),
           ' twice sends one through.',
         ),
-        el('div', { class: 'sheet-body' }, groups),
+        el('div', { class: 'sheet-body' }, groups, extensionSheetGroups()),
       ),
     ),
   );

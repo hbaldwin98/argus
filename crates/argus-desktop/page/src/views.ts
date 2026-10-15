@@ -10,25 +10,42 @@ import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { $, el, icon } from './dom.js';
 import { dragEdge } from './edge.js';
+import {
+  extensionPanel,
+  extensionTabs,
+  extensionViewCount,
+  openFirstExtensionView,
+} from './extension_views.js';
 import { call } from './tauri.js';
 import { ago } from './values.js';
 import { viewLink } from './viewlink.js';
 
 let shown: ViewsPage = { views: [], open: null };
 
-export function drawViews(page: ViewsPage): void {
+/** Draws the panel from the agents' views `page`, or from the ones last
+ *  sent when an extension's changed; an extension's view out takes the
+ *  panel's body, beside the same tabs. */
+export function drawViews(page: ViewsPage = shown): void {
   shown = page;
   const panel = $('views-inner');
   const launcher = $('views-tab');
+  const extension = extensionPanel();
   const open =
-    page.open && page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
-  $('views').hidden = !open;
-  launcher.hidden = Boolean(open) || page.views.length === 0;
+    !extension &&
+    page.open &&
+    page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
+  const waiting = page.views.length + extensionViewCount();
+  $('views').hidden = !open && !extension;
+  launcher.hidden = Boolean(open) || Boolean(extension) || waiting === 0;
+  if (extension) {
+    panel.replaceChildren(tabs(page.views, null), ...extension);
+    return;
+  }
   if (!open) {
     panel.replaceChildren();
     launcher.replaceChildren(
       el('span', { class: 'vdot', 'aria-hidden': 'true' }),
-      `${page.views.length} ${page.views.length === 1 ? 'view' : 'views'}`,
+      `${waiting} ${waiting === 1 ? 'view' : 'views'}`,
     );
     return;
   }
@@ -44,7 +61,7 @@ function key(v: PageView): string {
   return `${v.pane}/${v.view.id}`;
 }
 
-function tabs(views: readonly PageView[], open: PageView): HTMLElement {
+function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
   return el(
     'div',
     { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' },
@@ -63,6 +80,7 @@ function tabs(views: readonly PageView[], open: PageView): HTMLElement {
         el('span', { class: 'ttl' }, v.view.title),
       ),
     ),
+    extensionTabs(),
     el('span', { class: 'grow' }),
     el(
       'button',
@@ -171,4 +189,5 @@ export function listenToViewsEdge(): void {
 export function openNewestView(): void {
   const newest = shown.views[0];
   if (newest) call('open_view', { pane: newest.pane, id: newest.view.id });
+  else openFirstExtensionView();
 }

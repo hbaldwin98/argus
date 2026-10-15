@@ -39,6 +39,9 @@ use argus_protocol::{
 
 use crate::add_project::AddProject;
 use crate::agent_views::AgentViews;
+use crate::extension_dialog::ExtensionDialogs;
+use crate::extension_keys::ExtensionKeys;
+use crate::extension_views::{ExtensionViews, Here};
 use crate::agents::Agents;
 use crate::capture_note::CaptureNote;
 use crate::checkouts_stage::{CheckoutsStage, Opened};
@@ -114,6 +117,13 @@ pub struct Session {
     awaited: Awaited<Made>,
     agents: Agents,
     views: AgentViews,
+    /// What the extensions publish: their views, the one out in the side
+    /// panel in place of an agent's, their commands and their dialogs.
+    extension_views: ExtensionViews,
+    extension_keys: ExtensionKeys,
+    extensions_sent: Sent<page::ExtensionsPage>,
+    extension_dialogs: ExtensionDialogs,
+    extension_dialog_sent: Sent<page::ExtDialogPage>,
     rail_width: DraggedWidth,
     views_width: DraggedWidth,
     dialogs: Dialogs,
@@ -175,6 +185,11 @@ impl Session {
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
+            extension_views: ExtensionViews::default(),
+            extension_keys: ExtensionKeys::default(),
+            extensions_sent: Sent::default(),
+            extension_dialogs: ExtensionDialogs::default(),
+            extension_dialog_sent: Sent::default(),
             rail_width: DraggedWidth::new(dragged_width::RAIL, settings.rail_width),
             views_width: DraggedWidth::new(dragged_width::VIEWS, settings.views_width),
             dialogs: Dialogs::new(settings.review),
@@ -223,6 +238,12 @@ impl Session {
         opening: Vec<ServerMsg>,
     ) -> Vec<ClientMsg> {
         self.status.connected(daemon, alarm);
+        // What another daemon published is not this one's; it sends its
+        // own after its greeting, and the dialogs it put here it cancelled
+        // when the connection went.
+        self.extension_views.clear();
+        self.extension_keys.clear();
+        self.extension_dialogs.clear();
         // A new connection knows nothing this window asked of the last.
         self.reported = None;
         self.awaited.forget_asked();
@@ -324,9 +345,21 @@ impl Session {
             }
             ServerMsg::Tasks(list) => self.features.receive_tasks(*list),
             ServerMsg::ViewShown(view) => {
-                self.views.shown(*view, self.shown.pane());
+                // An extension's view out in the panel is not taken from
+                // under the person by an agent's arriving.
+                let on_screen = self.shown.pane().filter(|_| !self.extension_views.is_open());
+                self.views.shown(*view, on_screen);
                 self.rail_changed = true;
             }
+            ServerMsg::ExtensionViews(views) => self.extension_views.receive(views),
+            ServerMsg::ExtensionCommands(commands) => self.extension_keys.receive(commands),
+            ServerMsg::ExtensionNotice { extension, text } => {
+                self.passing.push(Event::Notice { text: format!("{extension}: {text}") });
+            }
+            ServerMsg::ExtensionDialog { extension, id, dialog, prompted } => {
+                self.extension_dialogs.asked(extension, id, dialog, prompted);
+            }
+            ServerMsg::ExtensionDialogWithdrawn { id } => self.extension_dialogs.withdrawn(id),
             ServerMsg::ViewClosed { pane, id } => {
                 self.views.closed(pane, &id);
                 self.rail_changed = true;
@@ -539,15 +572,17 @@ impl Session {
             | Call::SnapLayouts
             | Call::OpenUrl { .. } => self.finish(),
             Call::OpenView { pane, id } => {
+                self.extension_views.hide();
                 self.views.open(PaneId(pane), id);
                 self.finish()
             }
             Call::HideViews => {
+                self.extension_views.hide();
                 self.views.hide();
                 self.finish()
             }
             Call::ToggleViews => {
-                self.views.toggle();
+                self.toggle_views();
                 self.finish()
             }
             Call::RailWidth { width } => {
@@ -562,6 +597,29 @@ impl Session {
             }
             Call::RefreshView { pane, id } => {
                 self.views.refresh(PaneId(pane), id, &mut self.out);
+                self.finish()
+            }
+            Call::OpenExtensionView { extension, view } => self.open_extension_view(&extension, &view),
+            Call::SelectExtensionRow { key } => {
+                self.extension_views.select(key);
+                self.finish()
+            }
+            Call::ExtensionAction { action } => self.extension_action(&action),
+            Call::ExtensionKey { action } => self.extension_key(action),
+            Call::AnswerExtension { yes } => {
+                if let Some(msg) = self.extension_views.answer(yes) {
+                    self.out.push(msg);
+                }
+                self.finish()
+            }
+            Call::ExtensionCommand { extension, command, checkout, pane } => {
+                self.extension_command(&extension, &command, checkout.map(CheckoutId), pane.map(PaneId));
+                self.finish()
+            }
+            Call::AnswerDialog { dialog, answer } => {
+                if let Some(msg) = self.extension_dialogs.answer(dialog, answer) {
+                    self.out.push(msg);
+                }
                 self.finish()
             }
             Call::CloseView { pane, id } => {
@@ -623,7 +681,14 @@ impl Session {
         let after_leader = self.shown.take_leader();
         match keymap::in_pane(key, after_leader) {
             Some(action) => self.run(action),
-            None if after_leader => {}
+            // An extension's command heard anywhere, or on a pane, is
+            // reached through the leader as the window's own keys are.
+            None if after_leader => {
+                if let Some(command) = self.extension_keys.after_leader(key) {
+                    let (extension, name) = (command.extension.clone(), command.name.clone());
+                    self.extension_command(&extension, &name, None, None);
+                }
+            }
             None if keymap::is_leader(key) => self.shown.await_leader(),
             None => {
                 let bytes = keys::to_key(key).map(|k| argus_protocol::keys::encode(&k)).unwrap_or_default();
@@ -660,7 +725,7 @@ impl Session {
             Action::Compose => self.go(Stage::Composer),
             Action::Console => self.open_console_tab(),
             Action::ToggleConsole => self.toggle_console(),
-            Action::Views => self.views.toggle(),
+            Action::Views => self.toggle_views(),
             Action::ConsoleFullscreen => self.toggle_console_fullscreen(),
             Action::NewConsole => self.spawn_console(Made::ShowConsole),
             Action::SplitConsole => self.toggle_split(),
@@ -986,6 +1051,96 @@ impl Session {
             self.back_to_workspace();
         }
         self.finish()
+    }
+
+    // ---- What extensions publish ------------------------------------------
+
+    /// Where the person is, for a view scoped to a repository or a
+    /// checkout: the repository the rail reads, and the checkout of the pane
+    /// on screen, else that repository's own.
+    fn here(&self) -> Here {
+        let repository = self.chosen_repository();
+        let shown = self.shown.pane().and_then(|pane| {
+            self.tree.iter().flat_map(|p| &p.repositories).flat_map(|r| &r.checkouts).find(|c| c.panes.iter().any(|p| p.id == pane))
+        });
+        let checkout = shown.or_else(|| repository.and_then(|r| r.checkouts.iter().find(|c| c.primary)));
+        Here { repository: repository.map(|r| r.id), checkout: checkout.map(|c| c.id) }
+    }
+
+    /// The side panel away, whichever kind of view it shows, or the newest
+    /// agent's view out.
+    fn toggle_views(&mut self) {
+        if self.extension_views.is_open() {
+            self.extension_views.hide();
+            self.views.hide();
+        } else {
+            self.views.toggle();
+        }
+    }
+
+    fn open_extension_view(&mut self, extension: &str, view: &str) -> Vec<ClientMsg> {
+        let here = self.here();
+        if self.extension_views.open(extension, view, &here) {
+            self.views.hide();
+        } else {
+            self.passing.push(Event::Notice { text: format!("{extension} shows no {view} here") });
+        }
+        self.finish()
+    }
+
+    /// One of the view's actions; the view changes when its extension
+    /// publishes it again, never before.
+    fn extension_action(&mut self, action: &str) -> Vec<ClientMsg> {
+        let here = self.here();
+        match self.extension_views.act(&here, action) {
+            Ok(Some(msg)) => self.out.push(msg),
+            Ok(None) => {}
+            Err(text) => self.passing.push(Event::Notice { text }),
+        }
+        self.finish()
+    }
+
+    fn extension_key(&mut self, action: Action) -> Vec<ClientMsg> {
+        let here = self.here();
+        match action {
+            Action::Next => self.extension_views.step(&here, 1),
+            Action::Previous => self.extension_views.step(&here, -1),
+            Action::First => self.extension_views.select_end(&here, false),
+            Action::Last => self.extension_views.select_end(&here, true),
+            _ => {}
+        }
+        self.finish()
+    }
+
+    /// Runs an extension's command with where the person is: the row the
+    /// page says the rail has picked, else the Checkouts stage's row, else
+    /// the pane on screen. The daemon reads it against its own tree.
+    fn extension_command(&mut self, extension: &str, command: &str, checkout: Option<CheckoutId>, pane: Option<PaneId>) {
+        if !self.extension_keys.holds(extension, command) {
+            self.passing.push(Event::Notice { text: format!("{extension} has no command {command}") });
+            return;
+        }
+        let staged = (self.stage == Stage::Checkouts)
+            .then(|| self.chosen_repository().and_then(|repo| self.checkouts.checkout(repo)))
+            .flatten();
+        let pane = pane.or_else(|| checkout.is_none().then(|| self.shown.pane()).flatten());
+        let context = View {
+            project: self.project,
+            checkout: checkout.or(staged).or_else(|| self.shown_checkout()),
+            pane,
+            active: self.focused,
+        };
+        self.out.push(ClientMsg::ExtensionCommand { extension: extension.into(), command: command.into(), context });
+    }
+
+    fn extensions_page(&self) -> page::ExtensionsPage {
+        let here = self.here();
+        page::ExtensionsPage {
+            views: self.extension_views.tabs(&here),
+            open: self.extension_views.table(&here),
+            commands: self.extension_keys.page(),
+            groups: self.extension_keys.groups(self.extension_views.views()),
+        }
     }
 
     // ---- The console ---------------------------------------------------------
@@ -1895,6 +2050,11 @@ impl Session {
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
         self.settle_console();
+        // A view taken away, or out of scope where the person now is, is
+        // put away; the panel is the agents' again.
+        if self.extension_views.is_open() && self.extension_views.shown(&self.here()).is_none() {
+            self.extension_views.hide();
+        }
         // The session under the dialog's cursor is read once it is there,
         // however the cursor got there: a key, a filter, or the listing.
         if let Some(wanted) = self.recent.as_ref().and_then(|d| d.wants_read(&self.sessions, &self.tree)).cloned() {
@@ -1975,6 +2135,13 @@ impl Session {
                 events.push(Event::Checkouts(Box::new(table)));
             }
         }
+        let extensions = self.extensions_page();
+        if let Some(page) = self.extensions_sent.take((extensions != page::ExtensionsPage::default()).then_some(extensions)) {
+            events.push(Event::Extensions(Box::new(page)));
+        }
+        if let Some(page) = self.extension_dialog_sent.take(self.extension_dialogs.page()) {
+            events.push(Event::ExtensionDialog(Box::new(page)));
+        }
         let tree = &self.tree;
         if let Some(page) = self.views.take(|pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
             events.push(Event::Views(Box::new(page)));
@@ -1994,6 +2161,8 @@ impl Session {
         self.capture_sent.forget();
         self.console_sent.forget();
         self.views.forget();
+        self.extensions_sent.forget();
+        self.extension_dialog_sent.forget();
         // A page that has just loaded has no palette open.
         self.palette = false;
         self.palette_sent.forget();
@@ -3118,7 +3287,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 88] = [
+    const CALLS: [&str; 95] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3193,6 +3362,13 @@ mod tests {
         r#"{"call":"console","gesture":{"on":"close","pane":1}}"#,
         r#"{"call":"console","gesture":{"on":"split"}}"#,
         r#"{"call":"console","gesture":{"on":"closeSide","pane":1}}"#,
+        r#"{"call":"open_extension_view","extension":"docker","view":"containers"}"#,
+        r#"{"call":"select_extension_row","key":"web"}"#,
+        r#"{"call":"extension_action","action":"restart"}"#,
+        r#"{"call":"extension_key","action":"next"}"#,
+        r#"{"call":"answer_extension","yes":false}"#,
+        r#"{"call":"extension_command","extension":"docker","command":"up","checkout":100,"pane":null}"#,
+        r#"{"call":"answer_dialog","dialog":3,"answer":{"picked":"web"}}"#,
         r#"{"call":"reconnect"}"#,
         r#"{"call":"minimize"}"#,
         r#"{"call":"toggle_maximize"}"#,
@@ -3986,5 +4162,124 @@ mod tests {
         assert!(console(&mut s, ConsoleGesture::Spawn).is_empty());
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old"))));
         assert!(!console_page(&mut s).can_spawn);
+    }
+
+    // ---- Extensions ------------------------------------------------------
+
+    fn containers(rows: &[&str]) -> ServerMsg {
+        let rows: Vec<String> =
+            rows.iter().map(|key| format!(r#"{{"key": "{key}", "cells": [{{"kind": "text", "text": "{key}"}}]}}"#)).collect();
+        let json = format!(
+            r#"[{{"extension": "docker", "name": "containers", "title": "Containers", "columns": [{{"title": "Name"}}],
+                 "rows": [{}], "actions": [{{"id": "restart", "label": "Restart", "key": "r"}}]}}]"#,
+            rows.join(",")
+        );
+        ServerMsg::ExtensionViews(serde_json::from_str(&json).unwrap())
+    }
+
+    fn extensions_page(s: &mut Session) -> Option<page::ExtensionsPage> {
+        s.events(0).into_iter().rev().find_map(|e| match e {
+            Event::Extensions(page) => Some(*page),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn a_published_view_is_listed_and_its_action_goes_to_the_daemon_as_it_stands() {
+        let mut s = session(Hello::this_build());
+        s.events(0);
+        s.receive(containers(&["web", "db"]));
+        let page = extensions_page(&mut s).unwrap();
+        assert_eq!(page.views[0].title, "Containers");
+        assert!(page.open.is_none(), "listed, not opened for the person");
+
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        s.call(Call::ExtensionKey { action: Action::Next });
+        let sent = s.call(Call::ExtensionAction { action: "restart".into() });
+        assert!(matches!(
+            sent.as_slice(),
+            [ClientMsg::ExtensionAction { row: Some(row), action, .. }] if row == "db" && action == "restart"
+        ), "{sent:?}");
+        let open = extensions_page(&mut s).unwrap().open.unwrap();
+        assert_eq!(open.rows.len(), 2, "the view is as the extension last said");
+    }
+
+    #[test]
+    fn an_extensions_view_and_an_agents_take_the_panel_from_each_other() {
+        let mut s = session(Hello::this_build());
+        s.receive(containers(&["web"]));
+        let view = argus_protocol::AgentView { id: "ci".into(), title: "CI".into(), status: None, subject: None, blocks: Vec::new() };
+        s.receive(ServerMsg::ViewShown(Box::new(argus_protocol::ShownView { pane: PaneId(1), at: 5, subject: None, view })));
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert!(extensions_page(&mut s).unwrap().open.is_some());
+        s.call(Call::OpenView { pane: 1, id: "ci".into() });
+        assert!(extensions_page(&mut s).unwrap().open.is_none(), "the agent's view has the panel");
+    }
+
+    #[test]
+    fn a_view_its_extension_takes_away_is_put_away() {
+        let mut s = session(Hello::this_build());
+        s.receive(containers(&["web"]));
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert!(extensions_page(&mut s).unwrap().open.is_some());
+        s.receive(ServerMsg::ExtensionViews(Vec::new()));
+        assert_eq!(extensions_page(&mut s), Some(page::ExtensionsPage::default()), "the page hears it went");
+        assert!(extensions_page(&mut s).is_none(), "once");
+    }
+
+    #[test]
+    fn a_command_goes_with_where_the_person_is_and_after_the_leader_from_a_pane() {
+        let mut s = session(Hello::this_build());
+        let commands = r#"[{"extension": "docker", "name": "up", "title": "Compose up", "key": {"key": "u", "ctrl": true}}]"#;
+        s.receive(ServerMsg::ExtensionCommands(serde_json::from_str(commands).unwrap()));
+        s.select(PaneId(1));
+        let sent = s.call(Call::ExtensionCommand { extension: "docker".into(), command: "up".into(), checkout: None, pane: None });
+        assert!(matches!(
+            sent.as_slice(),
+            [ClientMsg::ExtensionCommand { command, context, .. }, ..]
+                if command == "up" && context.checkout == Some(CheckoutId(100)) && context.pane == Some(PaneId(1))
+        ), "{sent:?}");
+        s.key(&PageKey { ctrl: true, key: " ".into(), ..PageKey::default() });
+        let sent = s.key(&PageKey { ctrl: true, key: "u".into(), ..PageKey::default() });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::ExtensionCommand { .. })), "{sent:?}");
+        let sent = s.call(Call::ExtensionCommand { extension: "docker".into(), command: "down".into(), checkout: None, pane: None });
+        assert!(sent.iter().all(|m| !matches!(m, ClientMsg::ExtensionCommand { .. })), "no such command");
+    }
+
+    #[test]
+    fn a_dialog_put_here_is_drawn_and_its_answer_goes_back() {
+        let mut s = session(Hello::this_build());
+        let dialog = argus_protocol::ExtDialog {
+            title: "Restart".into(),
+            kind: argus_protocol::ExtDialogKind::Confirm { message: "sure?".into(), yes: None },
+            answers: Some(4),
+        };
+        s.receive(ServerMsg::ExtensionDialog { extension: "docker".into(), id: 9, dialog, prompted: true });
+        let page = s.events(0).into_iter().find_map(|e| match e {
+            Event::ExtensionDialog(page) => Some(*page),
+            _ => None,
+        });
+        assert!(page.is_some_and(|p| p.open && p.prompted && p.id == 9));
+        let sent = s.call(Call::AnswerDialog { dialog: 9, answer: Some(argus_protocol::ExtAnswer::Yes) });
+        assert!(matches!(sent.as_slice(), [ClientMsg::ExtensionDialogAnswer { dialog: 9, answer: Some(_) }, ..]), "{sent:?}");
+        s.receive(ServerMsg::ExtensionDialog {
+            extension: "docker".into(),
+            id: 10,
+            dialog: argus_protocol::ExtDialog {
+                title: "x".into(),
+                kind: argus_protocol::ExtDialogKind::Prompt { message: "?".into(), initial: String::new() },
+                answers: None,
+            },
+            prompted: false,
+        });
+        s.receive(ServerMsg::ExtensionDialogWithdrawn { id: 10 });
+        assert!(s.call(Call::AnswerDialog { dialog: 10, answer: None }).iter().all(|m| !matches!(m, ClientMsg::ExtensionDialogAnswer { .. })));
+    }
+
+    #[test]
+    fn an_extensions_notice_is_said_with_its_name() {
+        let mut s = session(Hello::this_build());
+        s.receive(ServerMsg::ExtensionNotice { extension: "docker".into(), text: "web restarted".into() });
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "docker: web restarted")));
     }
 }

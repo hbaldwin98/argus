@@ -240,6 +240,7 @@ impl ExtKey {
 }
 
 /// A question an extension asks the person.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtDialog {
     pub title: String,
@@ -252,6 +253,7 @@ pub struct ExtDialog {
     pub answers: Option<u64>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExtDialogKind {
@@ -273,12 +275,14 @@ pub enum ExtDialogKind {
     Form { fields: Vec<ExtField> },
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtItem {
     pub key: String,
     pub label: String,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtField {
     pub name: String,
@@ -289,6 +293,7 @@ pub struct ExtField {
 
 /// What the person answered. Cancelling is not an answer: it reaches the
 /// extension as [`ExtEvent::Cancel`].
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExtAnswer {

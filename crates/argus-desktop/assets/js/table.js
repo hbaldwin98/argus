@@ -44,11 +44,15 @@ function compare(a, b) {
     }
     return String(a).localeCompare(String(b));
 }
-export function table(block) {
+export function table(block, picks = null) {
     if (block.rows.length === 0)
         return el('div', { class: 'vtable-empty' }, 'No rows');
     const rows = block.rows.map((cells, index) => {
-        const tr = el('tr', null, block.columns.map((col, c) => {
+        const key = picks?.keys[index] ?? null;
+        const on = key !== null && key === picks?.selected;
+        const tr = el('tr', picks && key !== null
+            ? { class: on ? 'on' : null, 'aria-selected': String(on), onclick: () => picks.select(key) }
+            : null, block.columns.map((col, c) => {
             const cell = cells[c];
             const td = el('td', { class: col.numeric ? 'vtable-num' : null });
             if (cell) {
@@ -60,7 +64,8 @@ export function table(block) {
                 }
             }
             return td;
-        }));
+        }), picks?.trailing &&
+            el('td', { class: 'row-actions' }, on && key !== null && picks.trailing(key)));
         return { tr, cells, index };
     });
     const body = el('tbody', null, rows.map((r) => r.tr));
@@ -89,7 +94,7 @@ export function table(block) {
         const th = el('th', { scope: 'col', class: col.numeric ? 'vtable-num' : null }, el('button', { type: 'button', class: 'vtable-sort', onclick: () => sortBy(c) }, col.title, el('span', { class: 'vtable-arrow', 'aria-hidden': 'true' })));
         headers.push(th);
         return th;
-    }));
+    }), picks?.trailing && el('th', null, el('span', { class: 'sr-only' }, 'Actions')));
     // The agent says it sorted this column but not which way, so "other"
     // rather than a descending we would be guessing at.
     mark(active, 'other');

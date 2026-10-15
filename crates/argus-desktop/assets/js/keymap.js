@@ -8,7 +8,9 @@ import { reviewOpen } from './review.js';
 import { focusSessionsSearch, readerOpen, sessionsOpen } from './sessions.js';
 import { focusTranscriptFind } from './transcript.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
+import { extensionDialogFocused } from './dialogs.js';
 import { $ } from './dom.js';
+import { answerExtensionNo, extensionViewFocused, runExtensionCommand } from './extension_views.js';
 import { expandedOpen } from './sequence.js';
 import { closeLayer, featureAction } from './features.js';
 import { closePalette, openPalette } from './palette.js';
@@ -39,12 +41,34 @@ export function actionFor(places, e) {
     }
     return null;
 }
+/** The id of the action on the extension view out whose key `e` is: one
+ *  character, typed with no modifier but its own shift. */
+function extensionActionFor(e) {
+    if (e.ctrlKey || e.altKey || e.metaKey)
+        return null;
+    const actions = state.extensions?.open?.actions ?? [];
+    return actions.find((action) => action.key !== null && action.key === e.key)?.id ?? null;
+}
+/** Runs the extension command whose key `e` is among those heard in
+ *  `scopes`, saying whether there was one. The daemon refused any key the
+ *  keymap holds, so none of these shadows one of the window's own. */
+function extensionCommand(e, scopes) {
+    const view = state.extensions?.open?.view ?? null;
+    const command = (state.extensions?.commands ?? []).find((c) => scopes.includes(c.scope) &&
+        (c.scope !== 'view' || c.view === view) &&
+        c.chords.some((chord) => matches(chord, e)));
+    if (!command)
+        return false;
+    e.preventDefault();
+    runExtensionCommand(command.extension, command.command);
+    return true;
+}
 /** Runs `action`, saying whether there was anything for it to do. */
 function run(action) {
     const layerOpen = $('layer').childElementCount > 0;
     if (action === 'closeLayer') {
         // A question the stage asked is answered no, not only put away.
-        if (answerNo() || answerRemoveNo())
+        if (answerNo() || answerRemoveNo() || answerExtensionNo())
             return true;
         if (layerOpen) {
             closeLayer();
@@ -150,6 +174,9 @@ export function listen() {
         const typing = e.target instanceof Element && e.target.closest('input, textarea, [contenteditable]');
         if (typing)
             return;
+        // An extension's question answers its own keys while it has them.
+        if (extensionDialogFocused())
+            return;
         // The settings answer their own keys, Escape among them.
         if (settingsOpen())
             return;
@@ -222,11 +249,30 @@ export function listen() {
                 e.preventDefault();
             return;
         }
+        // An extension's view clicked holds its own keys and its actions'.
+        if (extensionViewFocused() && $('layer').childElementCount === 0) {
+            const action = actionFor(['extension'], e);
+            const id = action ? null : extensionActionFor(e);
+            if (action)
+                call('extension_key', { action });
+            else if (id)
+                call('extension_action', { action: id });
+            if (action || id) {
+                e.preventDefault();
+                return;
+            }
+            if (extensionCommand(e, ['view', 'anywhere']))
+                return;
+        }
         // A row picked in the rail holds the keys until a click elsewhere.
         if (railPicked()) {
             const action = actionFor(['anywhere', 'rail'], e);
             if (action && (railAction(action) || run(action)))
                 e.preventDefault();
+            else if (!action) {
+                const onPane = state.railPick?.pane !== null;
+                extensionCommand(e, onPane ? ['anywhere', 'checkout', 'pane'] : ['anywhere', 'checkout']);
+            }
             return;
         }
         // An open feature hears its own keys before Anywhere's: its j and k
@@ -248,5 +294,8 @@ export function listen() {
         const action = actionFor(places, e);
         if (action && run(action))
             e.preventDefault();
+        else if (!action && $('layer').childElementCount === 0) {
+            extensionCommand(e, state.rail.stage === 'checkouts' ? ['anywhere', 'checkout'] : ['anywhere']);
+        }
     });
 }

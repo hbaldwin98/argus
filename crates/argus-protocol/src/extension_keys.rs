@@ -50,7 +50,8 @@ pub const KEPT: &[Kept] = &[
     key("A"), key("B"), key("C"), key("D"), key("E"), key("F"), key("G"), key("H"), key("M"), key("N"),
     key("O"), key("P"), key("R"), key("S"), key("V"), key("X"), key("Y"),
     ctrl(" "), ctrl("n"), ctrl("k"), ctrl(","), ctrl("p"), ctrl("f"), ctrl("v"), ctrl("V"), alt("v"),
-    ctrl("="), ctrl("+"), ctrl("-"), ctrl("0"), ctrl("Enter"),
+    ctrl("="), ctrl("+"), ctrl("-"), ctrl("0"), ctrl("Enter"), ctrl("."),
+    key("+"), key("="), key("-"), key("J"), key("K"), key("L"), key("."), key("u"), key("U"),
 ];
 
 /// The keys a view's own stage keeps for moving through its rows,
@@ -123,7 +124,7 @@ mod tests {
 
     #[test]
     fn a_key_argus_leaves_free_is_taken() {
-        for free in ["t", "u", "w", "T", "I"] {
+        for free in ["t", "w", "T", "I", "Q"] {
             assert_eq!(command_key_refusal(&press(free)), None, "{free}");
         }
         assert_eq!(command_key_refusal(&ExtKey { ctrl: true, ..press("d") }), None);

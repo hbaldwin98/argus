@@ -6,6 +6,7 @@ import type { CapturePage } from './bindings/CapturePage';
 import type { Checkouts } from './bindings/Checkouts';
 import type { Command } from './bindings/Command';
 import type { ConsolePage } from './bindings/ConsolePage';
+import type { ExtensionsPage } from './bindings/ExtensionsPage';
 import type { Features } from './bindings/Features';
 import type { Group } from './bindings/Group';
 import type { Rail } from './bindings/Rail';
@@ -70,6 +71,8 @@ export const state: {
   settings: SettingsPage | null;
   /** Where the console is, its tabs, and whether the canvas is its. */
   console: ConsolePage | null;
+  /** What the extensions put in the window: views, commands, keys. */
+  extensions: ExtensionsPage | null;
   /** The comment being written, kept across the dialog's redraws. */
   reviewDraft: string;
   /** What the index's filter says. */
@@ -116,6 +119,7 @@ export const state: {
   sessions: null,
   settings: null,
   console: null,
+  extensions: null,
   reviewDraft: '',
   filter: '',
   archivedOpen: false,

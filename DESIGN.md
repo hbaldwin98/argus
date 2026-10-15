@@ -123,7 +123,7 @@ are the run's, since a restarted daemon's consoles are new shells under new ids.
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `settings`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
+`palette`, `shortcuts`, `settings`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
 `markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and
 `tickets` for a feature's ticket links),
@@ -424,6 +424,9 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `agent_views` | which views agents showed, as the window holds them, which one is out in the side panel, and which wait on a refresh |
+| `extension_views` | which extension views the window holds, which are listed where the person is, the one out in the side panel in an agent view's place, its selected row and the question an action waits on |
+| `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension |
+| `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, and the answer or cancellation each sends back |
 | `opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
 | `logging` | where the window's own diagnostics go |
 | `window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
@@ -2132,13 +2135,39 @@ one character the view's own stage does not keep for moving and filtering.
 
 The protocol carries it to a client that listed `extensions` in its greeting, and to no other:
 `ExtensionViews` and `ExtensionCommands` whole after the daemon's greeting and on each change, `ExtensionNotice`
-for a notice; the client sends `ViewAction` and `Command`, which the daemon checks against what is
+for a notice; the client sends `ExtensionAction` and `ExtensionCommand`, which the daemon checks against what is
 published before forwarding — a client a publish behind cannot act on what has been taken away. A
 dialog goes to one client, so only one window asks: the one that ran the command it answers, when
 it names one (`answers`, the command's id), else the client the person was last at among those
 that listed `extension-dialogs`. Only that client may answer it, in its own kind (`ExtensionDialogAnswer`),
 and a dialog nobody answered is withdrawn, its extension told it was cancelled, when that client
 goes.
+
+The desktop window draws extensions where it draws agents' views rather than in a stage of its own:
+an extension's view is one more tab of the side panel (`extension_views`), listed while its scope
+holds — a repository's while the rail reads that repository, a checkout's while its pane is on
+screen or it is that repository's own — and counted on the launcher at the window's edge with the
+agents' views. Brought out, it takes the panel's body from an agent's view and gives it back when
+an agent's is chosen, and an agent's view arriving never takes the panel from it. It is drawn by
+the agent table's renderer (`table.ts`, `values.ts`), a row's status leading it as a chip, with
+the selected row marked and its actions at its end, view-wide actions in the panel's header. A
+click in it gives it the keys: `j`/`k` move the row, and each action's key runs it. An action that
+asks first asks in the dialog the Checkouts stage asks before a removal in, and an action is sent
+as it stands — the table changes when the extension publishes again. A view taken away, or out of
+scope where the person now is, is put away. Commands (`extension_keys`) are in the palette with
+their keys, and on the shortcuts sheet under a heading per extension beside the keymap's: a command
+heard anywhere runs from wherever the page has the keys and, through the leader, from a pane; one
+on a checkout from the Checkouts stage or a checkout picked on the rail; one on a pane from a pane
+picked there or through the leader; one in a view while that view has the keys. Its context is the
+rail's pick, else the Checkouts stage's row, else the pane on screen. A dialog (`extension_dialog`,
+drawn by `dialogs.ts`) opens over the window's top without a scrim. One that answers a command run
+in this window takes the keys; one an extension raised on its own does not — it waits for a click,
+so a pane being typed in keeps every key — the simpler of the two choices weighed, against turning
+it into a notice until the person left the pane, since nothing is typed into it by surprise either
+way. Later ones wait behind the first, Escape or Cancel sends the cancellation, and the daemon
+withdrawing one takes it down. The terminal client does not greet with `extensions`, so it is sent
+none of this: agent views are the desktop's, and which of their blocks a terminal could draw is a
+decision of its own.
 
 ## Editors and overlays
 
