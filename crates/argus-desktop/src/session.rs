@@ -2138,6 +2138,11 @@ impl Session {
         self.shown.pane().filter(|_| self.side_visible(self.shown.keys()))
     }
 
+    pub fn found_fonts(&mut self, fonts: Vec<crate::page::FontFamily>) -> Vec<ClientMsg> {
+        self.choices.found_fonts(fonts);
+        Vec::new()
+    }
+
     /// One choice in the Settings dialog. The page draws the look from
     /// what comes back, and `commands` puts the backdrop on the window.
     fn set(&mut self, change: SettingChange) -> Vec<ClientMsg> {

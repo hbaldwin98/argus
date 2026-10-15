@@ -8,7 +8,7 @@
 //! this sends back, not from the control it moved.
 
 use crate::backdrop;
-use crate::page::{SettingChange, SettingsPage};
+use crate::page::{FontFamily, SettingChange, SettingsPage};
 use crate::settings::{Backdrop, EditorMode, Preferences, MIN_OPACITY};
 
 /// The zoom keys' steps, in percent: a browser's, so a step feels as it
@@ -21,6 +21,7 @@ pub struct Chosen {
     unheard: bool,
     /// The file has not kept them since they changed.
     unsaved: bool,
+    fonts: Vec<FontFamily>,
 }
 
 impl Chosen {
@@ -29,10 +30,11 @@ impl Chosen {
         now.opacity = now.opacity.clamp(MIN_OPACITY, 100);
         now.zoom = now.zoom.clamp(ZOOM_STEPS[0], ZOOM_STEPS[ZOOM_STEPS.len() - 1]);
         now.font = family_name(&now.font);
+        now.ui_font = family_name(&now.ui_font);
         if !backdrop::can_draw(now.backdrop) {
             now.backdrop = Backdrop::Clear;
         }
-        Chosen { now, unheard: true, unsaved: false }
+        Chosen { now, unheard: true, unsaved: false, fonts: Vec::new() }
     }
 
     pub fn get(&self) -> &Preferences {
@@ -65,6 +67,7 @@ impl Chosen {
             SettingChange::NotifyInBackground { only } => next.notify_in_background = only,
             SettingChange::FeatureLayout { layout } => next.feature_layout = layout,
             SettingChange::Font { family } => next.font = family_name(&family),
+            SettingChange::UiFont { family } => next.ui_font = family_name(&family),
         }
         if next != self.now {
             self.now = next;
@@ -112,7 +115,14 @@ impl Chosen {
             chosen: self.now.clone(),
             min_opacity: MIN_OPACITY,
             backdrops: backdrop::offered(),
+            fonts: self.fonts.clone(),
         })
+    }
+
+    /// The installed fonts have been read: the dialog offers them.
+    pub fn found_fonts(&mut self, fonts: Vec<FontFamily>) {
+        self.fonts = fonts;
+        self.unheard = true;
     }
 
     /// A page that has just loaded holds nothing: it hears them again.
@@ -221,6 +231,15 @@ mod tests {
     }
 
     #[test]
+    fn fonts_found_are_heard_with_the_choices() {
+        let mut choices = Chosen::new(Preferences::default());
+        choices.take();
+        let fonts = vec![FontFamily { name: "Cascadia Mono".into(), mono: true }];
+        choices.found_fonts(fonts.clone());
+        assert_eq!(choices.take().map(|p| p.fonts), Some(fonts));
+    }
+
+    #[test]
     fn a_font_family_keeps_nothing_that_could_end_its_quotes() {
         let mut choices = Chosen::new(Preferences::default());
         choices.change(SettingChange::Font { family: "  JetBrainsMono Nerd Font ".into() }).unwrap();
@@ -229,6 +248,10 @@ mod tests {
         assert_eq!(choices.get().font, "x color: red");
         let choices = Chosen::new(Preferences { font: "Fira\"Code".into(), ..Preferences::default() });
         assert_eq!(choices.get().font, "FiraCode", "a hand-edited file too");
+        let mut choices = Chosen::new(Preferences { ui_font: "In;ter".into(), ..Preferences::default() });
+        assert_eq!(choices.get().ui_font, "Inter", "the interface's too");
+        choices.change(SettingChange::UiFont { family: " Segoe\"UI ".into() }).unwrap();
+        assert_eq!(choices.get().ui_font, "SegoeUI");
     }
 
     #[test]

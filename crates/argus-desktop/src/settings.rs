@@ -104,6 +104,10 @@ pub struct Preferences {
     /// bundled ones alone.
     #[serde(default)]
     pub font: String,
+    /// The family of an installed font every other line is drawn in, in
+    /// front of the system's own. Empty draws the system's alone.
+    #[serde(default)]
+    pub ui_font: String,
     /// How large the whole window is drawn, panes and all, in percent: set
     /// by the zoom keys rather than the dialog, and kept like its choices.
     #[serde(default = "actual_size")]
@@ -184,6 +188,7 @@ impl Default for Preferences {
             notify_in_background: true,
             feature_layout: Layout::default(),
             font: String::new(),
+            ui_font: String::new(),
             zoom: actual_size(),
         }
     }
@@ -322,6 +327,7 @@ mod tests {
             notify_in_background: false,
             feature_layout: Layout::Board,
             font: "Iosevka Term".into(),
+            ui_font: "Inter".into(),
             zoom: 125,
         };
         save_to(&path, &settings).unwrap();

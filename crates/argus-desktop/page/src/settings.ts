@@ -1,6 +1,6 @@
 // The Settings dialog, and the look its choices give the window: the theme
-// on the document, the background's opacity as `--see` and the font in
-// front of `--font-mono`'s bundled faces.
+// on the document, the background's opacity as `--see` and the fonts in
+// front of `--font-mono`'s bundled faces and `--font-ui`'s system ones.
 //
 // Rust holds the choices (`src/preferences.rs`) and saves each as it is
 // made; the dialog draws what Rust sends back, and is updated in place
@@ -13,6 +13,7 @@ import type { Layout } from './bindings/Layout';
 import type { SettingChange } from './bindings/SettingChange';
 import type { Theme } from './bindings/Theme';
 import { $, el, icon, type Child } from './dom.js';
+import { fontPicker, type FontPicker } from './font_picker.js';
 import { actionFor } from './keymap.js';
 import { screens } from './screen.js';
 import { state } from './state.js';
@@ -70,10 +71,16 @@ export function applyLook(): void {
   else root.dataset.theme = chosen.theme;
   root.style.setProperty('--see', String(chosen.opacity / 100));
   // Rust leaves no quote in the name to end it early.
-  const font = chosen.font && `"${chosen.font}", var(--font-mono-bundled)`;
-  if (font) root.style.setProperty('--font-mono', font);
-  else root.style.removeProperty('--font-mono');
+  putFont(root, '--font-mono', chosen.font, 'var(--font-mono-bundled)');
+  putFont(root, '--font-ui', chosen.uiFont, 'var(--font-ui-system)');
   for (const s of screens) s.retheme();
+}
+
+/** A chosen family in front of the faces that draw what it lacks. Rust
+ *  leaves no quote in the name to end it early. */
+function putFont(root: HTMLElement, property: string, family: string, behind: string): void {
+  if (family) root.style.setProperty(property, `"${family}", ${behind}`);
+  else root.style.removeProperty(property);
 }
 
 /** The dialog's controls, kept to be updated in place. */
@@ -85,7 +92,10 @@ let controls: {
   backdrops: Map<Backdrop, HTMLButtonElement>;
   backdropRow: HTMLElement;
   backdropWhy: HTMLElement;
-  font: HTMLInputElement;
+  font: FontPicker;
+  fontWhy: HTMLElement;
+  uiFont: FontPicker;
+  uiFontWhy: HTMLElement;
   editors: Map<EditorMode, HTMLButtonElement>;
   command: HTMLInputElement;
   notify: HTMLButtonElement;
@@ -234,14 +244,38 @@ export function openSettings(): void {
     backdropGroup,
   );
 
-  const font = el('input', {
-    class: 'field mono',
-    placeholder: 'JetBrains Mono',
-    'aria-label': 'Font',
-    autocomplete: 'off',
-    spellcheck: 'false',
-  });
-  font.addEventListener('input', () => set({ set: 'font', family: font.value }));
+  const font = fontPicker('Code font', 'var(--font-mono-bundled)', 'JetBrains Mono', (family) =>
+    set({ set: 'font', family }),
+  );
+  const fontWhy = el('span', { class: 'meta' });
+  const fontRow = el(
+    'div',
+    { class: 'setrow' },
+    el(
+      'div',
+      { class: 'grow stack-2' },
+      el('span', null, 'Code font'),
+      el('span', { class: 'meta' }, 'Panes and code, monospaced; a Nerd Font draws its icons'),
+      fontWhy,
+    ),
+    font.node,
+  );
+  const uiFont = fontPicker('Interface font', 'var(--font-ui-system)', 'System', (family) =>
+    set({ set: 'uiFont', family }),
+  );
+  const uiFontWhy = el('span', { class: 'meta' });
+  const uiFontRow = el(
+    'div',
+    { class: 'setrow' },
+    el(
+      'div',
+      { class: 'grow stack-2' },
+      el('span', null, 'Interface font'),
+      el('span', { class: 'meta' }, 'Menus, lists, headings and prose'),
+      uiFontWhy,
+    ),
+    uiFont.node,
+  );
 
   const [editorGroup, editors] = segment('Files open', EDITORS, (mode) =>
     set({ set: 'editor', mode }),
@@ -274,6 +308,9 @@ export function openSettings(): void {
     backdropRow,
     backdropWhy,
     font,
+    fontWhy,
+    uiFont,
+    uiFontWhy,
     editors,
     command,
     notify,
@@ -298,11 +335,8 @@ export function openSettings(): void {
       // Clear alone is no choice: where it is all this system draws, the
       // row is left out.
       page.backdrops.length > 1 ? backdropRow : null,
-      row(
-        'Font',
-        'An installed font for panes and code, a Nerd Font for its icons; empty uses JetBrains Mono',
-        font,
-      ),
+      fontRow,
+      uiFontRow,
     ),
     section(
       'Editor',
@@ -404,6 +438,39 @@ export function closeSettings(): void {
   before = null;
 }
 
+const probe = document.createElement('canvas').getContext('2d');
+const PROBE_TEXT = 'mmmmmmmmmmlli0O@#';
+const drawable = new Map<string, boolean>();
+
+/** Whether this webview finds a font by that name. A name it does not know
+ *  draws in the fallback after it, so text measures as the fallback alone
+ *  does; one it knows measures unlike at least one of three generics.
+ *  Rust offers both of a font's names, and a webview knows it by only one. */
+function draws(family: string): boolean {
+  let found = drawable.get(family);
+  if (found !== undefined) return found;
+  found = false;
+  for (const generic of ['monospace', 'serif', 'sans-serif']) {
+    if (!probe) break;
+    probe.font = `32px ${generic}`;
+    const fallback = probe.measureText(PROBE_TEXT).width;
+    probe.font = `32px "${family}", ${generic}`;
+    if (probe.measureText(PROBE_TEXT).width !== fallback) {
+      found = true;
+      break;
+    }
+  }
+  drawable.set(family, found);
+  return found;
+}
+
+/** Says under a font field when nothing is called what it holds. */
+function missingNote(note: HTMLElement, family: string, instead: string): void {
+  const missing = family !== '' && !draws(family);
+  note.textContent = missing ? `No font here is called that, so ${instead} draws` : '';
+  note.hidden = !missing;
+}
+
 /** The choices Rust sent: the window's look always, and the dialog's
  *  controls while it is open. */
 export function drawSettings(): void {
@@ -431,7 +498,17 @@ export function drawSettings(): void {
   }
   controls.backdropWhy.textContent = why.join('. ');
   controls.backdropWhy.hidden = why.length === 0;
-  if (document.activeElement !== controls.font) controls.font.value = chosen.font;
+  const installed = page.fonts.filter((f) => draws(f.name));
+  controls.font.update(
+    installed.filter((f) => f.mono).map((f) => f.name),
+    chosen.font,
+  );
+  controls.uiFont.update(
+    installed.map((f) => f.name),
+    chosen.uiFont,
+  );
+  missingNote(controls.fontWhy, chosen.font, 'JetBrains Mono');
+  missingNote(controls.uiFontWhy, chosen.uiFont, 'the system font');
   setSegment(controls.editors, chosen.editor);
   // A field being typed in is ahead of what came back.
   if (document.activeElement !== controls.command) controls.command.value = chosen.editorCommand;

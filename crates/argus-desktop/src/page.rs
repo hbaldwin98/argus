@@ -230,6 +230,7 @@ pub enum SettingChange {
     NotifyInBackground { only: bool },
     FeatureLayout { layout: Layout },
     Font { family: String },
+    UiFont { family: String },
 }
 
 /// What was done in the note a new feature is written as.
@@ -556,6 +557,17 @@ pub struct SettingsPage {
     /// The backdrops this machine draws, in the dialog's order; one it
     /// cannot draw at all is left out.
     pub backdrops: Vec<BackdropOffer>,
+    /// The families installed, for the font fields to offer; none until
+    /// they have been read, a moment after the window opens.
+    pub fonts: Vec<FontFamily>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+pub struct FontFamily {
+    pub name: String,
+    /// Only these are offered for the panes, whose grid needs even cells.
+    pub mono: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2206,6 +2218,7 @@ mod tests {
             chosen: Preferences::default(),
             min_opacity: 30,
             backdrops: vec![BackdropOffer { backdrop: Backdrop::Mica, unavailable: Some("Mica needs Windows 11".into()) }],
+            fonts: vec![FontFamily { name: "Cascadia Mono".into(), mono: true }],
         }));
         assert_eq!(
             as_json(event),
@@ -2214,10 +2227,11 @@ mod tests {
                 "chosen": {
                     "theme": "system", "opacity": 100, "backdrop": "clear", "editor": "floating",
                     "editorCommand": "", "notify": true, "notifyInBackground": true, "featureLayout": "list",
-                    "font": "", "zoom": 100
+                    "font": "", "uiFont": "", "zoom": 100
                 },
                 "minOpacity": 30,
-                "backdrops": [{"backdrop": "mica", "unavailable": "Mica needs Windows 11"}]
+                "backdrops": [{"backdrop": "mica", "unavailable": "Mica needs Windows 11"}],
+                "fonts": [{"name": "Cascadia Mono", "mono": true}]
             })
         );
     }

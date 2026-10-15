@@ -220,7 +220,9 @@
 }
 
 :root {
-  --font-ui: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --font-ui-system: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  /* The Settings dialog's interface font goes in front (settings.ts). */
+  --font-ui: var(--font-ui-system);
   --font-mono-bundled:
     'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas, monospace;
   /* The Settings dialog's font goes in front of the bundled ones (settings.ts). */
@@ -3399,6 +3401,51 @@ body.console-fullscreen #bar {
 }
 .settings .setrow .field {
   width: 260px;
+}
+.fontpick {
+  position: relative;
+  width: 260px;
+  max-width: 50%;
+  flex: none;
+}
+.settings .setrow .fontpick .field {
+  width: 100%;
+  max-width: none;
+  padding-right: var(--sp-24);
+}
+.fontpick-chev {
+  position: absolute;
+  right: var(--sp-8);
+  top: 0;
+  height: var(--control-h);
+  display: flex;
+  align-items: center;
+  color: var(--fg-faint);
+  pointer-events: none;
+}
+/* Under its field, and so outranking `.layer .menu`, which pins a menu in
+   the layer to the window. */
+.fontpick .fontpick-list {
+  position: absolute;
+  top: calc(100% + var(--sp-4));
+  left: 0;
+  right: 0;
+  width: auto;
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 3;
+}
+.fontpick-list .mi {
+  flex: none;
+  font-size: 13px;
+}
+.fontpick-list .fontpick-note {
+  color: var(--fg-faint);
+  cursor: default;
+  font-family: var(--font-ui);
+}
+.fontpick-check {
+  color: var(--accent);
 }
 .settings .placeholder {
   color: var(--fg-faint);

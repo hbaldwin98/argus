@@ -1,12 +1,13 @@
 // The Settings dialog, and the look its choices give the window: the theme
-// on the document, the background's opacity as `--see` and the font in
-// front of `--font-mono`'s bundled faces.
+// on the document, the background's opacity as `--see` and the fonts in
+// front of `--font-mono`'s bundled faces and `--font-ui`'s system ones.
 //
 // Rust holds the choices (`src/preferences.rs`) and saves each as it is
 // made; the dialog draws what Rust sends back, and is updated in place
 // rather than rebuilt, so a slider being dragged or a command being typed
 // keeps its hold while the choices come back.
 import { $, el, icon } from './dom.js';
+import { fontPicker } from './font_picker.js';
 import { actionFor } from './keymap.js';
 import { screens } from './screen.js';
 import { state } from './state.js';
@@ -57,13 +58,18 @@ export function applyLook() {
         root.dataset.theme = chosen.theme;
     root.style.setProperty('--see', String(chosen.opacity / 100));
     // Rust leaves no quote in the name to end it early.
-    const font = chosen.font && `"${chosen.font}", var(--font-mono-bundled)`;
-    if (font)
-        root.style.setProperty('--font-mono', font);
-    else
-        root.style.removeProperty('--font-mono');
+    putFont(root, '--font-mono', chosen.font, 'var(--font-mono-bundled)');
+    putFont(root, '--font-ui', chosen.uiFont, 'var(--font-ui-system)');
     for (const s of screens)
         s.retheme();
+}
+/** A chosen family in front of the faces that draw what it lacks. Rust
+ *  leaves no quote in the name to end it early. */
+function putFont(root, property, family, behind) {
+    if (family)
+        root.style.setProperty(property, `"${family}", ${behind}`);
+    else
+        root.style.removeProperty(property);
 }
 /** The dialog's controls, kept to be updated in place. */
 let controls = null;
@@ -144,14 +150,12 @@ export function openSettings() {
     const [backdropGroup, backdrops] = segment('What shows through', page.backdrops.map((offer) => [offer.backdrop, BACKDROPS[offer.backdrop]]), (backdrop) => set({ set: 'backdrop', backdrop }));
     const backdropWhy = el('span', { class: 'meta' });
     const backdropRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'What shows through'), el('span', { class: 'meta' }, 'Clear shows the desktop; Mica and Acrylic blur it'), backdropWhy), backdropGroup);
-    const font = el('input', {
-        class: 'field mono',
-        placeholder: 'JetBrains Mono',
-        'aria-label': 'Font',
-        autocomplete: 'off',
-        spellcheck: 'false',
-    });
-    font.addEventListener('input', () => set({ set: 'font', family: font.value }));
+    const font = fontPicker('Code font', 'var(--font-mono-bundled)', 'JetBrains Mono', (family) => set({ set: 'font', family }));
+    const fontWhy = el('span', { class: 'meta' });
+    const fontRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'Code font'), el('span', { class: 'meta' }, 'Panes and code, monospaced; a Nerd Font draws its icons'), fontWhy), font.node);
+    const uiFont = fontPicker('Interface font', 'var(--font-ui-system)', 'System', (family) => set({ set: 'uiFont', family }));
+    const uiFontWhy = el('span', { class: 'meta' });
+    const uiFontRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'Interface font'), el('span', { class: 'meta' }, 'Menus, lists, headings and prose'), uiFontWhy), uiFont.node);
     const [editorGroup, editors] = segment('Files open', EDITORS, (mode) => set({ set: 'editor', mode }));
     const command = el('input', {
         class: 'field mono',
@@ -173,6 +177,9 @@ export function openSettings() {
         backdropRow,
         backdropWhy,
         font,
+        fontWhy,
+        uiFont,
+        uiFontWhy,
         editors,
         command,
         notify,
@@ -184,7 +191,7 @@ export function openSettings() {
     ]), row('Follow the system', 'Mocha when it is dark, Latte when it is light', follow), row('Background opacity', 'The desktop shows through the background; text and borders stay solid', el('div', { class: 'opacity' }, opacity, percent)), 
     // Clear alone is no choice: where it is all this system draws, the
     // row is left out.
-    page.backdrops.length > 1 ? backdropRow : null, row('Font', 'An installed font for panes and code, a Nerd Font for its icons; empty uses JetBrains Mono', font)), section('Editor', row('Files open', 'A known GUI editor always opens on its own', editorGroup), row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command)), section('Notifications', row('When an agent needs you', 'A system notification naming the pane: waiting, needs-review or failed', notify), row('Only while this window is in the background', null, background)), section('Features', row('Feature index', 'Remembered per repository; this is what a new one opens as', layoutGroup)), section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')));
+    page.backdrops.length > 1 ? backdropRow : null, fontRow, uiFontRow), section('Editor', row('Files open', 'A known GUI editor always opens on its own', editorGroup), row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command)), section('Notifications', row('When an agent needs you', 'A system notification naming the pane: waiting, needs-review or failed', notify), row('Only while this window is in the background', null, background)), section('Features', row('Feature index', 'Remembered per repository; this is what a new one opens as', layoutGroup)), section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')));
     const nav = el('nav', { class: 'settings-nav', 'aria-label': 'Settings sections' }, SECTIONS.map((name) => el('button', {
         class: 'frow',
         onclick: () => {
@@ -229,6 +236,38 @@ export function closeSettings() {
         before.focus();
     before = null;
 }
+const probe = document.createElement('canvas').getContext('2d');
+const PROBE_TEXT = 'mmmmmmmmmmlli0O@#';
+const drawable = new Map();
+/** Whether this webview finds a font by that name. A name it does not know
+ *  draws in the fallback after it, so text measures as the fallback alone
+ *  does; one it knows measures unlike at least one of three generics.
+ *  Rust offers both of a font's names, and a webview knows it by only one. */
+function draws(family) {
+    let found = drawable.get(family);
+    if (found !== undefined)
+        return found;
+    found = false;
+    for (const generic of ['monospace', 'serif', 'sans-serif']) {
+        if (!probe)
+            break;
+        probe.font = `32px ${generic}`;
+        const fallback = probe.measureText(PROBE_TEXT).width;
+        probe.font = `32px "${family}", ${generic}`;
+        if (probe.measureText(PROBE_TEXT).width !== fallback) {
+            found = true;
+            break;
+        }
+    }
+    drawable.set(family, found);
+    return found;
+}
+/** Says under a font field when nothing is called what it holds. */
+function missingNote(note, family, instead) {
+    const missing = family !== '' && !draws(family);
+    note.textContent = missing ? `No font here is called that, so ${instead} draws` : '';
+    note.hidden = !missing;
+}
 /** The choices Rust sent: the window's look always, and the dialog's
  *  controls while it is open. */
 export function drawSettings() {
@@ -260,8 +299,11 @@ export function drawSettings() {
     }
     controls.backdropWhy.textContent = why.join('. ');
     controls.backdropWhy.hidden = why.length === 0;
-    if (document.activeElement !== controls.font)
-        controls.font.value = chosen.font;
+    const installed = page.fonts.filter((f) => draws(f.name));
+    controls.font.update(installed.filter((f) => f.mono).map((f) => f.name), chosen.font);
+    controls.uiFont.update(installed.map((f) => f.name), chosen.uiFont);
+    missingNote(controls.fontWhy, chosen.font, 'JetBrains Mono');
+    missingNote(controls.uiFontWhy, chosen.uiFont, 'the system font');
     setSegment(controls.editors, chosen.editor);
     // A field being typed in is ahead of what came back.
     if (document.activeElement !== controls.command)

@@ -88,13 +88,17 @@ leader. Both are drawn over everything, a review included, and a pane's leader k
 `Run` event, since only the page draws them. So does the Settings dialog, `Ctrl-,` (in a pane, the
 leader and `,`), also in the palette and behind the gear at the sidebar's foot: the theme (Mocha,
 Macchiato, Frappé or Latte, or following the system as Mocha in the dark and Latte in the light),
-the background's opacity and what shows through it, the font, where a file opens and the editor
+the background's opacity and what shows through it, the two fonts, where a file opens and the editor
 command, the system notification an agent coming to need you raises, and the layout a repository's
 Feature index opens as before it remembers its own. Each choice is a call that `preferences` holds
-and saves as it is made, and the page draws the look from what comes back. The font is the family of
-one installed on the machine, put in front of the bundled JetBrains Mono and Symbols Nerd Font Mono,
-so the panes draw a prompt's or an editor's Nerd Font icons whichever text face is chosen; a pane
-re-measures its cells when it changes. The window is always built transparent,
+and saves as it is made, and the page draws the look from what comes back. Each font is the family of
+one installed on the machine, typed or picked from a list under the field that draws each family in
+its own face: the families `fonts` reads at start, those the webview can find under that name, with
+a note when nothing is called what the field holds. A half-typed name is not chosen until it is
+picked, entered or left. The code font, offered from the monospaced families, goes in front of the
+bundled JetBrains Mono and Symbols Nerd Font Mono, so the panes draw a prompt's or an editor's Nerd
+Font icons whichever text face is chosen; a pane re-measures its cells when it changes. The
+interface font, offered from every family, goes in front of the system's own and draws the rest. The window is always built transparent,
 since that can only be set as it is made, so the opacity is only the page's alpha on its large fills
 — the sidebar, the strip, the stages and the terminal's background — and never on text or borders,
 and moving it never rebuilds the window. What shows through is Clear, or on Windows Mica (Windows 11
@@ -130,7 +134,7 @@ are the run's, since a restarted daemon's consoles are new shells under new ids.
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `settings`, `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
+`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
 `markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and
 `tickets` for a feature's ticket links),
@@ -402,6 +406,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
 | `notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
 | `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
+| `fonts` | which font families this machine has installed, by every name the webview might know each by, and which are monospaced, for the Settings dialog to offer |
 | `shown` | the panes the window shows — the Workspace's, and one per side of the console — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
 | `console` | where the console is — docked, the Console stage, fullscreen or hidden — how tall it is docked, the daemon's consoles and the tab chosen for each side of a split, and the page it draws |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |

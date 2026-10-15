@@ -32,6 +32,7 @@ mod feature_stage;
 mod feature_view;
 mod features;
 mod flows_lens;
+mod fonts;
 #[cfg(test)]
 mod fixtures;
 mod keymap;
@@ -99,6 +100,11 @@ fn main() {
             shared.set_app(app.handle().clone());
             open_window(app, &shared)?;
             tauri::async_runtime::spawn(daemon::run(shared.clone()));
+            let found = shared.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let fonts = fonts::installed();
+                found.act(|session| session.found_fonts(fonts));
+            });
             tauri::async_runtime::spawn(frames(shared));
             Ok(())
         })

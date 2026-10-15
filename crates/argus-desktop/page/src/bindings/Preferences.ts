@@ -42,6 +42,11 @@ featureLayout: Layout,
  */
 font: string, 
 /**
+ * The family of an installed font every other line is drawn in, in
+ * front of the system's own. Empty draws the system's alone.
+ */
+uiFont: string, 
+/**
  * How large the whole window is drawn, panes and all, in percent: set
  * by the zoom keys rather than the dialog, and kept like its choices.
  */

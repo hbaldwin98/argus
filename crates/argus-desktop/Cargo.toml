@@ -30,6 +30,11 @@ tauri-plugin-notification = "2"
 # Mica and Acrylic behind a see-through window, put on and taken off a
 # live window, so switching between them needs no rebuild.
 window-vibrancy = "0.8"
+# The installed fonts the Settings dialog offers: fontdb finds them where
+# each system keeps them (fontconfig on Linux), ttf-parser reads each one's
+# names, since fontdb keeps only one and a webview may know it by another.
+fontdb = "0.24"
+ttf-parser = "0.25"
 
 # The title bar's colour, set through DWM.
 [target.'cfg(windows)'.dependencies]
