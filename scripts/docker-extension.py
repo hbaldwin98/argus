@@ -13,7 +13,10 @@ token it publishes with:
 On Windows the command is usually ["python", ...]. It uses only the
 standard library and the `docker` CLI. The view opens as a page of its
 own from the desktop window's sidebar, under Extensions; it can be docked
-in the side panel instead, beside the views agents show.
+in the side panel instead, beside the views agents show. What it says of
+itself, and each command's and action's help, is what
+`argus extension show docker` prints; `argus extension guide` explains
+every request it makes.
 """
 
 import json
@@ -90,10 +93,14 @@ def view(listed, title="Containers"):
         "columns": [{"title": "Name"}, {"title": "Image"}, {"title": "Status"}, {"title": "Ports"}],
         "rows": rows[:200],
         "actions": [
-            {"id": "restart", "label": "Restart", "key": "r", "confirm": "Restart this container?"},
-            {"id": "stop", "label": "Stop", "key": "s", "confirm": "Stop this container?"},
-            {"id": "logs", "label": "Logs", "key": "o"},
-            {"id": "refresh", "label": "Refresh", "view_wide": True},
+            {"id": "restart", "label": "Restart", "key": "r", "confirm": "Restart this container?",
+             "help": "docker restart, on the selected container, after asking."},
+            {"id": "stop", "label": "Stop", "key": "s", "confirm": "Stop this container?",
+             "help": "docker stop, on the selected container, after asking."},
+            {"id": "logs", "label": "Logs", "key": "o",
+             "help": "Opens a console following the selected container's logs."},
+            {"id": "refresh", "label": "Refresh", "view_wide": True,
+             "help": "Reads docker ps again now rather than at the next poll."},
         ],
     }
 
@@ -193,10 +200,26 @@ def listen():
     os._exit(1)
 
 
+ABOUT = {
+    "summary": "Docker containers: restart, stop and follow their logs, and start compose services.",
+    "guide": (
+        "Open **Containers** under Extensions in the desktop window's sidebar. It lists every "
+        f"container `docker ps --all` shows, read again every {POLL_SECONDS} seconds.\n\n"
+        "- `r` restarts the selected container and `s` stops it, each after asking.\n"
+        "- `o` opens a console running `docker logs -f` on it.\n"
+        "- On a checkout, Alt S picks one of its compose services and runs `docker compose up -d` on it.\n\n"
+        "It runs the `docker` CLI on the daemon's machine; when docker does not answer, the view's "
+        "title says so."
+    ),
+}
+
+
 def main():
+    send("PUT", "about", ABOUT)
     refused = send("PUT", "commands", [
-        {"name": "up", "title": "Start a compose service…", "key": {"key": "s", "alt": True}, "scope": "checkout"},
-        {"name": "refresh", "title": "Refresh the containers"},
+        {"name": "up", "title": "Start a compose service…", "key": {"key": "s", "alt": True}, "scope": "checkout",
+         "help": "Picks one of the checkout's compose services and runs docker compose up -d on it."},
+        {"name": "refresh", "title": "Refresh the containers", "help": "Reads docker ps again now."},
     ])
     for each in (refused or {}).get("refused", []):
         print(f"no key for {each['name']}: {each['reason']}", flush=True)
