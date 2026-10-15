@@ -214,6 +214,41 @@ async fn asking_for_a_refresh_tells_the_agent_to_read_the_subject_again() {
     let _ = d.close_pane(pane);
 }
 
+#[tokio::test]
+async fn pressing_an_action_tells_the_agent_and_an_unknown_one_is_not_relayed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    d.set_pane_session_id(pane, "s1");
+    let view = serde_json::json!({
+        "id": "t", "title": "t",
+        "actions": [{"id": "retry", "label": "Retry"}],
+        "blocks": [{"kind": "markdown", "text": "hello"}],
+    });
+    let body = serde_json::json!({"action": "show", "view": view}).to_string();
+    post_agent_hook(&d, pane, Endpoint::View, &body).await;
+    let (_, mut inbox) = super::inbox::open_inbox(&d, pane, "s1").await;
+    let press = |action: &str| argus_protocol::ViewPress {
+        view: "t".into(),
+        action: action.into(),
+        rows: vec![],
+        form: None,
+        answers: vec![],
+    };
+
+    d.press_view(pane, press("rm-rf"));
+    d.press_view(pane, press("retry"));
+
+    let argus_protocol::InboxItem::Message { text } = super::inbox::next_item(&mut inbox).await;
+    assert!(text.contains("`retry`") && text.contains("Retry") && text.contains("`t`"), "{text}");
+    let nothing = tokio::time::timeout(
+        Duration::from_millis(300),
+        super::inbox::next_item(&mut inbox),
+    )
+    .await;
+    assert!(nothing.is_err(), "the unknown action was not relayed");
+    let _ = d.close_pane(pane);
+}
+
 #[test]
 fn a_view_change_round_trips_as_the_agent_writes_it() {
     let view = AgentView {

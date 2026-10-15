@@ -643,7 +643,7 @@ impl Session {
             }
             Call::PressView { pane, press } => {
                 if self.status.daemon_can(VIEW_ACTIONS) {
-                    self.out.push(ClientMsg::PressView { pane: PaneId(pane), press });
+                    self.views.press(PaneId(pane), press, &mut self.out);
                 }
                 self.finish()
             }
