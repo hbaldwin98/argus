@@ -1,6 +1,6 @@
 //! The parts filed under a feature — its tasks and its sequence diagrams:
 //! which feature a request for one lands in, which rows it may touch, and
-//! who hears about the change.
+//! which lists its change pushes.
 //!
 //! An agent is on whichever feature its checkout points at, and a client
 //! names one outright. After that the two are one path, so the id guard

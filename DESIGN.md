@@ -1743,11 +1743,13 @@ the feature; and transfers and captured notes are the view's.
 
 Every other change to a board is built the same way. A task or a diagram (`state/board_parts`), a
 decision added or changed (`state/decisions`), the tracker map (`state/tracker_map`) and a turn of a
-reconcile (`state/reconcile`) each have one apply, taking the board's address and who asked
-(`state/asker`), and the rules that differ by who asked are arms of its match. The address is
-resolved once per request, from the agent's pane or the client's checkout (`state/board_address`):
-the store key, the project, the checkout a feature pointer is kept against, and the repositories a
-push names. The `_for_agent` and `_for_client` entry points do nothing but resolve it and call the
+reconcile (`state/reconcile`) each have one apply, taking the board's address and, where a rule
+depends on it, who asked (`state/asker`); the rules that differ by who asked are arms of its match.
+Changing a decision has no such rule, so its apply takes no asker. The address is resolved once per
+request, from the agent's pane or the client's checkout (`state/board_address`): the store key, the
+project, the checkout a feature pointer is kept against, and the repositories a push names. The
+`_for_agent` and `_for_client` entry points resolve the address and the feature the request is
+about — a client names its feature, an agent's is the one it names or its checkout's — and call the
 apply, so a refusal or a push cannot differ by which side asked.
 
 A person starting a feature has a paragraph, not a title, so the view sends a whole note —
