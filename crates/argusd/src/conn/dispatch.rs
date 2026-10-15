@@ -1,45 +1,74 @@
-//! What each client message does, grouped by what it touches. A concern's
-//! messages are handled in one function here, and `dispatch` tries each in
-//! turn.
+//! What each client message does: one exhaustive match, so a message added
+//! to the protocol does not compile until it is given an arm here.
+//!
+//! Slow work leaves the message loop through the helper that fits its
+//! shape:
+//! - `spawn_reporting`: async subprocess work whose refusal is reported
+//!   as an Error; any answer is sent from inside the task.
+//! - `spawn_pane`: a blocking spawn, answered with `Created::Pane`.
+//! - `answered`/`answer_created`: answering a named request.
+//! - `reply_with`: a blocking read of one checkout.
+//! - `ReviewLane`: one review at a time, a newer one replacing an older
+//!   one per side.
+//! - a `Daemon` method that returns a closure: state taken under the lock
+//!   on the loop, the file I/O done off it.
 
 use super::*;
 use crate::state::FeaturePart;
-use argus_protocol::Created;
+use argus_protocol::{Created, ReviewBase};
+
+/// What the loop does once a message is handled.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Outcome {
+    Continue,
+    /// The acknowledgement is queued; the loop waits for it to be flushed
+    /// before telling the daemon.
+    Shutdown(ShutdownReason),
+}
 
 pub(super) fn dispatch(
     msg: ClientMsg,
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    subs: &mut Subscriptions,
-    reviews: &mut ReviewLane,
-    viewer: ViewerId,
-) -> anyhow::Result<()> {
-    dispatch_pane(Box::new(msg), daemon, out_tx, subs, viewer)
-        .or_else(|msg| dispatch_boards(msg, daemon, out_tx))
-        .or_else(|msg| dispatch_panel(msg, daemon, out_tx))
-        .or_else(|msg| dispatch_git(msg, daemon, out_tx))
-        .or_else(|msg| dispatch_checkout_reads(msg, daemon, out_tx))
-        .or_else(|msg| dispatch_sessions(msg, daemon, out_tx))
-        .or_else(|msg| dispatch_review(msg, daemon, out_tx, reviews))
-        .or_else(|msg| dispatch_extensions(msg, daemon, out_tx, viewer))
-        .unwrap_or_else(|_| unreachable!("every client message is dispatched"))
-}
+    conn: &mut Connection,
+) -> Outcome {
+    let result = match msg {
+        // This connection itself: who it is, what it watches, and the
+        // daemon's lifetime.
+        ClientMsg::Hello(hello) => {
+            greet(daemon, out_tx, conn, hello);
+            Ok(())
+        }
+        ClientMsg::View(view) => {
+            daemon.report_view(conn.viewer, view);
+            Ok(())
+        }
+        ClientMsg::WatchFocus => {
+            let watch = conn.focus_watch.insert(FocusWatch::default());
+            let focus = daemon.focus_in(&daemon.snapshot());
+            let _ = out_tx.send(watch.first(focus));
+            Ok(())
+        }
+        ClientMsg::WatchViews => {
+            conn.agent_views = Some(replay_views(daemon, out_tx));
+            Ok(())
+        }
+        ClientMsg::Restart => {
+            let _ = out_tx.send(ServerMsg::Restarting);
+            return Outcome::Shutdown(ShutdownReason::Restart);
+        }
+        ClientMsg::Stop => {
+            let _ = out_tx.send(ServerMsg::Stopping);
+            return Outcome::Shutdown(ShutdownReason::Stop);
+        }
 
-/// The panes themselves: streaming one, typing into it, starting one — an
-/// editor included — and closing it.
-fn dispatch_pane(
-    msg: Box<ClientMsg>,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    subs: &mut Subscriptions,
-    viewer: ViewerId,
-) -> DispatchResult {
-    let result = match *msg {
-        ClientMsg::Subscribe { pane } => super::subscribe(daemon, pane, subs.runs)
-            .map(|(snapshot, rx)| subs.add(pane, snapshot, rx, daemon.clone())),
+        // The panes themselves: streaming one, typing into it, starting
+        // one — an editor included — and closing it.
+        ClientMsg::Subscribe { pane } => super::subscribe(daemon, pane, conn.subs.runs)
+            .map(|(snapshot, rx)| conn.subs.add(pane, snapshot, rx, daemon.clone())),
         ClientMsg::Unsubscribe { pane } => {
-            subs.remove(pane);
-            daemon.release_pane_size(viewer, pane);
+            conn.subs.remove(pane);
+            daemon.release_pane_size(conn.viewer, pane);
             Ok(())
         }
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
@@ -47,32 +76,10 @@ fn dispatch_pane(
         ClientMsg::PasteFile { pane, name, bytes } => {
             daemon.paste_file(pane, &name, &bytes).map(|_| ())
         }
-        ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),
-        ClientMsg::Scrollback { pane, offset, top } => daemon
-            .pane_scrollback(pane, offset as usize, top)
-            .map(|scrolled| {
-                let cells = scrolled.cells;
-                let (offset, depth) = (scrolled.offset as u32, scrolled.depth as u32);
-                let answer = if subs.runs {
-                    ServerMsg::ScrollbackRuns {
-                        pane,
-                        offset,
-                        depth,
-                        rows: cells.len() as u16,
-                        cols: cells.first().map_or(0, |row| row.len() as u16),
-                        runs: argus_protocol::grid_runs(&cells),
-                        top: Some(scrolled.top),
-                    }
-                } else {
-                    ServerMsg::ScrollbackRows {
-                        pane,
-                        offset,
-                        depth,
-                        cells,
-                    }
-                };
-                let _ = out_tx.send(answer);
-            }),
+        ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(conn.viewer, pane, rows, cols),
+        ClientMsg::Scrollback { pane, offset, top } => {
+            scrollback(daemon, out_tx, conn.subs.runs, pane, offset, top)
+        }
         ClientMsg::SpawnShell {
             checkout,
             request_id,
@@ -118,20 +125,10 @@ fn dispatch_pane(
                 daemon.spawn_editor(checkout, &path, line, external, command.as_deref())
             })
         }
-        msg => return Err(Box::new(msg)),
-    };
-    Ok(result)
-}
 
-/// Features, their decision boards and their task lists. A board is read at
-/// project scope, whole, and pushed at every client rather than answered to
-/// one.
-fn dispatch_boards(
-    msg: Box<ClientMsg>,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> DispatchResult {
-    let result = match *msg {
+        // Features, their decision boards and their task lists. A board is
+        // read at project scope, whole, and pushed at every client rather
+        // than answered to one.
         ClientMsg::GetDecisions { project, checkout } => {
             daemon.decision_board(project, checkout).map(|board| {
                 let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
@@ -197,19 +194,11 @@ fn dispatch_boards(
             slug,
             action,
         } => daemon.reconcile_for_client(project, checkout, &slug, action),
-        msg => return Err(Box::new(msg)),
-    };
-    Ok(result)
-}
 
-/// The rows of the panel and which workspace is open. The directory
-/// browser rides along because it is how a project or repository is added.
-fn dispatch_panel(
-    msg: Box<ClientMsg>,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> DispatchResult {
-    let result = match *msg {
+        // The rows of the panel and which workspace is open. The directory
+        // browser rides along because it is how a project or repository is
+        // added.
+        //
         // `git init` is a subprocess, so a new repository is made on its
         // own task, as `InitRepository` is.
         ClientMsg::AddProject {
@@ -279,45 +268,21 @@ fn dispatch_panel(
             });
             Ok(())
         }
-        msg => return Err(Box::new(msg)),
-    };
-    Ok(result)
-}
 
-/// Writes to Git. Each is real subprocess I/O, so it runs on its own task and
-/// reports a refusal on its own rather than stalling this connection.
-fn dispatch_git(
-    msg: Box<ClientMsg>,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> DispatchResult {
-    let result = match *msg {
-        // Both do real subprocess I/O (`git worktree add`/`remove`), so they
-        // run on their own task instead of blocking this connection's
-        // message loop — a slow worktree op must not stall keystrokes going
-        // to some other pane. Each reports its own error asynchronously.
+        // Writes to Git. Each is real subprocess I/O — a slow worktree op
+        // must not stall keystrokes going to some other pane — so it runs
+        // on its own task and reports a refusal on its own.
         ClientMsg::CreateWorktree {
             checkout,
             branch,
             request_id,
-        } => {
-            let answer = out_tx.clone();
-            spawn_reporting(daemon, out_tx, move |d| async move {
-                // Answered before setup runs: the worktree is there, and
-                // setup can take as long as an install does.
-                let made = d.create_worktree(checkout, branch).await;
-                let created = made.as_ref().ok().map(|id| Created::Checkout(*id));
-                answer_created(&answer, request_id, created);
-                d.setup_worktree(made?).await
-            })
-        }
+        } => create_worktree(daemon, out_tx, checkout, branch, request_id),
         ClientMsg::RemoveCheckout { checkout } => {
             spawn_reporting(daemon, out_tx, move |d| async move {
                 d.remove_checkout(checkout).await
             })
         }
-        // Same reasoning: `git init` is a subprocess, and the directory it
-        // lands in may not exist yet.
+        // `git init` again, and the directory it lands in may not exist yet.
         ClientMsg::InitRepository {
             project,
             path,
@@ -353,49 +318,15 @@ fn dispatch_git(
                 move |d| async move { d.pull(checkout).await },
             )
         }
-        // Not `spawn_reporting`: an unmerged branch comes back as a
-        // question for the user rather than as an error, and only this
-        // call has one to send.
         ClientMsg::DeleteBranch {
             checkout,
             branch,
             force,
-        } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                let msg = match daemon.delete_branch(checkout, &branch, force).await {
-                    Ok(BranchDeletion::Deleted) => return,
-                    Ok(BranchDeletion::NotMerged(commits)) => {
-                        ServerMsg::BranchNotMerged {
-                            checkout,
-                            branch,
-                            commits,
-                        }
-                    }
-                    Err(error) => ServerMsg::Error {
-                        message: error.to_string(),
-                    },
-                };
-                let _ = out_tx.send(msg);
-            });
-            Ok(())
-        }
-        msg => return Err(Box::new(msg)),
-    };
-    Ok(result)
-}
+        } => delete_branch(daemon, out_tx, checkout, branch, force),
 
-/// What a checkout contains, for the pickers and the history view. Each
-/// walks the working tree or the object store, so it answers from a
-/// blocking thread.
-fn dispatch_checkout_reads(
-    msg: Box<ClientMsg>,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> DispatchResult {
-    let result = match *msg {
-        // Listing walks a working tree, so it goes off the message loop.
+        // What a checkout contains, for the pickers and the history view.
+        // Each walks the working tree or the object store, so it answers
+        // from a blocking thread.
         ClientMsg::ListBranches { checkout } => {
             reply_with(daemon, out_tx, checkout, move |path| ServerMsg::Branches {
                 checkout,
@@ -445,20 +376,10 @@ fn dispatch_checkout_reads(
                 },
             },
         ),
-        msg => return Err(Box::new(msg)),
-    };
-    Ok(result)
-}
 
-/// A repository's agent sessions, what one said, and reopening one. A
-/// listing and a read open the harnesses' own files, a listing up to a few
-/// hundred of them, so they answer from a blocking thread.
-fn dispatch_sessions(
-    msg: Box<ClientMsg>,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> DispatchResult {
-    let result = match *msg {
+        // A repository's agent sessions, what one said, and reopening one.
+        // A listing and a read open the harnesses' own files, a listing up
+        // to a few hundred of them, so they answer from a blocking thread.
         ClientMsg::ListSessions {
             request_id,
             repository,
@@ -509,57 +430,15 @@ fn dispatch_sessions(
                 daemon.resume_session(checkout, &harness, &session_id)
             })
         }
-        msg => return Err(Box::new(msg)),
-    };
-    Ok(result)
-}
 
-/// Reviewing a checkout's changes, and commenting on them to an agent.
-fn dispatch_review(
-    msg: Box<ClientMsg>,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    reviews: &mut ReviewLane,
-) -> DispatchResult {
-    let result = match *msg {
+        // Reviewing a checkout's changes, and commenting on them to an
+        // agent.
         ClientMsg::Review {
             request_id,
             checkout,
             base,
             commit,
-        } => daemon.checkout_path(checkout).map(|path| {
-            let out_tx = out_tx.clone();
-            let generate = move || match commit.as_deref() {
-                Some(rev) => crate::diff::generate_commit(&path, rev),
-                None => crate::diff::generate(&path, base),
-            };
-            reviews.submit(base, generate, move |generated| {
-                let message = match generated {
-                    Ok(Ok(generated)) => ServerMsg::Review(argus_protocol::Review {
-                        request_id,
-                        checkout,
-                        base: if generated.commit.is_some() {
-                            argus_protocol::ReviewBase::Commit
-                        } else {
-                            base
-                        },
-                        files: generated.files,
-                        commit: generated.commit,
-                    }),
-                    Ok(Err(error)) => ServerMsg::ReviewFailed {
-                        request_id,
-                        checkout,
-                        message: error.to_string(),
-                    },
-                    Err(error) => ServerMsg::ReviewFailed {
-                        request_id,
-                        checkout,
-                        message: error.to_string(),
-                    },
-                };
-                let _ = out_tx.send(message);
-            });
-        }),
+        } => review(daemon, out_tx, &mut conn.reviews, request_id, checkout, base, commit),
         ClientMsg::ReviewComment {
             checkout,
             recipient,
@@ -570,45 +449,186 @@ fn dispatch_review(
             .map(|(id, delivered)| {
                 let _ = out_tx.send(ServerMsg::ReviewCommentSaved { id, delivered });
             }),
-        msg => return Err(Box::new(msg)),
-    };
-    Ok(result)
-}
 
-/// What the person did with what an extension published, on its way to
-/// the extension, and what the extensions are, for `argus extension`.
-fn dispatch_extensions(
-    msg: Box<ClientMsg>,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    viewer: ViewerId,
-) -> DispatchResult {
-    let result = match *msg {
+        // What the person did with what an extension published, on its way
+        // to the extension, and what the extensions are, for
+        // `argus extension`.
         ClientMsg::DescribeExtensions => {
             let _ = out_tx.send(ServerMsg::ExtensionsDescribed(daemon.describe_extensions()));
             Ok(())
         }
         ClientMsg::ExtensionAction { extension, view, row, action } => daemon.extension_action(&extension, &view, row, &action),
         ClientMsg::ExtensionCommand { extension, command, context } => {
-            daemon.extension_command(viewer, &extension, &command, &context)
+            daemon.extension_command(conn.viewer, &extension, &command, &context)
         }
-        ClientMsg::ExtensionDialogAnswer { dialog, answer } => daemon.answer_dialog(viewer, dialog, answer),
-        msg => return Err(Box::new(msg)),
+        ClientMsg::ExtensionDialogAnswer { dialog, answer } => daemon.answer_dialog(conn.viewer, dialog, answer),
     };
-    Ok(result)
+    if let Err(e) = result {
+        let _ = out_tx.send(ServerMsg::Error {
+            message: e.to_string(),
+        });
+    }
+    Outcome::Continue
 }
 
-/// The message comes back boxed when it was not this concern's: it is the
-/// largest thing a connection handles, and handed back inline it would make
-/// every dispatcher's result that size whether or not it was refused.
-type DispatchResult = Result<anyhow::Result<()>, Box<ClientMsg>>;
+/// Answers a greeting whenever it comes. A client that greets reads on
+/// until the answer, keeping the tree and the rest that went out first;
+/// one that never greets is never sent a message it cannot read.
+fn greet(
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    conn: &mut Connection,
+    hello: Hello,
+) {
+    tracing::info!(
+        version = %hello.version,
+        protocol = hello.protocol,
+        "client greeted"
+    );
+    conn.subs.runs = hello.can(CELL_RUNS);
+    let _ = out_tx.send(ServerMsg::Hello(Hello::this_build()));
+    // The tree went before the greeting; the consoles could not, and they
+    // follow the daemon's own greeting.
+    if hello.can(CONSOLES) {
+        let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
+    }
+    // Likewise what the extensions publish, and whether this client is one
+    // a dialog can be put to.
+    let takes = hello.can(EXTENSIONS);
+    if takes {
+        send_extensions(daemon, out_tx);
+    }
+    daemon.extension_asker(conn.viewer, takes && hello.can(EXTENSION_DIALOGS));
+    conn.peer = Some(hello);
+}
+
+fn scrollback(
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    runs: bool,
+    pane: PaneId,
+    offset: u32,
+    top: Option<u64>,
+) -> anyhow::Result<()> {
+    let scrolled = daemon.pane_scrollback(pane, offset as usize, top)?;
+    let cells = scrolled.cells;
+    let (offset, depth) = (scrolled.offset as u32, scrolled.depth as u32);
+    let answer = if runs {
+        ServerMsg::ScrollbackRuns {
+            pane,
+            offset,
+            depth,
+            rows: cells.len() as u16,
+            cols: cells.first().map_or(0, |row| row.len() as u16),
+            runs: argus_protocol::grid_runs(&cells),
+            top: Some(scrolled.top),
+        }
+    } else {
+        ServerMsg::ScrollbackRows {
+            pane,
+            offset,
+            depth,
+            cells,
+        }
+    };
+    let _ = out_tx.send(answer);
+    Ok(())
+}
+
+fn create_worktree(
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    checkout: argus_protocol::CheckoutId,
+    branch: String,
+    request_id: u64,
+) -> anyhow::Result<()> {
+    let answer = out_tx.clone();
+    spawn_reporting(daemon, out_tx, move |d| async move {
+        // Answered before setup runs: the worktree is there, and setup can
+        // take as long as an install does.
+        let made = d.create_worktree(checkout, branch).await;
+        let created = made.as_ref().ok().map(|id| Created::Checkout(*id));
+        answer_created(&answer, request_id, created);
+        d.setup_worktree(made?).await
+    })
+}
+
+/// Not `spawn_reporting`: an unmerged branch comes back as a question for
+/// the user rather than as an error, and only this call has one to send.
+fn delete_branch(
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    checkout: argus_protocol::CheckoutId,
+    branch: String,
+    force: bool,
+) -> anyhow::Result<()> {
+    let daemon = daemon.clone();
+    let out_tx = out_tx.clone();
+    tokio::spawn(async move {
+        let msg = match daemon.delete_branch(checkout, &branch, force).await {
+            Ok(BranchDeletion::Deleted) => return,
+            Ok(BranchDeletion::NotMerged(commits)) => {
+                ServerMsg::BranchNotMerged {
+                    checkout,
+                    branch,
+                    commits,
+                }
+            }
+            Err(error) => ServerMsg::Error {
+                message: error.to_string(),
+            },
+        };
+        let _ = out_tx.send(msg);
+    });
+    Ok(())
+}
+
+fn review(
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    reviews: &mut ReviewLane,
+    request_id: u64,
+    checkout: argus_protocol::CheckoutId,
+    base: ReviewBase,
+    commit: Option<String>,
+) -> anyhow::Result<()> {
+    let path = daemon.checkout_path(checkout)?;
+    let out_tx = out_tx.clone();
+    let generate = move || match commit.as_deref() {
+        Some(rev) => crate::diff::generate_commit(&path, rev),
+        None => crate::diff::generate(&path, base),
+    };
+    reviews.submit(base, generate, move |generated| {
+        let message = match generated {
+            Ok(Ok(generated)) => ServerMsg::Review(argus_protocol::Review {
+                request_id,
+                checkout,
+                base: if generated.commit.is_some() {
+                    ReviewBase::Commit
+                } else {
+                    base
+                },
+                files: generated.files,
+                commit: generated.commit,
+            }),
+            Ok(Err(error)) => ServerMsg::ReviewFailed {
+                request_id,
+                checkout,
+                message: error.to_string(),
+            },
+            Err(error) => ServerMsg::ReviewFailed {
+                request_id,
+                checkout,
+                message: error.to_string(),
+            },
+        };
+        let _ = out_tx.send(message);
+    });
+    Ok(())
+}
 
 /// Runs a daemon call on its own task, reporting a refusal to the client
 /// that asked for it.
-///
-/// Every git mutation has this shape: real subprocess I/O that must not
-/// stall this connection's message loop, nothing to answer with when it
-/// works, and a message worth showing when it does not.
 fn spawn_reporting<F, Fut>(
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
