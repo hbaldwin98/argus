@@ -31,6 +31,7 @@ use argus_protocol::{
 use tokio::sync::broadcast;
 
 mod agents;
+mod board_address;
 mod board_parts;
 mod build;
 mod clock;

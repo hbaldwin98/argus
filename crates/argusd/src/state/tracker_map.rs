@@ -18,8 +18,8 @@ impl Daemon {
         draft: &str,
         artifact_scope: ArtifactScope,
     ) -> anyhow::Result<TrackerMap> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
+        let address = self.address_for_agent(pane_id, artifact_scope)?;
+        let key = address.key.as_str();
         if draft.trim().is_empty() {
             return self.store.tracker_map(key);
         }
@@ -27,7 +27,7 @@ impl Daemon {
         let body = checked_map(draft).map_err(|e| anyhow::anyhow!("{e}"))?;
         let by = format!("pane #{}", pane_id.0);
         self.store.draft_tracker_map(key, &body, &by, super::decisions::now())?;
-        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
+        self.broadcast_decisions(&address, self.store.decisions(key)?);
         self.store.tracker_map(key)
     }
 
@@ -38,14 +38,15 @@ impl Daemon {
         checkout: CheckoutId,
         change: MapChange,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        let address = self.address_for_client(project, checkout)?;
+        let key = address.key.as_str();
         let checked = |body: &str| checked_map(body).map_err(|e| anyhow::anyhow!("{e}"));
         match change {
-            MapChange::Write(body) => self.store.set_tracker_map(&key, &checked(&body)?)?,
-            MapChange::Approve(body) => self.store.approve_tracker_map(&key, &checked(&body)?)?,
-            MapChange::Discard => self.store.discard_tracker_map_draft(&key)?,
+            MapChange::Write(body) => self.store.set_tracker_map(key, &checked(&body)?)?,
+            MapChange::Approve(body) => self.store.approve_tracker_map(key, &checked(&body)?)?,
+            MapChange::Discard => self.store.discard_tracker_map_draft(key)?,
         }
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
+        self.broadcast_decisions(&address, self.store.decisions(key)?);
         Ok(())
     }
 }

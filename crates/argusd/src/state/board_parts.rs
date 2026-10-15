@@ -9,6 +9,7 @@
 
 use argus_protocol::{PaneId, ProjectId};
 
+use super::board_address::BoardAddress;
 use super::*;
 use crate::store::Store;
 
@@ -55,17 +56,16 @@ pub trait FeaturePart: Sized {
     /// Names the repositories whose board this is, as a push does: a read
     /// answered without them would be dropped by a client that keeps only
     /// its own repository's lists.
-    fn list(daemon: &Daemon, target: &BoardTarget) -> anyhow::Result<Self::List>;
+    fn list(daemon: &Daemon, target: &BoardTarget<'_>) -> anyhow::Result<Self::List>;
     /// The answer on a checkout that is on no feature.
     fn empty(project_name: String) -> Self::List;
-    fn broadcast(daemon: &Daemon, target: &BoardTarget);
+    fn broadcast(daemon: &Daemon, target: &BoardTarget<'_>);
 }
 
 /// The one feature a part request lands in, however the caller named it.
 #[derive(Clone)]
-pub struct BoardTarget {
-    pub project_name: String,
-    pub key: String,
+pub struct BoardTarget<'a> {
+    pub address: &'a BoardAddress,
     pub feature: String,
 }
 
@@ -86,11 +86,10 @@ impl Daemon {
         filing: impl Into<super::features::Filing>,
     ) -> anyhow::Result<P::List> {
         let filing = filing.into();
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(filing.scope).to_string();
-        let Some(feature) = self.feature_for_agent(&scope, &filing)? else {
+        let address = self.address_for_agent(pane_id, filing.scope)?;
+        let Some(feature) = self.feature_for_agent(&address, &filing)? else {
             if action.is_read() {
-                return Ok(P::empty(scope.project_name));
+                return Ok(P::empty(address.project_name));
             }
             if action.is_add() {
                 anyhow::bail!(
@@ -102,8 +101,7 @@ impl Daemon {
             anyhow::bail!("this checkout is not on a feature yet");
         };
         let target = BoardTarget {
-            project_name: scope.project_name,
-            key,
+            address: &address,
             feature,
         };
         let by = Author {
@@ -122,10 +120,9 @@ impl Daemon {
         feature: &str,
         action: P,
     ) -> anyhow::Result<P::List> {
-        let (project_name, key) = self.client_artifact_scope(project, checkout)?;
+        let address = self.address_for_client(project, checkout)?;
         let target = BoardTarget {
-            project_name,
-            key,
+            address: &address,
             feature: feature.to_string(),
         };
         self.apply_part(&target, action, Author::default())
@@ -135,7 +132,7 @@ impl Daemon {
     /// change is also pushed, so a client that did not ask still sees it.
     fn apply_part<P: FeaturePart>(
         &self,
-        target: &BoardTarget,
+        target: &BoardTarget<'_>,
         action: P,
         by: Author<'_>,
     ) -> anyhow::Result<P::List> {
@@ -150,7 +147,7 @@ impl Daemon {
                 feature: feature.to_string(),
                 ..target.clone()
             });
-            action.apply(&self.store, &target.key, &target.feature, at, by)?;
+            action.apply(&self.store, &target.address.key, &target.feature, at, by)?;
             P::broadcast(self, target);
             if let Some(landed) = landed.filter(|landed| landed.feature != target.feature) {
                 P::broadcast(self, &landed);
@@ -165,8 +162,8 @@ impl Daemon {
     /// read, so a stale id would otherwise let one feature's agent tick off
     /// another's work by arithmetic — or a client holding a list the tree
     /// has since moved on from rewrite a row it is no longer showing.
-    fn guard_part<P: FeaturePart>(&self, target: &BoardTarget, id: i64) -> anyhow::Result<()> {
-        if !P::ids(&self.store, &target.key, &target.feature)?.contains(&id) {
+    fn guard_part<P: FeaturePart>(&self, target: &BoardTarget<'_>, id: i64) -> anyhow::Result<()> {
+        if !P::ids(&self.store, &target.address.key, &target.feature)?.contains(&id) {
             anyhow::bail!("{} {id} is not under this feature", P::NOUN);
         }
         Ok(())

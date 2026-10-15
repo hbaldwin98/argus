@@ -22,12 +22,12 @@ impl Daemon {
         filing: impl Into<super::features::Filing>,
     ) -> anyhow::Result<Feature> {
         let filing = filing.into();
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(filing.scope).to_string();
-        let Some(slug) = self.feature_for_agent(&scope, &filing)? else {
+        let address = self.address_for_agent(pane_id, filing.scope)?;
+        let key = address.key.as_str();
+        let Some(slug) = self.feature_for_agent(&address, &filing)? else {
             anyhow::bail!("this checkout is on no feature; name one with --feature <slug>");
         };
-        let (under_way, _) = self.store.reconcile(&key, &slug)?;
+        let (under_way, _) = self.store.reconcile(key, &slug)?;
         let by = format!("pane #{}", pane_id.0);
         match change {
             ReconcileChange::Read => {}
@@ -54,7 +54,7 @@ impl Daemon {
                     noticed: proposal.noticed,
                     carrying: Vec::new(),
                 };
-                self.store.set_reconcile(&key, &slug, Some(&reconcile))?;
+                self.store.set_reconcile(key, &slug, Some(&reconcile))?;
             }
             ReconcileChange::Report { failed } => {
                 let Some(mut left) = under_way.filter(|r| r.stage() == Stage::Carrying) else {
@@ -86,19 +86,19 @@ impl Daemon {
                 left.lines = lines;
                 left.at = super::decisions::now();
                 let left = (!left.lines.is_empty()).then_some(left);
-                let decisions = self.store.decisions(&key)?;
+                let decisions = self.store.decisions(key)?;
                 let filed: Vec<_> = decisions.iter().filter(|d| d.feature.as_deref() == Some(slug.as_str())).collect();
                 let reconciled = Reconciled {
                     at: super::decisions::now(),
                     by,
-                    seen: seen(&self.store.tasks(&key, &slug)?, &filed),
+                    seen: seen(&self.store.tasks(key, &slug)?, &filed),
                 };
-                self.store.finish_reconcile(&key, &slug, left.as_ref(), &reconciled)?;
+                self.store.finish_reconcile(key, &slug, left.as_ref(), &reconciled)?;
             }
         }
-        self.broadcast_decisions(&scope.project_name, &key, self.store.decisions(&key)?);
+        self.broadcast_decisions(&address, self.store.decisions(key)?);
         self.store
-            .features(&key)?
+            .features(key)?
             .into_iter()
             .find(|f| f.slug == slug)
             .ok_or_else(|| anyhow::anyhow!("there is no feature {slug}"))
@@ -112,10 +112,11 @@ impl Daemon {
         slug: &str,
         action: ReconcileAction,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        let address = self.address_for_client(project, checkout)?;
+        let key = address.key.as_str();
         let feature = self
             .store
-            .features(&key)?
+            .features(key)?
             .into_iter()
             .find(|f| f.slug == slug)
             .ok_or_else(|| anyhow::anyhow!("there is no feature {slug}"))?;
@@ -127,8 +128,10 @@ impl Daemon {
                     anyhow::bail!("the ticked lines are still being carried out");
                 }
                 let ask = checked_ask(&ask).map_err(|e| anyhow::anyhow!("{e}"))?;
-                let agent = self.agent_scope(pane).map_err(|_| anyhow::anyhow!("pane #{} is not a live agent", pane.0))?;
-                if agent.artifact_key != key {
+                let agent = self
+                    .address_for_agent(pane, argus_protocol::ArtifactScope::RepositoryBranch)
+                    .map_err(|_| anyhow::anyhow!("pane #{} is not a live agent", pane.0))?;
+                if agent.key != key {
                     anyhow::bail!("pane #{} works in another repository", pane.0);
                 }
                 if !self.notify(pane, &ask_message(&feature, &ask)) {
@@ -144,7 +147,7 @@ impl Daemon {
                     noticed: Vec::new(),
                     carrying: Vec::new(),
                 };
-                self.store.set_reconcile(&key, slug, Some(&reconcile))?;
+                self.store.set_reconcile(key, slug, Some(&reconcile))?;
             }
             ReconcileAction::CarryOut { ticked } => {
                 let Some(mut reconcile) = under_way.filter(|r| r.stage() == Stage::Proposed) else {
@@ -165,16 +168,16 @@ impl Daemon {
                 if !self.notify(reconcile.pane, &carry_out_message(&feature, &reconcile)) {
                     anyhow::bail!("{} is gone; turn this proposal down and ask another agent", reconcile.by);
                 }
-                self.store.set_reconcile(&key, slug, Some(&reconcile))?;
+                self.store.set_reconcile(key, slug, Some(&reconcile))?;
             }
             ReconcileAction::Discard => {
                 if under_way.is_none() {
                     anyhow::bail!("no reconcile is under way on {slug}");
                 }
-                self.store.set_reconcile(&key, slug, None)?;
+                self.store.set_reconcile(key, slug, None)?;
             }
         }
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
+        self.broadcast_decisions(&address, self.store.decisions(key)?);
         Ok(())
     }
 }

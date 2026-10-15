@@ -137,9 +137,8 @@ async fn an_agents_move_is_recorded_as_its_own_and_only_a_person_says_why() {
         slug: slug.clone(),
         detail: detail.map(str::to_string),
     };
-    let scope = d.agent_scope(agent).unwrap();
-    let key = scope.artifact_key(ArtifactScope::default());
-    let last = |d: &Daemon| d.store.feature_events(key, &slug).unwrap().pop().unwrap();
+    let key = d.address_for_agent(agent, ArtifactScope::default()).unwrap().key;
+    let last = |d: &Daemon| d.store.feature_events(&key, &slug).unwrap().pop().unwrap();
 
     d.feature_action_for_agent(agent, Some("session-1"), done(None), ArtifactScope::default())
         .unwrap();

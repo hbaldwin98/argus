@@ -9,35 +9,6 @@ use argus_protocol::{ReviewAnchor, ReviewComment, MAX_REVIEW_COMMENT_BYTES};
 
 use super::*;
 
-impl AgentScope {
-    pub fn artifact_key(&self, scope: argus_protocol::ArtifactScope) -> &str {
-        match scope {
-            argus_protocol::ArtifactScope::RepositoryBranch => &self.artifact_key,
-            argus_protocol::ArtifactScope::Workspace => &self.workspace_artifact_key,
-        }
-    }
-}
-
-pub(super) fn repository_artifact_key(_repository: &Repository, checkout: &Checkout) -> String {
-    path_artifact_key(&checkout.path)
-}
-
-fn path_artifact_key(path: &std::path::Path) -> String {
-    let git_dir = crate::git::repository_common_dir(path).unwrap_or_else(|| path.to_path_buf());
-    format!("repository\0{}", git_dir.to_string_lossy())
-}
-
-/// The durable identity of the place an agent is running.
-pub(crate) struct AgentScope {
-    pub project_name: String,
-    pub checkout_path: std::path::PathBuf,
-    /// Opaque durable board identity. The separator cannot occur in a Git
-    /// path, so repositories cannot alias.
-    pub artifact_key: String,
-    /// Explicit broad scope for changes spanning repositories or branches.
-    pub workspace_artifact_key: String,
-}
-
 /// Whether a hook's report should be dropped rather than applied, for
 /// either of two reasons. The pane has already exited, and nothing said
 /// afterwards — a `Stop` racing a crash, say — should resurrect its row. Or
@@ -333,109 +304,7 @@ impl Daemon {
     /// Comments visible to the checkout containing this live agent. Pane ids
     /// are runtime-only, so durable access is deliberately checkout-scoped.
     pub fn review_comments_for_agent(&self, pane_id: PaneId) -> anyhow::Result<Vec<ReviewComment>> {
-        let scope = self.agent_scope(pane_id)?;
-        self.store.review_comments(&scope.checkout_path)
-    }
-
-    /// Where a live agent pane sits: the project that owns it and the
-    /// checkout it is working in, both named the way the store files them
-    /// rather than by the ids a restart throws away.
-    ///
-    /// Every durable read an agent is allowed to make resolves through
-    /// here, so the rule that a caller must be a live agent pane is written
-    /// once. A shell pane, an exited one, or an id from another Argus gets
-    /// the same refusal whatever it asked for.
-    pub(super) fn agent_scope(&self, pane_id: PaneId) -> anyhow::Result<AgentScope> {
-        let inner = self.inner.lock().unwrap();
-        for project in &inner.projects {
-            for repository in &project.repositories {
-                for checkout in &repository.checkouts {
-                    let Some(pane) = checkout.panes.iter().find(|pane| pane.id == pane_id) else {
-                        continue;
-                    };
-                    if !pane.is_running_agent() {
-                        anyhow::bail!("source must be a live agent pane");
-                    }
-                    let workspace_name = inner
-                        .workspaces
-                        .iter()
-                        .find(|workspace| workspace.id == project.workspace)
-                        .map(|workspace| workspace.name.as_str())
-                        .ok_or_else(|| anyhow::anyhow!("project has no workspace"))?;
-                    return Ok(AgentScope {
-                        project_name: project.name.clone(),
-                        checkout_path: checkout.path.clone(),
-                        artifact_key: repository_artifact_key(repository, checkout),
-                        workspace_artifact_key: format!("workspace\0{workspace_name}"),
-                    });
-                }
-            }
-        }
-        anyhow::bail!("no such source pane")
-    }
-
-    /// The repositories in the tree whose board is the one filed under
-    /// `key`: what a pushed board names so each client keeps only its own.
-    /// More than one when a repository is listed twice.
-    pub(crate) fn repositories_keyed(&self, key: &str) -> Vec<RepositoryId> {
-        let paths: Vec<(RepositoryId, PathBuf)> = {
-            let inner = self.inner.lock().unwrap();
-            inner
-                .projects
-                .iter()
-                .flat_map(|project| &project.repositories)
-                .filter_map(|repository| {
-                    let checkout = repository
-                        .checkouts
-                        .iter()
-                        .find(|checkout| checkout.primary)
-                        .or_else(|| repository.checkouts.first())?;
-                    Some((repository.id, checkout.path.clone()))
-                })
-                .collect()
-        };
-        paths
-            .into_iter()
-            .filter(|(_, path)| self.board_key(path) == key)
-            .map(|(id, _)| id)
-            .collect()
-    }
-
-    fn board_key(&self, path: &std::path::Path) -> String {
-        if let Some(key) = self.board_keys.lock().unwrap().get(path) {
-            return key.clone();
-        }
-        let key = path_artifact_key(path);
-        self.board_keys.lock().unwrap().insert(path.to_path_buf(), key.clone());
-        key
-    }
-
-    pub(super) fn client_artifact_scope(
-        &self,
-        project_id: ProjectId,
-        checkout_id: CheckoutId,
-    ) -> anyhow::Result<(String, String)> {
-        let inner = self.inner.lock().unwrap();
-        let project = inner
-            .projects
-            .iter()
-            .find(|project| project.id == project_id)
-            .ok_or_else(|| anyhow::anyhow!("no such project"))?;
-        let (repository, checkout) = project
-            .repositories
-            .iter()
-            .find_map(|repository| {
-                repository
-                    .checkouts
-                    .iter()
-                    .find(|checkout| checkout.id == checkout_id)
-                    .map(|checkout| (repository, checkout))
-            })
-            .ok_or_else(|| anyhow::anyhow!("checkout is not in this project"))?;
-        Ok((
-            project.name.clone(),
-            repository_artifact_key(repository, checkout),
-        ))
+        self.store.review_comments(&self.agent_checkout(pane_id)?)
     }
 
     /// The one way to edit an agent's row, live in the tree or still in

@@ -342,6 +342,7 @@ to the type or its locking.
 | `state/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, and what the agent is told at each turn |
 | `state/views` | which views agents have shown, per pane, and which go when |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
+| `state/board_address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
 | `review_queue` | when a review's diff is generated: one at a time across the daemon, and only the newest of each side each client asked for |
