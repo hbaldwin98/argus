@@ -2,6 +2,7 @@
 import type { DiffRow } from "./DiffRow";
 import type { Recipient } from "./Recipient";
 import type { ReviewFile } from "./ReviewFile";
+import type { ReviewJump } from "./ReviewJump";
 
 /**
  * The review dialog: one checkout's diff, a side at a time.
@@ -38,4 +39,8 @@ empty: string | null, composing: boolean,
 /**
  * The agents in the checkout a comment can go to.
  */
-recipients: Array<Recipient>, recipient: number | null, };
+recipients: Array<Recipient>, recipient: number | null, 
+/**
+ * The Ctrl-P field over the file list, while it is open.
+ */
+jump: ReviewJump | null, };

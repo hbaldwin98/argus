@@ -2,7 +2,7 @@
 // (`src/keymap.rs`) and run here. A pane's keys go to Rust whole, and its
 // leader is dispatched there.
 import { answerNo, checkoutsAction } from './checkouts.js';
-import { historyOpen } from './history.js';
+import { focusHistoryFilter, historyOpen } from './history.js';
 import { reviewOpen } from './review.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
@@ -75,7 +75,10 @@ export function listen() {
             const action = actionFor(['anywhere', 'history'], e);
             if (action && action !== 'workspace' && action !== 'feature' && action !== 'checkouts') {
                 e.preventDefault();
-                call('history_action', { action, row: null });
+                if (action === 'filter')
+                    focusHistoryFilter();
+                else
+                    call('history_action', { action, row: null });
             }
             return;
         }

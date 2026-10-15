@@ -114,6 +114,8 @@ pub enum Action {
     Fold,
     /// The commit under the cursor as a review.
     AsReview,
+    /// The file at the cursor in the person's editor.
+    OpenEditor,
 }
 
 #[derive(Debug, Serialize)]
@@ -222,6 +224,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("2").after_leader()], Feature, "Feature"),
     bind(Pane, &[Chord::key("x").after_leader()], Close, "close the pane, ending its program"),
     bind(Pane, &[Chord::key("3").after_leader()], Action::Checkouts, "Checkouts"),
+    bind(Pane, &[Chord::key("Tab").after_leader()], OpenReview, "review the pane's checkout"),
     bind(Pane, PASTE, Paste, "paste"),
     bind(Pane, &[Chord::key("PageUp").shift()], PageUp, "back through the history"),
     bind(Pane, &[Chord::key("PageDown").shift()], PageDown, "forward to the live screen"),
@@ -272,6 +275,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Review, &[Chord::key("c"), Chord::key("C")], Comment, "comment"),
     bind(Review, &[Chord::key("b"), Chord::key("B")], Side, "staged or unstaged"),
     bind(Review, &[Chord::key("s"), Chord::key("S")], Split, "split or unified"),
+    bind(Review, &[Chord::key("p").ctrl()], Filter, "jump to a file"),
+    bind(Review, &[Chord::key("e"), Chord::key("E")], OpenEditor, "open in your editor"),
     bind(History, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next row"),
     bind(History, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
     bind(History, &[Chord::key("Home")], First, "newest"),
@@ -280,6 +285,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(History, &[Chord::key("h"), Chord::key("ArrowLeft")], Fold, "fold it"),
     bind(History, &[Chord::key("Enter")], Choose, "open a commit, or a file as a review"),
     bind(History, &[Chord::key("o"), Chord::key("O")], AsReview, "open as a review"),
+    bind(History, &[Chord::key("/")], Filter, "filter commits"),
 ];
 
 const ORDER: [Place; 9] = [Anywhere, Pane, Rail, Place::Feature, Card, CheckoutsTable, Start, Review, History];
@@ -399,6 +405,22 @@ mod tests {
         assert_eq!(in_pane(&page("x"), true), Some(Close));
         assert_eq!(in_pane(&page("x"), false), None, "an x is typed");
         assert_eq!(in_pane(&page("j"), true), None, "the Feature stage's key is not a pane's");
+        assert_eq!(in_pane(&page("Tab"), true), Some(OpenReview));
+        assert_eq!(in_pane(&page("Tab"), false), None, "a tab is typed");
+    }
+
+    #[test]
+    fn the_review_jumps_with_ctrl_p_and_opens_the_editor_with_e() {
+        let review = |key: &PageKey| {
+            BINDINGS
+                .iter()
+                .filter(|b| b.place == Review)
+                .find(|b| b.chords.iter().any(|c| c.matches(key)))
+                .map(|b| b.action)
+        };
+        assert_eq!(review(&PageKey { ctrl: true, ..page("p") }), Some(Filter));
+        assert_eq!(review(&page("p")), None, "a bare p is nothing");
+        assert_eq!(review(&page("E")), Some(OpenEditor));
     }
 
     #[test]

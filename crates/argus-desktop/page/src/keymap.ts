@@ -6,7 +6,7 @@ import type { Action } from './bindings/Action';
 import type { Chord } from './bindings/Chord';
 import type { Place } from './bindings/Place';
 import { answerNo, checkoutsAction } from './checkouts.js';
-import { historyOpen } from './history.js';
+import { focusHistoryFilter, historyOpen } from './history.js';
 import { reviewOpen } from './review.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
@@ -80,7 +80,8 @@ export function listen(): void {
       const action = actionFor(['anywhere', 'history'], e);
       if (action && action !== 'workspace' && action !== 'feature' && action !== 'checkouts') {
         e.preventDefault();
-        call('history_action', { action, row: null });
+        if (action === 'filter') focusHistoryFilter();
+        else call('history_action', { action, row: null });
       }
       return;
     }

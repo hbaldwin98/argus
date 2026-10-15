@@ -12,6 +12,7 @@ rmp-serde = { workspace = true }
 compact_str = { workspace = true }
 directories = { workspace = true }
 thiserror = { workspace = true }
+nucleo-matcher = "0.3"
 
 [dev-dependencies]
 serde_json = { workspace = true }

@@ -1,9 +1,9 @@
 //! What the history dialog holds — a checkout's newest commits, the ones
-//! unfolded to their files, and the diff of the file under the cursor —
-//! and what its gestures ask of the daemon. The rows and what unfolding
-//! asks for are `argus_protocol::history_view`'s, as in the terminal
-//! client; a commit's diff is asked for once and kept while the dialog is
-//! open.
+//! unfolded to their files, the filter over them, and the diff of the file
+//! under the cursor — and what its gestures ask of the daemon. The rows
+//! and what unfolding asks for are `argus_protocol::history_view`'s, as in
+//! the terminal client; a commit's diff is asked for once and kept while
+//! the dialog is open.
 
 use std::collections::HashMap;
 
@@ -25,6 +25,9 @@ pub struct HistoryDialog {
     diffs: HashMap<String, ReviewView>,
     /// Diffs asked for and not yet answered: request id to oid.
     pending: HashMap<u64, String>,
+    /// What the filter field says: the commits shown are those whose hash,
+    /// subject or author holds every word of it.
+    filter: String,
 }
 
 /// What a gesture in the dialog comes to.
@@ -46,6 +49,7 @@ impl HistoryDialog {
             failed: None,
             diffs: HashMap::new(),
             pending: HashMap::new(),
+            filter: String::new(),
         };
         (dialog, ClientMsg::ListCommits { request_id, checkout: checkout.id })
     }
@@ -57,6 +61,8 @@ impl HistoryDialog {
     pub fn receive_commits(&mut self, request_id: u64, commits: Vec<CommitInfo>) {
         if request_id == self.asked {
             self.view = Some(HistoryView::new(self.checkout, commits));
+            // A filter typed while they loaded already hides some.
+            self.keep_cursor_shown();
         }
     }
 
@@ -87,26 +93,67 @@ impl HistoryDialog {
         true
     }
 
+    /// The cursor moves over the rows the filter shows, and stops at
+    /// either end of them.
     pub fn move_by(&mut self, delta: isize, id: impl FnMut() -> u64) -> Then {
+        let shown = self.shown();
         if let Some(view) = &mut self.view {
-            view.move_by(delta);
-        }
-        self.want_diff(id)
-    }
-
-    pub fn ends(&mut self, bottom: bool, id: impl FnMut() -> u64) -> Then {
-        if let Some(view) = &mut self.view {
-            if bottom {
-                view.bottom_of_list();
-            } else {
-                view.top_of_list();
+            let at = shown.iter().position(|r| *r >= view.sel).unwrap_or(shown.len());
+            let to = at.saturating_add_signed(delta).min(shown.len().saturating_sub(1));
+            if let Some(row) = shown.get(to) {
+                view.sel = *row;
             }
         }
         self.want_diff(id)
     }
 
+    pub fn ends(&mut self, bottom: bool, id: impl FnMut() -> u64) -> Then {
+        let shown = self.shown();
+        if let Some(view) = &mut self.view {
+            let row = if bottom { shown.last() } else { shown.first() };
+            if let Some(row) = row {
+                view.sel = *row;
+            }
+        }
+        self.want_diff(id)
+    }
+
+    /// The filter field changed. A cursor left on a row it hides moves to
+    /// the first it shows.
+    pub fn set_filter(&mut self, filter: String, id: impl FnMut() -> u64) -> Then {
+        self.filter = filter;
+        self.keep_cursor_shown();
+        self.want_diff(id)
+    }
+
+    fn keep_cursor_shown(&mut self) {
+        let shown = self.shown();
+        if let Some(view) = self.view.as_mut().filter(|v| !shown.contains(&v.sel)) {
+            if let Some(first) = shown.first() {
+                view.sel = *first;
+            }
+        }
+    }
+
+    /// The rows the filter shows: each matching commit with its files.
+    fn shown(&self) -> Vec<usize> {
+        let Some(view) = &self.view else {
+            return Vec::new();
+        };
+        let words: Vec<String> = self.filter.split_whitespace().map(str::to_lowercase).collect();
+        let matches = |entry: &argus_protocol::history_view::HistoryEntry| {
+            let info = &entry.info;
+            let text = format!("{} {} {}", info.oid, info.summary, info.author).to_lowercase();
+            words.iter().all(|w| text.contains(w.as_str()))
+        };
+        (0..view.rows.len())
+            .filter(|&i| view.commits.get(view.rows[i].commit()).is_some_and(matches))
+            .collect()
+    }
+
     pub fn select_row(&mut self, row: usize, id: impl FnMut() -> u64) -> Then {
-        if let Some(view) = self.view.as_mut().filter(|v| row < v.rows.len()) {
+        let shown = self.shown();
+        if let Some(view) = self.view.as_mut().filter(|_| shown.contains(&row)) {
             view.sel = row;
         }
         self.want_diff(id)
@@ -115,7 +162,8 @@ impl HistoryDialog {
     /// `l`: unfolds a commit to its files, asking what they are the first
     /// time.
     pub fn unfold(&mut self) -> Then {
-        let Some(view) = &mut self.view else {
+        let hidden = !self.cursor_shown();
+        let Some(view) = self.view.as_mut().filter(|_| !hidden) else {
             return Then::Nothing;
         };
         match view.drill() {
@@ -142,14 +190,20 @@ impl HistoryDialog {
 
     /// The commit under the cursor, as a review.
     pub fn as_review(&self) -> Then {
-        match self.view.as_ref().and_then(HistoryView::selected_oid) {
+        match self.view.as_ref().filter(|_| self.cursor_shown()).and_then(HistoryView::selected_oid) {
             Some(oid) => Then::Review(oid.to_owned()),
             None => Then::Nothing,
         }
     }
 
     fn selected_row(&self) -> Option<HistoryRow> {
-        self.view.as_ref().and_then(|v| v.rows.get(v.sel).copied())
+        self.view.as_ref().filter(|_| self.cursor_shown()).and_then(|v| v.rows.get(v.sel).copied())
+    }
+
+    /// Whether the filter shows the cursor's row: one it hides is acted
+    /// on by nothing.
+    fn cursor_shown(&self) -> bool {
+        self.view.as_ref().is_some_and(|v| self.shown().contains(&v.sel))
     }
 
     /// The cursor on a file of a commit whose diff has not been asked for:
@@ -180,15 +234,18 @@ impl HistoryDialog {
                 open: true,
                 name: self.name.clone(),
                 branch: self.branch.clone(),
+                filter: self.filter.clone(),
                 loading: self.failed.is_none(),
                 empty: self.failed.clone(),
                 ..HistoryPage::default()
             };
         };
-        let rows = view
+        let shown = self.shown();
+        let rows: Vec<HistoryRowView> = view
             .rows
             .iter()
             .enumerate()
+            .filter(|(i, _)| shown.contains(i))
             .filter_map(|(i, row)| {
                 let entry = view.commits.get(row.commit())?;
                 let on = i == view.sel;
@@ -225,9 +282,18 @@ impl HistoryDialog {
                 })
             })
             .collect();
-        // The diff of the file under the cursor, from its commit's diff.
-        let file = view.selected_file().map(|f| f.path.clone());
-        let commit = view.selected_commit().map(|c| c.info.clone());
+        // The diff of the file under the cursor, from its commit's diff;
+        // none while the filter hides the cursor's row.
+        let on = shown.contains(&view.sel);
+        let file = view.selected_file().filter(|_| on).map(|f| f.path.clone());
+        let commit = view.selected_commit().filter(|_| on).map(|c| c.info.clone());
+        let empty = if view.commits.is_empty() {
+            Some(format!("No commits in {} yet.", self.name))
+        } else if rows.is_empty() {
+            Some(format!("No commit matches “{}”.", self.filter.trim()))
+        } else {
+            None
+        };
         let diff = view.selected_oid().and_then(|oid| self.diffs.get(oid));
         let shown = match (diff, &file) {
             (Some(d), Some(path)) => d.review.files.iter().position(|f| &f.path == path).map(|at| (d, at)),
@@ -237,8 +303,9 @@ impl HistoryDialog {
             open: true,
             name: self.name.clone(),
             branch: self.branch.clone(),
+            filter: self.filter.clone(),
             loading: false,
-            empty: view.commits.is_empty().then(|| format!("No commits in {} yet.", self.name)),
+            empty,
             rows,
             commit: commit.map(|c| c.short),
             path: file.clone(),
@@ -264,6 +331,48 @@ mod tests {
         assert!(matches!(msg, ClientMsg::ListCommits { request_id: 5, .. }));
         d.receive_commits(5, vec![commit("aaaa1", "Newest"), commit("bbbb2", "Older")]);
         d
+    }
+
+    #[test]
+    fn the_filter_shows_the_commits_holding_every_word_and_moves_the_cursor_onto_them() {
+        let mut d = opened();
+        assert!(matches!(d.set_filter("OLD".into(), || 1), Then::Nothing));
+        let page = d.page(0);
+        assert_eq!(page.rows.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(), ["Older"]);
+        assert!(page.rows[0].on, "the cursor left the hidden row for the first shown");
+        d.set_filter("older bbbb".into(), || 1);
+        assert_eq!(d.page(0).rows.len(), 1, "a word of the hash counts");
+        d.set_filter("older newest".into(), || 1);
+        assert_eq!(d.page(0).empty.as_deref(), Some("No commit matches “older newest”."));
+        assert!(matches!(d.as_review(), Then::Nothing), "nothing under a hidden cursor");
+        d.set_filter(String::new(), || 1);
+        assert_eq!(d.page(0).rows.len(), 2);
+    }
+
+    #[test]
+    fn a_filter_typed_while_loading_lights_the_first_match() {
+        let (mut d, _) = HistoryDialog::open(&checkout(100, "main", true, Vec::new()), 5);
+        d.set_filter("fix".into(), || 1);
+        d.receive_commits(5, vec![commit("aaaa1", "Other"), commit("bbbb2", "Fix one"), commit("cccc3", "Fix two")]);
+        assert!(d.page(0).rows[0].on, "the first match is lit");
+        assert!(matches!(d.as_review(), Then::Review(oid) if oid == "bbbb2"));
+        d.move_by(1, || 1);
+        assert!(d.page(0).rows[1].on, "j steps to the second match, not past it");
+    }
+
+    #[test]
+    fn the_cursor_moves_over_only_the_rows_the_filter_shows() {
+        let (mut d, _) = HistoryDialog::open(&checkout(100, "main", true, Vec::new()), 5);
+        d.receive_commits(5, vec![commit("aaaa1", "Fix one"), commit("bbbb2", "Other"), commit("cccc3", "Fix two")]);
+        d.set_filter("fix".into(), || 1);
+        d.move_by(1, || 1);
+        assert!(d.page(0).rows[1].on, "past the hidden commit");
+        d.move_by(1, || 1);
+        assert!(d.page(0).rows[1].on, "held at the last shown");
+        d.ends(false, || 1);
+        assert!(d.page(0).rows[0].on);
+        assert!(matches!(d.select_row(1, || 1), Then::Nothing));
+        assert!(d.page(0).rows[0].on, "a hidden row cannot be clicked");
     }
 
     #[test]

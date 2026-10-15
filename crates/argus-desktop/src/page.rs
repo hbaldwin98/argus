@@ -464,6 +464,19 @@ pub struct ReviewPage {
     /// The agents in the checkout a comment can go to.
     pub recipients: Vec<Recipient>,
     pub recipient: Option<u64>,
+    /// The Ctrl-P field over the file list, while it is open.
+    pub jump: Option<ReviewJump>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewJump {
+    pub query: String,
+    /// The files it matches, best first, as indices into `files`.
+    pub matches: Vec<usize>,
+    /// The match Enter opens, an index into `files`.
+    pub at: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -489,8 +502,10 @@ pub struct HistoryPage {
     pub open: bool,
     pub name: String,
     pub branch: String,
+    /// What the filter field says; the rows are the commits it matches.
+    pub filter: String,
     pub loading: bool,
-    /// Why there are no rows: no commits yet, or a failed read.
+    /// Why there are no rows: no commits yet, nothing matching the filter, or a failed read.
     pub empty: Option<String>,
     pub rows: Vec<HistoryRowView>,
     /// The commit under the cursor, short.

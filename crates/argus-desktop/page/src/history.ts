@@ -78,6 +78,37 @@ function diff(h: HistoryPage): HTMLElement {
   );
 }
 
+/**
+ * Rust filters the rows; the field only says what it says. Its text is its
+ * own once drawn: an echo that lands after the next letter would drop it.
+ */
+function filterField(filter: string): HTMLElement {
+  const live = document.getElementById('history-filter');
+  const field = el('input', {
+    class: 'field filter',
+    id: 'history-filter',
+    placeholder: 'Filter commits',
+    'aria-label': 'Filter commits by subject, hash or author',
+    oninput: (e: Event) => {
+      if (e.target instanceof HTMLInputElement) call('filter_history', { filter: e.target.value });
+    },
+    onkeydown: (e: KeyboardEvent) => {
+      // The list has the keys back, filtered.
+      if (e.key === 'Escape' || e.key === 'Enter') {
+        e.preventDefault();
+        (e.target as HTMLElement).blur();
+      }
+    },
+  });
+  field.value = live instanceof HTMLInputElement ? live.value : filter;
+  return field;
+}
+
+/** `/`: the filter field takes the keys. */
+export function focusHistoryFilter(): void {
+  document.getElementById('history-filter')?.focus();
+}
+
 export function drawHistory(): void {
   const h = state.history;
   const host = $('history');
@@ -86,6 +117,7 @@ export function drawHistory(): void {
     host.replaceChildren();
     return;
   }
+  const filterHad = document.activeElement?.id === 'history-filter';
   const scrolled = ['history-list', 'history-body'].map(
     (id) => document.getElementById(id)?.scrollTop ?? 0,
   );
@@ -119,6 +151,7 @@ export function drawHistory(): void {
           ),
           el('span', { class: 'meta' }, 'newest 100 on HEAD'),
           el('span', { class: 'grow' }),
+          filterField(h.filter),
           el(
             'button',
             {
@@ -147,6 +180,8 @@ export function drawHistory(): void {
           ' fold · ',
           keycap('Enter'),
           ' file as a review · ',
+          keycap('/'),
+          ' filter · ',
           keycap('Esc'),
           ' close',
         ),
@@ -158,6 +193,12 @@ export function drawHistory(): void {
     if (node) node.scrollTop = scrolled[i] ?? 0;
   });
   host.querySelector('.hrow.on')?.scrollIntoView({ block: 'nearest' });
+  // Redrawn as each letter arrives: the filter keeps the keys and the caret.
+  const field = document.getElementById('history-filter');
+  if (filterHad && field instanceof HTMLInputElement) {
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  }
 }
 
 export function historyOpen(): boolean {

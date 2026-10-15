@@ -15,14 +15,32 @@ import {
 } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
 import { $ } from './dom.js';
-import { drawHistory } from './history.js';
-import { drawReview } from './review.js';
+import { drawHistory, historyOpen } from './history.js';
+import { drawReview, reviewOpen } from './review.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { listen as listenToKeys } from './keymap.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
+
+/** Whether the pane had the keys when a dialog opened over it. */
+let paneHadKeys = false;
+
+/** A dialog opened from a pane (leader-Tab) takes the keys from it, and
+ *  gives them back once no dialog is left open. */
+function dialogKeys(): void {
+  const input = $('input');
+  if (reviewOpen() || historyOpen()) {
+    if (document.activeElement === input) {
+      paneHadKeys = true;
+      input.blur();
+    }
+  } else if (paneHadKeys) {
+    paneHadKeys = false;
+    if (state.rail.shown) input.focus();
+  }
+}
 
 function receive(event: Event): void {
   switch (event.type) {
@@ -59,10 +77,12 @@ function receive(event: Event): void {
     case 'history':
       state.history = event;
       drawHistory();
+      dialogKeys();
       break;
     case 'review':
       state.review = event;
       drawReview();
+      dialogKeys();
       break;
     case 'checkouts':
       state.checkouts = event;

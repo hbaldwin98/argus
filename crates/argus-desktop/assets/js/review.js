@@ -28,12 +28,62 @@ function head(r) {
 function click(target) {
     call('review_click', { target });
 }
+function jump(gesture) {
+    call('review_jump', { gesture });
+}
+/**
+ * The Ctrl-P field: its keys are its own, and Rust says what matches. The
+ * text is the field's own once it is open: Rust's echo of a letter can
+ * land after the next is typed, and putting it back would drop that one.
+ */
+function jumpField(query) {
+    const live = document.getElementById('review-jump');
+    const field = el('input', {
+        class: 'field',
+        id: 'review-jump',
+        placeholder: 'Jump to a file',
+        'aria-label': 'Jump to a file',
+        oninput: (e) => {
+            if (e.target instanceof HTMLInputElement)
+                jump({ on: 'query', text: e.target.value });
+        },
+        onkeydown: (e) => {
+            // Ctrl-N and Ctrl-P step as in fzf, and must not reach the webview,
+            // where Ctrl-P prints.
+            const down = e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n');
+            const up = e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p');
+            const step = down ? 1 : up ? -1 : 0;
+            if (step)
+                jump({ on: 'step', by: step });
+            else if (e.key === 'Enter')
+                jump({ on: 'choose' });
+            else if (e.key === 'Escape') {
+                // The field closes, not the dialog under it.
+                e.stopPropagation();
+                jump({ on: 'close' });
+            }
+            else
+                return;
+            e.preventDefault();
+        },
+    });
+    field.value = live instanceof HTMLInputElement ? live.value : query;
+    return field;
+}
 function files(r) {
-    return el('aside', { class: 'review-files', 'aria-label': 'Changed files' }, el('div', { class: 'mlabel' }, 'Changed files'), el('div', { class: 'review-file-list' }, r.files.map((f, i) => el('button', {
-        class: `rfile${i === r.file ? ' on' : ''}`,
-        title: f.path,
-        onclick: () => click({ on: 'file', file: i }),
-    }, el('span', { class: 'rname' }, el('span', { class: 'fg-faint' }, f.dir), f.name), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)))));
+    const order = r.jump ? r.jump.matches : r.files.map((_, i) => i);
+    const lit = r.jump ? r.jump.at : r.file;
+    return el('aside', { class: 'review-files', 'aria-label': 'Changed files' }, r.jump ? jumpField(r.jump.query) : el('div', { class: 'mlabel' }, 'Changed files'), el('div', { class: 'review-file-list' }, order.map((i) => {
+        const f = r.files[i];
+        return (f &&
+            el('button', {
+                class: `rfile${i === lit ? ' on' : ''}`,
+                title: f.path,
+                onclick: () => click({ on: 'file', file: i }),
+            }, el('span', { class: 'rname' }, el('span', { class: 'fg-faint' }, f.dir), f.name), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)));
+    }), r.jump &&
+        r.jump.matches.length === 0 &&
+        el('div', { class: 'meta' }, `No file matches “${r.jump.query}”.`)));
 }
 function code(side) {
     return el('span', { class: 'dcode' }, side.parts.map(([text, kind]) => (kind ? el('span', { class: `sx-${kind}` }, text) : text)));
@@ -140,17 +190,26 @@ export function drawReview() {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'review-title',
-    }, head(r), el('div', { class: 'review-split' }, fileList, diff(r)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' line · ', keycap('V'), ' pick · ', keycap('C'), ' comment · ', keycap('B'), ' side · ', keycap('S'), ' split · ', keycap('Esc'), ' close'))));
+    }, head(r), el('div', { class: 'review-split' }, fileList, diff(r)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' line · ', keycap('V'), ' pick · ', keycap('C'), ' comment · ', keycap('B'), ' side · ', keycap('S'), ' split · ', keycap('Ctrl P'), ' jump · ', keycap('E'), ' editor · ', keycap('Esc'), ' close'))));
     ['review-body', 'review-files'].forEach((id, i) => {
         const node = document.getElementById(id);
         if (node)
             node.scrollTop = scrolled[i] ?? 0;
     });
     host.querySelector('.drow.cursor')?.scrollIntoView({ block: 'nearest' });
+    host.querySelector('.rfile.on')?.scrollIntoView({ block: 'nearest' });
+    // The jump field is redrawn as each letter arrives, and keeps the keys
+    // and the caret while it is open.
+    const field = document.getElementById('review-jump');
     const box = document.getElementById('review-comment');
-    if (box instanceof HTMLTextAreaElement && (typing || r.composing)) {
-        box.focus();
-        box.setSelectionRange(box.value.length, box.value.length);
+    const keys = field instanceof HTMLInputElement
+        ? field
+        : box instanceof HTMLTextAreaElement && (typing || r.composing)
+            ? box
+            : null;
+    if (keys) {
+        keys.focus();
+        keys.setSelectionRange(keys.value.length, keys.value.length);
     }
 }
 export function reviewOpen() {

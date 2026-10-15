@@ -204,14 +204,16 @@ checkout to a branch, `F` fetches, `P` pulls, and `S`/`A` start a shell or the d
 selected checkout. `N` gives a branch row a worktree, or a checkout a new branch in one; `D`
 deletes a branch row (asking again, before `git branch -D`, when git refuses an unmerged one) or
 removes a worktree once asked. `R` opens the checkout's review: its unstaged
-and staged changes beside the diff, where `v` picks lines and `c` comments to the checkout's agent.
-`H` opens its history: commits unfolding to their files, and any of them opened as a review. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+and staged changes beside the diff, where `v` picks lines, `c` comments to the checkout's agent,
+`Ctrl-P` jumps to a file by name and `E` opens the line in your editor. It opens on the side and
+layout last chosen, unless that side has nothing and the other does. `H` opens its history:
+commits unfolding to their files, filtered with `/`, and any of them opened as a review. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
 again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the
 program except the leader, `Ctrl-Space`: after it, `f` fills the window with the pane and again
-gives the rail back, `x` closes the pane, `1`, `2` and `3` open the Workspace, the Feature and the
-Checkouts stage, and a second `Ctrl-Space` sends one to the program. Outside a pane `1`, `2` and `3`
+gives the rail back, `x` closes the pane, `Tab` reviews the pane's checkout, `1`, `2` and `3` open
+the Workspace, the Feature and the Checkouts stage, and a second `Ctrl-Space` sends one to the program. Outside a pane `1`, `2` and `3`
 open them directly, and the
 Feature stage takes `j`/`k`, Home/End, `v`, `z`, `/`, and on the feature under the cursor `m`,
 `h`, `A` and `g`. `Ctrl-V` (`Cmd-V` on a Mac), `Ctrl-Shift-V` and `Alt-V` paste, and
