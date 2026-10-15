@@ -4421,6 +4421,8 @@ mod tests {
 
     #[test]
     fn a_console_asked_for_over_the_composer_puts_it_away_and_redraws_the_rail() {
+        // Select reaches reveal_console; Toggle reaches dock_console, which
+        // leaves the composer before reveal_console could see it.
         for gesture in [ConsoleGesture::Select { pane: 8 }, ConsoleGesture::Toggle] {
             let mut s = with_consoles();
             s.show_composer(true);
@@ -4435,9 +4437,11 @@ mod tests {
     fn fullscreen_over_the_composer_puts_it_away() {
         let mut s = with_consoles();
         s.show_composer(true);
+        s.events(0);
         console(&mut s, ConsoleGesture::Fullscreen);
-        assert_eq!(console_page(&mut s).place, ConsolePlace::Fullscreen);
         assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(drawn_stage(&mut s), Some(Stage::Workspace));
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Fullscreen);
     }
 
     #[test]

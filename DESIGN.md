@@ -136,10 +136,8 @@ daemon's consoles are new shells under new ids. The Feature stage
 has them while it is open, and another pane brings them back for good.
 
 Which stage is up is `session`'s own state, one `page::Stage` every move goes through `go` to set,
-because a stage moved puts away the composer, the console's tab or an extension's page and hands the
-keys on, and only the coordinator sees all of those. It moves into a module of its own — the stage,
-the stage an extension's page was opened over, and the ways into and out of fullscreen — once a
-second panel can be a page, or side-by-side stages need somewhere to return to beyond `before_page`.
+so a stage moved always redraws the rail. Its callers hand the keys on and put fullscreen away
+themselves, since half the ways out of fullscreen move no stage.
 
 The docks (`docks`) are the stage's left, right and bottom edges; the sidebar keeps the window's
 own left edge, so the left dock is between it and the stage, and the bottom dock is under the stage

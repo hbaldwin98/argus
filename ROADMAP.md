@@ -163,7 +163,10 @@ Agent views (HUN-216) are data an agent read with its own tools, handed to the w
 set of blocks it draws: never markup, and never kept in the store.
 
 Remaining: several panes at once; remote hosts through `ssh … argus bridge`; and packaging as
-.app, .msi and AppImage with signing and updates, which no issue tracks yet.
+.app, .msi and AppImage with signing and updates, which no issue tracks yet. The window's stage
+moves out of `session` into a module of its own (the stage, the stage an extension's page was
+opened over, and the ways into and out of fullscreen) once a second panel can be a page, or
+side-by-side stages need somewhere to return to beyond `before_page`.
 
 Extensions (HUN-191) landed for the daemon and the desktop window. An outside process publishes
 views of rows (running dev servers, a repository's containers) in the agent views' vocabulary,
