@@ -868,7 +868,7 @@
   align-items: center;
   gap: var(--sp-6);
   margin: 0 var(--sp-8);
-  padding: 0 var(--sp-4) 0 var(--sp-16);
+  padding: 0 var(--sp-4) 0 var(--sp-32);
   border-radius: var(--r-sm);
   color: var(--fg-faint);
   font-size: var(--fs-xs);
@@ -881,10 +881,12 @@
 .co .name {
   font-family: var(--font-mono);
 }
-/* In the row's left padding, so folding does not shift its branch. */
+/* In the row's left padding, so folding does not shift its branch, and
+   under its repository's name rather than beside that repository's own
+   chevron, where it read as a sibling of it. */
 .cofold {
   position: absolute;
-  left: 0;
+  left: var(--sp-16);
   top: 0;
   bottom: 0;
   width: var(--sp-16);
@@ -947,7 +949,7 @@
   font-size: var(--fs-xs);
 }
 .nest {
-  margin: 0 var(--sp-8) var(--sp-4) 22px;
+  margin: 0 var(--sp-8) var(--sp-4) 38px;
   padding-left: var(--sp-4);
   border-left: 1px solid var(--line);
 }
