@@ -789,3 +789,42 @@ fn a_person_decides_and_changes_decisions_only_under_the_feature_they_name() {
         ("how are frames delimited?", Some("delimited"), Some("length-prefixed"))
     );
 }
+
+#[test]
+fn a_reconcile_turn_is_refused_from_the_side_it_is_not_for() {
+    use crate::state::reconcile::Turn;
+    use argus_protocol::{ProposalWrite, ProposedLine, ReconcileAction, ReconcileChange};
+
+    let (d, at) = board();
+    let slug = open_feature(&d, &at, "notes storage");
+    let propose = || ReconcileChange::Propose {
+        proposal: ProposalWrite {
+            asked: "tidy the tickets".into(),
+            lines: vec![ProposedLine {
+                to: "Jira".into(),
+                key: "ARG-1".into(),
+                does: "close".into(),
+                ..ProposedLine::default()
+            }],
+            noticed: Vec::new(),
+        },
+    };
+    d.apply_reconcile(&at, agent(None), &slug, Turn::Agent(propose()))
+        .unwrap();
+    let before = d.store.reconcile(&at.key, &slug).unwrap();
+    assert!(before.0.is_some());
+
+    let refused = d
+        .apply_reconcile(&at, Asker::Person, &slug, Turn::Agent(propose()))
+        .unwrap_err();
+    assert!(refused.to_string().contains("an agent reads"), "{refused}");
+    let refused = d
+        .apply_reconcile(&at, agent(None), &slug, Turn::Person(ReconcileAction::Discard))
+        .unwrap_err();
+    assert!(refused.to_string().contains("the person asks"), "{refused}");
+    assert_eq!(
+        d.store.reconcile(&at.key, &slug).unwrap(),
+        before,
+        "neither refusal touched the reconcile"
+    );
+}

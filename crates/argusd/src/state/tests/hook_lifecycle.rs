@@ -368,6 +368,46 @@ async fn only_a_live_agent_may_record_a_decision() {
     close_all(&d);
 }
 
+/// The board rules are tested on a hand-made address; this is what makes
+/// that address the one both sides would have resolved.
+#[tokio::test]
+async fn an_agent_and_a_client_at_one_checkout_address_one_board() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let from_agent = d
+        .address_for_agent(agent, ArtifactScope::RepositoryBranch)
+        .unwrap();
+    let from_client = d.address_for_client(project, checkout).unwrap();
+    assert_eq!(from_agent.key, from_client.key);
+    assert_eq!(from_agent.project, project);
+    assert_eq!(from_client.project, project);
+    assert_eq!(from_agent.project_name, from_client.project_name);
+    assert_eq!(from_agent.repositories, from_client.repositories);
+    assert_eq!(
+        from_client.repositories,
+        [d.snapshot()[0].repositories[0].id]
+    );
+    assert_eq!(from_agent.checkout_path, from_client.checkout_path);
+
+    open_feature(&d, agent, "notes storage");
+    let mut rx = d.subscribe_decisions();
+    let write = DecisionWrite {
+        chose: "sqlite".into(),
+        ..Default::default()
+    };
+    d.record_agent_decision(agent, None, write, ArtifactScope::default())
+        .unwrap();
+    let pushed = rx.try_recv().expect("the write is pushed");
+    assert_eq!(pushed.project, Some(project));
+    let board = d.decision_board(project, checkout).unwrap();
+    assert_eq!(board.decisions[0].chose, "sqlite", "and the client reads it");
+    close_all(&d);
+}
+
 #[tokio::test]
 async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
     let dir = tempfile::tempdir().unwrap();
