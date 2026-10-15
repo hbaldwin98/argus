@@ -10,7 +10,7 @@
 
 use super::*;
 use crossterm::event::KeyCode::{
-    BackTab, Char, Down, End, Enter, Esc, Home, Left, PageDown, PageUp, Right, Tab, Up,
+    Backspace, BackTab, Char, Down, End, Enter, Esc, Home, Left, PageDown, PageUp, Right, Tab, Up,
 };
 
 /// Some keys, and the one action they all run.
@@ -604,10 +604,10 @@ const AGENT_VIEWS: Keymap = Keymap {
             bindings: &[
                 Binding::new(
                     "j / k",
-                    "scroll the open view",
+                    "scroll the open view; along the links list while it is up",
                     &[
-                        (&[Char('j'), Down], |app| app.agent_views.scroll_by(1)),
-                        (&[Char('k'), Up], |app| app.agent_views.scroll_by(-1)),
+                        (&[Char('j'), Down], |app| app.stage_down(1)),
+                        (&[Char('k'), Up], |app| app.stage_down(-1)),
                     ],
                 )
                 .hints(&[Hint::new("j/k scroll", 3).narrow("j/k")]),
@@ -615,8 +615,8 @@ const AGENT_VIEWS: Keymap = Keymap {
                     "n / p",
                     "next view, previous view",
                     &[
-                        (&[Char('n'), Right, Char('l')], |app| app.agent_views.step(1)),
-                        (&[Char('p'), Left, Char('h')], |app| app.agent_views.step(-1)),
+                        (&[Char('n'), Right], |app| app.step_stage(1)),
+                        (&[Char('p'), Left], |app| app.step_stage(-1)),
                     ],
                 )
                 .hints(&[Hint::new("n/p view", 2).narrow("n/p")]),
@@ -624,8 +624,8 @@ const AGENT_VIEWS: Keymap = Keymap {
                     "pgdn / pgup",
                     "a page at a time",
                     &[
-                        (&[PageDown, Char(' ')], |app| app.agent_views.page_by(1)),
-                        (&[PageUp], |app| app.agent_views.page_by(-1)),
+                        (&[PageDown, Char(' ')], |app| app.page_stage_by(1)),
+                        (&[PageUp], |app| app.page_stage_by(-1)),
                     ],
                 )
                 .help_only(),
@@ -633,17 +633,41 @@ const AGENT_VIEWS: Keymap = Keymap {
                     "g / G",
                     "top, bottom",
                     &[
-                        (&[Char('g'), Home], |app| app.agent_views.scroll = 0),
-                        (&[Char('G'), End], |app| app.agent_views.scroll_to_end()),
+                        (&[Char('g'), Home], App::top_stage),
+                        (&[Char('G'), End], App::bottom_stage),
                     ],
                 )
                 .help_only(),
                 Binding::new(
+                    "l",
+                    "list the views this saved view links to",
+                    &[(&[Char('l')], App::list_links)],
+                )
+                .hints(&[Hint::new("l links", 2)]),
+                Binding::new(
+                    "enter",
+                    "open the link under the cursor",
+                    &[(&[Enter], App::follow_link)],
+                )
+                .help_only(),
+                Binding::new(
+                    "backspace / h",
+                    "back to the view before the last link",
+                    &[(&[Backspace, Char('h')], App::back_in_stage)],
+                )
+                .help_only(),
+                Binding::new(
                     "r",
-                    "ask the agent to read it again",
-                    &[(&[Char('r')], App::refresh_open_view)],
+                    "ask the agent to read it again, or to refresh a saved view",
+                    &[(&[Char('r')], App::refresh_stage)],
                 )
                 .hints(&[Hint::new("r refresh", 1)]),
+                Binding::new(
+                    "s",
+                    "mark the saved view out of date",
+                    &[(&[Char('s')], App::mark_stage_stale)],
+                )
+                .help_only(),
                 Binding::new(
                     "x",
                     "close the view",
@@ -653,8 +677,11 @@ const AGENT_VIEWS: Keymap = Keymap {
                 Binding::note("click", "open that view; the wheel scrolls it"),
                 Binding::new(
                     "esc  q",
-                    "back to the workspace",
-                    &[(&[Esc, Char('q')], |app| app.open_view(View::Workspace))],
+                    "back to the workspace; esc first closes a links list",
+                    &[
+                        (&[Esc], App::leave_stage),
+                        (&[Char('q')], |app| app.open_view(View::Workspace)),
+                    ],
                 )
                 .hints(&[Hint::new("q workspace", 3).narrow("q")]),
             ],

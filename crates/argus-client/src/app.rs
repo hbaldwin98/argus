@@ -11,7 +11,8 @@
 //! for a pane parked in its history, `actions` for what is asked of the
 //! daemon, `pickers` for the modal layers, `server` for what arrives
 //! back, `showing` for what the daemon is told this client shows,
-//! `agent_views` for the views agents showed, and
+//! `agent_views` for the views agents showed, `saved_views` for the ones
+//! kept and the links followed between them, and
 //! `consoles` for the shells that belong to no checkout.
 
 use argus_protocol::{
@@ -44,6 +45,7 @@ pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 pub use board_writes::LineInput;
 pub use feature::{FeatureHit, FeatureRow, Lens, Standing, GROUPS};
 pub use agent_views::AgentViews;
+pub use saved_views::{Links, SavedViews};
 pub use views::View;
 
 mod actions;
@@ -62,9 +64,11 @@ mod nav;
 mod pickers;
 mod rail;
 mod rows;
+mod saved_views;
 mod scroll;
 mod server;
 mod showing;
+mod view_links;
 mod views;
 
 fn state_word(status: PaneStatus) -> &'static str {
@@ -196,6 +200,8 @@ pub struct App {
     pub view: View,
     /// The views agents showed, shown by the Views stage. See `agent_views`.
     pub agent_views: AgentViews,
+    /// The saved views the daemon holds, shown by the same stage. See `saved_views`.
+    pub saved_views: SavedViews,
     /// Where focus was in the workspace when another view took the stage,
     /// so coming back lands where you left rather than at the root.
     workspace_focus: Focus,
@@ -442,6 +448,7 @@ impl App {
             focus,
             view: View::default(),
             agent_views: AgentViews::default(),
+            saved_views: SavedViews::default(),
             workspace_focus: Focus::Panes,
             sel_project: 0,
             sel_repository: 0,

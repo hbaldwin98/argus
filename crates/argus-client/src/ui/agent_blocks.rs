@@ -97,11 +97,15 @@ fn one(block: &Block, width: usize, depth: usize, th: Theme, out: &mut Vec<Line<
         return;
     }
     match block {
-        Block::Section { heading, blocks, .. } => {
-            out.push(Line::from(vec![
+        Block::Section { heading, blocks, opens } => {
+            let mut head = vec![
                 Span::styled("▍ ", Style::default().fg(th.accent)),
                 bold(one_line(heading), th.text),
-            ]));
+            ];
+            if opens.is_some() {
+                head.push(opens_mark(th));
+            }
+            out.push(Line::from(head));
             nested(blocks, Span::raw("  "), width, depth, th, out);
         }
         Block::Columns { columns } => {
@@ -169,13 +173,16 @@ fn one(block: &Block, width: usize, depth: usize, th: Theme, out: &mut Vec<Line<
                 ]));
             }
         }
-        Block::Card { title, chip, tone, blocks, .. } => {
+        Block::Card { title, chip, tone, blocks, opens, .. } => {
             let border = if *tone == Tone::Neutral { th.edge } else { tone_color(*tone, th) };
             let edge = Style::default().fg(border);
-            if title.is_some() || chip.is_some() {
+            if title.is_some() || chip.is_some() || opens.is_some() {
                 let mut head = vec![Span::styled("┌ ", edge)];
                 if let Some(title) = title {
                     head.push(bold(one_line(title), th.text));
+                }
+                if opens.is_some() {
+                    head.push(opens_mark(th));
                 }
                 if let Some(chip) = chip {
                     head.push(Span::raw(" "));
@@ -186,19 +193,22 @@ fn one(block: &Block, width: usize, depth: usize, th: Theme, out: &mut Vec<Line<
             nested(blocks, Span::styled("│ ", edge), width, depth, th, out);
             out.push(Line::from(Span::styled("└", edge)));
         }
-        Block::Details { summary, chip, blocks, .. } => {
+        Block::Details { summary, chip, blocks, opens, .. } => {
             let mut head = vec![
                 Span::styled("▾ ", Style::default().fg(th.accent)),
                 bold(one_line(summary), th.text),
             ];
+            if opens.is_some() {
+                head.push(opens_mark(th));
+            }
             push_chip(&mut head, chip.as_ref(), th);
             out.push(Line::from(ellipsize_spans(head, width)));
             nested(blocks, Span::raw("  "), width, depth, th, out);
         }
         Block::Row { items, .. } => row(items, width, th, out),
         Block::Unknown => out.push(Line::from(muted("needs a newer Argus to show", th))),
-        // MINIMAL STUB (saved views): the terminal client's agent drew the
-        // embedded view's blocks here, with a cycle and depth guard.
+        // Expanded before drawing (see `SavedViews::embedded`); one that
+        // reaches here was not, and says what it names.
         Block::Embed { view } => out.push(Line::from(muted(format!("embedded view `{}`", one_line(view)), th))),
         Block::Divider => out.push(Line::from(Span::styled(
             "─".repeat(width),
@@ -454,6 +464,9 @@ fn list_item(item: &Item, width: usize, th: Theme, out: &mut Vec<Line<'static>>)
         let sep = if head.is_empty() { "" } else { " · " };
         head.push(Span::styled(format!("{sep}{}", one_line(title)), Style::default().fg(th.text)));
     }
+    if item.opens.is_some() {
+        head.push(opens_mark(th));
+    }
     push_chip(&mut head, item.chip.as_ref(), th);
     let bullet = Span::styled("• ", Style::default().fg(th.accent));
     let mut body = Vec::new();
@@ -495,6 +508,9 @@ fn stats_lines(stats: &[Stat], width: usize, th: Theme, out: &mut Vec<Line<'stat
             dim(format!("{name}{}  ", " ".repeat(pad)), th),
             bold(one_line(&stat.value), tone_color(stat.tone, th)),
         ];
+        if stat.opens.is_some() {
+            spans.push(opens_mark(th));
+        }
         if let Some(delta) = &stat.delta {
             spans.push(muted(format!("  {}", one_line(delta)), th));
         }
@@ -537,10 +553,18 @@ fn check_item(item: &CheckItem, th: Theme) -> Vec<Span<'static>> {
             Style::default().fg(if item.done { th.muted } else { th.text }),
         ),
     ];
+    if item.opens.is_some() {
+        spans.push(opens_mark(th));
+    }
     if let Some(note) = &item.note {
         spans.push(dim(format!(" — {}", one_line(note)), th));
     }
     spans
+}
+
+/// What a thing that opens a saved view carries after its label.
+fn opens_mark(th: Theme) -> Span<'static> {
+    Span::styled(" ›", Style::default().fg(th.accent))
 }
 
 fn log_line(line: &LogLine, width: usize, th: Theme, out: &mut Vec<Line<'static>>) {

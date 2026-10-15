@@ -13,6 +13,7 @@ mod picking;
 mod preferences;
 mod prompts;
 mod reviewing;
+mod saved_views;
 mod scrollback;
 mod showing;
 mod spawning;

@@ -79,13 +79,6 @@ impl AgentViews {
         }
     }
 
-    /// Opens the view `delta` places along the list, stopping at its ends.
-    pub fn step(&mut self, delta: i32) {
-        let Some(at) = self.open_index() else { return };
-        let next = (at as i32 + delta).clamp(0, self.views.len() as i32 - 1) as usize;
-        self.choose(next);
-    }
-
     pub fn choose(&mut self, index: usize) {
         let Some(view) = self.views.get(index) else { return };
         let key = (view.pane, view.view.id.clone());
@@ -95,17 +88,6 @@ impl AgentViews {
         self.open = Some(key);
     }
 
-    pub fn scroll_by(&mut self, lines: i32) {
-        self.scroll = (self.scroll as i64 + i64::from(lines)).max(0) as usize;
-    }
-
-    pub fn page_by(&mut self, pages: i32) {
-        self.scroll_by(pages * self.page.saturating_sub(1).max(1) as i32);
-    }
-
-    pub fn scroll_to_end(&mut self) {
-        self.scroll = usize::MAX / 2;
-    }
 }
 
 impl App {
@@ -125,6 +107,11 @@ impl App {
     /// Asks the daemon to close the open view; it goes when the daemon says
     /// it did.
     pub(crate) fn close_open_view(&mut self) {
+        if self.saved_views.is_open() {
+            // A saved view is a record, not something on screen to dismiss.
+            self.report("x closes a shown view; a saved view stays");
+            return;
+        }
         let Some(shown) = self.agent_views.opened() else {
             return;
         };
@@ -132,6 +119,103 @@ impl App {
             pane: shown.pane,
             id: shown.view.id.clone(),
         });
+    }
+
+    /// The stage's items are the live views, then the saved ones, so the
+    /// list, its clicks and its keys share one count.
+    pub(crate) fn stage_len(&self) -> usize {
+        self.agent_views.all().len() + self.saved_views.all().len()
+    }
+
+    /// The item the stage shows, in [`App::stage_len`]'s count.
+    pub(crate) fn stage_open(&self) -> Option<usize> {
+        if self.saved_views.is_open() {
+            return self
+                .saved_views
+                .open_index()
+                .map(|at| self.agent_views.all().len() + at);
+        }
+        self.agent_views.open_index()
+    }
+
+    pub(crate) fn choose_stage(&mut self, index: usize) {
+        let live = self.agent_views.all().len();
+        if index < live {
+            if self.saved_views.is_open() {
+                // The live view's scroll was left where it was when the saved view took the stage.
+                self.agent_views.scroll = 0;
+            }
+            self.saved_views.close();
+            self.agent_views.choose(index);
+        } else {
+            self.saved_views.choose(index - live);
+        }
+    }
+
+    /// Moves to the item `delta` places along the stage's list. A saved
+    /// view that is open but gone is let go, so the walk does not stop at it.
+    pub(crate) fn step_stage(&mut self, delta: i32) {
+        if self.saved_views.is_open() && self.saved_views.open_index().is_none() {
+            self.saved_views.close();
+        }
+        let Some(at) = self.stage_open() else { return };
+        let last = self.stage_len().saturating_sub(1) as i32;
+        self.choose_stage((at as i32 + delta).clamp(0, last) as usize);
+    }
+
+    /// The scroll and page of whichever the stage shows: a saved view's own
+    /// when one is open, a live view's otherwise.
+    fn stage_scroll_mut(&mut self) -> &mut usize {
+        if self.saved_views.is_open() {
+            &mut self.saved_views.scroll
+        } else {
+            &mut self.agent_views.scroll
+        }
+    }
+
+    pub(crate) fn stage_scroll(&self) -> usize {
+        if self.saved_views.is_open() {
+            self.saved_views.scroll
+        } else {
+            self.agent_views.scroll
+        }
+    }
+
+    fn stage_page(&self) -> usize {
+        if self.saved_views.is_open() {
+            self.saved_views.page
+        } else {
+            self.agent_views.page
+        }
+    }
+
+    /// Records what the last frame showed of the open view, which clamps
+    /// the scroll and sets how far a page goes.
+    pub(crate) fn set_stage_window(&mut self, top: usize, visible: usize) {
+        *self.stage_scroll_mut() = top;
+        if self.saved_views.is_open() {
+            self.saved_views.page = visible;
+        } else {
+            self.agent_views.page = visible;
+        }
+    }
+
+    pub(crate) fn scroll_stage_by(&mut self, lines: i32) {
+        let at = self.stage_scroll_mut();
+        *at = (*at as i64 + i64::from(lines)).max(0) as usize;
+    }
+
+    pub(crate) fn page_stage_by(&mut self, pages: i32) {
+        let page = self.stage_page().saturating_sub(1).max(1) as i32;
+        self.scroll_stage_by(pages * page);
+    }
+
+    pub(crate) fn top_stage(&mut self) {
+        *self.stage_scroll_mut() = 0;
+    }
+
+    pub(crate) fn bottom_stage(&mut self) {
+        *self.stage_scroll_mut() = usize::MAX / 2;
     }
 
     /// The title of the pane that showed a view, if the tree still has it.

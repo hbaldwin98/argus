@@ -136,11 +136,11 @@ impl App {
                         if let Some(index) =
                             crate::ui::command_center_agent_view_at(self, ev.column, ev.row)
                         {
-                            self.agent_views.choose(index);
+                            self.choose_stage(index);
                         }
                     }
-                    MouseEventKind::ScrollUp => self.agent_views.scroll_by(-3),
-                    MouseEventKind::ScrollDown => self.agent_views.scroll_by(3),
+                    MouseEventKind::ScrollUp => self.scroll_stage_by(-3),
+                    MouseEventKind::ScrollDown => self.scroll_stage_by(3),
                     _ => {}
                 }
                 return;

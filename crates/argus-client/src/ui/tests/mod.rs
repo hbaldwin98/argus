@@ -14,6 +14,7 @@ mod help;
 mod keymap;
 mod panes;
 mod picker;
+mod saved_views;
 mod status;
 mod views;
 

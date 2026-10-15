@@ -81,6 +81,10 @@ impl App {
         if daemon.is_some_and(|d| d.can(argus_protocol::AGENT_VIEWS)) {
             let _ = self.out.send(ClientMsg::WatchViews);
         }
+        self.saved_views.connected();
+        if daemon.is_some_and(|d| d.can(argus_protocol::SAVED_VIEWS)) {
+            let _ = self.out.send(ClientMsg::WatchSavedViews);
+        }
         self.offer_consoles(daemon.is_some_and(|d| d.can(argus_protocol::CONSOLES)));
         let Some(daemon) = daemon else {
             self.report(format!("{argusd} predates this client; {fix} to update it"));
@@ -304,12 +308,12 @@ impl App {
             ServerMsg::ViewPressFailed { action, reason, .. } => {
                 self.alert(format!("{action} failed: {reason}"));
             }
-            // MINIMAL STUB (saved views): this client does not list
-            // SAVED_VIEWS yet, so the daemon sends none of these.
-            ServerMsg::SavedViews(_)
-            | ServerMsg::SavedViewChanged(_)
-            | ServerMsg::SavedViewRemoved { .. }
-            | ServerMsg::SavedViewFailed { .. } => {}
+            ServerMsg::SavedViews(list) => self.saved_views.replaced(list),
+            ServerMsg::SavedViewChanged(view) => self.saved_views.changed(*view),
+            ServerMsg::SavedViewRemoved { id } => self.saved_views.removed(&id),
+            ServerMsg::SavedViewFailed { id, reason } => {
+                self.alert(format!("saved view {id} failed: {reason}"));
+            }
             // Sent only to a client that listed extensions, which this
             // does not yet.
             ServerMsg::ExtensionViews(_)

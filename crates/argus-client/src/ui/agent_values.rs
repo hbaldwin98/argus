@@ -147,8 +147,8 @@ pub(super) fn value_spans(value: &Value, th: Theme) -> Vec<Span<'static>> {
             Some(label) if !label.is_empty() => one_line(label),
             _ => format!("pane {pane}"),
         }),
-        // MINIMAL STUB (saved views): a label with a marker; the terminal
-        // client's saved-view work makes it openable.
+        // A link reads as its label and a marker; `l` on a saved view lists
+        // the ones it names.
         Value::View { id, label } => plain(match label {
             Some(label) if !label.is_empty() => format!("{} ›", one_line(label)),
             _ => format!("view {} ›", one_line(id)),
