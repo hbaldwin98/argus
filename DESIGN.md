@@ -337,11 +337,11 @@ to the type or its locking.
 | `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, what one session said, and reopening one by its id |
 | `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
 | `state/tree` | finding your way around the tree |
-| `state/features` | which feature a checkout is on, and the one path a change to a feature takes, with who asked as a parameter |
-| `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
-| `state/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, and what the agent is told at each turn |
+| `state/features` | which feature a checkout is on, and the one apply a change to a feature takes, with the board's address and who asked as parameters |
+| `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a feature board's rows: how a task or a diagram is stored, a decision added, changed and read, and the tracker map written or drafted — each change one apply, whoever asks |
+| `state/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, side by side in one apply, and what the agent is told at each turn |
 | `state/views` | which views agents have shown, per pane, and which go when |
-| `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
+| `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and which lists its change pushes |
 | `state/board_address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
 | `state/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `conn` | one client connection, and which task each message runs on |
@@ -1618,7 +1618,10 @@ worktree is removed. The daemon derives a durable key from the repository's shar
 instead of persisting its runtime ids. Synthetic and non-Git checkouts use their repository path.
 For work that deliberately crosses repository boundaries, the pane API accepts an explicit workspace scope,
 selected by `ARGUS_ARTIFACT_SCOPE=workspace` in `argus-hook`. This scope is independent of the open
-workspace in the TUI: opening a workspace changes visibility, not where an artifact is filed.
+workspace in the TUI: opening a workspace changes visibility, not where an artifact is filed. No
+client view shows a workspace board, so a change to one is answered to the agent that made it and
+pushed to no client: a push names the repositories it is for rather than the board it is, and pushed
+under the workspace's repositories it would replace each one's own board on screen.
 
 A feature is stored, not derived: schema v6's `feature` table holds a slug, a title, the document
 body, and the checkout and branch it originated in. The slug is derived from the title once, at
@@ -1737,6 +1740,15 @@ a person's records neither; `select` and `note` are about an agent's checkout an
 person; an agent's `done` and `reopen` are logged as the agent's, with its session, and carry no
 detail, which is the person's to give; an agent's `drop` is refused while anything is filed under
 the feature; and transfers and captured notes are the view's.
+
+Every other change to a board is built the same way. A task or a diagram (`state/board_parts`), a
+decision added or changed (`state/decisions`), the tracker map (`state/tracker_map`) and a turn of a
+reconcile (`state/reconcile`) each have one apply, taking the board's address and who asked
+(`state/asker`), and the rules that differ by who asked are arms of its match. The address is
+resolved once per request, from the agent's pane or the client's checkout (`state/board_address`):
+the store key, the project, the checkout a feature pointer is kept against, and the repositories a
+push names. The `_for_agent` and `_for_client` entry points do nothing but resolve it and call the
+apply, so a refusal or a push cannot differ by which side asked.
 
 A person starting a feature has a paragraph, not a title, so the view sends a whole note —
 `FeatureAction::Capture`, read by `argus_protocol::capture` — and `store/capture` writes it in
