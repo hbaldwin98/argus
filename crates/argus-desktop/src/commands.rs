@@ -319,6 +319,32 @@ pub async fn go_to_pane(shared: State<'_, Arc<Shared>>, pane: u64) -> Answer {
     Ok(())
 }
 
+/// The command palette opened, or with `open` false closed.
+#[tauri::command]
+pub async fn palette(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
+    shared.act(|s| s.palette(open));
+    Ok(())
+}
+
+/// A command chosen in the palette.
+#[tauri::command]
+pub async fn command(shared: State<'_, Arc<Shared>>, action: Action) -> Answer {
+    shared.act(|s| s.command(action));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn go_to_checkout(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
+    shared.act(|s| s.go_to_checkout(CheckoutId(checkout)));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn go_to_feature(shared: State<'_, Arc<Shared>>, slug: String) -> Answer {
+    shared.act(|s| s.go_to_feature(&slug));
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn reconnect(shared: State<'_, Arc<Shared>>) -> Answer {
     shared.ask_reconnect();

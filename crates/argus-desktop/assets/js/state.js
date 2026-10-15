@@ -16,6 +16,8 @@ export const state = {
     },
     features: null,
     keymap: [],
+    commands: [],
+    palette: null,
     menuOpen: false,
     start: null,
     railPick: null,

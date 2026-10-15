@@ -2,11 +2,13 @@
 // view state that is the page's own — a menu open, a filter typed.
 
 import type { Checkouts } from './bindings/Checkouts';
+import type { Command } from './bindings/Command';
 import type { Features } from './bindings/Features';
 import type { Group } from './bindings/Group';
 import type { Rail } from './bindings/Rail';
 import type { ReviewPage } from './bindings/ReviewPage';
 import type { HistoryPage } from './bindings/HistoryPage';
+import type { Palette } from './bindings/Palette';
 import type { Status } from './bindings/Status';
 
 export const state: {
@@ -15,6 +17,10 @@ export const state: {
   features: Features | null;
   /** Every binding, as `src/keymap.rs` groups them. */
   keymap: Group[];
+  /** What the palette offers to run, from the same table. */
+  commands: Command[];
+  /** What the palette can go to, while it is open. */
+  palette: Palette | null;
   /** The project switcher's menu. */
   menuOpen: boolean;
   /** The checkout whose + menu is open, where it opened from, and its
@@ -48,6 +54,8 @@ export const state: {
   },
   features: null,
   keymap: [],
+  commands: [],
+  palette: null,
   menuOpen: false,
   start: null,
   railPick: null,

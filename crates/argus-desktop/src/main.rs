@@ -25,6 +25,7 @@ mod history;
 mod keys;
 mod logging;
 mod page;
+mod palette;
 mod rail;
 mod review;
 mod screen;
@@ -100,6 +101,10 @@ fn main() {
             commands::hold,
             commands::archive,
             commands::go_to_pane,
+            commands::palette,
+            commands::command,
+            commands::go_to_checkout,
+            commands::go_to_feature,
             commands::reconnect,
         ])
         .on_page_load(|webview, payload| {

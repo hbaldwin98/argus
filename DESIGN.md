@@ -56,17 +56,26 @@ does and what it is called. A key in a pane goes to Rust, which dispatches it fr
 table crosses to the page once it loads, and the page dispatches every other key from it, so a key
 cannot be run by one and missing from what the sheet and the palette are drawn from. In a pane every
 key is the program's except the leader, `Ctrl-Space` as in the terminal client: the key after it is
-the window's, one nothing binds is dropped, and a second leader sends one through. The leader and
-`f` fill the window with the pane, putting the rail, the tabs and the stage header away until the
-same keys again. The Feature stage has them while it is open, and another pane brings them back
-for good. Rust holds the model (`session`); the page draws what it is sent
-and reports gestures. It is TypeScript in `crates/argus-desktop/page/src`, one module per subject
-(`chrome`, `screen`, `input`, `keymap`, `features`, `chime`, with `dom`, `state` and `tauri` beneath them), compiled
-into `assets/js` and committed, so building the crate needs no Node. The events it reads are
-`page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
-either committed output differs from what its source makes. Its webview keeps its storage
-under the instance's config directory, so a dev window never shares it with the installed one, and
-it logs to `argus-desktop.log` beside the config, keeping the previous run's.
+the window's, one nothing binds is dropped, and a second leader sends one through. `Ctrl-K` (in a
+pane, the leader and `k`) opens the palette, one fuzzy search over the table's commands and the
+panes, checkouts and features Rust lists while it is open (`palette`), `>` narrowing it to commands
+and `#` to features; a command chosen is a call that `session` runs where its key would, the
+checkout ones on the Checkouts stage's row or else the pane on screen's checkout. A stage hides the
+pane, so from one the pane commands find nothing on screen, and a held or archived feature chosen
+unfolds the Feature index to it. `?` (in a pane, the leader and `?`) opens the shortcuts sheet,
+which is the table's groups drawn whole, opening with the rule that a pane has every key but the
+leader. Both are drawn over everything, a review included, and a pane's leader key reaches them as a
+`Run` event, since only the page draws them. The leader and `f` fill the window with the pane,
+putting the rail, the tabs and the stage header away until the same keys again. The Feature stage
+has them while it is open, and another pane brings them back for good. Rust holds the model
+(`session`); the page draws what it is sent and reports gestures. It is TypeScript in
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `screen`, `input`, `keymap`,
+`palette`, `shortcuts`, `features`, `chime`, with `keys`, `dom`, `state` and `tauri` beneath them),
+compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
+are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
+either committed output differs from what its source makes. Its webview keeps its storage under the
+instance's config directory, so a dev window never shares it with the installed one, and it logs to
+`argus-desktop.log` beside the config, keeping the previous run's.
 
 The daemon is started with its stderr on the null device, since it shares no console with the
 client and anything it printed would either land in the middle of the TUI or open a console window
@@ -309,7 +318,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `page` | what the page and the window's Rust say to each other |
 | `commands` | the calls the page makes, handed to the session |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
-| `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page |
+| `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, and the commands the palette runs |
+| `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `logging` | where the window's own diagnostics go |

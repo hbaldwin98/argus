@@ -4,4 +4,4 @@
  * What a binding does. The page runs those of the places it dispatches,
  * `session` those of a pane.
  */
-export type Action = "workspace" | "feature" | "closeLayer" | "leader" | "fill" | "close" | "paste" | "pageUp" | "pageDown" | "next" | "previous" | "first" | "last" | "layout" | "folded" | "filter" | "move" | "hold" | "archive" | "goToPane" | "startShell" | "startAgent" | "choose" | "checkouts" | "branches" | "fetch" | "pull" | "newWorktree" | "delete" | "openReview" | "pick" | "comment" | "side" | "split" | "nextFile" | "previousFile" | "openHistory" | "unfold" | "fold" | "asReview" | "openEditor";
+export type Action = "workspace" | "feature" | "closeLayer" | "leader" | "fill" | "close" | "paste" | "pageUp" | "pageDown" | "next" | "previous" | "first" | "last" | "layout" | "folded" | "filter" | "move" | "hold" | "archive" | "goToPane" | "startShell" | "startAgent" | "choose" | "checkouts" | "branches" | "fetch" | "pull" | "newWorktree" | "delete" | "openReview" | "pick" | "comment" | "side" | "split" | "nextFile" | "previousFile" | "openHistory" | "unfold" | "fold" | "asReview" | "openEditor" | "palette" | "shortcuts";

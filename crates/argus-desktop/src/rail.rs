@@ -123,7 +123,7 @@ fn checkout(checkout: &CheckoutInfo, shown: Option<PaneId>) -> page::Checkout {
     }
 }
 
-fn branch(checkout: &CheckoutInfo) -> String {
+pub fn branch(checkout: &CheckoutInfo) -> String {
     match &checkout.git {
         Some(git) => git.branch.clone().unwrap_or_else(|| "detached".into()),
         None => String::new(),

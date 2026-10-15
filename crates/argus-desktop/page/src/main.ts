@@ -19,7 +19,8 @@ import { drawHistory, historyOpen } from './history.js';
 import { drawReview, reviewOpen } from './review.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
-import { listen as listenToKeys } from './keymap.js';
+import { listen as listenToKeys, runOver } from './keymap.js';
+import { drawPalette } from './palette.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
@@ -97,6 +98,15 @@ function receive(event: Event): void {
       break;
     case 'keymap':
       state.keymap = event.groups;
+      state.commands = event.commands;
+      drawChrome();
+      break;
+    case 'palette':
+      state.palette = event;
+      drawPalette();
+      break;
+    case 'run':
+      runOver(event.action);
       break;
   }
 }
