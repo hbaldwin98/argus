@@ -5014,6 +5014,124 @@ body.resizing:has(.brief-sash.held) {
 
 /* Agent views: charts (chart, progress, a stat's trend). */
 
+.vchart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+
+.vchart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.vchart-axes text {
+  fill: var(--fg-muted);
+  font: 10px var(--font-mono);
+}
+
+.vchart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.vchart-line {
+  fill: none;
+  stroke: var(--t);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.vchart-area {
+  fill: var(--t);
+  stroke: none;
+}
+
+.vchart-bar,
+.vchart-dot {
+  fill: var(--t);
+}
+
+.vchart-key {
+  stroke: var(--t);
+  stroke-width: 2;
+}
+
+.vchart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4) var(--sp-12);
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+}
+
+.vchart-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.vspark {
+  display: block;
+  width: 100%;
+  height: 32px;
+}
+
+.vchart-spark .vspark {
+  max-width: 240px;
+}
+
+.vstat .vspark {
+  margin-top: var(--sp-4);
+  height: 28px;
+}
+
+.vprogress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.vprogress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-8);
+  font-size: var(--fs-sm);
+}
+
+.vprogress-note {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.vmeter {
+  display: block;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--t) 18%, transparent);
+  overflow: hidden;
+}
+
+.vmeter-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--t);
+}
+
+.vprogress-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+}
+
+.vmeter-sm {
+  width: 60px;
+}
+
 /* Agent views: actions and forms. */
 
 /* Agent views: shapes (timeline, tree, checklist, log, board, matrix). */

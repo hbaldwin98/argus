@@ -1,8 +1,9 @@
 // A stats view block: tiles of an already-formatted value under a label, with
-// an optional delta coloured by the stat's tone.
+// an optional delta coloured by the stat's tone, and a spark of its trend.
 
 import type { Stat } from './bindings/Stat';
 import { toneClass } from './chip.js';
+import { spark } from './chart.js';
 import { el } from './dom.js';
 
 export function stats(list: readonly Stat[]): HTMLElement {
@@ -22,6 +23,7 @@ export function stats(list: readonly Stat[]): HTMLElement {
               s.delta,
             )
           : null,
+        s.trend.length > 0 ? spark(s.trend, s.tone) : null,
       ),
     ),
   );

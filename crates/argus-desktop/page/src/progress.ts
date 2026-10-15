@@ -1,15 +1,61 @@
 // A progress view block, and the meter a progress value draws in a cell.
 
-import { el } from './dom.js';
 import type { Block } from './bindings/Block';
+import type { Tone } from './bindings/Tone';
 import type { Value } from './bindings/Value';
+import { toneClass } from './chip.js';
+import { el } from './dom.js';
 
-/** Not drawn yet: a progress value in a cell. */
-export function progressValue(v: Extract<Value, { kind: 'progress' }>): HTMLElement {
-  return el('span', { class: 'vpending' }, `${v.value} / ${v.max}`);
+/** How far along, 0 to 1; an agent's overshoot or a zero max is not a broken bar. */
+function fraction(value: number, max: number): number {
+  if (!(max > 0) || !Number.isFinite(value)) return 0;
+  return Math.min(Math.max(value / max, 0), 1);
 }
 
-/** Not drawn yet: the block's kind, so a view that uses it still reads. */
-export function progress(_block: Extract<Block, { kind: 'progress' }>): HTMLElement {
-  return el('div', { class: 'vpending' }, 'progress');
+function meter(frac: number, tone: Tone, cls: string): HTMLElement {
+  const fill = el('span', { class: 'vmeter-fill' });
+  fill.style.width = `${frac * 100}%`;
+  return el('span', { class: `${cls} ${toneClass(tone)}` }, fill);
+}
+
+/** A compact inline meter with the percentage, for a cell or a field. */
+export function progressValue(v: Extract<Value, { kind: 'progress' }>): HTMLElement {
+  const frac = fraction(v.value, v.max);
+  const pct = `${Math.round(frac * 100)}%`;
+  return el(
+    'span',
+    {
+      class: 'vprogress-inline',
+      role: 'progressbar',
+      'aria-valuemin': 0,
+      'aria-valuemax': v.max,
+      'aria-valuenow': frac * v.max,
+      'aria-valuetext': pct,
+    },
+    meter(frac, v.tone, 'vmeter vmeter-sm'),
+    el('span', { class: 'vnum' }, pct),
+  );
+}
+
+export function progress(block: Extract<Block, { kind: 'progress' }>): HTMLElement {
+  const frac = fraction(block.value, block.max);
+  return el(
+    'div',
+    {
+      class: 'vprogress',
+      role: 'progressbar',
+      'aria-label': block.label,
+      'aria-valuemin': 0,
+      'aria-valuemax': block.max,
+      'aria-valuenow': frac * block.max,
+      'aria-valuetext': block.note ?? `${Math.round(frac * 100)}%`,
+    },
+    el(
+      'div',
+      { class: 'vprogress-head' },
+      el('span', null, block.label),
+      block.note != null && el('span', { class: 'vprogress-note' }, block.note),
+    ),
+    meter(frac, block.tone, 'vmeter'),
+  );
 }
