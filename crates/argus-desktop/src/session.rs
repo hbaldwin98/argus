@@ -14,7 +14,8 @@
 //! written as (`capture_note`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
 //! the project switcher (`switcher`) and the dialog adding a project
-//! (`add_project`), and what the daemon is making
+//! (`add_project`), the Settings dialog's choices (`preferences`), and what
+//! the daemon is making
 //! (`argus_protocol::awaited`). The session says which of them a message
 //! or gesture is for, and what one of them changing means for the rest.
 //!
@@ -43,16 +44,19 @@ use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keymap::{self, Action};
+use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::page::{
-    self, AddProjectGesture, Call, CaptureGesture, Event, FeatureEdit, PageMouse, ReviewClick, ReviewJumpGesture, Stage,
+    self, AddProjectGesture, Call, CaptureGesture, Event, FeatureEdit, PageMouse, ReviewClick, ReviewJumpGesture,
+    SettingChange, Stage,
 };
 use crate::palette;
+use crate::preferences::Chosen;
 use crate::rail::{self, Choices};
 use crate::sent::Sent;
 use crate::sessions::Sessions;
 use crate::sessions_dialog::{SessionsDialog, Then as SessionsThen};
-use crate::settings::Settings;
+use crate::settings::{Backdrop, Settings, Theme};
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
 use crate::switcher::Switcher;
@@ -108,6 +112,9 @@ pub struct Session {
     palette: bool,
     palette_sent: Sent<page::Palette>,
     focused: bool,
+    choices: Chosen,
+    /// Notifications for the system, raised by the last tree.
+    alerts: Vec<Alert>,
     /// The view last reported, so an unchanged one is not sent again.
     reported: Option<View>,
     /// The rail draws from nearly everything here, so whatever changes it
@@ -133,7 +140,11 @@ impl Session {
             repository: None,
             toggled: HashSet::new(),
             stage: Stage::Workspace,
-            features: FeatureStage::new(settings.layouts),
+            features: {
+                let mut stage = FeatureStage::new(settings.layouts);
+                stage.set_opens_as(settings.preferences.feature_layout);
+                stage
+            },
             capture: None,
             capture_sent: Sent::default(),
             checkouts: CheckoutsStage::default(),
@@ -150,6 +161,8 @@ impl Session {
             palette: false,
             palette_sent: Sent::default(),
             focused: true,
+            choices: Chosen::new(settings.preferences),
+            alerts: Vec::new(),
             reported: None,
             rail_changed: true,
             passing: Vec::new(),
@@ -290,12 +303,13 @@ impl Session {
     /// first tree, compared with none, is quiet.
     fn take_tree(&mut self, tree: Vec<ProjectInfo>) {
         let watched = self.watched();
-        let rings = transitions(self.tree.as_slice(), tree.as_slice())
-            .iter()
-            .any(|t| t.after.status.needs_you() && Some(t.pane.id) != watched);
+        let changes = transitions(self.tree.as_slice(), tree.as_slice());
+        let rings = changes.iter().any(|t| t.after.status.needs_you() && Some(t.pane.id) != watched);
         if rings && self.status.chimes() {
             self.passing.push(Event::Chime);
         }
+        let looking = Looking { focused: self.focused, watched };
+        self.alerts.extend(notifications::alerts(&changes, &tree, self.choices.get(), &looking));
         self.tree = tree;
         self.loaded = true;
         self.rail_changed = true;
@@ -406,6 +420,7 @@ impl Session {
             Call::SetLayout { layout } => self.set_layout(layout),
             Call::ToggleFolded => self.toggle_folded(),
             Call::SetChime { on } => self.set_chime(on),
+            Call::Setting { change } => self.set(change),
             Call::Hold { slug, reason } => self.hold(&slug, reason),
             Call::Archive { slug, archived } => self.archive(&slug, archived),
             Call::Capture { gesture } => self.capture_gesture(gesture),
@@ -509,7 +524,7 @@ impl Session {
             }
             Action::PageUp => self.on_view(|view| view.page(-1)),
             Action::PageDown => self.on_view(|view| view.page(1)),
-            Action::Palette | Action::Shortcuts => self.passing.push(Event::Run { action }),
+            Action::Palette | Action::Shortcuts | Action::Settings => self.passing.push(Event::Run { action }),
             // `commands` reads the clipboard before the key gets here; the
             // rest are the page's, for keys a pane never hears.
             _ => {}
@@ -1091,7 +1106,8 @@ impl Session {
     fn review_action(&mut self, action: Action) -> Vec<ClientMsg> {
         if let Some((checkout, path, line)) = self.dialogs.review_action(action, &self.tree, &mut self.passing) {
             let request_id = self.awaited.ask(Made::ShowOverStages);
-            self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external: false, command: None, request_id });
+            let (external, command) = self.choices.editor();
+            self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external, command, request_id });
         }
         self.finish()
     }
@@ -1259,6 +1275,27 @@ impl Session {
         self.shown.pane().filter(|_| !matches!(self.stage, Stage::Feature | Stage::Checkouts))
     }
 
+    /// One choice in the Settings dialog. The page draws the look from
+    /// what comes back, and `commands` puts the backdrop on the window.
+    fn set(&mut self, change: SettingChange) -> Vec<ClientMsg> {
+        if let Err(reason) = self.choices.change(change) {
+            self.passing.push(Event::Notice { text: reason });
+        }
+        self.features.set_opens_as(self.choices.get().feature_layout);
+        self.finish()
+    }
+
+    /// The theme and backdrop chosen, which the window's frame draws.
+    pub fn look(&self) -> (Theme, Backdrop) {
+        let chosen = self.choices.get();
+        (chosen.theme, chosen.backdrop)
+    }
+
+    /// The notifications the last trees raised, for the system to show.
+    pub fn take_alerts(&mut self) -> Vec<Alert> {
+        std::mem::take(&mut self.alerts)
+    }
+
     fn set_chime(&mut self, on: bool) -> Vec<ClientMsg> {
         self.status.set_chime(on);
         self.finish()
@@ -1272,9 +1309,12 @@ impl Session {
             return false;
         }
         match action {
-            Action::Workspace | Action::Feature | Action::Checkouts | Action::Compose | Action::Shortcuts => {
-                self.run(action)
-            }
+            Action::Workspace
+            | Action::Feature
+            | Action::Checkouts
+            | Action::Compose
+            | Action::Shortcuts
+            | Action::Settings => self.run(action),
             Action::Fill | Action::Close if self.on_screen().is_none() => {
                 self.passing.push(Event::Notice { text: "no pane is on screen".into() });
             }
@@ -1346,16 +1386,18 @@ impl Session {
 
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
-        // All four, not short-circuited: each flag is cleared as it is read.
+        // All five, not short-circuited: each flag is cleared as it is read.
         let layouts = self.features.take_layouts_changed();
         let agent = self.agents.take_changed();
         let chime = self.status.take_chime_changed();
         let review = self.dialogs.take_layout_changed();
-        (layouts || agent || chime || review).then(|| Settings {
+        let chosen = self.choices.take_unsaved();
+        (layouts || agent || chime || review || chosen).then(|| Settings {
             layouts: self.features.layouts().clone(),
             last_agent: self.agents.last().cloned(),
             chime: self.status.chimes(),
             review: self.dialogs.layout(),
+            preferences: self.choices.get().clone(),
         })
     }
 
@@ -1441,6 +1483,9 @@ impl Session {
         if let Some(status) = self.status.take() {
             events.push(Event::Status(status));
         }
+        if let Some(page) = self.choices.take() {
+            events.push(Event::Settings(Box::new(page)));
+        }
         if std::mem::take(&mut self.rail_changed) {
             events.push(Event::Rail(Box::new(self.rail(now))));
         }
@@ -1480,6 +1525,7 @@ impl Session {
     /// shown pane's whole screen follows with the next frame.
     pub fn everything(&mut self, now: u64) -> Vec<Event> {
         self.status.resend();
+        self.choices.resend();
         self.dialogs.reload();
         self.recent_sent.forget();
         self.adding_sent.forget();
@@ -1745,6 +1791,24 @@ mod tests {
         assert!(s.stage != Stage::Checkouts, "the editor is on screen");
     }
 
+    #[test]
+    fn the_editor_opens_as_the_settings_say() {
+        let mut s = session(without_focus());
+        s.set(SettingChange::Editor { mode: crate::settings::EditorMode::Separately });
+        s.set(SettingChange::EditorCommand { command: "code -w".into() });
+        let sent = s.open_review(CheckoutId(100));
+        let [ClientMsg::Review { request_id, .. }, ..] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        s.receive(reviewed(argus_protocol::ReviewBase::Unstaged, *request_id));
+        s.review_action(Action::Next);
+        let sent = s.review_action(Action::OpenEditor);
+        let [ClientMsg::OpenInEditor { external: true, command: Some(command), .. }] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        assert_eq!(command, "code -w");
+    }
+
 
     #[test]
     fn a_tree_arriving_before_the_answer_waits_for_it() {
@@ -1821,13 +1885,13 @@ mod tests {
         let mut s = session(without_focus());
         let first = s.events(0);
         assert!(
-            matches!(first.as_slice(), [Event::Status(_), Event::Rail(_), Event::Features(_)]),
+            matches!(first.as_slice(), [Event::Status(_), Event::Settings(_), Event::Rail(_), Event::Features(_)]),
             "{first:?}"
         );
         assert!(s.events(0).is_empty());
         s.toggle_repository(RepositoryId(10));
         assert!(matches!(s.events(0).as_slice(), [Event::Rail(_)]));
-        assert_eq!(s.everything(0).len(), 5, "a fresh page hears it all, the keymap first");
+        assert_eq!(s.everything(0).len(), 6, "a fresh page hears it all, the keymap first");
     }
 
 
@@ -1900,6 +1964,39 @@ mod tests {
 
         s.receive(with_status(0, PaneStatus::Failed));
         assert_eq!(chimes(&mut s), 0);
+    }
+
+    #[test]
+    fn an_agent_needing_you_raises_a_notification_while_the_window_is_away() {
+        let mut s = session(without_focus());
+        s.events(0);
+        s.receive(with_status(0, PaneStatus::Waiting));
+        assert!(s.take_alerts().is_empty(), "the window is in front");
+        s.receive(with_status(0, PaneStatus::Working));
+        s.focus(false);
+        s.receive(with_status(0, PaneStatus::Waiting));
+        let alerts = s.take_alerts();
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].title, "claude");
+        assert!(s.take_alerts().is_empty(), "raised once");
+    }
+
+    #[test]
+    fn a_setting_is_heard_saved_and_followed() {
+        let mut s = session(without_focus());
+        s.events(0);
+        s.set(SettingChange::FeatureLayout { layout: Layout::Board });
+        let events = s.events(0);
+        let Some(Event::Settings(page)) = events.iter().find(|e| matches!(e, Event::Settings(_))) else {
+            panic!("{events:?}");
+        };
+        assert_eq!(page.chosen.feature_layout, Layout::Board);
+        assert!(events.iter().any(|e| matches!(e, Event::Features(f) if f.layout == "board")), "the index follows");
+        let saved = s.take_settings().expect("saved");
+        assert_eq!(saved.preferences.feature_layout, Layout::Board);
+        assert!(s.take_settings().is_none(), "saved once");
+        s.set(SettingChange::Theme { theme: Theme::Latte });
+        assert_eq!(s.look().0, Theme::Latte);
     }
 
     #[test]
@@ -2481,7 +2578,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 69] = [
+    const CALLS: [&str; 70] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -2531,6 +2628,7 @@ mod tests {
         r#"{"call":"set_layout","layout":"board"}"#,
         r#"{"call":"toggle_folded"}"#,
         r#"{"call":"set_chime","on":false}"#,
+        r#"{"call":"setting","change":{"set":"opacity","percent":80}}"#,
         r#"{"call":"hold","slug":"trim","reason":"waiting"}"#,
         r#"{"call":"archive","slug":"trim","archived":true}"#,
         r#"{"call":"capture","gesture":{"on":"open"}}"#,

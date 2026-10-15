@@ -161,6 +161,8 @@ pub enum Action {
     Palette,
     /// Open the shortcuts sheet, or close it.
     Shortcuts,
+    /// Open the Settings dialog.
+    Settings,
 }
 
 #[derive(Debug, Serialize)]
@@ -282,6 +284,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Anywhere, &[Chord::key("Escape")], CloseLayer, "close the menu or dialog"),
     bind(Anywhere, &[Chord::key("k").ctrl()], Action::Palette, "search actions, panes, features and checkouts"),
     bind(Anywhere, &[Chord::key("?")], Shortcuts, "these shortcuts"),
+    bind(Anywhere, &[Chord::key(",").ctrl()], Action::Settings, "settings"),
     bind(Pane, &[LEADER.after_leader()], Leader, "send ctrl-space to the program"),
     bind(Pane, &[Chord::key("f").after_leader()], Fill, "fill the window with the pane, and back"),
     bind(Pane, &[Chord::key("1").after_leader()], Workspace, "Workspace"),
@@ -295,6 +298,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("PageDown").shift()], PageDown, "forward to the live screen"),
     bind(Pane, &[Chord::key("k").ctrl().after_leader(), Chord::key("k").after_leader()], Action::Palette, "search actions, panes, features and checkouts"),
     bind(Pane, &[Chord::key("?").after_leader()], Shortcuts, "these shortcuts"),
+    bind(Pane, &[Chord::key(",").after_leader()], Action::Settings, "settings"),
     bind(Rail, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next checkout or pane"),
     bind(Rail, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous checkout or pane"),
     bind(Rail, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell on its checkout"),
@@ -394,6 +398,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Action::Checkouts, Some(Anywhere), "Go to the Checkouts stage"),
     (Compose, Some(Anywhere), "Start a shell or an agent…"),
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
+    (Action::Settings, Some(Anywhere), "Open the settings"),
     (Fill, Some(Pane), "Fill the window with the pane, and back"),
     (Close, Some(Pane), "Close the pane, ending its program"),
     (StartShell, Some(CheckoutsTable), "Start a shell on this checkout"),
@@ -569,6 +574,20 @@ mod tests {
         assert_eq!(in_pane(&ctrl_k, true), Some(Action::Palette));
         assert_eq!(in_pane(&page("?"), false), None);
         assert_eq!(in_pane(&page("?"), true), Some(Shortcuts));
+    }
+
+    #[test]
+    fn the_settings_open_with_ctrl_comma_and_after_the_leader_with_comma() {
+        let ctrl_comma = PageKey { ctrl: true, ..page(",") };
+        let anywhere = BINDINGS
+            .iter()
+            .filter(|b| b.place == Anywhere)
+            .find(|b| b.chords.iter().any(|c| c.matches(&ctrl_comma)))
+            .map(|b| b.action);
+        assert_eq!(anywhere, Some(Action::Settings));
+        assert_eq!(in_pane(&ctrl_comma, false), None, "the program's");
+        assert_eq!(in_pane(&page(","), true), Some(Action::Settings));
+        assert!(is_command(Action::Settings), "and the palette lists it");
     }
 
     /// The page hears Anywhere, Feature and Card together, so a key may

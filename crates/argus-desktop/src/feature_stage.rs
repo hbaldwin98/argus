@@ -65,6 +65,9 @@ pub struct FeatureStage {
     /// `Settings::layouts`: the session saves them with the rest.
     layouts: BTreeMap<String, String>,
     layouts_changed: bool,
+    /// The layout of a repository that remembers none of its own, as the
+    /// Settings dialog sets it.
+    opens_as: Layout,
     changed: bool,
 }
 
@@ -79,7 +82,15 @@ impl FeatureStage {
             cursor: None,
             layouts,
             layouts_changed: false,
+            opens_as: Layout::default(),
             changed: true,
+        }
+    }
+
+    pub fn set_opens_as(&mut self, layout: Layout) {
+        if self.opens_as != layout {
+            self.opens_as = layout;
+            self.changed = true;
         }
     }
 
@@ -193,7 +204,7 @@ impl FeatureStage {
         scope
             .and_then(|scope| self.layouts.get(&scope.key))
             .and_then(|word| Layout::from_word(word))
-            .unwrap_or_default()
+            .unwrap_or(self.opens_as)
     }
 
     pub fn set_layout(&mut self, layout: Layout, scope: Option<&Scope>) {
@@ -475,6 +486,18 @@ mod tests {
         assert!(!stage.take_layouts_changed());
         let other = Scope { key: "/src/other".into(), ..scope() };
         assert_eq!(stage.everything(Some(&other), &[]).layout, "list");
+    }
+
+    #[test]
+    fn a_repository_that_remembers_no_layout_opens_as_the_settings_say() {
+        let (mut stage, _) = loaded();
+        stage.set_layout(Layout::List, Some(&scope()));
+        let other = Scope { key: "/src/other".into(), ..scope() };
+        stage.take(Some(&other), &[]);
+        stage.set_opens_as(Layout::Board);
+        assert!(stage.take(Some(&other), &[]).is_some(), "the index is drawn again");
+        assert_eq!(stage.everything(Some(&other), &[]).layout, "board");
+        assert_eq!(stage.everything(Some(&scope()), &[]).layout, "list", "its own is kept");
     }
 
     #[test]

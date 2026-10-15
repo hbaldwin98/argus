@@ -13,6 +13,7 @@
 
 mod add_project;
 mod agents;
+mod backdrop;
 mod capture_note;
 mod clipboard;
 mod checkouts;
@@ -30,8 +31,10 @@ mod keymap;
 mod history;
 mod keys;
 mod logging;
+mod notifications;
 mod page;
 mod palette;
+mod preferences;
 mod rail;
 mod review;
 mod screen;
@@ -70,6 +73,7 @@ fn main() {
 
     let shared = Arc::new(Shared::new(settings::load()));
     let built = tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![commands::connect, commands::call])
         .on_page_load(|webview, payload| {
@@ -78,7 +82,8 @@ fn main() {
             }
         })
         .setup(move |app| {
-            open_window(app)?;
+            shared.set_app(app.handle().clone());
+            open_window(app, &shared)?;
             tauri::async_runtime::spawn(daemon::run(shared.clone()));
             tauri::async_runtime::spawn(frames(shared));
             Ok(())
@@ -98,7 +103,7 @@ fn main() {
     std::process::exit(code);
 }
 
-fn open_window(app: &mut tauri::App) -> tauri::Result<()> {
+fn open_window(app: &mut tauri::App, shared: &Arc<Shared>) -> tauri::Result<()> {
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()));
     let window = window_frame::frameless(builder)
         .title("Argus")
@@ -109,12 +114,17 @@ fn open_window(app: &mut tauri::App) -> tauri::Result<()> {
         .data_directory(argus_protocol::config_dir().join("desktop"))
         // Tauri's own handler would swallow drops the page will want.
         .disable_drag_drop_handler()
+        // Always, since it can only be set as the window is made: the
+        // background opacity is then the page's alpha alone, and moving
+        // its slider never rebuilds the window (`backdrop`).
+        .transparent(true)
         .build()?;
-    window_frame::paint(&window);
+    commands::dress(&window, shared);
     let painted = window.clone();
+    let shared = shared.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::ThemeChanged(_) = event {
-            window_frame::paint(&painted);
+            commands::dress(&painted, &shared);
         }
     });
     Ok(())

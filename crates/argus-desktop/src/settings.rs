@@ -1,16 +1,20 @@
 //! What the window remembers between runs: how each repository's feature
 //! index is laid out, which agent it last started, whether an agent coming
-//! to need you chimes, and the side and layout a review opens on.
+//! to need you chimes, the side and layout a review opens on, and what the
+//! Settings dialog sets.
 //!
 //! Its own file beside the config, `desktop.json`, rather than a section
-//! of the terminal client's `client.toml`: whether the two clients share
-//! their settings is still open (HUN-185), and a file of its own is the
-//! choice that is easy to fold in later.
+//! of the terminal client's `client.toml` (DESIGN.md §Configuration says
+//! why): the two clients overlap only in the editor and the theme's name,
+//! and each writes its whole file from the copy it loaded, so sharing one
+//! would have each quietly undo the other's changes.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+
+use crate::features::Layout;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
@@ -34,6 +38,124 @@ pub struct Settings {
     /// made again on each visit.
     #[serde(default)]
     pub review: ReviewLayout,
+    /// What the Settings dialog sets, flat in the file beside the rest.
+    #[serde(flatten)]
+    pub preferences: Preferences,
+}
+
+/// The Settings dialog's choices. Each field keeps its default when the
+/// file predates it, so an older file loses nothing it held.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Preferences {
+    #[serde(default)]
+    pub theme: Theme,
+    /// How solid the window's background is, in percent: the desktop shows
+    /// through the rest, and text and borders stay solid. Never under
+    /// [`MIN_OPACITY`], so a window cannot be made to vanish.
+    #[serde(default = "opaque")]
+    pub opacity: u8,
+    #[serde(default)]
+    pub backdrop: Backdrop,
+    #[serde(default)]
+    pub editor: EditorMode,
+    /// The editor to run, flags and all. Empty leaves the daemon to use
+    /// `$VISUAL`, then `$EDITOR`.
+    #[serde(default)]
+    pub editor_command: String,
+    /// An OS notification naming the pane when an agent comes to need you:
+    /// the window's version of the terminal client's bell.
+    #[serde(default = "on")]
+    pub notify: bool,
+    /// Only while the window is in the background: a window in front is
+    /// already where the person is looking.
+    #[serde(default = "on")]
+    pub notify_in_background: bool,
+    /// The index a repository opens as before it remembers its own.
+    #[serde(default)]
+    pub feature_layout: Layout,
+}
+
+pub const MIN_OPACITY: u8 = 30;
+
+/// The window's colours: a Catppuccin flavour, or whichever of Mocha and
+/// Latte the system's light or dark says.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum Theme {
+    /// What the window did before it had a setting, so a file from before
+    /// it looks as it always did.
+    #[default]
+    System,
+    Mocha,
+    Macchiato,
+    Frappe,
+    Latte,
+}
+
+impl Theme {
+    /// The flavour drawn, given whether the system is dark.
+    pub fn resolve(self, system_dark: bool) -> Theme {
+        match self {
+            Theme::System if system_dark => Theme::Mocha,
+            Theme::System => Theme::Latte,
+            flavour => flavour,
+        }
+    }
+
+    pub fn is_dark(self, system_dark: bool) -> bool {
+        self.resolve(system_dark) != Theme::Latte
+    }
+}
+
+/// What shows through the window's background where it is see-through.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum Backdrop {
+    /// The desktop itself.
+    #[default]
+    Clear,
+    /// Windows 11's Mica: the wallpaper, blurred and tinted.
+    Mica,
+    /// Windows' Acrylic: whatever is behind the window, blurred.
+    Acrylic,
+}
+
+/// Where a file opened from the window opens: the terminal client's three
+/// editor modes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum EditorMode {
+    #[default]
+    Floating,
+    /// A pane in the checkout. An editor is never a listed pane, so the
+    /// daemon floats it as the first mode does (DESIGN.md §Editors).
+    Checkout,
+    /// Launched on its own with no pty, for an editor with its own window.
+    Separately,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Preferences {
+            theme: Theme::default(),
+            opacity: opaque(),
+            backdrop: Backdrop::default(),
+            editor: EditorMode::default(),
+            editor_command: String::new(),
+            notify: true,
+            notify_in_background: true,
+            feature_layout: Layout::default(),
+        }
+    }
+}
+
+fn opaque() -> u8 {
+    100
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,7 +168,13 @@ pub struct ReviewLayout {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { layouts: BTreeMap::new(), last_agent: None, chime: true, review: ReviewLayout::default() }
+        Settings {
+            layouts: BTreeMap::new(),
+            last_agent: None,
+            chime: true,
+            review: ReviewLayout::default(),
+            preferences: Preferences::default(),
+        }
     }
 }
 
@@ -106,6 +234,16 @@ mod tests {
         settings.last_agent = Some("codex".into());
         settings.chime = false;
         settings.review = ReviewLayout { staged: true, split: true };
+        settings.preferences = Preferences {
+            theme: Theme::Frappe,
+            opacity: 70,
+            backdrop: Backdrop::Mica,
+            editor: EditorMode::Separately,
+            editor_command: "code -w".into(),
+            notify: false,
+            notify_in_background: false,
+            feature_layout: Layout::Board,
+        };
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path), settings);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -131,6 +269,37 @@ mod tests {
         assert_eq!(loaded.last_agent, None);
         assert!(loaded.chime);
         assert_eq!(loaded.review, ReviewLayout::default(), "unstaged and unified, as before");
+        assert_eq!(loaded.preferences, Preferences::default());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_file_from_before_the_settings_dialog_looks_as_the_window_always_did() {
+        let p = Preferences::default();
+        assert_eq!(p.theme, Theme::System, "the system's light or dark");
+        assert_eq!(p.opacity, 100, "solid");
+        assert_eq!(p.backdrop, Backdrop::Clear);
+        assert_eq!(p.feature_layout, Layout::List);
+        assert!(p.notify && p.notify_in_background);
+    }
+
+    #[test]
+    fn following_the_system_is_mocha_in_the_dark_and_latte_in_the_light() {
+        assert_eq!(Theme::System.resolve(true), Theme::Mocha);
+        assert_eq!(Theme::System.resolve(false), Theme::Latte);
+        assert_eq!(Theme::Frappe.resolve(false), Theme::Frappe, "a flavour chosen is kept");
+        assert!(!Theme::Latte.is_dark(true));
+        assert!(Theme::Macchiato.is_dark(false));
+    }
+
+    #[test]
+    fn the_settings_file_names_each_choice_as_the_page_does() {
+        let json = serde_json::to_value(Settings::default()).unwrap();
+        assert_eq!(json["theme"], "system");
+        assert_eq!(json["backdrop"], "clear");
+        assert_eq!(json["editor"], "floating");
+        assert_eq!(json["editorCommand"], "");
+        assert_eq!(json["notifyInBackground"], true);
+        assert_eq!(json["featureLayout"], "list");
     }
 }

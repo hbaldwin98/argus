@@ -1,7 +1,8 @@
 //! The two Tauri commands the page invokes: `connect`, which opens its
 //! channel, and `call`, which takes every [`Call`] and hands it to whatever
 //! answers it — the session, or for the clipboard, the window's frame and
-//! a reconnect, the part of the window that owns them.
+//! a reconnect, the part of the window that owns them. A setting is the
+//! session's, and the window's frame and backdrop follow its look.
 //!
 //! Each is `async` because Tauri runs a synchronous command on the UI
 //! thread, and none of them should hold the window while it takes a lock.
@@ -12,8 +13,9 @@ use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{State, WebviewWindow};
 
+use crate::backdrop;
 use crate::clipboard;
-use crate::page::{Call, Event};
+use crate::page::{Call, Event, SettingChange};
 use crate::shared::Shared;
 use crate::window_frame;
 
@@ -39,9 +41,24 @@ pub async fn call(shared: State<'_, Arc<Shared>>, window: WebviewWindow, call: C
         Call::CloseWindow => return window_frame::close(&window),
         Call::DragWindow => return window_frame::drag(&window),
         Call::SnapLayouts => return window_frame::snap_layouts(&window),
+        Call::Setting { change } => {
+            let look = matches!(change, SettingChange::Theme { .. } | SettingChange::Backdrop { .. });
+            shared.act(|s| s.call(Call::Setting { change }));
+            if look {
+                dress(&window, &shared);
+            }
+        }
         call => shared.act(|s| s.call(call)),
     }
     Ok(())
+}
+
+/// Paints the window's frame and puts its backdrop on, as the look chosen
+/// and the system's light or dark say.
+pub fn dress(window: &WebviewWindow, shared: &Shared) {
+    let (theme, chosen) = shared.read(|s| s.look());
+    window_frame::paint(window, theme);
+    backdrop::show(window, chosen, theme.is_dark(window_frame::system_dark(window)));
 }
 
 fn paste_clipboard(shared: &Shared) {
