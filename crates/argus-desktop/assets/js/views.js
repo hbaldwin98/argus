@@ -14,7 +14,7 @@ import { state } from './state.js';
 import { call } from './tauri.js';
 import { ago } from './values.js';
 import { viewLink } from './viewlink.js';
-let shown = { views: [], open: null, popped: null };
+let shown = { views: [], open: null, popped: null, canPress: false };
 /** Whether a dock shows the views now. */
 function viewsOut() {
     const docks = state.docks;
@@ -122,6 +122,7 @@ function ctxOf(v) {
         path: key(v),
         drawn: (source) => v.diagrams.find((d) => d.source === source),
         pressed: v.pressed,
+        canPress: shown.canPress,
         changed: new Set(v.changed),
     };
 }

@@ -19,6 +19,8 @@ export interface ViewCtx {
   /** Ids of the view's actions pressed and not yet answered by the agent
    *  showing the view again; their buttons wait. */
   pressed?: readonly string[];
+  /** Whether the daemon takes a button press; a button is disabled when not. */
+  canPress: boolean;
   /** The paths, under the view (`2`, `1.0.3`), of the blocks that changed
    *  since the person saw them; those are drawn marked. */
   changed?: ReadonlySet<string>;

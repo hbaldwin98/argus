@@ -18,4 +18,10 @@ open: ViewRef | null,
 /**
  * The view open as a page, when one is.
  */
-popped: ViewRef | null, };
+popped: ViewRef | null, 
+/**
+ * Whether the daemon takes button presses, which only one that listed
+ * `VIEW_ACTIONS` does: on an older one the page draws the buttons
+ * disabled instead of letting a press go nowhere.
+ */
+canPress: boolean, };

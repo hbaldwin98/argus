@@ -6,7 +6,7 @@
 //! changed. Only which one is chosen, and that a refresh is pending, are
 //! the window's own; whether the panel is on screen is `docks`'s.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use argus_protocol::{ClientMsg, PaneId, ProjectInfo, RepositoryId, ShownView, ViewPress};
 
@@ -15,6 +15,7 @@ use argus_protocol::Block;
 
 use crate::page::{FeatureViewLink, FlowLine, Link, PageDiagram, PageParticipant, PageView, ViewRef, ViewsPage};
 use crate::sent::Sent;
+use crate::view_changes::ViewChanges;
 use crate::view_refs;
 
 #[derive(Default)]
@@ -29,14 +30,7 @@ pub struct AgentViews {
     refreshing: HashSet<(PaneId, String)>,
     /// Action ids pressed in a view and not answered by its being shown again.
     pressed: HashMap<(PaneId, String), Vec<String>>,
-    /// The blocks, by path, that changed in a view since the person last
-    /// had it in front of them. Kept until they open the view.
-    unseen: HashMap<(PaneId, String), BTreeSet<String>>,
-    /// What changed in a view that was on screen as it did, or that has
-    /// just been opened onto: sent so the page can flash it once. Kept
-    /// until the next thing happens to a view, not until it is sent, so a
-    /// page redrawn a moment later does not lose the flash before it ran.
-    flashing: HashMap<(PaneId, String), BTreeSet<String>>,
+    changes: ViewChanges,
     sent: Sent<ViewsPage>,
 }
 
@@ -47,8 +41,7 @@ impl AgentViews {
         self.views.clear();
         self.refreshing.clear();
         self.pressed.clear();
-        self.unseen.clear();
-        self.flashing.clear();
+        self.changes.reset();
         self.popped = None;
         out.push(ClientMsg::WatchViews);
     }
@@ -61,23 +54,20 @@ impl AgentViews {
         let key = (view.pane, view.view.id.clone());
         self.refreshing.remove(&key);
         self.pressed.remove(&key);
-        self.flashing.clear();
+        self.changes.end_flashes();
         let before = self.find(key.0, &key.1).map(|v| v.view.blocks.clone());
         self.views.retain(|v| (v.pane, v.view.id.as_str()) != (key.0, key.1.as_str()));
         let comes_out = !out && on_screen == Some(view.pane);
         if comes_out {
             self.open = Some(key.clone());
         }
-        let changed = before.map(|before| changed_blocks(&before, &view.view.blocks)).unwrap_or_default();
         self.views.insert(0, view);
         // Seen as it changes when the panel is in front of the person, or
         // comes out for them, on this very view; anywhere else it waits
         // to be opened.
-        if !changed.is_empty() {
-            let seen = (out || comes_out) && self.displayed().as_ref() == Some(&key);
-            let marks = if seen { &mut self.flashing } else { &mut self.unseen };
-            marks.entry(key).or_default().extend(changed);
-        }
+        let seen = (out || comes_out) && self.displayed().as_ref() == Some(&key);
+        let after = &self.views[0].view.blocks;
+        self.changes.record(key, before.as_deref(), after, seen);
         comes_out
     }
 
@@ -86,13 +76,14 @@ impl AgentViews {
         self.open.clone().or_else(|| self.views.first().map(|v| (v.pane, v.view.id.clone())))
     }
 
-    /// A view closed, saying whether it was the one open as a page.
-    pub fn closed(&mut self, pane: PaneId, id: &str) -> bool {
+    /// A view closed, giving its title if it was the one open as a page.
+    pub fn closed(&mut self, pane: PaneId, id: &str) -> Option<String> {
+        let title = self.find(pane, id).map(|v| v.view.title.clone());
         self.views.retain(|v| (v.pane, v.view.id.as_str()) != (pane, id));
-        self.refreshing.remove(&(pane, id.to_string()));
-        self.pressed.remove(&(pane, id.to_string()));
-        self.unseen.remove(&(pane, id.to_string()));
-        self.flashing.clear();
+        let key = (pane, id.to_string());
+        self.refreshing.remove(&key);
+        self.pressed.remove(&key);
+        self.changes.forget(&key);
         if self.open.as_ref().is_some_and(|(p, i)| (*p, i.as_str()) == (pane, id)) {
             self.open = None;
         }
@@ -100,7 +91,8 @@ impl AgentViews {
         if was_popped {
             self.popped = None;
         }
-        was_popped
+        // The title is what the person knew it by; the id is for the agent.
+        was_popped.then(|| title.unwrap_or_else(|| id.to_string()))
     }
 
     /// Chooses a view, saying whether the window holds it. The page it was
@@ -108,7 +100,7 @@ impl AgentViews {
     pub fn open(&mut self, pane: PaneId, id: String) -> bool {
         let held = self.find(pane, &id).is_some();
         if held {
-            self.flashing.clear();
+            self.changes.end_flashes();
             self.open = Some((pane, id));
             self.popped = None;
         }
@@ -177,6 +169,23 @@ impl AgentViews {
         }
     }
 
+    /// The daemon could not take a press: the action is pending no longer,
+    /// since no agent will answer it by showing the view again. Gives the
+    /// sentence to say, led by the view's title when this window holds it.
+    pub fn press_failed(&mut self, pane: PaneId, view: &str, action: &str, reason: &str) -> String {
+        let key = (pane, view.to_string());
+        if let Some(pending) = self.pressed.get_mut(&key) {
+            pending.retain(|a| a != action);
+            if pending.is_empty() {
+                self.pressed.remove(&key);
+            }
+        }
+        match self.find(pane, view) {
+            Some(held) => format!("{}: {reason}", held.view.title),
+            None => reason.to_string(),
+        }
+    }
+
     pub fn close(&mut self, pane: PaneId, id: String, out: &mut Vec<ClientMsg>) {
         if self.find(pane, &id).is_some() {
             out.push(ClientMsg::CloseView { pane, id });
@@ -191,18 +200,18 @@ impl AgentViews {
     /// pane by its id, for "read by …". `out` is whether the panel is on
     /// screen: the view it shows is seen then, and what changed in it
     /// while it was not is flashed once instead of waiting to be opened.
-    pub fn take(&mut self, out: bool, title: impl Fn(PaneId) -> Option<String>) -> Option<ViewsPage> {
+    pub fn take(&mut self, out: bool, can_press: bool, title: impl Fn(PaneId) -> Option<String>) -> Option<ViewsPage> {
         if out {
             if let Some(key) = self.displayed() {
-                if let Some(marks) = self.unseen.remove(&key) {
-                    self.flashing.entry(key).or_default().extend(marks);
-                }
+                self.changes.reveal(&key);
             }
         }
         // An empty page is the default, which `Sent` says only once views
-        // have been and gone, so a window no agent showed one in hears none.
-        let page = self.page(title);
-        self.sent.take((page != ViewsPage::default()).then_some(page))
+        // have been and gone, so a window no agent showed one in hears none;
+        // what the daemon can do alone does not make a page worth sending.
+        let page = ViewsPage { can_press, ..self.page(title) };
+        let empty = ViewsPage { can_press: false, ..page.clone() } == ViewsPage::default();
+        self.sent.take((!empty).then_some(page))
     }
 
     pub fn forget(&mut self) {
@@ -216,8 +225,7 @@ impl AgentViews {
                 .iter()
                 .map(|v| {
                     let key = (v.pane, v.view.id.clone());
-                    let unseen = self.unseen.get(&key);
-                    let marked = unseen.into_iter().chain(self.flashing.get(&key)).flatten();
+                    let (changed, unseen) = self.changes.marks(&key);
                     PageView {
                         pane: v.pane.0,
                         from: title(v.pane).unwrap_or_default(),
@@ -227,8 +235,8 @@ impl AgentViews {
                         subject: v.subject.as_ref().map(Link::of),
                         view: v.view.clone(),
                         diagrams: diagrams(&v.view.blocks),
-                        changed: marked.cloned().collect::<BTreeSet<_>>().into_iter().collect(),
-                        unseen: unseen.is_some_and(|marks| !marks.is_empty()),
+                        changed,
+                        unseen,
                     }
                 })
                 .collect(),
@@ -236,87 +244,9 @@ impl AgentViews {
                 .displayed()
                 .map(|(pane, id)| ViewRef { pane: pane.0, id }),
             popped: self.popped.clone().map(|(pane, id)| ViewRef { pane: pane.0, id }),
+            can_press: false,
         }
     }
-}
-
-/// The paths, as the page names a block under its view (`2`, `1.0.3`), of
-/// the blocks in `after` that are not as they were in `before`.
-///
-/// Only the innermost block that differs is named, so a section with one
-/// changed line in it marks the line and not everything beside it. A
-/// block whose kind changed, or whose container has a different shape (a
-/// tab or column more or fewer), is named whole; so is one that was added.
-/// A path is built as the page builds it: a section's, card's, details'
-/// and grid's blocks follow its own path, and a column, a tab or an open
-/// table row adds its index first.
-fn changed_blocks(before: &[Block], after: &[Block]) -> Vec<String> {
-    let mut found = Vec::new();
-    diff_list(before, after, "", &mut found);
-    found
-}
-
-fn diff_list(before: &[Block], after: &[Block], prefix: &str, found: &mut Vec<String>) {
-    for (i, new) in after.iter().enumerate() {
-        let path = if prefix.is_empty() { i.to_string() } else { format!("{prefix}.{i}") };
-        match before.get(i) {
-            Some(old) => diff_block(old, new, &path, found),
-            None => found.push(path),
-        }
-    }
-}
-
-fn diff_block(old: &Block, new: &Block, path: &str, found: &mut Vec<String>) {
-    if old == new {
-        return;
-    }
-    let (inside_old, inside_new) = (inner_lists(old), inner_lists(new));
-    let same_shape = inside_old.len() == inside_new.len()
-        && inside_old.iter().zip(&inside_new).all(|(a, b)| a.0 == b.0)
-        && shell(old) == shell(new);
-    if !same_shape {
-        found.push(path.to_string());
-        return;
-    }
-    for ((_, a), (key, b)) in inside_old.iter().zip(&inside_new) {
-        let at = if key.is_empty() { path.to_string() } else { format!("{path}.{key}") };
-        diff_list(a, b, &at, found);
-    }
-}
-
-/// The lists of blocks directly inside a block, each with the index the
-/// page adds to the block's path before its own (none for a section's).
-fn inner_lists(block: &Block) -> Vec<(String, &[Block])> {
-    match block {
-        Block::Section { blocks, .. } | Block::Card { blocks, .. } | Block::Details { blocks, .. } => {
-            vec![(String::new(), blocks)]
-        }
-        // The page draws each grid item as a list of one, under its index.
-        Block::Grid { items, .. } => items.chunks(1).enumerate().map(|(i, item)| (i.to_string(), item)).collect(),
-        Block::Columns { columns } => columns.iter().enumerate().map(|(i, c)| (i.to_string(), c.as_slice())).collect(),
-        Block::Tabs { tabs } => tabs.iter().enumerate().map(|(i, t)| (i.to_string(), t.blocks.as_slice())).collect(),
-        Block::Table { details, .. } => details
-            .iter()
-            .enumerate()
-            .filter_map(|(i, d)| d.as_ref().map(|d| (format!("d{i}"), d.as_slice())))
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// The block with the blocks inside it emptied, so that what is left is
-/// the container's own content.
-fn shell(block: &Block) -> Block {
-    let mut bare = block.clone();
-    match &mut bare {
-        Block::Section { blocks, .. } | Block::Card { blocks, .. } | Block::Details { blocks, .. } => blocks.clear(),
-        Block::Grid { items, .. } => items.clear(),
-        Block::Columns { columns } => columns.iter_mut().for_each(Vec::clear),
-        Block::Tabs { tabs } => tabs.iter_mut().for_each(|t| t.blocks.clear()),
-        Block::Table { details, .. } => details.iter_mut().flatten().for_each(Vec::clear),
-        _ => {}
-    }
-    bare
 }
 
 /// Every diagram block a view holds, however deep, read once each.
@@ -375,12 +305,12 @@ mod tests {
     #[test]
     fn the_page_hears_of_views_only_once_there_have_been_some() {
         let mut views = AgentViews::default();
-        assert_eq!(views.take(false, |_| None), None);
+        assert_eq!(views.take(false, false, |_| None), None);
         views.shown(shown(1, "ci"), None, false);
-        assert_eq!(views.take(false, |_| None).unwrap().views.len(), 1);
+        assert_eq!(views.take(false, false, |_| None).unwrap().views.len(), 1);
         views.closed(PaneId(1), "ci");
-        assert_eq!(views.take(false, |_| None), Some(ViewsPage::default()));
-        assert_eq!(views.take(false, |_| None), None);
+        assert_eq!(views.take(false, false, |_| None), Some(ViewsPage::default()));
+        assert_eq!(views.take(false, false, |_| None), None);
     }
 
     #[test]
@@ -423,7 +353,7 @@ mod tests {
         assert!(views.open(PaneId(1), "a".into()));
         assert_eq!(views.page(|_| None).popped, None, "opening it in the dock ends the page");
         views.pop_out(PaneId(1), "b".into());
-        assert!(views.closed(PaneId(1), "b"), "closing says it was the page");
+        assert!(views.closed(PaneId(1), "b").is_some(), "closing says it was the page");
         assert!(!views.popped());
     }
 
@@ -505,6 +435,42 @@ mod tests {
     }
 
     #[test]
+    fn a_press_the_daemon_could_not_take_is_no_longer_pending_and_names_its_view() {
+        let mut views = AgentViews::default();
+        views.shown(shown(1, "ci"), None, false);
+        let mut out = Vec::new();
+        views.press(PaneId(1), press("ci", "retry"), &mut out);
+        views.press(PaneId(1), press("ci", "stop"), &mut out);
+        let said = views.press_failed(PaneId(1), "ci", "retry", "the agent has gone");
+        assert_eq!(said, "ci: the agent has gone");
+        assert_eq!(views.page(|_| None).views[0].pressed, ["stop"], "only that action is released");
+        views.press_failed(PaneId(1), "ci", "stop", "x");
+        assert!(views.pressed.is_empty());
+        assert_eq!(views.press_failed(PaneId(1), "gone", "retry", "no such view"), "no such view");
+    }
+
+    #[test]
+    fn closing_the_popped_view_gives_its_title_and_closing_another_gives_none() {
+        let mut views = AgentViews::default();
+        let mut view = shown(1, "ci");
+        view.view.title = "Build status".into();
+        views.shown(view, None, false);
+        views.shown(shown(1, "other"), None, false);
+        views.pop_out(PaneId(1), "ci".into());
+        assert_eq!(views.closed(PaneId(1), "other"), None);
+        assert_eq!(views.closed(PaneId(1), "ci").as_deref(), Some("Build status"));
+    }
+
+    #[test]
+    fn the_page_says_whether_buttons_can_be_pressed_without_that_alone_making_it_worth_sending() {
+        let mut views = AgentViews::default();
+        assert!(views.take(false, true, |_| None).is_none(), "no views, nothing to hear");
+        views.shown(shown(1, "ci"), None, false);
+        assert!(views.take(false, false, |_| None).is_some_and(|p| !p.can_press));
+        assert!(views.take(false, true, |_| None).is_some_and(|p| p.can_press), "a daemon upgrade is heard");
+    }
+
+    #[test]
     fn a_pressed_action_is_pending_until_its_view_is_shown_again_or_closed_or_reconnected() {
         let mut views = AgentViews::default();
         views.shown(shown(1, "ci"), None, false);
@@ -548,77 +514,6 @@ mod tests {
         view
     }
 
-    fn section(blocks: Vec<Block>) -> Block {
-        Block::Section { heading: "s".into(), blocks }
-    }
-
-    fn changed(before: Vec<Block>, after: Vec<Block>) -> Vec<String> {
-        changed_blocks(&before, &after)
-    }
-
-    #[test]
-    fn a_change_is_named_by_the_path_the_page_draws_it_at() {
-        let grid = |b| Block::Grid { min: argus_protocol::GridMin::Md, items: vec![md("a"), b] };
-        assert_eq!(changed(vec![grid(md("b"))], vec![grid(md("B"))]), ["0.1.0"]);
-        let table = |b| Block::Table {
-            columns: vec![argus_protocol::Column { title: "c".into(), numeric: false, optional: false }],
-            rows: vec![vec![argus_protocol::Value::Empty], vec![argus_protocol::Value::Empty]],
-            sorted_by: None,
-            total: None,
-            row_keys: Vec::new(),
-            select: argus_protocol::RowSelect::None,
-            actions: Vec::new(),
-            details: vec![None, Some(vec![b])],
-        };
-        assert_eq!(changed(vec![table(md("x"))], vec![table(md("y"))]), ["0.d1.0"]);
-    }
-
-    #[test]
-    fn only_the_blocks_whose_content_differs_are_named() {
-        assert_eq!(changed(vec![md("a"), md("b")], vec![md("a"), md("B")]), ["1"]);
-        assert!(changed(vec![md("a")], vec![md("a")]).is_empty());
-    }
-
-    #[test]
-    fn a_nested_change_names_the_inner_block_and_not_its_containers() {
-        let before = vec![md("x"), section(vec![md("a"), Block::Divider, md("c")])];
-        let after = vec![md("x"), section(vec![md("a"), Block::Divider, md("C")])];
-        assert_eq!(changed(before, after), ["1.2"]);
-    }
-
-    #[test]
-    fn a_columns_and_a_tabs_paths_add_the_column_or_tab_first() {
-        let columns = |b: &str| Block::Columns { columns: vec![vec![md("a")], vec![md("a"), md(b)]] };
-        assert_eq!(changed(vec![columns("b")], vec![columns("B")]), ["0.1.1"]);
-        let tabs = |b: &str| Block::Tabs {
-            tabs: vec![
-                argus_protocol::Tab { title: "one".into(), blocks: vec![md("a")] },
-                argus_protocol::Tab { title: "two".into(), blocks: vec![md(b)] },
-            ],
-        };
-        assert_eq!(changed(vec![md("x"), tabs("b")], vec![md("x"), tabs("B")]), ["1.1.0"]);
-    }
-
-    #[test]
-    fn a_containers_own_change_names_the_container() {
-        let with_heading = |h: &str| Block::Section { heading: h.into(), blocks: vec![md("a")] };
-        assert_eq!(changed(vec![with_heading("old")], vec![with_heading("new")]), ["0"]);
-    }
-
-    #[test]
-    fn a_block_added_or_of_another_kind_is_named_whole() {
-        assert_eq!(changed(vec![md("a")], vec![md("a"), md("b")]), ["1"]);
-        assert_eq!(changed(vec![md("a")], vec![Block::Divider]), ["0"]);
-        assert_eq!(changed(vec![section(vec![md("a")])], vec![section(vec![md("a"), md("b")])]), ["0.1"]);
-        let columns = |n: usize| Block::Columns { columns: vec![vec![md("a")]; n] };
-        assert_eq!(changed(vec![columns(1)], vec![columns(2)]), ["0"]);
-    }
-
-    #[test]
-    fn a_blocks_removed_are_not_named() {
-        assert!(changed(vec![md("a"), md("b")], vec![md("a")]).is_empty());
-    }
-
     #[test]
     fn a_view_changed_while_it_is_in_front_of_the_person_flashes_and_is_not_unseen() {
         let mut views = AgentViews::default();
@@ -645,17 +540,17 @@ mod tests {
         assert!(ci.unseen);
         // The panel coming out onto another view does not clear it.
         views.open(PaneId(1), "other".into());
-        views.take(true, |_| None);
+        views.take(true, true, |_| None);
         let page = views.page(|_| None);
         assert!(page.views.iter().find(|v| v.view.id == "ci").unwrap().unseen);
         // Opening it is seeing it: the marks flash once, and it is no longer unseen.
         assert!(views.open(PaneId(1), "ci".into()));
-        let page = views.take(true, |_| None).unwrap();
+        let page = views.take(true, true, |_| None).unwrap();
         let ci = page.views.iter().find(|v| v.view.id == "ci").unwrap();
         assert_eq!(ci.changed, ["0", "1"]);
         assert!(!ci.unseen);
         views.open(PaneId(1), "other".into());
-        let page = views.take(true, |_| None).unwrap();
+        let page = views.take(true, true, |_| None).unwrap();
         assert!(page.views.iter().find(|v| v.view.id == "ci").unwrap().changed.is_empty());
     }
 

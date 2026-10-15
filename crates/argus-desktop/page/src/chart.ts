@@ -16,6 +16,7 @@ const PAD = { left: 44, right: 10, top: 10, bottom: 24 };
 const DASHES = ['', '6 3', '2 3', '8 3 2 3'];
 const FILLS = [1, 0.6, 0.35, 0.8];
 const LABEL_CHAR_PX = 6;
+const MAX_TICKS = 12;
 
 type Chart = Extract<Block, { kind: 'chart' }>;
 type Pt = { x: number; y: number };
@@ -57,13 +58,30 @@ function scale(min: number, max: number): { lo: number; hi: number; ticks: numbe
   const step = niceStep((hi - lo) / 3);
   lo = Math.floor(lo / step + 1e-9) * step;
   hi = Math.ceil(hi / step - 1e-9) * step;
+  if (![lo, hi, step].every(Number.isFinite) || step <= 0) return { lo: 0, hi: 1, ticks: [0, 1] };
   const ticks: number[] = [];
-  for (let t = lo; t <= hi + step / 2; t += step) ticks.push(Number(t.toPrecision(12)));
+  // A step too small for the span (a float that cannot advance at 1e15) would
+  // never reach `hi`; the cap is what makes the loop end regardless.
+  for (let i = 0, t = lo; i < MAX_TICKS && t <= hi + step / 2; i++, t += step) {
+    ticks.push(Number(t.toPrecision(12)));
+  }
   return { lo, hi, ticks };
 }
 
 function finite(v: number | null | undefined): v is number {
   return v != null && Number.isFinite(v);
+}
+
+/** The smallest and largest of `values`, `seed` included. A loop, because
+ *  spreading a long array into `Math.min` overflows the stack in JavaScriptCore. */
+function extent(values: readonly number[], seed: number): [number, number] {
+  let lo = seed;
+  let hi = seed;
+  for (const v of values) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  return [lo, hi];
 }
 
 /** The runs of consecutive present values, so a gap breaks the line. */
@@ -98,9 +116,8 @@ function summary(block: Chart): string {
   const names = block.series.map((s) => s.name).join(', ');
   const all = block.series.flatMap((s) => s.values).filter(finite);
   const unit = block.unit ? ` ${block.unit}` : '';
-  const range = all.length
-    ? `, from ${compact(Math.min(...all))} to ${compact(Math.max(...all))}${unit}`
-    : '';
+  const [lo, hi] = all.length ? extent(all, all[0]!) : [0, 0];
+  const range = all.length ? `, from ${compact(lo)} to ${compact(hi)}${unit}` : '';
   return `${block.shape} chart of ${names || 'no series'} over ${block.x.length} points${range}`;
 }
 
@@ -136,7 +153,7 @@ function axes(block: Chart, lo: number, hi: number, ticks: number[], bandX: (i: 
     );
     g.appendChild(svgText({ x: PAD.left - 6, y: y(t) + 3.5, 'text-anchor': 'end' }, compact(t)));
   }
-  const longest = Math.max(1, ...block.x.map((s) => Array.from(s).length));
+  const longest = block.x.reduce((m, s) => Math.max(m, Array.from(s).length), 1);
   const slot = (W - PAD.left - PAD.right) / Math.max(block.x.length, 1);
   const every = Math.max(1, Math.ceil((longest * LABEL_CHAR_PX + 10) / slot));
   block.x.forEach((label, i) => {
@@ -149,7 +166,7 @@ function axes(block: Chart, lo: number, hi: number, ticks: number[], bandX: (i: 
 function drawChart(block: Chart): SVGElement {
   const n = block.x.length;
   const present = block.series.flatMap((s) => s.values.slice(0, n)).filter(finite);
-  const { lo, hi, ticks } = scale(Math.min(...present, 0), Math.max(...present, 0));
+  const { lo, hi, ticks } = scale(...extent(present, 0));
   const plotW = W - PAD.left - PAD.right;
   const bars = block.shape === 'bar';
   // Bars sit in bands; a line runs edge to edge, or centred if it is one point.
@@ -226,8 +243,7 @@ function drawChart(block: Chart): SVGElement {
 /** A small line with no axes, to sit inline: a stat's trend, a spark chart. */
 export function spark(values: readonly number[], tone: Tone): SVGElement {
   const vals = values.filter(Number.isFinite);
-  const lo = Math.min(...vals);
-  const hi = Math.max(...vals);
+  const [lo, hi] = vals.length ? extent(vals, vals[0]!) : [0, 0];
   const pts = vals.map((v, i) => ({
     x: vals.length < 2 ? 50 : (100 * i) / (vals.length - 1),
     y: hi === lo ? 16 : 28 - (24 * (v - lo)) / (hi - lo),

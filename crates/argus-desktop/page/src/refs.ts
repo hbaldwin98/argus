@@ -34,16 +34,28 @@ export function duration(ms: number): string {
   return `${Math.floor(ms / DAY)}d ${Math.floor((ms % DAY) / HOUR)}h`;
 }
 
-/** Whether a path stays inside a checkout. Rust refuses the rest again when
- *  it is pressed; this only decides whether it is drawn as a button. */
+/** Rust's `char::is_control`: the C0 and C1 control characters. */
+function isControl(c: string): boolean {
+  const code = c.codePointAt(0) ?? 0;
+  return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+}
+
+/** Whether a path is drawn as a button rather than as plain text. This is
+ *  `is_checkout_relative` in `argus-protocol/src/checkout_path.rs` written a
+ *  second time, since a button is drawn without asking Rust; Rust is the
+ *  authority and refuses again when one is pressed, so a drift here costs a
+ *  button that says no, never an escape. Change the two together. */
 function inside(path: string): boolean {
-  return (
-    path !== '' &&
-    !path.includes('\0') &&
-    !/^[A-Za-z]:/.test(path) &&
-    !/^[/\\]/.test(path) &&
-    !path.split(/[/\\]/).includes('..')
-  );
+  if (path === '' || /^[/\\]/.test(path) || Array.from(path).some(isControl)) return false;
+  if (/^[A-Za-z]:/.test(path)) return false;
+  let named = false;
+  for (const part of path.split(/[/\\]/)) {
+    if (part === '' || part === '.') continue;
+    // Windows drops trailing dots and spaces from a name, so `.. ` is `..`.
+    if (/^\.+$/.test(part) || /[. ]$/.test(part)) return false;
+    named = true;
+  }
+  return named;
 }
 
 function pointer(

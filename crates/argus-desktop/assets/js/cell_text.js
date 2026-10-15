@@ -38,6 +38,7 @@ export function cellText(v) {
         case 'pane':
             return v.label ?? `pane ${v.pane}`;
         case 'empty':
+        case 'unknown':
             return '';
     }
 }

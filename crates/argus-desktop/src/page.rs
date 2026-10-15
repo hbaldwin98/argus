@@ -1210,6 +1210,10 @@ pub struct ViewsPage {
     pub open: Option<ViewRef>,
     /// The view open as a page, when one is.
     pub popped: Option<ViewRef>,
+    /// Whether the daemon takes button presses, which only one that listed
+    /// `VIEW_ACTIONS` does: on an older one the page draws the buttons
+    /// disabled instead of letting a press go nowhere.
+    pub can_press: bool,
 }
 
 /// A view that names a feature, offered where the feature's tickets are.

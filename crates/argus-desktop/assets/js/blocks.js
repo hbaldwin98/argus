@@ -101,6 +101,9 @@ function draw(block, ctx) {
             return board(block, ctx);
         case 'form':
             return form(block, ctx);
+        // A block a newer daemon sent that this window has no drawing for.
+        case 'unknown':
+            return el('div', { class: 'vmuted' }, 'This needs a newer Argus to show.');
     }
 }
 function tabs(block, ctx) {

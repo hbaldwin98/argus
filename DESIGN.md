@@ -163,10 +163,8 @@ docks keeps its console docked at the bottom as tall as it was, its views panel'
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `drag`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel, with one module per block kind: `blocks`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board`, `form`, `actions`, `refs`, `table`, `table_memory`, `cell_text`, `copy`, `viewctx`), `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
-`clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
-`markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and
-`tickets` for a feature's ticket links),
+`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
+`clock` and `tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
@@ -482,7 +480,9 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `agent_views` | which views agents showed, as the window holds them, which one their panel shows, which is open as a page, which name a feature, and which wait on a refresh |
-| `view_refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, and which paths it refuses |
+| `view_changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
+| `view_refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
+| `page_over` | which stage a page, an agent's view or an extension's, opened over, so that docking or closing it goes back there |
 | `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, the question an action waits on, and the one open as a page |
 | `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension |
 | `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, and the answer or cancellation each sends back |

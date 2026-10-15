@@ -120,6 +120,9 @@ function draw(block: Block, ctx: ViewCtx): HTMLElement {
       return board(block, ctx);
     case 'form':
       return form(block, ctx);
+    // A block a newer daemon sent that this window has no drawing for.
+    case 'unknown':
+      return el('div', { class: 'vmuted' }, 'This needs a newer Argus to show.');
   }
 }
 
