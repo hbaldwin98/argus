@@ -33,6 +33,7 @@ mod review;
 mod screen;
 mod sent;
 mod session;
+mod sessions;
 mod settings;
 mod shown;
 mod status;

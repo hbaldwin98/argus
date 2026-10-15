@@ -18,6 +18,7 @@ pub(super) fn read(record: &Value, reading: &mut Reading) {
     }
     let at = text(record, "timestamp");
     reading.cwd(text(record, "cwd"));
+    reading.session_id(text(record, "sessionId"));
     match text(record, "type") {
         Some("user") => user(record, at, reading),
         Some("assistant") => assistant(record, at, reading),

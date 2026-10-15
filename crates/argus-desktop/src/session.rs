@@ -10,7 +10,8 @@
 //! Each subject keeps its own state and what the page last heard of it —
 //! the status bar (`status`), the pane on screen (`shown`), the agents
 //! offered (`agents`), the review and history (`dialogs`), the two stages
-//! (`feature_stage`, `checkouts_stage`), and what the daemon is making
+//! (`feature_stage`, `checkouts_stage`), a repository's past agent
+//! sessions (`sessions`), and what the daemon is making
 //! (`argus_protocol::awaited`). The session says which of them a message
 //! or gesture is for, and what one of them changing means for the rest.
 //!
@@ -42,6 +43,7 @@ use crate::page::{self, Call, Event, PageMouse, ReviewClick, ReviewJumpGesture, 
 use crate::palette;
 use crate::rail::{self, Choices};
 use crate::sent::Sent;
+use crate::sessions::Sessions;
 use crate::settings::Settings;
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
@@ -77,6 +79,7 @@ pub struct Session {
     awaited: Awaited<Made>,
     agents: Agents,
     dialogs: Dialogs,
+    sessions: Sessions,
     /// The command palette is open, so what it can go to is sent.
     palette: bool,
     palette_sent: Sent<page::Palette>,
@@ -112,6 +115,7 @@ impl Session {
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             dialogs: Dialogs::new(settings.review),
+            sessions: Sessions::default(),
             palette: false,
             palette_sent: Sent::default(),
             focused: true,
@@ -152,6 +156,7 @@ impl Session {
         self.reported = None;
         self.awaited.forget_asked();
         self.features.forget_asked();
+        self.sessions = Sessions::default();
         for msg in opening {
             self.apply(msg);
         }
@@ -171,6 +176,9 @@ impl Session {
             return;
         }
         let Some(msg) = self.dialogs.receive(msg, &mut self.passing) else {
+            return;
+        };
+        let Some(msg) = self.sessions.receive(msg) else {
             return;
         };
         match msg {
@@ -892,6 +900,36 @@ impl Session {
     fn review_comment(&mut self, body: Option<String>) -> Vec<ClientMsg> {
         self.dialogs.review_comment(body, &self.tree, &mut self.out, &mut self.passing);
         self.finish()
+    }
+
+    // ---- A repository's sessions --------------------------------------------
+
+    // The page asks through these once session previews (HUN-174) draw
+    // them; until then only the tests do.
+
+    /// Asks for a repository's agent sessions, when the daemon can say.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn list_sessions(&mut self, repository: RepositoryId) -> Vec<ClientMsg> {
+        let request_id = self.awaited.name();
+        if let Some(msg) = self.sessions.list(&self.status, repository, request_id) {
+            self.out.push(msg);
+        }
+        self.finish()
+    }
+
+    /// Asks what one listed session said.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn read_session(&mut self, session: &argus_protocol::sessions::Session) -> Vec<ClientMsg> {
+        let request_id = self.awaited.name();
+        if let Some(msg) = self.sessions.read(&self.status, session, request_id) {
+            self.out.push(msg);
+        }
+        self.finish()
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn sessions(&self) -> &Sessions {
+        &self.sessions
     }
 
     // ---- The command palette ------------------------------------------------
@@ -2235,5 +2273,34 @@ mod tests {
         s.go_to_checkout(CheckoutId(101));
         assert!(s.stage == Stage::Checkouts);
         assert_eq!(s.checkouts.selected_key(), Some("c101"));
+    }
+
+    #[test]
+    fn a_repositorys_sessions_are_held_once_the_daemon_answers() {
+        let mut s = session(Hello::this_build());
+        let sent = s.list_sessions(RepositoryId(10));
+        let [ClientMsg::ListSessions { request_id, repository: RepositoryId(10) }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        let listed = argus_protocol::sessions::Session {
+            harness: "claude".into(),
+            session_id: "s1".into(),
+            checkout: CheckoutId(100),
+            removed_worktree: None,
+            title: None,
+            started: None,
+            ended: None,
+            modified: None,
+            turns: None,
+            pane: Some(PaneId(1)),
+        };
+        s.receive(ServerMsg::Sessions { request_id: *request_id, repository: RepositoryId(10), sessions: vec![listed.clone()] });
+        assert_eq!(s.sessions().listed(RepositoryId(10)), Some(&[listed.clone()][..]));
+        assert!(matches!(s.read_session(&listed).as_slice(), [ClientMsg::ReadSession { .. }]));
+
+        // A reconnect forgets what the last daemon said.
+        s.connected(Some(without_focus()), None, Vec::new());
+        assert!(s.sessions().listed(RepositoryId(10)).is_none());
+        assert!(s.list_sessions(RepositoryId(10)).is_empty(), "not asked of a daemon that cannot say");
     }
 }

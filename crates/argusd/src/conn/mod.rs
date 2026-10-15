@@ -1009,6 +1009,10 @@ mod tests {
 
     impl Harness {
         pub(super) fn new(repo: &std::path::Path) -> Self {
+            Self::with_harnesses(repo, Vec::new())
+        }
+
+        pub(super) fn with_harnesses(repo: &std::path::Path, harnesses: Vec<crate::config::HarnessConfig>) -> Self {
             let daemon = Daemon::new(ConfigFile {
                 workspaces: Vec::new(),
                 projects: vec![ProjectConfig {
@@ -1019,7 +1023,7 @@ mod tests {
                     ..Default::default()
                 }],
                 agents: Vec::new(),
-                harnesses: Vec::new(),
+                harnesses,
             });
             let (tx, rx) = mpsc::unbounded_channel();
             let (frames_tx, frames) = mpsc::channel(FRAME_QUEUE);

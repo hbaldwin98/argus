@@ -217,6 +217,7 @@ live in this crate and a contract written twice drifts in silence.
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
 | `transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
+| `sessions` | a repository's agent sessions as listed: the harness and id that resume each, its checkout or the removed worktree it ran in, title, times and turns, and the pane running it |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
 behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
@@ -240,6 +241,7 @@ to the type or its locking.
 | `state/workspaces` | which scope is open, daemon-wide |
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |
+| `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, and what one session said |
 | `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
 | `state/tree` | finding your way around the tree |
 | `state/features` | which feature a checkout is on, and the one path a change to a feature takes, with who asked as a parameter |
@@ -254,7 +256,9 @@ to the type or its locking.
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
 | `harness/transcript` | reading a session's transcript file, in its harness's format, into the protocol's transcript |
-| `harness/transcript/locate` | where a session's transcript is on disk, from its harness's path templates |
+| `harness/transcript/locate` | where transcripts are on disk, from a harness's path templates: the one a session's id names, and every one kept for a set of checkouts |
+| `harness/transcript/listing` | which sessions the harnesses kept for a repository's checkouts, newest first |
+| `harness/transcript/glance` | how much of a transcript a listing reads: a short one whole, a long one at its two ends |
 | `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi`, `harness/transcript/neutral` | one transcript format each: which of its records are a turn, a reply or a tool call, and what they say of the session |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
@@ -331,6 +335,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `rail` | what the rail lists from the tree, and what a row says |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
+| `sessions` | what the window has asked of a repository's agent sessions — the list, and what one said — and what it holds of the answers |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — and which of its keys and buttons are the `column_verbs` it sends |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
@@ -1063,8 +1068,8 @@ truth and the table follows it: a pane that closed has no row to update.
 
 ## Transcripts
 
-The daemon can read a past session's transcript from the file its harness keeps, for the session
-previews HUN-174 adds; until then nothing asks it to. Argus never stores a transcript and never
+The daemon lists a repository's past sessions and reads one's transcript from the files their
+harnesses keep, for the session previews HUN-174 adds. Argus never stores a transcript and never
 follows one as it grows: `harness/transcript` reads the harness's own file whole, when asked,
 into `argus_protocol::transcript::Transcript` — the person's turns, the agent's replies and the tools
 it ran, each with the time the harness wrote, plus the session's title (the one the harness gave it,
@@ -1075,20 +1080,49 @@ it left out. A line that is not JSON, or a record a reader does not know, is ski
 
 A harness's `transcript` names a format and where its files are, as path templates: `~` is the
 home directory, `{session_id}` the identity its hooks captured, `{checkout}` the pane's checkout,
-and `*` any run of characters within one component; where several files match, the newest wins. A
-session id that holds a separator, `*`, `:` or `..` names nothing. The built-ins:
+`{project}` a whole directory component the harness named after the checkout's path, and `*` any
+run of characters within one component; where several files match, the newest wins. Harnesses spell
+a path as a directory name each their own way (`C--src-app`, `--src-app--`), so `{project}` matches
+a name whose runs of letters and digits are the path's, ignoring case. A session id that holds a
+separator, `*`, `:` or `..` names nothing. The built-ins:
 
 | harness | format | where |
 | --- | --- | --- |
-| `claude` | `claude` | `~/.claude/projects/*/{session_id}.jsonl` |
+| `claude` | `claude` | `~/.claude/projects/{project}/{session_id}.jsonl` |
 | `codex` | `codex` | `~/.codex/sessions/*/*/*/rollout-*-{session_id}.jsonl` |
-| `agent` | `cursor` | `~/.cursor/projects/*/agent-transcripts/{session_id}.jsonl`, or in a directory of the same name |
-| `pi` | `pi` | `~/.pi/agent/sessions/*/*_{session_id}.jsonl` |
+| `agent` | `cursor` | `~/.cursor/projects/{project}/agent-transcripts/{session_id}.jsonl`, or in a directory of the same name |
+| `pi` | `pi` | `~/.pi/agent/sessions/{project}/*_{session_id}.jsonl` |
 
 OpenCode, AGY and `generic` keep none Argus reads, and asking after one of their sessions answers
-`Conversation::NoTranscript`, for HUN-174 to list the session from what Argus recorded — title,
-times, checkout — and say it has no transcript. A transcript a harness names but that is not on
-disk is `Missing`.
+`Conversation::NoTranscript`. A transcript a harness names but that is not on disk is `Missing`.
+
+`ClientMsg::ListSessions` asks for a repository's sessions across all its checkouts, and
+`ClientMsg::ReadSession` for one session's `Conversation`; both go only to a daemon that listed the
+`sessions` capability, and both are answered from a blocking thread, correlated by request id. A
+listing (`harness/transcript/listing`) turns each template's `{session_id}` into a wildcard and
+collects every file it names — capped at 20,000 per template — then orders them by when they were
+last written and opens only the newest, until it holds `sessions::MAX_SESSIONS` (100). A file
+under `{checkout}`, or under a `{project}` named for a checkout, is placed by its path. Any other is
+opened to the record saying where it ran: one filed by date (Codex), or one under a `{project}`
+whose name only begins with a checkout's or the worktree root's, which is a directory below it. A
+directory that is still there is the deepest checkout holding it, compared canonically; one that
+is gone is a removed worktree of the repository when it was under the worktree root or a tool's
+`.<tool>/worktrees` in a checkout, and is listed under the primary checkout with
+`removed_worktree` naming it, for HUN-174 to show as past. Only the newest 300 such files are
+opened at all, so a repository's Codex sessions older than the last 300 Codex sessions anywhere
+are not listed. Cursor's transcripts record no directory, so its sessions from a removed worktree
+are not listed. Where the id in a file name is ambiguous (`rollout-<time>-<id>`), the id
+the transcript records is taken. Each listed transcript is read whole up to 256 KiB, its turns
+counted; a longer one is read only at its first 128 KiB and last 32 KiB, which give its start,
+end, title (a title named near the end wins over the first prompt) and directory, and its turn
+count is left unknown for `ReadSession` to give. Two harnesses that name the same place, such as a
+wrapper configured with `transcript = "claude"`, list its sessions once, under the first.
+
+Each session says which harness ran it and its id — together what `resume_id` reopens — its
+checkout, title, times, the file's modification time it is ordered by, and the agent pane running
+it now, matched by the session id a hook reported; such a session is listed under the harness the
+pane started with. A running agent whose session no transcript lists, from a harness that keeps
+none or has not written it yet, is listed first, with its pane's title.
 
 A `[[harness]]` block sets `transcript = "claude"` (a known format where its own harness keeps it —
 the form older configs wrote, for a wrapper around that CLI) or `transcript = { format = "…", path =

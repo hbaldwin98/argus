@@ -18,6 +18,7 @@ pub(super) fn read(record: &Value, reading: &mut Reading) {
     match (text(record, "type"), text(payload, "type")) {
         (Some("session_meta"), _) => {
             reading.cwd(text(payload, "cwd"));
+            reading.session_id(text(payload, "id"));
             reading.at(at);
         }
         (Some("event_msg"), Some("item_completed")) => item(&payload["item"], at, reading),

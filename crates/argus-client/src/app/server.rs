@@ -243,6 +243,8 @@ impl App {
                     self.alert(format!("history: {message}"));
                 }
             }
+            // The terminal client asks for no sessions yet.
+            ServerMsg::Sessions { .. } | ServerMsg::SessionTranscript { .. } => {}
             ServerMsg::Directories(listing) => {
                 // A listing for a directory we have already navigated away
                 // from would yank the browser backwards.

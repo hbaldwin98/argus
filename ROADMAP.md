@@ -156,11 +156,11 @@ reaches the daemon through `argus bridge` and shows the rail and one live pane t
 pastes and resizes, starts a shell from a checkout's `+`, and waits for Reconnect after a stop.
 
 Remaining: the Feature stage and trackers (HUN-172, HUN-173); recent sessions (HUN-174, on the
-transcript readers HUN-169 brought back); the parity issues under HUN-181 — checkouts, review and
-history, the command palette and shortcuts, settings and notifications, projects, feature editing,
-starting an agent, mouse, selection and scrollback, the full transcript; several panes at once;
-remote hosts through `ssh … argus bridge`; and packaging as .app, .msi and AppImage with signing
-and updates, which no issue tracks yet.
+transcript readers HUN-169 brought back and the daemon's session listing from HUN-177); the parity
+issues under HUN-181 — checkouts, review and history, the command palette and shortcuts, settings
+and notifications, projects, feature editing, starting an agent, mouse, selection and scrollback,
+the full transcript; several panes at once; remote hosts through `ssh … argus bridge`; and
+packaging as .app, .msi and AppImage with signing and updates, which no issue tracks yet.
 
 Extensions (HUN-191): an outside process adds to the interface — a tab of rows it publishes
 (running dev servers, a repository's containers), commands with keys that join the keymap, the

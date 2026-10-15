@@ -48,9 +48,6 @@ mod hooks;
 mod install;
 pub mod plugin_dir;
 mod skill;
-// Read by the session previews of HUN-174; until a message asks for one,
-// only the tests do.
-#[cfg_attr(not(test), allow(dead_code))]
 pub mod transcript;
 
 use hooks::*;
@@ -184,7 +181,6 @@ pub struct Harness {
     /// Where the CLI keeps a session's transcript and in which format, for
     /// previewing a past session. `None` for one that keeps none Argus can
     /// read, which is `Conversation::NoTranscript` rather than an error.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub transcript: Option<transcript::Source>,
 }
 

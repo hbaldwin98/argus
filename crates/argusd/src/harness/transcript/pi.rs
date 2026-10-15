@@ -18,6 +18,7 @@ pub(super) fn read(record: &Value, reading: &mut Reading) {
         Some("message") => {}
         Some("session") => {
             reading.cwd(text(record, "cwd"));
+            reading.session_id(text(record, "id"));
             return reading.at(at);
         }
         Some("session_info") => {

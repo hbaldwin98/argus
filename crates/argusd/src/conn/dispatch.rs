@@ -19,6 +19,7 @@ pub(super) fn dispatch(
         .or_else(|msg| dispatch_panel(msg, daemon, out_tx))
         .or_else(|msg| dispatch_git(msg, daemon, out_tx))
         .or_else(|msg| dispatch_checkout_reads(msg, daemon, out_tx))
+        .or_else(|msg| dispatch_sessions(msg, daemon, out_tx))
         .or_else(|msg| dispatch_review(msg, daemon, out_tx, reviews))
         .unwrap_or_else(|_| unreachable!("every client message is dispatched"))
 }
@@ -387,6 +388,52 @@ fn dispatch_checkout_reads(
                 },
             },
         ),
+        msg => return Err(Box::new(msg)),
+    };
+    Ok(result)
+}
+
+/// A repository's agent sessions and what one said. Both open the
+/// harnesses' own files, a listing up to a few hundred of them, so they
+/// answer from a blocking thread.
+fn dispatch_sessions(
+    msg: Box<ClientMsg>,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) -> DispatchResult {
+    let result = match *msg {
+        ClientMsg::ListSessions {
+            request_id,
+            repository,
+        } => daemon.list_sessions(repository).map(|list| {
+            let out_tx = out_tx.clone();
+            tokio::task::spawn_blocking(move || {
+                let sessions = list();
+                let _ = out_tx.send(ServerMsg::Sessions {
+                    request_id,
+                    repository,
+                    sessions,
+                });
+            });
+        }),
+        ClientMsg::ReadSession {
+            request_id,
+            checkout,
+            harness,
+            session_id,
+        } => daemon
+            .read_session(checkout, &harness, session_id.clone())
+            .map(|read| {
+                let out_tx = out_tx.clone();
+                tokio::task::spawn_blocking(move || {
+                    let conversation = Box::new(read());
+                    let _ = out_tx.send(ServerMsg::SessionTranscript {
+                        request_id,
+                        session_id,
+                        conversation,
+                    });
+                });
+            }),
         msg => return Err(Box::new(msg)),
     };
     Ok(result)

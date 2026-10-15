@@ -41,6 +41,7 @@ pub mod paths;
 pub mod review;
 pub mod review_session;
 pub mod review_view;
+pub mod sessions;
 pub mod standing;
 pub mod tasks;
 pub mod tracker_links;
@@ -76,7 +77,7 @@ pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError
 pub use held_tree::{transitions, HeldTree, Transition};
 pub use hello::{
     Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
-    PANE_TELEMETRY, PROTOCOL,
+    PANE_TELEMETRY, PROTOCOL, SESSIONS,
 };
 pub use hook::{
     endpoint_url, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,

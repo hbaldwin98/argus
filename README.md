@@ -432,9 +432,10 @@ built-in name replaces it outright, including a plugin module and resume argumen
 shipped.
 `transcript` says where the CLI keeps a session's transcript and in which format: `format` is
 `claude`, `codex`, `cursor`, `pi` or `neutral`, and `path` a template with `~`, `{session_id}`,
-`{checkout}` and `*`. `transcript = "claude"` alone reads Claude Code's format where Claude Code
-keeps it. The key is accepted ahead of the session previews that will read it (HUN-174); the
-neutral format and the templates are spelled out in DESIGN.md, "Transcripts".
+`{checkout}`, `{project}` and `*`. `transcript = "claude"` alone reads Claude Code's format where
+Claude Code keeps it. The daemon lists a repository's sessions from these files and reads one when
+asked, ahead of the session previews that will show them (HUN-174); the neutral format and the
+templates are spelled out in DESIGN.md, "Transcripts".
 
 ### `client.toml`
 

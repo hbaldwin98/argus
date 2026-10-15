@@ -3,7 +3,8 @@
 
 use super::*;
 use crate::conn::tests::Harness;
-use argus_protocol::{CheckoutId, PaneId, ReviewBase};
+use argus_protocol::transcript::Conversation;
+use argus_protocol::{CheckoutId, PaneId, RepositoryId, ReviewBase};
 
 #[test]
 fn a_named_request_is_answered_with_what_it_made() {
@@ -478,4 +479,60 @@ async fn subscribing_twice_to_one_pane_does_not_double_up() {
     assert_eq!(h.subs.tasks.len(), 1);
 
     let _ = h.daemon.close_pane(pane);
+}
+
+#[tokio::test]
+async fn a_repositorys_sessions_and_what_one_said_are_answered_to_the_asker() {
+    let dir = tempfile::tempdir().unwrap();
+    let kept = dir.path().join(".herdr");
+    std::fs::create_dir_all(&kept).unwrap();
+    std::fs::write(
+        kept.join("s1.jsonl"),
+        "{\"kind\":\"user\",\"text\":\"Tidy the notes\"}\n{\"kind\":\"agent\",\"text\":\"Tidied.\"}\n",
+    )
+    .unwrap();
+    let herdr: crate::config::HarnessConfig = toml::from_str(
+        "name = \"herdr\"\ntranscript = { path = \"{checkout}/.herdr/{session_id}.jsonl\" }\n",
+    )
+    .unwrap();
+    let mut h = Harness::with_harnesses(dir.path(), vec![herdr]);
+    let repository = h.daemon.snapshot()[0].repositories[0].id;
+
+    // Answered from a blocking thread, which may read the real home's
+    // transcripts for the built-in harnesses too.
+    async fn answer(h: &mut Harness) -> ServerMsg {
+        tokio::time::timeout(std::time::Duration::from_secs(60), h.rx.recv())
+            .await
+            .expect("an answer should arrive")
+            .unwrap()
+    }
+    h.send(ClientMsg::ListSessions { request_id: 3, repository });
+    let sessions = match answer(&mut h).await {
+        ServerMsg::Sessions { request_id: 3, repository: r, sessions } if r == repository => sessions,
+        other => panic!("expected sessions, got {other:?}"),
+    };
+    let herdr = sessions.iter().find(|s| s.harness == "herdr").expect("the herdr session");
+    assert_eq!(herdr.session_id, "s1");
+    assert_eq!(herdr.title.as_deref(), Some("Tidy the notes"));
+    assert_eq!(herdr.turns, Some(1));
+
+    h.send(ClientMsg::ReadSession {
+        request_id: 4,
+        checkout: herdr.checkout,
+        harness: "herdr".into(),
+        session_id: "s1".into(),
+    });
+    match answer(&mut h).await {
+        ServerMsg::SessionTranscript { request_id: 4, session_id, conversation } => {
+            assert_eq!(session_id, "s1");
+            assert!(
+                matches!(&*conversation, Conversation::Read(t) if t.entries.len() == 2),
+                "{conversation:?}"
+            );
+        }
+        other => panic!("expected the transcript, got {other:?}"),
+    }
+
+    h.send(ClientMsg::ListSessions { request_id: 5, repository: RepositoryId(9999) });
+    assert!(h.error().await.contains("no such repository"));
 }

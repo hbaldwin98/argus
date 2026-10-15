@@ -25,7 +25,7 @@ pub const PROTOCOL: u32 = 1;
 /// The optional messages and encodings this build can take. A side sends
 /// one only when the other listed it, so each addition is safe against a
 /// peer of any age.
-pub const CAPABILITIES: &[&str] = &[PANE_TELEMETRY, CELL_RUNS, PASTE_FILE, FOCUS];
+pub const CAPABILITIES: &[&str] = &[PANE_TELEMETRY, CELL_RUNS, PASTE_FILE, FOCUS, SESSIONS];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
 /// reports its model, context or spend.
@@ -45,6 +45,10 @@ pub const PASTE_FILE: &str = "paste-file";
 /// `ClientMsg::WatchFocus` from a client, `ServerMsg::Focus` from the
 /// daemon. Listed by each side for the half it takes.
 pub const FOCUS: &str = "focus";
+
+/// `ClientMsg::ListSessions` and `ClientMsg::ReadSession`, and their
+/// answers: a repository's past agent sessions and what one said.
+pub const SESSIONS: &str = "sessions";
 
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

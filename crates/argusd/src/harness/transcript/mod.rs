@@ -18,9 +18,13 @@ use serde_json::Value;
 mod claude;
 mod codex;
 mod cursor;
+mod glance;
+mod listing;
 mod locate;
 mod neutral;
 mod pi;
+
+pub use listing::{sessions, Places};
 
 /// Which harness's format a transcript is in, and so how to read it. A
 /// `[[harness]]` block names one, since a block cannot bring a reader of
@@ -54,17 +58,17 @@ impl Format {
     /// whoever writes it says where.
     pub fn default_paths(self) -> Vec<String> {
         let paths: &[&str] = match self {
-            // Under a directory named for the checkout's path; a session
-            // id is a UUID, so any project directory will do.
-            Format::Claude => &["~/.claude/projects/*/{session_id}.jsonl"],
+            Format::Claude => &["~/.claude/projects/{project}/{session_id}.jsonl"],
+            // Filed by date: only the session's own record says where it
+            // ran.
             Format::Codex => &["~/.codex/sessions/*/*/*/rollout-*-{session_id}.jsonl"],
             // Older builds write the file straight into the directory,
             // newer ones into a directory of its own.
             Format::Cursor => &[
-                "~/.cursor/projects/*/agent-transcripts/{session_id}.jsonl",
-                "~/.cursor/projects/*/agent-transcripts/{session_id}/{session_id}.jsonl",
+                "~/.cursor/projects/{project}/agent-transcripts/{session_id}.jsonl",
+                "~/.cursor/projects/{project}/agent-transcripts/{session_id}/{session_id}.jsonl",
             ],
-            Format::Pi => &["~/.pi/agent/sessions/*/*_{session_id}.jsonl"],
+            Format::Pi => &["~/.pi/agent/sessions/{project}/*_{session_id}.jsonl"],
             Format::Neutral => &[],
         };
         paths.iter().map(|p| p.to_string()).collect()
@@ -113,16 +117,8 @@ pub fn conversation(source: Option<&Source>, session_id: &str, checkout: &Path) 
 /// faster than Argus learns them, and one it does not know is not a reason
 /// to stop reading the ones it does.
 pub fn read(format: Format, path: &Path) -> std::io::Result<Transcript> {
-    let mut file = BufReader::new(std::fs::File::open(path)?);
     let mut reading = Reading::default();
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        if file.read_until(b'\n', &mut line)? == 0 {
-            break;
-        }
-        reading.line(format, &String::from_utf8_lossy(&line));
-    }
+    reading.lines(format, BufReader::new(std::fs::File::open(path)?), |_| false)?;
     Ok(reading.finish())
 }
 
@@ -131,9 +127,34 @@ pub struct Reading {
     transcript: Transcript,
     /// Tool calls by the harness's own id, which a later result names.
     calls: std::collections::HashMap<String, usize>,
+    /// Whether the title is one the harness gave, rather than the first
+    /// thing asked: a listing that reads a file's two ends keeps a title
+    /// named at the end over one guessed at the start.
+    named: bool,
+    /// The id the transcript records for its session, where it records
+    /// one: what a listing takes over an id a file name only half spells.
+    session_id: Option<String>,
 }
 
 impl Reading {
+    /// Each line of `from`, until it runs out or `enough` says so.
+    fn lines(
+        &mut self,
+        format: Format,
+        mut from: impl BufRead,
+        enough: impl Fn(&Reading) -> bool,
+    ) -> std::io::Result<()> {
+        let mut line = Vec::new();
+        while !enough(self) {
+            line.clear();
+            if from.read_until(b'\n', &mut line)? == 0 {
+                break;
+            }
+            self.line(format, &String::from_utf8_lossy(&line));
+        }
+        Ok(())
+    }
+
     fn line(&mut self, format: Format, line: &str) {
         if let Ok(record) = serde_json::from_str::<Value>(line.trim()) {
             format.read_record(&record, self);
@@ -215,6 +236,13 @@ impl Reading {
         let title = one_line(title);
         if !title.is_empty() {
             self.transcript.meta.title = Some(title);
+            self.named = true;
+        }
+    }
+
+    fn session_id(&mut self, id: Option<&str>) {
+        if let Some(id) = id.filter(|id| !id.is_empty()) {
+            self.session_id.get_or_insert_with(|| id.to_string());
         }
     }
 

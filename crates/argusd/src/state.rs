@@ -10,7 +10,8 @@
 //! watchers that keep the tree level with the disk, `panel` for the rows
 //! the user adds and removes, `workspaces` for which scope is open,
 //! `hook_server` for the
-//! loopback receiver, `session` for what survives a restart, `inbox` for
+//! loopback receiver, `session` for what survives a restart, `sessions`
+//! for the agent sessions a repository's harnesses kept, `inbox` for
 //! the way what Argus says reaches an agent, and `tree` for finding your
 //! way around.
 //!
@@ -46,6 +47,7 @@ mod panel;
 mod panes;
 mod processes;
 mod session;
+mod sessions;
 mod sync;
 mod tree;
 mod viewers;

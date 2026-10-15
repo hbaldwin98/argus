@@ -14,6 +14,8 @@ use crate::hello::Hello;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
+use crate::sessions::Session;
+use crate::transcript::Conversation;
 use crate::tasks::{TaskAction, TaskList};
 use crate::tracker_links::MapChange;
 use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo};
@@ -155,6 +157,23 @@ pub enum ClientMsg {
     ListCommitFiles {
         checkout: CheckoutId,
         commit: String,
+    },
+    /// The agent sessions kept for any of a repository's checkouts, newest
+    /// first. Read off the harnesses' own files when asked, so a request
+    /// rather than something the tree carries. Only to a daemon that
+    /// listed `SESSIONS`.
+    ListSessions {
+        request_id: u64,
+        repository: RepositoryId,
+    },
+    /// What one listed session said, read whole from its harness's file.
+    /// `checkout` is where it was listed, which a harness's transcript path
+    /// may be named after. Only to a daemon that listed `SESSIONS`.
+    ReadSession {
+        request_id: u64,
+        checkout: CheckoutId,
+        harness: String,
+        session_id: String,
     },
     /// Persist a review comment, then notify the selected live agent.
     ReviewComment {
@@ -525,6 +544,19 @@ pub enum ServerMsg {
         request_id: u64,
         checkout: CheckoutId,
         message: String,
+    },
+    /// The answer to `ClientMsg::ListSessions`: at most
+    /// [`crate::sessions::MAX_SESSIONS`], newest first.
+    Sessions {
+        request_id: u64,
+        repository: RepositoryId,
+        sessions: Vec<Session>,
+    },
+    /// The answer to `ClientMsg::ReadSession`.
+    SessionTranscript {
+        request_id: u64,
+        session_id: String,
+        conversation: Box<Conversation>,
     },
     /// A pane's process exited.
     PaneClosed {
