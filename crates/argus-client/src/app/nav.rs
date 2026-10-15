@@ -43,7 +43,7 @@ impl App {
         let Some(label) = self.checkout_row_label(row) else {
             return false;
         };
-        crate::fuzzy::Fuzzy::matches(&self.checkout_filter, &label)
+        argus_protocol::fuzzy::Fuzzy::matches(&self.checkout_filter, &label)
     }
 
     /// Whether branch-name filtering is in effect (typing or a query kept

@@ -194,25 +194,35 @@ leaves the window open, and returns at once. The window reaches the same daemon 
 `argus bridge`, so it shows what the terminal client shows: the rail of projects, repositories,
 checkouts and panes, and one live pane that takes keys, pastes and resizes. `+` on a checkout opens a menu
 that starts a shell (`S`) or an agent from one of the daemon's templates (`A` for the first, the
-default; the arrows and Enter for the rest), and `×` on a pane, shown while it is pointed at and in
+default; the arrows and Enter for the rest). The template the window last started is listed first,
+and remembered across runs. A checkout several agents share says so: `⚠2` on its rail row, and
+"shared by 2" in the Checkouts tab. A project with `exclusive` set refuses a second agent there, and
+the window says which agent holds it. `×` on a pane, shown while it is pointed at and in
 the stage header, closes it. The Checkouts tab (`3`) lists the chosen repository's checkouts, and
 with `B` the branches without one: Enter opens a checkout on its first pane or switches the primary
 checkout to a branch, `F` fetches, `P` pulls, and `S`/`A` start a shell or the default agent in the
 selected checkout. `N` gives a branch row a worktree, or a checkout a new branch in one; `D`
 deletes a branch row (asking again, before `git branch -D`, when git refuses an unmerged one) or
 removes a worktree once asked. `R` opens the checkout's review: its unstaged
-and staged changes beside the diff, where `v` picks lines and `c` comments to the checkout's agent.
-`H` opens its history: commits unfolding to their files, and any of them opened as a review. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+and staged changes beside the diff, where `v` picks lines, `c` comments to the checkout's agent,
+`Ctrl-P` jumps to a file by name and `E` opens the line in your editor. It opens on the side and
+layout last chosen, unless that side has nothing and the other does. `H` opens its history:
+commits unfolding to their files, filtered with `/`, and any of them opened as a review. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
 again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the
 program except the leader, `Ctrl-Space`: after it, `f` fills the window with the pane and again
-gives the rail back, `x` closes the pane, `1`, `2` and `3` open the Workspace, the Feature and the
-Checkouts stage, and a second `Ctrl-Space` sends one to the program. Outside a pane `1`, `2` and `3`
+gives the rail back, `x` closes the pane, `Tab` reviews the pane's checkout, `1`, `2` and `3` open
+the Workspace, the Feature and the Checkouts stage, and a second `Ctrl-Space` sends one to the program. Outside a pane `1`, `2` and `3`
 open them directly, and the
 Feature stage takes `j`/`k`, Home/End, `v`, `z`, `/`, and on the feature under the cursor `m`,
 `h`, `A` and `g`. `Ctrl-V` (`Cmd-V` on a Mac), `Ctrl-Shift-V` and `Alt-V` paste, and
 Shift-PageUp/PageDown page through the history.
+
+`Ctrl-K` (from a pane, the leader and `k`) opens the palette: one search over the window's commands,
+the project's panes and checkouts and the chosen repository's features, each with its key or its
+status beside it. A leading `>` searches only commands, `#` only features. `?` (from a pane, the
+leader and `?`) opens the shortcuts sheet, every key grouped by where it works.
 
 ## Install on `PATH`
 
@@ -389,6 +399,7 @@ shape = "flat" # use "matcher" for Claude Code-style nesting
 context_event = "session_start"
 resume = ["--continue"] # appended to the agent command when a pane is restored
 resume_id = ["--resume", "{session_id}"] # exact resume when identity was captured
+transcript = { format = "neutral", path = "~/.herdr/sessions/{session_id}.jsonl" } # for session previews
 
 [harness.events]
 turn_start = "working"
@@ -415,6 +426,11 @@ Omit `settings` for an environment-only harness. Omit `resume` for a CLI that ca
 continue its last conversation; its panes still come back, just empty. A block that reuses a
 built-in name replaces it outright, including a plugin module and resume arguments the built-in
 shipped.
+`transcript` says where the CLI keeps a session's transcript and in which format: `format` is
+`claude`, `codex`, `cursor`, `pi` or `neutral`, and `path` a template with `~`, `{session_id}`,
+`{checkout}` and `*`. `transcript = "claude"` alone reads Claude Code's format where Claude Code
+keeps it. The key is accepted ahead of the session previews that will read it (HUN-174); the
+neutral format and the templates are spelled out in DESIGN.md, "Transcripts".
 
 ### `client.toml`
 

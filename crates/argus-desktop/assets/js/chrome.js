@@ -3,6 +3,8 @@
 import { drawCheckouts } from './checkouts.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { drawFeatures } from './features.js';
+import { chordsFor, keycaps } from './keys.js';
+import { openPalette } from './palette.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -119,7 +121,8 @@ function drawRail() {
             rows.push(el('div', {
                 class: `co${coPicked ? ' picked' : ''}`,
                 onclick: () => pickRail(co.id, null),
-            }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
+            }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.shared !== null &&
+                el('span', { class: 'shared', title: `shared by ${co.shared} agents` }, `⚠${co.shared}`), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
                 class: `icon${railStart(co.id) ? ' hot' : ''}`,
                 title: 'Start a shell or an agent',
                 'aria-label': `Start a shell or an agent on ${repo.name} ${co.name}`,
@@ -361,6 +364,15 @@ function drawBar() {
     else {
         left.push(el('span', { class: 'actions' }, dot('var(--fg-faint)'), 'Stopped'));
         right.push(el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'));
+    }
+    // The palette's key, from the keymap, where the eye looks for help.
+    const palette = chordsFor('palette', 'anywhere');
+    if (palette.length) {
+        right.unshift(el('button', {
+            class: 'hint',
+            title: 'Search actions, panes, features and checkouts',
+            onclick: openPalette,
+        }, keycaps(palette), 'Commands'));
     }
     $('bar').replaceChildren(...left, el('span', { class: 'grow' }), ...right);
 }

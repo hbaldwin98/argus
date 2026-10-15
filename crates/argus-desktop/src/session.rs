@@ -27,7 +27,8 @@ use crate::features::Layout;
 use crate::keymap::{self, Action};
 use crate::keys::{self, PageKey};
 use crate::page::{Connection, Event, PageMouse, Status};
-use crate::settings::Settings;
+use crate::palette;
+use crate::settings::{ReviewLayout, Settings};
 use crate::rail::{self, Choices};
 use crate::checkouts_stage::{CheckoutsStage, Deleting, Opened};
 use crate::history::{HistoryDialog, Then};
@@ -66,8 +67,12 @@ pub struct Session {
     last_request: u64,
     /// Spawns asked for and not yet answered.
     asked: Vec<u64>,
-    /// The agent templates the daemon offers, the first its default.
+    /// The agent templates the daemon offers, in its order.
     templates: Vec<String>,
+    /// The template of the agent this window last started, once the tree
+    /// showed it running: offered first, and what A starts.
+    last_agent: Option<String>,
+    last_agent_changed: bool,
     checkouts: CheckoutsStage,
     review: Option<ReviewDialog>,
     /// What the page was last sent of the review, so an unchanged one is
@@ -75,8 +80,19 @@ pub struct Session {
     review_sent: Option<crate::page::ReviewPage>,
     history: Option<HistoryDialog>,
     history_sent: Option<crate::page::HistoryPage>,
+    /// The side and layout a review opens on, as last chosen.
+    review_layout: ReviewLayout,
+    review_layout_changed: bool,
+    /// An editor asked for from the review: its pane leaves the stages
+    /// when it is shown, since E was pressed to look at it.
+    editor: Option<u64>,
+    /// The command palette is open, so what it can go to is sent.
+    palette: bool,
+    palette_sent: Option<crate::page::Palette>,
     /// A pane the daemon made for us that no tree has carried yet.
     made: Option<PaneId>,
+    /// The made pane is that editor's.
+    made_editor: bool,
     focused: bool,
     /// The leader was pressed in the pane: the next key is the window's.
     leader: bool,
@@ -101,6 +117,7 @@ impl Default for Session {
 impl Session {
     pub fn new(settings: Settings) -> Session {
         let chime = settings.chime;
+        let review_layout = settings.review;
         Session {
             tree: Vec::new(),
             loaded: false,
@@ -111,7 +128,7 @@ impl Session {
             project: None,
             repository: None,
             toggled: HashSet::new(),
-            features: FeatureStage::new(settings),
+            features: FeatureStage::new(settings.layouts),
             shown: None,
             screen: None,
             capacity: None,
@@ -119,12 +136,20 @@ impl Session {
             last_request: 0,
             asked: Vec::new(),
             templates: Vec::new(),
+            last_agent: settings.last_agent,
+            last_agent_changed: false,
             checkouts: CheckoutsStage::default(),
             review: None,
             review_sent: None,
             history: None,
             history_sent: None,
+            review_layout,
+            review_layout_changed: false,
+            editor: None,
+            palette: false,
+            palette_sent: None,
             made: None,
+            made_editor: false,
             focused: true,
             leader: false,
             filled: false,
@@ -215,6 +240,7 @@ impl Session {
                 self.asked.remove(at);
                 match created {
                     Some(Created::Pane(pane)) => {
+                        self.made_editor = self.editor.take_if(|id| *id == request_id).is_some();
                         self.made = Some(pane);
                         self.show_made();
                     }
@@ -336,10 +362,42 @@ impl Session {
         let Some(pane) = self.made else {
             return;
         };
-        if self.project_of(pane).is_some() {
-            self.made = None;
-            self.show(pane);
+        let Some(info) = self.pane_info(pane) else {
+            return;
+        };
+        // Read off the tree, not the request: a refused or mistaken spawn
+        // never becomes the one offered first.
+        let template = info.template.clone().filter(|_| info.kind == argus_protocol::PaneKind::Agent);
+        if template.is_some() && template != self.last_agent {
+            self.last_agent = template;
+            self.last_agent_changed = true;
+            self.rail_changed = true;
         }
+        self.made = None;
+        if std::mem::take(&mut self.made_editor) {
+            self.leave_stages();
+        }
+        self.show(pane);
+    }
+
+    fn pane_info(&self, pane: PaneId) -> Option<&argus_protocol::PaneInfo> {
+        self.tree
+            .iter()
+            .flat_map(|p| &p.repositories)
+            .flat_map(|r| &r.checkouts)
+            .flat_map(|c| &c.panes)
+            .find(|p| p.id == pane)
+    }
+
+    /// The daemon's templates with the one last started first, while the
+    /// daemon still offers it. The first is what A and the rail's a start.
+    fn agents(&self) -> Vec<String> {
+        let mut agents = self.templates.clone();
+        if let Some(at) = self.last_agent.as_ref().and_then(|last| agents.iter().position(|t| t == last)) {
+            let last = agents.remove(at);
+            agents.insert(0, last);
+        }
+        agents
     }
 
     // ---- Gestures ----------------------------------------------------------
@@ -444,9 +502,15 @@ impl Session {
             Action::Workspace => self.leave_stages(),
             Action::Feature => self.open_features(true),
             Action::Checkouts => self.open_checkouts(true),
+            Action::OpenReview => {
+                if let Some(checkout) = self.view().checkout {
+                    self.review_checkout(checkout);
+                }
+            }
             // A screen less a line, so the line at the edge stays in view.
             Action::PageUp => self.scroll_by(-page(self)),
             Action::PageDown => self.scroll_by(page(self)),
+            Action::Palette | Action::Shortcuts => self.passing.push(Event::Run { action }),
             // `commands` reads the clipboard before the key gets here; the
             // rest are the page's, for keys a pane never hears.
             _ => {}
@@ -797,18 +861,30 @@ impl Session {
 
     /// Opens the review of a checkout's working changes.
     pub fn open_review(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
+        self.review_checkout(checkout);
+        self.finish()
+    }
+
+    fn review_checkout(&mut self, checkout: CheckoutId) {
         let Some(info) = self.checkout_info(checkout).cloned() else {
-            return self.finish();
+            return;
         };
-        let mut ids = Vec::new();
-        let (dialog, msgs) = ReviewDialog::working(&info, || {
-            let id = self.fresh_id();
-            ids.push(id);
-            id
-        });
+        let layout = self.review_layout;
+        let (dialog, msgs) = ReviewDialog::working(&info, layout, || self.fresh_id());
         self.review = Some(dialog);
         self.out.extend(msgs);
-        self.finish()
+    }
+
+    /// What the review on screen has the person choosing, kept as the
+    /// side and layout the next one opens on.
+    fn remember_review_layout(&mut self) {
+        let Some(chosen) = self.review.as_ref().map(ReviewDialog::chosen) else {
+            return;
+        };
+        if chosen != self.review_layout {
+            self.review_layout = chosen;
+            self.review_layout_changed = true;
+        }
     }
 
     pub fn open_history(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
@@ -851,7 +927,7 @@ impl Session {
             // The history gives way to the review of the commit.
             Then::Review(commit) => {
                 if let Some(info) = self.checkout_info(dialog.checkout()).cloned() {
-                    let (review, msg) = ReviewDialog::of_commit(&info, commit, self.fresh_id());
+                    let (review, msg) = ReviewDialog::of_commit(&info, commit, self.review_layout, self.fresh_id());
                     self.review = Some(review);
                     self.out.push(msg);
                 }
@@ -880,9 +956,54 @@ impl Session {
                     self.passing.push(Event::Notice { text: text.into() });
                 }
             }
+            Action::Filter => dialog.open_jump(),
+            Action::OpenEditor => {
+                let target = dialog.editor_target();
+                self.open_editor(target);
+            }
             Action::CloseLayer => self.review = None,
             _ => {}
         }
+        self.remember_review_layout();
+        self.finish()
+    }
+
+    /// `E`: the file at the cursor in the person's editor. The review gives
+    /// way to it, as the terminal client's does; the daemon decides whether
+    /// the editor is a pane or brings its own window.
+    fn open_editor(&mut self, target: Option<(CheckoutId, String, Option<u32>)>) {
+        let Some((checkout, path, line)) = target else {
+            self.passing.push(Event::Notice { text: "no file to open".into() });
+            return;
+        };
+        self.review = None;
+        let request_id = self.next_request();
+        self.editor = Some(request_id);
+        self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external: false, command: None, request_id });
+    }
+
+    /// A letter, a step, Enter or Escape in the review's jump field.
+    pub fn review_jump(&mut self, gesture: ReviewJumpGesture) -> Vec<ClientMsg> {
+        if let Some(dialog) = &mut self.review {
+            match gesture {
+                ReviewJumpGesture::Query { text } => dialog.type_jump(text),
+                ReviewJumpGesture::Step { by } => dialog.step_jump(by),
+                ReviewJumpGesture::Choose => dialog.choose_jump(),
+                ReviewJumpGesture::Close => dialog.close_jump(),
+            }
+        }
+        self.finish()
+    }
+
+    /// What the history's filter field says now.
+    pub fn filter_history(&mut self, filter: String) -> Vec<ClientMsg> {
+        let Some(mut dialog) = self.history.take() else {
+            return self.finish();
+        };
+        if let Then::Ask(msg) = dialog.set_filter(filter, || self.fresh_id()) {
+            self.out.push(*msg);
+        }
+        self.history = Some(dialog);
         self.finish()
     }
 
@@ -897,6 +1018,7 @@ impl Session {
                 ReviewClick::Recipient { pane } => dialog.choose_recipient(PaneId(pane)),
             }
         }
+        self.remember_review_layout();
         self.finish()
     }
 
@@ -927,26 +1049,38 @@ impl Session {
     /// `x` on a checkout in the rail: the Checkouts stage opens on its row
     /// and asks, since its question is the stage's and is drawn there.
     pub fn remove_checkout(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
-        let Some(repo) = self
-            .current_project()
-            .and_then(|p| p.repositories.iter().find(|r| r.checkouts.iter().any(|c| c.id == checkout)))
-            .cloned()
-        else {
+        let Some((repository, info)) = self.in_project(checkout) else {
             return self.finish();
         };
-        let Some(info) = repo.checkouts.iter().find(|c| c.id == checkout) else {
-            return self.finish();
-        };
-        if let Err(text) = self.checkouts.ask_remove(info) {
+        if let Err(text) = self.checkouts.ask_remove(&info) {
             return self.note(text);
         }
-        if self.repository != Some(repo.id) {
-            self.repository = Some(repo.id);
+        self.open_on_row(repository, checkout);
+        self.finish()
+    }
+
+    /// A checkout chosen in the palette: the Checkouts stage opens on its
+    /// row, where its keys are.
+    pub fn go_to_checkout(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
+        if let Some((repository, _)) = self.in_project(checkout) {
+            self.open_on_row(repository, checkout);
+        }
+        self.finish()
+    }
+
+    /// A checkout of the rail's project, and the repository holding it.
+    fn in_project(&self, checkout: CheckoutId) -> Option<(RepositoryId, argus_protocol::CheckoutInfo)> {
+        let repo = self.current_project()?.repositories.iter().find(|r| r.checkouts.iter().any(|c| c.id == checkout))?;
+        Some((repo.id, repo.checkouts.iter().find(|c| c.id == checkout)?.clone()))
+    }
+
+    fn open_on_row(&mut self, repository: RepositoryId, checkout: CheckoutId) {
+        if self.repository != Some(repository) {
+            self.repository = Some(repository);
             self.rail_changed = true;
         }
         self.open_checkouts(true);
         self.checkouts.select(format!("c{}", checkout.0));
-        self.finish()
     }
 
     /// The answer to the stage's question: a yes does what it asked about.
@@ -1029,7 +1163,7 @@ impl Session {
                 let Some(checkout) = self.checkouts.checkout(&repo) else {
                     return self.note("give the branch a worktree first (N)");
                 };
-                return match (action, self.templates.first().cloned()) {
+                return match (action, self.agents().into_iter().next()) {
                     (Action::StartShell, _) => self.spawn_shell(checkout),
                     (_, Some(agent)) => self.spawn_agent(checkout, agent),
                     (_, None) => self.note("argusd offers no agent to start"),
@@ -1040,12 +1174,45 @@ impl Session {
         self.finish()
     }
 
+    // ---- The command palette ------------------------------------------------
+
+    /// The palette opened or closed. While it is open it is sent what it
+    /// can go to, and the chosen repository's board is asked for, so its
+    /// features are among them wherever the palette opened.
+    pub fn palette(&mut self, open: bool) -> Vec<ClientMsg> {
+        self.palette = open;
+        self.finish()
+    }
+
+    /// A feature chosen in the palette: the Feature stage opens on it, with
+    /// held and archived features shown if it is one of them.
+    pub fn go_to_feature(&mut self, slug: &str) -> Vec<ClientMsg> {
+        self.open_features(true);
+        let scope = self.scope();
+        self.features.reveal(slug, scope.as_ref(), &self.tree, &mut self.out);
+        self.finish()
+    }
+
+    /// A command chosen in the palette. One with nothing to act on says
+    /// so, rather than leaving the person to wonder whether it ran.
+    pub fn command(&mut self, action: Action) -> Vec<ClientMsg> {
+        if !self.run_command(action) {
+            self.passing.push(Event::Notice { text: format!("the palette has no command {action:?}") });
+        }
+        self.finish()
+    }
+
     /// The pane the person is looking at: on screen, in a window they are
     /// in. It needs no chime, as the terminal client rings for no pane
     /// being typed in.
     fn watched(&self) -> Option<PaneId> {
-        let on_screen = !self.features.is_open() && !self.checkouts.is_open();
-        self.shown.filter(|_| self.focused && on_screen)
+        self.on_screen().filter(|_| self.focused)
+    }
+
+    /// The shown pane while the Workspace is up. A stage keeps `shown` to
+    /// come back to, but hides the pane and takes its keys away.
+    fn on_screen(&self) -> Option<PaneId> {
+        self.shown.filter(|_| !self.features.is_open() && !self.checkouts.is_open())
     }
 
     pub fn set_chime(&mut self, on: bool) -> Vec<ClientMsg> {
@@ -1057,16 +1224,92 @@ impl Session {
         self.finish()
     }
 
+    /// Runs a palette command, saying whether `action` is one. Each acts
+    /// where its key would, the stages' keys on their stage, or on this
+    /// checkout (`on_this_checkout`).
+    fn run_command(&mut self, action: Action) -> bool {
+        if !keymap::is_command(action) {
+            return false;
+        }
+        match action {
+            Action::Workspace | Action::Feature | Action::Checkouts | Action::Shortcuts => self.run(action),
+            Action::Fill | Action::Close if self.on_screen().is_none() => {
+                self.passing.push(Event::Notice { text: "no pane is on screen".into() });
+            }
+            Action::Fill | Action::Close => self.run(action),
+            Action::Layout => {
+                let scope = self.scope();
+                let other = match self.features.layout(scope.as_ref()) {
+                    Layout::List => Layout::Board,
+                    Layout::Board => Layout::List,
+                };
+                self.features.set_layout(other, scope.as_ref());
+            }
+            Action::Folded => {
+                let scope = self.scope();
+                self.features.toggle_folded(scope.as_ref(), &self.tree, &mut self.out);
+            }
+            Action::Branches => {
+                self.open_checkouts(true);
+                self.checkouts.toggle_branches();
+            }
+            Action::Fetch | Action::Pull | Action::OpenReview | Action::OpenHistory | Action::StartShell | Action::StartAgent => {
+                self.on_this_checkout(action);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// A checkout command acts on the Checkouts stage's selected row while
+    /// that stage is open, as its key there does, and else on the checkout
+    /// of the pane on screen.
+    fn on_this_checkout(&mut self, action: Action) {
+        // Each of these finishes on its own; what it sent is this
+        // command's, and goes out when the command finishes.
+        let sent = if self.checkouts.is_open() {
+            self.checkouts_action(action)
+        } else if let Some(checkout) = self.shown_checkout() {
+            match action {
+                Action::Fetch => vec![ClientMsg::Fetch { checkout }],
+                Action::Pull => vec![ClientMsg::Pull { checkout }],
+                Action::OpenReview => self.open_review(checkout),
+                Action::OpenHistory => self.open_history(checkout),
+                Action::StartShell => self.spawn_shell(checkout),
+                _ => match self.templates.first().cloned() {
+                    Some(agent) => self.spawn_agent(checkout, agent),
+                    None => self.note("argusd offers no agent to start"),
+                },
+            }
+        } else {
+            self.note("show a pane, or pick a checkout in Checkouts, first")
+        };
+        self.out.extend(sent);
+    }
+
+    fn shown_checkout(&self) -> Option<CheckoutId> {
+        let pane = self.on_screen()?;
+        self.tree
+            .iter()
+            .flat_map(|p| &p.repositories)
+            .flat_map(|r| &r.checkouts)
+            .find(|c| c.panes.iter().any(|p| p.id == pane))
+            .map(|c| c.id)
+    }
+
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
-        let chime_changed = std::mem::take(&mut self.chime_changed);
-        let mut settings = match self.features.take_settings() {
-            Some(settings) => settings,
-            None if chime_changed => self.features.settings().clone(),
-            None => return None,
-        };
-        settings.chime = self.chime;
-        Some(settings)
+        // All four, not short-circuited: each flag is cleared as it is read.
+        let layouts = self.features.take_layouts_changed();
+        let agent = std::mem::take(&mut self.last_agent_changed);
+        let chime = std::mem::take(&mut self.chime_changed);
+        let review = std::mem::take(&mut self.review_layout_changed);
+        (layouts || agent || chime || review).then(|| Settings {
+            layouts: self.features.layouts().clone(),
+            last_agent: self.last_agent.clone(),
+            chime: self.chime,
+            review: self.review_layout,
+        })
     }
 
     fn current_project(&self) -> Option<&ProjectInfo> {
@@ -1111,7 +1354,7 @@ impl Session {
 
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
-        self.features.set_board_wanted(self.checkouts.is_open());
+        self.features.set_board_wanted(self.checkouts.is_open() || self.palette);
         // Whatever changed may have changed which board the stage reads.
         let scope = self.scope();
         if self.connection == Connection::Connected {
@@ -1128,17 +1371,9 @@ impl Session {
     }
 
     fn view(&self) -> View {
-        let checkout = self.shown.and_then(|pane| {
-            self.tree
-                .iter()
-                .flat_map(|p| &p.repositories)
-                .flat_map(|r| &r.checkouts)
-                .find(|c| c.panes.iter().any(|p| p.id == pane))
-                .map(|c| c.id)
-        });
         View {
             project: self.project,
-            checkout,
+            checkout: self.shown_checkout(),
             pane: self.shown,
             active: self.focused,
         }
@@ -1179,6 +1414,17 @@ impl Session {
                 events.push(Event::History(Box::new(page)));
             }
         }
+        if self.palette || self.palette_sent.as_ref().is_some_and(|p| p.open) {
+            let page = if self.palette {
+                palette::build(self.current_project(), self.features.board(), &self.tree)
+            } else {
+                crate::page::Palette::default()
+            };
+            if self.palette_sent.as_ref() != Some(&page) {
+                self.palette_sent = Some(page.clone());
+                events.push(Event::Palette(Box::new(page)));
+            }
+        }
         if self.checkouts.is_open() {
             let repo = self.chosen_repository().cloned();
             if let Some(table) = self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now) {
@@ -1195,11 +1441,14 @@ impl Session {
         self.status_changed = true;
         self.review_sent = None;
         self.history_sent = None;
+        // A page that has just loaded has no palette open.
+        self.palette = false;
+        self.palette_sent = None;
         self.rail_changed = true;
         if let Some(screen) = &mut self.screen {
             screen.refresh();
         }
-        let mut events = vec![Event::Keymap { groups: keymap::groups() }];
+        let mut events = vec![Event::Keymap { groups: keymap::groups(), commands: keymap::commands() }];
         events.append(&mut self.events(now));
         if !events.iter().any(|e| matches!(e, Event::Features(_))) {
             let scope = self.scope();
@@ -1243,7 +1492,7 @@ impl Session {
             "workspace"
         };
         rail.filled = self.filled && !self.features.is_open() && self.shown.is_some();
-        rail.templates = self.templates.clone();
+        rail.templates = self.agents();
         rail
     }
 
@@ -1260,8 +1509,6 @@ impl Session {
     }
 }
 
-/// What to say of a daemon from another build than this window, as the
-/// terminal client says it.
 /// What a click in the review dialog landed on.
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "on")]
@@ -1272,6 +1519,17 @@ pub enum ReviewClick {
     Recipient { pane: u64 },
 }
 
+/// What was done in the review's jump field: a letter typed, a match
+/// stepped to, Enter, or Escape.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ReviewJumpGesture {
+    Query { text: String },
+    Step { by: isize },
+    Choose,
+    Close,
+}
+
 fn deletion(deleting: Deleting) -> ClientMsg {
     match deleting {
         Deleting::Branch { checkout, branch, force } => ClientMsg::DeleteBranch { checkout, branch, force },
@@ -1279,6 +1537,8 @@ fn deletion(deleting: Deleting) -> ClientMsg {
     }
 }
 
+/// What to say of a daemon from another build than this window, as the
+/// terminal client says it.
 fn another_build(daemon: &Hello) -> Option<String> {
     let ours = env!("CARGO_PKG_VERSION");
     (daemon.version != ours).then(|| {
@@ -1431,6 +1691,109 @@ mod tests {
         s.key(&leader);
         let x = PageKey { key: "x".into(), ..PageKey::default() };
         assert_eq!(names(&s.key(&x)), ["Kill { pane: PaneId(1) }"]);
+    }
+
+    fn leader_then(s: &mut Session, key: &str) -> Vec<ClientMsg> {
+        s.key(&PageKey { key: " ".into(), ctrl: true, ..PageKey::default() });
+        s.key(&PageKey { key: key.into(), ..PageKey::default() })
+    }
+
+    fn reviews(msgs: &[ClientMsg]) -> Vec<(CheckoutId, argus_protocol::ReviewBase)> {
+        msgs.iter()
+            .filter_map(|m| match m {
+                ClientMsg::Review { checkout, base, .. } => Some((*checkout, *base)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_leader_and_tab_review_the_shown_panes_checkout() {
+        let mut s = session(without_focus());
+        assert!(reviews(&leader_then(&mut s, "Tab")).is_empty(), "no pane, no checkout");
+        s.select(PaneId(3));
+        let sent = leader_then(&mut s, "Tab");
+        assert_eq!(reviews(&sent).len(), 2, "both sides of checkout 200: {:?}", names(&sent));
+        assert!(reviews(&sent).iter().all(|(c, _)| *c == CheckoutId(200)));
+        assert!(s.review.is_some());
+    }
+
+    #[test]
+    fn the_review_side_and_layout_are_saved_and_the_next_review_opens_on_them() {
+        let mut s = session(without_focus());
+        s.open_review(CheckoutId(100));
+        s.review_action(Action::Side);
+        assert_eq!(s.take_settings().map(|t| t.review), Some(ReviewLayout { staged: true, split: false }));
+        s.review_click(ReviewClick::Side { staged: true });
+        assert!(s.take_settings().is_none(), "nothing changed");
+        s.review_action(Action::Split);
+        s.review_action(Action::CloseLayer);
+        assert_eq!(s.take_settings().map(|t| t.review), Some(ReviewLayout { staged: true, split: true }));
+        s.open_review(CheckoutId(100));
+        let page = s.review.as_ref().unwrap().page(None);
+        assert_eq!((page.base, page.split), ("staged", true));
+    }
+
+    #[test]
+    fn a_window_opens_reviews_on_the_layout_it_was_saved_with() {
+        let settings = Settings { review: ReviewLayout { staged: true, split: true }, ..Settings::default() };
+        let mut s = Session::new(settings);
+        s.connected(Some(without_focus()), None, vec![with_tree(tree())]);
+        s.open_review(CheckoutId(100));
+        assert_eq!(s.review.as_ref().unwrap().page(None).base, "staged");
+    }
+
+    fn reviewed(base: argus_protocol::ReviewBase, request_id: u64) -> ServerMsg {
+        use argus_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, Review};
+        ServerMsg::Review(Review {
+            request_id,
+            checkout: CheckoutId(100),
+            base,
+            files: vec![FileDiff {
+                path: "src/brief.rs".into(),
+                old_path: None,
+                kind: ChangeKind::Modified,
+                hunks: vec![Hunk {
+                    header: "@@ -1 +1 @@".into(),
+                    lines: vec![DiffLine { kind: LineKind::Added, old_lineno: None, new_lineno: Some(4), text: "x".into(), spans: Vec::new() }],
+                }],
+                note: None,
+            }],
+            commit: None,
+        })
+    }
+
+    #[test]
+    fn e_in_the_review_opens_the_cursors_line_and_its_pane_leaves_the_stage() {
+        let mut s = session(without_focus());
+        s.show_checkouts(true);
+        let sent = s.open_review(CheckoutId(100));
+        let [ClientMsg::Review { request_id: unstaged, .. }, ..] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        s.receive(reviewed(argus_protocol::ReviewBase::Unstaged, *unstaged));
+        s.review_action(Action::Next);
+        let sent = s.review_action(Action::OpenEditor);
+        let [ClientMsg::OpenInEditor { checkout, path, line, external: false, command: None, request_id }] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        assert_eq!((*checkout, path.as_str(), *line), (CheckoutId(100), "src/brief.rs", Some(4)));
+        assert!(s.review.is_none(), "the review gives way");
+        assert!(s.checkouts.is_open(), "nothing predicted");
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(9))) });
+        let mut grown = tree();
+        grown[0].repositories[0].checkouts[0].panes.push(pane(9, PaneKind::Editor, "brief.rs", PaneStatus::Idle));
+        s.receive(with_tree(grown));
+        assert_eq!(s.shown, Some(PaneId(9)));
+        assert!(!s.checkouts.is_open(), "the editor is on screen");
+    }
+
+    #[test]
+    fn e_with_nothing_read_opens_nothing() {
+        let mut s = session(without_focus());
+        s.open_review(CheckoutId(100));
+        assert!(s.review_action(Action::OpenEditor).is_empty());
+        assert!(s.review.is_some());
     }
 
     #[test]
@@ -1942,6 +2305,84 @@ mod tests {
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("nobody"))));
     }
 
+    fn offered(s: &mut Session) -> Vec<String> {
+        s.events(0)
+            .into_iter()
+            .find_map(|e| match e {
+                Event::Rail(rail) => Some(rail.templates),
+                _ => None,
+            })
+            .expect("the rail is drawn again")
+    }
+
+    /// Asks for `template` on checkout 100 and has the daemon make pane 7
+    /// running it.
+    fn start(s: &mut Session, template: &str) {
+        let sent = s.spawn_agent(CheckoutId(100), template.into());
+        let Some(ClientMsg::SpawnAgent { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(7))) });
+        let mut grown = tree();
+        let made = argus_protocol::PaneInfo {
+            template: Some(template.into()),
+            ..pane(7, PaneKind::Agent, "Trim context", PaneStatus::Working)
+        };
+        grown[0].repositories[0].checkouts[0].panes.push(made);
+        s.receive(with_tree(grown));
+    }
+
+    #[test]
+    fn the_agent_last_started_is_offered_first_and_remembered() {
+        let mut s = session(without_focus());
+        s.receive(ServerMsg::Templates(vec!["claude".into(), "codex".into()]));
+        assert_eq!(offered(&mut s), ["claude", "codex"]);
+
+        start(&mut s, "codex");
+
+        assert_eq!(s.shown, Some(PaneId(7)));
+        assert_eq!(offered(&mut s), ["codex", "claude"]);
+        let saved = s.take_settings().expect("a new last agent is saved");
+        assert_eq!(saved.last_agent.as_deref(), Some("codex"));
+        assert!(s.take_settings().is_none(), "saved once");
+    }
+
+    #[test]
+    fn a_remembered_agent_leads_only_while_the_daemon_offers_it() {
+        let remembered = |last: &str| {
+            let settings = Settings { last_agent: Some(last.into()), ..Settings::default() };
+            let mut s = Session::new(settings);
+            s.connected(Some(without_focus()), None, vec![with_tree(tree())]);
+            s.receive(ServerMsg::Templates(vec!["claude".into(), "codex".into()]));
+            offered(&mut s)
+        };
+        assert_eq!(remembered("codex"), ["codex", "claude"]);
+        assert_eq!(remembered("aider"), ["claude", "codex"], "gone from the config");
+    }
+
+    #[test]
+    fn a_refused_agent_is_said_and_changes_nothing() {
+        let mut s = session(without_focus());
+        s.receive(ServerMsg::Templates(vec!["claude".into(), "codex".into()]));
+        s.events(0);
+        let sent = s.spawn_agent(CheckoutId(100), "codex".into());
+        let Some(ClientMsg::SpawnAgent { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+
+        let refusal = "claude is already working here, and this project allows one agent per checkout — make a worktree for another";
+        let mut answered = s.receive(ServerMsg::Created { request_id: *request_id, created: None });
+        answered.extend(s.receive(ServerMsg::Error { message: refusal.into() }));
+
+        assert!(answered.is_empty(), "nothing to subscribe to: {:?}", names(&answered));
+        assert_eq!(s.shown, None);
+        let events = s.events(0);
+        assert!(events.iter().any(|e| matches!(e, Event::Notice { text } if text == refusal)));
+        s.receive(with_tree(tree()));
+        assert_eq!(offered(&mut s), ["claude", "codex"], "a refused agent is not the last one started");
+        assert!(s.take_settings().is_none());
+    }
+
     #[test]
     fn the_checkouts_stage_opens_alone_and_asks_for_the_board_it_names_features_from() {
         let mut s = session(without_focus());
@@ -2031,5 +2472,116 @@ mod tests {
         assert_eq!((*checkout, branch.as_str()), (CheckoutId(100), "spike"));
         s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Checkout(CheckoutId(200))) });
         assert_eq!(s.checkouts.selected_key(), Some("c200"));
+    }
+
+    /// Each command the palette lists runs something here, from the pane
+    /// on screen's Workspace as from either stage; none falls through to
+    /// "no command".
+    #[test]
+    fn every_palette_command_dispatches() {
+        for command in keymap::commands() {
+            for stage in ["workspace", "feature", "checkouts"] {
+                let mut s = session(without_focus());
+                s.receive(ServerMsg::Templates(vec!["claude".into()]));
+                s.select(PaneId(1));
+                s.open_features(stage == "feature");
+                s.open_checkouts(stage == "checkouts");
+                assert!(s.run_command(command.action), "{} does not dispatch in {stage}", command.label);
+            }
+        }
+    }
+
+    /// A stage hides the pane it will come back to, so the palette's pane
+    /// and checkout commands find none on screen there.
+    #[test]
+    fn a_stage_leaves_no_pane_on_screen_for_the_palettes_commands() {
+        for stage in ["feature", "checkouts"] {
+            let mut s = session(without_focus());
+            s.select(PaneId(1));
+            if stage == "feature" {
+                s.show_features(true);
+            } else {
+                s.show_checkouts(true);
+            }
+            s.events(0);
+            let sent = s.command(Action::Close);
+            assert!(!sent.iter().any(|m| matches!(m, ClientMsg::Kill { .. })), "{stage}: {sent:?}");
+            assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "no pane is on screen")));
+        }
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.show_features(true);
+        assert!(!s.command(Action::Fetch).iter().any(|m| matches!(m, ClientMsg::Fetch { .. })));
+    }
+
+    #[test]
+    fn an_action_the_palette_does_not_list_is_refused() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.events(0);
+        assert!(s.command(Action::Delete).is_empty());
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("no command"))));
+    }
+
+    #[test]
+    fn a_checkout_command_acts_on_the_pane_on_screens_checkout() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        assert!(matches!(s.command(Action::Fetch).as_slice(), [ClientMsg::Fetch { checkout: CheckoutId(100) }]));
+        let sent = s.command(Action::StartShell);
+        assert!(matches!(sent.as_slice(), [ClientMsg::SpawnShell { checkout: CheckoutId(100), .. }]), "{sent:?}");
+        s.command(Action::OpenReview);
+        assert_eq!(s.review.as_ref().map(|r| r.checkout()), Some(CheckoutId(100)));
+    }
+
+    #[test]
+    fn a_checkout_command_with_no_checkout_says_so() {
+        let mut s = session(without_focus());
+        s.events(0);
+        assert!(s.command(Action::Pull).is_empty());
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("show a pane"))));
+    }
+
+    #[test]
+    fn the_leader_and_question_mark_ask_the_page_for_the_sheet() {
+        let mut s = showing(5, false);
+        s.events(0);
+        s.key(&ctrl_space());
+        assert!(s.key(&press("?")).is_empty(), "nothing typed");
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Run { action: Action::Shortcuts })));
+        s.key(&ctrl_space());
+        s.key(&PageKey { ctrl: true, ..press("k") });
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Run { action: Action::Palette })));
+    }
+
+    #[test]
+    fn an_open_palette_is_sent_what_it_can_go_to_and_asks_for_the_board() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.events(0);
+        let sent = s.palette(true);
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::GetDecisions { .. })), "{sent:?}");
+        let listed = s.events(0).into_iter().find_map(|e| match e {
+            Event::Palette(palette) => Some(palette),
+            _ => None,
+        });
+        let listed = listed.expect("the palette is sent");
+        assert!(listed.open && !listed.features_loaded);
+        assert_eq!(listed.panes.iter().map(|p| p.id).collect::<Vec<_>>(), [1, 2], "the rail's project's panes");
+        assert!(s.events(0).iter().all(|e| !matches!(e, Event::Palette(_))), "unchanged, not sent again");
+        s.palette(false);
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Palette(p) if !p.open)));
+    }
+
+    #[test]
+    fn a_checkout_chosen_in_the_palette_opens_the_checkouts_stage_on_it() {
+        let mut s = session(without_focus());
+        let mut more = tree();
+        more[0].repositories[0].checkouts.push(checkout(101, "spike", false, Vec::new()));
+        s.receive(with_tree(more));
+        s.select(PaneId(1));
+        s.go_to_checkout(CheckoutId(101));
+        assert!(s.checkouts.is_open());
+        assert_eq!(s.checkouts.selected_key(), Some("c101"));
     }
 }

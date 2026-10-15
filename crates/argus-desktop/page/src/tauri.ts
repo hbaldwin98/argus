@@ -16,7 +16,7 @@ declare global {
 
 type None = Record<string, never>;
 
-interface Commands {
+export interface Commands {
   connect: { events: TauriChannel<Event> };
   select: { pane: number };
   resize: { rows: number; cols: number };
@@ -52,8 +52,16 @@ interface Commands {
       | { on: 'recipient'; pane: number };
   };
   review_refresh: None;
+  review_jump: {
+    gesture:
+      | { on: 'query'; text: string }
+      | { on: 'step'; by: number }
+      | { on: 'choose' }
+      | { on: 'close' };
+  };
   open_history: { checkout: number };
   history_action: { action: Action; row: number | null };
+  filter_history: { filter: string };
   review_comment: { body: string | null };
   peek: { slug: string };
   set_layout: { layout: 'list' | 'board' };
@@ -62,6 +70,10 @@ interface Commands {
   hold: { slug: string; reason: string | null };
   archive: { slug: string; archived: boolean };
   go_to_pane: { pane: number };
+  palette: { open: boolean };
+  command: { action: Action };
+  go_to_checkout: { checkout: number };
+  go_to_feature: { slug: string };
   reconnect: None;
 }
 

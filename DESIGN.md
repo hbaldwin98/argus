@@ -56,17 +56,26 @@ does and what it is called. A key in a pane goes to Rust, which dispatches it fr
 table crosses to the page once it loads, and the page dispatches every other key from it, so a key
 cannot be run by one and missing from what the sheet and the palette are drawn from. In a pane every
 key is the program's except the leader, `Ctrl-Space` as in the terminal client: the key after it is
-the window's, one nothing binds is dropped, and a second leader sends one through. The leader and
-`f` fill the window with the pane, putting the rail, the tabs and the stage header away until the
-same keys again. The Feature stage has them while it is open, and another pane brings them back
-for good. Rust holds the model (`session`); the page draws what it is sent
-and reports gestures. It is TypeScript in `crates/argus-desktop/page/src`, one module per subject
-(`chrome`, `screen`, `input`, `keymap`, `features`, `chime`, with `dom`, `state` and `tauri` beneath them), compiled
-into `assets/js` and committed, so building the crate needs no Node. The events it reads are
-`page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
-either committed output differs from what its source makes. Its webview keeps its storage
-under the instance's config directory, so a dev window never shares it with the installed one, and
-it logs to `argus-desktop.log` beside the config, keeping the previous run's.
+the window's, one nothing binds is dropped, and a second leader sends one through. `Ctrl-K` (in a
+pane, the leader and `k`) opens the palette, one fuzzy search over the table's commands and the
+panes, checkouts and features Rust lists while it is open (`palette`), `>` narrowing it to commands
+and `#` to features; a command chosen is a call that `session` runs where its key would, the
+checkout ones on the Checkouts stage's row or else the pane on screen's checkout. A stage hides the
+pane, so from one the pane commands find nothing on screen, and a held or archived feature chosen
+unfolds the Feature index to it. `?` (in a pane, the leader and `?`) opens the shortcuts sheet,
+which is the table's groups drawn whole, opening with the rule that a pane has every key but the
+leader. Both are drawn over everything, a review included, and a pane's leader key reaches them as a
+`Run` event, since only the page draws them. The leader and `f` fill the window with the pane,
+putting the rail, the tabs and the stage header away until the same keys again. The Feature stage
+has them while it is open, and another pane brings them back for good. Rust holds the model
+(`session`); the page draws what it is sent and reports gestures. It is TypeScript in
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `screen`, `input`, `keymap`,
+`palette`, `shortcuts`, `features`, `chime`, with `keys`, `dom`, `state` and `tauri` beneath them),
+compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
+are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
+either committed output differs from what its source makes. Its webview keeps its storage under the
+instance's config directory, so a dev window never shares it with the installed one, and it logs to
+`argus-desktop.log` beside the config, keeping the previous run's.
 
 The daemon is started with its stderr on the null device, since it shares no console with the
 client and anything it printed would either land in the middle of the TUI or open a console window
@@ -187,6 +196,7 @@ live in this crate and a contract written twice drifts in silence.
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
 | `history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
+| `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
 | `capture` | how one note reads as a feature: its title, brief, tasks and decisions |
@@ -195,6 +205,7 @@ live in this crate and a contract written twice drifts in silence.
 | `flow` | the steps a sequence diagram's source says, in the order it says them |
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
+| `transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
 behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
@@ -226,6 +237,9 @@ to the type or its locking.
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
+| `harness/transcript` | reading a session's transcript file, in its harness's format, into the protocol's transcript |
+| `harness/transcript/locate` | where a session's transcript is on disk, from its harness's path templates |
+| `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi`, `harness/transcript/neutral` | one transcript format each: which of its records are a turn, a reply or a tool call, and what they say of the session |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
 | `store/capture` | a whole note written down as a feature, in one transaction |
@@ -275,7 +289,7 @@ result of a request; `ui` is a pure function of it.
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
-| `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
+| `grid`, `selection`, `pty_input`, `paste`, `clipboard` | a pane's screen, its selected text, and the input primitives |
 | `pty_input/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
 | `pty_input/mouse` | a terminal mouse event as the protocol's, relative to the pane's area |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
@@ -294,17 +308,18 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
 | `screen` | a pane's screen as the page draws it: the grid the daemon's damage lands on, and the rows changed since the last frame |
 | `rail` | what the rail lists from the tree, and what a row says |
-| `review` | what the review dialog holds — a checkout's unstaged and staged sides, the diff on screen, the lines picked and who a comment goes to — and what its gestures ask of the daemon |
-| `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, and each opened commit's diff — and what its gestures ask of the daemon |
+| `review` | what the review dialog holds — a checkout's unstaged and staged sides, the diff on screen, the lines picked, who a comment goes to and the file being jumped to — and what its gestures ask of the daemon |
+| `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row — and what its keys and buttons ask of the daemon |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
-| `settings` | what the window remembers between runs: each repository's index layout, and whether it chimes |
+| `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, and the side and layout a review opens on |
 | `page` | what the page and the window's Rust say to each other |
 | `commands` | the calls the page makes, handed to the session |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
-| `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page |
+| `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, and the commands the palette runs |
+| `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `logging` | where the window's own diagnostics go |
@@ -1020,6 +1035,55 @@ and control-free, and enter the child command as argv rather than shell interpol
 are omitted. Each recording replaces the pane table in one transaction, because the tree is the
 truth and the table follows it: a pane that closed has no row to update.
 
+## Transcripts
+
+The daemon can read a past session's transcript from the file its harness keeps, for the session
+previews HUN-174 adds; until then nothing asks it to. Argus never stores a transcript and never
+follows one as it grows: `harness/transcript` reads the harness's own file whole, when asked,
+into `argus_protocol::transcript::Transcript` — the person's turns, the agent's replies and the tools
+it ran, each with the time the harness wrote, plus the session's title (the one the harness gave it,
+else the first prompt that is not a slash or shell command), its first and last times, its turn
+count and the directory it ran in. Thinking, tool output and the harness's own bookkeeping are left
+out. Text is clipped to 8 KiB and a session keeps its newest 500 entries, saying how many older ones
+it left out. A line that is not JSON, or a record a reader does not know, is skipped.
+
+A harness's `transcript` names a format and where its files are, as path templates: `~` is the
+home directory, `{session_id}` the identity its hooks captured, `{checkout}` the pane's checkout,
+and `*` any run of characters within one component; where several files match, the newest wins. A
+session id that holds a separator, `*`, `:` or `..` names nothing. The built-ins:
+
+| harness | format | where |
+| --- | --- | --- |
+| `claude` | `claude` | `~/.claude/projects/*/{session_id}.jsonl` |
+| `codex` | `codex` | `~/.codex/sessions/*/*/*/rollout-*-{session_id}.jsonl` |
+| `agent` | `cursor` | `~/.cursor/projects/*/agent-transcripts/{session_id}.jsonl`, or in a directory of the same name |
+| `pi` | `pi` | `~/.pi/agent/sessions/*/*_{session_id}.jsonl` |
+
+OpenCode, AGY and `generic` keep none Argus reads, and asking after one of their sessions answers
+`Conversation::NoTranscript`, for HUN-174 to list the session from what Argus recorded — title,
+times, checkout — and say it has no transcript. A transcript a harness names but that is not on
+disk is `Missing`.
+
+A `[[harness]]` block sets `transcript = "claude"` (a known format where its own harness keeps it —
+the form older configs wrote, for a wrapper around that CLI) or `transcript = { format = "…", path =
+"…" }`, where `format` is `claude`, `codex`, `cursor`, `pi` or `neutral`. A table without `format`
+is neutral, and one without `path` looks where the format's own harness keeps it. An unknown
+format, or the neutral one with no `path`, is logged and the block loads without a transcript.
+
+The neutral format is one JSON object per line, each a `transcript::Entry`:
+
+```jsonl
+{"kind":"user","text":"Tidy the release notes","at":"2026-10-14T09:00:00Z"}
+{"kind":"tool","tool":"shell","summary":"npm run lint","at":"…","failed":true}
+{"kind":"agent","text":"The notes are tidied.","at":"…"}
+{"kind":"title","text":"Release notes"}
+```
+
+`at` (RFC 3339), `summary` and `failed` are optional; a `title` line names the session, the last
+one winning; a line of any other `kind` is skipped, as a client skips an entry of a kind it does not
+know. It is what `argus-hook` would write for a harness that reports its turns, and the serde shape
+of the protocol's entry, so it cannot drift from what a client is sent.
+
 ## Git and checkouts
 
 Read-only Git work uses `git2`. At daemon startup only HEAD is read for each checkout, so the first
@@ -1124,10 +1188,11 @@ one project can have a branch of the same name. Its `setup` commands run in a wo
 just created, in order, parsed into arguments without a shell like the editor command; the row is
 broadcast before they run, and a failure is reported without removing the worktree.
 
-A checkout may hold several agents. That is shown — a warning glyph on the row, and "shared by N"
-where the column is wide enough — rather than prevented, unless the project sets `exclusive`, which
-turns a second fresh agent in one checkout into a refusal naming the one already there. Shells never
-count, and restoring a session is exempt: those panes were already running together.
+A checkout may hold several agents (`CheckoutInfo::shared_by`). That is shown — in the desktop
+window, `⚠N` on the rail row and "shared by N" in the Checkouts table — rather than prevented,
+unless the project sets `exclusive`, which turns a second fresh agent in one checkout into a refusal
+naming the one already there. Shells never count, nor does the marker count an agent that has
+exited, and restoring a session is exempt: those panes were already running together.
 
 Argus-created worktrees live under `<primary>/.argus/worktrees/<branch>` by default; a branch name that is not
 a plain path component is refused before it becomes a directory, and a name starting with a dash is

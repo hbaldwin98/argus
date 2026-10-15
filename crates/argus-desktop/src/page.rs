@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::keymap::Group;
+use crate::keymap::{Action, Command, Group};
 
 /// One message down the page's channel.
 #[derive(Debug, Clone, Serialize)]
@@ -35,9 +35,16 @@ pub enum Event {
     Notice { text: String },
     /// An agent came to need the person somewhere they are not looking.
     Chime,
-    /// Every binding, grouped as the shortcuts sheet lists them, sent once
-    /// a page loads: the page dispatches from it outside a pane.
-    Keymap { groups: Vec<Group> },
+    /// Every binding, grouped as the shortcuts sheet lists them, and the
+    /// palette's commands, sent once a page loads: the page dispatches from
+    /// it outside a pane.
+    Keymap { groups: Vec<Group>, commands: Vec<Command> },
+    /// What the palette can go to, whenever it changes while open; `open`
+    /// false once it closes.
+    Palette(Box<Palette>),
+    /// A key pressed in a pane, or a command chosen in the palette, for
+    /// something only the page draws: the palette or the shortcuts sheet.
+    Run { action: Action },
 }
 
 /// The connection, as the status bar and the empty stage show it.
@@ -92,7 +99,8 @@ pub struct Rail {
     /// away until the leader and `f` again.
     pub filled: bool,
     /// The agents a checkout's + offers beside a shell: the daemon's
-    /// templates, the first its default.
+    /// templates, the one this window last started first, and the first
+    /// its default.
     pub templates: Vec<String>,
 }
 
@@ -153,6 +161,8 @@ pub struct Checkout {
     /// `GitStatus::summary`, or `None` outside git.
     pub git: Option<String>,
     pub clean: bool,
+    /// `CheckoutInfo::shared_by`: how many agents share it, when several do.
+    pub shared: Option<usize>,
     pub panes: Vec<Pane>,
 }
 
@@ -309,6 +319,59 @@ pub struct Line {
     pub aside: Option<String>,
 }
 
+/// What the command palette can go to while it is open.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Palette {
+    pub open: bool,
+    /// Every pane of the project.
+    pub panes: Vec<PalettePane>,
+    /// Every checkout of the project, those of closed repositories too.
+    pub checkouts: Vec<PaletteCheckout>,
+    /// The features of the repository the Feature stage reads.
+    pub features: Vec<PaletteFeature>,
+    /// Whether that repository's board has arrived.
+    pub features_loaded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PalettePane {
+    pub id: u64,
+    pub title: String,
+    pub agent: bool,
+    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
+    pub status: &'static str,
+    /// `repository / checkout`.
+    pub place: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PaletteCheckout {
+    pub id: u64,
+    pub name: String,
+    pub repository: String,
+    pub branch: String,
+    /// `GitStatus::summary`, or `None` outside git.
+    pub git: Option<String>,
+    pub clean: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PaletteFeature {
+    pub slug: String,
+    pub number: i64,
+    pub title: String,
+    #[cfg_attr(test, ts(type = "\"new\" | \"queued\" | \"active\" | \"done\" | \"held\" | \"archived\""))]
+    pub standing: &'static str,
+}
+
 /// The rows of a pane's screen that changed since the last frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
@@ -387,6 +450,8 @@ pub struct CheckoutsRow {
     /// What was last committed here; a branch row has none.
     pub last: Option<LastCommit>,
     pub running: Vec<Running>,
+    /// `CheckoutInfo::shared_by`; a branch row has no agents to share it.
+    pub shared: Option<usize>,
     /// The number of the feature this checkout is on, when the board says.
     pub feature: Option<i64>,
     /// That feature is the one the Feature stage has under its cursor.
@@ -459,6 +524,19 @@ pub struct ReviewPage {
     /// The agents in the checkout a comment can go to.
     pub recipients: Vec<Recipient>,
     pub recipient: Option<u64>,
+    /// The Ctrl-P field over the file list, while it is open.
+    pub jump: Option<ReviewJump>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewJump {
+    pub query: String,
+    /// The files it matches, best first, as indices into `files`.
+    pub matches: Vec<usize>,
+    /// The match Enter opens, an index into `files`.
+    pub at: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -484,8 +562,10 @@ pub struct HistoryPage {
     pub open: bool,
     pub name: String,
     pub branch: String,
+    /// What the filter field says; the rows are the commits it matches.
+    pub filter: String,
     pub loading: bool,
-    /// Why there are no rows: no commits yet, or a failed read.
+    /// Why there are no rows: no commits yet, nothing matching the filter, or a failed read.
     pub empty: Option<String>,
     pub rows: Vec<HistoryRowView>,
     /// The commit under the cursor, short.
@@ -684,6 +764,7 @@ mod tests {
                         kind: "main",
                         git: Some("clean".into()),
                         clean: true,
+                        shared: None,
                         panes: vec![Pane {
                             id: 4,
                             agent: true,
@@ -764,5 +845,20 @@ mod tests {
         assert_eq!(as_json(event), json!({"type": "clipboard", "text": "copied"}));
         let event = Event::Notice { text: "no such pane".into() };
         assert_eq!(as_json(event), json!({"type": "notice", "text": "no such pane"}));
+    }
+
+    #[test]
+    fn the_palette_and_a_run_name_their_fields_in_camel_case() {
+        let palette = Palette {
+            open: true,
+            panes: vec![PalettePane { id: 4, title: "claude".into(), agent: true, status: "waiting", place: "argus / main".into() }],
+            features_loaded: true,
+            ..Palette::default()
+        };
+        let value = as_json(Event::Palette(Box::new(palette)));
+        assert_eq!(value["type"], "palette");
+        assert_eq!(value["featuresLoaded"], true);
+        assert_eq!(value["panes"][0]["place"], "argus / main");
+        assert_eq!(as_json(Event::Run { action: Action::Shortcuts }), json!({"type": "run", "action": "shortcuts"}));
     }
 }

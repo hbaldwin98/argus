@@ -17,7 +17,6 @@ mod desktop;
 mod dirpicker;
 mod dropped;
 mod focus;
-mod fuzzy;
 mod grid;
 mod herdr;
 mod hosts;

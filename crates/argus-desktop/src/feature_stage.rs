@@ -7,6 +7,8 @@
 //! sends the stage's edits. Like everything in the window it never
 //! predicts: a hold or an archive shows once the pushed board says so.
 
+use std::collections::BTreeMap;
+
 use argus_protocol::{
     CheckoutId, ClientMsg, DecisionBoard, FeatureState, ProjectId, ProjectInfo, RepositoryId,
     TaskAction, TaskList,
@@ -14,7 +16,6 @@ use argus_protocol::{
 
 use crate::features::{self, Index, Layout};
 use crate::page;
-use crate::settings::Settings;
 
 /// Which repository the stage reads, and how to address its board.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,13 +43,14 @@ pub struct FeatureStage {
     peek: Option<String>,
     peek_tasks: Option<TaskList>,
     show_folded: bool,
-    settings: Settings,
-    settings_changed: bool,
+    /// `Settings::layouts`: the session saves them with the rest.
+    layouts: BTreeMap<String, String>,
+    layouts_changed: bool,
     changed: bool,
 }
 
 impl FeatureStage {
-    pub fn new(settings: Settings) -> FeatureStage {
+    pub fn new(layouts: BTreeMap<String, String>) -> FeatureStage {
         FeatureStage {
             open: false,
             board_wanted: false,
@@ -58,8 +60,8 @@ impl FeatureStage {
             peek: None,
             peek_tasks: None,
             show_folded: false,
-            settings,
-            settings_changed: false,
+            layouts,
+            layouts_changed: false,
             changed: true,
         }
     }
@@ -166,12 +168,32 @@ impl FeatureStage {
         self.ask_tasks(scope, out);
     }
 
+    /// Puts the cursor on a feature the index may be folding away, showing
+    /// the folded ones first: a peek on a row the index hides would be
+    /// moved off it by the next board's `settle_peek`.
+    pub fn reveal(&mut self, slug: &str, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        let folded = self.board.as_ref().is_some_and(|board| features::is_folded(board, tree, slug));
+        if folded && !self.show_folded {
+            self.show_folded = true;
+            self.changed = true;
+        }
+        self.peek(slug, scope, out);
+    }
+
+    /// How the scope's index is laid out, as remembered for it.
+    pub fn layout(&self, scope: Option<&Scope>) -> Layout {
+        scope
+            .and_then(|scope| self.layouts.get(&scope.key))
+            .and_then(|word| Layout::from_word(word))
+            .unwrap_or_default()
+    }
+
     pub fn set_layout(&mut self, layout: Layout, scope: Option<&Scope>) {
         let Some(scope) = scope else {
             return;
         };
-        self.settings.layouts.insert(scope.key.clone(), layout.word().to_string());
-        self.settings_changed = true;
+        self.layouts.insert(scope.key.clone(), layout.word().to_string());
+        self.layouts_changed = true;
         self.changed = true;
     }
 
@@ -223,20 +245,17 @@ impl FeatureStage {
         self.index(scope, tree)
     }
 
-    pub fn settings(&self) -> &Settings {
-        &self.settings
+    /// Whether a layout changed since last asked, so they are saved.
+    pub fn take_layouts_changed(&mut self) -> bool {
+        std::mem::take(&mut self.layouts_changed)
     }
 
-    /// The settings, when a change asks for them to be saved.
-    pub fn take_settings(&mut self) -> Option<Settings> {
-        std::mem::take(&mut self.settings_changed).then(|| self.settings.clone())
+    pub fn layouts(&self) -> &BTreeMap<String, String> {
+        &self.layouts
     }
 
     fn index(&self, scope: Option<&Scope>, tree: &[ProjectInfo]) -> page::Features {
-        let layout = scope
-            .and_then(|scope| self.settings.layouts.get(&scope.key))
-            .and_then(|word| Layout::from_word(word))
-            .unwrap_or_default();
+        let layout = self.layout(scope);
         features::build(&Index {
             repository: scope.map_or("", |scope| scope.repository_name.as_str()),
             board: self.board.as_ref(),
@@ -309,7 +328,7 @@ mod tests {
 
     /// An open stage that has asked for and received the fixture board.
     fn loaded() -> (FeatureStage, Vec<ClientMsg>) {
-        let mut stage = FeatureStage::new(Settings::default());
+        let mut stage = FeatureStage::new(BTreeMap::new());
         stage.set_open(true);
         let mut out = Vec::new();
         stage.refresh(Some(&scope()), &mut out);
@@ -331,7 +350,7 @@ mod tests {
 
     #[test]
     fn a_closed_stage_asks_for_nothing() {
-        let mut stage = FeatureStage::new(Settings::default());
+        let mut stage = FeatureStage::new(BTreeMap::new());
         let mut out = Vec::new();
         stage.refresh(Some(&scope()), &mut out);
         assert!(out.is_empty());
@@ -339,7 +358,7 @@ mod tests {
 
     #[test]
     fn a_board_not_asked_for_is_dropped() {
-        let mut stage = FeatureStage::new(Settings::default());
+        let mut stage = FeatureStage::new(BTreeMap::new());
         stage.set_open(true);
         let mut out = Vec::new();
         stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
@@ -353,7 +372,7 @@ mod tests {
 
     #[test]
     fn a_board_another_repository_of_the_project_was_pushed_is_dropped() {
-        let mut stage = FeatureStage::new(Settings::default());
+        let mut stage = FeatureStage::new(BTreeMap::new());
         stage.set_open(true);
         let mut out = Vec::new();
         stage.refresh(Some(&scope()), &mut out);
@@ -392,6 +411,22 @@ mod tests {
     }
 
     #[test]
+    fn an_archived_feature_revealed_is_listed_and_stays_peeked_past_the_next_board() {
+        let (mut stage, _) = loaded();
+        let mut out = Vec::new();
+        stage.reveal("old", Some(&scope()), &fixtures::feature_tree(), &mut out);
+        assert_eq!(names(&out), ["tasks old"]);
+        stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
+        assert_eq!(stage.peeked(), Some("old"));
+        assert!(stage.everything(Some(&scope()), &fixtures::feature_tree()).show_folded, "the index lists it");
+
+        let (mut stage, _) = loaded();
+        stage.reveal("bump", Some(&scope()), &fixtures::feature_tree(), &mut out);
+        assert_eq!(stage.peeked(), Some("bump"));
+        assert!(!stage.show_folded, "a listed feature leaves the folded ones folded");
+    }
+
+    #[test]
     fn holds_and_archives_go_to_the_daemon_and_change_nothing_here() {
         let (stage, _) = loaded();
         let mut out = Vec::new();
@@ -417,9 +452,9 @@ mod tests {
         assert_eq!(stage.everything(Some(&scope()), &[]).layout, "list");
         stage.set_layout(Layout::Board, Some(&scope()));
         assert_eq!(stage.everything(Some(&scope()), &[]).layout, "board");
-        let saved = stage.take_settings().unwrap();
-        assert_eq!(saved.layouts.get("/src/main").map(String::as_str), Some("board"));
-        assert!(stage.take_settings().is_none());
+        assert!(stage.take_layouts_changed());
+        assert_eq!(stage.layouts().get("/src/main").map(String::as_str), Some("board"));
+        assert!(!stage.take_layouts_changed());
         let other = Scope { key: "/src/other".into(), ..scope() };
         assert_eq!(stage.everything(Some(&other), &[]).layout, "list");
     }

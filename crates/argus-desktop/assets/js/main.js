@@ -5,14 +5,33 @@ import { chime, listen as listenForSound } from './chime.js';
 import { closeStart, drawChrome, drawHeading, notice, railPicked, reconnect, unpickRail, } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
 import { $ } from './dom.js';
-import { drawHistory } from './history.js';
-import { drawReview } from './review.js';
+import { drawHistory, historyOpen } from './history.js';
+import { drawReview, reviewOpen } from './review.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
-import { listen as listenToKeys } from './keymap.js';
+import { listen as listenToKeys, runOver } from './keymap.js';
+import { drawPalette } from './palette.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
+/** Whether the pane had the keys when a dialog opened over it. */
+let paneHadKeys = false;
+/** A dialog opened from a pane (leader-Tab) takes the keys from it, and
+ *  gives them back once no dialog is left open. */
+function dialogKeys() {
+    const input = $('input');
+    if (reviewOpen() || historyOpen()) {
+        if (document.activeElement === input) {
+            paneHadKeys = true;
+            input.blur();
+        }
+    }
+    else if (paneHadKeys) {
+        paneHadKeys = false;
+        if (state.rail.shown)
+            input.focus();
+    }
+}
 function receive(event) {
     switch (event.type) {
         case 'status':
@@ -51,10 +70,12 @@ function receive(event) {
         case 'history':
             state.history = event;
             drawHistory();
+            dialogKeys();
             break;
         case 'review':
             state.review = event;
             drawReview();
+            dialogKeys();
             break;
         case 'checkouts':
             state.checkouts = event;
@@ -69,6 +90,15 @@ function receive(event) {
             break;
         case 'keymap':
             state.keymap = event.groups;
+            state.commands = event.commands;
+            drawChrome();
+            break;
+        case 'palette':
+            state.palette = event;
+            drawPalette();
+            break;
+        case 'run':
+            runOver(event.action);
             break;
     }
 }

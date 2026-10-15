@@ -20,6 +20,7 @@ pub mod features;
 pub mod flow;
 pub mod focus;
 pub mod framing;
+pub mod fuzzy;
 pub mod held_tree;
 pub mod history_view;
 pub mod hello;
@@ -38,6 +39,7 @@ pub mod review_view;
 pub mod standing;
 pub mod tasks;
 pub mod tracker_links;
+pub mod transcript;
 pub mod transport;
 pub mod tree;
 

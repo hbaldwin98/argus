@@ -43,6 +43,7 @@ stage: "workspace" | "feature" | "checkouts",
 filled: boolean, 
 /**
  * The agents a checkout's + offers beside a shell: the daemon's
- * templates, the first its default.
+ * templates, the one this window last started first, and the first
+ * its default.
  */
 templates: Array<string>, };

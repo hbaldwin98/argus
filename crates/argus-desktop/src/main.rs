@@ -25,6 +25,7 @@ mod history;
 mod keys;
 mod logging;
 mod page;
+mod palette;
 mod rail;
 mod review;
 mod screen;
@@ -89,8 +90,10 @@ fn main() {
             commands::review_click,
             commands::review_refresh,
             commands::review_comment,
+            commands::review_jump,
             commands::open_history,
             commands::history_action,
+            commands::filter_history,
             commands::peek,
             commands::set_layout,
             commands::toggle_folded,
@@ -98,6 +101,10 @@ fn main() {
             commands::hold,
             commands::archive,
             commands::go_to_pane,
+            commands::palette,
+            commands::command,
+            commands::go_to_checkout,
+            commands::go_to_feature,
             commands::reconnect,
         ])
         .on_page_load(|webview, payload| {

@@ -6,11 +6,13 @@ import type { Action } from './bindings/Action';
 import type { Chord } from './bindings/Chord';
 import type { Place } from './bindings/Place';
 import { answerNo, checkoutsAction } from './checkouts.js';
-import { historyOpen } from './history.js';
+import { focusHistoryFilter, historyOpen } from './history.js';
 import { reviewOpen } from './review.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
+import { closePalette, openPalette } from './palette.js';
+import { closeSheet, openSheet, sheetOpen, toggleSheet } from './shortcuts.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -48,6 +50,10 @@ function run(action: Action): boolean {
   // A menu or dialog over the stage holds the keys until it closes.
   if (layerOpen) return false;
   switch (action) {
+    case 'palette':
+    case 'shortcuts':
+      runOver(action);
+      return true;
     case 'workspace':
     case 'feature':
       call('show_features', { open: action === 'feature' });
@@ -60,6 +66,25 @@ function run(action: Action): boolean {
   }
 }
 
+/** Opens the palette or the sheet, for a key here or one Rust heard in a
+ *  pane: one over the other would leave two holding the keys. */
+export function runOver(action: Action): void {
+  if (action === 'palette') {
+    closeSheet();
+    openPalette();
+  } else if (action === 'shortcuts') {
+    closePalette();
+    toggleSheet();
+  }
+}
+
+/** The keys a review or history dialog does not answer, open over it. */
+function notTheirs(action: Action): boolean {
+  return (
+    action === 'workspace' || action === 'feature' || action === 'checkouts' || action === 'palette'
+  );
+}
+
 export function listen(): void {
   document.addEventListener('keydown', (e) => {
     // A text field takes its own keys, and the pane's text area sends its
@@ -67,10 +92,23 @@ export function listen(): void {
     const typing =
       e.target instanceof Element && e.target.closest('input, textarea, [contenteditable]');
     if (typing) return;
-    // The review dialog holds the keys while it is open; Rust runs them.
+    // The sheet is over everything and holds the keys until put away.
+    if (sheetOpen()) {
+      const action = actionFor(['anywhere'], e);
+      if (action === 'closeLayer' || action === 'shortcuts') {
+        e.preventDefault();
+        closeSheet();
+      }
+      return;
+    }
+    // The review and history dialogs hold the keys while open, all but
+    // the sheet's, which lists theirs; Rust runs the rest.
     if (reviewOpen()) {
       const action = actionFor(['anywhere', 'review'], e);
-      if (action && action !== 'workspace' && action !== 'feature' && action !== 'checkouts') {
+      if (action === 'shortcuts') {
+        e.preventDefault();
+        openSheet();
+      } else if (action && !notTheirs(action)) {
         e.preventDefault();
         call('review_action', { action });
       }
@@ -78,9 +116,13 @@ export function listen(): void {
     }
     if (historyOpen()) {
       const action = actionFor(['anywhere', 'history'], e);
-      if (action && action !== 'workspace' && action !== 'feature' && action !== 'checkouts') {
+      if (action === 'shortcuts') {
         e.preventDefault();
-        call('history_action', { action, row: null });
+        openSheet();
+      } else if (action && !notTheirs(action)) {
+        e.preventDefault();
+        if (action === 'filter') focusHistoryFilter();
+        else call('history_action', { action, row: null });
       }
       return;
     }

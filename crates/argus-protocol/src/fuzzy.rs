@@ -1,4 +1,6 @@
-//! Fuzzy filtering for the pickers.
+//! Which items a typed query matches, best first: the terminal client's
+//! pickers, and the desktop review's jump field. It lives here so a query
+//! finds the same things in either client.
 //!
 //! Wraps `nucleo-matcher` — the matcher behind Helix, and fzf's algorithm —
 //! rather than shelling out to `fzf`, which is an interactive program that
@@ -29,10 +31,6 @@ impl Fuzzy {
         }
     }
 
-    /// Indices into `items` that match `query`, best score first. An empty
-    /// query keeps everything in its original order — the list is usually
-    /// already in a meaningful one, and reordering it on no input would be
-    /// noise.
     /// Whether one string matches a fuzzy query. Used outside pickers where
     /// building a filtered index list would be heavier than a yes/no check.
     pub fn matches(query: &str, item: &str) -> bool {
@@ -47,6 +45,10 @@ impl Fuzzy {
             .is_some()
     }
 
+    /// Indices into `items` that match `query`, best score first. An empty
+    /// query keeps everything in its original order — the list is usually
+    /// already in a meaningful one, and reordering it on no input would be
+    /// noise.
     pub fn filter(&mut self, query: &str, items: &[String]) -> Vec<usize> {
         if query.trim().is_empty() {
             return (0..items.len()).collect();
@@ -180,6 +182,12 @@ mod tests {
     fn filtering_an_empty_list_is_not_an_error() {
         let mut f = Fuzzy::new();
         assert!(f.filter("anything", &[]).is_empty());
+    }
+
+    #[test]
+    fn a_query_starting_a_file_name_outranks_one_inside_a_directory() {
+        let list = items(&["docs/prereview.md", "src/review.rs", "README.md"]);
+        assert_eq!(Fuzzy::paths().filter("rev", &list), vec![1, 0]);
     }
 
     #[test]

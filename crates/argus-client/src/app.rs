@@ -23,7 +23,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::brief::{BriefMode, BriefTarget, BriefView};
 use crate::dirpicker::{DirAction, DirPicker, DirTarget};
-use crate::fuzzy::Fuzzy;
+use argus_protocol::fuzzy::Fuzzy;
 use crate::grid::Grid;
 use argus_protocol::history_view::{Drill, HistoryView};
 use crate::pty_input::{encode_key, encode_mouse, is_leader};

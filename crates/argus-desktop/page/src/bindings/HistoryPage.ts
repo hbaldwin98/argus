@@ -6,9 +6,13 @@ import type { HistoryRowView } from "./HistoryRowView";
  * The history dialog: a checkout's newest commits, and the diff of the
  * file under the cursor.
  */
-export type HistoryPage = { open: boolean, name: string, branch: string, loading: boolean, 
+export type HistoryPage = { open: boolean, name: string, branch: string, 
 /**
- * Why there are no rows: no commits yet, or a failed read.
+ * What the filter field says; the rows are the commits it matches.
+ */
+filter: string, loading: boolean, 
+/**
+ * Why there are no rows: no commits yet, nothing matching the filter, or a failed read.
  */
 empty: string | null, rows: Array<HistoryRowView>, 
 /**
