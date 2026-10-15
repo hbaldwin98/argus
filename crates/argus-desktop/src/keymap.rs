@@ -968,9 +968,26 @@ mod tests {
         let last = LAYERS.last().unwrap();
         assert_eq!(last.layer, Layer::Stage);
         assert_eq!(last.places, Some(&[Anywhere][..]));
+    }
+
+    #[test]
+    fn the_layers_cross_to_the_page_in_camel_case() {
         let value = serde_json::to_value(LAYERS).unwrap();
         assert_eq!(value[0], serde_json::json!({ "layer": "field", "places": null, "takesFromPane": false }));
         assert_eq!(value[5]["places"], serde_json::json!(["anywhere", "link"]));
+    }
+
+    /// The page blurs a pane's text area when one of these opens, so a
+    /// flag flipped here changes which dialogs a pane keeps typing under.
+    /// The transcript is listed because it opens only inside the sessions
+    /// dialog, which already took the keys.
+    #[test]
+    fn only_the_dialogs_take_the_keys_from_a_pane() {
+        let taking: Vec<Layer> = LAYERS.iter().filter(|l| l.takes_from_pane).map(|l| l.layer).collect();
+        assert_eq!(
+            taking,
+            [Layer::AddProject, Layer::Link, Layer::Reconcile, Layer::Review, Layer::History, Layer::Transcript, Layer::Sessions]
+        );
     }
 
     /// As in the terminal client's rail: j and k move the pick, s and a
