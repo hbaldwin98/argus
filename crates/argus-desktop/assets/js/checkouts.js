@@ -5,6 +5,7 @@
 import { startMenu, toggleStart } from './chrome.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { closeLayer } from './features.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 function keycap(key) {
@@ -24,7 +25,7 @@ function head(c) {
                 call('filter_checkouts', { filter: e.target.value });
         },
         onkeydown: (e) => {
-            if (e.key === 'Escape' || e.key === 'Enter') {
+            if (actionFor(['filter'], e) === 'leave') {
                 e.preventDefault();
                 e.target.blur();
             }
@@ -133,9 +134,10 @@ function nameDialog(from) {
         closeLayer();
     };
     name.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter')
+        const action = actionFor(['writing'], e);
+        if (action === 'choose')
             make();
-        if (e.key === 'Escape')
+        if (action === 'closeLayer')
             closeLayer();
     });
     $('layer').replaceChildren(el('div', {

@@ -8,6 +8,7 @@
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { $, el, ghosts, icon } from './dom.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { drawWork } from './work.js';
@@ -474,9 +475,10 @@ function holdDialog(row) {
         closeLayer();
     };
     reason.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter')
+        const action = actionFor(['writing'], e);
+        if (action === 'choose')
             hold();
-        if (e.key === 'Escape')
+        if (action === 'closeLayer')
             closeLayer();
     });
     const dialog = el('div', {

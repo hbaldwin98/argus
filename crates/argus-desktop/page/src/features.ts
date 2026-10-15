@@ -15,6 +15,7 @@ import type { Peek } from './bindings/Peek';
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { drawWork } from './work.js';
@@ -771,8 +772,9 @@ function holdDialog(row: FeatureRow): void {
     closeLayer();
   };
   reason.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') hold();
-    if (e.key === 'Escape') closeLayer();
+    const action = actionFor(['writing'], e);
+    if (action === 'choose') hold();
+    if (action === 'closeLayer') closeLayer();
   });
   const dialog = el(
     'div',

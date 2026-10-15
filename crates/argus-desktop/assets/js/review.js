@@ -4,6 +4,7 @@
 // pressed or clicked. A redraw keeps the scroll, and the comment being
 // written, where they were.
 import { $, el, ghosts, icon } from './dom.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 function keycap(key) {
@@ -50,14 +51,13 @@ function jumpField(query) {
         onkeydown: (e) => {
             // Ctrl-N and Ctrl-P step as in fzf, and must not reach the webview,
             // where Ctrl-P prints.
-            const down = e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n');
-            const up = e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p');
-            const step = down ? 1 : up ? -1 : 0;
-            if (step)
-                jump({ on: 'step', by: step });
-            else if (e.key === 'Enter')
+            const action = actionFor(['jump'], e);
+            if (action === 'next' || action === 'previous') {
+                jump({ on: 'step', by: action === 'next' ? 1 : -1 });
+            }
+            else if (action === 'choose')
                 jump({ on: 'choose' });
-            else if (e.key === 'Escape') {
+            else if (action === 'closeLayer') {
                 // The field closes, not the dialog under it.
                 e.stopPropagation();
                 jump({ on: 'close' });
@@ -121,11 +121,12 @@ function commentBox(r) {
                 state.reviewDraft = e.target.value;
         },
         onkeydown: (e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            const action = actionFor(['writing'], e);
+            if (action === 'save') {
                 e.preventDefault();
                 send();
             }
-            else if (e.key === 'Escape') {
+            else if (action === 'closeLayer') {
                 e.preventDefault();
                 e.stopPropagation();
                 call('review_comment', { body: null });

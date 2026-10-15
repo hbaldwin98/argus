@@ -10,6 +10,7 @@ import type { ReviewClick } from './bindings/ReviewClick';
 import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
 import type { ReviewPage } from './bindings/ReviewPage';
 import { $, el, ghosts, icon, type Child } from './dom.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -115,12 +116,11 @@ function jumpField(query: string): HTMLElement {
     onkeydown: (e: KeyboardEvent) => {
       // Ctrl-N and Ctrl-P step as in fzf, and must not reach the webview,
       // where Ctrl-P prints.
-      const down = e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n');
-      const up = e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p');
-      const step = down ? 1 : up ? -1 : 0;
-      if (step) jump({ on: 'step', by: step });
-      else if (e.key === 'Enter') jump({ on: 'choose' });
-      else if (e.key === 'Escape') {
+      const action = actionFor(['jump'], e);
+      if (action === 'next' || action === 'previous') {
+        jump({ on: 'step', by: action === 'next' ? 1 : -1 });
+      } else if (action === 'choose') jump({ on: 'choose' });
+      else if (action === 'closeLayer') {
         // The field closes, not the dialog under it.
         e.stopPropagation();
         jump({ on: 'close' });
@@ -220,10 +220,11 @@ function commentBox(r: ReviewPage): HTMLElement {
       if (e.target instanceof HTMLTextAreaElement) state.reviewDraft = e.target.value;
     },
     onkeydown: (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      const action = actionFor(['writing'], e);
+      if (action === 'save') {
         e.preventDefault();
         send();
-      } else if (e.key === 'Escape') {
+      } else if (action === 'closeLayer') {
         e.preventDefault();
         e.stopPropagation();
         call('review_comment', { body: null });

@@ -4,6 +4,7 @@
 // keeps until a pane it started is made.
 import { $, el, icon } from './dom.js';
 import { chordsFor, keycaps } from './keys.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 /** Built once and only refilled after, so a redraw for a pane's status
@@ -51,7 +52,7 @@ function build() {
             state.compose.text = text.value;
         },
         onkeydown: (e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            if (actionFor(['writing'], e) === 'save') {
                 e.preventDefault();
                 start(true);
             }

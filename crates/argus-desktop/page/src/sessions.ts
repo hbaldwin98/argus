@@ -10,6 +10,7 @@ import type { SessionRowView } from './bindings/SessionRowView';
 import type { SessionsPage } from './bindings/SessionsPage';
 import type { TranscriptLine } from './bindings/TranscriptLine';
 import { $, el, ghosts, icon, type Child } from './dom.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -160,7 +161,7 @@ function searchField(search: string): HTMLElement {
     },
     onkeydown: (e: KeyboardEvent) => {
       // The list has the keys back, filtered.
-      if (e.key === 'Escape' || e.key === 'Enter') {
+      if (actionFor(['filter'], e) === 'leave') {
         e.preventDefault();
         (e.target as HTMLElement).blur();
       }

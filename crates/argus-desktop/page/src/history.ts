@@ -6,6 +6,7 @@
 import type { HistoryPage } from './bindings/HistoryPage';
 import type { HistoryRowView } from './bindings/HistoryRowView';
 import { $, el, ghosts, icon, type Child } from './dom.js';
+import { actionFor } from './keymap.js';
 import { diffRow } from './review.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -94,7 +95,7 @@ function filterField(filter: string): HTMLElement {
     },
     onkeydown: (e: KeyboardEvent) => {
       // The list has the keys back, filtered.
-      if (e.key === 'Escape' || e.key === 'Enter') {
+      if (actionFor(['filter'], e) === 'leave') {
         e.preventDefault();
         (e.target as HTMLElement).blur();
       }

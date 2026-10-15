@@ -4,6 +4,7 @@
 // workspaces, the question and the dialog (`src/switcher.rs`,
 // `src/add_project.rs`); nothing here changes until the daemon says so.
 import { $, el, ghosts, icon } from './dom.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 // ---- The switcher ------------------------------------------------------------
@@ -217,7 +218,7 @@ function pathRow(a) {
         class: 'field mono grow',
         spellcheck: 'false',
         onkeydown: (e) => {
-            if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+            if (actionFor(['writing'], e) === 'choose' && e.target instanceof HTMLInputElement) {
                 e.preventDefault();
                 call('add_project', { gesture: { on: 'browse', path: e.target.value } });
             }
@@ -301,7 +302,7 @@ function addDialog(a) {
         onkeydown: (e) => {
             // The dialog holds the keys: none reach the stage under it.
             e.stopPropagation();
-            if (e.key === 'Escape') {
+            if (actionFor(['anywhere'], e) === 'closeLayer') {
                 e.preventDefault();
                 closeAdd();
             }

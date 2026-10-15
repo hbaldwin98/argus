@@ -5,6 +5,7 @@
 
 import { $, el, icon } from './dom.js';
 import { chordsFor, keycaps } from './keys.js';
+import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -79,7 +80,7 @@ function build(): NonNullable<typeof parts> {
       state.compose.text = text.value;
     },
     onkeydown: (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      if (actionFor(['writing'], e) === 'save') {
         e.preventDefault();
         start(true);
       }

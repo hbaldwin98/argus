@@ -64,10 +64,12 @@ says whether it asked, so the page can tell a press for the child from the start
 with how far back a parked view is. It
 reports its view only while it has focus, so a window in the background never takes the focus from
 a terminal client being typed in. Its keys are one table, `keymap`, of bindings each with its keys,
-where it works (Anywhere, In a pane, Feature, Board card — the shortcuts sheet's groups), what it
-does and what it is called. A key in a pane goes to Rust, which dispatches it from the table; the
-table crosses to the page once it loads, and the page dispatches every other key from it, so a key
-cannot be run by one and missing from what the sheet and the palette are drawn from. In a pane every
+where it works (Anywhere, In a pane, Sidebar, Feature, Board card, a dialog, a text field — the
+shortcuts sheet's groups), what it does and what it is called. A key in a pane goes to Rust, which
+dispatches it from the table; the table crosses to the page once it loads, and the page dispatches
+every other key from it, a text field's Enter and Escape included, so a key cannot be run by one and
+missing from what the sheet and the palette are drawn from; a test fails a page module that reads a
+key's name itself. In a pane every
 key is the program's except the leader, `Ctrl-Space` as in the terminal client: the key after it is
 the window's, one nothing binds is dropped, and a second leader sends one through. `Ctrl-K` (in a
 pane, the leader and `k`) opens the palette, one fuzzy search over the table's commands and the

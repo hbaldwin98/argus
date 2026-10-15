@@ -382,8 +382,7 @@ export function startMenu(name: string, checkout: number): HTMLElement {
         },
         el('span', { class: `glyph${item.agent ? '' : ' sh'}` }, item.agent ? '◆' : '›'),
         el('span', { class: 'grow' }, item.label),
-        i === 0 && el('span', { class: 'kbd' }, 'S'),
-        i === 1 && el('span', { class: 'kbd' }, 'A'),
+        i < 2 && keycaps(chordsFor(i === 0 ? 'startShell' : 'startAgent', 'start').slice(0, 1)),
       ),
     ]),
   );
