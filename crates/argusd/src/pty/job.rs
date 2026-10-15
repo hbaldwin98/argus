@@ -2,8 +2,9 @@
 //!
 //! An agent spawns subprocesses of its own, and those outlive a killed
 //! parent unless something reaches them. On Windows a job object is that
-//! owner: the pane's process is assigned to one at spawn, so closing the
-//! pane takes the whole tree with it, and a runaway cannot take the machine
+//! owner: every pane's console server and child are assigned to one at
+//! spawn, so closing the pane, or the death of the process that holds the
+//! job, takes them with it, and an agent's runaway cannot take the machine
 //! down on its way. On Unix the child is its own session leader, and the
 //! session is what gets swept.
 
@@ -24,18 +25,12 @@ pub(super) struct ProcessJob {
 
 #[cfg(windows)]
 impl ProcessJob {
+    /// An agent's job: bounded, and nothing the agent starts leaves it.
     pub(super) fn new(limits: JobLimits) -> anyhow::Result<Self> {
         use windows_sys::Win32::System::JobObjects::{
-            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
             JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
             JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         };
-
-        let raw = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
-        if raw.is_null() {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        let handle = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
 
         let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_JOB_MEMORY
@@ -43,17 +38,50 @@ impl ProcessJob {
             | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         info.BasicLimitInformation.ActiveProcessLimit = limits.active_processes;
         info.JobMemoryLimit = limits.memory_bytes;
+        Self::with(&info)
+    }
+
+    /// A shell's job: unbounded, and holding only the console server and
+    /// the shell. What the shell starts leaves the job as it is started,
+    /// because a shell is where a person starts what is meant to outlive
+    /// the pane: `scripts/reload.sh` schedules the restart that replaces
+    /// this daemon from inside one, and the old daemon's exit closing the
+    /// job must not take that restart down with it.
+    pub(super) fn shell() -> anyhow::Result<Self> {
+        use windows_sys::Win32::System::JobObjects::{
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
+        };
+
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        info.BasicLimitInformation.LimitFlags =
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+        Self::with(&info)
+    }
+
+    fn with(
+        info: &windows_sys::Win32::System::JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    ) -> anyhow::Result<Self> {
+        use windows_sys::Win32::System::JobObjects::{
+            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+        };
+
+        let raw = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if raw.is_null() {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        let handle = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
         let configured = unsafe {
             SetInformationJobObject(
                 handle.as_raw_handle() as _,
                 JobObjectExtendedLimitInformation,
-                std::ptr::from_ref(&info).cast(),
-                std::mem::size_of_val(&info) as u32,
+                std::ptr::from_ref(info).cast(),
+                std::mem::size_of_val(info) as u32,
             )
         };
         if configured == 0 {
             return Err(anyhow::anyhow!(
-                "could not configure agent process limits: {}",
+                "could not configure a pane's job: {}",
                 std::io::Error::last_os_error()
             ));
         }
@@ -68,7 +96,7 @@ impl ProcessJob {
             unsafe { AssignProcessToJobObject(self.handle.as_raw_handle() as _, process as _) };
         if assigned == 0 {
             return Err(anyhow::anyhow!(
-                "could not contain agent process: {}",
+                "could not contain a pane's process: {}",
                 std::io::Error::last_os_error()
             ));
         }
@@ -107,31 +135,65 @@ impl ProcessJob {
         }
         Ok(info.ActiveProcesses)
     }
+
+    /// The PIDs of every process in the job.
+    #[cfg(test)]
+    pub(super) fn process_ids(&self) -> anyhow::Result<Vec<u32>> {
+        use windows_sys::Win32::System::JobObjects::{
+            JobObjectBasicProcessIdList, QueryInformationJobObject,
+        };
+
+        // JOBOBJECT_BASIC_PROCESS_ID_LIST with room for more than a pane
+        // holds; windows-sys declares its list one entry long.
+        #[repr(C)]
+        struct IdList {
+            _assigned: u32,
+            listed: u32,
+            ids: [usize; 64],
+        }
+        let mut list = IdList {
+            _assigned: 0,
+            listed: 0,
+            ids: [0; 64],
+        };
+        let queried = unsafe {
+            QueryInformationJobObject(
+                self.handle.as_raw_handle() as _,
+                JobObjectBasicProcessIdList,
+                std::ptr::from_mut(&mut list).cast(),
+                std::mem::size_of_val(&list) as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        if queried == 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(list.ids[..list.listed as usize]
+            .iter()
+            .map(|&id| id as u32)
+            .collect())
+    }
 }
 
 #[cfg(windows)]
-pub(super) fn job_for(resource_policy: ResourcePolicy) -> anyhow::Result<Option<ProcessJob>> {
+pub(super) fn job_for(resource_policy: ResourcePolicy) -> anyhow::Result<ProcessJob> {
     match resource_policy {
-        ResourcePolicy::Unrestricted => Ok(None),
+        ResourcePolicy::Unrestricted => ProcessJob::shell(),
         ResourcePolicy::Agent => ProcessJob::new(JobLimits {
             memory_bytes: AGENT_JOB_MEMORY_BYTES,
             active_processes: AGENT_JOB_PROCESS_LIMIT,
-        })
-        .map(Some),
+        }),
     }
 }
 
 #[cfg(windows)]
 pub(super) fn assign_to_job(
-    job: Option<&ProcessJob>,
+    job: &ProcessJob,
     child: &mut Box<dyn Child + Send + Sync>,
 ) -> anyhow::Result<()> {
-    let Some(job) = job else {
-        return Ok(());
-    };
     let Some(handle) = child.as_raw_handle() else {
         let _ = child.kill();
-        anyhow::bail!("agent process did not expose a Windows process handle");
+        anyhow::bail!("a pane's process did not expose a Windows process handle");
     };
     if let Err(error) = job.assign(handle) {
         let _ = child.kill();
@@ -140,20 +202,13 @@ pub(super) fn assign_to_job(
     Ok(())
 }
 
-/// Ends a pane's child and every process it started: the job, when the
-/// pane has one, and otherwise just the child.
+/// Ends a pane's child and its console server, and for an agent every
+/// process it started. A shell's descendants left its job as they started;
+/// ending the console they are attached to is what reaches them, as closing
+/// a shell pane always has.
 #[cfg(windows)]
-pub(super) fn end_process_tree(job: Option<&ProcessJob>, killer: &Killer) -> anyhow::Result<()> {
-    if let Some(job) = job {
-        return job.terminate();
-    }
-    // portable-pty's WinChildKiller::kill (0.8 and 0.9) reports an error when
-    // TerminateProcess succeeds — its check is inverted — and the child's
-    // own kill hides the same bug by discarding the result. So this is
-    // best effort, as it always was: the exit itself reaches the pump
-    // through the exit waiter.
-    let _ = killer.lock().unwrap().kill();
-    Ok(())
+pub(super) fn end_process_tree(job: &ProcessJob) -> anyhow::Result<()> {
+    job.terminate()
 }
 
 /// Ends a pane's child and every process it started.
@@ -331,6 +386,7 @@ pub(super) fn strip_argus_hook_identity(command: &mut CommandBuilder) {
 }
 
 /// What ends a pane's child once the exit waiter owns the child itself.
+#[cfg(unix)]
 pub(super) type Killer = StdMutex<Box<dyn ChildKiller + Send + Sync>>;
 
 /// Hands the child to a thread that blocks until it exits and reports its
@@ -357,14 +413,19 @@ pub(super) fn spawn_output_reader(
 ) {
     std::thread::spawn(move || {
         let mut buf = [0u8; READ_CHUNK];
+        let mut listening = true;
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
-                Ok(n) => {
-                    if byte_tx.blocking_send(buf[..n].to_vec()).is_err() {
-                        break;
-                    }
+                // Read to the end even once the pump has gone. The pane
+                // still holds the master's own read end, so a reader that
+                // stopped would leave the console server's last frame with
+                // nowhere to go: the server blocks on the full pipe, and
+                // `ClosePseudoConsole` then waits on that server.
+                Ok(n) if listening => {
+                    listening = byte_tx.blocking_send(buf[..n].to_vec()).is_ok();
                 }
+                Ok(_) => {}
                 Err(_) => break,
             }
         }

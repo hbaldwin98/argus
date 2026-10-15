@@ -570,22 +570,128 @@ async fn agent_policy_contains_the_program_behind_the_cmd_wrapper() {
         .unwrap();
 
         wait_for(&pane, |g| grid_contains(g, "argus-job-descendant-ready")).await;
-        let active = pane._job.as_ref().unwrap().active_processes().unwrap();
+        let active = pane.job.active_processes().unwrap();
         pane.kill().unwrap();
 
+        // The console server, cmd.exe, and the agent behind it.
         assert!(
-            active >= 2,
-            "only cmd.exe entered the job on attempt {i}; its agent child escaped"
+            active >= 3,
+            "only {active} entered the job on attempt {i}; the agent child escaped"
         );
 
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while pane._job.as_ref().unwrap().active_processes().unwrap() != 0 {
+        while pane.job.active_processes().unwrap() != 0 {
             assert!(
                 tokio::time::Instant::now() < deadline,
                 "terminating the pane left a descendant running on attempt {i}"
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+    }
+}
+
+/// Opens a pane of the kind `ARGUS_PANE_OWNER_TEST` names, prints the PIDs
+/// in its job, and waits to be killed.
+#[cfg(windows)]
+#[tokio::test]
+async fn pane_owner_helper() {
+    let Some(kind) = std::env::var_os("ARGUS_PANE_OWNER_TEST") else {
+        return;
+    };
+    let (spec, started) = if kind == "agent" {
+        let ping = Spawn::Program {
+            program: "ping".to_string(),
+            args: ["-n", "120", "127.0.0.1"].map(String::from).to_vec(),
+            env: Vec::new(),
+            resource_policy: ResourcePolicy::Agent,
+        };
+        // The console server, cmd.exe and ping behind it.
+        (ping, 3)
+    } else {
+        (Spawn::DefaultShell, 2)
+    };
+    let pane = PaneRuntime::spawn(PaneId(90), &std::env::temp_dir(), spec, |_| {}).unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while pane.job.active_processes().unwrap() < started {
+        assert!(tokio::time::Instant::now() < deadline, "the pane never started");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let pids: Vec<String> = pane
+        .job
+        .process_ids()
+        .unwrap()
+        .iter()
+        .map(u32::to_string)
+        .collect();
+    println!("argus-pane-owner-pids {}", pids.join(" "));
+    tokio::time::sleep(Duration::from_secs(120)).await;
+}
+
+/// HUN-201: a test binary or daemon killed with panes open left their
+/// console servers spinning, orphaned, and their children with them.
+#[cfg(windows)]
+#[test]
+fn a_panes_console_and_child_die_with_the_process_that_owns_them() {
+    use std::io::BufRead;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use std::process::{Command, Stdio};
+    use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
+        PROCESS_TERMINATE,
+    };
+
+    for kind in ["shell", "agent"] {
+        let mut owner = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "pty::tests::pane_owner_helper", "--nocapture"])
+            .env("ARGUS_PANE_OWNER_TEST", kind)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let said = std::io::BufReader::new(owner.stdout.take().unwrap())
+            .lines()
+            .map_while(Result::ok)
+            .find_map(|line| line.strip_prefix("argus-pane-owner-pids ").map(str::to_string))
+            .unwrap_or_else(|| panic!("the {kind} pane's owner never named its processes"));
+        let in_job: Vec<u32> = said.split(' ').map(|pid| pid.parse().unwrap()).collect();
+        let servers = super::console_host::servers_started_by(owner.id());
+        assert!(!servers.is_empty(), "the {kind} pane's owner started no console server");
+        assert!(
+            servers.iter().all(|server| in_job.contains(server)),
+            "the {kind} pane's console server {servers:?} is not in its job {in_job:?}"
+        );
+
+        // Held before the owner dies, so a PID handed on cannot pass for
+        // one still running.
+        let watched: Vec<(u32, OwnedHandle)> = in_job
+            .iter()
+            .map(|&pid| {
+                let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, 0, pid) };
+                assert!(!raw.is_null(), "{pid} in the {kind} pane's job is already gone");
+                (pid, unsafe { OwnedHandle::from_raw_handle(raw as _) })
+            })
+            .collect();
+        owner.kill().unwrap();
+        owner.wait().unwrap();
+
+        let survivors: Vec<u32> = watched
+            .iter()
+            .filter(|(_, process)| {
+                let waited = unsafe { WaitForSingleObject(process.as_raw_handle() as _, 10_000) };
+                if waited != WAIT_OBJECT_0 {
+                    unsafe { TerminateProcess(process.as_raw_handle() as _, 1) };
+                    return true;
+                }
+                false
+            })
+            .map(|(pid, _)| *pid)
+            .collect();
+        assert!(
+            survivors.is_empty(),
+            "{survivors:?} of the {kind} pane outlived the process that owned it"
+        );
     }
 }
 

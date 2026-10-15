@@ -17,9 +17,13 @@ use argus_protocol::{
     damage, grid_runs, Cell, Color, CompactString, Cursor, CursorShape, MouseEncoding, MouseMode,
     MouseTracking, PaneId, ServerMsg, BLANK,
 };
-use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
+#[cfg(unix)]
+use portable_pty::ChildKiller;
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::broadcast;
 
+#[cfg(windows)]
+mod console_host;
 mod job;
 mod vt;
 
@@ -195,18 +199,23 @@ fn executable_in_directory(directory: &Path, program: &OsStr, extensions: &[OsSt
 }
 
 pub struct PaneRuntime {
+    /// The console server and the child. First, so a runtime dropped
+    /// without a kill ends them before the master closes the
+    /// pseudoconsole: `ClosePseudoConsole` waits for the server to exit,
+    /// and a server with no one left reading its output never does.
+    #[cfg(windows)]
+    job: ProcessJob,
     master: Box<dyn MasterPty + Send>,
     input: PaneInput,
     vt: Arc<StdMutex<Vt>>,
     /// The child itself belongs to its exit waiter, so ending it goes
     /// through a killer cloned off it before it was handed over.
+    #[cfg(unix)]
     killer: Killer,
     /// The session the child leads, for the Unix sweep.
     #[cfg(unix)]
     pid: Option<u32>,
     damage_tx: broadcast::Sender<ServerMsg>,
-    #[cfg(windows)]
-    _job: Option<ProcessJob>,
     /// How many times the pump has woken, so a test can tell an idle pane
     /// from one ticking on a timer. Only a Unix test reads it: a ConPTY
     /// child is never silent from the start.
@@ -247,12 +256,17 @@ impl PaneRuntime {
         on_exit: impl FnOnce(Option<i32>) + Send + 'static,
     ) -> anyhow::Result<Self> {
         let pty_system = native_pty_system();
-        let pair = pty_system.openpty(PtySize {
+        let size = PtySize {
             rows: DEFAULT_ROWS,
             cols: DEFAULT_COLS,
             pixel_width: 0,
             pixel_height: 0,
-        })?;
+        };
+        #[cfg(windows)]
+        let (pair, console_server) =
+            console_host::open_with_server(|| pty_system.openpty(size))?;
+        #[cfg(not(windows))]
+        let pair = pty_system.openpty(size)?;
 
         let (mut cmd, resource_policy) = spec.into_command();
         set_pty_terminal(&mut cmd);
@@ -264,6 +278,14 @@ impl PaneRuntime {
 
         #[cfg(windows)]
         let job = job_for(resource_policy)?;
+        #[cfg(windows)]
+        if let Some(server) = console_server {
+            // Before the child starts: the server must not outlive the
+            // owner whatever happens next.
+            if let Err(error) = job.assign(server.as_raw_handle()) {
+                tracing::warn!("this pane's console server is not contained: {error:#}");
+            }
+        }
         #[cfg(not(windows))]
         let _ = resource_policy;
 
@@ -273,7 +295,7 @@ impl PaneRuntime {
         #[cfg(not(windows))]
         let child = pair.slave.spawn_command(cmd)?;
         #[cfg(windows)]
-        assign_to_job(job.as_ref(), &mut child)?;
+        assign_to_job(&job, &mut child)?;
         drop(pair.slave);
 
         let vt = Arc::new(StdMutex::new(Vt::new(
@@ -286,6 +308,7 @@ impl PaneRuntime {
             writer: Arc::new(StdMutex::new(pair.master.take_writer()?)),
             vt: vt.clone(),
         };
+        #[cfg(unix)]
         let killer = StdMutex::new(child.clone_killer());
         #[cfg(unix)]
         let pid = child.process_id();
@@ -439,15 +462,16 @@ impl PaneRuntime {
         }
 
         Ok(PaneRuntime {
+            #[cfg(windows)]
+            job,
             master: pair.master,
             input,
             vt,
+            #[cfg(unix)]
             killer,
             #[cfg(unix)]
             pid,
             damage_tx,
-            #[cfg(windows)]
-            _job: job,
             #[cfg(test)]
             pump_wakes,
         })
@@ -471,7 +495,7 @@ impl PaneRuntime {
     pub fn kill(&self) -> anyhow::Result<()> {
         #[cfg(windows)]
         {
-            end_process_tree(self._job.as_ref(), &self.killer)
+            end_process_tree(&self.job)
         }
         #[cfg(unix)]
         {

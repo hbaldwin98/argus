@@ -221,7 +221,7 @@ to the type or its locking.
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
-| `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and its terminal emulator with the translation of its screen |
+| `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
 | `pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
@@ -559,9 +559,21 @@ A pane does not inherit the markers of a Claude Code session that started the da
 child and save no transcript. What a person sets to configure Claude Code, such as
 `CLAUDE_CODE_USE_BEDROCK`, is still handed on.
 
-On Windows, each agent process tree runs in its own Job Object with a 32 GiB committed-memory limit
-and a 256-process limit. Closing the pane or dropping its runtime terminates the whole job rather
-than only the template's immediate process. Shell and editor panes are not subject to these limits.
+On Windows, every pane's console server and child run in a Job Object of the pane's own, set to
+kill what it holds when its last handle closes. The process that opened the pane holds that handle,
+so however it dies — a daemon killed, a test binary stopped — the OS ends its consoles and children.
+Before this an owner's death orphaned its `conhost.exe` or `OpenConsole.exe` servers, which spun on
+their broken pipes: 63 of them once held 129k CPU-seconds and stalled other runs' ConPTY tests.
+ConPTY starts the server as a child of whoever opens the pseudoconsole and hands back no handle to
+it, so `pty/console_host` opens one pseudoconsole at a time per process and takes the console-server
+child that appeared meanwhile. An agent's job also has a 32 GiB committed-memory limit and a
+256-process limit, and everything the agent starts stays in it. A shell's job is unbounded and lets
+what the shell starts leave it silently: a shell is where a person starts what should outlive the
+pane, and `scripts/reload.sh` schedules from one the restart that replaces the daemon, which the old
+daemon's exit must not take down. Closing a pane or dropping its runtime terminates the job, the
+console server first: `ClosePseudoConsole` waits for the server to exit, and a teardown that left
+the server to finish on its own could wait minutes. For the same reason a pane's output is read to
+the end even after its pump has stopped, so the server's last frame is never left in a full pipe.
 
 Windows panes run on the ConPTY built into Windows unless `conpty.dll` and `OpenConsole.exe` sit
 beside `argusd.exe`, which portable-pty prefers. Argus does not ship them: nothing works worse
