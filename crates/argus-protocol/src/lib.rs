@@ -20,6 +20,7 @@ pub mod column_verbs;
 pub mod damage;
 pub mod decisions;
 pub mod diagrams;
+pub mod extension_guide;
 pub mod extension_keys;
 pub mod extensions;
 pub mod features;

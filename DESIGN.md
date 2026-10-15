@@ -248,6 +248,7 @@ live in this crate and a contract written twice drifts in silence.
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses — an extension's endpoints among them |
 | `extensions` | what an extension publishes for Argus to draw — its views, commands and dialogs — and what the person does with them on the way back |
 | `extension_keys` | which keys an extension may bind, and the words a refused one is refused in: the keys Argus keeps where an extension's would be heard |
+| `extension_guide` | how to build an extension from nothing, as `argus extension guide` prints it: a walkthrough, then the reference, its examples read through the types and its limits filled from the constants |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
 | `ago` | how long ago something happened, as every client says it |
@@ -344,8 +345,7 @@ result of a request; `ui` is a pure function of it.
 | `sibling` | starting another of Argus's executables, found beside this one, so it outlives this process |
 | `desktop` | the `argus desktop` command: opening the desktop window beside this terminal client |
 | `bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
-| `focus` | the `argus focus` command: where the person is working, as JSON, once or on every change |
-| `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
+| `focus` | the `argus focus` command: where the person is working, as JSON, once or on every change || `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
 | `remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
 | `ssh_hosts` | the hosts the user's ssh config names, for the host picker |
 | `app` | the model: the tree, the selection, and which modal is up |
