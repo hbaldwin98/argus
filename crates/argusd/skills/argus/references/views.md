@@ -35,7 +35,8 @@ EOF
 
 It prints `patched: <id> <path>`. A path starts `blocks[i]` and continues with
 `.blocks[i]` (section, card, details), `.columns[c][i]`, `.tabs[t].blocks[i]`,
-`.items[i]` (grid) or `.details[r][i]` (a table row's details).
+`.items[i]` (grid) or `.details[r][i]` (a table row's details). An index is
+digits only. A patch leaves the view's refresh timer running.
 
 ## The view
 
@@ -52,7 +53,11 @@ It prints `patched: <id> <path>`. A path starts `blocks[i]` and continues with
 }
 ```
 
-`id` is yours, up to 64 bytes. `subject` is the ticket's URL when the view is
+`id` is yours, up to 64 bytes, with no control characters (nor in any action id
+or label, form id, field name or row key, which are typed back to you). Two
+actions in one view cannot share an id. A block or value `kind` Argus does not
+know is refused, so a misspelt one comes back with its path. Numbers are at most
+1e15 in magnitude, a `trend` has at most 500 values and a `graph` 1000 edges. `subject` is the ticket's URL when the view is
 of one; leave it out otherwise. Only `http` and `https` links are accepted.
 `feature` is the number of the feature the view belongs with: its header offers
 the view too. `refresh_every` (at least 60 seconds) has you asked to read the
@@ -71,7 +76,12 @@ The person pressed `rerun` ("Rerun failed") in the view `ci`. Selected rows: ["4
 ```
 
 The rows and form sentences appear only when there are some. Numbers arrive as
-`3.0`. The button waits until you show the view again, so always do.
+`3.0`. Argus drops from a press whatever your view did not offer: a row key the
+table does not have, an answer of the wrong kind, a choice that is not an
+option, a number outside `min` and `max`, and text past 4096 bytes is cut. The
+button waits until you show the view again, so always do. A press that could
+not reach you (the view was gone, or you were not running) is the person's to
+hear of: they are told, and you are not.
 
 `tone` is the only colour you choose, by meaning: `neutral`, `good`, `warn`,
 `bad`, `active` (in progress), `info`.
@@ -123,8 +133,8 @@ A field, a table cell: `{ "kind": ..., ... }`.
 `duration` `{ "ms" }`, `code` `{ "text" }`, `empty` `{}`.
 
 These open things in Argus rather than a browser, read against your pane:
-`path` `{ "path", "line" }` (relative to the checkout's root; opens in the
-person's editor), `commit` `{ "sha", "title" }` (opens History),
+`path` `{ "path", "line" }` (relative to the checkout's root, with no `..`;
+opens in the person's editor), `commit` `{ "sha", "title" }` (opens History),
 `feature` `{ "number" }`, `pane` `{ "pane", "label" }` (focuses it).
 
 ## A ticket

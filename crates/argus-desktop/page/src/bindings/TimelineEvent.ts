@@ -11,6 +11,6 @@ at: string | null, title: string, tone: Tone,
  */
 body: string | null, 
 /**
- * Events sharing a lane are drawn on one line of their own.
+ * Events sharing a lane are drawn in a column of their own.
  */
 lane: string | null, };

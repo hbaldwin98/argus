@@ -43,6 +43,7 @@ mod diagrams;
 mod tasks;
 mod reconcile;
 mod tracker_map;
+mod view_timers;
 mod views;
 mod git_ops;
 mod git_reads;

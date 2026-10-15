@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 /// Opens `url`, or says why not.
 pub fn open(url: &str) -> Result<(), String> {
-    if !argus_protocol::agent_view::is_web_url(url) {
+    if !argus_protocol::is_web_url(url) {
         return Err("only an http or https link is opened".into());
     }
     #[cfg(target_os = "macos")]

@@ -175,6 +175,7 @@ pub(super) fn value_spans(value: &Value, th: Theme) -> Vec<Span<'static>> {
             _ => format!("pane {pane}"),
         }),
         Value::Empty => muted("—".to_string()),
+        Value::Unknown => muted("(needs a newer Argus)".to_string()),
     }
 }
 

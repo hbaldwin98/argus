@@ -3,21 +3,7 @@
 //! by, and the view with that block swapped.
 
 use crate::agent_view::{AgentView, Block};
-
-/// One step from a block down to a list of blocks inside it, and which of
-/// that list's blocks the path goes on to.
-enum Step {
-    /// `.blocks[i]`: a section, card or details.
-    Blocks(usize),
-    /// `.columns[c][i]`
-    Column(usize, usize),
-    /// `.tabs[t].blocks[i]`
-    Tab(usize, usize),
-    /// `.items[i]`
-    Item(usize),
-    /// `.details[r][i]`: the blocks a table row opens to.
-    Detail(usize, usize),
-}
+use crate::view_tree::Slot;
 
 impl AgentView {
     /// The view with the block at `path` replaced by `block`, or what is
@@ -25,77 +11,58 @@ impl AgentView {
     /// shown view is.
     pub fn patched(mut self, path: &str, block: Block) -> Result<AgentView, String> {
         let (top, steps) = parse(path)?;
-        let mut list = &mut self.blocks;
+        let mut list: &mut [Block] = &mut self.blocks;
         let mut at = top;
         let mut walked = format!("blocks[{top}]");
-        for step in &steps {
+        for (slot, next) in &steps {
             let len = list.len();
             let Some(here) = list.get_mut(at) else {
                 return Err(format!("{path}: {walked} is out of range, there are {len} blocks"));
             };
-            let (inner, next) = descend(here, step, &walked, path)?;
-            walked.push_str(&describe(step));
-            list = inner;
-            at = next;
+            list = descend(here, slot, *next, &walked, path)?;
+            at = *next;
+            walked.push_str(&slot.patch_path(*next));
         }
         let len = list.len();
         match list.get_mut(at) {
-            Some(slot) => *slot = block,
+            Some(held) => *held = block,
             None => return Err(format!("{path}: {walked} is out of range, there are {len} blocks")),
         }
         Ok(self)
     }
 }
 
-fn describe(step: &Step) -> String {
-    match step {
-        Step::Blocks(i) => format!(".blocks[{i}]"),
-        Step::Column(c, i) => format!(".columns[{c}][{i}]"),
-        Step::Tab(t, i) => format!(".tabs[{t}].blocks[{i}]"),
-        Step::Item(i) => format!(".items[{i}]"),
-        Step::Detail(r, i) => format!(".details[{r}][{i}]"),
-    }
-}
-
-/// The list inside `block` that `step` goes into, and the index in it the
-/// step names. `walked` is the path to `block`, for the refusal.
+/// The list inside `block` that `slot` names. `next` is the index the path
+/// goes on to in it and `walked` the path to `block`, for the refusal.
 fn descend<'a>(
     block: &'a mut Block,
-    step: &Step,
+    slot: &Slot,
+    next: usize,
     walked: &str,
     path: &str,
-) -> Result<(&'a mut Vec<Block>, usize), String> {
-    match (step, block) {
-        (Step::Blocks(i), Block::Section { blocks, .. })
-        | (Step::Blocks(i), Block::Card { blocks, .. })
-        | (Step::Blocks(i), Block::Details { blocks, .. }) => Ok((blocks, *i)),
-        (Step::Column(c, i), Block::Columns { columns }) => {
-            let count = columns.len();
-            match columns.get_mut(*c) {
-                Some(column) => Ok((column, *i)),
-                None => Err(format!("{path}: {walked}.columns[{c}] is out of range, there are {count} columns")),
-            }
-        }
-        (Step::Tab(t, i), Block::Tabs { tabs }) => {
-            let count = tabs.len();
-            match tabs.get_mut(*t) {
-                Some(tab) => Ok((&mut tab.blocks, *i)),
-                None => Err(format!("{path}: {walked}.tabs[{t}] is out of range, there are {count} tabs")),
-            }
-        }
-        (Step::Item(i), Block::Grid { items, .. }) => Ok((items, *i)),
-        (Step::Detail(r, i), Block::Table { details, .. }) => {
-            let count = details.len();
-            match details.get_mut(*r) {
-                Some(Some(inner)) => Ok((inner, *i)),
-                Some(None) => Err(format!("{path}: {walked}.details[{r}] is empty, the row opens to nothing")),
-                None => Err(format!(
-                    "{path}: {walked}.details[{r}] is out of range, there are {count} rows with details"
-                )),
-            }
-        }
-        (_, block) => Err(format!("{path}: {walked} is {}, which has no {}", kind(block), describe(step))),
+) -> Result<&'a mut [Block], String> {
+    if let Some(at) = block.children().iter().position(|(held, _)| held == slot) {
+        return Ok(block.children_mut().swap_remove(at).1);
     }
+    Err(match (slot, &*block) {
+        (Slot::Column(c), Block::Columns { columns }) => {
+            format!("{path}: {walked}.columns[{c}] is out of range, there are {} columns", columns.len())
+        }
+        (Slot::Tab(t), Block::Tabs { tabs }) => {
+            format!("{path}: {walked}.tabs[{t}] is out of range, there are {} tabs", tabs.len())
+        }
+        (Slot::Item(i), Block::Grid { items, .. }) => {
+            format!("{path}: {walked}.items[{i}] is out of range, there are {} items", items.len())
+        }
+        (Slot::Details(r), Block::Table { details, .. }) => match details.get(*r) {
+            Some(None) => format!("{path}: {walked}.details[{r}] is empty, the row opens to nothing"),
+            _ => format!(
+                "{path}: {walked}.details[{r}] is out of range, there are {} rows with details",
+                details.len()
+            ),
+        },
+        (_, block) => format!("{path}: {walked} is {}, which has no {}", kind(block), slot.patch_path(next)),
+    })
 }
 
 fn kind(block: &Block) -> &'static str {
@@ -111,7 +78,8 @@ fn kind(block: &Block) -> &'static str {
     }
 }
 
-/// The index and what follows it, from text that starts `[3]`.
+/// The index and what follows it, from text that starts `[3]`. Digits and
+/// nothing else, so `[+3]` and `[ 3]` are not another way to write it.
 fn index<'p>(rest: &'p str, path: &str) -> Result<(usize, &'p str), String> {
     let inner = rest
         .strip_prefix('[')
@@ -119,14 +87,19 @@ fn index<'p>(rest: &'p str, path: &str) -> Result<(usize, &'p str), String> {
     let (digits, after) = inner
         .split_once(']')
         .ok_or_else(|| format!("{path}: a `[` is never closed"))?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("{path}: {digits:?} is not an index"));
+    }
     let n = digits
         .parse::<usize>()
         .map_err(|_| format!("{path}: {digits:?} is not an index"))?;
     Ok((n, after))
 }
 
-/// The top-level index and the steps below it.
-fn parse(path: &str) -> Result<(usize, Vec<Step>), String> {
+/// The top-level index and the steps below it, each a slot and the index in
+/// its list that the path goes on to (always 0 for a grid item, which is
+/// the block itself).
+fn parse(path: &str) -> Result<(usize, Vec<(Slot, usize)>), String> {
     let rest = path
         .strip_prefix("blocks")
         .ok_or_else(|| format!("{path}: a path starts with `blocks[i]`"))?;
@@ -141,12 +114,12 @@ fn parse(path: &str) -> Result<(usize, Vec<Step>), String> {
         let (step, after) = match name {
             "blocks" => {
                 let (i, after) = index(after, path)?;
-                (Step::Blocks(i), after)
+                ((Slot::Blocks, i), after)
             }
             "columns" => {
                 let (c, after) = index(after, path)?;
                 let (i, after) = index(after, path)?;
-                (Step::Column(c, i), after)
+                ((Slot::Column(c), i), after)
             }
             "tabs" => {
                 let (t, after) = index(after, path)?;
@@ -154,16 +127,16 @@ fn parse(path: &str) -> Result<(usize, Vec<Step>), String> {
                     .strip_prefix(".blocks")
                     .ok_or_else(|| format!("{path}: a tab's blocks are `.tabs[t].blocks[i]`"))?;
                 let (i, after) = index(after, path)?;
-                (Step::Tab(t, i), after)
+                ((Slot::Tab(t), i), after)
             }
             "items" => {
                 let (i, after) = index(after, path)?;
-                (Step::Item(i), after)
+                ((Slot::Item(i), 0), after)
             }
             "details" => {
                 let (r, after) = index(after, path)?;
                 let (i, after) = index(after, path)?;
-                (Step::Detail(r, i), after)
+                ((Slot::Details(r), i), after)
             }
             other => {
                 return Err(format!(
@@ -337,10 +310,44 @@ mod tests {
         for bad in [
             "", "blocks", "blocks[]", "blocks[x]", "blocks[-1]", "blocks[1", "block[1]", "blocks[1]blocks[0]",
             "blocks[1].", "blocks[1].rows[0]", "blocks[1].columns[0]", "blocks[3].tabs[0][0]",
-            "blocks[1].blocks[0]x", "[1]",
+            "blocks[1].blocks[0]x", "[1]", "blocks[+1]", "blocks[ 1]", "blocks[1].blocks[+0]",
         ] {
             let err = patched(bad).unwrap_err();
             assert!(err.starts_with(&format!("{bad}:")), "{bad}: {err}");
+        }
+    }
+
+    fn walk(block: &Block, path: &str, found: &mut Vec<String>) {
+        found.push(path.to_string());
+        for (slot, list) in block.children() {
+            for (i, inner) in list.iter().enumerate() {
+                walk(inner, &format!("{path}{}", slot.patch_path(i)), found);
+            }
+        }
+    }
+
+    fn paths(view: &AgentView) -> Vec<String> {
+        let mut found = Vec::new();
+        for (i, block) in view.blocks.iter().enumerate() {
+            walk(block, &format!("blocks[{i}]"), &mut found);
+        }
+        found
+    }
+
+    fn news(blocks: &[Block]) -> usize {
+        let own = blocks.iter().filter(|b| text(b) == "NEW").count();
+        own + blocks.iter().flat_map(|b| b.nested()).map(news).sum::<usize>()
+    }
+
+    #[test]
+    fn every_path_the_walk_prints_is_one_a_patch_reads_back() {
+        let found = paths(&nested());
+        assert!(found.contains(&"blocks[4].items[1]".to_string()));
+        assert!(found.contains(&"blocks[5].details[1][0]".to_string()));
+        assert!(found.contains(&"blocks[3].tabs[0].blocks[0]".to_string()));
+        for path in found {
+            let v = patched(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            assert_eq!(news(&v.blocks), 1, "{path}");
         }
     }
 

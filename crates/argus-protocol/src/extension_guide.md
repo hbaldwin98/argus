@@ -462,14 +462,17 @@ A cell is one of these, chosen by `kind`. Values do not nest, apart from the chi
 ]
 ```
 
-- `number` is a JSON number, with an optional `unit` drawn after it.
+- `number` is a JSON number, with an optional `unit` drawn after it. A number, here or in a
+  `progress`, is at most 1e15 in magnitude; a larger one is refused with a `409`.
 - `date` is `YYYY-MM-DD`; `date_time` is RFC 3339.
 - `progress` is a meter, `value` out of a `max` above 0; `duration` is milliseconds, drawn as `4m 12s`.
 - `path`, `commit`, `feature` and `pane` point into Argus rather than out of it: a click opens the
   file in the person's editor, the commit in History, the feature, or the pane. A path is relative
-  to the root of the checkout the person is at.
+  to the root of the checkout the person is at, and one that is absolute, has a drive letter or climbs
+  out with `..` is refused with a `409`.
 - A `link`'s `url`, and a `ticket`'s when it has one, must be `http` or `https`. Anything else is
   refused with a `409`.
+- A `kind` that is not in the list above is refused with a `409` too.
 - A chip is `{"label", "tone"}`. The tone is the only colour an extension picks, and it picks a
   meaning: {{TONES}}. `neutral` is the default.
 

@@ -4,18 +4,20 @@
 //! agent read from a ticket a moment ago, and nothing read from a ticket
 //! outlives the agent's next look at it. A restart of the daemon, or the
 //! pane's removal, is the end of its views.
+//!
+//! Every change to what is held — a show, a patch, a close, a pane going —
+//! is made, and told to the watchers, under the one lock, so a watcher
+//! sees each change in the order it was made.
 
 use argus_protocol::{
-    AgentView, AnswerValue, Block, PaneId, RowItem, ServerMsg, ShownView, ViewAction, ViewChange,
-    ViewPress, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES,
+    find_action, press_request, AgentView, PaneId, ServerMsg, ShownView, ViewChange, ViewPress,
+    MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES,
 };
-use std::collections::HashMap;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::sync::Arc;
 
 use tokio::sync::broadcast;
-use tokio::task::AbortHandle;
 
+use super::view_timers::{spawn_timer, Timers};
 use super::*;
 
 /// The views, oldest shown first across every pane, which is the order a
@@ -24,9 +26,8 @@ use super::*;
 pub(super) struct Views {
     shown: Vec<ShownView>,
     /// The task asking each view's agent to refresh it, for the views shown
-    /// with a `refresh_every`. Whatever removes a view removes its task
-    /// here, so a timer never outlives what it refreshes.
-    timers: HashMap<(PaneId, String), AbortHandle>,
+    /// with a `refresh_every`.
+    pub(super) timers: Timers,
 }
 
 impl Views {
@@ -50,27 +51,14 @@ impl Views {
         }
         let oldest = self.shown.iter().position(|v| v.pane == pane)?;
         let id = self.shown.remove(oldest).view.id;
-        self.keep_timer(pane, &id, None);
+        self.timers.stop(pane, &id);
         Some(id)
-    }
-
-    /// Replaces the view's refresh task with `timer`, stopping the old one.
-    /// Showing a view again restarts the clock with whatever interval it
-    /// now has, or none.
-    fn keep_timer(&mut self, pane: PaneId, id: &str, timer: Option<AbortHandle>) {
-        let old = match timer {
-            Some(timer) => self.timers.insert((pane, id.to_string()), timer),
-            None => self.timers.remove(&(pane, id.to_string())),
-        };
-        if let Some(old) = old {
-            old.abort();
-        }
     }
 
     fn close(&mut self, pane: PaneId, id: &str) -> bool {
         let before = self.shown.len();
         self.shown.retain(|v| !(v.pane == pane && v.view.id == id));
-        self.keep_timer(pane, id, None);
+        self.timers.stop(pane, id);
         self.shown.len() != before
     }
 
@@ -80,20 +68,13 @@ impl Views {
         let ids: Vec<String> = ids.collect();
         self.shown.retain(|v| v.pane != pane);
         for id in &ids {
-            self.keep_timer(pane, id, None);
+            self.timers.stop(pane, id);
         }
         ids
     }
 
     fn get(&self, pane: PaneId, id: &str) -> Option<&ShownView> {
         self.shown.iter().find(|v| v.pane == pane && v.view.id == id)
-    }
-
-    /// Whether the view is being asked to refresh, for the tests of what
-    /// stops a timer.
-    #[cfg(test)]
-    pub(super) fn is_refreshing(&self, pane: PaneId, id: &str) -> bool {
-        self.timers.contains_key(&(pane, id.to_string()))
     }
 }
 
@@ -102,7 +83,7 @@ impl Views {
 pub(super) type ViewEvent = ServerMsg;
 
 impl Daemon {
-    /// An agent's `view` request: shows the view, or closes one.
+    /// An agent's `view` request: shows the view, patches one, or closes one.
     ///
     /// The refusal is the limit's own words, with the path to the offending
     /// block, for the agent to fix and send again. Closing a view the pane
@@ -115,27 +96,43 @@ impl Daemon {
     ) -> anyhow::Result<()> {
         self.agent_scope(pane)?;
         match change {
-            ViewChange::Show { view } => self.show_view(pane, view),
+            ViewChange::Show { view } => {
+                let view = checked_within_size(view)?;
+                self.hold_view(pane, |_| Ok(view))
+            }
             ViewChange::Close { id } => {
                 self.close_view(pane, id.trim());
                 Ok(())
             }
             ViewChange::Patch { id, path, block } => {
-                let held = self.agent_views.lock().unwrap().get(pane, id.trim()).cloned();
-                let held = held.ok_or_else(|| anyhow::anyhow!("the pane shows no view {:?}", id.trim()))?;
-                let view = held.view.patched(&path, block).map_err(|e| anyhow::anyhow!("{e}"))?;
-                self.show_view(pane, view)
+                let id = id.trim().to_string();
+                self.hold_view(pane, |views| {
+                    let held = views
+                        .get(pane, &id)
+                        .ok_or_else(|| anyhow::anyhow!("the pane shows no view {id:?}"))?;
+                    let patched = held.view.clone().patched(&path, block).map_err(|e| anyhow::anyhow!("{e}"))?;
+                    checked_within_size(patched)
+                })
             }
         }
     }
 
-    fn show_view(self: &Arc<Self>, pane: PaneId, view: AgentView) -> anyhow::Result<()> {
-        let view = view.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-        // The body limit bounds what was sent; a view that serialises
-        // larger than it, from defaults filled in that the sender never
-        // wrote, is as much a dump as one that was sent so.
-        let size = serde_json::to_vec(&view).map_or(0, |bytes| bytes.len());
-        anyhow::ensure!(size <= MAX_VIEW_BYTES, "a view is at most {MAX_VIEW_BYTES} bytes");
+    /// Holds the view `make` builds, from what is held now, and tells the
+    /// watchers; all under the views lock. The pane is looked for in the
+    /// tree under it as well: a pane being removed takes its views next, by
+    /// the same lock, so a view shown as its pane goes is either refused
+    /// here or dropped there, and never left with a timer and no pane.
+    ///
+    /// A view shown again keeps the refresh timer it has while its interval
+    /// is unchanged, and a patch never changes the interval.
+    fn hold_view(
+        self: &Arc<Self>,
+        pane: PaneId,
+        make: impl FnOnce(&Views) -> anyhow::Result<AgentView>,
+    ) -> anyhow::Result<()> {
+        let mut views = self.agent_views.lock().unwrap();
+        self.agent_scope(pane)?;
+        let view = make(&views)?;
         let (id, every) = (view.id.clone(), view.refresh_every);
         let shown = ShownView {
             pane,
@@ -146,18 +143,11 @@ impl Daemon {
         // Sent under the lock, so a watcher that subscribes in
         // `watch_views` sees each change either in its replay or after it,
         // and never in the wrong order.
-        let mut views = self.agent_views.lock().unwrap();
         if let Some(id) = views.show(shown.clone()) {
             let _ = self.agent_views_tx.send(ServerMsg::ViewClosed { pane, id });
         }
         let _ = self.agent_views_tx.send(ServerMsg::ViewShown(Box::new(shown)));
-        // Always replaced, so showing the view again restarts the clock at
-        // its new interval, or stops it when the new view has none.
-        let timer = every.and_then(|secs| {
-            let task = keep_refreshing(Arc::downgrade(self), pane, id.clone(), Duration::from_secs(secs.into()));
-            tokio::runtime::Handle::try_current().ok().map(|rt| rt.spawn(task).abort_handle())
-        });
-        views.keep_timer(pane, &id, timer);
+        views.timers.keep(pane, &id, every, |every| spawn_timer(self, pane, &id, every));
         Ok(())
     }
 
@@ -189,20 +179,23 @@ impl Daemon {
     }
 
     /// Tells the agent that showed a view which of its actions the person
-    /// pressed. A view that is not held is ignored, as a refresh of one is.
+    /// pressed.
     ///
-    /// An action the view does not offer is dropped, not relayed: what is
-    /// typed to the agent must be something its own view said, never text a
-    /// client made up.
-    pub fn press_view(&self, pane: PaneId, press: ViewPress) {
-        let Some(shown) = self.agent_views.lock().unwrap().get(pane, &press.view).cloned() else {
-            return;
-        };
-        let Some(action) = find_action(&shown.view, &press.action) else {
-            return;
-        };
-        let press = offered(&shown.view, press);
-        self.notify(pane, &press_request(&shown.view, action, &press));
+    /// An action the view does not offer is not relayed: what is typed to
+    /// the agent must be something its own view said, never text a client
+    /// made up. Nor is one that cannot be told to an agent that is not
+    /// running. Each is the person's to hear of, so the reason comes back
+    /// as the `Err`, in words for them.
+    pub fn press_view(&self, pane: PaneId, press: ViewPress) -> Result<(), String> {
+        let shown = self.agent_views.lock().unwrap().get(pane, &press.view).cloned();
+        let shown = shown.ok_or("That view is no longer shown.")?;
+        let not_offered = "That view no longer offers that action.";
+        let action = find_action(&shown.view, &press.action).ok_or(not_offered)?;
+        let press = press.offered_by(&shown.view).ok_or(not_offered)?;
+        if !self.notify(pane, &press_request(&shown.view, action, &press)) {
+            return Err("The agent is not running, so it could not be told.".into());
+        }
+        Ok(())
     }
 
     /// Called as a pane leaves the tree: its views go with it.
@@ -214,270 +207,37 @@ impl Daemon {
     }
 }
 
-/// Asks for a view to be refreshed every `every`, the first time one
-/// interval after it was shown, for as long as it is held. The daemon is
-/// held weakly so that a timer never keeps it alive; `Views` aborts the
-/// task when the view goes, and the loop also ends on its own should the
-/// view be gone first. A delayed tick is not made up, so an agent that was
-/// busy is asked once, not once per tick it missed.
-pub(super) async fn keep_refreshing(daemon: Weak<Daemon>, pane: PaneId, id: String, every: Duration) {
-    let mut ticks = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
-    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    loop {
-        ticks.tick().await;
-        let Some(daemon) = daemon.upgrade() else { return };
-        if !daemon.refresh_view(pane, &id) {
-            return;
-        }
-    }
+/// The view if it keeps every limit and fits the size one may be held at.
+fn checked_within_size(view: AgentView) -> anyhow::Result<AgentView> {
+    let view = view.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
+    // The body limit bounds what was sent; a view that serialises
+    // larger than it, from defaults filled in that the sender never
+    // wrote, is as much a dump as one that was sent so.
+    let size = serde_json::to_vec(&view).map_or(0, |bytes| bytes.len());
+    anyhow::ensure!(size <= MAX_VIEW_BYTES, "a view is at most {MAX_VIEW_BYTES} bytes");
+    Ok(view)
 }
 
 /// What is typed to the agent when it has no inbox, so it must stay one
 /// line: a newline in a title would send the request early.
 fn refresh_request(view: &AgentView) -> String {
-    let title: String = view.title.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    let title = argus_protocol::view_press::plain(&view.title);
     let source = match &view.subject {
-        Some(url) => url.clone(),
+        Some(url) => argus_protocol::view_press::plain(url),
         None => "its source".to_string(),
     };
     format!(
         "Refresh the view `{id}` (\"{title}\"): read {source} again with your own tools and show \
          it anew with `argus-hook view show --stdin`, same id.",
-        id = view.id,
+        id = argus_protocol::view_press::plain(&view.id),
     )
-}
-
-/// The view's action with this id, wherever the view offers one.
-fn find_action<'a>(view: &'a AgentView, id: &str) -> Option<&'a ViewAction> {
-    let header = view.actions.iter().find(|a| a.id == id);
-    header.or_else(|| find_in(&view.blocks, id))
-}
-
-fn find_in<'a>(blocks: &'a [Block], id: &str) -> Option<&'a ViewAction> {
-    for block in blocks {
-        let own: &[ViewAction] = match block {
-            Block::Card { actions, .. } | Block::Table { actions, .. } => actions,
-            Block::Form { submit, .. } => std::slice::from_ref(submit),
-            _ => &[],
-        };
-        if let Some(found) = own.iter().find(|a| a.id == id) {
-            return Some(found);
-        }
-        if let Block::Row { items, .. } = block {
-            let mut acts = items.iter().filter_map(|i| match i {
-                RowItem::Action { action } => Some(action),
-                RowItem::Value { .. } => None,
-            });
-            if let Some(found) = acts.find(|a| a.id == id) {
-                return Some(found);
-            }
-        }
-        if let Some(found) = block.nested().into_iter().find_map(|inner| find_in(inner, id)) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-/// The press with only what the view offered for its action: row keys of
-/// a table that carries the action, and the answers of the form it
-/// submits. A client could send anything; the agent hears only what its
-/// own view could have produced.
-fn offered(view: &AgentView, mut press: ViewPress) -> ViewPress {
-    let mut keys = std::collections::HashSet::new();
-    let mut fields = None;
-    collect_offers(&view.blocks, &press.action, &mut keys, &mut fields);
-    press.rows.retain(|row| keys.contains(row.as_str()));
-    match fields {
-        Some((form, names)) if press.form.as_deref() == Some(form) => {
-            press.answers.retain(|a| names.contains(a.name.as_str()));
-        }
-        _ => {
-            press.form = None;
-            press.answers.clear();
-        }
-    }
-    press
-}
-
-type FormFields<'a> = Option<(&'a str, std::collections::HashSet<&'a str>)>;
-
-fn collect_offers<'a>(
-    blocks: &'a [Block],
-    action: &str,
-    keys: &mut std::collections::HashSet<&'a str>,
-    fields: &mut FormFields<'a>,
-) {
-    for block in blocks {
-        match block {
-            Block::Table { row_keys, actions, .. } if actions.iter().any(|a| a.id == action) => {
-                keys.extend(row_keys.iter().map(String::as_str));
-            }
-            Block::Form { id, fields: form, submit } if submit.id == action && fields.is_none() => {
-                *fields = Some((id.as_str(), form.iter().map(|f| f.name.as_str()).collect()));
-            }
-            _ => {}
-        }
-        for inner in block.nested() {
-            collect_offers(inner, action, keys, fields);
-        }
-    }
-}
-
-/// Control characters made spaces, since the request may be typed into a
-/// terminal where a newline sends it early and an escape does worse.
-fn plain(text: &str) -> String {
-    text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
-}
-
-/// The same, through every string of `value`, keys included.
-fn plain_json(value: serde_json::Value) -> serde_json::Value {
-    use serde_json::Value;
-    match value {
-        Value::String(s) => Value::String(plain(&s)),
-        Value::Array(items) => Value::Array(items.into_iter().map(plain_json).collect()),
-        Value::Object(map) => Value::Object(map.into_iter().map(|(k, v)| (plain(&k), plain_json(v))).collect()),
-        other => other,
-    }
-}
-
-/// One line, like [`refresh_request`]. The rows and answers are JSON, so
-/// the agent can parse them.
-fn press_request(view: &AgentView, action: &ViewAction, press: &ViewPress) -> String {
-    let mut text = format!(
-        "The person pressed `{action_id}` (\"{label}\") in the view `{id}`.",
-        action_id = plain(&action.id),
-        label = plain(&action.label),
-        id = plain(&view.id),
-    );
-    if !press.rows.is_empty() {
-        let rows = plain_json(serde_json::json!(press.rows));
-        text.push_str(&format!(" Selected rows: {rows}."));
-    }
-    if let Some(form) = &press.form {
-        let answers: serde_json::Map<String, serde_json::Value> = press
-            .answers
-            .iter()
-            .map(|a| {
-                let value = match &a.value {
-                    AnswerValue::Text(t) => serde_json::json!(t),
-                    AnswerValue::Number(n) => serde_json::json!(n),
-                    AnswerValue::Bool(b) => serde_json::json!(b),
-                };
-                (a.name.clone(), value)
-            })
-            .collect();
-        let answers = plain_json(serde_json::Value::Object(answers));
-        text.push_str(&format!(" Form `{}` answers: {answers}.", plain(form)));
-    }
-    text.push_str(&format!(
-        " Do what it asks with your own tools, then show the view again with \
-         `argus-hook view show --stdin`, same id `{}`, so the person sees it done.",
-        plain(&view.id),
-    ));
-    text
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_press_carries_only_the_rows_and_answers_its_view_offered() {
-        use argus_protocol::{Answer, Column, FormField, FormInput, RowSelect};
-        let act = |id: &str| ViewAction { id: id.into(), label: id.into(), tone: Default::default(), confirm: None };
-        let view = AgentView {
-            id: "v".into(),
-            title: "v".into(),
-            blocks: vec![
-                Block::Table {
-                    columns: vec![Column { title: "c".into(), numeric: false, optional: false }],
-                    rows: vec![vec![argus_protocol::Value::Empty]],
-                    sorted_by: None,
-                    total: None,
-                    row_keys: vec!["r1".into()],
-                    select: RowSelect::Many,
-                    actions: vec![act("rerun")],
-                    details: Vec::new(),
-                },
-                Block::Form {
-                    id: "deploy".into(),
-                    fields: vec![FormField {
-                        name: "branch".into(),
-                        label: "Branch".into(),
-                        input: FormInput::Toggle { default: false },
-                    }],
-                    submit: act("go"),
-                },
-            ],
-            ..Default::default()
-        };
-        let answer = |name: &str| Answer { name: name.into(), value: AnswerValue::Bool(true) };
-        let press = |action: &str| ViewPress {
-            view: "v".into(),
-            action: action.into(),
-            rows: vec!["r1".into(), "made-up".into()],
-            form: Some("deploy".into()),
-            answers: vec![answer("branch"), answer("extra")],
-        };
-        let rerun = offered(&view, press("rerun"));
-        assert_eq!(rerun.rows, ["r1"]);
-        assert!(rerun.form.is_none() && rerun.answers.is_empty());
-        let go = offered(&view, press("go"));
-        assert!(go.rows.is_empty());
-        assert_eq!(go.answers, [answer("branch")]);
-    }
-
-    fn action(id: &str) -> ViewAction {
-        ViewAction { id: id.into(), label: format!("label {id}"), tone: Default::default(), confirm: None }
-    }
-
-    fn press(action: &str) -> ViewPress {
-        ViewPress { view: "t".into(), action: action.into(), rows: vec![], form: None, answers: vec![] }
-    }
-
-    #[test]
-    fn an_action_is_found_wherever_the_view_offers_it() {
-        let mut view = shown(1, "t").view;
-        view.actions = vec![action("head")];
-        let card = Block::Card {
-            title: None,
-            chip: None,
-            tone: Default::default(),
-            blocks: vec![Block::Form { id: "f".into(), fields: vec![], submit: action("send") }],
-            actions: vec![action("card")],
-        };
-        let row = Block::Row {
-            align: Default::default(),
-            items: vec![RowItem::Action { action: action("inrow") }],
-        };
-        view.blocks = vec![Block::Section { heading: "s".into(), blocks: vec![card, row] }];
-        for id in ["head", "card", "send", "inrow"] {
-            assert_eq!(find_action(&view, id).map(|a| a.id.as_str()), Some(id));
-        }
-        assert!(find_action(&view, "rm-rf").is_none());
-    }
-
-    #[test]
-    fn a_press_request_stays_on_one_line_and_carries_rows_and_answers() {
-        let view = shown(1, "t").view;
-        let mut act = action("ship");
-        act.label = "Ship\nit".into();
-        let mut p = press("ship");
-        p.rows = vec!["r1".into(), "r\n2".into()];
-        p.form = Some("f".into());
-        p.answers = vec![
-            argus_protocol::Answer { name: "note".into(), value: AnswerValue::Text("a\nb\u{1b}[0m".into()) },
-            argus_protocol::Answer { name: "n".into(), value: AnswerValue::Number(3.0) },
-            argus_protocol::Answer { name: "ok".into(), value: AnswerValue::Bool(true) },
-        ];
-        let text = press_request(&view, &act, &p);
-        assert!(!text.chars().any(char::is_control), "{text:?}");
-        assert!(text.contains("`ship`") && text.contains("`t`") && text.contains("Ship it"), "{text}");
-        assert!(text.contains(r#"["r1","r 2"]"#), "{text}");
-        assert!(text.contains(r#""n":3.0"#) && text.contains(r#""ok":true"#), "{text}");
-        assert!(text.contains("view show --stdin"), "{text}");
-    }
+    use std::time::Duration;
+    use tokio::task::AbortHandle;
 
     fn shown(pane: u64, id: &str) -> ShownView {
         ShownView {
@@ -555,6 +315,12 @@ mod tests {
         tokio::spawn(std::future::pending::<()>()).abort_handle()
     }
 
+    fn timed(views: &mut Views, pane: u64, id: &str) -> AbortHandle {
+        let timer = pending_timer();
+        views.timers.keep(PaneId(pane), id, Some(60), |_| Some(timer.clone()));
+        timer
+    }
+
     async fn stopped(timer: &AbortHandle) -> bool {
         for _ in 0..50 {
             if timer.is_finished() {
@@ -566,52 +332,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replacing_a_timer_stops_the_old_one() {
-        let mut views = Views::default();
-        let (old, new) = (pending_timer(), pending_timer());
-        views.keep_timer(PaneId(1), "a", Some(old.clone()));
-        views.keep_timer(PaneId(1), "a", Some(new.clone()));
-        assert!(stopped(&old).await);
-        assert!(!new.is_finished());
-        views.keep_timer(PaneId(1), "a", None);
-        assert!(stopped(&new).await);
-        assert!(!views.is_refreshing(PaneId(1), "a"));
-    }
-
-    #[tokio::test]
     async fn closing_a_view_stops_its_timer_and_no_other() {
         let mut views = Views::default();
-        let (a, b) = (pending_timer(), pending_timer());
         views.show(shown(1, "a"));
         views.show(shown(1, "b"));
-        views.keep_timer(PaneId(1), "a", Some(a.clone()));
-        views.keep_timer(PaneId(1), "b", Some(b.clone()));
+        let a = timed(&mut views, 1, "a");
+        let b = timed(&mut views, 1, "b");
         views.close(PaneId(1), "a");
         assert!(stopped(&a).await);
-        assert!(!b.is_finished() && views.is_refreshing(PaneId(1), "b"));
+        assert!(!b.is_finished() && views.timers.is_refreshing(PaneId(1), "b"));
     }
 
     #[tokio::test]
     async fn a_ninth_view_stops_the_timer_of_the_one_it_displaces() {
         let mut views = Views::default();
-        let oldest = pending_timer();
         views.show(shown(1, "v0"));
-        views.keep_timer(PaneId(1), "v0", Some(oldest.clone()));
+        let oldest = timed(&mut views, 1, "v0");
         for n in 1..=MAX_VIEWS_PER_PANE {
             views.show(shown(1, &format!("v{n}")));
         }
         assert!(stopped(&oldest).await);
-        assert!(!views.is_refreshing(PaneId(1), "v0"));
+        assert!(!views.timers.is_refreshing(PaneId(1), "v0"));
     }
 
     #[tokio::test]
     async fn a_pane_going_stops_the_timers_of_its_views() {
         let mut views = Views::default();
-        let (mine, other) = (pending_timer(), pending_timer());
         views.show(shown(1, "a"));
         views.show(shown(2, "a"));
-        views.keep_timer(PaneId(1), "a", Some(mine.clone()));
-        views.keep_timer(PaneId(2), "a", Some(other.clone()));
+        let mine = timed(&mut views, 1, "a");
+        let other = timed(&mut views, 2, "a");
         views.drop_pane(PaneId(1));
         assert!(stopped(&mine).await);
         assert!(!other.is_finished());
@@ -627,5 +377,14 @@ mod tests {
         assert!(text.contains("`t`") && text.contains("https://example.com/browse/ENG-1"), "{text}");
         view.subject = None;
         assert!(refresh_request(&view).contains("its source"));
+    }
+
+    #[test]
+    fn a_refresh_request_has_no_control_character_in_any_part() {
+        let mut view = shown(1, "t\u{1b}x").view;
+        view.title = "a\u{7}b".into();
+        view.subject = Some("https://example.com/a\nb".into());
+        let text = refresh_request(&view);
+        assert!(!text.chars().any(char::is_control), "{text:?}");
     }
 }

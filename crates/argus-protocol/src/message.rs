@@ -450,7 +450,7 @@ pub enum ClientMsg {
     /// The person pressed one of a view's actions. The agent is told, as a
     /// refresh is asked of it, and the view stays as it is until it shows
     /// it again.
-    PressView { pane: PaneId, press: crate::agent_view::ViewPress },
+    PressView { pane: PaneId, press: crate::view_press::ViewPress },
     /// An action taken in an extension's view, on `row` unless the action
     /// is view-wide. Forwarded to the extension as it stands; the view
     /// changes only when the extension publishes it again. Only to a daemon
@@ -724,6 +724,13 @@ pub enum ServerMsg {
     /// A view is gone: closed by its agent or a person, pushed out by a
     /// newer one, or its pane ended.
     ViewClosed { pane: PaneId, id: String },
+    /// A [`ClientMsg::PressView`] that was not relayed to the agent: the
+    /// view is no longer held, no longer offers the action, or its agent
+    /// is not running to be told. Sent only to the client that pressed, and
+    /// only to one that listed `VIEW_ACTIONS`, so the person is not left
+    /// waiting on an agent that was never asked. `reason` is a sentence for
+    /// them.
+    ViewPressFailed { pane: PaneId, view: String, action: String, reason: String },
     /// Every view every running extension publishes, whole, after the
     /// daemon's greeting and whenever one changes. Only to a client that
     /// listed `EXTENSIONS`.
