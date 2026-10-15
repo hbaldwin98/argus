@@ -140,10 +140,7 @@ impl Daemon {
             self.guard_part::<P>(target, id)?;
         }
         if !action.is_read() {
-            let at = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or_default();
+            let at = super::decisions::now();
             // A client watching the feature a row moved into is owed the
             // push as much as one watching the feature it left.
             let landed = action.also_changes().map(|feature| BoardTarget {

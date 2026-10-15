@@ -6,8 +6,8 @@
 //! showing what is.
 
 use argus_protocol::{
-    Capture, DecisionChange, DecisionState, DecisionText, DecisionWrite, FeatureState, LinkWrite,
-    TaskAction, TaskPlace, TaskState, TaskWrite,
+    Capture, DecisionChange, DecisionState, DecisionText, DecisionWrite, FeatureAction,
+    FeatureState, LinkWrite, TaskAction, TaskPlace, TaskState, TaskWrite,
 };
 
 use super::*;
@@ -161,19 +161,17 @@ impl App {
         };
         match input.what {
             LineEdit::Feature(slug) => {
-                let _ = self.out.send(ClientMsg::RenameFeature {
+                let _ = self.out.send(ClientMsg::Feature {
                     project,
                     checkout,
-                    slug,
-                    title: text,
+                    action: FeatureAction::Retitle { slug, title: text },
                 });
             }
             LineEdit::Hold(slug) => {
-                let _ = self.out.send(ClientMsg::HoldFeature {
+                let _ = self.out.send(ClientMsg::Feature {
                     project,
                     checkout,
-                    slug,
-                    reason: Some(text),
+                    action: FeatureAction::Hold { slug, reason: text },
                 });
             }
             LineEdit::Link(slug) => {
@@ -187,11 +185,10 @@ impl App {
                     Ok(read) => self.report(format!("linked to {} {}", read.tracker, read.key)),
                     Err(message) => return self.report(message),
                 }
-                let _ = self.out.send(ClientMsg::LinkFeature {
+                let _ = self.out.send(ClientMsg::Feature {
                     project,
                     checkout,
-                    slug,
-                    link,
+                    action: FeatureAction::Link { slug, link },
                 });
             }
             LineEdit::NewTask => self.send_task(task(text, None)),
@@ -295,11 +292,13 @@ impl App {
         };
         match read.checked(into.is_none()) {
             Ok(capture) => {
-                let _ = self.out.send(ClientMsg::CaptureFeature {
+                let _ = self.out.send(ClientMsg::Feature {
                     project,
                     checkout,
-                    into,
-                    capture: Box::new(capture),
+                    action: FeatureAction::Capture {
+                        into,
+                        capture: Box::new(capture),
+                    },
                 });
                 self.capture = None;
             }
@@ -313,10 +312,10 @@ impl App {
         let Some((project, checkout, slug)) = self.board_target() else {
             return;
         };
-        let _ = self.out.send(ClientMsg::RemoveFeature {
+        let _ = self.out.send(ClientMsg::Feature {
             project,
             checkout,
-            slug,
+            action: FeatureAction::Drop { slug },
         });
     }
 
@@ -331,21 +330,16 @@ impl App {
         else {
             return;
         };
-        let state = match feature.state {
-            FeatureState::Done => FeatureState::Open,
-            FeatureState::Open => FeatureState::Done,
+        let (action, said) = match feature.state {
+            FeatureState::Open => (FeatureAction::Done { slug: slug.clone(), detail: None }, "archived"),
+            FeatureState::Done => (FeatureAction::Reopen { slug: slug.clone(), detail: None }, "reopened"),
         };
-        let _ = self.out.send(ClientMsg::MoveFeature {
+        let _ = self.out.send(ClientMsg::Feature {
             project,
             checkout,
-            slug: slug.clone(),
-            state,
-            detail: None,
+            action,
         });
-        self.report(match state {
-            FeatureState::Done => format!("{slug} archived"),
-            FeatureState::Open => format!("{slug} reopened"),
-        });
+        self.report(format!("{slug} {said}"));
     }
 
     /// Opens the selected feature's ticket, or offers its tickets when it is
@@ -464,11 +458,10 @@ impl App {
         if feature.held.is_none() {
             return self.begin_line(LineEdit::Hold(slug), String::new());
         }
-        let _ = self.out.send(ClientMsg::HoldFeature {
+        let _ = self.out.send(ClientMsg::Feature {
             project,
             checkout,
-            slug: slug.clone(),
-            reason: None,
+            action: FeatureAction::Unhold { slug: slug.clone() },
         });
         self.report(format!("{slug} is no longer held"));
     }

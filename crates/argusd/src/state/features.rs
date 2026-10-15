@@ -1,5 +1,5 @@
 //! Which feature a checkout is working on, and the document that says
-//! what that feature is.
+//! what that feature is — changed through one path, whoever asks.
 //!
 //! The decision board used to be one tree per project, which answered
 //! "what has this project ever decided" — a question nobody asks. An agent
@@ -16,8 +16,8 @@
 //! checkout, where moving its pointer would move every other agent's.
 
 use argus_protocol::{
-    Actor, ArtifactScope, Decision, Feature, FeatureBoard, FeatureMove, FeatureState, FeatureWrite,
-    LinkWrite, PaneId, ProjectId,
+    Actor, ArtifactScope, Decision, Feature, FeatureAction, FeatureBoard, FeatureMove,
+    FeatureState, PaneId, ProjectId,
 };
 
 use super::agents::AgentScope;
@@ -128,212 +128,227 @@ impl Daemon {
         Ok(None)
     }
 
-    /// Opens a feature, points this checkout at it, and answers with the
-    /// board as it now stands.
-    pub fn open_feature_for_agent(
+    /// A change from an agent, answered with the board as it stands
+    /// afterwards: every one of these changes what the next `decide` from
+    /// this checkout is filed under, so the agent has to be able to see
+    /// where it now is.
+    pub fn feature_action_for_agent(
         &self,
         pane_id: PaneId,
         session: Option<&str>,
-        write: FeatureWrite,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or_default();
-        let checkout = scope.checkout_path.to_string_lossy().to_string();
-        let feature = self.store.add_feature(
-            key,
-            &write,
-            Some(checkout.as_str()),
-            self.branch_of(&scope.checkout_path).as_deref(),
-            at,
-            session,
-        )?;
-        self.store
-            .set_artifact_feature_scope(&scope.checkout_path, key, &feature.slug)?;
-        let board = self.feature_board(&scope, artifact_scope, None)?;
-        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
-        Ok(board)
-    }
-
-    /// Points this checkout at a feature that already exists.
-    ///
-    /// Pushed, because a feature row names the checkouts pointed at it:
-    /// this is the moment a feature somebody wrote down gains a place
-    /// where work on it can be seen happening.
-    pub fn select_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        slug: &str,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        self.store.set_artifact_feature_scope(
-            &scope.checkout_path,
-            scope.artifact_key(artifact_scope),
-            slug,
-        )?;
-        let board = self.feature_board(&scope, artifact_scope, None)?;
-        let key = scope.artifact_key(artifact_scope);
-        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
-        Ok(board)
-    }
-
-    /// Adds a paragraph to the current feature's document.
-    ///
-    /// Refused when the checkout is on no feature, rather than opening one:
-    /// what to call a feature is the decision this whole scope hangs off,
-    /// and it is not one to make out of a stray note.
-    pub fn append_to_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        text: &str,
+        action: FeatureAction,
         filing: impl Into<Filing>,
     ) -> anyhow::Result<FeatureBoard> {
-        let Filing {
-            scope: artifact_scope,
-            feature: named,
-        } = filing.into();
+        let filing = filing.into();
         let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        let features = self.store.features(key)?;
-        let Some(slug) = self.board_feature(&scope, artifact_scope, &features, named.as_deref())?
-        else {
-            anyhow::bail!("this checkout is not on a feature yet");
+        let key = scope.artifact_key(filing.scope);
+        let by = FeatureActor::Agent {
+            scope: &scope,
+            session,
+            filing: &filing,
         };
-        if text.trim().is_empty() {
-            anyhow::bail!("there is nothing to add");
-        }
-        self.store.append_to_feature(key, &slug, text)?;
-        let board = self.feature_board(&scope, artifact_scope, Some(&slug))?;
-        // The brief is drawn beside the decisions, so a paragraph added
-        // mid-task shows up where it is being read rather than at whatever
-        // point the reader next changes something else.
-        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
-        Ok(board)
+        let about = self.apply_feature(&scope.project_name, key, &by, action)?;
+        self.feature_board(&scope, filing.scope, about.as_deref())
     }
 
-    /// Accepts a feature, or reopens one, from the feature view.
-    ///
-    /// `done` means a person has looked at the work and taken it. An agent
-    /// can make the move too, but only on a person's word, and it is
-    /// recorded as the agent's ([`Self::move_feature_for_agent`]). It names
-    /// the feature outright rather than resolving one from a checkout: a
-    /// person is looking at the selected repository's features, and
-    /// whichever checkout they have selected has nothing to do with the
-    /// row under the cursor.
-    pub fn move_feature_for_client(
+    /// A change from the feature view, which names the board by the
+    /// checkout it is looking at rather than resolving one from a pane:
+    /// whichever checkout a person has selected has nothing to do with the
+    /// row under their cursor. The answer is the push every client gets.
+    pub fn feature_action_for_client(
         &self,
         project: ProjectId,
         checkout: CheckoutId,
+        action: FeatureAction,
+    ) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        let by = FeatureActor::Person { project, checkout };
+        self.apply_feature(&name, &key, &by, action).map(drop)
+    }
+
+    /// Applies one change to the board `key` names and pushes the board to
+    /// every client. Answers with the feature the change was about when
+    /// the asker could not have named it: the one an append resolved.
+    ///
+    /// Every rule that differs by who asked is an arm of this match, so
+    /// the two sides cannot drift by being written twice:
+    ///
+    /// - an agent's `Open` records where it was cut and points the
+    ///   agent's checkout at it; a person's is work not yet started;
+    /// - `Select` and `Append` are about the agent's checkout, which a
+    ///   person does not have;
+    /// - an agent's `Done` and `Reopen` are recorded as the agent's, with
+    ///   its session, and say nothing: what was said is the person's;
+    /// - an agent drops only a feature with nothing under it;
+    /// - `Transfer` and `Capture` are the view's.
+    fn apply_feature(
+        &self,
+        project_name: &str,
+        key: &str,
+        by: &FeatureActor<'_>,
+        action: FeatureAction,
+    ) -> anyhow::Result<Option<String>> {
+        let at = super::decisions::now();
+        let mut about = None;
+        match action {
+            FeatureAction::Open(write) => {
+                let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
+                match by {
+                    // Nothing to record as its origin and no checkout to
+                    // point at it: whichever agent picks it up says so
+                    // with `argus-hook feature use`, and that is when it
+                    // gains a home.
+                    FeatureActor::Person { .. } => {
+                        self.store.add_feature(key, &write, None, None, at, None)?;
+                    }
+                    FeatureActor::Agent { scope, session, .. } => {
+                        let checkout = scope.checkout_path.to_string_lossy();
+                        let feature = self.store.add_feature(
+                            key,
+                            &write,
+                            Some(&checkout),
+                            self.branch_of(&scope.checkout_path).as_deref(),
+                            at,
+                            *session,
+                        )?;
+                        self.store
+                            .set_artifact_feature_scope(&scope.checkout_path, key, &feature.slug)?;
+                    }
+                }
+            }
+            // Pushed, because a feature row names the checkouts pointed at
+            // it: this is the moment a feature somebody wrote down gains a
+            // place where work on it can be seen happening.
+            FeatureAction::Select { slug } => {
+                let FeatureActor::Agent { scope, .. } = by else {
+                    anyhow::bail!("a person moves a feature between checkouts with a transfer");
+                };
+                self.store
+                    .set_artifact_feature_scope(&scope.checkout_path, key, &slug)?;
+            }
+            // Refused when the checkout is on no feature, rather than
+            // opening one: what to call a feature is the decision this
+            // whole scope hangs off, and it is not one to make out of a
+            // stray note. Pushed, because the brief is drawn beside the
+            // decisions, and a paragraph added mid-task belongs where it
+            // is being read.
+            FeatureAction::Append { text } => {
+                let FeatureActor::Agent { scope, filing, .. } = by else {
+                    anyhow::bail!("a person rewrites a brief whole");
+                };
+                let features = self.store.features(key)?;
+                let named = filing.feature.as_deref();
+                let Some(slug) = self.board_feature(scope, filing.scope, &features, named)? else {
+                    anyhow::bail!("this checkout is not on a feature yet");
+                };
+                if text.trim().is_empty() {
+                    anyhow::bail!("there is nothing to add");
+                }
+                self.store.append_to_feature(key, &slug, &text)?;
+                about = Some(slug);
+            }
+            FeatureAction::Done { slug, detail } => {
+                self.move_feature(key, &slug, FeatureState::Done, detail, by, at)?
+            }
+            FeatureAction::Reopen { slug, detail } => {
+                self.move_feature(key, &slug, FeatureState::Open, detail, by, at)?
+            }
+            FeatureAction::Retitle { slug, title } => self.store.rename_feature(key, &slug, &title)?,
+            FeatureAction::Rewrite { slug, body } => self.store.set_feature_body(key, &slug, &body)?,
+            FeatureAction::Drop { slug } => {
+                if let FeatureActor::Agent { .. } = by {
+                    self.refuse_dropping_work(key, &slug)?;
+                }
+                self.store.remove_feature(key, &slug)?;
+            }
+            FeatureAction::Hold { slug, reason } => {
+                self.store.hold_feature(key, &slug, Some(&reason))?
+            }
+            FeatureAction::Unhold { slug } => self.store.hold_feature(key, &slug, None)?,
+            FeatureAction::Wait { slug, on } => self.store.add_feature_wait(key, &slug, &on)?,
+            FeatureAction::Unwait { slug, on } => {
+                self.store.remove_feature_wait(key, &slug, &on)?
+            }
+            FeatureAction::Link { slug, link } => {
+                let link = link.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
+                self.store.link_feature(key, &slug, &link)?;
+            }
+            FeatureAction::Unlink { slug, key: ticket } => {
+                self.store.unlink_feature(key, &slug, &ticket)?
+            }
+            FeatureAction::Transfer { slug, to } => {
+                let FeatureActor::Person { project, checkout } = by else {
+                    anyhow::bail!("an agent takes a feature up with `argus-hook feature use`");
+                };
+                let (source, destination) = self.transfer_paths(*project, *checkout, to)?;
+                self.store
+                    .transfer_artifact_feature_scope(key, &slug, &source, &destination)?;
+            }
+            // A new feature is opened as a person's `Open` is, for the same
+            // reason: a note is work not yet started.
+            FeatureAction::Capture { into, capture } => {
+                let FeatureActor::Person { .. } = by else {
+                    anyhow::bail!("a note is captured from the feature view");
+                };
+                let capture = capture
+                    .checked(into.is_none())
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let slug = self.store.capture_feature(key, into.as_deref(), &capture, at)?;
+                // The tasks as well as the board: a client holding the
+                // feature's list open is owed the rows a note just added.
+                let _ = self.tasks_tx.send(argus_protocol::TaskList {
+                    repositories: self.repositories_keyed(key),
+                    project_name: project_name.to_string(),
+                    tasks: self.store.tasks(key, &slug)?,
+                    feature: Some(slug),
+                });
+            }
+        }
+        self.broadcast_decisions(project_name, key, self.store.decisions(key)?);
+        Ok(about)
+    }
+
+    /// Accepts or reopens a feature. A person's move is the person's; an
+    /// agent's is carried out on a person's word and logged as the
+    /// agent's, with its session, so the history says who carried the word
+    /// out rather than claiming the person made the move themselves.
+    fn move_feature(
+        &self,
+        key: &str,
         slug: &str,
         state: FeatureState,
         detail: Option<String>,
+        by: &FeatureActor<'_>,
+        at: i64,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or_default();
-        self.store.move_feature(
-            &key,
-            slug,
-            &FeatureMove {
-                state,
-                detail,
-                actor: Actor::Human,
-                session: None,
-                at,
-            },
-        )?;
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
+        let (actor, session) = match by {
+            FeatureActor::Person { .. } => (Actor::Human, None),
+            FeatureActor::Agent { session, .. } => {
+                if detail.is_some() {
+                    anyhow::bail!("what was said about a move is the person's to say");
+                }
+                (Actor::Agent, session.map(str::to_string))
+            }
+        };
+        let mv = FeatureMove {
+            state,
+            detail,
+            actor,
+            session,
+            at,
+        };
+        self.store.move_feature(key, slug, &mv)?;
         Ok(())
     }
 
-    /// Accepts or reopens a feature for an agent carrying out a person's
-    /// instruction. The move is logged as the agent's, with its session, so
-    /// the history says who carried the word out rather than claiming the
-    /// person made it themselves.
-    pub fn move_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        session: Option<&str>,
-        slug: &str,
-        state: FeatureState,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or_default();
-        self.store.move_feature(
-            key,
-            slug,
-            &FeatureMove {
-                state,
-                detail: None,
-                actor: Actor::Agent,
-                session: session.map(str::to_string),
-                at,
-            },
-        )?;
-        let board = self.feature_board(&scope, artifact_scope, None)?;
-        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
-        Ok(board)
-    }
-
-    /// Renames a feature for an agent. The slug stays, since every row
-    /// under the feature is keyed on it.
-    pub fn retitle_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        slug: &str,
-        title: &str,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        self.store.rename_feature(key, slug, title)?;
-        self.feature_changed_for_agent(&scope, artifact_scope)
-    }
-
-    /// Replaces a feature's brief for an agent: how a paragraph it appended
-    /// is taken back, and how a brief that has drifted is put right.
-    pub fn rewrite_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        slug: &str,
-        body: &str,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        self.store.set_feature_body(key, slug, body)?;
-        self.feature_changed_for_agent(&scope, artifact_scope)
-    }
-
-    /// Removes a feature for an agent, only when nothing is filed under it.
+    /// Refuses an agent's drop of a feature with anything filed under it.
     ///
-    /// The undoing of opening one — a feature opened by mistake, or one
-    /// emptied on purpose. Removing a feature takes its tasks and diagrams
-    /// with it and leaves its decisions unfiled, and work other agents
-    /// filed there is not an agent's to take back in one move: it can
-    /// empty the feature a task at a time, each of which it can undo, and a
-    /// person can remove a whole one from the feature view.
-    pub fn drop_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        slug: &str,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
+    /// Removing a feature takes its tasks and diagrams with it and leaves
+    /// its decisions unfiled, and work other agents filed there is not an
+    /// agent's to take back in one move: it can empty the feature a task at
+    /// a time, each of which it can undo, and a person can remove a whole
+    /// one from the feature view.
+    fn refuse_dropping_work(&self, key: &str, slug: &str) -> anyhow::Result<()> {
         let tasks = self.store.tasks(key, slug)?.len();
         let diagrams = self.store.sequence_diagrams(key, slug)?.len();
         let decisions = self
@@ -348,272 +363,40 @@ impl Daemon {
                  under it; drop its tasks first, or a person can remove it from the feature view"
             );
         }
-        self.store.remove_feature(key, slug)?;
-        self.feature_changed_for_agent(&scope, artifact_scope)
-    }
-
-    /// Holds a feature with a reason, or lifts its hold, for an agent.
-    pub fn hold_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        slug: &str,
-        reason: Option<&str>,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        self.store
-            .hold_feature(scope.artifact_key(artifact_scope), slug, reason)?;
-        self.feature_changed_for_agent(&scope, artifact_scope)
-    }
-
-    /// Records, or takes back, that a feature comes after another, for an
-    /// agent.
-    pub fn wait_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        slug: &str,
-        on: &str,
-        waits: bool,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        if waits {
-            self.store.add_feature_wait(key, slug, on)?;
-        } else {
-            self.store.remove_feature_wait(key, slug, on)?;
-        }
-        self.feature_changed_for_agent(&scope, artifact_scope)
-    }
-
-    /// Links a feature to a ticket, or takes a link away, for an agent.
-    pub fn link_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        slug: &str,
-        change: LinkChange,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        self.change_feature_link(scope.artifact_key(artifact_scope), slug, change)?;
-        self.feature_changed_for_agent(&scope, artifact_scope)
-    }
-
-    /// The one write both an agent's link and a person's go through.
-    fn change_feature_link(&self, key: &str, slug: &str, change: LinkChange) -> anyhow::Result<()> {
-        match change {
-            LinkChange::Link(write) => {
-                let link = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-                self.store.link_feature(key, slug, &link)
-            }
-            LinkChange::Unlink(ticket) => self.store.unlink_feature(key, slug, &ticket),
-        }
-    }
-
-    /// The board after an agent changed a feature, pushed to every client.
-    fn feature_changed_for_agent(
-        &self,
-        scope: &AgentScope,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<FeatureBoard> {
-        let key = scope.artifact_key(artifact_scope);
-        let board = self.feature_board(scope, artifact_scope, None)?;
-        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
-        Ok(board)
-    }
-
-    /// Opens a feature from the board, with no checkout to its name.
-    ///
-    /// A feature written down by a person is work that has not started
-    /// yet, so there is nothing to record as its origin and no checkout to
-    /// point at it. Whichever agent picks it up says so with
-    /// `argus-hook feature use`, and that is when it gains a home.
-    pub fn open_feature_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        write: FeatureWrite,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or_default();
-        self.store.add_feature(&key, &write, None, None, at, None)?;
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
     }
 
-    /// Writes a note down as a feature, or with `into` adds its tasks and
-    /// decisions to one that exists, and pushes what changed.
-    ///
-    /// A new feature is opened as [`Self::open_feature_for_client`] opens
-    /// one, for the same reason: a person's note is work not yet started,
-    /// so it has no origin and no checkout pointed at it.
-    pub fn capture_feature_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        into: Option<&str>,
-        capture: argus_protocol::Capture,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        let capture = capture
-            .checked(into.is_none())
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or_default();
-        let slug = self.store.capture_feature(&key, into, &capture, at)?;
-        // The tasks as well as the board: a client holding the feature's
-        // list open is owed the rows a note just added to it.
-        let _ = self.tasks_tx.send(argus_protocol::TaskList {
-            repositories: self.repositories_keyed(&key),
-            project_name: name.clone(),
-            tasks: self.store.tasks(&key, &slug)?,
-            feature: Some(slug),
-        });
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
-        Ok(())
-    }
-
-    pub fn remove_feature_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: &str,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.store.remove_feature(&key, slug)?;
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
-        Ok(())
-    }
-
-    /// Transfers current work between checkouts of the same repository.
-    pub fn transfer_feature_for_client(
+    /// Where a transfer moves a feature from and to: two checkouts of one
+    /// repository, since a board is a repository's.
+    fn transfer_paths(
         &self,
         project: ProjectId,
         source: CheckoutId,
         destination: CheckoutId,
-        slug: &str,
-    ) -> anyhow::Result<()> {
-        let (name, key, source_path, destination_path) = {
-            let inner = self.inner.lock().unwrap();
-            let project = inner
-                .projects
-                .iter()
-                .find(|candidate| candidate.id == project)
-                .ok_or_else(|| anyhow::anyhow!("no such project"))?;
-            let (repository, source_checkout) = project
-                .repositories
-                .iter()
-                .find_map(|repository| {
-                    repository
-                        .checkouts
-                        .iter()
-                        .find(|checkout| checkout.id == source)
-                        .map(|checkout| (repository, checkout))
-                })
-                .ok_or_else(|| anyhow::anyhow!("source checkout is not in this project"))?;
-            let destination_checkout = repository
-                .checkouts
-                .iter()
-                .find(|checkout| checkout.id == destination)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("destination checkout is not in the source repository")
-                })?;
-            (
-                project.name.clone(),
-                super::agents::repository_artifact_key(repository, source_checkout),
-                source_checkout.path.clone(),
-                destination_checkout.path.clone(),
-            )
-        };
-        self.store.transfer_artifact_feature_scope(
-            &key,
-            slug,
-            &source_path,
-            &destination_path,
-        )?;
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
-        Ok(())
-    }
-
-    pub fn rename_feature_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: &str,
-        title: &str,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.store.rename_feature(&key, slug, title)?;
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
-        Ok(())
-    }
-
-    /// Holds a feature, or lifts its hold, from the view.
-    pub fn hold_feature_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: &str,
-        reason: Option<&str>,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.store.hold_feature(&key, slug, reason)?;
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
-        Ok(())
-    }
-
-    /// Links a feature to a ticket, or takes a link away, from the view.
-    pub fn link_feature_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: &str,
-        change: LinkChange,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.change_feature_link(&key, slug, change)?;
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
-        Ok(())
-    }
-
-    /// Records, or takes back, that a feature comes after another, from the
-    /// view.
-    pub fn wait_feature_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: &str,
-        on: &str,
-        waits: bool,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        if waits {
-            self.store.add_feature_wait(&key, slug, on)?;
-        } else {
-            self.store.remove_feature_wait(&key, slug, on)?;
-        }
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
-        Ok(())
-    }
-
-    /// Rewrites a feature's brief from the view.
-    pub fn set_feature_body_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: &str,
-        body: String,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.store.set_feature_body(&key, slug, &body)?;
-        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
-        Ok(())
+    ) -> anyhow::Result<(std::path::PathBuf, std::path::PathBuf)> {
+        let inner = self.inner.lock().unwrap();
+        let project = inner
+            .projects
+            .iter()
+            .find(|candidate| candidate.id == project)
+            .ok_or_else(|| anyhow::anyhow!("no such project"))?;
+        let (repository, source_checkout) = project
+            .repositories
+            .iter()
+            .find_map(|repository| {
+                repository
+                    .checkouts
+                    .iter()
+                    .find(|checkout| checkout.id == source)
+                    .map(|checkout| (repository, checkout))
+            })
+            .ok_or_else(|| anyhow::anyhow!("source checkout is not in this project"))?;
+        let destination_checkout = repository
+            .checkouts
+            .iter()
+            .find(|checkout| checkout.id == destination)
+            .ok_or_else(|| anyhow::anyhow!("destination checkout is not in the source repository"))?;
+        Ok((source_checkout.path.clone(), destination_checkout.path.clone()))
     }
 
     /// The feature the next decision from this pane is filed under.
@@ -640,8 +423,18 @@ impl Daemon {
     }
 }
 
-/// A link made, or the key of one taken away.
-pub enum LinkChange {
-    Link(LinkWrite),
-    Unlink(String),
+/// Who is changing a feature, and where they are looking from.
+enum FeatureActor<'a> {
+    /// A person at a client, on the board of the checkout they selected.
+    Person {
+        project: ProjectId,
+        checkout: CheckoutId,
+    },
+    /// An agent: the conversation it is, the checkout its pane is in, and
+    /// the feature its request names, if it names one.
+    Agent {
+        scope: &'a AgentScope,
+        session: Option<&'a str>,
+        filing: &'a Filing,
+    },
 }

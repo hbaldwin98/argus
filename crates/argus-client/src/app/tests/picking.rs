@@ -40,11 +40,10 @@ fn feature_transfer_picker_offers_sibling_checkout_and_sends_its_id() {
     assert_eq!(h.app.picker.as_ref().unwrap().items, vec!["feat"]);
     h.key(KeyCode::Enter);
     let sent = h.sent();
-    let [ClientMsg::TransferFeature {
+    let [ClientMsg::Feature {
         project,
-        source,
-        destination,
-        slug,
+        checkout: source,
+        action: argus_protocol::FeatureAction::Transfer { slug, to: destination },
     }] = sent.as_slice()
     else {
         panic!("expected one feature transfer, got {sent:?}");

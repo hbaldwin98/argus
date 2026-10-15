@@ -52,7 +52,6 @@ mod viewers;
 mod workspaces;
 
 pub use board_parts::FeaturePart;
-pub use features::LinkChange;
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;

@@ -90,11 +90,10 @@ impl App {
                 feature,
                 action: argus_protocol::TaskAction::SetBody { id, body },
             },
-            BriefTarget::Feature { project, slug } => ClientMsg::SetFeatureBody {
+            BriefTarget::Feature { project, slug } => ClientMsg::Feature {
                 project,
                 checkout: checkout.expect("a feature brief belongs to the selected checkout"),
-                slug,
-                body,
+                action: argus_protocol::FeatureAction::Rewrite { slug, body },
             },
             BriefTarget::Decision {
                 project,

@@ -240,7 +240,8 @@ to the type or its locking.
 | `state/session` | what survives a daemon restart |
 | `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
 | `state/tree` | finding your way around the tree |
-| `state/features`, `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
+| `state/features` | which feature a checkout is on, and the one path a change to a feature takes, with who asked as a parameter |
+| `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
@@ -1355,7 +1356,7 @@ keeping its slug, and `feature drop` removes one with nothing under it — the u
 feature with tasks, decisions or diagrams under it is refused, since those may be other agents'
 work; an agent empties it a task at a time, each of which it can undo, and a person removes a whole
 one from the view. A human replaces a brief in the view: `e` on a feature, from either board, opens
-the brief in the brief editor and `ClientMsg::SetFeatureBody` writes back whatever it says. It is the same editor a
+the brief in the brief editor and `FeatureAction::Rewrite` writes back whatever it says. It is the same editor a
 task's brief gets because it is the same job, prose a person reads and corrects. The editor is
 modal: `j`/`k`, `0`/`$` and `g`/`G` navigate, `i`, `a` or `o` start typing, and `Esc` leaves insert
 mode and saves; `q` saves and closes. The work a brief might have listed lives in its tasks. The decision view draws the
@@ -1440,9 +1441,18 @@ table would only add a position to keep dense.
 There is no policy flag on these writes: the board exists for agents to write, never loses a row,
 and attributes every one, so there is nothing for a gate to protect.
 
+A feature changes through one vocabulary, `FeatureAction`: the helper posts it to the pane API and
+the view sends it in `ClientMsg::Feature`, and both reach one apply path in `state/features` that
+takes who asked as a parameter. What differs by who asked is in that one match, side by side: an
+agent's `open` records the checkout and branch it was cut on and points that checkout at it, where
+a person's records neither; `select` and `note` are about an agent's checkout and refused to a
+person; an agent's `done` and `reopen` are logged as the agent's, with its session, and carry no
+detail, which is the person's to give; an agent's `drop` is refused while anything is filed under
+the feature; and transfers and captured notes are the view's.
+
 A person starting a feature has a paragraph, not a title, so the view sends a whole note —
-`ClientMsg::CaptureFeature`, read by `argus_protocol::capture` — and `store/capture` writes it in
-one transaction: the feature, opened exactly as `ClientMsg::OpenFeature` opens one, its tasks
+`FeatureAction::Capture`, read by `argus_protocol::capture` — and `store/capture` writes it in
+one transaction: the feature, opened exactly as a person's `FeatureAction::Open` opens one, its tasks
 nested in order, and its decisions, a `?` line open with its options and a `!` line accepted with
 its reason, each under the task it was indented beneath. A refusal at the last row leaves nothing
 behind, not even the number the feature would have had. With `into`, the tasks and decisions are
@@ -1521,7 +1531,7 @@ A new feature is written as **one note** rather than a title and then a task at 
 (`argus-protocol::capture`). The note is typed on the left and what it reads as is drawn on the
 right — the title, the brief, the numbered tasks, the decisions — so what `Ctrl-S` creates is on
 screen before it is sent, and a line the grammar cannot place is named instead of dropped.
-`ClientMsg::CaptureFeature` writes all of it in one transaction. `i` inside a feature writes more
+`FeatureAction::Capture` writes all of it in one transaction. `i` inside a feature writes more
 of it the same way, where the first line is a row rather than a title.
 
 The client still predicts nothing. Marking a task done sends the move and draws the mark when the
@@ -1595,7 +1605,7 @@ writes them, and the claim they held is what the panes now say directly.
 `done` stays stored and stays the human's decision; the index calls it archived, since `DONE` is
 what it says of a feature whose tasks are all finished and nobody has accepted yet. `v` archives
 the selected feature and brings an archived one back over
-`ClientMsg::MoveFeature`; the pushed board is the only state change the client trusts. An agent can
+`FeatureAction::Done` and `Reopen`; the pushed board is the only state change the client trusts. An agent can
 carry the decision out — `argus-hook feature done <slug>`, and `feature reopen <slug>` to take it
 back — and the bundled skill says to only on a person's word, never because its own tasks are
 finished. `feature_event` records every move with who made it, so one an agent made is logged as the
@@ -1644,7 +1654,7 @@ redrafts in between cannot have its newer text approved unseen, and the store re
 a turn-down when no draft is waiting.
 
 `m` transfers the selected feature's active checkout association to another checkout in the same
-repository over `ClientMsg::TransferFeature`. The daemon validates both runtime ids, removes the
+repository over `FeatureAction::Transfer`, sent on the source checkout's board. The daemon validates both runtime ids, removes the
 source association and writes the destination in one store transaction. This changes where work is
 happening, not where it began: `origin_checkout` and `origin_branch` remain historical. Removing a
 worktree removes neither the repository-owned feature nor its accepted history.

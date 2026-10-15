@@ -2,6 +2,7 @@
 //! over the fixtures they all build a daemon from.
 
 mod branches;
+mod features;
 mod follow;
 mod hook_lifecycle;
 mod inbox;
@@ -411,6 +412,20 @@ pub(super) async fn post_agent_hook(
 
 pub(super) fn settings_of(dir: &std::path::Path) -> std::path::PathBuf {
     dir.join(".claude").join("settings.local.json")
+}
+
+/// Opens a feature and points the pane's checkout at it, which every
+/// decision now needs: a decision with nowhere to be filed is the pile
+/// this scoping exists to end.
+pub(super) fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
+    let open = argus_protocol::FeatureAction::Open(argus_protocol::FeatureWrite {
+        title: title.into(),
+        body: None,
+    });
+    let board = d
+        .feature_action_for_agent(agent, None, open, argus_protocol::ArtifactScope::default())
+        .unwrap();
+    board.current.expect("opening a feature works on it")
 }
 
 pub(super) fn only_checkout(d: &Daemon) -> CheckoutId {
