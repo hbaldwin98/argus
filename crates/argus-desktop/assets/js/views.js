@@ -6,6 +6,7 @@
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { DOCK_ICON, dockOf, moveItems } from './docks.js';
+import { draggable } from './drag.js';
 import { $, el, icon } from './dom.js';
 import { openMenu } from './menu.js';
 import { state } from './state.js';
@@ -45,7 +46,7 @@ function key(v) {
     return `${v.pane}/${v.view.id}`;
 }
 function tabs(views, open) {
-    return el('div', { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' }, views.map((v) => el('button', {
+    const strip = el('div', { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' }, views.map((v) => el('button', {
         class: `vpanel-tab${v === open ? ' on' : ''}`,
         role: 'tab',
         type: 'button',
@@ -69,6 +70,7 @@ function tabs(views, open) {
         title: 'Hide',
         onclick: () => call('hide_views', {}),
     }, icon('close')));
+    return draggable(strip, 'views', 'Views');
 }
 function header(v) {
     const at = new Date(Number(v.at) * 1000).toISOString();

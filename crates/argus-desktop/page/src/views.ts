@@ -10,6 +10,7 @@ import type { ViewsPage } from './bindings/ViewsPage';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { DOCK_ICON, dockOf, moveItems } from './docks.js';
+import { draggable } from './drag.js';
 import { $, el, icon } from './dom.js';
 import { openMenu } from './menu.js';
 import { state } from './state.js';
@@ -57,7 +58,7 @@ function key(v: PageView): string {
 }
 
 function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
-  return el(
+  const strip = el(
     'div',
     { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' },
     views.map((v) =>
@@ -103,6 +104,7 @@ function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
       icon('close'),
     ),
   );
+  return draggable(strip, 'views', 'Views');
 }
 
 function header(v: PageView): HTMLElement {

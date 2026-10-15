@@ -253,7 +253,7 @@ Console in the sidebar, gives it the stage; `` ` `` (from a pane, the leader and
 beside the connection, shows it docked beside the Workspace, Feature and Checkouts stages or hides
 it, and its sash sets its size. It docks at the bottom until moved: the chevron in its head, or the
 palette's Dock the console on the left, on the right or at the bottom, moves it to that edge of the
-stage. The leader and `z` fills the window with it, all but the sidebar's
+stage, as does dragging its header there. The leader and `z` fills the window with it, all but the sidebar's
 projects. A tab per console, `+` for another and a tab's `✕` to end one. Docked, the console sits
 beside the Workspace's pane with both on screen, so an agent and a shell are side by side: a click
 on either, or the pane chosen on the rail, gives it the keys, and from a pane the leader and `o`
@@ -527,7 +527,9 @@ docked on the left, the right or the bottom of the stage, or as a page of its ow
 `place` says, until you move it with its header's dock menu, **Open as page** or **Dock** (`>` and
 `<` while the view has the keys), which the window remembers per view. A dock holding several
 panels — the console, the agents' views, extension views — shows a tab for each, and a tab's
-right-click moves it to another dock. The palette's **Go to …** opens one too.
+right-click moves it to another dock. Any panel can also be dragged by its tab or header, or an
+extension's view from the sidebar, to an edge of the stage to dock it there, or onto the stage to
+open it as a page. The palette's **Go to …** opens one too.
 
 ### `client.toml`
 

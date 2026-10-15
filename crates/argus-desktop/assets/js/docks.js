@@ -6,6 +6,7 @@
 // holds more than one, and reports a tab picked, a panel moved or a sash
 // let go.
 import { $, el } from './dom.js';
+import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
 import { extensionElement, extensionOnStage } from './extension_views.js';
 import { contextMenu } from './menu.js';
@@ -102,7 +103,7 @@ function drawTabs(dock, page, shown) {
         strip.replaceChildren();
         return;
     }
-    strip.replaceChildren(...tabs.map((tab) => el('button', {
+    strip.replaceChildren(...tabs.map((tab) => draggable(el('button', {
         class: `dock-tab${tab.panel === shown ? ' on' : ''}`,
         role: 'tab',
         type: 'button',
@@ -112,11 +113,15 @@ function drawTabs(dock, page, shown) {
             { heading: tab.title },
             ...moveItems(tab.panel, true),
         ]),
-    }, tab.title)));
+    }, tab.title), tab.panel, tab.title)));
 }
 /** Each dock follows its sash while it is held, and its size is reported
  *  once it is let go, for Rust to keep and send back. */
 export function listen() {
+    // The console's head is drawn into the same element every time, so it
+    // is made draggable once; a press on one of its tabs or buttons stays
+    // theirs.
+    draggable($('console-head'), 'console', 'Console');
     const work = $('work');
     const center = $('center');
     const size = (dock) => (at) => {

@@ -10,6 +10,7 @@ import type { Dock } from './bindings/Dock';
 import type { DockPage } from './bindings/DockPage';
 import type { Panel } from './bindings/Panel';
 import { $, el, type IconName } from './dom.js';
+import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
 import { extensionElement, extensionOnStage } from './extension_views.js';
 import { contextMenu, type MenuItem } from './menu.js';
@@ -110,19 +111,23 @@ function drawTabs(dock: Dock, page: DockPage | null, shown: Panel | null): void 
   }
   strip.replaceChildren(
     ...tabs.map((tab) =>
-      el(
-        'button',
-        {
-          class: `dock-tab${tab.panel === shown ? ' on' : ''}`,
-          role: 'tab',
-          type: 'button',
-          'aria-selected': String(tab.panel === shown),
-          onclick: () => call('docks', { gesture: { on: 'show', panel: tab.panel } }),
-          oncontextmenu: contextMenu(tab.title, () => [
-            { heading: tab.title },
-            ...moveItems(tab.panel, true),
-          ]),
-        },
+      draggable(
+        el(
+          'button',
+          {
+            class: `dock-tab${tab.panel === shown ? ' on' : ''}`,
+            role: 'tab',
+            type: 'button',
+            'aria-selected': String(tab.panel === shown),
+            onclick: () => call('docks', { gesture: { on: 'show', panel: tab.panel } }),
+            oncontextmenu: contextMenu(tab.title, () => [
+              { heading: tab.title },
+              ...moveItems(tab.panel, true),
+            ]),
+          },
+          tab.title,
+        ),
+        tab.panel,
         tab.title,
       ),
     ),
@@ -132,6 +137,10 @@ function drawTabs(dock: Dock, page: DockPage | null, shown: Panel | null): void 
 /** Each dock follows its sash while it is held, and its size is reported
  *  once it is let go, for Rust to keep and send back. */
 export function listen(): void {
+  // The console's head is drawn into the same element every time, so it
+  // is made draggable once; a press on one of its tabs or buttons stays
+  // theirs.
+  draggable($('console-head'), 'console', 'Console');
   const work = $('work');
   const center = $('center');
   const size = (dock: Dock) => (at: number) => {

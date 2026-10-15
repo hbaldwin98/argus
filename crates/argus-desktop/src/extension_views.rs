@@ -242,6 +242,7 @@ impl ExtensionViews {
             .map(|v| {
                 let panel = Panel::extension(&v.extension, &v.name);
                 ExtTab {
+                    panel: panel.clone(),
                     extension: v.extension.clone(),
                     view: v.name.clone(),
                     title: v.title.clone(),

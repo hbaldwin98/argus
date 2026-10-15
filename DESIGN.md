@@ -140,7 +140,12 @@ comes back where it was put, and an extension's view gone with its extension fin
 when it comes back; an extension's view may instead be a page on the stage, which the console and
 the views never are. A dock shows one of the panels in it that exist now, is open or closed, and is
 as wide or tall as its sash left it; holding more than one, it draws a tab per panel over them, a
-tab's right-click offering the other docks. Each panel's own header has the same dock menu. So
+tab's right-click offering the other docks. Each panel's own header has the same dock menu, and a
+panel is dragged where it goes (`drag.ts`): its dock tab, its header, or an extension's view's row
+in the sidebar picked up, the place it would land shown under the pointer — an edge of the stage for
+that dock, the stage's foot for the bottom one, the rest for the stage itself where the panel has a
+page (the Console stage, an extension's page) — and the same move the menus send reported when it is
+let go; Escape puts it back, and a press that never travels stays a click. So
 several panels are on screen at once, one per dock — a console on the left, the agents' views on
 the right, an extension's table at the bottom — with only the keys moving between them. The Console
 stage and fullscreen take the console out of its dock without moving it, and leaving them puts it
@@ -149,7 +154,7 @@ the dock it left shows the tab before it, or closes once empty. A `desktop.json`
 docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `screen`, `input`, `keymap`,
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `drag`, `screen`, `input`, `keymap`,
 `palette`, `shortcuts`, `settings`, `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
 `markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and

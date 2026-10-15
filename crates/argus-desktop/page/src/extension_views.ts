@@ -13,6 +13,7 @@ import type { Panel } from './bindings/Panel';
 import type { Value } from './bindings/Value';
 import { DOCK_ICON, dockOf, moveItems } from './docks.js';
 import { $, el, icon, type IconName } from './dom.js';
+import { draggable } from './drag.js';
 import { closeLayer, openMenu } from './menu.js';
 import { keycaps } from './keys.js';
 import { state } from './state.js';
@@ -72,18 +73,22 @@ export function drawExtensionNav(): void {
       'div',
       { class: 'nav-nest', role: 'group', 'aria-label': 'Extensions', hidden: !listed },
       views.map((v) =>
-        el(
-          'button',
-          {
-            class: `nav nav-sub${v.on ? ' on' : ''}`,
-            type: 'button',
-            title: `${v.title} · from ${v.extension}${v.page ? '' : ', docked'}`,
-            'aria-current': v.on ? 'page' : null,
-            onclick: () => call('open_extension_view', { extension: v.extension, view: v.view }),
-          },
-          el('span', { class: 'ic' }, viewIcon(v.icon)),
-          el('span', { class: 'grow ttl' }, v.title),
-          el('span', { class: 'meta' }, v.extension),
+        draggable(
+          el(
+            'button',
+            {
+              class: `nav nav-sub${v.on ? ' on' : ''}`,
+              type: 'button',
+              title: `${v.title} · from ${v.extension}${v.page ? '' : ', docked'}`,
+              'aria-current': v.on ? 'page' : null,
+              onclick: () => call('open_extension_view', { extension: v.extension, view: v.view }),
+            },
+            el('span', { class: 'ic' }, viewIcon(v.icon)),
+            el('span', { class: 'grow ttl' }, v.title),
+            el('span', { class: 'meta' }, v.extension),
+          ),
+          v.panel,
+          v.title,
         ),
       ),
     ),
@@ -146,7 +151,7 @@ function moveButton(view: ExtTable): HTMLElement {
 
 function header(view: ExtTable): HTMLElement {
   const wide = view.actions.filter((a) => a.viewWide);
-  return el(
+  const head = el(
     'div',
     { class: 'vpanel-head' },
     el(
@@ -179,6 +184,7 @@ function header(view: ExtTable): HTMLElement {
       ),
     ),
   );
+  return draggable(head, view.panel, view.title);
 }
 
 /** The view as an agent's table block: a row's status, when any has one,

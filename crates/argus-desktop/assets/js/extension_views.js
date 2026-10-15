@@ -8,6 +8,7 @@
 // extension publishes it again.
 import { DOCK_ICON, dockOf, moveItems } from './docks.js';
 import { $, el, icon } from './dom.js';
+import { draggable } from './drag.js';
 import { closeLayer, openMenu } from './menu.js';
 import { keycaps } from './keys.js';
 import { state } from './state.js';
@@ -52,13 +53,13 @@ export function drawExtensionNav() {
         onclick: () => call('toggle_extensions', {}),
     }, el('span', { class: 'ic' }, icon(listed ? 'down' : 'right')), el('span', { class: 'grow' }, 'Extensions'), el('span', { class: 'meta' }, String(views.length))), 
     // Folded, the views are kept but hidden, so a fold is one redraw.
-    el('div', { class: 'nav-nest', role: 'group', 'aria-label': 'Extensions', hidden: !listed }, views.map((v) => el('button', {
+    el('div', { class: 'nav-nest', role: 'group', 'aria-label': 'Extensions', hidden: !listed }, views.map((v) => draggable(el('button', {
         class: `nav nav-sub${v.on ? ' on' : ''}`,
         type: 'button',
         title: `${v.title} · from ${v.extension}${v.page ? '' : ', docked'}`,
         'aria-current': v.on ? 'page' : null,
         onclick: () => call('open_extension_view', { extension: v.extension, view: v.view }),
-    }, el('span', { class: 'ic' }, viewIcon(v.icon)), el('span', { class: 'grow ttl' }, v.title), el('span', { class: 'meta' }, v.extension)))));
+    }, el('span', { class: 'ic' }, viewIcon(v.icon)), el('span', { class: 'grow ttl' }, v.title), el('span', { class: 'meta' }, v.extension)), v.panel, v.title))));
 }
 function actionButton(view, action, kind) {
     return el('button', {
@@ -99,7 +100,7 @@ function moveButton(view) {
 }
 function header(view) {
     const wide = view.actions.filter((a) => a.viewWide);
-    return el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), moveButton(view), !view.page &&
+    const head = el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), moveButton(view), !view.page &&
         el('button', {
             class: 'icon',
             type: 'button',
@@ -107,6 +108,7 @@ function header(view) {
             'aria-label': `Hide ${view.title}`,
             onclick: () => call('docks', { gesture: { on: 'hide', panel: view.panel } }),
         }, icon('close'))), el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'vpanel-acts' }, wide.map((action) => actionButton(view, action, 'btn sm')), modeButton(view, !view.page))));
+    return draggable(head, view.panel, view.title);
 }
 /** The view as an agent's table block: a row's status, when any has one,
  *  leads it as a chip. */

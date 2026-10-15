@@ -2075,6 +2075,8 @@ pub struct ExtensionsPage {
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ExtTab {
+    /// The panel it is, which a drag from the sidebar moves.
+    pub panel: Panel,
     pub extension: String,
     pub view: String,
     pub title: String,

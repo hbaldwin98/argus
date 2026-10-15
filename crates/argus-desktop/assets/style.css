@@ -2515,6 +2515,64 @@ body.filled .rail {
   flex: 1;
   min-height: 0;
 }
+/* A panel being dragged: the place it would land, and its name under the
+   pointer. Over everything, and never in the way of the pointer. */
+body.panel-dragging,
+body.panel-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+.drop-preview {
+  position: fixed;
+  z-index: 60;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  pointer-events: none;
+  transition:
+    left 80ms ease-out,
+    top 80ms ease-out,
+    width 80ms ease-out,
+    height 80ms ease-out;
+}
+.drop-preview[hidden] {
+  display: none;
+}
+.drop-words {
+  padding: var(--sp-4) var(--sp-8);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+.drag-ghost {
+  position: fixed;
+  z-index: 61;
+  padding: var(--sp-4) var(--sp-8);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.chead,
+.vpanel-tabs,
+.vpanel-head {
+  cursor: grab;
+}
+.chead button,
+.vpanel-tabs button,
+.vpanel-head button {
+  cursor: pointer;
+}
+
 /* Panels on screen nowhere wait here, so a console's screens and a view's
    scroll are kept for when they come back. */
 .parked {
