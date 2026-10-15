@@ -5011,6 +5011,81 @@ body.resizing:has(.brief-sash.held) {
 }
 
 /* Agent views: containers (card, grid, details, row, divider). */
+.vcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-12);
+  min-width: 0;
+  padding: var(--sp-12);
+  background: var(--bg-chrome);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.vcard.tinted {
+  border-color: color-mix(in srgb, var(--t) 55%, var(--line));
+}
+.vcard-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-width: 0;
+}
+.vcard-title {
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.vcard-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-8);
+}
+/* Named widths: the agent never picks pixels. */
+.vgrid {
+  display: grid;
+  gap: var(--sp-12);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.vgrid.sm {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.vgrid.lg {
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
+.vgrid > * {
+  min-width: 0;
+}
+.vdetails-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  cursor: pointer;
+  font-weight: 600;
+}
+.vdetails-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.vdetails-body {
+  padding-top: var(--sp-8);
+}
+.vrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-8);
+}
+.vrow.spread {
+  justify-content: space-between;
+}
+.vrow.end {
+  justify-content: flex-end;
+}
+.vdivider {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
 
 /* Agent views: charts (chart, progress, a stat's trend). */
 

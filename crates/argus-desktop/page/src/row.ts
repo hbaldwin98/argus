@@ -1,10 +1,17 @@
 // A row view block: values and buttons on one line, wrapping when narrow.
 
-import { el } from './dom.js';
+import { actionButton } from './actions.js';
 import type { Block } from './bindings/Block';
-import type { ViewCtx } from './viewctx.js';
+import { el } from './dom.js';
+import { value } from './values.js';
+import { at, type ViewCtx } from './viewctx.js';
 
-/** Not drawn yet: the block's kind, so a view that uses it still reads. */
-export function row(_block: Extract<Block, { kind: 'row' }>, _ctx: ViewCtx): HTMLElement {
-  return el('div', { class: 'vpending' }, 'row');
+export function row(block: Extract<Block, { kind: 'row' }>, ctx: ViewCtx): HTMLElement {
+  return el(
+    'div',
+    { class: `vrow ${block.align}` },
+    block.items.map((item, i) =>
+      item.kind === 'value' ? value(item.value, at(ctx, i)) : actionButton(item.action, at(ctx, i)),
+    ),
+  );
 }
