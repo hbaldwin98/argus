@@ -364,7 +364,7 @@ fn adding_a_project_files_it_under_the_open_workspace() {
         let d = persistent(config_with_workspaces());
         d.open_workspace(workspace_named(&d, "work")).unwrap();
 
-        d.add_project(&repo.path().to_string_lossy()).unwrap();
+        d.add_project(&repo.path().to_string_lossy(), None, &[]).unwrap();
 
         assert!(
             names_of(&d)
@@ -387,7 +387,7 @@ fn an_added_projects_workspace_is_persisted_so_it_survives_a_restart() {
     with_temp_config(|_| {
         let d = persistent(config_with_workspaces());
         d.open_workspace(workspace_named(&d, "work")).unwrap();
-        d.add_project(&repo.path().to_string_lossy()).unwrap();
+        d.add_project(&repo.path().to_string_lossy(), None, &[]).unwrap();
 
         let restarted = persistent(config_with_workspaces());
         let work = workspace_named(&restarted, "work");
@@ -449,7 +449,7 @@ fn a_workspace_created_then_given_a_project_is_how_grouping_starts() {
     with_temp_config(|_| {
         let d = daemon_with_primary("/repo");
         d.create_workspace("side").unwrap();
-        d.add_project(&repo.path().to_string_lossy()).unwrap();
+        d.add_project(&repo.path().to_string_lossy(), None, &[]).unwrap();
 
         let side = d
             .workspaces()
@@ -540,15 +540,48 @@ fn an_editor_pane_will_not_open_a_path_outside_the_checkout() {
 }
 
 #[test]
+fn a_named_project_skips_the_folders_it_was_given_and_still_does_after_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["web", "vendor/lib"] {
+        let child = dir.path().join(name);
+        std::fs::create_dir_all(&child).unwrap();
+        let _repo = real_repo(&child);
+    }
+    with_temp_config(|_| {
+        let d = persistent(ConfigFile::default());
+        d.add_project(&dir.path().to_string_lossy(), Some(" work "), &["vendor".into()])
+            .unwrap();
+        assert_eq!(names_of(&d), ["work"]);
+        assert_eq!(repository_names(&d), ["web"]);
+
+        let restarted = persistent(crate::config::load().unwrap());
+        assert_eq!(names_of(&restarted), ["work"]);
+        assert_eq!(repository_names(&restarted), ["web"], "the skip outlives the daemon");
+    });
+}
+
+#[test]
+fn a_second_project_of_one_name_is_refused() {
+    let (one, two) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    with_temp_config(|_| {
+        let d = persistent(ConfigFile::default());
+        d.add_project(&one.path().to_string_lossy(), Some("work"), &[]).unwrap();
+        let err = d.add_project(&two.path().to_string_lossy(), Some("work"), &[]).unwrap_err();
+        assert!(err.to_string().contains("already a project called work"), "{err}");
+        assert_eq!(names_of(&d), ["work"]);
+    });
+}
+
+#[test]
 fn adding_the_same_directory_twice_is_refused_rather_than_duplicated() {
     let repo = tempfile::tempdir().unwrap();
     with_temp_config(|_| {
         let d = persistent(ConfigFile::default());
         let path = repo.path().to_string_lossy();
-        d.add_project(&path).unwrap();
+        d.add_project(&path, None, &[]).unwrap();
         let before = d.snapshot().len();
 
-        let err = d.add_project(&path).unwrap_err();
+        let err = d.add_project(&path, None, &[]).unwrap_err();
 
         assert!(err.to_string().contains("already a project"), "{err}");
         assert_eq!(d.snapshot().len(), before);

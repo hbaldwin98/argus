@@ -12,7 +12,8 @@
 //! offered (`agents`), the review and history (`dialogs`), the two stages
 //! (`feature_stage`, `checkouts_stage`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
-//! and what the daemon is making
+//! the project switcher (`switcher`) and the dialog adding a project
+//! (`add_project`), and what the daemon is making
 //! (`argus_protocol::awaited`). The session says which of them a message
 //! or gesture is for, and what one of them changing means for the rest.
 //!
@@ -30,9 +31,10 @@ use argus_protocol::pane_view::{Effect, PaneView};
 use argus_protocol::paste;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
-    RepositoryId, ServerMsg, View, FOCUS, PASTE_FILE,
+    RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, FOCUS, PASTE_FILE,
 };
 
+use crate::add_project::AddProject;
 use crate::agents::Agents;
 use crate::checkouts_stage::{CheckoutsStage, Opened};
 use crate::dialogs::Dialogs;
@@ -40,7 +42,7 @@ use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keymap::{self, Action};
 use crate::keys::{self, PageKey};
-use crate::page::{self, Call, Event, PageMouse, ReviewClick, ReviewJumpGesture, Stage};
+use crate::page::{self, AddProjectGesture, Call, Event, PageMouse, ReviewClick, ReviewJumpGesture, Stage};
 use crate::palette;
 use crate::rail::{self, Choices};
 use crate::sent::Sent;
@@ -49,6 +51,7 @@ use crate::sessions_dialog::{SessionsDialog, Then as SessionsThen};
 use crate::settings::Settings;
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
+use crate::switcher::Switcher;
 
 /// What to do with a thing the daemon made for this window, once the tree
 /// holds it.
@@ -65,6 +68,8 @@ enum Made {
     /// Show the pane a session was resumed in, putting the sessions
     /// dialog away with whichever stage is up.
     Resumed,
+    /// Put the added project on the rail, closing the dialog that added it.
+    SelectProject,
 }
 
 pub struct Session {
@@ -88,6 +93,10 @@ pub struct Session {
     /// The recent-sessions dialog, while open.
     recent: Option<SessionsDialog>,
     recent_sent: Sent<page::SessionsPage>,
+    switcher: Switcher,
+    /// The add-a-project dialog, while open.
+    adding: Option<AddProject>,
+    adding_sent: Sent<page::AddProjectPage>,
     /// The command palette is open, so what it can go to is sent.
     palette: bool,
     palette_sent: Sent<page::Palette>,
@@ -126,6 +135,9 @@ impl Session {
             sessions: Sessions::default(),
             recent: None,
             recent_sent: Sent::default(),
+            switcher: Switcher::default(),
+            adding: None,
+            adding_sent: Sent::default(),
             palette: false,
             palette_sent: Sent::default(),
             focused: true,
@@ -177,6 +189,9 @@ impl Session {
                 dialog.reasked(asked);
             }
         }
+        if let Some(dialog) = &mut self.adding {
+            dialog.reconnected(self.awaited.name(), &mut self.out);
+        }
         self.shown.reconnected(&mut self.out);
         self.finish()
     }
@@ -205,9 +220,29 @@ impl Session {
                 self.tree.as_mut_slice().apply_telemetry(pane, telemetry);
             }
             ServerMsg::Created { request_id, created } => {
+                if let (Some(dialog), None) = (&mut self.adding, created) {
+                    dialog.refused(request_id);
+                }
                 self.awaited.answer(request_id, created);
                 self.settle_made();
             }
+            ServerMsg::Workspaces(workspaces) => {
+                self.switcher.receive_workspaces(workspaces);
+                self.rail_changed = true;
+            }
+            ServerMsg::Directories(listing) => {
+                if let Some(dialog) = &mut self.adding {
+                    dialog.listed(listing, || self.awaited.name(), &mut self.out);
+                }
+            }
+            ServerMsg::ProjectPreview(preview) => {
+                if let Some(dialog) = &mut self.adding {
+                    dialog.previewed(preview);
+                }
+            }
+            // A refused add's reason is said in its dialog, which is over
+            // the notices.
+            ServerMsg::Error { message } if self.adding.as_mut().is_some_and(|d| d.take_reason(&message)) => {}
             ServerMsg::BranchNotMerged { checkout, branch, commits } => {
                 self.checkouts.refused(checkout, branch, &commits, argus_protocol::ago::now());
             }
@@ -270,6 +305,10 @@ impl Session {
                 // A worktree made from the Checkouts stage is the row it
                 // lands on.
                 (Created::Checkout(checkout), Made::SelectRow) => self.checkouts.select(format!("c{}", checkout.0)),
+                (Created::Project(project), Made::SelectProject) => {
+                    self.adding = None;
+                    self.choose_project(project);
+                }
                 _ => {}
             }
         }
@@ -314,6 +353,11 @@ impl Session {
             Call::Close { pane } => self.close(PaneId(pane)),
             Call::Focus { focused } => self.focus(focused),
             Call::SelectProject { project } => self.select_project(ProjectId(project)),
+            Call::OpenWorkspace { workspace } => self.open_workspace(WorkspaceId(workspace)),
+            Call::RemoveProject { project } => self.remove_project(ProjectId(project)),
+            Call::AnswerRemoveProject { yes } => self.answer_remove_project(yes),
+            Call::OpenAddProject => self.open_add_project(),
+            Call::AddProject { gesture } => self.add_project(gesture),
             Call::ToggleRepository { repository } => self.toggle_repository(RepositoryId(repository)),
             Call::ChooseRepository { repository } => self.choose_repository(RepositoryId(repository)),
             Call::ShowFeatures { open } => self.show_features(open),
@@ -620,9 +664,71 @@ impl Session {
     }
 
     fn select_project(&mut self, project: ProjectId) -> Vec<ClientMsg> {
+        self.choose_project(project);
+        self.finish()
+    }
+
+    fn choose_project(&mut self, project: ProjectId) {
         if self.project != Some(project) && self.tree.iter().any(|p| p.id == project) {
             self.project = Some(project);
             self.hide();
+        }
+    }
+
+    // ---- The project switcher ----------------------------------------------
+
+    /// Asks the daemon to open a workspace; the rail follows its tree.
+    fn open_workspace(&mut self, workspace: WorkspaceId) -> Vec<ClientMsg> {
+        self.out.extend(self.switcher.open_workspace(workspace));
+        self.finish()
+    }
+
+    fn remove_project(&mut self, project: ProjectId) -> Vec<ClientMsg> {
+        if self.switcher.ask_remove(project, &self.tree) {
+            self.rail_changed = true;
+        }
+        self.finish()
+    }
+
+    /// A yes asks the daemon; the project leaves the rail when its tree
+    /// does, and a refusal is said as a notice.
+    fn answer_remove_project(&mut self, yes: bool) -> Vec<ClientMsg> {
+        self.out.extend(self.switcher.answer(yes));
+        self.rail_changed = true;
+        self.finish()
+    }
+
+    fn open_add_project(&mut self) -> Vec<ClientMsg> {
+        if !self.status.daemon_can(ADD_PROJECT) {
+            return self.note("argusd is too old to add a project from here: run `argus server restart`");
+        }
+        if self.adding.is_none() {
+            self.adding = Some(AddProject::new(self.awaited.name(), &mut self.out));
+        }
+        self.finish()
+    }
+
+    fn add_project(&mut self, gesture: AddProjectGesture) -> Vec<ClientMsg> {
+        let Some(dialog) = &mut self.adding else {
+            return self.finish();
+        };
+        match gesture {
+            AddProjectGesture::Kind { kind } => dialog.set_kind(kind),
+            AddProjectGesture::Browse { path } => dialog.browse(path, self.awaited.name(), &mut self.out),
+            AddProjectGesture::Into { name } => dialog.open(&name, self.awaited.name(), &mut self.out),
+            AddProjectGesture::Fields { name, skip, folder } => {
+                dialog.set_fields(name, skip, folder, || self.awaited.name(), &mut self.out);
+            }
+            AddProjectGesture::Add { name, skip, folder } => {
+                dialog.set_fields(name, skip, folder, || self.awaited.name(), &mut self.out);
+                let request_id = self.awaited.ask(Made::SelectProject);
+                match dialog.add(request_id) {
+                    Ok(msg) => self.out.push(msg),
+                    // The dialog says why; nothing was asked.
+                    Err(()) => self.awaited.answer(request_id, None),
+                }
+            }
+            AddProjectGesture::Close => self.adding = None,
         }
         self.finish()
     }
@@ -1263,6 +1369,10 @@ impl Session {
         if let Some(page) = self.recent_sent.take(recent) {
             events.push(Event::Sessions(Box::new(page)));
         }
+        let adding = self.adding.as_ref().map(AddProject::page);
+        if let Some(page) = self.adding_sent.take(adding) {
+            events.push(Event::AddProject(Box::new(page)));
+        }
         let listing = self.palette.then(|| palette::build(self.current_project(), self.features.board(), &self.tree));
         if let Some(listing) = self.palette_sent.take(listing) {
             events.push(Event::Palette(Box::new(listing)));
@@ -1283,6 +1393,7 @@ impl Session {
         self.status.resend();
         self.dialogs.reload();
         self.recent_sent.forget();
+        self.adding_sent.forget();
         // A page that has just loaded has no palette open.
         self.palette = false;
         self.palette_sent.forget();
@@ -1318,6 +1429,8 @@ impl Session {
         rail.stage = self.stage;
         rail.filled = self.shown.filled() && self.stage == Stage::Workspace && self.shown.pane().is_some();
         rail.templates = self.agents.offered();
+        rail.workspaces = self.switcher.workspaces();
+        rail.removing = self.switcher.removing(&self.tree);
         rail
     }
 
@@ -2222,7 +2335,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 56] = [
+    const CALLS: [&str; 62] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -2237,6 +2350,12 @@ mod tests {
         r#"{"call":"close","pane":2}"#,
         r#"{"call":"focus","focused":false}"#,
         r#"{"call":"select_project","project":2}"#,
+        r#"{"call":"open_workspace","workspace":3}"#,
+        r#"{"call":"remove_project","project":2}"#,
+        r#"{"call":"answer_remove_project","yes":false}"#,
+        r#"{"call":"open_add_project"}"#,
+        r#"{"call":"add_project","gesture":{"on":"fields","name":"work","skip":"vendor","folder":""}}"#,
+        r#"{"call":"add_project","gesture":{"on":"close"}}"#,
         r#"{"call":"toggle_repository","repository":10}"#,
         r#"{"call":"choose_repository","repository":10}"#,
         r#"{"call":"show_features","open":true}"#,
@@ -2511,5 +2630,131 @@ mod tests {
         let sent = s.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
         assert!(sent.iter().any(|m| matches!(m, ClientMsg::ListSessions { repository: RepositoryId(10), .. })), "{sent:?}");
         assert!(sessions_page(&mut s).is_some_and(|p| p.loading), "what the last daemon said is gone");
+    }
+
+    // ---- Projects: switch, add and remove ----------------------------------
+
+    fn add_page(s: &mut Session) -> Option<page::AddProjectPage> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::AddProject(page) => Some(*page),
+            _ => None,
+        })
+    }
+
+    /// A session with the add dialog open on `/home/work`, whose preview
+    /// found `web`.
+    fn adding_a_folder() -> Session {
+        let mut s = session(Hello::this_build());
+        let sent = s.call(Call::OpenAddProject);
+        let Some(ClientMsg::ListDirectories { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        let sent = s.receive(ServerMsg::Directories(argus_protocol::DirListing {
+            request_id: *request_id,
+            path: "/home/work".into(),
+            parent: Some("/home".into()),
+            entries: vec![argus_protocol::DirEntry { name: "web".into(), is_repo: true }],
+            error: None,
+        }));
+        let Some(ClientMsg::PreviewProject { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        s.receive(ServerMsg::ProjectPreview(argus_protocol::ProjectPreview {
+            request_id: *request_id,
+            path: "/home/work".into(),
+            repositories: vec!["web".into()],
+            depth: 8,
+            always_skipped: vec![".git".into()],
+            error: None,
+        }));
+        s
+    }
+
+    fn add(s: &mut Session) -> u64 {
+        let sent = s.call(Call::AddProject {
+            gesture: AddProjectGesture::Add { name: String::new(), skip: String::new(), folder: String::new() },
+        });
+        let [ClientMsg::AddProject { request_id, .. }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        *request_id
+    }
+
+    #[test]
+    fn the_switcher_lists_the_daemons_workspaces_and_opens_one_through_it() {
+        let mut s = session(Hello::this_build());
+        let workspace = |id, name: &str, open| argus_protocol::WorkspaceInfo {
+            id: WorkspaceId(id),
+            name: name.into(),
+            projects: 2,
+            panes: 3,
+            open,
+        };
+        s.receive(ServerMsg::Workspaces(vec![workspace(1, "personal", true), workspace(2, "work", false)]));
+        let listed: Vec<_> = s.rail(0).workspaces.iter().map(|w| (w.name.clone(), w.open)).collect();
+        assert_eq!(listed, [("personal".to_string(), true), ("work".to_string(), false)]);
+        let sent = s.call(Call::OpenWorkspace { workspace: 2 });
+        assert!(matches!(sent.as_slice(), [ClientMsg::OpenWorkspace { workspace: WorkspaceId(2) }]));
+        assert!(s.rail(0).workspaces[0].open, "the daemon says when it has switched");
+    }
+
+    #[test]
+    fn an_added_project_comes_on_the_rail_once_the_tree_holds_it() {
+        let mut s = adding_a_folder();
+        let page = add_page(&mut s).unwrap();
+        assert_eq!((page.repositories.clone(), page.blocked.clone()), (vec!["web".to_string()], None));
+
+        let request_id = add(&mut s);
+        assert!(add_page(&mut s).is_some_and(|p| p.adding));
+        s.receive(ServerMsg::Created { request_id, created: Some(Created::Project(ProjectId(3))) });
+        assert!(s.adding.is_some(), "no tree holds it yet");
+
+        let mut grown = tree();
+        grown.push(project(3, "work", vec![repository(30, "web", None, vec![checkout(300, "main", true, vec![])])]));
+        s.receive(with_tree(grown));
+        assert!(add_page(&mut s).is_some_and(|p| !p.open), "the dialog closes");
+        assert_eq!(s.rail(0).project.map(|p| p.name), Some("work".into()));
+    }
+
+    #[test]
+    fn a_refused_add_keeps_the_dialog_and_says_why_there() {
+        let mut s = adding_a_folder();
+        let request_id = add(&mut s);
+        s.receive(ServerMsg::Created { request_id, created: None });
+        s.receive(ServerMsg::Error { message: "there is already a project called work".into() });
+        let events = s.events(0);
+        assert!(!events.iter().any(|e| matches!(e, Event::Notice { .. })), "said in the dialog, not under it");
+        let page = events.into_iter().find_map(|e| match e {
+            Event::AddProject(page) => Some(*page),
+            _ => None,
+        });
+        let page = page.unwrap();
+        assert!(page.open && !page.adding);
+        assert_eq!(page.refusal.as_deref(), Some("there is already a project called work"));
+        assert_eq!(s.rail(0).project.map(|p| p.id), Some(1), "the rail is as it was");
+    }
+
+    #[test]
+    fn an_older_daemon_is_not_asked_to_add_a_project() {
+        let mut s = session(without_focus());
+        assert!(s.call(Call::OpenAddProject).is_empty());
+        assert!(s.adding.is_none());
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old"))));
+    }
+
+    #[test]
+    fn removing_a_project_asks_first_and_the_rail_waits_for_the_tree() {
+        let mut s = session(Hello::this_build());
+        assert!(s.call(Call::RemoveProject { project: 2 }).is_empty(), "nothing is sent before a yes");
+        assert_eq!(s.rail(0).removing.map(|r| r.name), Some("work".into()));
+
+        let sent = s.call(Call::AnswerRemoveProject { yes: true });
+        assert!(matches!(sent.as_slice(), [ClientMsg::RemoveProject { project: ProjectId(2) }]));
+        let rail = s.rail(0);
+        assert!(rail.removing.is_none());
+        assert_eq!(rail.projects.len(), 2, "still there until the daemon's tree drops it");
+
+        s.receive(with_tree(tree().into_iter().take(1).collect()));
+        assert_eq!(s.rail(0).projects.len(), 1);
     }
 }

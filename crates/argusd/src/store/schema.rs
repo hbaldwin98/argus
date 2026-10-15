@@ -483,3 +483,10 @@ CREATE TABLE seen_session (
 ) WITHOUT ROWID;
 CREATE INDEX seen_session_ended ON seen_session (ended);
 "#;
+
+/// The folders a project added at runtime skips beyond the built-in ones,
+/// one pattern per line, so its scan after a restart finds what it found
+/// when it was added. Empty for every project added before.
+pub(super) const SCHEMA_V24: &str = r#"
+ALTER TABLE project_overlay ADD COLUMN exclude TEXT NOT NULL DEFAULT '';
+"#;

@@ -420,7 +420,13 @@ impl App {
                 match target {
                     DirTarget::Project => {
                         let request_id = self.awaited.ask(Then::SelectProject);
-                        let _ = self.out.send(ClientMsg::AddProject { path, request_id });
+                        let _ = self.out.send(ClientMsg::AddProject {
+                            path,
+                            request_id,
+                            name: None,
+                            skip: Vec::new(),
+                            init: false,
+                        });
                     }
                     DirTarget::Repository(project) => {
                         let request_id = self.awaited.ask(Then::SelectRepository);

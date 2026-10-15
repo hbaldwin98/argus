@@ -9,6 +9,7 @@ import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
 import { closePalette, openPalette } from './palette.js';
+import { addProjectOpen, answerRemoveNo } from './projects.js';
 import { closeSheet, openSheet, sheetOpen, toggleSheet } from './shortcuts.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -37,7 +38,7 @@ function run(action) {
     const layerOpen = $('layer').childElementCount > 0;
     if (action === 'closeLayer') {
         // A question the stage asked is answered no, not only put away.
-        if (answerNo())
+        if (answerNo() || answerRemoveNo())
             return true;
         if (layerOpen)
             closeLayer();
@@ -101,6 +102,9 @@ export function listen() {
             }
             return;
         }
+        // The add-a-project dialog answers its own keys.
+        if (addProjectOpen())
+            return;
         // The review, history and sessions dialogs hold the keys while open,
         // all but the sheet's, which lists theirs; Rust runs the rest.
         if (reviewOpen()) {

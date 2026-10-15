@@ -1,6 +1,7 @@
 // What the page holds: the last of each event Rust sent, and the little
 // view state that is the page's own — a menu open, a filter typed.
 
+import type { AddProjectPage } from './bindings/AddProjectPage';
 import type { Checkouts } from './bindings/Checkouts';
 import type { Command } from './bindings/Command';
 import type { Features } from './bindings/Features';
@@ -22,8 +23,10 @@ export const state: {
   commands: Command[];
   /** What the palette can go to, while it is open. */
   palette: Palette | null;
-  /** The project switcher's menu. */
+  /** The project switcher's menu, and its workspaces unfolded. */
   menuOpen: boolean;
+  workspacesOpen: boolean;
+  addProject: AddProjectPage | null;
   /** The checkout whose + menu is open, where it opened from, and its
    *  highlighted item. */
   start: { checkout: number; from: 'rail' | 'table'; at: number } | null;
@@ -58,12 +61,16 @@ export const state: {
     stage: 'workspace',
     filled: false,
     templates: [],
+    workspaces: [],
+    removing: null,
   },
   features: null,
   keymap: [],
   commands: [],
   palette: null,
   menuOpen: false,
+  workspacesOpen: false,
+  addProject: null,
   start: null,
   railPick: null,
   checkouts: null,

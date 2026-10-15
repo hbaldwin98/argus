@@ -217,7 +217,12 @@ on a repository's rail row opens its recent agent sessions across every checkout
 of the one under the cursor shows beside the list (`O` gives it the whole dialog). Enter goes to a
 live session's pane, and on an ended one resumes it in a new pane (`R`), by the command the footer
 names; a session from a removed worktree, or from a harness that cannot resume by id, offers only
-its transcript. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+its transcript. The project heading at the top of the rail opens the switcher: every project with
+how many of its agents need you or are working, Add a project… (a folder of repositories, one
+repository, or a new one made with `git init`, previewing what it would add before anything is
+written, then a name and folders to skip), Switch workspace…, and Remove, which asks first and
+leaves the folders where they are. Connect to a host… is listed but not there yet: `argus --host`
+reaches one from a terminal. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
 again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the

@@ -342,22 +342,16 @@ fn conventional(repo: &git2::Repository) -> Option<String> {
 /// Directories a project scan never walks into: Git's own storage, the
 /// worktrees Argus creates (they belong to the repository above them), and
 /// two build/dependency trees big enough to dominate the walk on their own.
-const SKIPPED: [&str; 4] = [".git", ".argus", "node_modules", "target"];
+pub const SKIPPED: [&str; 4] = [".git", ".argus", "node_modules", "target"];
 
 /// How far below the root a repository can sit and still be found. A project
 /// root is a directory holding repositories, not a filesystem to crawl, and
 /// the cap keeps a mistyped root (`C:\` or `/`) from turning reconciliation
 /// into a disk scan.
-const MAX_DEPTH: usize = 8;
+pub const MAX_DEPTH: usize = 8;
 
-/// Every distinct Git repository at or beneath `root`, ordered by path so
-/// the repository column doesn't reshuffle between scans.
-///
-/// The walk stops at each repository it finds: a submodule, a vendored
-/// checkout or a linked worktree belongs to the repository containing it
-/// rather than beside it as a sibling. Bare repositories are skipped —
-/// nothing to check out — and directory symlinks are not followed, so a
-/// scan can neither cycle nor wander out of the root.
+/// The scan with nothing skipped but the built-in skips.
+#[cfg(test)]
 pub fn discover_repositories(root: &Path) -> Vec<PathBuf> {
     discover_repositories_within(root, &Scan::default())
 }
@@ -376,6 +370,20 @@ pub struct Scan {
 }
 
 impl Scan {
+    /// A scan skipping `skip` as a person typed it, blanks dropped: the
+    /// add dialog's preview and the add itself read it alike, so the
+    /// project added holds what the preview listed.
+    pub fn skipping(skip: &[String]) -> Scan {
+        Scan {
+            exclude: skip
+                .iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+            include: Vec::new(),
+        }
+    }
+
     /// Whether the walk should descend into `dir`, which sits at
     /// `relative` below the root.
     fn descends_into(&self, name: &str, relative: &Path) -> bool {
@@ -401,6 +409,14 @@ fn matches(patterns: &[String], name: &str, relative: &Path) -> bool {
     })
 }
 
+/// Every distinct Git repository at or beneath `root`, ordered by path so
+/// the repository column doesn't reshuffle between scans.
+///
+/// The walk stops at each repository it finds: a submodule, a vendored
+/// checkout or a linked worktree belongs to the repository containing it
+/// rather than beside it as a sibling. Bare repositories are skipped —
+/// nothing to check out — and directory symlinks are not followed, so a
+/// scan can neither cycle nor wander out of the root.
 pub fn discover_repositories_within(root: &Path, scan: &Scan) -> Vec<PathBuf> {
     // (identity, working directory). The identity is the repository's Git
     // directory, resolved, so two paths that reach one repository collapse

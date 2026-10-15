@@ -1,6 +1,6 @@
 //! Listing what a checkout contains, for the fuzzy pickers: its branches
 //! and its files — and, for the directory browser, what a directory
-//! anywhere on disk contains.
+//! anywhere on disk contains and which repositories adding it would find.
 //!
 //! Both are in-process. Branches come from libgit2; files from `ignore`,
 //! the crate ripgrep and fd are built on, so `.gitignore` is honoured with
@@ -9,7 +9,7 @@
 //! owns no console — the bug `git::list_worktrees` documents — and would
 //! make both features depend on tools that may not be installed.
 
-use argus_protocol::{DirEntry, DirListing};
+use argus_protocol::{DirEntry, DirListing, ProjectPreview};
 use std::path::{Path, PathBuf};
 
 /// Files bigger than a picker can usefully show. A repo past this is
@@ -113,6 +113,34 @@ pub fn directories(path: &str) -> DirListing {
     // only a byte comparison would choose.
     entries.sort_by_key(|e| (e.name.to_lowercase(), e.name.clone()));
     listing(entries, None)
+}
+
+/// The repositories adding `path` as a project skipping `skip` would
+/// find, by the same scan `Daemon::add_project` runs, so what the dialog
+/// lists is what the panel gets. Nothing is written.
+pub fn project_preview(path: &str, skip: &[String]) -> ProjectPreview {
+    let root = crate::config::expand_home(path);
+    let mut preview = ProjectPreview {
+        request_id: 0,
+        path: path.to_string(),
+        repositories: Vec::new(),
+        depth: crate::git::MAX_DEPTH,
+        always_skipped: crate::git::SKIPPED.iter().map(|s| s.to_string()).collect(),
+        error: None,
+    };
+    if !root.is_dir() {
+        preview.error = Some(format!("not a directory: {}", root.display()));
+        return preview;
+    }
+    let found = crate::git::discover_repositories_within(&root, &crate::git::Scan::skipping(skip));
+    preview.repositories = found
+        .iter()
+        .map(|repo| {
+            let relative = repo.strip_prefix(&root).unwrap_or(repo);
+            relative.to_string_lossy().replace('\\', "/")
+        })
+        .collect();
+    preview
 }
 
 /// Where an empty or `~`-rooted path points. A relative path is taken
@@ -419,5 +447,38 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("loose.txt"), "x").unwrap();
         assert_eq!(files(dir.path()), vec!["loose.txt"]);
+    }
+
+    #[test]
+    fn a_preview_lists_the_repositories_a_folder_holds_minus_those_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        for repo in ["web", "infra/k8s", "infra/terraform", "vendor/lib"] {
+            let path = dir.path().join(repo);
+            std::fs::create_dir_all(&path).unwrap();
+            git2::Repository::init(&path).unwrap();
+        }
+        std::fs::create_dir(dir.path().join("notes")).unwrap();
+
+        let preview = project_preview(&dir.path().to_string_lossy(), &[" vendor ".into(), String::new()]);
+        assert_eq!(preview.repositories, ["infra/k8s", "infra/terraform", "web"]);
+        assert_eq!(preview.depth, crate::git::MAX_DEPTH);
+        assert!(preview.always_skipped.iter().any(|s| s == "node_modules"));
+        assert_eq!(preview.error, None);
+        assert!(std::fs::read_dir(dir.path().join("notes")).unwrap().next().is_none(), "nothing is written");
+    }
+
+    #[test]
+    fn a_preview_of_a_repository_is_that_one_repository() {
+        let (_dir, path) = repo(&[("a.txt", "a")]);
+        assert_eq!(project_preview(&path.to_string_lossy(), &[]).repositories, [""]);
+    }
+
+    #[test]
+    fn a_preview_of_a_folder_that_is_not_there_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("gone");
+        let preview = project_preview(&gone.to_string_lossy(), &[]);
+        assert!(preview.repositories.is_empty());
+        assert!(preview.error.is_some_and(|e| e.contains("not a directory")));
     }
 }

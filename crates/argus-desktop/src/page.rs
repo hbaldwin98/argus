@@ -46,6 +46,15 @@ pub enum Call {
     /// The window gained or lost focus.
     Focus { focused: bool },
     SelectProject { project: u64 },
+    /// Opens one of the daemon's workspaces, which every client follows.
+    OpenWorkspace { workspace: u64 },
+    /// Asks whether to take a project out of the window.
+    RemoveProject { project: u64 },
+    /// The answer to that question.
+    AnswerRemoveProject { yes: bool },
+    OpenAddProject,
+    /// A gesture in the add-a-project dialog.
+    AddProject { gesture: AddProjectGesture },
     ToggleRepository { repository: u64 },
     ChooseRepository { repository: u64 },
     /// `open` true shows the Feature stage, false goes back to the Workspace.
@@ -132,6 +141,39 @@ pub enum ReviewClick {
     Recipient { pane: u64 },
 }
 
+/// What was done in the add-a-project dialog.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum AddProjectGesture {
+    Kind { kind: AddKind },
+    /// To a folder, by the daemon's own spelling of its path: one typed,
+    /// or the parent.
+    Browse { path: String },
+    /// Into a folder listed in the one browsed.
+    Into { name: String },
+    /// What the fields say now.
+    Fields { name: String, skip: String, folder: String },
+    /// Add, with what the fields say as it is pressed: calls need not
+    /// arrive in the order sent, so the last `Fields` may come after.
+    Add { name: String, skip: String, folder: String },
+    Close,
+}
+
+/// What a project is added from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum AddKind {
+    /// Every repository under a folder, found by the daemon's scan.
+    #[default]
+    Folder,
+    /// The one repository a folder is.
+    Repository,
+    /// A repository `git init` makes.
+    New,
+}
+
 /// What was done in the review's jump field: a letter typed, a match
 /// stepped to, Enter, or Escape.
 #[derive(Debug, Clone, Deserialize)]
@@ -165,6 +207,9 @@ pub enum Event {
     /// The recent-sessions dialog, whole, whenever it changes; `open`
     /// false once it closes.
     Sessions(Box<SessionsPage>),
+    /// The add-a-project dialog, whole, whenever it changes; `open` false
+    /// once it closes.
+    AddProject(Box<AddProjectPage>),
     /// Text a pane's child put on the clipboard (OSC 52).
     Clipboard { text: String },
     /// Something the daemon said that passes: a refused request's reason.
@@ -237,6 +282,10 @@ pub struct Rail {
     /// templates, the one this window last started first, and the first
     /// its default.
     pub templates: Vec<String>,
+    /// The daemon's workspaces, for the switcher's Switch workspace….
+    pub workspaces: Vec<WorkspaceChoice>,
+    /// A project waiting on a yes to be removed.
+    pub removing: Option<Removing>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -246,6 +295,80 @@ pub struct ProjectChoice {
     pub id: u64,
     pub name: String,
     pub needs_you: usize,
+    pub working: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceChoice {
+    pub id: u64,
+    pub name: String,
+    /// The one open now; the tree is its projects.
+    pub open: bool,
+    pub projects: usize,
+    /// Live panes in it, open or not.
+    pub panes: usize,
+}
+
+/// The question before a project is taken out of the window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Removing {
+    pub project: u64,
+    pub name: String,
+    pub repositories: usize,
+    /// Panes still running in it, which argusd will not leave stranded.
+    pub panes: usize,
+}
+
+/// The add-a-project dialog: a folder browsed on the daemon's machine, what
+/// adding it would find, and what to call the project.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AddProjectPage {
+    pub open: bool,
+    pub kind: AddKind,
+    /// The folder browsed, as the daemon spells it; `None` until listed.
+    pub path: Option<String>,
+    pub parent: Option<String>,
+    pub entries: Vec<FolderEntry>,
+    /// A listing has been asked for and not yet come.
+    pub browsing: bool,
+    /// Why the folder lists nothing: gone, or not readable.
+    pub listing_error: Option<String>,
+    /// What adding the folder would add, as the daemon's scan finds it:
+    /// root-relative, the folder itself named by its own name.
+    pub repositories: Vec<String>,
+    pub previewing: bool,
+    /// How deep the daemon's scan looks, and what it always skips, once a
+    /// preview has said.
+    pub depth: Option<usize>,
+    pub always_skipped: Vec<String>,
+    /// What the name, skip and new-folder fields say.
+    pub name: String,
+    pub skip: String,
+    pub folder: String,
+    /// The name the project gets while the name field is empty.
+    pub default_name: String,
+    /// For a new repository: the folder `git init` runs in.
+    pub target: Option<String>,
+    /// Why Add cannot be pressed yet; `None` when it can.
+    pub blocked: Option<String>,
+    /// The add is with the daemon.
+    pub adding: bool,
+    /// What the daemon said when it refused the last add.
+    pub refusal: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FolderEntry {
+    pub name: String,
+    pub is_repo: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -981,7 +1104,7 @@ mod tests {
     #[test]
     fn the_rail_names_its_rows_in_camel_case() {
         let rail = Rail {
-            projects: vec![ProjectChoice { id: 1, name: "src".into(), needs_you: 2 }],
+            projects: vec![ProjectChoice { id: 1, name: "src".into(), needs_you: 2, working: 1 }],
             project: Some(Project {
                 id: 1,
                 name: "src".into(),
@@ -1030,6 +1153,8 @@ mod tests {
             stage: Stage::Composer,
             filled: false,
             templates: vec!["claude".into()],
+            workspaces: vec![WorkspaceChoice { id: 7, name: "personal".into(), open: true, projects: 1, panes: 1 }],
+            removing: Some(Removing { project: 1, name: "src".into(), repositories: 1, panes: 0 }),
         };
         let value = as_json(Event::Rail(Box::new(rail)));
         assert_eq!(value["type"], "rail");
@@ -1041,6 +1166,35 @@ mod tests {
         assert_eq!(value["shown"]["pane"], 4);
         assert_eq!(value["loaded"], true);
         assert_eq!(value["stage"], "new");
+        assert_eq!(value["workspaces"][0]["open"], true);
+        assert_eq!(value["removing"]["repositories"], 1);
+    }
+
+    #[test]
+    fn the_add_dialog_names_its_fields_in_camel_case_and_reads_its_gestures() {
+        let page = AddProjectPage {
+            open: true,
+            kind: AddKind::New,
+            entries: vec![FolderEntry { name: "web".into(), is_repo: true }],
+            always_skipped: vec![".git".into()],
+            default_name: "web".into(),
+            ..AddProjectPage::default()
+        };
+        let value = as_json(Event::AddProject(Box::new(page)));
+        assert_eq!(value["type"], "addProject");
+        assert_eq!(value["kind"], "new");
+        assert_eq!(value["entries"][0]["isRepo"], true);
+        assert_eq!(value["alwaysSkipped"][0], ".git");
+        assert_eq!(value["defaultName"], "web");
+
+        let call: Call = serde_json::from_value(json!({
+            "call": "add_project",
+            "gesture": {"on": "fields", "name": "work", "skip": "vendor", "folder": ""}
+        }))
+        .unwrap();
+        assert!(matches!(call, Call::AddProject { gesture: AddProjectGesture::Fields { .. } }));
+        let call: Call = serde_json::from_value(json!({"call": "add_project", "gesture": {"on": "kind", "kind": "repository"}})).unwrap();
+        assert!(matches!(call, Call::AddProject { gesture: AddProjectGesture::Kind { kind: AddKind::Repository } }));
     }
 
     #[test]

@@ -76,7 +76,7 @@ pub use focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, 
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use held_tree::{transitions, HeldTree, Transition};
 pub use hello::{
-    Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
+    ADD_PROJECT, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS,
 };
 pub use hook::{
@@ -94,7 +94,7 @@ pub use memory::{
     DEFAULT_PACKET_MAX_ITEMS, MAX_ARTIFACT_TEXT_BYTES, MAX_WORK_CONTEXT_BRIEF_BYTES,
     MAX_WORK_CONTEXT_TITLE_BYTES,
 };
-pub use message::{ClientMsg, Created, DirEntry, DirListing, ServerMsg};
+pub use message::{ClientMsg, Created, DirEntry, DirListing, ProjectPreview, ServerMsg};
 pub use paths::{config_dir, instance_name};
 pub use review::{
     ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,

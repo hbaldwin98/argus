@@ -676,7 +676,7 @@ fn adding_a_directory_of_repositories_adds_every_repository_under_it() {
 
     with_temp_config(|_| {
         let d = Daemon::new(ConfigFile::default());
-        d.add_project(&dir.path().to_string_lossy()).unwrap();
+        d.add_project(&dir.path().to_string_lossy(), None, &[]).unwrap();
         assert_eq!(repository_names(&d), vec!["notes", "orion"]);
     });
 }
@@ -689,7 +689,7 @@ fn adding_a_repository_adds_that_one_repository() {
 
     with_temp_config(|_| {
         let d = Daemon::new(ConfigFile::default());
-        d.add_project(&dir.path().to_string_lossy()).unwrap();
+        d.add_project(&dir.path().to_string_lossy(), None, &[]).unwrap();
 
         let name = dir
             .path()
@@ -712,7 +712,7 @@ fn an_added_project_persists_the_root_it_was_given() {
 
     with_temp_config(|_| {
         let d = persistent(ConfigFile::default());
-        d.add_project(&dir.path().to_string_lossy()).unwrap();
+        d.add_project(&dir.path().to_string_lossy(), None, &[]).unwrap();
 
         let recorded = crate::store::Store::open().unwrap().overlays().unwrap();
         assert_eq!(recorded.projects.len(), 1);
@@ -738,7 +738,7 @@ fn a_project_added_at_runtime_comes_back_the_same_after_a_restart() {
 
     with_temp_config(|_| {
         let d = persistent(ConfigFile::default());
-        d.add_project(&dir.path().to_string_lossy()).unwrap();
+        d.add_project(&dir.path().to_string_lossy(), None, &[]).unwrap();
         let before = repository_names(&d);
 
         let restarted = persistent(crate::config::load().unwrap());
@@ -1183,7 +1183,7 @@ fn re_adding_a_project_brings_back_the_repositories_it_had_lost() {
 
         let restarted = persistent(crate::config::load().unwrap());
         restarted
-            .add_project(&dir.path().to_string_lossy())
+            .add_project(&dir.path().to_string_lossy(), None, &[])
             .unwrap();
         assert_eq!(repository_names(&restarted), vec!["notes", "orion"]);
     });

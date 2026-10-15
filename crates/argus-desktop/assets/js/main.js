@@ -2,7 +2,7 @@
 // person does. It decides nothing about the daemon — the model is the
 // window's `session` — so each event replaces what the page held.
 import { chime, listen as listenForSound } from './chime.js';
-import { closeStart, drawChrome, drawHeading, notice, railPicked, reconnect, unpickRail, } from './chrome.js';
+import { closeStart, drawChrome, notice, railPicked, reconnect, unpickRail } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
 import { clearComposer, focusComposer } from './compose.js';
 import { $ } from './dom.js';
@@ -14,6 +14,7 @@ import { listen as listenToInput } from './input.js';
 import { listen as listenToKeys, runOver } from './keymap.js';
 import { listen as listenToFrame } from './frame.js';
 import { drawPalette, openPalette } from './palette.js';
+import { addProjectOpen, drawAddProject, drawHeading } from './projects.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
@@ -23,7 +24,7 @@ let paneHadKeys = false;
  *  gives them back once no dialog is left open. */
 function dialogKeys() {
     const input = $('input');
-    if (reviewOpen() || historyOpen() || sessionsOpen()) {
+    if (reviewOpen() || historyOpen() || sessionsOpen() || addProjectOpen()) {
         if (document.activeElement === input) {
             paneHadKeys = true;
             input.blur();
@@ -87,6 +88,11 @@ function receive(event) {
             drawSessions();
             dialogKeys();
             break;
+        case 'addProject':
+            state.addProject = event;
+            drawAddProject();
+            dialogKeys();
+            break;
         case 'review':
             state.review = event;
             drawReview();
@@ -125,8 +131,11 @@ listenToFeatures();
 document.addEventListener('click', (e) => {
     // A click anywhere but its own items closes a checkout's + menu.
     closeStart();
-    if (state.menuOpen && e.target instanceof Node && !$('heading').contains(e.target)) {
+    // By the path the click took, not where its target is now: the heading
+    // redraws under its own clicks, which takes the target out of it.
+    if (state.menuOpen && !e.composedPath().includes($('heading'))) {
         state.menuOpen = false;
+        state.workspacesOpen = false;
         drawHeading();
     }
 });

@@ -20,11 +20,27 @@ impl Daemon {
     /// meant; pointing at the directory a dozen of them live in adds the
     /// dozen. A root with none of them yet is a project all the same — the
     /// scan runs again, and the first clone into it arrives on its own.
-    pub fn add_project(&self, path: &str) -> anyhow::Result<ProjectId> {
+    ///
+    /// `name` is what the panel calls it, the directory's own name when
+    /// `None`; `skip` is the project's `exclude`, kept with it so every
+    /// later scan skips the same folders.
+    pub fn add_project(
+        &self,
+        path: &str,
+        name: Option<&str>,
+        skip: &[String],
+    ) -> anyhow::Result<ProjectId> {
         let expanded = config::expand_home(path);
         if !expanded.is_dir() {
             anyhow::bail!("not a directory: {}", expanded.display());
         }
+        let name = match name.map(str::trim).filter(|n| !n.is_empty()) {
+            Some(name) => name.to_string(),
+            None => expanded
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string()),
+        };
         // The overlay upserts by root, but the tree would gain a second
         // project over the same directory, each scanning the same repos.
         {
@@ -40,15 +56,17 @@ impl Daemon {
                     expanded.display()
                 );
             }
+            // The store keys a project's added repositories and its hiding
+            // by name, so two of one name would share them.
+            if inner.projects.iter().any(|p| p.name == name) {
+                anyhow::bail!("there is already a project called {name}");
+            }
         }
-        let name = expanded
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string());
+        let scan = crate::git::Scan::skipping(skip);
 
         // Scanned before the lock is taken: this walks directories, and
         // every pane event in the daemon queues behind that mutex.
-        let found = crate::git::discover_repositories(&expanded);
+        let found = crate::git::discover_repositories_within(&expanded, &scan);
 
         // New projects land in whichever workspace is open, so "add this
         // directory" means "add it to what I am looking at".
@@ -57,6 +75,7 @@ impl Daemon {
             name: name.clone(),
             root: expanded.clone(),
             workspace: workspace_name,
+            exclude: scan.exclude.clone(),
         })?;
 
         let id = {
@@ -72,9 +91,12 @@ impl Daemon {
                 root: Some(expanded),
                 repositories,
                 // A project added at runtime is written to the config as a
-                // root and nothing else; worktree settings are something
-                // the user adds to the file by hand.
-                settings: ProjectSettings::default(),
+                // root and its skips; worktree settings are something the
+                // user adds to the file by hand.
+                settings: ProjectSettings {
+                    scan,
+                    ..ProjectSettings::default()
+                },
             });
             id
         };

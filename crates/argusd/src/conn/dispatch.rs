@@ -190,10 +190,33 @@ fn dispatch_panel(
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) -> DispatchResult {
     let result = match *msg {
-        ClientMsg::AddProject { path, request_id } => answered(
+        // `git init` is a subprocess, so a new repository is made on its
+        // own task, as `InitRepository` is.
+        ClientMsg::AddProject {
+            path,
+            request_id,
+            name,
+            skip,
+            init: true,
+        } => {
+            let answer = out_tx.clone();
+            spawn_reporting(daemon, out_tx, move |d| async move {
+                let made = d.init_project(&path, name.as_deref(), &skip).await;
+                answered(&answer, request_id, made.map(Created::Project))
+            })
+        }
+        ClientMsg::AddProject {
+            path,
+            request_id,
+            name,
+            skip,
+            init: false,
+        } => answered(
             out_tx,
             request_id,
-            daemon.add_project(&path).map(Created::Project),
+            daemon
+                .add_project(&path, name.as_deref(), &skip)
+                .map(Created::Project),
         ),
         ClientMsg::AddRepository {
             project,
@@ -219,6 +242,20 @@ fn dispatch_panel(
                 let mut listing = crate::browse::directories(&path);
                 listing.request_id = request_id;
                 let _ = out_tx.send(ServerMsg::Directories(listing));
+            });
+            Ok(())
+        }
+        // A scan up to eight folders deep, off the loop for the same reason.
+        ClientMsg::PreviewProject {
+            request_id,
+            path,
+            skip,
+        } => {
+            let out_tx = out_tx.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut preview = crate::browse::project_preview(&path, &skip);
+                preview.request_id = request_id;
+                let _ = out_tx.send(ServerMsg::ProjectPreview(preview));
             });
             Ok(())
         }

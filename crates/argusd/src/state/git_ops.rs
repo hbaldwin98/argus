@@ -250,41 +250,31 @@ impl Daemon {
         run_setup(&setup, &dest).await
     }
 
-    /// The only way into the panel that makes a repository rather than
-    /// finding one: create `path`, `git init` it, and add it as
-    /// `add_repository` would. Shelling out to `git init` rather than
-    /// writing a `.git` by hand, so the user gets whatever their own git
-    /// config would have made.
-    ///
-    /// A directory that is already a repository is added without being
-    /// re-inited — rewriting its hooks is not what "make me a new one"
-    /// asked for.
+    /// One of the two ways into the panel that make a repository rather
+    /// than find one: create `path`, `git init` it, and add it as
+    /// `add_repository` would.
     pub async fn init_repository(
         &self,
         project: ProjectId,
         path: &str,
     ) -> anyhow::Result<RepositoryId> {
-        let expanded = config::expand_home(path);
-        if !expanded.is_absolute() {
-            anyhow::bail!("repository path must be absolute: {}", expanded.display());
-        }
-        if expanded.is_file() {
-            anyhow::bail!("{} is a file", expanded.display());
-        }
-        // Made here rather than left to `git init <dir>`, so a path whose
-        // parents are missing fails as a directory that could not be
-        // created instead of as a git error about somewhere else.
-        std::fs::create_dir_all(&expanded)
-            .with_context(|| format!("could not create {}", expanded.display()))?;
-
-        if crate::git::git_dir(&expanded).is_none() {
-            run_git(&expanded, &["init"]).await?;
-        }
-
+        let made = make_repository(path).await?;
         // The path is passed on as the daemon resolved it, not as the
         // client spelled it: `add_repository` expands again, and a `~` that
         // survived to here would be expanded against the same home anyway.
-        self.add_repository(project, &expanded.to_string_lossy())
+        self.add_repository(project, &made.to_string_lossy())
+    }
+
+    /// The other: a new repository as a project of its own, added as
+    /// `add_project` adds any directory.
+    pub async fn init_project(
+        &self,
+        path: &str,
+        name: Option<&str>,
+        skip: &[String],
+    ) -> anyhow::Result<ProjectId> {
+        let made = make_repository(path).await?;
+        self.add_project(&made.to_string_lossy(), name, skip)
     }
 
     /// Errors rather than `None`, so a stale id reaches the user as text.
@@ -503,4 +493,30 @@ fn worktree_dir(root: &std::path::Path, branch: &str) -> anyhow::Result<PathBuf>
         anyhow::bail!("a branch name can't be a path: {branch}");
     }
     Ok(root.join(branch))
+}
+
+/// Creates `path` and `git init`s it, answering where it is. Shelling out
+/// to `git init` rather than writing a `.git` by hand, so the user gets
+/// whatever their own git config would have made.
+///
+/// A directory that is already a repository is left without being
+/// re-inited — rewriting its hooks is not what "make me a new one" asked
+/// for.
+async fn make_repository(path: &str) -> anyhow::Result<PathBuf> {
+    let expanded = config::expand_home(path);
+    if !expanded.is_absolute() {
+        anyhow::bail!("repository path must be absolute: {}", expanded.display());
+    }
+    if expanded.is_file() {
+        anyhow::bail!("{} is a file", expanded.display());
+    }
+    // Made here rather than left to `git init <dir>`, so a path whose
+    // parents are missing fails as a directory that could not be created
+    // instead of as a git error about somewhere else.
+    std::fs::create_dir_all(&expanded)
+        .with_context(|| format!("could not create {}", expanded.display()))?;
+    if crate::git::git_dir(&expanded).is_none() {
+        run_git(&expanded, &["init"]).await?;
+    }
+    Ok(expanded)
 }

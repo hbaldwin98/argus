@@ -11,6 +11,7 @@
 //! output is still seen.
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
+mod add_project;
 mod agents;
 mod clipboard;
 mod checkouts;
@@ -38,6 +39,7 @@ mod sessions_dialog;
 mod settings;
 mod shown;
 mod status;
+mod switcher;
 mod shared;
 mod window_frame;
 

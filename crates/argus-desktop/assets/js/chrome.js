@@ -5,6 +5,7 @@ import { drawComposer } from './compose.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { drawFeatures } from './features.js';
 import { chordsFor, keycaps } from './keys.js';
+import { drawHeading, drawRemoving } from './projects.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -20,6 +21,7 @@ export function drawChrome() {
     drawComposer();
     drawNav();
     drawHeading();
+    drawRemoving();
     drawRail();
     drawHead();
     drawBar();
@@ -55,38 +57,6 @@ const STAGE_NAME = { feature: 'Features', checkouts: 'Checkouts', new: 'New' };
 function chosenRepository() {
     const { project, repository } = state.rail;
     return project?.repositories.find((repo) => repo.id === repository)?.name ?? null;
-}
-export function drawHeading() {
-    const { project, projects } = state.rail;
-    const heading = $('heading');
-    if (!project) {
-        heading.replaceChildren();
-        return;
-    }
-    const several = projects.length > 1;
-    const button = el('button', {
-        class: 'projbtn',
-        'aria-label': several ? 'Switch project' : null,
-        'aria-expanded': several ? String(state.menuOpen) : null,
-        onclick: () => {
-            if (!several)
-                return;
-            state.menuOpen = !state.menuOpen;
-            drawHeading();
-        },
-    }, el('span', null, project.name), several && icon('down'), project.needsYou > 0 && el('span', { class: 'badge' }, `${project.needsYou} need you`));
-    const menu = several &&
-        state.menuOpen &&
-        el('div', { class: 'menu', role: 'menu' }, projects.map((choice) => el('button', {
-            class: `mi${choice.id === project.id ? ' on' : ''}`,
-            role: 'menuitem',
-            onclick: () => {
-                state.menuOpen = false;
-                call('select_project', { project: choice.id });
-                drawHeading();
-            },
-        }, el('span', { class: 'grow' }, choice.name), choice.needsYou > 0 && el('span', { class: 'st waiting' }, `${choice.needsYou}`))));
-    heading.replaceChildren(button, menu || '');
 }
 function statusColour(word) {
     if (word && LOUD.has(word))
@@ -473,7 +443,8 @@ function drawStage() {
         body = [
             icon('folder'),
             el('div', { class: 'type-title' }, 'No projects'),
-            el('div', { class: 'fg-muted' }, 'Run this in a folder of repositories:'),
+            el('button', { class: 'btn primary', onclick: () => call('open_add_project', {}) }, 'Add a project…'),
+            el('div', { class: 'fg-muted' }, 'or run this in a folder of repositories:'),
             el('div', { class: 'cmd' }, 'argus init'),
         ];
     }
