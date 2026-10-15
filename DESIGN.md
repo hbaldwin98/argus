@@ -414,8 +414,10 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
-| `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress and tickets — and the lens it is read through |
-| `work_lens` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key, and the task or decision under the cursor in full |
+| `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through |
+| `work_lens` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key and a mark on each row changed since the last reconcile, and the task or decision under the cursor in full |
+| `link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — and what its gestures ask of the daemon |
+| `reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — and what its gestures ask of the daemon |
 | `record_lens` | the Record lens: every decision in the order it was made, and a decision read as its record — what replaced it, what was turned down, and the ADR it copies as |
 | `flows_lens` | the Flows lens: a feature's flows, the one under the cursor as steps, and the step under the cursor with what binds it and what carries it out |
 | `sequence` | a flow's source as the sequence diagram the page draws: its lifelines in order, each step as an arrow between two of them, and the frames a branch draws |
@@ -1968,7 +1970,22 @@ like the rail's width, and a double-click gives back the usual one. Ctrl-. (in a
 the newest view out. A pane's row on the rail counts the views its agent has up. A feature's ticket
 links, in the index's peek and the open feature's heading, open the ticket in the browser, or, when a
 view of that ticket waits, carry a dot and open the view instead; the page matches them by URL, or by
-tracker and key. A diagram block is read in Rust, as the Flows lens reads a flow (`flow::rows` and
+tracker and key. An open feature's header lists its tickets with their roles, when it was last reconciled and by whom,
+and how many of its tasks and decisions changed here since; the Work lens dots each of those rows.
+`T` (or Link…) opens the link dialog: a pasted URL is read as its tracker and key by
+`LinkWrite::checked`, as the daemon will read it, with a role beside it; the tickets already linked
+open in the browser or unlink, and the repository's tracker map shows under them, with Edit the
+map… (`M`) opening its editor on the draft when one waits, where saving approves the draft as it
+reads or writes the map. The fields clear only once the pushed board holds the link. `t` opens the
+one ticket, or the dialog to choose among several. `R` (or Reconcile…) opens the reconcile dialog:
+with nothing under way it asks a live agent of the repository, the one that did the last one by
+default; with a proposal it lists the lines under Into Argus and Out to each tracker, every one
+unticked, with the line under the cursor in full — its exact text, editable before ticking (`e`),
+and the call the agent will make — and what was noticed outside the ask, which nothing ticks. Space
+ticks, Enter carries out the ticked lines in their words, `D` discards. The ticks are the dialog's
+until the board says the lines are being carried out, and a new proposal starts them again.
+
+A diagram block is read in Rust, as the Flows lens reads a flow (`flow::rows` and
 `flow::participants`), and drawn by the page as an SVG sequence diagram, its source a disclosure
 away. Every string is drawn as text, Markdown included; a link opens through `opener` in the
 system's browser and only when it is `http` or `https`.

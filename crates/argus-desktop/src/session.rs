@@ -50,6 +50,8 @@ use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keymap::{self, Action};
+use crate::link_dialog::{self, LinkDialog};
+use crate::reconcile_dialog::{self, ReconcileDialog};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::page::{
@@ -134,6 +136,15 @@ pub struct Session {
     /// Text a gesture asked to put on the clipboard, which the window
     /// writes once the change is made.
     copied: Option<String>,
+    /// A ticket a gesture asked to open in the browser, which the window
+    /// opens once the change is made.
+    opening: Option<String>,
+    /// The link dialog on the open feature, while open.
+    link: Option<LinkDialog>,
+    link_sent: Sent<page::LinkPage>,
+    /// The reconcile dialog on the open feature, while open.
+    reconciling: Option<ReconcileDialog>,
+    reconcile_sent: Sent<page::ReconcilePage>,
     switcher: Switcher,
     /// The add-a-project dialog, while open.
     adding: Option<AddProject>,
@@ -197,6 +208,11 @@ impl Session {
             recent: None,
             recent_sent: Sent::default(),
             copied: None,
+            opening: None,
+            link: None,
+            link_sent: Sent::default(),
+            reconciling: None,
+            reconcile_sent: Sent::default(),
             switcher: Switcher::default(),
             adding: None,
             adding_sent: Sent::default(),
@@ -329,6 +345,9 @@ impl Session {
                 if let Some(note) = &mut self.capture {
                     note.refused();
                 }
+                if let Some(dialog) = &mut self.link {
+                    dialog.refused();
+                }
                 self.passing.push(Event::Notice { text: message });
             }
             ServerMsg::Hello(hello) => self.status.greeted(hello),
@@ -338,6 +357,7 @@ impl Session {
             ServerMsg::Decisions(board) => {
                 self.features.receive_board(*board, &self.tree, &mut self.out);
                 self.capture_landed();
+                self.settle_tracker_dialogs();
             }
             ServerMsg::Templates(names) => {
                 self.agents.receive(names);
@@ -636,7 +656,112 @@ impl Session {
                 self.views.close(PaneId(pane), id, &mut self.out);
                 self.finish()
             }
+            Call::OpenLink { map } => {
+                self.open_link(map);
+                self.finish()
+            }
+            Call::Link { gesture } => self.link_gesture(gesture),
+            Call::OpenReconcile => {
+                self.open_reconcile();
+                self.finish()
+            }
+            Call::Reconcile { gesture } => self.reconcile_gesture(gesture),
         }
+    }
+
+    // ---- The tracker dialogs --------------------------------------------------
+
+    /// The feature open on the Feature stage, as the board has it.
+    fn opened_feature(&self, slug: &str) -> Option<&argus_protocol::Feature> {
+        self.features.board()?.features.iter().find(|f| f.slug == slug)
+    }
+
+    /// Opens the link dialog on the open feature, with `map` on the
+    /// repository's tracker map.
+    fn open_link(&mut self, map: bool) {
+        let Some(slug) = self.features.opened().map(str::to_owned) else {
+            return self.passing.push(Event::Notice { text: "open a feature to link it to a ticket".into() });
+        };
+        let tracker_map = self.features.board().map(|b| b.tracker_map.clone()).unwrap_or_default();
+        self.reconciling = None;
+        self.link = Some(LinkDialog::new(&slug, map.then_some(&tracker_map)));
+    }
+
+    fn open_reconcile(&mut self) {
+        let Some(slug) = self.features.opened().map(str::to_owned) else {
+            return self.passing.push(Event::Notice { text: "open a feature to reconcile it with its tickets".into() });
+        };
+        let mut dialog = ReconcileDialog::new(&slug);
+        if let Some(feature) = self.opened_feature(&slug) {
+            dialog.settle(feature);
+        }
+        self.link = None;
+        self.reconciling = Some(dialog);
+    }
+
+    fn link_gesture(&mut self, gesture: page::LinkGesture) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        let (Some(dialog), Some(board), Some(scope)) = (self.link.as_mut(), self.features.board(), scope) else {
+            return self.finish();
+        };
+        let Some(feature) = board.features.iter().find(|f| f.slug == dialog.slug()) else {
+            self.link = None;
+            return self.finish();
+        };
+        match dialog.gesture(gesture, feature, &board.tracker_map, &scope, &mut self.out) {
+            link_dialog::Then::Nothing => {}
+            link_dialog::Then::Close => self.link = None,
+            link_dialog::Then::Open(url) => self.opening = Some(url),
+            link_dialog::Then::Say(text) => self.passing.push(Event::Notice { text }),
+        }
+        self.finish()
+    }
+
+    fn reconcile_gesture(&mut self, gesture: page::ReconcileGesture) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        let (Some(dialog), Some(board), Some(scope)) = (self.reconciling.as_mut(), self.features.board(), scope) else {
+            return self.finish();
+        };
+        let Some(feature) = board.features.iter().find(|f| f.slug == dialog.slug()) else {
+            self.reconciling = None;
+            return self.finish();
+        };
+        match dialog.gesture(gesture, feature, &self.tree, &scope, &mut self.out) {
+            reconcile_dialog::Then::Nothing => {}
+            reconcile_dialog::Then::Close => self.reconciling = None,
+            reconcile_dialog::Then::GoTo(pane) => {
+                self.reconciling = None;
+                let sent = self.go_to_pane(pane);
+                self.out.extend(sent);
+            }
+            reconcile_dialog::Then::Say(text) => self.passing.push(Event::Notice { text }),
+        }
+        self.finish()
+    }
+
+    /// A pushed board: each tracker dialog follows its feature, and closes
+    /// with it.
+    fn settle_tracker_dialogs(&mut self) {
+        let Some(board) = self.features.board() else {
+            return;
+        };
+        let feature = |slug: &str| board.features.iter().find(|f| f.slug == slug);
+        match self.link.as_ref().map(|d| feature(d.slug())) {
+            Some(Some(f)) => self.link.as_mut().unwrap().settle(f),
+            Some(None) => self.link = None,
+            None => {}
+        }
+        match self.reconciling.as_ref().map(|d| feature(d.slug())) {
+            Some(Some(f)) => self.reconciling.as_mut().unwrap().settle(f),
+            Some(None) => self.reconciling = None,
+            None => {}
+        }
+    }
+
+    /// A ticket a gesture asked to open, once: the browser is the window's
+    /// to start, not the session's.
+    pub fn take_opening(&mut self) -> Option<String> {
+        self.opening.take()
     }
 
     /// Puts a pane on screen, leaving the Feature stage for it: a pane
@@ -2029,6 +2154,9 @@ impl Session {
                 self.features.toggle_folded(&self.tree, &mut self.out);
             }
             Action::NewFeature => self.open_capture(),
+            Action::LinkTicket => self.open_link(false),
+            Action::TrackerMap => self.open_link(true),
+            Action::Reconcile => self.open_reconcile(),
             Action::ZoomIn => self.choices.zoom_in(),
             Action::ZoomOut => self.choices.zoom_out(),
             Action::ZoomReset => self.choices.reset_zoom(),
@@ -2213,6 +2341,18 @@ impl Session {
         if let Some(page) = self.recent_sent.take(recent) {
             events.push(Event::Sessions(Box::new(page)));
         }
+        let board = self.features.board();
+        let feature = |slug: &str| board.and_then(|b| b.features.iter().find(|f| f.slug == slug));
+        let link = self.link.as_ref().and_then(|d| Some(d.page(feature(d.slug())?, &board?.tracker_map)));
+        if let Some(page) = self.link_sent.take(link) {
+            events.push(Event::Link(Box::new(page)));
+        }
+        let reconcile = self.reconciling.as_ref().zip(scope.as_ref()).and_then(|(d, scope)| {
+            Some(d.page(feature(d.slug())?, &self.tree, scope.repository, now))
+        });
+        if let Some(page) = self.reconcile_sent.take(reconcile) {
+            events.push(Event::Reconcile(Box::new(page)));
+        }
         let repository = scope.as_ref().map_or("", |scope| scope.repository_name.as_str());
         let capture = self.capture.as_ref().map(|note| note.page(repository));
         if let Some(page) = self.capture_sent.take(capture) {
@@ -2254,6 +2394,8 @@ impl Session {
         self.choices.resend();
         self.dialogs.reload();
         self.recent_sent.forget();
+        self.link_sent.forget();
+        self.reconcile_sent.forget();
         self.adding_sent.forget();
         self.capture_sent.forget();
         self.console_sent.forget();
@@ -2858,6 +3000,46 @@ mod tests {
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { .. })));
     }
 
+    fn link_page(s: &mut Session) -> Option<page::LinkPage> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::Link(page) => Some(*page),
+            _ => None,
+        })
+    }
+
+    /// The palette's Link a ticket opens the dialog on the open feature;
+    /// a link sent shows in its list only once the pushed board holds it,
+    /// and the dialog goes with the feature.
+    #[test]
+    fn the_link_dialog_follows_the_board_and_closes_with_its_feature() {
+        let mut s = session(without_focus());
+        s.show_features(true);
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        s.call(Call::Command { action: Action::LinkTicket });
+        assert!(link_page(&mut s).is_none(), "no feature is open");
+        s.call(Call::OpenFeature { slug: Some("trim".into()) });
+        s.call(Call::Command { action: Action::LinkTicket });
+        let page = link_page(&mut s).expect("the dialog opens");
+        assert_eq!((page.number, page.linked.len()), (7, 1));
+
+        let url = "https://acme.atlassian.net/browse/ARG-142";
+        let gesture = page::LinkGesture::Link { url: url.into(), role: "the PM's ticket".into() };
+        let sent = s.call(Call::Link { gesture });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::Feature { action: argus_protocol::FeatureAction::Link { .. }, .. })));
+        assert_eq!(link_page(&mut s).unwrap().linked.len(), 1, "not linked until the board says so");
+
+        let mut board = crate::fixtures::board();
+        let trim = board.features.iter_mut().find(|f| f.slug == "trim").unwrap();
+        trim.links.push(argus_protocol::TrackerLink { tracker: "Jira".into(), key: "ARG-142".into(), url: url.into(), role: "the PM's ticket".into() });
+        s.receive(ServerMsg::Decisions(Box::new(board.clone())));
+        let page = link_page(&mut s).unwrap();
+        assert_eq!((page.linked.len(), page.url.as_str()), (2, ""));
+
+        board.features.retain(|f| f.slug != "trim");
+        s.receive(ServerMsg::Decisions(Box::new(board)));
+        assert!(!link_page(&mut s).unwrap().open, "the feature went, and the dialog with it");
+    }
+
     /// A drag on the diagram sends the flow rewritten, and the Flows lens
     /// draws the new order only once the daemon pushes the list back.
     #[test]
@@ -3384,7 +3566,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 97] = [
+    const CALLS: [&str; 101] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3481,6 +3663,10 @@ mod tests {
         r#"{"call":"views_width","width":700}"#,
         r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
         r#"{"call":"close_view","pane":1,"id":"ci"}"#,
+        r#"{"call":"open_link","map":false}"#,
+        r#"{"call":"link","gesture":{"on":"fields","url":"https://linear.app/a/issue/ENG-1/x","role":"the work"}}"#,
+        r#"{"call":"open_reconcile"}"#,
+        r#"{"call":"reconcile","gesture":{"on":"action","action":"tick"}}"#,
         r#"{"call":"open_url","url":"https://example.com"}"#,
     ];
 

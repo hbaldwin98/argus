@@ -52,6 +52,12 @@ impl Shared {
         self.send(msgs);
         // Written here rather than by the page, which may write only
         // inside the gesture's own handler, and a key reaches Rust first.
+        if let Some(url) = session.take_opening() {
+            if let Err(said) = crate::opener::open(&url) {
+                let msgs = session.note(said);
+                self.send(msgs);
+            }
+        }
         if let Some(text) = session.take_copied() {
             let said = match clipboard::write(&text) {
                 Ok(()) => format!("copied {text}"),

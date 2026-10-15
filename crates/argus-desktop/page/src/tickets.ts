@@ -15,7 +15,11 @@ export function ticketLink(link: Link): HTMLElement {
     {
       class: view ? 'track viewed' : 'track',
       type: 'button',
-      title: view ? `${view.view.title}, as ${view.from || 'an agent'} read it` : link.url,
+      title: view
+        ? `${view.view.title}, as ${view.from || 'an agent'} read it`
+        : link.role
+          ? `${link.role}: ${link.url}`
+          : link.url,
       onclick: (event: MouseEvent) => {
         event.stopPropagation();
         if (view) call('open_view', { pane: view.pane, id: view.view.id });

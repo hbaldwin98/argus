@@ -83,6 +83,10 @@ pub enum Place {
     /// An extension's view out in the side panel, once a click there gives
     /// it the keys: these, and the view's own action keys.
     Extension,
+    /// The link dialog while it is open and no field has the keys.
+    Link,
+    /// The reconcile dialog while it is open and no field has the keys.
+    Reconcile,
 }
 
 /// What a binding does. The page runs those of the places it dispatches,
@@ -232,6 +236,24 @@ pub enum Action {
     ExtensionPage,
     /// The extension view open docked in the side panel.
     ExtensionDock,
+    /// Link the open feature to a ticket: the link dialog.
+    LinkTicket,
+    /// Open the open feature's ticket, or the linked one under the cursor,
+    /// in the browser.
+    OpenTicket,
+    /// Reconcile the open feature with its tickets: the reconcile dialog.
+    Reconcile,
+    /// The repository's tracker map, in the link dialog's editor.
+    TrackerMap,
+    Unlink,
+    /// Approve the tracker map's draft as it reads.
+    Approve,
+    /// Turn down what waits: the map's draft, or a reconcile's proposal.
+    Discard,
+    /// Tick or untick a proposed line.
+    Tick,
+    /// Send the ticked lines to the agent to carry out.
+    CarryOut,
 }
 
 #[derive(Debug, Serialize)]
@@ -328,6 +350,8 @@ impl Place {
             Place::Filter => "A filter or search field",
             Place::Palette => "Palette",
             Place::Extension => "An extension's view",
+            Place::Link => "Linking a ticket",
+            Place::Reconcile => "Reconciling with the tickets",
         }
     }
 }
@@ -444,6 +468,10 @@ pub static BINDINGS: &[Binding] = &[
     bind(Outline, &[Chord::key("f"), Chord::key("F")], Expand, "expand the flow's diagram"),
     bind(Outline, &[Chord::key("l"), Chord::key("ArrowRight")], NextFlow, "next flow"),
     bind(Outline, &[Chord::key("h"), Chord::key("ArrowLeft")], PreviousFlow, "previous flow"),
+    bind(Outline, &[Chord::key("T")], LinkTicket, "link a ticket"),
+    bind(Outline, &[Chord::key("t")], OpenTicket, "open its ticket in your browser"),
+    bind(Outline, &[Chord::key("R")], Action::Reconcile, "reconcile with its tickets"),
+    bind(Outline, &[Chord::key("M")], TrackerMap, "the repository's tracker map"),
     bind(Diagram, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next step"),
     bind(Diagram, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous step"),
     bind(Diagram, &[Chord::key("l"), Chord::key("ArrowRight")], NextFlow, "next flow"),
@@ -536,6 +564,21 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Extension, &[Chord::key("End")], Last, "last row"),
     bind(Place::Extension, &[Chord::key(">")], ExtensionPage, "open it as a page"),
     bind(Place::Extension, &[Chord::key("<")], ExtensionDock, "dock it to the side panel"),
+    bind(Place::Link, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next linked ticket"),
+    bind(Place::Link, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous linked ticket"),
+    bind(Place::Link, &[Chord::key("Enter")], Choose, "link the URL typed"),
+    bind(Place::Link, &[Chord::key("o"), Chord::key("O")], OpenTicket, "open the ticket in your browser"),
+    bind(Place::Link, &[Chord::key("x"), Chord::key("X")], Unlink, "unlink the ticket"),
+    bind(Place::Link, &[Chord::key("m"), Chord::key("M")], TrackerMap, "edit the tracker map"),
+    bind(Place::Link, &[Chord::key("A")], Approve, "approve the map's draft as it reads"),
+    bind(Place::Link, &[Chord::key("D")], Discard, "turn the map's draft down"),
+    bind(Place::Reconcile, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next line"),
+    bind(Place::Reconcile, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous line"),
+    bind(Place::Reconcile, &[Chord::key(" ")], Tick, "tick the line, or untick it"),
+    bind(Place::Reconcile, &[Chord::key("e"), Chord::key("E")], Edit, "edit the line's text before ticking it"),
+    bind(Place::Reconcile, &[Chord::key("Enter")], CarryOut, "carry out the ticked lines"),
+    bind(Place::Reconcile, &[Chord::key("D")], Discard, "discard the proposal"),
+    bind(Place::Reconcile, &[Chord::key("g"), Chord::key("G")], GoToPane, "go to the agent's pane"),
 ];
 
 /// What the palette offers to run, in its order, each with the place whose
@@ -571,9 +614,12 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
     (ExtensionPage, Some(Place::Extension), "Open the extension view as a page"),
     (ExtensionDock, Some(Place::Extension), "Dock the extension view to the side panel"),
+    (LinkTicket, Some(Outline), "Link the open feature to a ticket…"),
+    (Action::Reconcile, Some(Outline), "Reconcile the open feature with its tickets…"),
+    (TrackerMap, Some(Outline), "Edit the repository's tracker map…"),
 ];
 
-const ORDER: [Place; 19] = [
+const ORDER: [Place; 21] = [
     Anywhere,
     Pane,
     Window,
@@ -593,6 +639,8 @@ const ORDER: [Place; 19] = [
     Place::Filter,
     Place::Palette,
     Place::Extension,
+    Place::Link,
+    Place::Reconcile,
 ];
 
 /// The table as the sheet lists it: a group per place, in the sheet's order.
@@ -685,7 +733,9 @@ mod tests {
                 "A full transcript",
                 "A filter or search field",
                 "Palette",
-                "An extension's view"
+                "An extension's view",
+                "Linking a ticket",
+                "Reconciling with the tickets"
             ]
         );
     }
@@ -772,7 +822,7 @@ mod tests {
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
         let lens = |b: &&Binding| b.place == Outline && matches!(b.action, WorkLens | Action::RecordLens | Action::FlowsLens);
-        let heard_together: [&[Place]; 16] = [
+        let heard_together: [&[Place]; 18] = [
             &[Anywhere, Place::Feature, Card],
             &[Anywhere, Outline],
             &[Anywhere, Diagram],
@@ -789,6 +839,8 @@ mod tests {
             &[Place::Filter],
             &[Place::Palette],
             &[Place::Extension],
+            &[Anywhere, Place::Link],
+            &[Anywhere, Place::Reconcile],
         ];
         for places in heard_together {
             let chords: Vec<&Chord> = BINDINGS
@@ -1023,6 +1075,34 @@ mod tests {
             for chord in binding.chords.iter().filter(|c| c.key.chars().count() == 1) {
                 assert!(action_key_refusal(chord.key).is_some(), "an action could take {}", chord.key);
             }
+        }
+    }
+
+    /// The terminal client's keys where they do not clash: T links a
+    /// ticket and t opens it, M is the tracker map; R reconciles. Each
+    /// dialog's actions are on the sheet under its own heading, and the
+    /// palette opens all three.
+    #[test]
+    fn an_open_feature_links_reconciles_and_maps_with_the_terminal_clients_keys() {
+        let find = |place: Place, key: &str| {
+            BINDINGS
+                .iter()
+                .filter(|b| b.place == place)
+                .find(|b| b.chords.iter().any(|c| c.matches(&page(key))))
+                .map(|b| b.action)
+        };
+        assert_eq!(find(Outline, "T"), Some(LinkTicket));
+        assert_eq!(find(Outline, "t"), Some(OpenTicket));
+        assert_eq!(find(Outline, "R"), Some(Action::Reconcile));
+        assert_eq!(find(Outline, "M"), Some(TrackerMap));
+        for (key, action) in [("o", OpenTicket), ("x", Unlink), ("m", TrackerMap), ("A", Approve), ("D", Discard), ("Enter", Choose)] {
+            assert_eq!(find(Place::Link, key), Some(action), "{key}");
+        }
+        for (key, action) in [(" ", Tick), ("e", Edit), ("Enter", CarryOut), ("D", Discard), ("g", GoToPane), ("j", Next)] {
+            assert_eq!(find(Place::Reconcile, key), Some(action), "{key}");
+        }
+        for action in [LinkTicket, Action::Reconcile, TrackerMap] {
+            assert!(commands().iter().any(|c| c.action == action && !c.chords.is_empty()), "{action:?} in the palette");
         }
     }
 

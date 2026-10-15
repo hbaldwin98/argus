@@ -18,6 +18,8 @@ import { listen as listenToConsole } from './console.js';
 import { clearComposer, focusComposer } from './compose.js';
 import { $ } from './dom.js';
 import { drawHistory, historyOpen } from './history.js';
+import { drawLink, linkOpen } from './link.js';
+import { drawReconcile, reconcileOpen } from './reconcile.js';
 import { drawReview, reviewOpen } from './review.js';
 import { drawSessions, sessionsOpen } from './sessions.js';
 import { drawSettings } from './settings.js';
@@ -41,7 +43,14 @@ let paneHadKeys = false;
  *  gives them back once no dialog is left open. */
 function dialogKeys(): void {
   const input = $('input');
-  if (reviewOpen() || historyOpen() || sessionsOpen() || addProjectOpen()) {
+  if (
+    reviewOpen() ||
+    historyOpen() ||
+    sessionsOpen() ||
+    addProjectOpen() ||
+    linkOpen() ||
+    reconcileOpen()
+  ) {
     if (document.activeElement === input) {
       paneHadKeys = true;
       input.blur();
@@ -117,6 +126,14 @@ function receive(event: Event): void {
     case 'review':
       state.review = event;
       drawReview();
+      dialogKeys();
+      break;
+    case 'link':
+      drawLink(event);
+      dialogKeys();
+      break;
+    case 'reconcile':
+      drawReconcile(event);
       dialogKeys();
       break;
     case 'checkouts':

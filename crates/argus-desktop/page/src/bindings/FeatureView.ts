@@ -17,7 +17,20 @@ export type FeatureView = { slug: string, number: number, title: string, standin
 /**
  * Its tickets in the team's trackers.
  */
-links: Array<Link>, tasksDone: number, tasksTotal: number, decided: number, open: number, lens: Lens, 
+links: Array<Link>, 
+/**
+ * When it was last reconciled with them: `reconciled 2h ago by pane #32`.
+ */
+reconciled: string | null, 
+/**
+ * How many of its tasks and decisions changed since; `None` before
+ * its tasks arrive, or when it was never reconciled.
+ */
+changes: number | null, 
+/**
+ * Where a reconcile under way stands.
+ */
+reconcile: "asked" | "proposed" | "carrying" | null, tasksDone: number, tasksTotal: number, decided: number, open: number, lens: Lens, 
 /**
  * Whether its tasks have arrived; until then the outline says so.
  */

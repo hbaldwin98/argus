@@ -118,7 +118,7 @@ impl AgentViews {
                     from: title(v.pane).unwrap_or_default(),
                     at: v.at,
                     refreshing: self.refreshing.contains(&(v.pane, v.view.id.clone())),
-                    subject: v.subject.as_ref().map(|l| Link { tracker: l.tracker.clone(), key: l.key.clone(), url: l.url.clone() }),
+                    subject: v.subject.as_ref().map(Link::of),
                     view: v.view.clone(),
                     diagrams: diagrams(&v.view.blocks),
                 })

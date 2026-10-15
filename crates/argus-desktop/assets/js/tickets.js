@@ -10,7 +10,11 @@ export function ticketLink(link) {
     return el('button', {
         class: view ? 'track viewed' : 'track',
         type: 'button',
-        title: view ? `${view.view.title}, as ${view.from || 'an agent'} read it` : link.url,
+        title: view
+            ? `${view.view.title}, as ${view.from || 'an agent'} read it`
+            : link.role
+                ? `${link.role}: ${link.url}`
+                : link.url,
         onclick: (event) => {
             event.stopPropagation();
             if (view)

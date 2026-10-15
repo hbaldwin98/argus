@@ -117,6 +117,7 @@ pub fn build(index: &Index) -> Features {
                 work: index.work,
                 record: index.record,
                 flow: index.flow,
+                now: index.now,
             })
         });
     features
@@ -294,7 +295,7 @@ fn peek(row: &FeatureRow, feature: &Feature, board: &DecisionBoard, index: &Inde
         links: feature
             .links
             .iter()
-            .map(|link| Link { tracker: link.tracker.clone(), key: link.key.clone(), url: link.url.clone() })
+            .map(Link::of)
             .collect(),
         needs_you,
         in_flight,

@@ -8,7 +8,7 @@
 //! the page draws.
 
 use argus_protocol::outline::{Outline, WorkRef};
-use argus_protocol::TaskTreeRow;
+use argus_protocol::{Changes, TaskTreeRow};
 
 use crate::page::{Criterion, DecisionDetail, Line, TaskDetail, WorkAt, WorkRow};
 use crate::record_lens::{decision_detail, decision_state};
@@ -20,8 +20,9 @@ pub struct Work {
 }
 
 /// The outline with `cursor` on one of its rows; a cursor on a row that
-/// went away lands on the first.
-pub fn build(outline: &Outline, cursor: Option<WorkRef>) -> Work {
+/// went away lands on the first. `changes` marks the rows changed since the
+/// feature was last reconciled.
+pub fn build(outline: &Outline, cursor: Option<WorkRef>, changes: Option<&Changes>) -> Work {
     let cursor = cursor
         .filter(|at| outline.rows.iter().any(|row| row.at == *at))
         .or_else(|| outline.rows.first().map(|row| row.at));
@@ -41,6 +42,7 @@ pub fn build(outline: &Outline, cursor: Option<WorkRef>) -> Work {
                         state: task.task.state.as_str(),
                         waits_on: work.waits_on.clone(),
                         key: task.task.external.clone(),
+                        changed: changes.is_some_and(|c| c.tasks.contains(&task.task.id)),
                         on,
                     }
                 }
@@ -54,6 +56,7 @@ pub fn build(outline: &Outline, cursor: Option<WorkRef>) -> Work {
                         state: decision_state(decision.decision),
                         waits_on: None,
                         key: None,
+                        changed: changes.is_some_and(|c| c.decisions.contains(&decision.decision.id)),
                         on,
                     }
                 }
@@ -130,7 +133,7 @@ mod tests {
         tasks.tasks[3].external = Some("ENG-91".into());
         let scoped = board.scoped(Some("trim"));
         let outline = Outline::build(tasks.tree_rows(), scoped.tree_rows(), &HashSet::new());
-        build(&outline, cursor)
+        build(&outline, cursor, None)
     }
 
     #[test]

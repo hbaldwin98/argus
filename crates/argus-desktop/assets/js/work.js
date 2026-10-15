@@ -223,10 +223,28 @@ function head(view) {
     }, name, keycap(key))), el('span', { class: 'grow' }), el('span', { class: 'meta lens-keys' }, lensKeys(view.lens))));
 }
 /** The tickets the feature is linked to, each opening the view an agent
- *  showed of it when one waits (`tickets.ts`). Linking and reconciling are
- *  the tracker dialogs', which add their buttons to this row. */
+ *  showed of it when one waits (`tickets.ts`), when it was last
+ *  reconciled with them and how much changed here since, and the buttons
+ *  of the link and reconcile dialogs. */
 function tickets(view) {
-    return el('span', { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' }, view.links.map(ticketLink));
+    const waiting = {
+        asked: 'an agent is reading',
+        proposed: 'a proposal waits',
+        carrying: 'being carried out',
+    };
+    return el('span', { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' }, view.links.map(ticketLink), view.links.length > 0 &&
+        el('span', { class: 'meta' }, view.reconciled ?? 'never reconciled', view.changes !== null &&
+            view.changes > 0 &&
+            el('span', { class: 'fg-changed' }, ` · ${view.changes} change${view.changes === 1 ? '' : 's'} since`)), el('button', {
+        class: 'btn sm',
+        title: 'Link a ticket (T)',
+        onclick: () => call('open_link', { map: false }),
+    }, view.links.length > 0 ? 'Link…' : 'Link a ticket…'), view.links.length > 0 &&
+        el('button', {
+            class: `btn sm${view.reconcile === 'proposed' ? ' primary' : ''}`,
+            title: 'Reconcile with its tickets (R)',
+            onclick: () => call('open_reconcile', {}),
+        }, 'Reconcile…', view.reconcile && el('span', { class: 'meta' }, ` ${waiting[view.reconcile] ?? ''}`)));
 }
 function lensKeys(lens) {
     const keys = lens === 'record'
@@ -249,6 +267,8 @@ function lensKeys(lens) {
                 ['S', 'under it'],
                 ['D', 'decision'],
                 ['B', 'brief'],
+                ['T', 'link'],
+                ['R', 'reconcile'],
             ];
     return keys.flatMap(([key, what], i) => [i ? ' · ' : null, keycap(key), ` ${what}`]);
 }
@@ -297,7 +317,12 @@ function workRow(row) {
         ondblclick: () => editRow(),
     }, el('span', { class: tone }, mark), el('span', {
         class: `n${decision && row.state !== 'open' ? ' fg-ref' : ''}${row.state === 'open' ? ' fg-attention' : ''}`,
-    }, row.label), el('span', { class: 'wtext' }, el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text), row.key && el('span', { class: 'tkey' }, row.key)), aside);
+    }, row.label), el('span', { class: 'wtext' }, el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text), row.key && el('span', { class: 'tkey' }, row.key), row.changed &&
+        el('span', {
+            class: 'cdot',
+            title: 'changed here since the last reconcile',
+            'aria-label': 'changed since the last reconcile',
+        })), aside);
     node.style.paddingLeft = `${8 + row.depth * 20}px`;
     return node;
 }
@@ -481,6 +506,17 @@ export function setLens(lens) {
     state.editing = null;
     call('set_lens', { lens });
 }
+/** The one ticket, as its chip opens it; with several, the link dialog
+ *  lists them to choose from. */
+function openTicket(view) {
+    const [only, ...more] = view.links;
+    if (!only)
+        notice('No ticket is linked to this feature; T links one.');
+    else if (more.length > 0)
+        call('open_link', { map: false });
+    else
+        ticketLink(only).click();
+}
 export function goToPane(view) {
     if (view.agent)
         call('go_to_pane', { pane: view.agent.pane });
@@ -535,6 +571,18 @@ export function workAction(action) {
             return true;
         case 'goToPane':
             goToPane(view);
+            return true;
+        case 'linkTicket':
+            call('open_link', { map: false });
+            return true;
+        case 'trackerMap':
+            call('open_link', { map: true });
+            return true;
+        case 'reconcile':
+            call('open_reconcile', {});
+            return true;
+        case 'openTicket':
+            openTicket(view);
             return true;
         default:
             break;

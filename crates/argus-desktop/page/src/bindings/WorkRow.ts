@@ -18,4 +18,8 @@ waitsOn: string | null,
 /**
  * A task's key in the team's tracker.
  */
-key: string | null, on: boolean, };
+key: string | null, 
+/**
+ * Changed since the feature was last reconciled.
+ */
+changed: boolean, on: boolean, };

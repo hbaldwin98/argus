@@ -194,6 +194,15 @@ pub enum Call {
     /// A link in a view, for the system's opener; Rust opens only an
     /// `http` or `https` one.
     OpenUrl { url: String },
+    /// Opens the link dialog on the open feature, with `map` on its
+    /// tracker map's editor.
+    OpenLink { map: bool },
+    /// A gesture in the link dialog.
+    Link { gesture: LinkGesture },
+    /// Opens the reconcile dialog on the open feature.
+    OpenReconcile,
+    /// A gesture in the reconcile dialog.
+    Reconcile { gesture: ReconcileGesture },
 }
 
 /// One choice made in the Settings dialog.
@@ -281,6 +290,52 @@ pub enum FeatureEdit {
     MoveStep { diagram: i64, step: usize, to: usize },
     /// Moves a participant's lifeline to place `to`, counted from zero.
     MoveParticipant { diagram: i64, name: String, to: usize },
+}
+
+/// What was done in the link dialog.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum LinkGesture {
+    /// What the fields say now, read as the daemon will read them.
+    Fields { url: String, role: String },
+    /// Link, with what the fields say as it is pressed.
+    Link { url: String, role: String },
+    /// A ticket already linked, by its place in the list.
+    Select { index: usize },
+    Unlink { key: String },
+    /// The tracker map's editor, on the draft when one waits.
+    EditMap,
+    MapText { text: String },
+    /// The map written as `text`; with a draft waiting, the draft approved
+    /// as it reads there.
+    SaveMap { text: String },
+    /// The draft turned down.
+    DiscardDraft,
+    CancelMap,
+    /// A key of the dialog's own.
+    Action { action: Action },
+    Close,
+}
+
+/// What was done in the reconcile dialog. A line is its place among the
+/// proposal's lines.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ReconcileGesture {
+    Select { line: usize },
+    Tick { line: usize },
+    /// The selected line's text as the person rewrote it.
+    Text { line: usize, text: String },
+    /// The agent to ask.
+    Agent { pane: u64 },
+    Ask { ask: String },
+    CarryOut,
+    Discard,
+    /// A key of the dialog's own.
+    Action { action: Action },
+    Close,
 }
 
 /// How an open feature is read: as work, as a record of its decisions, or
@@ -435,6 +490,12 @@ pub enum Event {
     /// The views agents showed, whole, whenever one comes, goes or is
     /// opened.
     Views(Box<ViewsPage>),
+    /// The link dialog, whole, whenever it changes; `open` false once it
+    /// closes.
+    Link(Box<LinkPage>),
+    /// The reconcile dialog, whole, whenever it changes; `open` false once
+    /// it closes.
+    Reconcile(Box<ReconcilePage>),
     /// An agent came to need the person somewhere they are not looking.
     Chime,
     /// The Settings dialog's choices, whenever one changes: the page draws
@@ -929,6 +990,138 @@ pub struct Link {
     pub tracker: String,
     pub key: String,
     pub url: String,
+    /// What the ticket is to the feature, in the person's words.
+    pub role: String,
+}
+
+impl Link {
+    pub fn of(link: &argus_protocol::TrackerLink) -> Link {
+        Link { tracker: link.tracker.clone(), key: link.key.clone(), url: link.url.clone(), role: link.role.clone() }
+    }
+}
+
+/// The link dialog: the URL being linked and what it reads as, the tickets
+/// already linked, and the repository's tracker map.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LinkPage {
+    pub open: bool,
+    pub number: i64,
+    pub title: String,
+    pub url: String,
+    pub role: String,
+    /// The tracker and key the URL reads as, without going online.
+    pub read: Option<Link>,
+    /// Why the URL is not a link yet, once something is typed.
+    pub refusal: Option<String>,
+    /// A link was sent and the board does not hold it yet.
+    pub pending: bool,
+    pub linked: Vec<LinkedRow>,
+    pub map: MapPage,
+    /// The map's editor, with what it holds.
+    pub editing_map: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedRow {
+    pub link: Link,
+    pub on: bool,
+}
+
+/// The repository's tracker map, and the draft an agent left for it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct MapPage {
+    pub body: String,
+    pub draft: Option<String>,
+    pub draft_by: Option<String>,
+}
+
+/// The reconcile dialog: what was asked and of whom, the proposal grouped
+/// by where each line writes, the line under the cursor in full, and the
+/// agents an ask can go to.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReconcilePage {
+    pub open: bool,
+    pub number: i64,
+    pub title: String,
+    /// The tickets, as the heading names them: `Linear ENG-88 and Jira ARG-142`.
+    pub tickets: String,
+    /// `none` with nothing under way, else `asked`, `proposed` or `carrying`.
+    #[cfg_attr(test, ts(type = "\"none\" | \"asked\" | \"proposed\" | \"carrying\""))]
+    pub stage: &'static str,
+    /// The agent asked, or that proposed: `pane #32`.
+    pub by: Option<String>,
+    pub ago: Option<String>,
+    pub asked: String,
+    pub groups: Vec<LineGroup>,
+    pub noticed: Vec<Line>,
+    pub selected: Option<SelectedLine>,
+    pub ticked: usize,
+    pub total: usize,
+    /// The live agents of the repository an ask can go to.
+    pub agents: Vec<AgentChoice>,
+    /// When the last one was carried out: `reconciled 2h ago by pane #32`.
+    pub reconciled: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LineGroup {
+    /// `Into Argus`, `Out to Linear`.
+    pub heading: String,
+    pub into_argus: bool,
+    pub lines: Vec<ProposedRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ProposedRow {
+    pub line: usize,
+    pub key: String,
+    pub does: String,
+    pub why: String,
+    pub ticked: bool,
+    pub on: bool,
+    /// What the tracker said when it was carried out and failed.
+    pub failed: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedLine {
+    pub line: usize,
+    pub heading: String,
+    pub key: String,
+    pub does: String,
+    /// The text it writes, as the person last left it.
+    pub text: String,
+    /// The person rewrote it.
+    pub edited: bool,
+    /// The call the agent will make.
+    pub call: String,
+    pub ticked: bool,
+    pub failed: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentChoice {
+    pub pane: u64,
+    pub title: String,
+    /// It did the last reconcile, or the one under way.
+    pub last: bool,
+    pub chosen: bool,
 }
 
 /// The views agents showed, and the one open in the side panel.
@@ -1037,6 +1230,14 @@ pub struct FeatureView {
     pub brief: String,
     /// Its tickets in the team's trackers.
     pub links: Vec<Link>,
+    /// When it was last reconciled with them: `reconciled 2h ago by pane #32`.
+    pub reconciled: Option<String>,
+    /// How many of its tasks and decisions changed since; `None` before
+    /// its tasks arrive, or when it was never reconciled.
+    pub changes: Option<usize>,
+    /// Where a reconcile under way stands.
+    #[cfg_attr(test, ts(type = "\"asked\" | \"proposed\" | \"carrying\" | null"))]
+    pub reconcile: Option<&'static str>,
     pub tasks_done: usize,
     pub tasks_total: usize,
     pub decided: usize,
@@ -1199,6 +1400,8 @@ pub struct WorkRow {
     pub waits_on: Option<String>,
     /// A task's key in the team's tracker.
     pub key: Option<String>,
+    /// Changed since the feature was last reconciled.
+    pub changed: bool,
     pub on: bool,
 }
 

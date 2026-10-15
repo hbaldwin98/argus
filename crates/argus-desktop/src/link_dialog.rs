@@ -1,0 +1,334 @@
+//! What the link dialog holds — the feature it links, the URL and role
+//! being typed, the linked ticket under the cursor, the tracker map being
+//! edited, and a link sent and not yet on the board — and what its gestures
+//! ask of the daemon.
+//!
+//! The URL is read as the daemon will read it, by `LinkWrite::checked`, so
+//! the tracker and key it shows are the ones the link gets. Nothing is
+//! written to a tracker: a link is a key and a URL in Argus. The fields
+//! clear only once the pushed board holds the link, so a refused one keeps
+//! what was typed.
+
+use argus_protocol::{ClientMsg, Feature, FeatureAction, LinkWrite, MapChange, TrackerMap};
+
+use crate::feature_stage::Scope;
+use crate::keymap::Action;
+use crate::page::{Link, LinkGesture, LinkPage, LinkedRow, MapPage};
+
+pub struct LinkDialog {
+    slug: String,
+    url: String,
+    role: String,
+    /// The linked ticket under the cursor, by its place in the list.
+    cursor: usize,
+    /// The key of a link sent, until the board holds it or it is refused.
+    pending: Option<String>,
+    /// The tracker map's editor, holding what it says now.
+    editing_map: Option<String>,
+}
+
+/// What a gesture leaves for the session to do beyond the daemon's
+/// messages.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Then {
+    Nothing,
+    Close,
+    /// Open a URL in the browser.
+    Open(String),
+    Say(String),
+}
+
+impl LinkDialog {
+    /// The dialog on `slug`, with `map` on the map's editor.
+    pub fn new(slug: &str, map: Option<&TrackerMap>) -> LinkDialog {
+        let mut dialog = LinkDialog {
+            slug: slug.to_string(),
+            url: String::new(),
+            role: String::new(),
+            cursor: 0,
+            pending: None,
+            editing_map: None,
+        };
+        if let Some(map) = map {
+            dialog.edit_map(map);
+        }
+        dialog
+    }
+
+    pub fn slug(&self) -> &str {
+        &self.slug
+    }
+
+    /// A gesture, with the feature and map as the board has them and where
+    /// to send what it asks.
+    pub fn gesture(
+        &mut self,
+        gesture: LinkGesture,
+        feature: &Feature,
+        map: &TrackerMap,
+        scope: &Scope,
+        out: &mut Vec<ClientMsg>,
+    ) -> Then {
+        match gesture {
+            LinkGesture::Fields { url, role } => {
+                self.url = url;
+                self.role = role;
+            }
+            LinkGesture::Link { url, role } => {
+                self.url = url;
+                self.role = role;
+                return self.link(scope, out);
+            }
+            LinkGesture::Select { index } => self.cursor = index.min(feature.links.len().saturating_sub(1)),
+            LinkGesture::Unlink { key } => self.unlink(key, scope, out),
+            LinkGesture::EditMap => self.edit_map(map),
+            LinkGesture::MapText { text } => {
+                if let Some(editing) = &mut self.editing_map {
+                    *editing = text;
+                }
+            }
+            LinkGesture::SaveMap { text } => {
+                let change = if map.draft.is_some() { MapChange::Approve(text) } else { MapChange::Write(text) };
+                return self.change_map(change, scope, out);
+            }
+            LinkGesture::DiscardDraft => return self.discard_draft(map, scope, out),
+            LinkGesture::CancelMap => self.editing_map = None,
+            LinkGesture::Action { action } => return self.action(action, feature, map, scope, out),
+            LinkGesture::Close => return Then::Close,
+        }
+        Then::Nothing
+    }
+
+    fn action(&mut self, action: Action, feature: &Feature, map: &TrackerMap, scope: &Scope, out: &mut Vec<ClientMsg>) -> Then {
+        let last = feature.links.len().saturating_sub(1);
+        match action {
+            Action::Next => self.cursor = (self.cursor + 1).min(last),
+            Action::Previous => self.cursor = self.cursor.saturating_sub(1),
+            Action::Choose => return self.link(scope, out),
+            Action::OpenTicket => {
+                if let Some(link) = feature.links.get(self.cursor) {
+                    return Then::Open(link.url.clone());
+                }
+            }
+            Action::Unlink => {
+                if let Some(link) = feature.links.get(self.cursor) {
+                    self.unlink(link.key.clone(), scope, out);
+                }
+            }
+            Action::TrackerMap => self.edit_map(map),
+            Action::Approve => match &map.draft {
+                Some(draft) => return self.change_map(MapChange::Approve(draft.body.clone()), scope, out),
+                None => return Then::Say("no draft of the map waits".into()),
+            },
+            Action::Discard => return self.discard_draft(map, scope, out),
+            Action::CloseLayer => return Then::Close,
+            _ => {}
+        }
+        Then::Nothing
+    }
+
+    fn link(&mut self, scope: &Scope, out: &mut Vec<ClientMsg>) -> Then {
+        let link = self.write();
+        // Read here only so a typo is said at once; the daemon reads it
+        // again with the same function.
+        let read = match link.clone().checked() {
+            Ok(read) => read,
+            Err(why) => return Then::Say(why.into()),
+        };
+        self.pending = Some(read.key);
+        out.push(ClientMsg::Feature {
+            project: scope.project,
+            checkout: scope.checkout,
+            action: FeatureAction::Link { slug: self.slug.clone(), link },
+        });
+        Then::Nothing
+    }
+
+    fn unlink(&mut self, key: String, scope: &Scope, out: &mut Vec<ClientMsg>) {
+        out.push(ClientMsg::Feature {
+            project: scope.project,
+            checkout: scope.checkout,
+            action: FeatureAction::Unlink { slug: self.slug.clone(), key },
+        });
+    }
+
+    fn edit_map(&mut self, map: &TrackerMap) {
+        self.editing_map = Some(map.draft.as_ref().map_or(&map.body, |draft| &draft.body).clone());
+    }
+
+    fn change_map(&mut self, change: MapChange, scope: &Scope, out: &mut Vec<ClientMsg>) -> Then {
+        out.push(ClientMsg::TrackerMap { project: scope.project, checkout: scope.checkout, change });
+        self.editing_map = None;
+        Then::Nothing
+    }
+
+    fn discard_draft(&mut self, map: &TrackerMap, scope: &Scope, out: &mut Vec<ClientMsg>) -> Then {
+        if map.draft.is_none() {
+            return Then::Say("no draft of the map waits".into());
+        }
+        self.change_map(MapChange::Discard, scope, out)
+    }
+
+    fn write(&self) -> LinkWrite {
+        LinkWrite { url: self.url.clone(), role: Some(self.role.clone()), ..LinkWrite::default() }
+    }
+
+    /// The board changed: a link it now holds was the one sent, and the
+    /// fields are free for the next.
+    pub fn settle(&mut self, feature: &Feature) {
+        if self.pending.as_ref().is_some_and(|key| feature.links.iter().any(|l| &l.key == key)) {
+            self.pending = None;
+            self.url.clear();
+            self.role.clear();
+        }
+        self.cursor = self.cursor.min(feature.links.len().saturating_sub(1));
+    }
+
+    /// The daemon refused something: a link waiting on it was the one.
+    pub fn refused(&mut self) {
+        self.pending = None;
+    }
+
+    pub fn page(&self, feature: &Feature, map: &TrackerMap) -> LinkPage {
+        let typed = !self.url.trim().is_empty();
+        let (read, refusal) = match self.write().checked() {
+            Ok(read) => (Some(Link::of(&read)), None),
+            Err(why) => (None, typed.then(|| why.to_string())),
+        };
+        LinkPage {
+            open: true,
+            number: feature.number,
+            title: feature.title.clone(),
+            url: self.url.clone(),
+            role: self.role.clone(),
+            read,
+            refusal,
+            pending: self.pending.is_some(),
+            linked: feature
+                .links
+                .iter()
+                .enumerate()
+                .map(|(i, link)| LinkedRow { link: Link::of(link), on: i == self.cursor })
+                .collect(),
+            map: MapPage {
+                body: map.body.clone(),
+                draft: map.draft.as_ref().map(|d| d.body.clone()),
+                draft_by: map.draft.as_ref().map(|d| d.by.clone()),
+            },
+            editing_map: self.editing_map.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use argus_protocol::{CheckoutId, MapDraft, ProjectId, RepositoryId, TrackerLink};
+
+    fn scope() -> Scope {
+        Scope {
+            project: ProjectId(1),
+            project_name: "src".into(),
+            repository: RepositoryId(2),
+            repository_name: "argus".into(),
+            checkout: CheckoutId(3),
+            key: "/src/main".into(),
+        }
+    }
+
+    fn feature(links: &[&str]) -> Feature {
+        Feature {
+            slug: "trim".into(),
+            number: 7,
+            title: "Trim".into(),
+            links: links
+                .iter()
+                .map(|key| TrackerLink { tracker: "Jira".into(), key: key.to_string(), url: format!("https://acme.atlassian.net/browse/{key}"), role: String::new() })
+                .collect(),
+            ..Feature::default()
+        }
+    }
+
+    const URL: &str = "https://acme.atlassian.net/browse/ARG-142";
+
+    #[test]
+    fn a_url_reads_as_its_tracker_and_key_before_it_is_sent() {
+        let mut dialog = LinkDialog::new("trim", None);
+        let mut out = Vec::new();
+        let map = TrackerMap::default();
+        dialog.gesture(LinkGesture::Fields { url: URL.into(), role: "the PM's ticket".into() }, &feature(&[]), &map, &scope(), &mut out);
+        let page = dialog.page(&feature(&[]), &map);
+        let read = page.read.unwrap();
+        assert_eq!((read.tracker.as_str(), read.key.as_str(), read.role.as_str()), ("Jira", "ARG-142", "the PM's ticket"));
+        assert!(out.is_empty(), "typing sends nothing");
+
+        dialog.gesture(LinkGesture::Fields { url: "file:///etc".into(), role: String::new() }, &feature(&[]), &map, &scope(), &mut out);
+        assert!(dialog.page(&feature(&[]), &map).refusal.is_some());
+    }
+
+    #[test]
+    fn the_fields_clear_only_once_the_board_holds_the_link() {
+        let mut dialog = LinkDialog::new("trim", None);
+        let mut out = Vec::new();
+        let map = TrackerMap::default();
+        let then = dialog.gesture(LinkGesture::Link { url: URL.into(), role: "the story".into() }, &feature(&[]), &map, &scope(), &mut out);
+        assert_eq!(then, Then::Nothing);
+        assert!(matches!(&out[..], [ClientMsg::Feature { action: FeatureAction::Link { slug, link }, .. }]
+            if slug == "trim" && link.role.as_deref() == Some("the story")));
+        assert!(dialog.page(&feature(&[]), &map).pending);
+
+        dialog.settle(&feature(&[]));
+        assert_eq!(dialog.page(&feature(&[]), &map).url, URL, "not linked yet: the URL stays");
+        dialog.refused();
+        assert!(!dialog.page(&feature(&[]), &map).pending, "a refusal keeps what was typed to fix");
+
+        dialog.gesture(LinkGesture::Link { url: URL.into(), role: String::new() }, &feature(&[]), &map, &scope(), &mut out);
+        dialog.settle(&feature(&["ARG-142"]));
+        let page = dialog.page(&feature(&["ARG-142"]), &map);
+        assert_eq!((page.url.as_str(), page.pending, page.linked.len()), ("", false, 1));
+    }
+
+    #[test]
+    fn a_url_that_is_no_link_is_said_and_never_sent() {
+        let mut dialog = LinkDialog::new("trim", None);
+        let mut out = Vec::new();
+        let then = dialog.gesture(LinkGesture::Link { url: "ENG-88".into(), role: String::new() }, &feature(&[]), &TrackerMap::default(), &scope(), &mut out);
+        assert!(matches!(then, Then::Say(_)) && out.is_empty());
+    }
+
+    #[test]
+    fn the_keys_open_and_unlink_the_ticket_under_the_cursor() {
+        let mut dialog = LinkDialog::new("trim", None);
+        let (mut out, map, linked) = (Vec::new(), TrackerMap::default(), feature(&["A-1", "A-2"]));
+        let act = |dialog: &mut LinkDialog, action, out: &mut Vec<ClientMsg>| {
+            dialog.gesture(LinkGesture::Action { action }, &linked, &map, &scope(), out)
+        };
+        act(&mut dialog, Action::Next, &mut out);
+        act(&mut dialog, Action::Next, &mut out);
+        assert_eq!(act(&mut dialog, Action::OpenTicket, &mut out), Then::Open("https://acme.atlassian.net/browse/A-2".into()));
+        act(&mut dialog, Action::Unlink, &mut out);
+        assert!(matches!(&out[..], [ClientMsg::Feature { action: FeatureAction::Unlink { key, .. }, .. }] if key == "A-2"));
+        assert_eq!(act(&mut dialog, Action::CloseLayer, &mut out), Then::Close);
+    }
+
+    #[test]
+    fn the_map_editor_opens_on_a_waiting_draft_and_saving_approves_it_as_written() {
+        let map = TrackerMap {
+            body: "Linear: feature is an issue".into(),
+            draft: Some(MapDraft { body: "Linear: feature is a project".into(), by: "pane #32".into(), at: 1 }),
+        };
+        let mut dialog = LinkDialog::new("trim", Some(&map));
+        assert_eq!(dialog.page(&feature(&[]), &map).editing_map.as_deref(), Some("Linear: feature is a project"));
+        let mut out = Vec::new();
+        dialog.gesture(LinkGesture::SaveMap { text: "edited".into() }, &feature(&[]), &map, &scope(), &mut out);
+        assert!(matches!(&out[..], [ClientMsg::TrackerMap { change: MapChange::Approve(text), .. }] if text == "edited"));
+        assert!(dialog.page(&feature(&[]), &map).editing_map.is_none(), "the editor closes; the board says the rest");
+
+        let plain = TrackerMap::default();
+        let mut out = Vec::new();
+        dialog.gesture(LinkGesture::SaveMap { text: "Jira: story".into() }, &feature(&[]), &plain, &scope(), &mut out);
+        assert!(matches!(&out[..], [ClientMsg::TrackerMap { change: MapChange::Write(_), .. }]));
+        let then = dialog.gesture(LinkGesture::Action { action: Action::Discard }, &feature(&[]), &plain, &scope(), &mut out);
+        assert!(matches!(then, Then::Say(_)), "no draft to turn down");
+    }
+}

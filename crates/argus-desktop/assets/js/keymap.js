@@ -4,6 +4,8 @@
 import { captureOpen, discardCapture } from './capture.js';
 import { answerNo, checkoutsAction } from './checkouts.js';
 import { focusHistoryFilter, historyOpen } from './history.js';
+import { linkAction, linkOpen } from './link.js';
+import { reconcileAction, reconcileOpen } from './reconcile.js';
 import { reviewOpen } from './review.js';
 import { focusSessionsSearch, readerOpen, sessionsOpen } from './sessions.js';
 import { focusTranscriptFind } from './transcript.js';
@@ -202,6 +204,23 @@ export function listen() {
         // The add-a-project dialog answers its own keys.
         if (addProjectOpen())
             return;
+        // The tracker dialogs hold the keys while open, as the review does.
+        if (linkOpen() || reconcileOpen()) {
+            const link = linkOpen();
+            const action = actionFor(['anywhere', link ? 'link' : 'reconcile'], e);
+            if (action === 'shortcuts') {
+                e.preventDefault();
+                openSheet();
+            }
+            else if (action && !notTheirs(action)) {
+                e.preventDefault();
+                if (link)
+                    linkAction(action);
+                else
+                    reconcileAction(action);
+            }
+            return;
+        }
         // The review, history and sessions dialogs hold the keys while open,
         // all but the sheet's, which lists theirs; Rust runs the rest.
         if (reviewOpen()) {
