@@ -300,7 +300,7 @@ to the type or its locking.
 | `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
 | `harness/transcript` | reading a session's transcript file, in its harness's format, into the protocol's transcript |
 | `harness/transcript/locate` | where transcripts are on disk, from a harness's path templates: the one a session's id names, and every one kept for a set of checkouts |
-| `harness/transcript/listing` | which sessions the harnesses kept for a repository's checkouts, newest first |
+| `harness/transcript/listing` | which sessions the harnesses kept for a repository's checkouts, newest first, and whether a directory one ran in was a worktree of the repository since removed |
 | `harness/transcript/glance` | how much of a transcript a listing reads: a short one whole, a long one at its two ends |
 | `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi`, `harness/transcript/neutral` | one transcript format each: which of its records are a turn, a reply or a tool call, and what they say of the session |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
@@ -1197,8 +1197,13 @@ A session of a harness with no `transcript` still lists. Whenever the recorded p
 agent pane with a session id whose harness keeps none is written to `store/seen_sessions` — its
 harness, id, checkout and title, when Argus first saw it and when last — and the newest 1,000 are
 kept. A listing adds those in the repository's checkouts that no transcript lists, with those two
-times as RFC 3339 `started` and `ended` and the last as `modified`; one whose checkout is gone is
-left out, since nothing says it was a worktree of this repository. This is what Argus saw, not a
+times as RFC 3339 `started` and `ended` and the last as `modified`. One whose checkout is gone is
+placed by the rule a transcript's directory is: under the worktree root or a tool's
+`.<tool>/worktrees` in a checkout, it was a worktree of this repository, and is listed under the
+primary checkout with `removed_worktree` naming it, dimmed and offering only its transcript like a
+transcribed one; anywhere else nothing says it was this repository's, and it is left out. So is one
+whose directory is still there but is no checkout, as a resume on the primary would run it where it
+never ran. This is what Argus saw, not a
 transcript: the preview shows the title, checkout and times and says the harness keeps none.
 
 `ClientMsg::ListSessions` asks for a repository's sessions across all its checkouts, and

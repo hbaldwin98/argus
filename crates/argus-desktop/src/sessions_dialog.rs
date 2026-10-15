@@ -669,6 +669,26 @@ mod tests {
     }
 
     #[test]
+    fn a_seen_session_from_a_removed_worktree_is_dimmed_and_says_where_it_ran() {
+        // What the daemon lists of a generic agent's session whose worktree
+        // was removed after it ran: Argus saw it, no transcript holds it.
+        let seen = Session {
+            removed_worktree: Some("C:\\src\\.argus\\worktrees\\spike-2".into()),
+            turns: None,
+            ..session("plain", "generic", 100)
+        };
+        let sessions = held(vec![seen]);
+        let mut d = dialog();
+        let page = d.page(&sessions, &tree(), 0);
+        assert!(page.rows[0].removed);
+        assert_eq!(page.rows[0].checkout, "spike-2");
+        let why = "its worktree spike-2 was removed";
+        assert_eq!(page.preview.unwrap().why.as_deref(), Some(why), "the worktree, not the harness, is why");
+        assert_eq!(d.resume(&sessions, &tree()), Then::Say(format!("it cannot be resumed: {why}")));
+        assert_eq!(d.choose(&sessions, &tree()), Then::Nothing);
+    }
+
+    #[test]
     fn a_daemon_that_cannot_list_sessions_is_said_to_and_not_waited_on() {
         let page = SessionsDialog::new(RepositoryId(10), "argus".into(), true).page(&Sessions::default(), &tree(), 0);
         assert!(!page.loading && page.empty.is_some_and(|e| e.contains("cannot list sessions")));

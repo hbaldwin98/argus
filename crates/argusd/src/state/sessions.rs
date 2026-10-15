@@ -185,21 +185,30 @@ impl Daemon {
 
 /// The listed sessions and those Argus saw in the repository's checkouts
 /// that no transcript lists, newest first. A seen session's times are the
-/// first and last Argus saw of it; one whose checkout is gone is not
-/// listed, as nothing says whether that was a worktree of this repository.
+/// first and last Argus saw of it. One whose checkout is gone is listed as
+/// a transcript from there would be — under the primary checkout, its
+/// worktree named as removed — when the directory was where the repository
+/// puts worktrees, and not at all otherwise, as nothing then says it was
+/// this repository's. A directory still there that is no checkout is not
+/// listed either: resumed on the primary, it would run where it never did.
 fn with_seen(mut listed: Vec<Session>, seen: Vec<SeenSession>, places: &Places) -> Vec<Session> {
     for seen in seen {
         if listed.iter().any(|s| s.session_id == seen.session_id) {
             continue;
         }
-        let Some(&(checkout, _)) = places.checkouts.iter().find(|(_, path)| same_path(path, &seen.checkout_path)) else {
-            continue;
+        let at = places.checkouts.iter().find(|(_, path)| same_path(path, &seen.checkout_path));
+        let (checkout, removed_worktree) = match at {
+            Some(&(checkout, _)) => (checkout, None),
+            None if transcript::removed_worktree(&seen.checkout_path, places) => {
+                (places.primary, Some(seen.checkout_path.to_string_lossy().into_owned()))
+            }
+            None => continue,
         };
         listed.push(Session {
             harness: seen.harness,
             session_id: seen.session_id,
             checkout,
-            removed_worktree: None,
+            removed_worktree,
             title: Some(seen.title).filter(|title| !title.is_empty()),
             started: Some(rfc3339(seen.started)),
             ended: Some(rfc3339(seen.ended)),
@@ -325,6 +334,39 @@ mod tests {
         assert_eq!(g1.started.as_deref(), Some("2026-10-14T09:00:00Z"));
         assert_eq!(g1.ended.as_deref(), Some("2026-10-14T09:03:20Z"));
         assert_eq!(g1.turns, None);
+    }
+
+    #[test]
+    fn a_seen_session_from_a_removed_worktree_lists_as_removed_and_one_from_elsewhere_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("app");
+        let root = dir.path().join("worktrees").join("app");
+        // A directory still there that is no checkout of the repository.
+        let stray = app.join("notes");
+        std::fs::create_dir_all(&stray).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
+        let places = Places {
+            checkouts: vec![(CheckoutId(1), app.clone())],
+            worktree_root: Some(root.clone()),
+            primary: CheckoutId(1),
+        };
+        let text = |p: PathBuf| p.to_string_lossy().into_owned();
+        let sessions = with_seen(
+            Vec::new(),
+            vec![
+                seen("rooted", &text(root.join("spike")), 1_791_968_900),
+                seen("tooled", &text(app.join(".claude").join("worktrees").join("fix")), 1_791_968_800),
+                seen("elsewhere", &text(dir.path().join("other")), 1_791_968_700),
+                seen("stray", &text(stray.clone()), 1_791_968_600),
+            ],
+            &places,
+        );
+        let listed: Vec<_> = sessions
+            .iter()
+            .map(|s| (s.session_id.as_str(), s.checkout, s.removed_worktree.is_some()))
+            .collect();
+        assert_eq!(listed, [("rooted", CheckoutId(1), true), ("tooled", CheckoutId(1), true)]);
+        assert_eq!(sessions[0].removed_worktree, Some(text(root.join("spike"))), "named as Argus saw it");
     }
 
     #[tokio::test]

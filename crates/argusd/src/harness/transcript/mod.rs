@@ -24,7 +24,7 @@ mod locate;
 mod neutral;
 mod pi;
 
-pub use listing::{sessions, Places};
+pub use listing::{removed_worktree, sessions, Places};
 
 /// Which harness's format a transcript is in, and so how to read it. A
 /// `[[harness]]` block names one, since a block cannot bring a reader of
