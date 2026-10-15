@@ -212,6 +212,9 @@ pub async fn init(dir: Option<String>) -> anyhow::Result<()> {
         let add = ClientMsg::AddProject {
             path: path.clone(),
             request_id: 0,
+            name: None,
+            skip: Vec::new(),
+            init: false,
         };
         write_msg(&mut stream, &add)
             .await

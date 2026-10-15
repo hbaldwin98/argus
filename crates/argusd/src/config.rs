@@ -448,6 +448,7 @@ pub fn with_overlays(mut config: ConfigFile, overlays: &crate::store::Overlays) 
             root: Some(path_str(&added.root)),
             repos: repos.iter().map(|r| path_str(r)).collect(),
             workspace: Some(added.workspace.clone()),
+            exclude: added.exclude.clone(),
             ..Default::default()
         });
     }

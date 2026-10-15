@@ -165,6 +165,14 @@ mod tests {
             ClientMsg::AddProject {
                 path: r"C:\src\thing".to_string(),
                 request_id: 4,
+                name: Some("thing".to_string()),
+                skip: vec!["vendor".to_string()],
+                init: true,
+            },
+            ClientMsg::PreviewProject {
+                request_id: 4,
+                path: r"C:\src\thing".to_string(),
+                skip: vec!["vendor".to_string()],
             },
             ClientMsg::AddRepository {
                 project: ProjectId(1),

@@ -223,12 +223,14 @@ fn two_directories_sharing_a_name_are_two_projects() {
         name: "src".into(),
         root: PathBuf::from("/home/me/src"),
         workspace: "default".into(),
+        exclude: Vec::new(),
     })
     .unwrap();
     s.add_project(&ProjectOverlay {
         name: "src".into(),
         root: PathBuf::from("/elsewhere"),
         workspace: "work".into(),
+        exclude: Vec::new(),
     })
     .unwrap();
 
@@ -246,12 +248,26 @@ fn re_adding_the_same_directory_updates_it_in_place() {
             name: "src".into(),
             root: PathBuf::from("/home/me/src"),
             workspace: workspace.into(),
+            exclude: Vec::new(),
         })
         .unwrap();
     }
     let out = s.project_overlays().unwrap();
     assert_eq!(out.len(), 1, "one directory is one project");
     assert_eq!(out[0].workspace, "work");
+}
+
+#[test]
+fn an_added_project_keeps_the_folders_it_skips() {
+    let s = store();
+    s.add_project(&ProjectOverlay {
+        name: "work".into(),
+        root: PathBuf::from("/work"),
+        workspace: "default".into(),
+        exclude: vec!["vendor".into(), "infra/old".into()],
+    })
+    .unwrap();
+    assert_eq!(s.project_overlays().unwrap()[0].exclude, ["vendor", "infra/old"]);
 }
 
 #[test]
@@ -275,6 +291,7 @@ fn removing_an_added_project_leaves_nothing_behind() {
         name: "added".into(),
         root: PathBuf::from("/added"),
         workspace: "default".into(),
+        exclude: Vec::new(),
     })
     .unwrap();
     s.add_repo("added", Path::new("/added/repo")).unwrap();
@@ -298,6 +315,7 @@ fn adding_a_project_back_unhides_it() {
         name: "src".into(),
         root: PathBuf::from("/src"),
         workspace: "default".into(),
+        exclude: Vec::new(),
     })
     .unwrap();
     assert!(s.hidden_projects().unwrap().is_empty());
@@ -359,6 +377,7 @@ fn overlays_carry_each_added_projects_own_repositories() {
         name: "added".into(),
         root: PathBuf::from("/added"),
         workspace: "default".into(),
+        exclude: Vec::new(),
     })
     .unwrap();
     s.add_repo("added", Path::new("/added/extra")).unwrap();

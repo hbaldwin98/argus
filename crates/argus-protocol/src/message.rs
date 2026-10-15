@@ -327,6 +327,10 @@ pub enum ClientMsg {
     /// Add a new project rooted at an arbitrary directory — not limited to
     /// whatever's already in `projects.toml` or under the daemon's cwd.
     /// Persisted to config so it survives a daemon restart.
+    ///
+    /// `name`, `skip` and `init` are sent only to a daemon that listed
+    /// [`crate::hello::ADD_PROJECT`]: an older one reads past them and
+    /// would add something other than what was asked.
     AddProject {
         path: String,
         /// Names the request, so the daemon can answer with what it made
@@ -334,6 +338,29 @@ pub enum ClientMsg {
         /// what a client that predates it sends.
         #[serde(default)]
         request_id: u64,
+        /// What the panel calls it; `None` names it after the directory.
+        #[serde(default)]
+        name: Option<String>,
+        /// Folders its scan never walks into, beyond the ones every scan
+        /// skips — a project's `exclude`, in the same bare-name or
+        /// root-relative form.
+        #[serde(default)]
+        skip: Vec<String>,
+        /// Make `path` a repository first: created if missing, and `git
+        /// init` unless it already is one, so adding an existing repository
+        /// this way never initialises it again.
+        #[serde(default)]
+        init: bool,
+    },
+    /// The repositories `AddProject` would find under `path` with `skip`,
+    /// for the add dialog to show before anything is added. Nothing is
+    /// written. Answered with [`ServerMsg::ProjectPreview`], by
+    /// `request_id`, since the scan walks the disk and an answer for a
+    /// folder the person has since left must not land.
+    PreviewProject {
+        request_id: u64,
+        path: String,
+        skip: Vec<String>,
     },
     /// List the subdirectories of `path`, for the directory browser
     /// behind "add project" and "add repository". An empty path means
@@ -528,6 +555,8 @@ pub enum ServerMsg {
     },
     /// The answer to `ClientMsg::ListDirectories`.
     Directories(DirListing),
+    /// The answer to `ClientMsg::PreviewProject`.
+    ProjectPreview(ProjectPreview),
     /// The answer to `ClientMsg::ListFiles`, repo-relative.
     Files {
         checkout: CheckoutId,
@@ -665,6 +694,25 @@ pub struct DirEntry {
     pub is_repo: bool,
 }
 
+/// What adding a folder as a project would find, as the daemon's own scan
+/// finds it. The scan's rules come with it, so a client says what the
+/// daemon it reached does rather than what its own build remembers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectPreview {
+    pub request_id: u64,
+    /// The folder scanned, as asked.
+    pub path: String,
+    /// Each repository found, relative to `path` with `/` separators, in
+    /// the order the panel would list them; empty for `path` itself.
+    pub repositories: Vec<String>,
+    /// How many folders below `path` the scan looks.
+    pub depth: usize,
+    /// The folders every scan skips, whatever the project says.
+    pub always_skipped: Vec<String>,
+    /// Why there is nothing to show: a folder that is not there.
+    pub error: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -674,11 +722,26 @@ mod tests {
     }
 
     /// `SpawnShell` as a client built before requests were named sent it,
-    /// and `Scrollback` as one built before lines were numbered.
+    /// `Scrollback` as one built before lines were numbered, and
+    /// `AddProject` as one built before a project could be named.
     #[derive(Serialize, Deserialize)]
     enum OlderClientMsg {
         SpawnShell { checkout: CheckoutId },
         Scrollback { pane: PaneId, offset: u32 },
+        AddProject { path: String, request_id: u64 },
+    }
+
+    #[test]
+    fn an_add_from_an_older_client_names_nothing_skips_nothing_and_inits_nothing() {
+        let older = wire(&OlderClientMsg::AddProject {
+            path: "/src".into(),
+            request_id: 3,
+        });
+        let read: ClientMsg = rmp_serde::from_slice(&older).unwrap();
+        let ClientMsg::AddProject { path, request_id, name, skip, init } = read else {
+            panic!("not an add: {read:?}");
+        };
+        assert_eq!((path.as_str(), request_id, name, skip.len(), init), ("/src", 3, None, 0, false));
     }
 
     #[test]

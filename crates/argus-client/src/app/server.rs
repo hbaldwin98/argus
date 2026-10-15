@@ -245,6 +245,8 @@ impl App {
             }
             // The terminal client asks for no sessions yet.
             ServerMsg::Sessions { .. } | ServerMsg::SessionTranscript { .. } | ServerMsg::Resumes { .. } => {}
+            // Nor a preview: its browser adds the directory it lands on.
+            ServerMsg::ProjectPreview(_) => {}
             ServerMsg::Directories(listing) => {
                 // A listing for a directory we have already navigated away
                 // from would yank the browser backwards.

@@ -9,9 +9,15 @@ impl Store {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         tx.execute(
-            "INSERT INTO project_overlay (root, name, workspace) VALUES (?1, ?2, ?3)
-             ON CONFLICT(root) DO UPDATE SET name = excluded.name, workspace = excluded.workspace",
-            rusqlite::params![path_text(&overlay.root), overlay.name, overlay.workspace],
+            "INSERT INTO project_overlay (root, name, workspace, exclude) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(root) DO UPDATE SET name = excluded.name, workspace = excluded.workspace,
+                 exclude = excluded.exclude",
+            rusqlite::params![
+                path_text(&overlay.root),
+                overlay.name,
+                overlay.workspace,
+                overlay.exclude.join("\n")
+            ],
         )?;
         // Adding a project back is the undo for having removed it.
         tx.execute(
@@ -25,12 +31,18 @@ impl Store {
     pub fn project_overlays(&self) -> Result<Vec<ProjectOverlay>> {
         let conn = self.conn();
         let mut stmt =
-            conn.prepare("SELECT name, root, workspace FROM project_overlay ORDER BY rowid")?;
+            conn.prepare("SELECT name, root, workspace, exclude FROM project_overlay ORDER BY rowid")?;
         let rows = stmt.query_map([], |r| {
             Ok(ProjectOverlay {
                 name: r.get(0)?,
                 root: PathBuf::from(r.get::<_, String>(1)?),
                 workspace: r.get(2)?,
+                exclude: r
+                    .get::<_, String>(3)?
+                    .lines()
+                    .filter(|line| !line.is_empty())
+                    .map(str::to_string)
+                    .collect(),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

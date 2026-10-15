@@ -14,6 +14,9 @@ fn a_named_request_is_answered_with_what_it_made() {
     h.send(ClientMsg::AddProject {
         path: other.path().to_string_lossy().to_string(),
         request_id: 3,
+        name: None,
+        skip: Vec::new(),
+        init: false,
     });
 
     let made = h.replies().into_iter().find_map(|reply| match reply {
@@ -37,11 +40,92 @@ fn an_unnamed_request_is_not_answered() {
     h.send(ClientMsg::AddProject {
         path: other.path().to_string_lossy().to_string(),
         request_id: 0,
+        name: None,
+        skip: Vec::new(),
+        init: false,
     });
     assert!(!h
         .replies()
         .iter()
         .any(|reply| matches!(reply, ServerMsg::Created { .. })));
+}
+
+/// What the daemon answers request `id` with, waiting past anything else
+/// it sends on the way.
+async fn answer_to(h: &mut Harness, id: u64) -> Option<argus_protocol::Created> {
+    loop {
+        let reply = tokio::time::timeout(std::time::Duration::from_secs(10), h.rx.recv())
+            .await
+            .expect("an answer should arrive");
+        if let Some(ServerMsg::Created { request_id, created }) = reply {
+            if request_id == id {
+                return created;
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_new_repository_is_made_and_added_as_a_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = tempfile::tempdir().unwrap();
+    let fresh = parent.path().join("fresh");
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::AddProject {
+        path: fresh.to_string_lossy().to_string(),
+        request_id: 5,
+        name: Some("scratch".into()),
+        skip: Vec::new(),
+        init: true,
+    });
+    let Some(argus_protocol::Created::Project(made)) = answer_to(&mut h, 5).await else {
+        panic!("the project is made");
+    };
+    assert!(fresh.join(".git").is_dir(), "git init ran");
+    let project = h.daemon.snapshot().into_iter().find(|p| p.id == made).unwrap();
+    assert_eq!((project.name.as_str(), project.repositories.len()), ("scratch", 1));
+}
+
+#[tokio::test]
+async fn a_new_repository_that_already_exists_keeps_its_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let existing = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(existing.path()).unwrap();
+    let tree = repo.find_tree(repo.index().unwrap().write_tree().unwrap()).unwrap();
+    let sig = git2::Signature::now("t", "t@example.com").unwrap();
+    let head = Some(repo.commit(Some("HEAD"), &sig, &sig, "first", &tree, &[]).unwrap());
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::AddProject {
+        path: existing.path().to_string_lossy().to_string(),
+        request_id: 6,
+        name: Some("kept".into()),
+        skip: Vec::new(),
+        init: true,
+    });
+    assert!(matches!(answer_to(&mut h, 6).await, Some(argus_protocol::Created::Project(_))));
+    let after = git2::Repository::open(existing.path()).unwrap().head().unwrap().target();
+    assert_eq!(after, head);
+}
+
+#[tokio::test]
+async fn a_preview_answers_by_its_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = tempfile::tempdir().unwrap();
+    std::fs::create_dir(folder.path().join("web")).unwrap();
+    git2::Repository::init(folder.path().join("web")).unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::PreviewProject {
+        request_id: 7,
+        path: folder.path().to_string_lossy().to_string(),
+        skip: Vec::new(),
+    });
+    let reply = tokio::time::timeout(std::time::Duration::from_secs(10), h.rx.recv())
+        .await
+        .expect("a preview should arrive");
+    let Some(ServerMsg::ProjectPreview(preview)) = reply else {
+        panic!("not a preview: {reply:?}");
+    };
+    assert_eq!((preview.request_id, preview.repositories), (7, vec!["web".to_string()]));
 }
 
 #[tokio::test]

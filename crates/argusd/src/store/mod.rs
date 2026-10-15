@@ -44,6 +44,7 @@ pub use seen_sessions::{SeenSession, Sighting};
 use schema::{
     SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16,
     SCHEMA_V17, SCHEMA_V18, SCHEMA_V19, SCHEMA_V2, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23,
+    SCHEMA_V24,
     SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
@@ -82,6 +83,9 @@ pub struct ProjectOverlay {
     pub name: String,
     pub root: PathBuf,
     pub workspace: String,
+    /// Folders its scan skips beyond the built-in ones: the project's
+    /// `exclude`, as it was added.
+    pub exclude: Vec<String>,
 }
 
 /// Everything the store has to say about what the panel should show,
@@ -113,7 +117,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 pub(crate) static NO_RESTORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 23;
+const SCHEMA_VERSION: i64 = 24;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -264,6 +268,9 @@ impl Store {
         }
         if from < 23 {
             tx.execute_batch(SCHEMA_V23)?;
+        }
+        if from < 24 {
+            tx.execute_batch(SCHEMA_V24)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;

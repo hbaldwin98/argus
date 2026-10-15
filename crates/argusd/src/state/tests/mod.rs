@@ -252,7 +252,7 @@ pub(super) fn project_and_an_outside_repository() -> (tempfile::TempDir, tempfil
     let _other = real_repo(&elsewhere);
 
     let d = persistent(ConfigFile::default());
-    d.add_project(&root.path().to_string_lossy()).unwrap();
+    d.add_project(&root.path().to_string_lossy(), None, &[]).unwrap();
     (root, outside, d)
 }
 
@@ -277,7 +277,7 @@ pub(super) fn added_project_with(names: &[&str]) -> (tempfile::TempDir, Arc<Daem
         let _repo = real_repo(&child);
     }
     let d = persistent(ConfigFile::default());
-    d.add_project(&dir.path().to_string_lossy()).unwrap();
+    d.add_project(&dir.path().to_string_lossy(), None, &[]).unwrap();
     (dir, d)
 }
 
