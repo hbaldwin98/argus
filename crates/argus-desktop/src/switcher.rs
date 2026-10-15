@@ -30,12 +30,10 @@ impl Switcher {
     }
 
     /// Asks before removing a project the tree holds.
-    pub fn ask_remove(&mut self, project: ProjectId, tree: &[ProjectInfo]) -> bool {
-        let known = tree.iter().any(|p| p.id == project);
-        if known {
+    pub fn ask_remove(&mut self, project: ProjectId, tree: &[ProjectInfo]) {
+        if tree.iter().any(|p| p.id == project) {
             self.removing = Some(project);
         }
-        known
     }
 
     /// The answer: a yes asks the daemon, which leaves the folders alone
@@ -107,8 +105,9 @@ mod tests {
             vec![pane(1, PaneKind::Shell, "zsh", PaneStatus::Idle)],
         )])])];
         let mut switcher = Switcher::default();
-        assert!(!switcher.ask_remove(ProjectId(9), &tree), "no such project");
-        assert!(switcher.ask_remove(ProjectId(1), &tree));
+        switcher.ask_remove(ProjectId(9), &tree);
+        assert!(switcher.removing(&tree).is_none(), "no such project");
+        switcher.ask_remove(ProjectId(1), &tree);
         let asked = switcher.removing(&tree).unwrap();
         assert_eq!((asked.name.as_str(), asked.repositories, asked.panes), ("src", 1, 1));
 

@@ -1,14 +1,33 @@
 //! The questions extensions put to this window: the one open over the
-//! stage, those waiting behind it, and the answer or cancellation each sends
-//! back.
+//! stage, those waiting behind it, the answer or cancellation each sends
+//! back, and what the page last heard of them.
 //!
 //! The daemon puts a dialog to one window only, and withdraws it when its
 //! extension goes; this holds what it was put and lets go of a dialog only
 //! when it is answered here or withdrawn there.
 
 use argus_protocol::{ClientMsg, ExtAnswer, ExtDialog};
+use serde::Serialize;
 
-use crate::page::ExtDialogPage;
+use crate::page::Event;
+use crate::sent::Sent;
+
+/// The question an extension puts to this window.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtDialogPage {
+    pub open: bool,
+    pub extension: String,
+    pub id: u64,
+    pub dialog: Option<argus_protocol::ExtDialog>,
+    /// It answers a command the person ran here: it takes the keys. One
+    /// raised on its own waits for a click, so a pane being typed in keeps
+    /// them.
+    pub prompted: bool,
+    /// How many more wait behind it.
+    pub waiting: usize,
+}
 
 struct Asked {
     extension: String,
@@ -22,6 +41,7 @@ struct Asked {
 pub struct ExtensionDialogs {
     /// Oldest first; the first is the one open.
     asked: Vec<Asked>,
+    sent: Sent<ExtDialogPage>,
 }
 
 impl ExtensionDialogs {
@@ -47,7 +67,18 @@ impl ExtensionDialogs {
         Some(ClientMsg::ExtensionDialogAnswer { dialog: id, answer })
     }
 
-    pub fn page(&self) -> Option<ExtDialogPage> {
+    /// What the page has not heard of the open question.
+    pub fn take(&mut self) -> Option<Event> {
+        let page = self.page();
+        self.sent.take(page).map(|page| Event::ExtensionDialog(Box::new(page)))
+    }
+
+    /// The page reloaded and holds nothing: an open question is sent again.
+    pub fn reload(&mut self) {
+        self.sent.forget();
+    }
+
+    fn page(&self) -> Option<ExtDialogPage> {
         let first = self.asked.first()?;
         Some(ExtDialogPage {
             open: true,

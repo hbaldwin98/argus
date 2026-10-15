@@ -1,7 +1,8 @@
 //! What the recent-sessions dialog holds — whose sessions it lists, the
 //! search and the harness and checkout filters over them, the session
 //! under the cursor and whether its full transcript is open in place of
-//! the list — and what it draws and offers of them.
+//! the list — what it draws and offers of them, and what the page last
+//! heard of it.
 //!
 //! Live sessions are listed first and go to their pane. An ended one
 //! resumes in a new pane by the command the footer names, unless its
@@ -14,11 +15,91 @@
 use argus_protocol::sessions::Session;
 use argus_protocol::transcript::Conversation;
 use argus_protocol::{CheckoutId, PaneId, ProjectInfo, RepositoryId};
+use serde::Serialize;
 
 use crate::keymap::Action;
-use crate::page::{Resumed, SessionPreview, SessionRowView, SessionsPage, TranscriptLine};
+use crate::page::{Event, ReaderPage, Resumed, TranscriptLine};
+use crate::sent::Sent;
 use crate::sessions::{self, Sessions};
 use crate::transcript_reader::{self, TranscriptReader};
+
+/// The recent-sessions dialog: one repository's agent sessions, live ones
+/// first, and what the one under the cursor said.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionsPage {
+    pub open: bool,
+    pub repository: String,
+    /// What the search field says; the rows are the sessions it matches.
+    pub search: String,
+    /// The harnesses and the checkouts the listing holds, for the menus,
+    /// and what each menu is set to; `None` is all.
+    pub harnesses: Vec<String>,
+    pub harness: Option<String>,
+    pub checkouts: Vec<String>,
+    pub checkout: Option<String>,
+    pub loading: bool,
+    /// Why there are no rows: none yet, none matching, or a daemon that
+    /// cannot list them.
+    pub empty: Option<String>,
+    pub rows: Vec<SessionRowView>,
+    /// `None` while the full transcript is open, which draws it instead.
+    pub preview: Option<SessionPreview>,
+    /// The full transcript, read in place of the list.
+    pub reader: Option<ReaderPage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRowView {
+    /// What a click on it sends back.
+    pub row: usize,
+    pub title: String,
+    pub harness: String,
+    /// Its checkout, or the removed worktree it ran in.
+    pub checkout: String,
+    /// Running in a pane now.
+    pub live: bool,
+    pub turns: Option<u32>,
+    /// How long since its transcript was written: `2h`, or `—`.
+    pub ago: String,
+    /// It ran in a worktree since removed: drawn dimmed.
+    pub removed: bool,
+    pub on: bool,
+}
+
+/// The session under the cursor: what it said, and what can be done with it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPreview {
+    pub title: String,
+    pub harness: String,
+    pub checkout: String,
+    pub session_id: String,
+    /// When its transcript starts, as the harness wrote it.
+    pub started: Option<String>,
+    /// What it said has been asked for and not yet read.
+    pub loading: bool,
+    /// Said in place of the transcript: none kept, or one gone missing.
+    pub notice: Option<String>,
+    /// Oldest first.
+    pub entries: Vec<TranscriptLine>,
+    /// How many older entries the daemon left out.
+    pub earlier: u32,
+    /// `go` to its pane, `resume` in a new one, or only its `transcript`.
+    #[cfg_attr(test, ts(type = "\"go\" | \"resume\" | \"transcript\""))]
+    pub offer: &'static str,
+    /// The exact command a resume runs, as the footer names it.
+    pub command: Option<String>,
+    /// Why it cannot be resumed, when it offers only its transcript.
+    pub why: Option<String>,
+    /// Its full transcript can be opened: not one its harness keeps none
+    /// of, or one gone missing.
+    pub readable: bool,
+}
 
 pub struct SessionsDialog {
     repository: RepositoryId,
@@ -348,6 +429,44 @@ impl SessionsDialog {
             (_, preview) => page.preview = preview,
         }
         page
+    }
+}
+
+/// The dialog as the window holds it, while open, and what the page last
+/// heard of it.
+#[derive(Default)]
+pub struct Recent {
+    dialog: Option<SessionsDialog>,
+    sent: Sent<SessionsPage>,
+}
+
+impl Recent {
+    pub fn open(&mut self, dialog: SessionsDialog) {
+        self.dialog = Some(dialog);
+    }
+
+    pub fn close(&mut self) {
+        self.dialog = None;
+    }
+
+    pub fn get(&self) -> Option<&SessionsDialog> {
+        self.dialog.as_ref()
+    }
+
+    pub fn get_mut(&mut self) -> Option<&mut SessionsDialog> {
+        self.dialog.as_mut()
+    }
+
+    /// What the page has not heard of the dialog. `now` is seconds since
+    /// the Unix epoch.
+    pub fn take(&mut self, sessions: &Sessions, tree: &[ProjectInfo], now: u64) -> Option<Event> {
+        let page = self.dialog.as_ref().map(|d| d.page(sessions, tree, now));
+        self.sent.take(page).map(|page| Event::Sessions(Box::new(page)))
+    }
+
+    /// The page reloaded and holds nothing: an open dialog is sent again.
+    pub fn reload(&mut self) {
+        self.sent.forget();
     }
 }
 

@@ -10,10 +10,78 @@
 //! what was typed.
 
 use argus_protocol::{ClientMsg, Feature, FeatureAction, LinkWrite, MapChange, TrackerMap};
+use serde::{Deserialize, Serialize};
 
 use crate::feature_stage::Scope;
 use crate::keymap::Action;
-use crate::page::{Link, LinkGesture, LinkPage, LinkedRow, MapPage};
+use crate::page::Link;
+
+/// What was done in the link dialog.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum LinkGesture {
+    /// What the fields say now, read as the daemon will read them.
+    Fields { url: String, role: String },
+    /// Link, with what the fields say as it is pressed.
+    Link { url: String, role: String },
+    /// A ticket already linked, by its place in the list.
+    Select { index: usize },
+    Unlink { key: String },
+    /// The tracker map's editor, on the draft when one waits.
+    EditMap,
+    MapText { text: String },
+    /// The map written as `text`; with a draft waiting, the draft approved
+    /// as it reads there.
+    SaveMap { text: String },
+    /// The draft turned down.
+    DiscardDraft,
+    CancelMap,
+    /// A key of the dialog's own.
+    Action { action: Action },
+    Close,
+}
+
+/// The link dialog: the URL being linked and what it reads as, the tickets
+/// already linked, and the repository's tracker map.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LinkPage {
+    pub open: bool,
+    pub number: i64,
+    pub title: String,
+    pub url: String,
+    pub role: String,
+    /// The tracker and key the URL reads as, without going online.
+    pub read: Option<Link>,
+    /// Why the URL is not a link yet, once something is typed.
+    pub refusal: Option<String>,
+    /// A link was sent and the board does not hold it yet.
+    pub pending: bool,
+    pub linked: Vec<LinkedRow>,
+    pub map: MapPage,
+    /// The map's editor, with what it holds.
+    pub editing_map: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedRow {
+    pub link: Link,
+    pub on: bool,
+}
+
+/// The repository's tracker map, and the draft an agent left for it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct MapPage {
+    pub body: String,
+    pub draft: Option<String>,
+    pub draft_by: Option<String>,
+}
 
 pub struct LinkDialog {
     slug: String,

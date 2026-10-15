@@ -61,6 +61,7 @@ mod shown;
 mod status;
 mod switcher;
 mod shared;
+mod tracker_dialogs;
 mod transcript_reader;
 mod window_frame;
 mod work_lens;

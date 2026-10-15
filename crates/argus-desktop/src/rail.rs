@@ -183,8 +183,6 @@ fn statuses(project: &ProjectInfo) -> impl Iterator<Item = PaneStatus> + '_ {
         .flat_map(|c| c.statuses())
 }
 
-/// How long ago, the largest unit that fits: `5m`, `2h`, `3d`, `2w`; a
-/// dash for never.
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,7 +9,8 @@
 //!
 //! Each subject keeps its own state and what the page last heard of it —
 //! the status bar (`status`), the panes on screen (`shown`), the agents
-//! offered (`agents`), the review and history (`dialogs`), the two stages
+//! offered (`agents`), the review and history (`dialogs`), the link and
+//! reconcile dialogs (`tracker_dialogs`), the two stages
 //! (`feature_stage`, `checkouts_stage`) and the note a new feature is
 //! written as (`capture_note`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
@@ -38,39 +39,39 @@ use argus_protocol::{
     RENAME_PANE,
 };
 
-use crate::add_project::AddProject;
+use crate::add_project::{AddProject, AddProjectGesture, Adding};
 use crate::agent_views::AgentViews;
 use crate::extension_dialog::ExtensionDialogs;
 use crate::extension_keys::ExtensionKeys;
 use crate::extension_views::{first_place, ExtensionViews, Here};
 use crate::agents::Agents;
-use crate::capture_note::CaptureNote;
+use crate::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts_stage::{CheckoutsStage, Opened};
-use crate::console::{Console, OnScreen};
-use crate::docks::{Dock, Docks, DocksPage, Panel, Place};
+use crate::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
+use crate::docks::{Dock, DockGesture, Docks, Panel, Place};
 use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keymap::{self, Action};
-use crate::link_dialog::{self, LinkDialog};
-use crate::reconcile_dialog::{self, ReconcileDialog};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
+use crate::link_dialog::LinkGesture;
 use crate::page::{
-    self, AddProjectGesture, Call, CaptureGesture, ConsoleGesture, ConsolePlace, DockGesture, Event, FeatureEdit, PageMouse,
-    ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
+    self, Call, Event, FeatureEdit, PageMouse, ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
 };
 use crate::palette;
 use crate::preferences::Chosen;
+use crate::reconcile_dialog::ReconcileGesture;
 use crate::rail::{self, Choices};
 use crate::dragged_width::{self, DraggedWidth};
 use crate::sent::Sent;
 use crate::sessions::Sessions;
-use crate::sessions_dialog::{SessionsDialog, Then as SessionsThen};
+use crate::sessions_dialog::{Recent, SessionsDialog, Then as SessionsThen};
 use crate::settings::{Backdrop, Settings, Theme};
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
 use crate::switcher::Switcher;
+use crate::tracker_dialogs::{self, TrackerDialogs};
 
 /// What to do with a thing the daemon made for this window, once the tree
 /// holds it.
@@ -110,15 +111,12 @@ pub struct Session {
     folded: HashSet<CheckoutId>,
     stage: Stage,
     features: FeatureStage,
-    /// The note a new feature is being written as, while open.
-    capture: Option<CaptureNote>,
-    capture_sent: Sent<page::CapturePage>,
+    /// The note a new feature is being written as.
+    capture: Capturing,
     checkouts: CheckoutsStage,
     shown: ShownPane,
     console: Console,
-    console_sent: Sent<page::ConsolePage>,
     docks: Docks,
-    docks_sent: Sent<DocksPage>,
     awaited: Awaited<Made>,
     agents: Agents,
     views: AgentViews,
@@ -131,31 +129,23 @@ pub struct Session {
     extension_keys: ExtensionKeys,
     extensions_sent: Sent<page::ExtensionsPage>,
     extension_dialogs: ExtensionDialogs,
-    extension_dialog_sent: Sent<page::ExtDialogPage>,
     rail_width: DraggedWidth,
     outline_width: DraggedWidth,
     brief_height: DraggedWidth,
     dialogs: Dialogs,
     sessions: Sessions,
-    /// The recent-sessions dialog, while open.
-    recent: Option<SessionsDialog>,
-    recent_sent: Sent<page::SessionsPage>,
+    /// The recent-sessions dialog.
+    recent: Recent,
     /// Text a gesture asked to put on the clipboard, which the window
     /// writes once the change is made.
     copied: Option<String>,
     /// A ticket a gesture asked to open in the browser, which the window
     /// opens once the change is made.
     opening: Option<String>,
-    /// The link dialog on the open feature, while open.
-    link: Option<LinkDialog>,
-    link_sent: Sent<page::LinkPage>,
-    /// The reconcile dialog on the open feature, while open.
-    reconciling: Option<ReconcileDialog>,
-    reconcile_sent: Sent<page::ReconcilePage>,
+    tracker_dialogs: TrackerDialogs,
     switcher: Switcher,
-    /// The add-a-project dialog, while open.
-    adding: Option<AddProject>,
-    adding_sent: Sent<page::AddProjectPage>,
+    /// The add-a-project dialog.
+    adding: Adding,
     /// The command palette is open, so what it can go to is sent.
     palette: bool,
     palette_sent: Sent<page::Palette>,
@@ -165,9 +155,9 @@ pub struct Session {
     alerts: Vec<Alert>,
     /// The view last reported, so an unchanged one is not sent again.
     reported: Option<View>,
-    /// The rail draws from nearly everything here, so whatever changes it
-    /// says so, and it is built once when the page is next told.
-    rail_changed: bool,
+    /// The rail draws from nearly everything here, so it is built each
+    /// time the page is told and sent only when it differs.
+    rail_sent: Sent<page::Rail>,
     passing: Vec<Event>,
     out: Vec<ClientMsg>,
 }
@@ -194,14 +184,11 @@ impl Session {
                 stage.set_opens_as(settings.preferences.feature_layout);
                 stage
             },
-            capture: None,
-            capture_sent: Sent::default(),
+            capture: Capturing::default(),
             checkouts: CheckoutsStage::default(),
             shown: ShownPane::default(),
             console: Console::default(),
-            console_sent: Sent::default(),
             docks: Docks::new(settings.docks.unwrap_or_default()),
-            docks_sent: Sent::default(),
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
@@ -210,30 +197,24 @@ impl Session {
             extension_keys: ExtensionKeys::default(),
             extensions_sent: Sent::default(),
             extension_dialogs: ExtensionDialogs::default(),
-            extension_dialog_sent: Sent::default(),
             rail_width: DraggedWidth::new(dragged_width::RAIL, settings.rail_width),
             outline_width: DraggedWidth::new(dragged_width::OUTLINE, settings.outline_width),
             brief_height: DraggedWidth::new(dragged_width::BRIEF, settings.brief_height),
             dialogs: Dialogs::new(settings.review),
             sessions: Sessions::default(),
-            recent: None,
-            recent_sent: Sent::default(),
+            recent: Recent::default(),
             copied: None,
             opening: None,
-            link: None,
-            link_sent: Sent::default(),
-            reconciling: None,
-            reconcile_sent: Sent::default(),
+            tracker_dialogs: TrackerDialogs::default(),
             switcher: Switcher::default(),
-            adding: None,
-            adding_sent: Sent::default(),
+            adding: Adding::default(),
             palette: false,
             palette_sent: Sent::default(),
             focused: true,
             choices: Chosen::new(settings.preferences),
             alerts: Vec::new(),
             reported: None,
-            rail_changed: true,
+            rail_sent: Sent::default(),
             passing: Vec::new(),
             out: Vec::new(),
         }
@@ -280,13 +261,13 @@ impl Session {
             self.apply(msg);
         }
         // An open sessions dialog asks this daemon again, or says it cannot.
-        if let Some(repository) = self.recent.as_ref().map(SessionsDialog::repository) {
+        if let Some(repository) = self.recent.get().map(SessionsDialog::repository) {
             let asked = self.ask_sessions(repository);
-            if let Some(dialog) = &mut self.recent {
+            if let Some(dialog) = self.recent.get_mut() {
                 dialog.reasked(asked);
             }
         }
-        if let Some(dialog) = &mut self.adding {
+        if let Some(dialog) = self.adding.get_mut() {
             dialog.reconnected(self.awaited.name(), &mut self.out);
         }
         self.shown.reconnected(&mut self.out);
@@ -321,29 +302,26 @@ impl Session {
                 self.tree.as_mut_slice().apply_telemetry(pane, telemetry);
             }
             ServerMsg::Created { request_id, created } => {
-                if let (Some(dialog), None) = (&mut self.adding, created) {
+                if let (Some(dialog), None) = (self.adding.get_mut(), created) {
                     dialog.refused(request_id);
                 }
                 self.awaited.answer(request_id, created);
                 self.settle_made();
             }
-            ServerMsg::Workspaces(workspaces) => {
-                self.switcher.receive_workspaces(workspaces);
-                self.rail_changed = true;
-            }
+            ServerMsg::Workspaces(workspaces) => self.switcher.receive_workspaces(workspaces),
             ServerMsg::Directories(listing) => {
-                if let Some(dialog) = &mut self.adding {
+                if let Some(dialog) = self.adding.get_mut() {
                     dialog.listed(listing, || self.awaited.name(), &mut self.out);
                 }
             }
             ServerMsg::ProjectPreview(preview) => {
-                if let Some(dialog) = &mut self.adding {
+                if let Some(dialog) = self.adding.get_mut() {
                     dialog.previewed(preview);
                 }
             }
             // A refused add's reason is said in its dialog, which is over
             // the notices.
-            ServerMsg::Error { message } if self.adding.as_mut().is_some_and(|d| d.take_reason(&message)) => {}
+            ServerMsg::Error { message } if self.adding.get_mut().is_some_and(|d| d.take_reason(&message)) => {}
             ServerMsg::BranchNotMerged { checkout, branch, commits } => {
                 self.checkouts.refused(checkout, branch, &commits, argus_protocol::ago::now());
             }
@@ -353,12 +331,10 @@ impl Session {
             // The note stays open to be fixed, and Create can be pressed
             // again; the reason is said like any other.
             ServerMsg::Error { message } => {
-                if let Some(note) = &mut self.capture {
+                if let Some(note) = self.capture.get_mut() {
                     note.refused();
                 }
-                if let Some(dialog) = &mut self.link {
-                    dialog.refused();
-                }
+                self.tracker_dialogs.refused();
                 self.passing.push(Event::Notice { text: message });
             }
             ServerMsg::Hello(hello) => self.status.greeted(hello),
@@ -368,12 +344,11 @@ impl Session {
             ServerMsg::Decisions(board) => {
                 self.features.receive_board(*board, &self.tree, &mut self.out);
                 self.capture_landed();
-                self.settle_tracker_dialogs();
+                if let Some(board) = self.features.board() {
+                    self.tracker_dialogs.settle(board);
+                }
             }
-            ServerMsg::Templates(names) => {
-                self.agents.receive(names);
-                self.rail_changed = true;
-            }
+            ServerMsg::Templates(names) => self.agents.receive(names),
             ServerMsg::Tasks(list) => self.features.receive_tasks(*list),
             ServerMsg::ViewShown(view) => {
                 // Whatever the views' dock shows is not taken from under
@@ -381,7 +356,6 @@ impl Session {
                 if self.views.shown(*view, self.shown.pane(), self.docks.dock_out(&Panel::Views)) {
                     self.docks.show(&Panel::Views);
                 }
-                self.rail_changed = true;
             }
             ServerMsg::ExtensionViews(views) => self.extension_views.receive(views),
             ServerMsg::ExtensionCommands(commands) => self.extension_keys.receive(commands),
@@ -392,10 +366,7 @@ impl Session {
                 self.extension_dialogs.asked(extension, id, dialog, prompted);
             }
             ServerMsg::ExtensionDialogWithdrawn { id } => self.extension_dialogs.withdrawn(id),
-            ServerMsg::ViewClosed { pane, id } => {
-                self.views.closed(pane, &id);
-                self.rail_changed = true;
-            }
+            ServerMsg::ViewClosed { pane, id } => self.views.closed(pane, &id),
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
@@ -417,7 +388,6 @@ impl Session {
         self.alerts.extend(notifications::alerts(&changes, &tree, self.choices.get(), &looking));
         self.tree = tree;
         self.loaded = true;
-        self.rail_changed = true;
         self.features.tree_changed();
         if !self.tree.iter().any(|p| Some(p.id) == self.project) {
             self.project = self.tree.first().map(|p| p.id);
@@ -448,7 +418,6 @@ impl Session {
             if self.console.chosen().is_some() {
                 self.console_on_screen(self.shown.pane().filter(|_| !typing));
             }
-            self.rail_changed = true;
         }
         self.settle_made();
     }
@@ -471,7 +440,7 @@ impl Session {
             match (created, then) {
                 (Created::Pane(pane), Made::Show | Made::ShowOverStages) => self.show_made(pane, over_stages),
                 (Created::Pane(pane), Made::Resumed(from)) => {
-                    self.recent = None;
+                    self.recent.close();
                     self.sessions.resumed_in(pane, from);
                     self.show_made(pane, true);
                 }
@@ -479,7 +448,7 @@ impl Session {
                 // lands on.
                 (Created::Checkout(checkout), Made::SelectRow) => self.checkouts.select(format!("c{}", checkout.0)),
                 (Created::Project(project), Made::SelectProject) => {
-                    self.adding = None;
+                    self.adding.close();
                     self.choose_project(project);
                 }
                 (Created::Pane(pane), Made::ShowConsole) => self.show_console(pane),
@@ -496,8 +465,8 @@ impl Session {
         // Read off the tree, not the request: a refused or mistaken spawn
         // never becomes the one offered first.
         let template = info.template.clone().filter(|_| info.kind == argus_protocol::PaneKind::Agent);
-        if template.is_some_and(|template| self.agents.started(&template)) {
-            self.rail_changed = true;
+        if let Some(template) = template {
+            self.agents.started(&template);
         }
         if over_stages {
             self.leave_stages();
@@ -624,17 +593,14 @@ impl Session {
             }
             Call::RailWidth { width } => {
                 self.rail_width.set(width);
-                self.rail_changed = true;
                 self.finish()
             }
             Call::OutlineWidth { width } => {
                 self.outline_width.set(width);
-                self.rail_changed = true;
                 self.finish()
             }
             Call::BriefHeight { height } => {
                 self.brief_height.set(height);
-                self.rail_changed = true;
                 self.finish()
             }
             Call::RefreshView { pane, id } => {
@@ -696,90 +662,44 @@ impl Session {
 
     // ---- The tracker dialogs --------------------------------------------------
 
-    /// The feature open on the Feature stage, as the board has it.
-    fn opened_feature(&self, slug: &str) -> Option<&argus_protocol::Feature> {
-        self.features.board()?.features.iter().find(|f| f.slug == slug)
-    }
-
-    /// Opens the link dialog on the open feature, with `map` on the
-    /// repository's tracker map.
     fn open_link(&mut self, map: bool) {
-        let Some(slug) = self.features.opened().map(str::to_owned) else {
-            return self.passing.push(Event::Notice { text: "open a feature to link it to a ticket".into() });
-        };
-        let tracker_map = self.features.board().map(|b| b.tracker_map.clone()).unwrap_or_default();
-        self.reconciling = None;
-        self.link = Some(LinkDialog::new(&slug, map.then_some(&tracker_map)));
+        if let Err(text) = self.tracker_dialogs.open_link(self.features.opened(), self.features.board(), map) {
+            self.passing.push(Event::Notice { text: text.into() });
+        }
     }
 
     fn open_reconcile(&mut self) {
-        let Some(slug) = self.features.opened().map(str::to_owned) else {
-            return self.passing.push(Event::Notice { text: "open a feature to reconcile it with its tickets".into() });
-        };
-        let mut dialog = ReconcileDialog::new(&slug);
-        if let Some(feature) = self.opened_feature(&slug) {
-            dialog.settle(feature);
+        if let Err(text) = self.tracker_dialogs.open_reconcile(self.features.opened(), self.features.board()) {
+            self.passing.push(Event::Notice { text: text.into() });
         }
-        self.link = None;
-        self.reconciling = Some(dialog);
     }
 
-    fn link_gesture(&mut self, gesture: page::LinkGesture) -> Vec<ClientMsg> {
-        let scope = self.scope();
-        let (Some(dialog), Some(board), Some(scope)) = (self.link.as_mut(), self.features.board(), scope) else {
-            return self.finish();
-        };
-        let Some(feature) = board.features.iter().find(|f| f.slug == dialog.slug()) else {
-            self.link = None;
-            return self.finish();
-        };
-        match dialog.gesture(gesture, feature, &board.tracker_map, &scope, &mut self.out) {
-            link_dialog::Then::Nothing => {}
-            link_dialog::Then::Close => self.link = None,
-            link_dialog::Then::Open(url) => self.opening = Some(url),
-            link_dialog::Then::Say(text) => self.passing.push(Event::Notice { text }),
+    fn link_gesture(&mut self, gesture: LinkGesture) -> Vec<ClientMsg> {
+        if let Some(scope) = self.scope() {
+            let then = self.tracker_dialogs.link_gesture(gesture, self.features.board(), &scope, &mut self.out);
+            self.tracker_then(then);
         }
         self.finish()
     }
 
-    fn reconcile_gesture(&mut self, gesture: page::ReconcileGesture) -> Vec<ClientMsg> {
-        let scope = self.scope();
-        let (Some(dialog), Some(board), Some(scope)) = (self.reconciling.as_mut(), self.features.board(), scope) else {
-            return self.finish();
-        };
-        let Some(feature) = board.features.iter().find(|f| f.slug == dialog.slug()) else {
-            self.reconciling = None;
-            return self.finish();
-        };
-        match dialog.gesture(gesture, feature, &self.tree, &scope, &mut self.out) {
-            reconcile_dialog::Then::Nothing => {}
-            reconcile_dialog::Then::Close => self.reconciling = None,
-            reconcile_dialog::Then::GoTo(pane) => {
-                self.reconciling = None;
+    fn reconcile_gesture(&mut self, gesture: ReconcileGesture) -> Vec<ClientMsg> {
+        if let Some(scope) = self.scope() {
+            let board = self.features.board();
+            let then = self.tracker_dialogs.reconcile_gesture(gesture, board, &self.tree, &scope, &mut self.out);
+            self.tracker_then(then);
+        }
+        self.finish()
+    }
+
+    fn tracker_then(&mut self, then: tracker_dialogs::Then) {
+        match then {
+            tracker_dialogs::Then::Nothing => {}
+            tracker_dialogs::Then::Open(url) => self.opening = Some(url),
+            tracker_dialogs::Then::GoTo(pane) => {
                 let sent = self.go_to_pane(pane);
                 self.out.extend(sent);
             }
-            reconcile_dialog::Then::Say(text) => self.passing.push(Event::Notice { text }),
-        }
-        self.finish()
-    }
-
-    /// A pushed board: each tracker dialog follows its feature, and closes
-    /// with it.
-    fn settle_tracker_dialogs(&mut self) {
-        let Some(board) = self.features.board() else {
-            return;
-        };
-        let feature = |slug: &str| board.features.iter().find(|f| f.slug == slug);
-        match self.link.as_ref().map(|d| feature(d.slug())) {
-            Some(Some(f)) => self.link.as_mut().unwrap().settle(f),
-            Some(None) => self.link = None,
-            None => {}
-        }
-        match self.reconciling.as_ref().map(|d| feature(d.slug())) {
-            Some(Some(f)) => self.reconciling.as_mut().unwrap().settle(f),
-            Some(None) => self.reconciling = None,
-            None => {}
+            tracker_dialogs::Then::Say(text) => self.passing.push(Event::Notice { text }),
         }
     }
 
@@ -818,7 +738,6 @@ impl Session {
             if self.stage == Stage::Console {
                 self.go(Stage::Workspace);
             }
-            self.rail_changed = true;
         }
     }
 
@@ -826,7 +745,6 @@ impl Session {
     /// console's own panes are no project's, and stay.
     fn hide(&mut self) {
         self.shown.close(Side::Workspace, &mut self.out);
-        self.rail_changed = true;
     }
 
     fn resize(&mut self, side: Side, rows: u16, cols: u16) -> Vec<ClientMsg> {
@@ -873,7 +791,6 @@ impl Session {
             Action::Fill if self.console_typing() => self.toggle_console_fullscreen(),
             Action::Fill => {
                 self.shown.toggle_fill();
-                self.rail_changed = true;
             }
             Action::Close => {
                 if let Some(pane) = self.shown.pane() {
@@ -1121,9 +1038,7 @@ impl Session {
     }
 
     fn remove_project(&mut self, project: ProjectId) -> Vec<ClientMsg> {
-        if self.switcher.ask_remove(project, &self.tree) {
-            self.rail_changed = true;
-        }
+        self.switcher.ask_remove(project, &self.tree);
         self.finish()
     }
 
@@ -1131,7 +1046,6 @@ impl Session {
     /// does, and a refusal is said as a notice.
     fn answer_remove_project(&mut self, yes: bool) -> Vec<ClientMsg> {
         self.out.extend(self.switcher.answer(yes));
-        self.rail_changed = true;
         self.finish()
     }
 
@@ -1139,14 +1053,14 @@ impl Session {
         if !self.status.daemon_can(ADD_PROJECT) {
             return self.note("argusd is too old to add a project from here: run `argus server restart`");
         }
-        if self.adding.is_none() {
-            self.adding = Some(AddProject::new(self.awaited.name(), &mut self.out));
+        if self.adding.get().is_none() {
+            self.adding.open(AddProject::new(self.awaited.name(), &mut self.out));
         }
         self.finish()
     }
 
     fn add_project(&mut self, gesture: AddProjectGesture) -> Vec<ClientMsg> {
-        let Some(dialog) = &mut self.adding else {
+        let Some(dialog) = self.adding.get_mut() else {
             return self.finish();
         };
         match gesture {
@@ -1165,7 +1079,7 @@ impl Session {
                     Err(()) => self.awaited.answer(request_id, None),
                 }
             }
-            AddProjectGesture::Close => self.adding = None,
+            AddProjectGesture::Close => self.adding.close(),
         }
         self.finish()
     }
@@ -1174,7 +1088,6 @@ impl Session {
         if !self.toggled.remove(&repository) {
             self.toggled.insert(repository);
         }
-        self.rail_changed = true;
         self.finish()
     }
 
@@ -1182,7 +1095,6 @@ impl Session {
         if !self.folded.remove(&checkout) {
             self.folded.insert(checkout);
         }
-        self.rail_changed = true;
         self.finish()
     }
 
@@ -1202,7 +1114,6 @@ impl Session {
             self.toggle_repository(repository);
         }
         self.repository = Some(repository);
-        self.rail_changed = true;
         self.finish()
     }
 
@@ -1210,10 +1121,7 @@ impl Session {
 
     /// Puts `stage` up, and whichever was up away.
     fn go(&mut self, stage: Stage) {
-        if self.stage != stage {
-            self.stage = stage;
-            self.rail_changed = true;
-        }
+        self.stage = stage;
     }
 
     /// Leaves whichever stage is open for the Workspace.
@@ -1511,15 +1419,6 @@ impl Session {
         present
     }
 
-    /// A panel as its dock's tab names it.
-    fn panel_title(&self, panel: &Panel) -> String {
-        match panel {
-            Panel::Console => "Console".into(),
-            Panel::Views => "Views".into(),
-            Panel::Extension(_) => self.extension_views.get(panel, &self.here()).map(|v| v.title.clone()).unwrap_or_default(),
-        }
-    }
-
     /// Where the console is with the stage up now.
     fn console_place(&self) -> ConsolePlace {
         self.console.place(self.stage, self.docks.shows(&Panel::Console))
@@ -1563,7 +1462,6 @@ impl Session {
             }
             self.console_on_screen(Some(pane));
         }
-        self.rail_changed = true;
     }
 
     /// Whatever the console has chosen goes on screen: its tab on the
@@ -1585,7 +1483,6 @@ impl Session {
         if !keys.is_some_and(|pane| self.shown.focus(pane)) {
             self.shown.focus(first);
         }
-        self.rail_changed = true;
     }
 
     /// Splits the console: its second side shows the first tab on neither
@@ -1637,7 +1534,6 @@ impl Session {
             let keys = if self.console_typing() { keep } else { self.shown.pane().unwrap_or(keep) };
             self.console_on_screen(Some(keys));
         }
-        self.rail_changed = true;
     }
 
     /// The next pane on screen takes the keys, in the order they are
@@ -1652,7 +1548,6 @@ impl Session {
         let next = at.map_or(0, |at| (at + 1) % visible.len());
         if let Some(&pane) = visible.get(next) {
             self.shown.focus(pane);
-            self.rail_changed = true;
         }
     }
 
@@ -1673,7 +1568,6 @@ impl Session {
         if let Some(pane) = self.shown.on(Side::Workspace) {
             self.shown.focus(pane);
         }
-        self.rail_changed = true;
     }
 
     /// The console comes on screen with the keys: its chosen tabs, or a
@@ -1727,7 +1621,6 @@ impl Session {
         if self.stage == Stage::Console {
             self.go(Stage::Workspace);
         }
-        self.rail_changed = true;
     }
 
     fn open_console_tab(&mut self) {
@@ -1745,7 +1638,6 @@ impl Session {
             self.console.set_fullscreen(true);
             self.console_takes();
         }
-        self.rail_changed = true;
     }
 
     /// A hidden console lets its panes go and gives the keys back,
@@ -1810,20 +1702,20 @@ impl Session {
         match gesture {
             CaptureGesture::Open => self.open_capture(),
             CaptureGesture::Note { note } => {
-                if let Some(capture) = &mut self.capture {
+                if let Some(capture) = self.capture.get_mut() {
                     capture.write(note);
                 }
             }
             CaptureGesture::Create { note } => {
                 let scope = self.scope();
-                let (Some(capture), Some(scope)) = (self.capture.as_mut(), scope) else {
+                let (Some(capture), Some(scope)) = (self.capture.get_mut(), scope) else {
                     return self.note("no repository to write the feature in");
                 };
                 if let Err(why) = capture.create(note, &scope, self.features.board(), &mut self.out) {
                     self.passing.push(Event::Notice { text: why });
                 }
             }
-            CaptureGesture::Discard => self.capture = None,
+            CaptureGesture::Discard => self.capture.close(),
         }
         self.finish()
     }
@@ -1834,15 +1726,14 @@ impl Session {
             return;
         }
         self.go(Stage::Feature);
-        self.capture.get_or_insert_with(CaptureNote::new);
+        self.capture.open();
     }
 
     /// The note became a feature on the board: it closes, and the feature
     /// opens.
     fn capture_landed(&mut self) {
-        let landed = self.capture.as_ref().zip(self.features.board()).and_then(|(note, board)| note.landed(board));
+        let landed = self.features.board().and_then(|board| self.capture.landed(board));
         if let Some(slug) = landed {
-            self.capture = None;
             self.features.open(Some(&slug), &self.tree, &mut self.out);
         }
     }
@@ -1906,10 +1797,7 @@ impl Session {
     }
 
     fn open_on_row(&mut self, repository: RepositoryId, checkout: CheckoutId) {
-        if self.repository != Some(repository) {
-            self.repository = Some(repository);
-            self.rail_changed = true;
-        }
+        self.repository = Some(repository);
         self.go(Stage::Checkouts);
         self.checkouts.select(format!("c{}", checkout.0));
     }
@@ -2081,7 +1969,7 @@ impl Session {
             return self.finish();
         };
         let asked = self.ask_sessions(repository);
-        self.recent = Some(SessionsDialog::new(repository, name, !asked));
+        self.recent.open(SessionsDialog::new(repository, name, !asked));
         self.finish()
     }
 
@@ -2098,7 +1986,7 @@ impl Session {
 
     /// A key or click of the sessions dialog; `row` is a clicked row.
     fn sessions_action(&mut self, action: Action, row: Option<usize>) -> Vec<ClientMsg> {
-        let Some(dialog) = &mut self.recent else {
+        let Some(dialog) = self.recent.get_mut() else {
             return self.finish();
         };
         let (sessions, tree) = (&self.sessions, self.tree.as_slice());
@@ -2131,7 +2019,7 @@ impl Session {
             (Action::Choose, _) => dialog.choose(sessions, tree),
             (Action::Resume, _) => dialog.resume(sessions, tree),
             (Action::CloseLayer, _) => {
-                self.recent = None;
+                self.recent.close();
                 SessionsThen::Nothing
             }
             _ => SessionsThen::Nothing,
@@ -2143,7 +2031,7 @@ impl Session {
             // Only a pane the tree still holds: the listing may be older
             // than the pane's end.
             SessionsThen::GoTo(pane) if self.project_of(pane).is_some() => {
-                self.recent = None;
+                self.recent.close();
                 self.leave_stages();
                 self.show(pane);
             }
@@ -2160,14 +2048,14 @@ impl Session {
 
     /// What the sessions dialog's search field says now.
     fn search_sessions(&mut self, search: String) -> Vec<ClientMsg> {
-        if let Some(dialog) = &mut self.recent {
+        if let Some(dialog) = self.recent.get_mut() {
             dialog.set_search(search);
         }
         self.finish()
     }
 
     fn find_in_transcript(&mut self, find: String) -> Vec<ClientMsg> {
-        if let Some(dialog) = &mut self.recent {
+        if let Some(dialog) = self.recent.get_mut() {
             dialog.find(find, &self.sessions);
         }
         self.finish()
@@ -2180,7 +2068,7 @@ impl Session {
     }
 
     fn filter_sessions(&mut self, harness: Option<String>, checkout: Option<String>) -> Vec<ClientMsg> {
-        if let Some(dialog) = &mut self.recent {
+        if let Some(dialog) = self.recent.get_mut() {
             dialog.set_filters(harness, checkout);
         }
         self.finish()
@@ -2442,7 +2330,7 @@ impl Session {
         self.settle_extension();
         // The session under the dialog's cursor is read once it is there,
         // however the cursor got there: a key, a filter, or the listing.
-        if let Some(wanted) = self.recent.as_ref().and_then(|d| d.wants_read(&self.sessions, &self.tree)).cloned() {
+        if let Some(wanted) = self.recent.get().and_then(|d| d.wants_read(&self.sessions, &self.tree)).cloned() {
             let request_id = self.awaited.name();
             self.out.extend(self.sessions.read(&self.status, &wanted, request_id));
         }
@@ -2487,64 +2375,41 @@ impl Session {
         // the rail says which pane the Workspace shows.
         let present = self.present();
         self.docks.set_present(present);
-        let docks = self.docks.page(|panel| self.panel_title(panel));
-        if let Some(page) = self.docks_sent.take(Some(docks)) {
-            events.push(Event::Docks(Box::new(page)));
-        }
-        let console = self.console.page(self.console_place(), self.console_sides(), self.status.daemon_can(CONSOLES));
-        if let Some(page) = self.console_sent.take(Some(console)) {
-            events.push(Event::Console(Box::new(page)));
-        }
-        if std::mem::take(&mut self.rail_changed) {
-            events.push(Event::Rail(Box::new(self.rail(now))));
+        // Inline, not a method: `take` borrows the docks mutably while the
+        // titles read the extension views.
+        let (views, here) = (&self.extension_views, self.here());
+        events.extend(self.docks.take(|panel| match panel {
+            Panel::Console => "Console".into(),
+            Panel::Views => "Views".into(),
+            Panel::Extension(_) => views.get(panel, &here).map(|v| v.title.clone()).unwrap_or_default(),
+        }));
+        events.extend(self.console.take(self.console_place(), self.console_sides(), self.status.daemon_can(CONSOLES)));
+        if let Some(rail) = self.rail_sent.take(Some(self.rail(now))) {
+            events.push(Event::Rail(Box::new(rail)));
         }
         let scope = self.scope();
         if let Some(features) = self.features.take(scope.as_ref(), &self.tree, now) {
             events.push(Event::Features(Box::new(features)));
         }
         events.extend(self.dialogs.take(&self.tree, now));
-        let recent = self.recent.as_ref().map(|d| d.page(&self.sessions, &self.tree, now));
-        if let Some(page) = self.recent_sent.take(recent) {
-            events.push(Event::Sessions(Box::new(page)));
-        }
-        let board = self.features.board();
-        let feature = |slug: &str| board.and_then(|b| b.features.iter().find(|f| f.slug == slug));
-        let link = self.link.as_ref().and_then(|d| Some(d.page(feature(d.slug())?, &board?.tracker_map)));
-        if let Some(page) = self.link_sent.take(link) {
-            events.push(Event::Link(Box::new(page)));
-        }
-        let reconcile = self.reconciling.as_ref().zip(scope.as_ref()).and_then(|(d, scope)| {
-            Some(d.page(feature(d.slug())?, &self.tree, scope.repository, now))
-        });
-        if let Some(page) = self.reconcile_sent.take(reconcile) {
-            events.push(Event::Reconcile(Box::new(page)));
-        }
+        events.extend(self.recent.take(&self.sessions, &self.tree, now));
+        events.extend(self.tracker_dialogs.take(self.features.board(), &self.tree, scope.as_ref(), now));
         let repository = scope.as_ref().map_or("", |scope| scope.repository_name.as_str());
-        let capture = self.capture.as_ref().map(|note| note.page(repository));
-        if let Some(page) = self.capture_sent.take(capture) {
-            events.push(Event::Capture(Box::new(page)));
-        }
-        let adding = self.adding.as_ref().map(AddProject::page);
-        if let Some(page) = self.adding_sent.take(adding) {
-            events.push(Event::AddProject(Box::new(page)));
-        }
+        events.extend(self.capture.take(repository));
+        events.extend(self.adding.take());
         let listing = self.palette.then(|| palette::build(self.current_project(), self.features.board(), &self.tree));
         if let Some(listing) = self.palette_sent.take(listing) {
             events.push(Event::Palette(Box::new(listing)));
         }
         if self.stage == Stage::Checkouts {
             let repo = self.chosen_repository().cloned();
-            if let Some(table) = self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now) {
-                events.push(Event::Checkouts(Box::new(table)));
-            }
+            events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
         }
         let extensions = self.extensions_page();
         if let Some(page) = self.extensions_sent.take((extensions != page::ExtensionsPage::default()).then_some(extensions)) {
             events.push(Event::Extensions(Box::new(page)));
         }
-        if let Some(page) = self.extension_dialog_sent.take(self.extension_dialogs.page()) {
-            events.push(Event::ExtensionDialog(Box::new(page)));
-        }
+        events.extend(self.extension_dialogs.take());
         let tree = &self.tree;
         if let Some(page) = self.views.take(|pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
             events.push(Event::Views(Box::new(page)));
@@ -2559,20 +2424,20 @@ impl Session {
         self.status.resend();
         self.choices.resend();
         self.dialogs.reload();
-        self.recent_sent.forget();
-        self.link_sent.forget();
-        self.reconcile_sent.forget();
-        self.adding_sent.forget();
-        self.capture_sent.forget();
-        self.console_sent.forget();
-        self.docks_sent.forget();
+        self.recent.reload();
+        self.tracker_dialogs.reload();
+        self.adding.reload();
+        self.capture.reload();
+        self.console.reload();
+        self.docks.reload();
+        self.checkouts.reload();
         self.views.forget();
         self.extensions_sent.forget();
-        self.extension_dialog_sent.forget();
+        self.extension_dialogs.reload();
         // A page that has just loaded has no palette open.
         self.palette = false;
         self.palette_sent.forget();
-        self.rail_changed = true;
+        self.rail_sent.forget();
         self.shown.refresh();
         let mut events = vec![Event::Keymap { groups: keymap::groups(), commands: keymap::commands() }];
         events.append(&mut self.events(now));
@@ -2580,10 +2445,11 @@ impl Session {
             let scope = self.scope();
             events.push(Event::Features(Box::new(self.features.everything(scope.as_ref(), &self.tree, now))));
         }
+        // The table is drawn only while its stage is up, but a page that
+        // reloaded holds none to show when it goes up.
         if !events.iter().any(|e| matches!(e, Event::Checkouts(_))) {
             let repo = self.chosen_repository().cloned();
-            let table = self.checkouts.everything(repo.as_ref(), self.features.board(), self.features.peeked(), now);
-            events.push(Event::Checkouts(Box::new(table)));
+            events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
         }
         events
     }
@@ -2646,6 +2512,7 @@ impl Session {
 mod tests {
     use super::*;
     use crate::fixtures::{checkout, pane, project, repository};
+    use crate::link_dialog::LinkPage;
     use argus_protocol::{PaneKind, PaneStatus};
 
     fn tree() -> Vec<ProjectInfo> {
@@ -2980,6 +2847,126 @@ mod tests {
         assert_eq!(s.everything(0).len(), 8, "a fresh page hears it all, the keymap first");
     }
 
+    /// Each surface forgets what it sent when the page reloads: one that
+    /// did not would leave its open dialog missing from the fresh page.
+    #[test]
+    fn a_reloaded_page_hears_each_open_dialog_again() {
+        fn on_feature(s: &mut Session) {
+            s.show_features(true);
+            s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+            s.call(Call::OpenFeature { slug: Some("trim".into()) });
+        }
+        type Case = (&'static str, Box<dyn Fn(&mut Session)>, fn(&Event) -> bool);
+        let cases: Vec<Case> = vec![
+            (
+                "capture",
+                Box::new(|s| {
+                    on_feature(s);
+                    s.call(Call::Capture { gesture: CaptureGesture::Open });
+                }),
+                |e| matches!(e, Event::Capture(p) if p.open),
+            ),
+            (
+                "link",
+                Box::new(|s| {
+                    on_feature(s);
+                    s.call(Call::OpenLink { map: false });
+                }),
+                |e| matches!(e, Event::Link(p) if p.open),
+            ),
+            (
+                "reconcile",
+                Box::new(|s| {
+                    on_feature(s);
+                    s.call(Call::OpenReconcile);
+                }),
+                |e| matches!(e, Event::Reconcile(p) if p.open),
+            ),
+            (
+                "sessions",
+                Box::new(|s| {
+                    s.call(Call::OpenSessions { repository: 10 });
+                }),
+                |e| matches!(e, Event::Sessions(p) if p.open),
+            ),
+            (
+                "add project",
+                Box::new(|s| {
+                    s.call(Call::OpenAddProject);
+                }),
+                |e| matches!(e, Event::AddProject(p) if p.open),
+            ),
+            (
+                "review",
+                Box::new(|s| {
+                    s.call(Call::OpenReview { checkout: 100 });
+                }),
+                |e| matches!(e, Event::Review(p) if p.open),
+            ),
+            (
+                "history",
+                Box::new(|s| {
+                    s.call(Call::OpenHistory { checkout: 100 });
+                }),
+                |e| matches!(e, Event::History(p) if p.open),
+            ),
+            (
+                "extension dialog",
+                Box::new(|s| {
+                    let dialog = argus_protocol::ExtDialog {
+                        title: "Restart".into(),
+                        kind: argus_protocol::ExtDialogKind::Confirm { message: "sure?".into(), yes: None },
+                        answers: None,
+                    };
+                    s.receive(ServerMsg::ExtensionDialog { extension: "docker".into(), id: 9, dialog, prompted: false });
+                }),
+                |e| matches!(e, Event::ExtensionDialog(p) if p.open),
+            ),
+        ];
+        for (name, open, drawn) in cases {
+            let mut s = session(Hello::this_build());
+            open(&mut s);
+            assert!(s.events(0).iter().any(drawn), "the {name} opens");
+            assert!(!s.events(0).iter().any(drawn), "the {name} is heard once");
+            assert!(s.everything(0).iter().any(drawn), "the {name} is drawn again on a reloaded page");
+        }
+    }
+
+    #[test]
+    fn a_reloaded_page_hears_the_console_the_docks_and_the_checkouts_table_again() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        let drawn = |events: &[Event]| {
+            let has = |f: fn(&Event) -> bool| events.iter().any(f);
+            [
+                has(|e| matches!(e, Event::Console(_))),
+                has(|e| matches!(e, Event::Docks(_))),
+                has(|e| matches!(e, Event::Checkouts(_))),
+            ]
+        };
+        assert_eq!(drawn(&s.events(0)), [true; 3]);
+        assert_eq!(drawn(&s.events(0)), [false; 3], "each is heard once");
+        assert_eq!(drawn(&s.everything(0)), [true; 3], "a reloaded page is sent all three");
+    }
+
+    #[test]
+    fn the_rail_is_sent_again_only_when_it_differs() {
+        let mut s = session(without_focus());
+        let mut next = tree();
+        next[0].repositories.push(repository(11, "dotfiles", Some(0), vec![checkout(110, "main", true, vec![])]));
+        s.receive(with_tree(next.clone()));
+        let used = |events: &[Event]| {
+            events.iter().find_map(|e| match e {
+                Event::Rail(rail) => Some(rail.project.as_ref()?.repositories.iter().find(|r| r.id == 11)?.used.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(used(&s.events(60)), Some(Some("1m".into())));
+        s.receive(with_tree(next));
+        assert_eq!(used(&s.events(90)), None, "the same tree, and the same minute, is not sent again");
+        assert_eq!(used(&s.events(7_200)), Some(Some("2h".into())), "but an age that moved on is");
+    }
+
     #[test]
     fn a_window_asks_for_views_only_of_a_daemon_that_has_them_and_draws_what_comes() {
         let mut quiet = Session::default();
@@ -3137,7 +3124,7 @@ mod tests {
         assert_eq!((rail.stage, rail.repository), (Stage::Feature, Some(10)));
     }
 
-    fn capture_page(s: &mut Session) -> Option<page::CapturePage> {
+    fn capture_page(s: &mut Session) -> Option<crate::capture_note::CapturePage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::Capture(page) => Some(*page),
             _ => None,
@@ -3193,7 +3180,7 @@ mod tests {
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { .. })));
     }
 
-    fn link_page(s: &mut Session) -> Option<page::LinkPage> {
+    fn link_page(s: &mut Session) -> Option<LinkPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::Link(page) => Some(*page),
             _ => None,
@@ -3216,7 +3203,7 @@ mod tests {
         assert_eq!((page.number, page.linked.len()), (7, 1));
 
         let url = "https://acme.atlassian.net/browse/ARG-142";
-        let gesture = page::LinkGesture::Link { url: url.into(), role: "the PM's ticket".into() };
+        let gesture = LinkGesture::Link { url: url.into(), role: "the PM's ticket".into() };
         let sent = s.call(Call::Link { gesture });
         assert!(sent.iter().any(|m| matches!(m, ClientMsg::Feature { action: argus_protocol::FeatureAction::Link { .. }, .. })));
         assert_eq!(link_page(&mut s).unwrap().linked.len(), 1, "not linked until the board says so");
@@ -3647,7 +3634,7 @@ mod tests {
         let events = s.events(0);
         assert!(events.iter().any(|e| matches!(e, Event::Notice { text } if text == refusal)));
         s.receive(with_tree(tree()));
-        assert_eq!(offered(&mut s), ["claude", "codex"], "a refused agent is not the last one started");
+        assert_eq!(s.rail(0).templates, ["claude", "codex"], "a refused agent is not the last one started");
         assert!(s.take_settings().is_none());
     }
 
@@ -3693,7 +3680,7 @@ mod tests {
             Event::Checkouts(table) => table.confirm,
             _ => None,
         });
-        assert_eq!(asked, Some(crate::page::Confirm::Force { branch: "spike".into(), commits: Vec::new() }));
+        assert_eq!(asked, Some(crate::checkouts_stage::Confirm::Force { branch: "spike".into(), commits: Vec::new() }));
         let sent = s.answer_checkouts(true);
         assert!(matches!(
             sent.as_slice(),
@@ -3716,7 +3703,7 @@ mod tests {
             Event::Checkouts(table) => table.confirm,
             _ => None,
         });
-        assert!(matches!(asked, Some(crate::page::Confirm::Remove { name, .. }) if name == "spike"));
+        assert!(matches!(asked, Some(crate::checkouts_stage::Confirm::Remove { name, .. }) if name == "spike"));
         assert!(matches!(s.answer_checkouts(true).as_slice(), [ClientMsg::RemoveCheckout { checkout: CheckoutId(101) }]));
 
         s.remove_checkout(CheckoutId(100));
@@ -4027,7 +4014,7 @@ mod tests {
         s
     }
 
-    fn sessions_page(s: &mut Session) -> Option<page::SessionsPage> {
+    fn sessions_page(s: &mut Session) -> Option<crate::sessions_dialog::SessionsPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::Sessions(page) => Some(*page),
             _ => None,
@@ -4051,7 +4038,7 @@ mod tests {
         let mut s = listing_sessions();
         s.call(Call::SessionsAction { action: Action::Choose, row: None });
         assert_eq!(s.shown.pane(), Some(PaneId(1)));
-        assert!(s.recent.is_none(), "the dialog gave way to the pane");
+        assert!(s.recent.get().is_none(), "the dialog gave way to the pane");
     }
 
     #[test]
@@ -4063,14 +4050,14 @@ mod tests {
             panic!("{sent:?}");
         };
         assert_eq!((harness.as_str(), session_id.as_str()), ("claude", "ended"));
-        assert!(s.recent.is_some(), "nothing is predicted");
+        assert!(s.recent.get().is_some(), "nothing is predicted");
         s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(9))) });
-        assert!(s.recent.is_some() && s.shown.pane().is_none(), "made, but not in a tree yet");
+        assert!(s.recent.get().is_some() && s.shown.pane().is_none(), "made, but not in a tree yet");
         let mut grown = tree();
         grown[0].repositories[0].checkouts[0].panes.push(pane(9, PaneKind::Agent, "claude", PaneStatus::Working));
         s.receive(with_tree(grown));
         assert_eq!(s.shown.pane(), Some(PaneId(9)));
-        assert!(s.recent.is_none());
+        assert!(s.recent.get().is_none());
     }
 
     #[test]
@@ -4133,7 +4120,7 @@ mod tests {
         let page = sessions_page(&mut s).expect("the list again");
         assert!(page.open && page.reader.is_none());
         s.call(Call::SessionsAction { action: Action::CloseLayer, row: None });
-        assert!(s.recent.is_none(), "and a second Escape closes the dialog");
+        assert!(s.recent.get().is_none(), "and a second Escape closes the dialog");
     }
 
     #[test]
@@ -4145,7 +4132,7 @@ mod tests {
             panic!("{sent:?}");
         };
         s.receive(ServerMsg::Created { request_id: *request_id, created: None });
-        assert!(s.recent.is_some() && s.shown.pane().is_none());
+        assert!(s.recent.get().is_some() && s.shown.pane().is_none());
     }
 
     #[test]
@@ -4167,7 +4154,7 @@ mod tests {
 
     // ---- Projects: switch, add and remove ----------------------------------
 
-    fn add_page(s: &mut Session) -> Option<page::AddProjectPage> {
+    fn add_page(s: &mut Session) -> Option<crate::add_project::AddProjectPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::AddProject(page) => Some(*page),
             _ => None,
@@ -4240,7 +4227,7 @@ mod tests {
         let request_id = add(&mut s);
         assert!(add_page(&mut s).is_some_and(|p| p.adding));
         s.receive(ServerMsg::Created { request_id, created: Some(Created::Project(ProjectId(3))) });
-        assert!(s.adding.is_some(), "no tree holds it yet");
+        assert!(s.adding.get().is_some(), "no tree holds it yet");
 
         let mut grown = tree();
         grown.push(project(3, "work", vec![repository(30, "web", None, vec![checkout(300, "main", true, vec![])])]));
@@ -4271,7 +4258,7 @@ mod tests {
     fn an_older_daemon_is_not_asked_to_add_a_project() {
         let mut s = session(without_focus());
         assert!(s.call(Call::OpenAddProject).is_empty());
-        assert!(s.adding.is_none());
+        assert!(s.adding.get().is_none());
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old"))));
     }
 
@@ -4307,14 +4294,15 @@ mod tests {
         s
     }
 
-    fn console_page(s: &mut Session) -> page::ConsolePage {
+    fn console_page(s: &mut Session) -> crate::console::ConsolePage {
+        s.console.reload();
         s.events(0)
             .into_iter()
             .find_map(|e| match e {
                 Event::Console(page) => Some(*page),
                 _ => None,
             })
-            .unwrap_or_else(|| s.console.page(s.console_place(), s.console_sides(), s.status.daemon_can(CONSOLES)))
+            .expect("a forgotten console is sent again")
     }
 
     fn console(s: &mut Session, gesture: ConsoleGesture) -> Vec<String> {
@@ -4502,7 +4490,7 @@ mod tests {
         names(&s.call(Call::Docks { gesture }))
     }
 
-    fn docks_page(s: &mut Session) -> Option<DocksPage> {
+    fn docks_page(s: &mut Session) -> Option<crate::docks::DocksPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::Docks(page) => Some(*page),
             _ => None,

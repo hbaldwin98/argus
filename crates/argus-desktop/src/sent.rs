@@ -3,7 +3,8 @@
 //!
 //! The thing is built only while it is open; closed, the page is sent its
 //! `Default`, which says so (`open` false), and then nothing more until it
-//! opens again.
+//! opens again. Something always on screen — the rail, the console, the
+//! docks — is passed as always open, and sent only when it differs.
 
 pub struct Sent<T> {
     last: Option<T>,

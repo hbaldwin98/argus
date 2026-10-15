@@ -6,13 +6,26 @@
 //! one [`Call`], which `commands` dispatches. `cargo test` writes each type
 //! as TypeScript into `page/src/bindings`, so the page is compiled against
 //! these definitions rather than a copy.
+//!
+//! A surface that keeps what it last sent — a dialog, the console, the
+//! docks, the Checkouts stage — defines its own page and gestures in its
+//! module, beside the code that builds and reads them; the events and
+//! calls here name them.
 
 use serde::{Deserialize, Serialize};
 
-use crate::docks::{Dock, DocksPage, Panel};
+use crate::add_project::{AddProjectGesture, AddProjectPage};
+use crate::capture_note::{CaptureGesture, CapturePage};
+use crate::checkouts::Checkouts;
+use crate::console::{ConsoleGesture, ConsolePage};
+use crate::docks::{DockGesture, DocksPage, Panel};
+use crate::extension_dialog::ExtDialogPage;
 use crate::features::Layout;
 use crate::keymap::{Action, Command, Group};
 use crate::keys::PageKey;
+use crate::link_dialog::{LinkGesture, LinkPage};
+use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
+use crate::sessions_dialog::{SessionPreview, SessionsPage};
 use crate::settings::{Backdrop, EditorMode, Preferences, Theme};
 
 /// Something the page asks of the window. It answers nothing: what a call
@@ -236,22 +249,6 @@ pub enum SettingChange {
     UiFont { family: String },
 }
 
-/// What was done in the note a new feature is written as.
-#[derive(Debug, Clone, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase", tag = "on")]
-pub enum CaptureGesture {
-    /// An empty note, on the repository the Feature stage reads.
-    Open,
-    /// What the note says now, to be read as the daemon will read it.
-    Note { note: String },
-    /// Create, with the note as it is when pressed: calls need not arrive
-    /// in the order sent, so the last `Note` may come after.
-    Create { note: String },
-    /// Puts the note away unsent.
-    Discard,
-}
-
 /// A row of an open feature's outline, by the id a write names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
@@ -307,52 +304,6 @@ pub enum FeatureEdit {
     MoveParticipant { diagram: i64, name: String, to: usize },
 }
 
-/// What was done in the link dialog.
-#[derive(Debug, Clone, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase", tag = "on")]
-pub enum LinkGesture {
-    /// What the fields say now, read as the daemon will read them.
-    Fields { url: String, role: String },
-    /// Link, with what the fields say as it is pressed.
-    Link { url: String, role: String },
-    /// A ticket already linked, by its place in the list.
-    Select { index: usize },
-    Unlink { key: String },
-    /// The tracker map's editor, on the draft when one waits.
-    EditMap,
-    MapText { text: String },
-    /// The map written as `text`; with a draft waiting, the draft approved
-    /// as it reads there.
-    SaveMap { text: String },
-    /// The draft turned down.
-    DiscardDraft,
-    CancelMap,
-    /// A key of the dialog's own.
-    Action { action: Action },
-    Close,
-}
-
-/// What was done in the reconcile dialog. A line is its place among the
-/// proposal's lines.
-#[derive(Debug, Clone, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase", tag = "on")]
-pub enum ReconcileGesture {
-    Select { line: usize },
-    Tick { line: usize },
-    /// The selected line's text as the person rewrote it.
-    Text { line: usize, text: String },
-    /// The agent to ask.
-    Agent { pane: u64 },
-    Ask { ask: String },
-    CarryOut,
-    Discard,
-    /// A key of the dialog's own.
-    Action { action: Action },
-    Close,
-}
-
 /// How an open feature is read: as work, as a record of its decisions, or
 /// as its flows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -374,84 +325,6 @@ pub enum ReviewClick {
     Row { row: usize, extend: bool },
     Side { staged: bool },
     Recipient { pane: u64 },
-}
-
-/// What was done in the add-a-project dialog.
-#[derive(Debug, Clone, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase", tag = "on")]
-pub enum AddProjectGesture {
-    Kind { kind: AddKind },
-    /// To a folder, by the daemon's own spelling of its path: one typed,
-    /// or the parent.
-    Browse { path: String },
-    /// Into a folder listed in the one browsed.
-    Into { name: String },
-    /// What the fields say now.
-    Fields { name: String, skip: String, folder: String },
-    /// Add, with what the fields say as it is pressed: calls need not
-    /// arrive in the order sent, so the last `Fields` may come after.
-    Add { name: String, skip: String, folder: String },
-    Close,
-}
-
-/// What a project is added from.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub enum AddKind {
-    /// Every repository under a folder, found by the daemon's scan.
-    #[default]
-    Folder,
-    /// The one repository a folder is.
-    Repository,
-    /// A repository `git init` makes.
-    New,
-}
-
-/// What was done to the console.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase", tag = "on")]
-pub enum ConsoleGesture {
-    /// Shows it docked, or hides it wherever it is.
-    Toggle,
-    /// The Console stage: the console fills the stage.
-    Tab,
-    /// In its dock, from hidden, the Console stage or fullscreen.
-    Dock,
-    /// Fullscreen beside the sidebar, or back to where it was.
-    Fullscreen,
-    Hide,
-    /// One of its tabs, or a split side's header: that console on screen,
-    /// with the keys.
-    Select { pane: u64 },
-    /// "+": a new console, shown once the daemon has made it.
-    Spawn,
-    /// A tab's close: the daemon ends that console.
-    Close { pane: u64 },
-    /// Splits the console in two, or puts the split away keeping the side
-    /// with the keys.
-    Split,
-    /// A split side's close: that side leaves the split, its console stays
-    /// a tab.
-    CloseSide { pane: u64 },
-}
-
-/// What was done to the docks.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase", tag = "on")]
-pub enum DockGesture {
-    /// The panel goes to `dock`, shown there.
-    Move { panel: Panel, dock: Dock },
-    /// A dock's tab picked: its panel on screen there.
-    Show { panel: Panel },
-    /// A panel's close: its dock closes, and the panel stays in it.
-    Hide { panel: Panel },
-    /// A dock's sash let go at `size` CSS pixels: the bottom's height, or
-    /// a side's width.
-    Size { dock: Dock, size: u32 },
 }
 
 /// A screen the window draws a pane on: the Workspace's, and the console's
@@ -684,54 +557,6 @@ pub struct Removing {
     pub panes: usize,
 }
 
-/// The add-a-project dialog: a folder browsed on the daemon's machine, what
-/// adding it would find, and what to call the project.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct AddProjectPage {
-    pub open: bool,
-    pub kind: AddKind,
-    /// The folder browsed, as the daemon spells it; `None` until listed.
-    pub path: Option<String>,
-    pub parent: Option<String>,
-    pub entries: Vec<FolderEntry>,
-    /// A listing has been asked for and not yet come.
-    pub browsing: bool,
-    /// Why the folder lists nothing: gone, or not readable.
-    pub listing_error: Option<String>,
-    /// What adding the folder would add, as the daemon's scan finds it:
-    /// root-relative, the folder itself named by its own name.
-    pub repositories: Vec<String>,
-    pub previewing: bool,
-    /// How deep the daemon's scan looks, and what it always skips, once a
-    /// preview has said.
-    pub depth: Option<usize>,
-    pub always_skipped: Vec<String>,
-    /// What the name, skip and new-folder fields say.
-    pub name: String,
-    pub skip: String,
-    pub folder: String,
-    /// The name the project gets while the name field is empty.
-    pub default_name: String,
-    /// For a new repository: the folder `git init` runs in.
-    pub target: Option<String>,
-    /// Why Add cannot be pressed yet; `None` when it can.
-    pub blocked: Option<String>,
-    /// The add is with the daemon.
-    pub adding: bool,
-    /// What the daemon said when it refused the last add.
-    pub refusal: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct FolderEntry {
-    pub name: String,
-    pub is_repo: bool,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -824,56 +649,6 @@ pub enum Stage {
     Console,
     /// An extension's view, open as a page.
     Extension,
-}
-
-/// Where the console is.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub enum ConsolePlace {
-    /// Only the sidebar's foot says it is there.
-    #[default]
-    Hidden,
-    /// In its dock beside the Workspace, Feature or Checkouts stage.
-    Docked,
-    /// The Console stage.
-    Tab,
-    /// The whole window but the sidebar's projects: the stages' nav and
-    /// the sidebar's foot are put away.
-    Fullscreen,
-}
-
-/// The console as the page draws it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ConsolePage {
-    pub place: ConsolePlace,
-    /// A tab per console the daemon holds, in the order they were started.
-    pub tabs: Vec<ConsoleTab>,
-    /// The console whose screen the window's canvas is drawing, on the
-    /// first side. The canvas is the Workspace's or the console's, so
-    /// while this is set the Workspace stage has none.
-    pub showing: Option<u64>,
-    /// The console on the second side, while the console is split and
-    /// has the canvas.
-    pub beside: Option<u64>,
-    /// Which of `showing` and `beside` has the keys, and is typed in.
-    pub typing: Option<u64>,
-    /// The daemon takes `SpawnConsole`; an older one offers no "+".
-    pub can_spawn: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ConsoleTab {
-    pub pane: u64,
-    pub title: String,
-    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
-    pub status: &'static str,
-    /// The tab chosen for one side: shown when the console has the canvas.
-    pub on: bool,
 }
 
 /// The pane on screen, as the stage's header names it.
@@ -1046,130 +821,6 @@ impl Link {
     pub fn of(link: &argus_protocol::TrackerLink) -> Link {
         Link { tracker: link.tracker.clone(), key: link.key.clone(), url: link.url.clone(), role: link.role.clone() }
     }
-}
-
-/// The link dialog: the URL being linked and what it reads as, the tickets
-/// already linked, and the repository's tracker map.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct LinkPage {
-    pub open: bool,
-    pub number: i64,
-    pub title: String,
-    pub url: String,
-    pub role: String,
-    /// The tracker and key the URL reads as, without going online.
-    pub read: Option<Link>,
-    /// Why the URL is not a link yet, once something is typed.
-    pub refusal: Option<String>,
-    /// A link was sent and the board does not hold it yet.
-    pub pending: bool,
-    pub linked: Vec<LinkedRow>,
-    pub map: MapPage,
-    /// The map's editor, with what it holds.
-    pub editing_map: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct LinkedRow {
-    pub link: Link,
-    pub on: bool,
-}
-
-/// The repository's tracker map, and the draft an agent left for it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct MapPage {
-    pub body: String,
-    pub draft: Option<String>,
-    pub draft_by: Option<String>,
-}
-
-/// The reconcile dialog: what was asked and of whom, the proposal grouped
-/// by where each line writes, the line under the cursor in full, and the
-/// agents an ask can go to.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ReconcilePage {
-    pub open: bool,
-    pub number: i64,
-    pub title: String,
-    /// The tickets, as the heading names them: `Linear ENG-88 and Jira ARG-142`.
-    pub tickets: String,
-    /// `none` with nothing under way, else `asked`, `proposed` or `carrying`.
-    #[cfg_attr(test, ts(type = "\"none\" | \"asked\" | \"proposed\" | \"carrying\""))]
-    pub stage: &'static str,
-    /// The agent asked, or that proposed: `pane #32`.
-    pub by: Option<String>,
-    pub ago: Option<String>,
-    pub asked: String,
-    pub groups: Vec<LineGroup>,
-    pub noticed: Vec<Line>,
-    pub selected: Option<SelectedLine>,
-    pub ticked: usize,
-    pub total: usize,
-    /// The live agents of the repository an ask can go to.
-    pub agents: Vec<AgentChoice>,
-    /// When the last one was carried out: `reconciled 2h ago by pane #32`.
-    pub reconciled: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct LineGroup {
-    /// `Into Argus`, `Out to Linear`.
-    pub heading: String,
-    pub into_argus: bool,
-    pub lines: Vec<ProposedRow>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ProposedRow {
-    pub line: usize,
-    pub key: String,
-    pub does: String,
-    pub why: String,
-    pub ticked: bool,
-    pub on: bool,
-    /// What the tracker said when it was carried out and failed.
-    pub failed: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct SelectedLine {
-    pub line: usize,
-    pub heading: String,
-    pub key: String,
-    pub does: String,
-    /// The text it writes, as the person last left it.
-    pub text: String,
-    /// The person rewrote it.
-    pub edited: bool,
-    /// The call the agent will make.
-    pub call: String,
-    pub ticked: bool,
-    pub failed: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct AgentChoice {
-    pub pane: u64,
-    pub title: String,
-    /// It did the last reconcile, or the one under way.
-    pub last: bool,
-    pub chosen: bool,
 }
 
 /// The views agents showed, and the one their panel shows.
@@ -1520,51 +1171,6 @@ pub struct DecisionDetail {
     pub adr: String,
 }
 
-/// The note a new feature is written as, and what the daemon's own reading
-/// of it makes.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct CapturePage {
-    pub open: bool,
-    /// The repository it is written in, for the heading.
-    pub repository: String,
-    /// The note as the window last heard it, for a page that reloaded.
-    pub note: String,
-    pub title: String,
-    pub brief: Option<String>,
-    /// Every task at every depth, in the order a reader meets them.
-    pub tasks: Vec<NoteRow>,
-    pub decisions: Vec<NoteDecision>,
-    /// One-based lines the grammar found no place for.
-    pub unread: Vec<usize>,
-    /// Why it cannot be created yet; `None` when it is ready.
-    pub blocked: Option<String>,
-    /// Sent, and waiting on the board to hold it.
-    pub creating: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct NoteRow {
-    pub label: String,
-    pub depth: usize,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct NoteDecision {
-    pub label: String,
-    pub text: String,
-    /// A question, with `options`; else made, with `because`.
-    pub open: bool,
-    pub options: Vec<String>,
-    pub because: Option<String>,
-}
-
 /// What the command palette can go to while it is open.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
@@ -1640,103 +1246,6 @@ pub struct Frame {
     pub lines: Vec<(u16, Vec<Segment>)>,
     /// Set while the view is parked above the live screen.
     pub parked: Option<Parked>,
-}
-
-/// The Checkouts stage: the chosen repository's checkouts, and the
-/// branches no checkout is on while they are shown.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct Checkouts {
-    /// The repository it lists; `None` before one is chosen.
-    pub repository: Option<String>,
-    pub checkouts: usize,
-    /// Local and remote branches no checkout is on, shown or not.
-    pub branches: usize,
-    /// The repository's main branch, as the heading names it.
-    pub main: Option<String>,
-    pub branches_shown: bool,
-    pub filter: String,
-    pub rows: Vec<CheckoutsRow>,
-    /// The selected row's `key`.
-    pub selected: Option<String>,
-    pub detail: Option<CheckoutDetail>,
-    /// A question the stage is waiting on an answer to.
-    pub confirm: Option<Confirm>,
-}
-
-/// What the stage asks before doing something that cannot be taken back.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum Confirm {
-    /// Removing a worktree: its panes end, its directory and its branch go.
-    Remove { name: String, branch: String },
-    /// Git refused `branch -d`: the branch holds commits nothing else has,
-    /// which are what a yes gives up.
-    Force { branch: String, commits: Vec<LastCommit> },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct CheckoutsRow {
-    /// Names the row in what the page sends back: `c<id>`, `b<branch>` or
-    /// `r<origin/branch>`.
-    pub key: String,
-    /// The checkout's id; `None` for a branch with no directory.
-    pub checkout: Option<u64>,
-    /// The checkout's name; `None` for a branch row.
-    pub name: Option<String>,
-    pub primary: bool,
-    pub branch: String,
-    /// The compact git state, as on the rail; a branch row has none.
-    pub git: Option<String>,
-    pub clean: bool,
-    /// Said beside the git state: `remote only` for what a fetch turned up,
-    /// `merged` for a branch main already has.
-    pub note: Option<&'static str>,
-    /// What was last committed here; a branch row has none.
-    pub last: Option<LastCommit>,
-    pub running: Vec<Running>,
-    /// `CheckoutInfo::shared_by`; a branch row has no agents to share it.
-    pub shared: Option<usize>,
-    /// The number of the feature this checkout is on, when the board says.
-    pub feature: Option<i64>,
-    /// That feature is the one the Feature stage has under its cursor.
-    pub viewed: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct Running {
-    pub agent: bool,
-    pub status: &'static str,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct LastCommit {
-    pub short: String,
-    pub summary: String,
-    /// How long ago, as the rail says it: `2h`.
-    pub ago: String,
-}
-
-/// The selected checkout, said in full along the stage's foot.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct CheckoutDetail {
-    pub name: String,
-    pub path: String,
-    /// Its upstream and how far it is from it: `origin/main · 1 behind`;
-    /// `None` when git has not been read.
-    pub upstream: Option<String>,
-    /// `1 unstaged file`, `3 staged · 2 unstaged files`, `no changes`.
-    pub changes: Option<String>,
 }
 
 /// The review dialog: one checkout's diff, a side at a time.
@@ -1845,84 +1354,6 @@ pub struct HistoryRowView {
     pub added: usize,
     pub removed: usize,
     pub on: bool,
-}
-
-/// The recent-sessions dialog: one repository's agent sessions, live ones
-/// first, and what the one under the cursor said.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct SessionsPage {
-    pub open: bool,
-    pub repository: String,
-    /// What the search field says; the rows are the sessions it matches.
-    pub search: String,
-    /// The harnesses and the checkouts the listing holds, for the menus,
-    /// and what each menu is set to; `None` is all.
-    pub harnesses: Vec<String>,
-    pub harness: Option<String>,
-    pub checkouts: Vec<String>,
-    pub checkout: Option<String>,
-    pub loading: bool,
-    /// Why there are no rows: none yet, none matching, or a daemon that
-    /// cannot list them.
-    pub empty: Option<String>,
-    pub rows: Vec<SessionRowView>,
-    /// `None` while the full transcript is open, which draws it instead.
-    pub preview: Option<SessionPreview>,
-    /// The full transcript, read in place of the list.
-    pub reader: Option<ReaderPage>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct SessionRowView {
-    /// What a click on it sends back.
-    pub row: usize,
-    pub title: String,
-    pub harness: String,
-    /// Its checkout, or the removed worktree it ran in.
-    pub checkout: String,
-    /// Running in a pane now.
-    pub live: bool,
-    pub turns: Option<u32>,
-    /// How long since its transcript was written: `2h`, or `—`.
-    pub ago: String,
-    /// It ran in a worktree since removed: drawn dimmed.
-    pub removed: bool,
-    pub on: bool,
-}
-
-/// The session under the cursor: what it said, and what can be done with it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct SessionPreview {
-    pub title: String,
-    pub harness: String,
-    pub checkout: String,
-    pub session_id: String,
-    /// When its transcript starts, as the harness wrote it.
-    pub started: Option<String>,
-    /// What it said has been asked for and not yet read.
-    pub loading: bool,
-    /// Said in place of the transcript: none kept, or one gone missing.
-    pub notice: Option<String>,
-    /// Oldest first.
-    pub entries: Vec<TranscriptLine>,
-    /// How many older entries the daemon left out.
-    pub earlier: u32,
-    /// `go` to its pane, `resume` in a new one, or only its `transcript`.
-    #[cfg_attr(test, ts(type = "\"go\" | \"resume\" | \"transcript\""))]
-    pub offer: &'static str,
-    /// The exact command a resume runs, as the footer names it.
-    pub command: Option<String>,
-    /// Why it cannot be resumed, when it offers only its transcript.
-    pub why: Option<String>,
-    /// Its full transcript can be opened: not one its harness keeps none
-    /// of, or one gone missing.
-    pub readable: bool,
 }
 
 /// One session's transcript read whole: the preview's session with the
@@ -2207,26 +1638,10 @@ pub struct ExtChord {
     pub leader: bool,
 }
 
-/// The question an extension puts to this window.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtDialogPage {
-    pub open: bool,
-    pub extension: String,
-    pub id: u64,
-    pub dialog: Option<argus_protocol::ExtDialog>,
-    /// It answers a command the person ran here: it takes the keys. One
-    /// raised on its own waits for a click, so a pane being typed in keeps
-    /// them.
-    pub prompted: bool,
-    /// How many more wait behind it.
-    pub waiting: usize,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::add_project::{AddKind, FolderEntry};
     use serde_json::json;
 
     fn as_json(event: Event) -> serde_json::Value {
