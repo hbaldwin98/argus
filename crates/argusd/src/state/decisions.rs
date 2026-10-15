@@ -4,9 +4,9 @@
 //! `board_address` translates between them. A decision is scoped to a
 //! *feature*: a tree still has to be read whole, because a node hanging
 //! off three others says nothing without them, but the tree that has to be
-//! read whole is one feature's, not one project's. The repository board is what the
-//! client is pushed, since it draws the features alongside it; an agent is
-//! answered one feature at a time by `features`.
+//! read whole is one feature's, not one project's. The repository board is
+//! what the client is pushed, since it draws the features alongside it; an
+//! agent is answered one feature at a time by `features`.
 //!
 //! A decision is not always made yet: an open one is a question, usually
 //! the person's to answer, and a rejected one an answer turned down. Both
@@ -191,6 +191,9 @@ impl Daemon {
     ) -> anyhow::Result<Decision> {
         let filing = filing.into();
         let address = self.address_for_agent(pane_id, filing.scope)?;
+        // Checked before the feature is resolved as well as in the apply,
+        // so a write that is wrong in itself is told so first.
+        let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
         let feature = self.feature_for_agent(&address, filing.feature.as_deref())?;
         let by = Asker::Agent {
             pane: pane_id,
