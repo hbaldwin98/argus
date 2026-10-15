@@ -12,4 +12,8 @@ at: string | null, title: string | null,
 /**
  * Markdown.
  */
-body: string | null, chip: Chip | null, };
+body: string | null, chip: Chip | null, 
+/**
+ * A saved view this opens, by its id; see [`Value::View`].
+ */
+opens?: string | null, };

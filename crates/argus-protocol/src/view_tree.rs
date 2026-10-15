@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn every_container_names_the_lists_inside_it() {
-        let section = Block::Section { heading: "s".into(), blocks: vec![md("a")] };
+        let section = Block::Section { heading: "s".into(), blocks: vec![md("a")], opens: None };
         assert_eq!(section.children().len(), 1);
         assert_eq!(section.children()[0].0, Slot::Blocks);
 

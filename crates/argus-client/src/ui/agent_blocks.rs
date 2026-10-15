@@ -97,7 +97,7 @@ fn one(block: &Block, width: usize, depth: usize, th: Theme, out: &mut Vec<Line<
         return;
     }
     match block {
-        Block::Section { heading, blocks } => {
+        Block::Section { heading, blocks, .. } => {
             out.push(Line::from(vec![
                 Span::styled("▍ ", Style::default().fg(th.accent)),
                 bold(one_line(heading), th.text),
@@ -197,6 +197,9 @@ fn one(block: &Block, width: usize, depth: usize, th: Theme, out: &mut Vec<Line<
         }
         Block::Row { items, .. } => row(items, width, th, out),
         Block::Unknown => out.push(Line::from(muted("needs a newer Argus to show", th))),
+        // MINIMAL STUB (saved views): the terminal client's agent drew the
+        // embedded view's blocks here, with a cycle and depth guard.
+        Block::Embed { view } => out.push(Line::from(muted(format!("embedded view `{}`", one_line(view)), th))),
         Block::Divider => out.push(Line::from(Span::styled(
             "─".repeat(width),
             Style::default().fg(th.edge),

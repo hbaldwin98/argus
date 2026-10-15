@@ -76,7 +76,13 @@ pub struct ShownView {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Block {
-    Section { heading: String, blocks: Vec<Block> },
+    Section {
+        heading: String,
+        blocks: Vec<Block>,
+        /// A saved view this opens, by its id; see [`Value::View`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opens: Option<String>,
+    },
     /// Side by side; the page stacks them when it is narrow.
     Columns { columns: Vec<Vec<Block>> },
     Tabs { tabs: Vec<Tab> },
@@ -127,6 +133,9 @@ pub enum Block {
         blocks: Vec<Block>,
         #[serde(default)]
         actions: Vec<ViewAction>,
+        /// A saved view this opens, by its id; see [`Value::View`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opens: Option<String>,
     },
     /// As many blocks as fit side by side at the named minimum width,
     /// wrapping onto rows: a gallery of cards.
@@ -144,6 +153,9 @@ pub enum Block {
         #[serde(default)]
         open: bool,
         blocks: Vec<Block>,
+        /// A saved view this opens, by its id; see [`Value::View`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opens: Option<String>,
     },
     /// Values and buttons on one line, wrapping when narrow.
     Row {
@@ -202,6 +214,13 @@ pub enum Block {
         fields: Vec<FormField>,
         submit: ViewAction,
     },
+    /// Another saved view's blocks, drawn in place. A leaf: the embedded
+    /// body is not copied into this view's JSON, so a client resolves `view`
+    /// from the saved views it holds, guards a cycle, caps the depth it
+    /// follows at [`MAX_EMBED_DEPTH`](crate::saved_view::MAX_EMBED_DEPTH), and
+    /// draws a line saying so where the view is missing or too deep. The
+    /// saved view may not exist yet; it is drawn as missing until it does.
+    Embed { view: String },
     /// A kind this Argus does not know: what a newer one sent. An agent's
     /// typo is refused when the view is checked, but a client decoding what
     /// the daemon sent keeps it, to say it needs a newer Argus.
@@ -286,6 +305,9 @@ pub struct TimelineEvent {
     /// Events sharing a lane are drawn in a column of their own.
     #[serde(default)]
     pub lane: Option<String>,
+    /// A saved view this opens, by its id; see [`Value::View`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opens: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -300,6 +322,9 @@ pub struct TreeNode {
     pub open: bool,
     #[serde(default)]
     pub children: Vec<TreeNode>,
+    /// A saved view this opens, by its id; see [`Value::View`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opens: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -309,6 +334,9 @@ pub struct GraphNode {
     pub label: String,
     #[serde(default)]
     pub tone: Tone,
+    /// A saved view this opens, by its id; see [`Value::View`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opens: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -348,6 +376,9 @@ pub struct CheckItem {
     pub done: bool,
     #[serde(default)]
     pub note: Option<String>,
+    /// A saved view this opens, by its id; see [`Value::View`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opens: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -391,6 +422,9 @@ pub struct BoardCard {
     pub chip: Option<Chip>,
     #[serde(default)]
     pub value: Option<Value>,
+    /// A saved view this opens, by its id; see [`Value::View`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opens: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -481,6 +515,9 @@ pub struct Item {
     pub body: Option<String>,
     #[serde(default)]
     pub chip: Option<Chip>,
+    /// A saved view this opens, by its id; see [`Value::View`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opens: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -496,6 +533,9 @@ pub struct Stat {
     /// Recent values, oldest first, drawn as a spark line under the value.
     #[serde(default)]
     pub trend: Vec<f64>,
+    /// A saved view this opens, by its id; see [`Value::View`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opens: Option<String>,
 }
 
 /// What a field, a table cell or a list item holds.
@@ -559,6 +599,13 @@ pub enum Value {
     /// A pane, by id; focused.
     Pane {
         pane: u64,
+        #[serde(default)]
+        label: Option<String>,
+    },
+    /// A saved view, by its id; opened beside the one that links it. The
+    /// view may not be saved yet, and is then drawn as missing.
+    View {
+        id: String,
         #[serde(default)]
         label: Option<String>,
     },

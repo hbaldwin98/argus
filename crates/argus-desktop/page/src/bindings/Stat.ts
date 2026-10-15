@@ -9,4 +9,8 @@ value: string, delta: string | null, tone: Tone,
 /**
  * Recent values, oldest first, drawn as a spark line under the value.
  */
-trend: Array<number>, };
+trend: Array<number>, 
+/**
+ * A saved view this opens, by its id; see [`Value::View`].
+ */
+opens?: string | null, };

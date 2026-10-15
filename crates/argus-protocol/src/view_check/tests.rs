@@ -67,7 +67,7 @@ fn a_table_past_its_rows_is_refused() {
 
 #[test]
 fn blocks_nest_only_so_deep() {
-    let section = |blocks| Block::Section { heading: "s".into(), blocks };
+    let section = |blocks| Block::Section { heading: "s".into(), blocks, opens: None };
     let deep = |n: usize| (0..n).fold(vec![md()], |inner, _| vec![section(inner)]);
     assert!(view(deep(MAX_BLOCK_DEPTH - 1)).checked().is_ok());
     let err = refused(deep(MAX_BLOCK_DEPTH));
@@ -124,7 +124,7 @@ fn a_number_near_the_top_of_f64_is_refused_wherever_it_is_drawn() {
     assert!(refused(vec![chart]).starts_with("blocks[0].series[0].values[1]:"));
 
     let stat = |trend| Block::Stats {
-        stats: vec![Stat { label: "l".into(), value: "v".into(), delta: None, tone: Tone::Neutral, trend }],
+        stats: vec![Stat { label: "l".into(), value: "v".into(), delta: None, tone: Tone::Neutral, trend, opens: None }],
     };
     assert!(refused(vec![stat(vec![0.0, huge])]).starts_with("blocks[0].stats[0].trend[1]:"));
 
@@ -171,13 +171,13 @@ fn a_chart_point_that_is_not_finite_is_refused() {
 #[test]
 fn a_trend_and_a_graph_keep_their_counts() {
     let trend = |n| Block::Stats {
-        stats: vec![Stat { label: "l".into(), value: "v".into(), delta: None, tone: Tone::Neutral, trend: vec![1.0; n] }],
+        stats: vec![Stat { label: "l".into(), value: "v".into(), delta: None, tone: Tone::Neutral, trend: vec![1.0; n], opens: None }],
     };
     assert!(view(vec![trend(MAX_TREND_POINTS)]).checked().is_ok());
     assert!(refused(vec![trend(MAX_TREND_POINTS + 1)]).starts_with("blocks[0].stats[0].trend:"));
 
     let graph = |edges: usize| Block::Graph {
-        nodes: vec![GraphNode { id: "a".into(), label: "a".into(), tone: Tone::Neutral }],
+        nodes: vec![GraphNode { id: "a".into(), label: "a".into(), tone: Tone::Neutral, opens: None }],
         edges: (0..edges).map(|_| GraphEdge { from: "a".into(), to: "a".into(), label: None }).collect(),
         direction: Default::default(),
     };
@@ -223,6 +223,7 @@ fn two_actions_with_one_id_are_refused_wherever_they_are() {
         tone: Tone::Neutral,
         blocks: vec![],
         actions: vec![act("retry")],
+        opens: None,
     }]);
     v.actions = vec![act("retry")];
     let err = v.checked().unwrap_err();
@@ -265,4 +266,35 @@ fn a_path_that_leaves_the_checkout_is_refused() {
         let err = path(bad).checked().unwrap_err();
         assert!(err.starts_with("blocks[0].fields[0].value: a path is inside the checkout"), "{bad}: {err}");
     }
+}
+
+#[test]
+fn a_link_names_a_view_by_an_id_that_reads_back() {
+    let link = |id: &str| view(vec![fields(Value::View { id: id.into(), label: None })]);
+    assert!(link("deps").checked().is_ok(), "the view need not be saved yet");
+    for bad in ["", " padded ", "a\u{1b}b", &"x".repeat(MAX_VIEW_ID_BYTES + 1)] {
+        let err = link(bad).checked().unwrap_err();
+        assert!(err.starts_with("blocks[0].fields[0].value.id"), "{bad:?}: {err}");
+    }
+}
+
+#[test]
+fn every_element_that_opens_a_view_is_held_to_the_same_rule() {
+    let bad = Some(" x".to_string());
+    let section = Block::Section { heading: "s".into(), blocks: vec![], opens: bad.clone() };
+    assert!(refused(vec![section]).starts_with("blocks[0].opens"));
+    let item = |opens| Block::List {
+        items: vec![crate::Item { who: None, at: None, title: None, body: None, chip: None, opens }],
+    };
+    assert!(view(vec![item(Some("deps".into()))]).checked().is_ok());
+    assert_eq!(refused(vec![item(bad)]), "blocks[0].items[0].opens: a saved view's id is not empty and has no space around it");
+}
+
+#[test]
+fn a_view_cannot_embed_itself_even_deep_inside() {
+    let embed = |id: &str| Block::Embed { view: id.into() };
+    assert!(view(vec![embed("other")]).checked().is_ok());
+    let nested = Block::Section { heading: "s".into(), blocks: vec![embed("ci")], opens: None };
+    assert_eq!(refused(vec![nested]), "blocks[0].blocks[0]: a view cannot embed itself");
+    assert_eq!(refused(vec![embed("")]), "blocks[0].view: a saved view's id is not empty and has no space around it");
 }

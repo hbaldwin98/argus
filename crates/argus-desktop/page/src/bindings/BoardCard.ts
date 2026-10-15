@@ -6,4 +6,8 @@ export type BoardCard = { title: string,
 /**
  * Markdown.
  */
-body: string | null, chip: Chip | null, value: Value | null, };
+body: string | null, chip: Chip | null, value: Value | null, 
+/**
+ * A saved view this opens, by its id; see [`Value::View`].
+ */
+opens?: string | null, };

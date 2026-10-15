@@ -130,7 +130,7 @@ mod tests {
     }
 
     fn section(blocks: Vec<Block>) -> Block {
-        Block::Section { heading: "s".into(), blocks }
+        Block::Section { heading: "s".into(), blocks, opens: None }
     }
 
     fn changed(before: Vec<Block>, after: Vec<Block>) -> Vec<String> {
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn a_containers_own_change_names_the_container() {
-        let with_heading = |h: &str| Block::Section { heading: h.into(), blocks: vec![md("a")] };
+        let with_heading = |h: &str| Block::Section { heading: h.into(), blocks: vec![md("a")], opens: None };
         assert_eq!(changed(vec![with_heading("old")], vec![with_heading("new")]), ["0"]);
     }
 
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn a_containers_heading_changing_while_a_block_is_added_names_the_container() {
-        let sec = |h: &str, n: usize| Block::Section { heading: h.into(), blocks: vec![md("a"); n] };
+        let sec = |h: &str, n: usize| Block::Section { heading: h.into(), blocks: vec![md("a"); n], opens: None };
         assert_eq!(changed(vec![sec("old", 1)], vec![sec("new", 2)]), ["0"]);
     }
 }

@@ -190,14 +190,16 @@ mod tests {
                         tone: Default::default(),
                         blocks: vec![md("c0")],
                         actions: Vec::new(),
+                        opens: None,
                     },
                 ],
+                opens: None,
             },
             Block::Columns { columns: vec![vec![md("a0")], vec![md("b0"), md("b1")]] },
             Block::Tabs { tabs: vec![Tab { title: "one".into(), blocks: vec![md("t0")] }] },
             Block::Grid { min: Default::default(), items: vec![md("g0"), md("g1")] },
             table(vec![None, Some(vec![md("d0")])]),
-            Block::Details { summary: "d".into(), chip: None, open: false, blocks: vec![md("e0")] },
+            Block::Details { summary: "d".into(), chip: None, open: false, blocks: vec![md("e0")], opens: None },
         ])
     }
 

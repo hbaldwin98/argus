@@ -28,7 +28,11 @@ import type { ViewAction } from "./ViewAction";
 /**
  * One part of a view.
  */
-export type Block = { "kind": "section", heading: string, blocks: Array<Block>, } | { "kind": "columns", columns: Array<Array<Block>>, } | { "kind": "tabs", tabs: Array<Tab>, } | { "kind": "markdown", text: string, } | { "kind": "fields", fields: Array<Field>, } | { "kind": "table", columns: Array<Column>, rows: Array<Array<Value>>, 
+export type Block = { "kind": "section", heading: string, blocks: Array<Block>, 
+/**
+ * A saved view this opens, by its id; see [`Value::View`].
+ */
+opens?: string | null, } | { "kind": "columns", columns: Array<Array<Block>>, } | { "kind": "tabs", tabs: Array<Tab>, } | { "kind": "markdown", text: string, } | { "kind": "fields", fields: Array<Field>, } | { "kind": "table", columns: Array<Column>, rows: Array<Array<Value>>, 
 /**
  * The column the agent sorted the rows by.
  */
@@ -49,8 +53,16 @@ actions: Array<ViewAction>,
 /**
  * Blocks a row opens to in place, one entry per row when given.
  */
-details: Array<Array<Block> | null>, } | { "kind": "list", items: Array<Item>, } | { "kind": "stats", stats: Array<Stat>, } | { "kind": "code", lang: string | null, text: string, } | { "kind": "diagram", source: string, } | { "kind": "callout", tone: Tone, text: string, } | { "kind": "card", title: string | null, chip: Chip | null, tone: Tone, blocks: Array<Block>, actions: Array<ViewAction>, } | { "kind": "grid", min: GridMin, items: Array<Block>, } | { "kind": "details", summary: string, chip: Chip | null, open: boolean, blocks: Array<Block>, } | { "kind": "row", align: RowAlign, items: Array<RowItem>, } | { "kind": "divider" } | { "kind": "chart", shape: ChartShape, x: Array<string>, series: Array<Series>, unit: string | null, } | { "kind": "progress", label: string, value: number, max: number, tone: Tone, 
+details: Array<Array<Block> | null>, } | { "kind": "list", items: Array<Item>, } | { "kind": "stats", stats: Array<Stat>, } | { "kind": "code", lang: string | null, text: string, } | { "kind": "diagram", source: string, } | { "kind": "callout", tone: Tone, text: string, } | { "kind": "card", title: string | null, chip: Chip | null, tone: Tone, blocks: Array<Block>, actions: Array<ViewAction>, 
+/**
+ * A saved view this opens, by its id; see [`Value::View`].
+ */
+opens?: string | null, } | { "kind": "grid", min: GridMin, items: Array<Block>, } | { "kind": "details", summary: string, chip: Chip | null, open: boolean, blocks: Array<Block>, 
+/**
+ * A saved view this opens, by its id; see [`Value::View`].
+ */
+opens?: string | null, } | { "kind": "row", align: RowAlign, items: Array<RowItem>, } | { "kind": "divider" } | { "kind": "chart", shape: ChartShape, x: Array<string>, series: Array<Series>, unit: string | null, } | { "kind": "progress", label: string, value: number, max: number, tone: Tone, 
 /**
  * Already formatted, beside the label: `412 / 1,000`.
  */
-note: string | null, } | { "kind": "timeline", events: Array<TimelineEvent>, } | { "kind": "tree", nodes: Array<TreeNode>, } | { "kind": "graph", nodes: Array<GraphNode>, edges: Array<GraphEdge>, direction: GraphDirection, } | { "kind": "diff", path: string | null, patch: string, } | { "kind": "matrix", rows: Array<string>, columns: Array<string>, cells: Array<Array<MatrixCell>>, } | { "kind": "checklist", items: Array<CheckItem>, } | { "kind": "log", lines: Array<LogLine>, } | { "kind": "board", columns: Array<BoardColumn>, } | { "kind": "form", id: string, fields: Array<FormField>, submit: ViewAction, } | { "kind": "unknown" };
+note: string | null, } | { "kind": "timeline", events: Array<TimelineEvent>, } | { "kind": "tree", nodes: Array<TreeNode>, } | { "kind": "graph", nodes: Array<GraphNode>, edges: Array<GraphEdge>, direction: GraphDirection, } | { "kind": "diff", path: string | null, patch: string, } | { "kind": "matrix", rows: Array<string>, columns: Array<string>, cells: Array<Array<MatrixCell>>, } | { "kind": "checklist", items: Array<CheckItem>, } | { "kind": "log", lines: Array<LogLine>, } | { "kind": "board", columns: Array<BoardColumn>, } | { "kind": "form", id: string, fields: Array<FormField>, submit: ViewAction, } | { "kind": "embed", view: string, } | { "kind": "unknown" };

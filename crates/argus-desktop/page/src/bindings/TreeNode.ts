@@ -2,4 +2,8 @@
 import type { Chip } from "./Chip";
 import type { Value } from "./Value";
 
-export type TreeNode = { label: string, value: Value | null, chip: Chip | null, open: boolean, children: Array<TreeNode>, };
+export type TreeNode = { label: string, value: Value | null, chip: Chip | null, open: boolean, children: Array<TreeNode>, 
+/**
+ * A saved view this opens, by its id; see [`Value::View`].
+ */
+opens?: string | null, };

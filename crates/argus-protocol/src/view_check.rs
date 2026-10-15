@@ -81,6 +81,7 @@ impl AgentView {
         actions_ok(&self.actions, "actions", &mut actions)?;
         let name = |i: usize| format!("blocks[{i}]");
         list_ok(&self.blocks, "blocks", &name, 1, &mut actions)?;
+        embeds_not_itself(&self.blocks, &name, id)?;
         Ok(AgentView { id: id.to_string(), ..self })
     }
 }
@@ -118,14 +119,35 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
     match block {
         Block::Unknown => Err(format!("{path}: no block kind by that name")),
         Block::Tabs { tabs } if tabs.is_empty() => Err(format!("{path}: tabs need at least one tab")),
+        Block::Embed { view } => linked_view_ok(view, &format!("{path}.view")),
         Block::Fields { fields } => {
             for (i, field) in fields.iter().enumerate() {
                 value_ok(&field.value, &format!("{path}.fields[{i}].value"))?;
             }
             Ok(())
         }
+        Block::List { items } => {
+            for (i, item) in items.iter().enumerate() {
+                opens_ok(&item.opens, &format!("{path}.items[{i}]"))?;
+            }
+            Ok(())
+        }
+        Block::Timeline { events } => {
+            for (i, event) in events.iter().enumerate() {
+                opens_ok(&event.opens, &format!("{path}.events[{i}]"))?;
+            }
+            Ok(())
+        }
+        Block::Checklist { items } => {
+            for (i, item) in items.iter().enumerate() {
+                opens_ok(&item.opens, &format!("{path}.items[{i}]"))?;
+            }
+            Ok(())
+        }
+        Block::Section { opens, .. } | Block::Details { opens, .. } => opens_ok(opens, path),
         Block::Stats { stats } => {
             for (i, stat) in stats.iter().enumerate() {
+                opens_ok(&stat.opens, &format!("{path}.stats[{i}]"))?;
                 if stat.trend.len() > MAX_TREND_POINTS {
                     return Err(format!("{path}.stats[{i}].trend: a trend has at most {MAX_TREND_POINTS} points"));
                 }
@@ -176,7 +198,10 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
             }
             Ok(())
         }
-        Block::Card { actions: own, .. } => actions_ok(own, &format!("{path}.actions"), actions),
+        Block::Card { actions: own, opens, .. } => {
+            opens_ok(opens, path)?;
+            actions_ok(own, &format!("{path}.actions"), actions)
+        }
         Block::Row { items, .. } => {
             let count = items.iter().filter(|i| matches!(i, RowItem::Action { .. })).count();
             if count > MAX_VIEW_ACTIONS {
@@ -227,6 +252,7 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
             }
             let mut ids = HashSet::new();
             for (n, node) in nodes.iter().enumerate() {
+                opens_ok(&node.opens, &format!("{path}.nodes[{n}]"))?;
                 if !ids.insert(node.id.as_str()) {
                     return Err(format!("{path}.nodes[{n}]: the id {:?} is used twice", node.id));
                 }
@@ -266,6 +292,7 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
         Block::Board { columns } => {
             for (c, column) in columns.iter().enumerate() {
                 for (k, card) in column.cards.iter().enumerate() {
+                    opens_ok(&card.opens, &format!("{path}.columns[{c}].cards[{k}]"))?;
                     if let Some(value) = &card.value {
                         value_ok(value, &format!("{path}.columns[{c}].cards[{k}].value"))?;
                     }
@@ -311,20 +338,15 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
         }
         // Containers are walked through their children; the rest have no
         // limit of their own to keep.
-        Block::Section { .. }
-        | Block::Columns { .. }
+        Block::Columns { .. }
         | Block::Tabs { .. }
-        | Block::Details { .. }
         | Block::Grid { .. }
         | Block::Markdown { .. }
-        | Block::List { .. }
         | Block::Code { .. }
         | Block::Diagram { .. }
         | Block::Callout { .. }
         | Block::Divider
-        | Block::Timeline { .. }
         | Block::Log { .. }
-        | Block::Checklist { .. }
         | Block::Diff { .. } => Ok(()),
     }
 }
@@ -389,6 +411,7 @@ fn tree_ok(nodes: &[TreeNode], path: &str, depth: usize, count: &mut usize) -> R
         if *count > MAX_TREE_NODES {
             return Err(format!("{path}[{i}]: a tree has at most {MAX_TREE_NODES} nodes"));
         }
+        opens_ok(&node.opens, &format!("{path}[{i}]"))?;
         if let Some(value) = &node.value {
             value_ok(value, &format!("{path}[{i}].value"))?;
         }
@@ -405,10 +428,50 @@ pub(crate) fn value_ok(value: &Value, path: &str) -> Result<(), String> {
         Value::Path { path: file, .. } if !is_checkout_relative(file) => {
             Err(format!("{path}: a path is inside the checkout: relative, with no `..`"))
         }
+        Value::View { id, .. } => linked_view_ok(id, &format!("{path}.id")),
         Value::Link { url, .. } => web_url(url).map_err(|e| format!("{path}: {e}")),
         Value::Ticket { url: Some(url), .. } => web_url(url).map_err(|e| format!("{path}: {e}")),
         _ => Ok(()),
     }
+}
+
+/// A saved view's id, as a link or an embed names it: the rules a view's
+/// own id keeps, and trimmed, because the daemon stores the trimmed id and
+/// a link with a space in it would never find it. The view need not exist
+/// yet; a link to a view saved later is allowed.
+pub(crate) fn linked_view_ok(id: &str, path: &str) -> Result<(), String> {
+    if id.is_empty() || id != id.trim() {
+        return Err(format!("{path}: a saved view's id is not empty and has no space around it"));
+    }
+    if id.len() > MAX_VIEW_ID_BYTES {
+        return Err(format!("{path}: an id is at most {MAX_VIEW_ID_BYTES} bytes"));
+    }
+    no_control(id, path)
+}
+
+/// The `opens` of an element named by `path`, when it has one.
+fn opens_ok(opens: &Option<String>, path: &str) -> Result<(), String> {
+    match opens {
+        Some(id) => linked_view_ok(id, &format!("{path}.opens")),
+        None => Ok(()),
+    }
+}
+
+/// A view that embeds itself would never finish drawing. A longer cycle
+/// across saved views cannot be seen from one of them, so clients guard
+/// the depth they follow.
+fn embeds_not_itself(list: &[Block], name: &dyn Fn(usize) -> String, own: &str) -> Result<(), String> {
+    for (i, block) in list.iter().enumerate() {
+        let path = name(i);
+        if matches!(block, Block::Embed { view } if view == own) {
+            return Err(format!("{path}: a view cannot embed itself"));
+        }
+        for (slot, inner) in block.children() {
+            let inner_name = |n: usize| format!("{path}{}", slot.patch_path(n));
+            embeds_not_itself(inner, &inner_name, own)?;
+        }
+    }
+    Ok(())
 }
 
 /// Whether a client may hand `url` to the system's opener, which would as

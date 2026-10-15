@@ -13,4 +13,8 @@ body: string | null,
 /**
  * Events sharing a lane are drawn in a column of their own.
  */
-lane: string | null, };
+lane: string | null, 
+/**
+ * A saved view this opens, by its id; see [`Value::View`].
+ */
+opens?: string | null, };

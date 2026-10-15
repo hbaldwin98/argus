@@ -413,10 +413,11 @@ mod tests {
             tone: Default::default(),
             blocks: vec![Block::Form { id: "f".into(), fields: vec![], submit: action("send") }],
             actions: vec![action("card")],
+            opens: None,
         };
         let row = Block::Row { align: Default::default(), items: vec![RowItem::Action { action: action("inrow") }] };
         let mut v = AgentView { id: "v".into(), title: "v".into(), actions: vec![action("head")], ..Default::default() };
-        v.blocks = vec![Block::Section { heading: "s".into(), blocks: vec![card, row] }];
+        v.blocks = vec![Block::Section { heading: "s".into(), blocks: vec![card, row], opens: None }];
         for id in ["head", "card", "send", "inrow"] {
             assert_eq!(find_action(&v, id).map(|a| a.id.as_str()), Some(id));
         }

@@ -82,7 +82,8 @@ fn value_kind(value: &Value) -> usize {
         Value::Commit { .. } => 16,
         Value::Feature { .. } => 17,
         Value::Pane { .. } => 18,
-        Value::Unknown => 19,
+        Value::View { .. } => 19,
+        Value::Unknown => 20,
     }
 }
 
@@ -198,7 +199,7 @@ fn every_json_example_reads_as_the_type_it_shows() {
         read_blocks += 1;
     }
     assert!(read_blocks > 20, "only {read_blocks} blocks read");
-    assert_eq!(values.len(), 19, "every value kind is shown");
+    assert_eq!(values.len(), 20, "every value kind is shown");
     assert_eq!(dialogs.len(), 4, "every dialog kind is shown");
     assert_eq!(events.len(), 8, "every event, and every kind of answer, is shown");
 }
