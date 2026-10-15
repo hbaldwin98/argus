@@ -83,11 +83,6 @@ const PANE_WORD = {
     failed: 'failed',
     exited: 'exited',
 };
-/** A quiet repository nobody opened or chose folds under one row, so the
- *  sidebar is the work in hand; unfolding them is the page's own view. */
-function folded(repo) {
-    return repo.quiet && !repo.open && repo.id !== state.rail.repository;
-}
 function drawRail() {
     const rail = $('rail');
     const { project, loaded } = state.rail;
@@ -106,11 +101,8 @@ function drawRail() {
         rail.replaceChildren(el('div', { class: 'empty-rail' }, 'No projects yet.'));
         return;
     }
-    const quiet = project.repositories.filter(folded).length;
     const rows = [];
     for (const repo of project.repositories) {
-        if (folded(repo) && !state.quietOpen)
-            continue;
         rows.push(repoRow(repo));
         for (const co of repo.checkouts) {
             rows.push(checkoutRow(repo.name, co));
@@ -119,22 +111,7 @@ function drawRail() {
             }
         }
     }
-    if (quiet > 0)
-        rows.push(quietFold(quiet));
     rail.replaceChildren(...rows);
-}
-function quietFold(quiet) {
-    const words = state.quietOpen
-        ? 'Fold the quiet repositories'
-        : `${quiet} quiet ${quiet === 1 ? 'repository' : 'repositories'}`;
-    return el('button', {
-        class: 'nav quiet-fold',
-        'aria-expanded': String(state.quietOpen),
-        onclick: () => {
-            state.quietOpen = !state.quietOpen;
-            drawRail();
-        },
-    }, el('span', { class: 'ic' }, icon(state.quietOpen ? 'down' : 'right')), el('span', { class: 'fg-muted' }, words));
 }
 function repoRow(repo) {
     const colour = statusColour(repo.status);

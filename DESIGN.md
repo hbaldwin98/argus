@@ -45,8 +45,8 @@ of repositories, one repository, or a new one made with `git init`, with what th
 add (`PreviewProject`) beside the folders, then a name and folders to skip; it stays up until the
 daemon has made the project and a tree holds it, and a refusal is said in it. The rail is a tree: a heading per
 repository, a branch row per checkout with its + on hover, and the checkout's panes nested under it
-as a status dot and a title, saying only what needs a look or has ended; quiet repositories nobody
-opened fold under one row. New (`Ctrl-N`, in a pane the leader and `n`) is the composer, a stage
+as a status dot and a title, saying only what needs a look or has ended. Every repository is listed,
+the quiet ones after the active as the daemon orders them, and the rail only ever scrolls down. New (`Ctrl-N`, in a pane the leader and `n`) is the composer, a stage
 of its own: the chosen repository, a checkout and an agent picked beside a message that becomes
 the agent's first prompt, or a shell there. It stays up until the daemon makes the pane, so a
 refused start keeps what was typed. It shows one pane at a time; the daemon sizes a pane to the

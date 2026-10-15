@@ -37,6 +37,5 @@ export const state = {
     reviewDraft: '',
     filter: '',
     archivedOpen: false,
-    quietOpen: false,
     compose: { checkout: null, template: null, text: '' },
 };

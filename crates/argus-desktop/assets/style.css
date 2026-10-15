@@ -783,8 +783,13 @@
 .repo {
   display: flex;
   align-items: center;
-  margin-top: var(--sp-12);
+  margin-top: var(--sp-2);
   padding: 0 var(--sp-8);
+}
+/* A repository's checkouts and panes end before the next begins. */
+.co + .repo,
+.nest + .repo {
+  margin-top: var(--sp-8);
 }
 .repobtn {
   flex: 1;
@@ -947,10 +952,6 @@
   height: 1.5px;
   background: var(--fg-faint);
   border-radius: 1px;
-}
-.quiet-fold {
-  margin: var(--sp-12) var(--sp-8) 0;
-  width: calc(100% - var(--sp-16));
 }
 /* The rail's picked row, which holds the keys: ringed, so it reads apart
    from the pane on screen. */
@@ -1485,8 +1486,12 @@ button:focus-visible,
   flex-direction: column;
   position: relative;
 }
+/* Only ever down: a row too long for the rail cuts its title short rather
+   than scrolling the whole rail sideways. */
 .rail-list {
   flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding-bottom: var(--sp-12);
 }
@@ -1513,7 +1518,9 @@ button:focus-visible,
   visibility: visible;
 }
 .pane-row:hover .st,
-.pane-row:focus-within .st {
+.pane-row:focus-within .st,
+.pane-row:hover .pane-views,
+.pane-row:focus-within .pane-views {
   visibility: hidden;
 }
 .close:hover {
