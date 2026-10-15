@@ -293,6 +293,29 @@ mod tests {
     }
 
     #[test]
+    fn a_session_from_a_removed_worktree_reads_whole_from_the_checkout_it_is_listed_under() {
+        let root = tempfile::tempdir().unwrap();
+        let app = root.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let worktrees = root.path().join("trees");
+        let gone = worktrees.join("feat-x");
+        let projects = root.path().join("projects");
+        write(&projects.join(mangled(&gone)).join("g1.jsonl"), &[asked_in(&gone, "Gone")], 1);
+        let places = Places { checkouts: vec![(CheckoutId(1), app.clone())], worktree_root: Some(worktrees), primary: CheckoutId(1) };
+        let harness = claude(root.path());
+        let listed = sessions(std::slice::from_ref(&harness), &places);
+        assert_eq!((listed[0].checkout, listed[0].removed_worktree.is_some()), (CheckoutId(1), true));
+
+        // `ReadSession` names the primary checkout it was listed under, not
+        // the worktree it ran in: the id alone finds its file.
+        let read = super::super::conversation(Some(&harness.1), &listed[0].session_id, &app);
+        let argus_protocol::transcript::Conversation::Read(transcript) = read else {
+            panic!("read, not {read:?}");
+        };
+        assert_eq!(transcript.meta.title.as_deref(), Some("Gone"));
+    }
+
+    #[test]
     fn a_session_filed_by_date_is_placed_by_where_it_says_it_ran() {
         let root = tempfile::tempdir().unwrap();
         let checkout = root.path().join("app");
