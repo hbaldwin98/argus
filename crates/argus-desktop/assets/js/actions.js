@@ -37,7 +37,8 @@ export function actionButton(action, ctx, with_ = () => ({})) {
         return el('button', {
             class: `btn sm vtone-${action.tone}`,
             type: 'button',
-            disabled: waiting,
+            disabled: waiting || !ctx.canPress,
+            title: ctx.canPress ? null : 'This Argus daemon cannot take button presses',
             onclick: () => (action.confirm ? ask(true) : send()),
         }, waiting && el('span', { class: 'vspin', 'aria-label': 'waiting for the agent' }), action.label);
     };

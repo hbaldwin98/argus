@@ -20,7 +20,7 @@ import { ago } from './values.js';
 import type { ViewCtx } from './viewctx.js';
 import { viewLink } from './viewlink.js';
 
-let shown: ViewsPage = { views: [], open: null, popped: null };
+let shown: ViewsPage = { views: [], open: null, popped: null, canPress: false };
 
 /** Whether a dock shows the views now. */
 function viewsOut(): boolean {
@@ -205,6 +205,7 @@ function ctxOf(v: PageView): ViewCtx {
     path: key(v),
     drawn: (source: string) => v.diagrams.find((d) => d.source === source),
     pressed: v.pressed,
+    canPress: shown.canPress,
     changed: new Set(v.changed),
   };
 }

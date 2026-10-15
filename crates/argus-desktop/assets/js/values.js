@@ -116,5 +116,7 @@ export function value(v, ctx = null) {
             return refValue(v, ctx?.pane ?? null);
         case 'empty':
             return el('span', { class: 'vempty' }, '—');
+        case 'unknown':
+            return el('span', { class: 'vmuted', title: 'needs a newer Argus' }, '—');
     }
 }

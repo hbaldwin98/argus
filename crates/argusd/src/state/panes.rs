@@ -79,14 +79,10 @@ impl Daemon {
         let path = self.checkout_path(checkout)?;
         // Rejected here rather than trusted: `path` is spawned into a
         // command line, and a client is not the authority on what is
-        // inside the checkout. A leading separator is not `is_absolute` on
-        // Windows, so it is checked by hand rather than left to the platform.
-        if rel_path.is_empty()
-            || rel_path.starts_with(['/', '\\'])
-            || std::path::Path::new(rel_path).is_absolute()
-            || crate::paths::has_windows_drive_prefix(rel_path)
-            || rel_path.split(['/', '\\']).any(|c| c == "..")
-        {
+        // inside the checkout. The text is judged by the rule the daemon
+        // applied to the view the path came from; a link inside the
+        // checkout that leads out of it only shows on disk.
+        if !argus_protocol::is_checkout_relative(rel_path) || !crate::paths::stays_inside(&path, rel_path) {
             anyhow::bail!("not a path inside the checkout: {rel_path}");
         }
 

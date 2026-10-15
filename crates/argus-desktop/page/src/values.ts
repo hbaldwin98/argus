@@ -139,5 +139,7 @@ export function value(v: Value, ctx: ViewCtx | null = null): HTMLElement {
       return refValue(v, ctx?.pane ?? null);
     case 'empty':
       return el('span', { class: 'vempty' }, '—');
+    case 'unknown':
+      return el('span', { class: 'vmuted', title: 'needs a newer Argus' }, '—');
   }
 }

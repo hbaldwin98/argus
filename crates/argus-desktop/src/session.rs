@@ -56,6 +56,7 @@ use crate::link_dialog::{self, LinkDialog};
 use crate::reconcile_dialog::{self, ReconcileDialog};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
+use crate::page_over::{PageOver, Settled};
 use crate::page::{
     self, AddProjectGesture, Call, CaptureGesture, ConsoleGesture, ConsolePlace, DockGesture, Event, FeatureEdit, PageMouse,
     Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
@@ -71,7 +72,7 @@ use crate::settings::{Backdrop, Settings, Theme};
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
 use crate::switcher::Switcher;
-use crate::view_refs::{self, Target};
+use crate::view_refs::{self, Found, PendingFeature, Target};
 
 /// What to do with a thing the daemon made for this window, once the tree
 /// holds it.
@@ -126,12 +127,11 @@ pub struct Session {
     /// What the extensions publish: their views, the one out in the side
     /// panel in place of an agent's, their commands and their dialogs.
     extension_views: ExtensionViews,
-    /// The stage an extension's page opened over, to go back to when it
-    /// docks or goes.
-    before_page: Option<Stage>,
+    /// The stage a page, an agent's view or an extension's, opened over.
+    over: PageOver,
     /// A feature a reference in an agent's view named, to reveal once the
-    /// board of its repository has arrived: the number is only known there.
-    opening_feature: Option<(RepositoryId, i64)>,
+    /// board of its repository has arrived.
+    opening_feature: PendingFeature,
     extension_keys: ExtensionKeys,
     extensions_sent: Sent<page::ExtensionsPage>,
     extension_dialogs: ExtensionDialogs,
@@ -210,8 +210,8 @@ impl Session {
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
             extension_views: ExtensionViews::new(settings.extensions),
-            before_page: None,
-            opening_feature: None,
+            over: PageOver::default(),
+            opening_feature: PendingFeature::default(),
             extension_keys: ExtensionKeys::default(),
             extensions_sent: Sent::default(),
             extension_dialogs: ExtensionDialogs::default(),
@@ -398,10 +398,16 @@ impl Session {
             }
             ServerMsg::ExtensionDialogWithdrawn { id } => self.extension_dialogs.withdrawn(id),
             ServerMsg::ViewClosed { pane, id } => {
-                if self.views.closed(pane, &id) {
-                    self.passing.push(Event::Notice { text: format!("{id} was closed") });
+                if let Some(title) = self.views.closed(pane, &id) {
+                    self.passing.push(Event::Notice { text: format!("{title} was closed") });
                 }
                 self.rail_changed = true;
+            }
+            // The press never reached the agent, so the button comes back
+            // and the person is told why.
+            ServerMsg::ViewPressFailed { pane, view, action, reason } => {
+                let text = self.views.press_failed(pane, &view, &action, &reason);
+                self.passing.push(Event::Notice { text });
             }
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
             // The tree that follows says what closed and what stopping
@@ -1288,25 +1294,16 @@ impl Session {
     /// An agent's view over the stage up, which it goes back to when the
     /// view docks or closes. An extension's page gives way to it.
     fn show_view_page(&mut self) {
-        if self.stage != Stage::View {
-            if self.stage != Stage::Extension {
-                self.before_page = Some(self.stage);
-            }
-            self.go(Stage::View);
+        if let Some(stage) = self.over.open_view(self.stage) {
+            self.go(stage);
         }
     }
 
-    /// Keeps the stage level with the view: one docked, closed, or left for
-    /// another stage is no longer a page, and the view stage is never up
-    /// with no view on it.
     fn settle_view_page(&mut self) {
-        match (self.views.popped(), self.stage == Stage::View) {
-            (true, false) => self.views.end_pop_out(),
-            (false, true) => {
-                let back = self.before_page.take().unwrap_or(Stage::Workspace);
-                self.go(back);
-            }
-            _ => {}
+        match self.over.settle_view(self.views.popped(), self.stage) {
+            Some(Settled::EndPopOut) => self.views.end_pop_out(),
+            Some(Settled::Back(stage)) => self.go(stage),
+            None => {}
         }
     }
 
@@ -1331,7 +1328,7 @@ impl Session {
                     self.repository = Some(repository);
                     self.rail_changed = true;
                 }
-                self.opening_feature = Some((repository, number));
+                self.opening_feature.wait_for(repository, number);
                 self.go(Stage::Feature);
             }
         }
@@ -1342,21 +1339,14 @@ impl Session {
     /// repository is here to say which one is numbered so. The person going
     /// elsewhere meanwhile abandons it.
     fn settle_feature_ref(&mut self) {
-        let Some((repository, number)) = self.opening_feature else {
-            return;
-        };
-        if self.stage != Stage::Feature || self.repository != Some(repository) {
-            self.opening_feature = None;
-            return;
-        }
-        let Some(board) = self.features.board().filter(|b| b.repositories.is_empty() || b.repositories.contains(&repository)) else {
-            return;
-        };
-        let slug = board.features.iter().find(|f| f.number == number).map(|f| f.slug.clone());
-        self.opening_feature = None;
-        match slug {
-            Some(slug) => self.features.reveal(&slug, &self.tree, &mut self.out),
-            None => self.passing.push(Event::Notice { text: format!("no feature #{number} in this repository") }),
+        let (stage, chosen) = (self.stage, self.repository);
+        let there = |repository| stage == Stage::Feature && chosen == Some(repository);
+        match self.opening_feature.settle(there, self.features.board()) {
+            Some(Found::Slug(slug)) => self.features.reveal(&slug, &self.tree, &mut self.out),
+            Some(Found::Missing(number)) => {
+                self.passing.push(Event::Notice { text: format!("no feature #{number} in this repository") })
+            }
+            None => {}
         }
     }
 
@@ -1388,17 +1378,15 @@ impl Session {
     }
 
     fn show_extension_page(&mut self) {
-        if self.stage != Stage::Extension {
-            self.before_page = Some(self.stage);
-            self.go(Stage::Extension);
+        if let Some(stage) = self.over.open_extension(self.stage) {
+            self.go(stage);
         }
     }
 
     /// Back to the stage the page opened over, or the Workspace.
     fn leave_extension_page(&mut self) {
-        if self.stage == Stage::Extension {
-            let back = self.before_page.take().unwrap_or(Stage::Workspace);
-            self.go(back);
+        if let Some(stage) = self.over.leave_extension(self.stage) {
+            self.go(stage);
         }
     }
 
@@ -2654,7 +2642,8 @@ impl Session {
         }
         let tree = &self.tree;
         let views_out = self.docks.dock_out(&Panel::Views);
-        if let Some(page) = self.views.take(views_out, |pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
+        let can_press = self.status.daemon_can(VIEW_ACTIONS);
+        if let Some(page) = self.views.take(views_out, can_press, |pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
             events.push(Event::Views(Box::new(page)));
         }
         events.append(&mut self.passing);
@@ -5112,7 +5101,7 @@ mod tests {
         s.call(Call::PopOutView { pane: 1, id: "ci".into() });
         assert_eq!(s.stage, Stage::View);
         assert!(!s.docks.shows(&Panel::Views), "it is in the page, not also in a dock");
-        assert!(s.views.take(false, |_| None).unwrap().popped.is_some());
+        assert!(s.views.take(false, true, |_| None).unwrap().popped.is_some());
 
         s.call(Call::OpenView { pane: 1, id: "ci".into() });
         assert_eq!(s.stage, Stage::Workspace, "docking it goes back to the stage it opened over");
@@ -5123,6 +5112,42 @@ mod tests {
         assert_eq!(s.stage, Stage::Workspace, "a view that closes is no page");
         s.call(Call::PopOutView { pane: 1, id: "gone".into() });
         assert_eq!(s.stage, Stage::Workspace, "a view the window does not hold opens nothing");
+    }
+
+    #[test]
+    fn the_notice_for_a_closed_popped_view_names_its_title_not_its_id() {
+        let mut s = session(Hello::this_build());
+        agents_view(&mut s, 1);
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        s.receive(ServerMsg::ViewClosed { pane: PaneId(1), id: "ci".into() });
+        assert!(notices(&mut s).iter().any(|t| t == "CI was closed"));
+    }
+
+    #[test]
+    fn a_press_the_daemon_refused_is_said_and_gives_the_button_back() {
+        let mut s = session(Hello::this_build());
+        agents_view(&mut s, 1);
+        let press = argus_protocol::ViewPress { view: "ci".into(), action: "retry".into(), rows: vec![], form: None, answers: vec![] };
+        s.call(Call::PressView { pane: 1, press });
+        let pending = |s: &mut Session| s.views.take(false, true, |_| None).map(|p| p.views[0].pressed.clone());
+        assert_eq!(pending(&mut s), Some(vec!["retry".to_string()]));
+        s.receive(ServerMsg::ViewPressFailed { pane: PaneId(1), view: "ci".into(), action: "retry".into(), reason: "the agent has gone".into() });
+        assert!(notices(&mut s).iter().any(|t| t == "CI: the agent has gone"));
+        assert_eq!(pending(&mut s), Some(Vec::new()));
+    }
+
+    #[test]
+    fn the_page_is_told_a_daemon_that_cannot_take_presses_cannot() {
+        let mut s = session(Hello { capabilities: vec![AGENT_VIEWS.to_string()], ..Hello::this_build() });
+        agents_view(&mut s, 1);
+        assert!(!s.views.take(false, s.status.daemon_can(VIEW_ACTIONS), |_| None).unwrap().can_press);
+        let mut s = session(Hello::this_build());
+        agents_view(&mut s, 1);
+        let page = s.events(0).into_iter().find_map(|e| match e {
+            Event::Views(page) => Some(page),
+            _ => None,
+        });
+        assert!(page.unwrap().can_press);
     }
 
     fn notices(s: &mut Session) -> Vec<String> {

@@ -6,7 +6,7 @@
 //! the one thing to do or the sentence to say instead. An extension's
 //! table has no pane, so it is read against the checkout on screen.
 
-use argus_protocol::{CheckoutId, CheckoutInfo, PaneId, ProjectInfo, RepositoryId, RepositoryInfo};
+use argus_protocol::{CheckoutId, CheckoutInfo, DecisionBoard, PaneId, ProjectInfo, RepositoryId, RepositoryInfo};
 
 use crate::page::Reference;
 
@@ -33,18 +33,6 @@ fn holding(tree: &[ProjectInfo], checkout: CheckoutId) -> Option<(&RepositoryInf
     tree.iter().flat_map(|p| &p.repositories).find_map(|r| r.checkouts.iter().find(|c| c.id == checkout).map(|c| (r, c)))
 }
 
-/// Whether `path` stays inside a checkout: relative, and never going up. An
-/// agent wrote it from a ticket or a log, so it is not trusted to.
-pub fn inside_checkout(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    let drive = bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
-    !path.is_empty()
-        && !path.contains('\0')
-        && !drive
-        && !path.starts_with(['/', '\\'])
-        && !path.split(['/', '\\']).any(|part| part == "..")
-}
-
 fn is_hash(sha: &str) -> bool {
     (4..=64).contains(&sha.len()) && sha.bytes().all(|b| b.is_ascii_hexdigit())
 }
@@ -61,7 +49,7 @@ pub fn resolve(reference: &Reference, from: Option<PaneId>, here: Option<Checkou
         None => here.and_then(|c| holding(tree, c)).ok_or_else(|| "no checkout is on screen to read this against".to_string())?,
     };
     match reference {
-        Reference::Path { path, line } if inside_checkout(path) => {
+        Reference::Path { path, line } if argus_protocol::is_checkout_relative(path) => {
             Ok(Target::Editor { checkout: checkout.id, path: path.replace('\\', "/"), line: *line })
         }
         Reference::Path { path, .. } => Err(format!("{path} is not a path inside the checkout")),
@@ -69,6 +57,44 @@ pub fn resolve(reference: &Reference, from: Option<PaneId>, here: Option<Checkou
         Reference::Commit { sha } => Err(format!("{sha} is not a commit hash")),
         Reference::Feature { number } => Ok(Target::Feature { repository: repository.id, number: *number }),
         Reference::Pane { .. } => unreachable!("handled above"),
+    }
+}
+
+/// A feature a reference named, waiting for the board of its repository:
+/// the number is only known there, so the reference cannot be turned into
+/// the feature until the board has come.
+#[derive(Default)]
+pub struct PendingFeature {
+    waiting: Option<(RepositoryId, i64)>,
+}
+
+/// What the wait comes to.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Found {
+    /// The feature, by the slug the Feature stage reveals it by.
+    Slug(String),
+    /// The board is here and holds no feature of that number.
+    Missing(i64),
+}
+
+impl PendingFeature {
+    pub fn wait_for(&mut self, repository: RepositoryId, number: i64) {
+        self.waiting = Some((repository, number));
+    }
+
+    /// Settles the wait if it can be. `there` is whether the Feature stage
+    /// is up on the repository waited for; the person going elsewhere
+    /// meanwhile abandons it. `board` is the one the stage holds, if any.
+    pub fn settle(&mut self, there: impl FnOnce(RepositoryId) -> bool, board: Option<&DecisionBoard>) -> Option<Found> {
+        let (repository, number) = self.waiting?;
+        if !there(repository) {
+            self.waiting = None;
+            return None;
+        }
+        let board = board.filter(|b| b.repositories.is_empty() || b.repositories.contains(&repository))?;
+        self.waiting = None;
+        let slug = board.features.iter().find(|f| f.number == number).map(|f| f.slug.clone());
+        Some(slug.map_or(Found::Missing(number), Found::Slug))
     }
 }
 
@@ -105,7 +131,7 @@ mod tests {
 
     #[test]
     fn a_path_outside_the_checkout_is_refused() {
-        for bad in ["/etc/passwd", "\\win", "C:\\x", "c:/x", "../x", "a/../../x", "a\\..\\x", "", "a\0b"] {
+        for bad in ["/etc/passwd", "\\win", "C:\\x", "c:/x", "../x", "a/../../x", "a\\..\\x", "", "a\0b", ".. ", "...", "a/.../b", "a\nb"] {
             assert!(resolve(&path(bad), Some(PaneId(1)), None, &tree()).is_err(), "{bad:?}");
         }
         assert!(resolve(&path("a..b/c.rs"), Some(PaneId(1)), None, &tree()).is_ok(), "dots in a name are not going up");
@@ -129,5 +155,21 @@ mod tests {
         assert_eq!(resolve(&Reference::Pane { pane: 2 }, None, None, &tree()), Ok(Target::Pane(PaneId(2))));
         assert!(resolve(&Reference::Pane { pane: 99 }, Some(PaneId(1)), None, &tree()).unwrap_err().contains("gone"));
         assert!(resolve(&Reference::Feature { number: 1 }, Some(PaneId(99)), None, &tree()).is_err());
+    }
+
+    #[test]
+    fn a_feature_reference_waits_for_its_repositorys_board_and_is_abandoned_when_the_person_goes() {
+        let mut pending = PendingFeature::default();
+        assert_eq!(pending.settle(|_| true, None), None, "nothing waited for");
+        pending.wait_for(RepositoryId(10), 4);
+        assert_eq!(pending.settle(|_| true, None), None, "no board yet, still waiting");
+        let mut board = DecisionBoard { repositories: vec![RepositoryId(11)], ..Default::default() };
+        assert_eq!(pending.settle(|_| true, Some(&board)), None, "another repository's board is not it");
+        board.repositories = vec![RepositoryId(10)];
+        assert_eq!(pending.settle(|_| true, Some(&board)), Some(Found::Missing(4)));
+        assert_eq!(pending.settle(|_| true, Some(&board)), None, "settled once");
+        pending.wait_for(RepositoryId(10), 4);
+        assert_eq!(pending.settle(|_| false, Some(&board)), None);
+        assert_eq!(pending.settle(|_| true, Some(&board)), None, "abandoned for good");
     }
 }
