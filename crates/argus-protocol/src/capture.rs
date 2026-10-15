@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::decisions::MAX_DECISION_BYTES;
-use crate::features::{FeatureWrite, MAX_FEATURE_BODY_BYTES};
+use crate::features::{FeatureAction, FeatureWrite, MAX_FEATURE_BODY_BYTES};
 use crate::tasks::MAX_TASK_TITLE_BYTES;
 
 /// The tasks and decisions one note may hold. A note longer than this is a
@@ -218,6 +218,18 @@ impl Capture {
         decisions.last_mut().expect("a decision holder names a decision")
     }
 
+    /// What writing a note down asks of the daemon: a new feature, or with
+    /// `into` more of the one with that slug. Read and checked here so the
+    /// note a client previewed as ready is the one it sends, whichever
+    /// client it is; the daemon checks it again.
+    pub fn write(note: &str, into: Option<String>) -> Result<FeatureAction, &'static str> {
+        let capture = Capture::read(note, into.is_none()).checked(into.is_none())?;
+        Ok(FeatureAction::Capture {
+            into,
+            capture: Box::new(capture),
+        })
+    }
+
     /// Every task in the note, at any depth.
     pub fn task_count(&self) -> usize {
         self.tasks.iter().map(CapturedTask::count).sum()
@@ -389,6 +401,17 @@ every widget to tidy the theme roles.
         assert_eq!(capture.tasks[0].title, "one more task");
         assert!(capture.title.is_empty() && capture.body.is_none());
         assert_eq!(capture.unread, [2]);
+    }
+
+    #[test]
+    fn a_ready_note_is_written_whole_and_one_that_is_not_says_why() {
+        let Ok(FeatureAction::Capture { into, capture }) = Capture::write(NOTE, None) else {
+            panic!("the note is ready");
+        };
+        assert_eq!((into, capture.task_count()), (None, 5));
+        assert!(Capture::write("Title\n- A task\n  prose under it\n", None).is_err());
+        let more = Capture::write("- one more\n", Some("trim".into()));
+        assert!(matches!(more, Ok(FeatureAction::Capture { into: Some(_), .. })), "a row note needs no title");
     }
 
     #[test]

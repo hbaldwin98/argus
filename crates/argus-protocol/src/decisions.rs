@@ -69,6 +69,21 @@ impl DecisionState {
             _ => None,
         }
     }
+
+    /// How a decision typed on one line stands, by its first character:
+    /// the note grammar's `?` asks a question and `!` records one made, and
+    /// `~` is an answer that was turned down. Both clients read a typed
+    /// decision this way, so a line means the same in either.
+    pub fn typed(line: &str) -> (DecisionState, &str) {
+        let line = line.trim();
+        let (state, rest) = match line.chars().next() {
+            Some('?') => (DecisionState::Open, &line[1..]),
+            Some('~') => (DecisionState::Rejected, &line[1..]),
+            Some('!') => (DecisionState::Accepted, &line[1..]),
+            _ => (DecisionState::Accepted, line),
+        };
+        (state, rest.trim())
+    }
 }
 
 impl std::fmt::Display for DecisionState {
@@ -569,6 +584,14 @@ fn walk<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_typed_decision_says_how_it_stands_with_its_first_character() {
+        assert_eq!(DecisionState::typed("? which route"), (DecisionState::Open, "which route"));
+        assert_eq!(DecisionState::typed("~ read the file"), (DecisionState::Rejected, "read the file"));
+        assert_eq!(DecisionState::typed("! one contract"), (DecisionState::Accepted, "one contract"));
+        assert_eq!(DecisionState::typed(" one contract "), (DecisionState::Accepted, "one contract"));
+    }
 
     #[test]
     fn a_push_is_for_the_repository_it_names_and_an_unnamed_one_goes_by_project() {

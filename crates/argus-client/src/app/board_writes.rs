@@ -73,18 +73,6 @@ impl LineInput {
     }
 }
 
-/// How a typed decision line stands: the note grammar's `?` asks a question
-/// and `!` records one made, and `~` is an answer that was turned down.
-fn decision_line(line: &str) -> (DecisionState, &str) {
-    let (state, rest) = match line.chars().next() {
-        Some('?') => (DecisionState::Open, &line[1..]),
-        Some('~') => (DecisionState::Rejected, &line[1..]),
-        Some('!') => (DecisionState::Accepted, &line[1..]),
-        _ => (DecisionState::Accepted, line),
-    };
-    (state, rest.trim())
-}
-
 impl App {
     /// The project and checkout every board write is addressed to, and the
     /// feature it is about.
@@ -207,7 +195,7 @@ impl App {
                 task,
                 supersedes,
             } => {
-                let (state, chose) = decision_line(&text);
+                let (state, chose) = DecisionState::typed(&text);
                 let Some(feature) = self.feature_slug() else {
                     return;
                 };
@@ -280,9 +268,8 @@ impl App {
 
     /// Sends the note, or says why it is not ready and keeps it open.
     pub(super) fn commit_capture(&mut self) {
-        let (Some(note), Some(read), Some(checkout)) = (
+        let (Some(note), Some(checkout)) = (
             self.capture.as_ref(),
-            self.captured(),
             self.current_checkout().map(|checkout| checkout.id),
         ) else {
             return;
@@ -290,15 +277,12 @@ impl App {
         let BriefTarget::Capture { project, into } = note.target.clone() else {
             return;
         };
-        match read.checked(into.is_none()) {
-            Ok(capture) => {
+        match Capture::write(&note.body(), into) {
+            Ok(action) => {
                 let _ = self.out.send(ClientMsg::Feature {
                     project,
                     checkout,
-                    action: FeatureAction::Capture {
-                        into,
-                        capture: Box::new(capture),
-                    },
+                    action,
                 });
                 self.capture = None;
             }
@@ -944,18 +928,5 @@ impl App {
             }
             None => {}
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_typed_decision_says_how_it_stands_with_its_first_character() {
-        assert_eq!(decision_line("? which route"), (DecisionState::Open, "which route"));
-        assert_eq!(decision_line("~ read the file"), (DecisionState::Rejected, "read the file"));
-        assert_eq!(decision_line("! one contract"), (DecisionState::Accepted, "one contract"));
-        assert_eq!(decision_line("one contract"), (DecisionState::Accepted, "one contract"));
     }
 }
