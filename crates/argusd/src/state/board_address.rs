@@ -25,8 +25,8 @@ pub(crate) struct BoardAddress {
     /// path, so repositories cannot alias.
     pub key: String,
     /// The repositories in the tree whose board this is: what a pushed board
-    /// names so each client keeps only its own. A workspace board is every
-    /// repository's in the workspace.
+    /// names so each client keeps only its own. None for a workspace board,
+    /// which is never pushed.
     pub repositories: Vec<RepositoryId>,
     /// The checkout the request comes from, which is what a feature pointer
     /// is kept against. A client's is the one it has selected.
@@ -57,7 +57,6 @@ impl BoardAddress {
 struct AgentPlace {
     project: ProjectId,
     project_name: String,
-    workspace: WorkspaceId,
     workspace_name: String,
     checkout_path: PathBuf,
 }
@@ -87,10 +86,7 @@ impl Daemon {
                 let repositories = self.repositories_keyed(&key);
                 (key, repositories)
             }
-            ArtifactScope::Workspace => (
-                format!("workspace\0{}", place.workspace_name),
-                self.repositories_in(place.workspace),
-            ),
+            ArtifactScope::Workspace => (format!("workspace\0{}", place.workspace_name), Vec::new()),
         };
         Ok(BoardAddress {
             scope,
@@ -128,7 +124,6 @@ impl Daemon {
                     return Ok(AgentPlace {
                         project: project.id,
                         project_name: project.name.clone(),
-                        workspace: project.workspace,
                         workspace_name,
                         checkout_path: checkout.path.clone(),
                     });
@@ -194,17 +189,6 @@ impl Daemon {
             .into_iter()
             .filter(|(_, path)| self.board_key(path) == key)
             .map(|(id, _)| id)
-            .collect()
-    }
-
-    fn repositories_in(&self, workspace: WorkspaceId) -> Vec<RepositoryId> {
-        let inner = self.inner.lock().unwrap();
-        inner
-            .projects
-            .iter()
-            .filter(|project| project.workspace == workspace)
-            .flat_map(|project| &project.repositories)
-            .map(|repository| repository.id)
             .collect()
     }
 

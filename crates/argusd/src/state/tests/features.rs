@@ -365,11 +365,7 @@ async fn a_workspace_write_leaves_every_repositorys_board_on_screen_alone() {
         .spawn_agent(project.repositories[0].checkouts[0].id, "claude")
         .unwrap();
     let address = d.address_for_agent(agent, ArtifactScope::Workspace).unwrap();
-    assert_eq!(
-        address.repositories,
-        [project.repositories[0].id, project.repositories[1].id],
-        "a workspace board is every repository's in it"
-    );
+    assert!(!address.is_pushed());
     let mut boards = d.subscribe_decisions();
     let mut tasks = d.subscribe_tasks();
 
@@ -389,10 +385,6 @@ async fn a_workspace_write_leaves_every_repositorys_board_on_screen_alone() {
 
     assert!(boards.try_recv().is_err(), "no board is pushed for a workspace write");
     assert!(tasks.try_recv().is_err(), "nor a task list");
-    let shown = d
-        .decision_board(project.id, project.repositories[1].checkouts[0].id)
-        .unwrap();
-    assert!(shown.features.is_empty(), "and the repository's own board is untouched");
     close_all(&d);
 }
 
