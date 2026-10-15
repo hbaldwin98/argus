@@ -175,6 +175,22 @@ pub enum ClientMsg {
         harness: String,
         session_id: String,
     },
+    /// How each harness that can reopen one exact session does it,
+    /// answered with [`ServerMsg::Resumes`]: what a client names before it
+    /// asks for one. Only to a daemon that listed `SESSIONS`.
+    ListResumes {
+        request_id: u64,
+    },
+    /// Reopens a listed session in a new agent pane on `checkout`, from the
+    /// template [`ServerMsg::Resumes`] named for its harness, answered with
+    /// [`ServerMsg::Created`]. Refused for a harness no template can resume
+    /// with. Only to a daemon that listed `SESSIONS`.
+    ResumeSession {
+        request_id: u64,
+        checkout: CheckoutId,
+        harness: String,
+        session_id: String,
+    },
     /// Persist a review comment, then notify the selected live agent.
     ReviewComment {
         checkout: CheckoutId,
@@ -557,6 +573,13 @@ pub enum ServerMsg {
         request_id: u64,
         session_id: String,
         conversation: Box<Conversation>,
+    },
+    /// The answer to `ClientMsg::ListResumes`: for each harness that can
+    /// reopen one exact session, its name and the argv that would, with
+    /// `{session_id}` left to fill. A harness not named cannot.
+    Resumes {
+        request_id: u64,
+        resumes: Vec<(String, Vec<String>)>,
     },
     /// A pane's process exited.
     PaneClosed {

@@ -46,8 +46,10 @@ pub const PASTE_FILE: &str = "paste-file";
 /// daemon. Listed by each side for the half it takes.
 pub const FOCUS: &str = "focus";
 
-/// `ClientMsg::ListSessions` and `ClientMsg::ReadSession`, and their
-/// answers: a repository's past agent sessions and what one said.
+/// `ClientMsg::ListSessions`, `ClientMsg::ReadSession`,
+/// `ClientMsg::ListResumes` and `ClientMsg::ResumeSession`, and their
+/// answers: a repository's past agent sessions, what one said, and
+/// reopening one.
 pub const SESSIONS: &str = "sessions";
 
 /// One side's greeting.

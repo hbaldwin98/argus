@@ -482,6 +482,37 @@ async fn subscribing_twice_to_one_pane_does_not_double_up() {
 }
 
 #[tokio::test]
+async fn the_resumes_name_each_harness_command_and_one_without_is_refused() {
+    // The default templates: claude's resumes by id, and what the client
+    // is told is the command that would run.
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    h.send(ClientMsg::ListResumes { request_id: 2 });
+    let resumes = h.replies().into_iter().find_map(|reply| match reply {
+        ServerMsg::Resumes { request_id: 2, resumes } => Some(resumes),
+        _ => None,
+    });
+    let resumes = resumes.expect("the resumes are answered at once");
+    let (_, claude) = resumes.iter().find(|(harness, _)| harness == "claude").expect("claude resumes");
+    assert!(claude.ends_with(&["--resume".to_string(), "{session_id}".to_string()]), "{claude:?}");
+    assert!(!resumes.iter().any(|(harness, _)| harness == "generic"), "generic has no resume_id");
+
+    h.send(ClientMsg::ResumeSession {
+        request_id: 6,
+        checkout,
+        harness: "generic".into(),
+        session_id: "s1".into(),
+    });
+    let answer = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+        .await
+        .expect("an answer should arrive");
+    assert!(matches!(answer, Some(ServerMsg::Created { request_id: 6, created: None })), "{answer:?}");
+    let error = h.error().await;
+    assert!(error.contains("no agent template can resume a generic session"), "{error}");
+}
+
+#[tokio::test]
 async fn a_repositorys_sessions_and_what_one_said_are_answered_to_the_asker() {
     let dir = tempfile::tempdir().unwrap();
     let kept = dir.path().join(".herdr");

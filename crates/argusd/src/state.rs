@@ -182,12 +182,17 @@ const MAX_CHILDREN: usize = 8;
 /// the backstop for a child that vanishes silently.
 const CHILD_SILENCE: Duration = Duration::from_secs(600);
 
-/// Whether a spawn opens a new conversation or continues the one the pane
-/// had before the daemon stopped.
+/// Whether a spawn opens a new conversation, continues the one the pane
+/// had before the daemon stopped, or reopens one the person picked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Start {
     Fresh,
     Resuming,
+    /// A past conversation the person chose to resume by its id. Unlike a
+    /// restore it is their own start: held to the one-agent rule as a
+    /// fresh one is, and a CLI that refuses the id is left to say so rather
+    /// than quietly replaced by a new conversation.
+    Picked,
 }
 
 struct Checkout {

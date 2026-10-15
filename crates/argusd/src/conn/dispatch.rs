@@ -393,9 +393,9 @@ fn dispatch_checkout_reads(
     Ok(result)
 }
 
-/// A repository's agent sessions and what one said. Both open the
-/// harnesses' own files, a listing up to a few hundred of them, so they
-/// answer from a blocking thread.
+/// A repository's agent sessions, what one said, and reopening one. A
+/// listing and a read open the harnesses' own files, a listing up to a few
+/// hundred of them, so they answer from a blocking thread.
 fn dispatch_sessions(
     msg: Box<ClientMsg>,
     daemon: &Arc<Daemon>,
@@ -434,6 +434,24 @@ fn dispatch_sessions(
                     });
                 });
             }),
+        ClientMsg::ListResumes { request_id } => {
+            let _ = out_tx.send(ServerMsg::Resumes {
+                request_id,
+                resumes: daemon.resumes(),
+            });
+            Ok(())
+        }
+        ClientMsg::ResumeSession {
+            request_id,
+            checkout,
+            harness,
+            session_id,
+        } => {
+            let daemon = daemon.clone();
+            spawn_pane(out_tx, request_id, move || {
+                daemon.resume_session(checkout, &harness, &session_id)
+            })
+        }
         msg => return Err(Box::new(msg)),
     };
     Ok(result)

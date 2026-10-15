@@ -172,10 +172,10 @@ impl Daemon {
 
         let path = {
             let inner = self.inner.lock().unwrap();
-            // Only on a fresh start: a restore is replaying panes that were
-            // already running together, and refusing half of them would
-            // take work away rather than protect it.
-            if start == Start::Fresh {
+            // Not on a restore: it is replaying panes that were already
+            // running together, and refusing half of them would take work
+            // away rather than protect it.
+            if start != Start::Resuming {
                 if let Some(running) = exclusive_conflict(&inner.projects, checkout) {
                     anyhow::bail!(
                         "{running} is already working here, and this project allows one agent per checkout — make a worktree for another"
@@ -273,7 +273,7 @@ impl Daemon {
                 pane.harness = Some(harness.name.to_string());
                 pane.harness_session_id = pending.harness_session_id.or(harness_session_id);
                 pane.children = pending.children;
-                pane.resumed = resuming.then(|| Resumed {
+                pane.resumed = (resuming && start == Start::Resuming).then(|| Resumed {
                     checkout,
                     template: template.name.clone(),
                     at: self.clock.now(),

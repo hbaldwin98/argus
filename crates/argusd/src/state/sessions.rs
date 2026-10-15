@@ -89,6 +89,47 @@ impl Daemon {
         Ok(move || transcript::conversation(source.as_ref(), &session_id, &path))
     }
 
+    /// How each harness that can reopen one exact conversation does it:
+    /// the command of the first template that runs it with the harness's
+    /// `resume_id` after, `{session_id}` left for the client to fill. The
+    /// client names the command before it is run, and `resume_session`
+    /// starts the same template, so what it names is what runs.
+    pub fn resumes(&self) -> Vec<(String, Vec<String>)> {
+        let templates = self.templates.lock().unwrap().clone();
+        let mut resumes: Vec<(String, Vec<String>)> = Vec::new();
+        for template in &templates {
+            let harness = self.harness_for(template);
+            if harness.resume_id.is_empty() || resumes.iter().any(|(name, _)| *name == harness.name) {
+                continue;
+            }
+            let command = template.cmd.iter().chain(&harness.resume_id).cloned().collect();
+            resumes.push((harness.name.to_string(), command));
+        }
+        resumes
+    }
+
+    /// Starts an agent on `checkout` reopening the session `session_id`
+    /// that `harness` kept, from the template `resumes` names for it.
+    pub fn resume_session(
+        self: &Arc<Self>,
+        checkout: CheckoutId,
+        harness: &str,
+        session_id: &str,
+    ) -> anyhow::Result<PaneId> {
+        let template = {
+            let templates = self.templates.lock().unwrap();
+            templates
+                .iter()
+                .find(|t| {
+                    let runs = self.harness_for(t);
+                    runs.name == harness && !runs.resume_id.is_empty()
+                })
+                .map(|t| t.name.clone())
+        };
+        let template = template.ok_or_else(|| anyhow::anyhow!("no agent template can resume a {harness} session"))?;
+        self.start_agent(checkout, &template, Start::Picked, Some(session_id.to_string()), None)
+    }
+
     /// Each harness that keeps transcripts, named with where. A wrapper
     /// configured to read another CLI's files (`transcript = "claude"`)
     /// would list every one of them a second time, so a place already

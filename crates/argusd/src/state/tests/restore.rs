@@ -454,6 +454,43 @@ fn exact_resume_expands_the_id_as_argv_not_shell_text() {
     assert!(resuming);
 }
 
+#[tokio::test]
+async fn a_picked_session_resumes_by_its_id_and_is_no_restore_to_fall_back_from() {
+    // The person chose this conversation: a CLI that refuses it is theirs
+    // to see, not swapped for a new conversation they did not ask for.
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    assert_eq!(
+        d.resumes(),
+        [("claude".to_string(), vec!["echo".to_string(), "hi".to_string(), "--resume".to_string(), "{session_id}".to_string()])],
+        "the template's command with the harness's resume_id after"
+    );
+    let pane = d.resume_session(only_checkout(&d), "claude", "s-42").unwrap();
+    assert_eq!(resuming_panes(&d), 0);
+    let ids: Vec<_> = d.session_panes().into_iter().filter_map(|p| p.harness_session_id).collect();
+    assert_eq!(ids, ["s-42"], "the pane holds the session it reopened");
+
+    d.exit(pane, Some(1));
+    let panes = panes_of(&d);
+    assert_eq!(panes.len(), 1);
+    assert_eq!((panes[0].id, panes[0].status), (pane, PaneStatus::Exited { code: Some(1) }));
+    assert!(d.resume_session(only_checkout(&d), "generic", "s-42").is_err(), "generic has no resume_id");
+    close_all(&d);
+}
+
+#[test]
+fn a_picked_session_is_resumed_by_its_id_after_the_templates_flags() {
+    let (args, resuming) = agent_args(
+        &["--model".to_string(), "opus".to_string()],
+        &["--continue".to_string()],
+        &["--resume".to_string(), "{session_id}".to_string()],
+        Start::Picked,
+        Some("s-42"),
+    );
+    assert_eq!(args, ["--model", "opus", "--resume", "s-42"]);
+    assert!(resuming);
+}
+
 #[test]
 fn a_harness_that_cannot_resume_restores_the_old_way() {
     // Nothing to append, and nothing for a failed start to fall back
