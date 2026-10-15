@@ -164,8 +164,9 @@ right dock's, and each extension view where the person had put it. Rust holds th
 `markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and
 `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
-are `page.rs`'s types and the page and gesture types each surface's module keeps beside it (`console`, `docks`, `capture_note`, `checkouts`, …),
-written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
+are `page.rs`'s types and the page and gesture types each surface's module keeps beside it
+(`console`, `docks`, `capture_note`, `checkouts`, …), written as TypeScript by `cargo test` into
+`page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
 instance's config directory, so a dev window never shares it with the installed one, and it logs to
 `argus-desktop.log` beside the config, keeping the previous run's.
@@ -453,8 +454,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `features` | what the Feature stage's index shows from a board: its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
 | `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through |
 | `work_lens` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key and a mark on each row changed since the last reconcile, and the task or decision under the cursor in full |
-| `link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — and what its gestures ask of the daemon |
-| `reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — and what its gestures ask of the daemon |
+| `link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — what its gestures ask of the daemon, and the page and gestures it trades with the page |
+| `reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — what its gestures ask of the daemon, and the page and gestures it trades with the page |
 | `tracker_dialogs` | the link and reconcile dialogs as the window holds them: which of the two is open and on which feature, closing it when the board loses that feature, the refusal only the link dialog hears, and what the page last heard of each |
 | `record_lens` | the Record lens: every decision in the order it was made, and a decision read as its record — what replaced it, what was turned down, and the ADR it copies as |
 | `flows_lens` | the Flows lens: a feature's flows, the one under the cursor as steps, and the step under the cursor with what binds it and what carries it out |

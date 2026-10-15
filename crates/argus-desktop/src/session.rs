@@ -55,11 +55,13 @@ use crate::features::Layout;
 use crate::keymap::{self, Action};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
+use crate::link_dialog::LinkGesture;
 use crate::page::{
     self, Call, Event, FeatureEdit, PageMouse, ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
 };
 use crate::palette;
 use crate::preferences::Chosen;
+use crate::reconcile_dialog::ReconcileGesture;
 use crate::rail::{self, Choices};
 use crate::dragged_width::{self, DraggedWidth};
 use crate::sent::Sent;
@@ -672,7 +674,7 @@ impl Session {
         }
     }
 
-    fn link_gesture(&mut self, gesture: page::LinkGesture) -> Vec<ClientMsg> {
+    fn link_gesture(&mut self, gesture: LinkGesture) -> Vec<ClientMsg> {
         if let Some(scope) = self.scope() {
             let then = self.tracker_dialogs.link_gesture(gesture, self.features.board(), &scope, &mut self.out);
             self.tracker_then(then);
@@ -680,7 +682,7 @@ impl Session {
         self.finish()
     }
 
-    fn reconcile_gesture(&mut self, gesture: page::ReconcileGesture) -> Vec<ClientMsg> {
+    fn reconcile_gesture(&mut self, gesture: ReconcileGesture) -> Vec<ClientMsg> {
         if let Some(scope) = self.scope() {
             let board = self.features.board();
             let then = self.tracker_dialogs.reconcile_gesture(gesture, board, &self.tree, &scope, &mut self.out);
@@ -2514,6 +2516,7 @@ impl Session {
 mod tests {
     use super::*;
     use crate::fixtures::{checkout, pane, project, repository};
+    use crate::link_dialog::LinkPage;
     use argus_protocol::{PaneKind, PaneStatus};
 
     fn tree() -> Vec<ProjectInfo> {
@@ -3164,7 +3167,7 @@ mod tests {
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { .. })));
     }
 
-    fn link_page(s: &mut Session) -> Option<page::LinkPage> {
+    fn link_page(s: &mut Session) -> Option<LinkPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::Link(page) => Some(*page),
             _ => None,
@@ -3187,7 +3190,7 @@ mod tests {
         assert_eq!((page.number, page.linked.len()), (7, 1));
 
         let url = "https://acme.atlassian.net/browse/ARG-142";
-        let gesture = page::LinkGesture::Link { url: url.into(), role: "the PM's ticket".into() };
+        let gesture = LinkGesture::Link { url: url.into(), role: "the PM's ticket".into() };
         let sent = s.call(Call::Link { gesture });
         assert!(sent.iter().any(|m| matches!(m, ClientMsg::Feature { action: argus_protocol::FeatureAction::Link { .. }, .. })));
         assert_eq!(link_page(&mut s).unwrap().linked.len(), 1, "not linked until the board says so");

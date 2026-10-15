@@ -10,9 +10,9 @@
 use argus_protocol::{ClientMsg, DecisionBoard, Feature, PaneId, ProjectInfo};
 
 use crate::feature_stage::Scope;
-use crate::link_dialog::{self, LinkDialog};
-use crate::page::{Event, LinkGesture, LinkPage, ReconcileGesture, ReconcilePage};
-use crate::reconcile_dialog::{self, ReconcileDialog};
+use crate::link_dialog::{self, LinkDialog, LinkGesture, LinkPage};
+use crate::page::Event;
+use crate::reconcile_dialog::{self, ReconcileDialog, ReconcileGesture, ReconcilePage};
 use crate::sent::Sent;
 
 enum Open {
