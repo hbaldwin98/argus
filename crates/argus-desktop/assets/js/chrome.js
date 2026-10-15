@@ -15,6 +15,7 @@ import { call } from './tauri.js';
 const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 export function drawChrome() {
     const stopped = state.status.connection === 'stopped';
+    railWidth(state.rail.width);
     const stage = state.rail.stage;
     $('fstage').hidden = stage !== 'feature';
     $('cstage').hidden = stage !== 'checkouts';
@@ -500,4 +501,42 @@ export function notice(text) {
 }
 export function reconnect() {
     call('reconnect', {});
+}
+// ---- The rail's width ------------------------------------------------------
+/** The width the person dragged the rail to, or the stylesheet's own,
+ *  which narrows in a small window, when they never did. */
+function railWidth(width) {
+    const root = document.documentElement.style;
+    if (width === null)
+        root.removeProperty('--rail-w');
+    else
+        root.setProperty('--rail-w', `${width}px`);
+}
+/** The rail's edge: the rail follows the pointer while it is held, and the
+ *  width is reported once it is let go, for Rust to hold to its bounds,
+ *  keep and send back. A double-click gives back the usual width. */
+export function listenToRailEdge() {
+    const sash = $('rail-sash');
+    sash.addEventListener('mousedown', (e) => {
+        if (e.button !== 0)
+            return;
+        e.preventDefault();
+        const left = sash.parentElement?.getBoundingClientRect().left ?? 0;
+        let width = Math.round(e.clientX - left);
+        document.body.classList.add('resizing');
+        const move = (m) => {
+            width = Math.round(m.clientX - left);
+            railWidth(width);
+        };
+        const up = () => {
+            window.removeEventListener('mousemove', move);
+            window.removeEventListener('mouseup', up);
+            document.body.classList.remove('resizing');
+            railWidth(state.rail.width);
+            call('rail_width', { width: Math.max(0, width) });
+        };
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+    });
+    sash.addEventListener('dblclick', () => call('rail_width', { width: null }));
 }

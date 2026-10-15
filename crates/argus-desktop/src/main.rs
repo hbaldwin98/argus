@@ -39,6 +39,7 @@ mod page;
 mod palette;
 mod preferences;
 mod rail;
+mod rail_width;
 mod review;
 mod screen;
 mod sent;

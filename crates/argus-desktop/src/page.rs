@@ -153,6 +153,9 @@ pub enum Call {
     HideViews,
     /// Puts the side panel away, or brings out the newest view.
     ToggleViews,
+    /// Where a drag of the rail's edge was let go, in CSS pixels; `None`
+    /// to go back to its own width.
+    RailWidth { width: Option<u32> },
     /// Asks the agent that showed a view to read it again.
     RefreshView { pane: u64, id: String },
     /// Closes a view for every client.
@@ -470,6 +473,9 @@ pub struct Rail {
     pub workspaces: Vec<WorkspaceChoice>,
     /// A project waiting on a yes to be removed.
     pub removing: Option<Removing>,
+    /// The width the person dragged the rail to, in CSS pixels; `None`
+    /// leaves the page's own.
+    pub width: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1717,6 +1723,7 @@ mod tests {
             templates: vec!["claude".into()],
             workspaces: vec![WorkspaceChoice { id: 7, name: "personal".into(), open: true, projects: 1, panes: 1 }],
             removing: Some(Removing { project: 1, name: "src".into(), repositories: 1, panes: 0 }),
+            width: Some(320),
         };
         let value = as_json(Event::Rail(Box::new(rail)));
         assert_eq!(value["type"], "rail");

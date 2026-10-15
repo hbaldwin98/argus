@@ -52,6 +52,7 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         templates: Vec::new(),
         workspaces: Vec::new(),
         removing: None,
+        width: None,
     }
 }
 

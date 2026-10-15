@@ -84,6 +84,7 @@ export const state: {
     templates: [],
     workspaces: [],
     removing: null,
+    width: null,
   },
   features: null,
   capture: null,

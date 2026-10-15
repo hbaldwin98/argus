@@ -43,6 +43,10 @@ pub struct Settings {
     /// one instance shares and no other file of the window's is in.
     #[serde(default)]
     pub console: ConsoleLayout,
+    /// The rail's width as the person dragged it, in CSS pixels; absent
+    /// until they do.
+    #[serde(default)]
+    pub rail_width: Option<u32>,
     /// What the Settings dialog sets, flat in the file beside the rest.
     #[serde(flatten)]
     pub preferences: Preferences,
@@ -209,6 +213,7 @@ impl Default for Settings {
             chime: true,
             review: ReviewLayout::default(),
             console: ConsoleLayout::default(),
+            rail_width: None,
             preferences: Preferences::default(),
         }
     }

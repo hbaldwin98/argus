@@ -46,7 +46,9 @@ add (`PreviewProject`) beside the folders, then a name and folders to skip; it s
 daemon has made the project and a tree holds it, and a refusal is said in it. The rail is a tree: a heading per
 repository, a branch row per checkout with its + on hover, and the checkout's panes nested under it
 as a status dot and a title, saying only what needs a look or has ended. Every repository is listed,
-the quiet ones after the active as the daemon orders them, and the rail only ever scrolls down. New (`Ctrl-N`, in a pane the leader and `n`) is the composer, a stage
+the quiet ones after the active as the daemon orders them, and the rail only ever scrolls down. Its
+right edge drags it wider or narrower, between 200 and 560 pixels; the width is kept in `desktop.json`,
+and a double-click on the edge gives back the usual one, which narrows in a small window. New (`Ctrl-N`, in a pane the leader and `n`) is the composer, a stage
 of its own: the chosen repository, a checkout and an agent picked beside a message that becomes
 the agent's first prompt, or a shell there. It stays up until the daemon makes the pane, so a
 refused start keeps what was typed. It shows one pane at a time; the daemon sizes a pane to the
@@ -391,6 +393,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once |
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
+| `rail_width` | how wide the person dragged the rail, held to its bounds, and whether that changed since it was saved |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, among them what each pane it resumed a session in was resumed from |

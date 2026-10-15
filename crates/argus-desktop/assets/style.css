@@ -3555,7 +3555,14 @@ body.console-fullscreen #bar {
   flex-wrap: wrap;
   gap: var(--sp-4);
 }
+/* A button, so the page never navigates, drawn as a link. */
 .vlink {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  font: inherit;
+  text-align: inherit;
   color: var(--ref);
   text-decoration: none;
   cursor: pointer;
@@ -4114,4 +4121,25 @@ body.console-fullscreen #bar {
   font-size: var(--fs-xs);
   font-weight: 600;
   text-align: center;
+}
+
+/* The rail's edge, dragged to make it wider or narrower. */
+.rail-sash {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  z-index: 4;
+  cursor: col-resize;
+}
+.rail-sash:hover,
+body.resizing .rail-sash {
+  box-shadow: inset -3px 0 0 -1px var(--accent);
+}
+/* While the edge is held the pointer stays a resize arrow, and nothing it
+   passes over is selected. */
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
 }

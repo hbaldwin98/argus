@@ -4,7 +4,15 @@
 
 import type { Event } from './bindings/Event';
 import { chime, listen as listenForSound } from './chime.js';
-import { closeStart, drawChrome, notice, railPicked, reconnect, unpickRail } from './chrome.js';
+import {
+  closeStart,
+  drawChrome,
+  listenToRailEdge,
+  notice,
+  railPicked,
+  reconnect,
+  unpickRail,
+} from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
 import { listen as listenToConsole } from './console.js';
 import { clearComposer, focusComposer } from './compose.js';
@@ -155,6 +163,7 @@ listenForSound();
 listenToKeys();
 listenToFeatures();
 listenToConsole();
+listenToRailEdge();
 
 document.addEventListener('click', (e) => {
   // A click anywhere but its own items closes a checkout's + menu.

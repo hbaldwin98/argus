@@ -53,4 +53,9 @@ workspaces: Array<WorkspaceChoice>,
 /**
  * A project waiting on a yes to be removed.
  */
-removing: Removing | null, };
+removing: Removing | null, 
+/**
+ * The width the person dragged the rail to, in CSS pixels; `None`
+ * leaves the page's own.
+ */
+width: number | null, };
