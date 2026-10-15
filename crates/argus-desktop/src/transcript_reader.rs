@@ -10,7 +10,8 @@
 use argus_protocol::sessions::Session;
 use argus_protocol::transcript::Entry;
 
-use crate::page::{ReaderPage, SessionPreview, TranscriptLine, TurnJump};
+use crate::page::{ReaderPage, TranscriptLine, TurnJump};
+use crate::sessions_dialog::SessionPreview;
 
 pub struct TranscriptReader {
     session_id: String,

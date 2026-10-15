@@ -1,7 +1,8 @@
 //! Where each panel sits: which dock — left, right or bottom — holds it
 //! among that dock's tabs, or whether it opens as a page on the stage;
-//! which tab each dock shows, whether each dock is open, and how big; and
-//! whether that changed since `desktop.json` kept it.
+//! which tab each dock shows, whether each dock is open, and how big;
+//! whether that changed since `desktop.json` kept it, and what the page
+//! last heard of it.
 //!
 //! A panel the person placed stays placed whether or not it shows, or even
 //! exists: hidden and shown again it comes back where it was put, and an
@@ -18,6 +19,24 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::dragged_width::Bounds;
+use crate::page::Event;
+use crate::sent::Sent;
+
+/// What was done to the docks.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum DockGesture {
+    /// The panel goes to `dock`, shown there.
+    Move { panel: Panel, dock: Dock },
+    /// A dock's tab picked: its panel on screen there.
+    Show { panel: Panel },
+    /// A panel's close: its dock closes, and the panel stays in it.
+    Hide { panel: Panel },
+    /// A dock's sash let go at `size` CSS pixels: the bottom's height, or
+    /// a side's width.
+    Size { dock: Dock, size: u32 },
+}
 
 /// The edges of the stage a panel docks against. The sidebar keeps the
 /// window's own left edge, so the left dock is between it and the stage.
@@ -246,6 +265,7 @@ pub struct Docks {
     present: Vec<Panel>,
     /// The file has not kept the layout since it changed.
     unsaved: bool,
+    sent: Sent<DocksPage>,
 }
 
 impl Docks {
@@ -283,7 +303,7 @@ impl Docks {
             }
             d.open &= d.active.is_some();
         }
-        Docks { layout, present: vec![Panel::Console], unsaved: false }
+        Docks { layout, present: vec![Panel::Console], unsaved: false, sent: Sent::default() }
     }
 
     /// Which panels exist now, as the session finds them.
@@ -392,6 +412,18 @@ impl Docks {
     /// Whether the layout changed since last asked, so it is saved.
     pub fn take_unsaved(&mut self) -> bool {
         std::mem::take(&mut self.unsaved)
+    }
+
+    /// What the page has not heard of the docks, each panel named by
+    /// `title`.
+    pub fn take(&mut self, title: impl Fn(&Panel) -> String) -> Option<Event> {
+        let page = self.page(title);
+        self.sent.take(Some(page)).map(|page| Event::Docks(Box::new(page)))
+    }
+
+    /// The page reloaded and holds nothing: the docks are sent again.
+    pub fn reload(&mut self) {
+        self.sent.forget();
     }
 
     /// The docks with the panels that exist now, each named by `title`.

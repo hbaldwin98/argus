@@ -1,7 +1,7 @@
 //! The console: shells that belong to no checkout, as the window holds
 //! them — where it is (docked, the Console stage, fullscreen beside the
 //! sidebar, or hidden), the daemon's consoles, the tab chosen for each side
-//! of a split — and the page it draws.
+//! of a split — and the page it draws, and what the page last heard.
 //!
 //! The consoles are the daemon's `ServerMsg::Consoles`, never predicted: a
 //! tab appears once the daemon says the console exists and goes once it
@@ -15,8 +15,89 @@
 //! would show.
 
 use argus_protocol::{PaneId, PaneInfo};
+use serde::{Deserialize, Serialize};
 
-use crate::page::{ConsolePage, ConsolePlace, ConsoleTab, Stage};
+use crate::page::{Event, Stage};
+use crate::sent::Sent;
+
+/// What was done to the console.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ConsoleGesture {
+    /// Shows it docked, or hides it wherever it is.
+    Toggle,
+    /// The Console stage: the console fills the stage.
+    Tab,
+    /// In its dock, from hidden, the Console stage or fullscreen.
+    Dock,
+    /// Fullscreen beside the sidebar, or back to where it was.
+    Fullscreen,
+    Hide,
+    /// One of its tabs, or a split side's header: that console on screen,
+    /// with the keys.
+    Select { pane: u64 },
+    /// "+": a new console, shown once the daemon has made it.
+    Spawn,
+    /// A tab's close: the daemon ends that console.
+    Close { pane: u64 },
+    /// Splits the console in two, or puts the split away keeping the side
+    /// with the keys.
+    Split,
+    /// A split side's close: that side leaves the split, its console stays
+    /// a tab.
+    CloseSide { pane: u64 },
+}
+
+/// Where the console is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum ConsolePlace {
+    /// Only the sidebar's foot says it is there.
+    #[default]
+    Hidden,
+    /// In its dock beside the Workspace, Feature or Checkouts stage.
+    Docked,
+    /// The Console stage.
+    Tab,
+    /// The whole window but the sidebar's projects: the stages' nav and
+    /// the sidebar's foot are put away.
+    Fullscreen,
+}
+
+/// The console as the page draws it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ConsolePage {
+    pub place: ConsolePlace,
+    /// A tab per console the daemon holds, in the order they were started.
+    pub tabs: Vec<ConsoleTab>,
+    /// The console whose screen the window's canvas is drawing, on the
+    /// first side. The canvas is the Workspace's or the console's, so
+    /// while this is set the Workspace stage has none.
+    pub showing: Option<u64>,
+    /// The console on the second side, while the console is split and
+    /// has the canvas.
+    pub beside: Option<u64>,
+    /// Which of `showing` and `beside` has the keys, and is typed in.
+    pub typing: Option<u64>,
+    /// The daemon takes `SpawnConsole`; an older one offers no "+".
+    pub can_spawn: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ConsoleTab {
+    pub pane: u64,
+    pub title: String,
+    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
+    pub status: &'static str,
+    /// The tab chosen for one side: shown when the console has the canvas.
+    pub on: bool,
+}
 
 #[derive(Default)]
 pub struct Console {
@@ -27,6 +108,7 @@ pub struct Console {
     /// never without it.
     beside: Option<PaneId>,
     fullscreen: bool,
+    sent: Sent<ConsolePage>,
 }
 
 /// What the console's sides are drawing and which has the keys, as
@@ -137,6 +219,17 @@ impl Console {
 
     pub fn set_fullscreen(&mut self, fullscreen: bool) {
         self.fullscreen = fullscreen;
+    }
+
+    /// What the page has not heard of the console.
+    pub fn take(&mut self, place: ConsolePlace, on_screen: OnScreen, can_spawn: bool) -> Option<Event> {
+        let page = self.page(place, on_screen, can_spawn);
+        self.sent.take(Some(page)).map(|page| Event::Console(Box::new(page)))
+    }
+
+    /// The page reloaded and holds nothing: the console is sent again.
+    pub fn reload(&mut self) {
+        self.sent.forget();
     }
 
     /// `on_screen` is what the window's sides draw; only the consoles

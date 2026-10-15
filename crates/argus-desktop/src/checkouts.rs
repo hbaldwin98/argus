@@ -4,8 +4,94 @@
 
 use argus_protocol::column::{local_name, CheckoutRow};
 use argus_protocol::{CheckoutInfo, DecisionBoard, GitStatus, PaneKind, RepositoryInfo};
+use serde::Serialize;
 
-use crate::page::{CheckoutDetail, Checkouts, CheckoutsRow, LastCommit, Running};
+use crate::checkouts_stage::Confirm;
+
+/// The Checkouts stage: the chosen repository's checkouts, and the
+/// branches no checkout is on while they are shown.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Checkouts {
+    /// The repository it lists; `None` before one is chosen.
+    pub repository: Option<String>,
+    pub checkouts: usize,
+    /// Local and remote branches no checkout is on, shown or not.
+    pub branches: usize,
+    /// The repository's main branch, as the heading names it.
+    pub main: Option<String>,
+    pub branches_shown: bool,
+    pub filter: String,
+    pub rows: Vec<CheckoutsRow>,
+    /// The selected row's `key`.
+    pub selected: Option<String>,
+    pub detail: Option<CheckoutDetail>,
+    /// A question the stage is waiting on an answer to.
+    pub confirm: Option<Confirm>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CheckoutsRow {
+    /// Names the row in what the page sends back: `c<id>`, `b<branch>` or
+    /// `r<origin/branch>`.
+    pub key: String,
+    /// The checkout's id; `None` for a branch with no directory.
+    pub checkout: Option<u64>,
+    /// The checkout's name; `None` for a branch row.
+    pub name: Option<String>,
+    pub primary: bool,
+    pub branch: String,
+    /// The compact git state, as on the rail; a branch row has none.
+    pub git: Option<String>,
+    pub clean: bool,
+    /// Said beside the git state: `remote only` for what a fetch turned up,
+    /// `merged` for a branch main already has.
+    pub note: Option<&'static str>,
+    /// What was last committed here; a branch row has none.
+    pub last: Option<LastCommit>,
+    pub running: Vec<Running>,
+    /// `CheckoutInfo::shared_by`; a branch row has no agents to share it.
+    pub shared: Option<usize>,
+    /// The number of the feature this checkout is on, when the board says.
+    pub feature: Option<i64>,
+    /// That feature is the one the Feature stage has under its cursor.
+    pub viewed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Running {
+    pub agent: bool,
+    pub status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LastCommit {
+    pub short: String,
+    pub summary: String,
+    /// How long ago, as the rail says it: `2h`.
+    pub ago: String,
+}
+
+/// The selected checkout, said in full along the stage's foot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CheckoutDetail {
+    pub name: String,
+    pub path: String,
+    /// Its upstream and how far it is from it: `origin/main · 1 behind`;
+    /// `None` when git has not been read.
+    pub upstream: Option<String>,
+    /// `1 unstaged file`, `3 staged · 2 unstaged files`, `no changes`.
+    pub changes: Option<String>,
+}
 
 /// What the table is asked to show besides the repository itself.
 pub struct View<'a> {

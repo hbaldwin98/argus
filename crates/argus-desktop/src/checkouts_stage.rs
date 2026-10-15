@@ -1,14 +1,29 @@
 //! What the Checkouts stage holds — whether branch rows show, the filter,
-//! the selected row — and what its gestures ask of the daemon. Whether the
-//! stage is up is the session's. Like everything in the window it never
-//! predicts: a switched branch or a pull shows once the tree says so.
+//! the selected row — what its gestures ask of the daemon, and the table
+//! the page last heard. Whether the stage is up is the session's. Like
+//! everything in the window it never predicts: a switched branch or a pull
+//! shows once the tree says so.
 
 use argus_protocol::column::CheckoutRow;
 use argus_protocol::column_verbs::{force_delete, Verb};
 use argus_protocol::{CheckoutId, ClientMsg, DecisionBoard, PaneId, RepositoryInfo};
+use serde::Serialize;
 
-use crate::checkouts::{self, last_commit, View};
-use crate::page::{self, Confirm};
+use crate::checkouts::{self, last_commit, Checkouts, LastCommit, View};
+use crate::page::Event;
+use crate::sent::Sent;
+
+/// What the stage asks before doing something that cannot be taken back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum Confirm {
+    /// Removing a worktree: its panes end, its directory and its branch go.
+    Remove { name: String, branch: String },
+    /// Git refused `branch -d`: the branch holds commits nothing else has,
+    /// which are what a yes gives up.
+    Force { branch: String, commits: Vec<LastCommit> },
+}
 
 #[derive(Default)]
 pub struct CheckoutsStage {
@@ -16,8 +31,7 @@ pub struct CheckoutsStage {
     filter: String,
     /// The row the page chose, by key.
     selected: Option<String>,
-    /// What the page was last sent, so an unchanged table is not sent again.
-    sent: Option<page::Checkouts>,
+    sent: Sent<Checkouts>,
     /// The question waiting on the person, and what a yes sends.
     confirm: Option<(Confirm, ClientMsg)>,
 }
@@ -138,24 +152,19 @@ impl CheckoutsStage {
     }
 
     /// The table, if it differs from what the page was last sent.
-    pub fn take(&mut self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> Option<page::Checkouts> {
+    pub fn take(&mut self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> Option<Event> {
         let table = self.table(repo, board, viewed, now);
-        (self.sent.as_ref() != Some(&table)).then(|| {
-            self.sent = Some(table.clone());
-            table
-        })
+        self.sent.take(Some(table)).map(|table| Event::Checkouts(Box::new(table)))
     }
 
-    /// The table whatever was sent before: the page reloaded.
-    pub fn everything(&mut self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> page::Checkouts {
-        let table = self.table(repo, board, viewed, now);
-        self.sent = Some(table.clone());
-        table
+    /// The page reloaded and holds nothing: the table is sent again.
+    pub fn reload(&mut self) {
+        self.sent.forget();
     }
 
-    fn table(&self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> page::Checkouts {
+    fn table(&self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> Checkouts {
         let Some(repo) = repo else {
-            return page::Checkouts {
+            return Checkouts {
                 branches_shown: self.branches_shown,
                 filter: self.filter.clone(),
                 confirm: self.confirm.as_ref().map(|(question, _)| question.clone()),
@@ -214,6 +223,13 @@ mod tests {
         format!("{msg:?}")
     }
 
+    fn table(stage: &mut CheckoutsStage) -> Option<Checkouts> {
+        match stage.take(Some(&repo()), None, None, 0)? {
+            Event::Checkouts(table) => Some(*table),
+            other => panic!("{other:?}"),
+        }
+    }
+
     #[test]
     fn enter_on_a_branch_sends_what_the_column_says_a_switch_is() {
         let mut stage = CheckoutsStage::default();
@@ -235,7 +251,7 @@ mod tests {
 
         stage.refused(CheckoutId(100), "old".into(), &[], 0);
         assert_eq!(
-            stage.take(Some(&repo()), None, None, 0).unwrap().confirm,
+            table(&mut stage).unwrap().confirm,
             Some(Confirm::Force { branch: "old".into(), commits: Vec::new() })
         );
         assert_eq!(sent(stage.answer(true)), r#"Some(DeleteBranch { checkout: CheckoutId(100), branch: "old", force: true })"#);
@@ -248,7 +264,7 @@ mod tests {
         stage.select("c101".into());
         assert!(matches!(stage.delete(&repo()), Ok(None)));
         assert_eq!(
-            stage.take(Some(&repo()), None, None, 0).unwrap().confirm,
+            table(&mut stage).unwrap().confirm,
             Some(Confirm::Remove { name: "desktop".into(), branch: "desktop".into() })
         );
         assert!(stage.answer(false).is_none(), "a no does nothing");
@@ -260,9 +276,9 @@ mod tests {
     #[test]
     fn an_unchanged_table_is_not_sent_again() {
         let mut stage = CheckoutsStage::default();
-        assert!(stage.take(Some(&repo()), None, None, 0).is_some());
-        assert!(stage.take(Some(&repo()), None, None, 0).is_none());
+        assert!(table(&mut stage).is_some());
+        assert!(table(&mut stage).is_none());
         stage.toggle_branches();
-        assert!(stage.take(Some(&repo()), None, None, 0).is_some());
+        assert!(table(&mut stage).is_some());
     }
 }
