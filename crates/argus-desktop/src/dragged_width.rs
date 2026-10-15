@@ -1,6 +1,5 @@
-//! A size the person dragged one of the window's edges to — the rail's and
-//! the views panel's widths, an open feature's outline width and its brief's
-//! height — held to what leaves it usable and the rest room, and whether it
+//! A size the person dragged one of the window's edges to — the rail's
+//! width, an open feature's outline width and its brief's height — held to what leaves it usable and the rest room, and whether it
 //! changed since it was saved.
 //!
 //! Undragged it is `None`, and the page's own width stands, which may
@@ -8,7 +7,6 @@
 //! theirs.
 
 pub const RAIL: Bounds = Bounds { min: 200, max: 560 };
-pub const VIEWS: Bounds = Bounds { min: 360, max: 1200 };
 pub const OUTLINE: Bounds = Bounds { min: 220, max: 1200 };
 pub const BRIEF: Bounds = Bounds { min: 40, max: 900 };
 
@@ -70,6 +68,6 @@ mod tests {
 
     #[test]
     fn a_hand_edited_width_is_held_to_its_bounds_too() {
-        assert_eq!(DraggedWidth::new(VIEWS, Some(5)).get(), Some(VIEWS.min));
+        assert_eq!(DraggedWidth::new(OUTLINE, Some(5)).get(), Some(OUTLINE.min));
     }
 }

@@ -7,10 +7,6 @@ import type { ConsoleTab } from "./ConsoleTab";
  */
 export type ConsolePage = { place: ConsolePlace, 
 /**
- * Docked, in CSS pixels.
- */
-height: number, 
-/**
  * A tab per console the daemon holds, in the order they were started.
  */
 tabs: Array<ConsoleTab>, 

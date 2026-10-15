@@ -2452,29 +2452,207 @@ body.filled .rail {
   display: none;
 }
 
-/* ---- The console ------------------------------------------------------- */
+/* ---- The docks --------------------------------------------------------- */
 
-/* Docked under the Workspace, Feature or Checkouts stage, as tall as its
-   sash leaves it; the Console stage and fullscreen give it the stage. */
-.console {
+/* Under the strip: the stage between the left and right docks, and the
+   bottom dock under the stage alone. */
+.work {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.center {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+/* A dock holds the panel it shows, as wide or tall as its sash leaves it,
+   and never so big the stage has no room. */
+.dock {
   flex: none;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
+  position: relative;
+  background: var(--bg-sunken);
+}
+.dock[hidden] {
+  display: none;
+}
+.dock-left,
+.dock-right {
+  max-width: calc(100% - 240px);
+}
+.dock-bottom {
+  max-height: calc(100% - 120px);
   border-top: 1px solid var(--line);
+}
+.dock-left {
+  border-right: 1px solid var(--line);
+}
+.dock-right {
+  border-left: 1px solid var(--line);
+}
+/* A dock's tabs, only while it holds more than one panel; each panel
+   heads itself. */
+.dock-tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 var(--sp-8);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-chrome);
+  overflow-x: auto;
+}
+.dock-tabs[hidden] {
+  display: none;
+}
+.dock-tab {
+  display: inline-flex;
+  align-items: center;
+  max-width: 200px;
+  height: var(--control-h-sm);
+  padding: 0 var(--sp-8);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dock-tab:hover {
+  background: var(--fill);
+}
+.dock-tab.on {
+  background: var(--bg-surface);
+  color: var(--fg);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.dock-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dock-body > * {
+  flex: 1;
+  min-height: 0;
+}
+/* A panel being dragged: the place it would land, and its name under the
+   pointer. Over everything, and never in the way of the pointer. */
+body.panel-dragging,
+body.panel-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+.drop-preview {
+  position: fixed;
+  z-index: 60;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  pointer-events: none;
+  transition:
+    left 80ms ease-out,
+    top 80ms ease-out,
+    width 80ms ease-out,
+    height 80ms ease-out;
+}
+.drop-preview[hidden] {
+  display: none;
+}
+.drop-words {
+  padding: var(--sp-4) var(--sp-8);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+.drag-ghost {
+  position: fixed;
+  z-index: 61;
+  padding: var(--sp-4) var(--sp-8);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.chead,
+.vpanel-tabs,
+.vpanel-head {
+  cursor: grab;
+}
+.chead button,
+.vpanel-tabs button,
+.vpanel-head button {
+  cursor: pointer;
+}
+
+/* Panels on screen nowhere wait here, so a console's screens and a view's
+   scroll are kept for when they come back. */
+.parked {
+  display: none;
+}
+/* A side dock's edge, dragged as the views panel's is. */
+.dock-sash {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 4;
+  cursor: col-resize;
+}
+.dock-left .dock-sash {
+  right: -3px;
+}
+.dock-right .dock-sash {
+  left: -3px;
+}
+.dock-sash:hover,
+.dock-sash.held {
+  box-shadow: inset 3px 0 0 -1px var(--accent);
+}
+
+/* ---- The console ------------------------------------------------------- */
+
+/* In its dock, filling it; the Console stage and fullscreen give it the
+   stage. */
+.console {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   background: var(--bg-sunken);
 }
 body.console-tab .console,
 body.console-fullscreen .console {
   flex: 1;
-  border-top: 0;
 }
 /* Fullscreen keeps the sidebar's projects and the strip's window buttons;
-   the stages, their nav and the sidebar's foot are put away. */
+   the stages, the docks, their nav and the sidebar's foot are put away. */
 body.console-fullscreen #body,
 body.console-fullscreen #fstage,
 body.console-fullscreen #cstage,
 body.console-fullscreen #nstage,
+body.console-fullscreen .dock,
+body.console-fullscreen .sash,
 body.console-fullscreen .navs,
 body.console-fullscreen #bar {
   display: none;
@@ -3362,6 +3540,7 @@ body.console-fullscreen #bar {
   background: var(--see-surface);
 }
 .stage-body,
+.dock,
 .console,
 .board {
   background: var(--see-sunken);
@@ -3556,20 +3735,14 @@ body.console-fullscreen #bar {
 
 /* Beside the stage rather than over it, so the pane shrinks to fit and the
    rail stays in sight. */
+/* The views agents showed, or an extension's view, filling its dock. */
 .vpanel {
   position: relative;
-  width: var(--views-w, min(640px, 42vw));
-  min-width: 360px;
-  max-width: calc(100vw - var(--rail-w) - 240px);
-  flex: none;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--line);
   background: var(--bg-surface);
+  min-width: 0;
   min-height: 0;
-}
-.vpanel[hidden] {
-  display: none;
 }
 .vpanel-tabs {
   flex: none;
@@ -4326,20 +4499,6 @@ body.console-fullscreen #bar {
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-/* The views panel's edge, dragged as the rail's is. */
-.views-sash {
-  position: absolute;
-  top: 0;
-  left: -3px;
-  bottom: 0;
-  width: 6px;
-  z-index: 4;
-  cursor: col-resize;
-}
-.views-sash:hover,
-.views-sash.held {
-  box-shadow: inset 3px 0 0 -1px var(--accent);
 }
 /* The rail's edge, dragged to make it wider or narrower. */
 /* Inside the rail, whose overflow is hidden: half outside, its line was

@@ -1,56 +1,48 @@
-// The side panel the views agents showed open in, beside whatever stage is
-// up so the rail and the stage stay in sight, and the button in the title
-// strip that brings it back. Rust holds the views and which one is open;
-// the panel draws them and says what was pressed.
+// The panel the views agents showed open in — a panel `docks` puts in its
+// dock, the right one until it is moved, beside whatever stage is up so the
+// rail and the stage stay in sight — and the button in the title strip that
+// brings it back. Rust holds the views, which one is chosen, and whether
+// the panel is on screen; this draws them and says what was pressed.
 
 import type { Link } from './bindings/Link';
 import type { PageView } from './bindings/PageView';
 import type { ViewsPage } from './bindings/ViewsPage';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
+import { DOCK_ICON, dockOf, moveItems } from './docks.js';
+import { draggable } from './drag.js';
 import { $, el, icon } from './dom.js';
-import { dragEdge } from './edge.js';
-import {
-  extensionPanel,
-  extensionTabs,
-  extensionViewCount,
-  extensionViewFocused,
-  openFirstExtensionView,
-} from './extension_views.js';
+import { openMenu } from './menu.js';
+import { state } from './state.js';
 import { call } from './tauri.js';
 import { ago } from './values.js';
 import { viewLink } from './viewlink.js';
 
 let shown: ViewsPage = { views: [], open: null };
 
+/** Whether a dock shows the views now. */
+function viewsOut(): boolean {
+  const docks = state.docks;
+  return !!docks && [docks.left, docks.right, docks.bottom].some((d) => d.shown === 'views');
+}
+
 /** Draws the panel from the agents' views `page`, or from the ones last
- *  sent when an extension's changed; an extension's view out takes the
- *  panel's body, beside the same tabs. */
+ *  sent when the docks changed, and the strip's button while the panel is
+ *  not out. */
 export function drawViews(page: ViewsPage = shown): void {
   shown = page;
   const panel = $('views-inner');
   const launcher = $('views-tab');
-  const extension = extensionPanel();
   const open =
-    !extension &&
-    page.open &&
-    page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
-  const waiting = page.views.length + extensionViewCount();
-  $('views').hidden = !open && !extension;
-  launcher.hidden = Boolean(open) || Boolean(extension) || waiting === 0;
-  if (extension) {
-    // Replaced, the view would drop the keys a click in it gave it.
-    const had = extensionViewFocused();
-    panel.replaceChildren(tabs(page.views, null), ...extension);
-    if (had) document.getElementById('extension-view')?.focus();
-    return;
-  }
+    page.open && page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
+  const waiting = page.views.length;
+  launcher.hidden = viewsOut() || waiting === 0;
+  launcher.replaceChildren(
+    el('span', { class: 'vdot', 'aria-hidden': 'true' }),
+    `${waiting} ${waiting === 1 ? 'view' : 'views'}`,
+  );
   if (!open) {
     panel.replaceChildren();
-    launcher.replaceChildren(
-      el('span', { class: 'vdot', 'aria-hidden': 'true' }),
-      `${waiting} ${waiting === 1 ? 'view' : 'views'}`,
-    );
     return;
   }
   // Keep the reader's place when the view comes again or another is added.
@@ -66,7 +58,7 @@ function key(v: PageView): string {
 }
 
 function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
-  return el(
+  const strip = el(
     'div',
     { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' },
     views.map((v) =>
@@ -84,8 +76,22 @@ function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
         el('span', { class: 'ttl' }, v.view.title),
       ),
     ),
-    extensionTabs(),
     el('span', { class: 'grow' }),
+    el(
+      'button',
+      {
+        class: 'icon',
+        type: 'button',
+        title: 'Move to another dock',
+        'aria-label': 'Move to another dock',
+        'aria-haspopup': 'menu',
+        onclick: (e: MouseEvent) => {
+          const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          openMenu('Dock the views', moveItems('views', true), { x: box.left, y: box.bottom + 4 });
+        },
+      },
+      icon(DOCK_ICON[dockOf('views') ?? 'right']),
+    ),
     el(
       'button',
       {
@@ -98,6 +104,7 @@ function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
       icon('close'),
     ),
   );
+  return draggable(strip, 'views', 'Views');
 }
 
 function header(v: PageView): HTMLElement {
@@ -174,27 +181,8 @@ export function viewOf(link: Link): PageView | undefined {
   );
 }
 
-/** The panel's width as the person dragged it, or the stylesheet's own. */
-export function viewsWidth(width: number | null): void {
-  const root = document.documentElement.style;
-  if (width === null) root.removeProperty('--views-w');
-  else root.setProperty('--views-w', `${width}px`);
-}
-
-/** The panel's left edge, for Rust to hold to its bounds, keep and send
- *  back; a double-click gives back the usual width. */
-export function listenToViewsEdge(): void {
-  const panel = $('views');
-  dragEdge($('views-sash'), panel, {
-    sizeAt: (x) => panel.getBoundingClientRect().right - x,
-    draw: viewsWidth,
-    report: (width) => call('views_width', { width }),
-  });
-}
-
 /** Brings the newest view out, from the title strip's button. */
 export function openNewestView(): void {
   const newest = shown.views[0];
   if (newest) call('open_view', { pane: newest.pane, id: newest.view.id });
-  else openFirstExtensionView();
 }

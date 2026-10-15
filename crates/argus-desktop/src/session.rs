@@ -33,7 +33,7 @@ use argus_protocol::mouse::{self, MouseButton, MouseEvent, MouseKind};
 use argus_protocol::pane_view::{Effect, PaneView};
 use argus_protocol::paste;
 use argus_protocol::{
-    transitions, CheckoutId, ClientMsg, Created, ExtPlace, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
+    transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, CONSOLES, FOCUS, PASTE_FILE,
     RENAME_PANE,
 };
@@ -42,11 +42,12 @@ use crate::add_project::AddProject;
 use crate::agent_views::AgentViews;
 use crate::extension_dialog::ExtensionDialogs;
 use crate::extension_keys::ExtensionKeys;
-use crate::extension_views::{ExtensionViews, Here};
+use crate::extension_views::{first_place, ExtensionViews, Here};
 use crate::agents::Agents;
 use crate::capture_note::CaptureNote;
 use crate::checkouts_stage::{CheckoutsStage, Opened};
 use crate::console::{Console, OnScreen};
+use crate::docks::{Dock, Docks, DocksPage, Panel, Place};
 use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
@@ -56,7 +57,7 @@ use crate::reconcile_dialog::{self, ReconcileDialog};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::page::{
-    self, AddProjectGesture, Call, CaptureGesture, ConsoleGesture, ConsolePlace, Event, FeatureEdit, PageMouse,
+    self, AddProjectGesture, Call, CaptureGesture, ConsoleGesture, ConsolePlace, DockGesture, Event, FeatureEdit, PageMouse,
     ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
 };
 use crate::palette;
@@ -116,6 +117,8 @@ pub struct Session {
     shown: ShownPane,
     console: Console,
     console_sent: Sent<page::ConsolePage>,
+    docks: Docks,
+    docks_sent: Sent<DocksPage>,
     awaited: Awaited<Made>,
     agents: Agents,
     views: AgentViews,
@@ -130,7 +133,6 @@ pub struct Session {
     extension_dialogs: ExtensionDialogs,
     extension_dialog_sent: Sent<page::ExtDialogPage>,
     rail_width: DraggedWidth,
-    views_width: DraggedWidth,
     outline_width: DraggedWidth,
     brief_height: DraggedWidth,
     dialogs: Dialogs,
@@ -196,8 +198,10 @@ impl Session {
             capture_sent: Sent::default(),
             checkouts: CheckoutsStage::default(),
             shown: ShownPane::default(),
-            console: Console::new(settings.console),
+            console: Console::default(),
             console_sent: Sent::default(),
+            docks: Docks::new(settings.docks.unwrap_or_default()),
+            docks_sent: Sent::default(),
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
@@ -208,7 +212,6 @@ impl Session {
             extension_dialogs: ExtensionDialogs::default(),
             extension_dialog_sent: Sent::default(),
             rail_width: DraggedWidth::new(dragged_width::RAIL, settings.rail_width),
-            views_width: DraggedWidth::new(dragged_width::VIEWS, settings.views_width),
             outline_width: DraggedWidth::new(dragged_width::OUTLINE, settings.outline_width),
             brief_height: DraggedWidth::new(dragged_width::BRIEF, settings.brief_height),
             dialogs: Dialogs::new(settings.review),
@@ -373,10 +376,11 @@ impl Session {
             }
             ServerMsg::Tasks(list) => self.features.receive_tasks(*list),
             ServerMsg::ViewShown(view) => {
-                // An extension's view out in the panel is not taken from
-                // under the person by an agent's arriving.
-                let on_screen = self.shown.pane().filter(|_| !self.extension_docked());
-                self.views.shown(*view, on_screen);
+                // Whatever the views' dock shows is not taken from under
+                // the person by an agent's view arriving.
+                if self.views.shown(*view, self.shown.pane(), self.docks.dock_out(&Panel::Views)) {
+                    self.docks.show(&Panel::Views);
+                }
                 self.rail_changed = true;
             }
             ServerMsg::ExtensionViews(views) => self.extension_views.receive(views),
@@ -594,6 +598,7 @@ impl Session {
             Call::GoToCheckout { checkout } => self.go_to_checkout(CheckoutId(checkout)),
             Call::GoToFeature { slug } => self.go_to_feature(&slug),
             Call::Console { gesture } => self.console_gesture(gesture),
+            Call::Docks { gesture } => self.dock_gesture(gesture),
             Call::PasteClipboard
             | Call::Copy { .. }
             | Call::Reconnect
@@ -604,13 +609,13 @@ impl Session {
             | Call::SnapLayouts
             | Call::OpenUrl { .. } => self.finish(),
             Call::OpenView { pane, id } => {
-                self.hide_docked_extension();
-                self.views.open(PaneId(pane), id);
+                if self.views.open(PaneId(pane), id) {
+                    self.docks.show(&Panel::Views);
+                }
                 self.finish()
             }
             Call::HideViews => {
-                self.hide_docked_extension();
-                self.views.hide();
+                self.docks.hide(&Panel::Views);
                 self.finish()
             }
             Call::ToggleViews => {
@@ -619,11 +624,6 @@ impl Session {
             }
             Call::RailWidth { width } => {
                 self.rail_width.set(width);
-                self.rail_changed = true;
-                self.finish()
-            }
-            Call::ViewsWidth { width } => {
-                self.views_width.set(width);
                 self.rail_changed = true;
                 self.finish()
             }
@@ -642,16 +642,17 @@ impl Session {
                 self.finish()
             }
             Call::OpenExtensionView { extension, view } => self.open_extension_view(&extension, &view),
-            Call::SelectExtensionRow { key } => {
-                self.extension_views.select(key);
+            Call::SelectExtensionRow { panel, key } => {
+                self.extension_views.touch(&panel);
+                self.extension_views.select(&panel, key);
                 self.finish()
             }
-            Call::ExtensionAction { action } => self.extension_action(&action),
-            Call::ExtensionDefault { row } => {
-                self.extension_views.select(row);
-                self.extension_default()
+            Call::ExtensionAction { panel, action } => self.extension_action(&panel, &action),
+            Call::ExtensionDefault { panel, row } => {
+                self.extension_views.select(&panel, row);
+                self.extension_default(&panel)
             }
-            Call::ExtensionKey { action } => self.extension_key(action),
+            Call::ExtensionKey { panel, action } => self.extension_key(&panel, action),
             Call::AnswerExtension { yes } => {
                 if let Some(msg) = self.extension_views.answer(yes) {
                     self.out.push(msg);
@@ -662,8 +663,8 @@ impl Session {
                 self.extension_command(&extension, &command, checkout.map(CheckoutId), pane.map(PaneId));
                 self.finish()
             }
-            Call::ExtensionMode { page } => {
-                self.extension_mode(page);
+            Call::ExtensionMode { panel, page } => {
+                self.extension_mode(&panel, page);
                 self.finish()
             }
             Call::ToggleExtensions => {
@@ -886,11 +887,16 @@ impl Session {
             Action::Console => self.open_console_tab(),
             Action::ToggleConsole => self.toggle_console(),
             Action::Views => self.toggle_views(),
-            Action::ExtensionPage => self.extension_mode(true),
-            Action::ExtensionDock => self.extension_mode(false),
+            Action::ExtensionPage | Action::ExtensionDock => match self.extension_views.last().cloned() {
+                Some(panel) => self.extension_mode(&panel, action == Action::ExtensionPage),
+                None => self.passing.push(Event::Notice { text: "no extension view has been opened".into() }),
+            },
             Action::ConsoleFullscreen => self.toggle_console_fullscreen(),
             Action::NewConsole => self.spawn_console(Made::ShowConsole),
             Action::SplitConsole => self.toggle_split(),
+            Action::DockLeft => self.move_panel(&Panel::Console, Dock::Left),
+            Action::DockRight => self.move_panel(&Panel::Console, Dock::Right),
+            Action::DockBottom => self.move_panel(&Panel::Console, Dock::Bottom),
             Action::OtherSide => self.other_side(),
             Action::OpenReview => {
                 if let Some(checkout) = self.view().checkout {
@@ -1247,42 +1253,32 @@ impl Session {
         Here { repository: repository.map(|r| r.id), checkout: checkout.map(|c| c.id) }
     }
 
-    /// The side panel away, whichever kind of view it shows, or the newest
-    /// agent's view out.
+    /// The views away, or out on the one chosen, the newest at first.
     fn toggle_views(&mut self) {
-        if self.extension_docked() {
-            self.extension_views.hide();
-            self.views.hide();
-        } else {
-            self.views.toggle();
+        if self.docks.shows(&Panel::Views) {
+            self.docks.hide(&Panel::Views);
+        } else if !self.views.is_empty() {
+            self.docks.show(&Panel::Views);
         }
     }
 
-    /// Whether an extension's view is docked in the side panel, in an
-    /// agent's view's place.
-    fn extension_docked(&self) -> bool {
-        self.extension_views.open_mode() == Some(ExtPlace::Panel)
-    }
-
-    /// An agent's view takes the panel: a docked extension view gives it
-    /// up, and one open as a page stays where it is.
-    fn hide_docked_extension(&mut self) {
-        if self.extension_docked() {
-            self.extension_views.hide();
-        }
-    }
-
-    /// Opens an extension's view where it opens: a page over the stage up,
-    /// or docked in the side panel in an agent's view's place.
+    /// Opens an extension's view where it is: placed where its extension
+    /// says the first time, then where the person put it — its dock, or a
+    /// page over the stage up.
     fn open_extension_view(&mut self, extension: &str, view: &str) -> Vec<ClientMsg> {
         let here = self.here();
-        match self.extension_views.open(extension, view, &here) {
-            Some(ExtPlace::Stage) => self.show_extension_page(),
-            Some(ExtPlace::Panel) => {
-                self.leave_extension_page();
-                self.views.hide();
-            }
-            None => self.passing.push(Event::Notice { text: format!("{extension} shows no {view} here") }),
+        let panel = Panel::extension(extension, view);
+        let Some(found) = self.extension_views.get(&panel, &here) else {
+            self.passing.push(Event::Notice { text: format!("{extension} shows no {view} here") });
+            return self.finish();
+        };
+        self.docks.place(&panel, first_place(found.place));
+        self.extension_views.touch(&panel);
+        if self.docks.place_of(&panel) == Some(Place::Stage) {
+            self.extension_views.set_page(Some(&panel));
+            self.show_extension_page();
+        } else {
+            self.docks.show(&panel);
         }
         self.finish()
     }
@@ -1302,50 +1298,69 @@ impl Session {
         }
     }
 
-    /// Moves the view open to a page, or docks it, and remembers it there.
-    fn extension_mode(&mut self, page: bool) {
-        let mode = if page { ExtPlace::Stage } else { ExtPlace::Panel };
-        if !self.extension_views.set_mode(mode) {
-            self.passing.push(Event::Notice { text: "no extension view is open".into() });
+    /// Moves an extension's view to a page, or back into a dock, and
+    /// remembers it there.
+    fn extension_mode(&mut self, panel: &Panel, page: bool) {
+        if self.extension_views.get(panel, &self.here()).is_none() {
+            self.passing.push(Event::Notice { text: "that extension's view is not shown here".into() });
             return;
         }
+        self.extension_views.touch(panel);
         if page {
+            self.docks.stage(panel);
+            self.extension_views.set_page(Some(panel));
             self.show_extension_page();
         } else {
-            self.leave_extension_page();
-            self.views.hide();
+            self.dock_extension(panel, None);
         }
     }
 
-    /// Keeps the extension view open level with what the daemon publishes
-    /// and where the person went: one taken away, or out of scope where the
-    /// person now is, closes, and a page of it goes back to the stage it
-    /// opened over saying so; a page the person left for another stage
-    /// closes; and the extension stage is never up with no page on it.
+    /// Docks an extension's view in `dock`, or else the dock it is in, or
+    /// where its extension says, or on the right; a page of it goes back
+    /// to the stage it opened over.
+    fn dock_extension(&mut self, panel: &Panel, dock: Option<Dock>) {
+        let asked = self.extension_views.get(panel, &self.here()).map(|v| first_place(v.place));
+        let dock = dock.or(self.docks.dock_of(panel)).unwrap_or(match asked {
+            Some(Place::Dock(dock)) => dock,
+            _ => Dock::Right,
+        });
+        self.docks.move_to(panel, dock);
+        if self.extension_views.page() == Some(panel) {
+            self.extension_views.set_page(None);
+            self.leave_extension_page();
+        }
+    }
+
+    /// Keeps the page level with what the daemon publishes and where the
+    /// person went: one taken away, or out of scope where the person now
+    /// is, goes back to the stage it opened over saying so; a page the
+    /// person left for another stage closes; and the extension stage is
+    /// never up with no page on it. A docked view gone or out of scope is
+    /// only not drawn, by `docks`.
     fn settle_extension(&mut self) {
-        let shown = self.extension_views.shown(&self.here()).map(|v| self.extension_views.mode_of(v));
         let paged = self.stage == Stage::Extension;
-        match shown {
-            None if self.extension_views.is_open() => {
+        match self.extension_views.page().cloned() {
+            Some(panel) if self.extension_views.get(&panel, &self.here()).is_none() => {
                 if paged {
-                    if let Some((extension, title)) = self.extension_views.open_title() {
+                    if let Some((extension, title)) = self.extension_views.page_title() {
                         self.passing.push(Event::Notice { text: format!("{extension}: {title} is no longer shown here") });
                     }
                 }
-                self.extension_views.hide();
+                self.extension_views.set_page(None);
                 self.leave_extension_page();
             }
-            Some(ExtPlace::Stage) if !paged => self.extension_views.hide(),
-            Some(ExtPlace::Stage) => {}
-            _ => self.leave_extension_page(),
+            Some(_) if !paged => self.extension_views.set_page(None),
+            Some(_) => {}
+            None => self.leave_extension_page(),
         }
     }
 
     /// One of the view's actions; the view changes when its extension
     /// publishes it again, never before.
-    fn extension_action(&mut self, action: &str) -> Vec<ClientMsg> {
+    fn extension_action(&mut self, panel: &Panel, action: &str) -> Vec<ClientMsg> {
         let here = self.here();
-        match self.extension_views.act(&here, action) {
+        self.extension_views.touch(panel);
+        match self.extension_views.act(panel, &here, action) {
             Ok(Some(msg)) => self.out.push(msg),
             Ok(None) => {}
             Err(text) => self.passing.push(Event::Notice { text }),
@@ -1353,14 +1368,15 @@ impl Session {
         self.finish()
     }
 
-    fn extension_key(&mut self, action: Action) -> Vec<ClientMsg> {
+    fn extension_key(&mut self, panel: &Panel, action: Action) -> Vec<ClientMsg> {
         let here = self.here();
+        self.extension_views.touch(panel);
         match action {
-            Action::Next => self.extension_views.step(&here, 1),
-            Action::Previous => self.extension_views.step(&here, -1),
-            Action::First => self.extension_views.select_end(&here, false),
-            Action::Last => self.extension_views.select_end(&here, true),
-            Action::Choose => return self.extension_default(),
+            Action::Next => self.extension_views.step(panel, &here, 1),
+            Action::Previous => self.extension_views.step(panel, &here, -1),
+            Action::First => self.extension_views.select_end(panel, &here, false),
+            Action::Last => self.extension_views.select_end(panel, &here, true),
+            Action::Choose => return self.extension_default(panel),
             _ => {}
         }
         self.finish()
@@ -1368,10 +1384,10 @@ impl Session {
 
     /// The view's default action on its selected row; a view without one
     /// leaves Enter and a double-click doing nothing, said nowhere.
-    fn extension_default(&mut self) -> Vec<ClientMsg> {
+    fn extension_default(&mut self, panel: &Panel) -> Vec<ClientMsg> {
         let here = self.here();
-        match self.extension_views.default_action(&here) {
-            Some(action) => self.extension_action(&action),
+        match self.extension_views.default_action(panel, &here) {
+            Some(action) => self.extension_action(panel, &action),
             None => self.finish(),
         }
     }
@@ -1399,9 +1415,18 @@ impl Session {
 
     fn extensions_page(&self) -> page::ExtensionsPage {
         let here = self.here();
+        let docks = &self.docks;
+        let page = self.extension_views.page().filter(|_| self.stage == Stage::Extension);
+        let on = |panel: &Panel| docks.shows(panel) || page == Some(panel);
         page::ExtensionsPage {
-            views: self.extension_views.tabs(&here),
-            open: self.extension_views.table(&here),
+            views: self.extension_views.tabs(&here, |panel| docks.place_of(panel) == Some(Place::Stage), on),
+            tables: self
+                .extension_views
+                .present(&here)
+                .filter(|panel| on(panel))
+                .filter_map(|panel| self.extension_views.table(&panel, &here, page == Some(&panel)))
+                .collect(),
+            confirm: self.extension_views.confirm(),
             listed: self.extension_views.listed(),
             commands: self.extension_keys.page(),
             groups: self.extension_keys.groups(self.extension_views.views()),
@@ -1424,11 +1449,80 @@ impl Session {
                     self.out.push(ClientMsg::Kill { pane: PaneId(pane) });
                 }
             }
-            ConsoleGesture::Height { height } => self.console.set_height(height),
             ConsoleGesture::Split => self.toggle_split(),
             ConsoleGesture::CloseSide { pane } => self.close_side(PaneId(pane)),
         }
         self.finish()
+    }
+
+    fn dock_gesture(&mut self, gesture: DockGesture) -> Vec<ClientMsg> {
+        match gesture {
+            DockGesture::Move { panel, dock } => self.move_panel(&panel, dock),
+            DockGesture::Show { panel } => self.show_panel(&panel),
+            DockGesture::Hide { panel } => match panel {
+                Panel::Console => self.hide_console(),
+                _ => self.docks.hide(&panel),
+            },
+            DockGesture::Size { dock, size } => self.docks.set_size(dock, size),
+        }
+        self.finish()
+    }
+
+    /// The panel goes to `dock` and is shown there, as if shown from its
+    /// key: the console out of fullscreen or the Console stage, an
+    /// extension's view off the stage.
+    fn move_panel(&mut self, panel: &Panel, dock: Dock) {
+        match panel {
+            Panel::Console => {
+                self.docks.move_to(panel, dock);
+                self.dock_console();
+            }
+            Panel::Views => self.docks.move_to(panel, dock),
+            Panel::Extension(_) => {
+                self.extension_views.touch(panel);
+                self.dock_extension(panel, Some(dock));
+            }
+        }
+    }
+
+    /// A dock's tab picked: the panel on screen in its dock, and the
+    /// console with the keys, as its own key shows it.
+    fn show_panel(&mut self, panel: &Panel) {
+        match panel {
+            Panel::Console => self.dock_console(),
+            _ => {
+                if let Panel::Extension(_) = panel {
+                    self.extension_views.touch(panel);
+                }
+                self.docks.show(panel);
+            }
+        }
+    }
+
+    /// The panels that exist now: the console always, the views while an
+    /// agent has one up, and each extension's view listed where the person
+    /// is.
+    fn present(&self) -> Vec<Panel> {
+        let mut present = vec![Panel::Console];
+        if !self.views.is_empty() {
+            present.push(Panel::Views);
+        }
+        present.extend(self.extension_views.present(&self.here()));
+        present
+    }
+
+    /// A panel as its dock's tab names it.
+    fn panel_title(&self, panel: &Panel) -> String {
+        match panel {
+            Panel::Console => "Console".into(),
+            Panel::Views => "Views".into(),
+            Panel::Extension(_) => self.extension_views.get(panel, &self.here()).map(|v| v.title.clone()).unwrap_or_default(),
+        }
+    }
+
+    /// Where the console is with the stage up now.
+    fn console_place(&self) -> ConsolePlace {
+        self.console.place(self.stage, self.docks.shows(&Panel::Console))
     }
 
     /// Whether the keys are a console's rather than the Workspace's pane's.
@@ -1444,8 +1538,8 @@ impl Session {
     /// A hidden console is shown docked for a console asked for: one the
     /// person means to type into.
     fn reveal_console(&mut self) {
-        if self.console.place(self.stage) == ConsolePlace::Hidden {
-            self.console.set_docked(true);
+        if self.console_place() == ConsolePlace::Hidden {
+            self.docks.show(&Panel::Console);
             if self.stage == Stage::Composer {
                 self.stage = Stage::Workspace;
             }
@@ -1570,7 +1664,7 @@ impl Session {
                 !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console | Stage::Extension)
                     && !self.console.fullscreen()
             }
-            Side::First | Side::Second => self.console.place(self.stage) != ConsolePlace::Hidden,
+            Side::First | Side::Second => self.console_place() != ConsolePlace::Hidden,
         }
     }
 
@@ -1608,17 +1702,17 @@ impl Session {
     }
 
     fn toggle_console(&mut self) {
-        match self.console.place(self.stage) {
+        match self.console_place() {
             ConsolePlace::Hidden => self.dock_console(),
             _ => self.hide_console(),
         }
     }
 
-    /// Docked under the stage: from hidden, from the Console stage, or out
-    /// of fullscreen.
+    /// In its dock: from hidden, from the Console stage, or out of
+    /// fullscreen.
     fn dock_console(&mut self) {
         self.console.set_fullscreen(false);
-        self.console.set_docked(true);
+        self.docks.show(&Panel::Console);
         if matches!(self.stage, Stage::Console | Stage::Composer) {
             self.go(Stage::Workspace);
         }
@@ -1629,7 +1723,7 @@ impl Session {
     /// `finish` settles it.
     fn hide_console(&mut self) {
         self.console.set_fullscreen(false);
-        self.console.set_docked(false);
+        self.docks.hide(&Panel::Console);
         if self.stage == Stage::Console {
             self.go(Stage::Workspace);
         }
@@ -1647,8 +1741,8 @@ impl Session {
         if self.console.fullscreen() {
             self.console.set_fullscreen(false);
         } else {
-            if self.console.place(self.stage) == ConsolePlace::Hidden {
-                self.console.set_docked(true);
+            if self.console_place() == ConsolePlace::Hidden {
+                self.docks.show(&Panel::Console);
                 if self.stage == Stage::Composer {
                     self.go(Stage::Workspace);
                 }
@@ -1663,7 +1757,7 @@ impl Session {
     /// however it came to be hidden: its key, the composer, or leaving the
     /// Console stage.
     fn settle_console(&mut self) {
-        if self.console.place(self.stage) == ConsolePlace::Hidden && self.console_on() {
+        if self.console_place() == ConsolePlace::Hidden && self.console_on() {
             self.shown.close(Side::Second, &mut self.out);
             self.shown.close(Side::First, &mut self.out);
             self.give_back();
@@ -2197,6 +2291,9 @@ impl Session {
             | Action::ConsoleFullscreen
             | Action::NewConsole
             | Action::SplitConsole
+            | Action::DockLeft
+            | Action::DockRight
+            | Action::DockBottom
             | Action::OtherSide => self.run(action),
             Action::Fill | Action::Close if self.on_screen().is_none() => {
                 self.passing.push(Event::Notice { text: "no pane is on screen".into() });
@@ -2280,21 +2377,21 @@ impl Session {
         let agent = self.agents.take_changed();
         let chime = self.status.take_chime_changed();
         let review = self.dialogs.take_layout_changed();
-        let console = self.console.take_unsaved();
+        let docks = self.docks.take_unsaved();
         let rail = self.rail_width.take_unsaved()
-            | self.views_width.take_unsaved()
             | self.outline_width.take_unsaved()
             | self.brief_height.take_unsaved()
             | self.extension_views.take_unsaved();
         let chosen = self.choices.take_unsaved();
-        (layouts || agent || chime || review || console || rail || chosen).then(|| Settings {
+        (layouts || agent || chime || review || docks || rail || chosen).then(|| Settings {
             layouts: self.features.layouts().clone(),
             last_agent: self.agents.last().cloned(),
             chime: self.status.chimes(),
             review: self.dialogs.layout(),
-            console: self.console.layout(),
+            docks: Some(self.docks.layout().clone()),
+            console: None,
             rail_width: self.rail_width.get(),
-            views_width: self.views_width.get(),
+            views_width: None,
             outline_width: self.outline_width.get(),
             brief_height: self.brief_height.get(),
             extensions: self.extension_views.layout(),
@@ -2344,6 +2441,8 @@ impl Session {
 
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
+        let present = self.present();
+        self.docks.set_present(present);
         self.settle_console();
         self.settle_extension();
         // The session under the dialog's cursor is read once it is there,
@@ -2391,7 +2490,13 @@ impl Session {
         }
         // Before the rail, so the page knows which side has the keys when
         // the rail says which pane the Workspace shows.
-        let console = self.console.page(self.stage, self.console_sides(), self.status.daemon_can(CONSOLES));
+        let present = self.present();
+        self.docks.set_present(present);
+        let docks = self.docks.page(|panel| self.panel_title(panel));
+        if let Some(page) = self.docks_sent.take(Some(docks)) {
+            events.push(Event::Docks(Box::new(page)));
+        }
+        let console = self.console.page(self.console_place(), self.console_sides(), self.status.daemon_can(CONSOLES));
         if let Some(page) = self.console_sent.take(Some(console)) {
             events.push(Event::Console(Box::new(page)));
         }
@@ -2465,6 +2570,7 @@ impl Session {
         self.adding_sent.forget();
         self.capture_sent.forget();
         self.console_sent.forget();
+        self.docks_sent.forget();
         self.views.forget();
         self.extensions_sent.forget();
         self.extension_dialog_sent.forget();
@@ -2520,7 +2626,6 @@ impl Session {
         }
         rail.removing = self.switcher.removing(&self.tree);
         rail.width = self.rail_width.get();
-        rail.views_width = self.views_width.get();
         rail.outline_width = self.outline_width.get();
         rail.brief_height = self.brief_height.get();
         if let Some(shown) = &mut rail.shown {
@@ -2863,14 +2968,21 @@ mod tests {
         assert!(
             matches!(
                 first.as_slice(),
-                [Event::Status(_), Event::Settings(_), Event::Console(_), Event::Rail(_), Event::Features(_)]
+                [
+                    Event::Status(_),
+                    Event::Settings(_),
+                    Event::Docks(_),
+                    Event::Console(_),
+                    Event::Rail(_),
+                    Event::Features(_)
+                ]
             ),
             "{first:?}"
         );
         assert!(s.events(0).is_empty());
         s.toggle_repository(RepositoryId(10));
         assert!(matches!(s.events(0).as_slice(), [Event::Rail(_)]));
-        assert_eq!(s.everything(0).len(), 7, "a fresh page hears it all, the keymap first");
+        assert_eq!(s.everything(0).len(), 8, "a fresh page hears it all, the keymap first");
     }
 
     #[test]
@@ -3652,7 +3764,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 106] = [
+    const CALLS: [&str; 108] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3724,19 +3836,22 @@ mod tests {
         r#"{"call":"go_to_checkout","checkout":100}"#,
         r#"{"call":"go_to_feature","slug":"trim"}"#,
         r#"{"call":"console","gesture":{"on":"tab"}}"#,
-        r#"{"call":"console","gesture":{"on":"height","height":300}}"#,
+        r#"{"call":"docks","gesture":{"on":"size","dock":"bottom","size":300}}"#,
+        r#"{"call":"docks","gesture":{"on":"move","panel":"console","dock":"right"}}"#,
+        r#"{"call":"docks","gesture":{"on":"show","panel":"views"}}"#,
+        r#"{"call":"docks","gesture":{"on":"hide","panel":"extension:docker/containers"}}"#,
         r#"{"call":"console","gesture":{"on":"close","pane":1}}"#,
         r#"{"call":"console","gesture":{"on":"split"}}"#,
         r#"{"call":"console","gesture":{"on":"closeSide","pane":1}}"#,
         r#"{"call":"open_extension_view","extension":"docker","view":"containers"}"#,
-        r#"{"call":"select_extension_row","key":"web"}"#,
-        r#"{"call":"extension_action","action":"restart"}"#,
-        r#"{"call":"extension_default","row":"web"}"#,
-        r#"{"call":"extension_key","action":"next"}"#,
+        r#"{"call":"select_extension_row","panel":"extension:docker/containers","key":"web"}"#,
+        r#"{"call":"extension_action","panel":"extension:docker/containers","action":"restart"}"#,
+        r#"{"call":"extension_default","panel":"extension:docker/containers","row":"web"}"#,
+        r#"{"call":"extension_key","panel":"extension:docker/containers","action":"next"}"#,
         r#"{"call":"answer_extension","yes":false}"#,
         r#"{"call":"extension_command","extension":"docker","command":"up","checkout":100,"pane":null}"#,
         r#"{"call":"answer_dialog","dialog":3,"answer":{"picked":"web"}}"#,
-        r#"{"call":"extension_mode","page":true}"#,
+        r#"{"call":"extension_mode","panel":"extension:docker/containers","page":true}"#,
         r#"{"call":"toggle_extensions"}"#,
         r#"{"call":"reconnect"}"#,
         r#"{"call":"minimize"}"#,
@@ -3748,7 +3863,6 @@ mod tests {
         r#"{"call":"hide_views"}"#,
         r#"{"call":"toggle_views"}"#,
         r#"{"call":"rail_width","width":320}"#,
-        r#"{"call":"views_width","width":700}"#,
         r#"{"call":"outline_width","width":480}"#,
         r#"{"call":"brief_height","height":160}"#,
         r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
@@ -4205,7 +4319,7 @@ mod tests {
                 Event::Console(page) => Some(*page),
                 _ => None,
             })
-            .unwrap_or_else(|| s.console.page(s.stage, s.console_sides(), s.status.daemon_can(CONSOLES)))
+            .unwrap_or_else(|| s.console.page(s.console_place(), s.console_sides(), s.status.daemon_can(CONSOLES)))
     }
 
     fn console(s: &mut Session, gesture: ConsoleGesture) -> Vec<String> {
@@ -4345,21 +4459,65 @@ mod tests {
         assert_eq!(s.shown.pane(), Some(PaneId(1)), "the last one gives the keys back");
     }
 
+    fn docks(s: &mut Session, gesture: DockGesture) -> Vec<String> {
+        names(&s.call(Call::Docks { gesture }))
+    }
+
+    fn docks_page(s: &mut Session) -> Option<DocksPage> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::Docks(page) => Some(*page),
+            _ => None,
+        })
+    }
+
     #[test]
     fn the_docked_console_and_its_height_are_saved() {
         let mut s = with_consoles();
         s.take_settings();
         console(&mut s, ConsoleGesture::Toggle);
-        console(&mut s, ConsoleGesture::Height { height: 333 });
+        docks(&mut s, DockGesture::Size { dock: Dock::Bottom, size: 333 });
         let saved = s.take_settings().expect("saved");
-        assert_eq!(saved.console, crate::settings::ConsoleLayout { docked: true, height: 333 });
+        let bottom = saved.docks.as_ref().expect("kept").dock(Dock::Bottom);
+        assert_eq!((bottom.open, bottom.active.clone(), bottom.size), (true, Some(Panel::Console), 333));
         console(&mut s, ConsoleGesture::Fullscreen);
         assert!(s.take_settings().is_none(), "fullscreen lasts the run");
 
         let mut again = Session::new(saved);
         again.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
-        let page = console_page(&mut again);
-        assert_eq!((page.place, page.height), (ConsolePlace::Docked, 333));
+        assert_eq!(docks_page(&mut again).map(|d| d.bottom.size), Some(333));
+        assert_eq!(console_page(&mut again).place, ConsolePlace::Docked);
+    }
+
+    #[test]
+    fn the_console_moved_to_the_right_is_shown_there_with_the_keys_and_stays_there() {
+        let mut s = with_consoles();
+        s.events(0);
+        s.take_settings();
+        console(&mut s, ConsoleGesture::Tab);
+        docks(&mut s, DockGesture::Move { panel: Panel::Console, dock: Dock::Right });
+        let page = docks_page(&mut s).expect("the docks changed");
+        assert_eq!(page.right.shown, Some(Panel::Console));
+        assert_eq!(page.right.tabs.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["Console"]);
+        assert!(page.bottom.tabs.is_empty());
+        assert_eq!(s.stage, Stage::Workspace, "out of the Console stage, beside the Workspace");
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
+        assert_eq!(sides(&mut s), (Some(8), None, Some(8)), "the console has the keys");
+
+        // Hidden and shown again, it comes back on the right, not home.
+        console(&mut s, ConsoleGesture::Hide);
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Hidden);
+        console(&mut s, ConsoleGesture::Toggle);
+        assert_eq!(s.docks.dock_of(&Panel::Console), Some(Dock::Right));
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
+
+        let saved = s.take_settings().expect("saved");
+        assert_eq!(Docks::new(saved.docks.unwrap()).dock_of(&Panel::Console), Some(Dock::Right), "across runs");
+
+        // The palette moves it as the menu does, out of fullscreen too.
+        console(&mut s, ConsoleGesture::Fullscreen);
+        s.call(Call::Command { action: Action::DockLeft });
+        assert_eq!(s.docks.dock_of(&Panel::Console), Some(Dock::Left));
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
     }
 
     #[test]
@@ -4368,7 +4526,6 @@ mod tests {
         s.take_settings();
         s.events(0);
         s.call(Call::RailWidth { width: Some(360) });
-        s.call(Call::ViewsWidth { width: Some(9_000) });
         s.call(Call::OutlineWidth { width: Some(480) });
         s.call(Call::BriefHeight { height: Some(1) });
         let rail = s.events(0).into_iter().find_map(|e| match e {
@@ -4378,7 +4535,6 @@ mod tests {
         assert_eq!(rail.expect("the rail is told").width, Some(360));
         let saved = s.take_settings().expect("saved");
         assert_eq!(saved.rail_width, Some(360));
-        assert_eq!(saved.views_width, Some(dragged_width::VIEWS.max), "held to its bounds");
         assert_eq!(saved.outline_width, Some(480));
         assert_eq!(saved.brief_height, Some(dragged_width::BRIEF.min), "a brief keeps a line or two");
 
@@ -4557,7 +4713,8 @@ mod tests {
         console(&mut s, ConsoleGesture::Hide);
         leader_then(&mut s, "`");
         assert_eq!(sides(&mut s), (Some(8), Some(9), Some(8)));
-        assert!(s.take_settings().is_some_and(|saved| saved.console.docked), "docked is kept, the split is not in it");
+        let saved = s.take_settings().expect("saved");
+        assert!(saved.docks.unwrap().bottom.open, "docked is kept, the split is not in it");
     }
 
     #[test]
@@ -4588,6 +4745,20 @@ mod tests {
         })
     }
 
+    fn panel(view: &str) -> Panel {
+        Panel::extension("docker", view)
+    }
+
+    fn agents_view(s: &mut Session, pane: u64) {
+        let view = argus_protocol::AgentView { id: "ci".into(), title: "CI".into(), status: None, subject: None, blocks: Vec::new() };
+        s.receive(ServerMsg::ViewShown(Box::new(argus_protocol::ShownView { pane: PaneId(pane), at: 5, subject: None, view })));
+    }
+
+    /// The extension views on screen, by name.
+    fn tables(s: &mut Session) -> Vec<String> {
+        s.extensions_page().tables.into_iter().map(|t| t.view).collect()
+    }
+
     #[test]
     fn a_published_view_is_listed_and_its_action_goes_to_the_daemon_as_it_stands() {
         let mut s = session(Hello::this_build());
@@ -4595,17 +4766,18 @@ mod tests {
         s.receive(containers(&["web", "db"]));
         let page = extensions_page(&mut s).unwrap();
         assert_eq!(page.views[0].title, "Containers");
-        assert!(page.open.is_none(), "listed, not opened for the person");
+        assert!(page.tables.is_empty(), "listed, not opened for the person");
 
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
-        s.call(Call::ExtensionKey { action: Action::Next });
-        let sent = s.call(Call::ExtensionAction { action: "restart".into() });
+        s.call(Call::ExtensionKey { panel: panel("containers"), action: Action::Next });
+        let sent = s.call(Call::ExtensionAction { panel: panel("containers"), action: "restart".into() });
         assert!(matches!(
             sent.as_slice(),
             [ClientMsg::ExtensionAction { row: Some(row), action, .. }] if row == "db" && action == "restart"
         ), "{sent:?}");
-        let open = extensions_page(&mut s).unwrap().open.unwrap();
+        let open = extensions_page(&mut s).unwrap().tables.remove(0);
         assert_eq!(open.rows.len(), 2, "the view is as the extension last said");
+        assert_eq!(s.docks.dock_of(&panel("containers")), Some(Dock::Right), "where an older extension's opened");
     }
 
     #[test]
@@ -4616,28 +4788,43 @@ mod tests {
             "actions": [{"id": "start", "label": "Start"}], "default": "start"}]"#;
         s.receive(ServerMsg::ExtensionViews(serde_json::from_str(json).unwrap()));
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
-        let sent = s.call(Call::ExtensionDefault { row: "db".into() });
+        let sent = s.call(Call::ExtensionDefault { panel: panel("containers"), row: "db".into() });
         assert!(matches!(
             sent.as_slice(),
             [ClientMsg::ExtensionAction { row: Some(row), action, .. }] if row == "db" && action == "start"
         ), "{sent:?}");
-        let sent = s.call(Call::ExtensionKey { action: Action::Choose });
+        let sent = s.call(Call::ExtensionKey { panel: panel("containers"), action: Action::Choose });
         assert!(matches!(sent.as_slice(), [ClientMsg::ExtensionAction { row: Some(row), .. }] if row == "db"), "{sent:?}");
 
         s.receive(containers(&["web"]));
-        assert!(s.call(Call::ExtensionKey { action: Action::Choose }).is_empty(), "no default, nothing sent");
+        assert!(s.call(Call::ExtensionKey { panel: panel("containers"), action: Action::Choose }).is_empty(), "no default, nothing sent");
     }
 
     #[test]
-    fn an_extensions_view_and_an_agents_take_the_panel_from_each_other() {
+    fn an_extensions_view_and_the_agents_views_are_tabs_of_one_dock_until_one_moves() {
         let mut s = session(Hello::this_build());
+        s.select(PaneId(1));
         s.receive(containers(&["web"]));
-        let view = argus_protocol::AgentView { id: "ci".into(), title: "CI".into(), status: None, subject: None, blocks: Vec::new() };
-        s.receive(ServerMsg::ViewShown(Box::new(argus_protocol::ShownView { pane: PaneId(1), at: 5, subject: None, view })));
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
-        assert!(extensions_page(&mut s).unwrap().open.is_some());
+        agents_view(&mut s, 1);
+        assert_eq!(tables(&mut s), ["containers"], "an agent's view arriving does not take the dock");
+        assert!(!s.docks.shows(&Panel::Views));
+        let tabs = docks_page(&mut s).unwrap().right.tabs.into_iter().map(|t| t.title).collect::<Vec<_>>();
+        assert_eq!(tabs, ["Views", "Containers"]);
+
         s.call(Call::OpenView { pane: 1, id: "ci".into() });
-        assert!(extensions_page(&mut s).unwrap().open.is_none(), "the agent's view has the panel");
+        assert!(s.docks.shows(&Panel::Views));
+        assert!(tables(&mut s).is_empty(), "the other tab");
+        docks(&mut s, DockGesture::Show { panel: panel("containers") });
+        assert_eq!(tables(&mut s), ["containers"]);
+
+        docks(&mut s, DockGesture::Move { panel: panel("containers"), dock: Dock::Bottom });
+        docks(&mut s, DockGesture::Show { panel: Panel::Views });
+        assert_eq!(tables(&mut s), ["containers"], "both on screen once in two docks");
+        assert!(s.docks.shows(&Panel::Views));
+        docks(&mut s, DockGesture::Hide { panel: panel("containers") });
+        assert!(tables(&mut s).is_empty());
+        assert!(s.docks.shows(&Panel::Views), "a dock's close is its own");
     }
 
     #[test]
@@ -4645,10 +4832,12 @@ mod tests {
         let mut s = session(Hello::this_build());
         s.receive(containers(&["web"]));
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
-        assert!(extensions_page(&mut s).unwrap().open.is_some());
+        assert_eq!(extensions_page(&mut s).expect("opened").tables.len(), 1);
         s.receive(ServerMsg::ExtensionViews(Vec::new()));
         assert_eq!(extensions_page(&mut s), Some(page::ExtensionsPage::default()), "the page hears it went");
         assert!(extensions_page(&mut s).is_none(), "once");
+        s.receive(containers(&["web"]));
+        assert_eq!(tables(&mut s), ["containers"], "and comes back where it was, when it comes again");
     }
 
     #[test]
@@ -4754,18 +4943,19 @@ mod tests {
         s.receive(scoped());
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
         assert_eq!(s.stage, Stage::Extension, "a page, as it asked");
-        assert!(s.extensions_page().open.is_some_and(|t| t.page));
+        assert!(s.extensions_page().tables.first().is_some_and(|t| t.page));
 
-        s.call(Call::ExtensionMode { page: false });
+        s.call(Call::ExtensionMode { panel: panel("containers"), page: false });
         assert_eq!(s.stage, Stage::Checkouts, "docking goes back to the stage it opened over");
-        assert!(s.extensions_page().open.is_some_and(|t| !t.page));
-        assert!(s.take_settings().is_some_and(|saved| saved.extensions.modes["docker/containers"] == ExtPlace::Panel));
+        assert!(s.extensions_page().tables.first().is_some_and(|t| !t.page));
+        let saved = s.take_settings().expect("saved").docks.unwrap();
+        assert!(saved.right.tabs.contains(&panel("containers")) && saved.staged.is_empty());
 
         s.receive(scoped());
-        s.call(Call::HideViews);
+        docks(&mut s, DockGesture::Hide { panel: panel("containers") });
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
         assert_eq!(s.stage, Stage::Checkouts, "docked again after its extension republished");
-        assert!(s.extensions_page().open.is_some());
+        assert_eq!(tables(&mut s), ["containers"]);
     }
 
     #[test]
@@ -4780,11 +4970,35 @@ mod tests {
 
         s.receive(scoped());
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "argus".into() });
-        assert!(s.extensions_page().open.is_some_and(|t| !t.page));
+        assert!(s.extensions_page().tables.first().is_some_and(|t| !t.page));
         s.events(0);
         s.receive(ServerMsg::ExtensionViews(Vec::new()));
-        assert!(s.extensions_page().open.is_none());
+        assert!(tables(&mut s).is_empty());
         assert_eq!(s.stage, Stage::Workspace);
+    }
+
+    #[test]
+    fn a_page_and_views_docked_elsewhere_are_on_screen_together_each_with_its_own_row() {
+        let mut s = session(Hello::this_build());
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "argus".into() });
+        docks(&mut s, DockGesture::Move { panel: panel("argus"), dock: Dock::Left });
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert_eq!(s.stage, Stage::Extension);
+        assert_eq!(tables(&mut s), ["containers", "argus"]);
+        let page = s.extensions_page();
+        assert_eq!(page.tables.iter().map(|t| t.page).collect::<Vec<_>>(), [true, false]);
+        assert!(page.views.iter().all(|t| t.on || t.view == "api"));
+
+        // A page moved into a dock leaves the stage for it.
+        docks(&mut s, DockGesture::Move { panel: panel("containers"), dock: Dock::Bottom });
+        assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(tables(&mut s), ["containers", "argus"]);
+        assert!(s.extensions_page().tables.iter().all(|t| !t.page));
+        // The palette moves the view last used.
+        s.call(Call::ExtensionKey { panel: panel("argus"), action: Action::Next });
+        s.call(Call::Command { action: Action::ExtensionPage });
+        assert_eq!((s.stage, s.docks.place_of(&panel("argus"))), (Stage::Extension, Some(Place::Stage)));
     }
 
     #[test]
@@ -4793,7 +5007,7 @@ mod tests {
         s.receive(scoped());
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
         s.call(Call::ShowFeatures { open: true });
-        assert!(s.extensions_page().open.is_none());
+        assert!(tables(&mut s).is_empty());
         assert!(!s.extensions_page().listed);
         s.call(Call::ToggleExtensions);
         assert!(s.extensions_page().listed);

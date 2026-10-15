@@ -250,15 +250,17 @@ Shift-PageUp/PageDown page through the history.
 The console is shells that belong to no checkout: each starts in your home directory, and every
 window shows the same ones, since they are the daemon's. `4` (from a pane, the leader and `4`), or
 Console in the sidebar, gives it the stage; `` ` `` (from a pane, the leader and `` ` ``), or the `›_`
-beside the connection, shows it docked under the Workspace, Feature and Checkouts stages or hides it,
-and its sash sets its height; the leader and `z` fills the window with it, all but the sidebar's
+beside the connection, shows it docked beside the Workspace, Feature and Checkouts stages or hides
+it, and its sash sets its size. It docks at the bottom until moved: the chevron in its head, or the
+palette's Dock the console on the left, on the right or at the bottom, moves it to that edge of the
+stage, as does dragging its header there. The leader and `z` fills the window with it, all but the sidebar's
 projects. A tab per console, `+` for another and a tab's `✕` to end one. Docked, the console sits
-under the Workspace's pane with both on screen, so an agent and a shell are side by side: a click
+beside the Workspace's pane with both on screen, so an agent and a shell are side by side: a click
 on either, or the pane chosen on the rail, gives it the keys, and from a pane the leader and `o`
 hands them to the next one on screen. The split button (from a pane, the leader and `\`) shows two
 consoles side by side; a click on a side's header or screen gives it the keys, a tab picked replaces
-the side with the keys, and a side's `✕` takes it out of the split, its console staying a tab. Whether it is docked and its
-height are kept in `desktop.json`; the split lasts the run. A daemon restarted starts as many
+the side with the keys, and a side's `✕` takes it out of the split, its console staying a tab. Where it is docked, whether it
+shows, and its size are kept in `desktop.json`; the split lasts the run. A daemon restarted starts as many
 consoles again as were running, each a fresh shell in the home directory.
 
 `Ctrl-K` (from a pane, the leader and `k`) opens the palette: one search over the window's commands,
@@ -520,10 +522,14 @@ argus extension show docker   # one of them: its own guide, its commands and its
 machine's. `scripts/docker-extension.py` is a fuller example.
 
 In the desktop window, every view an extension publishes is listed under **Extensions** in the
-sidebar, after Workspace, Features, Checkouts and Console, while its scope matches. A view opens as
-a page of its own or docked in the side panel beside agents' views — where its `place` says, until
-you move it with **Open as page** or **Dock to side panel** (`>` and `<` while the view has the
-keys), which the window remembers per view. The palette's **Go to …** opens one too.
+sidebar, after Workspace, Features, Checkouts and Console, while its scope matches. A view opens
+docked on the left, the right or the bottom of the stage, or as a page of its own — where its
+`place` says, until you move it with its header's dock menu, **Open as page** or **Dock** (`>` and
+`<` while the view has the keys), which the window remembers per view. A dock holding several
+panels — the console, the agents' views, extension views — shows a tab for each, and a tab's
+right-click moves it to another dock. Any panel can also be dragged by its tab or header, or an
+extension's view from the sidebar, to an edge of the stage to dock it there, or onto the stage to
+open it as a page. The palette's **Go to …** opens one too.
 
 ### `client.toml`
 

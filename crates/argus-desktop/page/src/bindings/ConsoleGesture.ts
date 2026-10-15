@@ -3,4 +3,4 @@
 /**
  * What was done to the console.
  */
-export type ConsoleGesture = { "on": "toggle" } | { "on": "tab" } | { "on": "dock" } | { "on": "fullscreen" } | { "on": "hide" } | { "on": "select", pane: number, } | { "on": "spawn" } | { "on": "close", pane: number, } | { "on": "height", height: number, } | { "on": "split" } | { "on": "closeSide", pane: number, };
+export type ConsoleGesture = { "on": "toggle" } | { "on": "tab" } | { "on": "dock" } | { "on": "fullscreen" } | { "on": "hide" } | { "on": "select", pane: number, } | { "on": "spawn" } | { "on": "close", pane: number, } | { "on": "split" } | { "on": "closeSide", pane: number, };

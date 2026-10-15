@@ -60,10 +60,6 @@ removing: Removing | null,
  */
 width: number | null, 
 /**
- * The width the person dragged the views panel to, likewise.
- */
-viewsWidth: number | null, 
-/**
  * An open feature's outline width and brief height, likewise.
  */
 outlineWidth: number | null, briefHeight: number | null, };

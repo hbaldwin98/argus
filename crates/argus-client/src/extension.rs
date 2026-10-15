@@ -173,7 +173,9 @@ pub fn shown(extension: &ExtDescription) -> String {
             ExtScope::Checkout(id) => format!("shown at checkout {}", id.0),
         };
         let place = match view.place {
-            ExtPlace::Panel => "opens docked in the side panel",
+            ExtPlace::Panel | ExtPlace::Right => "opens docked on the right",
+            ExtPlace::Left => "opens docked on the left",
+            ExtPlace::Bottom => "opens docked at the bottom",
             ExtPlace::Stage => "opens as a page",
         };
         let icon = view.icon.as_deref().map(|icon| format!("; icon `{icon}`")).unwrap_or_default();

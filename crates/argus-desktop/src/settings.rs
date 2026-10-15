@@ -1,8 +1,8 @@
 //! What the window remembers between runs: how each repository's feature
 //! index is laid out, which agent it last started, whether an agent coming
-//! to need you chimes, the side and layout a review opens on, whether the
-//! console is docked and how tall, where each extension view opens, and
-//! what the Settings dialog sets.
+//! to need you chimes, the side and layout a review opens on, where each
+//! panel is docked and how big each dock is, where each extension view
+//! opens, and what the Settings dialog sets.
 //!
 //! Its own file beside the config, `desktop.json`, rather than a section
 //! of the terminal client's `client.toml` (DESIGN.md §Configuration says
@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::docks::{Dock, DocksLayout, Panel};
 use crate::features::Layout;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,17 +40,25 @@ pub struct Settings {
     /// made again on each visit.
     #[serde(default)]
     pub review: ReviewLayout,
-    /// Whether the console is docked under the stages, and how tall: kept
-    /// here rather than in the webview's storage, which every window of
-    /// one instance shares and no other file of the window's is in.
+    /// Which dock holds each panel, or which open as pages, which tab
+    /// each dock shows, whether it is open, and how big: kept here rather
+    /// than in the webview's storage, which every window of one instance
+    /// shares and no other file of the window's is in. Absent only in a
+    /// file from before the docks, which `load` makes it from.
     #[serde(default)]
-    pub console: ConsoleLayout,
+    pub docks: Option<DocksLayout>,
+    /// Whether the console was docked under the stages, and how tall, as a
+    /// file from before the docks says: read once into `docks`, never
+    /// written.
+    #[serde(default, skip_serializing)]
+    pub console: Option<ConsoleLayout>,
     /// The rail's width as the person dragged it, in CSS pixels; absent
     /// until they do.
     #[serde(default)]
     pub rail_width: Option<u32>,
-    /// The views panel's width as the person dragged it, likewise.
-    #[serde(default)]
+    /// The views panel's width as a file from before the docks says: the
+    /// right dock's, read once into `docks`, never written.
+    #[serde(default, skip_serializing)]
     pub views_width: Option<u32>,
     /// An open feature's task outline's width, likewise.
     #[serde(default)]
@@ -214,32 +223,49 @@ pub struct ReviewLayout {
 pub struct ExtensionsLayout {
     #[serde(default)]
     pub open: bool,
-    /// Docked or a page, by `extension/view`: the person's choice, which
-    /// outlives the extension republishing, or restarting, and the window
-    /// closing. A view not here opens where its extension says.
-    #[serde(default)]
+    /// Docked or a page, by `extension/view`, as a file from before the
+    /// docks says: read once into `docks`, never written.
+    #[serde(default, skip_serializing)]
     pub modes: BTreeMap<String, argus_protocol::ExtPlace>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConsoleLayout {
-    /// Hidden until first shown: a window that never opens a console is
-    /// not given one.
     #[serde(default)]
     pub docked: bool,
-    /// In CSS pixels, held by `console` to what the stage leaves room for.
     #[serde(default = "console_height")]
     pub height: u32,
 }
 
-impl Default for ConsoleLayout {
-    fn default() -> Self {
-        ConsoleLayout { docked: false, height: console_height() }
-    }
-}
-
 fn console_height() -> u32 {
     280
+}
+
+/// The docks a file from before them describes: the console docked under
+/// the stages is the bottom dock showing it, the views panel is the right
+/// dock, and a view docked in it is one of its tabs.
+fn older_docks(settings: &mut Settings) -> DocksLayout {
+    let mut docks = DocksLayout::default();
+    if let Some(console) = settings.console.take() {
+        let bottom = docks.dock_mut(Dock::Bottom);
+        bottom.tabs = vec![Panel::Console];
+        bottom.active = Some(Panel::Console);
+        bottom.open = console.docked;
+        bottom.size = console.height;
+    }
+    let right = docks.dock_mut(Dock::Right);
+    right.tabs.push(Panel::Views);
+    if let Some(width) = settings.views_width.take() {
+        right.size = width;
+    }
+    for (key, place) in std::mem::take(&mut settings.extensions.modes) {
+        let panel = Panel::Extension(key);
+        match place {
+            argus_protocol::ExtPlace::Stage => docks.staged.push(panel),
+            _ => docks.right.tabs.push(panel),
+        }
+    }
+    docks
 }
 
 impl Default for Settings {
@@ -249,7 +275,8 @@ impl Default for Settings {
             last_agent: None,
             chime: true,
             review: ReviewLayout::default(),
-            console: ConsoleLayout::default(),
+            docks: None,
+            console: None,
             rail_width: None,
             views_width: None,
             outline_width: None,
@@ -283,10 +310,19 @@ pub fn save(settings: &Settings) {
 }
 
 fn load_from(path: &Path) -> Settings {
-    std::fs::read(path)
+    let mut settings: Settings = std::fs::read(path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if settings.docks.is_none() {
+        settings.docks = Some(older_docks(&mut settings));
+    }
+    // Never written, so only an older window's file has them, and only for
+    // `older_docks`; one written by an older window since keeps no docks.
+    settings.console = None;
+    settings.views_width = None;
+    settings.extensions.modes.clear();
+    settings
 }
 
 fn save_to(path: &Path, settings: &Settings) -> std::io::Result<()> {
@@ -316,7 +352,10 @@ mod tests {
         settings.last_agent = Some("codex".into());
         settings.chime = false;
         settings.review = ReviewLayout { staged: true, split: true };
-        settings.console = ConsoleLayout { docked: true, height: 412 };
+        let mut docks = DocksLayout::default();
+        docks.bottom.open = true;
+        docks.staged.push(Panel::extension("docker", "containers"));
+        settings.docks = Some(docks);
         settings.preferences = Preferences {
             theme: Theme::Frappe,
             opacity: 70,
@@ -338,10 +377,10 @@ mod tests {
     #[test]
     fn a_missing_or_broken_file_remembers_nothing() {
         let path = scratch("broken");
-        assert_eq!(load_from(&path), Settings::default());
+        assert_eq!(load_from(&path), Settings { docks: Some(older_docks(&mut Settings::default())), ..Settings::default() });
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, b"{ not json").unwrap();
-        assert_eq!(load_from(&path), Settings::default());
+        assert_eq!(load_from(&path), Settings { docks: Some(older_docks(&mut Settings::default())), ..Settings::default() });
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -355,8 +394,31 @@ mod tests {
         assert_eq!(loaded.last_agent, None);
         assert!(loaded.chime);
         assert_eq!(loaded.review, ReviewLayout::default(), "unstaged and unified, as before");
-        assert_eq!(loaded.console, ConsoleLayout { docked: false, height: 280 }, "no console until one is asked for");
+        let docks = loaded.docks.expect("made from what the file had");
+        assert!(!docks.bottom.open, "no console until one is asked for");
         assert_eq!(loaded.preferences, Preferences::default());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_file_from_before_the_docks_keeps_its_console_views_panel_and_extension_views_where_they_were() {
+        let path = scratch("console");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let older = br#"{ "console": { "docked": true, "height": 412 }, "views_width": 700,
+            "extensions": { "open": true, "modes": { "docker/containers": "stage", "docker/images": "panel" } } }"#;
+        std::fs::write(&path, older).unwrap();
+        let loaded = load_from(&path);
+        assert_eq!((loaded.console, loaded.views_width), (None, None), "read once, never written");
+        let docks = loaded.docks.clone().expect("made from them");
+        let bottom = docks.dock(Dock::Bottom);
+        assert_eq!((bottom.open, bottom.active.clone(), bottom.size), (true, Some(Panel::Console), 412));
+        assert_eq!(docks.right.tabs, [Panel::Views, Panel::extension("docker", "images")]);
+        assert_eq!(docks.right.size, 700);
+        assert_eq!(docks.staged, [Panel::extension("docker", "containers")]);
+        assert!(loaded.extensions.open, "the fold stays unfolded");
+        let json = serde_json::to_value(&loaded).unwrap();
+        assert!(json.get("console").is_none() && json.get("views_width").is_none());
+        assert!(json["extensions"].get("modes").is_none());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

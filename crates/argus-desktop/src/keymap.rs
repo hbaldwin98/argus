@@ -83,7 +83,7 @@ pub enum Place {
     Filter,
     /// The palette's search field while it is open, which holds the keys.
     Palette,
-    /// An extension's view out in the side panel, once a click there gives
+    /// An extension's view in its dock or as the page, once a click there gives
     /// it the keys: these, and the view's own action keys.
     Extension,
     /// The link dialog while it is open and no field has the keys.
@@ -226,6 +226,10 @@ pub enum Action {
     NewConsole,
     /// Split the console in two, or put the split away.
     SplitConsole,
+    /// Dock the console against the stage's left, right or bottom edge.
+    DockLeft,
+    DockRight,
+    DockBottom,
     /// The split's other side takes the keys.
     OtherSide,
     /// The whole window larger or smaller, the panes' text with the rest,
@@ -237,7 +241,7 @@ pub enum Action {
     Views,
     /// The extension view open as a page of its own.
     ExtensionPage,
-    /// The extension view open docked in the side panel.
+    /// The extension view back in its dock.
     ExtensionDock,
     /// Link the open feature to a ticket: the link dialog.
     LinkTicket,
@@ -572,7 +576,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Extension, &[Chord::key("End")], Last, "last row"),
     bind(Place::Extension, &[Chord::key("Enter")], Choose, "the view's default action on the row"),
     bind(Place::Extension, &[Chord::key(">")], ExtensionPage, "open it as a page"),
-    bind(Place::Extension, &[Chord::key("<")], ExtensionDock, "dock it to the side panel"),
+    bind(Place::Extension, &[Chord::key("<")], ExtensionDock, "dock it again"),
     bind(Place::Link, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next linked ticket"),
     bind(Place::Link, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous linked ticket"),
     bind(Place::Link, &[Chord::key("Enter")], Choose, "link the URL typed"),
@@ -601,6 +605,9 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (ConsoleFullscreen, Some(Pane), "Console fullscreen beside the sidebar, and back"),
     (NewConsole, None, "Start a console shell in the home directory"),
     (SplitConsole, Some(Pane), "Split the console in two, and back"),
+    (DockLeft, None, "Dock the console on the left"),
+    (DockRight, None, "Dock the console on the right"),
+    (DockBottom, None, "Dock the console at the bottom"),
     (OtherSide, Some(Pane), "Give the keys to the next pane on screen"),
     (Compose, Some(Anywhere), "Start a shell or an agent…"),
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
@@ -622,7 +629,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Folded, Some(Place::Feature), "Show held and archived features, or fold them"),
     (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
     (ExtensionPage, Some(Place::Extension), "Open the extension view as a page"),
-    (ExtensionDock, Some(Place::Extension), "Dock the extension view to the side panel"),
+    (ExtensionDock, Some(Place::Extension), "Dock the extension view again"),
     (LinkTicket, Some(Outline), "Link the open feature to a ticket…"),
     (Action::Reconcile, Some(Outline), "Reconcile the open feature with its tickets…"),
     (TrackerMap, Some(Outline), "Edit the repository's tracker map…"),

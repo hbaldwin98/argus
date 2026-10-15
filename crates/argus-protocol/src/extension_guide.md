@@ -204,8 +204,9 @@ a new state, change `VIEW` and put it again.
 
 ## Step 6: choose where it opens
 
-A view opens docked in the side panel unless `place` says `stage`, which opens it as a page; the
-person can move it either way. `icon` names its icon in the sidebar:
+A view opens docked on the right, where the agents' views open, unless `place` says `left` or
+`bottom`, which dock it against that edge of the stage, or `stage`, which opens it as a page; the
+person can move it to any of them. `icon` names its icon in the sidebar:
 
 ```python
 VIEW["place"] = "stage"
@@ -401,8 +402,10 @@ its scope holds, and opens it docked in the side panel or as a page.
   - `{"checkout": ID}`: while that checkout is on screen.
 
   IDs are the daemon's; a command event's `context` carries them.
-- `place` is where it first opens: `"panel"`, the default, docks it in the side panel;
-  `"stage"` opens it as a page. The person can move it, and the window remembers their choice.
+- `place` is where it first opens: `"right"` (or `"panel"`, the default, the same) docks it on the
+  right, where the agents' views open; `"left"` and `"bottom"` dock it against that edge of the
+  stage; `"stage"` opens it as a page. The person can move it, and the window remembers their
+  choice. A daemon older than the docks refuses a view naming `left`, `right` or `bottom`.
 - `icon` is one of {{EXT_ICONS}}. Any other name of lowercase letters, digits and dashes, at most
   {{MAX_ICON_NAME}} bytes, is drawn as a generic icon.
 - `columns` are `{"title", "numeric", "optional"}`; a numeric column is aligned right, and an
