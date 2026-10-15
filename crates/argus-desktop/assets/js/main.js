@@ -7,19 +7,19 @@ import { drawCheckouts } from './checkouts.js';
 import { drawDocks, listen as listenToDocks } from './docks.js';
 import { clearComposer, focusComposer } from './compose.js';
 import { $ } from './dom.js';
-import { drawHistory, historyOpen } from './history.js';
-import { drawLink, linkOpen } from './link.js';
-import { drawReconcile, reconcileOpen } from './reconcile.js';
-import { drawReview, reviewOpen } from './review.js';
-import { drawSessions, sessionsOpen } from './sessions.js';
+import { drawHistory } from './history.js';
+import { drawLink } from './link.js';
+import { drawReconcile } from './reconcile.js';
+import { drawReview } from './review.js';
+import { drawSessions } from './sessions.js';
 import { drawSettings } from './settings.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
-import { listen as listenToKeys, runOver } from './keymap.js';
+import { dialogTakesKeys, listen as listenToKeys, runOver } from './keymap.js';
 import { listen as listenToMenus } from './menu.js';
 import { listen as listenToFrame } from './frame.js';
 import { drawPalette, openPalette } from './palette.js';
-import { addProjectOpen, drawAddProject, drawHeading } from './projects.js';
+import { drawAddProject, drawHeading } from './projects.js';
 import { drawFrame, screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
@@ -32,12 +32,7 @@ let paneHadKeys = false;
  *  gives them back once no dialog is left open. */
 function dialogKeys() {
     const input = $('input');
-    if (reviewOpen() ||
-        historyOpen() ||
-        sessionsOpen() ||
-        addProjectOpen() ||
-        linkOpen() ||
-        reconcileOpen()) {
+    if (dialogTakesKeys()) {
         if (document.activeElement === input) {
             paneHadKeys = true;
             input.blur();
@@ -170,6 +165,7 @@ function receive(event) {
         case 'keymap':
             state.keymap = event.groups;
             state.commands = event.commands;
+            state.layers = event.layers;
             drawChrome();
             break;
         case 'palette':

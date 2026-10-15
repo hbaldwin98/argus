@@ -2579,7 +2579,7 @@ impl Session {
         self.palette_sent.forget();
         self.rail_changed = true;
         self.shown.refresh();
-        let mut events = vec![Event::Keymap { groups: keymap::groups(), commands: keymap::commands() }];
+        let mut events = vec![Event::Keymap { groups: keymap::groups(), commands: keymap::commands(), layers: keymap::LAYERS }];
         events.append(&mut self.events(now));
         if !events.iter().any(|e| matches!(e, Event::Features(_))) {
             let scope = self.scope();

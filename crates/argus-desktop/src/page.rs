@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::docks::{Dock, DocksPage, Panel};
 use crate::features::Layout;
-use crate::keymap::{Action, Command, Group};
+use crate::keymap::{Action, Command, Group, KeyLayer};
 use crate::keys::PageKey;
 use crate::settings::{Backdrop, EditorMode, Preferences, Theme};
 
@@ -535,8 +535,8 @@ pub enum Event {
     Settings(Box<SettingsPage>),
     /// Every binding, grouped as the shortcuts sheet lists them, and the
     /// palette's commands, sent once a page loads: the page dispatches from
-    /// it outside a pane.
-    Keymap { groups: Vec<Group>, commands: Vec<Command> },
+    /// it outside a pane, asking the layers in their order who has a key.
+    Keymap { groups: Vec<Group>, commands: Vec<Command>, layers: &'static [KeyLayer] },
     /// What the palette can go to, whenever it changes while open; `open`
     /// false once it closes.
     Palette(Box<Palette>),
