@@ -11,11 +11,13 @@
 //! output is still seen.
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
+mod agents;
 mod clipboard;
 mod checkouts;
 mod checkouts_stage;
 mod commands;
 mod daemon;
+mod dialogs;
 mod feature_stage;
 mod features;
 #[cfg(test)]
@@ -29,8 +31,11 @@ mod palette;
 mod rail;
 mod review;
 mod screen;
+mod sent;
 mod session;
 mod settings;
+mod shown;
+mod status;
 mod shared;
 mod window_frame;
 

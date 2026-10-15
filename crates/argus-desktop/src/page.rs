@@ -216,10 +216,7 @@ pub struct Rail {
     pub loaded: bool,
     /// The repository whose features the Feature stage reads.
     pub repository: Option<u64>,
-    /// Which stage is up: the Workspace, the Feature or Checkouts stage,
-    /// or the composer (`new`).
-    #[cfg_attr(test, ts(type = "\"workspace\" | \"feature\" | \"checkouts\" | \"new\""))]
-    pub stage: &'static str,
+    pub stage: Stage,
     /// The pane fills the window: the rail and the stage's chrome are put
     /// away until the leader and `f` again.
     pub filled: bool,
@@ -303,6 +300,21 @@ pub struct Pane {
     pub status: &'static str,
     pub note: Option<String>,
     pub on: bool,
+}
+
+/// Which stage is up. One at a time: opening one puts the others away, and
+/// any of them over the Workspace keeps the pane on screen to come back to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum Stage {
+    #[default]
+    Workspace,
+    Feature,
+    Checkouts,
+    /// The composer: what to start, where, and its first message.
+    #[serde(rename = "new")]
+    Composer,
 }
 
 /// The pane on screen, as the stage's header names it.
@@ -914,7 +926,7 @@ mod tests {
             }),
             loaded: true,
             repository: Some(2),
-            stage: "workspace",
+            stage: Stage::Composer,
             filled: false,
             templates: vec!["claude".into()],
         };
@@ -927,6 +939,7 @@ mod tests {
         assert_eq!(repo["checkouts"][0]["git"], "clean");
         assert_eq!(value["shown"]["pane"], 4);
         assert_eq!(value["loaded"], true);
+        assert_eq!(value["stage"], "new");
     }
 
     #[test]

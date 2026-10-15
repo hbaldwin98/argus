@@ -320,7 +320,12 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | --- | --- |
 | `main` | startup: the runtime, the window, and running until it closes |
 | `daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
-| `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
+| `session` | what this window holds of the daemon and routes between its parts — the tree, the project and repository chosen on the rail, which stage is up — and which part each message and page call is for |
+| `status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
+| `shown` | the pane the window shows: its subscription and size on this connection, its view, whether it fills the window, and whether the leader waits on the next key |
+| `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
+| `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
+| `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once |
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
