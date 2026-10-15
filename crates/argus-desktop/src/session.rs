@@ -816,7 +816,7 @@ impl Session {
         if changed || keyed {
             self.console.set_fullscreen(false);
             if self.stage == Stage::Console {
-                self.stage = Stage::Workspace;
+                self.go(Stage::Workspace);
             }
             self.rail_changed = true;
         }
@@ -1541,7 +1541,7 @@ impl Session {
         if self.console_place() == ConsolePlace::Hidden {
             self.docks.show(&Panel::Console);
             if self.stage == Stage::Composer {
-                self.stage = Stage::Workspace;
+                self.go(Stage::Workspace);
             }
         }
     }
@@ -1741,12 +1741,7 @@ impl Session {
         if self.console.fullscreen() {
             self.console.set_fullscreen(false);
         } else {
-            if self.console_place() == ConsolePlace::Hidden {
-                self.docks.show(&Panel::Console);
-                if self.stage == Stage::Composer {
-                    self.go(Stage::Workspace);
-                }
-            }
+            self.reveal_console();
             self.console.set_fullscreen(true);
             self.console_takes();
         }
@@ -4414,6 +4409,46 @@ mod tests {
         s.select(PaneId(2));
         assert_eq!(console_page(&mut s).place, ConsolePlace::Docked, "a checkout's pane is not the console's to fill");
         assert_eq!(s.on_screen(), Some(PaneId(2)));
+    }
+
+    /// The stage on the rail the page is sent next, if one is.
+    fn drawn_stage(s: &mut Session) -> Option<Stage> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::Rail(rail) => Some(rail.stage),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn a_console_asked_for_over_the_composer_puts_it_away_and_redraws_the_rail() {
+        for gesture in [ConsoleGesture::Select { pane: 8 }, ConsoleGesture::Toggle] {
+            let mut s = with_consoles();
+            s.show_composer(true);
+            s.events(0);
+            console(&mut s, gesture);
+            assert_eq!(s.stage, Stage::Workspace, "{gesture:?}");
+            assert_eq!(drawn_stage(&mut s), Some(Stage::Workspace), "{gesture:?}");
+        }
+    }
+
+    #[test]
+    fn fullscreen_over_the_composer_puts_it_away() {
+        let mut s = with_consoles();
+        s.show_composer(true);
+        console(&mut s, ConsoleGesture::Fullscreen);
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Fullscreen);
+        assert_eq!(s.stage, Stage::Workspace);
+    }
+
+    #[test]
+    fn a_checkout_pane_chosen_on_the_console_stage_leaves_it_for_the_workspace() {
+        let mut s = with_consoles();
+        leader_then(&mut s, "4");
+        s.events(0);
+        s.select(PaneId(2));
+        assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(drawn_stage(&mut s), Some(Stage::Workspace));
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Hidden);
     }
 
     #[test]
