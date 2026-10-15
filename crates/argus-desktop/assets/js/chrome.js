@@ -309,6 +309,9 @@ export function railAction(action) {
                 notice('argusd offers no agent to start');
             return true;
         }
+        case 'openReview':
+            call('open_review', { checkout: pick.checkout });
+            return true;
         case 'close':
             // On a checkout, the Checkouts stage opens on it and asks first.
             if (pick.pane === null) {

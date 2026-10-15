@@ -439,6 +439,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Rail, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent on its checkout"),
     bind(Rail, &[Chord::key("x"), Chord::key("X")], Close, "close the pane, or remove the checkout"),
     bind(Rail, &[Chord::key("Enter")], Choose, "open the checkout's + menu, or type into the pane"),
+    bind(Rail, &[Chord::key("r"), Chord::key("R")], OpenReview, "review its checkout's changes"),
     bind(Place::Feature, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next feature"),
     bind(Place::Feature, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous feature"),
     bind(Place::Feature, &[Chord::key("Home")], First, "first feature"),
@@ -865,7 +866,8 @@ mod tests {
     }
 
     /// As in the terminal client's rail: j and k move the pick, s and a
-    /// start on its checkout, and a bare x closes a picked pane.
+    /// start on its checkout, R reviews it, and a bare x closes a picked
+    /// pane.
     #[test]
     fn a_picked_rail_row_moves_starts_and_closes_without_the_leader() {
         let rail = |key: &str| {
@@ -879,6 +881,7 @@ mod tests {
         assert_eq!(rail("a"), Some(StartAgent));
         assert_eq!(rail("x"), Some(Close));
         assert_eq!(rail("Enter"), Some(Choose));
+        assert_eq!(rail("R"), Some(OpenReview));
         assert_eq!(rail("j"), Some(Next));
         assert_eq!(rail("ArrowUp"), Some(Previous));
     }
