@@ -76,10 +76,11 @@ text field, each dialog, the sidebar's pick, a menu over the stage, each stage â
 it hears in order and whether it takes the keys from a pane it opens over. The first layer up has
 the key, Escape puts away the first thing it finds in the same order, and the page (`focus`) holds a
 handler per layer but no order of its own, so a dialog is added in one place and a test checks every
-layer's places for a key bound twice. A binding of the Everywhere place, the zoom keys', is heard by the page before
-anything else, a pane and a text field included, and so is bound nowhere else. The zoom is the
-webview's own rather than the page's CSS, so a pane's cells grow with the rest and its grid refits
-to the new size; it steps as a browser's does and is kept in `desktop.json`. In a pane every other
+layer's places for a key bound twice. A binding of the Everywhere place, the zoom keys', is heard by
+the page before anything else, a pane and a text field included, and so is bound nowhere else. The
+zoom is the webview's own rather than the page's CSS, so a pane's cells grow with the rest and its
+grid refits to the new size; it steps as a browser's does and is kept in `desktop.json`.
+In a pane every other
 key is the program's except the leader, `Ctrl-Space` as in the terminal client: the key after it is
 the window's, one nothing binds is dropped, and a second leader sends one through. `Ctrl-K` (in a
 pane, the leader and `k`) opens the palette, one fuzzy search over the table's commands and the

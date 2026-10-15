@@ -233,7 +233,7 @@ const handlers = {
         open: (target) => target instanceof Element && target.closest('input, textarea, [contenteditable]') !== null,
     },
     extensionDialog: { open: extensionDialogFocused },
-    // Escape among them.
+    // The settings answer their own keys, Escape among them.
     settings: { open: settingsOpen },
     sheet: {
         open: sheetOpen,
@@ -267,7 +267,7 @@ const handlers = {
         },
     },
     extension: { open: () => focusedExtension() !== null && !layerOpen(), keys: extensionKeys },
-    // Until a click elsewhere.
+    // A picked row holds the keys until a click elsewhere.
     rail: { open: railPicked, keys: railKeys },
     menu: {
         open: layerOpen,
