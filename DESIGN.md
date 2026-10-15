@@ -265,6 +265,7 @@ to the type or its locking.
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
 | `store/capture` | a whole note written down as a feature, in one transaction |
 | `store/panel`, `store/session` | runtime changes to the panel and when each repository was last used, and the panes to bring back after a restart |
+| `store/seen_sessions` | the sessions Argus saw agents run under a harness that keeps no transcript — title, checkout, first and last seen — so one still lists once its pane is gone |
 | `git`, `diff`, `browse`, `highlight` | the read-only questions asked of a repository |
 | `gitignore` | the repository-local excludes for generated Argus files |
 | `config` | `projects.toml`, which is read and never written |
@@ -1098,6 +1099,14 @@ separator, `*`, `:` or `..` names nothing. The built-ins:
 OpenCode, AGY and `generic` keep none Argus reads, and asking after one of their sessions answers
 `Conversation::NoTranscript`. A transcript a harness names but that is not on disk is `Missing`.
 
+A session of a harness with no `transcript` still lists. Whenever the recorded panes change, each
+agent pane with a session id whose harness keeps none is written to `store/seen_sessions` — its
+harness, id, checkout and title, when Argus first saw it and when last — and the newest 1,000 are
+kept. A listing adds those in the repository's checkouts that no transcript lists, with those two
+times as RFC 3339 `started` and `ended` and the last as `modified`; one whose checkout is gone is
+left out, since nothing says it was a worktree of this repository. This is what Argus saw, not a
+transcript: the preview shows the title, checkout and times and says the harness keeps none.
+
 `ClientMsg::ListSessions` asks for a repository's sessions across all its checkouts, and
 `ClientMsg::ReadSession` for one session's `Conversation`; both go only to a daemon that listed the
 `sessions` capability, and both are answered from a blocking thread, correlated by request id. A
@@ -1123,8 +1132,8 @@ wrapper configured with `transcript = "claude"`, list its sessions once, under t
 Each session says which harness ran it and its id — together what `resume_id` reopens — its
 checkout, title, times, the file's modification time it is ordered by, and the agent pane running
 it now, matched by the session id a hook reported; such a session is listed under the harness the
-pane started with. A running agent whose session no transcript lists, from a harness that keeps
-none or has not written it yet, is listed first, with its pane's title.
+pane started with. A running agent whose session nothing lists yet — a harness that has not written
+its transcript, or one Argus has not recorded — is listed first, with its pane's title.
 
 `ClientMsg::ListResumes` asks how each harness reopens one exact session, and is answered at once
 with `ServerMsg::Resumes`: for each harness some agent template runs whose `resume_id` is set, the
@@ -1166,8 +1175,13 @@ The neutral format is one JSON object per line, each a `transcript::Entry`:
 
 `at` (RFC 3339), `summary` and `failed` are optional; a `title` line names the session, the last
 one winning; a line of any other `kind` is skipped, as a client skips an entry of a kind it does not
-know. It is what `argus-hook` would write for a harness that reports its turns, and the serde shape
-of the protocol's entry, so it cannot drift from what a client is sent.
+know. It is the serde shape of the protocol's entry, so it cannot drift from what a client is sent,
+and what `argus-hook transcript FILE KIND …` appends for a harness that keeps no transcript of its
+own: `user`, `agent` and `title` take the text from the arguments or, with `--stdin`, from stdin,
+and `tool NAME SUMMARY…` takes `--failed`. Each line is stamped with the time in RFC 3339 UTC,
+written in one call so hooks running at once do not interleave, and a leading `~` in `FILE` is the
+home directory, for a hook config that runs it with no shell. It talks to no daemon: the file is
+the harness's, and its `[[harness]]` block names the same path as its neutral `transcript`.
 
 ## Git and checkouts
 

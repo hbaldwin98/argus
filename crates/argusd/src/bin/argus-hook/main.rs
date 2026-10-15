@@ -36,6 +36,8 @@
 //! argus-hook tracker-map                             # how this repo maps to its trackers
 //! argus-hook tracker-map draft --stdin               # proposes one; the person approves it
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
+//! argus-hook transcript ~/.herdr/s1.jsonl user "tidy the notes"   # a neutral transcript line
+//! argus-hook transcript ~/.herdr/s1.jsonl tool shell "npm run lint" --failed
 //! argus-hook context                           # comments, and the feature by name
 //! argus-hook context "preface"                  # the preface, then the same
 //! argus-hook say "text"                          # prints, calls nobody
@@ -76,8 +78,8 @@
 //!
 //! The commands live in modules by what they talk about: `board` for the
 //! shared work an agent reads and writes, `installed` for the form a
-//! harness's hook config runs, and `transport` for how either reaches the
-//! daemon.
+//! harness's hook config runs, `transport` for how either reaches the
+//! daemon, and `transcript` for the one file written without it.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -102,6 +104,7 @@ mod context;
 mod inbox;
 mod installed;
 mod telemetry;
+mod transcript;
 mod transport;
 
 use board::*;
@@ -158,6 +161,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("decisions", decisions),
     ("decide", decide),
     ("telemetry", telemetry),
+    ("transcript", transcript::transcript),
     ("inbox", inbox::inbox),
 ];
 

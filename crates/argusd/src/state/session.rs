@@ -118,6 +118,8 @@ impl Daemon {
         if recorded.as_ref() == Some(&panes) {
             return;
         }
+        // A title or status changing is the session still running.
+        self.saw_sessions(&panes);
         match self.store.save_panes(&panes) {
             Ok(()) => *recorded = Some(panes),
             // Left as it was, so the next broadcast tries again.

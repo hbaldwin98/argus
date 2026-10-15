@@ -7,10 +7,11 @@
 //! every keystroke waits on that lock.
 
 use argus_protocol::sessions::{is_plain_session_id, Resume, Session, MAX_SESSIONS};
-use argus_protocol::transcript::Conversation;
+use argus_protocol::transcript::{rfc3339, Conversation};
 
 use super::*;
 use crate::harness::transcript::{self, Places, Source};
+use crate::store::{SeenSession, Sighting};
 
 /// An agent pane, as a session listing needs it.
 struct Running {
@@ -65,11 +66,42 @@ impl Daemon {
             (places, running)
         };
         let harnesses = self.transcript_sources();
+        let seen = self.store.seen_sessions().unwrap_or_else(|e| {
+            tracing::warn!("could not read the sessions seen: {e}");
+            Vec::new()
+        });
         Ok(move || {
             // A repository with no checkout has nowhere a session ran.
-            let listed = places.map(|places| transcript::sessions(&harnesses, &places)).unwrap_or_default();
-            joined(listed, running)
+            let Some(places) = places else {
+                return joined(Vec::new(), running);
+            };
+            let listed = transcript::sessions(&harnesses, &places);
+            joined(with_seen(listed, seen, &places), running)
         })
+    }
+
+    /// Records the sessions running in `panes` whose harness keeps no
+    /// transcript, so each still lists — with its title, times and
+    /// checkout — once its pane is gone. One a transcript records is the
+    /// transcript's to list.
+    pub(super) fn saw_sessions(&self, panes: &[crate::store::SessionPane]) {
+        let sightings: Vec<Sighting> = panes
+            .iter()
+            .filter(|pane| pane.kind == PaneKind::Agent)
+            .filter_map(|pane| {
+                let harness = pane.harness.clone().unwrap_or_else(|| "generic".to_string());
+                let keeps = self.harnesses.iter().any(|h| h.name == harness && h.transcript.is_some());
+                Some(Sighting {
+                    harness,
+                    session_id: pane.harness_session_id.clone().filter(|_| !keeps)?,
+                    checkout_path: pane.checkout_path.clone(),
+                    title: pane.title.clone(),
+                })
+            })
+            .collect();
+        if let Err(e) = self.store.saw_sessions(&sightings, argus_protocol::ago::now()) {
+            tracing::warn!("could not record the sessions seen: {e}");
+        }
     }
 
     /// The work of reading one session's transcript, to be run off the
@@ -151,6 +183,37 @@ impl Daemon {
     }
 }
 
+/// The listed sessions and those Argus saw in the repository's checkouts
+/// that no transcript lists, newest first. A seen session's times are the
+/// first and last Argus saw of it; one whose checkout is gone is not
+/// listed, as nothing says whether that was a worktree of this repository.
+fn with_seen(mut listed: Vec<Session>, seen: Vec<SeenSession>, places: &Places) -> Vec<Session> {
+    for seen in seen {
+        if listed.iter().any(|s| s.session_id == seen.session_id) {
+            continue;
+        }
+        let Some(&(checkout, _)) = places.checkouts.iter().find(|(_, path)| same_path(path, &seen.checkout_path)) else {
+            continue;
+        };
+        listed.push(Session {
+            harness: seen.harness,
+            session_id: seen.session_id,
+            checkout,
+            removed_worktree: None,
+            title: Some(seen.title).filter(|title| !title.is_empty()),
+            started: Some(rfc3339(seen.started)),
+            ended: Some(rfc3339(seen.ended)),
+            modified: Some(seen.ended.saturating_mul(1000)),
+            turns: None,
+            pane: None,
+        });
+    }
+    // Stable, so two sessions written the same millisecond keep their order.
+    listed.sort_by(|a, b| b.modified.cmp(&a.modified));
+    listed.truncate(MAX_SESSIONS);
+    listed
+}
+
 /// The listed sessions with the pane each is running in. An agent running
 /// a session no transcript lists — its harness keeps none, or has not
 /// written it yet — is listed first, as the newest there is.
@@ -223,6 +286,71 @@ mod tests {
         assert_eq!(sessions[1].pane, Some(PaneId(9)));
         assert_eq!(sessions[1].harness, "herdr", "resumed by the harness it runs under");
         assert_eq!(sessions[0].pane, None);
+    }
+
+    fn seen(id: &str, checkout: &str, ended: u64) -> SeenSession {
+        SeenSession {
+            harness: "generic".into(),
+            session_id: id.into(),
+            checkout_path: PathBuf::from(checkout),
+            title: format!("{id} seen"),
+            started: 1_791_968_400,
+            ended,
+        }
+    }
+
+    #[test]
+    fn a_session_whose_harness_keeps_no_transcript_lists_from_what_argus_saw() {
+        let places = Places {
+            checkouts: vec![(CheckoutId(1), PathBuf::from("/src/app")), (CheckoutId(2), PathBuf::from("/src/app-wt"))],
+            worktree_root: None,
+            primary: CheckoutId(1),
+        };
+        let mut transcribed = listed("a", "claude");
+        transcribed.modified = Some(1_791_968_500_000);
+        let sessions = with_seen(
+            vec![transcribed],
+            vec![
+                seen("g1", "/src/app-wt", 1_791_968_600),
+                seen("a", "/src/app", 1_791_968_700),
+                seen("gone", "/src/elsewhere", 1_791_968_800),
+            ],
+            &places,
+        );
+        let ids: Vec<_> = sessions.iter().map(|s| s.session_id.as_str()).collect();
+        assert_eq!(ids, ["g1", "a"], "newest first; a transcript's own listing wins; a gone checkout lists nothing");
+        let g1 = &sessions[0];
+        assert_eq!((g1.harness.as_str(), g1.checkout), ("generic", CheckoutId(2)));
+        assert_eq!(g1.title.as_deref(), Some("g1 seen"));
+        assert_eq!(g1.started.as_deref(), Some("2026-10-14T09:00:00Z"));
+        assert_eq!(g1.ended.as_deref(), Some("2026-10-14T09:03:20Z"));
+        assert_eq!(g1.turns, None);
+    }
+
+    #[tokio::test]
+    async fn a_closed_session_of_a_harness_with_no_transcript_still_lists_and_says_it_has_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = crate::state::tests::running_claude_config(dir.path());
+        // A harness no config names is the generic one, which keeps none.
+        config.agents[0].harness = Some("plain".into());
+        let d = Daemon::new(config);
+        let repository = d.snapshot()[0].repositories[0].id;
+        let checkout = crate::state::tests::only_checkout(&d);
+        let pane = d.spawn_agent(checkout, "claude").unwrap();
+        d.set_pane_session_id(pane, "plain-1");
+        d.report_pane_title(pane, None, "Tidy the release notes");
+        d.close_pane(pane).unwrap();
+
+        let sessions = d.list_sessions(repository).unwrap()();
+        let session = sessions.iter().find(|s| s.session_id == "plain-1").expect("listed after its pane closed");
+        assert_eq!(session.harness, "generic");
+        assert_eq!(session.checkout, checkout);
+        assert_eq!(session.title.as_deref(), Some("Tidy the release notes"));
+        assert!(session.started.is_some() && session.ended.is_some() && session.modified.is_some());
+        assert_eq!(session.pane, None);
+
+        let read = d.read_session(checkout, &session.harness, session.session_id.clone()).unwrap()();
+        assert_eq!(read, Conversation::NoTranscript);
     }
 
     #[test]
