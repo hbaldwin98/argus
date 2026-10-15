@@ -9,6 +9,7 @@
 
 use crate::decisions::DecisionBoard;
 use crate::features::{Feature, FeatureState};
+use crate::held_tree::HeldTree;
 use crate::ids::PaneId;
 use crate::tasks::{TaskCounts, TaskState, TaskTreeRow};
 use crate::tree::{PaneInfo, PaneKind, PaneStatus, ProjectInfo};
@@ -129,7 +130,7 @@ fn feature_row(feature: &Feature, board: &DecisionBoard, tree: &[ProjectInfo]) -
     } else {
         Standing::Queued
     };
-    let worked_on = checkouts(tree)
+    let worked_on = tree.checkouts()
         .find(|checkout| feature.checkouts.iter().any(|path| path == &checkout.path))
         .map(|checkout| checkout.name.clone());
     FeatureRow {
@@ -156,7 +157,7 @@ fn feature_row(feature: &Feature, board: &DecisionBoard, tree: &[ProjectInfo]) -
 
 /// The live agent panes on the checkouts a feature is worked in.
 pub fn panes_on<'a>(feature: &Feature, tree: &'a [ProjectInfo]) -> Vec<&'a PaneInfo> {
-    checkouts(tree)
+    tree.checkouts()
         .filter(|checkout| feature.checkouts.iter().any(|path| path == &checkout.path))
         .flat_map(|checkout| checkout.panes.iter())
         .filter(|pane| pane.kind == PaneKind::Agent)
@@ -171,12 +172,6 @@ pub fn next_task<'a>(rows: &[TaskTreeRow<'a>]) -> Option<TaskTreeRow<'a>> {
     let doing = rows.iter().filter(leaf).find(|row| row.task.state == TaskState::Doing);
     let todo = rows.iter().filter(leaf).find(|row| row.task.state == TaskState::Todo);
     doing.or(todo).cloned()
-}
-
-fn checkouts(tree: &[ProjectInfo]) -> impl Iterator<Item = &crate::tree::CheckoutInfo> {
-    tree.iter()
-        .flat_map(|project| project.repositories.iter())
-        .flat_map(|repository| repository.checkouts.iter())
 }
 
 #[cfg(test)]

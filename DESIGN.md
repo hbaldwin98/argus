@@ -71,10 +71,16 @@ shortcuts sheet's groups), what it does and what it is called. A key in a pane g
 dispatches it from the table; the table crosses to the page once it loads, and the page dispatches
 every other key from it, a text field's Enter and Escape included, so a key cannot be run by one and
 missing from what the sheet and the palette are drawn from; a test fails a page module that reads a
-key's name itself. A binding of the Everywhere place, the zoom keys', is heard by the page before
-anything else, a pane and a text field included, and so is bound nowhere else. The zoom is the
-webview's own rather than the page's CSS, so a pane's cells grow with the rest and its grid refits
-to the new size; it steps as a browser's does and is kept in `desktop.json`. In a pane every other
+key's name itself. Who has a key outside a pane is the table's too: an ordered list of layers — a
+text field, each dialog, the sidebar's pick, a menu over the stage, each stage — each with the places
+it hears in order and whether it takes the keys from a pane it opens over. The first layer up has
+the key, Escape puts away the first thing it finds in the same order, and the page (`focus`) holds a
+handler per layer but no order of its own, so a dialog is added in one place and a test checks every
+layer's places for a key bound twice. A binding of the Everywhere place, the zoom keys', is heard by
+the page before anything else, a pane and a text field included, and so is bound nowhere else. The
+zoom is the webview's own rather than the page's CSS, so a pane's cells grow with the rest and its
+grid refits to the new size; it steps as a browser's does and is kept in `desktop.json`.
+In a pane every other
 key is the program's except the leader, `Ctrl-Space` as in the terminal client: the key after it is
 the window's, one nothing binds is dropped, and a second leader sends one through. `Ctrl-K` (in a
 pane, the leader and `k`) opens the palette, one fuzzy search over the table's commands and the
@@ -135,9 +141,10 @@ in `desktop.json`; fullscreen, the split and the tabs chosen are the run's, sinc
 daemon's consoles are new shells under new ids. The Feature stage
 has them while it is open, and another pane brings them back for good.
 
-Which stage is up is `session`'s own state, one `page::Stage` every move goes through `go` to set,
-so a stage moved always redraws the rail. Its callers hand the keys on and put fullscreen away
-themselves, since half the ways out of fullscreen move no stage.
+Which stage is up is `session`'s own state, one `page::Stage` set through `go`; the rail goes to
+the page whenever it differs from the last one sent, so no move has to say it changed it. `go`'s
+callers hand the keys on and put fullscreen away themselves, since half the ways out of fullscreen
+move no stage.
 
 The docks (`docks`) are the stage's left, right and bottom edges; the sidebar keeps the window's
 own left edge, so the left dock is between it and the stage, and the bottom dock is under the stage
@@ -162,11 +169,13 @@ the dock it left shows the tab before it, or closes once empty. A `desktop.json`
 docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `drag`, `screen`, `input`, `keymap`,
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `drag`, `screen`, `input`, `keymap`, `focus` (which layer has a key),
 `palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
-are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
+are `page.rs`'s types and the page and gesture types each surface's module keeps beside it
+(`console`, `docks`, `capture_note`, `checkouts`, …), written as TypeScript by `cargo test` into
+`page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
 instance's config directory, so a dev window never shares it with the installed one, and it logs to
 `argus-desktop.log` beside the config, keeping the previous run's.
@@ -278,7 +287,7 @@ live in this crate and a contract written twice drifts in silence.
 | `focus` | where the person is working: the view a client reports, and the focus the daemon makes of it and `argus focus` prints |
 | `inbox` | what the daemon tells a harness's plugin over its inbox |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
-| `held_tree` | a client's copy of the tree: every pane in it, telemetry applied to it between trees, and which panes changed state from the copy before |
+| `held_tree` | a client's copy of the tree, and finding things in it: every pane and checkout, where a pane or checkout sits, telemetry applied between trees, and which panes changed state from the copy before |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses — an extension's endpoints among them |
 | `extensions` | what an extension publishes for Argus to draw — its views, commands and dialogs — and what the person does with them on the way back |
 | `ext_console` | what an extension's console view runs and where — its command, working directory and environment as the extension asks, and the pane and ending the daemon reports |
@@ -346,12 +355,14 @@ to the type or its locking.
 | `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, what one session said, and reopening one by its id |
 | `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
 | `state/tree` | finding your way around the tree |
-| `state/features` | which feature a checkout is on, and the one path a change to a feature takes, with who asked as a parameter |
-| `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
-| `state/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, and what the agent is told at each turn |
+| `state/features` | which feature a checkout is on, and the one apply a change to a feature takes, with the board's address and who asked as parameters |
+| `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a feature board's rows: how a task or a diagram is stored, a decision added, changed and read, and the tracker map written or drafted — each change one apply, whoever asks |
+| `state/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, side by side in one apply, and what the agent is told at each turn |
 | `state/views` | which views agents have shown, per pane, and which go when |
 | `state/view_timers` | which views are being asked to refresh, and the task that asks |
-| `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
+| `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and which lists its change pushes |
+| `state/board_address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
+| `state/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
 | `review_queue` | when a review's diff is generated: one at a time across the daemon, and only the newest of each side each client asked for |
@@ -440,45 +451,46 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
 | `session` | what this window holds of the daemon and routes between its parts — the tree, the project and repository chosen on the rail, which stage is up — and which part each message and page call is for |
 | `switcher` | what the project switcher offers beyond the tree's projects — the daemon's workspaces — and the project waiting on a yes to be removed |
-| `add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — and what its gestures ask of the daemon |
+| `add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
 | `status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
 | `preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
 | `notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
 | `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
 | `fonts` | which font families this machine has installed, by every name the webview might know each by, and which are monospaced, for the Settings dialog to offer |
 | `shown` | the panes the window shows — the Workspace's, one per side of the console, and one per extension console view on screen — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
-| `console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, and the page it draws |
-| `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, or whether it is a page; which tab each dock shows of the panels that exist, whether it is open and how big, and whether that changed since it was saved |
+| `console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, the page it draws and the gestures it takes, and what the page last heard |
+| `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, or whether it is a page; which tab each dock shows of the panels that exist, whether it is open and how big, whether that changed since it was saved, the page and gestures of the docks, and what the page last heard |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
 | `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
-| `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once |
+| `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once, or of something always on screen, so it hears only what differs |
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
 | `dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, among them what each pane it resumed a session in was resumed from |
-| `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its full transcript is open in place of the list — and what each session offers: its pane, a resume by the exact command named, or only its transcript |
+| `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its full transcript is open in place of the list — and what each session offers: its pane, a resume by the exact command named, or only its transcript; the page it draws, last sent while open |
 | `transcript_reader` | the full-transcript reader: the person's turns as a jump list and the one it is on, what find looks for and the match it is on, and the page it draws |
-| `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — and which of its keys and buttons are the `column_verbs` it sends |
-| `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
+| `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — which of its keys and buttons are the `column_verbs` it sends, and the table the page last heard |
+| `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
 | `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through |
 | `work_lens` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key and a mark on each row changed since the last reconcile, and the task or decision under the cursor in full |
-| `link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — and what its gestures ask of the daemon |
-| `reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — and what its gestures ask of the daemon |
+| `link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — what its gestures ask of the daemon, and the page and gestures it trades with the page |
+| `reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — what its gestures ask of the daemon, and the page and gestures it trades with the page |
+| `tracker_dialogs` | the link and reconcile dialogs as the window holds them: which of the two is open and on which feature, closing it when the board loses that feature, the refusal only the link dialog hears, and what the page last heard of each |
 | `record_lens` | the Record lens: every decision in the order it was made, and a decision read as its record — what replaced it, what was turned down, and the ADR it copies as |
 | `flows_lens` | the Flows lens: a feature's flows, the one under the cursor as steps, and the step under the cursor with what binds it and what carries it out |
 | `sequence` | a flow's source as the sequence diagram the page draws: its lifelines in order, each step as an arrow between two of them, and the frames a branch draws |
 | `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it — a drag on a flow as its source rewritten — checked against the protocol's bounds |
 
-| `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, and whether the board holds the feature it was sent as yet |
+| `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, whether the board holds the feature it was sent as yet, and the page and gestures it trades with the page, last sent while open |
 | `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
-| `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
+| `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call`; a surface that keeps what it last sent defines its own page and gestures, which these name |
 | `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
-| `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, and the commands the palette runs |
+| `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, the commands the palette runs, and the order of the layers that hold the keys outside a pane |
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
@@ -488,7 +500,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `page_over` | which stage a page, an agent's view or an extension's, opened over, so that docking or closing it goes back there |
 | `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, the question an action waits on, and the one open as a page |
 | `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension |
-| `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, and the answer or cancellation each sends back |
+| `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |
 | `opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
 | `logging` | where the window's own diagnostics go |
 | `window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
@@ -1633,7 +1645,10 @@ worktree is removed. The daemon derives a durable key from the repository's shar
 instead of persisting its runtime ids. Synthetic and non-Git checkouts use their repository path.
 For work that deliberately crosses repository boundaries, the pane API accepts an explicit workspace scope,
 selected by `ARGUS_ARTIFACT_SCOPE=workspace` in `argus-hook`. This scope is independent of the open
-workspace in the TUI: opening a workspace changes visibility, not where an artifact is filed.
+workspace in the TUI: opening a workspace changes visibility, not where an artifact is filed. No
+client view shows a workspace board, so a change to one is answered to the agent that made it and
+pushed to no client: a push names the repositories it is for rather than the board it is, and pushed
+under the workspace's repositories it would replace each one's own board on screen.
 
 A feature is stored, not derived: schema v6's `feature` table holds a slug, a title, the document
 body, and the checkout and branch it originated in. The slug is derived from the title once, at
@@ -1752,6 +1767,17 @@ a person's records neither; `select` and `note` are about an agent's checkout an
 person; an agent's `done` and `reopen` are logged as the agent's, with its session, and carry no
 detail, which is the person's to give; an agent's `drop` is refused while anything is filed under
 the feature; and transfers and captured notes are the view's.
+
+Every other change to a board is built the same way. A task or a diagram (`state/board_parts`), a
+decision added or changed (`state/decisions`), the tracker map (`state/tracker_map`) and a turn of a
+reconcile (`state/reconcile`) each have one apply, taking the board's address and, where a rule
+depends on it, who asked (`state/asker`); the rules that differ by who asked are arms of its match.
+Changing a decision has no such rule, so its apply takes no asker. The address is resolved once per
+request, from the agent's pane or the client's checkout (`state/board_address`): the store key, the
+project, the checkout a feature pointer is kept against, and the repositories a push names. The
+`_for_agent` and `_for_client` entry points resolve the address and the feature the request is
+about — a client names its feature, an agent's is the one it names or its checkout's — and call the
+apply, so a refusal or a push cannot differ by which side asked.
 
 A person starting a feature has a paragraph, not a title, so the view sends a whole note —
 `FeatureAction::Capture`, read by `argus_protocol::capture` — and `store/capture` writes it in

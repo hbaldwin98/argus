@@ -1,6 +1,7 @@
 //! The daemon's tests, split the way the daemon is: one file per concern,
 //! over the fixtures they all build a daemon from.
 
+mod board_rules;
 mod branches;
 mod extension_consoles;
 mod extensions;

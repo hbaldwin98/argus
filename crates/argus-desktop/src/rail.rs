@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 
 use argus_protocol::{ago, 
-    CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo, RepositoryId,
+    CheckoutId, CheckoutInfo, HeldTree, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo, RepositoryId,
 };
 
 use crate::page::{self, Rail};
@@ -150,25 +150,18 @@ pub fn branch(checkout: &CheckoutInfo) -> String {
 }
 
 fn shown(tree: &[ProjectInfo], pane: PaneId) -> Option<page::Shown> {
-    for repo in tree.iter().flat_map(|p| &p.repositories) {
-        for checkout in &repo.checkouts {
-            let Some(info) = checkout.panes.iter().find(|p| p.id == pane) else {
-                continue;
-            };
-            return Some(page::Shown {
-                pane: pane.0,
-                repository: repo.name.clone(),
-                checkout: checkout.name.clone(),
-                branch: branch(checkout),
-                agent: info.kind == PaneKind::Agent,
-                title: info.title.clone(),
-                status: status(info),
-                // The session's to say: the tree does not carry it.
-                resumed: None,
-            });
-        }
-    }
-    None
+    let (lineage, info) = tree.lineage_of_pane(pane)?;
+    Some(page::Shown {
+        pane: pane.0,
+        repository: lineage.repository.name.clone(),
+        checkout: lineage.checkout.name.clone(),
+        branch: branch(lineage.checkout),
+        agent: info.kind == PaneKind::Agent,
+        title: info.title.clone(),
+        status: status(info),
+        // The session's to say: the tree does not carry it.
+        resumed: None,
+    })
 }
 
 fn status(pane: &PaneInfo) -> &'static str {
@@ -183,8 +176,6 @@ fn statuses(project: &ProjectInfo) -> impl Iterator<Item = PaneStatus> + '_ {
         .flat_map(|c| c.statuses())
 }
 
-/// How long ago, the largest unit that fits: `5m`, `2h`, `3d`, `2w`; a
-/// dash for never.
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,10 +14,114 @@ use argus_protocol::reconcile::Stage;
 use argus_protocol::{
     ClientMsg, Feature, PaneId, PaneKind, PaneStatus, ProjectInfo, Reconcile, ReconcileAction, RepositoryId, Ticked,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::feature_stage::Scope;
 use crate::keymap::Action;
-use crate::page::{AgentChoice, Line, LineGroup, ProposedRow, ReconcileGesture, ReconcilePage, SelectedLine};
+use crate::page::Line;
+
+/// What was done in the reconcile dialog. A line is its place among the
+/// proposal's lines.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ReconcileGesture {
+    Select { line: usize },
+    Tick { line: usize },
+    /// The selected line's text as the person rewrote it.
+    Text { line: usize, text: String },
+    /// The agent to ask.
+    Agent { pane: u64 },
+    Ask { ask: String },
+    CarryOut,
+    Discard,
+    /// A key of the dialog's own.
+    Action { action: Action },
+    Close,
+}
+
+/// The reconcile dialog: what was asked and of whom, the proposal grouped
+/// by where each line writes, the line under the cursor in full, and the
+/// agents an ask can go to.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReconcilePage {
+    pub open: bool,
+    pub number: i64,
+    pub title: String,
+    /// The tickets, as the heading names them: `Linear ENG-88 and Jira ARG-142`.
+    pub tickets: String,
+    /// `none` with nothing under way, else `asked`, `proposed` or `carrying`.
+    #[cfg_attr(test, ts(type = "\"none\" | \"asked\" | \"proposed\" | \"carrying\""))]
+    pub stage: &'static str,
+    /// The agent asked, or that proposed: `pane #32`.
+    pub by: Option<String>,
+    pub ago: Option<String>,
+    pub asked: String,
+    pub groups: Vec<LineGroup>,
+    pub noticed: Vec<Line>,
+    pub selected: Option<SelectedLine>,
+    pub ticked: usize,
+    pub total: usize,
+    /// The live agents of the repository an ask can go to.
+    pub agents: Vec<AgentChoice>,
+    /// When the last one was carried out: `reconciled 2h ago by pane #32`.
+    pub reconciled: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LineGroup {
+    /// `Into Argus`, `Out to Linear`.
+    pub heading: String,
+    pub into_argus: bool,
+    pub lines: Vec<ProposedRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ProposedRow {
+    pub line: usize,
+    pub key: String,
+    pub does: String,
+    pub why: String,
+    pub ticked: bool,
+    pub on: bool,
+    /// What the tracker said when it was carried out and failed.
+    pub failed: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedLine {
+    pub line: usize,
+    pub heading: String,
+    pub key: String,
+    pub does: String,
+    /// The text it writes, as the person last left it.
+    pub text: String,
+    /// The person rewrote it.
+    pub edited: bool,
+    /// The call the agent will make.
+    pub call: String,
+    pub ticked: bool,
+    pub failed: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentChoice {
+    pub pane: u64,
+    pub title: String,
+    /// It did the last reconcile, or the one under way.
+    pub last: bool,
+    pub chosen: bool,
+}
 
 pub struct ReconcileDialog {
     slug: String,

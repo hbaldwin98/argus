@@ -46,14 +46,13 @@ impl Agents {
 
     /// An agent from `template` is running, read off the tree rather than
     /// the request, so a refused or mistaken spawn never becomes the one
-    /// offered first. Whether the order changed.
-    pub fn started(&mut self, template: &str) -> bool {
+    /// offered first.
+    pub fn started(&mut self, template: &str) {
         if self.last.as_deref() == Some(template) {
-            return false;
+            return;
         }
         self.last = Some(template.to_owned());
         self.last_changed = true;
-        true
     }
 
     pub fn last(&self) -> Option<&String> {
@@ -80,13 +79,13 @@ mod tests {
     fn the_agent_last_started_is_offered_first_and_saved_once() {
         let mut agents = offering(None);
         assert_eq!(agents.offered(), ["claude", "codex"]);
-        assert!(agents.started("codex"));
+        agents.started("codex");
         assert_eq!(agents.offered(), ["codex", "claude"]);
         assert_eq!(agents.first().as_deref(), Some("codex"));
         assert!(agents.take_changed());
         assert!(!agents.take_changed(), "saved once");
-        assert!(!agents.started("codex"), "the same one again is no change");
-        assert!(!agents.take_changed());
+        agents.started("codex");
+        assert!(!agents.take_changed(), "the same one again is no change");
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //! each. What each dialog holds and draws is `review`'s and `history`'s;
 //! the history gives way to the review of a commit chosen in it.
 
-use argus_protocol::{CheckoutId, CheckoutInfo, ClientMsg, PaneId, ProjectInfo, ServerMsg};
+use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, ServerMsg};
 
 use crate::history::{HistoryDialog, Then};
 use crate::keymap::Action;
@@ -89,7 +89,7 @@ impl Dialogs {
 
     /// Opens the review of a checkout's working changes.
     pub fn open_review(&mut self, checkout: CheckoutId, tree: &[ProjectInfo], id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) {
-        let Some(info) = checkout_info(tree, checkout) else {
+        let Some(info) = tree.checkout(checkout) else {
             return;
         };
         let (dialog, msgs) = ReviewDialog::working(info, self.layout, id);
@@ -98,7 +98,7 @@ impl Dialogs {
     }
 
     pub fn open_history(&mut self, checkout: CheckoutId, tree: &[ProjectInfo], mut id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) {
-        let Some(info) = checkout_info(tree, checkout) else {
+        let Some(info) = tree.checkout(checkout) else {
             return;
         };
         let (dialog, msg) = HistoryDialog::open(info, id());
@@ -109,7 +109,7 @@ impl Dialogs {
     /// Opens the history with the cursor on `sha`, for a reference in an
     /// agent's view.
     pub fn open_history_at(&mut self, checkout: CheckoutId, sha: &str, tree: &[ProjectInfo], mut id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) {
-        let Some(info) = checkout_info(tree, checkout) else {
+        let Some(info) = tree.checkout(checkout) else {
             return;
         };
         let (dialog, msg) = HistoryDialog::open_at(info, id(), sha);
@@ -122,7 +122,7 @@ impl Dialogs {
     /// comes back, for the session to ask the daemon for.
     pub fn review_action(&mut self, action: Action, tree: &[ProjectInfo], say: &mut Vec<Event>) -> Option<EditorAt> {
         let dialog = self.review.as_mut()?;
-        let info = checkout_info(tree, dialog.checkout());
+        let info = tree.checkout(dialog.checkout());
         let refused = match action {
             Action::Side => dialog.switch_side().err(),
             Action::Comment => dialog.compose(info).err().map(str::to_owned),
@@ -200,7 +200,7 @@ impl Dialogs {
         };
         match body {
             None => dialog.cancel_comment(),
-            Some(body) => match dialog.comment(checkout_info(tree, dialog.checkout()), &body) {
+            Some(body) => match dialog.comment(tree.checkout(dialog.checkout()), &body) {
                 Ok(msg) => out.push(msg),
                 Err(text) => say.push(Event::Notice { text: text.into() }),
             },
@@ -245,7 +245,7 @@ impl Dialogs {
             Then::Review { commit, file } => {
                 let checkout = dialog.checkout();
                 self.history = None;
-                if let Some(info) = checkout_info(tree, checkout) {
+                if let Some(info) = tree.checkout(checkout) {
                     let (review, msg) = ReviewDialog::of_commit(info, commit, file, self.layout, id());
                     self.review = Some(review);
                     out.push(msg);
@@ -266,7 +266,7 @@ impl Dialogs {
     /// What the page has not heard of either dialog. `now` is seconds since
     /// the Unix epoch.
     pub fn take(&mut self, tree: &[ProjectInfo], now: u64) -> Vec<Event> {
-        let review = self.review.as_ref().map(|d| d.page(checkout_info(tree, d.checkout())));
+        let review = self.review.as_ref().map(|d| d.page(tree.checkout(d.checkout())));
         let history = self.history.as_ref().map(|d| d.page(now));
         let review = self.review_sent.take(review).map(|page| Event::Review(Box::new(page)));
         let history = self.history_sent.take(history).map(|page| Event::History(Box::new(page)));
@@ -304,10 +304,6 @@ impl Dialogs {
     pub fn review(&self) -> Option<&ReviewDialog> {
         self.review.as_ref()
     }
-}
-
-fn checkout_info(tree: &[ProjectInfo], checkout: CheckoutId) -> Option<&CheckoutInfo> {
-    tree.iter().flat_map(|p| &p.repositories).flat_map(|r| &r.checkouts).find(|c| c.id == checkout)
 }
 
 #[cfg(test)]

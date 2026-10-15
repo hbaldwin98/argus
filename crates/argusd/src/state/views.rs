@@ -94,7 +94,7 @@ impl Daemon {
         pane: PaneId,
         change: ViewChange,
     ) -> anyhow::Result<()> {
-        self.agent_scope(pane)?;
+        self.agent_checkout(pane)?;
         match change {
             ViewChange::Show { view } => {
                 let view = checked_within_size(view)?;
@@ -131,7 +131,7 @@ impl Daemon {
         make: impl FnOnce(&Views) -> anyhow::Result<AgentView>,
     ) -> anyhow::Result<()> {
         let mut views = self.agent_views.lock().unwrap();
-        self.agent_scope(pane)?;
+        self.agent_checkout(pane)?;
         let view = make(&views)?;
         let (id, every) = (view.id.clone(), view.refresh_every);
         let shown = ShownView {

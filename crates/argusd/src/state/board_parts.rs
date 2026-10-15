@@ -1,6 +1,6 @@
 //! The parts filed under a feature — its tasks and its sequence diagrams:
 //! which feature a request for one lands in, which rows it may touch, and
-//! who hears about the change.
+//! which lists its change pushes.
 //!
 //! An agent is on whichever feature its checkout points at, and a client
 //! names one outright. After that the two are one path, so the id guard
@@ -9,17 +9,10 @@
 
 use argus_protocol::{PaneId, ProjectId};
 
+use super::asker::Asker;
+use super::board_address::BoardAddress;
 use super::*;
 use crate::store::Store;
-
-/// Who is asking for a change. An agent is the conversation it is and the
-/// pane it asked through; a person at a client is neither, which is what
-/// lets a claim or a note say whose it is without a flag for it.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Author<'a> {
-    pub session: Option<&'a str>,
-    pub pane: Option<PaneId>,
-}
 
 /// One kind of row filed under a feature, spoken to through the action
 /// that changes it.
@@ -50,34 +43,28 @@ pub trait FeaturePart: Sized {
         key: &str,
         feature: &str,
         at: i64,
-        by: Author<'_>,
+        by: Asker<'_>,
     ) -> anyhow::Result<()>;
     /// Names the repositories whose board this is, as a push does: a read
     /// answered without them would be dropped by a client that keeps only
     /// its own repository's lists.
-    fn list(daemon: &Daemon, target: &BoardTarget) -> anyhow::Result<Self::List>;
+    fn list(daemon: &Daemon, target: &BoardTarget<'_>) -> anyhow::Result<Self::List>;
     /// The answer on a checkout that is on no feature.
     fn empty(project_name: String) -> Self::List;
-    fn broadcast(daemon: &Daemon, target: &BoardTarget);
+    fn broadcast(daemon: &Daemon, target: &BoardTarget<'_>);
 }
 
 /// The one feature a part request lands in, however the caller named it.
 #[derive(Clone)]
-pub struct BoardTarget {
-    pub project_name: String,
-    pub key: String,
+pub struct BoardTarget<'a> {
+    pub address: &'a BoardAddress,
     pub feature: String,
 }
 
 impl Daemon {
-    /// A change from an agent, applied to the feature its checkout is on,
-    /// answered with the list as it stands afterwards — an agent that has
-    /// just added three tasks needs the ids they were given before it can
-    /// take one up.
-    ///
-    /// Refused when the checkout is on no feature, for the same reason a
-    /// decision is: a row with nothing to be under is the pile all of this
-    /// exists to end. A read there is an empty list rather than an error.
+    /// A change from an agent, answered with the list as it stands
+    /// afterwards — an agent that has just added three tasks needs the ids
+    /// they were given before it can take one up.
     pub fn part_action_for_agent<P: FeaturePart>(
         &self,
         pane_id: PaneId,
@@ -86,11 +73,30 @@ impl Daemon {
         filing: impl Into<super::features::Filing>,
     ) -> anyhow::Result<P::List> {
         let filing = filing.into();
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(filing.scope).to_string();
-        let Some(feature) = self.feature_for_agent(&scope, &filing)? else {
+        let address = self.address_for_agent(pane_id, filing.scope)?;
+        let by = Asker::Agent {
+            pane: pane_id,
+            session,
+        };
+        self.agent_part_action(&address, by, filing.feature.as_deref(), action)
+    }
+
+    /// An agent's change, applied to the feature it names or else the one
+    /// its checkout is on.
+    ///
+    /// Refused when the checkout is on no feature, for the same reason a
+    /// decision is: a row with nothing to be under is the pile all of this
+    /// exists to end. A read there is an empty list rather than an error.
+    pub(in crate::state) fn agent_part_action<P: FeaturePart>(
+        &self,
+        address: &BoardAddress,
+        by: Asker<'_>,
+        named: Option<&str>,
+        action: P,
+    ) -> anyhow::Result<P::List> {
+        let Some(feature) = self.feature_for_agent(address, named)? else {
             if action.is_read() {
-                return Ok(P::empty(scope.project_name));
+                return Ok(P::empty(address.project_name.clone()));
             }
             if action.is_add() {
                 anyhow::bail!(
@@ -101,15 +107,7 @@ impl Daemon {
             }
             anyhow::bail!("this checkout is not on a feature yet");
         };
-        let target = BoardTarget {
-            project_name: scope.project_name,
-            key,
-            feature,
-        };
-        let by = Author {
-            session,
-            pane: Some(pane_id),
-        };
+        let target = BoardTarget { address, feature };
         self.apply_part(&target, action, by)
     }
 
@@ -122,22 +120,21 @@ impl Daemon {
         feature: &str,
         action: P,
     ) -> anyhow::Result<P::List> {
-        let (project_name, key) = self.client_artifact_scope(project, checkout)?;
+        let address = self.address_for_client(project, checkout)?;
         let target = BoardTarget {
-            project_name,
-            key,
+            address: &address,
             feature: feature.to_string(),
         };
-        self.apply_part(&target, action, Author::default())
+        self.apply_part(&target, action, Asker::Person)
     }
 
     /// Applies one change and answers with the list afterwards. Every
     /// change is also pushed, so a client that did not ask still sees it.
-    fn apply_part<P: FeaturePart>(
+    pub(in crate::state) fn apply_part<P: FeaturePart>(
         &self,
-        target: &BoardTarget,
+        target: &BoardTarget<'_>,
         action: P,
-        by: Author<'_>,
+        by: Asker<'_>,
     ) -> anyhow::Result<P::List> {
         if let Some(id) = action.id() {
             self.guard_part::<P>(target, id)?;
@@ -150,7 +147,7 @@ impl Daemon {
                 feature: feature.to_string(),
                 ..target.clone()
             });
-            action.apply(&self.store, &target.key, &target.feature, at, by)?;
+            action.apply(&self.store, &target.address.key, &target.feature, at, by)?;
             P::broadcast(self, target);
             if let Some(landed) = landed.filter(|landed| landed.feature != target.feature) {
                 P::broadcast(self, &landed);
@@ -165,8 +162,8 @@ impl Daemon {
     /// read, so a stale id would otherwise let one feature's agent tick off
     /// another's work by arithmetic — or a client holding a list the tree
     /// has since moved on from rewrite a row it is no longer showing.
-    fn guard_part<P: FeaturePart>(&self, target: &BoardTarget, id: i64) -> anyhow::Result<()> {
-        if !P::ids(&self.store, &target.key, &target.feature)?.contains(&id) {
+    fn guard_part<P: FeaturePart>(&self, target: &BoardTarget<'_>, id: i64) -> anyhow::Result<()> {
+        if !P::ids(&self.store, &target.address.key, &target.feature)?.contains(&id) {
             anyhow::bail!("{} {id} is not under this feature", P::NOUN);
         }
         Ok(())

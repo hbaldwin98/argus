@@ -271,7 +271,12 @@ function commentBox(r: ReviewPage): HTMLElement {
         { class: 'btn', onclick: () => call('review_comment', { body: null }) },
         'Cancel',
       ),
-      el('button', { class: 'btn primary', onclick: send }, 'Comment ', keycap('Ctrl Enter')),
+      el(
+        'button',
+        { class: 'btn primary', onclick: send },
+        'Comment',
+        el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'),
+      ),
     ),
   );
 }
@@ -308,7 +313,9 @@ function diff(r: ReviewPage): HTMLElement {
         el('span', { class: 'grow' }),
         r.pick && el('span', { class: 'meta' }, `${r.pick} picked`),
       ),
-    el('div', { class: `dbody${r.split ? ' split' : ''}`, id: 'review-body' }, body),
+    // Not `split`: that class is the app's flex-row layout, and would lay
+    // every diff row side by side.
+    el('div', { class: `dbody${r.split ? ' paired' : ''}`, id: 'review-body' }, body),
   );
 }
 

@@ -140,7 +140,7 @@ function commentBox(r) {
             class: `chipf${p.pane === r.recipient ? ' on' : ''}`,
             onclick: () => click({ on: 'recipient', pane: p.pane }),
         }, el('span', { class: 'glyph' }, '◆'), p.title))
-        : el('span', { class: 'chipf on' }, el('span', { class: 'glyph' }, '◆'), chosen?.title ?? ''), el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => call('review_comment', { body: null }) }, 'Cancel'), el('button', { class: 'btn primary', onclick: send }, 'Comment ', keycap('Ctrl Enter'))));
+        : el('span', { class: 'chipf on' }, el('span', { class: 'glyph' }, '◆'), chosen?.title ?? ''), el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => call('review_comment', { body: null }) }, 'Cancel'), el('button', { class: 'btn primary', onclick: send }, 'Comment', el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'))));
 }
 function send() {
     call('review_comment', { body: state.reviewDraft });
@@ -166,7 +166,10 @@ function diff(r) {
         ]);
     }
     return el('section', { class: 'review-diff' }, path &&
-        el('div', { class: 'fhdr' }, el('span', { class: 'mono' }, path.path), el('span', { class: 'grow' }), r.pick && el('span', { class: 'meta' }, `${r.pick} picked`)), el('div', { class: `dbody${r.split ? ' split' : ''}`, id: 'review-body' }, body));
+        el('div', { class: 'fhdr' }, el('span', { class: 'mono' }, path.path), el('span', { class: 'grow' }), r.pick && el('span', { class: 'meta' }, `${r.pick} picked`)), 
+    // Not `split`: that class is the app's flex-row layout, and would lay
+    // every diff row side by side.
+    el('div', { class: `dbody${r.split ? ' paired' : ''}`, id: 'review-body' }, body));
 }
 export function drawReview() {
     const r = state.review;

@@ -26,6 +26,7 @@ export const state = {
     expanded: null,
     keymap: [],
     commands: [],
+    layers: [],
     palette: null,
     menuOpen: false,
     workspacesOpen: false,

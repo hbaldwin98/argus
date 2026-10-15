@@ -1,6 +1,6 @@
 //! A new feature being written as one note: what the note reads as, by
-//! `argus_protocol::capture`'s grammar, and whether the board holds the
-//! feature it was sent as yet.
+//! `argus_protocol::capture`'s grammar, whether the board holds the
+//! feature it was sent as yet, and what the page last heard of it.
 //!
 //! The reading is the daemon's own parser run here, never a second grammar
 //! on the page, so what the preview shows is what gets stored. The note
@@ -10,9 +10,72 @@
 use std::collections::HashSet;
 
 use argus_protocol::{Capture, CapturedDecision, CapturedTask, ClientMsg, DecisionBoard};
+use serde::{Deserialize, Serialize};
 
 use crate::feature_stage::Scope;
-use crate::page::{CapturePage, NoteDecision, NoteRow};
+use crate::page::Event;
+use crate::sent::Sent;
+
+/// What was done in the note a new feature is written as.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum CaptureGesture {
+    /// An empty note, on the repository the Feature stage reads.
+    Open,
+    /// What the note says now, to be read as the daemon will read it.
+    Note { note: String },
+    /// Create, with the note as it is when pressed: calls need not arrive
+    /// in the order sent, so the last `Note` may come after.
+    Create { note: String },
+    /// Puts the note away unsent.
+    Discard,
+}
+
+/// The note a new feature is written as, and what the daemon's own reading
+/// of it makes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CapturePage {
+    pub open: bool,
+    /// The repository it is written in, for the heading.
+    pub repository: String,
+    /// The note as the window last heard it, for a page that reloaded.
+    pub note: String,
+    pub title: String,
+    pub brief: Option<String>,
+    /// Every task at every depth, in the order a reader meets them.
+    pub tasks: Vec<NoteRow>,
+    pub decisions: Vec<NoteDecision>,
+    /// One-based lines the grammar found no place for.
+    pub unread: Vec<usize>,
+    /// Why it cannot be created yet; `None` when it is ready.
+    pub blocked: Option<String>,
+    /// Sent, and waiting on the board to hold it.
+    pub creating: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NoteRow {
+    pub label: String,
+    pub depth: usize,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NoteDecision {
+    pub label: String,
+    pub text: String,
+    /// A question, with `options`; else made, with `because`.
+    pub open: bool,
+    pub options: Vec<String>,
+    pub because: Option<String>,
+}
 
 pub struct CaptureNote {
     note: String,
@@ -84,6 +147,48 @@ impl CaptureNote {
             blocked: capture.checked(true).err().map(str::to_string),
             creating: self.sent.is_some(),
         }
+    }
+}
+
+/// The note as the window holds it, while open, and what the page last
+/// heard of it.
+#[derive(Default)]
+pub struct Capturing {
+    note: Option<CaptureNote>,
+    sent: Sent<CapturePage>,
+}
+
+impl Capturing {
+    /// An empty note, or the one already open.
+    pub fn open(&mut self) {
+        self.note.get_or_insert_with(CaptureNote::new);
+    }
+
+    pub fn close(&mut self) {
+        self.note = None;
+    }
+
+    pub fn get_mut(&mut self) -> Option<&mut CaptureNote> {
+        self.note.as_mut()
+    }
+
+    /// The slug of the feature the open note became, once `board` holds
+    /// it; the note closes then.
+    pub fn landed(&mut self, board: &DecisionBoard) -> Option<String> {
+        let slug = self.note.as_ref()?.landed(board)?;
+        self.note = None;
+        Some(slug)
+    }
+
+    /// What the page has not heard of the note, written in `repository`.
+    pub fn take(&mut self, repository: &str) -> Option<Event> {
+        let page = self.note.as_ref().map(|note| note.page(repository));
+        self.sent.take(page).map(|page| Event::Capture(Box::new(page)))
+    }
+
+    /// The page reloaded and holds nothing: an open note is sent again.
+    pub fn reload(&mut self) {
+        self.sent.forget();
     }
 }
 

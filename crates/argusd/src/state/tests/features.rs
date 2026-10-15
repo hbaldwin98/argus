@@ -137,9 +137,8 @@ async fn an_agents_move_is_recorded_as_its_own_and_only_a_person_says_why() {
         slug: slug.clone(),
         detail: detail.map(str::to_string),
     };
-    let scope = d.agent_scope(agent).unwrap();
-    let key = scope.artifact_key(ArtifactScope::default());
-    let last = |d: &Daemon| d.store.feature_events(key, &slug).unwrap().pop().unwrap();
+    let key = d.address_for_agent(agent, ArtifactScope::default()).unwrap().key;
+    let last = |d: &Daemon| d.store.feature_events(&key, &slug).unwrap().pop().unwrap();
 
     d.feature_action_for_agent(agent, Some("session-1"), done(None), ArtifactScope::default())
         .unwrap();
@@ -350,6 +349,43 @@ async fn a_pushed_board_names_its_repository_so_another_of_the_project_keeps_its
     let asked = d.decision_board(project.id, checkout_b).unwrap();
     assert_eq!(asked.repositories, [repo_b], "an answer names its repository too");
     assert!(asked.features.is_empty());
+}
+
+#[tokio::test]
+async fn a_workspace_write_leaves_every_repositorys_board_on_screen_alone() {
+    // A push says which repositories it is for, not which board it is, and
+    // a client holds only its repository's board: a workspace board pushed
+    // under its repositories would replace each one's own.
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let d = daemon_with_two_agent_checkouts(first.path(), second.path());
+    let tree = d.snapshot();
+    let project = &tree[0];
+    let agent = d
+        .spawn_agent(project.repositories[0].checkouts[0].id, "claude")
+        .unwrap();
+    let address = d.address_for_agent(agent, ArtifactScope::Workspace).unwrap();
+    assert!(!address.is_pushed());
+    let mut boards = d.subscribe_decisions();
+    let mut tasks = d.subscribe_tasks();
+
+    d.feature_action_for_agent(agent, None, open("workspace migration"), ArtifactScope::Workspace)
+        .unwrap();
+    d.part_action_for_agent(
+        agent,
+        None,
+        TaskAction::Add(TaskWrite {
+            title: "update both crates".into(),
+            external: None,
+            parent: None,
+        }),
+        ArtifactScope::Workspace,
+    )
+    .unwrap();
+
+    assert!(boards.try_recv().is_err(), "no board is pushed for a workspace write");
+    assert!(tasks.try_recv().is_err(), "nor a task list");
+    close_all(&d);
 }
 
 #[tokio::test]

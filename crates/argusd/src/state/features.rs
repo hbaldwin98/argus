@@ -20,7 +20,8 @@ use argus_protocol::{
     FeatureState, PaneId, ProjectId,
 };
 
-use super::agents::AgentScope;
+use super::asker::Asker;
+use super::board_address::BoardAddress;
 use super::*;
 
 /// Where an agent's request is filed: on which board, and on it, a feature
@@ -55,20 +56,18 @@ impl Daemon {
         filing: impl Into<Filing>,
     ) -> anyhow::Result<FeatureBoard> {
         let filing = filing.into();
-        let scope = self.agent_scope(pane_id)?;
-        self.feature_board(&scope, filing.scope, filing.feature.as_deref())
+        let address = self.address_for_agent(pane_id, filing.scope)?;
+        self.feature_board(&address, filing.feature.as_deref())
     }
 
-    fn feature_board(
+    pub(in crate::state) fn feature_board(
         &self,
-        scope: &AgentScope,
-        artifact_scope: ArtifactScope,
+        address: &BoardAddress,
         named: Option<&str>,
     ) -> anyhow::Result<FeatureBoard> {
-        let key = scope.artifact_key(artifact_scope);
-        let features = self.store.features(key)?;
-        let current = self.board_feature(scope, artifact_scope, &features, named)?;
-        let decisions = self.store.decisions(key)?;
+        let features = self.store.features(&address.key)?;
+        let current = self.board_feature(address, &features, named)?;
+        let decisions = self.store.decisions(&address.key)?;
         let unfiled = decisions.iter().filter(|d| d.feature.is_none()).count();
         // An agent reads everything but what was withdrawn, which is kept
         // for people reading the history in the view; `decisions_for_agent`
@@ -81,8 +80,8 @@ impl Daemon {
             None => Vec::new(),
         };
         Ok(FeatureBoard {
-            project: self.project_id_named(&scope.project_name),
-            project_name: scope.project_name.clone(),
+            project: Some(address.project),
+            project_name: address.project_name.clone(),
             features,
             current,
             decisions: scoped,
@@ -94,8 +93,7 @@ impl Daemon {
     /// this board, or else the one this checkout is on.
     fn board_feature(
         &self,
-        scope: &AgentScope,
-        artifact_scope: ArtifactScope,
+        address: &BoardAddress,
         features: &[Feature],
         named: Option<&str>,
     ) -> anyhow::Result<Option<String>> {
@@ -104,7 +102,7 @@ impl Daemon {
             Some(slug) => {
                 anyhow::bail!("no feature `{slug}` on this board; `feature list` names them")
             }
-            None => self.current_feature(scope, artifact_scope, features),
+            None => self.current_feature(address, features),
         }
     }
 
@@ -113,14 +111,13 @@ impl Daemon {
     /// or transferred assignment.
     fn current_feature(
         &self,
-        scope: &AgentScope,
-        artifact_scope: ArtifactScope,
+        address: &BoardAddress,
         features: &[Feature],
     ) -> anyhow::Result<Option<String>> {
-        if let Some(slug) = self
-            .store
-            .artifact_feature_scope(&scope.checkout_path, scope.artifact_key(artifact_scope))?
-        {
+        let Some(checkout) = &address.checkout_path else {
+            return Ok(None);
+        };
+        if let Some(slug) = self.store.artifact_feature_scope(checkout, &address.key)? {
             if features.iter().any(|f| f.slug == slug) {
                 return Ok(Some(slug));
             }
@@ -140,15 +137,13 @@ impl Daemon {
         filing: impl Into<Filing>,
     ) -> anyhow::Result<FeatureBoard> {
         let filing = filing.into();
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(filing.scope);
-        let by = FeatureActor::Agent {
-            scope: &scope,
+        let address = self.address_for_agent(pane_id, filing.scope)?;
+        let by = Asker::Agent {
+            pane: pane_id,
             session,
-            filing: &filing,
         };
-        let about = self.apply_feature(&scope.project_name, key, &by, action)?;
-        self.feature_board(&scope, filing.scope, about.as_deref())
+        let about = self.apply_feature(&address, by, filing.feature.as_deref(), action)?;
+        self.feature_board(&address, about.as_deref())
     }
 
     /// A change from the feature view, which names the board by the
@@ -161,13 +156,13 @@ impl Daemon {
         checkout: CheckoutId,
         action: FeatureAction,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        let by = FeatureActor::Person { project, checkout };
-        self.apply_feature(&name, &key, &by, action).map(drop)
+        let address = self.address_for_client(project, checkout)?;
+        self.apply_feature(&address, Asker::Person, None, action).map(drop)
     }
 
-    /// Applies one change to the board `key` names and pushes the board to
-    /// every client. Answers with the feature the change was about when
+    /// Applies one change to the board `address` names and pushes it to
+    /// every client. `named` is the feature an agent's request names, if
+    /// it names one. Answers with the feature the change was about when
     /// the asker could not have named it: the one an append resolved.
     ///
     /// Every rule that differs by who asked is an arm of this match, so
@@ -181,13 +176,14 @@ impl Daemon {
     ///   its session, and say nothing: what was said is the person's;
     /// - an agent drops only a feature with nothing under it;
     /// - `Transfer` and `Capture` are the view's.
-    fn apply_feature(
+    pub(in crate::state) fn apply_feature(
         &self,
-        project_name: &str,
-        key: &str,
-        by: &FeatureActor<'_>,
+        address: &BoardAddress,
+        by: Asker<'_>,
+        named: Option<&str>,
         action: FeatureAction,
     ) -> anyhow::Result<Option<String>> {
+        let key = address.key.as_str();
         let at = super::decisions::now();
         let mut about = None;
         match action {
@@ -198,21 +194,21 @@ impl Daemon {
                     // point at it: whichever agent picks it up says so
                     // with `argus-hook feature use`, and that is when it
                     // gains a home.
-                    FeatureActor::Person { .. } => {
+                    Asker::Person => {
                         self.store.add_feature(key, &write, None, None, at, None)?;
                     }
-                    FeatureActor::Agent { scope, session, .. } => {
-                        let checkout = scope.checkout_path.to_string_lossy();
+                    Asker::Agent { session, .. } => {
+                        let path = address.checkout()?;
+                        let checkout = path.to_string_lossy();
                         let feature = self.store.add_feature(
                             key,
                             &write,
                             Some(&checkout),
-                            self.branch_of(&scope.checkout_path).as_deref(),
+                            self.branch_of(path).as_deref(),
                             at,
-                            *session,
+                            session,
                         )?;
-                        self.store
-                            .set_artifact_feature_scope(&scope.checkout_path, key, &feature.slug)?;
+                        self.store.set_artifact_feature_scope(path, key, &feature.slug)?;
                     }
                 }
             }
@@ -220,11 +216,11 @@ impl Daemon {
             // it: this is the moment a feature somebody wrote down gains a
             // place where work on it can be seen happening.
             FeatureAction::Select { slug } => {
-                let FeatureActor::Agent { scope, .. } = by else {
+                let Asker::Agent { .. } = by else {
                     anyhow::bail!("a person moves a feature between checkouts with a transfer");
                 };
                 self.store
-                    .set_artifact_feature_scope(&scope.checkout_path, key, &slug)?;
+                    .set_artifact_feature_scope(address.checkout()?, key, &slug)?;
             }
             // Refused when the checkout is on no feature, rather than
             // opening one: what to call a feature is the decision this
@@ -233,12 +229,11 @@ impl Daemon {
             // decisions, and a paragraph added mid-task belongs where it
             // is being read.
             FeatureAction::Append { text } => {
-                let FeatureActor::Agent { scope, filing, .. } = by else {
+                let Asker::Agent { .. } = by else {
                     anyhow::bail!("a person rewrites a brief whole");
                 };
                 let features = self.store.features(key)?;
-                let named = filing.feature.as_deref();
-                let Some(slug) = self.board_feature(scope, filing.scope, &features, named)? else {
+                let Some(slug) = self.board_feature(address, &features, named)? else {
                     anyhow::bail!("this checkout is not on a feature yet");
                 };
                 if text.trim().is_empty() {
@@ -256,7 +251,7 @@ impl Daemon {
             FeatureAction::Retitle { slug, title } => self.store.rename_feature(key, &slug, &title)?,
             FeatureAction::Rewrite { slug, body } => self.store.set_feature_body(key, &slug, &body)?,
             FeatureAction::Drop { slug } => {
-                if let FeatureActor::Agent { .. } = by {
+                if let Asker::Agent { .. } = by {
                     self.refuse_dropping_work(key, &slug)?;
                 }
                 self.store.remove_feature(key, &slug)?;
@@ -277,17 +272,17 @@ impl Daemon {
                 self.store.unlink_feature(key, &slug, &ticket)?
             }
             FeatureAction::Transfer { slug, to } => {
-                let FeatureActor::Person { project, checkout } = by else {
+                let Asker::Person = by else {
                     anyhow::bail!("an agent takes a feature up with `argus-hook feature use`");
                 };
-                let (source, destination) = self.transfer_paths(*project, *checkout, to)?;
+                let (source, destination) = self.transfer_paths(address, to)?;
                 self.store
                     .transfer_artifact_feature_scope(key, &slug, &source, &destination)?;
             }
             // A new feature is opened as a person's `Open` is, for the same
             // reason: a note is work not yet started.
             FeatureAction::Capture { into, capture } => {
-                let FeatureActor::Person { .. } = by else {
+                let Asker::Person = by else {
                     anyhow::bail!("a note is captured from the feature view");
                 };
                 let capture = capture
@@ -296,15 +291,17 @@ impl Daemon {
                 let slug = self.store.capture_feature(key, into.as_deref(), &capture, at)?;
                 // The tasks as well as the board: a client holding the
                 // feature's list open is owed the rows a note just added.
-                let _ = self.tasks_tx.send(argus_protocol::TaskList {
-                    repositories: self.repositories_keyed(key),
-                    project_name: project_name.to_string(),
-                    tasks: self.store.tasks(key, &slug)?,
-                    feature: Some(slug),
-                });
+                if address.is_pushed() {
+                    let _ = self.tasks_tx.send(argus_protocol::TaskList {
+                        repositories: address.repositories.clone(),
+                        project_name: address.project_name.clone(),
+                        tasks: self.store.tasks(key, &slug)?,
+                        feature: Some(slug),
+                    });
+                }
             }
         }
-        self.broadcast_decisions(project_name, key, self.store.decisions(key)?);
+        self.broadcast_decisions(address, self.store.decisions(key)?);
         Ok(about)
     }
 
@@ -318,12 +315,12 @@ impl Daemon {
         slug: &str,
         state: FeatureState,
         detail: Option<String>,
-        by: &FeatureActor<'_>,
+        by: Asker<'_>,
         at: i64,
     ) -> anyhow::Result<()> {
         let (actor, session) = match by {
-            FeatureActor::Person { .. } => (Actor::Human, None),
-            FeatureActor::Agent { session, .. } => {
+            Asker::Person => (Actor::Human, None),
+            Asker::Agent { session, .. } => {
                 if detail.is_some() {
                     anyhow::bail!("what was said about a move is the person's to say");
                 }
@@ -366,47 +363,49 @@ impl Daemon {
         Ok(())
     }
 
-    /// Where a transfer moves a feature from and to: two checkouts of one
-    /// repository, since a board is a repository's.
+    /// Where a transfer moves a feature from and to: the checkout the board
+    /// was addressed from, and another checkout of its repository, since a
+    /// board is a repository's.
     fn transfer_paths(
         &self,
-        project: ProjectId,
-        source: CheckoutId,
+        address: &BoardAddress,
         destination: CheckoutId,
     ) -> anyhow::Result<(std::path::PathBuf, std::path::PathBuf)> {
+        let source = address.checkout()?;
         let inner = self.inner.lock().unwrap();
         let project = inner
             .projects
             .iter()
-            .find(|candidate| candidate.id == project)
+            .find(|candidate| candidate.id == address.project)
             .ok_or_else(|| anyhow::anyhow!("no such project"))?;
-        let (repository, source_checkout) = project
+        let holding_source = |repository: &&Repository| {
+            repository.checkouts.iter().any(|checkout| checkout.path == source)
+        };
+        if !project.repositories.iter().any(|repository| holding_source(&repository)) {
+            anyhow::bail!("source checkout is not in this project");
+        }
+        // A repository listed twice has a checkout at the source path in
+        // each listing; the one meant is the listing the destination is in.
+        let destination_checkout = project
             .repositories
             .iter()
+            .filter(holding_source)
             .find_map(|repository| {
-                repository
-                    .checkouts
-                    .iter()
-                    .find(|checkout| checkout.id == source)
-                    .map(|checkout| (repository, checkout))
+                repository.checkouts.iter().find(|checkout| checkout.id == destination)
             })
-            .ok_or_else(|| anyhow::anyhow!("source checkout is not in this project"))?;
-        let destination_checkout = repository
-            .checkouts
-            .iter()
-            .find(|checkout| checkout.id == destination)
             .ok_or_else(|| anyhow::anyhow!("destination checkout is not in the source repository"))?;
-        Ok((source_checkout.path.clone(), destination_checkout.path.clone()))
+        Ok((source.to_path_buf(), destination_checkout.path.clone()))
     }
 
-    /// The feature the next decision from this pane is filed under.
-    pub(super) fn feature_for_agent(
+    /// The feature an agent's request is about: the one it names, or else
+    /// the one its checkout is on.
+    pub(in crate::state) fn feature_for_agent(
         &self,
-        scope: &AgentScope,
-        filing: &Filing,
+        address: &BoardAddress,
+        named: Option<&str>,
     ) -> anyhow::Result<Option<String>> {
-        let features = self.store.features(scope.artifact_key(filing.scope))?;
-        self.board_feature(scope, filing.scope, &features, filing.feature.as_deref())
+        let features = self.store.features(&address.key)?;
+        self.board_feature(address, &features, named)
     }
 
     /// The branch a checkout is on, as the last git poll saw it.
@@ -423,18 +422,3 @@ impl Daemon {
     }
 }
 
-/// Who is changing a feature, and where they are looking from.
-enum FeatureActor<'a> {
-    /// A person at a client, on the board of the checkout they selected.
-    Person {
-        project: ProjectId,
-        checkout: CheckoutId,
-    },
-    /// An agent: the conversation it is, the checkout its pane is in, and
-    /// the feature its request names, if it names one.
-    Agent {
-        scope: &'a AgentScope,
-        session: Option<&'a str>,
-        filing: &'a Filing,
-    },
-}

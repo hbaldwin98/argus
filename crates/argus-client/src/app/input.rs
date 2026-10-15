@@ -753,7 +753,7 @@ impl App {
         let Some(session) = &self.review else {
             return;
         };
-        let checkout = checkouts_in(&self.tree).find(|c| c.id == session.checkout());
+        let checkout = self.tree.checkout(session.checkout());
         if let Err(refused) = session.can_comment(checkout) {
             return self.report(refused);
         }
