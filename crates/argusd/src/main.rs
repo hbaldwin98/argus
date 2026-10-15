@@ -76,6 +76,8 @@ async fn main() -> anyhow::Result<()> {
     daemon.start_project_scan();
     // After the hook server, so a restored agent gets working hooks.
     daemon.restore_session();
+    // After the hook server too: each extension is handed its port.
+    let extensions = daemon.start_extensions(config::load_extensions(), argus_protocol::config_dir());
 
     tracing::info!("argusd listening");
 
@@ -92,6 +94,7 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("shutting down");
         }
     }
+    extensions.stop().await;
     daemon.sweep_stale_hooks();
     Ok(())
 }

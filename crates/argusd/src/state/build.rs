@@ -146,6 +146,7 @@ impl Daemon {
         let (diagrams_tx, _) = broadcast::channel(32);
         let (views_tx, _) = broadcast::channel(16);
         let (agent_views_tx, _) = broadcast::channel(64);
+        let (extensions_tx, _) = broadcast::channel(64);
         let daemon = Arc::new(Daemon {
             inner: StdMutex::new(Inner {
                 workspaces,
@@ -181,6 +182,8 @@ impl Daemon {
             views_tx,
             next_viewer: std::sync::atomic::AtomicU64::new(0),
             next_inbox: std::sync::atomic::AtomicU64::new(0),
+            extensions: StdMutex::new(Default::default()),
+            extensions_tx,
             plugin_root: std::sync::OnceLock::new(),
             paste_root: std::sync::OnceLock::new(),
             git,

@@ -293,6 +293,13 @@ impl App {
             ServerMsg::Focus(_) => {}
             // Views are the desktop's; this client never sends WatchViews.
             ServerMsg::ViewShown(_) | ServerMsg::ViewClosed { .. } => {}
+            // Sent only to a client that listed extensions, which this
+            // does not yet.
+            ServerMsg::ExtensionViews(_)
+            | ServerMsg::ExtensionCommands(_)
+            | ServerMsg::ExtensionNotice { .. }
+            | ServerMsg::ExtensionDialog { .. }
+            | ServerMsg::ExtensionDialogWithdrawn { .. } => {}
             ServerMsg::Stopping => self.should_quit = true,
         }
     }

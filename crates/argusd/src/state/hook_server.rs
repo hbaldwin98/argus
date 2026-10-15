@@ -1,4 +1,5 @@
-//! The loopback pane API: the HTTP receiver an agent's hooks POST to.
+//! The loopback pane API: the HTTP receiver an agent's hooks POST to, and
+//! an extension publishes through.
 //!
 //! Separate from the tree it reports into because it is a protocol surface,
 //! not daemon state — the same reason `harness`, `watch` and `session` are
@@ -162,6 +163,10 @@ async fn handle_hook_request(
     let path = if method == "POST" { target.clone() } else { String::new() };
 
     let headers = read_hook_headers(&mut reader, &daemon.hook_token).await?;
+    if let Some((name, endpoint)) = argus_protocol::parse_extension_path(&target) {
+        let name = name.to_string();
+        return serve_extension(reader, wr, daemon, method, &name, endpoint, headers).await;
+    }
     // The one request that is read rather than posted, and held open.
     if method == "GET" {
         if let Some((pane, Endpoint::Inbox)) = parse_request_target(&target).0 {
@@ -302,6 +307,131 @@ async fn handle_hook_request(
     Ok(())
 }
 
+/// Room for a view at its bound of rows, each a handful of short cells.
+const MAX_EXTENSION_BODY: usize = 1024 * 1024;
+
+/// One request to an extension's half of the pane API, from reading its
+/// body to writing the answer; the event stream is held open.
+async fn serve_extension<R, W>(
+    mut reader: R,
+    mut wr: W,
+    daemon: Arc<Daemon>,
+    method: &str,
+    name: &str,
+    endpoint: argus_protocol::ExtEndpoint,
+    headers: HookHeaders,
+) -> anyhow::Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use argus_protocol::ExtEndpoint;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let too_large = headers.content_length > MAX_EXTENSION_BODY;
+    let mut body = vec![0u8; if too_large { 0 } else { headers.content_length }];
+    if !body.is_empty() {
+        let _ = reader.read_exact(&mut body).await;
+    }
+    let response = if !daemon.extension_authorized(name, headers.bearer.as_deref()) {
+        HookResponse::empty(401, "Unauthorized")
+    } else if method != endpoint.method() {
+        HookResponse::text(405, "Method Not Allowed", format!("{} takes {}", endpoint.suffix(), endpoint.method()))
+    } else if too_large {
+        HookResponse::text(413, "Content Too Large", "request body is too large".into())
+    } else {
+        match endpoint {
+            ExtEndpoint::Events => return serve_extension_events(reader, wr, daemon, name).await,
+            ExtEndpoint::View => match decode::<OneOrMany<argus_protocol::ExtView>>(&body, "view") {
+                Ok(views) => json_reply(daemon.publish_views(name, views.into_vec())),
+                Err(refusal) => refusal,
+            },
+            ExtEndpoint::Commands => match decode::<Vec<argus_protocol::ExtCommand>>(&body, "list of commands") {
+                Ok(commands) => json_reply(daemon.publish_commands(name, commands)),
+                Err(refusal) => refusal,
+            },
+            ExtEndpoint::Dialog => match decode::<argus_protocol::ExtDialog>(&body, "dialog") {
+                Ok(dialog) => json_reply(daemon.raise_dialog(name, dialog).map(|id| serde_json::json!({ "dialog": id }))),
+                Err(refusal) => refusal,
+            },
+            ExtEndpoint::Notice => match daemon.extension_notice(name, &String::from_utf8_lossy(&body)) {
+                Ok(()) => HookResponse::empty(200, "OK"),
+                Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+            },
+            ExtEndpoint::Pane => match decode::<argus_protocol::ExtPane>(&body, "pane") {
+                Ok(pane) => {
+                    let (daemon, name) = (daemon.clone(), name.to_string());
+                    let opened = tokio::task::spawn_blocking(move || daemon.open_extension_pane(&name, pane))
+                        .await
+                        .unwrap_or_else(|error| Err(error.into()));
+                    json_reply(opened.map(|pane| serde_json::json!({ "pane": pane.0 })))
+                }
+                Err(refusal) => refusal,
+            },
+        }
+    };
+    wr.write_all(&response.bytes()).await?;
+    Ok(())
+}
+
+/// A whole model, or one view of it: an extension with one view need not
+/// wrap it in a list.
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum OneOrMany<T> {
+    Many(Vec<T>),
+    One(T),
+}
+
+impl<T> OneOrMany<T> {
+    fn into_vec(self) -> Vec<T> {
+        match self {
+            OneOrMany::Many(all) => all,
+            OneOrMany::One(one) => vec![one],
+        }
+    }
+}
+
+/// Holds an extension's event stream open, as a pane's inbox is held: the
+/// newest connection takes over, and it closes the moment the extension's
+/// end of the socket does.
+async fn serve_extension_events<R, W>(mut rd: R, mut wr: W, daemon: Arc<Daemon>, name: &str) -> anyhow::Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let Some((generation, mut events)) = daemon.open_extension_events(name) else {
+        wr.write_all(&HookResponse::empty(409, "Conflict").bytes()).await?;
+        return Ok(());
+    };
+    let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n\r\n";
+    let mut result = async {
+        wr.write_all(head.as_bytes()).await?;
+        wr.flush().await
+    }
+    .await;
+    let mut scratch = [0u8; 64];
+    while result.is_ok() {
+        let event = tokio::select! {
+            event = events.recv() => match event {
+                Some(event) => format!("data: {}\n\n", serde_json::to_string(&event)?),
+                None => break,
+            },
+            _ = rd.read(&mut scratch) => break,
+            _ = tokio::time::sleep(INBOX_HEARTBEAT) => ": still here\n\n".to_string(),
+        };
+        result = async {
+            wr.write_all(event.as_bytes()).await?;
+            wr.flush().await
+        }
+        .await;
+    }
+    daemon.close_extension_events(name, generation);
+    Ok(())
+}
+
 /// How often a quiet inbox says it is still there, so a plugin notices a
 /// daemon that went away and a daemon notices a plugin that did.
 const INBOX_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(15);
@@ -355,6 +485,9 @@ where
 /// What a hook request's headers say about it.
 struct HookHeaders {
     authorized: bool,
+    /// The token the request carried, for an extension's, which is its own
+    /// rather than the per-boot one.
+    bearer: Option<String>,
     content_length: usize,
     /// The conversation the report comes from.
     reporter: Option<String>,
@@ -372,6 +505,7 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
 
     let mut headers = HookHeaders {
         authorized: false,
+        bearer: None,
         content_length: 0,
         reporter: None,
         background: false,
@@ -385,6 +519,10 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
         }
         if let Some(v) = strip_header(&line, "Authorization") {
             headers.authorized = v.eq_ignore_ascii_case(&format!("Bearer {token}"));
+            headers.bearer = v
+                .split_once(' ')
+                .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("Bearer"))
+                .map(|(_, token)| token.trim().to_string());
         } else if let Some(v) = strip_header(&line, "Content-Length") {
             headers.content_length = v.parse().unwrap_or(0);
         } else if let Some(v) = strip_header(&line, argus_protocol::SESSION_HEADER) {

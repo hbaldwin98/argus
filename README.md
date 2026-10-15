@@ -490,6 +490,41 @@ hooks write the neutral one with `argus-hook transcript FILE user|agent|title TE
 saw of their panes — title, checkout, and when it first and last saw them — and its preview says it
 keeps no transcript.
 
+#### Extensions
+
+An extension is a program the daemon runs beside itself that adds to the interface: a tab, keys
+and palette commands, dialogs, status-bar notices, and panes it opens.
+
+```toml
+[[extension]]
+name = "docker"                       # lowercase letters, digits and dashes
+command = ["python3", "docker-extension.py"]
+dir = "~/argus-extensions"            # where it runs; the config directory by default
+env = { DOCKER_HOST = "unix:///var/run/docker.sock" }
+```
+
+The daemon starts each one with `ARGUS_HOOK_URL` (its own base, `…/extension/<name>`),
+`ARGUS_HOOK_TOKEN` (a token of its own, sent as `Authorization: Bearer`) and `ARGUS_EXTENSION`;
+starts it again when it exits, waiting longer each time up to a minute; and ends it when the daemon
+stops. Its output goes to `extension-<name>.log` in the config directory. While it is down its
+tabs, keys and dialogs are gone. The blocks are read when the daemon starts.
+
+It speaks JSON to these endpoints under its URL:
+
+| Request | Body | Answer |
+| --- | --- | --- |
+| `PUT view` | a view, or a list of them: `name`, `title`, `scope` (`"global"`, `{"repository": id}`, `{"checkout": id}`), `columns`, `rows` (`key`, `cells`, `status`), `actions` (`id`, `label`, `key`, `view_wide`, `confirm`) | the action keys refused |
+| `PUT commands` | a list: `name`, `title`, `key` (`{"key": "d", "ctrl": true}`), `scope` (`"anywhere"`, `{"view": name}`, `"checkout"`, `"pane"`) | the command keys refused |
+| `POST dialog` | `title`, `kind` (`{"confirm": {"message"}}`, `{"prompt": {"message", "initial"}}`, `{"pick": {"message", "items": [{"key", "label"}]}}`, `{"form": {"fields": [{"name", "label", "initial"}]}}`), and `answers`, the id of the command it answers | `{"dialog": id}` |
+| `POST notice` | one line of text | |
+| `POST pane` | `checkout` (none for a console) and `run`, a command typed into the new shell | `{"pane": id}` |
+| `GET events` | | server-sent events: `{"event": "action", "view", "action", "row"}`, `{"event": "command", "command", "id", "context"}`, `{"event": "answer", "dialog", "answer"}`, `{"event": "cancel", "dialog"}` |
+
+A key Argus already binds where the extension's would be heard — the leader, the digits, or any key
+on the shortcuts sheet — or one another extension took first, is refused: the command or action is
+kept without it, and the reason is in the answer and on the status bar. `scripts/docker-extension.py`
+is a small example.
+
 ### `client.toml`
 
 ```toml

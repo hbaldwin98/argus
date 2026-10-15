@@ -10,7 +10,8 @@
 //! watchers that keep the tree level with the disk, `panel` for the rows
 //! the user adds and removes, `workspaces` for which scope is open,
 //! `hook_server` for the
-//! loopback receiver, `session` for what survives a restart, `sessions`
+//! loopback receiver, `extensions` for what extensions publish and what
+//! goes back to them, `session` for what survives a restart, `sessions`
 //! for the agent sessions a repository's harnesses kept, `inbox` for
 //! the way what Argus says reaches an agent, and `tree` for finding your
 //! way around.
@@ -34,6 +35,8 @@ mod board_parts;
 mod build;
 mod clock;
 mod decisions;
+mod extension_host;
+mod extensions;
 mod features;
 mod follow;
 mod diagrams;
@@ -55,6 +58,7 @@ mod viewers;
 mod workspaces;
 
 pub use board_parts::FeaturePart;
+pub use extensions::ExtensionNews;
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;
@@ -392,6 +396,10 @@ pub struct Daemon {
     /// Names each inbox connection, so a stale one closing cannot close
     /// the one that replaced it.
     next_inbox: std::sync::atomic::AtomicU64,
+    /// What the running extensions publish, and the dialogs they have open.
+    /// See `extensions`.
+    extensions: StdMutex<extensions::Registry>,
+    extensions_tx: broadcast::Sender<ExtensionNews>,
     /// Where a harness's plugin folder is written (see
     /// `harness::plugin_dir`); unset until `main` names it, so a daemon
     /// built in a test writes none.

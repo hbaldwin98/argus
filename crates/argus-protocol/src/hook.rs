@@ -1,5 +1,6 @@
-//! The pane API's URL grammar: the loopback base an agent is handed, the
-//! path of each endpoint under it, and the board a request is filed on.
+//! The pane API's URL grammar: the loopback base an agent or an extension
+//! is handed, the path of each endpoint under it, and the board a request
+//! is filed on.
 //!
 //! The daemon and its installer build these URLs, `argus-hook` rebases and
 //! extends them, and the daemon parses them back — in separate binaries
@@ -315,6 +316,99 @@ pub fn parse_request_target(target: &str) -> (Option<(PaneId, Endpoint)>, Artifa
     (parse_pane_path(route), scope)
 }
 
+/// Set beside `ARGUS_HOOK_URL` and `ARGUS_HOOK_TOKEN` for an extension the
+/// daemon starts: its own name, which its URL already carries, for a script
+/// that would rather not parse one.
+pub const EXTENSION_VAR: &str = "ARGUS_EXTENSION";
+
+/// What a request to an extension's half of the pane API is for. An
+/// extension's URL is `/extension/<name>` where a pane's is `/pane/<id>`,
+/// and its token is its own, so one extension cannot publish as another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtEndpoint {
+    /// `PUT`: the extension's views, replacing every one it had.
+    View,
+    /// `PUT`: its commands, answered with the keys refused.
+    Commands,
+    /// `POST`: a dialog, answered with its id.
+    Dialog,
+    /// `POST`: a line for the status bar.
+    Notice,
+    /// `POST`: a shell, or a console, with a command typed into it.
+    Pane,
+    /// `GET`, held open: what the person did, as server-sent events.
+    Events,
+}
+
+impl ExtEndpoint {
+    pub const ALL: [ExtEndpoint; 6] = [
+        ExtEndpoint::View,
+        ExtEndpoint::Commands,
+        ExtEndpoint::Dialog,
+        ExtEndpoint::Notice,
+        ExtEndpoint::Pane,
+        ExtEndpoint::Events,
+    ];
+
+    pub fn suffix(self) -> &'static str {
+        match self {
+            ExtEndpoint::View => "view",
+            ExtEndpoint::Commands => "commands",
+            ExtEndpoint::Dialog => "dialog",
+            ExtEndpoint::Notice => "notice",
+            ExtEndpoint::Pane => "pane",
+            ExtEndpoint::Events => "events",
+        }
+    }
+
+    /// The one method each takes. Replacing is a put, so an extension that
+    /// republishes after a restart says the same thing it said before.
+    pub fn method(self) -> &'static str {
+        match self {
+            ExtEndpoint::View | ExtEndpoint::Commands => "PUT",
+            ExtEndpoint::Events => "GET",
+            ExtEndpoint::Dialog | ExtEndpoint::Notice | ExtEndpoint::Pane => "POST",
+        }
+    }
+}
+
+/// `/extension/<name>` — what an extension's `ARGUS_HOOK_URL` carries after
+/// its authority.
+pub fn extension_prefix(name: &str) -> String {
+    format!("/extension/{name}")
+}
+
+/// `/extension/<name>/<suffix>` — the inverse of [`parse_extension_path`].
+pub fn extension_path(name: &str, endpoint: ExtEndpoint) -> String {
+    format!("{}/{}", extension_prefix(name), endpoint.suffix())
+}
+
+/// `http://127.0.0.1:<port>/extension/<name>`.
+pub fn extension_url(port: u16, name: &str) -> String {
+    format!("http://{LOOPBACK}:{port}{}", extension_prefix(name))
+}
+
+/// The extension and endpoint a request target names, its query ignored,
+/// or `None` for anything else — a name that could not be an extension's
+/// included.
+pub fn parse_extension_path(target: &str) -> Option<(&str, ExtEndpoint)> {
+    let route = target.split_once('?').map_or(target, |(route, _)| route);
+    let mut parts = route.trim_start_matches('/').split('/');
+    if parts.next()? != "extension" {
+        return None;
+    }
+    let name = parts.next()?;
+    if !crate::extensions::is_extension_name(name) {
+        return None;
+    }
+    let suffix = parts.next()?;
+    let endpoint = ExtEndpoint::ALL.into_iter().find(|e| e.suffix() == suffix)?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((name, endpoint))
+}
+
 /// `url` asking about the feature `slug` rather than the one the pane's
 /// checkout is on.
 pub fn feature_url(url: &str, slug: &str) -> String {
@@ -536,6 +630,37 @@ mod tests {
         for var in [None, Some(""), Some("Workspace"), Some("repository")] {
             assert_eq!(requested_scope(var), ArtifactScope::RepositoryBranch, "{var:?}");
         }
+    }
+
+    #[test]
+    fn every_extension_endpoint_survives_a_round_trip() {
+        for endpoint in ExtEndpoint::ALL {
+            let path = extension_path("docker", endpoint);
+            assert_eq!(parse_extension_path(&path), Some(("docker", endpoint)), "{path}");
+        }
+        assert_eq!(extension_path("docker", ExtEndpoint::View), "/extension/docker/view");
+        assert_eq!(extension_url(4242, "docker"), "http://127.0.0.1:4242/extension/docker");
+        assert_eq!(
+            parse_extension_path("/extension/docker/events?x=1"),
+            Some(("docker", ExtEndpoint::Events))
+        );
+    }
+
+    #[test]
+    fn a_path_that_is_not_an_extension_request_is_refused() {
+        for path in [
+            "/extension",
+            "/extension/docker",
+            "/extension/Docker/view",
+            "/extension/../view",
+            "/extension/docker/views",
+            "/extension/docker/view/extra",
+            "/pane/1/title",
+            "",
+        ] {
+            assert_eq!(parse_extension_path(path), None, "{path}");
+        }
+        assert_eq!(parse_pane_path("/extension/docker/view"), None);
     }
 
     #[test]

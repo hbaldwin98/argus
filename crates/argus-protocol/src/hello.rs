@@ -25,7 +25,18 @@ pub const PROTOCOL: u32 = 1;
 /// The optional messages and encodings this build can take. A side sends
 /// one only when the other listed it, so each addition is safe against a
 /// peer of any age.
-pub const CAPABILITIES: &[&str] = &[PANE_TELEMETRY, CELL_RUNS, PASTE_FILE, FOCUS, SESSIONS, ADD_PROJECT, CONSOLES, AGENT_VIEWS];
+pub const CAPABILITIES: &[&str] = &[
+    PANE_TELEMETRY,
+    CELL_RUNS,
+    PASTE_FILE,
+    FOCUS,
+    SESSIONS,
+    ADD_PROJECT,
+    CONSOLES,
+    EXTENSIONS,
+    EXTENSION_DIALOGS,
+    AGENT_VIEWS,
+];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
 /// reports its model, context or spend.
@@ -66,6 +77,18 @@ pub const ADD_PROJECT: &str = "add-project";
 /// the half it takes.
 pub const CONSOLES: &str = "consoles";
 
+/// What extensions publish: `ServerMsg::ExtensionViews`, `ServerMsg::ExtensionCommands` and
+/// `ServerMsg::ExtensionNotice` from the daemon, `ClientMsg::ExtensionAction` and
+/// `ClientMsg::ExtensionCommand` from a client. Listed by each side for the half it
+/// takes.
+pub const EXTENSIONS: &str = "extensions";
+
+/// An extension's dialogs: `ServerMsg::ExtensionDialog` and
+/// `ServerMsg::ExtensionDialogWithdrawn` to a client that can draw one, and
+/// `ClientMsg::ExtensionDialogAnswer` back. Apart from [`EXTENSIONS`] because a
+/// dialog goes to one client, and only one that can ask it may be chosen.
+pub const EXTENSION_DIALOGS: &str = "extension-dialogs";
+
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
@@ -87,6 +110,13 @@ impl Hello {
             version: env!("CARGO_PKG_VERSION").to_string(),
             capabilities: CAPABILITIES.iter().map(|c| c.to_string()).collect(),
         }
+    }
+
+    /// This greeting less one capability: a client that cannot draw what
+    /// it names, though its build knows the messages.
+    pub fn without(mut self, capability: &str) -> Hello {
+        self.capabilities.retain(|c| c != capability);
+        self
     }
 
     /// Whether the side that sent this greeting can take `capability`.

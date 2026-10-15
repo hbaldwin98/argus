@@ -11,13 +11,13 @@ use std::sync::Arc;
 
 use argus_protocol::{
     grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Focus, Hello, PaneId,
-    ServerMsg, CELL_RUNS, CONSOLES, PANE_TELEMETRY,
+    ServerMsg, CELL_RUNS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, PANE_TELEMETRY,
 };
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::review_queue::ReviewLane;
-use crate::state::{BranchDeletion, Daemon, ViewerId};
+use crate::state::{BranchDeletion, Daemon, ExtensionNews, ViewerId};
 
 mod dispatch;
 
@@ -74,6 +74,7 @@ where
     let mut tasks_rx = daemon.subscribe_tasks();
     let mut diagrams_rx = daemon.subscribe_diagrams();
     let mut views_rx = daemon.subscribe_views();
+    let mut extensions_rx = daemon.subscribe_extensions();
     // Set once the client asks to be told where the person is working.
     let mut focus_watch: Option<FocusWatch> = None;
     // Subscribed only when the client asks, so one that never does is
@@ -146,6 +147,16 @@ where
                 if greeted && peer.as_ref().is_some_and(|p| p.can(CONSOLES)) {
                     let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
                 }
+                // Likewise what the extensions publish, and whether this
+                // client is one a dialog can be put to.
+                if greeted {
+                    let takes = peer.as_ref().is_some_and(|p| p.can(EXTENSIONS));
+                    if takes {
+                        send_extensions(&daemon, &out_tx);
+                    }
+                    let asks = takes && peer.as_ref().is_some_and(|p| p.can(EXTENSION_DIALOGS));
+                    daemon.extension_asker(viewer, asks);
+                }
                 if let Some(reason) = shutdown_reason {
                     // The writer owns the other end of this signal and
                     // sends it only after the acknowledgement frame is
@@ -187,6 +198,30 @@ where
                 // The daemon holds the sender for as long as it runs.
                 Err(broadcast::error::RecvError::Closed) => break,
             },
+            // A client that did not list extensions is never sent one of
+            // their messages; its receiver is simply never read.
+            news = extensions_rx.recv(), if peer.as_ref().is_some_and(|p| p.can(EXTENSIONS)) => match news {
+                Ok(ExtensionNews::Views) => {
+                    let _ = out_tx.send(ServerMsg::ExtensionViews(daemon.extension_views()));
+                }
+                Ok(ExtensionNews::Commands) => {
+                    let _ = out_tx.send(ServerMsg::ExtensionCommands(daemon.extension_commands()));
+                }
+                Ok(ExtensionNews::Notice { extension, text }) => {
+                    let _ = out_tx.send(ServerMsg::ExtensionNotice { extension, text });
+                }
+                Ok(ExtensionNews::Dialog { viewer: to, msg }) if to == viewer => {
+                    let _ = out_tx.send(msg);
+                }
+                Ok(ExtensionNews::Withdrawn { viewer: to, id }) if to == viewer => {
+                    let _ = out_tx.send(ServerMsg::ExtensionDialogWithdrawn { id });
+                }
+                Ok(_) => {}
+                // What was missed is read whole; a dialog missed is one the
+                // extension is told was not answered when this client goes.
+                Err(broadcast::error::RecvError::Lagged(_)) => send_extensions(&daemon, &out_tx),
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
             Ok(ws) = workspaces_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Workspaces(ws));
             }
@@ -224,6 +259,7 @@ where
         }
     }
     daemon.release_viewer(viewer);
+    daemon.forget_extension_viewer(viewer);
     reader.abort();
 }
 
@@ -237,6 +273,12 @@ async fn next_view_event(
         Some(rx) => rx.recv().await,
         None => std::future::pending().await,
     }
+}
+
+/// Every extension's views and commands, whole.
+fn send_extensions(daemon: &Daemon, out_tx: &mpsc::UnboundedSender<ServerMsg>) {
+    let _ = out_tx.send(ServerMsg::ExtensionViews(daemon.extension_views()));
+    let _ = out_tx.send(ServerMsg::ExtensionCommands(daemon.extension_commands()));
 }
 
 /// What a connection watching the focus was last sent, so a tree that
@@ -935,7 +977,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (daemon, pane) = daemon_with_a_pane(dir.path());
         let mut client = connect_to(daemon.clone()).await;
-        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(Hello::this_build()))
+        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(Hello::this_build().without(EXTENSIONS)))
             .await
             .unwrap();
         assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));
@@ -953,6 +995,96 @@ mod tests {
         let _ = daemon.close_pane(pane);
     }
 
+    /// A client greeted as `hello`, past the consoles that follow the
+    /// daemon's greeting.
+    async fn greeted_as(daemon: &Arc<Daemon>, hello: Hello) -> tokio::io::DuplexStream {
+        let mut client = connect_to(daemon.clone()).await;
+        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(hello)).await.unwrap();
+        assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));
+        assert!(matches!(next(&mut client).await, ServerMsg::Consoles(_)));
+        client
+    }
+
+    const CONTAINERS: &str = r#"{"name": "containers", "title": "Containers", "rows": [{"key": "web"}]}"#;
+
+    #[tokio::test]
+    async fn a_client_that_takes_extensions_is_sent_their_views_on_greeting_and_on_each_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        daemon.admit_extension("docker");
+        daemon.publish_views("docker", vec![serde_json::from_str(CONTAINERS).unwrap()]).unwrap();
+        let mut client = greeted_as(&daemon, Hello::this_build()).await;
+        assert!(matches!(next(&mut client).await, ServerMsg::ExtensionViews(views) if views.len() == 1));
+        assert!(matches!(next(&mut client).await, ServerMsg::ExtensionCommands(commands) if commands.is_empty()));
+
+        daemon.retire_extension("docker");
+
+        assert!(matches!(next(&mut client).await, ServerMsg::ExtensionViews(views) if views.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn a_client_that_did_not_list_extensions_is_never_sent_their_messages() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        daemon.admit_extension("docker");
+        let hello = Hello::this_build().without(EXTENSIONS).without(EXTENSION_DIALOGS);
+        let mut client = greeted_as(&daemon, hello).await;
+        daemon.extension_asker(daemon.new_viewer(), true);
+
+        daemon.publish_views("docker", vec![serde_json::from_str(CONTAINERS).unwrap()]).unwrap();
+        daemon.extension_notice("docker", "hello").unwrap();
+        daemon.raise_dialog("docker", argus_protocol::ExtDialog {
+            title: "t".into(),
+            kind: argus_protocol::ExtDialogKind::Prompt { message: "m".into(), initial: String::new() },
+            answers: None,
+        })
+        .unwrap();
+        let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
+        let pane = daemon.spawn_shell(checkout).unwrap();
+
+        // The tree the shell sends is the first thing to arrive after all
+        // of that: nothing of the extension's went before it.
+        assert!(matches!(next(&mut client).await, ServerMsg::Tree(_)), "only the tree");
+        let _ = daemon.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn a_dialog_goes_only_to_the_client_it_was_put_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        daemon.admit_extension("docker");
+        let mut first = greeted_as(&daemon, Hello::this_build()).await;
+        let mut second = greeted_as(&daemon, Hello::this_build()).await;
+        for client in [&mut first, &mut second] {
+            assert!(matches!(next(client).await, ServerMsg::ExtensionViews(_)));
+            assert!(matches!(next(client).await, ServerMsg::ExtensionCommands(_)));
+        }
+        // The second says the person is there.
+        argus_protocol::write_msg(&mut second, &ClientMsg::View(argus_protocol::View { active: true, ..Default::default() }))
+            .await
+            .unwrap();
+        for _ in 0..100 {
+            if daemon.focus_in(&daemon.snapshot()).is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+
+        let id = daemon.raise_dialog("docker", argus_protocol::ExtDialog {
+            title: "t".into(),
+            kind: argus_protocol::ExtDialogKind::Confirm { message: "m".into(), yes: None },
+            answers: None,
+        })
+        .unwrap();
+        daemon.extension_notice("docker", "after").unwrap();
+
+        assert!(matches!(next(&mut second).await, ServerMsg::ExtensionDialog { id: got, prompted: false, .. } if got == id));
+        assert!(
+            matches!(next(&mut first).await, ServerMsg::ExtensionNotice { text, .. } if text == "after"),
+            "the first is told nothing of the dialog"
+        );
+    }
+
     /// The consoles in the next message, which must be them.
     async fn next_consoles(client: &mut tokio::io::DuplexStream) -> Vec<argus_protocol::PaneInfo> {
         match next(client).await {
@@ -966,7 +1098,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let daemon = Harness::new(dir.path()).daemon;
         let mut client = connect_to(daemon.clone()).await;
-        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(Hello::this_build()))
+        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(Hello::this_build().without(EXTENSIONS)))
             .await
             .unwrap();
         assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));

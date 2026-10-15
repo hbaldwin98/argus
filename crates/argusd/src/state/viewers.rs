@@ -71,6 +71,12 @@ impl Viewers {
         self.views.last().map(|(_, view)| view)
     }
 
+    /// Every client that reported a view, the one the person was last at
+    /// first.
+    fn by_recency(&self) -> Vec<ViewerId> {
+        self.views.iter().rev().map(|(viewer, _)| *viewer).collect()
+    }
+
     /// The size to apply for `pane`, or `None` when nothing would change.
     /// A pane no client is showing keeps the size it has: reflowing a
     /// running program's output for an audience of nobody only destroys it.
@@ -184,6 +190,27 @@ impl Daemon {
                 .unwrap_or_default()
         };
         Some(Focus::of(&view, &workspace, tree))
+    }
+
+    /// The clients that reported a view, the one the person was last at
+    /// first: whom a question is put to.
+    pub(super) fn viewers_by_recency(&self) -> Vec<ViewerId> {
+        self.viewers.lock().unwrap().by_recency()
+    }
+
+    /// What `view` names, read against the daemon's tree as the focus is.
+    pub(super) fn read_view(&self, view: &View) -> Focus {
+        let tree = self.snapshot();
+        let workspace = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .workspaces
+                .iter()
+                .find(|w| w.id == inner.open)
+                .map(|w| w.name.clone())
+                .unwrap_or_default()
+        };
+        Focus::of(view, &workspace, &tree)
     }
 
     /// Drops every claim a disconnecting client held, and its view.

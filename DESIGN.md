@@ -241,7 +241,9 @@ live in this crate and a contract written twice drifts in silence.
 | `inbox` | what the daemon tells a harness's plugin over its inbox |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `held_tree` | a client's copy of the tree: every pane in it, telemetry applied to it between trees, and which panes changed state from the copy before |
-| `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
+| `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses — an extension's endpoints among them |
+| `extensions` | what an extension publishes for Argus to draw — its views, commands and dialogs — and what the person does with them on the way back |
+| `extension_keys` | which keys an extension may bind, and the words a refused one is refused in: the keys Argus keeps where an extension's would be heard |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
 | `ago` | how long ago something happened, as every client says it |
@@ -290,7 +292,9 @@ to the type or its locking.
 | `state/sync` | the polls and watchers that keep the tree level with the disk |
 | `state/panel` | the rows the user adds and removes by hand |
 | `state/workspaces` | which scope is open, daemon-wide |
-| `state/hook_server` | the loopback receiver agents report to |
+| `state/hook_server` | the loopback receiver agents report to and extensions publish through |
+| `state/extensions` | what the running extensions publish — views, commands, open dialogs — which client a dialog is put to, and what the person does with them on its way back |
+| `state/extension_host` | running the configured extensions: each started with its own URL and token, started again when it exits, stopped with the daemon |
 | `state/session` | what survives a daemon restart |
 | `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, what one session said, and reopening one by its id |
 | `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
@@ -2062,6 +2066,73 @@ suggest but never silently assign, typed artifacts beyond decisions and tasks �
 assumptions, open questions, summaries — and a bounded context packet that says why each durable
 item was included. Until those land, an agent still infers its work from whichever feature its
 checkout is on.
+
+## Extensions
+
+An extension is a program outside Argus that extends the interface: a tab of dev servers or Docker
+containers, a key that restarts the selected one, a deploy command that asks which environment
+first. The daemon owns extensions and the clients only draw them. Under `argus --host` only the
+daemon there is beside the containers, every client draws the same tab, and the client never
+predicts: a tab changes only when its extension publishes it again.
+
+```text
+extension ──HTTP (pane API)──▶ argusd ──protocol──▶ argus-desktop / argus
+    ▲                             │                        │
+    └──── events (SSE) ◀──────────┴──── ViewAction ◀───────┘
+```
+
+`projects.toml`'s `[[extension]]` blocks name each one and its `command`, run without a shell in
+its `dir` (Argus's config directory by default) with its `env` added. The daemon starts every one
+after its hook server binds (`state/extension_host`), handing it `ARGUS_HOOK_URL`
+(`http://127.0.0.1:<port>/extension/<name>`), `ARGUS_HOOK_TOKEN` and `ARGUS_EXTENSION`; its output
+goes to `extension-<name>.log` beside `argusd.log`. One that exits is started again after a wait
+that doubles from a second to a minute, back to a second once one has run a minute, and all are
+ended when the daemon stops. The extension's token is its own, minted when it starts and bound to
+its name, so only an extension the daemon started may publish, and one cannot speak as another; a
+pane's per-boot token is refused there. While one is down, everything it published is taken off
+every client: its tabs, its keys and commands, and its open dialogs. The blocks are read at start;
+a change to them takes a daemon restart.
+
+Everything an extension says is declarative, in `argus_protocol::extensions`' types as JSON:
+
+- `PUT /extension/<name>/view` — one view or a list, replacing every view it had. A view is a
+  named table (columns, rows each with a key, cells and a status in the pane API's words) with its
+  actions, each per-row or view-wide, with an optional one-character key and an optional question
+  asked first; its scope is global, a repository's or a checkout's (by the daemon's ids, which a
+  command's context carries).
+- `PUT /extension/<name>/commands` — its commands, each with a title, an optional key and where
+  the key is heard: anywhere (and through the leader from a pane), in one of its views, on a
+  checkout row, or on a pane row.
+- `POST /extension/<name>/dialog` — a confirm, a one-line prompt, a pick from a list or a small
+  form, answered with its id.
+- `POST /extension/<name>/notice` — one line for the status bar.
+- `POST /extension/<name>/pane` — a shell on a checkout, or a console when it names none, with a
+  command typed into it, answered with the pane's id: the same spawn a client asks for.
+- `GET /extension/<name>/events` — held open as server-sent events with the inbox's heartbeat:
+  each action (`{event: "action", view, action, row}`), each command run (`{event: "command",
+  command, id, context}`, the context being the client's view read against the daemon's tree as
+  `argus focus` prints it), and each dialog's answer or cancellation. The newest connection takes
+  over, as a pane's inbox does, and an action sent while none is open is refused to the person in
+  words rather than lost.
+
+An extension's key never shadows a key Argus binds, the leader, or the digits that open the stages,
+so the shortcuts sheet stays the one account of what a key does. The daemon decides when the key is
+registered and knows no client's keymap, so the keys the window keeps where a command would be
+heard are listed in `argus_protocol::extension_keys`, and the desktop's tests fail when it binds a
+key that list does not hold. A conflicting key — Argus's, another extension's, or one of the
+extension's own view's actions' — is refused: the command or action is kept without it, the answer
+to the put names each refusal and why, and every client's status bar says so. An action's key is
+one character the view's own stage does not keep for moving and filtering.
+
+The protocol carries it to a client that listed `extensions` in its greeting, and to no other:
+`ExtensionViews` and `ExtensionCommands` whole after the daemon's greeting and on each change, `ExtensionNotice`
+for a notice; the client sends `ViewAction` and `Command`, which the daemon checks against what is
+published before forwarding — a client a publish behind cannot act on what has been taken away. A
+dialog goes to one client, so only one window asks: the one that ran the command it answers, when
+it names one (`answers`, the command's id), else the client the person was last at among those
+that listed `extension-dialogs`. Only that client may answer it, in its own kind (`ExtensionDialogAnswer`),
+and a dialog nobody answered is withdrawn, its extension told it was cancelled, when that client
+goes.
 
 ## Editors and overlays
 

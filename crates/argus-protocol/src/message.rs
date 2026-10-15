@@ -9,6 +9,7 @@ use crate::agent_view::ShownView;
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::damage::{CellRun, Scroll};
 use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
+use crate::extensions::{ExtAnswer, ExtCommand, ExtDialog, ExtView};
 use crate::features::FeatureAction;
 use crate::focus::{Focus, View};
 use crate::hello::Hello;
@@ -430,6 +431,30 @@ pub enum ClientMsg {
     /// Ask the agent that showed a view to read it again and show it anew.
     /// The view stays as it is until it does.
     RefreshView { pane: PaneId, id: String },
+    /// An action taken in an extension's view, on `row` unless the action
+    /// is view-wide. Forwarded to the extension as it stands; the view
+    /// changes only when the extension publishes it again. Only to a daemon
+    /// that listed `EXTENSIONS`.
+    ExtensionAction {
+        extension: String,
+        view: String,
+        row: Option<String>,
+        action: String,
+    },
+    /// An extension's command run, with what this client is showing, which
+    /// the daemon reads against its own tree before the extension is told.
+    /// Only to a daemon that listed `EXTENSIONS`.
+    ExtensionCommand {
+        extension: String,
+        command: String,
+        context: View,
+    },
+    /// The answer to an extension's dialog, or `None` for one put away
+    /// without an answer. Only to a daemon that listed `EXTENSION_DIALOGS`.
+    ExtensionDialogAnswer {
+        dialog: u64,
+        answer: Option<ExtAnswer>,
+    },
     /// This client's greeting: the first message it sends, and the only one
     /// it sends before knowing the daemon can take more than the floor. A
     /// daemon from before the handshake hangs up on it, which is how the
@@ -675,6 +700,33 @@ pub enum ServerMsg {
     /// A view is gone: closed by its agent or a person, pushed out by a
     /// newer one, or its pane ended.
     ViewClosed { pane: PaneId, id: String },
+    /// Every view every running extension publishes, whole, after the
+    /// daemon's greeting and whenever one changes. Only to a client that
+    /// listed `EXTENSIONS`.
+    ExtensionViews(Vec<ExtView>),
+    /// Every running extension's commands, whole, keys refused at
+    /// registration already taken off, sent as views are.
+    ExtensionCommands(Vec<ExtCommand>),
+    /// A line an extension wants on the status bar.
+    ExtensionNotice {
+        extension: String,
+        text: String,
+    },
+    /// A question an extension asks, sent only to the one client the person
+    /// is at that can draw it, so only one window asks. `prompted` when it
+    /// answers a command the person ran there, which is when it may take
+    /// the keys. Only to a client that listed `EXTENSION_DIALOGS`.
+    ExtensionDialog {
+        extension: String,
+        id: u64,
+        dialog: ExtDialog,
+        prompted: bool,
+    },
+    /// A dialog that is no longer asked: its extension went, or another
+    /// answer reached it first.
+    ExtensionDialogWithdrawn {
+        id: u64,
+    },
     /// The daemon accepted a restart request and will exit after this frame
     /// reaches the client.
     Restarting,

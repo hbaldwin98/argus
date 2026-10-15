@@ -2,6 +2,7 @@
 //! over the fixtures they all build a daemon from.
 
 mod branches;
+mod extensions;
 mod features;
 mod agent_views;
 mod follow;

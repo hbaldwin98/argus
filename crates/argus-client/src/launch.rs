@@ -79,7 +79,10 @@ pub async fn connect() -> anyhow::Result<Connected> {
 /// comes first.
 pub(crate) async fn greet(channels: crate::Connection, wait: Duration) -> Greeted {
     let (in_tx, mut out_rx) = channels;
-    let _ = in_tx.send(ClientMsg::Hello(Hello::this_build()));
+    let hello = Hello::this_build()
+        .without(argus_protocol::EXTENSIONS)
+        .without(argus_protocol::EXTENSION_DIALOGS);
+    let _ = in_tx.send(ClientMsg::Hello(hello));
 
     let (daemon, opening) = match Greeting::read(&mut out_rx, wait).await {
         Greeting::Up { daemon, opening } => (daemon, opening),

@@ -86,6 +86,65 @@ pub struct ProjectConfig {
     pub setup: Vec<String>,
 }
 
+/// A program the daemon runs beside itself to extend the interface: its
+/// views, commands and dialogs reach the clients through the pane API.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ExtensionConfig {
+    /// What it publishes under, in its URL and on its tabs.
+    pub name: String,
+    /// The program and its arguments, run without a shell.
+    pub command: Vec<String>,
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
+    /// Where it runs; Argus's config directory when unset, so a script
+    /// beside `projects.toml` can be named by its file name.
+    #[serde(default)]
+    pub dir: Option<String>,
+}
+
+/// The `[[extension]]` blocks, read apart from the rest of the file so a
+/// project or agent read never has to know of them.
+#[derive(Debug, Default, Deserialize)]
+struct ExtensionsFile {
+    #[serde(default, rename = "extension")]
+    extensions: Vec<ExtensionConfig>,
+}
+
+/// The extensions `raw` declares that can be run: a name that could not be
+/// a URL segment, a second block of one name, or an empty command is
+/// logged and left out rather than failing the daemon.
+pub fn extensions_in(raw: &str) -> Result<Vec<ExtensionConfig>> {
+    let file: ExtensionsFile = toml::from_str(raw)?;
+    let mut kept: Vec<ExtensionConfig> = Vec::new();
+    for extension in file.extensions {
+        let reason = if !argus_protocol::extensions::is_extension_name(&extension.name) {
+            Some("is not lowercase letters, digits and dashes")
+        } else if kept.iter().any(|k| k.name == extension.name) {
+            Some("is declared twice")
+        } else if extension.command.is_empty() {
+            Some("has no command")
+        } else {
+            None
+        };
+        match reason {
+            Some(reason) => tracing::warn!("extension {:?} {reason}; not started", extension.name),
+            None => kept.push(extension),
+        }
+    }
+    Ok(kept)
+}
+
+/// The extensions `projects.toml` declares. Unreadable, it declares none:
+/// `load` has already said why.
+pub fn load_extensions() -> Vec<ExtensionConfig> {
+    let path = config_path();
+    let raw = std::fs::read_to_string(&path).unwrap_or_default();
+    extensions_in(&raw).unwrap_or_else(|e| {
+        tracing::warn!("could not read the extensions in {}: {e}", path.display());
+        Vec::new()
+    })
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentConfig {
     pub name: String,
@@ -388,6 +447,14 @@ const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or mor
 # name = "herdr"
 # cmd = ["herdr"]
 # harness = "herdr"
+
+# Extensions are programs the daemon runs beside itself. Each is handed
+# ARGUS_HOOK_URL and a token of its own, and publishes tabs, commands and
+# dialogs through them; the daemon starts it again if it exits.
+#
+# [[extension]]
+# name = "docker"
+# command = ["python3", "docker-extension.py"]
 "#;
 
 pub fn load() -> Result<ConfigFile> {
@@ -484,6 +551,41 @@ mod tests {
 
     fn parse(raw: &str) -> ConfigFile {
         toml::from_str(raw).expect("the test config should parse")
+    }
+
+    #[test]
+    fn an_extension_block_is_read_and_a_bad_one_left_out() {
+        let raw = r#"
+            [[project]]
+            name = "src"
+
+            [[extension]]
+            name = "docker"
+            command = ["python3", "docker.py"]
+            env = { DOCKER_HOST = "unix:///run/docker.sock" }
+
+            [[extension]]
+            name = "Docker Two"
+            command = ["x"]
+
+            [[extension]]
+            name = "docker"
+            command = ["again"]
+
+            [[extension]]
+            name = "empty"
+            command = []
+        "#;
+        let extensions = extensions_in(raw).unwrap();
+        assert_eq!(extensions.len(), 1, "{extensions:?}");
+        assert_eq!(extensions[0].command, ["python3", "docker.py"]);
+        assert_eq!(extensions[0].env["DOCKER_HOST"], "unix:///run/docker.sock");
+        assert_eq!(parse(raw).projects.len(), 1, "the rest of the file reads past them");
+    }
+
+    #[test]
+    fn the_default_config_declares_no_extension() {
+        assert!(extensions_in(DEFAULT_CONFIG).unwrap().is_empty());
     }
 
     #[test]
