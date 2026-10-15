@@ -28,6 +28,9 @@ pub struct HistoryDialog {
     /// What the filter field says: the commits shown are those whose hash,
     /// subject or author holds every word of it.
     filter: String,
+    /// A commit the dialog was opened for, by the hash an agent gave: the
+    /// cursor lands on it when the list arrives.
+    want: Option<String>,
 }
 
 /// What a gesture in the dialog comes to.
@@ -51,8 +54,17 @@ impl HistoryDialog {
             diffs: HashMap::new(),
             pending: HashMap::new(),
             filter: String::new(),
+            want: None,
         };
         (dialog, ClientMsg::ListCommits { request_id, checkout: checkout.id })
+    }
+
+    /// Opens on `sha`, a full hash or a prefix of one. A commit older than
+    /// the list the daemon sends leaves the cursor at the top.
+    pub fn open_at(checkout: &CheckoutInfo, request_id: u64, sha: &str) -> (HistoryDialog, ClientMsg) {
+        let (mut dialog, msg) = HistoryDialog::open(checkout, request_id);
+        dialog.want = Some(sha.to_lowercase());
+        (dialog, msg)
     }
 
     pub fn checkout(&self) -> CheckoutId {
@@ -61,7 +73,13 @@ impl HistoryDialog {
 
     pub fn receive_commits(&mut self, request_id: u64, commits: Vec<CommitInfo>) {
         if request_id == self.asked {
-            self.view = Some(HistoryView::new(self.checkout, commits));
+            let mut view = HistoryView::new(self.checkout, commits);
+            let landed = self.want.take().and_then(|sha| {
+                let commit = view.commits.iter().position(|c| c.info.oid.starts_with(&sha))?;
+                view.rows.iter().position(|r| *r == HistoryRow::Commit { commit })
+            });
+            view.sel = landed.unwrap_or(0);
+            self.view = Some(view);
             // A filter typed while they loaded already hides some.
             self.keep_cursor_shown();
         }
@@ -335,6 +353,17 @@ mod tests {
         assert!(matches!(msg, ClientMsg::ListCommits { request_id: 5, .. }));
         d.receive_commits(5, vec![commit("aaaa1", "Newest"), commit("bbbb2", "Older")]);
         d
+    }
+
+    #[test]
+    fn opened_for_a_hash_the_cursor_lands_on_that_commit_and_stays_at_the_top_when_it_is_not_there() {
+        let list = || vec![commit("aaaa1", "Newest"), commit("bbbb2", "Older")];
+        let (mut d, _) = HistoryDialog::open_at(&checkout(100, "main", true, Vec::new()), 5, "BBB");
+        d.receive_commits(5, list());
+        assert!(d.page(0).rows[1].on, "a prefix, in either case, finds it");
+        let (mut d, _) = HistoryDialog::open_at(&checkout(100, "main", true, Vec::new()), 5, "ffff");
+        d.receive_commits(5, list());
+        assert!(d.page(0).rows[0].on);
     }
 
     #[test]

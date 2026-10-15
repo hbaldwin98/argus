@@ -106,6 +106,17 @@ impl Dialogs {
         out.push(msg);
     }
 
+    /// Opens the history with the cursor on `sha`, for a reference in an
+    /// agent's view.
+    pub fn open_history_at(&mut self, checkout: CheckoutId, sha: &str, tree: &[ProjectInfo], mut id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) {
+        let Some(info) = checkout_info(tree, checkout) else {
+            return;
+        };
+        let (dialog, msg) = HistoryDialog::open_at(info, id(), sha);
+        self.history = Some(dialog);
+        out.push(msg);
+    }
+
     /// A key or button of the review dialog. `E` gives the review way to
     /// the file at its cursor, as the terminal client's does: what to open
     /// comes back, for the session to ask the daemon for.

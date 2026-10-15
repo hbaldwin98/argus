@@ -24,7 +24,7 @@ use argus_protocol::outline::WorkRef;
 use crate::feature_edits::{self, Target};
 use crate::features::{self, Index, Layout};
 use crate::flows_lens::FlowCursor;
-use crate::page::{self, FeatureEdit, Lens, WorkAt};
+use crate::page::{self, FeatureEdit, FeatureViewLink, Lens, WorkAt};
 use crate::work_lens;
 
 /// Which repository the stage reads, and how to address its board.
@@ -72,6 +72,10 @@ pub struct FeatureStage {
     /// The layout of a repository that remembers none of its own, as the
     /// Settings dialog sets it.
     opens_as: Layout,
+    /// The views agents showed in the repository, as `agent_views` last
+    /// said, each with the feature number it names. Held here only so the
+    /// index is drawn again when they change.
+    views: Vec<(i64, FeatureViewLink)>,
     changed: bool,
 }
 
@@ -89,7 +93,15 @@ impl FeatureStage {
             layouts,
             layouts_changed: false,
             opens_as: Layout::default(),
+            views: Vec::new(),
             changed: true,
+        }
+    }
+
+    pub fn set_views(&mut self, views: Vec<(i64, FeatureViewLink)>) {
+        if self.views != views {
+            self.views = views;
+            self.changed = true;
         }
     }
 
@@ -351,6 +363,7 @@ impl FeatureStage {
             work: self.cursor,
             record: self.record,
             flow: self.flow,
+            views: &self.views,
             now,
         })
     }

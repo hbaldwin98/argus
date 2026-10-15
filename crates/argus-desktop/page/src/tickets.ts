@@ -3,6 +3,7 @@
 // more than the tracker's page at a glance, and the tracker is a click away
 // from there. Without one it opens the ticket in the browser.
 
+import type { FeatureViewLink } from './bindings/FeatureViewLink';
 import type { Link } from './bindings/Link';
 import { el } from './dom.js';
 import { call } from './tauri.js';
@@ -30,6 +31,25 @@ export function ticketLink(link: Link): HTMLElement {
     ' ',
     el('b', null, link.key),
     view && el('span', { class: 'vdot', 'aria-label': 'a view of it waits' }),
+  );
+}
+
+/** A view an agent showed that names the feature, drawn like a ticket with
+ *  a view waiting: it opens that view in the views' panel. */
+export function featureViewLink(link: FeatureViewLink): HTMLElement {
+  return el(
+    'button',
+    {
+      class: 'track viewed',
+      type: 'button',
+      title: 'A view an agent showed of this feature',
+      onclick: (event: MouseEvent) => {
+        event.stopPropagation();
+        call('open_view', { pane: link.pane, id: link.id });
+      },
+    },
+    el('b', null, link.title),
+    el('span', { class: 'vdot', 'aria-hidden': 'true' }),
   );
 }
 

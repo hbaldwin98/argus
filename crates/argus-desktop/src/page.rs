@@ -166,8 +166,15 @@ pub enum Call {
     /// A hover over the strip's maximize button, for Windows 11's snap
     /// layouts.
     SnapLayouts,
-    /// Opens a view an agent showed, in the views' dock.
+    /// Opens a view an agent showed, in the views' dock; a view popped out
+    /// as a page comes back to the dock.
     OpenView { pane: u64, id: String },
+    /// Opens a view an agent showed as a page over the stage.
+    PopOutView { pane: u64, id: String },
+    /// A reference in a view pressed. `pane` is the one whose agent showed
+    /// the view; an extension's table has none and is read against the
+    /// checkout on screen.
+    OpenRef { pane: Option<u64>, reference: Reference },
     /// Puts the views away; they stay.
     HideViews,
     /// Puts the views away, or brings out the newest.
@@ -812,6 +819,18 @@ pub struct Pane {
     pub views: usize,
 }
 
+/// A value in an agent's view that points into Argus, as the page names it
+/// when pressed. What it points at is `view_refs`'s to find.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Reference {
+    Path { path: String, line: Option<u32> },
+    Commit { sha: String },
+    Feature { number: i64 },
+    Pane { pane: u64 },
+}
+
 /// Which stage is up. One at a time: opening one puts the others away, and
 /// any of them over the Workspace keeps the pane on screen to come back to.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -829,6 +848,8 @@ pub enum Stage {
     Console,
     /// An extension's view, open as a page.
     Extension,
+    /// A view an agent showed, open as a page.
+    View,
 }
 
 /// Where the console is.
@@ -1187,6 +1208,18 @@ pub struct ViewsPage {
     /// The pane and id of the view the panel shows: the one chosen, else
     /// the newest.
     pub open: Option<ViewRef>,
+    /// The view open as a page, when one is.
+    pub popped: Option<ViewRef>,
+}
+
+/// A view that names a feature, offered where the feature's tickets are.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureViewLink {
+    pub pane: u64,
+    pub id: String,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1295,6 +1328,8 @@ pub struct FeatureView {
     pub brief: String,
     /// Its tickets in the team's trackers.
     pub links: Vec<Link>,
+    /// The views agents showed that name this feature, newest first.
+    pub views: Vec<FeatureViewLink>,
     /// When it was last reconciled with them: `reconciled 2h ago by pane #32`.
     pub reconciled: Option<String>,
     /// How many of its tasks and decisions changed since; `None` before
