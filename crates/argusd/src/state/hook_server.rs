@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::{parse_request_target, Endpoint, PaneId, Report, MAX_DIAGRAM_BODY_BYTES};
+use argus_protocol::{parse_request_target, Endpoint, PaneId, MAX_DIAGRAM_BODY_BYTES};
 
 use super::Daemon;
 
@@ -200,16 +200,17 @@ async fn handle_hook_request(
                     Some(note),
                     headers.background,
                 );
-                // A turn's end, not its tool calls: an agent that steps into
-                // another worktree to look at something has not moved there.
-                if let (Report::Idle, Some(directory)) = (report, headers.directory.clone()) {
-                    let daemon = daemon.clone();
-                    let reporter = reporter.clone();
-                    let _ = tokio::task::spawn_blocking(move || {
-                        daemon.follow_agent_directory(pane, reporter.as_deref(), &directory)
-                    })
-                    .await;
-                }
+                let daemon = daemon.clone();
+                let (reporter, directory) = (reporter.clone(), headers.directory.clone());
+                let _ = tokio::task::spawn_blocking(move || {
+                    daemon.follow_status_report(
+                        pane,
+                        reporter.as_deref(),
+                        report,
+                        directory.as_deref(),
+                    )
+                })
+                .await;
                 HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Title)) => {
@@ -220,15 +221,15 @@ async fn handle_hook_request(
                 );
                 HookResponse::empty(200, "OK")
             }
-            Some((pane, Endpoint::Checkout))
-                if daemon.child_of(pane, reporter.as_deref()).is_none() =>
-            {
+            Some((pane, Endpoint::Checkout)) => {
                 let destination = PathBuf::from(String::from_utf8_lossy(&body).trim());
                 let daemon = daemon.clone();
-                let moved =
-                    tokio::task::spawn_blocking(move || daemon.move_agent_into(pane, &destination))
-                        .await
-                        .unwrap_or_else(|error| Err(error.into()));
+                let reporter = reporter.clone();
+                let moved = tokio::task::spawn_blocking(move || {
+                    daemon.move_agent_into(pane, reporter.as_deref(), &destination)
+                })
+                .await
+                .unwrap_or_else(|error| Err(error.into()));
                 match moved {
                     Ok(()) => HookResponse::empty(200, "OK"),
                     Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
@@ -273,8 +274,6 @@ async fn handle_hook_request(
                 &String::from_utf8_lossy(&body),
                 filing.scope,
             )),
-            // A checkout move from an agent that does not own the pane is
-            // dropped: the row follows the agent Argus started in it.
             _ => HookResponse::empty(200, "OK"),
         }
     };

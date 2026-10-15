@@ -224,9 +224,10 @@ to the type or its locking.
 | `state/build` | turning what the config declares into the tree the daemon runs on |
 | `state/panes` | a pane's lifecycle: spawned, restarted, written to, and retired — the one way out of the tree every removal takes |
 | `state/agents` | what an agent reports about itself, and what it is told |
-| `state/follow` | which checkout an agent pane belongs to: the one its agent works in, moved to when the agent says so or a turn ends in another worktree |
+| `state/follow` | which checkout an agent pane belongs to: the one its agent works in, moved to when the agent says so or a status report says its turn ended in another worktree |
 | `state/viewers` | what each client is showing: the one pty size reconciled out of what they all ask for, and the view of the client the person was last at |
 | `state/git_ops` | the writes to Git |
+| `state/git_reads` | the port the tree's reads of Git go through — status, HEAD, worktrees, a root's repositories — so a test can script what Git answers |
 | `state/sync` | the polls and watchers that keep the tree level with the disk |
 | `state/panel` | the rows the user adds and removes by hand |
 | `state/workspaces` | which scope is open, daemon-wide |

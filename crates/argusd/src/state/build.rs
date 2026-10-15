@@ -24,6 +24,24 @@ impl Daemon {
     }
 
     pub fn with_store(config: ConfigFile, store: crate::store::Store) -> Arc<Self> {
+        Self::assemble(config, store, Arc::new(git_reads::SystemGit))
+    }
+
+    /// A test daemon whose Git reads answer what the test scripts, and the
+    /// script to say it with. Unscripted reads still go to the disk.
+    #[cfg(test)]
+    pub(super) fn scripted(config: ConfigFile) -> (Arc<Self>, Arc<git_reads::ScriptedGit>) {
+        let git = Arc::new(git_reads::ScriptedGit::default());
+        let store = crate::store::Store::in_memory()
+            .expect("an in-memory runtime store needs nothing that can fail");
+        (Self::assemble(config, store, git.clone()), git)
+    }
+
+    fn assemble(
+        config: ConfigFile,
+        store: crate::store::Store,
+        git: Arc<dyn git_reads::GitReads>,
+    ) -> Arc<Self> {
         let mut ids = IdGen::default();
 
         // What the user declared, plus what they did to the panel while it
@@ -70,7 +88,7 @@ impl Daemon {
                 if let Some(root) = &root {
                     let found = retain_included(
                         &excluded,
-                        crate::git::discover_repositories_within(root, &settings.scan),
+                        git.discover_repositories(root, &settings.scan),
                     );
                     install_discovered(&mut ids, &mut repositories, &found);
                 }
@@ -144,13 +162,14 @@ impl Daemon {
             next_inbox: std::sync::atomic::AtomicU64::new(0),
             plugin_root: std::sync::OnceLock::new(),
             paste_root: std::sync::OnceLock::new(),
+            git,
         });
         // Checkout rows are named after the branch occupying them, and that
         // name now comes from the cache. Reading HEAD is enough for a name;
         // a full `git::status` walks every workdir, which on a cold disk
         // across a project root of many repositories is seconds in front of
         // the first client. The first poll tick fills dirty counts.
-        daemon.refresh_git_status_with(false, crate::git::head);
+        daemon.refresh_git_status_by(false, |path| daemon.git.head(path));
         daemon
     }
 
