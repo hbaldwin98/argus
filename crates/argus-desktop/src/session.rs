@@ -1240,7 +1240,11 @@ impl Session {
     /// on screen, else that repository's own.
     fn here(&self) -> Here {
         let repository = self.chosen_repository();
-        let shown = self.shown.on(Side::Workspace).and_then(|pane| self.tree.lineage_of_pane(pane)).map(|(lineage, _)| lineage.checkout);
+        let shown = self
+            .shown
+            .on(Side::Workspace)
+            .and_then(|pane| self.tree.lineage_of_pane(pane))
+            .map(|(lineage, _)| lineage.checkout);
         let checkout = shown.or_else(|| repository.and_then(|r| r.checkouts.iter().find(|c| c.primary)));
         Here { repository: repository.map(|r| r.id), checkout: checkout.map(|c| c.id) }
     }

@@ -23,8 +23,8 @@ pub struct Lineage<'a> {
     pub checkout: &'a CheckoutInfo,
 }
 
-/// A copy of the tree a client holds, the open workspace's projects, and
-/// finding things in it.
+/// A client's copy of the tree (the open workspace's projects), and finding
+/// things in it.
 pub trait HeldTree {
     fn checkouts(&self) -> impl Iterator<Item = &CheckoutInfo>;
 
@@ -217,6 +217,32 @@ mod tests {
             (lineage.project.name.as_str(), lineage.repository.name.as_str(), lineage.checkout.path.as_str()),
             ("p1", "r1", "/r1")
         );
+    }
+
+    #[test]
+    fn a_lineage_names_the_repository_and_checkout_that_hold_it() {
+        let mut tree = projects(vec![vec![]]);
+        let first = tree[0].repositories[0].clone();
+        let checkout = |id: u64, panes: Vec<PaneInfo>| CheckoutInfo {
+            id: CheckoutId(id),
+            name: format!("c{id}"),
+            path: format!("/c{id}"),
+            panes,
+            git: None,
+            primary: false,
+        };
+        tree[0].repositories.push(RepositoryInfo {
+            id: RepositoryId(7),
+            name: "second".into(),
+            checkouts: vec![checkout(10, vec![pane(1, PaneStatus::Idle)]), checkout(11, vec![pane(2, PaneStatus::Idle)])],
+            ..first
+        });
+
+        let lineage = tree.lineage_of_checkout(CheckoutId(11)).unwrap();
+        assert_eq!((lineage.repository.id, lineage.checkout.id), (RepositoryId(7), CheckoutId(11)));
+        let (lineage, found) = tree.lineage_of_pane(PaneId(2)).unwrap();
+        assert_eq!(found.id, PaneId(2));
+        assert_eq!((lineage.repository.id, lineage.checkout.id), (RepositoryId(7), CheckoutId(11)));
     }
 
     #[test]
