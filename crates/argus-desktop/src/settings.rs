@@ -47,6 +47,9 @@ pub struct Settings {
     /// until they do.
     #[serde(default)]
     pub rail_width: Option<u32>,
+    /// The views panel's width as the person dragged it, likewise.
+    #[serde(default)]
+    pub views_width: Option<u32>,
     /// What the Settings dialog sets, flat in the file beside the rest.
     #[serde(flatten)]
     pub preferences: Preferences,
@@ -214,6 +217,7 @@ impl Default for Settings {
             review: ReviewLayout::default(),
             console: ConsoleLayout::default(),
             rail_width: None,
+            views_width: None,
             preferences: Preferences::default(),
         }
     }

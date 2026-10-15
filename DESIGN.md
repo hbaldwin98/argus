@@ -393,7 +393,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once |
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
-| `rail_width` | how wide the person dragged the rail, held to its bounds, and whether that changed since it was saved |
+| `dragged_width` | how wide the person dragged a side column — the rail, the views panel — held to its bounds, and whether that changed since it was saved |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, among them what each pane it resumed a session in was resumed from |
@@ -1901,7 +1901,8 @@ the pane shrinks to fit rather than being covered. It opens by itself only when 
 on screen and the panel is not already showing one; otherwise a tab at the window's edge counts the
 views waiting and brings the newest out. The panel has a tab per view, newest first, says who read it
 and how long ago, and offers Refresh, which waits for the agent to show it again, and Close, which
-takes it down for every client. Ctrl-. (in a pane, the leader and `v`) puts the panel away or brings
+takes it down for every client. Its left edge drags it wider or narrower, between 360 and 1200 pixels, kept
+like the rail's width, and a double-click gives back the usual one. Ctrl-. (in a pane, the leader and `v`) puts the panel away or brings
 the newest view out. A pane's row on the rail counts the views its agent has up. A feature's ticket
 links, in the index's peek and the open feature's heading, open the ticket in the browser, or, when a
 view of that ticket waits, carry a dot and open the view instead; the page matches them by URL, or by

@@ -5,16 +5,17 @@
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { $, el, icon } from './dom.js';
+import { state } from './state.js';
 import { call } from './tauri.js';
 import { ago } from './values.js';
 import { viewLink } from './viewlink.js';
 let shown = { views: [], open: null };
 export function drawViews(page) {
     shown = page;
-    const panel = $('views');
+    const panel = $('views-inner');
     const launcher = $('views-tab');
     const open = page.open && page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
-    panel.hidden = !open;
+    $('views').hidden = !open;
     launcher.hidden = Boolean(open) || page.views.length === 0;
     if (!open) {
         panel.replaceChildren();
@@ -74,6 +75,42 @@ export function viewOf(link) {
     return shown.views.find((v) => v.subject !== null &&
         (v.subject.url === link.url ||
             (v.subject.tracker === link.tracker && v.subject.key === link.key)));
+}
+/** The panel's width as the person dragged it, or the stylesheet's own. */
+export function viewsWidth(width) {
+    const root = document.documentElement.style;
+    if (width === null)
+        root.removeProperty('--views-w');
+    else
+        root.setProperty('--views-w', `${width}px`);
+}
+/** The panel's left edge: the panel follows the pointer while it is held,
+ *  and the width is reported once it is let go, for Rust to hold to its
+ *  bounds, keep and send back. A double-click gives back the usual width. */
+export function listenToViewsEdge() {
+    const sash = $('views-sash');
+    sash.addEventListener('mousedown', (e) => {
+        if (e.button !== 0)
+            return;
+        e.preventDefault();
+        const right = $('views').getBoundingClientRect().right;
+        let width = Math.round(right - e.clientX);
+        document.body.classList.add('resizing');
+        const move = (m) => {
+            width = Math.round(right - m.clientX);
+            viewsWidth(width);
+        };
+        const up = () => {
+            window.removeEventListener('mousemove', move);
+            window.removeEventListener('mouseup', up);
+            document.body.classList.remove('resizing');
+            viewsWidth(state.rail.viewsWidth);
+            call('views_width', { width: Math.max(0, width) });
+        };
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+    });
+    sash.addEventListener('dblclick', () => call('views_width', { width: null }));
 }
 /** Brings the newest view out, from the tab at the window's edge. */
 export function openNewestView() {

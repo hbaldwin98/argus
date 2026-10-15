@@ -3380,8 +3380,10 @@ body.console-fullscreen #bar {
 /* Beside the stage rather than over it, so the pane shrinks to fit and the
    rail stays in sight. */
 .vpanel {
-  width: min(640px, 42vw);
+  position: relative;
+  width: var(--views-w, min(640px, 42vw));
   min-width: 360px;
+  max-width: calc(100vw - var(--rail-w) - 240px);
   flex: none;
   display: flex;
   flex-direction: column;
@@ -4123,6 +4125,27 @@ body.console-fullscreen #bar {
   text-align: center;
 }
 
+/* The views panel holds what the panel shows, beside its edge. */
+.vpanel-inner {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The views panel's edge, dragged as the rail's is. */
+.views-sash {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  bottom: 0;
+  width: 6px;
+  z-index: 4;
+  cursor: col-resize;
+}
+.views-sash:hover,
+body.resizing .views-sash {
+  box-shadow: inset 3px 0 0 -1px var(--accent);
+}
 /* The rail's edge, dragged to make it wider or narrower. */
 .rail-sash {
   position: absolute;

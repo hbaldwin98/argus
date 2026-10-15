@@ -56,7 +56,7 @@ use crate::page::{
 use crate::palette;
 use crate::preferences::Chosen;
 use crate::rail::{self, Choices};
-use crate::rail_width::RailWidth;
+use crate::dragged_width::{self, DraggedWidth};
 use crate::sent::Sent;
 use crate::sessions::Sessions;
 use crate::sessions_dialog::{SessionsDialog, Then as SessionsThen};
@@ -114,7 +114,8 @@ pub struct Session {
     awaited: Awaited<Made>,
     agents: Agents,
     views: AgentViews,
-    rail_width: RailWidth,
+    rail_width: DraggedWidth,
+    views_width: DraggedWidth,
     dialogs: Dialogs,
     sessions: Sessions,
     /// The recent-sessions dialog, while open.
@@ -174,7 +175,8 @@ impl Session {
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
-            rail_width: RailWidth::new(settings.rail_width),
+            rail_width: DraggedWidth::new(dragged_width::RAIL, settings.rail_width),
+            views_width: DraggedWidth::new(dragged_width::VIEWS, settings.views_width),
             dialogs: Dialogs::new(settings.review),
             sessions: Sessions::default(),
             recent: None,
@@ -532,6 +534,11 @@ impl Session {
             }
             Call::RailWidth { width } => {
                 self.rail_width.set(width);
+                self.rail_changed = true;
+                self.finish()
+            }
+            Call::ViewsWidth { width } => {
+                self.views_width.set(width);
                 self.rail_changed = true;
                 self.finish()
             }
@@ -1813,7 +1820,7 @@ impl Session {
         let chime = self.status.take_chime_changed();
         let review = self.dialogs.take_layout_changed();
         let console = self.console.take_unsaved();
-        let rail = self.rail_width.take_unsaved();
+        let rail = self.rail_width.take_unsaved() | self.views_width.take_unsaved();
         let chosen = self.choices.take_unsaved();
         (layouts || agent || chime || review || console || rail || chosen).then(|| Settings {
             layouts: self.features.layouts().clone(),
@@ -1822,6 +1829,7 @@ impl Session {
             review: self.dialogs.layout(),
             console: self.console.layout(),
             rail_width: self.rail_width.get(),
+            views_width: self.views_width.get(),
             preferences: self.choices.get().clone(),
         })
     }
@@ -2019,6 +2027,7 @@ impl Session {
         }
         rail.removing = self.switcher.removing(&self.tree);
         rail.width = self.rail_width.get();
+        rail.views_width = self.views_width.get();
         if let Some(shown) = &mut rail.shown {
             shown.resumed = self.sessions.resumed_from(PaneId(shown.pane)).cloned();
         }
@@ -3062,7 +3071,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 83] = [
+    const CALLS: [&str; 84] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3143,6 +3152,7 @@ mod tests {
         r#"{"call":"hide_views"}"#,
         r#"{"call":"toggle_views"}"#,
         r#"{"call":"rail_width","width":320}"#,
+        r#"{"call":"views_width","width":700}"#,
         r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
         r#"{"call":"close_view","pane":1,"id":"ci"}"#,
         r#"{"call":"open_url","url":"https://example.com"}"#,
@@ -3736,11 +3746,12 @@ mod tests {
     }
 
     #[test]
-    fn the_rail_keeps_the_width_it_was_dragged_to_across_runs() {
+    fn the_side_columns_keep_the_widths_they_were_dragged_to_across_runs() {
         let mut s = session(without_focus());
         s.take_settings();
         s.events(0);
         s.call(Call::RailWidth { width: Some(360) });
+        s.call(Call::ViewsWidth { width: Some(9_000) });
         let rail = s.events(0).into_iter().find_map(|e| match e {
             Event::Rail(rail) => Some(rail),
             _ => None,
@@ -3748,6 +3759,7 @@ mod tests {
         assert_eq!(rail.expect("the rail is told").width, Some(360));
         let saved = s.take_settings().expect("saved");
         assert_eq!(saved.rail_width, Some(360));
+        assert_eq!(saved.views_width, Some(dragged_width::VIEWS.max), "held to its bounds");
 
         let mut again = Session::new(saved);
         again.connected(Some(without_focus()), None, vec![with_tree(tree())]);

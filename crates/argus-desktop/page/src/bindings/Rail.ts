@@ -58,4 +58,8 @@ removing: Removing | null,
  * The width the person dragged the rail to, in CSS pixels; `None`
  * leaves the page's own.
  */
-width: number | null, };
+width: number | null, 
+/**
+ * The width the person dragged the views panel to, likewise.
+ */
+viewsWidth: number | null, };

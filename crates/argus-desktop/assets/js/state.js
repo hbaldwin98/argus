@@ -16,6 +16,7 @@ export const state = {
         workspaces: [],
         removing: null,
         width: null,
+        viewsWidth: null,
     },
     features: null,
     capture: null,
