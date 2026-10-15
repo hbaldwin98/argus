@@ -23,7 +23,9 @@ pub struct Index<'a> {
     pub peek_tasks: Option<&'a TaskList>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
 pub enum Layout {
     #[default]
     List,

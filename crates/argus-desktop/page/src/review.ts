@@ -6,10 +6,12 @@
 
 import type { DiffRow } from './bindings/DiffRow';
 import type { DiffSide } from './bindings/DiffSide';
+import type { ReviewClick } from './bindings/ReviewClick';
+import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
 import type { ReviewPage } from './bindings/ReviewPage';
 import { $, el, ghosts, icon, type Child } from './dom.js';
 import { state } from './state.js';
-import { call, type Commands } from './tauri.js';
+import { call } from './tauri.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);
@@ -87,17 +89,11 @@ function head(r: ReviewPage): HTMLElement {
   );
 }
 
-type Click =
-  | { on: 'file'; file: number }
-  | { on: 'row'; row: number; extend: boolean }
-  | { on: 'side'; staged: boolean }
-  | { on: 'recipient'; pane: number };
-
-function click(target: Click): void {
+function click(target: ReviewClick): void {
   call('review_click', { target });
 }
 
-function jump(gesture: Commands['review_jump']['gesture']): void {
+function jump(gesture: ReviewJumpGesture): void {
   call('review_jump', { gesture });
 }
 

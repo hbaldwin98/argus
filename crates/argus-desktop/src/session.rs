@@ -29,7 +29,7 @@ use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keymap::{self, Action};
 use crate::keys::{self, PageKey};
-use crate::page::{Connection, Event, PageMouse, Status};
+use crate::page::{Call, Connection, Event, PageMouse, ReviewClick, ReviewJumpGesture, Status};
 use crate::palette;
 use crate::settings::{ReviewLayout, Settings};
 use crate::rail::{self, Choices};
@@ -391,6 +391,66 @@ impl Session {
     }
 
     // ---- Gestures ----------------------------------------------------------
+
+    /// A call the page made. The clipboard's, the window frame's and a
+    /// reconnect are not the session's: `commands` answers them before a
+    /// call gets here, and the paste key too, which `pastes` names.
+    pub fn call(&mut self, call: Call) -> Vec<ClientMsg> {
+        match call {
+            Call::Select { pane } => self.select(PaneId(pane)),
+            Call::Resize { rows, cols } => self.resize(rows, cols),
+            Call::Key { key } => self.key(&key),
+            Call::Text { text } => self.text(&text),
+            Call::Paste { text } => self.paste(text),
+            Call::Wheel { notches, at } => self.wheel(notches, at),
+            Call::Mouse { gesture, button, at } => self.mouse(gesture, button, at),
+            Call::SpawnShell { checkout } => self.spawn_shell(CheckoutId(checkout)),
+            Call::SpawnAgent { checkout, template } => self.spawn_agent(CheckoutId(checkout), template),
+            Call::Close { pane } => self.close(PaneId(pane)),
+            Call::Focus { focused } => self.focus(focused),
+            Call::SelectProject { project } => self.select_project(ProjectId(project)),
+            Call::ToggleRepository { repository } => self.toggle_repository(RepositoryId(repository)),
+            Call::ChooseRepository { repository } => self.choose_repository(RepositoryId(repository)),
+            Call::ShowFeatures { open } => self.show_features(open),
+            Call::ShowCheckouts { open } => self.show_checkouts(open),
+            Call::ShowComposer { open } => self.show_composer(open),
+            Call::Compose { checkout, template, prompt } => self.compose(CheckoutId(checkout), template, prompt),
+            Call::SelectCheckoutRow { key } => self.select_checkout_row(key),
+            Call::FilterCheckouts { filter } => self.filter_checkouts(filter),
+            Call::CheckoutsAction { action } => self.checkouts_action(action),
+            Call::RemoveCheckout { checkout } => self.remove_checkout(CheckoutId(checkout)),
+            Call::AnswerCheckouts { yes } => self.answer_checkouts(yes),
+            Call::NewWorktree { name } => self.new_worktree(name),
+            Call::OpenReview { checkout } => self.open_review(CheckoutId(checkout)),
+            Call::ReviewAction { action } => self.review_action(action),
+            Call::ReviewClick { target } => self.review_click(target),
+            Call::ReviewRefresh => self.review_refresh(),
+            Call::ReviewComment { body } => self.review_comment(body),
+            Call::ReviewJump { gesture } => self.review_jump(gesture),
+            Call::OpenHistory { checkout } => self.open_history(CheckoutId(checkout)),
+            Call::HistoryAction { action, row } => self.history_action(action, row),
+            Call::FilterHistory { filter } => self.filter_history(filter),
+            Call::Peek { slug } => self.peek(&slug),
+            Call::SetLayout { layout } => self.set_layout(layout),
+            Call::ToggleFolded => self.toggle_folded(),
+            Call::SetChime { on } => self.set_chime(on),
+            Call::Hold { slug, reason } => self.hold(&slug, reason),
+            Call::Archive { slug, archived } => self.archive(&slug, archived),
+            Call::GoToPane { pane } => self.go_to_pane(PaneId(pane)),
+            Call::Palette { open } => self.palette(open),
+            Call::Command { action } => self.command(action),
+            Call::GoToCheckout { checkout } => self.go_to_checkout(CheckoutId(checkout)),
+            Call::GoToFeature { slug } => self.go_to_feature(&slug),
+            Call::PasteClipboard
+            | Call::Copy { .. }
+            | Call::Reconnect
+            | Call::Minimize
+            | Call::ToggleMaximize
+            | Call::CloseWindow
+            | Call::DragWindow
+            | Call::SnapLayouts => self.finish(),
+        }
+    }
 
     /// Puts a pane on screen, leaving the Feature stage for it: a pane
     /// chosen on the rail is one the person means to look at and type into.
@@ -1507,27 +1567,6 @@ impl Session {
     }
 }
 
-/// What a click in the review dialog landed on.
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-#[serde(rename_all = "camelCase", tag = "on")]
-pub enum ReviewClick {
-    File { file: usize },
-    Row { row: usize, extend: bool },
-    Side { staged: bool },
-    Recipient { pane: u64 },
-}
-
-/// What was done in the review's jump field: a letter typed, a match
-/// stepped to, Enter, or Escape.
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase", tag = "on")]
-pub enum ReviewJumpGesture {
-    Query { text: String },
-    Step { by: isize },
-    Choose,
-    Close,
-}
-
 /// What to say of a daemon from another build than this window, as the
 /// terminal client says it.
 fn another_build(daemon: &Hello) -> Option<String> {
@@ -2494,6 +2533,85 @@ mod tests {
                 s.open_features(stage == "feature");
                 s.open_checkouts(stage == "checkouts");
                 assert!(s.run_command(command.action), "{} does not dispatch in {stage}", command.label);
+            }
+        }
+    }
+
+    /// Every call the page can make, written as the page writes it.
+    const CALLS: [&str; 52] = [
+        r#"{"call":"select","pane":1}"#,
+        r#"{"call":"resize","rows":30,"cols":100}"#,
+        r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
+        r#"{"call":"text","text":"é"}"#,
+        r#"{"call":"paste","text":"ls"}"#,
+        r#"{"call":"paste_clipboard"}"#,
+        r#"{"call":"wheel","notches":-1,"at":[0,0]}"#,
+        r#"{"call":"mouse","gesture":"down","button":0,"at":[1,3]}"#,
+        r#"{"call":"copy","from":[0,0],"to":[0,4]}"#,
+        r#"{"call":"spawn_shell","checkout":100}"#,
+        r#"{"call":"spawn_agent","checkout":100,"template":"claude"}"#,
+        r#"{"call":"close","pane":2}"#,
+        r#"{"call":"focus","focused":false}"#,
+        r#"{"call":"select_project","project":2}"#,
+        r#"{"call":"toggle_repository","repository":10}"#,
+        r#"{"call":"choose_repository","repository":10}"#,
+        r#"{"call":"show_features","open":true}"#,
+        r#"{"call":"show_checkouts","open":true}"#,
+        r#"{"call":"show_composer","open":true}"#,
+        r#"{"call":"compose","checkout":100,"template":null,"prompt":null}"#,
+        r#"{"call":"select_checkout_row","key":"c100"}"#,
+        r#"{"call":"filter_checkouts","filter":"ma"}"#,
+        r#"{"call":"checkouts_action","action":"next"}"#,
+        r#"{"call":"remove_checkout","checkout":100}"#,
+        r#"{"call":"answer_checkouts","yes":false}"#,
+        r#"{"call":"new_worktree","name":"spike"}"#,
+        r#"{"call":"open_review","checkout":100}"#,
+        r#"{"call":"review_action","action":"split"}"#,
+        r#"{"call":"review_click","target":{"on":"row","row":0,"extend":true}}"#,
+        r#"{"call":"review_refresh"}"#,
+        r#"{"call":"review_comment","body":null}"#,
+        r#"{"call":"review_jump","gesture":{"on":"query","text":"br"}}"#,
+        r#"{"call":"open_history","checkout":100}"#,
+        r#"{"call":"history_action","action":"next","row":null}"#,
+        r#"{"call":"filter_history","filter":"fix"}"#,
+        r#"{"call":"peek","slug":"trim"}"#,
+        r#"{"call":"set_layout","layout":"board"}"#,
+        r#"{"call":"toggle_folded"}"#,
+        r#"{"call":"set_chime","on":false}"#,
+        r#"{"call":"hold","slug":"trim","reason":"waiting"}"#,
+        r#"{"call":"archive","slug":"trim","archived":true}"#,
+        r#"{"call":"go_to_pane","pane":1}"#,
+        r#"{"call":"palette","open":true}"#,
+        r#"{"call":"command","action":"fill"}"#,
+        r#"{"call":"go_to_checkout","checkout":100}"#,
+        r#"{"call":"go_to_feature","slug":"trim"}"#,
+        r#"{"call":"reconnect"}"#,
+        r#"{"call":"minimize"}"#,
+        r#"{"call":"toggle_maximize"}"#,
+        r#"{"call":"close_window"}"#,
+        r#"{"call":"drag_window"}"#,
+        r#"{"call":"snap_layouts"}"#,
+    ];
+
+    /// Each call reads as the page writes it and goes through the session,
+    /// from the Workspace as from either stage. The names are read off the
+    /// generated type, so a call added without a line in `CALLS` fails here.
+    #[test]
+    fn every_call_the_page_makes_is_read_and_dispatched() {
+        let union = <Call as ts_rs::TS>::inline(&ts_rs::Config::default());
+        let declared: HashSet<&str> = union.split(r#"{ "call": ""#).skip(1).filter_map(|s| s.split('"').next()).collect();
+        let written: HashSet<String> = CALLS.iter().map(|c| serde_json::from_str::<serde_json::Value>(c).unwrap()["call"].as_str().unwrap().to_owned()).collect();
+        assert_eq!(declared.len(), written.len(), "declared {declared:?}");
+        assert!(declared.iter().all(|name| written.contains(*name)), "declared {declared:?}");
+        for stage in ["workspace", "feature", "checkouts"] {
+            let mut s = session(Hello::this_build());
+            s.receive(ServerMsg::Templates(vec!["claude".into()]));
+            s.select(PaneId(1));
+            s.open_features(stage == "feature");
+            s.open_checkouts(stage == "checkouts");
+            for json in CALLS {
+                let call: Call = serde_json::from_str(json).unwrap_or_else(|e| panic!("{json}: {e}"));
+                s.call(call);
             }
         }
     }

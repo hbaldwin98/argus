@@ -330,8 +330,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
 | `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, and the side and layout a review opens on |
-| `page` | what the page and the window's Rust say to each other |
-| `commands` | the calls the page makes, handed to the session |
+| `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
+| `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
 | `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, and the commands the palette runs |
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
