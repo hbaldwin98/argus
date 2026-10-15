@@ -45,6 +45,9 @@ pub struct Layout {
     /// The contextual rail down the left edge: the project, its
     /// repositories and their checkouts and panes.
     pub rail: Panel,
+    /// The consoles at the foot of the rail, under their rule. Zero-sized
+    /// when the daemon keeps none or the rail is too short to spare them.
+    pub consoles: Panel,
     /// The Checkouts stage's table.
     pub checkouts: Panel,
     /// The selected pane's terminal: the Workspace stage, or the whole

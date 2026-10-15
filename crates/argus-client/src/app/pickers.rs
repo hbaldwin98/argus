@@ -272,6 +272,10 @@ impl App {
         if self.templates.is_empty() {
             return;
         }
+        if self.current_console().is_some() {
+            self.report("an agent starts in a checkout; a console has none");
+            return;
+        }
         if self.current_checkout().is_none() && self.current_branch_row().is_none() {
             return;
         }

@@ -22,17 +22,26 @@ pub(super) fn render_workspace(
             .unwrap_or("checkout"),
     );
     let pane = app.current_pane();
-    let mut header = Line::from(vec![
-        Span::styled(
-            format!("  {repo}"),
+    // A console is under no repository, so its crumb names what it is
+    // rather than the repository the tree's selection was left on.
+    let mut header = if app.current_console().is_some() {
+        Line::from(Span::styled(
+            "  console",
             Style::default().fg(th.text).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" / ", Style::default().fg(th.edge)),
-        Span::styled(
-            checkout.to_string(),
-            Style::default().fg(th.syntax.function),
-        ),
-    ]);
+        ))
+    } else {
+        Line::from(vec![
+            Span::styled(
+                format!("  {repo}"),
+                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" / ", Style::default().fg(th.edge)),
+            Span::styled(
+                checkout.to_string(),
+                Style::default().fg(th.syntax.function),
+            ),
+        ])
+    };
     let telemetry = pane
         .filter(|p| p.kind == PaneKind::Agent)
         .map(|p| (p.telemetry.clone(), p.status));

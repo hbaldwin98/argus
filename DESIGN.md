@@ -335,7 +335,8 @@ result of a request; `ui` is a pure function of it.
 | `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
-| `app/awaited` | what the terminal client does with what the daemon made for it — focus the pane, select the row, start what was asked for in the new checkout — once `awaited` says the tree holds it |
+| `app/awaited` | what the terminal client does with what the daemon made for it — focus the pane, select the row, start what was asked for in the new checkout — once `awaited` says the tree, or the consoles beside it, holds it |
+| `app/consoles` | the shells that belong to no checkout: the daemon's list of them, which one the stage shows, and asking for another |
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/showing` | what the daemon is told this client shows |
 | `app/views` | which surface the content area holds, and the fetches opening one makes |
@@ -344,7 +345,7 @@ result of a request; `ui` is a pure function of it.
 | `ui` | the frame, and where the cursor goes on it |
 | `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
 | `ui/command_center` | the HTML-specified shell: where the rail and stage go, the stage heading, the first-run state, and the status vocabulary they share |
-| `ui/command_center/rail` | drawing the rail — its heading, the rows `app/rail` lists, and the divider between the active repositories and the quiet ones — and which row a click lands on |
+| `ui/command_center/rail` | drawing the rail — its heading, the rows `app/rail` lists, the divider between the active repositories and the quiet ones, and the consoles at its foot — and which row a click lands on |
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/checkouts` | one stage each, with the hit-test that shares its layout |
 | `ui/command_center/feature/index`, `ui/command_center/feature/work`, `ui/command_center/feature/record`, `ui/command_center/feature/flows`, `ui/command_center/feature/capture` | what fills the Feature stage's frame: the index of features, each of the three lenses, and the note a feature is written as |
 | `ui/text` | fitting text to a width |
@@ -480,6 +481,22 @@ are not rail rows; the Checkouts stage draws every one, and there `n`, `D`, `s`,
 `R`/Tab, `H` and Enter act on the row its table has selected — Enter opens a checkout in the workspace, or switches
 the primary checkout to a branch. The table keeps no scroll position apart from that
 selection, so `j`/`k` and the wheel both move the row and the table follows it.
+
+The consoles (see "Panes and terminal state") are the rail's last rows, drawn at its foot under a
+rule of their own rather than after the repositories in the scrolling list: they belong to no
+project, so they are the same rows whichever project the rail is on, and pinning them there keeps
+them on screen however long the repositories run. The foot takes a row per console up to half of
+the rail. `j` walks on into them past the last repository row, and a console picked is the stage's
+pane like any other: shown with the keys left on the rail, typed into with `l`/Enter, closed with
+`x`, its breadcrumb naming it a console rather than a repository. `h` on one stays put, since it
+hangs under nothing. `c` anywhere on the rail asks the daemon for a console, and `s` on a console's
+row asks for another, since a shell *there* is one; the row appears, and takes the keys, once the
+daemon's list holds it. The selection holds a console by id, beside the tree's indices it leaves
+untouched, and only while the Workspace is up and the cursor is not on a tree row: what needs a
+checkout — review, history, git, an agent — finds none on a console, and the Feature stage keeps
+reading the tree's checkout. A console that ends gives its row to the next, as a pane does, but
+hands the keys back to the rail, and the last one ending puts the cursor back on the tree. A daemon
+that does not list `consoles` gets no section, and `c` says it predates them.
 
 The status bar's keymaps are written as tiers and the widest that fits is drawn, so a narrow bar
 shows fewer keys rather than one cut mid-word. A card or table holding more rows than it can show
@@ -666,6 +683,8 @@ pane as part of a project, so the consoles do not travel in the tree: a client t
 send `ClientMsg::SpawnConsole`. How many consoles are running is recorded beside the panes, in a
 `console_pane` table of its own so that every `pane` row keeps its checkout, and a restart starts
 that many fresh shells in the home directory; a console whose shell has exited is not counted.
+Both clients show them: the desktop window as its console, the terminal client at the foot of
+its rail ("Navigation model").
 
 An agent whose process exits leaves its row as `Exited` unless its template sets `restart`:
 `on-failure` starts it again on a non-zero exit, `always` on any exit, and `never` — the default —

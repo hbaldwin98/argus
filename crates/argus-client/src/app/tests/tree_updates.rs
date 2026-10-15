@@ -46,7 +46,7 @@ fn consoles_leave_the_projects_and_the_selection_alone() {
     h.keys("lllj");
     let before = (h.app.current_project().map(|p| p.id), h.app.column_pane());
     h.app.on_server_msg(ServerMsg::Consoles(vec![pane(900, "shell")]));
-    // The terminal client lists no consoles yet: decoding one changes nothing.
+    // Listed at the rail's foot, but nobody picked one: the stage stays.
     assert_eq!((h.app.current_project().map(|p| p.id), h.app.column_pane()), before);
 }
 

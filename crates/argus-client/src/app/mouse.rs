@@ -114,6 +114,7 @@ impl App {
                         if let Some(checkout) =
                             crate::ui::command_center_checkout_at(self, ev.column, ev.row)
                         {
+                            self.forget_console();
                             self.sel_checkout = checkout;
                             self.sel_pane = 0;
                             self.focus = Focus::Checkouts;

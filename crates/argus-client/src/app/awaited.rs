@@ -24,10 +24,15 @@ pub(super) enum Then {
 pub(super) type Awaited = argus_protocol::awaited::Awaited<Then>;
 
 impl App {
-    /// Acts on everything made that the tree now holds; the rest waits for
-    /// a later tree.
+    /// Acts on everything made that the tree, or the list of consoles beside
+    /// it, now holds; the rest waits for a later one.
     pub(super) fn settle_awaited(&mut self) {
-        for (created, then) in self.awaited.settle(&self.tree) {
+        let (tree, consoles) = (&self.tree, &self.consoles);
+        let seen = |created| {
+            argus_protocol::awaited::holds(tree, created)
+                || matches!(created, Created::Pane(id) if consoles.iter().any(|c| c.id == id))
+        };
+        for (created, then) in self.awaited.settle_by(seen) {
             self.act_on_made(created, &then);
         }
     }
@@ -88,6 +93,12 @@ impl App {
     /// it, when asked to or when it is not a pane the workspace can hold
     /// (an editor is not a listed pane).
     fn focus_made_pane(&mut self, id: PaneId, floating: bool) {
+        if let Some(console) = self.consoles.iter().position(|c| c.id == id) {
+            self.open_view(View::Workspace);
+            self.pick_console(console);
+            self.focus = Focus::PaneContent;
+            return;
+        }
         let Some(title) = self.tree.panes()
             .find(|p| p.id == id)
             .map(|p| p.title.clone())
@@ -116,6 +127,7 @@ impl App {
     /// into: the keys would otherwise go to a pane the stage no longer
     /// shows.
     fn leave_pane(&mut self) {
+        self.forget_console();
         if self.focus == Focus::PaneContent {
             self.focus = Focus::Panes;
         }
