@@ -63,12 +63,16 @@ impl Daemon {
         let key = address.key.as_str();
         let checked = |body: &str| checked_map(body).map_err(|e| anyhow::anyhow!("{e}"));
         match (by, change) {
-            (Asker::Person, MapChange::Write(body)) => self.store.set_tracker_map(key, &checked(&body)?)?,
+            (Asker::Person, MapChange::Write(body)) => {
+                self.store.set_tracker_map(key, &checked(&body)?)?
+            }
             (Asker::Agent { pane, .. }, MapChange::Write(body)) => {
                 let by = pane_label(pane);
                 self.store.draft_tracker_map(key, &checked(&body)?, &by, super::decisions::now())?
             }
-            (Asker::Person, MapChange::Approve(body)) => self.store.approve_tracker_map(key, &checked(&body)?)?,
+            (Asker::Person, MapChange::Approve(body)) => {
+                self.store.approve_tracker_map(key, &checked(&body)?)?
+            }
             (Asker::Person, MapChange::Discard) => self.store.discard_tracker_map_draft(key)?,
             (Asker::Agent { .. }, MapChange::Approve(_) | MapChange::Discard) => {
                 anyhow::bail!("a draft of the map is the person's to approve or discard")
