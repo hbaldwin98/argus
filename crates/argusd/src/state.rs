@@ -67,6 +67,7 @@ mod workspaces;
 pub use board_parts::FeaturePart;
 pub(crate) use features::Filing;
 pub use extensions::ExtensionNews;
+pub use pushes::{Pushes, TreeNews};
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;
@@ -519,14 +520,9 @@ impl Daemon {
         self.inner.lock().unwrap().consoles.iter().map(pane_info).collect()
     }
 
-    pub fn subscribe_tree(&self) -> broadcast::Receiver<Vec<ProjectInfo>> {
-        self.pushes.subscribe_tree()
-    }
-
-    pub fn subscribe_telemetry(
-        &self,
-    ) -> broadcast::Receiver<(PaneId, argus_protocol::AgentTelemetry)> {
-        self.pushes.subscribe_telemetry()
+    /// What is published for the connections to push.
+    pub fn pushes(&self) -> &Pushes {
+        &self.pushes
     }
 
     pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
@@ -550,7 +546,7 @@ impl Daemon {
         // recording the session on the same edge is cheap and means the
         // file is never more than one spawn or close out of date.
         self.record_session();
-        self.pushes.tree(self.snapshot());
+        self.pushes.tree(|| self.snapshot());
         self.push_saved_views();
     }
 

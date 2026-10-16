@@ -1122,11 +1122,12 @@ extension report from their message and tool events. Claude Code tool hooks are 
 so the user's permission rules still apply. Clients show the report on the workspace breadcrumb.
 
 A report arrives with every tool call, so it does not travel in a tree. The daemon publishes the
-pane's merged record on a channel of its own, and each connection sends it as its client can take
-it: `ServerMsg::PaneTelemetry`, the one pane's record, to a client that greeted with
-`pane-telemetry`, and the whole tree to any other. A connection handles trees before telemetry, so a
-tree taken before a report cannot land after it and wind the numbers back, and one that falls behind
-the records is sent the tree, which holds them all.
+pane's merged record on the tree's channel, and each connection sends it as its client can take it:
+`ServerMsg::PaneTelemetry`, the one pane's record, to a client that greeted with `pane-telemetry`,
+and the whole tree to any other. A tree is read and a record merged under one lock, and each is
+sent before it is let go, so the channel carries them in the order they were read: a tree taken
+before a report cannot land after it and wind the numbers back. A connection that falls behind is
+sent the tree, which holds them all.
 
 What Argus has to say to an agent on its own account — a review comment's one-line notification —
 goes through the agent's harness when the harness can take it, and is typed into its terminal

@@ -5,6 +5,8 @@
 //! `broadcast::Sender` is one this module does not know about. A send with
 //! no receiver is not an error: no client need be connected.
 
+use std::sync::Mutex as StdMutex;
+
 use argus_protocol::{
     AgentTelemetry, DecisionBoard, DiagramList, PaneId, ProjectInfo, ServerMsg, TaskList, WorkspaceInfo,
 };
@@ -13,10 +15,10 @@ use tokio::sync::broadcast;
 use super::views::ViewEvent;
 use super::ExtensionNews;
 
-/// Trees come at structural changes and each poll, never at pane output.
-const TREE_DEPTH: usize = 32;
-/// A report comes with every tool call, so its bursts are the deepest.
-const TELEMETRY_DEPTH: usize = 64;
+/// The 32 trees and 64 reports the two channels held before they were
+/// one: a tree comes at a structural change or a poll, and a report with
+/// every tool call.
+const TREE_DEPTH: usize = 128;
 const WORKSPACES_DEPTH: usize = 32;
 const DECISIONS_DEPTH: usize = 32;
 const TASKS_DEPTH: usize = 32;
@@ -29,12 +31,24 @@ const VIEWS_DEPTH: usize = 64;
 const SAVED_VIEWS_DEPTH: usize = 64;
 const EXTENSIONS_DEPTH: usize = 64;
 
+/// The tree, or one pane's merged telemetry, on one channel. A report is
+/// apart from the tree because it changes on every tool call, and a client
+/// that can take one pane's record should not be sent every pane's; it is
+/// on the tree's channel so that the two keep the order they were read in.
+#[derive(Debug, Clone)]
+pub enum TreeNews {
+    Tree(Vec<ProjectInfo>),
+    Telemetry { pane: PaneId, telemetry: Box<AgentTelemetry> },
+}
+
 pub struct Pushes {
-    tree: broadcast::Sender<Vec<ProjectInfo>>,
-    /// An agent's merged telemetry after each report. Apart from the tree
-    /// because it changes on every tool call, and a client that can take
-    /// one pane's record should not be sent every pane's.
-    telemetry: broadcast::Sender<(PaneId, AgentTelemetry)>,
+    tree: broadcast::Sender<TreeNews>,
+    /// Held while a tree or a report is read and sent, so a tree taken
+    /// before a report can never be sent after it and wind the numbers
+    /// back: the channel alone orders the sends, not the reads. Taken
+    /// before `Daemon::inner` and never while it is held, which the
+    /// snapshot and the merge each lock for themselves.
+    tree_order: StdMutex<()>,
     workspaces: broadcast::Sender<Vec<WorkspaceInfo>>,
     /// Whole boards rather than one decision each: a client watching a
     /// tree being built needs the tree, and a board is small enough that
@@ -56,7 +70,7 @@ impl Pushes {
     pub(super) fn new() -> Pushes {
         Pushes {
             tree: broadcast::channel(TREE_DEPTH).0,
-            telemetry: broadcast::channel(TELEMETRY_DEPTH).0,
+            tree_order: StdMutex::new(()),
             workspaces: broadcast::channel(WORKSPACES_DEPTH).0,
             decisions: broadcast::channel(DECISIONS_DEPTH).0,
             tasks: broadcast::channel(TASKS_DEPTH).0,
@@ -68,12 +82,19 @@ impl Pushes {
         }
     }
 
-    pub(super) fn tree(&self, tree: Vec<ProjectInfo>) {
-        let _ = self.tree.send(tree);
+    /// The tree `snapshot` takes, read and sent in `tree_order`.
+    pub(super) fn tree(&self, snapshot: impl FnOnce() -> Vec<ProjectInfo>) {
+        let _order = self.tree_order.lock().unwrap();
+        let _ = self.tree.send(TreeNews::Tree(snapshot()));
     }
 
-    pub(super) fn telemetry(&self, pane: PaneId, telemetry: AgentTelemetry) {
-        let _ = self.telemetry.send((pane, telemetry));
+    /// The record `merge` folds in, merged and sent in `tree_order`;
+    /// `None` sends nothing.
+    pub(super) fn telemetry(&self, merge: impl FnOnce() -> Option<(PaneId, AgentTelemetry)>) {
+        let _order = self.tree_order.lock().unwrap();
+        if let Some((pane, telemetry)) = merge() {
+            let _ = self.tree.send(TreeNews::Telemetry { pane, telemetry: Box::new(telemetry) });
+        }
     }
 
     pub(super) fn workspaces(&self, all: Vec<WorkspaceInfo>) {
@@ -111,12 +132,17 @@ impl Pushes {
         let _ = self.extensions.send(news);
     }
 
-    pub(super) fn subscribe_tree(&self) -> broadcast::Receiver<Vec<ProjectInfo>> {
-        self.tree.subscribe()
-    }
-
-    pub(super) fn subscribe_telemetry(&self) -> broadcast::Receiver<(PaneId, AgentTelemetry)> {
-        self.telemetry.subscribe()
+    /// The tree as `snapshot` reads it, and the receiver of every tree and
+    /// report after it, both taken in `tree_order`: nothing published
+    /// between them is missed, and none of what the receiver holds is older
+    /// than the tree.
+    pub(crate) fn follow_tree(
+        &self,
+        snapshot: impl FnOnce() -> Vec<ProjectInfo>,
+    ) -> (Vec<ProjectInfo>, broadcast::Receiver<TreeNews>) {
+        let _order = self.tree_order.lock().unwrap();
+        let rx = self.tree.subscribe();
+        (snapshot(), rx)
     }
 
     pub(super) fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
@@ -153,3 +179,57 @@ impl Pushes {
         self.extensions.subscribe()
     }
 }
+
+/// A test's view of one kind of news on a channel that carries several:
+/// the other kinds are skipped, so a test written against a channel of its
+/// own reads the same after channels merge.
+#[cfg(test)]
+pub(crate) struct Pushed<N, T> {
+    rx: broadcast::Receiver<N>,
+    pick: fn(N) -> Option<T>,
+}
+
+#[cfg(test)]
+impl<N: Clone, T> Pushed<N, T> {
+    pub(crate) fn new(rx: broadcast::Receiver<N>, pick: fn(N) -> Option<T>) -> Self {
+        Pushed { rx, pick }
+    }
+
+    pub(crate) fn try_recv(&mut self) -> Result<T, broadcast::error::TryRecvError> {
+        loop {
+            if let Some(news) = (self.pick)(self.rx.try_recv()?) {
+                return Ok(news);
+            }
+        }
+    }
+
+    pub(crate) async fn recv(&mut self) -> Result<T, broadcast::error::RecvError> {
+        loop {
+            if let Some(news) = (self.pick)(self.rx.recv().await?) {
+                return Ok(news);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+impl super::Daemon {
+    pub(crate) fn subscribe_tree(&self) -> Pushed<TreeNews, Vec<ProjectInfo>> {
+        let (_, rx) = self.pushes.follow_tree(Vec::new);
+        Pushed::new(rx, |news| match news {
+            TreeNews::Tree(tree) => Some(tree),
+            TreeNews::Telemetry { .. } => None,
+        })
+    }
+
+    pub(crate) fn subscribe_telemetry(&self) -> Pushed<TreeNews, (PaneId, AgentTelemetry)> {
+        let (_, rx) = self.pushes.follow_tree(Vec::new);
+        Pushed::new(rx, |news| match news {
+            TreeNews::Telemetry { pane, telemetry } => Some((pane, *telemetry)),
+            TreeNews::Tree(_) => None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests;

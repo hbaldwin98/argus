@@ -16,7 +16,7 @@ use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::review_queue::ReviewLane;
-use crate::state::{BranchDeletion, Daemon, ExtensionNews, ViewerId};
+use crate::state::{BranchDeletion, Daemon, ExtensionNews, TreeNews, ViewerId};
 
 mod dispatch;
 
@@ -45,7 +45,10 @@ where
 
     tokio::spawn(writer_task(wr, out_rx, frames_rx, control_flushed));
 
-    if out_tx.send(ServerMsg::Tree(daemon.snapshot())).is_err() {
+    // Followed before it is read, so a change between the two is not
+    // missed until the next tree.
+    let (tree, mut tree_rx) = daemon.pushes().follow_tree(|| daemon.snapshot());
+    if out_tx.send(ServerMsg::Tree(tree)).is_err() {
         return;
     }
     if out_tx
@@ -64,8 +67,6 @@ where
     let mut conn = Connection::new(&daemon, frames_tx);
     let viewer = conn.viewer;
 
-    let mut tree_rx = daemon.subscribe_tree();
-    let mut telemetry_rx = daemon.subscribe_telemetry();
     let mut workspaces_rx = daemon.subscribe_workspaces();
     let mut decisions_rx = daemon.subscribe_decisions();
     let mut tasks_rx = daemon.subscribe_tasks();
@@ -75,8 +76,7 @@ where
 
     loop {
         tokio::select! {
-            // In order, so a tree taken before a telemetry report cannot
-            // land after it and wind that pane's numbers back.
+            // A shutdown first, then the client, then what is pushed.
             biased;
             reason = shutdown_rx.recv() => {
                 let stop_notice_queued = match reason {
@@ -103,17 +103,30 @@ where
                     break;
                 }
             }
-            Ok(tree) = tree_rx.recv() => {
-                if let Some(watch) = &mut conn.focus_watch {
-                    if let Some(msg) = watch.changed(daemon.focus_in(&tree)) {
-                        let _ = out_tx.send(msg);
-                    }
+            // A tree and a report share the channel, so they arrive in the
+            // order they were read and a tree cannot wind a pane's numbers
+            // back.
+            news = tree_rx.recv() => match news {
+                Ok(TreeNews::Tree(tree)) => send_tree(&daemon, &out_tx, &mut conn, tree),
+                Ok(TreeNews::Telemetry { pane, telemetry }) if conn.can(PANE_TELEMETRY) => {
+                    let _ = out_tx.send(ServerMsg::PaneTelemetry { pane, telemetry: *telemetry });
                 }
-                let _ = out_tx.send(ServerMsg::Tree(tree));
-                if conn.can(CONSOLES) {
-                    let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
+                // A client that cannot take one pane's record is sent them
+                // all in a tree.
+                Ok(TreeNews::Telemetry { .. }) => {
+                    let _ = out_tx.send(ServerMsg::Tree(daemon.snapshot()));
                 }
-            }
+                // One that fell behind is sent the tree, which holds every
+                // record, from a fresh receiver: the lagged one still holds
+                // trees older than it.
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let (tree, fresh) = daemon.pushes().follow_tree(|| daemon.snapshot());
+                    tree_rx = fresh;
+                    send_tree(&daemon, &out_tx, &mut conn, tree);
+                }
+                // The daemon holds the sender for as long as it runs.
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
             // Lagging only means several changes were missed, and the
             // focus is read whole either way.
             Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
@@ -123,18 +136,6 @@ where
                     let _ = out_tx.send(msg);
                 }
             }
-            report = telemetry_rx.recv() => match report {
-                Ok((pane, telemetry)) if conn.can(PANE_TELEMETRY) => {
-                    let _ = out_tx.send(ServerMsg::PaneTelemetry { pane, telemetry });
-                }
-                // A client that cannot take one pane's record, or one that
-                // fell behind the records, is sent them all in a tree.
-                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {
-                    let _ = out_tx.send(ServerMsg::Tree(daemon.snapshot()));
-                }
-                // The daemon holds the sender for as long as it runs.
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
             // A client that did not list extensions is never sent one of
             // their messages; its receiver is simply never read.
             news = extensions_rx.recv(), if conn.can(EXTENSIONS) => match news {
@@ -205,6 +206,25 @@ where
     daemon.release_viewer(viewer);
     daemon.forget_extension_viewer(viewer);
     reader.abort();
+}
+
+/// A tree, as the client is sent it: with where the person now is for a
+/// focus watcher, and the consoles beside it for a client that takes them.
+fn send_tree(
+    daemon: &Daemon,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    conn: &mut Connection,
+    tree: Vec<argus_protocol::ProjectInfo>,
+) {
+    if let Some(watch) = &mut conn.focus_watch {
+        if let Some(msg) = watch.changed(daemon.focus_in(&tree)) {
+            let _ = out_tx.send(msg);
+        }
+    }
+    let _ = out_tx.send(ServerMsg::Tree(tree));
+    if conn.can(CONSOLES) {
+        let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
+    }
 }
 
 /// The next change to the views, or never for a connection that is not

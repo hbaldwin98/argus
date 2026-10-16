@@ -362,9 +362,9 @@ impl Daemon {
     /// Merges a telemetry report into the pane's own. A nested agent's
     /// numbers are not the pane's, so a report from a child is dropped.
     ///
-    /// The merged record goes out on its own channel rather than in a
-    /// tree: this runs on every tool call, and each connection decides
-    /// whether its client can take the one pane or needs the whole tree.
+    /// The merged record goes out on its own rather than in a tree: this
+    /// runs on every tool call, and each connection decides whether its
+    /// client can take the one pane or needs the whole tree.
     pub(crate) fn report_pane_telemetry(
         &self,
         pane: PaneId,
@@ -374,18 +374,17 @@ impl Daemon {
         if self.child_of(pane, reporter).is_some() || report.is_empty() {
             return;
         }
-        let merged = {
+        // Merged under the tree's order, so no tree read before the merge
+        // can be sent after it.
+        self.pushes.telemetry(|| {
             let mut inner = self.inner.lock().unwrap();
             match find_pane(&mut inner.projects, pane) {
                 Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) => {
-                    p.telemetry.merge(report).then(|| p.telemetry.clone())
+                    p.telemetry.merge(report).then(|| (pane, p.telemetry.clone()))
                 }
                 _ => None,
             }
-        };
-        if let Some(telemetry) = merged {
-            self.pushes.telemetry(pane, telemetry);
-        }
+        });
     }
 
     /// Renames a pane, or the child that reported. The daemon does this
