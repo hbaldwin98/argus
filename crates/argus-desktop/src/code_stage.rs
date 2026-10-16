@@ -199,13 +199,11 @@ impl CodeStage {
         true
     }
 
-    /// A request of this stage's that could not be answered. A file that
-    /// would not read leaves nothing of an older one on screen; a search
-    /// that could not run says why in the search.
-    pub fn failed(&mut self, checkout: CheckoutId, request_id: u64, message: String) -> bool {
-        if checkout != self.checkout {
-            return false;
-        }
+    /// A request of this stage's that could not be answered, known by its
+    /// id alone: the window names every request from one count. A file
+    /// that would not read leaves nothing of an older one on screen; a
+    /// search that could not run says why in the search.
+    pub fn failed(&mut self, request_id: u64, message: String) -> bool {
         if let Some(search) = self.search.as_mut().filter(|s| s.asked == Some(request_id)) {
             search.asked = None;
             search.error = Some(message);
@@ -1092,7 +1090,7 @@ mod tests {
         s.open_search();
         s.search(ReviewJumpGesture::Query { text: "(".into() }, || 0);
         s.search(ReviewJumpGesture::Choose, || 20);
-        assert!(s.failed(CheckoutId(100), 20, "“(” is not a regular expression this can read".into()));
+        assert!(s.failed(20, "“(” is not a regular expression this can read".into()));
         let page = s.page(None);
         assert!(page.search.unwrap().error.is_some());
         assert!(page.failed.is_none() && !page.lines.is_empty(), "the file stays");
@@ -1121,11 +1119,11 @@ mod tests {
     #[test]
     fn a_file_that_will_not_read_says_why_where_its_lines_would_be() {
         let (mut s, _) = stage(Some("gone.rs"), None);
-        assert!(s.failed(CheckoutId(100), 2, "gone.rs is not in this version".into()));
+        assert!(s.failed(2, "gone.rs is not in this version".into()));
         let page = s.page(None);
         assert_eq!(page.failed.as_deref(), Some("gone.rs is not in this version"));
         assert!(page.lines.is_empty() && !page.file_loading);
-        assert!(!s.failed(CheckoutId(100), 99, "not mine".into()));
+        assert!(!s.failed(99, "not mine".into()));
     }
 
     #[test]

@@ -4,10 +4,10 @@
 //! is `link_dialog`'s and `reconcile_dialog`'s.
 //!
 //! Both work on the feature open on the Feature stage, so opening one puts
-//! the other away. A refusal from the daemon is the link dialog's alone: a
+//! the other away. A refusal of a link it sent is the link dialog's; a
 //! reconcile's requests say how they went on the board.
 
-use argus_protocol::{ClientMsg, DecisionBoard, Feature, PaneId, ProjectInfo};
+use argus_protocol::{ClientMsg, DecisionBoard, Feature, PaneId, ProjectInfo, RequestRefusal};
 
 use crate::feature_stage::Scope;
 use crate::link_dialog::{self, LinkDialog, LinkGesture, LinkPage};
@@ -75,6 +75,7 @@ impl TrackerDialogs {
         gesture: LinkGesture,
         board: Option<&DecisionBoard>,
         scope: &Scope,
+        id: impl FnMut() -> u64,
         out: &mut Vec<ClientMsg>,
     ) -> Then {
         let (Some(Open::Link(dialog)), Some(board)) = (self.open.as_mut(), board) else {
@@ -84,7 +85,7 @@ impl TrackerDialogs {
             self.open = None;
             return Then::Nothing;
         };
-        match dialog.gesture(gesture, feature, &board.tracker_map, scope, out) {
+        match dialog.gesture(gesture, feature, &board.tracker_map, scope, id, out) {
             link_dialog::Then::Nothing => Then::Nothing,
             link_dialog::Then::Close => {
                 self.open = None;
@@ -137,10 +138,11 @@ impl TrackerDialogs {
         }
     }
 
-    /// The daemon refused something.
-    pub fn refused(&mut self) {
-        if let Some(Open::Link(dialog)) = &mut self.open {
-            dialog.refused();
+    /// Whether `refusal` let go of the link the link dialog waits on.
+    pub fn refused(&mut self, refusal: &RequestRefusal) -> bool {
+        match &mut self.open {
+            Some(Open::Link(dialog)) => dialog.refused(refusal),
+            _ => false,
         }
     }
 
@@ -271,15 +273,30 @@ mod tests {
         dialogs.open_link(Some("trim"), Some(&board()), false).unwrap();
         let link = LinkGesture::Link { url: "https://acme.atlassian.net/browse/ARG-142".into(), role: String::new() };
         let mut out = Vec::new();
-        assert_eq!(dialogs.link_gesture(link, Some(&board()), &scope(), &mut out), Then::Nothing);
-        assert_eq!(out.len(), 1, "the link is asked of the daemon");
+        assert_eq!(dialogs.link_gesture(link, Some(&board()), &scope(), || 9, &mut out), Then::Nothing);
+        let [ClientMsg::Feature { request_id, .. }] = out[..] else {
+            panic!("the link is asked of the daemon: {out:?}");
+        };
         let pending = |dialogs: &mut TrackerDialogs| match &dialogs.take(Some(&board()), &[], None, 0)[..] {
             [Event::Link(page)] => page.pending,
             other => panic!("{other:?}"),
         };
         assert!(pending(&mut dialogs));
-        dialogs.refused();
+        assert!(dialogs.refused(&RequestRefusal { request_id, reason: "no".into(), read: false }));
         assert!(!pending(&mut dialogs));
+    }
+
+    #[test]
+    fn another_requests_refusal_leaves_the_link_waiting() {
+        let mut dialogs = TrackerDialogs::default();
+        dialogs.open_link(Some("trim"), Some(&board()), false).unwrap();
+        let link = LinkGesture::Link { url: "https://acme.atlassian.net/browse/ARG-142".into(), role: String::new() };
+        dialogs.link_gesture(link, Some(&board()), &scope(), || 9, &mut Vec::new());
+        assert!(!dialogs.refused(&RequestRefusal { request_id: 8, reason: "fetch failed".into(), read: false }));
+        let [Event::Link(page)] = &dialogs.take(Some(&board()), &[], None, 0)[..] else {
+            panic!("the link dialog is open");
+        };
+        assert!(page.pending, "still waiting on its own answer");
     }
 
     #[test]

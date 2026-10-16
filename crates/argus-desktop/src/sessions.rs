@@ -1,8 +1,9 @@
 //! What the window has asked of a repository's agent sessions — the list,
 //! what one of them said, and how each harness resumes one — and what it
-//! holds of the answers. Only the latest of each is wanted: an answer to a
-//! request since replaced is dropped. Asked only of a daemon that listed
-//! `SESSIONS`, since an older one hangs up on a message it does not know.
+//! holds of the answers, or why the daemon refused one. Only the latest of
+//! each is wanted: an answer to a request since replaced is dropped. Asked
+//! only of a daemon that listed `SESSIONS`, since an older one hangs up on
+//! a message it does not know.
 //!
 //! It also holds what each pane this window resumed a session in was
 //! resumed from. The tree does not carry it, and need not: the pane is the
@@ -21,11 +22,19 @@ use crate::status::StatusBar;
 
 #[derive(Debug, Default)]
 pub struct Sessions {
-    listing: Option<u64>,
+    /// The listing asked for, and the repository it is of.
+    listing: Option<(u64, RepositoryId)>,
     listed: Option<(RepositoryId, Vec<Session>)>,
+    /// Why the daemon would not list a repository's sessions. Held as that
+    /// listing's answer, so the dialog says it rather than waiting on it.
+    refused_list: Option<(RepositoryId, String)>,
     /// The read asked for, and the session it is of.
     reading: Option<(u64, String)>,
     read: Option<(String, Conversation)>,
+    /// Why the daemon would not read a session, by its id. Held as the
+    /// read's answer: a read wanted while nothing is held would otherwise
+    /// be asked again, and refused again, on every turn.
+    refused_read: Option<(String, String)>,
     resuming: Option<u64>,
     /// Each harness that resumes a session by id, with the argv it would
     /// run, `{session_id}` unfilled; `None` until the daemon has said.
@@ -40,7 +49,8 @@ impl Sessions {
     /// cannot take it.
     pub fn list(&mut self, status: &StatusBar, repository: RepositoryId, request_id: u64) -> Option<ClientMsg> {
         status.daemon_can(SESSIONS).then_some(())?;
-        self.listing = Some(request_id);
+        self.listing = Some((request_id, repository));
+        self.refused_list.take_if(|(refused, _)| *refused == repository);
         Some(ClientMsg::ListSessions { request_id, repository })
     }
 
@@ -49,6 +59,7 @@ impl Sessions {
     pub fn read(&mut self, status: &StatusBar, session: &Session, request_id: u64) -> Option<ClientMsg> {
         status.daemon_can(SESSIONS).then_some(())?;
         self.reading = Some((request_id, session.session_id.clone()));
+        self.refused_read.take_if(|(refused, _)| *refused == session.session_id);
         Some(ClientMsg::ReadSession {
             request_id,
             checkout: session.checkout,
@@ -70,7 +81,7 @@ impl Sessions {
     pub fn receive(&mut self, msg: ServerMsg) -> Option<ServerMsg> {
         match msg {
             ServerMsg::Sessions { request_id, repository, sessions } => {
-                if self.listing == Some(request_id) {
+                if self.listing.is_some_and(|(asked, _)| asked == request_id) {
                     self.listed = Some((repository, sessions));
                 }
                 None
@@ -90,6 +101,30 @@ impl Sessions {
             }
             other => Some(other),
         }
+    }
+
+    /// Takes the refusal of the listing or the read still wanted, holding
+    /// why in its place; false for any other request's.
+    pub fn failed(&mut self, request_id: u64, reason: &str) -> bool {
+        if let Some((_, repository)) = self.listing.take_if(|(asked, _)| *asked == request_id) {
+            self.refused_list = Some((repository, reason.to_owned()));
+            return true;
+        }
+        if let Some((_, session_id)) = self.reading.take_if(|(asked, _)| *asked == request_id) {
+            self.refused_read = Some((session_id, reason.to_owned()));
+            return true;
+        }
+        false
+    }
+
+    /// Why the daemon would not list `repository`'s sessions.
+    pub fn list_refusal(&self, repository: RepositoryId) -> Option<&str> {
+        self.refused_list.as_ref().filter(|(r, _)| *r == repository).map(|(_, why)| why.as_str())
+    }
+
+    /// Why the daemon would not read what `session_id` said.
+    pub fn read_refusal(&self, session_id: &str) -> Option<&str> {
+        self.refused_read.as_ref().filter(|(id, _)| id == session_id).map(|(_, why)| why.as_str())
     }
 
     pub fn listed(&self, repository: RepositoryId) -> Option<&[Session]> {
@@ -229,6 +264,30 @@ mod tests {
         assert_eq!(sessions.transcript("s1"), Some(&conversation));
         assert!(!sessions.reading("s1"), "answered");
         assert!(sessions.receive(ServerMsg::Restarting).is_some(), "not its to take");
+    }
+
+    #[test]
+    fn a_refusal_is_held_for_the_ask_it_answers_and_another_is_not() {
+        let hello = daemon(&[SESSIONS]);
+        let mut sessions = Sessions::default();
+        sessions.list(&hello, RepositoryId(1), 1);
+        sessions.read(&hello, &session("s1"), 2);
+        assert!(!sessions.failed(9, "not ours"), "neither asked it");
+        assert!(sessions.list_refusal(RepositoryId(1)).is_none() && sessions.read_refusal("s1").is_none());
+        assert!(sessions.reading("s1"), "and the read still waits");
+
+        assert!(sessions.failed(2, "no such checkout: 3"));
+        assert_eq!(sessions.read_refusal("s1"), Some("no such checkout: 3"));
+        assert!(!sessions.reading("s1"));
+        assert!(sessions.failed(1, "gone"));
+        assert_eq!(sessions.list_refusal(RepositoryId(1)), Some("gone"));
+        assert!(sessions.list_refusal(RepositoryId(2)).is_none());
+        assert!(!sessions.failed(1, "again"), "answered once");
+
+        // Asked again, the refusal is no longer the answer.
+        sessions.list(&hello, RepositoryId(1), 3);
+        sessions.read(&hello, &session("s1"), 4);
+        assert!(sessions.list_refusal(RepositoryId(1)).is_none() && sessions.read_refusal("s1").is_none());
     }
 
     #[tokio::test]

@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 
-use argus_protocol::{Capture, CapturedDecision, CapturedTask, ClientMsg, DecisionBoard};
+use argus_protocol::{Capture, CapturedDecision, CapturedTask, ClientMsg, DecisionBoard, RequestRefusal};
 use serde::{Deserialize, Serialize};
 
 use crate::feature_stage::Scope;
@@ -79,9 +79,16 @@ pub struct NoteDecision {
 
 pub struct CaptureNote {
     note: String,
-    /// What Create sent: the title asked for and the slugs the board held
-    /// then, so the feature it made is the one that was not there.
-    sent: Option<(String, HashSet<String>)>,
+    sent: Option<Sending>,
+}
+
+/// What Create sent: the id it named the write with, the title asked for
+/// and the slugs the board held then, so the feature it made is the one
+/// that was not there.
+struct Sending {
+    request_id: u64,
+    title: String,
+    before: HashSet<String>,
 }
 
 impl CaptureNote {
@@ -96,30 +103,42 @@ impl CaptureNote {
     /// Sends the note as a feature on `scope`'s board, or says why it is
     /// not ready. Sent once: a second Create while the first is out would
     /// make the feature twice.
-    pub fn create(&mut self, note: String, scope: &Scope, board: Option<&DecisionBoard>, out: &mut Vec<ClientMsg>) -> Result<(), String> {
+    pub fn create(
+        &mut self,
+        note: String,
+        scope: &Scope,
+        board: Option<&DecisionBoard>,
+        request_id: u64,
+        out: &mut Vec<ClientMsg>,
+    ) -> Result<(), String> {
         self.note = note;
         if self.sent.is_some() {
             return Ok(());
         }
         let action = Capture::write(&self.note, None).map_err(str::to_string)?;
         let before = board.map(|b| b.features.iter().map(|f| f.slug.clone()).collect()).unwrap_or_default();
-        self.sent = Some((Capture::parse(&self.note).title, before));
-        out.push(ClientMsg::Feature { project: scope.project, checkout: scope.checkout, action, request_id: 0 });
+        self.sent = Some(Sending { request_id, title: Capture::parse(&self.note).title, before });
+        out.push(ClientMsg::Feature { project: scope.project, checkout: scope.checkout, action, request_id });
         Ok(())
     }
 
-    /// The daemon refused what was sent: the note can be fixed and sent again.
-    pub fn refused(&mut self) -> bool {
-        self.sent.take().is_some()
+    /// The daemon refused what was sent: the note can be fixed and sent
+    /// again. False for a refusal of anything else.
+    pub fn refused(&mut self, refusal: &RequestRefusal) -> bool {
+        if !self.sent.as_ref().is_some_and(|s| refusal.refuses_change(s.request_id)) {
+            return false;
+        }
+        self.sent = None;
+        true
     }
 
     /// The slug of the feature the note became, once `board` holds it.
     pub fn landed(&self, board: &DecisionBoard) -> Option<String> {
-        let (title, before) = self.sent.as_ref()?;
+        let sent = self.sent.as_ref()?;
         board
             .features
             .iter()
-            .find(|f| !before.contains(&f.slug) && f.title == *title)
+            .find(|f| !sent.before.contains(&f.slug) && f.title == sent.title)
             .map(|f| f.slug.clone())
     }
 
@@ -270,7 +289,7 @@ The recent-sessions dialog previews what was said.
         assert!(page.blocked.is_some());
 
         let mut out = Vec::new();
-        let refused = note.create("Title\n- A task\n  prose under it\n".into(), &scope(), None, &mut out);
+        let refused = note.create("Title\n- A task\n  prose under it\n".into(), &scope(), None, 4, &mut out);
         assert!(refused.is_err() && out.is_empty(), "nothing is sent");
     }
 
@@ -279,8 +298,8 @@ The recent-sessions dialog previews what was said.
         let mut note = CaptureNote::new();
         let board = fixtures::board();
         let mut out = Vec::new();
-        note.create(NOTE.into(), &scope(), Some(&board), &mut out).unwrap();
-        note.create(NOTE.into(), &scope(), Some(&board), &mut out).unwrap();
+        note.create(NOTE.into(), &scope(), Some(&board), 4, &mut out).unwrap();
+        note.create(NOTE.into(), &scope(), Some(&board), 5, &mut out).unwrap();
         assert_eq!(out.len(), 1, "a second Create while the first is out sends nothing");
         let ClientMsg::Feature { action: FeatureAction::Capture { into: None, capture }, .. } = &out[0] else {
             panic!("{:?}", out[0]);
@@ -303,10 +322,14 @@ The recent-sessions dialog previews what was said.
     fn a_refused_note_can_be_sent_again() {
         let mut note = CaptureNote::new();
         let mut out = Vec::new();
-        note.create(NOTE.into(), &scope(), None, &mut out).unwrap();
-        assert!(note.refused());
+        note.create(NOTE.into(), &scope(), None, 4, &mut out).unwrap();
+        assert!(matches!(&out[..], [ClientMsg::Feature { request_id: 4, .. }]), "the write names itself");
+        let refusal = |request_id| RequestRefusal { request_id, reason: "no".into(), read: false };
+        assert!(!note.refused(&refusal(3)), "another request's refusal");
+        assert!(note.page("argus").creating);
+        assert!(note.refused(&refusal(4)));
         assert!(!note.page("argus").creating);
-        note.create(NOTE.into(), &scope(), None, &mut out).unwrap();
+        note.create(NOTE.into(), &scope(), None, 5, &mut out).unwrap();
         assert_eq!(out.len(), 2);
     }
 }

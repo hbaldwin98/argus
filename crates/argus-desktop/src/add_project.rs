@@ -9,7 +9,7 @@
 //! each answer is taken only if it is for the last thing asked: a slow
 //! listing must not land in a folder the person has since left.
 
-use argus_protocol::{ClientMsg, DirListing, ProjectPreview};
+use argus_protocol::{ClientMsg, DirListing, ProjectPreview, RequestRefusal};
 use serde::{Deserialize, Serialize};
 
 use crate::page::Event;
@@ -108,8 +108,6 @@ pub struct AddProject {
     folder: String,
     /// The add, named, until the daemon answers it.
     adding: Option<u64>,
-    /// A refused add waits for the daemon's reason, which follows it.
-    reason_due: bool,
     refusal: Option<String>,
 }
 
@@ -126,7 +124,6 @@ impl AddProject {
             skip: String::new(),
             folder: String::new(),
             adding: None,
-            reason_due: false,
             refusal: None,
         };
         dialog.browse(String::new(), request_id, out);
@@ -266,20 +263,14 @@ impl AddProject {
         Ok(ClientMsg::AddProject { path, request_id, name, skip, init: self.kind == AddKind::New })
     }
 
-    /// The daemon refused request `request_id`; its reason comes next.
-    pub fn refused(&mut self, request_id: u64) {
-        if self.adding == Some(request_id) {
-            self.adding = None;
-            self.reason_due = true;
-        }
-    }
-
-    /// The daemon's error, if it is the reason the add was refused.
-    pub fn take_reason(&mut self, message: &str) -> bool {
-        if !std::mem::take(&mut self.reason_due) {
+    /// Takes the daemon's refusal of the add waiting on it, saying why in
+    /// the dialog; false for any other request's.
+    pub fn refused(&mut self, refusal: &RequestRefusal) -> bool {
+        if self.adding != Some(refusal.request_id) {
             return false;
         }
-        self.refusal = Some(message.to_string());
+        self.adding = None;
+        self.refusal = Some(refusal.reason.clone());
         true
     }
 
@@ -288,7 +279,6 @@ impl AddProject {
     /// which the tree will say.
     pub fn reconnected(&mut self, request_id: u64, out: &mut Vec<ClientMsg>) {
         self.adding = None;
-        self.reason_due = false;
         self.previewing = None;
         let path = self.listing.as_ref().map(|l| l.path.clone()).unwrap_or_default();
         self.browse(path, request_id, out);
@@ -501,9 +491,14 @@ mod tests {
         let mut dialog = browsed(&["web"]);
         dialog.set_fields("work".into(), String::new(), String::new(), || 9, &mut Vec::new());
         dialog.add(6).unwrap();
-        assert!(!dialog.take_reason("something else"), "no add was refused yet");
-        dialog.refused(6);
-        assert!(dialog.take_reason("there is already a project called work"));
+        let refusal = |request_id| RequestRefusal {
+            request_id,
+            reason: "there is already a project called work".into(),
+            read: false,
+        };
+        assert!(!dialog.refused(&refusal(5)), "another request's refusal is not the add's");
+        assert!(dialog.page().adding);
+        assert!(dialog.refused(&refusal(6)));
         let page = dialog.page();
         assert_eq!((page.adding, page.name.as_str()), (false, "work"));
         assert_eq!(page.refusal.as_deref(), Some("there is already a project called work"));

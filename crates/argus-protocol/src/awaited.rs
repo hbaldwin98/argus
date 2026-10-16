@@ -54,10 +54,10 @@ impl<Then> Awaited<Then> {
         self.last
     }
 
-    /// The daemon's answer. A refusal forgets the request — its reason
-    /// arrives as an error — and a thing made waits for the tree. An answer
-    /// to a request this client did not make, or no longer holds, is
-    /// another client's or too late, and changes nothing.
+    /// The daemon's answer. A refusal forgets the request; saying why is
+    /// the client's. A thing made waits for the tree. An answer to a
+    /// request this client did not make, or no longer holds, is another
+    /// client's or too late, and changes nothing.
     pub fn answer(&mut self, request_id: u64, created: Option<Created>) {
         let Some(at) = self.asked.iter().position(|(id, _)| *id == request_id) else {
             return;

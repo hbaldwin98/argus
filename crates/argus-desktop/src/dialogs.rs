@@ -1,11 +1,12 @@
 //! The review and history dialogs as the window holds them: which is
-//! open or parked, the daemon's answers routed to the one that asked
-//! whether open or parked, the side and layout the next review opens on,
-//! and what the page was last sent of each. What each dialog holds and
-//! draws is `review`'s and `history`'s; the history gives way to the
-//! review of a commit chosen in it.
+//! open or parked, the daemon's answers and refusals routed to the one
+//! that asked whether open or parked, the side and layout the next
+//! review opens on, and what the page was last sent of each. What each
+//! dialog holds and draws is `review`'s and `history`'s; the history
+//! gives way to the review of a commit chosen in it.
 
-use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, ServerMsg};
+use argus_protocol::review_session::Answered;
+use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, RequestRefusal, ServerMsg};
 
 use crate::history::{HistoryDialog, Then};
 use crate::keymap::Action;
@@ -50,9 +51,8 @@ impl Dialogs {
     }
 
     /// Hands a daemon message to the dialog that asked for it, giving back
-    /// any message neither takes. A commit's diff the history asked for,
-    /// or why it could not be read, is the history's, though it comes as a
-    /// review.
+    /// any message neither takes. A commit's diff the history asked for is
+    /// the history's, though it comes as a review.
     pub fn receive(&mut self, msg: ServerMsg, say: &mut Vec<Event>) -> Option<ServerMsg> {
         match msg {
             ServerMsg::Review(review) => {
@@ -64,20 +64,9 @@ impl Dialogs {
                     dialog.receive(review);
                 }
             }
-            ServerMsg::ReviewFailed { request_id, message, .. } => {
-                let taken = self.histories().any(|h| h.diff_failed(request_id, message.clone()));
-                if let Some(dialog) = self.review_mut().filter(|_| !taken) {
-                    dialog.failed(request_id, message);
-                }
-            }
             ServerMsg::ReviewContext(context) => {
                 if let Some(dialog) = self.review_mut() {
                     dialog.receive_context(context);
-                }
-            }
-            ServerMsg::ReviewContextFailed { request_id, message, .. } => {
-                if self.review_mut().is_some_and(|d| d.context_failed(request_id)) {
-                    say.push(Event::Notice { text: message });
                 }
             }
             // The save names no box, so it goes to every review there is,
@@ -96,11 +85,6 @@ impl Dialogs {
                     history.receive_commits(request_id, commits.clone());
                 }
             }
-            ServerMsg::CommitsFailed { request_id, message, .. } => {
-                for history in self.histories() {
-                    history.commits_failed(request_id, message.clone());
-                }
-            }
             ServerMsg::CommitFiles { checkout, commit, files } => {
                 for history in self.histories() {
                     history.receive_files(checkout, &commit, files.clone());
@@ -115,6 +99,27 @@ impl Dialogs {
             other => return Some(other),
         }
         None
+    }
+
+    /// A refusal of a request one of the dialogs made, taken by the one
+    /// that made it, open or parked: a history's list, a commit's diff it
+    /// asked for and a review side say it in place, a fold as a notice.
+    /// False when none asked.
+    pub fn refused(&mut self, refusal: &RequestRefusal, say: &mut Vec<Event>) -> bool {
+        let (id, reason) = (refusal.request_id, &refusal.reason);
+        for history in self.histories() {
+            if history.commits_failed(id, reason.clone()) || history.diff_failed(id, reason.clone()) {
+                return true;
+            }
+        }
+        let Some(review) = self.review_mut() else {
+            return false;
+        };
+        if review.context_failed(id) {
+            say.push(Event::Notice { text: reason.clone() });
+            return true;
+        }
+        review.failed(id, reason.clone()) != Answered::Stale
     }
 
     /// Every history answers can be for: the open one, then the one parked
@@ -551,16 +556,20 @@ mod tests {
         assert!(page.comment.is_some() && page.pick.is_some());
     }
 
+    fn refusal(request_id: u64, reason: &str) -> RequestRefusal {
+        RequestRefusal { request_id, reason: reason.into(), read: true }
+    }
+
     /// The daemon refuses a review of a checkout that is gone under its
     /// ids; the review says why where the person is looking.
     #[test]
     fn a_review_of_a_checkout_that_is_gone_says_why_in_the_review() {
         let mut dialogs = reviewing(ReviewLayout::default());
         for request_id in [1, 2] {
-            let msg = ServerMsg::ReviewFailed { request_id, checkout: CheckoutId(100), message: "no such checkout".into() };
-            assert!(dialogs.receive(msg, &mut Vec::new()).is_none());
+            assert!(dialogs.refused(&refusal(request_id, "no such checkout"), &mut Vec::new()));
         }
         assert_eq!(dialogs.review().unwrap().page(None).empty.as_deref(), Some("no such checkout"));
+        assert!(!dialogs.refused(&refusal(99, "another's"), &mut Vec::new()), "not a request either made");
     }
 
     /// A history over one commit of one file, with the cursor on that file:
@@ -603,10 +612,12 @@ mod tests {
         dialogs.open_review(CheckoutId(100), &tree(), &mut id, &mut Vec::new());
         let asked = history_on_a_file(&mut dialogs, &mut id);
 
-        let msg = ServerMsg::ReviewFailed { request_id: asked, checkout: CheckoutId(100), message: "bad object".into() };
-        assert!(dialogs.receive(msg, &mut Vec::new()).is_none());
+        let mut say = Vec::new();
+        assert!(dialogs.refused(&refusal(asked, "bad object"), &mut say));
+        assert!(say.is_empty(), "said in place, not as a notice");
         let page = history_page(&mut dialogs);
         assert_eq!((page.diff_empty.as_deref(), page.diff_loading), (Some("bad object"), false));
+        assert!(dialogs.review().unwrap().page(None).empty.is_none(), "and the review beside it was handed nothing");
     }
 
     /// The Code stage reads while a history's diff is still out: the
@@ -652,8 +663,7 @@ mod tests {
         let open = history_page(&mut dialogs);
 
         assert!(dialogs.receive(ServerMsg::Review(diff_of(a, "a.md")), say).is_none());
-        let failed = ServerMsg::ReviewFailed { request_id: b, checkout: CheckoutId(100), message: "bad object".into() };
-        assert!(dialogs.receive(failed, say).is_none());
+        assert!(dialogs.refused(&refusal(b, "bad object"), say));
         assert_eq!(history_page(&mut dialogs), open, "the open history was handed nothing");
 
         assert!(dialogs.unpark());

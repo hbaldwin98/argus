@@ -91,10 +91,14 @@ impl HistoryDialog {
         }
     }
 
-    pub fn commits_failed(&mut self, request_id: u64, message: String) {
-        if request_id == self.asked {
-            self.failed = Some(message);
+    /// Whether `request_id` was the list asked for, which then says why it
+    /// could not be read.
+    pub fn commits_failed(&mut self, request_id: u64, message: String) -> bool {
+        if request_id != self.asked {
+            return false;
         }
+        self.failed = Some(message);
+        true
     }
 
     pub fn receive_files(&mut self, checkout: CheckoutId, commit: &str, files: Vec<CommitFile>) {
@@ -451,6 +455,18 @@ mod tests {
         assert!(d.page(0).rows[0].on);
         assert!(matches!(d.select_row(1, || 1), Then::Nothing));
         assert!(d.page(0).rows[0].on, "a hidden row cannot be clicked");
+    }
+
+    #[test]
+    fn a_failed_list_is_said_in_the_dialog_and_another_requests_is_not() {
+        let (mut d, _) = HistoryDialog::open(&checkout(100, "main", true, Vec::new()), 5);
+        assert!(!d.commits_failed(6, "not this one's".into()));
+        let page = d.page(0);
+        assert!(page.loading && page.empty.is_none());
+        assert!(d.commits_failed(5, "no such checkout: 100".into()));
+        let page = d.page(0);
+        assert!(!page.loading);
+        assert_eq!(page.empty.as_deref(), Some("no such checkout: 100"));
     }
 
     #[test]

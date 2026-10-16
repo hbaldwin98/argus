@@ -345,10 +345,12 @@ impl SessionsDialog {
     }
 
     /// The read the session under the cursor wants: what it said, asked
-    /// once, while nothing of it is held or on its way.
+    /// once, while nothing of it is held or on its way. A refused read is
+    /// held as its answer, or it would be asked again on every turn.
     pub fn wants_read<'a>(&self, sessions: &'a Sessions, tree: &[ProjectInfo]) -> Option<&'a Session> {
         let session = self.selected(sessions, tree)?;
-        let held = sessions.transcript(&session.session_id).is_some() || sessions.reading(&session.session_id);
+        let id = &session.session_id;
+        let held = sessions.transcript(id).is_some() || sessions.reading(id) || sessions.read_refusal(id).is_some();
         (!held).then_some(session)
     }
 
@@ -389,6 +391,10 @@ impl SessionsDialog {
         };
         if self.unsupported {
             page.empty = Some("This argusd cannot list sessions: update it, and restart it.".into());
+            return page;
+        }
+        if let Some(why) = sessions.list_refusal(self.repository) {
+            page.empty = Some(why.to_owned());
             return page;
         }
         let Some(listed) = sessions.listed(self.repository) else {
@@ -506,8 +512,9 @@ fn offer(session: &Session, sessions: &Sessions, tree: &[ProjectInfo]) -> Offer 
 
 fn preview(session: &Session, sessions: &Sessions, tree: &[ProjectInfo]) -> SessionPreview {
     let conversation = sessions.transcript(&session.session_id);
+    let refused = sessions.read_refusal(&session.session_id);
     let (entries, earlier, notice) = match conversation {
-        None => (Vec::new(), 0, None),
+        None => (Vec::new(), 0, refused.map(str::to_owned)),
         Some(Conversation::NoTranscript) => {
             (Vec::new(), 0, Some(format!("{} keeps no transcript Argus can read.", session.harness)))
         }
@@ -531,7 +538,7 @@ fn preview(session: &Session, sessions: &Sessions, tree: &[ProjectInfo]) -> Sess
         checkout: place(session, tree),
         session_id: session.session_id.clone(),
         started: session.started.clone(),
-        loading: conversation.is_none(),
+        loading: conversation.is_none() && refused.is_none(),
         notice,
         entries,
         earlier,

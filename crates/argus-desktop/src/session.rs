@@ -34,10 +34,11 @@ use argus_protocol::keys::{Key, KeyCode, Mods};
 use argus_protocol::mouse::{self, MouseButton, MouseEvent, MouseKind};
 use argus_protocol::pane_view::{Effect, PaneView};
 use argus_protocol::paste;
+use argus_protocol::request_refusal::OlderDaemon;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
-    RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS, PASTE_FILE,
-    RENAME_PANE, SAVED_VIEWS, CODE, CodeVersion,
+    RepositoryId, RequestRefusal, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS,
+    PASTE_FILE, RENAME_PANE, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion,
 };
 
 use crate::add_project::{AddProject, AddProjectGesture, Adding};
@@ -128,6 +129,8 @@ pub struct Session {
     console: Console,
     docks: Docks,
     awaited: Awaited<Made>,
+    /// An older daemon's refusals, read as this one's.
+    older: OlderDaemon,
     agents: Agents,
     views: AgentViews,
     /// The views agents saved, and the columns of each panel showing them.
@@ -209,6 +212,7 @@ impl Session {
             console: Console::default(),
             docks: Docks::new(settings.docks.unwrap_or_default()),
             awaited: Awaited::default(),
+            older: OlderDaemon::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
             saved: SavedViews::default(),
@@ -309,6 +313,7 @@ impl Session {
         self.awaited.forget_asked();
         self.features.forget_asked();
         self.sessions = Sessions::default();
+        self.older = OlderDaemon::default();
         for msg in opening {
             self.apply(msg);
         }
@@ -340,7 +345,16 @@ impl Session {
         self.finish()
     }
 
+    /// A daemon message, an older daemon's refusals read as this one's
+    /// first, so the window hears a refusal one way.
     fn apply(&mut self, msg: ServerMsg) {
+        let msg = if self.status.daemon_can(REQUEST_REFUSALS) { Some(msg) } else { self.older.read(msg) };
+        if let Some(msg) = msg {
+            self.route(msg);
+        }
+    }
+
+    fn route(&mut self, msg: ServerMsg) {
         // The review's comment path is the Code stage's too: each box knows
         // whether the comment the daemon saved was its own.
         if let (ServerMsg::ReviewCommentSaved { .. }, Some(code)) = (&msg, &mut self.code) {
@@ -364,9 +378,6 @@ impl Session {
                 self.tree.as_mut_slice().apply_telemetry(pane, telemetry);
             }
             ServerMsg::Created { request_id, created } => {
-                if let (Some(dialog), None) = (self.adding.get_mut(), created) {
-                    dialog.refused(request_id);
-                }
                 self.awaited.answer(request_id, created);
                 self.settle_made();
             }
@@ -381,24 +392,15 @@ impl Session {
                     dialog.previewed(preview);
                 }
             }
-            // A refused add's reason is said in its dialog, which is over
-            // the notices.
-            ServerMsg::Error { message } if self.adding.get_mut().is_some_and(|d| d.take_reason(&message)) => {}
             ServerMsg::BranchNotMerged { checkout, branch, commits } => {
                 self.checkouts.refused(checkout, branch, &commits, argus_protocol::ago::now());
             }
             ServerMsg::Clipboard { pane, text } if Some(pane) == self.shown.pane() => {
                 self.passing.push(Event::Clipboard { text });
             }
-            // The note stays open to be fixed, and Create can be pressed
-            // again; the reason is said like any other.
-            ServerMsg::Error { message } => {
-                if let Some(note) = self.capture.get_mut() {
-                    note.refused();
-                }
-                self.tracker_dialogs.refused();
-                self.passing.push(Event::Notice { text: message });
-            }
+            // A refusal of a request that named none.
+            ServerMsg::Error { message } => self.passing.push(Event::Notice { text: message }),
+            ServerMsg::Refused(refusal) => self.refused(refusal),
             ServerMsg::Hello(hello) => self.status.greeted(hello),
             ServerMsg::Restarting => self.passing.push(Event::Notice {
                 text: "argusd is restarting".into(),
@@ -467,14 +469,34 @@ impl Session {
                     code.receive_matches(found);
                 }
             }
-            ServerMsg::CodeFailed { request_id, checkout, message } => {
-                if let Some(code) = &mut self.code {
-                    code.failed(checkout, request_id, message);
-                }
-            }
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
             _ => {}
+        }
+    }
+
+    /// A request this window named was refused. The part that asked takes
+    /// it: the add dialog, the review and history, the Code stage and the
+    /// sessions dialog say why where they asked; a note or a link waiting
+    /// on it lets go, and the reason is said under it. A refused change
+    /// nobody waits on is said all the same; a refused read nobody wants is
+    /// dropped, as its answer would have been.
+    fn refused(&mut self, refusal: RequestRefusal) {
+        let id = refusal.request_id;
+        self.awaited.answer(id, None);
+        let said = self.adding.get_mut().is_some_and(|d| d.refused(&refusal))
+            || self.dialogs.refused(&refusal, &mut self.passing)
+            || self.code.as_mut().is_some_and(|c| c.failed(id, refusal.reason.clone()))
+            || self.sessions.failed(id, &refusal.reason);
+        if said {
+            return;
+        }
+        // Not short-circuited: an older daemon's bare error lets go of
+        // every change waiting on one.
+        let waited = self.capture.get_mut().is_some_and(|n| n.refused(&refusal))
+            | self.tracker_dialogs.refused(&refusal);
+        if waited || !refusal.read {
+            self.passing.push(Event::Notice { text: refusal.reason });
         }
     }
 
@@ -869,7 +891,8 @@ impl Session {
 
     fn link_gesture(&mut self, gesture: LinkGesture) -> Vec<ClientMsg> {
         if let Some(scope) = self.scope() {
-            let then = self.tracker_dialogs.link_gesture(gesture, self.features.board(), &scope, &mut self.out);
+            let (tracker, awaited) = (&mut self.tracker_dialogs, &mut self.awaited);
+            let then = tracker.link_gesture(gesture, self.features.board(), &scope, || awaited.name(), &mut self.out);
             self.tracker_then(then);
         }
         self.finish()
@@ -2403,10 +2426,11 @@ impl Session {
             }
             CaptureGesture::Create { note } => {
                 let scope = self.scope();
+                let request_id = self.awaited.name();
                 let (Some(capture), Some(scope)) = (self.capture.get_mut(), scope) else {
                     return self.note("no repository to write the feature in");
                 };
-                if let Err(why) = capture.create(note, &scope, self.features.board(), &mut self.out) {
+                if let Err(why) = capture.create(note, &scope, self.features.board(), request_id, &mut self.out) {
                     self.passing.push(Event::Notice { text: why });
                 }
             }
@@ -3328,6 +3352,16 @@ mod tests {
         Hello { capabilities: Vec::new(), ..Hello::this_build() }
     }
 
+    /// A daemon that refuses a named request by its id.
+    fn refusing() -> Hello {
+        let capabilities = [REQUEST_REFUSALS, ADD_PROJECT, argus_protocol::SESSIONS, CODE];
+        Hello { capabilities: capabilities.map(String::from).to_vec(), ..Hello::this_build() }
+    }
+
+    fn refusal(request_id: u64, reason: &str, read: bool) -> ServerMsg {
+        ServerMsg::Refused(RequestRefusal { request_id, reason: reason.into(), read })
+    }
+
     fn names(msgs: &[ClientMsg]) -> Vec<String> {
         msgs.iter()
             .map(|m| match m {
@@ -3633,6 +3667,50 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_commit_diff_lets_the_history_ask_for_it_again() {
+        let mut s = session(refusing());
+        s.show_checkouts(true);
+        let sent = s.open_history(CheckoutId(100));
+        let Some(ClientMsg::ListCommits { request_id, .. }) = sent.iter().find(|m| matches!(m, ClientMsg::ListCommits { .. })) else {
+            panic!("{:?}", names(&sent));
+        };
+        let oid = "a".repeat(40);
+        let commit = argus_protocol::CommitInfo {
+            oid: oid.clone(),
+            short: "aaaaaaa".into(),
+            summary: "Wake a pane's pump".into(),
+            author: "hunt".into(),
+            time: 0,
+        };
+        s.receive(ServerMsg::Commits { request_id: *request_id, checkout: CheckoutId(100), commits: vec![commit] });
+        s.history_action(Action::Unfold, None);
+        let files = vec![crate::fixtures::commit_file("a.md")];
+        s.receive(ServerMsg::CommitFiles { checkout: CheckoutId(100), commit: oid, files });
+        let asked = |sent: Vec<ClientMsg>| {
+            sent.into_iter().find_map(|m| match m {
+                ClientMsg::Review { request_id, .. } => Some(request_id),
+                _ => None,
+            })
+        };
+        let diff = asked(s.history_action(Action::Next, None)).expect("the file's diff is asked for");
+        s.events(0);
+
+        s.receive(refusal(diff, "bad object", true));
+        let events = s.events(0);
+        assert!(!events.iter().any(|e| matches!(e, Event::Notice { .. })), "said in place, not under it");
+        let page = events.into_iter().find_map(|e| match e {
+            Event::History(page) => Some(*page),
+            _ => None,
+        });
+        let page = page.expect("the history is drawn again");
+        assert_eq!((page.diff_empty.as_deref(), page.diff_loading), (Some("bad object"), false));
+
+        s.history_action(Action::Previous, None);
+        let again = asked(s.history_action(Action::Next, None)).expect("asked again when the cursor comes back");
+        assert_ne!(again, diff);
+    }
+
+    #[test]
     fn the_code_stage_opens_on_the_checkout_picked_in_checkouts_and_keeps_it() {
         let mut s = session(Hello::this_build());
         s.show_checkouts(true);
@@ -3641,6 +3719,36 @@ mod tests {
         s.show_features(false);
         assert!(code_asks(s.show_code(true)).is_empty(), "left as it was, not read again");
         assert!(s.stages.now() == Stage::Code);
+    }
+
+    #[test]
+    fn a_refused_code_search_says_why_in_the_search_and_a_stale_one_is_dropped() {
+        let mut s = session(refusing());
+        s.show_checkouts(true);
+        s.show_code(true);
+        s.code_action(Action::Search);
+        let search = |s: &mut Session, text: &str| {
+            s.call(Call::CodeSearch { gesture: ReviewJumpGesture::Query { text: text.into() } });
+            let sent = code_asks(s.call(Call::CodeSearch { gesture: ReviewJumpGesture::Choose }));
+            let [ClientMsg::SearchCode { request_id, .. }] = sent.as_slice() else {
+                panic!("{:?}", names(&sent));
+            };
+            *request_id
+        };
+        let error = |s: &Session| s.code.as_ref().unwrap().page(None).search.unwrap().error;
+
+        let first = search(&mut s, "(");
+        s.events(0);
+        s.receive(refusal(first, "“(” is not a regular expression this can read", true));
+        assert_eq!(error(&s).as_deref(), Some("“(” is not a regular expression this can read"));
+        assert!(notices(&mut s).is_empty(), "said in the search, not under it");
+
+        let second = search(&mut s, "brief");
+        s.receive(refusal(first, "late", true));
+        assert_eq!(error(&s), None, "a refusal of the search before is dropped");
+        assert!(notices(&mut s).is_empty());
+        s.receive(refusal(second, "the glob is not one this can read", true));
+        assert_eq!(error(&s).as_deref(), Some("the glob is not one this can read"));
     }
 
     #[test]
@@ -4178,6 +4286,16 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_read_no_one_waits_on_is_dropped_and_a_refused_change_is_said() {
+        let mut s = session(refusing());
+        s.events(0);
+        s.receive(refusal(999, "that search is long gone", true));
+        assert!(s.events(0).is_empty(), "dropped, as its answer would have been");
+        s.receive(refusal(998, "no such checkout: 9999", false));
+        assert_eq!(notices(&mut s), ["no such checkout: 9999"]);
+    }
+
+    #[test]
     fn opening_the_feature_stage_asks_for_the_chosen_repositorys_board() {
         let mut s = session(without_focus());
         assert!(names(&s.show_features(true)).iter().any(|m| m.starts_with("GetDecisions")));
@@ -4228,6 +4346,52 @@ mod tests {
         s.receive(ServerMsg::Decisions(Box::new(board)));
         assert!(!capture_page(&mut s).unwrap().open, "the note is done with");
         assert_eq!(s.features.opened(), Some("readers"));
+    }
+
+    /// Only the refusal of the write a note or a link waits on lets go of
+    /// it: a failed fetch, or any other request's refusal, says so and
+    /// leaves it waiting on its own answer.
+    #[test]
+    fn an_unrelated_refusal_leaves_a_waiting_note_and_link_alone() {
+        let mut s = session(refusing());
+        s.run_command(Action::NewFeature);
+        s.finish();
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        let note = "Bring the readers back\n- Restore them\n";
+        let sent = s.call(Call::Capture { gesture: CaptureGesture::Create { note: note.into() } });
+        let Some(&ClientMsg::Feature { request_id, .. }) = sent.iter().find(|m| matches!(m, ClientMsg::Feature { .. })) else {
+            panic!("{:?}", names(&sent));
+        };
+        assert_ne!(request_id, 0, "the write names itself");
+        let creating = |s: &mut Session| s.capture.get_mut().unwrap().page("argus").creating;
+        s.receive(ServerMsg::Error { message: "fetch failed".into() });
+        s.receive(refusal(request_id + 100, "no such checkout: 9999", false));
+        assert!(creating(&mut s), "still waiting on its own answer");
+        s.events(0);
+        s.receive(refusal(request_id, "a feature with that title exists", false));
+        assert!(!creating(&mut s), "refused: still open, to send again");
+        assert_eq!(notices(&mut s), ["a feature with that title exists"]);
+
+        let mut s = session(refusing());
+        s.show_features(true);
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        s.call(Call::OpenFeature { slug: Some("trim".into()) });
+        s.call(Call::Command { action: Action::LinkTicket });
+        let gesture = LinkGesture::Link { url: "https://acme.atlassian.net/browse/ARG-142".into(), role: String::new() };
+        let sent = s.call(Call::Link { gesture });
+        let Some(&ClientMsg::Feature { request_id, .. }) = sent.iter().find(|m| matches!(m, ClientMsg::Feature { .. })) else {
+            panic!("{:?}", names(&sent));
+        };
+        let pending = |s: &mut Session| {
+            s.tracker_dialogs.reload();
+            link_page(s).unwrap().pending
+        };
+        assert!(pending(&mut s));
+        s.receive(ServerMsg::Error { message: "fetch failed".into() });
+        s.receive(refusal(request_id + 100, "no such checkout: 9999", false));
+        assert!(pending(&mut s), "still waiting on its own answer");
+        s.receive(refusal(request_id, "ARG-142 is linked already", false));
+        assert!(!pending(&mut s));
     }
 
     #[test]
@@ -5194,7 +5358,11 @@ mod tests {
     /// the listing — a live session on pane 1, then an ended one — and
     /// that claude resumes by id.
     fn listing_sessions() -> Session {
-        let mut s = session(Hello::this_build());
+        listing_sessions_from(Hello::this_build())
+    }
+
+    fn listing_sessions_from(daemon: Hello) -> Session {
+        let mut s = session(daemon);
         let sent = s.call(Call::OpenSessions { repository: 10 });
         let [ClientMsg::ListSessions { request_id: list, repository: RepositoryId(10) }, ClientMsg::ListResumes { request_id: resumes }] =
             sent.as_slice()
@@ -5337,6 +5505,49 @@ mod tests {
         assert!(s.recent.get().is_some() && s.shown.pane().is_none());
     }
 
+    /// The daemon will not read a session whose checkout is gone. The
+    /// preview says why, and the read is not asked again on the next turn,
+    /// which would be refused again, for ever.
+    #[test]
+    fn a_refused_session_read_says_why_in_the_preview_and_is_not_asked_again() {
+        let mut s = listing_sessions_from(refusing());
+        let sent = s.call(Call::SessionsAction { action: Action::Next, row: None });
+        let [ClientMsg::ReadSession { request_id, .. }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        let sent = s.receive(refusal(*request_id, "no such checkout: 100", true));
+        assert!(!sent.iter().any(|m| matches!(m, ClientMsg::ReadSession { .. })), "{sent:?}");
+        let events = s.events(0);
+        assert!(!events.iter().any(|e| matches!(e, Event::Notice { .. })), "said in the preview, not under it");
+        let page = events.into_iter().find_map(|e| match e {
+            Event::Sessions(page) => Some(*page),
+            _ => None,
+        });
+        let preview = page.and_then(|p| p.preview).expect("the preview is drawn again");
+        assert_eq!((preview.session_id.as_str(), preview.loading), ("ended", false));
+        assert_eq!(preview.notice.as_deref(), Some("no such checkout: 100"));
+        assert!(s.finish().is_empty(), "and the next turn does not ask again");
+    }
+
+    #[test]
+    fn a_refused_session_listing_says_why_in_the_dialog() {
+        let mut s = session(refusing());
+        let sent = s.call(Call::OpenSessions { repository: 10 });
+        let Some(ClientMsg::ListSessions { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        s.receive(refusal(*request_id, "no such repository: 10", true));
+        let events = s.events(0);
+        assert!(!events.iter().any(|e| matches!(e, Event::Notice { .. })));
+        let page = events.into_iter().find_map(|e| match e {
+            Event::Sessions(page) => Some(*page),
+            _ => None,
+        });
+        let page = page.expect("the dialog is drawn again");
+        assert!(!page.loading);
+        assert_eq!(page.empty.as_deref(), Some("no such repository: 10"));
+    }
+
     #[test]
     fn a_daemon_that_cannot_list_sessions_is_not_asked_and_the_dialog_says_so() {
         let mut s = session(without_focus());
@@ -5366,7 +5577,11 @@ mod tests {
     /// A session with the add dialog open on `/home/work`, whose preview
     /// found `web`.
     fn adding_a_folder() -> Session {
-        let mut s = session(Hello::this_build());
+        adding_a_folder_from(Hello::this_build())
+    }
+
+    fn adding_a_folder_from(daemon: Hello) -> Session {
+        let mut s = session(daemon);
         let sent = s.call(Call::OpenAddProject);
         let Some(ClientMsg::ListDirectories { request_id, .. }) = sent.first() else {
             panic!("{sent:?}");
@@ -5454,6 +5669,23 @@ mod tests {
         assert!(page.open && !page.adding);
         assert_eq!(page.refusal.as_deref(), Some("there is already a project called work"));
         assert_eq!(s.rail(0).project.map(|p| p.id), Some(1), "the rail is as it was");
+    }
+
+    #[test]
+    fn a_refused_add_says_why_in_its_dialog_from_one_refusal() {
+        let mut s = adding_a_folder_from(refusing());
+        let request_id = add(&mut s);
+        s.events(0);
+        s.receive(refusal(request_id, "there is already a project called work", false));
+        let events = s.events(0);
+        assert!(!events.iter().any(|e| matches!(e, Event::Notice { .. })), "said in the dialog, not under it");
+        let page = events.into_iter().find_map(|e| match e {
+            Event::AddProject(page) => Some(*page),
+            _ => None,
+        });
+        let page = page.expect("the dialog is drawn again");
+        assert!(page.open && !page.adding);
+        assert_eq!(page.refusal.as_deref(), Some("there is already a project called work"));
     }
 
     #[test]

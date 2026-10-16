@@ -9,7 +9,7 @@
 //! clear only once the pushed board holds the link, so a refused one keeps
 //! what was typed.
 
-use argus_protocol::{ClientMsg, Feature, FeatureAction, LinkWrite, MapChange, TrackerMap};
+use argus_protocol::{ClientMsg, Feature, FeatureAction, LinkWrite, MapChange, RequestRefusal, TrackerMap};
 use serde::{Deserialize, Serialize};
 
 use crate::feature_stage::Scope;
@@ -89,8 +89,9 @@ pub struct LinkDialog {
     role: String,
     /// The linked ticket under the cursor, by its place in the list.
     cursor: usize,
-    /// The key of a link sent, until the board holds it or it is refused.
-    pending: Option<String>,
+    /// The id a link was sent with, and its key, until the board holds it
+    /// or it is refused.
+    pending: Option<(u64, String)>,
     /// The tracker map's editor, holding what it says now.
     editing_map: Option<String>,
 }
@@ -127,14 +128,15 @@ impl LinkDialog {
         &self.slug
     }
 
-    /// A gesture, with the feature and map as the board has them and where
-    /// to send what it asks.
+    /// A gesture, with the feature and map as the board has them, what
+    /// names a request, and where to send what it asks.
     pub fn gesture(
         &mut self,
         gesture: LinkGesture,
         feature: &Feature,
         map: &TrackerMap,
         scope: &Scope,
+        id: impl FnMut() -> u64,
         out: &mut Vec<ClientMsg>,
     ) -> Then {
         match gesture {
@@ -145,7 +147,7 @@ impl LinkDialog {
             LinkGesture::Link { url, role } => {
                 self.url = url;
                 self.role = role;
-                return self.link(scope, out);
+                return self.link(scope, id, out);
             }
             LinkGesture::Select { index } => self.cursor = index.min(feature.links.len().saturating_sub(1)),
             LinkGesture::Unlink { key } => self.unlink(key, scope, out),
@@ -161,18 +163,26 @@ impl LinkDialog {
             }
             LinkGesture::DiscardDraft => return self.discard_draft(map, scope, out),
             LinkGesture::CancelMap => self.editing_map = None,
-            LinkGesture::Action { action } => return self.action(action, feature, map, scope, out),
+            LinkGesture::Action { action } => return self.action(action, feature, map, scope, id, out),
             LinkGesture::Close => return Then::Close,
         }
         Then::Nothing
     }
 
-    fn action(&mut self, action: Action, feature: &Feature, map: &TrackerMap, scope: &Scope, out: &mut Vec<ClientMsg>) -> Then {
+    fn action(
+        &mut self,
+        action: Action,
+        feature: &Feature,
+        map: &TrackerMap,
+        scope: &Scope,
+        id: impl FnMut() -> u64,
+        out: &mut Vec<ClientMsg>,
+    ) -> Then {
         let last = feature.links.len().saturating_sub(1);
         match action {
             Action::Next => self.cursor = (self.cursor + 1).min(last),
             Action::Previous => self.cursor = self.cursor.saturating_sub(1),
-            Action::Choose => return self.link(scope, out),
+            Action::Choose => return self.link(scope, id, out),
             Action::OpenTicket => {
                 if let Some(link) = feature.links.get(self.cursor) {
                     return Then::Open(link.url.clone());
@@ -195,7 +205,7 @@ impl LinkDialog {
         Then::Nothing
     }
 
-    fn link(&mut self, scope: &Scope, out: &mut Vec<ClientMsg>) -> Then {
+    fn link(&mut self, scope: &Scope, mut id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) -> Then {
         let link = self.write();
         // Read here only so a typo is said at once; the daemon reads it
         // again with the same function.
@@ -203,12 +213,13 @@ impl LinkDialog {
             Ok(read) => read,
             Err(why) => return Then::Say(why.into()),
         };
-        self.pending = Some(read.key);
+        let request_id = id();
+        self.pending = Some((request_id, read.key));
         out.push(ClientMsg::Feature {
             project: scope.project,
             checkout: scope.checkout,
             action: FeatureAction::Link { slug: self.slug.clone(), link },
-            request_id: 0,
+            request_id,
         });
         Then::Nothing
     }
@@ -246,7 +257,7 @@ impl LinkDialog {
     /// The board changed: a link it now holds was the one sent, and the
     /// fields are free for the next.
     pub fn settle(&mut self, feature: &Feature) {
-        if self.pending.as_ref().is_some_and(|key| feature.links.iter().any(|l| &l.key == key)) {
+        if self.pending.as_ref().is_some_and(|(_, key)| feature.links.iter().any(|l| &l.key == key)) {
             self.pending = None;
             self.url.clear();
             self.role.clear();
@@ -254,9 +265,14 @@ impl LinkDialog {
         self.cursor = self.cursor.min(feature.links.len().saturating_sub(1));
     }
 
-    /// The daemon refused something: a link waiting on it was the one.
-    pub fn refused(&mut self) {
+    /// Takes the daemon's refusal of the link waiting on it, keeping what
+    /// was typed to fix; false for a refusal of anything else.
+    pub fn refused(&mut self, refusal: &RequestRefusal) -> bool {
+        if !self.pending.as_ref().is_some_and(|(id, _)| refusal.refuses_change(*id)) {
+            return false;
+        }
         self.pending = None;
+        true
     }
 
     pub fn page(&self, feature: &Feature, map: &TrackerMap) -> LinkPage {
@@ -326,13 +342,13 @@ mod tests {
         let mut dialog = LinkDialog::new("trim", None);
         let mut out = Vec::new();
         let map = TrackerMap::default();
-        dialog.gesture(LinkGesture::Fields { url: URL.into(), role: "the PM's ticket".into() }, &feature(&[]), &map, &scope(), &mut out);
+        dialog.gesture(LinkGesture::Fields { url: URL.into(), role: "the PM's ticket".into() }, &feature(&[]), &map, &scope(), || 9, &mut out);
         let page = dialog.page(&feature(&[]), &map);
         let read = page.read.unwrap();
         assert_eq!((read.tracker.as_str(), read.key.as_str(), read.role.as_str()), ("Jira", "ARG-142", "the PM's ticket"));
         assert!(out.is_empty(), "typing sends nothing");
 
-        dialog.gesture(LinkGesture::Fields { url: "file:///etc".into(), role: String::new() }, &feature(&[]), &map, &scope(), &mut out);
+        dialog.gesture(LinkGesture::Fields { url: "file:///etc".into(), role: String::new() }, &feature(&[]), &map, &scope(), || 9, &mut out);
         assert!(dialog.page(&feature(&[]), &map).refusal.is_some());
     }
 
@@ -341,7 +357,7 @@ mod tests {
         let mut dialog = LinkDialog::new("trim", None);
         let mut out = Vec::new();
         let map = TrackerMap::default();
-        let then = dialog.gesture(LinkGesture::Link { url: URL.into(), role: "the story".into() }, &feature(&[]), &map, &scope(), &mut out);
+        let then = dialog.gesture(LinkGesture::Link { url: URL.into(), role: "the story".into() }, &feature(&[]), &map, &scope(), || 9, &mut out);
         assert_eq!(then, Then::Nothing);
         assert!(matches!(&out[..], [ClientMsg::Feature { action: FeatureAction::Link { slug, link }, .. }]
             if slug == "trim" && link.role.as_deref() == Some("the story")));
@@ -349,10 +365,10 @@ mod tests {
 
         dialog.settle(&feature(&[]));
         assert_eq!(dialog.page(&feature(&[]), &map).url, URL, "not linked yet: the URL stays");
-        dialog.refused();
+        dialog.refused(&RequestRefusal { request_id: 9, reason: "no".into(), read: false });
         assert!(!dialog.page(&feature(&[]), &map).pending, "a refusal keeps what was typed to fix");
 
-        dialog.gesture(LinkGesture::Link { url: URL.into(), role: String::new() }, &feature(&[]), &map, &scope(), &mut out);
+        dialog.gesture(LinkGesture::Link { url: URL.into(), role: String::new() }, &feature(&[]), &map, &scope(), || 9, &mut out);
         dialog.settle(&feature(&["ARG-142"]));
         let page = dialog.page(&feature(&["ARG-142"]), &map);
         assert_eq!((page.url.as_str(), page.pending, page.linked.len()), ("", false, 1));
@@ -362,7 +378,7 @@ mod tests {
     fn a_url_that_is_no_link_is_said_and_never_sent() {
         let mut dialog = LinkDialog::new("trim", None);
         let mut out = Vec::new();
-        let then = dialog.gesture(LinkGesture::Link { url: "ENG-88".into(), role: String::new() }, &feature(&[]), &TrackerMap::default(), &scope(), &mut out);
+        let then = dialog.gesture(LinkGesture::Link { url: "ENG-88".into(), role: String::new() }, &feature(&[]), &TrackerMap::default(), &scope(), || 9, &mut out);
         assert!(matches!(then, Then::Say(_)) && out.is_empty());
     }
 
@@ -371,7 +387,7 @@ mod tests {
         let mut dialog = LinkDialog::new("trim", None);
         let (mut out, map, linked) = (Vec::new(), TrackerMap::default(), feature(&["A-1", "A-2"]));
         let act = |dialog: &mut LinkDialog, action, out: &mut Vec<ClientMsg>| {
-            dialog.gesture(LinkGesture::Action { action }, &linked, &map, &scope(), out)
+            dialog.gesture(LinkGesture::Action { action }, &linked, &map, &scope(), || 9, out)
         };
         act(&mut dialog, Action::Next, &mut out);
         act(&mut dialog, Action::Next, &mut out);
@@ -390,15 +406,15 @@ mod tests {
         let mut dialog = LinkDialog::new("trim", Some(&map));
         assert_eq!(dialog.page(&feature(&[]), &map).editing_map.as_deref(), Some("Linear: feature is a project"));
         let mut out = Vec::new();
-        dialog.gesture(LinkGesture::SaveMap { text: "edited".into() }, &feature(&[]), &map, &scope(), &mut out);
+        dialog.gesture(LinkGesture::SaveMap { text: "edited".into() }, &feature(&[]), &map, &scope(), || 9, &mut out);
         assert!(matches!(&out[..], [ClientMsg::TrackerMap { change: MapChange::Approve(text), .. }] if text == "edited"));
         assert!(dialog.page(&feature(&[]), &map).editing_map.is_none(), "the editor closes; the board says the rest");
 
         let plain = TrackerMap::default();
         let mut out = Vec::new();
-        dialog.gesture(LinkGesture::SaveMap { text: "Jira: story".into() }, &feature(&[]), &plain, &scope(), &mut out);
+        dialog.gesture(LinkGesture::SaveMap { text: "Jira: story".into() }, &feature(&[]), &plain, &scope(), || 9, &mut out);
         assert!(matches!(&out[..], [ClientMsg::TrackerMap { change: MapChange::Write(_), .. }]));
-        let then = dialog.gesture(LinkGesture::Action { action: Action::Discard }, &feature(&[]), &plain, &scope(), &mut out);
+        let then = dialog.gesture(LinkGesture::Action { action: Action::Discard }, &feature(&[]), &plain, &scope(), || 9, &mut out);
         assert!(matches!(then, Then::Say(_)), "no draft to turn down");
     }
 }
