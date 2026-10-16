@@ -16,9 +16,10 @@ use argus_protocol::{
 };
 
 use crate::code_tree::{self, folders_of};
+use crate::comment_box;
 use crate::page::{
     CodeChangeRow, CodeClick, CodeHit, CodeHitFile, CodeJump, CodeMark, CodeOutlineRow, CodePage, CodeRow,
-    CodeSearch, CodeTreeRow, Recipient, ReviewJumpGesture,
+    CodeSearch, CodeTreeRow, ReviewJumpGesture,
 };
 use crate::review::parts;
 
@@ -630,6 +631,13 @@ impl CodeStage {
         let at_line = self.cursor as u32 + 1;
         let symbols = shown.map(|f| f.symbols.as_slice()).unwrap_or_default();
         let inside = symbols.iter().rposition(|s| s.line <= at_line);
+        let pick = (picking && shown.is_some()).then(|| {
+            if from == to { format!("line {}", from + 1) } else { format!("lines {}–{}", from + 1, to + 1) }
+        });
+        let comment = self.composing.then(|| {
+            let about = format!("{} · {}", pick.as_deref().unwrap_or(""), self.path.as_deref().unwrap_or(""));
+            comment_box::page(checkout, self.addressee(checkout), about)
+        });
         CodePage {
             open: true,
             checkout: self.checkout.0,
@@ -706,16 +714,8 @@ impl CodeStage {
             }),
             search: self.search.as_ref().map(search_page),
             back: self.back.as_ref().map(|b| b.label.clone()),
-            pick: (picking && shown.is_some()).then(|| {
-                if from == to { format!("line {}", from + 1) } else { format!("lines {}–{}", from + 1, to + 1) }
-            }),
-            composing: self.composing,
-            recipients: checkout
-                .into_iter()
-                .flat_map(recipients)
-                .map(|p| Recipient { pane: p.id.0, title: p.title.clone() })
-                .collect(),
-            recipient: self.addressee(checkout).map(|p| p.0),
+            pick,
+            comment,
             failed: self.failed.clone(),
         }
     }
@@ -1192,7 +1192,7 @@ mod tests {
         assert_eq!(anchor.text, ["+    new()", "+    more()"]);
         s.commented();
         let page = s.page(Some(&co));
-        assert!(!page.composing && page.pick.is_none() && page.lines.iter().all(|r| !r.picked));
+        assert!(page.comment.is_none() && page.pick.is_none() && page.lines.iter().all(|r| !r.picked));
     }
 
     #[test]
@@ -1201,7 +1201,7 @@ mod tests {
         assert_eq!(s.compose(Some(&with_agent())), Err("read a file to comment on"));
         s.receive_file(file(2, "src/a.rs"));
         assert_eq!(s.compose(Some(&checkout(100, "main", true, Vec::new()))), Err("no agent running in this checkout"));
-        assert!(!s.page(None).composing);
+        assert!(s.page(None).comment.is_none());
     }
 
     #[test]

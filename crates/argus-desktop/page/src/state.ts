@@ -86,10 +86,6 @@ export const state: {
   extensions: ExtensionsPage | null;
   /** The views agents saved, and the columns of each panel showing them. */
   saved: SavedViewsPage | null;
-  /** The comment being written, kept across the dialog's redraws. */
-  reviewDraft: string;
-  /** The Code stage's comment as typed, kept across redraws. */
-  codeDraft: string;
   /** The composer's draft: its picks and message, kept across redraws
    *  until a pane it started is made. */
   compose: { checkout: number | null; template: string | null; text: string };
@@ -147,7 +143,5 @@ export const state: {
   docks: null,
   extensions: null,
   saved: null,
-  reviewDraft: '',
-  codeDraft: '',
   compose: { checkout: null, template: null, text: '' },
 };

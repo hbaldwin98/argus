@@ -21,6 +21,7 @@ mod checkouts;
 mod checkouts_stage;
 mod code_stage;
 mod code_tree;
+mod comment_box;
 mod commands;
 mod console;
 mod daemon;

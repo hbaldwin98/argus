@@ -54,7 +54,5 @@ export const state = {
     docks: null,
     extensions: null,
     saved: null,
-    reviewDraft: '',
-    codeDraft: '',
     compose: { checkout: null, template: null, text: '' },
 };

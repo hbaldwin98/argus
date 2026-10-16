@@ -14,7 +14,8 @@ use argus_protocol::{
     CodeVersion, ReviewBase, ReviewContext,
 };
 
-use crate::page::{DiffRow, DiffSide, Recipient, ReviewFile, ReviewJump, ReviewPage};
+use crate::comment_box;
+use crate::page::{DiffRow, DiffSide, ReviewFile, ReviewJump, ReviewPage};
 use crate::settings::ReviewLayout;
 
 pub struct ReviewDialog {
@@ -331,12 +332,6 @@ impl ReviewDialog {
     /// The dialog as the page draws it, given the checkout as the tree has
     /// it now (its agents may have come or gone).
     pub fn page(&self, checkout: Option<&CheckoutInfo>) -> ReviewPage {
-        let recipients: Vec<Recipient> = checkout
-            .into_iter()
-            .flat_map(agent_comment::recipients)
-            .map(|p| Recipient { pane: p.id.0, title: p.title.clone() })
-            .collect();
-        let recipient = self.addressee(checkout).map(|p| p.0);
         let base = self.session.base();
         let view = self.view();
         let files: Vec<ReviewFile> = view.map(|v| v.review.files.iter().map(file).collect()).unwrap_or_default();
@@ -357,16 +352,21 @@ impl ReviewDialog {
             }),
             _ => None,
         };
+        let base_label = match base {
+            ReviewBase::Unstaged => "unstaged",
+            ReviewBase::Staged => "staged",
+            ReviewBase::Commit => "commit",
+        };
+        let pick = view.filter(|v| v.mark.is_some() || self.composing).and_then(ReviewView::anchor).map(|a| pick_label(&a));
+        let comment = self.composing.then(|| {
+            comment_box::page(checkout, self.addressee(checkout), format!("{} · {base_label}", pick.as_deref().unwrap_or("")))
+        });
         ReviewPage {
             open: true,
             checkout: self.session.checkout().0,
             name: self.name.clone(),
             branch: self.branch.clone(),
-            base: match base {
-                ReviewBase::Unstaged => "unstaged",
-                ReviewBase::Staged => "staged",
-                ReviewBase::Commit => "commit",
-            },
+            base: base_label,
             commit: view.and_then(|v| v.review.commit.as_ref()).map(|c| format!("{}  {}", c.short, c.summary)),
             unstaged: self.session.files(ReviewBase::Unstaged),
             staged: self.session.files(ReviewBase::Staged),
@@ -375,13 +375,11 @@ impl ReviewDialog {
             removed: files.iter().map(|f| f.removed).sum(),
             files,
             file: selected,
-            pick: view.filter(|v| v.mark.is_some() || self.composing).and_then(ReviewView::anchor).map(|a| pick_label(&a)),
+            pick,
             rows,
             loading: view.is_none() && failed.is_none(),
             empty,
-            composing: self.composing,
-            recipients,
-            recipient,
+            comment,
             jump: self.jump.as_ref().map(|j| {
                 let matches = self.jump_matches();
                 ReviewJump { query: j.query.clone(), at: matches.get(j.at).copied(), matches }
@@ -729,7 +727,7 @@ mod tests {
         let (mut d, _) = ReviewDialog::working(&co, ReviewLayout::default(), || 1);
         d.receive(diff(1, ReviewBase::Unstaged));
         assert_eq!(d.compose(Some(&co)), Err("no agent running in this checkout"));
-        assert!(!d.page(Some(&co)).composing);
+        assert!(d.page(Some(&co)).comment.is_none());
     }
 
     #[test]
@@ -739,9 +737,10 @@ mod tests {
         let (mut d, _) = dialog();
         d.receive(diff(1, ReviewBase::Unstaged));
         d.choose_recipient(PaneId(6));
-        let page = d.page(Some(&co));
-        assert_eq!(page.recipients.iter().map(|r| r.pane).collect::<Vec<_>>(), [7]);
-        assert_eq!(page.recipient, Some(7));
+        d.compose(Some(&co)).unwrap();
+        let comment = d.page(Some(&co)).comment.unwrap();
+        assert_eq!(comment.recipients.iter().map(|r| r.pane).collect::<Vec<_>>(), [7]);
+        assert_eq!(comment.to, Some(7));
         assert!(matches!(d.comment(Some(&co), "hi"), Ok(ClientMsg::ReviewComment { recipient: PaneId(7), .. })));
     }
 

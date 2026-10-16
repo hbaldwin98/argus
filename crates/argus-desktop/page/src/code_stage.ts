@@ -12,10 +12,17 @@ import type { CodePage } from './bindings/CodePage';
 import type { CodeRow } from './bindings/CodeRow';
 import type { CodeSearch } from './bindings/CodeSearch';
 import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
+import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
+
+const ways: CommentWays = {
+  id: 'code-comment',
+  send: (body) => call('code_comment', { body }),
+  choose: (pane) => click({ on: 'recipient', pane }),
+};
 
 function click(target: CodeClick): void {
   call('code_click', { target });
@@ -446,7 +453,7 @@ function file(c: CodePage): HTMLElement {
     });
     body = [
       ...c.lines.flatMap((r, i) =>
-        c.composing && i === under ? [...line(r), commentBox(c)] : line(r),
+        c.comment && i === under ? [...line(r), commentBox(c.comment, ways)] : line(r),
       ),
       ...(c.removedAtEnd > 0 ? [gone(c.removedAtEnd)] : []),
     ];
@@ -487,77 +494,6 @@ function file(c: CodePage): HTMLElement {
       { class: 'code-wrap' },
       el('div', { class: 'code-body', id: 'code-body', onscroll: trackView }, body),
       c.lines.length > 0 && ruler(c),
-    ),
-  );
-}
-
-function sendComment(): void {
-  call('code_comment', { body: state.codeDraft });
-}
-
-function commentBox(c: CodePage): HTMLElement {
-  const body = el('textarea', {
-    class: 'field comment-body',
-    id: 'code-comment',
-    'aria-label': 'Comment',
-    rows: '3',
-    oninput: (e: Event) => {
-      if (e.target instanceof HTMLTextAreaElement) state.codeDraft = e.target.value;
-    },
-    onkeydown: (e: KeyboardEvent) => {
-      const action = actionFor(['writing'], e);
-      if (action === 'save') {
-        e.preventDefault();
-        sendComment();
-      } else if (action === 'closeLayer') {
-        e.preventDefault();
-        e.stopPropagation();
-        call('code_comment', { body: null });
-      }
-    },
-  });
-  body.value = state.codeDraft;
-  const chosen = c.recipients.find((p) => p.pane === c.recipient);
-  return el(
-    'div',
-    { class: 'comment-card' },
-    el(
-      'div',
-      { class: 'actions' },
-      el('span', { class: 'fg-accent strong' }, 'Comment'),
-      el('span', { class: 'meta' }, `${c.pick ?? ''} · ${c.path ?? ''}`),
-    ),
-    body,
-    el(
-      'div',
-      { class: 'actions' },
-      el('span', { class: 'meta' }, 'Send to'),
-      c.recipients.length > 1
-        ? c.recipients.map((p) =>
-            el(
-              'button',
-              {
-                class: `chipf${p.pane === c.recipient ? ' on' : ''}`,
-                onclick: () => click({ on: 'recipient', pane: p.pane }),
-              },
-              el('span', { class: 'glyph' }, '◆'),
-              p.title,
-            ),
-          )
-        : el(
-            'span',
-            { class: 'chipf on' },
-            el('span', { class: 'glyph' }, '◆'),
-            chosen?.title ?? '',
-          ),
-      el('span', { class: 'grow' }),
-      el('button', { class: 'btn', onclick: () => call('code_comment', { body: null }) }, 'Cancel'),
-      el(
-        'button',
-        { class: 'btn primary', onclick: sendComment },
-        'Comment',
-        el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'),
-      ),
     ),
   );
 }
@@ -644,7 +580,7 @@ export function drawCode(): void {
   const hit = c.search?.files.flatMap((f) => f.hits).find((h) => h.on);
   const on = `${list}:${c.search ? (hit?.index ?? '') : (c.jump?.at ?? c.path ?? '')}`;
   const cursor = `${c.path ?? ''}:${c.at}`;
-  if (!c.composing) state.codeDraft = '';
+  settleDraft('code-comment', c.comment !== null);
   const typing = document.activeElement?.id;
   stage.replaceChildren(
     head(c),
@@ -668,13 +604,7 @@ export function drawCode(): void {
   placeMarks();
   trackView();
   // The field with the keys keeps them; one just opened takes them.
-  const want = c.composing
-    ? 'code-comment'
-    : c.search
-      ? 'code-search'
-      : c.jump
-        ? 'code-jump'
-        : null;
+  const want = c.comment ? 'code-comment' : c.search ? 'code-search' : c.jump ? 'code-jump' : null;
   const keep = typing && document.getElementById(typing);
   const focus = keep && typing !== 'code-jump' ? keep : want ? document.getElementById(want) : null;
   if (focus instanceof HTMLInputElement || focus instanceof HTMLTextAreaElement) {

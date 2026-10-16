@@ -9,6 +9,7 @@ import type { DiffSide } from './bindings/DiffSide';
 import type { ReviewClick } from './bindings/ReviewClick';
 import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
 import type { ReviewPage } from './bindings/ReviewPage';
+import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
@@ -89,6 +90,12 @@ function head(r: ReviewPage): HTMLElement {
     ),
   );
 }
+
+const ways: CommentWays = {
+  id: 'review-comment',
+  send: (body) => call('review_comment', { body }),
+  choose: (pane) => click({ on: 'recipient', pane }),
+};
 
 function click(target: ReviewClick): void {
   call('review_click', { target });
@@ -239,81 +246,6 @@ export function diffRow(
   );
 }
 
-function commentBox(r: ReviewPage): HTMLElement {
-  const body = el('textarea', {
-    class: 'field comment-body',
-    id: 'review-comment',
-    'aria-label': 'Comment',
-    rows: '3',
-    oninput: (e: Event) => {
-      if (e.target instanceof HTMLTextAreaElement) state.reviewDraft = e.target.value;
-    },
-    onkeydown: (e: KeyboardEvent) => {
-      const action = actionFor(['writing'], e);
-      if (action === 'save') {
-        e.preventDefault();
-        send();
-      } else if (action === 'closeLayer') {
-        e.preventDefault();
-        e.stopPropagation();
-        call('review_comment', { body: null });
-      }
-    },
-  });
-  body.value = state.reviewDraft;
-  const chosen = r.recipients.find((p) => p.pane === r.recipient);
-  return el(
-    'div',
-    { class: 'comment-card' },
-    el(
-      'div',
-      { class: 'actions' },
-      el('span', { class: 'fg-accent strong' }, 'Comment'),
-      el('span', { class: 'meta' }, `${r.pick ?? ''} · ${r.base}`),
-    ),
-    body,
-    el(
-      'div',
-      { class: 'actions' },
-      el('span', { class: 'meta' }, 'Send to'),
-      r.recipients.length > 1
-        ? r.recipients.map((p) =>
-            el(
-              'button',
-              {
-                class: `chipf${p.pane === r.recipient ? ' on' : ''}`,
-                onclick: () => click({ on: 'recipient', pane: p.pane }),
-              },
-              el('span', { class: 'glyph' }, '◆'),
-              p.title,
-            ),
-          )
-        : el(
-            'span',
-            { class: 'chipf on' },
-            el('span', { class: 'glyph' }, '◆'),
-            chosen?.title ?? '',
-          ),
-      el('span', { class: 'grow' }),
-      el(
-        'button',
-        { class: 'btn', onclick: () => call('review_comment', { body: null }) },
-        'Cancel',
-      ),
-      el(
-        'button',
-        { class: 'btn primary', onclick: send },
-        'Comment',
-        el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'),
-      ),
-    ),
-  );
-}
-
-function send(): void {
-  call('review_comment', { body: state.reviewDraft });
-}
-
 function diff(r: ReviewPage): HTMLElement {
   const path = r.file === null ? null : r.files[r.file];
   let body: Child;
@@ -332,7 +264,7 @@ function diff(r: ReviewPage): HTMLElement {
         (e) => click({ on: 'row', row: d.row, extend: e.shiftKey }),
         (all) => click({ on: 'fold', row: d.row, all }),
       ),
-      r.composing && i === under && commentBox(r),
+      r.comment && i === under && commentBox(r.comment, ways),
     ]);
   }
   return el(
@@ -358,7 +290,7 @@ export function drawReview(): void {
   if (!r?.open) {
     host.hidden = true;
     host.replaceChildren();
-    state.reviewDraft = '';
+    settleDraft('review-comment', false);
     return;
   }
   // What a redraw would lose: where each list was scrolled, and whether
@@ -367,7 +299,7 @@ export function drawReview(): void {
     (id) => document.getElementById(id)?.scrollTop ?? 0,
   );
   const typing = document.activeElement?.id === 'review-comment';
-  if (!r.composing) state.reviewDraft = '';
+  settleDraft('review-comment', r.comment !== null);
   host.hidden = false;
   const fileList = files(r);
   fileList.id = 'review-files';
@@ -424,7 +356,7 @@ export function drawReview(): void {
   const keys =
     field instanceof HTMLInputElement
       ? field
-      : box instanceof HTMLTextAreaElement && (typing || r.composing)
+      : box instanceof HTMLTextAreaElement && (typing || r.comment !== null)
         ? box
         : null;
   if (keys) {

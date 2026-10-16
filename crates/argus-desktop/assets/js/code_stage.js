@@ -3,10 +3,16 @@
 // file defines. Rust holds the files, the cursor, the fields and the search
 // (`src/code_stage.rs`); the page draws them and says what was clicked or
 // typed.
+import { commentBox, settleDraft } from './comment_box.js';
 import { $, el, ghosts, icon } from './dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
+const ways = {
+    id: 'code-comment',
+    send: (body) => call('code_comment', { body }),
+    choose: (pane) => click({ on: 'recipient', pane }),
+};
 function click(target) {
     call('code_click', { target });
 }
@@ -294,7 +300,7 @@ function file(c) {
                 under = i;
         });
         body = [
-            ...c.lines.flatMap((r, i) => c.composing && i === under ? [...line(r), commentBox(c)] : line(r)),
+            ...c.lines.flatMap((r, i) => c.comment && i === under ? [...line(r), commentBox(c.comment, ways)] : line(r)),
             ...(c.removedAtEnd > 0 ? [gone(c.removedAtEnd)] : []),
         ];
     }
@@ -306,41 +312,6 @@ function file(c) {
     return el('section', { class: 'code-file' }, c.path &&
         el('div', { class: 'fhdr' }, el('span', { class: 'mono path' }, c.path), el('span', { class: 'grow' }), el('span', { class: 'meta' }, facts.join(' · '), (c.added > 0 || c.removed > 0) && ' · ', c.added > 0 && el('span', { class: 'fg-ok' }, `+${c.added}`), c.added > 0 && c.removed > 0 && ' ', c.removed > 0 && el('span', { class: 'fg-danger' }, `−${c.removed}`)), !c.outline &&
             el('button', { class: 'btn sm outline-show', onclick: () => click({ on: 'outline' }) }, 'Outline', kbd('O'))), el('div', { class: 'code-wrap' }, el('div', { class: 'code-body', id: 'code-body', onscroll: trackView }, body), c.lines.length > 0 && ruler(c)));
-}
-function sendComment() {
-    call('code_comment', { body: state.codeDraft });
-}
-function commentBox(c) {
-    const body = el('textarea', {
-        class: 'field comment-body',
-        id: 'code-comment',
-        'aria-label': 'Comment',
-        rows: '3',
-        oninput: (e) => {
-            if (e.target instanceof HTMLTextAreaElement)
-                state.codeDraft = e.target.value;
-        },
-        onkeydown: (e) => {
-            const action = actionFor(['writing'], e);
-            if (action === 'save') {
-                e.preventDefault();
-                sendComment();
-            }
-            else if (action === 'closeLayer') {
-                e.preventDefault();
-                e.stopPropagation();
-                call('code_comment', { body: null });
-            }
-        },
-    });
-    body.value = state.codeDraft;
-    const chosen = c.recipients.find((p) => p.pane === c.recipient);
-    return el('div', { class: 'comment-card' }, el('div', { class: 'actions' }, el('span', { class: 'fg-accent strong' }, 'Comment'), el('span', { class: 'meta' }, `${c.pick ?? ''} · ${c.path ?? ''}`)), body, el('div', { class: 'actions' }, el('span', { class: 'meta' }, 'Send to'), c.recipients.length > 1
-        ? c.recipients.map((p) => el('button', {
-            class: `chipf${p.pane === c.recipient ? ' on' : ''}`,
-            onclick: () => click({ on: 'recipient', pane: p.pane }),
-        }, el('span', { class: 'glyph' }, '◆'), p.title))
-        : el('span', { class: 'chipf on' }, el('span', { class: 'glyph' }, '◆'), chosen?.title ?? ''), el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => call('code_comment', { body: null }) }, 'Cancel'), el('button', { class: 'btn primary', onclick: sendComment }, 'Comment', el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'))));
 }
 function outline(c) {
     return el('aside', { class: 'code-outline', 'aria-label': 'Outline' }, el('div', { class: 'ohd' }, el('span', { class: 'mlabel grow' }, 'Outline'), el('button', {
@@ -391,8 +362,7 @@ export function drawCode() {
     const hit = c.search?.files.flatMap((f) => f.hits).find((h) => h.on);
     const on = `${list}:${c.search ? (hit?.index ?? '') : (c.jump?.at ?? c.path ?? '')}`;
     const cursor = `${c.path ?? ''}:${c.at}`;
-    if (!c.composing)
-        state.codeDraft = '';
+    settleDraft('code-comment', c.comment !== null);
     const typing = document.activeElement?.id;
     stage.replaceChildren(head(c), el('div', { class: 'code-split' }, side(c), file(c), c.outline && outline(c)));
     const body = document.getElementById('code-body');
@@ -414,13 +384,7 @@ export function drawCode() {
     placeMarks();
     trackView();
     // The field with the keys keeps them; one just opened takes them.
-    const want = c.composing
-        ? 'code-comment'
-        : c.search
-            ? 'code-search'
-            : c.jump
-                ? 'code-jump'
-                : null;
+    const want = c.comment ? 'code-comment' : c.search ? 'code-search' : c.jump ? 'code-jump' : null;
     const keep = typing && document.getElementById(typing);
     const focus = keep && typing !== 'code-jump' ? keep : want ? document.getElementById(want) : null;
     if (focus instanceof HTMLInputElement || focus instanceof HTMLTextAreaElement) {

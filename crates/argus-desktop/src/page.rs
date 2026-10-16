@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::add_project::{AddProjectGesture, AddProjectPage};
 use crate::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::Checkouts;
+use crate::comment_box::CommentPage;
 use crate::console::{ConsoleGesture, ConsolePage};
 use crate::docks::{DockGesture, DocksPage, Panel};
 use crate::extension_dialog::ExtDialogPage;
@@ -1460,9 +1461,8 @@ pub struct CodePage {
     pub failed: Option<String>,
     /// The picked lines, `lines 3–5`, while a range or a comment is open.
     pub pick: Option<String>,
-    pub composing: bool,
-    pub recipients: Vec<Recipient>,
-    pub recipient: Option<u64>,
+    /// The comment box, while it is open.
+    pub comment: Option<CommentPage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1648,10 +1648,8 @@ pub struct ReviewPage {
     pub loading: bool,
     /// Why there is no diff: nothing on this side, or a failed read.
     pub empty: Option<String>,
-    pub composing: bool,
-    /// The agents in the checkout a comment can go to.
-    pub recipients: Vec<Recipient>,
-    pub recipient: Option<u64>,
+    /// The comment box, while it is open.
+    pub comment: Option<CommentPage>,
     /// The Ctrl-P field over the file list, while it is open.
     pub jump: Option<ReviewJump>,
 }
@@ -1818,14 +1816,6 @@ pub struct DiffSide {
     /// The text as `[text, highlight]`, the highlight a short class name
     /// (`k`, `s`, `c`, …) or empty.
     pub parts: Vec<(String, &'static str)>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct Recipient {
-    pub pane: u64,
-    pub title: String,
 }
 
 /// A mouse gesture over the pane the page did not keep for a selection.

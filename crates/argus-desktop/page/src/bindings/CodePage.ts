@@ -6,7 +6,7 @@ import type { CodeOutlineRow } from "./CodeOutlineRow";
 import type { CodeRow } from "./CodeRow";
 import type { CodeSearch } from "./CodeSearch";
 import type { CodeTreeRow } from "./CodeTreeRow";
-import type { Recipient } from "./Recipient";
+import type { CommentPage } from "./CommentPage";
 
 /**
  * The Code stage: one checkout's files, one of them read whole, its changes
@@ -66,4 +66,8 @@ back: string | null, failed: string | null,
 /**
  * The picked lines, `lines 3–5`, while a range or a comment is open.
  */
-pick: string | null, composing: boolean, recipients: Array<Recipient>, recipient: number | null, };
+pick: string | null, 
+/**
+ * The comment box, while it is open.
+ */
+comment: CommentPage | null, };
