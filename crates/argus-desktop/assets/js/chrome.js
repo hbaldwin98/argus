@@ -15,6 +15,7 @@ import { closesOnMiddle } from './middle.js';
 import { drawHeading, drawRemoving } from './projects.js';
 import { renameDialog } from './rename.js';
 import { screen } from './screen.js';
+import { drawSplit } from './split.js';
 import { openSettings } from './settings.js';
 import { dragEdge } from './edge.js';
 import { state } from './state.js';
@@ -37,6 +38,7 @@ export function drawChrome() {
     drawCode();
     drawExtensionPage();
     drawComposer();
+    drawSplit();
     drawConsole();
     drawNav();
     drawHeading();

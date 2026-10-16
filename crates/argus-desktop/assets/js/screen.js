@@ -386,6 +386,8 @@ function makeScreen(terminal, first) {
         drawCursor,
         report,
         sizeLabel,
+        /** The size of one cell, in CSS pixels. */
+        cellSize: () => ({ w: cell.w, h: cell.h }),
         cellAt,
         select,
         takesMouse,
@@ -420,12 +422,33 @@ export function viewScreen(terminal) {
         watch(s);
     return s;
 }
+/** The screens of the panes split beside the Workspace's, by the number
+ *  Rust gives each. They are kept for good once made, so a pane closed and
+ *  another opened reuse a terminal rather than leaking one. */
+const besides = new Map();
+/** The screen drawing the `n`th pane beside the Workspace's, made in
+ *  `terminal` the first time. */
+export function splitScreen(n, terminal) {
+    const known = besides.get(n);
+    if (known)
+        return known;
+    const s = makeScreen(terminal, { beside: n });
+    besides.set(n, s);
+    screens.push(s);
+    for (const watch of watchers)
+        watch(s);
+    return s;
+}
+/** The screen of the `n`th pane beside the Workspace's, once made. */
+export function besideScreen(n) {
+    return besides.get(n) ?? null;
+}
 /** Draws `s` on `side`, or nowhere when its view is not on screen. */
 export function bindView(s, side) {
     for (const [n, v] of views)
         if (v === s)
             views.delete(n);
-    if (side !== null && typeof side === 'object')
+    if (side !== null && typeof side === 'object' && 'view' in side)
         views.set(side.view, s);
     s.bind(side !== null && typeof side === 'object' ? side : null);
 }
@@ -438,8 +461,9 @@ export function keyedViewScreen() {
     return keyedView;
 }
 export function onSide(side) {
-    if (typeof side === 'object')
-        return views.get(side.view) ?? null;
+    if (typeof side === 'object') {
+        return ('view' in side ? views.get(side.view) : besides.get(side.beside)) ?? null;
+    }
     if (side === 'first')
         return consoleScreen;
     return side === 'second' ? beside : screen;

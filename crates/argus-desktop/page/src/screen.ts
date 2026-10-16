@@ -410,6 +410,8 @@ function makeScreen(terminal: HTMLElement, first: Side | null) {
     drawCursor,
     report,
     sizeLabel,
+    /** The size of one cell, in CSS pixels. */
+    cellSize: (): { w: number; h: number } => ({ w: cell.w, h: cell.h }),
     cellAt,
     select,
     takesMouse,
@@ -451,10 +453,32 @@ export function viewScreen(terminal: HTMLElement): Screen {
   return s;
 }
 
+/** The screens of the panes split beside the Workspace's, by the number
+ *  Rust gives each. They are kept for good once made, so a pane closed and
+ *  another opened reuse a terminal rather than leaking one. */
+const besides = new Map<number, Screen>();
+
+/** The screen drawing the `n`th pane beside the Workspace's, made in
+ *  `terminal` the first time. */
+export function splitScreen(n: number, terminal: HTMLElement): Screen {
+  const known = besides.get(n);
+  if (known) return known;
+  const s = makeScreen(terminal, { beside: n });
+  besides.set(n, s);
+  screens.push(s);
+  for (const watch of watchers) watch(s);
+  return s;
+}
+
+/** The screen of the `n`th pane beside the Workspace's, once made. */
+export function besideScreen(n: number): Screen | null {
+  return besides.get(n) ?? null;
+}
+
 /** Draws `s` on `side`, or nowhere when its view is not on screen. */
 export function bindView(s: Screen, side: Side | null): void {
   for (const [n, v] of views) if (v === s) views.delete(n);
-  if (side !== null && typeof side === 'object') views.set(side.view, s);
+  if (side !== null && typeof side === 'object' && 'view' in side) views.set(side.view, s);
   s.bind(side !== null && typeof side === 'object' ? side : null);
 }
 
@@ -470,7 +494,9 @@ export function keyedViewScreen(): Screen | null {
 }
 
 export function onSide(side: Side): Screen | null {
-  if (typeof side === 'object') return views.get(side.view) ?? null;
+  if (typeof side === 'object') {
+    return ('view' in side ? views.get(side.view) : besides.get(side.beside)) ?? null;
+  }
   if (side === 'first') return consoleScreen;
   return side === 'second' ? beside : screen;
 }

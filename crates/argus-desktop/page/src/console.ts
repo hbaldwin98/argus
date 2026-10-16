@@ -14,7 +14,15 @@ import { chordsFor, presses } from './keys.js';
 import { contextMenu, type MenuItem, openMenu } from './menu.js';
 import { closesOnMiddle } from './middle.js';
 import { renameDialog } from './rename.js';
-import { type Screen, beside, consoleScreen, keyedViewScreen, screen, screens } from './screen.js';
+import {
+  type Screen,
+  beside,
+  besideScreen,
+  consoleScreen,
+  keyedViewScreen,
+  screen,
+  screens,
+} from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -253,7 +261,10 @@ export function keyedScreen(): Screen {
   const view = keyedViewScreen();
   if (view) return view;
   const page = state.console;
-  if (page?.typing == null) return screen;
+  if (page?.typing == null) {
+    const split = state.rail.row.keyed;
+    return (split === null ? null : besideScreen(split)) ?? screen;
+  }
   if (page.typing === page.beside) return beside;
   return page.typing === page.showing ? consoleScreen : screen;
 }

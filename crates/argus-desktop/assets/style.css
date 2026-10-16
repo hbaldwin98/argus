@@ -1806,6 +1806,89 @@ body.maximized .winbtn .restore {
 .stage-body.held {
   opacity: 0.55;
 }
+/* The Workspace's panes: each cell is placed by the page from the grid
+   Rust keeps, as percentages of this box, and a gutter lies on each seam. */
+.split {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+.gcell {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.gcell > .terminal {
+  min-height: 0;
+}
+.gcell.keyed > .thead {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.thead.gripper {
+  cursor: grab;
+  gap: var(--sp-3);
+  padding-left: var(--sp-5);
+  user-select: none;
+}
+.thead.gripper .ttl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gutter {
+  position: absolute;
+  z-index: 2;
+  background: var(--line);
+}
+.gutter.vertical {
+  width: 1px;
+  margin-left: -0.5px;
+  cursor: col-resize;
+}
+.gutter.horizontal {
+  left: 0;
+  right: 0;
+  height: 1px;
+  margin-top: -0.5px;
+  cursor: row-resize;
+}
+/* A wider target than the line, so the seam is easy to take. */
+.gutter::before {
+  content: '';
+  position: absolute;
+}
+.gutter.vertical::before {
+  inset: 0 -4px;
+}
+.gutter.horizontal::before {
+  inset: -4px 0;
+}
+.gutter:hover,
+.gutter.held {
+  background: var(--accent);
+}
+.drop-zone {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+body.moving-pane,
+body.moving-pane * {
+  cursor: grabbing !important;
+}
 .terminal {
   flex: 1;
   min-width: 0;

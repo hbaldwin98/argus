@@ -11,7 +11,7 @@ import { chordsFor, presses } from './keys.js';
 import { contextMenu, openMenu } from './menu.js';
 import { closesOnMiddle } from './middle.js';
 import { renameDialog } from './rename.js';
-import { beside, consoleScreen, keyedViewScreen, screen, screens } from './screen.js';
+import { beside, besideScreen, consoleScreen, keyedViewScreen, screen, screens, } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 function gesture(g) {
@@ -166,8 +166,10 @@ export function keyedScreen() {
     if (view)
         return view;
     const page = state.console;
-    if (page?.typing == null)
-        return screen;
+    if (page?.typing == null) {
+        const split = state.rail.row.keyed;
+        return (split === null ? null : besideScreen(split)) ?? screen;
+    }
     if (page.typing === page.beside)
         return beside;
     return page.typing === page.showing ? consoleScreen : screen;

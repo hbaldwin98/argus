@@ -1,0 +1,326 @@
+// The Workspace's panes side by side: a cell for each, placed by the grid
+// Rust sends with the rail, a gutter between each two neighbours to size
+// them, and a header on each that can be dragged onto another to move it.
+// The arithmetic is `split_math.ts`; this holds the layout's state and
+// draws it. Rust keeps the layout and the sizes, and the page only holds a
+// size from the moment a gutter is let go until Rust answers with it.
+//
+// A drag of a gutter moves the cells at most once a frame and sends their
+// new sizes once, when it is let go, so no pane is resized while the
+// pointer is moving: the panes report their room when `resizing` is
+// lifted, each only if its own size changed.
+import { $, el, icon } from './dom.js';
+import { splitScreen, screen } from './screen.js';
+import { state } from './state.js';
+import { call } from './tauri.js';
+import { cellRects, dragGutter, dropZone, toThousandths, zoneRect, } from './split_math.js';
+const cells = [];
+let held = null;
+let heldTimer;
+/** A gutter or a header is being dragged, so nothing redraws under it. */
+let busy = false;
+const HEAD_PX = 28;
+const MOVE_THRESHOLD = 4;
+function splitEl() {
+    return $('split');
+}
+function sameSizes(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+}
+function sizes() {
+    const { heights, widths } = state.rail.row;
+    return held ?? { heights, widths };
+}
+function ensureCell(i) {
+    const known = cells[i];
+    if (known)
+        return known;
+    if (i === 0) {
+        const cell = { box: $('gcell-0'), terminal: $('terminal'), head: null, shown: true };
+        cells[0] = cell;
+        return cell;
+    }
+    const terminal = el('div', { class: 'terminal' });
+    const box = el('div', { class: 'gcell', hidden: true }, terminal);
+    splitEl().append(box);
+    splitScreen(i - 1, terminal);
+    const cell = { box, terminal, head: null, shown: false };
+    cells[i] = cell;
+    return cell;
+}
+/** The pane in slot `i`: 0 is the Workspace's own. */
+function paneAt(i) {
+    return i === 0 ? state.rail.shown : (state.rail.row.beside[i - 1] ?? null);
+}
+function percent(n) {
+    return `${(n * 100).toFixed(3)}%`;
+}
+function place(box, r) {
+    box.style.left = percent(r.x);
+    box.style.top = percent(r.y);
+    box.style.width = percent(r.w);
+    box.style.height = percent(r.h);
+}
+/** Each slot's rectangle, from the grid and the sizes. */
+function slotRects(of) {
+    const rects = cellRects(of.heights, of.widths);
+    const out = new Map();
+    state.rail.row.grid.forEach((row, r) => row.forEach((slot, c) => {
+        const rect = rects[r]?.[c];
+        if (rect)
+            out.set(slot, rect);
+    }));
+    return out;
+}
+function head(i, pane) {
+    const row = state.rail.row;
+    const keyed = i === 0 ? row.keyed === null : row.keyed === i - 1;
+    return el('div', {
+        class: `thead gripper${keyed ? ' on' : ''}`,
+        title: 'Drag onto another pane to move this one',
+        onmousedown: (e) => startMove(e, i, pane.pane),
+    }, el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'), el('span', { class: 'ttl' }, pane.title), el('span', { class: `sdot ${pane.status}`, 'aria-hidden': 'true' }), i === 0
+        ? ''
+        : el('button', {
+            class: 'icon x',
+            title: 'Take out of the grid',
+            'aria-label': `Take ${pane.title} out of the grid`,
+            // A press on the close must not start a move.
+            onmousedown: (e) => e.stopPropagation(),
+            onclick: () => call('close_beside', { side: { beside: i - 1 } }),
+        }, icon('close')));
+}
+/** Draws the cells, their headers and the gutters between them from the
+ *  rail. Called with every redraw of the window. */
+export function drawSplit() {
+    const area = splitEl();
+    const wanted = state.rail.shown ? 1 + state.rail.row.beside.length : 0;
+    if (held && sameSizes(held, { heights: state.rail.row.heights, widths: state.rail.row.widths })) {
+        held = null;
+    }
+    area.hidden = wanted === 0;
+    if (busy)
+        return;
+    for (let i = 0; i < Math.max(wanted, cells.length); i++) {
+        const cell = ensureCell(i);
+        const visible = i < wanted;
+        cell.box.hidden = !visible;
+        if (visible && !cell.shown && i > 0) {
+            // Back on screen after being let go: it has to say its room again,
+            // since Rust forgot the size when it dropped the pane.
+            const s = splitScreen(i - 1, cell.terminal);
+            const side = s.side();
+            s.bind(null);
+            s.bind(side);
+        }
+        cell.shown = visible;
+    }
+    const rects = slotRects(sizes());
+    const split = wanted > 1;
+    for (let i = 0; i < wanted; i++) {
+        const cell = cells[i];
+        const pane = paneAt(i);
+        if (!cell)
+            continue;
+        cell.head?.remove();
+        cell.head = split && pane ? head(i, pane) : null;
+        if (cell.head)
+            cell.box.prepend(cell.head);
+        const rect = rects.get(i);
+        if (rect)
+            place(cell.box, rect);
+        const keyed = i === 0 ? state.rail.row.keyed === null : state.rail.row.keyed === i - 1;
+        cell.box.classList.toggle('keyed', split && keyed);
+    }
+    drawGutters(split);
+}
+function drawGutters(split) {
+    for (const old of splitEl().querySelectorAll('.gutter'))
+        old.remove();
+    if (!split)
+        return;
+    const { grid } = state.rail.row;
+    const of = sizes();
+    const rects = cellRects(of.heights, of.widths);
+    grid.forEach((row, r) => {
+        const line = rects[r];
+        if (!line)
+            return;
+        line.slice(0, -1).forEach((rect, c) => {
+            const g = el('div', {
+                class: 'gutter vertical',
+                role: 'separator',
+                'aria-orientation': 'vertical',
+            });
+            g.style.left = percent(rect.x + rect.w);
+            g.style.top = percent(rect.y);
+            g.style.height = percent(rect.h);
+            grip(g, 'x', r, c);
+            splitEl().append(g);
+        });
+        const next = rects[r + 1]?.[0];
+        if (next) {
+            const g = el('div', {
+                class: 'gutter horizontal',
+                role: 'separator',
+                'aria-orientation': 'horizontal',
+            });
+            g.style.top = percent(next.y);
+            grip(g, 'y', r, 0);
+            splitEl().append(g);
+        }
+    });
+}
+/** The fewest pixels a pane may have across (`x`) or down (`y`): the
+ *  columns and rows Rust says, in the cells it is drawn in, and the room
+ *  the terminal leaves round its grid. */
+function minimum(axis) {
+    const { minCols, minRows } = state.rail.row;
+    const cell = screen.cellSize();
+    const style = getComputedStyle($('terminal'));
+    if (axis === 'x') {
+        return minCols * cell.w + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    }
+    return (minRows * cell.h + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + HEAD_PX);
+}
+/** Makes `g` drag the gutter after pane `at` of row `r` (`x`), or the one
+ *  under row `r` (`y`). */
+function grip(g, axis, r, at) {
+    g.addEventListener('dblclick', () => call('even_shares', { row: axis === 'x' ? r : null }));
+    g.addEventListener('mousedown', (e) => {
+        if (e.button !== 0)
+            return;
+        e.preventDefault();
+        const box = splitEl().getBoundingClientRect();
+        const total = axis === 'x' ? box.width : box.height;
+        const now = sizes();
+        const start = (axis === 'x' ? (now.widths[r] ?? []) : now.heights).map((t) => (t / 1000) * total);
+        const from = axis === 'x' ? e.clientX : e.clientY;
+        const least = minimum(axis);
+        let latest = now;
+        let frame = 0;
+        busy = true;
+        document.body.classList.add('resizing');
+        g.classList.add('held');
+        const draw = () => {
+            frame = 0;
+            const rects = slotRects(latest);
+            cells.forEach((cell, i) => {
+                const rect = rects.get(i);
+                if (rect && !cell.box.hidden)
+                    place(cell.box, rect);
+            });
+            g.style.cssText = '';
+            const lines = cellRects(latest.heights, latest.widths);
+            const rect = lines[r]?.[at];
+            const next = lines[r + 1]?.[0];
+            if (axis === 'x' && rect) {
+                g.style.left = percent(rect.x + rect.w);
+                g.style.top = percent(rect.y);
+                g.style.height = percent(rect.h);
+            }
+            else if (next) {
+                g.style.top = percent(next.y);
+            }
+        };
+        const move = (m) => {
+            const dragged = toThousandths(dragGutter(start, at, (axis === 'x' ? m.clientX : m.clientY) - from, least));
+            latest =
+                axis === 'x'
+                    ? { heights: now.heights, widths: now.widths.map((w, i) => (i === r ? dragged : w)) }
+                    : { heights: dragged, widths: now.widths };
+            if (!frame)
+                frame = requestAnimationFrame(draw);
+        };
+        const up = () => {
+            window.removeEventListener('mousemove', move);
+            window.removeEventListener('mouseup', up);
+            cancelAnimationFrame(frame);
+            busy = false;
+            held = latest;
+            clearTimeout(heldTimer);
+            // If Rust declines the sizes it says nothing, so the page lets go of
+            // them rather than keep a layout Rust does not have.
+            heldTimer = setTimeout(() => {
+                held = null;
+                drawSplit();
+            }, 600);
+            document.body.classList.remove('resizing');
+            drawSplit();
+            call('set_shares', { heights: latest.heights, widths: latest.widths });
+        };
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+    });
+}
+// ---- Moving a pane by its header -------------------------------------------
+/** Where a header held over the cells would land: the cell under the
+ *  pointer, and the zone of it. */
+function target(x, y, self) {
+    for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i];
+        if (!cell || cell.box.hidden || i === self)
+            continue;
+        const box = cell.box.getBoundingClientRect();
+        if (x < box.left || x >= box.right || y < box.top || y >= box.bottom)
+            continue;
+        return { slot: i, zone: dropZone((x - box.left) / box.width, (y - box.top) / box.height), box };
+    }
+    return null;
+}
+function startMove(e, slot, pane) {
+    if (e.button !== 0)
+        return;
+    const origin = [e.clientX, e.clientY];
+    let marker = null;
+    let over = null;
+    const lit = (m) => {
+        over = target(m.clientX, m.clientY, slot);
+        if (!over) {
+            marker?.remove();
+            marker = null;
+            return;
+        }
+        const area = splitEl().getBoundingClientRect();
+        const zone = zoneRect(over.zone);
+        marker ??= splitEl().appendChild(el('div', { class: 'drop-zone' }));
+        marker.style.left = `${over.box.left - area.left + zone.x * over.box.width}px`;
+        marker.style.top = `${over.box.top - area.top + zone.y * over.box.height}px`;
+        marker.style.width = `${zone.w * over.box.width}px`;
+        marker.style.height = `${zone.h * over.box.height}px`;
+    };
+    const move = (m) => {
+        if (!busy &&
+            Math.hypot(m.clientX - (origin[0] ?? 0), m.clientY - (origin[1] ?? 0)) < MOVE_THRESHOLD) {
+            return;
+        }
+        busy = true;
+        document.body.classList.add('moving-pane');
+        lit(m);
+    };
+    const end = (drop) => {
+        window.removeEventListener('mousemove', move);
+        window.removeEventListener('mouseup', up);
+        window.removeEventListener('keydown', key, true);
+        document.body.classList.remove('moving-pane');
+        marker?.remove();
+        const landing = over ? cells[over.slot] && paneAt(over.slot) : null;
+        const zone = over?.zone;
+        busy = false;
+        if (drop && landing && zone)
+            call('move_pane', { pane, onto: landing.pane, zone });
+        else
+            drawSplit();
+    };
+    const up = () => end(true);
+    const key = (k) => {
+        if (k.key !== 'Escape')
+            return;
+        k.preventDefault();
+        k.stopPropagation();
+        end(false);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    window.addEventListener('keydown', key, true);
+}
