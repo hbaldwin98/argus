@@ -81,7 +81,7 @@ fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
         // The view's own bound, so the 413 is the refusal of a dump.
         Some((_, Endpoint::View)) => argus_protocol::MAX_VIEW_BYTES,
         // The view's bound, and room for what it was built from.
-        Some((_, Endpoint::SavedView)) => argus_protocol::MAX_VIEW_BYTES + 128 * 1024,
+        Some((_, Endpoint::SavedView)) => argus_protocol::MAX_SAVED_VIEW_WRITE_BYTES,
         // A launch carries a brief for the agent it starts, not a status.
         Some((_, Endpoint::Agent)) => argus_protocol::MAX_LAUNCH_BYTES,
         _ => MAX_BODY,

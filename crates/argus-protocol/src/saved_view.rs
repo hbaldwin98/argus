@@ -33,6 +33,12 @@ pub const MAX_SAVED_VIEWS: usize = 500;
 pub const MAX_EMBED_DEPTH: usize = 3;
 /// One source's text: a path, a URL or a note.
 pub const MAX_SOURCE_BYTES: usize = 2048;
+/// The longest body a save may arrive in: a view at its bound, and room for
+/// a recipe and every source at theirs, with JSON's quoting on top, and the
+/// keys, kinds, scope and features around them.
+pub const MAX_SAVED_VIEW_WRITE_BYTES: usize = crate::view_check::MAX_VIEW_BYTES
+    + 2 * (MAX_RECIPE_BYTES + MAX_VIEW_SOURCES * MAX_SOURCE_BYTES)
+    + 4096;
 
 /// A feature, named the way a client names one: the repository it is on and
 /// its number there.

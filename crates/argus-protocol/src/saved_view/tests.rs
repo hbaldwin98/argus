@@ -167,6 +167,29 @@ fn a_saved_views_body_is_held_to_the_views_bound() {
     assert_eq!(w.checked().unwrap_err(), format!("a view is at most {max} bytes"));
 }
 
+/// Every string at its bound and all of it a character JSON escapes, so the
+/// body is the largest a save that passes its checks can be.
+#[test]
+fn a_save_at_every_limit_fits_the_body_it_may_arrive_in() {
+    let quotes = |n: usize| "\"".repeat(n);
+    let mut view = view(&"v".repeat(MAX_VIEW_ID_BYTES));
+    view.blocks = vec![crate::Block::Markdown { text: String::new() }];
+    let room = crate::MAX_VIEW_BYTES - serde_json::to_vec(&view).unwrap().len();
+    view.blocks = vec![crate::Block::Markdown { text: "x".repeat(room) }];
+    assert_eq!(serde_json::to_vec(&view).unwrap().len(), crate::MAX_VIEW_BYTES);
+    let write = SavedViewWrite {
+        id: Some("w".repeat(MAX_VIEW_ID_BYTES)),
+        scope: WriteScope::Feature { number: i64::MAX },
+        features: (0..MAX_ATTACHED_FEATURES as i64).map(|n| i64::MAX - n).collect(),
+        recipe: Some(quotes(MAX_RECIPE_BYTES)),
+        sources: (0..MAX_VIEW_SOURCES).map(|_| ViewSource::Note { text: quotes(MAX_SOURCE_BYTES) }).collect(),
+        view,
+    };
+    assert!(write.clone().checked().is_ok());
+    let body = serde_json::to_vec(&SavedViewChange::Save { view: Box::new(write) }).unwrap();
+    assert!(body.len() <= MAX_SAVED_VIEW_WRITE_BYTES, "{} > {MAX_SAVED_VIEW_WRITE_BYTES}", body.len());
+}
+
 #[test]
 fn a_refresh_request_is_one_line_naming_the_recipe_and_sources() {
     let s = saved();
