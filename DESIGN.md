@@ -2351,11 +2351,13 @@ again the window names the blocks whose content changed (`agent_views`): they fl
 person is looking at that view, and otherwise stay marked, with a dot on its tab, until it is opened.
 What the page alone remembers about a view — a chosen tab, an open details or tree node, a table's
 selection, opened rows and filter, a form's draft — is kept by block path across those redraws. Pop
-out opens a view as a stage page, and Dock puts it back. A reference value opens in the window and
-never a browser (`view_refs`): a path in the person's editor, a commit in History, a feature in the
-Feature stage, a pane focused; each is read against the pane that showed the view, or the checkout
-on screen for an extension's table, and a path that is absolute or climbs out of the checkout stays
-plain text. Copy, on a code block or a table as TSV, goes through Rust's clipboard. A feature's ticket
+out opens a view as a stage page over whatever stage was up, and Dock, the views panel brought out
+or the agent closing it goes back there. While a view is the page it is the one in front of the
+person: shown again it flashes there, and the panel does not come out by itself beside it. A
+reference value opens in the window and never a browser (`view_refs`): a path in the person's
+editor, a commit in History, a feature in the Feature stage, a pane focused; each is read against
+the pane that showed the view, or the checkout on screen for an extension's table, and a path that
+is absolute or climbs out of the checkout stays plain text. Copy, on a code block or a table as TSV, goes through Rust's clipboard. A feature's ticket
 links, in the index's peek and the open feature's heading, open the ticket in the browser, or, when a
 view of that ticket waits, carry a dot and open the view instead; the page matches them by URL, or by
 tracker and key. An open feature's header lists its tickets with their roles, when it was last reconciled and by whom,

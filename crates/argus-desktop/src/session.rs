@@ -411,8 +411,10 @@ impl Session {
             ServerMsg::Tasks(list) => self.features.receive_tasks(*list),
             ServerMsg::ViewShown(view) => {
                 // Whatever the views' dock shows is not taken from under
-                // the person by an agent's view arriving.
-                if self.views.shown(*view, self.shown.pane(), self.docks.dock_out(&Panel::Views)) {
+                // the person by an agent's view arriving, nor brought out
+                // beside the page its view is open as.
+                let out = self.views_in_front();
+                if self.views.shown(*view, self.shown.pane(), out) {
                     self.docks.show(&Panel::Views);
                 }
             }
@@ -1481,9 +1483,21 @@ impl Session {
         if self.docks.shows(&Panel::Views) {
             self.docks.hide(&Panel::Views);
         } else if !self.views.is_empty() {
-            self.views.end_pop_out();
-            self.docks.show(&Panel::Views);
+            self.show_views_panel();
         }
+    }
+
+    /// The views' panel out in its dock: a view open as a page goes back into
+    /// it, since one view is never drawn twice.
+    fn show_views_panel(&mut self) {
+        self.views.end_pop_out();
+        self.docks.show(&Panel::Views);
+    }
+
+    /// The views' panel is in front of the person: out in its dock, or its view
+    /// open as the page.
+    fn views_in_front(&self) -> bool {
+        self.docks.dock_out(&Panel::Views) || self.views.popped()
     }
 
     /// An agent's view over the stage up, which it goes back to when the
@@ -1867,7 +1881,11 @@ impl Session {
                 self.docks.move_to(panel, dock);
                 self.dock_console();
             }
-            Panel::Views | Panel::Saved(_) => self.docks.move_to(panel, dock),
+            Panel::Views => {
+                self.docks.move_to(panel, dock);
+                self.show_views_panel();
+            }
+            Panel::Saved(_) => self.docks.move_to(panel, dock),
             Panel::Extension(_) => {
                 self.extension_views.touch(panel);
                 self.dock_extension(panel, Some(dock));
@@ -1880,6 +1898,7 @@ impl Session {
     fn show_panel(&mut self, panel: &Panel) {
         match panel {
             Panel::Console => self.dock_console(),
+            Panel::Views => self.show_views_panel(),
             _ => {
                 if let Panel::Extension(_) = panel {
                     self.extension_views.touch(panel);
@@ -3143,7 +3162,9 @@ impl Session {
         }
         events.extend(self.extension_dialogs.take());
         let tree = &self.tree;
-        let views_out = self.docks.dock_out(&Panel::Views);
+        // A view open as the page is in front of the person as much as the
+        // panel's is, so its changes are seen there.
+        let views_out = self.views_in_front();
         let can_press = self.status.daemon_can(VIEW_ACTIONS);
         if let Some(page) = self.views.take(views_out, can_press, |pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
             events.push(Event::Views(Box::new(page)));
@@ -6166,6 +6187,58 @@ mod tests {
         s.call(Call::PopOutView { pane: 1, id: "ci".into() });
         s.receive(ServerMsg::ViewClosed { pane: PaneId(1), id: "ci".into() });
         assert!(notices(&mut s).iter().any(|t| t == "CI was closed"));
+    }
+
+    #[test]
+    fn bringing_the_views_panel_out_puts_a_view_page_back_in_it() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        agents_view(&mut s, 1);
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        assert_eq!(s.stages.now(), Stage::View);
+        docks(&mut s, DockGesture::Show { panel: Panel::Views });
+        assert_eq!(s.stages.now(), Stage::Checkouts, "its tab picked");
+        assert!(s.docks.shows(&Panel::Views));
+
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        assert_eq!(s.stages.now(), Stage::View);
+        docks(&mut s, DockGesture::Move { panel: Panel::Views, dock: Dock::Left });
+        assert_eq!(s.stages.now(), Stage::Checkouts, "moved to a dock");
+        assert!(s.docks.shows(&Panel::Views));
+    }
+
+    #[test]
+    fn an_agent_showing_its_page_view_again_leaves_the_panel_in_its_dock() {
+        let mut s = session(Hello::this_build());
+        s.select(PaneId(1));
+        agents_view(&mut s, 1);
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        assert!(!s.docks.shows(&Panel::Views));
+        agents_view(&mut s, 1);
+        assert!(!s.docks.shows(&Panel::Views), "the page draws it; the panel would draw it twice");
+        assert_eq!(s.stages.now(), Stage::View);
+    }
+
+    #[test]
+    fn a_view_open_as_the_page_is_seen_as_it_changes() {
+        let mut s = session(Hello::this_build());
+        let show = |s: &mut Session, text: &str| {
+            let blocks = vec![argus_protocol::Block::Markdown { text: text.into() }];
+            let view = argus_protocol::AgentView { id: "ci".into(), title: "CI".into(), blocks, ..Default::default() };
+            s.receive(ServerMsg::ViewShown(Box::new(argus_protocol::ShownView { pane: PaneId(1), at: 5, subject: None, view })));
+        };
+        show(&mut s, "building");
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        s.events(0);
+        show(&mut s, "built");
+        let page = s.events(0).into_iter().find_map(|e| match e {
+            Event::Views(page) => Some(page),
+            _ => None,
+        });
+        let page = page.expect("the views are sent again");
+        let ci = page.views.iter().find(|v| v.view.id == "ci").expect("held");
+        assert!(!ci.changed.is_empty(), "what changed is marked");
+        assert!(!ci.unseen, "and seen, being on the page");
     }
 
     #[test]

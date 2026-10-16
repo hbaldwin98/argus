@@ -47,9 +47,10 @@ impl AgentViews {
     }
 
     /// A view came. It comes out by itself, saying so, only when its pane
-    /// is the one on screen and the panel is not out already: the person is
-    /// watching that agent, and anywhere else it would take the panel from
-    /// under them.
+    /// is the one on screen and the panel is not in front of the person
+    /// already (out in its dock, or its view open as the page): the person
+    /// is watching that agent, and anywhere else it would take the panel
+    /// from under them.
     pub fn shown(&mut self, view: ShownView, on_screen: Option<PaneId>, out: bool) -> bool {
         let key = (view.pane, view.view.id.clone());
         self.refreshing.remove(&key);
@@ -197,8 +198,9 @@ impl AgentViews {
     }
 
     /// What to send the page, if it has not heard it. `title` names a
-    /// pane by its id, for "read by …". `out` is whether the panel is on
-    /// screen: the view it shows is seen then, and what changed in it
+    /// pane by its id, for "read by …". `out` is whether the panel is in
+    /// front of the person, out in its dock or its view open as the page:
+    /// the view it shows is seen then, and what changed in it
     /// while it was not is flashed once instead of waiting to be opened.
     pub fn take(&mut self, out: bool, can_press: bool, title: impl Fn(PaneId) -> Option<String>) -> Option<ViewsPage> {
         if out {
