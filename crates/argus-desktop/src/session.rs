@@ -57,8 +57,7 @@ use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, CodeStage};
-use crate::split_grid::{Dir, Zone};
-use crate::shown::workspace_grid;
+use crate::shown::workspace_grid::{self, Dir, Zone};
 use crate::stage::{Settled, Stages};
 use crate::page::{
     self, Call, CodeClick, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,

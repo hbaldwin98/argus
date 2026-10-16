@@ -7,7 +7,7 @@
 //! The layout is explicit, not derived from the number of panes: a new
 //! pane is placed by the grid rule (`ceil(sqrt(n))` to a row), and from
 //! there the person rearranges it by hand and sizes it by dragging.
-//! Where the panes are on screen is `shown`'s and the page's; this only
+//! Where the panes are on screen is `workspace_grid`'s and the page's; this only
 //! answers the shape.
 
 /// The narrowest and shortest a pane of the grid may be, in cells. Below

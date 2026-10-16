@@ -169,18 +169,23 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
 
 ### Panes side by side
 
-The Workspace shows one pane, or several in a grid. `shown` holds the Workspace's slot and a
-list of slots beside it (`Side::Beside(n)`), each subscribed and sized on its own, and the
-layout: `split_grid` is the pure arithmetic of rows of panes, each row's column fractions and the
-rows' heights. A pane added is placed by the grid rule (it joins the first row with fewer than
+The Workspace shows one pane, or several in a grid. `shown/workspace_grid` holds the Workspace's
+cell and the cells split beside it (`Side::Beside(n)`), each subscribed and sized on its own, with
+their layout, the refusals for a pane that cannot join, and the `GridPage` the rail carries (sizes
+in thousandths, the cell with the keys by its number); `shown/workspace_grid/split_grid` beneath it
+is the pure arithmetic of rows of panes, each row's column fractions and the rows' heights.
+A pane added is placed by the grid rule (it joins the first row with fewer than
 `ceil(sqrt(n))` panes, else starts one, so the rows fill top first: 3 over 2, then 3 over 3), after which the person moves it by dragging its header onto another (centre
 swaps, a side joins that row, the top or bottom starts a row). A pane dragged from the rail opens
 the same way: onto a pane's zone it lands there, anywhere else on the stage it joins by the grid
 rule, and into an empty Workspace it is simply shown. A pane also moves with the keyboard, and is
 sized by dragging a gutter (a double click evens a row, or the rows). Closing a pane gives its room to a
-neighbour and leaves every other size alone. The layout is the window's own: the daemon learns each
-pane's rows and columns only, and the sizes survive a visit to another stage because `shown`
-holds them. A pane that would leave another under 20 columns by 6 rows is refused with a note.
+neighbour and leaves every other size alone; the panes after it number down, each taking the room
+of the side it now has (the Workspace's pane going hands its side to the first split), because the
+page measures and remembers room by side, and it measures again where that differs. The layout is
+the window's own: the daemon learns each pane's rows and columns only, and the sizes survive a
+visit to another stage because the window's `shown` holds the grid. A pane that would leave
+another under 20 columns by 6 rows is refused with a note.
 The page draws the grid in `split.ts` (state and DOM) over `split_math.ts` (pure, tested under
 node), sending sizes once when a gutter is let go. Not yet: the sizes do not persist across
 restarts, and the move and focus keys are chords after the leader (`ArrowKeys`, with Shift to

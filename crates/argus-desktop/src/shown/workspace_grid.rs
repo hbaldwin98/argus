@@ -13,7 +13,11 @@ use serde::Serialize;
 
 use super::Slot;
 use crate::page::{Shown, Side};
-use crate::split_grid::{Dir, Layout, Zone, MIN_COLS, MIN_ROWS};
+use split_grid::{Layout, MIN_COLS, MIN_ROWS};
+
+mod split_grid;
+
+pub use split_grid::{Dir, Zone};
 
 /// What the rail carries of the Workspace's grid: the first pane is `Rail.shown`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]

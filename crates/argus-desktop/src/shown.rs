@@ -17,11 +17,10 @@ use argus_protocol::{ClientMsg, KeyboardMode, MouseTracking, PaneId, ServerMsg};
 
 use crate::page::{Frame, Side};
 use crate::screen::Screen;
-use crate::split_grid::Dir;
 
 pub mod workspace_grid;
 
-use workspace_grid::{Refusal, WorkspaceGrid};
+use workspace_grid::{Dir, Refusal, WorkspaceGrid};
 
 #[derive(Default)]
 struct Slot {
@@ -475,7 +474,7 @@ impl ShownPane {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::split_grid::Zone;
+    use workspace_grid::Zone;
 
     fn names(msgs: &[ClientMsg]) -> Vec<String> {
         msgs.iter()

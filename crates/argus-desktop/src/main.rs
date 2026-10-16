@@ -46,7 +46,6 @@ mod logging;
 mod notifications;
 mod opener;
 mod page;
-mod split_grid;
 mod stage;
 mod palette;
 mod preferences;

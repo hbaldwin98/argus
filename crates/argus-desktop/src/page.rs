@@ -27,8 +27,7 @@ use crate::link_dialog::{LinkGesture, LinkPage};
 use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
 use crate::sessions_dialog::{SessionPreview, SessionsPage};
 use crate::saved_views::{SavedColumn, SavedViewsPage};
-use crate::split_grid::{Dir, Zone};
-use crate::shown::workspace_grid::GridPage;
+use crate::shown::workspace_grid::{Dir, GridPage, Zone};
 use crate::settings::{Backdrop, EditorMode, Preferences, SavedLinks, Theme};
 
 /// Something the page asks of the window. It answers nothing: what a call
