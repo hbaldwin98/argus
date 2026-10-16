@@ -4,8 +4,13 @@ import type { PageDiagram } from "./PageDiagram";
 import type { PageFeature } from "./PageFeature";
 import type { PageScope } from "./PageScope";
 import type { PageSource } from "./PageSource";
+import type { Panel } from "./Panel";
 
-export type PageSaved = { id: string, scope: PageScope, 
+export type PageSaved = { id: string, 
+/**
+ * The panel it opens in on its own, which a drag from the sidebar moves.
+ */
+panel: Panel, scope: PageScope, 
 /**
  * About where the person is, which the sidebar's filter keeps.
  */

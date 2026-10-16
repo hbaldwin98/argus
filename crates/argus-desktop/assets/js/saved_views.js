@@ -272,7 +272,7 @@ function navRow(node, open) {
             title: 'stale',
             role: 'img',
             'aria-label': 'stale',
-        })), `saved:${v.id}`, v.view.title), inner > 0 &&
+        })), v.panel, v.view.title), inner > 0 &&
         el('button', {
             class: 'nav-twist',
             type: 'button',

@@ -964,6 +964,33 @@ mod tests {
         assert_eq!(serde_json::to_value(PanelKind::Extension).unwrap(), "extension");
     }
 
+    /// What a panel can do is told the page (`PresentPanel`), which asks
+    /// `panels.ts`; a name's prefix read or built again on the page is the
+    /// rule written twice. The modules that handle every panel may not
+    /// compare one with a fixed name either.
+    #[test]
+    fn the_page_never_reads_what_a_panel_can_do_from_its_name() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/page/src");
+        let prefixes = ["'saved:", "\"saved:", "`saved:", "'extension:", "\"extension:", "`extension:"];
+        let names = ["=== 'console'", "!== 'console'", "=== 'views'", "!== 'views'"];
+        let mut read = 0;
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+            if !name.ends_with(".ts") {
+                continue;
+            }
+            read += 1;
+            let every_panel = ["docks.ts", "drag.ts", "panels.ts"].contains(&name.as_str());
+            let source = std::fs::read_to_string(&path).unwrap();
+            for (n, line) in source.lines().enumerate() {
+                let by_name = prefixes.iter().any(|p| line.contains(p)) || (every_panel && names.iter().any(|c| line.contains(c)));
+                assert!(!by_name, "{name}:{} reads a panel's name; ask `panels.ts` for what Rust said instead: {}", n + 1, line.trim());
+            }
+        }
+        assert!(read > 10, "read only {read} page modules from {dir}");
+    }
+
     #[test]
     fn a_dock_gesture_stages_or_closes_a_panel_by_name() {
         let gesture = |json| serde_json::from_value::<DockGesture>(json).unwrap();

@@ -251,6 +251,7 @@ impl SavedViews {
                 let (rank, label) = scope_label(&v.scope, tree);
                 let saved = PageSaved {
                     id: v.id.clone(),
+                    panel: Panel::Saved(v.id.clone()),
                     scope: PageScope { rank, label },
                     here: is_here(v, here),
                     features: attached(v),
@@ -386,6 +387,8 @@ pub struct SavedPanel {
 #[serde(rename_all = "camelCase")]
 pub struct PageSaved {
     pub id: String,
+    /// The panel it opens in on its own, which a drag from the sidebar moves.
+    pub panel: Panel,
     pub scope: PageScope,
     /// About where the person is, which the sidebar's filter keeps.
     pub here: bool,
@@ -604,5 +607,12 @@ mod tests {
         assert_eq!(views.take(Whereabouts::default(), &[], &[], false), None);
         views.removed("a");
         assert_eq!(views.take(Whereabouts::default(), &[], &[], false), Some(SavedViewsPage::default()));
+    }
+
+    #[test]
+    fn a_saved_view_names_the_panel_it_opens_in() {
+        let views = held(&["plan"]);
+        let page = views.page(Whereabouts::default(), &[], &[], true);
+        assert_eq!(page.views[0].panel, Panel::Saved("plan".into()), "the sidebar's drag moves the panel the docks know");
     }
 }

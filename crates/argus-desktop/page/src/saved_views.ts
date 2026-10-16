@@ -469,7 +469,7 @@ function navRow(node: Nested, open: ReadonlySet<string>): HTMLElement[] {
             'aria-label': 'stale',
           }),
       ),
-      `saved:${v.id}`,
+      v.panel,
       v.view.title,
     ),
     inner > 0 &&
