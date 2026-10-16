@@ -57,6 +57,7 @@ use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, CodeStage};
+use crate::split_grid::{self, Dir, Zone};
 use crate::stage::{Settled, Stages};
 use crate::page::{
     self, Call, CodeClick, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
@@ -591,6 +592,14 @@ impl Session {
             Call::Select { pane } => self.select(PaneId(pane)),
             Call::Resize { side, rows, cols } => self.resize(side, rows, cols),
             Call::FocusView { pane } => self.focus_view(PaneId(pane)),
+            Call::OpenBeside { pane } => self.open_beside(PaneId(pane)),
+            Call::CloseBeside { side } => self.close_beside(side),
+            Call::SetShares { heights, widths } => self.set_shares(&heights, &widths),
+            Call::EvenShares { row } => self.even_shares(row.map(usize::from)),
+            Call::StepRow { by } => self.step_row(isize::from(by)),
+            Call::MovePane { pane, onto, zone } => self.move_pane(PaneId(pane), PaneId(onto), zone),
+            Call::MoveHeld { dir } => self.move_held(dir),
+            Call::FocusTowards { dir } => self.focus_towards(dir),
             Call::Key { key } => self.key(&key),
             Call::Text { text } => self.text(&text),
             Call::Paste { text } => self.paste(text),
@@ -904,7 +913,9 @@ impl Session {
         let Some(project) = self.project_of(pane) else {
             return;
         };
-        let changed = self.shown.show_on(Side::Workspace, pane, &mut self.out);
+        // A pane already side by side with the others is only given the
+        // keys: showing it on the Workspace would take it out of the row.
+        let changed = !self.shown.in_row(pane) && self.shown.show_on(Side::Workspace, pane, &mut self.out);
         let keyed = self.shown.keys() != Side::Workspace;
         self.shown.focus(pane);
         if changed {
@@ -933,6 +944,76 @@ impl Session {
         if matches!(side, Side::View(_)) {
             self.shown.refresh_side(side);
         }
+        self.finish()
+    }
+
+    /// Splits `pane` off beside the Workspace's, and gives it the keys. The
+    /// Workspace needs a pane of its own to split from, and the row a pane's
+    /// worth of room: a refusal says which, and the row stays as it was.
+    fn open_beside(&mut self, pane: PaneId) -> Vec<ClientMsg> {
+        if self.project_of(pane).is_none() {
+            return self.finish();
+        }
+        if self.shown.on(Side::Workspace).is_none() {
+            return self.note("show a pane in the Workspace first, then open another beside it");
+        }
+        if !self.shown.in_row(pane) && !self.shown.has_room() {
+            return self.note(format!(
+                "no room for another pane: each needs {} columns by {} rows. Close one first",
+                split_grid::MIN_COLS,
+                split_grid::MIN_ROWS
+            ));
+        }
+        self.leave_stages();
+        self.console.set_fullscreen(false);
+        if self.shown.open_beside(pane, &mut self.out).is_none() {
+            return self.note("that pane is open in the console: close it there first");
+        }
+        self.shown.focus(pane);
+        self.finish()
+    }
+
+    /// Takes a split out of the row. Its pane keeps running, and is on the
+    /// rail to be shown again.
+    fn close_beside(&mut self, side: Side) -> Vec<ClientMsg> {
+        if matches!(side, Side::Beside(_)) {
+            self.shown.close(side, &mut self.out);
+        }
+        self.finish()
+    }
+
+    fn set_shares(&mut self, heights: &[u16], widths: &[Vec<u16>]) -> Vec<ClientMsg> {
+        let thousandths = |list: &[u16]| list.iter().map(|&p| f32::from(p)).collect::<Vec<_>>();
+        let widths: Vec<Vec<f32>> = widths.iter().map(|w| thousandths(w)).collect();
+        self.shown.resize_grid(&thousandths(heights), &widths);
+        self.finish()
+    }
+
+    fn even_shares(&mut self, row: Option<usize>) -> Vec<ClientMsg> {
+        self.shown.even_out(row);
+        self.finish()
+    }
+
+    /// A pane dropped on another's centre or edge, from its header.
+    fn move_pane(&mut self, pane: PaneId, onto: PaneId, zone: Zone) -> Vec<ClientMsg> {
+        self.shown.place(pane, onto, zone);
+        self.finish()
+    }
+
+    /// The pane with the keys trades places with its neighbour: the
+    /// keyboard's way of what a drop does.
+    fn move_held(&mut self, dir: Dir) -> Vec<ClientMsg> {
+        self.shown.step_pane(dir);
+        self.finish()
+    }
+
+    fn focus_towards(&mut self, dir: Dir) -> Vec<ClientMsg> {
+        self.shown.focus_towards(dir);
+        self.finish()
+    }
+
+    fn step_row(&mut self, by: isize) -> Vec<ClientMsg> {
+        self.shown.step_keys(by);
         self.finish()
     }
 
@@ -3089,6 +3170,20 @@ impl Session {
         if let Some(shown) = &mut rail.shown {
             shown.resumed = self.sessions.resumed_from(PaneId(shown.pane)).cloned();
         }
+        let permille = |list: &[f32]| list.iter().map(|s| (s * 1000.0).round() as u16).collect::<Vec<_>>();
+        let layout = self.shown.layout();
+        rail.row = page::Row {
+            beside: self.shown.beside_sides().into_iter().filter_map(|side| rail::shown(&self.tree, self.shown.on(side)?)).collect(),
+            grid: layout.rows().iter().map(|r| r.iter().map(|&i| i as u8).collect()).collect(),
+            heights: permille(layout.heights()),
+            widths: layout.widths().iter().map(|w| permille(w)).collect(),
+            keyed: match self.shown.keys() {
+                Side::Beside(n) => Some(n),
+                _ => None,
+            },
+            min_cols: split_grid::MIN_COLS,
+            min_rows: split_grid::MIN_ROWS,
+        };
         rail
     }
 
@@ -3521,6 +3616,60 @@ mod tests {
         assert_eq!(s.view().project, Some(ProjectId(1)));
         assert_eq!(names(&s.select(PaneId(3))), ["subscribe 3"]);
         assert_eq!(s.view().project, Some(ProjectId(2)));
+    }
+
+    #[test]
+    fn a_pane_opened_beside_joins_the_grid_and_takes_the_keys() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.resize(Side::Workspace, 30, 100);
+        assert_eq!(names(&s.open_beside(PaneId(2))), ["subscribe 2", "resize 2 30x100"]);
+        assert_eq!(s.shown.pane(), Some(PaneId(2)));
+        let row = s.rail(0).row;
+        assert_eq!((row.grid, row.keyed, row.beside.len()), (vec![vec![0, 1]], Some(0), 1));
+        assert_eq!(row.widths, [[500, 500]]);
+    }
+
+    #[test]
+    fn opening_beside_with_nothing_in_the_workspace_or_no_room_says_why_and_changes_nothing() {
+        let mut s = session(without_focus());
+        s.open_beside(PaneId(1));
+        assert!(notices(&mut s).iter().any(|n| n.contains("Workspace first")));
+        s.select(PaneId(1));
+        s.resize(Side::Workspace, 30, 30);
+        s.open_beside(PaneId(2));
+        assert!(notices(&mut s).iter().any(|n| n.contains("20 columns by 6 rows")), "30 columns do not make two of 20");
+        assert_eq!(s.shown.panes(), [PaneId(1)]);
+    }
+
+    #[test]
+    fn closing_a_split_lets_the_pane_go_without_killing_it_and_the_keys_return() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.open_beside(PaneId(2));
+        let sent = s.close_beside(Side::Beside(0));
+        assert_eq!(names(&sent), ["unsubscribe 2"]);
+        assert_eq!((s.shown.pane(), s.rail(0).row.beside.len()), (Some(PaneId(1)), 0));
+    }
+
+    #[test]
+    fn selecting_a_pane_already_in_the_grid_only_gives_it_the_keys() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.open_beside(PaneId(2));
+        s.select(PaneId(1));
+        assert_eq!((s.shown.pane(), s.shown.panes()), (Some(PaneId(1)), vec![PaneId(1), PaneId(2)]));
+    }
+
+    #[test]
+    fn dropping_a_pane_on_another_rearranges_the_grid_the_rail_reports() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.open_beside(PaneId(2));
+        s.move_pane(PaneId(2), PaneId(1), Zone::Top);
+        assert_eq!(s.rail(0).row.grid, [vec![1], vec![0]]);
+        s.move_held(Dir::Down);
+        assert_eq!(s.rail(0).row.grid, [vec![0], vec![1]]);
     }
 
     #[test]
@@ -4525,9 +4674,17 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 130] = [
+    const CALLS: [&str; 138] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
+        r#"{"call":"open_beside","pane":2}"#,
+        r#"{"call":"close_beside","side":{"beside":0}}"#,
+        r#"{"call":"set_shares","heights":[1000],"widths":[[500,500]]}"#,
+        r#"{"call":"even_shares","row":null}"#,
+        r#"{"call":"step_row","by":1}"#,
+        r#"{"call":"move_pane","pane":2,"onto":1,"zone":"left"}"#,
+        r#"{"call":"move_held","dir":"down"}"#,
+        r#"{"call":"focus_towards","dir":"up"}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
         r#"{"call":"text","text":"é"}"#,

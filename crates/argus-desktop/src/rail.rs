@@ -59,6 +59,7 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         width: None,
         outline_width: None,
         brief_height: None,
+        row: page::Row::default(),
     }
 }
 
@@ -150,7 +151,7 @@ pub fn branch(checkout: &CheckoutInfo) -> String {
     }
 }
 
-fn shown(tree: &[ProjectInfo], pane: PaneId) -> Option<page::Shown> {
+pub fn shown(tree: &[ProjectInfo], pane: PaneId) -> Option<page::Shown> {
     let (lineage, info) = tree.lineage_of_pane(pane)?;
     Some(page::Shown {
         pane: pane.0,

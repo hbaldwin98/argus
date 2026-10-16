@@ -27,6 +27,7 @@ use crate::link_dialog::{LinkGesture, LinkPage};
 use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
 use crate::sessions_dialog::{SessionPreview, SessionsPage};
 use crate::saved_views::{SavedColumn, SavedViewsPage};
+use crate::split_grid::{Dir, Zone};
 use crate::settings::{Backdrop, EditorMode, Preferences, SavedLinks, Theme};
 
 /// Something the page asks of the window. It answers nothing: what a call
@@ -43,6 +44,27 @@ pub enum Call {
     /// A press on an extension console's screen: it takes the keys, as a
     /// click on the console does.
     FocusView { pane: u64 },
+    /// Splits `pane` off to the right of the Workspace's row.
+    OpenBeside { pane: u64 },
+    /// Takes the pane on a split side out of the row; it keeps running.
+    CloseBeside { side: Side },
+    /// The sizes the person dragged the grid's gutters to, in thousandths:
+    /// each row's height, and each pane's width in its row. Only the window
+    /// keeps them: the daemon learns each pane's size alone.
+    SetShares { heights: Vec<u16>, widths: Vec<Vec<u16>> },
+    /// Evens one row's panes out, or with none the rows' heights, as a
+    /// double click on a gutter does.
+    EvenShares { row: Option<u8> },
+    /// A pane's header dropped on another pane: on its centre they swap, on
+    /// a side it joins that row there, on the top or bottom it starts a row.
+    MovePane { pane: u64, onto: u64, zone: Zone },
+    /// The pane with the keys trades places with its neighbour in `dir`.
+    MoveHeld { dir: Dir },
+    /// The keys go to the pane next to the one that has them in `dir`.
+    FocusTowards { dir: Dir },
+    /// Moves the keys along the grid by `by` panes in reading order,
+    /// wrapping round.
+    StepRow { by: i8 },
     Key { key: PageKey },
     /// Text an input method composed.
     Text { text: String },
@@ -590,6 +612,30 @@ pub struct Rail {
     /// An open feature's outline width and brief height, likewise.
     pub outline_width: Option<u32>,
     pub brief_height: Option<u32>,
+    /// The panes split beside the Workspace's.
+    pub row: Row,
+}
+
+/// The Workspace's panes in a grid: the first is `Rail.shown`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Row {
+    /// The panes after the first, in reading order, for the stage's header.
+    pub beside: Vec<Shown>,
+    /// Which of all the panes, the first's too, sit in each row of the
+    /// grid.
+    pub grid: Vec<Vec<u8>>,
+    /// Each row's height, in thousandths of the grid's.
+    pub heights: Vec<u16>,
+    /// Each pane's width in its row, in thousandths of the row's.
+    pub widths: Vec<Vec<u16>>,
+    /// The split with the keys, by its place in `beside`; none when the
+    /// Workspace's own pane has them.
+    pub keyed: Option<u8>,
+    /// The least a pane of the grid may be, in columns and rows.
+    pub min_cols: u16,
+    pub min_rows: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2153,6 +2199,7 @@ mod tests {
             width: Some(320),
             outline_width: None,
             brief_height: None,
+            row: Row::default(),
         };
         let value = as_json(Event::Rail(Box::new(rail)));
         assert_eq!(value["type"], "rail");

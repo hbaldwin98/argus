@@ -3,6 +3,7 @@ import type { HostChoice } from "./HostChoice";
 import type { Project } from "./Project";
 import type { ProjectChoice } from "./ProjectChoice";
 import type { Removing } from "./Removing";
+import type { Row } from "./Row";
 import type { Shown } from "./Shown";
 import type { Stage } from "./Stage";
 import type { WorkspaceChoice } from "./WorkspaceChoice";
@@ -68,4 +69,8 @@ width: number | null,
 /**
  * An open feature's outline width and brief height, likewise.
  */
-outlineWidth: number | null, briefHeight: number | null, };
+outlineWidth: number | null, briefHeight: number | null, 
+/**
+ * The panes split beside the Workspace's.
+ */
+row: Row, };

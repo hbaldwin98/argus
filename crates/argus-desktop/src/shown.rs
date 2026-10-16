@@ -17,6 +17,7 @@ use argus_protocol::{ClientMsg, KeyboardMode, MouseTracking, PaneId, ServerMsg};
 
 use crate::page::{Frame, Side};
 use crate::screen::Screen;
+use crate::split_grid::{Dir, Layout, Zone};
 
 #[derive(Default)]
 struct Slot {
@@ -67,6 +68,7 @@ struct ViewSlot {
     slot: Slot,
 }
 
+#[derive(Default)]
 pub struct ShownPane {
     /// The Workspace's, then the console's first and second.
     sides: [Slot; 3],
@@ -79,10 +81,11 @@ pub struct ShownPane {
     /// stage. A `Side::Beside(n)` is the `n`th; closing one shifts the rest
     /// down, so a side the page still names is redrawn whole.
     beside: Vec<Slot>,
-    /// The share of the row each of the Workspace's pane and those beside
-    /// it has, in that order, summing to one. The window's own layout: the
+    /// Where the Workspace's pane and those beside it sit in the grid they
+    /// fill, and how big each is. Numbered as the slots are: 0 the
+    /// Workspace's, `n + 1` the `Beside(n)`. The window's own layout: the
     /// daemon only learns each pane's rows and columns.
-    shares: Vec<f32>,
+    layout: Layout,
     keys: Side,
     /// The person asked for the Workspace's pane to fill the window.
     filled: bool,
@@ -101,20 +104,6 @@ fn at(side: Side) -> usize {
         Side::First => 1,
         Side::Second => 2,
         Side::View(_) | Side::Beside(_) => unreachable!("a view's or a split's side is kept by its own list"),
-    }
-}
-
-impl Default for ShownPane {
-    fn default() -> Self {
-        ShownPane {
-            sides: Default::default(),
-            views: Vec::new(),
-            beside: Vec::new(),
-            shares: vec![1.0],
-            keys: Side::default(),
-            filled: false,
-            leader: false,
-        }
     }
 }
 
@@ -324,8 +313,7 @@ impl ShownPane {
             if self.on(Side::Beside(0)).is_some() {
                 self.move_over(Side::Beside(0), Side::Workspace, out);
                 self.beside.remove(0);
-                self.shares.remove(0);
-                self.normalise_shares();
+                self.layout.remove(0);
                 for slot in &mut self.beside {
                     if let Some(screen) = &mut slot.screen {
                         screen.refresh();
@@ -341,43 +329,79 @@ impl ShownPane {
         self.settle_keys();
     }
 
-    /// The panes of the row the Workspace and its splits make, left to
-    /// right.
+    /// The panes of the grid the Workspace and its splits fill, in reading
+    /// order.
     pub fn row(&self) -> Vec<Side> {
-        std::iter::once(Side::Workspace).chain((0..self.beside.len()).map(|n| Side::Beside(n as u8))).collect()
+        self.layout.order().into_iter().map(Self::side_numbered).collect()
     }
 
-    /// The share of the row each pane of `row` has.
-    pub fn shares(&self) -> &[f32] {
-        &self.shares
+    fn side_numbered(n: usize) -> Side {
+        n.checked_sub(1).map_or(Side::Workspace, |n| Side::Beside(n as u8))
     }
 
-    /// Splits `pane` off to the right of the row, giving it an even share
-    /// and shrinking the others to make it. The Workspace needs a pane to
-    /// be split from. A pane the row already shows is not split again; its
-    /// side is returned.
+    fn number_of(side: Side) -> Option<usize> {
+        match side {
+            Side::Workspace => Some(0),
+            Side::Beside(n) => Some(usize::from(n) + 1),
+            _ => None,
+        }
+    }
+
+    /// Whether `pane` is one of the grid's.
+    pub fn in_row(&self, pane: PaneId) -> bool {
+        matches!(self.side_of(pane), Some(Side::Workspace | Side::Beside(_)))
+    }
+
+    /// Whether the grid has room for one more pane without any dropping
+    /// below `MIN_COLS` by `MIN_ROWS`, judged by the size the page last
+    /// reported for the panes; a grid not yet measured has room.
+    pub fn has_room(&self) -> bool {
+        let Some((cols, rows)) = self.area() else { return true };
+        let mut next = self.layout.clone();
+        next.add();
+        next.fits(cols, rows)
+    }
+
+    /// The cells the grid spans: the widest row's columns added up, and each
+    /// row's first pane's rows. None until the page has measured them all.
+    fn area(&self) -> Option<(u16, u16)> {
+        let room = |n: usize| self.slot(Self::side_numbered(n))?.capacity;
+        let cols = self.layout.rows().iter().map(|row| row.iter().map(|&n| Some(u32::from(room(n)?.1))).sum::<Option<u32>>()).collect::<Option<Vec<_>>>()?;
+        let rows = self.layout.rows().iter().map(|row| Some(u32::from(room(row[0])?.0))).sum::<Option<u32>>()?;
+        let cols = cols.into_iter().max()?;
+        Some((cols.min(u32::from(u16::MAX)) as u16, rows.min(u32::from(u16::MAX)) as u16))
+    }
+
+    /// Where the panes sit and how big each is.
+    pub fn layout(&self) -> &Layout {
+        &self.layout
+    }
+
+    /// The slots after the Workspace's, in the order they were opened.
+    pub fn beside_sides(&self) -> Vec<Side> {
+        (0..self.beside.len()).map(|n| Side::Beside(n as u8)).collect()
+    }
+
+    /// Splits `pane` off into the grid, placed by the grid rule. The
+    /// Workspace needs a pane to be split from. A pane the grid already
+    /// shows is not split again; its side is returned.
     pub fn open_beside(&mut self, pane: PaneId, out: &mut Vec<ClientMsg>) -> Option<Side> {
         self.on(Side::Workspace)?;
         if let Some(from) = self.side_of(pane) {
             return matches!(from, Side::Workspace | Side::Beside(_)).then_some(from);
         }
         let n = self.beside.len();
-        let mut slot = Slot::default();
         // The page measures a new side before it can size it, so a split
         // asks for the room of its left neighbour until it has its own.
-        slot.capacity = self.beside.last().or(self.sides.first()).and_then(|left| left.capacity);
+        let mut slot = Slot { capacity: self.beside.last().or(self.sides.first()).and_then(|left| left.capacity), ..Slot::default() };
         slot.subscribe(pane, out);
         self.beside.push(slot);
-        let share = 1.0 / (n + 2) as f32;
-        for existing in &mut self.shares {
-            *existing *= 1.0 - share;
-        }
-        self.shares.push(share);
+        self.layout.add();
         Some(Side::Beside(n as u8))
     }
 
-    /// Takes the emptied slot `n` out of the row; its share goes to its
-    /// left neighbour and the splits after it shift down, drawn whole.
+    /// Takes the emptied slot `n` out of the grid, its room going to a
+    /// neighbour, and the splits after it shift down, drawn whole.
     fn remove_beside(&mut self, n: usize) {
         if n >= self.beside.len() {
             return;
@@ -390,10 +414,7 @@ impl ShownPane {
             Side::Beside(k) if usize::from(k) > n => Side::Beside(k - 1),
             keys => keys,
         };
-        if self.shares.len() > n + 1 {
-            let gone = self.shares.remove(n + 1);
-            self.shares[n] += gone;
-        }
+        self.layout.remove(n + 1);
         for slot in &mut self.beside[n..] {
             if let Some(screen) = &mut slot.screen {
                 screen.refresh();
@@ -401,33 +422,51 @@ impl ShownPane {
         }
     }
 
-    fn normalise_shares(&mut self) {
-        let total: f32 = self.shares.iter().sum();
-        if self.shares.len() != 1 + self.beside.len() || total <= 0.0 {
-            self.even_shares();
-        } else {
-            for share in &mut self.shares {
-                *share /= total;
-            }
+    /// The sizes the person dragged the gutters to: each row's height, and
+    /// each pane's width in its row. Anything that does not fit the grid
+    /// changes nothing.
+    pub fn resize_grid(&mut self, heights: &[f32], widths: &[Vec<f32>]) {
+        if let Some(layout) = self.layout.resized(heights, widths) {
+            self.layout = layout;
         }
     }
 
-    /// The shares the person dragged the gutters to. Anything that does not
-    /// fit the row, or leaves a pane no room, changes nothing.
-    pub fn set_shares(&mut self, shares: &[f32]) {
-        if shares.len() == self.shares.len() && shares.iter().all(|s| s.is_finite() && *s > 0.0) {
-            self.shares = shares.to_vec();
-            self.normalise_shares();
+    /// Evens one row's panes out, or with none the rows' heights.
+    pub fn even_out(&mut self, row: Option<usize>) {
+        match row {
+            Some(row) => self.layout.even_row(row),
+            None => self.layout.even_rows(),
         }
     }
 
-    /// Gives every pane of the row the same share.
-    pub fn even_shares(&mut self) {
-        self.shares = vec![1.0 / (1 + self.beside.len()) as f32; 1 + self.beside.len()];
+    /// `pane` dropped on `onto`'s `zone`; false when either is not in the
+    /// grid.
+    pub fn place(&mut self, pane: PaneId, onto: PaneId, zone: Zone) -> bool {
+        let number = |pane| self.side_of(pane).and_then(Self::number_of);
+        let (Some(a), Some(b)) = (number(pane), number(onto)) else { return false };
+        self.layout.place(a, b, zone);
+        true
     }
 
-    /// Moves the keys `by` panes along the row, wrapping round. False when
-    /// the keys are not in the row or it has only one pane.
+    /// The pane with the keys trades places with its neighbour in `dir`.
+    /// False when the keys are not on the grid.
+    pub fn step_pane(&mut self, dir: Dir) -> bool {
+        let Some(at) = Self::number_of(self.keys) else { return false };
+        self.layout.step(at, dir);
+        true
+    }
+
+    /// The pane next to the keys' in `dir`, which then has them.
+    pub fn focus_towards(&mut self, dir: Dir) -> bool {
+        let Some(at) = Self::number_of(self.keys) else { return false };
+        let Some(next) = self.layout.neighbour(at, dir) else { return false };
+        self.keys = Self::side_numbered(next);
+        self.leader = false;
+        true
+    }
+
+    /// Moves the keys `by` panes along the grid in reading order, wrapping
+    /// round. False when the keys are not in it or it has only one pane.
     pub fn step_keys(&mut self, by: isize) -> bool {
         let row: Vec<Side> = self.row().into_iter().filter(|&s| self.on(s).is_some()).collect();
         let Some(at) = row.iter().position(|&s| s == self.keys) else { return false };
@@ -719,11 +758,27 @@ mod tests {
         let mut out = Vec::new();
         assert_eq!(shown.open_beside(PaneId(4), &mut out), Some(Side::Beside(0)));
         assert_eq!(names(&out), ["subscribe 4", "resize 4 20x60"]);
-        assert_eq!(shown.shares(), [0.5, 0.5]);
+        assert_eq!(shown.layout().rows(), [vec![0, 1]]);
         shown.open_beside(PaneId(5), &mut Vec::new());
-        let sum: f32 = shown.shares().iter().sum();
-        assert!((sum - 1.0).abs() < 1e-5 && (shown.shares()[2] - 1.0 / 3.0).abs() < 1e-5);
+        assert_eq!(shown.layout().rows(), [vec![0, 1], vec![2]], "two over one");
         assert_eq!(shown.panes(), [PaneId(1), PaneId(4), PaneId(5)]);
+    }
+
+    #[test]
+    fn a_grid_refuses_a_pane_that_would_leave_one_smaller_than_the_least() {
+        let mut shown = ShownPane::default();
+        shown.resize(Side::Workspace, 20, 70, &mut Vec::new());
+        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
+        assert!(shown.has_room(), "70 columns make two of 35");
+        let side = shown.open_beside(PaneId(4), &mut Vec::new()).unwrap();
+        shown.resize(side, 20, 35, &mut Vec::new());
+        assert!(shown.has_room(), "two over one of 20 rows makes 10 each");
+        shown.resize(Side::Workspace, 20, 20, &mut Vec::new());
+        shown.resize(side, 20, 19, &mut Vec::new());
+        assert!(!shown.has_room(), "39 columns cannot make two of 20 over a third");
+        shown.resize(Side::Workspace, 11, 40, &mut Vec::new());
+        shown.resize(side, 11, 40, &mut Vec::new());
+        assert!(!shown.has_room(), "11 rows cannot make two of 6");
     }
 
     #[test]
@@ -748,9 +803,7 @@ mod tests {
         assert_eq!(sent(|out| shown.close(Side::Beside(1), out)), ["unsubscribe 5"]);
         assert_eq!((shown.on(Side::Beside(0)), shown.on(Side::Beside(1))), (Some(PaneId(4)), Some(PaneId(6))));
         assert_eq!(shown.keys(), Side::Beside(0), "the neighbour on its left");
-        let sum: f32 = shown.shares().iter().sum();
-        assert_eq!(shown.shares().len(), 3);
-        assert!((sum - 1.0).abs() < 1e-5);
+        assert_eq!(shown.layout().rows(), [vec![0, 1], vec![2]], "the rest are numbered down");
     }
 
     #[test]
@@ -769,7 +822,7 @@ mod tests {
         assert_eq!(sent(|out| shown.close(Side::Workspace, out)), ["unsubscribe 1", "resize 4 20x30"]);
         assert_eq!((shown.on(Side::Workspace), shown.on(Side::Beside(0)), shown.on(Side::Beside(1))), (Some(PaneId(4)), Some(PaneId(5)), Some(PaneId(6))));
         assert_eq!(shown.keys(), Side::Workspace);
-        assert_eq!(shown.shares().len(), 3);
+        assert_eq!(shown.layout().rows(), [vec![0], vec![1, 2]]);
     }
 
     #[test]
@@ -786,16 +839,44 @@ mod tests {
     }
 
     #[test]
-    fn shares_that_do_not_fit_the_row_change_nothing() {
+    fn dragged_sizes_that_do_not_fit_the_grid_change_nothing() {
         let mut shown = ShownPane::default();
         row(&mut shown);
-        shown.set_shares(&[3.0, 1.0, 1.0, 1.0]);
-        assert!((shown.shares()[0] - 0.5).abs() < 1e-5, "normalised");
-        shown.set_shares(&[1.0, 1.0]);
-        shown.set_shares(&[1.0, 0.0, 1.0, 1.0]);
-        assert!((shown.shares()[0] - 0.5).abs() < 1e-5);
-        shown.even_shares();
-        assert_eq!(shown.shares(), [0.25; 4]);
+        shown.resize_grid(&[1.0, 3.0], &[vec![3.0, 1.0], vec![1.0, 1.0]]);
+        assert_eq!(shown.layout().heights(), [0.25, 0.75], "normalised");
+        assert_eq!(shown.layout().widths()[0], [0.75, 0.25]);
+        shown.resize_grid(&[1.0, 0.0], &[vec![1.0, 1.0], vec![1.0, 1.0]]);
+        shown.resize_grid(&[1.0], &[vec![1.0]]);
+        assert_eq!(shown.layout().heights(), [0.25, 0.75]);
+        shown.even_out(Some(0));
+        assert_eq!(shown.layout().widths()[0], [0.5, 0.5]);
+        shown.even_out(None);
+        assert_eq!(shown.layout().heights(), [0.5, 0.5]);
+    }
+
+    #[test]
+    fn a_pane_dropped_on_another_moves_in_the_grid_and_the_keys_read_in_the_new_order() {
+        let mut shown = ShownPane::default();
+        row(&mut shown);
+        assert!(shown.place(PaneId(6), PaneId(1), Zone::Left));
+        assert_eq!(shown.row(), [Side::Beside(2), Side::Workspace, Side::Beside(0), Side::Beside(1)]);
+        assert!(!shown.place(PaneId(9), PaneId(1), Zone::Left), "not in the grid");
+        shown.focus(PaneId(6));
+        assert!(shown.step_keys(1) && shown.keys() == Side::Workspace, "reading order, not opening order");
+    }
+
+    #[test]
+    fn the_focused_pane_trades_places_with_its_neighbour_and_the_keys_move_spatially() {
+        let mut shown = ShownPane::default();
+        row(&mut shown);
+        shown.focus(PaneId(4));
+        assert!(shown.focus_towards(Dir::Down));
+        assert_eq!(shown.keys(), Side::Beside(2), "pane 6 is under pane 4");
+        assert!(!shown.focus_towards(Dir::Right), "nothing further");
+        assert!(shown.step_pane(Dir::Left));
+        assert_eq!(shown.layout().rows()[1], [3, 2]);
+        assert!(shown.focus_towards(Dir::Up));
+        assert_eq!(shown.keys(), Side::Workspace, "pane 6 is now under pane 1");
     }
 
     #[test]
@@ -811,7 +892,7 @@ mod tests {
         row(&mut shown);
         shown.show_on(Side::Workspace, PaneId(5), &mut Vec::new());
         assert_eq!(shown.panes(), [PaneId(5), PaneId(4), PaneId(6)]);
-        assert_eq!(shown.shares().len(), 3);
+        assert_eq!(shown.layout().rows(), [vec![0, 1], vec![2]]);
     }
 
     fn wanted(views: &[(&str, Option<u64>)]) -> Vec<(String, Option<PaneId>)> {
