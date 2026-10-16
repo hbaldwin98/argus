@@ -974,6 +974,17 @@ for mouse reporting is sent as a cursor key (xterm alternate-scroll); a child th
 mouse reporting still gets the mouse sequence. Keyboard, paste, mouse, and daemon updates all share
 the client's 16 ms redraw tick, so input bursts cannot trigger an unbounded number of full UI renders.
 
+Keys are legacy xterm bytes until the child negotiates better. The emulator tracks the kitty keyboard
+flags a child pushes with `CSI > flags u` (and answers the `CSI ? u` query), and the daemon carries
+them as `keyboard` beside `mouse` on every pane snapshot and frame, defaulted on the wire so an older
+daemon reads as "none". A client types through `keys::encode_with` with the flags of the pane it
+types into: at the disambiguate level Escape, modified Enter, Tab and Backspace, and Ctrl or Alt text
+become `CSI u` sequences, so an agent CLI can tell Shift+Enter (newline) from Enter (submit); with
+report-all-keys even plain ones do. Event types, alternate keys and associated text are tracked but not
+acted on, since a client only presses and a `Key` carries no layout or text. modifyOtherKeys is not
+tracked: the emulator ignores it, and the CLIs that want modified Enter ask for kitty first. The
+terminal client still types legacy bytes.
+
 A selection dragged in a pane is copied two ways at once: to the desktop clipboard, and to the
 host terminal as OSC 52, which is the only route out over SSH or through a multiplexer (herdr
 forwards it; tmux needs `set-clipboard on`). A child's own OSC 52 copy (Claude Code's `/copy`, a

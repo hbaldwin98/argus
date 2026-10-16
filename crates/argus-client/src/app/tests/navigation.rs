@@ -529,6 +529,7 @@ fn damage_for_an_unsubscribed_pane_is_ignored() {
                 ..Default::default()
             }],
         }],
+        keyboard: Default::default(),
     });
     assert_eq!(h.app.grids[&PaneId(100)].rows()[0][0].ch, " ");
 }
@@ -549,6 +550,7 @@ fn a_snapshot_for_the_subscribed_pane_installs_the_grid() {
             visible: true,
             ..Default::default()
         },
+        keyboard: Default::default(),
     });
     assert!(h.app.grids.contains_key(&PaneId(100)));
 }
@@ -566,6 +568,7 @@ fn damage_carries_the_childs_alternate_screen() {
         pane: PaneId(100),
         cursor: Default::default(),
         spans: vec![],
+        keyboard: Default::default(),
     });
     assert!(h.app.grids[&PaneId(100)].alternate_screen());
 }

@@ -14,6 +14,7 @@ use crate::extensions::{ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtVie
 use crate::features::FeatureAction;
 use crate::focus::{Focus, View};
 use crate::hello::Hello;
+use crate::keys::KeyboardMode;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext};
 use crate::diagrams::{DiagramAction, DiagramList};
@@ -583,6 +584,11 @@ pub enum ServerMsg {
         /// older daemon never injects arrows into a shell.
         #[serde(default)]
         alternate_screen: bool,
+        /// The kitty keyboard flags the child has pushed. Defaulted on the
+        /// wire so an older daemon reads as "none", which keeps every key
+        /// in its legacy encoding.
+        #[serde(default)]
+        keyboard: KeyboardMode,
     },
     /// Incremental changed spans since the last snapshot/damage for a pane.
     Damage {
@@ -593,6 +599,8 @@ pub enum ServerMsg {
         mouse: MouseTracking,
         #[serde(default)]
         alternate_screen: bool,
+        #[serde(default)]
+        keyboard: KeyboardMode,
     },
     /// `PaneSnapshot` for a client that greeted with `CELL_RUNS`: the grid
     /// as runs, every cell not in one a default blank.
@@ -604,6 +612,8 @@ pub enum ServerMsg {
         cursor: Cursor,
         mouse: MouseTracking,
         alternate_screen: bool,
+        #[serde(default)]
+        keyboard: KeyboardMode,
     },
     /// `Damage` for a client that greeted with `CELL_RUNS`: the region that
     /// scrolled, applied first, then the runs that changed after it.
@@ -614,6 +624,8 @@ pub enum ServerMsg {
         cursor: Cursor,
         mouse: MouseTracking,
         alternate_screen: bool,
+        #[serde(default)]
+        keyboard: KeyboardMode,
     },
     /// Text a pane's child asked to put on the clipboard with OSC 52. The
     /// pane's terminal is the daemon's, so the request has to be carried to

@@ -88,7 +88,7 @@ pub(super) fn pane_info(d: &Daemon, pane: PaneId) -> PaneInfo {
 }
 
 pub(super) fn pane_size(d: &Daemon, pane: PaneId) -> (u16, u16) {
-    let (rows, cols, _, _, _, _, _) = d.subscribe_pane(pane).unwrap();
+    let (rows, cols, _, _, _, _, _, _) = d.subscribe_pane(pane).unwrap();
     (rows, cols)
 }
 

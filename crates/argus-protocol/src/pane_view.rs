@@ -18,7 +18,7 @@
 //! view's first row — so it moves from the text on screen however far
 //! output has pushed that text back meanwhile.
 
-use crate::keys::{self, Key, KeyCode, Mods};
+use crate::keys::{self, Key, KeyCode, KeyboardMode, Mods};
 use crate::mouse::{self, MouseEvent, MouseKind};
 use crate::{grid_from_runs, Cell, ClientMsg, Cursor, MouseTracking, PaneId, ServerMsg};
 
@@ -37,6 +37,7 @@ pub struct PaneView {
     cursor: Cursor,
     mouse: MouseTracking,
     alternate_screen: bool,
+    keyboard: KeyboardMode,
     /// Whether the daemon has sent the grid yet; damage before it has
     /// nothing to land on.
     received: bool,
@@ -105,6 +106,7 @@ impl PaneView {
             cursor: Cursor::default(),
             mouse: MouseTracking::default(),
             alternate_screen: false,
+            keyboard: KeyboardMode::default(),
             received: false,
             parked: None,
         }
@@ -130,17 +132,17 @@ impl PaneView {
             return None;
         }
         Some(match msg {
-            ServerMsg::PaneRows { rows, cols, runs, cursor, mouse, alternate_screen, .. } => {
-                self.modes(*cursor, *mouse, *alternate_screen);
+            ServerMsg::PaneRows { rows, cols, runs, cursor, mouse, alternate_screen, keyboard, .. } => {
+                self.modes(*cursor, *mouse, *alternate_screen, *keyboard);
                 self.replace(*rows, *cols, grid_from_runs(*rows, *cols, runs))
             }
-            ServerMsg::PaneSnapshot { rows, cols, cells, cursor, mouse, alternate_screen, .. } => {
-                self.modes(*cursor, *mouse, *alternate_screen);
+            ServerMsg::PaneSnapshot { rows, cols, cells, cursor, mouse, alternate_screen, keyboard, .. } => {
+                self.modes(*cursor, *mouse, *alternate_screen, *keyboard);
                 self.replace(*rows, *cols, cells.clone())
             }
             ServerMsg::RowDamage { .. } | ServerMsg::Damage { .. } if !self.received => Effect::default(),
-            ServerMsg::RowDamage { scroll, runs, cursor, mouse, alternate_screen, .. } => {
-                self.modes(*cursor, *mouse, *alternate_screen);
+            ServerMsg::RowDamage { scroll, runs, cursor, mouse, alternate_screen, keyboard, .. } => {
+                self.modes(*cursor, *mouse, *alternate_screen, *keyboard);
                 let mut touched = Vec::new();
                 // The scroll moves what the runs were diffed against, so it
                 // goes first, and every row it touched is redrawn.
@@ -155,8 +157,8 @@ impl PaneView {
                 }
                 self.touched(touched)
             }
-            ServerMsg::Damage { spans, cursor, mouse, alternate_screen, .. } => {
-                self.modes(*cursor, *mouse, *alternate_screen);
+            ServerMsg::Damage { spans, cursor, mouse, alternate_screen, keyboard, .. } => {
+                self.modes(*cursor, *mouse, *alternate_screen, *keyboard);
                 let mut touched = Vec::new();
                 for span in spans {
                     let Some(row) = self.live.get_mut(span.row as usize) else {
@@ -276,6 +278,12 @@ impl PaneView {
         self.mouse
     }
 
+    /// The kitty keyboard flags the child has pushed, which decide how
+    /// [`keys::encode_with`] spells a key for it.
+    pub fn keyboard(&self) -> KeyboardMode {
+        self.keyboard
+    }
+
     pub fn alternate_screen(&self) -> bool {
         self.alternate_screen
     }
@@ -303,8 +311,8 @@ impl PaneView {
         Effect { redraw: Redraw::All, send, note: None }
     }
 
-    fn modes(&mut self, cursor: Cursor, mouse: MouseTracking, alternate_screen: bool) {
-        (self.cursor, self.mouse, self.alternate_screen) = (cursor, mouse, alternate_screen);
+    fn modes(&mut self, cursor: Cursor, mouse: MouseTracking, alternate_screen: bool, keyboard: KeyboardMode) {
+        (self.cursor, self.mouse, self.alternate_screen, self.keyboard) = (cursor, mouse, alternate_screen, keyboard);
     }
 
     /// Live rows that changed, which are drawn only while live.
@@ -393,11 +401,12 @@ mod tests {
             cursor: Cursor::default(),
             mouse,
             alternate_screen,
+            keyboard: Default::default(),
         }
     }
 
     fn row_damage(scroll: Option<Scroll>, runs: Vec<CellRun>, mouse: MouseTracking, alternate_screen: bool) -> ServerMsg {
-        ServerMsg::RowDamage { pane: PANE, scroll, runs, cursor: Cursor::default(), mouse, alternate_screen }
+        ServerMsg::RowDamage { pane: PANE, scroll, runs, cursor: Cursor::default(), mouse, alternate_screen, keyboard: Default::default() }
     }
 
     /// A view of five live rows on the normal screen.
@@ -606,6 +615,7 @@ mod tests {
             cursor: Cursor::default(),
             mouse: MouseTracking::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         };
         assert_eq!(view.receive(&damage).unwrap().redraw, Redraw::Rows(vec![0]));
         assert_eq!(text(view.rows()), ["aX"]);

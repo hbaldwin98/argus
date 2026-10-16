@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use argus_protocol::{
-    Cell, CheckoutId, CheckoutInfo, Focus, GitStatus, IdGen, PaneId, PaneInfo, PaneKind,
+    CheckoutId, CheckoutInfo, Focus, GitStatus, IdGen, PaneId, PaneInfo, PaneKind,
     PaneStatus, ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg, View,
     WorkspaceId, WorkspaceInfo,
 };
@@ -502,15 +502,7 @@ fn pane_info(pane: &Pane) -> PaneInfo {
     }
 }
 
-type PaneSubscription = (
-    u16,
-    u16,
-    Vec<Vec<Cell>>,
-    argus_protocol::Cursor,
-    argus_protocol::MouseTracking,
-    bool,
-    broadcast::Receiver<ServerMsg>,
-);
+use crate::pty::PaneSubscription;
 
 impl Daemon {
     pub fn template_names(&self) -> Vec<String> {

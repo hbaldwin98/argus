@@ -623,6 +623,7 @@ mod tests {
             cursor: Default::default(),
             mouse: Default::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         };
         let runs = ServerMsg::RowDamage {
             pane: PaneId(4),
@@ -631,6 +632,7 @@ mod tests {
             cursor: Default::default(),
             mouse: Default::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         };
         assert_eq!(damaged_pane(&per_cell), Some(PaneId(3)));
         assert_eq!(damaged_pane(&runs), Some(PaneId(4)));

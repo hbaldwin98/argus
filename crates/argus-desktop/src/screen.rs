@@ -231,6 +231,7 @@ mod tests {
             cursor,
             mouse: MouseTracking::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         }
     }
 
@@ -242,6 +243,7 @@ mod tests {
             cursor,
             mouse: MouseTracking::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         }
     }
 
@@ -294,6 +296,7 @@ mod tests {
             cursor: Cursor::default(),
             mouse: MouseTracking::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         };
         screen.receive(&msg);
         let frame = screen.take_frame().unwrap();
@@ -359,6 +362,7 @@ mod tests {
             cursor: Cursor::default(),
             mouse: MouseTracking::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         };
         screen.receive(&snapshot);
         screen.take_frame();
@@ -369,6 +373,7 @@ mod tests {
             cursor: Cursor::default(),
             mouse: MouseTracking::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         };
         screen.receive(&damage);
         assert_eq!(lines(&screen.take_frame().unwrap()), [(1, "cX".into())]);
@@ -412,6 +417,7 @@ mod tests {
             cursor: Cursor::default(),
             mouse: MouseTracking::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         });
         assert_eq!(screen.text((0, 0), (0, 5)), "a日b");
     }

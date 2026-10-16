@@ -188,6 +188,53 @@ fn a_childs_mouse_request_is_carried_on_the_snapshot() {
 }
 
 #[test]
+fn a_childs_kitty_keyboard_flags_are_carried_and_popped() {
+    let mut vt = Vt::new(24, 80, 0);
+    assert_eq!(vt.keyboard(), KeyboardMode::default());
+
+    // Flags 1 (disambiguate) then 9 (and report all keys), as an agent CLI
+    // pushes on start-up.
+    vt.process(b"\x1b[>1u");
+    assert_eq!(vt.keyboard(), KeyboardMode(1));
+    vt.process(b"\x1b[>9u");
+    assert_eq!(vt.keyboard(), KeyboardMode(9));
+
+    vt.process(b"\x1b[<u");
+    assert_eq!(vt.keyboard(), KeyboardMode(1), "a pop reads back the flags beneath");
+    vt.process(b"\x1b[<u");
+    assert_eq!(vt.keyboard(), KeyboardMode::default());
+}
+
+#[test]
+fn a_keyboard_flags_query_is_answered_with_the_flags_in_force() {
+    let mut vt = Vt::new(24, 80, 0);
+    vt.process(b"\x1b[>5u\x1b[?u");
+
+    assert_eq!(vt.take_replies(), b"\x1b[?5u");
+}
+
+#[test]
+fn a_keyboard_push_alone_is_broadcast_to_watchers() {
+    let mut vt = Vt::new(4, 20, 0);
+    let (tx, mut rx) = broadcast::channel(8);
+    let mut sent = Sent::default();
+    let mut live = vt.grid();
+    send_frame(&mut vt, &mut live, &mut sent, &tx, PaneId(1));
+    while rx.try_recv().is_ok() {}
+
+    vt.process(b"\x1b[>1u");
+    send_frame(&mut vt, &mut live, &mut sent, &tx, PaneId(1));
+
+    match rx.try_recv() {
+        Ok(ServerMsg::RowDamage { keyboard, runs, .. }) => {
+            assert_eq!(keyboard, KeyboardMode(1));
+            assert!(runs.is_empty(), "no cell changed");
+        }
+        other => panic!("expected a frame, got {other:?}"),
+    }
+}
+
+#[test]
 fn a_childs_osc_52_copy_is_held_for_the_client() {
     let mut vt = Vt::new(24, 80, 0);
 
@@ -867,7 +914,7 @@ async fn a_pane_nobody_is_watching_still_keeps_its_screen() {
     .unwrap();
     wait_for(&pane, |g| grid_contains(g, "unwatched-marker")).await;
 
-    let (_, _, grid, _, _, _, _rx) = pane.snapshot_and_subscribe();
+    let (_, _, grid, _, _, _, _, _rx) = pane.snapshot_and_subscribe();
     assert!(
         grid_contains(&grid, "unwatched-marker"),
         "output produced with nobody watching was lost:
@@ -1244,6 +1291,7 @@ fn a_resize_snapshot_is_never_older_than_the_damage_ahead_of_it() {
                         cursor: vt.cursor(),
                         mouse: vt.mouse(),
                         alternate_screen: false,
+                        keyboard: Default::default(),
                     });
                 })
             };

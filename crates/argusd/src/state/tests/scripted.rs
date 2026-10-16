@@ -206,10 +206,11 @@ impl Process for ScriptedProcess {
         (
             rows,
             cols,
-            vec![vec![Cell::default(); cols as usize]; rows as usize],
+            vec![vec![argus_protocol::Cell::default(); cols as usize]; rows as usize],
             argus_protocol::Cursor::default(),
             argus_protocol::MouseTracking::default(),
             false,
+            argus_protocol::KeyboardMode::default(),
             self.damage_tx.subscribe(),
         )
     }

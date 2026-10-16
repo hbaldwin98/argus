@@ -6,6 +6,8 @@
 //! own key events into a `Key` is the client's business; deciding *whether*
 //! a key goes to a pane at all is too.
 
+use serde::{Deserialize, Serialize};
+
 /// A key a client asks to type into a pane: what was pressed and which
 /// modifiers were held.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +71,31 @@ impl Mods {
     }
 }
 
+/// The kitty keyboard protocol flags a child has pushed with `CSI > flags u`.
+/// Zero is the legacy encoding every child starts in; the bits are the
+/// protocol's own, so a flag the daemon relays is the number the child sent.
+/// Only the disambiguate and report-all-keys levels change what [`encode_with`]
+/// writes: this client only ever presses, so event types add nothing, and
+/// alternate keys and associated text need the layout and text of the key
+/// press, which a [`Key`] does not carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct KeyboardMode(pub u8);
+
+impl KeyboardMode {
+    pub const DISAMBIGUATE: u8 = 1;
+    pub const REPORT_ALL_KEYS: u8 = 8;
+
+    /// Whether the child asked for any key to be spelled as `CSI u`.
+    pub fn disambiguates(self) -> bool {
+        self.0 & (Self::DISAMBIGUATE | Self::REPORT_ALL_KEYS) != 0
+    }
+
+    /// Whether even plain text, Enter, Tab and Backspace are `CSI u`.
+    pub fn reports_all_keys(self) -> bool {
+        self.0 & Self::REPORT_ALL_KEYS != 0
+    }
+}
+
 /// The xterm modifier parameter: 1, plus a bit per held modifier. It is
 /// what turns `\x1b[C` into `\x1b[1;5C`, and it is the only way a child
 /// ever learns that ctrl was down for a key that is not a letter.
@@ -116,11 +143,63 @@ fn control_byte(c: char) -> Option<u8> {
     })
 }
 
-/// The byte sequence a terminal child process expects to read from its
-/// pty for `key`. Covers the common case (shells, pagers, line editors);
-/// exotic function-key / kitty-protocol sequences are not attempted. An
-/// empty result means the key has no encoding and nothing is sent.
+/// `key` in the legacy encoding: what a child that has not negotiated
+/// anything reads. See [`encode_with`].
 pub fn encode(key: &Key) -> Vec<u8> {
+    encode_with(key, KeyboardMode::default())
+}
+
+/// `CSI code u`, or `CSI code ; mods u` once a modifier is held.
+fn csi_u(code: u32, param: u8) -> Vec<u8> {
+    if param == 1 {
+        format!("\x1b[{code}u").into_bytes()
+    } else {
+        format!("\x1b[{code};{param}u").into_bytes()
+    }
+}
+
+/// The key number the kitty protocol gives `key`, when the child's flags make
+/// it a `CSI u` rather than its legacy bytes. At the disambiguate level the
+/// keys that were ambiguous become sequences: Escape always, Enter, Tab and
+/// Backspace once a modifier is held, and text once ctrl or alt is. The
+/// protocol numbers a letter by its unshifted form, shift travelling in the
+/// modifier, so Ctrl+Shift+A is 97;6.
+fn kitty_number(key: &Key, mode: KeyboardMode) -> Option<u32> {
+    let all = mode.reports_all_keys();
+    let held = key.mods != Mods::NONE;
+    match key.code {
+        KeyCode::Esc => Some(27),
+        KeyCode::Enter if all || held => Some(13),
+        KeyCode::Tab if all || held => Some(9),
+        KeyCode::BackTab => Some(9),
+        KeyCode::Backspace if all || held => Some(127),
+        KeyCode::Char(c) if all || key.mods.ctrl || key.mods.alt => {
+            let mut lower = c.to_lowercase();
+            Some(match (lower.next(), lower.next()) {
+                (Some(l), None) => l as u32,
+                _ => c as u32,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The byte sequence a terminal child process expects to read from its
+/// pty for `key`, given the kitty keyboard flags it has pushed. Without any
+/// it is legacy xterm: shells, pagers and line editors, where Shift+Enter and
+/// Enter are the same byte. With them the keys that legacy collapses become
+/// distinct `CSI u` sequences, which is how agent CLIs tell Shift+Enter
+/// (newline) from Enter (submit). Named keys keep their xterm form, which the
+/// protocol leaves alone. An empty result means the key has no encoding and
+/// nothing is sent.
+pub fn encode_with(key: &Key, mode: KeyboardMode) -> Vec<u8> {
+    if mode.disambiguates() {
+        if let Some(number) = kitty_number(key, mode) {
+            // BackTab is Shift+Tab to the protocol, which has no separate key.
+            let mods = if key.code == KeyCode::BackTab { key.mods.with(Mods::SHIFT) } else { key.mods };
+            return csi_u(number, modifier_param(mods));
+        }
+    }
     let Mods { ctrl, alt, .. } = key.mods;
     let param = modifier_param(key.mods);
 
@@ -449,5 +528,65 @@ mod tests {
         assert_eq!(encode(&k(KeyCode::F(5))), b"\x1b[15~");
         assert_eq!(encode(&k(KeyCode::F(12))), b"\x1b[24~");
         assert!(encode(&k(KeyCode::F(13))).is_empty());
+    }
+
+    const DISAMBIGUATE: KeyboardMode = KeyboardMode(KeyboardMode::DISAMBIGUATE);
+    const ALL_KEYS: KeyboardMode = KeyboardMode(KeyboardMode::DISAMBIGUATE | KeyboardMode::REPORT_ALL_KEYS);
+
+    fn kitty(mode: KeyboardMode, code: KeyCode, mods: Mods) -> Vec<u8> {
+        encode_with(&Key::new(code, mods), mode)
+    }
+
+    #[test]
+    fn a_child_that_pushed_nothing_gets_the_legacy_bytes() {
+        let none = KeyboardMode::default();
+        assert_eq!(kitty(none, KeyCode::Enter, Mods::SHIFT), b"\r");
+        assert_eq!(kitty(none, KeyCode::Esc, Mods::NONE), b"\x1b");
+        assert_eq!(kitty(none, KeyCode::Char('a'), Mods::ALT), b"\x1ba");
+    }
+
+    #[test]
+    fn modified_enter_tab_and_backspace_become_distinct_at_the_disambiguate_level() {
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Enter, Mods::SHIFT), b"\x1b[13;2u");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Enter, Mods::CTRL), b"\x1b[13;5u");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Enter, Mods::ALT), b"\x1b[13;3u");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Tab, Mods::CTRL), b"\x1b[9;5u");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::BackTab, Mods::NONE), b"\x1b[9;2u");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Backspace, Mods::CTRL), b"\x1b[127;5u");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Backspace, Mods::SHIFT.with(Mods::ALT)), b"\x1b[127;4u");
+    }
+
+    #[test]
+    fn plain_enter_tab_and_backspace_keep_their_bytes_until_every_key_is_reported() {
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Enter, Mods::NONE), b"\r");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Tab, Mods::NONE), b"\t");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Backspace, Mods::NONE), b"\x7f");
+        assert_eq!(kitty(ALL_KEYS, KeyCode::Enter, Mods::NONE), b"\x1b[13u");
+        assert_eq!(kitty(ALL_KEYS, KeyCode::Tab, Mods::NONE), b"\x1b[9u");
+        assert_eq!(kitty(ALL_KEYS, KeyCode::Backspace, Mods::NONE), b"\x1b[127u");
+    }
+
+    #[test]
+    fn escape_is_always_a_sequence_once_the_child_disambiguates() {
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Esc, Mods::NONE), b"\x1b[27u");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Esc, Mods::SHIFT), b"\x1b[27;2u");
+    }
+
+    #[test]
+    fn text_is_a_sequence_only_with_ctrl_or_alt_unless_every_key_is_reported() {
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Char('a'), Mods::NONE), b"a");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Char('A'), Mods::SHIFT), b"A");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Char('a'), Mods::CTRL), b"\x1b[97;5u");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Char('a'), Mods::ALT), b"\x1b[97;3u");
+        // The protocol numbers a letter by its unshifted form.
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Char('A'), Mods::CTRL.with(Mods::SHIFT)), b"\x1b[97;6u");
+        assert_eq!(kitty(DISAMBIGUATE, KeyCode::Char(' '), Mods::CTRL), b"\x1b[32;5u");
+        assert_eq!(kitty(ALL_KEYS, KeyCode::Char('a'), Mods::NONE), b"\x1b[97u");
+    }
+
+    #[test]
+    fn named_keys_keep_their_xterm_form_under_the_protocol() {
+        assert_eq!(kitty(ALL_KEYS, KeyCode::Left, Mods::CTRL), b"\x1b[1;5D");
+        assert_eq!(kitty(ALL_KEYS, KeyCode::F(5), Mods::NONE), b"\x1b[15~");
     }
 }

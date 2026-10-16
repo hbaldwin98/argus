@@ -129,6 +129,7 @@ fn a_resize_re_reads_the_parked_rows_at_the_new_width() {
         cursor: argus_protocol::Cursor::default(),
         mouse: Default::default(),
         alternate_screen: false,
+        keyboard: Default::default(),
     });
 
     assert_eq!(scrollback_asks(&mut h), [3]);
@@ -199,6 +200,7 @@ fn a_grid_sent_as_runs_is_the_grid_the_pane_draws() {
         cursor: argus_protocol::Cursor::default(),
         mouse: Default::default(),
         alternate_screen: false,
+        keyboard: Default::default(),
     });
 
     assert_eq!(h.app.grids[&pane].live_rows(), cells);

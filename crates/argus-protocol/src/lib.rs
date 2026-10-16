@@ -84,6 +84,7 @@ pub use saved_view::{
     SavedViewRecord, SavedViewWrite, ViewScope, ViewSource, WriteScope, MAX_ATTACHED_FEATURES, MAX_EMBED_DEPTH,
     MAX_RECIPE_BYTES, MAX_SAVED_VIEWS, MAX_SOURCE_BYTES, MAX_VIEW_SOURCES,
 };
+pub use keys::KeyboardMode;
 pub use view_tree::Slot;
 pub use view_links::linked_views;
 pub use artifacts::ArtifactScope;

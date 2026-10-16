@@ -41,6 +41,7 @@ pub(crate) fn reshow(view: &mut PaneView, change: impl FnOnce(&mut Shown)) {
         cursor: shown.cursor,
         mouse: shown.mouse,
         alternate_screen: shown.alternate_screen,
+        keyboard: Default::default(),
     });
 }
 

@@ -424,7 +424,7 @@ fn subscribe(
     pane: PaneId,
     runs: bool,
 ) -> anyhow::Result<(ServerMsg, broadcast::Receiver<ServerMsg>)> {
-    let (rows, cols, cells, cursor, mouse, alternate_screen, rx) = daemon.subscribe_pane(pane)?;
+    let (rows, cols, cells, cursor, mouse, alternate_screen, keyboard, rx) = daemon.subscribe_pane(pane)?;
     let snapshot = if runs {
         ServerMsg::PaneRows {
             pane,
@@ -434,6 +434,7 @@ fn subscribe(
             cursor,
             mouse,
             alternate_screen,
+            keyboard,
         }
     } else {
         ServerMsg::PaneSnapshot {
@@ -444,6 +445,7 @@ fn subscribe(
             cursor,
             mouse,
             alternate_screen,
+            keyboard,
         }
     };
     Ok((snapshot, rx))
@@ -463,6 +465,7 @@ fn per_cell(frame: ServerMsg) -> Option<ServerMsg> {
             cursor,
             mouse,
             alternate_screen,
+            keyboard,
         } => Some(ServerMsg::PaneSnapshot {
             pane,
             rows,
@@ -471,6 +474,7 @@ fn per_cell(frame: ServerMsg) -> Option<ServerMsg> {
             cursor,
             mouse,
             alternate_screen,
+            keyboard,
         }),
         ServerMsg::RowDamage {
             scroll: Some(_), ..
@@ -482,12 +486,14 @@ fn per_cell(frame: ServerMsg) -> Option<ServerMsg> {
             cursor,
             mouse,
             alternate_screen,
+            keyboard,
         } => Some(ServerMsg::Damage {
             pane,
             spans: runs.iter().map(CellRun::span).collect(),
             cursor,
             mouse,
             alternate_screen,
+            keyboard,
         }),
         other => Some(other),
     }
@@ -1460,6 +1466,7 @@ mod tests {
             },
             mouse: Default::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         }
     }
 
@@ -1475,6 +1482,7 @@ mod tests {
             cursor: Default::default(),
             mouse: Default::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         }
     }
 
@@ -1488,6 +1496,7 @@ mod tests {
             cursor: Default::default(),
             mouse: Default::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         }
     }
 

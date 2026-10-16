@@ -13,7 +13,7 @@
 //! are handed between them.
 
 use argus_protocol::pane_view::{Effect, PaneView};
-use argus_protocol::{ClientMsg, MouseTracking, PaneId, ServerMsg};
+use argus_protocol::{ClientMsg, KeyboardMode, MouseTracking, PaneId, ServerMsg};
 
 use crate::page::{Frame, Side};
 use crate::screen::Screen;
@@ -341,6 +341,11 @@ impl ShownPane {
     /// The mouse modes the keyed pane's child asked for.
     pub fn mouse(&self) -> MouseTracking {
         self.keyed().map(|screen| screen.view().mouse()).unwrap_or_default()
+    }
+
+    /// The kitty keyboard flags the keyed pane's child has pushed.
+    pub fn keyboard(&self) -> KeyboardMode {
+        self.keyed().map(|screen| screen.view().keyboard()).unwrap_or_default()
     }
 
     /// The keyed pane's text between two cells; empty with no pane.

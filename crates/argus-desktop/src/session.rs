@@ -931,7 +931,8 @@ impl Session {
             }
             None if keymap::is_leader(key) => self.shown.await_leader(),
             None => {
-                let bytes = keys::to_key(key).map(|k| argus_protocol::keys::encode(&k)).unwrap_or_default();
+                let mode = self.shown.keyboard();
+                let bytes = keys::to_key(key).map(|k| argus_protocol::keys::encode_with(&k, mode)).unwrap_or_default();
                 self.input(bytes);
             }
         }
@@ -946,7 +947,10 @@ impl Session {
 
     fn run(&mut self, action: Action) {
         match action {
-            Action::Leader => self.input(argus_protocol::keys::encode(&Key::new(KeyCode::Char(' '), Mods::CTRL))),
+            Action::Leader => {
+                let ctrl_space = Key::new(KeyCode::Char(' '), Mods::CTRL);
+                self.input(argus_protocol::keys::encode_with(&ctrl_space, self.shown.keyboard()))
+            }
             // A console has no sidebar of its own to put away: filling the
             // window is its fullscreen.
             Action::Fill if self.console_typing() => self.toggle_console_fullscreen(),
@@ -3959,8 +3963,46 @@ mod tests {
             cursor: argus_protocol::Cursor::default(),
             mouse: argus_protocol::MouseTracking::default(),
             alternate_screen,
+            keyboard: argus_protocol::KeyboardMode::default(),
         });
         s
+    }
+
+    fn input_bytes(msgs: &[ClientMsg]) -> Vec<u8> {
+        msgs.iter()
+            .filter_map(|m| match m {
+                ClientMsg::Input { bytes, .. } => Some(bytes.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    }
+
+    fn rows_with_keyboard(flags: u8) -> ServerMsg {
+        ServerMsg::PaneRows {
+            pane: PaneId(2),
+            rows: 5,
+            cols: 10,
+            runs: Vec::new(),
+            cursor: argus_protocol::Cursor::default(),
+            mouse: argus_protocol::MouseTracking::default(),
+            alternate_screen: false,
+            keyboard: argus_protocol::KeyboardMode(flags),
+        }
+    }
+
+    #[test]
+    fn shift_enter_is_distinct_once_the_child_pushes_kitty_flags() {
+        let shift_enter = PageKey { key: "Enter".into(), shift: true, ..PageKey::default() };
+        let mut s = showing(5, false);
+        assert_eq!(input_bytes(&s.key(&shift_enter)), b"\r", "legacy until the child asks");
+
+        s.receive(rows_with_keyboard(1));
+        assert_eq!(input_bytes(&s.key(&shift_enter)), b"\x1b[13;2u");
+        assert_eq!(input_bytes(&s.key(&press("Enter"))), b"\r", "a plain Enter still submits");
+
+        s.receive(rows_with_keyboard(0));
+        assert_eq!(input_bytes(&s.key(&shift_enter)), b"\r", "a pop returns to legacy");
     }
 
     fn history(offset: u32, depth: u32, top: Option<u64>) -> ServerMsg {
@@ -4001,6 +4043,7 @@ mod tests {
             cursor: argus_protocol::Cursor::default(),
             mouse: argus_protocol::MouseTracking::default(),
             alternate_screen: false,
+            keyboard: Default::default(),
         });
         assert_eq!(scrollback(&resized), [(3, Some(100))]);
     }
@@ -4153,6 +4196,7 @@ mod tests {
                 encoding: argus_protocol::MouseEncoding::Sgr,
             },
             alternate_screen: false,
+            keyboard: Default::default(),
         });
         let down = b"\x1b[<2;4;2M".to_vec();
         assert_eq!(names(&s.mouse(PageMouse::Down, 2, (1, 3))), [format!("input 2 {down:?}")]);
@@ -5391,6 +5435,7 @@ mod tests {
                 cursor: argus_protocol::Cursor::default(),
                 mouse: argus_protocol::MouseTracking::default(),
                 alternate_screen: false,
+                keyboard: Default::default(),
             });
         }
         let sent = s.wheel(PaneId(8), -1, (0, 0));

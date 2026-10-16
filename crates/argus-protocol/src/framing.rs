@@ -360,6 +360,7 @@ mod tests {
                     ..Default::default()
                 }],
             }],
+            keyboard: Default::default(),
         };
         let ServerMsg::Damage { spans, cursor, .. } = roundtrip(&sent).await else {
             panic!("variant changed across the wire");

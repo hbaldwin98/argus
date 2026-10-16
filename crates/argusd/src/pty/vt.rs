@@ -108,6 +108,7 @@ impl Vt {
             scrolling_history: scrollback + COUNTING_HEADROOM,
             default_cursor_style: UNSET_SHAPE,
             osc52: Osc52::OnlyCopy,
+            kitty_keyboard: true,
             ..Config::default()
         };
         let requests = Requests::default();
@@ -297,6 +298,21 @@ impl Vt {
                 MouseEncoding::Default
             },
         }
+    }
+
+    /// The kitty keyboard flags the child has pushed, in the protocol's own
+    /// bit order. alacritty keeps the active entry of the child's push/pop
+    /// stack in `TermMode`, so a pop reads back as the flags beneath it.
+    pub(super) fn keyboard(&self) -> KeyboardMode {
+        let mode = self.term.mode();
+        let bits = [
+            (TermMode::DISAMBIGUATE_ESC_CODES, 1),
+            (TermMode::REPORT_EVENT_TYPES, 2),
+            (TermMode::REPORT_ALTERNATE_KEYS, 4),
+            (TermMode::REPORT_ALL_KEYS_AS_ESC, 8),
+            (TermMode::REPORT_ASSOCIATED_TEXT, 16),
+        ];
+        KeyboardMode(bits.iter().filter(|(flag, _)| mode.contains(*flag)).fold(0, |all, (_, bit)| all | bit))
     }
 
     pub(super) fn alternate_screen(&self) -> bool {

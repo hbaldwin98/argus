@@ -14,7 +14,7 @@ use std::ffi::OsString;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 
 use argus_protocol::{
-    damage, grid_runs, Cell, Color, CompactString, Cursor, CursorShape, MouseEncoding, MouseMode,
+    damage, grid_runs, Cell, Color, CompactString, Cursor, CursorShape, KeyboardMode, MouseEncoding, MouseMode,
     MouseTracking, PaneId, ServerMsg, BLANK,
 };
 #[cfg(unix)]
@@ -225,6 +225,18 @@ pub struct PaneRuntime {
     #[cfg_attr(windows, allow(dead_code))]
     pump_wakes: Arc<std::sync::atomic::AtomicUsize>,
 }
+
+/// A pane's grid and modes, and the damage stream that continues them.
+pub type PaneSubscription = (
+    u16,
+    u16,
+    Vec<Vec<Cell>>,
+    Cursor,
+    MouseTracking,
+    bool,
+    KeyboardMode,
+    broadcast::Receiver<ServerMsg>,
+);
 
 #[derive(Clone)]
 pub struct PaneInput {
@@ -535,17 +547,7 @@ impl PaneRuntime {
     /// to neither — it is newer than the snapshot and older than the
     /// receiver — and the cells it carried stay wrong on the subscriber's
     /// grid until something else happens to overwrite them.
-    pub fn snapshot_and_subscribe(
-        &self,
-    ) -> (
-        u16,
-        u16,
-        Vec<Vec<Cell>>,
-        Cursor,
-        MouseTracking,
-        bool,
-        broadcast::Receiver<ServerMsg>,
-    ) {
+    pub fn snapshot_and_subscribe(&self) -> PaneSubscription {
         let vt = self.vt.lock().unwrap();
         let (rows, cols) = vt.size();
         let rx = self.damage_tx.subscribe();
@@ -556,6 +558,7 @@ impl PaneRuntime {
             vt.cursor(),
             vt.mouse(),
             vt.alternate_screen(),
+            vt.keyboard(),
             rx,
         )
     }
@@ -615,6 +618,7 @@ fn publish_snapshot(
         cursor: vt.cursor(),
         mouse: vt.mouse(),
         alternate_screen: vt.alternate_screen(),
+        keyboard: vt.keyboard(),
     });
 }
 
@@ -632,6 +636,10 @@ struct Sent {
     /// print them.
     mouse: Option<MouseTracking>,
     alternate_screen: Option<bool>,
+    /// Tracked for the reason `mouse` is: an agent CLI pushes its keyboard
+    /// flags once at start-up without drawing a cell, and a client that
+    /// misses that keeps sending Shift+Enter as a plain Enter.
+    keyboard: Option<KeyboardMode>,
 }
 
 /// Brings `live` up to the emulator's screen and sends the watchers what
@@ -647,12 +655,14 @@ fn send_frame(
     let cursor = vt.cursor();
     let mouse = vt.mouse();
     let alternate_screen = vt.alternate_screen();
+    let keyboard = vt.keyboard();
     let (scroll, runs) = damage(sent.grid.as_mut(), live);
     let unchanged = scroll.is_none()
         && runs.is_empty()
         && sent.cursor == Some(cursor)
         && sent.mouse == Some(mouse)
-        && sent.alternate_screen == Some(alternate_screen);
+        && sent.alternate_screen == Some(alternate_screen)
+        && sent.keyboard == Some(keyboard);
     if unchanged {
         return;
     }
@@ -672,6 +682,7 @@ fn send_frame(
     sent.cursor = Some(cursor);
     sent.mouse = Some(mouse);
     sent.alternate_screen = Some(alternate_screen);
+    sent.keyboard = Some(keyboard);
     let _ = damage_tx.send(ServerMsg::RowDamage {
         pane,
         scroll,
@@ -679,6 +690,7 @@ fn send_frame(
         cursor,
         mouse,
         alternate_screen,
+        keyboard,
     });
 }
 
