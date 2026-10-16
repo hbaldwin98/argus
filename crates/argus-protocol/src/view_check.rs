@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use crate::agent_view::{AgentView, Block, FormInput, RowItem, RowSelect, TreeNode, Value};
 use crate::checkout_path::is_checkout_relative;
 use crate::view_press::ViewAction;
+use crate::view_tree::Leaf;
 
 /// A view's JSON, as the agent sends it. Room for a large ticket with its
 /// comments; past it the agent is dumping, not choosing.
@@ -78,7 +79,10 @@ impl AgentView {
             return Err(format!("refresh_every: at least {MIN_REFRESH_SECS} seconds"));
         }
         let mut actions = HashSet::new();
-        actions_ok(&self.actions, "actions", &mut actions)?;
+        at_most_actions(&self.actions, "actions")?;
+        for (i, action) in self.actions.iter().enumerate() {
+            action_ok(action, &format!("actions[{i}]"), &mut actions)?;
+        }
         let name = |i: usize| format!("blocks[{i}]");
         list_ok(&self.blocks, "blocks", &name, 1, &mut actions)?;
         embeds_not_itself(&self.blocks, &name, id)?;
@@ -114,40 +118,28 @@ fn block_ok(block: &Block, path: &str, depth: usize, actions: &mut Actions) -> R
     Ok(())
 }
 
-/// What a block holds itself, not the blocks inside it.
+/// What a block holds itself, not the blocks inside it: its own shape, then
+/// each link, value and action in it, in the order `view_tree` reads them.
 fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String> {
+    shape_ok(block, path)?;
+    for (at, leaf) in block.leaves() {
+        let path = format!("{path}{}", at.patch_step());
+        match leaf {
+            Leaf::SavedView(id) => linked_view_ok(id, &path)?,
+            Leaf::Value(value) => value_ok(value, &path)?,
+            Leaf::Action(action, _) => action_ok(action, &path, actions)?,
+        }
+    }
+    Ok(())
+}
+
+/// A block's counts and shape: what it keeps apart from its leaves.
+fn shape_ok(block: &Block, path: &str) -> Result<(), String> {
     match block {
         Block::Unknown => Err(format!("{path}: no block kind by that name")),
         Block::Tabs { tabs } if tabs.is_empty() => Err(format!("{path}: tabs need at least one tab")),
-        Block::Embed { view } => linked_view_ok(view, &format!("{path}.view")),
-        Block::Fields { fields } => {
-            for (i, field) in fields.iter().enumerate() {
-                value_ok(&field.value, &format!("{path}.fields[{i}].value"))?;
-            }
-            Ok(())
-        }
-        Block::List { items } => {
-            for (i, item) in items.iter().enumerate() {
-                opens_ok(&item.opens, &format!("{path}.items[{i}]"))?;
-            }
-            Ok(())
-        }
-        Block::Timeline { events } => {
-            for (i, event) in events.iter().enumerate() {
-                opens_ok(&event.opens, &format!("{path}.events[{i}]"))?;
-            }
-            Ok(())
-        }
-        Block::Checklist { items } => {
-            for (i, item) in items.iter().enumerate() {
-                opens_ok(&item.opens, &format!("{path}.items[{i}]"))?;
-            }
-            Ok(())
-        }
-        Block::Section { opens, .. } | Block::Details { opens, .. } => opens_ok(opens, path),
         Block::Stats { stats } => {
             for (i, stat) in stats.iter().enumerate() {
-                opens_ok(&stat.opens, &format!("{path}.stats[{i}]"))?;
                 if stat.trend.len() > MAX_TREND_POINTS {
                     return Err(format!("{path}.stats[{i}].trend: a trend has at most {MAX_TREND_POINTS} points"));
                 }
@@ -179,9 +171,6 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
                         columns.len()
                     ));
                 }
-                for (c, cell) in row.iter().enumerate() {
-                    value_ok(cell, &format!("{path}.rows[{r}][{c}]"))?;
-                }
             }
             if !row_keys.is_empty() && row_keys.len() != rows.len() {
                 return Err(format!("{path}.row_keys: one per row, the table has {} rows", rows.len()));
@@ -192,26 +181,17 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
             if (*select != RowSelect::None || !own.is_empty()) && row_keys.is_empty() {
                 return Err(format!("{path}: a table that selects rows or acts on them needs row_keys"));
             }
-            actions_ok(own, &format!("{path}.actions"), actions)?;
+            at_most_actions(own, &format!("{path}.actions"))?;
             if !details.is_empty() && details.len() != rows.len() {
                 return Err(format!("{path}.details: one per row, the table has {} rows", rows.len()));
             }
             Ok(())
         }
-        Block::Card { actions: own, opens, .. } => {
-            opens_ok(opens, path)?;
-            actions_ok(own, &format!("{path}.actions"), actions)
-        }
+        Block::Card { actions: own, .. } => at_most_actions(own, &format!("{path}.actions")),
         Block::Row { items, .. } => {
             let count = items.iter().filter(|i| matches!(i, RowItem::Action { .. })).count();
             if count > MAX_VIEW_ACTIONS {
                 return Err(format!("{path}: at most {MAX_VIEW_ACTIONS} actions in one place"));
-            }
-            for (i, item) in items.iter().enumerate() {
-                match item {
-                    RowItem::Value { value } => value_ok(value, &format!("{path}.items[{i}].value"))?,
-                    RowItem::Action { action } => action_ok(action, &format!("{path}.items[{i}].action"), actions)?,
-                }
             }
             Ok(())
         }
@@ -252,7 +232,6 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
             }
             let mut ids = HashSet::new();
             for (n, node) in nodes.iter().enumerate() {
-                opens_ok(&node.opens, &format!("{path}.nodes[{n}]"))?;
                 if !ids.insert(node.id.as_str()) {
                     return Err(format!("{path}.nodes[{n}]: the id {:?} is used twice", node.id));
                 }
@@ -289,18 +268,7 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
         Block::Log { lines } if lines.len() > MAX_LOG_LINES => {
             Err(format!("{path}.lines: a log has at most {MAX_LOG_LINES} lines; send the tail"))
         }
-        Block::Board { columns } => {
-            for (c, column) in columns.iter().enumerate() {
-                for (k, card) in column.cards.iter().enumerate() {
-                    opens_ok(&card.opens, &format!("{path}.columns[{c}].cards[{k}]"))?;
-                    if let Some(value) = &card.value {
-                        value_ok(value, &format!("{path}.columns[{c}].cards[{k}].value"))?;
-                    }
-                }
-            }
-            Ok(())
-        }
-        Block::Form { id, fields, submit } => {
+        Block::Form { id, fields, .. } => {
             if id.trim().is_empty() {
                 return Err(format!("{path}: a form needs an id"));
             }
@@ -334,11 +302,20 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
                     _ => {}
                 }
             }
-            action_ok(submit, &format!("{path}.submit"), actions)
+            Ok(())
         }
-        // Containers are walked through their children; the rest have no
-        // limit of their own to keep.
-        Block::Columns { .. }
+        // A container's blocks are walked by `block_ok`, and every kind's
+        // links, values and actions by `own_ok` after this; these kinds keep
+        // no shape of their own.
+        Block::Embed { .. }
+        | Block::Fields { .. }
+        | Block::List { .. }
+        | Block::Timeline { .. }
+        | Block::Checklist { .. }
+        | Block::Section { .. }
+        | Block::Details { .. }
+        | Block::Board { .. }
+        | Block::Columns { .. }
         | Block::Tabs { .. }
         | Block::Grid { .. }
         | Block::Markdown { .. }
@@ -351,12 +328,9 @@ fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String
     }
 }
 
-fn actions_ok(list: &[ViewAction], path: &str, ids: &mut Actions) -> Result<(), String> {
+fn at_most_actions(list: &[ViewAction], path: &str) -> Result<(), String> {
     if list.len() > MAX_VIEW_ACTIONS {
         return Err(format!("{path}: at most {MAX_VIEW_ACTIONS} actions in one place"));
-    }
-    for (i, action) in list.iter().enumerate() {
-        action_ok(action, &format!("{path}[{i}]"), ids)?;
     }
     Ok(())
 }
@@ -411,10 +385,6 @@ fn tree_ok(nodes: &[TreeNode], path: &str, depth: usize, count: &mut usize) -> R
         if *count > MAX_TREE_NODES {
             return Err(format!("{path}[{i}]: a tree has at most {MAX_TREE_NODES} nodes"));
         }
-        opens_ok(&node.opens, &format!("{path}[{i}]"))?;
-        if let Some(value) = &node.value {
-            value_ok(value, &format!("{path}[{i}].value"))?;
-        }
         tree_ok(&node.children, &format!("{path}[{i}].children"), depth + 1, count)?;
     }
     Ok(())
@@ -447,14 +417,6 @@ pub(crate) fn linked_view_ok(id: &str, path: &str) -> Result<(), String> {
         return Err(format!("{path}: an id is at most {MAX_VIEW_ID_BYTES} bytes"));
     }
     no_control(id, path)
-}
-
-/// The `opens` of an element named by `path`, when it has one.
-fn opens_ok(opens: &Option<String>, path: &str) -> Result<(), String> {
-    match opens {
-        Some(id) => linked_view_ok(id, &format!("{path}.opens")),
-        None => Ok(()),
-    }
 }
 
 /// A view that embeds itself would never finish drawing. A longer cycle
