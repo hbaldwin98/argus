@@ -44,6 +44,10 @@ export function el(tag, props, ...children) {
             continue;
         if (key === 'class')
             node.className = String(value);
+        // Through the style object, not the attribute: the window's CSP is
+        // `style-src 'self'`, which drops a style attribute and allows this.
+        else if (key === 'style')
+            node.style.cssText = String(value);
         else if (key.startsWith('on') && typeof value === 'function') {
             node.addEventListener(key.slice(2), value);
         }

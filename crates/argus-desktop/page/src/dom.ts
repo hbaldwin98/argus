@@ -76,6 +76,9 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   for (const [key, value] of Object.entries(props ?? {})) {
     if (value == null || value === false) continue;
     if (key === 'class') node.className = String(value);
+    // Through the style object, not the attribute: the window's CSP is
+    // `style-src 'self'`, which drops a style attribute and allows this.
+    else if (key === 'style') node.style.cssText = String(value);
     else if (key.startsWith('on') && typeof value === 'function') {
       node.addEventListener(key.slice(2), value as EventListener);
     } else node.setAttribute(key, value === true ? '' : String(value));
