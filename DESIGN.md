@@ -1622,6 +1622,21 @@ on the line it was on across a toggle, a half-made range is dropped, and the cho
 that persists like the side toggle. A row holding both sides anchors a comment to both, which is
 the anchor the unified view produces for the same two lines selected together.
 
+The lines a diff did not carry are folds: one before the first hunk, one between each two, and
+one after the last, each saying how many lines it hides. The cursor stops on a fold but a fold
+takes no comment. `Enter` opens twenty lines of it — up from the first hunk, down from the hunk
+above anywhere else — or all of a short one, and `z` opens the rest; the desktop window's fold
+also has buttons for both. The lines come from the file's new-side blob, which each shown
+`FileDiff` names along with how many lines that side has, rather than from the working tree: the
+unstaged side is a snapshot the agent may have edited past since. The daemon reads and highlights
+the asked lines of that blob (`ReviewContext`) and sends new numbers only; the client numbers the
+old side by the offset the hunks above left, and splices the lines into the hunk they border as
+ordinary context, joining two hunks once nothing lies between them and rewriting the `@@`
+ranges. So a revealed line is commented on, split and navigated exactly as the diff's own
+context is. One fold is read at a time, and lines that arrive after a refresh read the file anew
+are dropped. A daemon that names no blob offers no folds, so an older one is never asked. The
+history's commit preview draws no folds; the review it opens into does.
+
 Every request has an id and the client accepts only the latest exact reply. Review capture is
 globally serialized, and a connection drops an older queued capture when a newer request replaces
 it.

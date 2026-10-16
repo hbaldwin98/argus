@@ -15,6 +15,51 @@ fn r_asks_the_daemon_for_the_selected_checkouts_diff() {
 }
 
 #[test]
+fn enter_on_a_fold_reads_its_lines_and_they_join_the_diff() {
+    let mut h = Harness::new();
+    let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+    let context = |old: Option<u32>, new: u32| argus_protocol::DiffLine {
+        kind: argus_protocol::LineKind::Context,
+        old_lineno: old,
+        new_lineno: Some(new),
+        text: format!("line {new}"),
+        spans: Vec::new(),
+    };
+    let mut review = diff_of(checkout);
+    let file = &mut review.files[0];
+    file.hunks[0].lines.push(context(Some(2), 3));
+    file.new_blob = Some("b10b".into());
+    file.new_lines = Some(5);
+    open_review(&mut h, review);
+
+    h.key(KeyCode::Char('G'));
+    h.key(KeyCode::Char('j')); // onto the fold below the hunk
+    h.key(KeyCode::Enter);
+    let request_id = match &h.sent()[..] {
+        [ClientMsg::ReviewContext { request_id, blob, start: 4, end: 5, .. }] if blob == "b10b" => *request_id,
+        other => panic!("unexpected {other:?}"),
+    };
+
+    h.app.on_server_msg(ServerMsg::ReviewContext(argus_protocol::ReviewContext {
+        request_id,
+        checkout,
+        lines: vec![context(None, 4), context(None, 5)],
+    }));
+    let lines = &h.app.review_view().unwrap().review.files[0].hunks[0].lines;
+    assert_eq!(lines.len(), 5);
+    assert_eq!(lines[4].old_lineno, Some(4), "one line was added above it");
+}
+
+#[test]
+fn enter_off_a_fold_asks_for_nothing() {
+    let mut h = Harness::new();
+    let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+    open_review(&mut h, diff_of(checkout));
+    h.key(KeyCode::Enter);
+    assert!(h.sent().iter().all(|m| !matches!(m, ClientMsg::ReviewContext { .. })));
+}
+
+#[test]
 fn the_arriving_diff_opens_the_viewer_and_takes_focus() {
     let mut h = Harness::new();
     let checkout = h.app.tree[0].repositories[0].checkouts[0].id;

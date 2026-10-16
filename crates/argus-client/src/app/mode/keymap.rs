@@ -1017,6 +1017,11 @@ fn has_review(app: &App) -> bool {
     app.review_view().is_some()
 }
 
+/// Whether the review's cursor is on a fold, the only place Enter opens one.
+fn on_fold(app: &App) -> bool {
+    app.review_view().is_some_and(|v| v.fold().is_some())
+}
+
 fn in_review(app: &mut App, act: impl FnOnce(&mut argus_protocol::review_view::ReviewView)) {
     if let Some(view) = app.review_view_mut() {
         act(view);
@@ -1048,6 +1053,16 @@ const REVIEW: Keymap = Keymap {
             )
             .when(has_review)
             .hints(&[Hint::new("j/k", 1)]),
+            Binding::new(
+                "enter / z",
+                "the lines between hunks: a step more, or all",
+                &[
+                    (&[Enter], |app| app.unfold_review(false)),
+                    (&[Char('z')], |app| app.unfold_review(true)),
+                ],
+            )
+            .when(on_fold)
+            .hints(&[Hint::new("enter unfold", 0).when(on_fold)]),
             Binding::new(
                 "d / u",
                 "ten at a time",

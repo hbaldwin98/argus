@@ -2211,6 +2211,10 @@ impl Session {
     /// is a pane or brings its own window, and a pane leaves the stages
     /// once shown, since E was pressed to look at it.
     fn review_action(&mut self, action: Action) -> Vec<ClientMsg> {
+        if matches!(action, Action::Unfold | Action::UnfoldAll) {
+            self.dialogs.review_unfold(None, action == Action::UnfoldAll, || self.awaited.name(), &mut self.out);
+            return self.finish();
+        }
         if let Some((checkout, path, line)) = self.dialogs.review_action(action, &self.tree, &mut self.passing) {
             let request_id = self.awaited.ask(Made::ShowOverStages);
             let (external, command) = self.choices.editor();
@@ -2225,6 +2229,10 @@ impl Session {
     }
 
     fn review_click(&mut self, target: ReviewClick) -> Vec<ClientMsg> {
+        if let ReviewClick::Fold { row, all } = target {
+            self.dialogs.review_unfold(Some(row), all, || self.awaited.name(), &mut self.out);
+            return self.finish();
+        }
         self.dialogs.review_click(target, &mut self.passing);
         self.finish()
     }
@@ -3003,6 +3011,8 @@ mod tests {
                     lines: vec![DiffLine { kind: LineKind::Added, old_lineno: None, new_lineno: Some(4), text: "x".into(), spans: Vec::new() }],
                 }],
                 note: None,
+                new_blob: None,
+                new_lines: None,
             }],
             commit: None,
         })

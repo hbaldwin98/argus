@@ -194,10 +194,39 @@ function half(side: DiffSide | null, both: boolean): HTMLElement {
   );
 }
 
-/** A row of a diff; `pick` is what a click on a line does, if anything. */
-export function diffRow(r: DiffRow, pick?: (e: MouseEvent) => void): HTMLElement {
+/**
+ * A row of a diff; `pick` is what a click on a line does, if anything, and
+ * `unfold` what a fold's buttons do. A fold drawn without one is only said.
+ */
+export function diffRow(
+  r: DiffRow,
+  pick?: (e: MouseEvent) => void,
+  unfold?: (all: boolean) => void,
+): HTMLElement {
   if (r.kind === 'hunk' || r.kind === 'note') {
     return el('div', { class: `drow ${r.kind}` }, r.text);
+  }
+  if (r.kind === 'fold') {
+    const show = (label: string, all: boolean): HTMLElement =>
+      el(
+        'button',
+        {
+          class: 'fbtn',
+          onclick: (e: MouseEvent) => {
+            // The row under it would take the click as a move first.
+            e.stopPropagation();
+            unfold?.(all);
+          },
+        },
+        label,
+      );
+    return el(
+      'div',
+      { class: `drow fold${r.cursor ? ' cursor' : ''}`, onclick: pick ?? null },
+      el('span', { class: 'fold-text' }, `⋯ ${r.text}`),
+      unfold &&
+        (r.step ? [show(`Show ${r.step}`, false), show('Show all', true)] : show('Show', true)),
+    );
   }
   const line = r.kind === 'line';
   return el(
@@ -298,7 +327,11 @@ function diff(r: ReviewPage): HTMLElement {
       if (d.picked || (d.cursor && under < 0)) under = i;
     });
     body = rows.flatMap((d, i) => [
-      diffRow(d, (e) => click({ on: 'row', row: d.row, extend: e.shiftKey })),
+      diffRow(
+        d,
+        (e) => click({ on: 'row', row: d.row, extend: e.shiftKey }),
+        (all) => click({ on: 'fold', row: d.row, all }),
+      ),
       r.composing && i === under && commentBox(r),
     ]);
   }
@@ -370,6 +403,8 @@ export function drawReview(): void {
           ' jump · ',
           keycap('E'),
           ' editor · ',
+          keycap('Enter'),
+          ' unfold · ',
           keycap('Esc'),
           ' close',
         ),

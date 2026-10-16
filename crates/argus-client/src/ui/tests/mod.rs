@@ -498,6 +498,33 @@ fn showing(
     commit: Option<argus_protocol::CommitInfo>,
     lines: Vec<argus_protocol::DiffLine>,
 ) -> App {
+    showing_file(split, commit, lines, None)
+}
+
+/// A review whose file is forty lines long, read from a blob, so the lines
+/// above and below its one hunk are folds — the cursor on the one below.
+pub(super) fn app_with_folded_review() -> App {
+    let lines = vec![
+        diff_line(argus_protocol::LineKind::Context, Some(10), Some(10), "unchanged"),
+        diff_line(argus_protocol::LineKind::Removed, Some(11), None, "gone"),
+        diff_line(argus_protocol::LineKind::Added, None, Some(11), "arrived"),
+        diff_line(argus_protocol::LineKind::Context, Some(12), Some(12), "after"),
+    ];
+    let mut app = showing_file(false, None, lines, Some(40));
+    let view = app.review.as_mut().unwrap().view_mut().unwrap();
+    view.bottom_of_diff();
+    view.move_by(1);
+    app
+}
+
+/// As [`showing`], the file `new_lines` long when that is given, with a
+/// blob to read the lines between hunks from.
+fn showing_file(
+    split: bool,
+    commit: Option<argus_protocol::CommitInfo>,
+    lines: Vec<argus_protocol::DiffLine>,
+    new_lines: Option<u32>,
+) -> App {
     use argus_protocol::review_session::ReviewSession;
     let mut app = app_with_tree();
     app.review_split = split;
@@ -524,6 +551,8 @@ fn showing(
                 lines,
             }],
             note: None,
+            new_blob: new_lines.map(|_| "b10b".to_string()),
+            new_lines,
         }],
         commit,
     });

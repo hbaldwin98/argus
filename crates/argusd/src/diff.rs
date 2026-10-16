@@ -48,10 +48,70 @@ pub fn generate(path: &Path, base: ReviewBase) -> anyhow::Result<GeneratedReview
     };
     let mut files = render_diff(&repo, old, target.tree, &target.untracked)?;
     highlight_files(&repo, old, target.tree, &mut files);
+    count_new_lines(&repo, &mut files);
     Ok(GeneratedReview {
         files,
         commit: None,
     })
+}
+
+/// Lines `start..=end` of `blob`, highlighted as `path`, for a fold the
+/// viewer opened. Read from the blob a review named rather than from the
+/// working tree, which has moved on since the snapshot was taken. New
+/// numbers only: the old side's offset is the client's to apply.
+pub fn context(repo_path: &Path, blob: &str, path: &str, start: u32, end: u32) -> anyhow::Result<Vec<DiffLine>> {
+    let repo = git2::Repository::open(repo_path)
+        .with_context(|| format!("could not open Git repository at {}", repo_path.display()))?;
+    let oid = git2::Oid::from_str(blob).with_context(|| format!("{blob} is not an object id"))?;
+    let blob = repo.find_blob(oid).with_context(|| format!("could not read {path} as reviewed"))?;
+    if blob.is_binary() || blob.size() as i64 > MAX_DIFF_BYTES {
+        anyhow::bail!("{path} is not shown as text");
+    }
+    let text = String::from_utf8_lossy(blob.content());
+    let spans = crate::highlight::line_spans(path, &text);
+    let first = start.max(1);
+    let last = end.min(first.saturating_add(MAX_LINES_PER_FILE as u32 - 1));
+    Ok(text
+        .lines()
+        .enumerate()
+        .skip(first as usize - 1)
+        .take((last + 1).saturating_sub(first) as usize)
+        .map(|(i, text)| {
+            let width = text.len() as u32;
+            DiffLine {
+                kind: LineKind::Context,
+                old_lineno: None,
+                new_lineno: Some(i as u32 + 1),
+                spans: spans
+                    .as_ref()
+                    .and_then(|s| s.get(i))
+                    .map(|s| s.iter().copied().filter(|s| s.end <= width).collect())
+                    .unwrap_or_default(),
+                text: text.to_owned(),
+            }
+        })
+        .collect())
+}
+
+/// How many lines each shown file's new side has, which is what says how
+/// much lies below its last hunk. Only for a file a fold could be opened
+/// in: one with hunks and a new blob to read.
+fn count_new_lines(repo: &git2::Repository, files: &mut [FileDiff]) {
+    for file in files {
+        if file.note.is_some() || file.hunks.is_empty() {
+            continue;
+        }
+        let Some(oid) = file.new_blob.as_deref().and_then(|b| git2::Oid::from_str(b).ok()) else {
+            continue;
+        };
+        let Ok(blob) = repo.find_blob(oid) else {
+            continue;
+        };
+        let content = blob.content();
+        let breaks = content.iter().filter(|&&b| b == b'\n').count();
+        let unterminated = content.last().is_some_and(|&b| b != b'\n');
+        file.new_lines = Some((breaks + usize::from(unterminated)) as u32);
+    }
 }
 
 /// Newest first, capped, identities only. Summarizing what each commit
@@ -118,6 +178,7 @@ pub fn generate_commit(path: &Path, rev: &str) -> anyhow::Result<GeneratedReview
         .map(|tree| tree.id());
     let mut files = render_diff(&repo, old, new_tree.id(), &HashSet::new())?;
     highlight_files(&repo, old, new_tree.id(), &mut files);
+    count_new_lines(&repo, &mut files);
     Ok(GeneratedReview {
         files,
         commit: Some(crate::git::commit_info(&commit)),
@@ -484,7 +545,10 @@ fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {
         _ => ChangeKind::Modified,
     };
     let too_large = delta.old_file().size().max(delta.new_file().size()) > MAX_DIFF_BYTES as u64;
+    let new_blob = delta.new_file().id();
     FileDiff {
+        new_blob: (!new_blob.is_zero()).then(|| new_blob.to_string()),
+        new_lines: None,
         old_path: (kind == ChangeKind::Renamed)
             .then(|| delta.old_file().path().map(slashed))
             .flatten(),
@@ -773,6 +837,74 @@ mod tests {
     /// Highlighting reaches the wire, and each side is read in its own blob.
     /// The removed line here is only valid Rust in the file it was removed
     /// from, so finding its keyword proves the old tree was the one parsed.
+    fn thirty_lines() -> String {
+        (1..=30).map(|n| format!("let line_{n} = {n};\n")).collect()
+    }
+
+    #[test]
+    fn a_shown_file_names_its_new_blob_and_how_long_it_is() {
+        // What a fold below the last hunk is measured against.
+        let (_dir, path) = repo_with(&[("a.rs", &thirty_lines())]);
+        write(&path, "a.rs", &thirty_lines().replace("line_15 = 15", "line_15 = 0"));
+
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
+        let file = find(&review.files, "a.rs");
+        assert!(file.new_blob.is_some());
+        assert_eq!(file.new_lines, Some(30));
+    }
+
+    #[test]
+    fn a_deleted_file_has_no_new_side_to_read() {
+        let (_dir, path) = repo_with(&[("gone.rs", "fn x() {}\n"), ("kept.rs", "")]);
+        std::fs::remove_file(path.join("gone.rs")).unwrap();
+
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
+        let file = find(&review.files, "gone.rs");
+        assert_eq!((file.new_blob.as_deref(), file.new_lines), (None, None));
+    }
+
+    #[test]
+    fn context_is_read_from_the_snapshot_reviewed_not_the_working_tree() {
+        // The agent kept typing after the review was taken; a fold opened
+        // now must show the file the diff around it was made from.
+        let (_dir, path) = repo_with(&[("a.rs", &thirty_lines())]);
+        write(&path, "a.rs", &thirty_lines().replace("line_15 = 15", "line_15 = 0"));
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
+        let blob = find(&review.files, "a.rs").new_blob.clone().unwrap();
+        write(&path, "a.rs", "rewritten\n");
+
+        let lines = context(&path, &blob, "a.rs", 2, 4).unwrap();
+        let texts: Vec<(Option<u32>, &str)> = lines.iter().map(|l| (l.new_lineno, l.text.as_str())).collect();
+        assert_eq!(
+            texts,
+            [(Some(2), "let line_2 = 2;"), (Some(3), "let line_3 = 3;"), (Some(4), "let line_4 = 4;")]
+        );
+        assert!(lines.iter().all(|l| l.kind == LineKind::Context && l.old_lineno.is_none()));
+        assert!(
+            lines[0].spans.iter().any(|s| &lines[0].text[s.start as usize..s.end as usize] == "let"),
+            "highlighted as the file's language: {:?}",
+            lines[0].spans
+        );
+    }
+
+    #[test]
+    fn context_past_the_end_of_the_file_stops_at_its_last_line() {
+        let (_dir, path) = repo_with(&[("a.rs", &thirty_lines())]);
+        write(&path, "a.rs", &thirty_lines().replace("line_1 = 1", "line_1 = 0"));
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
+        let blob = find(&review.files, "a.rs").new_blob.clone().unwrap();
+
+        let lines = context(&path, &blob, "a.rs", 28, 99).unwrap();
+        assert_eq!(lines.iter().filter_map(|l| l.new_lineno).collect::<Vec<_>>(), [28, 29, 30]);
+    }
+
+    #[test]
+    fn context_from_something_that_is_not_a_blob_is_an_error() {
+        let (_dir, path) = repo_with(&[("a.rs", "x\n")]);
+        assert!(context(&path, "not-hex", "a.rs", 1, 2).is_err());
+        assert!(context(&path, &"0".repeat(40), "a.rs", 1, 2).is_err());
+    }
+
     #[test]
     fn diff_lines_carry_syntax_spans_from_their_own_side() {
         let (_dir, path) = repo_with(&[("a.rs", "fn old_name() {}\n")]);

@@ -357,6 +357,8 @@ pub enum Lens {
 pub enum ReviewClick {
     File { file: usize },
     Row { row: usize, extend: bool },
+    /// One of a fold's buttons: a step of its lines, or all of them.
+    Fold { row: usize, all: bool },
     Side { staged: bool },
     Recipient { pane: u64 },
 }
@@ -1499,10 +1501,15 @@ pub struct TranscriptLine {
 pub struct DiffRow {
     /// What a click on it sends back.
     pub row: usize,
-    #[cfg_attr(test, ts(type = "\"hunk\" | \"note\" | \"line\" | \"pair\""))]
+    #[cfg_attr(test, ts(type = "\"hunk\" | \"note\" | \"line\" | \"pair\" | \"fold\""))]
     pub kind: &'static str,
     /// A hunk's `@@` line, or a note's reason.
     pub text: String,
+    /// How many lines a fold stands for.
+    pub hidden: Option<u32>,
+    /// How many lines one opening of a fold shows, when that is fewer than
+    /// it hides: what its first button offers.
+    pub step: Option<u32>,
     /// A line, or a pair's removed side.
     pub left: Option<DiffSide>,
     /// A pair's added side.

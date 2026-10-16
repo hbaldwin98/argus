@@ -7,9 +7,10 @@
 
 use argus_protocol::fuzzy::Fuzzy;
 use argus_protocol::review_session::{self, Answered, Comment, ReviewSession};
-use argus_protocol::review_view::{marker, ReviewView, Row};
+use argus_protocol::review_view::{fold_of, marker, ReviewView, Row, FOLD_STEP};
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ChangeKind, ClientMsg, DiffLine, HighlightKind, LineKind, PaneId, Review, ReviewBase,
+    ReviewContext,
 };
 
 use crate::page::{DiffRow, DiffSide, Recipient, ReviewFile, ReviewJump, ReviewPage};
@@ -92,6 +93,29 @@ impl ReviewDialog {
         self.session.failed(checkout, request_id, message)
     }
 
+    /// Enter on a fold, or one of its buttons (`row`, which the cursor
+    /// moves to): a step of its lines, or all of them, asked for.
+    pub fn unfold(&mut self, row: Option<usize>, all: bool, id: u64) -> Option<ClientMsg> {
+        if let Some(row) = row {
+            let view = self.view_mut()?;
+            if !matches!(view.rows.get(row), Some(Row::Fold { .. })) {
+                return None;
+            }
+            view.sel = row;
+        }
+        self.session.unfold(all, id)
+    }
+
+    /// A fold's lines, spliced in if they are still wanted.
+    pub fn receive_context(&mut self, context: ReviewContext) -> bool {
+        self.session.receive_context(context)
+    }
+
+    /// Whether a fold that could not be read was this dialog's to say so.
+    pub fn context_failed(&mut self, checkout: CheckoutId, request_id: u64) -> bool {
+        self.session.context_failed(checkout, request_id)
+    }
+
     fn view(&self) -> Option<&ReviewView> {
         self.session.view()
     }
@@ -161,7 +185,7 @@ impl ReviewDialog {
         let Some(view) = self.view_mut() else {
             return;
         };
-        if !view.rows.get(row).is_some_and(|r| r.is_selectable()) {
+        if !view.rows.get(row).is_some_and(|r| r.is_stop()) {
             return;
         }
         if extend && view.mark.is_none() {
@@ -372,6 +396,21 @@ fn file(diff: &argus_protocol::FileDiff) -> ReviewFile {
 fn diff_row(view: &ReviewView, index: usize, row: Row, cursor: bool, picked: bool) -> DiffRow {
     let files = &view.review.files;
     let line = |file: usize, hunk: usize, line: usize| side(&files[file].hunks[hunk].lines[line]);
+    if let Row::Fold { file, gap } = row {
+        let hidden = fold_of(&files[file], gap).map_or(0, |f| f.hidden());
+        let lines = if hidden == 1 { "line" } else { "lines" };
+        return DiffRow {
+            row: index,
+            kind: "fold",
+            text: format!("{hidden} {lines} not in the diff"),
+            hidden: Some(hidden),
+            step: (hidden > FOLD_STEP).then_some(FOLD_STEP),
+            left: None,
+            right: None,
+            cursor,
+            picked: false,
+        };
+    }
     let (kind, text, left, right) = match row {
         Row::Hunk { file, hunk } => ("hunk", files[file].hunks[hunk].header.clone(), None, None),
         Row::Note { file } => ("note", files[file].note.clone().unwrap_or_default(), None, None),
@@ -382,9 +421,9 @@ fn diff_row(view: &ReviewView, index: usize, row: Row, cursor: bool, picked: boo
             left.map(|l| line(file, hunk, l)),
             right.map(|l| line(file, hunk, l)),
         ),
-        Row::File { .. } => ("hunk", String::new(), None, None),
+        Row::File { .. } | Row::Fold { .. } => ("hunk", String::new(), None, None),
     };
-    DiffRow { row: index, kind, text, left, right, cursor, picked }
+    DiffRow { row: index, kind, text, hidden: None, step: None, left, right, cursor, picked }
 }
 
 /// A line with its highlighting cut into pieces here, where the byte
@@ -481,6 +520,8 @@ mod tests {
                     ],
                 }],
                 note: None,
+                new_blob: None,
+                new_lines: None,
             }],
             commit: None,
         }
@@ -672,6 +713,47 @@ mod tests {
         assert_eq!(d.switch_side(), Err("nothing staged; still showing unstaged".into()));
         assert_eq!(d.page(None).base, "unstaged");
         assert!(!d.chosen().staged);
+    }
+
+    /// The diff, its file forty lines long and readable from a blob: a fold
+    /// of 38 lines lies below the hunk.
+    fn foldable(request_id: u64) -> Review {
+        let mut review = diff(request_id, ReviewBase::Unstaged);
+        review.files[0].new_blob = Some("b10b".into());
+        review.files[0].new_lines = Some(40);
+        review.files[0].hunks[0].lines.push(line(LineKind::Context, Some(3), Some(3), "}"));
+        review
+    }
+
+    #[test]
+    fn a_fold_is_drawn_with_what_it_hides_and_how_much_a_step_shows() {
+        let (mut d, _) = dialog();
+        d.receive(foldable(1));
+        let fold = d.page(None).rows.into_iter().find(|r| r.kind == "fold").unwrap();
+        assert_eq!(fold.text, "37 lines not in the diff");
+        assert_eq!((fold.hidden, fold.step), (Some(37), Some(20)));
+    }
+
+    #[test]
+    fn a_folds_button_asks_for_its_lines_and_they_join_the_diff() {
+        let (mut d, _) = dialog();
+        d.receive(foldable(1));
+        let row = d.page(None).rows.iter().find(|r| r.kind == "fold").unwrap().row;
+        let asked = d.unfold(Some(row), true, 9).unwrap();
+        assert!(matches!(asked, ClientMsg::ReviewContext { request_id: 9, start: 4, end: 40, .. }));
+        let lines = (4..=40).map(|n| line(LineKind::Context, None, Some(n), "")).collect();
+        assert!(d.receive_context(ReviewContext { request_id: 9, checkout: CheckoutId(100), lines }));
+        let page = d.page(None);
+        assert!(page.rows.iter().all(|r| r.kind != "fold"), "the fold is gone once it is all shown");
+        assert_eq!(page.rows.iter().filter(|r| r.kind == "line").count(), 41);
+    }
+
+    #[test]
+    fn unfolding_off_a_fold_asks_for_nothing() {
+        let (mut d, _) = dialog();
+        d.receive(foldable(1));
+        assert!(d.unfold(None, false, 9).is_none(), "the cursor starts on a line");
+        assert!(d.unfold(Some(1), false, 9).is_none(), "a click that names a line");
     }
 
     #[test]

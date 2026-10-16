@@ -54,6 +54,16 @@ impl Dialogs {
                     dialog.failed(checkout, request_id, message);
                 }
             }
+            ServerMsg::ReviewContext(context) => {
+                if let Some(dialog) = &mut self.review {
+                    dialog.receive_context(context);
+                }
+            }
+            ServerMsg::ReviewContextFailed { request_id, checkout, message } => {
+                if self.review.as_mut().is_some_and(|d| d.context_failed(checkout, request_id)) {
+                    say.push(Event::Notice { text: message });
+                }
+            }
             ServerMsg::ReviewCommentSaved { id, delivered } => {
                 if let Some(dialog) = &mut self.review {
                     dialog.commented();
@@ -170,8 +180,18 @@ impl Dialogs {
                 }
             }
             ReviewClick::Recipient { pane } => dialog.choose_recipient(PaneId(pane)),
+            // A request to the daemon, which `review_unfold` sends.
+            ReviewClick::Fold { .. } => {}
         }
         self.remember_layout();
+    }
+
+    /// Enter on a fold, or a click on one of its buttons (`row`): a step of
+    /// its lines asked for, or with `all` the whole of it.
+    pub fn review_unfold(&mut self, row: Option<usize>, all: bool, id: impl FnOnce() -> u64, out: &mut Vec<ClientMsg>) {
+        if let Some(msg) = self.review.as_mut().and_then(|d| d.unfold(row, all, id())) {
+            out.push(msg);
+        }
     }
 
     /// A letter, a step, Enter or Escape in the review's jump field.

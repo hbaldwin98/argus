@@ -132,6 +132,17 @@ pub struct FileDiff {
     pub hunks: Vec<Hunk>,
     /// Why `hunks` is empty despite real changes: binary, or over the cap.
     pub note: Option<String>,
+    /// The new side's blob as hex, which the lines between hunks are read
+    /// from with [`ClientMsg::ReviewContext`](crate::ClientMsg::ReviewContext).
+    /// The blob, not the path: the unstaged side is a snapshot the working
+    /// tree has moved on from. Absent where there is no new side, and from
+    /// a daemon that cannot read more, so no fold is offered to one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_blob: Option<String>,
+    /// How many lines the new side has: what says how much lies below the
+    /// last hunk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_lines: Option<u32>,
 }
 
 impl FileDiff {
@@ -208,6 +219,17 @@ impl Review {
     pub fn is_empty(&self) -> bool {
         self.files.is_empty()
     }
+}
+
+/// Lines of a file its hunks did not carry, read from a [`FileDiff::new_blob`]
+/// as context. Only new numbers are filled in: the old side is offset from
+/// the new by however much the hunks above changed, which the client knows
+/// and the daemon, reading one blob, does not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewContext {
+    pub request_id: u64,
+    pub checkout: CheckoutId,
+    pub lines: Vec<DiffLine>,
 }
 
 /// The exact reviewed lines a comment refers to. Both sides are retained:

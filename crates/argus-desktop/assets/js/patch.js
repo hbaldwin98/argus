@@ -10,7 +10,17 @@ function side(kind, marker, text, old, now) {
     return { old, new: now, marker, kind, parts: [[text, '']] };
 }
 function push(rows, kind, text, left) {
-    rows.push({ row: rows.length, kind, text, left, right: null, cursor: false, picked: false });
+    rows.push({
+        row: rows.length,
+        kind,
+        text,
+        hidden: null,
+        step: null,
+        left,
+        right: null,
+        cursor: false,
+        picked: false,
+    });
 }
 /** The diff's rows, or null when it holds no hunk to draw. Counts in a
  *  hunk header say where the hunk ends, which is how a removed line that

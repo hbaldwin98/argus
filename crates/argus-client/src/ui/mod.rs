@@ -34,7 +34,7 @@ use crate::brief::BriefMode;
 use crate::dirpicker::DirRow;
 use argus_protocol::pane_view::PaneView;
 use argus_protocol::history_view::{HistoryRow, HistoryView};
-use argus_protocol::review_view::{ReviewView, Row};
+use argus_protocol::review_view::{fold_of, ReviewView, Row, FOLD_STEP};
 use crate::theme::Theme;
 use argus_protocol::CursorShape;
 

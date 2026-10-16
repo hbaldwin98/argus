@@ -3244,6 +3244,37 @@ body.console-fullscreen #bar {
   padding: 0 var(--sp-12);
   cursor: default;
 }
+/* A fold: the lines between hunks the diff did not carry, opened on request. */
+.drow.fold {
+  align-items: center;
+  gap: var(--sp-8);
+  min-height: 26px;
+  padding: 0 var(--sp-12);
+  color: var(--fg-muted);
+  background: var(--bg-chrome);
+  border-top: 1px dashed var(--line-strong);
+  border-bottom: 1px dashed var(--line-strong);
+  cursor: default;
+}
+.fold-text {
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+}
+.fbtn {
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--ref);
+  font: inherit;
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  padding: 0 var(--sp-4);
+  height: 22px;
+  cursor: pointer;
+}
+.fbtn:hover {
+  background: var(--fill);
+}
 .dside {
   flex: 1;
   min-width: 0;

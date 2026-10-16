@@ -71,7 +71,12 @@ fn modes() -> Vec<(&'static str, Vec<App>)> {
         ("the feature stage", feature.into()),
         (
             "a diff",
-            vec![app_with_review(), app_with_review_split(true), from_history],
+            vec![
+                app_with_review(),
+                app_with_review_split(true),
+                from_history,
+                app_with_folded_review(),
+            ],
         ),
         ("history", vec![app_with_history()]),
         ("a brief", vec![app_with_a_brief("The pty.")]),

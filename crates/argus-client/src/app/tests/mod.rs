@@ -457,6 +457,8 @@ pub(super) fn diff_of(checkout: CheckoutId) -> argus_protocol::Review {
                 ],
             }],
             note: None,
+            new_blob: None,
+            new_lines: None,
         }],
         commit: None,
     }

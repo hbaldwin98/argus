@@ -482,6 +482,27 @@ pub(super) fn dispatch(
             base,
             commit,
         } => review(daemon, out_tx, &mut conn.reviews, request_id, checkout, base, commit),
+        ClientMsg::ReviewContext {
+            request_id,
+            checkout,
+            blob,
+            path,
+            start,
+            end,
+        } => reply_with(daemon, out_tx, checkout, move |repo| {
+            match crate::diff::context(&repo, &blob, &path, start, end) {
+                Ok(lines) => ServerMsg::ReviewContext(argus_protocol::ReviewContext {
+                    request_id,
+                    checkout,
+                    lines,
+                }),
+                Err(error) => ServerMsg::ReviewContextFailed {
+                    request_id,
+                    checkout,
+                    message: error.to_string(),
+                },
+            }
+        }),
         ClientMsg::ReviewComment {
             checkout,
             recipient,

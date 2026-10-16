@@ -3,4 +3,4 @@
 /**
  * What a click in the review dialog landed on.
  */
-export type ReviewClick = { "on": "file", file: number, } | { "on": "row", row: number, extend: boolean, } | { "on": "side", staged: boolean, } | { "on": "recipient", pane: number, };
+export type ReviewClick = { "on": "file", file: number, } | { "on": "row", row: number, extend: boolean, } | { "on": "fold", row: number, all: boolean, } | { "on": "side", staged: boolean, } | { "on": "recipient", pane: number, };

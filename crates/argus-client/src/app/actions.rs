@@ -426,7 +426,7 @@ impl App {
 }
 
 /// Hands out `next` and moves it on, never to zero.
-fn next_id(next: &mut u64) -> u64 {
+pub(super) fn next_id(next: &mut u64) -> u64 {
     let id = *next;
     *next = id.wrapping_add(1).max(1);
     id

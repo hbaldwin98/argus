@@ -331,7 +331,13 @@ impl HistoryDialog {
             rows,
             commit: commit.map(|c| c.short),
             path: file.clone(),
-            diff: shown.map(|(d, at)| file_rows(d, at, None, |_| false)).unwrap_or_default(),
+            // A preview opens no folds; the review it opens into does.
+            diff: shown
+                .map(|(d, at)| file_rows(d, at, None, |_| false))
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|r| r.kind != "fold")
+                .collect(),
             diff_loading: file.is_some() && shown.is_none(),
             files: shown.map(|(d, _)| files_of(d).len()).unwrap_or(0),
         }
@@ -458,6 +464,8 @@ mod tests {
                     lines: vec![DiffLine { kind: LineKind::Added, old_lineno: None, new_lineno: Some(2), text: "more".into(), spans: Vec::new() }],
                 }],
                 note: None,
+                new_blob: None,
+                new_lines: None,
             }],
             commit: None,
         });

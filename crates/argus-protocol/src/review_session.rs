@@ -9,7 +9,9 @@
 //! afterwards is a look at what is already in hand rather than another wait.
 
 use crate::review_view::ReviewView;
-use crate::{CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus, Review, ReviewBase};
+use crate::{
+    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus, Review, ReviewBase, ReviewContext,
+};
 
 /// What an answer from the daemon came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +60,19 @@ pub struct ReviewSession {
     /// The file to open on once the commit arrives, when it was opened from
     /// a file row of the history.
     jump_to: Option<String>,
+    /// The fold whose lines are on their way. One at a time: opening
+    /// another before they land means the first is no longer wanted.
+    unfolding: Option<Unfolding>,
+}
+
+/// What a fold's lines were asked for against, to know on arrival that they
+/// still belong where they were going.
+struct Unfolding {
+    request_id: u64,
+    base: ReviewBase,
+    file: usize,
+    path: String,
+    blob: String,
 }
 
 /// The agents a comment from `checkout` can go to. A shell has nothing to
@@ -108,6 +123,7 @@ impl ReviewSession {
             staged: Side::default(),
             of_commit: Side::default(),
             jump_to: None,
+            unfolding: None,
         }
     }
 
@@ -233,6 +249,52 @@ impl ReviewSession {
                 Ok(())
             }
         }
+    }
+
+    /// Enter on a fold: asks for the next step of its lines, or with `all`
+    /// the whole of it. None when the cursor is not on a fold.
+    pub fn unfold(&mut self, all: bool, request_id: u64) -> Option<ClientMsg> {
+        let base = self.base;
+        let view = self.view()?;
+        let (file, start, end) = view.unfold(all)?;
+        let diff = &view.review.files[file];
+        let blob = diff.new_blob.clone()?;
+        let msg = ClientMsg::ReviewContext {
+            request_id,
+            checkout: self.checkout,
+            blob: blob.clone(),
+            path: diff.path.clone(),
+            start,
+            end,
+        };
+        self.unfolding = Some(Unfolding { request_id, base, file, path: diff.path.clone(), blob });
+        Some(msg)
+    }
+
+    /// A fold's lines, spliced in when they are the latest asked for and
+    /// the file they were read from is still the one on that side: a
+    /// refresh that read the file anew has folds of its own.
+    pub fn receive_context(&mut self, context: ReviewContext) -> bool {
+        if context.checkout != self.checkout {
+            return false;
+        }
+        let Some(asked) = self.unfolding.take_if(|u| u.request_id == context.request_id) else {
+            return false;
+        };
+        let Some(view) = self.side_mut(asked.base).view.as_mut() else {
+            return false;
+        };
+        let same = view
+            .review
+            .files
+            .get(asked.file)
+            .is_some_and(|f| f.path == asked.path && f.new_blob.as_deref() == Some(asked.blob.as_str()));
+        same && view.reveal(asked.file, context.lines)
+    }
+
+    /// Whether a fold that could not be read was this review's latest ask.
+    pub fn context_failed(&mut self, checkout: CheckoutId, request_id: u64) -> bool {
+        checkout == self.checkout && self.unfolding.take_if(|u| u.request_id == request_id).is_some()
     }
 
     /// Both sides of a change side by side, or stacked, for every side held.
@@ -373,6 +435,8 @@ mod tests {
                 }],
             }],
             note: None,
+            new_blob: None,
+            new_lines: None,
         }
     }
 
@@ -604,5 +668,91 @@ mod tests {
         s.view_mut().unwrap().toggle_mark();
         s.commented();
         assert!(s.view().unwrap().mark.is_none());
+    }
+
+    // --- folds --------------------------------------------------------------
+
+    fn numbered(kind: LineKind, old: Option<u32>, new: Option<u32>) -> DiffLine {
+        DiffLine { kind, old_lineno: old, new_lineno: new, text: String::new(), spans: Vec::new() }
+    }
+
+    /// A ten-line file with a line added at 2: seven lines lie below the
+    /// hunk, read from blob `blob`.
+    fn foldable(request_id: u64, blob: &str) -> Review {
+        let mut review = answer(request_id, Unstaged, &["a.rs"]);
+        let file = &mut review.files[0];
+        file.hunks[0].lines = vec![
+            numbered(LineKind::Context, Some(1), Some(1)),
+            numbered(LineKind::Added, None, Some(2)),
+            numbered(LineKind::Context, Some(2), Some(3)),
+        ];
+        file.new_blob = Some(blob.into());
+        file.new_lines = Some(10);
+        review
+    }
+
+    fn on_the_fold(s: &mut ReviewSession) {
+        let view = s.view_mut().unwrap();
+        view.bottom_of_diff();
+        view.move_by(1);
+    }
+
+    fn below(request_id: u64) -> ReviewContext {
+        let lines = (4..=10).map(|n| numbered(LineKind::Context, None, Some(n))).collect();
+        ReviewContext { request_id, checkout: CO, lines }
+    }
+
+    #[test]
+    fn opening_a_fold_asks_for_its_lines_from_the_blob_and_splices_them_in() {
+        let (mut s, _) = working();
+        s.receive(foldable(1, "b10b"));
+        on_the_fold(&mut s);
+        let asked = s.unfold(false, 50).unwrap();
+        assert!(matches!(
+            &asked,
+            ClientMsg::ReviewContext { request_id: 50, checkout: CO, blob, path, start: 4, end: 10 }
+                if blob == "b10b" && path == "a.rs"
+        ));
+        assert!(s.receive_context(below(50)));
+        let lines = &s.view().unwrap().review.files[0].hunks[0].lines;
+        assert_eq!(lines.len(), 10);
+        assert_eq!(lines[9].old_lineno, Some(9), "numbered on the old side too");
+    }
+
+    #[test]
+    fn off_a_fold_nothing_is_asked_for() {
+        let (mut s, _) = working();
+        s.receive(foldable(1, "b10b"));
+        assert!(s.unfold(true, 50).is_none());
+    }
+
+    #[test]
+    fn lines_for_a_file_read_again_since_are_dropped() {
+        // A refresh read the file anew, with folds of its own.
+        let (mut s, _) = working();
+        s.receive(foldable(1, "b10b"));
+        on_the_fold(&mut s);
+        s.unfold(false, 50).unwrap();
+        let mut ids = 2;
+        s.refresh(|| {
+            ids += 1;
+            ids
+        });
+        s.receive(foldable(3, "c0de"));
+        assert!(!s.receive_context(below(50)));
+        assert_eq!(s.view().unwrap().review.files[0].hunks[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn only_the_latest_fold_asked_for_is_taken() {
+        let (mut s, _) = working();
+        s.receive(foldable(1, "b10b"));
+        on_the_fold(&mut s);
+        s.unfold(false, 50).unwrap();
+        s.unfold(true, 51).unwrap();
+        assert!(!s.receive_context(below(50)));
+        assert!(!s.context_failed(CO, 50));
+        assert!(s.context_failed(CO, 51));
+        assert!(!s.context_failed(CO, 51), "and answered once");
     }
 }

@@ -36,7 +36,17 @@ function push(
   text: string,
   left: DiffSide | null,
 ) {
-  rows.push({ row: rows.length, kind, text, left, right: null, cursor: false, picked: false });
+  rows.push({
+    row: rows.length,
+    kind,
+    text,
+    hidden: null,
+    step: null,
+    left,
+    right: null,
+    cursor: false,
+    picked: false,
+  });
 }
 
 /** The diff's rows, or null when it holds no hunk to draw. Counts in a

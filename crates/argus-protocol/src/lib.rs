@@ -138,7 +138,7 @@ pub use message::{ClientMsg, Created, DirEntry, DirListing, ProjectPreview, Serv
 pub use paths::{config_dir, instance_name};
 pub use review::{
     ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,
-    LineKind, Review, ReviewAnchor, ReviewBase, ReviewComment, MAX_HISTORY_COMMITS,
+    LineKind, Review, ReviewAnchor, ReviewBase, ReviewComment, ReviewContext, MAX_HISTORY_COMMITS,
     MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
 };
 pub use tasks::{

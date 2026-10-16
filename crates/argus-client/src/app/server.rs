@@ -168,6 +168,24 @@ impl App {
             } => {
                 self.receive_review_failure(request_id, checkout, message);
             }
+            ServerMsg::ReviewContext(context) => {
+                if let Some(session) = &mut self.review {
+                    session.receive_context(context);
+                }
+            }
+            ServerMsg::ReviewContextFailed {
+                request_id,
+                checkout,
+                message,
+            } => {
+                if self
+                    .review
+                    .as_mut()
+                    .is_some_and(|s| s.context_failed(checkout, request_id))
+                {
+                    self.alert(message);
+                }
+            }
             ServerMsg::ReviewCommentSaved { id, delivered } => {
                 if let Some(session) = &mut self.review {
                     session.commented();

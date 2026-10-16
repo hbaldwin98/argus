@@ -8,8 +8,13 @@
 //! each row holds both sides. Only the flattening differs — navigation,
 //! selection, and anchoring run over whichever rows came out, which is why
 //! a comment written in one view means the same thing in the other.
+//!
+//! Between hunks lie the lines the diff did not carry, drawn as a fold the
+//! cursor can stop on. Opening one splices the lines the daemon read into
+//! the hunks beside it as plain context, so what was revealed is commented
+//! on, split and navigated exactly as the diff's own context is.
 
-use crate::{FileDiff, LineKind, Review, ReviewAnchor};
+use crate::{DiffLine, FileDiff, Hunk, LineKind, Review, ReviewAnchor};
 
 /// Headers and notes are drawn but never selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +46,12 @@ pub enum Row {
     Note {
         file: usize,
     },
+    /// Lines the diff did not carry, before hunk `gap` — or after the last
+    /// one, when `gap` is the number of hunks. See [`fold_of`].
+    Fold {
+        file: usize,
+        gap: usize,
+    },
 }
 
 impl Row {
@@ -50,14 +61,21 @@ impl Row {
             | Row::Hunk { file, .. }
             | Row::Line { file, .. }
             | Row::Pair { file, .. }
-            | Row::Note { file } => file,
+            | Row::Note { file }
+            | Row::Fold { file, .. } => file,
         }
     }
 
-    /// Whether the cursor stops here. Headers and notes cannot take a
-    /// comment, so they are drawn and skipped over.
+    /// Whether this row is lines a comment can take. Headers and notes
+    /// cannot, so they are drawn and skipped over.
     pub fn is_selectable(self) -> bool {
         matches!(self, Row::Line { .. } | Row::Pair { .. })
+    }
+
+    /// Whether the cursor stops here: on lines, and on a fold, which takes
+    /// no comment but has to be reached to be opened.
+    pub fn is_stop(self) -> bool {
+        self.is_selectable() || matches!(self, Row::Fold { .. })
     }
 
     /// The diff lines this row covers, removed side first, in the order a
@@ -79,6 +97,68 @@ impl Row {
             .chain(second)
             .map(move |line| (file, hunk, line))
     }
+}
+
+/// The lines a fold hides, by their new-side numbers, inclusive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fold {
+    pub first: u32,
+    pub last: u32,
+    /// What to add to a new number to get the old one: whatever the hunks
+    /// above added and removed.
+    offset: i64,
+}
+
+impl Fold {
+    pub fn hidden(self) -> u32 {
+        self.last + 1 - self.first
+    }
+}
+
+/// How many lines one opening of a long fold shows: about a screen.
+pub const FOLD_STEP: u32 = 20;
+
+/// The lines before hunk `gap` of `file` that its diff did not carry, or
+/// after the last hunk when `gap` is the number of hunks. None where there
+/// are none, and for a file the daemon gave no blob to read them from.
+pub fn fold_of(file: &FileDiff, gap: usize) -> Option<Fold> {
+    file.new_blob.as_ref()?;
+    if file.note.is_some() || gap > file.hunks.len() {
+        return None;
+    }
+    let before = gap.checked_sub(1).map(|h| &file.hunks[h]);
+    let after = file.hunks.get(gap);
+    let prev_end = match before {
+        Some(hunk) => hunk.lines.iter().rev().find_map(|l| l.new_lineno)?,
+        None => 0,
+    };
+    let next_start = match after {
+        Some(hunk) => hunk.lines.iter().find_map(|l| l.new_lineno)?,
+        None => file.new_lines? + 1,
+    };
+    if next_start <= prev_end + 1 {
+        return None;
+    }
+    // A hunk ends and begins on context unless it meets an end of the file,
+    // where there is no fold, so one of these two lines has both numbers.
+    let both = |l: &DiffLine| Some(i64::from(l.old_lineno?) - i64::from(l.new_lineno?));
+    let offset = before
+        .and_then(|h| h.lines.last())
+        .and_then(both)
+        .or_else(|| after.and_then(|h| h.lines.first()).and_then(both))?;
+    Some(Fold {
+        first: prev_end + 1,
+        last: next_start - 1,
+        offset,
+    })
+}
+
+/// Where a row was, said in a way that survives the rows being rebuilt: a
+/// line by its file and numbers, a fold by its file and place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Spot {
+    Line(usize, Option<u32>, Option<u32>),
+    Fold(usize, usize),
 }
 
 pub struct ReviewView {
@@ -115,14 +195,129 @@ impl ReviewView {
         if split == self.split {
             return;
         }
-        let was = self.rows.get(self.sel).and_then(|r| r.lines().next());
+        let was = self.spot(self.sel);
         self.split = split;
         self.rows = flatten(&self.review.files, split);
         self.mark = None;
         self.sel = was
-            .and_then(|at| self.rows.iter().position(|r| r.lines().any(|l| l == at)))
+            .and_then(|at| self.find(at))
             .or_else(|| self.rows.iter().position(|r| r.is_selectable()))
             .unwrap_or(0);
+    }
+
+    fn spot(&self, row: usize) -> Option<Spot> {
+        match *self.rows.get(row)? {
+            Row::Fold { file, gap } => Some(Spot::Fold(file, gap)),
+            row => {
+                let (file, hunk, line) = row.lines().next()?;
+                let line = &self.review.files[file].hunks[hunk].lines[line];
+                Some(Spot::Line(file, line.old_lineno, line.new_lineno))
+            }
+        }
+    }
+
+    fn find(&self, spot: Spot) -> Option<usize> {
+        self.rows.iter().position(|&row| match (spot, row) {
+            (Spot::Fold(f, g), Row::Fold { file, gap }) => (f, g) == (file, gap),
+            (Spot::Line(f, old, new), row) => row.lines().any(|(file, hunk, line)| {
+                let line = &self.review.files[file].hunks[hunk].lines[line];
+                file == f && line.old_lineno == old && line.new_lineno == new
+            }),
+            _ => false,
+        })
+    }
+
+    /// The fold under the cursor, and which file it is in.
+    pub fn fold(&self) -> Option<(usize, usize, Fold)> {
+        let Row::Fold { file, gap } = *self.rows.get(self.sel)? else {
+            return None;
+        };
+        Some((file, gap, fold_of(&self.review.files[file], gap)?))
+    }
+
+    /// The new-side lines opening the fold under the cursor asks for, and
+    /// the file they are in: the whole of a short fold, else a step of it
+    /// taken next to the code it opens from — up from the first hunk, down
+    /// from the hunk above anywhere else.
+    pub fn unfold(&self, all: bool) -> Option<(usize, u32, u32)> {
+        let (file, gap, fold) = self.fold()?;
+        let range = if all || fold.hidden() <= FOLD_STEP {
+            (fold.first, fold.last)
+        } else if gap == 0 {
+            (fold.last + 1 - FOLD_STEP, fold.last)
+        } else {
+            (fold.first, fold.first + FOLD_STEP - 1)
+        };
+        Some((file, range.0, range.1))
+    }
+
+    /// Splices lines read for a fold of `file` into the hunk they border,
+    /// as context, joining two hunks once nothing lies between them. False,
+    /// changing nothing, when they no longer border one: the diff was read
+    /// again while they were on their way.
+    ///
+    /// The cursor stays on a fold that is still there, so opening a long
+    /// one step by step is one key pressed again; on one that closed, it
+    /// moves to the first line revealed.
+    pub fn reveal(&mut self, file: usize, lines: Vec<DiffLine>) -> bool {
+        let (Some(first), Some(last)) = (
+            lines.first().and_then(|l| l.new_lineno),
+            lines.last().and_then(|l| l.new_lineno),
+        ) else {
+            return false;
+        };
+        let Some(diff) = self.review.files.get(file) else {
+            return false;
+        };
+        let found = (0..=diff.hunks.len()).find_map(|gap| {
+            fold_of(diff, gap)
+                .filter(|f| f.first <= first && last <= f.last)
+                .map(|f| (gap, f))
+        });
+        let Some((gap, fold)) = found else {
+            return false;
+        };
+        if last + 1 - first != lines.len() as u32
+            || !lines.windows(2).all(|w| w[0].new_lineno.map(|n| n + 1) == w[1].new_lineno)
+        {
+            return false;
+        }
+        let lines: Vec<DiffLine> = lines
+            .into_iter()
+            .map(|mut l| {
+                l.kind = LineKind::Context;
+                l.old_lineno = l.new_lineno.map(|n| (i64::from(n) + fold.offset) as u32);
+                l
+            })
+            .collect();
+        let sel = self.spot(self.sel);
+        let mark = self.mark.and_then(|m| self.spot(m));
+        let opened = Spot::Line(file, lines[0].old_lineno, lines[0].new_lineno);
+
+        let hunks = &mut self.review.files[file].hunks;
+        let into = if gap > 0 && first == fold.first {
+            hunks[gap - 1].lines.extend(lines);
+            gap - 1
+        } else if gap < hunks.len() && last == fold.last {
+            hunks[gap].lines.splice(0..0, lines);
+            gap
+        } else {
+            return false;
+        };
+        if first == fold.first && last == fold.last && gap > 0 && gap < hunks.len() {
+            let next = hunks.remove(gap);
+            hunks[gap - 1].lines.extend(next.lines);
+        }
+        retitle(&mut hunks[into]);
+
+        self.rows = flatten(&self.review.files, self.split);
+        self.sel = sel
+            .and_then(|s| self.find(s))
+            .or_else(|| self.find(opened))
+            .or_else(|| self.rows.iter().position(|r| r.is_stop()))
+            .unwrap_or(0);
+        self.mark = mark.and_then(|m| self.find(m));
+        true
     }
 
     pub fn is_empty(&self) -> bool {
@@ -139,7 +334,7 @@ impl ReviewView {
             .rows
             .iter()
             .enumerate()
-            .filter(|(_, r)| r.is_selectable() && marked_file.is_none_or(|file| r.file() == file))
+            .filter(|(_, r)| r.is_stop() && marked_file.is_none_or(|file| r.file() == file))
             .map(|(i, _)| i)
             .collect();
         if selectable.is_empty() {
@@ -318,6 +513,9 @@ fn flatten(files: &[FileDiff], split: bool) -> Vec<Row> {
             continue;
         }
         for (h, hunk) in file.hunks.iter().enumerate() {
+            if fold_of(file, h).is_some() {
+                rows.push(Row::Fold { file: f, gap: h });
+            }
             rows.push(Row::Hunk { file: f, hunk: h });
             if split {
                 paired(&mut rows, f, h, hunk);
@@ -329,8 +527,27 @@ fn flatten(files: &[FileDiff], split: bool) -> Vec<Row> {
                 }));
             }
         }
+        if fold_of(file, file.hunks.len()).is_some() {
+            rows.push(Row::Fold {
+                file: f,
+                gap: file.hunks.len(),
+            });
+        }
     }
     rows
+}
+
+/// Rewrites a hunk's `@@` ranges after lines were spliced into it, keeping
+/// what git put after them — the enclosing function, usually.
+fn retitle(hunk: &mut Hunk) {
+    let tail = hunk.header.splitn(3, "@@").nth(2).unwrap_or("").to_owned();
+    let range = |numbers: Vec<u32>| match numbers.first() {
+        Some(start) => format!("{start},{}", numbers.len()),
+        None => "0,0".to_owned(),
+    };
+    let old = range(hunk.lines.iter().filter_map(|l| l.old_lineno).collect());
+    let new = range(hunk.lines.iter().filter_map(|l| l.new_lineno).collect());
+    hunk.header = format!("@@ -{old} +{new} @@{tail}").trim_end().to_owned();
 }
 
 /// Pairs a hunk's two sides the way git's own hunks are shaped: a run of
@@ -399,6 +616,8 @@ mod tests {
                 lines,
             }],
             note: None,
+            new_blob: None,
+            new_lines: None,
         }
     }
 
@@ -947,5 +1166,203 @@ mod tests {
             .unwrap()
             .notification("first thought\nsecond thought");
         assert!(!m.contains('\n'), "{m:?}");
+    }
+
+    // --- folds --------------------------------------------------------------
+
+    fn both(old: u32, new: u32) -> DiffLine {
+        DiffLine {
+            kind: LineKind::Context,
+            old_lineno: Some(old),
+            new_lineno: Some(new),
+            text: format!("line {new}"),
+            spans: Vec::new(),
+        }
+    }
+
+    /// A sixty-line file changed in two places: one line swapped at 12,
+    /// and one added at 41, which puts every later new number one ahead.
+    fn folded() -> ReviewView {
+        let hunk = |header: &str, lines| Hunk {
+            header: header.to_string(),
+            lines,
+        };
+        view(vec![FileDiff {
+            path: "a.rs".into(),
+            old_path: None,
+            kind: ChangeKind::Modified,
+            hunks: vec![
+                hunk(
+                    "@@ -10,4 +10,4 @@ fn a",
+                    vec![
+                        both(10, 10),
+                        both(11, 11),
+                        line(LineKind::Removed, 12, "old"),
+                        line(LineKind::Added, 12, "new"),
+                        both(13, 13),
+                    ],
+                ),
+                hunk(
+                    "@@ -40,2 +40,3 @@ fn b",
+                    vec![both(40, 40), line(LineKind::Added, 41, "added"), both(41, 42)],
+                ),
+            ],
+            note: None,
+            new_blob: Some("b10b".into()),
+            new_lines: Some(60),
+        }])
+    }
+
+    fn folds(v: &ReviewView) -> Vec<(usize, u32, u32)> {
+        v.rows
+            .iter()
+            .filter_map(|r| match *r {
+                Row::Fold { file, gap } => fold_of(&v.review.files[file], gap).map(|f| (gap, f.first, f.last)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The new lines `first..=last`, as the daemon sends them: context with
+    /// no old number, which is the client's to work out.
+    fn read(first: u32, last: u32) -> Vec<DiffLine> {
+        (first..=last)
+            .map(|n| DiffLine {
+                kind: LineKind::Context,
+                old_lineno: None,
+                new_lineno: Some(n),
+                text: format!("line {n}"),
+                spans: Vec::new(),
+            })
+            .collect()
+    }
+
+    fn on_fold(v: &mut ReviewView, gap: usize) {
+        v.sel = v.rows.iter().position(|r| *r == Row::Fold { file: 0, gap }).unwrap();
+    }
+
+    #[test]
+    fn folds_stand_for_the_lines_before_between_and_after_the_hunks() {
+        assert_eq!(folds(&folded()), [(0, 1, 9), (1, 14, 39), (2, 43, 60)]);
+    }
+
+    #[test]
+    fn a_file_the_daemon_gave_no_blob_for_has_no_folds() {
+        // Nothing could be read to open one with.
+        let mut v = folded();
+        v.review.files[0].new_blob = None;
+        v.rows = flatten(&v.review.files, false);
+        assert!(folds(&v).is_empty());
+    }
+
+    #[test]
+    fn the_cursor_stops_on_a_fold_but_a_fold_takes_no_comment() {
+        let mut v = folded();
+        v.move_by(-1);
+        assert_eq!(v.rows[v.sel], Row::Fold { file: 0, gap: 0 });
+        assert!(v.anchor().is_none());
+    }
+
+    #[test]
+    fn a_short_fold_opens_whole_and_a_long_one_a_step_at_a_time() {
+        let mut v = folded();
+        on_fold(&mut v, 0);
+        assert_eq!(v.unfold(false), Some((0, 1, 9)));
+        on_fold(&mut v, 1);
+        assert_eq!(v.unfold(false), Some((0, 14, 33)), "down from the hunk above");
+        assert_eq!(v.unfold(true), Some((0, 14, 39)));
+    }
+
+    #[test]
+    fn a_long_fold_above_the_first_hunk_opens_up_from_it() {
+        let mut v = folded();
+        v.review.files[0].hunks[0].lines[0] = both(40, 40);
+        v.review.files[0].hunks.truncate(1);
+        v.review.files[0].hunks[0].lines.truncate(1);
+        v.rows = flatten(&v.review.files, false);
+        on_fold(&mut v, 0);
+        assert_eq!(v.unfold(false), Some((0, 20, 39)));
+    }
+
+    #[test]
+    fn opening_a_whole_fold_closes_it_and_lands_on_its_first_line() {
+        let mut v = folded();
+        on_fold(&mut v, 0);
+        assert!(v.reveal(0, read(1, 9)));
+        assert_eq!(folds(&v), [(1, 14, 39), (2, 43, 60)]);
+        assert_eq!(v.review.files[0].hunks[0].header, "@@ -1,13 +1,13 @@ fn a");
+        let a = v.anchor().unwrap();
+        assert_eq!((a.old_start, a.new_start), (Some(1), Some(1)));
+        assert_eq!(a.text, [" line 1"], "a revealed line is context like any other");
+    }
+
+    #[test]
+    fn a_step_into_a_long_fold_leaves_the_cursor_on_what_is_left_of_it() {
+        // So opening the rest is the same key again.
+        let mut v = folded();
+        on_fold(&mut v, 1);
+        assert!(v.reveal(0, read(14, 33)));
+        assert_eq!(folds(&v), [(0, 1, 9), (1, 34, 39), (2, 43, 60)]);
+        assert_eq!(v.rows[v.sel], Row::Fold { file: 0, gap: 1 });
+    }
+
+    #[test]
+    fn opening_all_of_a_fold_between_two_hunks_joins_them() {
+        let mut v = folded();
+        on_fold(&mut v, 1);
+        assert!(v.reveal(0, read(14, 39)));
+        assert_eq!(v.review.files[0].hunks.len(), 1);
+        assert_eq!(v.review.files[0].hunks[0].header, "@@ -10,32 +10,33 @@ fn a");
+        assert_eq!(folds(&v), [(0, 1, 9), (1, 43, 60)]);
+    }
+
+    #[test]
+    fn revealed_lines_are_numbered_on_the_old_side_by_what_the_hunks_above_changed() {
+        let mut v = folded();
+        on_fold(&mut v, 2);
+        assert!(v.reveal(0, read(43, 60)));
+        let last = v.review.files[0].hunks[1].lines.last().unwrap();
+        assert_eq!((last.old_lineno, last.new_lineno), (Some(59), Some(60)));
+        assert!(folds(&v).iter().all(|&(gap, ..)| gap != 2));
+    }
+
+    #[test]
+    fn lines_that_no_longer_border_a_hunk_are_refused() {
+        // The diff was read again while they were on their way.
+        let mut v = folded();
+        assert!(!v.reveal(0, read(3, 5)), "in a fold but touching no hunk");
+        assert!(!v.reveal(0, read(12, 14)), "not inside a fold at all");
+        assert!(!v.reveal(4, read(1, 9)), "no such file");
+        assert_eq!(folds(&v), folds(&folded()));
+    }
+
+    #[test]
+    fn a_range_across_a_reveal_keeps_both_its_ends() {
+        // Lines arrive whenever they arrive; the person may have moved on to
+        // pick something else, and the rows shifting under it must not move it.
+        let mut v = folded();
+        v.toggle_mark();
+        v.move_by(1);
+        let before = v.anchor();
+        assert!(v.reveal(0, read(1, 9)));
+        assert_eq!(v.anchor(), before);
+    }
+
+    #[test]
+    fn the_split_view_folds_the_same_lines() {
+        let mut v = folded();
+        v.set_split(true);
+        assert_eq!(folds(&v), [(0, 1, 9), (1, 14, 39), (2, 43, 60)]);
+        on_fold(&mut v, 0);
+        assert!(v.reveal(0, read(1, 9)));
+        assert_eq!(
+            v.rows[v.sel],
+            Row::Pair {
+                file: 0,
+                hunk: 0,
+                left: Some(0),
+                right: Some(0)
+            }
+        );
     }
 }

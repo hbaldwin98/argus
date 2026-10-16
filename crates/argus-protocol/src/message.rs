@@ -14,7 +14,7 @@ use crate::features::FeatureAction;
 use crate::focus::{Focus, View};
 use crate::hello::Hello;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
-use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
+use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext};
 use crate::diagrams::{DiagramAction, DiagramList};
 use crate::sessions::{Resume, Session};
 use crate::transcript::Conversation;
@@ -158,6 +158,18 @@ pub enum ClientMsg {
         /// ignoring `base` except as the flag [`ReviewBase::Commit`].
         #[serde(default)]
         commit: Option<String>,
+    },
+    /// Lines `start..=end` of a reviewed file's new side, for a fold the
+    /// viewer opened. Sent only for a file whose diff named its
+    /// [`FileDiff::new_blob`](crate::FileDiff::new_blob), so a daemon too old
+    /// to answer is never asked. `path` chooses the grammar.
+    ReviewContext {
+        request_id: u64,
+        checkout: CheckoutId,
+        blob: String,
+        path: String,
+        start: u32,
+        end: u32,
     },
     /// Newest commits on this checkout's HEAD, identities only. What each
     /// one changed is [`ClientMsg::ListCommitFiles`], asked for one commit
@@ -614,6 +626,14 @@ pub enum ServerMsg {
     Review(Review),
     /// A failed review capture/diff, correlated so stale failures are dropped.
     ReviewFailed {
+        request_id: u64,
+        checkout: CheckoutId,
+        message: String,
+    },
+    /// The answer to `ClientMsg::ReviewContext`.
+    ReviewContext(ReviewContext),
+    /// A fold that could not be read, correlated like `ReviewFailed`.
+    ReviewContextFailed {
         request_id: u64,
         checkout: CheckoutId,
         message: String,

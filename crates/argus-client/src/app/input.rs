@@ -728,6 +728,14 @@ impl App {
         }
     }
 
+    /// Enter on a fold: its next step of lines, or with `all` the rest.
+    pub(super) fn unfold_review(&mut self, all: bool) {
+        let id = super::actions::next_id(&mut self.next_review_request);
+        if let Some(msg) = self.review.as_mut().and_then(|s| s.unfold(all, id)) {
+            let _ = self.out.send(msg);
+        }
+    }
+
     pub(super) fn open_reviewed_line_in_editor(&mut self) {
         let Some(v) = self.review_view() else {
             return;

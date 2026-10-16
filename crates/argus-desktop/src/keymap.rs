@@ -185,8 +185,10 @@ pub enum Action {
     PreviousFile,
     /// Open the selected checkout's history.
     OpenHistory,
-    /// Unfold a commit to its files.
+    /// Unfold a commit to its files, or show a step of a review's fold.
     Unfold,
+    /// Show the whole of a review's fold.
+    UnfoldAll,
     Fold,
     /// The commit under the cursor as a review.
     AsReview,
@@ -587,6 +589,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Review, &[Chord::key("s"), Chord::key("S")], Split, "split or unified"),
     bind(Review, &[Chord::key("p").ctrl()], Filter, "jump to a file"),
     bind(Review, &[Chord::key("e"), Chord::key("E")], OpenEditor, "open in your editor"),
+    bind(Review, &[Chord::key("Enter")], Unfold, "show more of the lines between hunks"),
+    bind(Review, &[Chord::key("z")], UnfoldAll, "show all of them"),
     bind(Jump, &[Chord::key("ArrowDown"), Chord::key("n").ctrl()], Next, "next file"),
     bind(Jump, &[Chord::key("ArrowUp"), Chord::key("p").ctrl()], Previous, "previous file"),
     bind(Jump, &[Chord::key("Enter")], Choose, "open the file"),

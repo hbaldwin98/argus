@@ -674,6 +674,15 @@ fn dump_review() {
     }
 }
 
+#[test]
+#[ignore]
+fn dump_folded_review() {
+    let mut app = app_with_folded_review();
+    for line in lines(&draw_at(&mut app, 100, 20)) {
+        println!("|{line}");
+    }
+}
+
 // --- alignment ----------------------------------------------------------
 
 #[test]

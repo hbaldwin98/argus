@@ -122,6 +122,24 @@ pub(super) fn review_line<'a>(
             format!("{pad}{}", file.note.as_deref().unwrap_or("")),
             Style::default().fg(th.dim).add_modifier(Modifier::ITALIC),
         )],
+        Row::Fold { gap, .. } => {
+            let hidden = fold_of(file, gap).map_or(0, |f| f.hidden());
+            let what = if hidden == 1 { "line".to_owned() } else { "lines".to_owned() };
+            let mut v = vec![Span::styled(
+                format!("{pad}⋯ {hidden} {what} not in the diff"),
+                Style::default().fg(th.muted),
+            )];
+            // Only on the fold the cursor is on: on every fold it is noise.
+            if selected {
+                let keys = if hidden > FOLD_STEP {
+                    format!("   enter {FOLD_STEP} more · z all")
+                } else {
+                    "   enter show".to_owned()
+                };
+                v.push(Span::styled(keys, Style::default().fg(th.dim)));
+            }
+            return Line::from(v).style(Style::default().bg(if selected { th.sel_bg } else { th.surface }));
+        }
         // The only row that splits. Headers and notes span the width in
         // either view, and the wash below is skipped because each side
         // carries its own.

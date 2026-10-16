@@ -9,11 +9,20 @@ export type DiffRow = {
 /**
  * What a click on it sends back.
  */
-row: number, kind: "hunk" | "note" | "line" | "pair", 
+row: number, kind: "hunk" | "note" | "line" | "pair" | "fold", 
 /**
  * A hunk's `@@` line, or a note's reason.
  */
 text: string, 
+/**
+ * How many lines a fold stands for.
+ */
+hidden: number | null, 
+/**
+ * How many lines one opening of a fold shows, when that is fewer than
+ * it hides: what its first button offers.
+ */
+step: number | null, 
 /**
  * A line, or a pair's removed side.
  */

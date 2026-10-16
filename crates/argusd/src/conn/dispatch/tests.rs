@@ -424,6 +424,56 @@ async fn a_review_request_answers_with_that_checkouts_diff() {
 }
 
 #[tokio::test]
+async fn a_fold_is_read_from_the_blob_the_review_named() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::write(dir.path().join("a.txt"), "one\ntwo\nthree\n").unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    let wait = std::time::Duration::from_secs(5);
+    h.send(ClientMsg::Review {
+        request_id: 1,
+        checkout,
+        base: ReviewBase::Unstaged,
+        commit: None,
+    });
+    let Some(ServerMsg::Review(review)) = tokio::time::timeout(wait, h.rx.recv()).await.unwrap() else {
+        panic!("no review");
+    };
+    let blob = review.files[0].new_blob.clone().expect("a blob to read folds from");
+
+    h.send(ClientMsg::ReviewContext {
+        request_id: 2,
+        checkout,
+        blob,
+        path: "a.txt".into(),
+        start: 2,
+        end: 3,
+    });
+    match tokio::time::timeout(wait, h.rx.recv()).await.unwrap() {
+        Some(ServerMsg::ReviewContext(context)) => {
+            assert_eq!((context.request_id, context.checkout), (2, checkout));
+            let texts: Vec<&str> = context.lines.iter().map(|l| l.text.as_str()).collect();
+            assert_eq!(texts, ["two", "three"]);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+
+    h.send(ClientMsg::ReviewContext {
+        request_id: 3,
+        checkout,
+        blob: "nonsense".into(),
+        path: "a.txt".into(),
+        start: 1,
+        end: 1,
+    });
+    assert!(matches!(
+        tokio::time::timeout(wait, h.rx.recv()).await.unwrap(),
+        Some(ServerMsg::ReviewContextFailed { request_id: 3, .. })
+    ));
+}
+
+#[tokio::test]
 async fn a_new_review_replaces_an_older_queued_review() {
     let dir = tempfile::tempdir().unwrap();
     git2::Repository::init(dir.path()).unwrap();

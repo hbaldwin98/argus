@@ -99,10 +99,25 @@ function numbers(side, both) {
 function half(side, both) {
     return el('div', { class: `dside ${side?.kind ?? 'blank'}` }, numbers(side, both), el('span', { class: 'dmark' }, side?.marker ?? ''), side ? code(side) : el('span', { class: 'dcode' }));
 }
-/** A row of a diff; `pick` is what a click on a line does, if anything. */
-export function diffRow(r, pick) {
+/**
+ * A row of a diff; `pick` is what a click on a line does, if anything, and
+ * `unfold` what a fold's buttons do. A fold drawn without one is only said.
+ */
+export function diffRow(r, pick, unfold) {
     if (r.kind === 'hunk' || r.kind === 'note') {
         return el('div', { class: `drow ${r.kind}` }, r.text);
+    }
+    if (r.kind === 'fold') {
+        const show = (label, all) => el('button', {
+            class: 'fbtn',
+            onclick: (e) => {
+                // The row under it would take the click as a move first.
+                e.stopPropagation();
+                unfold?.(all);
+            },
+        }, label);
+        return el('div', { class: `drow fold${r.cursor ? ' cursor' : ''}`, onclick: pick ?? null }, el('span', { class: 'fold-text' }, `⋯ ${r.text}`), unfold &&
+            (r.step ? [show(`Show ${r.step}`, false), show('Show all', true)] : show('Show', true)));
     }
     const line = r.kind === 'line';
     return el('div', {
@@ -161,7 +176,7 @@ function diff(r) {
                 under = i;
         });
         body = rows.flatMap((d, i) => [
-            diffRow(d, (e) => click({ on: 'row', row: d.row, extend: e.shiftKey })),
+            diffRow(d, (e) => click({ on: 'row', row: d.row, extend: e.shiftKey }), (all) => click({ on: 'fold', row: d.row, all })),
             r.composing && i === under && commentBox(r),
         ]);
     }
@@ -194,7 +209,7 @@ export function drawReview() {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'review-title',
-    }, head(r), el('div', { class: 'review-split' }, fileList, diff(r)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' line · ', keycap('V'), ' pick · ', keycap('C'), ' comment · ', keycap('B'), ' side · ', keycap('S'), ' split · ', keycap('Ctrl P'), ' jump · ', keycap('E'), ' editor · ', keycap('Esc'), ' close'))));
+    }, head(r), el('div', { class: 'review-split' }, fileList, diff(r)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' line · ', keycap('V'), ' pick · ', keycap('C'), ' comment · ', keycap('B'), ' side · ', keycap('S'), ' split · ', keycap('Ctrl P'), ' jump · ', keycap('E'), ' editor · ', keycap('Enter'), ' unfold · ', keycap('Esc'), ' close'))));
     ['review-body', 'review-files'].forEach((id, i) => {
         const node = document.getElementById(id);
         if (node)

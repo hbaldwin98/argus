@@ -16,6 +16,15 @@ fn the_review_never_hides_the_nav_columns() {
 }
 
 #[test]
+fn a_fold_says_how_many_lines_the_diff_left_out_and_on_the_cursor_how_to_open_it() {
+    let mut app = app_with_folded_review();
+    let out = lines(&draw(&mut app)).join("\n");
+    assert!(out.contains("⋯ 9 lines not in the diff\n") || out.contains("⋯ 9 lines not in the diff "), "{out}");
+    assert!(!out.contains("9 lines not in the diff   enter"), "only the cursor's fold says its keys:\n{out}");
+    assert!(out.contains("⋯ 28 lines not in the diff   enter 20 more · z all"), "{out}");
+}
+
+#[test]
 fn the_history_never_hides_the_nav_columns() {
     // Same standing rule as the review: opening the log must not take
     // the tree off screen.
