@@ -220,7 +220,50 @@ impl Endpoint {
             Endpoint::Agent => Cow::Borrowed("agent"),
         }
     }
+
+    /// The largest body the daemon reads for this endpoint; past it the
+    /// helper refuses before sending and the daemon answers 413. Exhaustive,
+    /// so a new endpoint does not compile until it says.
+    pub fn max_body(self) -> usize {
+        match self {
+            Endpoint::Status(_)
+            | Endpoint::Title
+            | Endpoint::Checkout
+            | Endpoint::Session
+            | Endpoint::Comments
+            | Endpoint::Decisions
+            | Endpoint::Features
+            | Endpoint::Feature
+            | Endpoint::Tasks
+            | Endpoint::Telemetry
+            | Endpoint::Inbox => MAX_HOOK_BODY,
+            Endpoint::Decide | Endpoint::DecisionChange => MAX_DECISION_BODY,
+            // Mermaid source in JSON, with room for the encoding.
+            Endpoint::Diagrams => crate::MAX_DIAGRAM_BODY_BYTES + 4096,
+            // Room for a map at its bound, as UTF-8 that the server refuses
+            // past it in words rather than as a body cut off.
+            Endpoint::TrackerMap => crate::MAX_TRACKER_MAP_BYTES + 1024,
+            Endpoint::Reconcile => crate::reconcile::MAX_PROPOSAL_BYTES,
+            // The view's own bound, so the 413 is the refusal of a dump.
+            Endpoint::View => crate::MAX_VIEW_BYTES,
+            // The view's bound, and room for what it was built from.
+            Endpoint::SavedView => crate::MAX_SAVED_VIEW_WRITE_BYTES,
+            // A launch carries a brief for the agent it starts, not a status.
+            Endpoint::Agent => crate::MAX_LAUNCH_BYTES,
+        }
+    }
 }
+
+/// The body a request may carry when its path names no endpoint, and the
+/// most a status note, title, session id or read carries.
+pub const MAX_HOOK_BODY: usize = 4096;
+
+/// A decision is several bounded fields and two bounded lists, each entry
+/// of which may run to the same bound; the room is for all of them full,
+/// with JSON's quoting on top.
+const MAX_DECISION_BODY: usize = (6 + crate::MAX_DECISION_OPTIONS + crate::MAX_DECISION_CONSEQUENCES)
+    * crate::MAX_DECISION_BYTES
+    * 2;
 
 /// `/pane/<id>` — the prefix every pane request shares, and everything an
 /// `ARGUS_HOOK_URL` carries after its authority.
@@ -686,6 +729,44 @@ mod tests {
             assert_eq!(parse_extension_path(path), None, "{path}");
         }
         assert_eq!(parse_pane_path("/extension/docker/view"), None);
+    }
+
+    #[test]
+    fn every_endpoint_takes_at_least_a_note() {
+        for endpoint in every_endpoint() {
+            assert!(endpoint.max_body() >= MAX_HOOK_BODY, "{endpoint:?}");
+        }
+    }
+
+    #[test]
+    fn a_view_body_is_bounded_by_the_views_own_limit() {
+        assert_eq!(Endpoint::View.max_body(), crate::MAX_VIEW_BYTES);
+        assert!(Endpoint::SavedView.max_body() > crate::MAX_VIEW_BYTES);
+        assert_eq!(Endpoint::Agent.max_body(), crate::MAX_LAUNCH_BYTES);
+    }
+
+    #[test]
+    fn a_decision_body_has_room_for_every_field_full() {
+        let full = || Some("\"".repeat(crate::MAX_DECISION_BYTES));
+        let write = crate::DecisionWrite {
+            chose: full().unwrap(),
+            over: full(),
+            because: full(),
+            under: Some(i64::MAX),
+            supersedes: Some(i64::MAX),
+            state: crate::DecisionState::Open,
+            task: Some(i64::MAX),
+            context: full(),
+            detail: full(),
+            consequences: (0..crate::MAX_DECISION_CONSEQUENCES)
+                .map(|_| crate::Consequence { gain: false, text: full().unwrap() })
+                .collect(),
+            options: (0..crate::MAX_DECISION_OPTIONS).map(|_| full().unwrap()).collect(),
+        };
+        let body = serde_json::to_vec(&write).unwrap().len();
+        for endpoint in [Endpoint::Decide, Endpoint::DecisionChange] {
+            assert!(body <= endpoint.max_body(), "{endpoint:?}: {body} > {}", endpoint.max_body());
+        }
     }
 
     #[test]

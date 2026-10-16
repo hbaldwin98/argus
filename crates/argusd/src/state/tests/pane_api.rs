@@ -1143,3 +1143,21 @@ async fn a_pane_is_told_when_the_person_moves_to_it_and_away() {
     assert_eq!(d.processes.written(second), b"\x1b[I\x1b[O\x1b[I\x1b[O", "a client going takes the focus with it");
     close_all(&d);
 }
+
+#[tokio::test]
+async fn a_body_past_its_endpoints_bound_is_refused_with_the_bound() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    d.start_hook_server().unwrap();
+    let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+
+    let bound = Endpoint::Title.max_body();
+    let body = "x".repeat(bound + 1);
+    let response = post_agent_hook(&d, source, Endpoint::Title, &body).await;
+    let response = String::from_utf8_lossy(&response);
+
+    assert!(response.starts_with("HTTP/1.1 413"), "{response}");
+    let (_, words) = response.split_once("\r\n\r\n").expect("a head and a body");
+    assert!(words.ends_with(&format!("at most {bound} bytes")), "the agent is told the bound: {response}");
+    close_all(&d);
+}

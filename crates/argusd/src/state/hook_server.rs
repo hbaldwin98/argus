@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::{parse_request_target, Endpoint, PaneId, MAX_DIAGRAM_BODY_BYTES};
+use argus_protocol::{parse_request_target, Endpoint, PaneId, MAX_HOOK_BODY};
 
 use super::Daemon;
 
@@ -54,37 +54,6 @@ impl Daemon {
             }
         });
         Ok(())
-    }
-}
-
-const MAX_BODY: usize = 4096;
-/// Diagram adds carry Mermaid source in JSON; allow room for encoding overhead.
-const MAX_DIAGRAM_HOOK_BODY: usize = MAX_DIAGRAM_BODY_BYTES + 4096;
-
-/// A decision is several bounded fields and two bounded lists, each entry
-/// of which may run to the same bound; the room is for all of them full,
-/// with JSON's quoting on top.
-const MAX_DECISION_HOOK_BODY: usize = (6
-    + argus_protocol::MAX_DECISION_OPTIONS
-    + argus_protocol::MAX_DECISION_CONSEQUENCES)
-    * argus_protocol::MAX_DECISION_BYTES
-    * 2;
-
-fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
-    match endpoint {
-        Some((_, Endpoint::Decide | Endpoint::DecisionChange)) => MAX_DECISION_HOOK_BODY,
-        Some((_, Endpoint::Diagrams)) => MAX_DIAGRAM_HOOK_BODY,
-        // Room for a map at its bound, as UTF-8 that the server refuses
-        // past it in words rather than as a body cut off.
-        Some((_, Endpoint::TrackerMap)) => argus_protocol::MAX_TRACKER_MAP_BYTES + 1024,
-        Some((_, Endpoint::Reconcile)) => argus_protocol::reconcile::MAX_PROPOSAL_BYTES,
-        // The view's own bound, so the 413 is the refusal of a dump.
-        Some((_, Endpoint::View)) => argus_protocol::MAX_VIEW_BYTES,
-        // The view's bound, and room for what it was built from.
-        Some((_, Endpoint::SavedView)) => argus_protocol::MAX_SAVED_VIEW_WRITE_BYTES,
-        // A launch carries a brief for the agent it starts, not a status.
-        Some((_, Endpoint::Agent)) => argus_protocol::MAX_LAUNCH_BYTES,
-        _ => MAX_BODY,
     }
 }
 
@@ -190,7 +159,7 @@ async fn handle_hook_request(
         feature: argus_protocol::requested_feature(&path),
     };
     // The server trusts nothing about a request beyond its bearer token.
-    let max_body = max_hook_body(endpoint);
+    let max_body = endpoint.map_or(MAX_HOOK_BODY, |(_, endpoint)| endpoint.max_body());
     let too_large = content_length > max_body;
     let mut body = vec![0u8; if too_large { 0 } else { content_length }];
     if !body.is_empty() {
@@ -208,7 +177,7 @@ async fn handle_hook_request(
     let response = if !authorized {
         HookResponse::empty(401, "Unauthorized")
     } else if too_large {
-        HookResponse::text(413, "Content Too Large", "request body is too large".into())
+        HookResponse::text(413, "Content Too Large", format!("request body is too large: at most {max_body} bytes"))
     } else {
         match endpoint {
             Some((pane, Endpoint::Status(report))) => {
