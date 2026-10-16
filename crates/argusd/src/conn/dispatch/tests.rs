@@ -660,7 +660,7 @@ async fn both_sides_asked_together_are_both_answered() {
 }
 
 #[tokio::test]
-async fn a_review_of_a_checkout_that_is_gone_errors_without_spawning_work() {
+async fn a_review_of_a_checkout_that_is_gone_is_refused_under_its_id() {
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
     h.send(ClientMsg::Review {
@@ -669,7 +669,18 @@ async fn a_review_of_a_checkout_that_is_gone_errors_without_spawning_work() {
         base: ReviewBase::Unstaged,
         commit: None,
     });
-    assert!(h.error().await.contains("no such checkout"));
+    let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+        .await
+        .expect("the refusal should arrive")
+        .expect("channel open");
+    match reply {
+        ServerMsg::ReviewFailed {
+            request_id: 1,
+            checkout: CheckoutId(9999),
+            message,
+        } => assert!(message.contains("no such checkout"), "{message}"),
+        other => panic!("unexpected {other:?}"),
+    }
 }
 
 #[tokio::test]

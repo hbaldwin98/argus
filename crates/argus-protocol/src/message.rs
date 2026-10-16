@@ -667,7 +667,8 @@ pub enum ServerMsg {
     },
     /// The answer to `ClientMsg::Review`.
     Review(Review),
-    /// A failed review capture/diff, correlated so stale failures are dropped.
+    /// A review that could not be read, a checkout that is gone included,
+    /// correlated so stale failures are dropped.
     ReviewFailed {
         request_id: u64,
         checkout: CheckoutId,

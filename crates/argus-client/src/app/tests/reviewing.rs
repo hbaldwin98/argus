@@ -109,6 +109,28 @@ fn only_the_exact_latest_review_request_is_accepted() {
     assert!(h.app.review_view().is_some());
 }
 
+/// The daemon refuses a review of a checkout that is gone under its ids,
+/// where it once sent an untagged error; the person is told the same.
+#[test]
+fn a_review_the_daemon_refuses_is_alerted_with_why() {
+    let mut h = Harness::new();
+    h.key(KeyCode::Char('l'));
+    h.key(KeyCode::Char('R'));
+    h.sent();
+    let checkout = h.app.current_checkout().unwrap().id;
+
+    for request_id in [1, 2] {
+        h.app.on_server_msg(ServerMsg::ReviewFailed {
+            request_id,
+            checkout,
+            message: "no such checkout".into(),
+        });
+    }
+    assert!(h.app.review_view().is_none());
+    assert_eq!(h.app.status, "error: no such checkout");
+    assert!(h.app.status_alert);
+}
+
 #[test]
 fn an_unsolicited_diff_never_hijacks_the_screen() {
     let mut h = Harness::new();

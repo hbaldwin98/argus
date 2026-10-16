@@ -1691,7 +1691,8 @@ order it made them, and every ask is answered under its own id, with the diff or
 not be read. One a connection asks again — the same checkout, side and commit — while the first
 still waits for its turn is answered by that one capture, which is read after both; any other is
 captured on its own, so two commits asked back to back are both answered and a history preview
-never waits on an ask that went nowhere.
+never waits on an ask that went nowhere. A review of a checkout that is gone is refused the same
+way, under its id.
 
 The client supports line and file navigation, single-file range marking, a changed-file fuzzy
 picker, refresh, and opening the selected line in an editor. A comment records the review side,

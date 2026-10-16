@@ -444,6 +444,18 @@ mod tests {
         assert!(out.is_empty() && dialogs.take(&tree(), 0).is_empty());
     }
 
+    /// The daemon refuses a review of a checkout that is gone under its
+    /// ids; the review says why where the person is looking.
+    #[test]
+    fn a_review_of_a_checkout_that_is_gone_says_why_in_the_review() {
+        let mut dialogs = reviewing(ReviewLayout::default());
+        for request_id in [1, 2] {
+            let msg = ServerMsg::ReviewFailed { request_id, checkout: CheckoutId(100), message: "no such checkout".into() };
+            assert!(dialogs.receive(msg, &mut Vec::new()).is_none());
+        }
+        assert_eq!(dialogs.review().unwrap().page(None).empty.as_deref(), Some("no such checkout"));
+    }
+
     #[test]
     fn a_message_neither_dialog_asked_for_is_given_back() {
         let mut dialogs = Dialogs::new(ReviewLayout::default());

@@ -728,7 +728,18 @@ fn review(
     base: ReviewBase,
     commit: Option<String>,
 ) -> anyhow::Result<()> {
-    let path = daemon.checkout_path(checkout)?;
+    // Refused under its id: an untagged Error would leave the asker waiting.
+    let path = match daemon.checkout_path(checkout) {
+        Ok(path) => path,
+        Err(error) => {
+            let _ = out_tx.send(ServerMsg::ReviewFailed {
+                request_id,
+                checkout,
+                message: error.to_string(),
+            });
+            return Ok(());
+        }
+    };
     let out_tx = out_tx.clone();
     let ask = ReviewAsk::new(checkout, base, commit.clone());
     let generate = move || match commit.as_deref() {
