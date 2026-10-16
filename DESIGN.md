@@ -334,7 +334,7 @@ live in this crate and a contract written twice drifts in silence.
 | `agent_view` | what a view an agent shows is made of — its blocks and values and the change an agent sends to show, patch or close one — as the desktop and the terminal client both draw it |
 | `view_check` | whether a view keeps its limits (sizes, depth, counts, bounded numbers, unique and printable ids, web links, checkout-relative paths, kinds this Argus knows), and where it does not, the path that names the fault |
 | `saved_view` | what a saved view is: its body, its scope, and the metadata an agent refreshes it from (recipe, sources, the commit it was built at, stale); what an agent writes to save one and reads back; and the line an agent is typed to refresh one |
-| `view_tree` | how the blocks of a view nest: the lists inside each container, and what a patch path and the desktop page each call them |
+| `view_tree` | what each kind of block holds: the lists of blocks inside a container and the links, values and actions it holds itself, each by the step a refusal names it with, and each list as the desktop page names it |
 | `view_links` | which saved views a view links to, in the order it names them, reached through values, `opens` and embeds at any depth: the terminal's links list and the desktop's nesting of a linked view under the view that names it |
 | `view_press` | what a press of a view's action carries back, which of it the view offered, and the one line the agent is told of it |
 | `checkout_path` | whether a path an agent wrote stays inside the checkout it is read against |
