@@ -160,6 +160,14 @@ fn any_element_that_can_open_a_view_names_one_that_is_checked() {
 }
 
 #[test]
+fn a_saved_views_body_is_held_to_the_views_bound() {
+    let mut w = write("a");
+    w.view.blocks = vec![crate::Block::Divider; 15_000];
+    let max = crate::MAX_VIEW_BYTES;
+    assert_eq!(w.checked().unwrap_err(), format!("a view is at most {max} bytes"));
+}
+
+#[test]
 fn a_refresh_request_is_one_line_naming_the_recipe_and_sources() {
     let s = saved();
     let text = refresh_request(&s.view, s.recipe.as_deref(), &s.sources);

@@ -86,7 +86,16 @@ impl AgentView {
         let name = |i: usize| format!("blocks[{i}]");
         list_ok(&self.blocks, "blocks", &name, 1, &mut actions)?;
         embeds_not_itself(&self.blocks, &name, id)?;
-        Ok(AgentView { id: id.to_string(), ..self })
+        let view = AgentView { id: id.to_string(), ..self };
+        // The body limit bounds what was sent; a view that serialises
+        // larger than it, from defaults filled in that the sender never
+        // wrote, is as much a dump as one sent so. A patched view was never
+        // sent whole, so this is its only bound.
+        let size = serde_json::to_vec(&view).map_or(0, |bytes| bytes.len());
+        if size > MAX_VIEW_BYTES {
+            return Err(format!("a view is at most {MAX_VIEW_BYTES} bytes"));
+        }
+        Ok(view)
     }
 }
 

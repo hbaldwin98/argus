@@ -342,6 +342,29 @@ async fn a_patch_keeps_the_views_refresh_timer_untouched() {
     let _ = d.close_pane(pane);
 }
 
+/// A patch was never sent whole, so no body limit bounds the view it makes;
+/// the view's own bound must, or patches could grow a view without end.
+#[tokio::test]
+async fn a_patch_that_grows_a_view_past_its_bound_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    let markdown = |bytes: usize| serde_json::json!({"kind": "markdown", "text": "x".repeat(bytes)});
+    let shown = MAX_VIEW_BYTES * 45 / 100;
+    let view = serde_json::json!({"id": "a", "title": "a", "blocks": [markdown(shown), markdown(shown)]});
+    let body = serde_json::json!({"action": "show", "view": view}).to_string();
+    let response = text(&post_agent_hook(&d, pane, Endpoint::View, &body).await);
+    assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+
+    let grown = patch("a", "blocks[1]", markdown(MAX_VIEW_BYTES * 57 / 100));
+    let response = text(&post_agent_hook(&d, pane, Endpoint::View, &grown).await);
+
+    assert!(response.starts_with("HTTP/1.1 409"), "{response}");
+    assert!(response.contains(&format!("at most {MAX_VIEW_BYTES} bytes")), "{response}");
+    let held = &d.watch_views().0[0].view.blocks[1];
+    assert!(matches!(held, argus_protocol::Block::Markdown { text } if text.len() == shown), "the view is as it was");
+    let _ = d.close_pane(pane);
+}
+
 #[tokio::test]
 async fn showing_a_view_again_keeps_its_timer_unless_the_interval_changed() {
     let dir = tempfile::tempdir().unwrap();

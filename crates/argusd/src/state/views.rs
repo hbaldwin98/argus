@@ -11,7 +11,7 @@
 
 use argus_protocol::view_press::relay;
 use argus_protocol::{
-    AgentView, PaneId, ServerMsg, ShownView, ViewChange, ViewPress, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES,
+    AgentView, PaneId, ServerMsg, ShownView, ViewChange, ViewPress, MAX_VIEWS_PER_PANE,
 };
 use std::sync::Arc;
 
@@ -97,7 +97,7 @@ impl Daemon {
         self.agent_checkout(pane)?;
         match change {
             ViewChange::Show { view } => {
-                let view = checked_within_size(view)?;
+                let view = view.checked().map_err(anyhow::Error::msg)?;
                 self.hold_view(pane, |_| Ok(view))
             }
             ViewChange::Close { id } => {
@@ -111,7 +111,7 @@ impl Daemon {
                         .get(pane, &id)
                         .ok_or_else(|| anyhow::anyhow!("the pane shows no view {id:?}"))?;
                     let patched = held.view.clone().patched(&path, block).map_err(|e| anyhow::anyhow!("{e}"))?;
-                    checked_within_size(patched)
+                    patched.checked().map_err(anyhow::Error::msg)
                 })
             }
         }
@@ -207,17 +207,6 @@ impl Daemon {
             let _ = self.agent_views_tx.send(ServerMsg::ViewClosed { pane, id });
         }
     }
-}
-
-/// The view if it keeps every limit and fits the size one may be held at.
-fn checked_within_size(view: AgentView) -> anyhow::Result<AgentView> {
-    let view = view.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-    // The body limit bounds what was sent; a view that serialises
-    // larger than it, from defaults filled in that the sender never
-    // wrote, is as much a dump as one that was sent so.
-    let size = serde_json::to_vec(&view).map_or(0, |bytes| bytes.len());
-    anyhow::ensure!(size <= MAX_VIEW_BYTES, "a view is at most {MAX_VIEW_BYTES} bytes");
-    Ok(view)
 }
 
 /// What is typed to the agent when it has no inbox, so it must stay one

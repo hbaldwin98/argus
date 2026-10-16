@@ -365,6 +365,13 @@ fn every_leaf_is_refused_by_the_path_that_names_it() {
 }
 
 #[test]
+fn a_view_that_serialises_past_its_bound_is_refused() {
+    assert!(view(vec![Block::Divider; 10]).checked().is_ok());
+    let err = refused(vec![Block::Divider; 15_000]);
+    assert_eq!(err, format!("a view is at most {MAX_VIEW_BYTES} bytes"));
+}
+
+#[test]
 fn a_view_cannot_embed_itself_even_deep_inside() {
     let embed = |id: &str| Block::Embed { view: id.into() };
     assert!(view(vec![embed("other")]).checked().is_ok());

@@ -27,7 +27,7 @@ use argus_protocol::view_press::relay;
 use argus_protocol::{
     saved_view_refresh_request, ArtifactScope, FeatureRef, PaneId,
     RepositoryId, SavedView, SavedViewChange, SavedViewEntry, SavedViewRecord, SavedViewWrite, ServerMsg,
-    ViewPress, ViewScope, WriteScope, MAX_VIEW_BYTES,
+    ViewPress, ViewScope, WriteScope,
 };
 use tokio::sync::broadcast;
 
@@ -290,8 +290,6 @@ impl Daemon {
         write: SavedViewWrite,
     ) -> anyhow::Result<SavedViewEntry> {
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let size = serde_json::to_vec(&write.view).map_or(0, |bytes| bytes.len());
-        anyhow::ensure!(size <= MAX_VIEW_BYTES, "a view is at most {MAX_VIEW_BYTES} bytes");
         let board = &address.key;
         let checkout = address.checkout()?.to_path_buf();
 
