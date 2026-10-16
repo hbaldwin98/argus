@@ -156,6 +156,35 @@ fn tree<'a>(nodes: &'a [TreeNode], indices: &mut Vec<usize>, out: &mut Leaves<'a
     }
 }
 
+/// The kinds that hold no blocks, as one pattern for the three walks over
+/// containers: a new kind goes here once, or gets an arm in each of them.
+macro_rules! holds_no_blocks {
+    () => {
+        Block::Markdown { .. }
+            | Block::Fields { .. }
+            | Block::List { .. }
+            | Block::Stats { .. }
+            | Block::Code { .. }
+            | Block::Diagram { .. }
+            | Block::Callout { .. }
+            | Block::Row { .. }
+            | Block::Divider
+            | Block::Chart { .. }
+            | Block::Progress { .. }
+            | Block::Timeline { .. }
+            | Block::Tree { .. }
+            | Block::Graph { .. }
+            | Block::Diff { .. }
+            | Block::Matrix { .. }
+            | Block::Checklist { .. }
+            | Block::Log { .. }
+            | Block::Board { .. }
+            | Block::Form { .. }
+            | Block::Embed { .. }
+            | Block::Unknown
+    };
+}
+
 impl Block {
     /// What this block holds itself, not the blocks inside it, in the order
     /// a reader meets it, each with where it sits.
@@ -265,7 +294,7 @@ impl Block {
                 .enumerate()
                 .filter_map(|(r, inner)| inner.as_ref().map(|inner| (Slot::Details(r), inner.as_slice())))
                 .collect(),
-            _ => Vec::new(),
+            holds_no_blocks!() => Vec::new(),
         }
     }
 
@@ -287,7 +316,7 @@ impl Block {
                 .enumerate()
                 .filter_map(|(r, inner)| inner.as_mut().map(|inner| (Slot::Details(r), inner.as_mut_slice())))
                 .collect(),
-            _ => Vec::new(),
+            holds_no_blocks!() => Vec::new(),
         }
     }
 
@@ -307,7 +336,7 @@ impl Block {
             Block::Tabs { tabs } => tabs.iter_mut().for_each(|tab| tab.blocks.clear()),
             Block::Grid { items, .. } => items.clear(),
             Block::Table { details, .. } => details.iter_mut().flatten().for_each(Vec::clear),
-            _ => {}
+            holds_no_blocks!() => {}
         }
         debug_assert!(bare.children().iter().all(|(_, list)| list.is_empty()), "a container kind left out");
         bare
