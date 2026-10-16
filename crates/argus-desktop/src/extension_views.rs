@@ -12,10 +12,11 @@
 use std::collections::BTreeMap;
 
 use argus_protocol::{CheckoutId, ClientMsg, ExtPlace, ExtScope, ExtView, PaneId, RepositoryId};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::docks::{Dock, Panel, Place};
 use crate::extension_keys::{ExtCommandPage, ExtGroup};
+use crate::keymap::Action;
 use crate::page::Side;
 use crate::settings::ExtensionsLayout;
 
@@ -164,6 +165,23 @@ pub struct ExtConfirm {
     pub question: String,
 }
 
+/// What was done in one extension's view.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ExtensionGesture {
+    /// A row clicked.
+    Select { key: String },
+    /// One of the view's actions, by its id.
+    Act { action: String },
+    /// A double click or Enter on `row`: the view's default action on it.
+    /// The row rides along, so the default is taken on the row clicked
+    /// whether or not its select has landed yet.
+    Default { row: String },
+    /// A key of the view: the selection stepped, or Enter.
+    Key { action: Action },
+}
+
 #[derive(Default)]
 pub struct ExtensionViews {
     views: Vec<ExtView>,
@@ -233,7 +251,40 @@ impl ExtensionViews {
         self.last = Some(panel.clone());
     }
 
-    pub fn select(&mut self, panel: &Panel, key: String) {
+    /// A gesture in `panel`'s view where the person is: what to send now,
+    /// or why nothing is. Any gesture makes it the view last used; the view
+    /// itself changes only when its extension publishes it again.
+    pub fn gesture(&mut self, panel: &Panel, here: &Here, gesture: ExtensionGesture) -> Result<Option<ClientMsg>, String> {
+        self.touch(panel);
+        match gesture {
+            ExtensionGesture::Select { key } => self.select(panel, key),
+            ExtensionGesture::Act { action } => return self.act(panel, here, &action),
+            ExtensionGesture::Default { row } => {
+                self.select(panel, row);
+                return self.take_default(panel, here);
+            }
+            ExtensionGesture::Key { action } => match action {
+                Action::Next => self.step(panel, here, 1),
+                Action::Previous => self.step(panel, here, -1),
+                Action::First => self.select_end(panel, here, false),
+                Action::Last => self.select_end(panel, here, true),
+                Action::Choose => return self.take_default(panel, here),
+                _ => {}
+            },
+        }
+        Ok(None)
+    }
+
+    /// The view's default action on its selected row; a view without one
+    /// leaves Enter and a double click doing nothing, said nowhere.
+    fn take_default(&mut self, panel: &Panel, here: &Here) -> Result<Option<ClientMsg>, String> {
+        match self.get(panel, here).and_then(|v| v.default.clone()) {
+            Some(action) => self.act(panel, here, &action),
+            None => Ok(None),
+        }
+    }
+
+    fn select(&mut self, panel: &Panel, key: String) {
         self.selected.insert(panel.clone(), key);
     }
 
@@ -245,7 +296,7 @@ impl ExtensionViews {
     }
 
     /// Moves the selection `by` rows, held at either end.
-    pub fn step(&mut self, panel: &Panel, here: &Here, by: isize) {
+    fn step(&mut self, panel: &Panel, here: &Here, by: isize) {
         let Some(view) = self.get(panel, here) else { return };
         let current = self.selected_in(panel, view);
         let at = view.rows.iter().position(|r| Some(&r.key) == current.as_ref()).unwrap_or(0);
@@ -256,7 +307,7 @@ impl ExtensionViews {
     }
 
     /// The first row, or the last.
-    pub fn select_end(&mut self, panel: &Panel, here: &Here, last: bool) {
+    fn select_end(&mut self, panel: &Panel, here: &Here, last: bool) {
         let Some(view) = self.get(panel, here) else { return };
         let row = if last { view.rows.last() } else { view.rows.first() };
         if let Some(row) = row.map(|r| r.key.clone()) {
@@ -266,7 +317,7 @@ impl ExtensionViews {
 
     /// The action `id` of the view, on its selected row unless it is
     /// view-wide: what to send now, or nothing when it asks first.
-    pub fn act(&mut self, panel: &Panel, here: &Here, id: &str) -> Result<Option<ClientMsg>, String> {
+    fn act(&mut self, panel: &Panel, here: &Here, id: &str) -> Result<Option<ClientMsg>, String> {
         let view = self.get(panel, here).ok_or("that extension's view is not shown here")?;
         let picked = self.selected_in(panel, view);
         let taken = view.offers(id, picked.as_deref())?;
@@ -288,11 +339,6 @@ impl ExtensionViews {
             }
             None => Ok(Some(msg)),
         }
-    }
-
-    /// The id of the view's default row action, when it names one.
-    pub fn default_action(&self, panel: &Panel, here: &Here) -> Option<String> {
-        self.get(panel, here)?.default.clone()
     }
 
     /// The person answered the question: a yes is what it asked about.
@@ -423,6 +469,77 @@ mod tests {
         Panel::extension("docker", "images")
     }
 
+    fn key(action: Action) -> ExtensionGesture {
+        ExtensionGesture::Key { action }
+    }
+
+    /// The views held, the containers' naming `logs` its default.
+    fn defaulted() -> ExtensionViews {
+        let mut views = ExtensionViews::default();
+        let mut published = published();
+        published[0].default = Some("logs".into());
+        views.receive(published);
+        views
+    }
+
+    fn sent_row(sent: Option<ClientMsg>) -> Option<String> {
+        match sent {
+            Some(ClientMsg::ExtensionAction { row, action, .. }) if action == "logs" => row,
+            other => panic!("not the default: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_key_steps_the_selection_and_enter_takes_the_default_action() {
+        let (mut views, here) = (defaulted(), Here::default());
+        assert!(views.gesture(&containers(), &here, key(Action::Next)).unwrap().is_none());
+        assert_eq!(views.table(&containers(), &here, false).unwrap().selected.as_deref(), Some("db"));
+        assert!(views.gesture(&containers(), &here, key(Action::First)).unwrap().is_none());
+        assert_eq!(views.table(&containers(), &here, false).unwrap().selected.as_deref(), Some("web"));
+        views.gesture(&containers(), &here, key(Action::Last)).unwrap();
+        let sent = views.gesture(&containers(), &here, key(Action::Choose)).unwrap();
+        assert_eq!(sent_row(sent).as_deref(), Some("db"));
+    }
+
+    #[test]
+    fn a_default_is_taken_on_the_row_it_rides_with() {
+        let (mut views, here) = (defaulted(), Here::default());
+        let sent = views.gesture(&containers(), &here, ExtensionGesture::Default { row: "db".into() }).unwrap();
+        assert_eq!(sent_row(sent).as_deref(), Some("db"), "not the first row, selected until now");
+    }
+
+    #[test]
+    fn enter_on_a_view_that_names_no_default_sends_nothing() {
+        let (mut views, here) = held();
+        assert!(views.gesture(&containers(), &here, key(Action::Choose)).unwrap().is_none());
+        let double = ExtensionGesture::Default { row: "db".into() };
+        assert!(views.gesture(&containers(), &here, double).unwrap().is_none());
+        assert_eq!(views.table(&containers(), &here, false).unwrap().selected.as_deref(), Some("db"), "only selected");
+    }
+
+    #[test]
+    fn every_gesture_makes_its_view_the_one_the_palette_moves() {
+        let (mut views, _) = held();
+        let repo = Here { repository: Some(RepositoryId(4)), checkout: None };
+        for gesture in [
+            ExtensionGesture::Select { key: "a".into() },
+            ExtensionGesture::Act { action: "none".into() },
+            ExtensionGesture::Default { row: "a".into() },
+            key(Action::Choose),
+        ] {
+            views.touch(&containers());
+            let _ = views.gesture(&images(), &repo, gesture);
+            assert_eq!(views.last(), Some(&images()));
+        }
+    }
+
+    #[test]
+    fn a_gesture_on_a_view_not_shown_here_is_refused() {
+        let (mut views, nowhere) = held();
+        let act = ExtensionGesture::Act { action: "logs".into() };
+        assert_eq!(views.gesture(&images(), &nowhere, act).unwrap_err(), "that extension's view is not shown here");
+    }
+
     #[test]
     fn a_scoped_view_is_listed_only_where_its_scope_is() {
         let (views, nowhere) = held();
@@ -445,7 +562,7 @@ mod tests {
     #[test]
     fn an_action_on_the_selected_row_is_sent_as_it_stands() {
         let (mut views, here) = held();
-        views.step(&containers(), &here, 1);
+        views.gesture(&containers(), &here, key(Action::Next)).unwrap();
         let sent = views.act(&containers(), &here, "logs").unwrap().unwrap();
         assert!(matches!(
             sent,
@@ -460,8 +577,8 @@ mod tests {
     fn each_view_keeps_its_own_selected_row() {
         let (mut views, _) = held();
         let repo = Here { repository: Some(RepositoryId(4)), checkout: None };
-        views.step(&containers(), &repo, 1);
-        views.select_end(&images(), &repo, true);
+        views.gesture(&containers(), &repo, key(Action::Next)).unwrap();
+        views.gesture(&images(), &repo, key(Action::Last)).unwrap();
         assert_eq!(views.table(&containers(), &repo, false).unwrap().selected.as_deref(), Some("db"));
         assert_eq!(views.table(&images(), &repo, false).unwrap().selected.as_deref(), Some("b"));
     }

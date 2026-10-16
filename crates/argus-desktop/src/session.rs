@@ -45,7 +45,7 @@ use crate::add_project::{AddProject, AddProjectGesture, Adding};
 use crate::agent_views::AgentViews;
 use crate::extension_dialog::ExtensionDialogs;
 use crate::extension_keys::ExtensionKeys;
-use crate::extension_views::{first_place, ExtTable, ExtensionViews, ExtensionsPage, Here};
+use crate::extension_views::{first_place, ExtTable, ExtensionGesture, ExtensionViews, ExtensionsPage, Here};
 use crate::agents::Agents;
 use crate::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts_stage::{CheckoutsStage, Opened};
@@ -795,17 +795,10 @@ impl Session {
                 self.finish()
             }
             Call::OpenExtensionView { extension, view } => self.open_extension_view(&extension, &view),
-            Call::SelectExtensionRow { panel, key } => {
-                self.extension_views.touch(&panel);
-                self.extension_views.select(&panel, key);
-                self.finish()
-            }
-            Call::ExtensionAction { panel, action } => self.extension_action(&panel, &action),
-            Call::ExtensionDefault { panel, row } => {
-                self.extension_views.select(&panel, row);
-                self.extension_default(&panel)
-            }
-            Call::ExtensionKey { panel, action } => self.extension_key(&panel, action),
+            Call::SelectExtensionRow { panel, key } => self.extension_gesture(&panel, ExtensionGesture::Select { key }),
+            Call::ExtensionAction { panel, action } => self.extension_gesture(&panel, ExtensionGesture::Act { action }),
+            Call::ExtensionDefault { panel, row } => self.extension_gesture(&panel, ExtensionGesture::Default { row }),
+            Call::ExtensionKey { panel, action } => self.extension_gesture(&panel, ExtensionGesture::Key { action }),
             Call::AnswerExtension { yes } => {
                 if let Some(msg) = self.extension_views.answer(yes) {
                     self.out.push(msg);
@@ -1698,41 +1691,14 @@ impl Session {
         }
     }
 
-    /// One of the view's actions; the view changes when its extension
-    /// publishes it again, never before.
-    fn extension_action(&mut self, panel: &Panel, action: &str) -> Vec<ClientMsg> {
+    /// A gesture in an extension's view, where the person is.
+    fn extension_gesture(&mut self, panel: &Panel, gesture: ExtensionGesture) -> Vec<ClientMsg> {
         let here = self.here();
-        self.extension_views.touch(panel);
-        match self.extension_views.act(panel, &here, action) {
-            Ok(Some(msg)) => self.out.push(msg),
-            Ok(None) => {}
+        match self.extension_views.gesture(panel, &here, gesture) {
+            Ok(msg) => self.out.extend(msg),
             Err(text) => self.passing.push(Event::Notice { text }),
         }
         self.finish()
-    }
-
-    fn extension_key(&mut self, panel: &Panel, action: Action) -> Vec<ClientMsg> {
-        let here = self.here();
-        self.extension_views.touch(panel);
-        match action {
-            Action::Next => self.extension_views.step(panel, &here, 1),
-            Action::Previous => self.extension_views.step(panel, &here, -1),
-            Action::First => self.extension_views.select_end(panel, &here, false),
-            Action::Last => self.extension_views.select_end(panel, &here, true),
-            Action::Choose => return self.extension_default(panel),
-            _ => {}
-        }
-        self.finish()
-    }
-
-    /// The view's default action on its selected row; a view without one
-    /// leaves Enter and a double-click doing nothing, said nowhere.
-    fn extension_default(&mut self, panel: &Panel) -> Vec<ClientMsg> {
-        let here = self.here();
-        match self.extension_views.default_action(panel, &here) {
-            Some(action) => self.extension_action(panel, &action),
-            None => self.finish(),
-        }
     }
 
     /// Runs an extension's command with where the person is: the row the
