@@ -112,6 +112,37 @@ mod tests {
     }
 
     #[test]
+    fn every_place_a_view_can_link_from_is_found_in_reading_order() {
+        let view = |id: &str| serde_json::json!({ "kind": "view", "id": id });
+        let found = linked_views(&blocks(serde_json::json!([
+            { "kind": "embed", "view": "embed" },
+            { "kind": "section", "heading": "s", "blocks": [], "opens": "section" },
+            { "kind": "details", "summary": "d", "blocks": [], "opens": "details" },
+            { "kind": "card", "opens": "card", "blocks": [
+                { "kind": "fields", "fields": [{ "label": "f", "value": view("field") }] } ] },
+            { "kind": "table", "columns": [{ "title": "a" }], "rows": [[view("cell")]],
+              "details": [[{ "kind": "section", "heading": "s", "blocks": [], "opens": "detail" }]] },
+            { "kind": "list", "items": [{ "opens": "item" }] },
+            { "kind": "checklist", "items": [{ "label": "c", "done": true, "opens": "check" }] },
+            { "kind": "timeline", "events": [{ "title": "e", "opens": "event" }] },
+            { "kind": "stats", "stats": [{ "label": "s", "value": "1", "opens": "stat" }] },
+            { "kind": "graph", "nodes": [{ "id": "n", "label": "n", "opens": "node" }], "edges": [] },
+            { "kind": "tree", "nodes": [{ "label": "a", "opens": "branch", "value": view("branch-value"),
+              "children": [{ "label": "b", "opens": "leaf" }] }] },
+            { "kind": "board", "columns": [{ "title": "c", "cards": [{ "title": "k", "opens": "board", "value": view("board-value") }] }] },
+            { "kind": "row", "items": [{ "kind": "value", "value": view("row") }] },
+            { "kind": "embed", "view": "card" }
+        ])));
+        assert_eq!(
+            found,
+            vec![
+                "embed", "section", "details", "card", "field", "cell", "detail", "item", "check", "event", "stat", "node",
+                "branch", "branch-value", "leaf", "board", "board-value", "row",
+            ]
+        );
+    }
+
+    #[test]
     fn a_view_with_no_links_has_none() {
         assert!(linked_views(&blocks(serde_json::json!([{ "kind": "divider" }]))).is_empty());
     }

@@ -290,6 +290,80 @@ fn every_element_that_opens_a_view_is_held_to_the_same_rule() {
     assert_eq!(refused(vec![item(bad)]), "blocks[0].items[0].opens: a saved view's id is not empty and has no space around it");
 }
 
+/// Each place a block holds a link, a value or an action of its own, with a
+/// fault there and the refusal that names it. The paths are what an agent
+/// is told to fix, so they hold byte for byte however the walk is written.
+#[test]
+fn every_leaf_is_refused_by_the_path_that_names_it() {
+    const LINK: &str = "a saved view's id is not empty and has no space around it";
+    const VALUE: &str = "a link is an http or https URL";
+    const ACTION: &str = "an action needs a label";
+    let link = serde_json::json!(" x");
+    let value = serde_json::json!({ "kind": "link", "label": "l", "url": "file:///x" });
+    let view_value = serde_json::json!({ "kind": "view", "id": " x" });
+    let action = serde_json::json!({ "id": "a", "label": "" });
+    let good = serde_json::json!({ "id": "ok", "label": "Ok" });
+    let toggle = serde_json::json!([{ "name": "n", "label": "n", "input": { "kind": "toggle" } }]);
+    let table = |cell: &serde_json::Value, actions: serde_json::Value, details: serde_json::Value| {
+        serde_json::json!({ "kind": "table",
+            "columns": [{ "title": "a" }, { "title": "b" }],
+            "rows": [[{ "kind": "empty" }, cell]], "row_keys": ["k"],
+            "actions": actions, "details": details })
+    };
+    let empty = serde_json::json!({ "kind": "empty" });
+    let cases = [
+        (serde_json::json!({ "kind": "embed", "view": "" }), format!("blocks[0].view: {LINK}")),
+        (serde_json::json!({ "kind": "section", "heading": "s", "blocks": [], "opens": link }), format!("blocks[0].opens: {LINK}")),
+        (serde_json::json!({ "kind": "details", "summary": "s", "blocks": [], "opens": link }), format!("blocks[0].opens: {LINK}")),
+        (serde_json::json!({ "kind": "card", "blocks": [], "opens": link }), format!("blocks[0].opens: {LINK}")),
+        (serde_json::json!({ "kind": "card", "blocks": [], "actions": [action] }), format!("blocks[0].actions[0]: {ACTION}")),
+        (table(&empty, serde_json::json!([action]), serde_json::json!([])), format!("blocks[0].actions[0]: {ACTION}")),
+        (serde_json::json!({ "kind": "fields", "fields": [{ "label": "f", "value": value }] }), format!("blocks[0].fields[0].value: {VALUE}")),
+        (table(&value, serde_json::json!([]), serde_json::json!([])), format!("blocks[0].rows[0][1]: {VALUE}")),
+        (serde_json::json!({ "kind": "list", "items": [{ "opens": link }] }), format!("blocks[0].items[0].opens: {LINK}")),
+        (serde_json::json!({ "kind": "checklist", "items": [{ "label": "c", "done": false, "opens": link }] }), format!("blocks[0].items[0].opens: {LINK}")),
+        (serde_json::json!({ "kind": "timeline", "events": [{ "title": "e", "opens": link }] }), format!("blocks[0].events[0].opens: {LINK}")),
+        (serde_json::json!({ "kind": "stats", "stats": [{ "label": "s", "value": "1", "opens": link }] }), format!("blocks[0].stats[0].opens: {LINK}")),
+        (serde_json::json!({ "kind": "graph", "nodes": [{ "id": "n", "label": "n", "opens": link }], "edges": [] }), format!("blocks[0].nodes[0].opens: {LINK}")),
+        (
+            serde_json::json!({ "kind": "tree", "nodes": [{ "label": "a", "children": [{ "label": "b" }, { "label": "c", "opens": link }] }] }),
+            format!("blocks[0].nodes[0].children[1].opens: {LINK}"),
+        ),
+        (
+            serde_json::json!({ "kind": "tree", "nodes": [{ "label": "a", "children": [{ "label": "b" }, { "label": "c", "value": value }] }] }),
+            format!("blocks[0].nodes[0].children[1].value: {VALUE}"),
+        ),
+        (
+            serde_json::json!({ "kind": "board", "columns": [{ "title": "c", "cards": [{ "title": "a" }, { "title": "b", "opens": link }] }] }),
+            format!("blocks[0].columns[0].cards[1].opens: {LINK}"),
+        ),
+        (
+            serde_json::json!({ "kind": "board", "columns": [{ "title": "c", "cards": [{ "title": "a" }, { "title": "b", "value": value }] }] }),
+            format!("blocks[0].columns[0].cards[1].value: {VALUE}"),
+        ),
+        (
+            serde_json::json!({ "kind": "row", "items": [{ "kind": "action", "action": good }, { "kind": "value", "value": value }] }),
+            format!("blocks[0].items[1].value: {VALUE}"),
+        ),
+        (serde_json::json!({ "kind": "row", "items": [{ "kind": "action", "action": action }] }), format!("blocks[0].items[0].action: {ACTION}")),
+        (serde_json::json!({ "kind": "form", "id": "f", "fields": toggle, "submit": action }), format!("blocks[0].submit: {ACTION}")),
+        (
+            table(&empty, serde_json::json!([]), serde_json::json!([[{ "kind": "section", "heading": "s", "blocks": [], "opens": link }]])),
+            format!("blocks[0].details[0][0].opens: {LINK}"),
+        ),
+        (serde_json::json!({ "kind": "fields", "fields": [{ "label": "f", "value": view_value }] }), format!("blocks[0].fields[0].value.id: {LINK}")),
+        (table(&view_value, serde_json::json!([]), serde_json::json!([])), format!("blocks[0].rows[0][1].id: {LINK}")),
+    ];
+    for (block, refusal) in cases {
+        let block: Block = serde_json::from_value(block).unwrap();
+        assert_eq!(refused(vec![block.clone()]), refusal, "{block:?}");
+    }
+
+    let mut header = view(vec![]);
+    header.actions = vec![act("ok"), ViewAction { label: String::new(), ..act("a") }];
+    assert_eq!(header.checked().unwrap_err(), format!("actions[1]: {ACTION}"));
+}
+
 #[test]
 fn a_view_cannot_embed_itself_even_deep_inside() {
     let embed = |id: &str| Block::Embed { view: id.into() };
