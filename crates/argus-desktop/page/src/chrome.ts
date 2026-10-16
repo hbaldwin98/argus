@@ -37,7 +37,7 @@ export function drawChrome(): void {
   $('kstage').hidden = stage !== 'code';
   $('xstage').hidden = stage !== 'extension';
   $('vstage').hidden = stage !== 'view';
-  $('body').hidden = stage !== 'workspace';
+  $('body').hidden = !state.rail.workspaceShown;
   drawFeatures();
   drawCheckouts();
   drawCode();

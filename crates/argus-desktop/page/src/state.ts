@@ -101,6 +101,7 @@ export const state: {
     repository: null,
     stage: 'workspace',
     filled: false,
+    workspaceShown: true,
     templates: [],
     workspaces: [],
     hosts: [],

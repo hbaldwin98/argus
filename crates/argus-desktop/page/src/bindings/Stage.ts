@@ -2,6 +2,7 @@
 
 /**
  * Which stage is up. One at a time: opening one puts the others away, and
- * any of them over the Workspace keeps the pane on screen to come back to.
+ * any of them over the Workspace keeps its pane to come back to, hidden and
+ * without the keys meanwhile.
  */
 export type Stage = "workspace" | "feature" | "checkouts" | "new" | "console" | "extension" | "view" | "code";

@@ -43,6 +43,12 @@ repository: number | null, stage: Stage,
  */
 filled: boolean, 
 /**
+ * The Workspace's panes are drawn: its stage is up and no fullscreen
+ * console covers it. The page hides them by this, the same rule that
+ * takes their keys.
+ */
+workspaceShown: boolean, 
+/**
  * The agents a checkout's + offers beside a shell: the daemon's
  * templates, the one this window last started first, and the first
  * its default.

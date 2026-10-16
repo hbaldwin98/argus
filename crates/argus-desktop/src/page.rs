@@ -604,6 +604,10 @@ pub struct Rail {
     /// The pane fills the window: the rail and the stage's chrome are put
     /// away until the leader and `f` again.
     pub filled: bool,
+    /// The Workspace's panes are drawn: its stage is up and no fullscreen
+    /// console covers it. The page hides them by this, the same rule that
+    /// takes their keys.
+    pub workspace_shown: bool,
     /// The agents a checkout's + offers beside a shell: the daemon's
     /// templates, the one this window last started first, and the first
     /// its default.
@@ -759,7 +763,8 @@ pub enum Reference {
 }
 
 /// Which stage is up. One at a time: opening one puts the others away, and
-/// any of them over the Workspace keeps the pane on screen to come back to.
+/// any of them over the Workspace keeps its pane to come back to, hidden and
+/// without the keys meanwhile.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -2178,6 +2183,7 @@ mod tests {
             repository: Some(2),
             stage: Stage::Composer,
             filled: false,
+            workspace_shown: false,
             templates: vec!["claude".into()],
             workspaces: vec![WorkspaceChoice { id: 7, name: "personal".into(), open: true, projects: 1, panes: 1 }],
             removing: Some(Removing { project: 1, name: "src".into(), repositories: 1, panes: 0 }),
@@ -2197,6 +2203,7 @@ mod tests {
         assert_eq!(value["shown"]["resumed"], json!({"at": "2026-10-14T13:52:00Z", "turns": 48}));
         assert_eq!(value["loaded"], true);
         assert_eq!(value["stage"], "new");
+        assert_eq!(value["workspaceShown"], false);
         assert_eq!(value["workspaces"][0]["open"], true);
         assert_eq!(value["hosts"][0], json!({"name": "devbox", "current": true}));
         assert_eq!(value["removing"]["repositories"], 1);

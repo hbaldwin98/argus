@@ -150,9 +150,11 @@ daemon's consoles are new shells under new ids. The Feature stage
 has them while it is open, and another pane brings them back for good.
 
 Which stage is up is `session`'s own state, one `page::Stage` set through `go`; the rail goes to
-the page whenever it differs from the last one sent, so no move has to say it changed it. `go`'s
-callers hand the keys on and put fullscreen away themselves, since half the ways out of fullscreen
-move no stage.
+the page whenever it differs from the last one sent, so no move has to say it changed it. It says
+too whether the Workspace's panes are drawn — only while its stage is up and no fullscreen console
+covers it, the composer covering them as every other stage does — and the page hides them by the
+rule that takes their keys. `go`'s callers hand the keys on and put fullscreen away themselves,
+since half the ways out of fullscreen move no stage.
 
 The docks (`docks`) are the stage's left, right and bottom edges; the sidebar keeps the window's
 own left edge, so the left dock is between it and the stage, and the bottom dock is under the stage
@@ -526,7 +528,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `saved_views` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
 | `view_changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
 | `view_refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
-| `stage` | which stage is up, and the stage a page (an agent's view, an extension's, the Code stage) opened over, so that docking, closing or Escape goes back there |
+| `stage` | which stage is up, and the stage a page (an agent's view, an extension's, the Code stage) opened over, so that docking, closing or Escape goes back there, and whether the Workspace's panes are drawn under it |
 | `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, the question an action waits on, and the one open as a page |
 | `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension |
 | `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |

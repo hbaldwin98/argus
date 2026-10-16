@@ -47,6 +47,13 @@ impl Stages {
     pub fn leave_code(&mut self) {
         self.go(self.before_code);
     }
+
+    /// Whether the Workspace's panes are drawn: only while its stage is up
+    /// and no fullscreen console covers it. Every other stage covers them,
+    /// the composer's too.
+    pub fn shows_workspace(&self, console_fullscreen: bool) -> bool {
+        self.now == Stage::Workspace && !console_fullscreen
+    }
 }
 
 #[derive(Default)]
@@ -154,5 +161,16 @@ mod tests {
         assert_eq!(stages.now(), Stage::Code);
         stages.leave_code();
         assert_eq!(stages.now(), Stage::Checkouts, "re-entering does not forget what it was over");
+    }
+
+    #[test]
+    fn the_workspace_is_drawn_only_while_its_stage_is_up_and_no_fullscreen_console_covers_it() {
+        let mut stages = Stages::default();
+        assert!(stages.shows_workspace(false));
+        assert!(!stages.shows_workspace(true), "a fullscreen console covers it");
+        for stage in [Stage::Feature, Stage::Checkouts, Stage::Composer, Stage::Console, Stage::Code, Stage::View, Stage::Extension] {
+            stages.go(stage);
+            assert!(!stages.shows_workspace(false), "{stage:?} covers it");
+        }
     }
 }

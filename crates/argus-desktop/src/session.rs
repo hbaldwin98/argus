@@ -2041,13 +2041,7 @@ impl Session {
     /// and the console's while it is not hidden.
     fn side_visible(&self, side: Side) -> bool {
         match side {
-            Side::Workspace | Side::Beside(_) => {
-                !matches!(
-                    self.stages.now(),
-                    Stage::Feature | Stage::Checkouts | Stage::Code | Stage::Console | Stage::Extension | Stage::View
-                )
-                    && !self.console.fullscreen()
-            }
+            Side::Workspace | Side::Beside(_) => self.stages.shows_workspace(self.console.fullscreen()),
             Side::First | Side::Second => self.console_place() != ConsolePlace::Hidden,
             // A view's screen is kept only while its view is on screen.
             Side::View(_) => true,
@@ -3256,6 +3250,7 @@ impl Session {
             shown.resumed = self.sessions.resumed_from(PaneId(shown.pane)).cloned();
         }
         rail.row = self.shown.grid().page(self.shown.keys(), |pane| rail::shown(&self.tree, pane));
+        rail.workspace_shown = self.stages.shows_workspace(self.console.fullscreen());
         rail
     }
 
@@ -5001,6 +4996,42 @@ mod tests {
                 s.call(call);
             }
         }
+    }
+
+    #[test]
+    fn the_composer_covers_the_workspace_pane_and_takes_its_keys() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        assert_eq!(s.on_screen(), Some(PaneId(1)));
+        s.show_composer(true);
+        assert_eq!(s.on_screen(), None);
+        s.events(0);
+        let sent = s.command(Action::Close);
+        assert!(!sent.iter().any(|m| matches!(m, ClientMsg::Kill { .. })), "{sent:?}");
+        assert!(notices(&mut s).iter().any(|t| t == "no pane is on screen"));
+        assert!(!s.command(Action::Fetch).iter().any(|m| matches!(m, ClientMsg::Fetch { .. })));
+        assert!(notices(&mut s).iter().any(|t| t == "show a pane, or pick a checkout in Checkouts, first"));
+        s.show_composer(false);
+        assert_eq!(s.on_screen(), Some(PaneId(1)));
+    }
+
+    #[test]
+    fn the_page_is_told_whether_the_workspaces_panes_are_drawn() {
+        let mut s = with_consoles();
+        assert!(s.rail(0).workspace_shown);
+        s.show_composer(true);
+        assert!(!s.rail(0).workspace_shown, "under the composer");
+        s.show_features(true);
+        assert!(!s.rail(0).workspace_shown, "under the Feature stage");
+        s.show_features(false);
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert_eq!(s.stages.now(), Stage::Extension);
+        assert!(!s.rail(0).workspace_shown, "under an extension's page");
+        s.show_features(false);
+        assert!(s.rail(0).workspace_shown);
+        console(&mut s, ConsoleGesture::Fullscreen);
+        assert!(!s.rail(0).workspace_shown, "under a fullscreen console");
     }
 
     /// A stage hides the pane it will come back to, so the palette's pane
