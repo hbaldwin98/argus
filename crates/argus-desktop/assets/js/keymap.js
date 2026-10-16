@@ -13,7 +13,7 @@ import { focusTranscriptFind } from './transcript.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { extensionDialogFocused } from './dialogs.js';
 import { $ } from './dom.js';
-import { answerExtensionNo, focusedExtension, pagedExtension, runExtensionCommand, } from './extension_views.js';
+import { answerExtensionNo, extensionGesture, focusedExtension, pagedExtension, runExtensionCommand, } from './extension_views.js';
 import { expandedOpen } from './sequence.js';
 import { featureAction } from './features.js';
 import { escapeFrom, takesFromPane, up } from './focus.js';
@@ -137,7 +137,7 @@ function run(action) {
                     action === 'choose';
                 const page = pagedExtension();
                 if (moves && page)
-                    call('extension_key', { panel: page.panel, action });
+                    extensionGesture(page.panel, { on: 'key', action });
                 return moves;
             }
             return workOpen() ? workAction(action) : featureAction(action);
@@ -189,9 +189,9 @@ function extensionKeys(e, places) {
     if (action === 'extensionPage' || action === 'extensionDock')
         run(action);
     else if (action)
-        call('extension_key', { panel: focused.panel, action });
+        extensionGesture(focused.panel, { on: 'key', action });
     else if (id)
-        call('extension_action', { panel: focused.panel, action: id });
+        extensionGesture(focused.panel, { on: 'act', action: id });
     if (action || id) {
         e.preventDefault();
         return true;
@@ -219,7 +219,7 @@ function stageKeys(e, places) {
         const id = page ? extensionActionFor(e, page) : null;
         if (page && id) {
             e.preventDefault();
-            call('extension_action', { panel: page.panel, action: id });
+            extensionGesture(page.panel, { on: 'act', action: id });
         }
         else {
             const checkouts = state.rail.stage === 'checkouts';

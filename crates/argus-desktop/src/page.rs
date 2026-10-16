@@ -22,7 +22,7 @@ use crate::comment_box::CommentPage;
 use crate::console::{ConsoleGesture, ConsolePage};
 use crate::docks::{DockGesture, DocksPage, Panel};
 use crate::extension_dialog::ExtDialogPage;
-use crate::extension_views::ExtensionsPage;
+use crate::extension_views::{ExtensionGesture, ExtensionsPage};
 use crate::features::Layout;
 use crate::keymap::{Action, Command, Group, KeyLayer};
 use crate::keys::PageKey;
@@ -269,15 +269,9 @@ pub enum Call {
     PressSavedView { id: String, press: argus_protocol::ViewPress },
     /// Brings an extension's view out where it is: its dock, or a page.
     OpenExtensionView { extension: String, view: String },
-    /// A row picked in the view `panel` names; the calls after it are on
-    /// that view too, since several may be on screen at once.
-    SelectExtensionRow { panel: Panel, key: String },
-    /// One of the view's actions, by its id, on its selected row.
-    ExtensionAction { panel: Panel, action: String },
-    /// The view's default action on `row`, selected first: a double-click.
-    ExtensionDefault { panel: Panel, row: String },
-    /// A key of the view's own, moving its selection.
-    ExtensionKey { panel: Panel, action: Action },
+    /// A gesture in one extension's view, by the panel it is: several may
+    /// be on screen at once.
+    Extension { panel: Panel, gesture: ExtensionGesture },
     /// The answer to the question an action asked first.
     AnswerExtension { yes: bool },
     /// An extension's command, by its key or from the palette; `checkout`

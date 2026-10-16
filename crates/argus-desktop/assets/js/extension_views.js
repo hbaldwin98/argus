@@ -15,6 +15,10 @@ import { bindView, keyView, screen, viewScreen } from './screen.js';
 import { state } from './state.js';
 import { table } from './table.js';
 import { call } from './tauri.js';
+/** A gesture in the view `panel` names. */
+export function extensionGesture(panel, gesture) {
+    call('extension', { panel, gesture });
+}
 function keycap(key) {
     return el('span', { class: 'kbd' }, key);
 }
@@ -68,7 +72,7 @@ function actionButton(view, action, kind) {
         type: 'button',
         onclick: (e) => {
             e.stopPropagation();
-            call('extension_action', { panel: view.panel, action: action.id });
+            extensionGesture(view.panel, { on: 'act', action: action.id });
         },
     }, action.label, action.key && [' ', keycap(action.key)]);
 }
@@ -200,12 +204,10 @@ function body(view) {
     }, table(asBlock(view), {
         keys: view.rows.map((row) => row.key),
         selected: view.selected,
-        select: (row) => call('select_extension_row', { panel: view.panel, key: row }),
+        select: (row) => extensionGesture(view.panel, { on: 'select', key: row }),
         // The row rides along, so the default is taken on the row clicked
         // whether or not its select has landed yet.
-        activate: view.default
-            ? (row) => call('extension_default', { panel: view.panel, row })
-            : null,
+        activate: view.default ? (row) => extensionGesture(view.panel, { on: 'default', row }) : null,
         trailing: perRow.length ? () => perRow.map((a) => actionButton(view, a, 'btn sm')) : null,
     }));
 }

@@ -793,10 +793,7 @@ impl Session {
                 self.finish()
             }
             Call::OpenExtensionView { extension, view } => self.open_extension_view(&extension, &view),
-            Call::SelectExtensionRow { panel, key } => self.extension_gesture(&panel, ExtensionGesture::Select { key }),
-            Call::ExtensionAction { panel, action } => self.extension_gesture(&panel, ExtensionGesture::Act { action }),
-            Call::ExtensionDefault { panel, row } => self.extension_gesture(&panel, ExtensionGesture::Default { row }),
-            Call::ExtensionKey { panel, action } => self.extension_gesture(&panel, ExtensionGesture::Key { action }),
+            Call::Extension { panel, gesture } => self.extension_gesture(&panel, gesture),
             Call::AnswerExtension { yes } => {
                 if let Some(msg) = self.extension_views.answer(yes) {
                     self.out.push(msg);
@@ -5031,10 +5028,10 @@ mod tests {
         r#"{"call":"console","gesture":{"on":"split"}}"#,
         r#"{"call":"console","gesture":{"on":"closeSide","pane":1}}"#,
         r#"{"call":"open_extension_view","extension":"docker","view":"containers"}"#,
-        r#"{"call":"select_extension_row","panel":"extension:docker/containers","key":"web"}"#,
-        r#"{"call":"extension_action","panel":"extension:docker/containers","action":"restart"}"#,
-        r#"{"call":"extension_default","panel":"extension:docker/containers","row":"web"}"#,
-        r#"{"call":"extension_key","panel":"extension:docker/containers","action":"next"}"#,
+        r#"{"call":"extension","panel":"extension:docker/containers","gesture":{"on":"select","key":"web"}}"#,
+        r#"{"call":"extension","panel":"extension:docker/containers","gesture":{"on":"act","action":"restart"}}"#,
+        r#"{"call":"extension","panel":"extension:docker/containers","gesture":{"on":"default","row":"web"}}"#,
+        r#"{"call":"extension","panel":"extension:docker/containers","gesture":{"on":"key","action":"next"}}"#,
         r#"{"call":"answer_extension","yes":false}"#,
         r#"{"call":"extension_command","extension":"docker","command":"up","checkout":100,"pane":null}"#,
         r#"{"call":"answer_dialog","dialog":3,"answer":{"picked":"web"}}"#,
@@ -6144,8 +6141,8 @@ mod tests {
         assert!(page.tables.is_empty(), "listed, not opened for the person");
 
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
-        s.call(Call::ExtensionKey { panel: panel("containers"), action: Action::Next });
-        let sent = s.call(Call::ExtensionAction { panel: panel("containers"), action: "restart".into() });
+        s.call(Call::Extension { panel: panel("containers"), gesture: ExtensionGesture::Key { action: Action::Next } });
+        let sent = s.call(Call::Extension { panel: panel("containers"), gesture: ExtensionGesture::Act { action: "restart".into() } });
         assert!(matches!(
             sent.as_slice(),
             [ClientMsg::ExtensionAction { row: Some(row), action, .. }] if row == "db" && action == "restart"
@@ -6163,16 +6160,16 @@ mod tests {
             "actions": [{"id": "start", "label": "Start"}], "default": "start"}]"#;
         s.receive(ServerMsg::ExtensionViews(serde_json::from_str(json).unwrap()));
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
-        let sent = s.call(Call::ExtensionDefault { panel: panel("containers"), row: "db".into() });
+        let sent = s.call(Call::Extension { panel: panel("containers"), gesture: ExtensionGesture::Default { row: "db".into() } });
         assert!(matches!(
             sent.as_slice(),
             [ClientMsg::ExtensionAction { row: Some(row), action, .. }] if row == "db" && action == "start"
         ), "{sent:?}");
-        let sent = s.call(Call::ExtensionKey { panel: panel("containers"), action: Action::Choose });
+        let sent = s.call(Call::Extension { panel: panel("containers"), gesture: ExtensionGesture::Key { action: Action::Choose } });
         assert!(matches!(sent.as_slice(), [ClientMsg::ExtensionAction { row: Some(row), .. }] if row == "db"), "{sent:?}");
 
         s.receive(containers(&["web"]));
-        assert!(s.call(Call::ExtensionKey { panel: panel("containers"), action: Action::Choose }).is_empty(), "no default, nothing sent");
+        assert!(s.call(Call::Extension { panel: panel("containers"), gesture: ExtensionGesture::Key { action: Action::Choose } }).is_empty(), "no default, nothing sent");
     }
 
     #[test]
@@ -6699,7 +6696,7 @@ mod tests {
         assert!(table.console.as_ref().unwrap().keyed);
         assert_eq!(table.actions.iter().map(|a| a.view_wide).collect::<Vec<_>>(), [true], "Restart rides along");
         assert_eq!(s.shown.on(table.console.unwrap().side.unwrap()), Some(PaneId(30)));
-        assert!(s.call(Call::ExtensionKey { panel: panel("dev"), action: Action::Next }).is_empty());
+        assert!(s.call(Call::Extension { panel: panel("dev"), gesture: ExtensionGesture::Key { action: Action::Next } }).is_empty());
     }
 
     #[test]
@@ -6731,7 +6728,7 @@ mod tests {
         assert_eq!(tables(&mut s), ["containers", "argus"]);
         assert!(drawn(&s).tables.iter().all(|t| !t.page));
         // The palette moves the view last used.
-        s.call(Call::ExtensionKey { panel: panel("argus"), action: Action::Next });
+        s.call(Call::Extension { panel: panel("argus"), gesture: ExtensionGesture::Key { action: Action::Next } });
         s.call(Call::Command { action: Action::ExtensionPage });
         assert_eq!((s.stages.now(), s.docks.place_of(&panel("argus"))), (Stage::Extension, Some(Place::Stage)));
     }
