@@ -60,6 +60,24 @@ impl Slot {
     }
 }
 
+/// Moves `from`'s pane, screen and the size it was last asked onto `to`,
+/// whose room stays: the page measures and remembers room by side, so a
+/// pane that takes another side takes that side's room.
+fn shift(from: &mut Slot, to: &mut Slot) {
+    to.pane = from.pane.take();
+    to.screen = from.screen.take();
+    to.sized = from.sized.take();
+}
+
+/// A slot whose pane came from another side: drawn whole, and resized
+/// only where its new side's room differs from what it was last asked.
+fn redraw(slot: &mut Slot, out: &mut Vec<ClientMsg>) {
+    if let Some(screen) = &mut slot.screen {
+        screen.refresh();
+    }
+    slot.send_size(out);
+}
+
 /// An extension's console view's screen. The daemon owns its pane, so the
 /// window follows what the view says rather than choosing it.
 struct ViewSlot {
@@ -254,7 +272,7 @@ impl ShownPane {
             Some(from) => {
                 self.move_over(from, side, out);
                 if let Side::Beside(n) = from {
-                    self.remove_beside(usize::from(n));
+                    self.remove_beside(usize::from(n), out);
                 }
             }
             None => {
@@ -297,7 +315,7 @@ impl ShownPane {
             slot.clear(unsubscribe, out);
         }
         if let Side::Beside(n) = side {
-            self.remove_beside(usize::from(n));
+            self.remove_beside(usize::from(n), out);
         }
         if side == Side::First && self.on(Side::Second).is_some() {
             self.move_over(Side::Second, Side::First, out);
@@ -311,13 +329,15 @@ impl ShownPane {
             // second takes its first's, so the Workspace is never the
             // empty side of a split.
             if self.on(Side::Beside(0)).is_some() {
-                self.move_over(Side::Beside(0), Side::Workspace, out);
-                self.beside.remove(0);
+                shift(&mut self.beside[0], &mut self.sides[0]);
+                for j in 1..self.beside.len() {
+                    let (left, right) = self.beside.split_at_mut(j);
+                    shift(&mut right[0], &mut left[j - 1]);
+                }
+                self.beside.pop();
                 self.layout.remove(0);
-                for slot in &mut self.beside {
-                    if let Some(screen) = &mut slot.screen {
-                        screen.refresh();
-                    }
+                for slot in std::iter::once(&mut self.sides[0]).chain(&mut self.beside) {
+                    redraw(slot, out);
                 }
                 self.keys = match self.keys {
                     Side::Beside(0) => Side::Workspace,
@@ -401,12 +421,17 @@ impl ShownPane {
     }
 
     /// Takes the emptied slot `n` out of the grid, its room going to a
-    /// neighbour, and the splits after it shift down, drawn whole.
-    fn remove_beside(&mut self, n: usize) {
+    /// neighbour, and the splits after it shift down onto the rooms of the
+    /// sides they take, drawn whole.
+    fn remove_beside(&mut self, n: usize, out: &mut Vec<ClientMsg>) {
         if n >= self.beside.len() {
             return;
         }
-        self.beside.remove(n);
+        for j in n + 1..self.beside.len() {
+            let (left, right) = self.beside.split_at_mut(j);
+            shift(&mut right[0], &mut left[j - 1]);
+        }
+        self.beside.pop();
         // The keys follow their pane down the row; those on the one that
         // went go to its neighbour on the left.
         self.keys = match self.keys {
@@ -416,9 +441,7 @@ impl ShownPane {
         };
         self.layout.remove(n + 1);
         for slot in &mut self.beside[n..] {
-            if let Some(screen) = &mut slot.screen {
-                screen.refresh();
-            }
+            redraw(slot, out);
         }
     }
 
@@ -819,10 +842,31 @@ mod tests {
     fn the_workspace_going_moves_the_first_split_over_at_its_size_with_its_keys() {
         let mut shown = ShownPane::default();
         row(&mut shown);
-        assert_eq!(sent(|out| shown.close(Side::Workspace, out)), ["unsubscribe 1", "resize 4 20x30"]);
+        assert_eq!(sent(|out| shown.close(Side::Workspace, out)), ["unsubscribe 1"], "every room is the same");
         assert_eq!((shown.on(Side::Workspace), shown.on(Side::Beside(0)), shown.on(Side::Beside(1))), (Some(PaneId(4)), Some(PaneId(5)), Some(PaneId(6))));
         assert_eq!(shown.keys(), Side::Workspace);
         assert_eq!(shown.layout().rows(), [vec![0], vec![1, 2]]);
+    }
+
+    #[test]
+    fn a_pane_renumbered_onto_another_side_is_sized_to_that_sides_room() {
+        let mut shown = ShownPane::default();
+        row(&mut shown);
+        for (n, cols) in [(0, 31), (1, 32), (2, 33)] {
+            shown.resize(Side::Beside(n), 20, cols, &mut Vec::new());
+        }
+        assert_eq!(sent(|out| shown.close(Side::Beside(0), out)), ["unsubscribe 4", "resize 5 20x31", "resize 6 20x32"]);
+    }
+
+    #[test]
+    fn the_first_split_taking_the_workspaces_side_takes_its_room() {
+        let mut shown = ShownPane::default();
+        shown.resize(Side::Workspace, 20, 60, &mut Vec::new());
+        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
+        let side = shown.open_beside(PaneId(4), &mut Vec::new()).unwrap();
+        shown.resize(side, 20, 40, &mut Vec::new());
+        assert_eq!(sent(|out| shown.close(Side::Workspace, out)), ["unsubscribe 1", "resize 4 20x60"]);
+        assert_eq!(sent(|out| shown.resize(Side::Workspace, 20, 40, out)), ["resize 4 20x40"]);
     }
 
     #[test]
