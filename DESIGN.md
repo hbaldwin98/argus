@@ -490,15 +490,15 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
 | `dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
-| `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
-| `comment_box` | the comment box under picked lines as the page draws it, for the review and the Code stage alike: what the lines are, the agents it could go to and the one it goes to |
+| `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, its comment box, the file being jumped to — and the page it draws |
+| `comment_box` | the comment box the review and the Code stage share: whether it is open, the agent it is lit on, whether a comment the daemon saved was its own, and what the page draws of it |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff or why it could not be read — and what its gestures ask of the daemon |
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, among them what each pane it resumed a session in was resumed from |
 | `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its full transcript is open in place of the list — and what each session offers: its pane, a resume by the exact command named, or only its transcript; the page it draws, last sent while open |
 | `transcript_reader` | the full-transcript reader: the person's turns as a jump list and the one it is on, what find looks for and the match it is on, and the page it draws |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — which of its keys and buttons are the `column_verbs` it sends, and the table the page last heard |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
-| `code_stage` | what the Code stage holds — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the go-to-file field, the search, and the review it was opened from — what its gestures ask of the daemon, and the page it draws |
+| `code_stage` | what the Code stage holds — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the comment being written, the go-to-file field, the search, and the review it was opened from — what its gestures ask of the daemon, and the page it draws |
 | `code_tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout, the filter and the fold — and what its messages and gestures change, and where each cursor steps, never onto a row the page does not draw |
 | `features` | what the Feature stage's index shows from a board: which features it lists and in what order — the filter, the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
@@ -1702,11 +1702,15 @@ way, under its id.
 
 The client supports line and file navigation, single-file range marking, a changed-file fuzzy
 picker, refresh, and opening the selected line in an editor. A comment records the review side,
-paths, separate old and new ranges, quoted diff text, and body. The client chooses among the live (never exited)
-agents in the checkout when necessary. The daemon validates that recipient, persists the comment
-under the checkout path, then sends a flattened one-line notification to the recipient: through
-its inbox when one is open, else typed into its PTY. A failed delivery does not discard the stored
-comment. Live agents in the checkout can read the
+paths, separate old and new ranges, quoted diff text, and body. Who hears it is `agent_comment`'s,
+the same for a review, a commit's review and the Code stage in either client: a live (never exited)
+agent in the checkout. The terminal asks between several each time; the window's box lights the
+first when it opens and keeps the one chosen. One that has exited since it was chosen is refused as
+no longer running, never swapped for another, and the box stays open for someone else to be
+chosen. A body longer than the daemon takes is refused before it is sent. The daemon validates that
+recipient, persists the comment under the checkout path, then sends a flattened one-line
+notification to the recipient: through its inbox when one is open, else typed into its PTY. A
+failed delivery does not discard the stored comment. Live agents in the checkout can read the
 newest 100 comments with `argus-hook comments`.
 
 Added and removed lines are marked by a background wash rather than by foreground colour, which
@@ -1782,7 +1786,8 @@ over; it is not read again. `c` in the history does the same with the commit und
 reading it at that commit, on the file the cursor is on when it is on one.
 
 A comment is made in Code as in a review — `v` picks a range, `c` opens the box — and goes the same
-way, as a review comment, stored and then told to an agent in the checkout. Its anchor is the side
+way, as a review comment, stored and then told to an agent in the checkout, refused in the same
+words as a review's. Its anchor is the side
 of a review the version is: the working tree as unstaged work, the index as staged, a commit as
 that commit. It carries the version's line numbers only; the other side's would need a diff, and
 an agent reading the comment needs no more than one.

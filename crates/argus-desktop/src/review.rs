@@ -1,11 +1,10 @@
 //! What the review dialog holds beyond the review itself — the checkout's
-//! name, the side and layout the person chose, the comment box and who it
-//! is addressed to, and the file being jumped to — and the page it draws.
-//! Which sides were asked for, which one shows, and whether a comment can
-//! go are `argus_protocol::review_session`'s, so the dialog behaves as the
-//! terminal client's review does.
+//! name, the side and layout the person chose, its comment box, and the
+//! file being jumped to — and the page it draws. Which sides were asked for
+//! and which one shows are `review_session`'s, and whether a comment may go
+//! and to whom is `agent_comment`'s, so the dialog behaves as the terminal
+//! client's review does.
 
-use argus_protocol::agent_comment::{self, Comment};
 use argus_protocol::fuzzy::Fuzzy;
 use argus_protocol::review_session::{Answered, ReviewSession};
 use argus_protocol::review_view::{fold_of, marker, ReviewView, Row, FOLD_STEP};
@@ -14,7 +13,7 @@ use argus_protocol::{
     CodeVersion, ReviewBase, ReviewContext,
 };
 
-use crate::comment_box;
+use crate::comment_box::CommentBox;
 use crate::page::{DiffRow, DiffSide, ReviewFile, ReviewJump, ReviewPage};
 use crate::settings::ReviewLayout;
 
@@ -22,9 +21,7 @@ pub struct ReviewDialog {
     session: ReviewSession,
     name: String,
     branch: String,
-    composing: bool,
-    /// The agent picked to read a comment; the first live one until then.
-    recipient: Option<PaneId>,
+    comment_box: CommentBox,
     /// The side and layout the person chose, which the next review opens
     /// on. Not always the side on screen: one that gave way from an empty
     /// side was not chosen.
@@ -66,8 +63,7 @@ impl ReviewDialog {
             session,
             name: checkout.name.clone(),
             branch: checkout.git.as_ref().and_then(|g| g.branch.clone()).unwrap_or_default(),
-            composing: false,
-            recipient: None,
+            comment_box: CommentBox::default(),
             chosen: layout,
             jump: None,
         }
@@ -137,7 +133,7 @@ impl ReviewDialog {
             return Ok(());
         }
         self.session.show_side(base)?;
-        self.composing = false;
+        self.comment_box.close();
         self.chosen.staged = staged;
         if let Some(jump) = &mut self.jump {
             jump.at = 0;
@@ -293,40 +289,29 @@ impl ReviewDialog {
     /// `c`: the comment box, under the picked lines, when an agent is
     /// there to read it.
     pub fn compose(&mut self, checkout: Option<&CheckoutInfo>) -> Result<(), &'static str> {
-        agent_comment::can_comment(self.session.anchor().as_ref(), checkout)?;
-        self.composing = true;
-        Ok(())
+        self.comment_box.open(self.session.anchor().as_ref(), checkout)
     }
 
     pub fn cancel_comment(&mut self) {
-        self.composing = false;
+        self.comment_box.close();
     }
 
     pub fn choose_recipient(&mut self, pane: PaneId) {
-        self.recipient = Some(pane);
-    }
-
-    /// The agent a comment goes to: the one picked while it still runs,
-    /// else the first that does.
-    fn addressee(&self, checkout: Option<&CheckoutInfo>) -> Option<PaneId> {
-        let live: Vec<PaneId> = checkout.into_iter().flat_map(agent_comment::recipients).map(|p| p.id).collect();
-        self.recipient.filter(|p| live.contains(p)).or(live.first().copied())
+        self.comment_box.choose(pane);
     }
 
     /// The comment, anchored to the picked lines and addressed to the
-    /// chosen agent. The box stays open until the daemon says it is saved.
-    pub fn comment(&self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
-        match agent_comment::comment(self.session.anchor(), checkout, self.addressee(checkout), body)? {
-            Comment::Send(msg) => Ok(*msg),
-            // The page always names an addressee while an agent is live.
-            Comment::Choose(_) => Err("choose the agent to send it to"),
-        }
+    /// agent lit. The box stays open until the daemon says it is saved.
+    pub fn comment(&mut self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
+        self.comment_box.send(self.session.anchor(), checkout, body)
     }
 
-    /// The daemon saved the comment: the box closes and the pick with it.
+    /// The daemon saved a comment. When it was this box's, the box closes
+    /// and the pick with it; one saved from another box leaves both.
     pub fn commented(&mut self) {
-        self.composing = false;
-        self.session.commented();
+        if self.comment_box.saved() {
+            self.session.commented();
+        }
     }
 
     /// The dialog as the page draws it, given the checkout as the tree has
@@ -357,10 +342,9 @@ impl ReviewDialog {
             ReviewBase::Staged => "staged",
             ReviewBase::Commit => "commit",
         };
-        let pick = view.filter(|v| v.mark.is_some() || self.composing).and_then(ReviewView::anchor).map(|a| pick_label(&a));
-        let comment = self.composing.then(|| {
-            comment_box::page(checkout, self.addressee(checkout), format!("{} · {base_label}", pick.as_deref().unwrap_or("")))
-        });
+        let pick =
+            view.filter(|v| v.mark.is_some() || self.comment_box.is_open()).and_then(ReviewView::anchor).map(|a| pick_label(&a));
+        let comment = self.comment_box.page(checkout, || format!("{} · {base_label}", pick.as_deref().unwrap_or("")));
         ReviewPage {
             open: true,
             checkout: self.session.checkout().0,
@@ -731,17 +715,62 @@ mod tests {
     }
 
     #[test]
-    fn an_exited_agent_is_neither_offered_nor_sent_to() {
+    fn an_exited_agent_is_not_offered_and_one_chosen_is_not_sent_to() {
         let mut co = agent_checkout();
         co.panes.insert(0, pane(6, PaneKind::Agent, "gone", PaneStatus::Exited { code: Some(0) }));
         let (mut d, _) = dialog();
         d.receive(diff(1, ReviewBase::Unstaged));
-        d.choose_recipient(PaneId(6));
         d.compose(Some(&co)).unwrap();
+        assert_eq!(d.page(Some(&co)).comment.unwrap().to, Some(7), "lit on the live one");
+        d.choose_recipient(PaneId(6));
         let comment = d.page(Some(&co)).comment.unwrap();
         assert_eq!(comment.recipients.iter().map(|r| r.pane).collect::<Vec<_>>(), [7]);
-        assert_eq!(comment.to, Some(7));
-        assert!(matches!(d.comment(Some(&co), "hi"), Ok(ClientMsg::ReviewComment { recipient: PaneId(7), .. })));
+        assert_eq!(comment.to, None);
+        assert_eq!(d.comment(Some(&co), "hi").err(), Some("that agent is no longer running"));
+    }
+
+    fn with_agents(ids: &[u64]) -> CheckoutInfo {
+        let panes = ids.iter().map(|&id| pane(id, PaneKind::Agent, "claude", PaneStatus::Working)).collect();
+        checkout(100, "main", true, panes)
+    }
+
+    #[test]
+    fn an_agent_that_exits_while_the_comment_is_written_is_refused_and_unlit() {
+        let mut co = with_agents(&[7, 8]);
+        let (mut d, _) = dialog();
+        d.receive(diff(1, ReviewBase::Unstaged));
+        d.compose(Some(&co)).unwrap();
+        d.choose_recipient(PaneId(8));
+        co.panes[1].status = PaneStatus::Exited { code: Some(0) };
+        assert_eq!(d.comment(Some(&co), "tidy").err(), Some("that agent is no longer running"));
+        let comment = d.page(Some(&co)).comment.expect("the box stays open");
+        assert_eq!(comment.to, None);
+        d.choose_recipient(PaneId(7));
+        assert!(matches!(d.comment(Some(&co), "tidy"), Ok(ClientMsg::ReviewComment { recipient: PaneId(7), .. })));
+    }
+
+    #[test]
+    fn a_side_switch_puts_the_box_away_and_a_late_send_is_refused() {
+        let co = agent_checkout();
+        let (mut d, _) = dialog();
+        d.receive(diff(1, ReviewBase::Unstaged));
+        d.receive(diff(2, ReviewBase::Staged));
+        d.compose(Some(&co)).unwrap();
+        d.switch_side().unwrap();
+        assert!(d.page(Some(&co)).comment.is_none());
+        assert_eq!(d.comment(Some(&co), "tidy").err(), Some("no comment box is open"));
+    }
+
+    #[test]
+    fn a_comment_saved_from_another_box_leaves_the_picked_lines() {
+        let co = agent_checkout();
+        let (mut d, _) = dialog();
+        d.receive(diff(1, ReviewBase::Unstaged));
+        d.toggle_pick();
+        d.compose(Some(&co)).unwrap();
+        d.commented();
+        let page = d.page(Some(&co));
+        assert!(page.pick.is_some() && page.comment.is_some());
     }
 
     #[test]

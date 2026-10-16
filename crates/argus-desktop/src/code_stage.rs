@@ -1,22 +1,22 @@
 //! What the Code stage holds — the checkout it reads, the version, that
 //! version's files and the ones it changed, the folders open, the file read
-//! and the cursor in it, whether the outline shows, the go-to-file field,
-//! the search and how it reads its query, and the dialog it was opened
-//! from — what its gestures ask of the daemon, and the page it draws. What
-//! the daemon read is shown as it said it; nothing is predicted, so a file
-//! that will not read says so where its lines would be.
+//! and the cursor in it, the comment being written, whether the outline
+//! shows, the go-to-file field, the search and how it reads its query, and
+//! the dialog it was opened from — what its gestures ask of the daemon, and
+//! the page it draws. What the daemon read is shown as it said it; nothing
+//! is predicted, so a file that will not read says so where its lines would
+//! be. Whether a comment may go, and to whom, is `agent_comment`'s.
 
 use std::collections::HashSet;
 
 use argus_protocol::fuzzy::Fuzzy;
-use argus_protocol::agent_comment::recipients;
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatches, CodeTree, CodeVersion, PaneId,
     ReviewAnchor, ReviewBase, SearchOptions,
 };
 
 use crate::code_tree::{self, folders_of};
-use crate::comment_box;
+use crate::comment_box::CommentBox;
 use crate::page::{
     CodeChangeRow, CodeClick, CodeHit, CodeHitFile, CodeJump, CodeMark, CodeOutlineRow, CodePage, CodeRow,
     CodeSearch, CodeTreeRow, ReviewJumpGesture,
@@ -74,9 +74,7 @@ pub struct CodeStage {
     cursor: usize,
     /// The other end of a `v` range, from zero.
     mark: Option<usize>,
-    composing: bool,
-    /// The agent picked to read a comment; the first live one until then.
-    recipient: Option<PaneId>,
+    comment_box: CommentBox,
     /// The line to put the cursor on once the file asked for arrives.
     land: Option<u32>,
     outline: bool,
@@ -111,8 +109,7 @@ impl CodeStage {
             file_asked: None,
             cursor: 0,
             mark: None,
-            composing: false,
-            recipient: None,
+            comment_box: CommentBox::default(),
             land: None,
             outline: true,
             jump: None,
@@ -153,7 +150,7 @@ impl CodeStage {
         self.file_asked = Some(request_id);
         self.land = line;
         self.mark = None;
-        self.composing = false;
+        self.comment_box.close();
         self.failed = None;
         self.path = Some(path.clone());
         ClientMsg::ReadCode { request_id, checkout: self.checkout, path, version: self.version.clone() }
@@ -248,7 +245,7 @@ impl CodeStage {
                 self.go_to(line);
             }
             CodeClick::Go { line } => self.go_to(line),
-            CodeClick::Recipient { pane } => self.recipient = Some(PaneId(pane)),
+            CodeClick::Recipient { pane } => self.comment_box.choose(PaneId(pane)),
             CodeClick::ChangedOnly { only } => self.changed_only = only,
             CodeClick::Outline => self.toggle_outline(),
             CodeClick::Match { index } => {
@@ -281,8 +278,8 @@ impl CodeStage {
     /// file is what is left. Never the stage: false when there was nothing
     /// to close.
     pub fn escape(&mut self) -> bool {
-        if self.composing {
-            self.composing = false;
+        if self.comment_box.is_open() {
+            self.comment_box.close();
         } else if self.search.is_some() {
             self.search = None;
         } else if self.jump.is_some() {
@@ -410,46 +407,27 @@ impl CodeStage {
         })
     }
 
-    /// The agent a comment goes to: the one picked while it still runs,
-    /// else the first that does.
-    fn addressee(&self, checkout: Option<&CheckoutInfo>) -> Option<PaneId> {
-        let live: Vec<PaneId> = checkout.into_iter().flat_map(recipients).map(|p| p.id).collect();
-        self.recipient.filter(|p| live.contains(p)).or(live.first().copied())
-    }
-
     /// `c`: the comment box, under the picked lines, when there are lines
     /// and an agent to read it.
     pub fn compose(&mut self, checkout: Option<&CheckoutInfo>) -> Result<(), &'static str> {
-        if self.anchor().is_none() {
-            return Err("read a file to comment on");
-        }
-        if self.addressee(checkout).is_none() {
-            return Err("no agent running in this checkout");
-        }
-        self.composing = true;
-        Ok(())
+        self.comment_box.open(self.anchor().as_ref(), checkout)
     }
 
     pub fn cancel_comment(&mut self) {
-        self.composing = false;
+        self.comment_box.close();
     }
 
     /// The comment, sent through the review's path: stored under the
     /// checkout, then told to the agent. The box stays until it is saved.
-    pub fn comment(&self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
-        let body = body.trim();
-        if body.is_empty() {
-            return Err("the comment is empty");
-        }
-        let anchor = self.anchor().ok_or("read a file to comment on")?;
-        let recipient = self.addressee(checkout).ok_or("no agent running in this checkout")?;
-        Ok(ClientMsg::ReviewComment { checkout: self.checkout, recipient, anchor: Box::new(anchor), body: body.to_owned() })
+    pub fn comment(&mut self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
+        let anchor = self.anchor();
+        self.comment_box.send(anchor, checkout, body)
     }
 
-    /// The daemon saved a comment: the box closes and the range with it.
+    /// The daemon saved a comment. When it was this box's, the box closes
+    /// and the range with it; one saved from the review leaves both.
     pub fn commented(&mut self) {
-        if self.composing {
-            self.composing = false;
+        if self.comment_box.saved() {
             self.mark = None;
         }
     }
@@ -586,7 +564,7 @@ impl CodeStage {
     /// it now: its agents may have come or gone.
     pub fn page(&self, checkout: Option<&CheckoutInfo>) -> CodePage {
         let (from, to) = self.picked();
-        let picking = self.mark.is_some() || self.composing;
+        let picking = self.mark.is_some() || self.comment_box.is_open();
         let shown = self.shown();
         let change = self.path.as_ref().and_then(|p| self.changes.iter().find(|c| &c.path == p));
         let mut lines: Vec<CodeRow> = shown
@@ -634,10 +612,9 @@ impl CodeStage {
         let pick = (picking && shown.is_some()).then(|| {
             if from == to { format!("line {}", from + 1) } else { format!("lines {}–{}", from + 1, to + 1) }
         });
-        let comment = self.composing.then(|| {
-            let about = format!("{} · {}", pick.as_deref().unwrap_or(""), self.path.as_deref().unwrap_or(""));
-            comment_box::page(checkout, self.addressee(checkout), about)
-        });
+        let comment = self
+            .comment_box
+            .page(checkout, || format!("{} · {}", pick.as_deref().unwrap_or(""), self.path.as_deref().unwrap_or("")));
         CodePage {
             open: true,
             checkout: self.checkout.0,
@@ -1198,7 +1175,7 @@ mod tests {
     #[test]
     fn a_comment_needs_a_file_and_an_agent() {
         let (mut s, _) = stage(Some("src/a.rs"), None);
-        assert_eq!(s.compose(Some(&with_agent())), Err("read a file to comment on"));
+        assert_eq!(s.compose(Some(&with_agent())), Err("pick a line to comment on"));
         s.receive_file(file(2, "src/a.rs"));
         assert_eq!(s.compose(Some(&checkout(100, "main", true, Vec::new()))), Err("no agent running in this checkout"));
         assert!(s.page(None).comment.is_none());
@@ -1221,10 +1198,35 @@ mod tests {
         let mut read = file(2, "src/a.rs");
         read.version = CodeVersion::Commit("abc123".into());
         s.receive_file(read);
+        s.compose(Some(&with_agent())).unwrap();
         let ClientMsg::ReviewComment { anchor, .. } = s.comment(Some(&with_agent()), "x").unwrap() else {
             panic!()
         };
         assert_eq!((anchor.base, anchor.commit.as_deref()), (ReviewBase::Commit, Some("abc123")));
+    }
+
+    #[test]
+    fn a_comment_to_an_agent_that_has_exited_is_refused_as_in_a_review() {
+        let mut s = reading("src/a.rs", None);
+        let mut co = checkout(100, "main", true, vec![
+            pane(7, PaneKind::Agent, "claude", PaneStatus::Working),
+            pane(8, PaneKind::Agent, "codex", PaneStatus::Working),
+        ]);
+        s.compose(Some(&co)).unwrap();
+        s.click(CodeClick::Recipient { pane: 8 }, || 0);
+        co.panes[1].status = PaneStatus::Exited { code: Some(0) };
+        assert_eq!(s.comment(Some(&co), "why?").err(), Some("that agent is no longer running"));
+        assert_eq!(s.page(Some(&co)).comment.expect("the box stays open").to, None);
+    }
+
+    #[test]
+    fn a_comment_saved_from_the_review_leaves_the_code_stages_box_open() {
+        let mut s = reading("src/a.rs", None);
+        s.toggle_pick();
+        s.compose(Some(&with_agent())).unwrap();
+        s.commented();
+        let page = s.page(Some(&with_agent()));
+        assert!(page.comment.is_some() && page.pick.is_some());
     }
 
     #[test]

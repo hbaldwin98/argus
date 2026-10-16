@@ -80,8 +80,10 @@ impl Dialogs {
                     say.push(Event::Notice { text: message });
                 }
             }
+            // The save names no box, so it goes to every review there is,
+            // and each takes it only if the comment was its own.
             ServerMsg::ReviewCommentSaved { id, delivered } => {
-                if let Some(dialog) = &mut self.review {
+                for dialog in self.reviews() {
                     dialog.commented();
                 }
                 let text = if delivered { format!("comment #{id} sent") } else { format!("comment #{id} saved; the agent was not there to take it") };
@@ -123,6 +125,16 @@ impl Dialogs {
             _ => None,
         };
         self.history.as_mut().into_iter().chain(parked)
+    }
+
+    /// Every review there is: the open one, then one parked while the Code
+    /// stage reads, which may have a comment of its own out.
+    fn reviews(&mut self) -> impl Iterator<Item = &mut ReviewDialog> + '_ {
+        let parked = match &mut self.parked {
+            Some(Parked::Review(dialog)) => Some(&mut **dialog),
+            _ => None,
+        };
+        self.review.as_mut().into_iter().chain(parked)
     }
 
     /// The review answers go to: the open one, else the parked one. A
@@ -399,7 +411,8 @@ impl Dialogs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::{checkout, commit, commit_file, diff_of, project, repository};
+    use crate::fixtures::{checkout, commit, commit_file, diff_of, pane, project, repository};
+    use argus_protocol::{PaneKind, PaneStatus, ReviewBase};
 
     fn tree() -> Vec<ProjectInfo> {
         vec![project(1, "src", vec![repository(10, "argus", None, vec![checkout(100, "main", true, Vec::new())])])]
@@ -471,6 +484,77 @@ mod tests {
         dialogs.open_review(CheckoutId(9), &tree(), ids(), &mut out);
         dialogs.open_history(CheckoutId(9), &tree(), ids(), &mut out);
         assert!(out.is_empty() && dialogs.take(&tree(), 0).is_empty());
+    }
+
+    /// The tree with one live agent in checkout 100.
+    fn agent_tree() -> Vec<ProjectInfo> {
+        let agent = pane(7, PaneKind::Agent, "claude", PaneStatus::Working);
+        vec![project(1, "src", vec![repository(10, "argus", None, vec![checkout(100, "main", true, vec![agent])])])]
+    }
+
+    /// A review with an agent to comment to, its unstaged side read, a line
+    /// picked and the comment box open on it.
+    fn composing(tree: &[ProjectInfo]) -> Dialogs {
+        let mut dialogs = Dialogs::new(ReviewLayout::default());
+        compose(&mut dialogs, tree);
+        dialogs
+    }
+
+    fn compose(dialogs: &mut Dialogs, tree: &[ProjectInfo]) {
+        dialogs.open_review(CheckoutId(100), tree, ids(), &mut Vec::new());
+        let mut read = diff_of(1, "src/a.rs");
+        read.base = ReviewBase::Unstaged;
+        assert!(dialogs.receive(ServerMsg::Review(read), &mut Vec::new()).is_none());
+        let mut say = Vec::new();
+        dialogs.review_action(Action::Pick, tree, &mut say);
+        dialogs.review_action(Action::Comment, tree, &mut say);
+        assert!(say.is_empty(), "{say:?}");
+    }
+
+    #[test]
+    fn a_review_parked_with_its_comment_out_takes_its_save() {
+        let tree = agent_tree();
+        let mut dialogs = composing(&tree);
+        let (mut out, mut say) = (Vec::new(), Vec::new());
+        dialogs.review_comment(Some("tidy".into()), &tree, &mut out, &mut say);
+        assert!(matches!(out.as_slice(), [ClientMsg::ReviewComment { .. }]), "{say:?}");
+        assert!(dialogs.park_review().is_some());
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true }, &mut say);
+        assert!(dialogs.unpark());
+        let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
+        assert!(page.comment.is_none() && page.pick.is_none());
+    }
+
+    /// A review opened from the rail while another is parked with its
+    /// comment out: the save still shuts the parked one's box, and the open
+    /// one, which sent nothing, keeps its own.
+    #[test]
+    fn a_review_parked_with_its_comment_out_takes_its_save_while_another_is_open() {
+        let tree = agent_tree();
+        let mut dialogs = composing(&tree);
+        let (mut out, mut say) = (Vec::new(), Vec::new());
+        dialogs.review_comment(Some("tidy".into()), &tree, &mut out, &mut say);
+        assert!(matches!(out.as_slice(), [ClientMsg::ReviewComment { .. }]), "{say:?}");
+        assert!(dialogs.park_review().is_some());
+        compose(&mut dialogs, &tree);
+
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true }, &mut say);
+        let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
+        assert!(page.comment.is_some() && page.pick.is_some(), "the open review keeps its box");
+        assert!(dialogs.unpark());
+        let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
+        assert!(page.comment.is_none() && page.pick.is_none(), "the parked review took its save");
+    }
+
+    #[test]
+    fn a_code_comment_saved_while_a_review_is_parked_leaves_its_picks() {
+        let tree = agent_tree();
+        let mut dialogs = composing(&tree);
+        assert!(dialogs.park_review().is_some());
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true }, &mut Vec::new());
+        assert!(dialogs.unpark());
+        let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
+        assert!(page.comment.is_some() && page.pick.is_some());
     }
 
     /// The daemon refuses a review of a checkout that is gone under its

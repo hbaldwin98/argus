@@ -337,8 +337,8 @@ impl Session {
     }
 
     fn apply(&mut self, msg: ServerMsg) {
-        // The review's comment path is the Code stage's too: whichever box
-        // was open is the one the daemon saved.
+        // The review's comment path is the Code stage's too: each box knows
+        // whether the comment the daemon saved was its own.
         if let (ServerMsg::ReviewCommentSaved { .. }, Some(code)) = (&msg, &mut self.code) {
             code.commented();
         }
