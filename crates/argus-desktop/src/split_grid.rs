@@ -94,17 +94,17 @@ impl Layout {
         self.rows.iter().enumerate().find_map(|(r, row)| Some((r, row.iter().position(|&p| p == pane)?)))
     }
 
-    /// Places the new pane `len()` by the grid rule: in the last row while
-    /// that is shorter than `ceil(sqrt(n))`, else in a row of its own. Only
-    /// the row it joins is made even, or the rows' heights when it starts
-    /// one; every other size stays as it was dragged.
+    /// Places the new pane `len()` by the grid rule: in the first row that
+    /// is shorter than `ceil(sqrt(n))`, else in a row of its own, so an
+    /// untouched grid fills top first — 2, 2 over 1, 2 over 2, 3 over 2,
+    /// 3 over 3. Only the row it joins is made even, or the rows' heights
+    /// when it starts one; every other size stays as it was dragged.
     pub fn add(&mut self) {
         let id = self.len();
         let across = (1..=id + 1).find(|c| c * c > id).unwrap_or(1);
-        let last = self.rows.len() - 1;
-        if self.rows[last].len() < across {
-            self.rows[last].push(id);
-            self.widths[last] = even(self.rows[last].len());
+        if let Some(r) = self.rows.iter().position(|row| row.len() < across) {
+            self.rows[r].push(id);
+            self.widths[r] = even(self.rows[r].len());
         } else {
             self.rows.push(vec![id]);
             self.widths.push(vec![1.0]);
@@ -277,8 +277,9 @@ mod tests {
         assert_eq!(grown(2).rows(), [vec![0, 1]]);
         assert_eq!(grown(3).rows(), [vec![0, 1], vec![2]]);
         assert_eq!(grown(4).rows(), [vec![0, 1], vec![2, 3]]);
-        assert_eq!(grown(5).rows(), [vec![0, 1], vec![2, 3, 4]]);
-        assert_eq!(grown(6).rows(), [vec![0, 1], vec![2, 3, 4], vec![5]]);
+        assert_eq!(grown(5).rows(), [vec![0, 1, 4], vec![2, 3]]);
+        assert_eq!(grown(6).rows(), [vec![0, 1, 4], vec![2, 3, 5]]);
+        assert_eq!(grown(7).rows(), [vec![0, 1, 4], vec![2, 3, 5], vec![6]]);
     }
 
     #[test]
@@ -290,6 +291,7 @@ mod tests {
         assert_eq!(layout.widths[0], [0.3, 0.7], "the first row keeps its drag");
         assert_eq!(layout.widths[1], [0.5, 0.5], "the row joined is even");
         assert_eq!(layout.heights, [0.7, 0.3], "no new row, no new heights");
+        layout.add();
         layout.add();
         layout.add();
         assert_eq!(layout.rows().len(), 3);
@@ -376,8 +378,12 @@ mod tests {
 
     #[test]
     fn neighbours_are_in_the_row_or_the_nearest_in_the_next() {
-        let layout = grown(6);
-        assert_eq!(layout.rows(), [vec![0, 1], vec![2, 3, 4], vec![5]]);
+        // A shape only a person rearranging makes: rows of unequal length.
+        let layout = Layout {
+            rows: vec![vec![0, 1], vec![2, 3, 4], vec![5]],
+            widths: vec![even(2), even(3), even(1)],
+            heights: even(3),
+        };
         assert_eq!(layout.neighbour(0, Dir::Right), Some(1));
         assert_eq!(layout.neighbour(0, Dir::Left), None);
         assert_eq!(layout.neighbour(1, Dir::Down), Some(4), "the right half is over the right third");
