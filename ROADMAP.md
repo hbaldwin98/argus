@@ -163,7 +163,12 @@ Agent views (HUN-216) are data an agent read with its own tools, handed to the w
 set of blocks it draws: never markup, and never kept in the store.
 
 Remaining: several panes at once; remote hosts through `ssh … argus bridge`; and packaging as
-.app, .msi and AppImage with signing and updates, which no issue tracks yet. The window's stage
+.app, .msi and AppImage. Landed for packaging: the desktop finds the `argus` beside it before PATH
+(what a GUI launch without a shell PATH needs), and `tauri.bundle.conf.json` lists the sidecars
+`argus`, `argusd` and `argus-hook`, read only by a bundle build. Still to do: icons (only
+`icon.png` and `icon.ico` exist, no `.icns` for macOS), enabling the `app`, `msi` and `appimage`
+targets (`bundle.active` is still `false`), a CI job that stages the sidecars and bundles per
+platform, signing, and the updater. See DESKTOP.md §Bundling. The window's stage
 moves out of `session` into a module of its own (the stage, the stage an extension's page was
 opened over, and the ways into and out of fullscreen) once a second panel can be a page, or
 side-by-side stages need somewhere to return to beyond `before_page`.

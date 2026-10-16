@@ -112,8 +112,9 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
 
 ### `daemon`
 
-- Find `argus[.exe]` beside `std::env::current_exe()`, else bare `argus` (PATH). Same scheme as
-  `launch.rs` `daemon_exe_path`.
+- Find `argus[.exe]` beside `std::env::current_exe()`, else bare `argus` (PATH): `daemon::locate`
+  takes the candidate directories and an existence check, so the bundle wins and PATH is the last
+  resort. The lookup is pure and tested without spawning anything.
 - Spawn `argus bridge` with `tokio::process::Command`: stdin/stdout/stderr piped, `kill_on_drop`,
   environment inherited (so `ARGUS_INSTANCE` / `ARGUS_CONFIG_DIR` pass through), on Windows
   `creation_flags(0x0800_0000)` (CREATE_NO_WINDOW — argus.exe is a console binary and a GUI parent
@@ -309,6 +310,33 @@ documents the tokens.
   projects, feature editing, starting an agent, mouse, selection and scrollback, the full transcript;
   remote hosts through `ssh … argus bridge`; packaging as .app/.msi/AppImage with signing and
   updates, which no issue tracks yet).
+
+## Bundling (not built yet)
+
+What a bundled app needs, and what is done. The app ships unbundled today: `bundle.active` is
+`false` and CI packages nothing for the desktop.
+
+- **Sidecars.** `argus`, `argusd` and `argus-hook` sit beside `argus-desktop` in the bundle: in
+  `Argus.app/Contents/MacOS/` on macOS, beside the `.exe` on Windows. `argus` finds `argusd` beside
+  itself (`sibling::path`), so no PATH lookup is needed inside a bundle. The desktop finds `argus`
+  the same way (`daemon::locate`), which matters because a GUI launch on macOS or Windows usually
+  lacks the shell PATH.
+- **Where the list lives.** `crates/argus-desktop/tauri.bundle.conf.json` holds the `externalBin`
+  list. It is not in `tauri.conf.json` on purpose: `tauri-build` copies each listed sidecar in the
+  build script and fails when one is missing, which would break every `cargo build`, `test` and
+  `clippy`. Only `tauri build --config crates/argus-desktop/tauri.bundle.conf.json` reads it.
+- **Staging.** Before that build, each sidecar must be at `crates/argus-desktop/binaries/<name>-<target-triple>[.exe]`
+  (gitignored). `tauri-build` then copies it into the profile directory with the triple removed, and
+  the bundler places it under the same name. The triple-stripping is what `tauri-build` does
+  (`copy_binaries`); the bundler is not in the local cargo registry, so the bundle-time placement
+  is not checked here.
+- **Icons.** `icons/` holds only `icon.png` and `icon.ico`. A macOS bundle needs an `icon.icns`,
+  which does not exist yet; `bundle.icon` must list one before the `app` target builds.
+- **Targets.** `bundle.targets` is not set and `bundle.active` stays `false`. Enabling `app`,
+  `msi` and `appimage` is the step that turns this on, once the sidecars and icons are in place.
+- **Not started:** a CI job that builds the sidecars and bundle on each platform, code signing
+  (macOS notarization, Windows Authenticode), and the updater. Each waits for its secrets and
+  workflow changes; none is in this crate.
 
 ## Decided for later slices
 
