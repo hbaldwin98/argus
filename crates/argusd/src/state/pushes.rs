@@ -22,10 +22,10 @@ use super::ExtensionNews;
 /// The 32 trees and 64 reports the two channels held before they were
 /// one: a tree comes at a structural change or a poll, and a report with
 /// every tool call.
-const TREE_DEPTH: usize = 128;
+pub(crate) const TREE_DEPTH: usize = 128;
 const WORKSPACES_DEPTH: usize = 32;
 /// The three channels of 32 the boards had before they were one.
-const BOARDS_DEPTH: usize = 64;
+pub(crate) const BOARDS_DEPTH: usize = 64;
 /// How many boards' latest pushes are kept for a connection that fell
 /// behind. A board is one feature's or one project's, so this is more than
 /// the person has open at once.
@@ -34,9 +34,9 @@ const REMEMBERED_BOARDS: usize = 64;
 /// whole anyway.
 const FOCUS_DEPTH: usize = 16;
 /// A pane dropped closes all its views at once.
-const VIEWS_DEPTH: usize = 64;
+pub(crate) const VIEWS_DEPTH: usize = 64;
 const SAVED_VIEWS_DEPTH: usize = 64;
-const EXTENSIONS_DEPTH: usize = 64;
+pub(crate) const EXTENSIONS_DEPTH: usize = 64;
 
 /// The tree, or one pane's merged telemetry, on one channel. A report is
 /// apart from the tree because it changes on every tool call, and a client
@@ -96,8 +96,8 @@ pub struct Pushes {
     /// this lock, so the record's order is the channel's. Workspace boards
     /// are never pushed, so never kept.
     latest_boards: StdMutex<VecDeque<BoardNews>>,
-    /// A tick whenever a client's view changes or goes, for the
-    /// connections watching the focus to read it again.
+    /// A tick whenever a tree is pushed or a client's view changes or
+    /// goes, for the connections watching the focus to read it again.
     focus: broadcast::Sender<()>,
     views: broadcast::Sender<ViewNews>,
     saved_views: broadcast::Sender<SavedViewNews>,
@@ -119,10 +119,16 @@ impl Pushes {
         }
     }
 
-    /// The tree `snapshot` takes, read and sent in `tree_order`.
+    /// The tree `snapshot` takes, read and sent in `tree_order`; then a
+    /// tick of the focus, since a tree can move where the person is. Each
+    /// focus watcher reads the tree again on that tick, a cost on this hot
+    /// path that is small at the one or two windows that watch.
     pub(super) fn tree(&self, snapshot: impl FnOnce() -> Vec<ProjectInfo>) {
-        let _order = self.tree_order.lock().unwrap();
-        let _ = self.tree.send(TreeNews::Tree(snapshot()));
+        {
+            let _order = self.tree_order.lock().unwrap();
+            let _ = self.tree.send(TreeNews::Tree(snapshot()));
+        }
+        self.focus_moved();
     }
 
     /// The record `merge` folds in, merged and sent in `tree_order`;
@@ -182,7 +188,7 @@ impl Pushes {
         (snapshot(), rx)
     }
 
-    pub(super) fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
+    pub(crate) fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
         self.workspaces.subscribe()
     }
 
@@ -202,7 +208,7 @@ impl Pushes {
         self.boards.subscribe()
     }
 
-    pub(super) fn subscribe_focus(&self) -> broadcast::Receiver<()> {
+    pub(crate) fn subscribe_focus(&self) -> broadcast::Receiver<()> {
         self.focus.subscribe()
     }
 
@@ -216,7 +222,7 @@ impl Pushes {
         self.saved_views.subscribe()
     }
 
-    pub(super) fn subscribe_extensions(&self) -> broadcast::Receiver<ExtensionNews> {
+    pub(crate) fn subscribe_extensions(&self) -> broadcast::Receiver<ExtensionNews> {
         self.extensions.subscribe()
     }
 }
@@ -254,7 +260,23 @@ impl<N: Clone, T> Pushed<N, T> {
 }
 
 #[cfg(test)]
+impl Pushes {
+    /// A board pushed the way state pushes one, for a test outside state.
+    pub(crate) fn push_board(&self, board: BoardNews) {
+        self.board(board);
+    }
+}
+
+#[cfg(test)]
 impl super::Daemon {
+    pub(crate) fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
+        self.pushes.subscribe_workspaces()
+    }
+
+    pub(crate) fn subscribe_extensions(&self) -> broadcast::Receiver<ExtensionNews> {
+        self.pushes.subscribe_extensions()
+    }
+
     pub(crate) fn subscribe_tree(&self) -> Pushed<TreeNews, Vec<ProjectInfo>> {
         let (_, rx) = self.pushes.follow_tree(Vec::new);
         Pushed::new(rx, |news| match news {

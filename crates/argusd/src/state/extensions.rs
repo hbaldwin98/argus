@@ -82,10 +82,6 @@ impl Registry {
 }
 
 impl Daemon {
-    pub fn subscribe_extensions(&self) -> broadcast::Receiver<ExtensionNews> {
-        self.pushes.subscribe_extensions()
-    }
-
     pub(super) fn tell_extensions(&self, news: ExtensionNews) {
         self.pushes.extension(news);
     }

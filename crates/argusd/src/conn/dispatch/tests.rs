@@ -1008,8 +1008,8 @@ fn a_description_of_the_extensions_is_answered_to_the_client_that_asked() {
     assert_eq!((described[0].name.as_str(), described[0].about.as_ref()), ("docker", Some(&about)));
 }
 
-#[test]
-fn a_view_and_the_watches_take_effect_through_dispatch() {
+#[tokio::test]
+async fn a_view_and_the_watches_take_effect_through_dispatch() {
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
 
@@ -1018,11 +1018,11 @@ fn a_view_and_the_watches_take_effect_through_dispatch() {
 
     h.send(ClientMsg::WatchFocus);
     assert!(matches!(h.replies().as_slice(), [ServerMsg::Focus(Some(_))]));
-    assert!(h.conn.focus_watch.is_some());
+    assert!(h.conn.topics.joined::<topics::Focus>());
 
     h.send(ClientMsg::WatchViews);
     assert!(h.replies().is_empty(), "no views to replay");
-    assert!(h.conn.agent_views.is_some());
+    assert!(h.conn.topics.joined::<topics::Views>());
 }
 
 #[test]
@@ -1048,8 +1048,8 @@ fn a_press_that_cannot_be_relayed_is_answered_to_the_client_that_pressed() {
     }
 }
 
-#[test]
-fn a_greeting_is_answered_then_followed_by_what_the_client_takes() {
+#[tokio::test]
+async fn a_greeting_is_answered_then_followed_by_what_the_client_takes() {
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
 
@@ -1065,11 +1065,11 @@ fn a_greeting_is_answered_then_followed_by_what_the_client_takes() {
         ]
     ));
     assert!(h.conn.subs.runs);
-    assert!(h.conn.peer.is_some());
+    assert!(h.conn.peer.can(argus_protocol::CELL_RUNS));
 }
 
-#[test]
-fn a_greeting_without_extensions_is_sent_none_of_theirs() {
+#[tokio::test]
+async fn a_greeting_without_extensions_is_sent_none_of_theirs() {
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
     let hello = argus_protocol::Hello::this_build().without(argus_protocol::EXTENSIONS);
@@ -1079,8 +1079,21 @@ fn a_greeting_without_extensions_is_sent_none_of_theirs() {
     assert!(matches!(h.replies().as_slice(), [ServerMsg::Hello(_), ServerMsg::Consoles(_)]));
 }
 
-#[test]
-fn a_greeting_without_consoles_is_sent_none() {
+#[tokio::test]
+async fn a_second_greeting_without_extensions_leaves_their_topic() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::Hello(argus_protocol::Hello::this_build()));
+    assert!(h.conn.topics.joined::<topics::Extensions>());
+
+    let hello = argus_protocol::Hello::this_build().without(argus_protocol::EXTENSIONS);
+    h.send(ClientMsg::Hello(hello));
+
+    assert!(!h.conn.topics.joined::<topics::Extensions>());
+}
+
+#[tokio::test]
+async fn a_greeting_without_consoles_is_sent_none() {
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
     let hello = argus_protocol::Hello::this_build().without(argus_protocol::CONSOLES);
@@ -1103,8 +1116,8 @@ fn askable(h: &Harness) -> bool {
     h.daemon.raise_dialog("docker", dialog).is_ok()
 }
 
-#[test]
-fn only_a_greeting_that_takes_extensions_and_dialogs_is_put_a_dialog() {
+#[tokio::test]
+async fn only_a_greeting_that_takes_extensions_and_dialogs_is_put_a_dialog() {
     use argus_protocol::{Hello, EXTENSIONS, EXTENSION_DIALOGS};
     let cases = [
         (Hello::this_build(), true),
@@ -1122,26 +1135,26 @@ fn only_a_greeting_that_takes_extensions_and_dialogs_is_put_a_dialog() {
     }
 }
 
-#[test]
-fn the_saved_view_messages_take_effect_only_for_a_client_that_listed_the_capability() {
+#[tokio::test]
+async fn the_saved_view_messages_take_effect_only_for_a_client_that_listed_the_capability() {
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
 
     h.send(ClientMsg::WatchSavedViews);
     h.send(ClientMsg::MarkSavedViewStale { id: "deps".into() });
-    assert!(h.conn.saved_views.is_none(), "a client that never greeted is not watching");
+    assert!(!h.conn.topics.joined::<topics::SavedViews>(), "a client that never greeted is not watching");
     assert!(h.replies().is_empty(), "and is not answered");
 
     h.send(ClientMsg::Hello(argus_protocol::Hello::this_build().without(argus_protocol::SAVED_VIEWS)));
     h.replies();
     h.send(ClientMsg::WatchSavedViews);
     h.send(ClientMsg::DeleteSavedView { id: "deps".into() });
-    assert!(h.conn.saved_views.is_none());
+    assert!(!h.conn.topics.joined::<topics::SavedViews>());
     assert!(h.replies().is_empty(), "one that greeted without it is no different");
 }
 
-#[test]
-fn watching_saved_views_replays_them_and_a_refused_request_is_answered_to_the_asker() {
+#[tokio::test]
+async fn watching_saved_views_replays_them_and_a_refused_request_is_answered_to_the_asker() {
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
     h.send(ClientMsg::Hello(argus_protocol::Hello::this_build()));
@@ -1149,7 +1162,7 @@ fn watching_saved_views_replays_them_and_a_refused_request_is_answered_to_the_as
 
     h.send(ClientMsg::WatchSavedViews);
     assert!(matches!(h.replies().as_slice(), [ServerMsg::SavedViews(all)] if all.is_empty()));
-    assert!(h.conn.saved_views.is_some());
+    assert!(h.conn.topics.joined::<topics::SavedViews>());
 
     let press = argus_protocol::ViewPress {
         view: "deps".into(),

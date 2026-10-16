@@ -1,5 +1,5 @@
 //! One client connection: read a message, dispatch it, write what comes
-//! back.
+//! back, and forward the topics it has joined.
 //!
 //! Anything dispatch does that is real I/O — a git subprocess, a directory
 //! walk, a diff — leaves the message loop for a task of its own, because a
@@ -9,16 +9,17 @@
 use std::sync::Arc;
 
 use argus_protocol::{
-    grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Focus, Hello, PaneId,
-    ServerMsg, CELL_RUNS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, PANE_TELEMETRY, SAVED_VIEWS,
+    grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Hello, PaneId, ServerMsg,
+    CELL_RUNS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, SAVED_VIEWS,
 };
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::review_queue::ReviewLane;
-use crate::state::{BoardNews, BranchDeletion, Daemon, ExtensionNews, SavedViewNews, TreeNews, ViewNews, ViewerId};
+use crate::state::{BranchDeletion, Daemon, ViewerId};
 
 mod dispatch;
+mod topics;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ShutdownReason {
@@ -45,40 +46,23 @@ where
 
     tokio::spawn(writer_task(wr, out_rx, frames_rx, control_flushed));
 
-    // Followed before it is read, so a change between the two is not
-    // missed until the next tree.
-    let (tree, mut tree_rx) = daemon.pushes().follow_tree(|| daemon.snapshot());
-    if out_tx.send(ServerMsg::Tree(tree)).is_err() {
-        return;
-    }
-    if out_tx
-        .send(ServerMsg::Templates(daemon.template_names()))
-        .is_err()
-    {
-        return;
-    }
-    if out_tx
-        .send(ServerMsg::Workspaces(daemon.workspaces()))
-        .is_err()
-    {
-        return;
-    }
-
-    let mut conn = Connection::new(&daemon, frames_tx);
+    // Built first, for the topics it joins; from here on, every way out of
+    // the loop passes the releases below.
+    let mut conn = Connection::new(&daemon, frames_tx, out_tx.clone());
     let viewer = conn.viewer;
-
-    let mut workspaces_rx = daemon.subscribe_workspaces();
-    // A client asks for the boards it shows; only what changes after is
-    // pushed.
-    let mut boards_rx = daemon.pushes().subscribe_boards();
-    let mut views_rx = daemon.subscribe_views();
-    let mut extensions_rx = daemon.subscribe_extensions();
+    conn.topics.join(topics::Tree { peer: conn.peer.clone() });
+    let _ = out_tx.send(ServerMsg::Templates(daemon.template_names()));
+    conn.topics.join(topics::Workspaces);
+    conn.topics.join(topics::Boards);
 
     loop {
         tokio::select! {
-            // A shutdown first, then the client, then what is pushed.
+            // A shutdown first, then the client; what is pushed goes on
+            // tasks of its own.
             biased;
             reason = shutdown_rx.recv() => {
+                // Nothing is pushed after the notice.
+                conn.topics.stop();
                 let stop_notice_queued = match reason {
                     Ok(ShutdownReason::Stop) => out_tx.send(ServerMsg::Stopping).is_ok(),
                     _ => false,
@@ -103,199 +87,11 @@ where
                     break;
                 }
             }
-            // A tree and a report share the channel, so they arrive in the
-            // order they were read and a tree cannot wind a pane's numbers
-            // back.
-            news = tree_rx.recv() => match news {
-                Ok(TreeNews::Tree(tree)) => send_tree(&daemon, &out_tx, &mut conn, tree),
-                Ok(TreeNews::Telemetry { pane, telemetry }) if conn.can(PANE_TELEMETRY) => {
-                    let _ = out_tx.send(ServerMsg::PaneTelemetry { pane, telemetry: *telemetry });
-                }
-                // A client that cannot take one pane's record is sent them
-                // all in a tree.
-                Ok(TreeNews::Telemetry { .. }) => {
-                    let _ = out_tx.send(ServerMsg::Tree(daemon.snapshot()));
-                }
-                // One that fell behind is sent the tree, which holds every
-                // record, from a fresh receiver: the lagged one still holds
-                // trees older than it.
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    let (tree, fresh) = daemon.pushes().follow_tree(|| daemon.snapshot());
-                    tree_rx = fresh;
-                    send_tree(&daemon, &out_tx, &mut conn, tree);
-                }
-                // The daemon holds the sender for as long as it runs.
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
-            // Lagging only means several changes were missed, and the
-            // focus is read whole either way.
-            Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
-                = views_rx.recv(), if conn.focus_watch.is_some() => {
-                let watch = conn.focus_watch.as_mut().expect("guarded on a watch");
-                if let Some(msg) = watch.changed(daemon.focus_in(&daemon.snapshot())) {
-                    let _ = out_tx.send(msg);
-                }
-            }
-            // A client that did not list extensions is never sent one of
-            // their messages; its receiver is simply never read.
-            news = extensions_rx.recv(), if conn.can(EXTENSIONS) => match news {
-                Ok(ExtensionNews::Views) => {
-                    let _ = out_tx.send(ServerMsg::ExtensionViews(daemon.extension_views()));
-                }
-                Ok(ExtensionNews::Commands) => {
-                    let _ = out_tx.send(ServerMsg::ExtensionCommands(daemon.extension_commands()));
-                }
-                Ok(ExtensionNews::Notice { extension, text }) => {
-                    let _ = out_tx.send(ServerMsg::ExtensionNotice { extension, text });
-                }
-                Ok(ExtensionNews::Dialog { viewer: to, extension, id, dialog, prompted }) if to == viewer => {
-                    let _ = out_tx.send(ServerMsg::ExtensionDialog { extension, id, dialog: *dialog, prompted });
-                }
-                Ok(ExtensionNews::Withdrawn { viewer: to, id }) if to == viewer => {
-                    let _ = out_tx.send(ServerMsg::ExtensionDialogWithdrawn { id });
-                }
-                Ok(_) => {}
-                // What was missed is read whole, and every dialog still put
-                // to this client is put again, oldest first, from a fresh
-                // receiver taken before the reads so nothing falls between.
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    extensions_rx = daemon.subscribe_extensions();
-                    send_extensions(&daemon, &out_tx);
-                    for news in daemon.dialogs_put_to(viewer) {
-                        if let ExtensionNews::Dialog { extension, id, dialog, prompted, .. } = news {
-                            let _ = out_tx.send(ServerMsg::ExtensionDialog { extension, id, dialog: *dialog, prompted });
-                        }
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
-            Ok(ws) = workspaces_rx.recv() => {
-                let _ = out_tx.send(ServerMsg::Workspaces(ws));
-            }
-            // Every client is told, and one reading another repository's
-            // or feature's board drops it by the repositories it names. The
-            // view a client reports is for saying where the person is,
-            // never for deciding what it is sent.
-            news = boards_rx.recv() => match news {
-                Ok(board) => {
-                    let _ = out_tx.send(board_msg(board));
-                }
-                // One that fell behind is sent each board's latest push,
-                // from a fresh receiver: the lagged one would follow them
-                // with older pushes of the same boards.
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    let (latest, fresh) = daemon.pushes().follow_boards();
-                    boards_rx = fresh;
-                    for board in latest {
-                        let _ = out_tx.send(board_msg(board));
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
-            // Only for a watcher. One that fell behind lost changes it
-            // cannot name, so it is replayed the views as they stand; a
-            // view closed in the gap is the one thing that replay cannot
-            // say, and the next change to it will.
-            // A watcher that fell behind is sent the list whole, which
-            // replaces what it held, so a removal it missed goes with it.
-            news = next_news(&mut conn.saved_views) => match news {
-                Ok(SavedViewNews::Changed(view)) => {
-                    let _ = out_tx.send(ServerMsg::SavedViewChanged(view));
-                }
-                Ok(SavedViewNews::Removed { id }) => {
-                    let _ = out_tx.send(ServerMsg::SavedViewRemoved { id });
-                }
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    conn.saved_views = Some(replay_saved_views(&daemon, &out_tx));
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
-            news = next_news(&mut conn.agent_views) => match news {
-                Ok(ViewNews::Shown(view)) => {
-                    let _ = out_tx.send(ServerMsg::ViewShown(view));
-                }
-                Ok(ViewNews::Closed { pane, id }) => {
-                    let _ = out_tx.send(ServerMsg::ViewClosed { pane, id });
-                }
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    conn.agent_views = Some(replay_views(&daemon, &out_tx));
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
         }
     }
     daemon.release_viewer(viewer);
     daemon.forget_extension_viewer(viewer);
     reader.abort();
-}
-
-/// A tree, as the client is sent it: with where the person now is for a
-/// focus watcher, and the consoles beside it for a client that takes them.
-fn send_tree(
-    daemon: &Daemon,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    conn: &mut Connection,
-    tree: Vec<argus_protocol::ProjectInfo>,
-) {
-    if let Some(watch) = &mut conn.focus_watch {
-        if let Some(msg) = watch.changed(daemon.focus_in(&tree)) {
-            let _ = out_tx.send(msg);
-        }
-    }
-    let _ = out_tx.send(ServerMsg::Tree(tree));
-    if conn.can(CONSOLES) {
-        let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
-    }
-}
-
-fn board_msg(board: BoardNews) -> ServerMsg {
-    match board {
-        BoardNews::Decisions(board) => ServerMsg::Decisions(board),
-        BoardNews::Tasks(list) => ServerMsg::Tasks(list),
-        BoardNews::Diagrams(list) => ServerMsg::SequenceDiagrams(list),
-    }
-}
-
-/// The next change to the views, or never for a connection that is not
-/// watching them. A `select!` branch's future is built whether or not its
-/// guard holds, so the absence has to be a future that does not finish.
-async fn next_news<N: Clone>(
-    watch: &mut Option<broadcast::Receiver<N>>,
-) -> Result<N, broadcast::error::RecvError> {
-    match watch {
-        Some(rx) => rx.recv().await,
-        None => std::future::pending().await,
-    }
-}
-
-/// Every view as it stands, sent to the client, and the receiver that
-/// carries each change after.
-fn replay_views(
-    daemon: &Daemon,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> broadcast::Receiver<ViewNews> {
-    let (shown, rx) = daemon.watch_views();
-    for view in shown {
-        let _ = out_tx.send(ServerMsg::ViewShown(Box::new(view)));
-    }
-    rx
-}
-
-/// Every saved view as it stands, sent to the client, and the receiver
-/// that carries each change after.
-fn replay_saved_views(
-    daemon: &Daemon,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> broadcast::Receiver<SavedViewNews> {
-    let (all, rx) = daemon.watch_saved_views();
-    let _ = out_tx.send(ServerMsg::SavedViews(all));
-    rx
-}
-
-/// Every extension's views and commands, whole.
-fn send_extensions(daemon: &Daemon, out_tx: &mpsc::UnboundedSender<ServerMsg>) {
-    let _ = out_tx.send(ServerMsg::ExtensionViews(daemon.extension_views()));
-    let _ = out_tx.send(ServerMsg::ExtensionCommands(daemon.extension_commands()));
 }
 
 /// What one connection holds for itself, which dispatch reads and writes
@@ -307,57 +103,41 @@ struct Connection {
     viewer: ViewerId,
     subs: Subscriptions,
     reviews: ReviewLane<dispatch::Generated>,
-    /// Set once the client asks to be told where the person is working.
-    focus_watch: Option<FocusWatch>,
-    /// Subscribed only when the client asks, so one that never does is
-    /// never sent a view.
-    agent_views: Option<broadcast::Receiver<ViewNews>>,
-    /// The same for saved views, subscribed when the client asks.
-    saved_views: Option<broadcast::Receiver<SavedViewNews>>,
-    /// What the client said it can take: nothing until it greets, and
-    /// nothing for good from a client that never does.
-    peer: Option<Hello>,
+    /// What the client is pushed: the tree, the workspaces and the boards
+    /// from the start, and the rest once it asks or greets for them.
+    topics: topics::Topics,
+    peer: Peer,
 }
 
 impl Connection {
-    fn new(daemon: &Daemon, frames: mpsc::Sender<ServerMsg>) -> Self {
+    fn new(daemon: &Arc<Daemon>, frames: mpsc::Sender<ServerMsg>, out: mpsc::UnboundedSender<ServerMsg>) -> Self {
         Connection {
             viewer: daemon.new_viewer(),
             subs: Subscriptions::new(frames),
             reviews: daemon.review_lane(),
-            focus_watch: None,
-            agent_views: None,
-            saved_views: None,
-            peer: None,
+            topics: topics::Topics::new(daemon.clone(), out),
+            peer: Peer::default(),
         }
     }
 
     fn can(&self, capability: &str) -> bool {
-        self.peer.as_ref().is_some_and(|p| p.can(capability))
+        self.peer.can(capability)
     }
 }
 
-/// What a connection watching the focus was last sent, so a tree that
-/// changes nothing it names sends nothing.
-#[derive(Default)]
-struct FocusWatch {
-    sent: Option<Focus>,
-}
+/// What the client said it can take: nothing until it greets, and nothing
+/// for good from a client that never does. Shared with the tree topic,
+/// whose messages depend on it and which joins before the greeting does.
+#[derive(Clone, Default)]
+pub(super) struct Peer(Arc<std::sync::RwLock<Option<Hello>>>);
 
-impl FocusWatch {
-    /// The answer to asking: sent whatever it is.
-    fn first(&mut self, focus: Option<Focus>) -> ServerMsg {
-        self.sent = focus.clone();
-        ServerMsg::Focus(focus.map(Box::new))
+impl Peer {
+    pub(super) fn set(&self, hello: Hello) {
+        *self.0.write().unwrap() = Some(hello);
     }
 
-    /// The message to send for `focus`, or `None` when it is what was
-    /// last sent.
-    fn changed(&mut self, focus: Option<Focus>) -> Option<ServerMsg> {
-        if focus == self.sent {
-            return None;
-        }
-        Some(self.first(focus))
+    pub(super) fn can(&self, capability: &str) -> bool {
+        self.0.read().unwrap().as_ref().is_some_and(|hello| hello.can(capability))
     }
 }
 
@@ -781,6 +561,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_connection_opens_with_the_tree_the_templates_and_the_workspaces_in_that_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut client, server) = tokio::io::duplex(1024 * 1024);
+        let (shutdown, _) = broadcast::channel(1);
+        tokio::spawn(handle(server, Harness::new(dir.path()).daemon, shutdown.clone(), shutdown.subscribe()));
+
+        assert!(matches!(next(&mut client).await, ServerMsg::Tree(_)));
+        assert!(matches!(next(&mut client).await, ServerMsg::Templates(_)));
+        assert!(matches!(next(&mut client).await, ServerMsg::Workspaces(_)));
+    }
+
+    #[tokio::test]
     async fn a_greeting_is_answered_with_this_builds_own() {
         let dir = tempfile::tempdir().unwrap();
         let mut client = connected(dir.path()).await;
@@ -865,7 +657,7 @@ mod tests {
 
     /// A daemon with one shell pane, started before any client connects so
     /// the opening tree already holds it and no later tree is on its way.
-    fn daemon_with_a_pane(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
+    pub(super) fn daemon_with_a_pane(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
         let daemon = Harness::new(dir).daemon;
         let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
         let pane = daemon.spawn_shell(checkout).unwrap();
@@ -873,7 +665,7 @@ mod tests {
     }
 
     /// A daemon with one agent pane that stays running.
-    fn daemon_with_an_agent(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
+    pub(super) fn daemon_with_an_agent(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
         let daemon = Daemon::new(ConfigFile {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
@@ -901,7 +693,7 @@ mod tests {
         (daemon, pane)
     }
 
-    fn view_change(id: &str) -> argus_protocol::ViewChange {
+    pub(super) fn view_change(id: &str) -> argus_protocol::ViewChange {
         argus_protocol::ViewChange::Show {
             view: argus_protocol::AgentView {
                 id: id.into(),
@@ -978,7 +770,7 @@ mod tests {
         let _ = daemon.close_pane(second);
     }
 
-    fn opus() -> argus_protocol::AgentTelemetry {
+    pub(super) fn opus() -> argus_protocol::AgentTelemetry {
         argus_protocol::AgentTelemetry {
             model: Some("opus".into()),
             ..Default::default()
@@ -1405,7 +1197,9 @@ mod tests {
             let (tx, rx) = mpsc::unbounded_channel();
             let (frames_tx, frames) = mpsc::channel(FRAME_QUEUE);
             Harness {
-                conn: Connection::new(&daemon, frames_tx),
+                // The very sender dispatch is handed, so `replies` sees what
+                // joining a topic queues.
+                conn: Connection::new(&daemon, frames_tx, tx.clone()),
                 daemon,
                 tx,
                 rx,

@@ -12,6 +12,8 @@
 //!   ask is answered.
 //! - a `Daemon` method that returns a closure: state taken under the lock
 //!   on the loop, the file I/O done off it.
+//! - `Topics::join`: a watch, answered with what joining sends and
+//!   followed on a task of its own.
 
 use super::*;
 use crate::state::FeaturePart;
@@ -50,20 +52,21 @@ pub(super) fn dispatch(
             Ok(())
         }
         ClientMsg::WatchFocus => {
-            let watch = conn.focus_watch.insert(FocusWatch::default());
-            let focus = daemon.focus_in(&daemon.snapshot());
-            let _ = out_tx.send(watch.first(focus));
+            conn.topics.join(topics::Focus::default());
             Ok(())
         }
         ClientMsg::WatchViews => {
-            conn.agent_views = Some(replay_views(daemon, out_tx));
+            conn.topics.join(topics::Views);
             Ok(())
         }
+        // Nothing is pushed after the acknowledgement.
         ClientMsg::Restart => {
+            conn.topics.stop();
             let _ = out_tx.send(ServerMsg::Restarting);
             return Outcome::Shutdown(ShutdownReason::Restart);
         }
         ClientMsg::Stop => {
+            conn.topics.stop();
             let _ = out_tx.send(ServerMsg::Stopping);
             return Outcome::Shutdown(ShutdownReason::Stop);
         }
@@ -128,7 +131,7 @@ pub(super) fn dispatch(
         // is. Each message needs the capability that brought it, and a
         // client that never listed it is told nothing back.
         ClientMsg::WatchSavedViews if conn.can(SAVED_VIEWS) => {
-            conn.saved_views = Some(replay_saved_views(daemon, out_tx));
+            conn.topics.join(topics::SavedViews);
             Ok(())
         }
         ClientMsg::RefreshSavedView { id } if conn.can(SAVED_VIEWS) => {
@@ -566,20 +569,26 @@ fn greet(
         "client greeted"
     );
     conn.subs.runs = hello.can(CELL_RUNS);
+    let (consoles, takes) = (hello.can(CONSOLES), hello.can(EXTENSIONS));
+    let asks = takes && hello.can(EXTENSION_DIALOGS);
+    // Before the answer, not after: a tree pushed in between would go
+    // without the consoles beside it. The client listed what it can take,
+    // so it can read one a moment ahead of the answer.
+    conn.peer.set(hello);
     let _ = out_tx.send(ServerMsg::Hello(Hello::this_build()));
     // The tree went before the greeting; the consoles could not, and they
     // follow the daemon's own greeting.
-    if hello.can(CONSOLES) {
+    if consoles {
         let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
     }
     // Likewise what the extensions publish, and whether this client is one
     // a dialog can be put to.
-    let takes = hello.can(EXTENSIONS);
     if takes {
-        send_extensions(daemon, out_tx);
+        conn.topics.join(topics::Extensions { viewer: conn.viewer });
+    } else {
+        conn.topics.leave::<topics::Extensions>();
     }
-    daemon.extension_asker(conn.viewer, takes && hello.can(EXTENSION_DIALOGS));
-    conn.peer = Some(hello);
+    daemon.extension_asker(conn.viewer, asks);
 }
 
 fn scrollback(

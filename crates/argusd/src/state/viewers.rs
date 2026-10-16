@@ -197,12 +197,6 @@ impl Daemon {
         }
     }
 
-    /// A tick each time a client's view changes or goes; the focus is read
-    /// again with [`Daemon::focus_in`].
-    pub fn subscribe_views(&self) -> broadcast::Receiver<()> {
-        self.pushes.subscribe_focus()
-    }
-
     /// Where the person is working, read against `tree`: the view of the
     /// client they were last at. `None` while no client reports one.
     pub fn focus_in(&self, tree: &[ProjectInfo]) -> Option<Focus> {

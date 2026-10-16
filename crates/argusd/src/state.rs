@@ -28,7 +28,6 @@ use argus_protocol::{
     PaneStatus, ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, View,
     WorkspaceId, WorkspaceInfo,
 };
-use tokio::sync::broadcast;
 
 mod agent_launch;
 mod agents;
@@ -68,6 +67,8 @@ pub use board_parts::FeaturePart;
 pub(crate) use features::Filing;
 pub use extensions::ExtensionNews;
 pub use pushes::{BoardNews, Pushes, TreeNews};
+#[cfg(test)]
+pub(crate) use pushes::{BOARDS_DEPTH, EXTENSIONS_DEPTH, TREE_DEPTH, VIEWS_DEPTH};
 pub use saved_views::SavedViewNews;
 pub use views::ViewNews;
 pub use git_ops::BranchDeletion;
@@ -525,10 +526,6 @@ impl Daemon {
     /// What is published for the connections to push.
     pub fn pushes(&self) -> &Pushes {
         &self.pushes
-    }
-
-    pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
-        self.pushes.subscribe_workspaces()
     }
 
     fn broadcast_tree(&self) {
