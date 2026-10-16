@@ -6,7 +6,7 @@
 //! stdin and stdout, as `argus --host` does over ssh, so connect-or-start
 //! stays in one place: the terminal client's `launch`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -126,18 +126,28 @@ async fn connect_once(shared: &Shared, greet: bool) -> Ended {
     Ended::Closed { stopped }
 }
 
-/// `argus` beside this executable, as an unpacked release or a `target/`
-/// directory has it, else whichever `PATH` finds.
+/// `argus` beside this executable: the bundle's sidecar in a `.app` or an
+/// install, or the build beside it in a `target/` directory. A GUI launch
+/// on macOS or Windows usually has no shell `PATH`, so the bundle has to be
+/// found first.
 fn argus_exe() -> PathBuf {
-    let name = format!("argus{}", std::env::consts::EXE_SUFFIX);
-    if let Ok(mut path) = std::env::current_exe() {
-        path.pop();
-        path.push(&name);
-        if path.exists() {
-            return path;
-        }
-    }
-    PathBuf::from(name)
+    let dirs: Vec<PathBuf> = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(PathBuf::from))
+        .into_iter()
+        .collect();
+    let file = format!("argus{}", std::env::consts::EXE_SUFFIX);
+    locate(&file, &dirs, |path| path.exists())
+}
+
+/// `file` in the first of `dirs` that holds it, else the bare name for
+/// `PATH` to find. `PATH` is the last resort, so a bundled sidecar always
+/// wins over whatever an older install left on the search path.
+fn locate(file: &str, dirs: &[PathBuf], exists: impl Fn(&Path) -> bool) -> PathBuf {
+    dirs.iter()
+        .map(|dir| dir.join(file))
+        .find(|path| exists(path))
+        .unwrap_or_else(|| PathBuf::from(file))
 }
 
 struct Bridge {
@@ -254,6 +264,7 @@ where
 mod tests {
     use super::*;
     use argus_protocol::read_msg;
+    use std::collections::HashSet;
     use tokio::io::duplex;
 
     #[tokio::test]
@@ -311,5 +322,39 @@ mod tests {
     fn a_silent_bridge_is_reported_by_its_exit_code() {
         assert_eq!(last_words(b"", Some(127)), "argus bridge exited with code 127 before argusd said anything");
         assert_eq!(last_words(b"  \n", None), "argus bridge ended before argusd said anything");
+    }
+
+    // A set of paths the lookup may find, standing in for the filesystem.
+    fn present(paths: &[&str]) -> impl Fn(&Path) -> bool {
+        let set: HashSet<PathBuf> = paths.iter().map(PathBuf::from).collect();
+        move |path| set.contains(path)
+    }
+
+    #[test]
+    fn the_bundle_beside_the_desktop_wins_over_path() {
+        let dirs = [PathBuf::from("/app/Contents/MacOS")];
+        let found = locate("argus", &dirs, present(&["/app/Contents/MacOS/argus"]));
+        assert_eq!(found, PathBuf::from("/app/Contents/MacOS/argus"));
+    }
+
+    #[test]
+    fn path_is_the_last_resort_when_no_directory_holds_argus() {
+        let dirs = [PathBuf::from("/app/Contents/MacOS")];
+        let found = locate("argus", &dirs, present(&[]));
+        assert_eq!(found, PathBuf::from("argus"));
+    }
+
+    #[test]
+    fn the_first_directory_that_holds_argus_wins() {
+        let dirs = [PathBuf::from("/first"), PathBuf::from("/second")];
+        let found = locate("argus", &dirs, present(&["/first/argus", "/second/argus"]));
+        assert_eq!(found, PathBuf::from("/first/argus"));
+    }
+
+    #[test]
+    fn a_later_directory_is_used_when_the_first_lacks_argus() {
+        let dirs = [PathBuf::from("/first"), PathBuf::from("/second")];
+        let found = locate("argus", &dirs, present(&["/second/argus"]));
+        assert_eq!(found, PathBuf::from("/second/argus"));
     }
 }

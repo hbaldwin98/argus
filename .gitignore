@@ -11,3 +11,6 @@
 cov.xml
 # tauri-build writes its schemas here on every build.
 crates/argus-desktop/gen/
+
+# Sidecars the desktop bundle copies in, staged by the bundle step (tauri.bundle.conf.json).
+/crates/argus-desktop/binaries/
