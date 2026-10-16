@@ -57,7 +57,7 @@ use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, CodeStage};
-use crate::split_grid::{self, Dir, Zone};
+use crate::split_grid::{Dir, Zone};
 use crate::shown::workspace_grid;
 use crate::stage::{Settled, Stages};
 use crate::page::{
@@ -3262,20 +3262,7 @@ impl Session {
         if let Some(shown) = &mut rail.shown {
             shown.resumed = self.sessions.resumed_from(PaneId(shown.pane)).cloned();
         }
-        let permille = |list: &[f32]| list.iter().map(|s| (s * 1000.0).round() as u16).collect::<Vec<_>>();
-        let layout = self.shown.layout();
-        rail.row = page::Row {
-            beside: self.shown.beside_sides().into_iter().filter_map(|side| rail::shown(&self.tree, self.shown.on(side)?)).collect(),
-            grid: layout.rows().iter().map(|r| r.iter().map(|&i| i as u8).collect()).collect(),
-            heights: permille(layout.heights()),
-            widths: layout.widths().iter().map(|w| permille(w)).collect(),
-            keyed: match self.shown.keys() {
-                Side::Beside(n) => Some(n),
-                _ => None,
-            },
-            min_cols: split_grid::MIN_COLS,
-            min_rows: split_grid::MIN_ROWS,
-        };
+        rail.row = self.shown.grid().page(self.shown.keys(), |pane| rail::shown(&self.tree, pane));
         rail
     }
 

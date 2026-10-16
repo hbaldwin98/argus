@@ -17,7 +17,7 @@ use argus_protocol::{ClientMsg, KeyboardMode, MouseTracking, PaneId, ServerMsg};
 
 use crate::page::{Frame, Side};
 use crate::screen::Screen;
-use crate::split_grid::{Dir, Layout, Zone};
+use crate::split_grid::{Dir, Zone};
 
 pub mod workspace_grid;
 
@@ -304,13 +304,8 @@ impl ShownPane {
         self.grid.holds(pane)
     }
 
-    pub fn layout(&self) -> &Layout {
-        self.grid.layout()
-    }
-
-    /// The slots after the Workspace's, in the order they were opened.
-    pub fn beside_sides(&self) -> Vec<Side> {
-        (0..self.grid.sides().len() - 1).map(|n| Side::Beside(n as u8)).collect()
+    pub fn grid(&self) -> &WorkspaceGrid {
+        &self.grid
     }
 
     /// Splits `pane` off into the grid; nothing is subscribed on a refusal.
@@ -505,6 +500,11 @@ mod tests {
         names(&out)
     }
 
+    /// Which cells sit in each row of the grid, as the page reads them.
+    fn rows(shown: &ShownPane) -> Vec<Vec<u8>> {
+        shown.grid().page(shown.keys(), |_| None).grid
+    }
+
     #[test]
     fn showing_subscribes_then_sizes_and_another_unsubscribes_the_first() {
         let mut shown = ShownPane::default();
@@ -677,7 +677,7 @@ mod tests {
         assert_eq!(sent(|out| shown.close(Side::Beside(1), out)), ["unsubscribe 5"]);
         assert_eq!((shown.on(Side::Beside(0)), shown.on(Side::Beside(1))), (Some(PaneId(4)), Some(PaneId(6))));
         assert_eq!(shown.keys(), Side::Beside(0), "the neighbour on its left");
-        assert_eq!(shown.layout().rows(), [vec![0, 1], vec![2]], "the rest are numbered down");
+        assert_eq!(rows(&shown), [vec![0, 1], vec![2]], "the rest are numbered down");
     }
 
     #[test]
@@ -696,7 +696,7 @@ mod tests {
         assert_eq!(sent(|out| shown.close(Side::Workspace, out)), ["unsubscribe 1"], "every room is the same");
         assert_eq!((shown.on(Side::Workspace), shown.on(Side::Beside(0)), shown.on(Side::Beside(1))), (Some(PaneId(4)), Some(PaneId(5)), Some(PaneId(6))));
         assert_eq!(shown.keys(), Side::Workspace);
-        assert_eq!(shown.layout().rows(), [vec![0], vec![1, 2]]);
+        assert_eq!(rows(&shown), [vec![0], vec![1, 2]]);
     }
 
     #[test]
@@ -737,16 +737,17 @@ mod tests {
     fn dragged_sizes_that_do_not_fit_the_grid_change_nothing() {
         let mut shown = ShownPane::default();
         row(&mut shown);
+        let page = |shown: &ShownPane| shown.grid().page(shown.keys(), |_| None);
         shown.resize_grid(&[1.0, 3.0], &[vec![3.0, 1.0], vec![1.0, 1.0]]);
-        assert_eq!(shown.layout().heights(), [0.25, 0.75], "normalised");
-        assert_eq!(shown.layout().widths()[0], [0.75, 0.25]);
+        assert_eq!(page(&shown).heights, [250, 750], "normalised");
+        assert_eq!(page(&shown).widths[0], [750, 250]);
         shown.resize_grid(&[1.0, 0.0], &[vec![1.0, 1.0], vec![1.0, 1.0]]);
         shown.resize_grid(&[1.0], &[vec![1.0]]);
-        assert_eq!(shown.layout().heights(), [0.25, 0.75]);
+        assert_eq!(page(&shown).heights, [250, 750]);
         shown.even_out(Some(0));
-        assert_eq!(shown.layout().widths()[0], [0.5, 0.5]);
+        assert_eq!(page(&shown).widths[0], [500, 500]);
         shown.even_out(None);
-        assert_eq!(shown.layout().heights(), [0.5, 0.5]);
+        assert_eq!(page(&shown).heights, [500, 500]);
     }
 
     #[test]
@@ -769,7 +770,7 @@ mod tests {
         assert_eq!(shown.keys(), Side::Beside(2), "pane 6 is under pane 4");
         assert!(!shown.focus_towards(Dir::Right), "nothing further");
         assert!(shown.step_pane(Dir::Left));
-        assert_eq!(shown.layout().rows()[1], [3, 2]);
+        assert_eq!(rows(&shown)[1], [3, 2]);
         assert!(shown.focus_towards(Dir::Up));
         assert_eq!(shown.keys(), Side::Workspace, "pane 6 is now under pane 1");
     }
@@ -787,7 +788,7 @@ mod tests {
         row(&mut shown);
         shown.show_on(Side::Workspace, PaneId(5), &mut Vec::new());
         assert_eq!(shown.panes(), [PaneId(5), PaneId(4), PaneId(6)]);
-        assert_eq!(shown.layout().rows(), [vec![0, 1], vec![2]]);
+        assert_eq!(rows(&shown), [vec![0, 1], vec![2]]);
     }
 
     fn wanted(views: &[(&str, Option<u64>)]) -> Vec<(String, Option<PaneId>)> {

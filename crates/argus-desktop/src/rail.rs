@@ -14,6 +14,7 @@ use argus_protocol::{ago,
 };
 
 use crate::page::{self, Rail};
+use crate::shown::workspace_grid::GridPage;
 
 /// What the rail is drawn from besides the tree.
 pub struct Choices<'a> {
@@ -59,7 +60,7 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         width: None,
         outline_width: None,
         brief_height: None,
-        row: page::Row::default(),
+        row: GridPage::default(),
     }
 }
 

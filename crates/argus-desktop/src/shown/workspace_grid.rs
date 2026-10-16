@@ -9,10 +9,33 @@
 //! side's number right as cells come and go.
 
 use argus_protocol::{ClientMsg, PaneId};
+use serde::Serialize;
 
 use super::Slot;
-use crate::page::Side;
+use crate::page::{Shown, Side};
 use crate::split_grid::{Dir, Layout, Zone, MIN_COLS, MIN_ROWS};
+
+/// What the rail carries of the Workspace's grid: the first pane is `Rail.shown`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GridPage {
+    /// The panes split beside the first, in the order they were opened,
+    /// for the stage's header.
+    pub beside: Vec<Shown>,
+    /// Which cells, the first's too, sit in each row of the grid.
+    pub grid: Vec<Vec<u8>>,
+    /// Each row's height, in thousandths of the grid's.
+    pub heights: Vec<u16>,
+    /// Each pane's width in its row, in thousandths of the row's.
+    pub widths: Vec<Vec<u16>>,
+    /// The split with the keys, by its place in `beside`; none when the
+    /// Workspace's own pane has them.
+    pub keyed: Option<u8>,
+    /// The least a pane of the grid may be, in columns and rows.
+    pub min_cols: u16,
+    pub min_rows: u16,
+}
 
 /// Why a pane may not join the grid. Its words are the note the window shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,9 +139,22 @@ impl WorkspaceGrid {
         true
     }
 
-    /// Where the panes sit and how big each is.
-    pub(super) fn layout(&self) -> &Layout {
-        &self.layout
+    /// The page the rail carries of the grid. `keys` is the side with
+    /// them, and `describe` names a cell's pane as the header draws it.
+    pub fn page(&self, keys: Side, describe: impl Fn(PaneId) -> Option<Shown>) -> GridPage {
+        let thousandths = |list: &[f32]| list.iter().map(|s| (s * 1000.0).round() as u16).collect::<Vec<_>>();
+        GridPage {
+            beside: self.cells[1..].iter().filter_map(|cell| cell.pane.and_then(&describe)).collect(),
+            grid: self.layout.rows().iter().map(|row| row.iter().map(|&n| n as u8).collect()).collect(),
+            heights: thousandths(self.layout.heights()),
+            widths: self.layout.widths().iter().map(|w| thousandths(w)).collect(),
+            keyed: match keys {
+                Side::Beside(n) => Some(n),
+                _ => None,
+            },
+            min_cols: MIN_COLS,
+            min_rows: MIN_ROWS,
+        }
     }
 
     /// The cell on `side`; none for a side that is not the grid's.
@@ -264,6 +300,21 @@ mod tests {
         grid.cell_mut(side).unwrap().capacity = Some(room);
     }
 
+    /// `n` panes, 1 the Workspace's and from 2 on beside it, in a grid the
+    /// page has not measured.
+    fn unmeasured(n: u64) -> WorkspaceGrid {
+        let mut grid = WorkspaceGrid::default();
+        grid.cell_mut(Side::Workspace).unwrap().subscribe(PaneId(1), &mut Vec::new());
+        for pane in 2..=n {
+            grid.join(PaneId(pane), &mut Vec::new()).unwrap();
+        }
+        grid
+    }
+
+    fn rows(grid: &WorkspaceGrid) -> Vec<Vec<u8>> {
+        grid.page(Side::Workspace, |_| None).grid
+    }
+
     /// The Workspace's pane 1 and 4, 5 and 6 beside it, each cell's room
     /// 20 rows by 30 columns and one more for each cell after the first.
     fn four() -> WorkspaceGrid {
@@ -285,9 +336,9 @@ mod tests {
         let mut out = Vec::new();
         assert_eq!(grid.join(PaneId(4), &mut out), Ok(Side::Beside(0)));
         assert_eq!(names(&out), ["subscribe 4", "resize 4 20x60"]);
-        assert_eq!(grid.layout().rows(), [vec![0, 1]]);
+        assert_eq!(rows(&grid), [vec![0, 1]]);
         grid.join(PaneId(5), &mut Vec::new()).unwrap();
-        assert_eq!(grid.layout().rows(), [vec![0, 1], vec![2]], "two over one");
+        assert_eq!(rows(&grid), [vec![0, 1], vec![2]], "two over one");
         assert_eq!(grid.panes().collect::<Vec<_>>(), [PaneId(1), PaneId(4), PaneId(5)]);
     }
 
@@ -327,6 +378,30 @@ mod tests {
     }
 
     #[test]
+    fn the_grids_page_reads_as_the_page_expects() {
+        let page = unmeasured(2).page(Side::Workspace, |_| None);
+        assert_eq!(
+            serde_json::to_value(page).unwrap(),
+            serde_json::json!({
+                "beside": [],
+                "grid": [[0, 1]],
+                "heights": [1000],
+                "widths": [[500, 500]],
+                "keyed": null,
+                "minCols": 20,
+                "minRows": 6,
+            })
+        );
+    }
+
+    #[test]
+    fn the_page_sends_sizes_in_thousandths() {
+        let page = unmeasured(5).page(Side::Workspace, |_| None);
+        assert_eq!(page.grid, [vec![0, 1, 4], vec![2, 3]]);
+        assert_eq!((page.widths[0].clone(), page.heights), (vec![333, 333, 333], vec![500, 500]));
+    }
+
+    #[test]
     fn a_refusal_says_why_in_the_words_the_note_shows() {
         assert!(Refusal::NoWorkspacePane.to_string().contains("in the Workspace first"));
         assert!(Refusal::NoRoom.to_string().contains("20 columns by 6 rows"));
@@ -344,7 +419,7 @@ mod tests {
         assert_eq!(grid.cell(Side::Beside(1)).and_then(|cell| cell.pane), Some(PaneId(6)));
         assert_eq!(grid.cell(Side::Beside(1)).and_then(|cell| cell.capacity), Some((20, 32)), "the room stays with the number");
         assert_eq!(names(&out), ["resize 6 20x32"]);
-        assert_eq!(grid.layout().rows(), [vec![0, 1], vec![2]]);
+        assert_eq!(rows(&grid), [vec![0, 1], vec![2]]);
 
         grid.cell_mut(Side::Beside(1)).unwrap().clear(true, &mut Vec::new());
         grid.close_empty(&mut keys, &mut Vec::new());

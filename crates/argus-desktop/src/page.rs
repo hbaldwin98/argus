@@ -28,6 +28,7 @@ use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
 use crate::sessions_dialog::{SessionPreview, SessionsPage};
 use crate::saved_views::{SavedColumn, SavedViewsPage};
 use crate::split_grid::{Dir, Zone};
+use crate::shown::workspace_grid::GridPage;
 use crate::settings::{Backdrop, EditorMode, Preferences, SavedLinks, Theme};
 
 /// Something the page asks of the window. It answers nothing: what a call
@@ -44,7 +45,7 @@ pub enum Call {
     /// A press on an extension console's screen: it takes the keys, as a
     /// click on the console does.
     FocusView { pane: u64 },
-    /// Splits `pane` off to the right of the Workspace's row.
+    /// Splits `pane` off into the Workspace's grid, placed by the grid rule.
     OpenBeside { pane: u64 },
     /// Takes the pane on a split side out of the row; it keeps running.
     CloseBeside { side: Side },
@@ -620,30 +621,8 @@ pub struct Rail {
     /// An open feature's outline width and brief height, likewise.
     pub outline_width: Option<u32>,
     pub brief_height: Option<u32>,
-    /// The panes split beside the Workspace's.
-    pub row: Row,
-}
-
-/// The Workspace's panes in a grid: the first is `Rail.shown`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct Row {
-    /// The panes after the first, in reading order, for the stage's header.
-    pub beside: Vec<Shown>,
-    /// Which of all the panes, the first's too, sit in each row of the
-    /// grid.
-    pub grid: Vec<Vec<u8>>,
-    /// Each row's height, in thousandths of the grid's.
-    pub heights: Vec<u16>,
-    /// Each pane's width in its row, in thousandths of the row's.
-    pub widths: Vec<Vec<u16>>,
-    /// The split with the keys, by its place in `beside`; none when the
-    /// Workspace's own pane has them.
-    pub keyed: Option<u8>,
-    /// The least a pane of the grid may be, in columns and rows.
-    pub min_cols: u16,
-    pub min_rows: u16,
+    /// The Workspace's grid of panes.
+    pub row: GridPage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2216,7 +2195,7 @@ mod tests {
             width: Some(320),
             outline_width: None,
             brief_height: None,
-            row: Row::default(),
+            row: GridPage::default(),
         };
         let value = as_json(Event::Rail(Box::new(rail)));
         assert_eq!(value["type"], "rail");

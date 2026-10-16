@@ -2,16 +2,16 @@
 import type { Shown } from "./Shown";
 
 /**
- * The Workspace's panes in a grid: the first is `Rail.shown`.
+ * What the rail carries of the Workspace's grid: the first pane is `Rail.shown`.
  */
-export type Row = { 
+export type GridPage = { 
 /**
- * The panes after the first, in reading order, for the stage's header.
+ * The panes split beside the first, in the order they were opened,
+ * for the stage's header.
  */
 beside: Array<Shown>, 
 /**
- * Which of all the panes, the first's too, sit in each row of the
- * grid.
+ * Which cells, the first's too, sit in each row of the grid.
  */
 grid: Array<Array<number>>, 
 /**
