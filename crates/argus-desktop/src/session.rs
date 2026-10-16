@@ -5501,8 +5501,23 @@ mod tests {
         let [ClientMsg::ResumeSession { request_id, .. }] = sent.as_slice() else {
             panic!("{sent:?}");
         };
-        s.receive(ServerMsg::Created { request_id: *request_id, created: None });
+        s.receive(refusal(*request_id, "claude cannot resume ended", false));
         assert!(s.recent.get().is_some() && s.shown.pane().is_none());
+        assert_eq!(notices(&mut s), ["claude cannot resume ended"]);
+    }
+
+    #[test]
+    fn an_older_daemons_refused_resume_leaves_the_dialog_up() {
+        let mut s = listing_sessions_from(Hello { capabilities: vec![argus_protocol::SESSIONS.into()], ..Hello::this_build() });
+        s.call(Call::SessionsAction { action: Action::Next, row: None });
+        let sent = s.call(Call::SessionsAction { action: Action::Resume, row: None });
+        let [ClientMsg::ResumeSession { request_id, .. }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        s.receive(ServerMsg::Created { request_id: *request_id, created: None });
+        s.receive(ServerMsg::Error { message: "claude cannot resume ended".into() });
+        assert!(s.recent.get().is_some() && s.shown.pane().is_none());
+        assert_eq!(notices(&mut s), ["claude cannot resume ended"]);
     }
 
     /// The daemon will not read a session whose checkout is gone. The
@@ -5653,12 +5668,12 @@ mod tests {
         assert_eq!(s.rail(0).project.map(|p| p.name), Some("work".into()));
     }
 
+    /// One refusal, by the add's id, is the whole of the daemon's answer.
     #[test]
     fn a_refused_add_keeps_the_dialog_and_says_why_there() {
         let mut s = adding_a_folder();
         let request_id = add(&mut s);
-        s.receive(ServerMsg::Created { request_id, created: None });
-        s.receive(ServerMsg::Error { message: "there is already a project called work".into() });
+        s.receive(refusal(request_id, "there is already a project called work", false));
         let events = s.events(0);
         assert!(!events.iter().any(|e| matches!(e, Event::Notice { .. })), "said in the dialog, not under it");
         let page = events.into_iter().find_map(|e| match e {
@@ -5671,12 +5686,15 @@ mod tests {
         assert_eq!(s.rail(0).project.map(|p| p.id), Some(1), "the rail is as it was");
     }
 
+    /// An older daemon says no with `Created` and nothing made, then the
+    /// reason as an error of its own.
     #[test]
-    fn a_refused_add_says_why_in_its_dialog_from_one_refusal() {
-        let mut s = adding_a_folder_from(refusing());
+    fn an_older_daemons_refused_add_still_says_why_in_the_dialog() {
+        let mut s = adding_a_folder_from(Hello { capabilities: vec![ADD_PROJECT.into()], ..Hello::this_build() });
         let request_id = add(&mut s);
         s.events(0);
-        s.receive(refusal(request_id, "there is already a project called work", false));
+        s.receive(ServerMsg::Created { request_id, created: None });
+        s.receive(ServerMsg::Error { message: "there is already a project called work".into() });
         let events = s.events(0);
         assert!(!events.iter().any(|e| matches!(e, Event::Notice { .. })), "said in the dialog, not under it");
         let page = events.into_iter().find_map(|e| match e {

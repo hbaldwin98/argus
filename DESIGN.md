@@ -261,13 +261,22 @@ machine's editor command is left out so the daemon there picks its own.
 
 A request that makes something — a shell, an agent, an editor, a worktree, a project, a
 repository — may name itself with a `request_id`, and the daemon answers that client alone with
-`Created`: the id of what it made, or nothing when it refused (the reason still arrives as an
-`Error`). The client matches what was made by that id, never by where a new row turns up in the
-next tree, since the tree is broadcast for everything and the first to arrive need not carry the
-row; it acts once it holds both the answer and a tree containing the id, in either order. An
-unnamed request (id zero, what a client from before this sends) is never answered, so an older
-client never receives a message it cannot read, and an older daemon ignores the name — a newer
-client talking to it simply does not move to what it made.
+`Created`: the id of what it made. The client matches what was made by that id, never by where a
+new row turns up in the next tree, since the tree is broadcast for everything and the first to
+arrive need not carry the row; it acts once it holds both the answer and a tree containing the
+id, in either order. A named request the daemon turns down — a make, a read answered by id, a
+change to a feature — is refused by that id: to a client that listed `request-refusals`, with one
+`Refused` carrying the id, the reason and whether the request only read, so a refused read the
+client no longer wants is dropped like its answer and a refused change is always said. Any other
+client is refused in the shape it has always read, and a request that names none — a keystroke,
+a git write, anything nothing waits on — with a bare `Error`; which shape each request gets, both
+ways, is `request_refusal`'s alone. An unnamed request (id zero, what a client from before this
+sends) is never answered, so an older client never receives a message it cannot read, and an
+older daemon ignores the name — a newer client talking to it simply does not move to what it
+made. The desktop reads an older daemon's refusals as the new shape; a bare `Error` from one
+names nothing, so it lets go of any change still waiting on one, as the window always did. The
+terminal client does not list `request-refusals` yet: it counts its reviews apart from what it
+makes, and an id alone could name either.
 
 Where the person is working is the client's to know, since the selection is client state, so the
 daemon is told. A client whose daemon listed `focus` sends a `View` (the project, checkout and pane
@@ -1769,8 +1778,8 @@ expression, smart case — case matters only when the query has a capital — un
 always matter, anywhere in a line unless only whole words are asked for, over the files
 `.gitignore` leaves, narrowed by include globs read as ripgrep's `-g` reads them (`!` excludes).
 Binary files and ones over 1 MiB are skipped. It returns every line with a match and every match
-on it, in path order, and stops at 500, saying so. A pattern or glob it cannot read is an answer
-of its own (`CodeFailed`), said in the search, rather than nothing found.
+on it, in path order, and stops at 500, saying so. A pattern or glob it cannot read is refused,
+by the search's id, and said in the search, rather than nothing found.
 
 The stage is the desktop window's; the terminal client has none and asks for none of this. It
 opens first on the checkout picked in Checkouts, else the one on screen, and after that comes back

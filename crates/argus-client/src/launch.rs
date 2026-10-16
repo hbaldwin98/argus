@@ -79,9 +79,12 @@ pub async fn connect() -> anyhow::Result<Connected> {
 /// comes first.
 pub(crate) async fn greet(channels: crate::Connection, wait: Duration) -> Greeted {
     let (in_tx, mut out_rx) = channels;
+    // Its reviews count their requests apart from what it makes, so a
+    // refusal by id alone could name either.
     let hello = Hello::this_build()
         .without(argus_protocol::EXTENSIONS)
-        .without(argus_protocol::EXTENSION_DIALOGS);
+        .without(argus_protocol::EXTENSION_DIALOGS)
+        .without(argus_protocol::REQUEST_REFUSALS);
     let _ = in_tx.send(ClientMsg::Hello(hello));
 
     let (daemon, opening) = match Greeting::read(&mut out_rx, wait).await {
@@ -328,6 +331,24 @@ mod tests {
             connected.opening.as_slice(),
             [ServerMsg::Tree(_), ServerMsg::Templates(_)]
         ));
+    }
+
+    #[tokio::test]
+    async fn the_terminal_client_does_not_ask_to_be_refused_by_id() {
+        let (client, mut daemon) = tokio::io::duplex(1024 * 1024);
+        let (heard_tx, heard) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let greeting: ClientMsg = read_msg(&mut daemon).await.unwrap();
+            let _ = heard_tx.send(greeting);
+            write_msg(&mut daemon, &ServerMsg::Hello(Hello::this_build())).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        greet(crate::wire::connection_channels(client), Duration::from_millis(200)).await;
+        let ClientMsg::Hello(hello) = heard.await.unwrap() else {
+            panic!("the client greets first");
+        };
+        assert!(!hello.can(argus_protocol::REQUEST_REFUSALS), "{hello:?}");
+        assert!(hello.can(argus_protocol::CODE), "and still lists the rest");
     }
 
     #[tokio::test]

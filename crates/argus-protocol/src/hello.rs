@@ -41,6 +41,7 @@ pub const CAPABILITIES: &[&str] = &[
     RENAME_PANE,
     SAVED_VIEWS,
     CODE,
+    REQUEST_REFUSALS,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
