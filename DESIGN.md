@@ -320,6 +320,7 @@ live in this crate and a contract written twice drifts in silence.
 | `board_follower` | how a client follows one repository's board: when it asks for the board and the feature's lists, which pushes it keeps, and where the cursor lands on a feature, task or diagram when one is replaced |
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
+| `agent_launch` | what an agent asks for when it starts another agent in a pane of its own — the template, the first message, and the checkout, new worktree or other repository's checkout it works in — and what it is told it started |
 | `agent_view` | what a view an agent shows is made of — its blocks and values and the change an agent sends to show, patch or close one — as the desktop and the terminal client both draw it |
 | `view_check` | whether a view keeps its limits (sizes, depth, counts, bounded numbers, unique and printable ids, web links, checkout-relative paths, kinds this Argus knows), and where it does not, the path that names the fault |
 | `saved_view` | what a saved view is: its body, its scope, and the metadata an agent refreshes it from (recipe, sources, the commit it was built at, stale); what an agent writes to save one and reads back; and the line an agent is typed to refresh one |
@@ -344,6 +345,7 @@ to the type or its locking.
 | `state/processes` | starting a pane's process and driving it once it runs: the port every pane is started through, a pty in a running daemon and a scripted process in tests |
 | `state/clock` | what time it is for the durations the daemon decides on — a resume's grace, a restart loop's window, a quiet child's age |
 | `state/agents` | what an agent reports about itself, and what it is told |
+| `state/agent_launch` | an agent starting another: which checkout it lands in, which template it gets, and who may ask |
 | `state/follow` | which checkout a pane belongs to: the one its agent works in, moved to when the agent says so or a status report says its turn ended in another worktree, and the primary checkout once its worktree is removed outside Argus |
 | `state/viewers` | what each client is showing: the one pty size reconciled out of what they all ask for, and the view of the client the person was last at |
 | `state/git_ops` | the writes to Git |
@@ -1130,6 +1132,19 @@ already moved to, the innermost checkout holding that directory takes the row, a
 since the last poll is looked for before the move is refused. The refusal is the answer's body,
 and the helper prints it, because a move that failed in silence left agents believing the row had
 followed them.
+
+An agent starts another agent through the daemon rather than as a subagent of its own turn:
+`argus-hook agent [--template T] [--worktree B [--from C] | --in C] (--stdin | <prompt>)` posts an
+`AgentLaunch` to `/pane/<id>/agent` (`agent_launch`, `state/agent_launch`). The new agent gets a pane
+of its own, as one the person started would, so it outlives the asking turn and the person can watch
+and steer it. It is the asker's template unless one is named; it works in the asker's checkout, a new
+worktree (made as the window makes one, in the asker's repository or the one `--from` names, with
+setup run beside it rather than waited on), or a checkout Argus already shows in any repository. A
+checkout Argus does not show is refused rather than added, since what joins the tree is the person's
+call. Only a live agent pane may ask, and a project that allows one agent per checkout refuses a launch
+into an occupied one, the same as the window. The prompt is required, because an agent with nothing to
+do waits at a prompt the asker cannot type into, and it is bounded at 16 KB because it reaches the CLI
+as an argument. The answer names the pane, template and checkout, and the helper prints it.
 
 The row also follows without being told, since an agent that has to remember to report a move
 mostly does not. The installed hook form carries the event's `cwd` on every report as

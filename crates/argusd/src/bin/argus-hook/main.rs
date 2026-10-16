@@ -49,6 +49,9 @@
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook instructions                        # inherited instructions, then context
 //! argus-hook inbox <session-id>                  # the pane's inbox, one item a line
+//! argus-hook agent "review the parser"           # another agent, in a pane of its own here
+//! argus-hook agent --worktree fix-resize --stdin # in a new worktree, its brief on stdin
+//! argus-hook agent --in ~/src/other "port this"  # in a checkout of another repository
 //! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
 //! ```
 //!
@@ -86,8 +89,8 @@
 //! shared work an agent reads and writes, `installed` for the form a
 //! harness's hook config runs, `transport` for how either reaches the
 //! daemon, `view` for what an agent shows the person, `reconcile` for a
-//! feature's reconcile with its tickets, and `transcript` for the one file
-//! written without it.
+//! feature's reconcile with its tickets, `launch` for the agents an agent
+//! starts, and `transcript` for the one file written without it.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -111,6 +114,7 @@ mod board;
 mod context;
 mod inbox;
 mod installed;
+mod launch;
 mod reconcile;
 mod telemetry;
 mod transcript;
@@ -176,6 +180,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("telemetry", telemetry),
     ("transcript", transcript::transcript),
     ("inbox", inbox::inbox),
+    ("agent", launch::agent),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {

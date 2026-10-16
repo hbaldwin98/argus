@@ -30,6 +30,7 @@ use argus_protocol::{
 };
 use tokio::sync::broadcast;
 
+mod agent_launch;
 mod agents;
 mod asker;
 mod board_address;

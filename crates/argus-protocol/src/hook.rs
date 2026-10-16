@@ -185,6 +185,9 @@ pub enum Endpoint {
     /// from the Views section, or the read, list, delete or stale mark of
     /// one already kept.
     SavedView,
+    /// A [`crate::AgentLaunch`]: another agent started in a pane of its
+    /// own, answered with the [`crate::AgentLaunched`] it became.
+    Agent,
 }
 
 impl Endpoint {
@@ -214,6 +217,7 @@ impl Endpoint {
             Endpoint::Inbox => Cow::Borrowed("inbox"),
             Endpoint::View => Cow::Borrowed("view"),
             Endpoint::SavedView => Cow::Borrowed("saved-view"),
+            Endpoint::Agent => Cow::Borrowed("agent"),
         }
     }
 }
@@ -256,6 +260,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "inbox" => Endpoint::Inbox,
         "view" => Endpoint::View,
         "saved-view" => Endpoint::SavedView,
+        "agent" => Endpoint::Agent,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -475,6 +480,7 @@ mod tests {
             Endpoint::Inbox,
             Endpoint::View,
             Endpoint::SavedView,
+            Endpoint::Agent,
             Endpoint::TrackerMap,
             Endpoint::Reconcile,
         ];

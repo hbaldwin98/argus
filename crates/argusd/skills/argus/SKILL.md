@@ -61,6 +61,25 @@ or if your harness does not report its directory, run `"$ARGUS_HOOK" checkout`
 from the new directory; it says whether the pane moved. Resolve this skill from
 the new checkout afterwards.
 
+## Other agents
+
+When the user asks for work to run in parallel, start each piece as an agent in
+a pane of its own, rather than as a subagent that ends with your turn:
+
+```sh
+"$ARGUS_HOOK" agent --worktree fix-resize "fix the resize race; see task 12"
+"$ARGUS_HOOK" agent --worktree port-x --from ~/src/other --stdin < brief.md
+"$ARGUS_HOOK" agent --in ~/src/other "update the client for the new field"
+"$ARGUS_HOOK" agent "review the diff in this checkout"
+```
+
+`--worktree` makes a new worktree, in your repository or the one `--from`
+names; `--in` uses a checkout Argus already shows; with neither the agent shares
+this checkout. It is your own kind of agent unless `--template` names another.
+The prompt is all it knows, so make it a complete brief: the goal, the files,
+how to verify, and what to report. A brief over 16 KB goes in a file the prompt
+names. It prints the new pane's number, or why it was not started.
+
 ## Shared work
 
 Each feature has a brief, tasks with subtasks, decisions, and optional sequence

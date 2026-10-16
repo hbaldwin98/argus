@@ -8,6 +8,7 @@
 //! cannot.
 
 pub mod adr;
+pub mod agent_launch;
 pub mod agent_view;
 pub mod view_check;
 pub mod view_links;
@@ -64,6 +65,7 @@ pub mod transport;
 pub mod tree;
 
 pub use ago::ago;
+pub use agent_launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
 pub use agent_view::{
     AgentView, Block, BoardCard, BoardColumn, ChartShape, CheckItem, Chip, Column, Field, FormField, FormInput,
     GraphDirection, GraphEdge, GraphNode, GridMin, Item, LogLevel, LogLine, MatrixCell, RowAlign, RowItem,

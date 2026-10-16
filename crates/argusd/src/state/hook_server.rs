@@ -82,6 +82,8 @@ fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
         Some((_, Endpoint::View)) => argus_protocol::MAX_VIEW_BYTES,
         // The view's bound, and room for what it was built from.
         Some((_, Endpoint::SavedView)) => argus_protocol::MAX_VIEW_BYTES + 128 * 1024,
+        // A launch carries a brief for the agent it starts, not a status.
+        Some((_, Endpoint::Agent)) => argus_protocol::MAX_LAUNCH_BYTES,
         _ => MAX_BODY,
     }
 }
@@ -312,6 +314,10 @@ async fn handle_hook_request(
                 Err(error) => {
                     HookResponse::text(400, "Bad Request", format!("not a saved view change: {error}"))
                 }
+            },
+            Some((pane, Endpoint::Agent)) => match decode(&body, "agent launch") {
+                Ok(launch) => json_reply(daemon.launch_agent_for_agent(pane, launch).await),
+                Err(refusal) => refusal,
             },
             _ => HookResponse::empty(200, "OK"),
         }

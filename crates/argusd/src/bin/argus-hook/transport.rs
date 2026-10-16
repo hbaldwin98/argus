@@ -148,6 +148,17 @@ pub(super) fn post_as(url: &str, token: &str, body: &str, session: Option<&str>)
 }
 
 pub(super) fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, String)> {
+    post_response_within(url, token, body, TIMEOUT)
+}
+
+/// [`post_response`], waiting up to `wait` for the answer: for a request
+/// whose work is slower than a report's, such as making a worktree.
+pub(super) fn post_response_within(
+    url: &str,
+    token: &str,
+    body: &str,
+    wait: Duration,
+) -> Option<(u16, String)> {
     let rest = url.strip_prefix("http://")?;
     let (authority, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
@@ -156,7 +167,7 @@ pub(super) fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, 
     let addr = authority.parse().ok()?;
     let mut stream = TcpStream::connect_timeout(&addr, TIMEOUT).ok()?;
     stream.set_write_timeout(Some(TIMEOUT)).ok()?;
-    stream.set_read_timeout(Some(TIMEOUT)).ok()?;
+    stream.set_read_timeout(Some(wait)).ok()?;
     stream
         .write_all(request(path, authority, token, None, false, None, body).as_bytes())
         .ok()?;

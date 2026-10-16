@@ -6,6 +6,7 @@ mod branches;
 mod extension_consoles;
 mod extensions;
 mod features;
+mod agent_launch;
 mod agent_views;
 mod follow;
 mod hook_lifecycle;
