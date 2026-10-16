@@ -659,8 +659,8 @@ impl Session {
             Call::FilterSessions { harness, checkout } => self.filter_sessions(harness, checkout),
             Call::Peek { slug } => self.peek(&slug),
             Call::SetLayout { layout } => self.set_layout(layout),
-            Call::ToggleFolded => self.toggle_folded(),
             Call::FilterFeatures { filter } => self.filter_features(filter),
+            Call::FeatureAction { action } => self.feature_action(action),
             Call::SetChime { on } => self.set_chime(on),
             Call::Setting { change } => self.set(change),
             Call::Hold { slug, reason } => self.hold(&slug, reason),
@@ -2352,15 +2352,28 @@ impl Session {
         self.finish()
     }
 
-    fn toggle_folded(&mut self) -> Vec<ClientMsg> {
-        let scope = self.scope();
-        self.features.toggle_folded(scope.as_ref(), &self.tree, &mut self.out);
-        self.finish()
-    }
-
     fn filter_features(&mut self, filter: String) -> Vec<ClientMsg> {
         let scope = self.scope();
         self.features.set_filter(filter, scope.as_ref(), &self.tree, &mut self.out);
+        self.finish()
+    }
+
+    /// A key of the Feature stage that moves a cursor or changes what its
+    /// index lists. The layout and the fold are the palette's commands too.
+    fn feature_action(&mut self, action: Action) -> Vec<ClientMsg> {
+        let by = match action {
+            Action::Next => 1,
+            Action::Previous => -1,
+            Action::First => isize::MIN,
+            Action::Last => isize::MAX,
+            Action::Layout | Action::Folded => {
+                self.run_command(action);
+                return self.finish();
+            }
+            _ => return self.finish(),
+        };
+        let scope = self.scope();
+        self.features.step(by, scope.as_ref(), &self.tree, &mut self.out);
         self.finish()
     }
 
@@ -4178,6 +4191,22 @@ mod tests {
     }
 
     #[test]
+    fn a_feature_key_moves_the_peek_and_asks_for_its_lists() {
+        let mut s = session(without_focus());
+        s.show_features(true);
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        let sent = s.call(Call::FeatureAction { action: Action::Next });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::Task { feature, .. } if feature == "bump")), "{:?}", names(&sent));
+        s.events(0);
+        s.call(Call::FeatureAction { action: Action::Folded });
+        let folded = s.events(0).into_iter().find_map(|e| match e {
+            Event::Features(f) => Some(f.show_folded),
+            _ => None,
+        });
+        assert_eq!(folded, Some(true), "as the palette's command does");
+    }
+
+    #[test]
     fn an_edit_to_an_open_feature_is_sent_and_a_refused_one_is_said() {
         let mut s = session(without_focus());
         s.show_features(true);
@@ -4864,8 +4893,8 @@ mod tests {
         r#"{"call":"filter_sessions","harness":"claude","checkout":null}"#,
         r#"{"call":"peek","slug":"trim"}"#,
         r#"{"call":"set_layout","layout":"board"}"#,
-        r#"{"call":"toggle_folded"}"#,
         r##"{"call":"filter_features","filter":"#7"}"##,
+        r#"{"call":"feature_action","action":"next"}"#,
         r#"{"call":"set_chime","on":false}"#,
         r#"{"call":"setting","change":{"set":"opacity","percent":80}}"#,
         r#"{"call":"hold","slug":"trim","reason":"waiting"}"#,

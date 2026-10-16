@@ -173,9 +173,11 @@ pub enum Call {
     FilterSessions { harness: Option<String>, checkout: Option<String> },
     Peek { slug: String },
     SetLayout { layout: Layout },
-    ToggleFolded,
     /// What the Feature index's filter field says now.
     FilterFeatures { filter: String },
+    /// A key of the Feature stage that moves a cursor or changes what the index
+    /// lists: on the index its features, on a feature opened from it the lens read.
+    FeatureAction { action: Action },
     SetChime { on: bool },
     /// One choice in the Settings dialog, saved as it is made.
     Setting { change: SettingChange },

@@ -2,9 +2,9 @@
 //! under the cursor and its tasks and flows, whether that feature is opened,
 //! the lens it is read through and where each lens's cursor is, how each
 //! repository lays its index out, the filter and the fold — and what its
-//! messages and gestures change, the cursor never resting on a row the page
-//! does not draw. Whether the stage is up is the session's; it says when the
-//! board is wanted.
+//! messages and gestures change, and where each cursor steps, never onto a
+//! row the page does not draw. Whether the stage is up is the session's; it
+//! says when the board is wanted.
 //!
 //! The session says which repository the stage is about ([`Scope`]); the
 //! protocol's `BoardFollower` decides when to ask for its board and which
@@ -344,6 +344,22 @@ impl FeatureStage {
         self.settled(before, false);
     }
 
+    /// Moves the cursor `by` rows of what is drawn, held at either end: on
+    /// the index the listed features. `isize::MIN`/`isize::MAX` are the first
+    /// and last, as `CheckoutsStage::step`. An opened feature is drawn in
+    /// place of the index, so the index's cursor stays where it is.
+    pub fn step(&mut self, by: isize, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        if self.opened().is_some() {
+            return;
+        }
+        let listed = self.board.listed(tree, &self.listing(scope));
+        let at = self.board.feature().and_then(|slug| listed.iter().position(|row| row.slug == slug));
+        if let Some(next) = stepped(listed.len(), at, by) {
+            let slug = listed[next].slug.clone();
+            self.peek(&slug, out);
+        }
+    }
+
     /// Holds a feature with a reason, or lifts its hold with `None`.
     pub fn hold(&self, slug: &str, reason: Option<String>, scope: Option<&Scope>, out: &mut Vec<ClientMsg>) {
         if let Some(scope) = scope.filter(|_| self.has(slug)) {
@@ -462,6 +478,17 @@ impl FeatureStage {
     fn has(&self, slug: &str) -> bool {
         self.board().is_some_and(|b| b.features.iter().any(|f| f.slug == slug))
     }
+}
+
+/// Where a cursor at `at` of `len` rows lands `by` rows on, held at either
+/// end; from nowhere, on the first, or with `isize::MAX` on the last.
+fn stepped(len: usize, at: Option<usize>, by: isize) -> Option<usize> {
+    let last = len.checked_sub(1)?;
+    Some(match at {
+        Some(at) => at.saturating_add_signed(by).min(last),
+        None if by == isize::MAX => last,
+        None => 0,
+    })
 }
 
 #[cfg(test)]
@@ -911,6 +938,58 @@ mod tests {
         assert_eq!(stage.peeked(), Some("desktop"));
         assert!(out.is_empty(), "{:?}", names(&out));
         assert!(stage.take(Some(&scope()), &tree, 0).is_none(), "the same text changes nothing");
+    }
+
+    /// Steps `by` as many times as there are moves, saying where each landed.
+    fn steps(stage: &mut FeatureStage, moves: &[isize]) -> Vec<String> {
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        moves
+            .iter()
+            .map(|by| {
+                stage.step(*by, Some(&scope()), &tree, &mut out);
+                stage.peeked().unwrap_or("nothing").to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stepping_moves_the_cursor_over_the_listed_features_and_holds_at_the_ends() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.step(1, Some(&scope()), &tree, &mut out);
+        assert_eq!(names(&out), ["tasks bump", "flows bump"], "each move asks that feature's lists");
+        assert_eq!(steps(&mut stage, &[1, 1, 1, -1]), ["desktop", "ctrlc", "ctrlc", "desktop"]);
+        assert_eq!(steps(&mut stage, &[isize::MIN, -1, isize::MAX]), ["trim", "trim", "ctrlc"]);
+    }
+
+    #[test]
+    fn the_board_steps_column_by_column_and_skips_the_folded_archived() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        stage.set_layout(Layout::Board, Some(&scope()), &tree, &mut Vec::new());
+        assert_eq!(steps(&mut stage, &[isize::MIN, 1, 1, 1, 1, 1]), ["bump", "desktop", "trim", "ctrlc", "mouse", "mouse"]);
+    }
+
+    #[test]
+    fn stepping_from_nothing_lands_on_the_first_or_with_last_on_the_last() {
+        let (mut stage, _) = loaded();
+        let mut out = Vec::new();
+        stage.board.point(None, &mut out);
+        assert_eq!(steps(&mut stage, &[isize::MAX]), ["ctrlc"]);
+        stage.board.point(None, &mut out);
+        assert_eq!(steps(&mut stage, &[-1]), ["trim"]);
+        stage.set_filter("zz".into(), Some(&scope()), &fixtures::feature_tree(), &mut out);
+        out.clear();
+        assert_eq!(steps(&mut stage, &[1]), ["nothing"], "nothing listed to step onto");
+    }
+
+    #[test]
+    fn the_index_is_not_stepped_while_a_feature_is_open() {
+        let (mut stage, _) = loaded();
+        stage.open(Some("trim"), Some(&scope()), &fixtures::feature_tree(), &mut Vec::new());
+        assert_eq!(steps(&mut stage, &[1, isize::MAX]), ["trim", "trim"]);
     }
 
     #[test]

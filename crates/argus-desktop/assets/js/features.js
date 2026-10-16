@@ -4,8 +4,9 @@
 // board says so. Only Held and Archived take a dropped card: the other
 // columns follow the work. A feature opened from the index is `work.ts`'s,
 // and a new one written as a note `capture.ts`'s; either is drawn here in
-// place of the index. Which features are listed and in what order are
-// Rust's (`features`, `feature_stage`); this draws them.
+// place of the index. Which features are listed, in what order, and where
+// the cursor steps are Rust's (`features`, `feature_stage`); this draws
+// them and forwards the keys.
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { closeExpanded } from './sequence.js';
@@ -183,7 +184,7 @@ function indexHead(f) {
     }, layout === 'list' ? 'List' : 'Board')));
     return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Features'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('N'), ' new · ', keycap('Enter'), ' open · ', keycap('V'), ' list or board · ', keycap('M'), ' move to… · ', keycap('G'), ' go to its pane')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Features in ${f.repository}`), el('span', { class: 'meta' }, counts), el('span', { class: 'grow' }), filter, f.layout === 'list' &&
         f.folded > 0 &&
-        el('button', { class: 'btn', onclick: () => call('toggle_folded', {}) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(f.folded))), seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
+        el('button', { class: 'btn', onclick: () => call('feature_action', { action: 'folded' }) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(f.folded))), seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
 }
 function list(f) {
     const rows = f.rows;
@@ -285,7 +286,7 @@ function board(f) {
         for (const row of cards)
             section.append(card(row));
         if (group === 'archived' && f.folded > 0) {
-            section.append(el('button', { class: 'kmore', onclick: () => call('toggle_folded', {}) }, f.showFolded ? 'Fold the archived' : `Show the ${f.folded} archived`));
+            section.append(el('button', { class: 'kmore', onclick: () => call('feature_action', { action: 'folded' }) }, f.showFolded ? 'Fold the archived' : `Show the ${f.folded} archived`));
         }
         return section;
     };
@@ -448,10 +449,7 @@ function drop(row, group) {
     if (group === row.group)
         return;
     if (takes(row, group)) {
-        if (group === 'held')
-            holdDialog(row);
-        else
-            call('archive', { slug: row.slug, archived: true });
+        runMove(row, group);
         return;
     }
     const move = row.moves.find((m) => m.to === group);
@@ -474,17 +472,21 @@ function moveMenu(row, x, y) {
         disabled: !!move.disabled,
         onclick: () => {
             closeLayer();
-            if (move.to === 'held')
-                holdDialog(row);
-            else if (move.to === 'unhold')
-                call('hold', { slug: row.slug, reason: null });
-            else if (move.to === 'archived')
-                call('archive', { slug: row.slug, archived: true });
-            else if (move.to === 'reopen')
-                call('archive', { slug: row.slug, archived: false });
+            runMove(row, move.to);
         },
     }, move.disabled === 'here now' && el('span', { class: 'fg-ok' }, '✓'), move.label, el('span', { class: 'grow' }), move.disabled ? el('span', { class: 'meta' }, move.disabled) : moveKey(move.to))));
     placeMenu(menu, { x, y });
+}
+/** Runs one of a row's moves that a person sets; a hold asks why first. */
+function runMove(row, to) {
+    if (to === 'held')
+        holdDialog(row);
+    else if (to === 'unhold')
+        call('hold', { slug: row.slug, reason: null });
+    else if (to === 'archived')
+        call('archive', { slug: row.slug, archived: true });
+    else if (to === 'reopen')
+        call('archive', { slug: row.slug, archived: false });
 }
 function holdDialog(row) {
     const reason = el('input', {
@@ -525,32 +527,14 @@ function goToPane(pane) {
 // ---- Keys --------------------------------------------------------------------
 /** Runs a Feature or Board card binding, saying whether it had a feature to act on. */
 export function featureAction(action) {
-    const rows = state.features?.rows ?? [];
-    const at = rows.findIndex((row) => row.peeked);
-    const row = rows[at];
-    const peekAt = (i) => {
-        const next = rows[Math.max(0, Math.min(rows.length - 1, i))];
-        if (next)
-            call('peek', { slug: next.slug });
-    };
     switch (action) {
         case 'next':
-            peekAt(at + 1);
-            return true;
         case 'previous':
-            peekAt(at - 1);
-            return true;
         case 'first':
-            peekAt(0);
-            return true;
         case 'last':
-            peekAt(rows.length - 1);
-            return true;
         case 'layout':
-            call('set_layout', { layout: state.features?.layout === 'board' ? 'list' : 'board' });
-            return true;
         case 'folded':
-            call('toggle_folded', {});
+            call('feature_action', { action });
             return true;
         case 'filter':
             document.getElementById('feature-filter')?.focus();
@@ -561,7 +545,9 @@ export function featureAction(action) {
         default:
             break;
     }
-    if (!row)
+    const peek = state.features?.peek;
+    const row = peek ? rowBySlug(peek.slug) : undefined;
+    if (!peek || !row)
         return false;
     switch (action) {
         case 'move': {
@@ -572,19 +558,18 @@ export function featureAction(action) {
             return true;
         }
         case 'hold':
-            if (row.group === 'held')
-                call('hold', { slug: row.slug, reason: null });
-            else
-                holdDialog(row);
+        case 'archive': {
+            const kinds = action === 'hold' ? ['held', 'unhold'] : ['archived', 'reopen'];
+            const move = row.moves.find((m) => kinds.includes(m.to));
+            if (move)
+                runMove(row, move.to);
             return true;
-        case 'archive':
-            call('archive', { slug: row.slug, archived: row.group !== 'archived' });
-            return true;
+        }
         case 'goToPane':
-            goToPane(row.agent?.pane ?? state.features?.peek?.pane);
+            goToPane(peek.pane);
             return true;
         case 'choose':
-            call('open_feature', { slug: row.slug });
+            call('open_feature', { slug: peek.slug });
             return true;
         default:
             return false;
