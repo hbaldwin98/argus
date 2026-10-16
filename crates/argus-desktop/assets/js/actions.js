@@ -25,7 +25,7 @@ export function actionButton(action, ctx, with_ = () => ({})) {
         };
         // A saved view has no pane: the daemon relays the press to whichever
         // agent last saved it.
-        if (ctx.chain)
+        if (ctx.kind === 'saved')
             call('press_saved_view', { id: ctx.id, press: sent });
         else
             call('press_view', { pane: ctx.pane, press: sent });

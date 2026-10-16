@@ -127,6 +127,7 @@ function header(v, popped) {
 /** What the view's blocks, and the buttons in its header, are drawn with. */
 function ctxOf(v) {
     return {
+        kind: 'agent',
         pane: v.pane,
         id: v.view.id,
         path: key(v),

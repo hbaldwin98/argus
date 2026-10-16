@@ -18,6 +18,7 @@ export function savedCtx(
   place: string,
 ): ViewCtx {
   return {
+    kind: 'saved',
     pane: 0,
     id: view.id,
     // Per column and per embed, so a chosen tab or an opened row is kept

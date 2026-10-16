@@ -7,6 +7,7 @@
 import { state } from './state.js';
 export function savedCtx(view, host, chain, depth, place) {
     return {
+        kind: 'saved',
         pane: 0,
         id: view.id,
         // Per column and per embed, so a chosen tab or an opened row is kept

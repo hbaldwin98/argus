@@ -220,6 +220,7 @@ function header(v: PageView, popped: boolean): HTMLElement {
 /** What the view's blocks, and the buttons in its header, are drawn with. */
 function ctxOf(v: PageView): ViewCtx {
   return {
+    kind: 'agent',
     pane: v.pane,
     id: v.view.id,
     path: key(v),

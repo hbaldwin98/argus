@@ -10,6 +10,9 @@ import type { SavedColumn } from './bindings/SavedColumn';
 export type Drawn = (source: string) => PageDiagram | undefined;
 
 export interface ViewCtx {
+  /** Whose view it is: an agent's, whose pane reads its references and
+   *  takes its presses, or a saved view, which has no pane. */
+  kind: 'agent' | 'saved';
   /** The pane whose agent showed the view. */
   pane: number;
   /** The view's id. */
@@ -29,9 +32,8 @@ export interface ViewCtx {
    *  here gets its target the column after. Absent in an agent's view and
    *  an extension's table, whose links open a panel of their own. */
   saved?: SavedColumn;
-  /** The saved views being drawn, outermost first: set for a saved view,
-   *  whose actions and references are not an agent pane's. An embed of one
-   *  of these is a cycle. */
+  /** The saved views being drawn, outermost first, set for a saved view:
+   *  an embed of one of these is a cycle. */
   chain?: readonly string[];
   /** How many embeds were followed to reach this view. */
   depth?: number;
@@ -40,7 +42,7 @@ export interface ViewCtx {
 /** The pane whose agent showed the view, for a reference in it to be read
  *  against; a saved view or an extension's table has none. */
 export function paneOf(ctx: ViewCtx | null): number | null {
-  return ctx && !ctx.chain ? ctx.pane : null;
+  return ctx?.kind === 'agent' ? ctx.pane : null;
 }
 
 /** The context of the block at `index` under `ctx`. */

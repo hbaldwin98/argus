@@ -5,7 +5,7 @@
 /** The pane whose agent showed the view, for a reference in it to be read
  *  against; a saved view or an extension's table has none. */
 export function paneOf(ctx) {
-    return ctx && !ctx.chain ? ctx.pane : null;
+    return ctx?.kind === 'agent' ? ctx.pane : null;
 }
 /** The context of the block at `index` under `ctx`. */
 export function at(ctx, index) {
