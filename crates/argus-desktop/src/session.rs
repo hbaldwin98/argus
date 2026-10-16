@@ -1,6 +1,6 @@
 //! What this window holds of the daemon and routes between its parts: the
-//! tree, which project and repository the rail has chosen, which stage is
-//! up, and what each daemon message and page call changes.
+//! tree, which project and repository the rail has chosen, and what each
+//! daemon message and page call changes.
 //!
 //! Plain Rust with no Tauri in it: each daemon message and each call the
 //! page makes goes in, and out come the messages to send the daemon. The
@@ -16,7 +16,8 @@
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
 //! the project switcher (`switcher`) and the dialog adding a project
 //! (`add_project`), the Settings dialog's choices (`preferences`), the
-//! console (`console`), the views agents showed (`agent_views`), and what
+//! console (`console`), the views agents showed (`agent_views`), what
+//! fills the stage and where leaving it goes (`stage`), and what
 //! the daemon is making
 //! (`argus_protocol::awaited`). The session says which of them a message
 //! or gesture is for, and what one of them changing means for the rest.
@@ -58,7 +59,7 @@ use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, CodeStage};
 use crate::shown::workspace_grid::{self, Dir, Zone};
-use crate::stage::{Settled, Stages};
+use crate::stage::{Page, Stages};
 use crate::page::{
     self, Call, CodeClick, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
     Stage,
@@ -296,8 +297,7 @@ impl Session {
         self.status.connected(daemon, alarm);
         // A page shows the last daemon's view; the next publishes its own, and
         // nothing went that the person should be told of.
-        self.extension_views.set_page(None);
-        self.views.end_pop_out();
+        self.stages.close();
         // What another daemon published is not this one's; it sends its
         // own after its greeting, and the dialogs it put here it cancelled
         // when the connection went.
@@ -443,11 +443,8 @@ impl Session {
                 self.extension_dialogs.asked(extension, id, dialog, prompted);
             }
             ServerMsg::ExtensionDialogWithdrawn { id } => self.extension_dialogs.withdrawn(id),
-            ServerMsg::ViewClosed { pane, id } => {
-                if let Some(title) = self.views.closed(pane, &id) {
-                    self.passing.push(Event::Notice { text: format!("{title} was closed") });
-                }
-            }
+            // A page of it goes back saying so, through `settle_page`.
+            ServerMsg::ViewClosed { pane, id } => self.views.closed(pane, &id),
             // The press never reached the agent, so the button comes back
             // and the person is told why.
             ServerMsg::ViewPressFailed { pane, view, action, reason } => {
@@ -715,14 +712,16 @@ impl Session {
             | Call::OpenUrl { .. } => self.finish(),
             Call::OpenView { pane, id } => {
                 if self.views.open(PaneId(pane), id) {
-                    self.docks.show(&Panel::Views);
+                    self.show_views_panel();
                 }
                 self.finish()
             }
             Call::PopOutView { pane, id } => {
-                if self.views.pop_out(PaneId(pane), id) {
+                let pane = PaneId(pane);
+                if self.views.pop_out(pane, id.clone()) {
+                    let title = self.views.title(pane, &id).unwrap_or(&id).to_string();
                     self.docks.hide(&Panel::Views);
-                    self.show_view_page();
+                    self.stages.open(Page::View { pane, id }, title);
                 }
                 self.finish()
             }
@@ -1494,30 +1493,16 @@ impl Session {
     /// The views' panel out in its dock: a view open as a page goes back into
     /// it, since one view is never drawn twice.
     fn show_views_panel(&mut self) {
-        self.views.end_pop_out();
+        if self.stages.view_page().is_some() {
+            self.stages.close();
+        }
         self.docks.show(&Panel::Views);
     }
 
     /// The views' panel is in front of the person: out in its dock, or its view
     /// open as the page.
     fn views_in_front(&self) -> bool {
-        self.docks.dock_out(&Panel::Views) || self.views.popped()
-    }
-
-    /// An agent's view over the stage up, which it goes back to when the
-    /// view docks or closes. An extension's page gives way to it.
-    fn show_view_page(&mut self) {
-        if let Some(stage) = self.stages.over.open_view(self.stages.now()) {
-            self.go(stage);
-        }
-    }
-
-    fn settle_view_page(&mut self) {
-        match self.stages.over.settle_view(self.views.popped(), self.stages.now()) {
-            Some(Settled::EndPopOut) => self.views.end_pop_out(),
-            Some(Settled::Back(stage)) => self.go(stage),
-            None => {}
-        }
+        self.docks.dock_out(&Panel::Views) || self.stages.view_page().is_some()
     }
 
     /// A reference pressed in a view: what it points at is found from the
@@ -1639,21 +1624,20 @@ impl Session {
             self.passing.push(Event::Notice { text: format!("{extension} shows no {view} here") });
             return self.finish();
         };
-        self.docks.place(&panel, first_place(found.place));
+        let (place, title) = (found.place, found.title.clone());
+        self.docks.place(&panel, first_place(place));
         self.extension_views.touch(&panel);
         if self.docks.place_of(&panel) == Some(Place::Stage) {
-            self.extension_views.set_page(Some(&panel));
-            self.show_extension_page();
+            self.show_extension_page(&panel, title);
         } else {
             self.docks.show(&panel);
         }
         self.finish()
     }
 
-    fn show_extension_page(&mut self) {
-        if let Some(stage) = self.stages.over.open_extension(self.stages.now()) {
-            self.go(stage);
-        }
+    /// An extension's view as the page, over the stage up.
+    fn show_extension_page(&mut self, panel: &Panel, title: String) {
+        self.stages.open(Page::Extension(panel.clone()), title);
         self.key_page_console();
     }
 
@@ -1663,7 +1647,7 @@ impl Session {
     /// waiting for its pane is clicked into once it has one.
     fn key_page_console(&mut self) {
         self.settle_view_consoles();
-        let page = self.extension_views.page().cloned().filter(|_| self.stages.now() == Stage::Extension);
+        let page = self.stages.extension_page().cloned();
         let name = page.and_then(|panel| match panel {
             Panel::Extension(name) => Some(name),
             _ => None,
@@ -1674,25 +1658,17 @@ impl Session {
         }
     }
 
-    /// Back to the stage the page opened over, or the Workspace.
-    fn leave_extension_page(&mut self) {
-        if let Some(stage) = self.stages.over.leave_extension(self.stages.now()) {
-            self.go(stage);
-        }
-    }
-
     /// Moves an extension's view to a page, or back into a dock, and
     /// remembers it there.
     fn extension_mode(&mut self, panel: &Panel, page: bool) {
-        if self.extension_views.get(panel, &self.here()).is_none() {
+        let Some(title) = self.extension_views.get(panel, &self.here()).map(|v| v.title.clone()) else {
             self.passing.push(Event::Notice { text: "that extension's view is not shown here".into() });
             return;
-        }
+        };
         self.extension_views.touch(panel);
         if page {
             self.docks.stage(panel);
-            self.extension_views.set_page(Some(panel));
-            self.show_extension_page();
+            self.show_extension_page(panel, title);
         } else {
             self.dock_extension(panel, None);
         }
@@ -1708,33 +1684,24 @@ impl Session {
             _ => Dock::Right,
         });
         self.docks.move_to(panel, dock);
-        if self.extension_views.page() == Some(panel) {
-            self.extension_views.set_page(None);
-            self.leave_extension_page();
+        if self.stages.extension_page() == Some(panel) {
+            self.stages.close();
         }
     }
 
-    /// Keeps the page level with what the daemon publishes and where the
-    /// person went: one taken away, or out of scope where the person now
-    /// is, goes back to the stage it opened over saying so; a page the
-    /// person left for another stage closes; and the extension stage is
-    /// never up with no page on it. A docked view gone or out of scope is
-    /// only not drawn, by `docks`.
-    fn settle_extension(&mut self) {
-        let paged = self.stages.now() == Stage::Extension;
-        match self.extension_views.page().cloned() {
-            Some(panel) if self.extension_views.get(&panel, &self.here()).is_none() => {
-                if paged {
-                    if let Some((extension, title)) = self.extension_views.page_title() {
-                        self.passing.push(Event::Notice { text: format!("{extension}: {title} is no longer shown here") });
-                    }
-                }
-                self.extension_views.set_page(None);
-                self.leave_extension_page();
-            }
-            Some(_) if !paged => self.extension_views.set_page(None),
-            Some(_) => {}
-            None => self.leave_extension_page(),
+    /// The page goes back to the stage under it, saying so, once what it
+    /// shows does: an agent's view closed, or an extension's taken away or
+    /// out of scope where the person now is. A docked view gone or out of
+    /// scope is only not drawn, by `docks`.
+    fn settle_page(&mut self) {
+        let here = self.here();
+        let (views, extension_views) = (&self.views, &self.extension_views);
+        let gone = self.stages.settle(|page| match page {
+            Page::View { pane, id } => views.title(*pane, id).map(str::to_owned),
+            Page::Extension(panel) => extension_views.get(panel, &here).map(|v| v.title.clone()),
+        });
+        if let Some(text) = gone {
+            self.passing.push(Event::Notice { text });
         }
     }
 
@@ -1799,7 +1766,7 @@ impl Session {
     /// Whether an extension's view is on screen: shown in its dock, or the
     /// page the stage is up on.
     fn extension_on(&self, panel: &Panel) -> bool {
-        self.docks.shows(panel) || (self.stages.now() == Stage::Extension && self.extension_views.page() == Some(panel))
+        self.docks.shows(panel) || self.stages.extension_page() == Some(panel)
     }
 
     /// Gives each console view on screen a screen of its own, and takes it
@@ -1812,7 +1779,7 @@ impl Session {
     fn extensions_page(&self) -> page::ExtensionsPage {
         let here = self.here();
         let docks = &self.docks;
-        let page = self.extension_views.page().filter(|_| self.stages.now() == Stage::Extension);
+        let page = self.stages.extension_page();
         let on = |panel: &Panel| self.extension_on(panel);
         let with_screen = |mut table: page::ExtTable| {
             if let (Some(console), Panel::Extension(name)) = (&mut table.console, &table.panel) {
@@ -3068,8 +3035,11 @@ impl Session {
         let present = self.present();
         self.docks.set_present(present);
         self.settle_console();
-        self.settle_extension();
-        self.settle_view_page();
+        self.settle_page();
+        debug_assert!(
+            self.stages.extension_page().is_none_or(|p| self.docks.place_of(p) == Some(Place::Stage)),
+            "an extension's page is a panel the docks put on the stage"
+        );
         self.settle_view_consoles();
         // The session under the dialog's cursor is read once it is there,
         // however the cursor got there: a key, a filter, or the listing.
@@ -3170,7 +3140,8 @@ impl Session {
         // panel's is, so its changes are seen there.
         let views_out = self.views_in_front();
         let can_press = self.status.daemon_can(VIEW_ACTIONS);
-        if let Some(page) = self.views.take(views_out, can_press, |pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
+        let popped = self.stages.view_page();
+        if let Some(page) = self.views.take(views_out, can_press, popped, |pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
             events.push(Event::Views(Box::new(page)));
         }
         let placed = self.placed_saved();
@@ -3549,6 +3520,27 @@ mod tests {
         assert!(sent.is_empty(), "the review comes back as it was, not read again");
         assert!(s.dialogs.review().is_some());
         assert!(s.stages.now() == Stage::Checkouts, "over the stage it was opened over");
+    }
+
+    #[test]
+    fn code_entered_from_a_page_over_code_keeps_what_code_was_opened_over() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        let sent = s.open_review(CheckoutId(100));
+        let [ClientMsg::Review { request_id, .. }, ..] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        s.receive(reviewed(argus_protocol::ReviewBase::Unstaged, *request_id));
+        s.review_action(Action::Next);
+        s.review_action(Action::OpenCode);
+        assert!(s.stages.now() == Stage::Code);
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert_eq!(s.stages.now(), Stage::Extension, "a page over Code");
+        s.show_code(true);
+        assert_eq!(s.stages.now(), Stage::Code);
+        s.code_action(Action::GoBack);
+        assert_eq!(s.stages.now(), Stage::Checkouts, "one way back, to what Code was opened over");
     }
 
     #[test]
@@ -6171,7 +6163,11 @@ mod tests {
         s.call(Call::PopOutView { pane: 1, id: "ci".into() });
         assert_eq!(s.stages.now(), Stage::View);
         assert!(!s.docks.shows(&Panel::Views), "it is in the page, not also in a dock");
-        assert!(s.views.take(false, true, |_| None).unwrap().popped.is_some());
+        let page = s.events(0).into_iter().find_map(|e| match e {
+            Event::Views(page) => Some(page),
+            _ => None,
+        });
+        assert!(page.expect("the views are sent again").popped.is_some());
 
         s.call(Call::OpenView { pane: 1, id: "ci".into() });
         assert_eq!(s.stages.now(), Stage::Workspace, "docking it goes back to the stage it opened over");
@@ -6191,6 +6187,18 @@ mod tests {
         s.call(Call::PopOutView { pane: 1, id: "ci".into() });
         s.receive(ServerMsg::ViewClosed { pane: PaneId(1), id: "ci".into() });
         assert!(notices(&mut s).iter().any(|t| t == "CI was closed"));
+    }
+
+    #[test]
+    fn a_closed_view_page_is_named_by_the_title_its_agent_last_gave_it() {
+        let mut s = session(Hello::this_build());
+        agents_view(&mut s, 1);
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        let view = argus_protocol::AgentView { id: "ci".into(), title: "Build".into(), ..Default::default() };
+        s.receive(ServerMsg::ViewShown(Box::new(argus_protocol::ShownView { pane: PaneId(1), at: 6, subject: None, view })));
+        s.events(0);
+        s.receive(ServerMsg::ViewClosed { pane: PaneId(1), id: "ci".into() });
+        assert!(notices(&mut s).iter().any(|t| t == "Build was closed"));
     }
 
     #[test]
@@ -6251,7 +6259,7 @@ mod tests {
         agents_view(&mut s, 1);
         let press = argus_protocol::ViewPress { view: "ci".into(), action: "retry".into(), rows: vec![], form: None, answers: vec![] };
         s.call(Call::PressView { pane: 1, press });
-        let pending = |s: &mut Session| s.views.take(false, true, |_| None).map(|p| p.views[0].pressed.clone());
+        let pending = |s: &mut Session| s.views.take(false, true, None, |_| None).map(|p| p.views[0].pressed.clone());
         assert_eq!(pending(&mut s), Some(vec!["retry".to_string()]));
         s.receive(ServerMsg::ViewPressFailed { pane: PaneId(1), view: "ci".into(), action: "retry".into(), reason: "the agent has gone".into() });
         assert!(notices(&mut s).iter().any(|t| t == "CI: the agent has gone"));
@@ -6262,7 +6270,7 @@ mod tests {
     fn the_page_is_told_a_daemon_that_cannot_take_presses_cannot() {
         let mut s = session(Hello { capabilities: vec![AGENT_VIEWS.to_string()], ..Hello::this_build() });
         agents_view(&mut s, 1);
-        assert!(!s.views.take(false, s.status.daemon_can(VIEW_ACTIONS), |_| None).unwrap().can_press);
+        assert!(!s.views.take(false, s.status.daemon_can(VIEW_ACTIONS), None, |_| None).unwrap().can_press);
         let mut s = session(Hello::this_build());
         agents_view(&mut s, 1);
         let page = s.events(0).into_iter().find_map(|e| match e {
@@ -6328,6 +6336,20 @@ mod tests {
         assert_eq!(s.stages.now(), Stage::Extension);
         s.call(Call::ExtensionMode { panel: panel("containers"), page: false });
         assert_eq!(s.stages.now(), Stage::Checkouts, "not the views' page, which it took the place of");
+    }
+
+    #[test]
+    fn a_page_whose_view_goes_is_named_by_the_title_it_last_had() {
+        let mut s = session(Hello::this_build());
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert_eq!(s.stages.now(), Stage::Extension);
+        let json = r#"[{"extension": "docker", "name": "containers", "title": "Running", "place": "stage",
+                        "columns": [{"title": "Name"}]}]"#;
+        s.receive(ServerMsg::ExtensionViews(serde_json::from_str(json).unwrap()));
+        s.events(0);
+        s.receive(ServerMsg::ExtensionViews(Vec::new()));
+        assert!(notices(&mut s).iter().any(|t| t == "docker: Running is no longer shown here"));
     }
 
     #[test]

@@ -1,12 +1,13 @@
 //! Which extension views the window holds, which are listed where the person
-//! is, each one's selected row, the question an action waits on, the view
-//! open as a page, and what their gestures send.
+//! is, each one's selected row, the question an action waits on, and what
+//! their gestures send.
 //!
 //! The daemon owns the views. Like an agent's view, one changes only when
 //! its extension publishes it again: an action is sent as it stands, and
 //! nothing here moves until the extension answers with a new view. Where a
-//! view is — which dock, or a page — is `docks`'s; the extension's `place`
-//! is only where it goes the first time it opens.
+//! view is — which dock, or a page — is `docks`'s, and the page up is
+//! `stage`'s; the extension's `place` is only where it goes the first time
+//! it opens.
 
 use std::collections::BTreeMap;
 
@@ -43,14 +44,6 @@ pub fn first_place(place: ExtPlace) -> Place {
     }
 }
 
-/// The view open as a page, and its title when it opened, to say what went
-/// once it has gone.
-struct Paged {
-    panel: Panel,
-    extension: String,
-    title: String,
-}
-
 #[derive(Default)]
 pub struct ExtensionViews {
     views: Vec<ExtView>,
@@ -59,7 +52,6 @@ pub struct ExtensionViews {
     /// An action waiting on a yes: the view it was taken in, the question,
     /// and what the yes sends.
     confirm: Option<(Panel, ExtConfirm, ClientMsg)>,
-    page: Option<Paged>,
     /// The view last opened or used, which the palette's page and dock
     /// commands move.
     last: Option<Panel>,
@@ -119,24 +111,6 @@ impl ExtensionViews {
 
     pub fn touch(&mut self, panel: &Panel) {
         self.last = Some(panel.clone());
-    }
-
-    /// Puts `panel` on the stage as a page, or takes the page away.
-    pub fn set_page(&mut self, panel: Option<&Panel>) {
-        self.page = panel.and_then(|panel| {
-            let (extension, name) = panel.extension_view()?;
-            let title = self.find(extension, name).map(|v| v.title.clone()).unwrap_or_default();
-            Some(Paged { panel: panel.clone(), extension: extension.to_string(), title })
-        });
-    }
-
-    pub fn page(&self) -> Option<&Panel> {
-        self.page.as_ref().map(|p| &p.panel)
-    }
-
-    /// What the page was called and who published it, to say it went.
-    pub fn page_title(&self) -> Option<(String, String)> {
-        self.page.as_ref().map(|p| (p.extension.clone(), p.title.clone()))
     }
 
     pub fn select(&mut self, panel: &Panel, key: String) {
@@ -415,10 +389,8 @@ mod tests {
         let (mut views, here) = held();
         assert!(views.get(&images(), &here).is_none(), "out of scope");
         assert!(views.get(&containers(), &here).is_some());
-        views.set_page(Some(&containers()));
         views.receive(Vec::new());
         assert!(views.table(&containers(), &here, true).is_none());
-        assert_eq!(views.page_title(), Some(("docker".into(), "Containers".into())), "to say what went");
         assert!(views.act(&containers(), &here, "logs").is_err());
     }
 }

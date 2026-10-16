@@ -4,7 +4,8 @@
 //! The daemon owns the views: a person closing one or asking for a refresh
 //! sends the request and changes nothing here until the daemon says it
 //! changed. Only which one is chosen, and that a refresh is pending, are
-//! the window's own; whether the panel is on screen is `docks`'s.
+//! the window's own; whether the panel is on screen is `docks`'s, and
+//! whether a view is open as a page is `stage`'s.
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,9 +25,6 @@ pub struct AgentViews {
     views: Vec<ShownView>,
     /// The view the panel shows; the newest while none is chosen.
     open: Option<(PaneId, String)>,
-    /// The view open as a page. It is the window's to hold, as the stage
-    /// is, and ends when the view closes.
-    popped: Option<(PaneId, String)>,
     refreshing: HashSet<(PaneId, String)>,
     /// Action ids pressed in a view and not answered by its being shown again.
     pressed: HashMap<(PaneId, String), Vec<String>>,
@@ -42,7 +40,6 @@ impl AgentViews {
         self.refreshing.clear();
         self.pressed.clear();
         self.changes.reset();
-        self.popped = None;
         out.push(ClientMsg::WatchViews);
     }
 
@@ -77,9 +74,8 @@ impl AgentViews {
         self.open.clone().or_else(|| self.views.first().map(|v| (v.pane, v.view.id.clone())))
     }
 
-    /// A view closed, giving its title if it was the one open as a page.
-    pub fn closed(&mut self, pane: PaneId, id: &str) -> Option<String> {
-        let title = self.find(pane, id).map(|v| v.view.title.clone());
+    /// A view closed.
+    pub fn closed(&mut self, pane: PaneId, id: &str) {
         self.views.retain(|v| (v.pane, v.view.id.as_str()) != (pane, id));
         let key = (pane, id.to_string());
         self.refreshing.remove(&key);
@@ -88,43 +84,26 @@ impl AgentViews {
         if self.open.as_ref().is_some_and(|(p, i)| (*p, i.as_str()) == (pane, id)) {
             self.open = None;
         }
-        let was_popped = self.popped.as_ref().is_some_and(|(p, i)| (*p, i.as_str()) == (pane, id));
-        if was_popped {
-            self.popped = None;
-        }
-        // The title is what the person knew it by; the id is for the agent.
-        was_popped.then(|| title.unwrap_or_else(|| id.to_string()))
     }
 
-    /// Chooses a view, saying whether the window holds it. The page it was
-    /// open as, if it was, is over: this is the way back to the dock.
+    /// Chooses a view, saying whether the window holds it.
     pub fn open(&mut self, pane: PaneId, id: String) -> bool {
         let held = self.find(pane, &id).is_some();
         if held {
             self.changes.end_flashes();
             self.open = Some((pane, id));
-            self.popped = None;
         }
         held
     }
 
-    /// Opens a view as a page, saying whether the window holds it.
+    /// Chooses a view to open as a page, saying whether the window holds
+    /// it; the panel's tab follows it, as the dock it goes back to.
     pub fn pop_out(&mut self, pane: PaneId, id: String) -> bool {
         let held = self.find(pane, &id).is_some();
         if held {
-            self.open = Some((pane, id.clone()));
-            self.popped = Some((pane, id));
+            self.open = Some((pane, id));
         }
         held
-    }
-
-    pub fn popped(&self) -> bool {
-        self.popped.is_some()
-    }
-
-    /// The page is over, because the person went to another stage.
-    pub fn end_pop_out(&mut self) {
-        self.popped = None;
     }
 
     /// The views that name a feature of `repository`, each with the number
@@ -197,12 +176,24 @@ impl AgentViews {
         self.views.iter().find(|v| v.pane == pane && v.view.id == id)
     }
 
+    /// The title a view the window holds goes by.
+    pub fn title(&self, pane: PaneId, id: &str) -> Option<&str> {
+        self.find(pane, id).map(|v| v.view.title.as_str())
+    }
+
     /// What to send the page, if it has not heard it. `title` names a
     /// pane by its id, for "read by …". `out` is whether the panel is in
     /// front of the person, out in its dock or its view open as the page:
     /// the view it shows is seen then, and what changed in it
     /// while it was not is flashed once instead of waiting to be opened.
-    pub fn take(&mut self, out: bool, can_press: bool, title: impl Fn(PaneId) -> Option<String>) -> Option<ViewsPage> {
+    /// `popped` is the view `stage` has open as a page.
+    pub fn take(
+        &mut self,
+        out: bool,
+        can_press: bool,
+        popped: Option<(PaneId, &str)>,
+        title: impl Fn(PaneId) -> Option<String>,
+    ) -> Option<ViewsPage> {
         if out {
             if let Some(key) = self.displayed() {
                 self.changes.reveal(&key);
@@ -211,7 +202,8 @@ impl AgentViews {
         // An empty page is the default, which `Sent` says only once views
         // have been and gone, so a window no agent showed one in hears none;
         // what the daemon can do alone does not make a page worth sending.
-        let page = ViewsPage { can_press, ..self.page(title) };
+        let popped = popped.map(|(pane, id)| ViewRef { pane: pane.0, id: id.to_string() });
+        let page = ViewsPage { can_press, popped, ..self.page(title) };
         let empty = ViewsPage { can_press: false, ..page.clone() } == ViewsPage::default();
         self.sent.take((!empty).then_some(page))
     }
@@ -245,7 +237,8 @@ impl AgentViews {
             open: self
                 .displayed()
                 .map(|(pane, id)| ViewRef { pane: pane.0, id }),
-            popped: self.popped.clone().map(|(pane, id)| ViewRef { pane: pane.0, id }),
+            // Which is a page is `stage`'s, which `take` is told.
+            popped: None,
             can_press: false,
         }
     }
@@ -307,12 +300,12 @@ mod tests {
     #[test]
     fn the_page_hears_of_views_only_once_there_have_been_some() {
         let mut views = AgentViews::default();
-        assert_eq!(views.take(false, false, |_| None), None);
+        assert_eq!(views.take(false, false, None, |_| None), None);
         views.shown(shown(1, "ci"), None, false);
-        assert_eq!(views.take(false, false, |_| None).unwrap().views.len(), 1);
+        assert_eq!(views.take(false, false, None, |_| None).unwrap().views.len(), 1);
         views.closed(PaneId(1), "ci");
-        assert_eq!(views.take(false, false, |_| None), Some(ViewsPage::default()));
-        assert_eq!(views.take(false, false, |_| None), None);
+        assert_eq!(views.take(false, false, None, |_| None), Some(ViewsPage::default()));
+        assert_eq!(views.take(false, false, None, |_| None), None);
     }
 
     #[test]
@@ -343,20 +336,16 @@ mod tests {
     }
 
     #[test]
-    fn a_view_popped_out_is_a_page_until_it_goes_back_to_the_dock_or_closes() {
+    fn a_view_popped_out_is_chosen_for_the_panel_only_if_the_window_holds_it() {
         let mut views = AgentViews::default();
         views.shown(shown(1, "a"), None, false);
         views.shown(shown(1, "b"), None, false);
         assert!(!views.pop_out(PaneId(1), "gone".into()), "only a view the window holds");
         assert!(views.pop_out(PaneId(1), "a".into()));
-        let page = views.page(|_| None);
-        assert_eq!(page.popped, Some(ViewRef { pane: 1, id: "a".into() }));
-        assert_eq!(page.open, page.popped, "the dock's tab follows it");
-        assert!(views.open(PaneId(1), "a".into()));
-        assert_eq!(views.page(|_| None).popped, None, "opening it in the dock ends the page");
-        views.pop_out(PaneId(1), "b".into());
-        assert!(views.closed(PaneId(1), "b").is_some(), "closing says it was the page");
-        assert!(!views.popped());
+        let a = Some(ViewRef { pane: 1, id: "a".into() });
+        assert_eq!(views.page(|_| None).open, a, "the dock's tab follows it");
+        assert_eq!(views.take(false, false, Some((PaneId(1), "a")), |_| None).unwrap().popped, a);
+        assert_eq!(views.take(false, false, None, |_| None).unwrap().popped, None);
     }
 
     #[test]
@@ -452,24 +441,25 @@ mod tests {
     }
 
     #[test]
-    fn closing_the_popped_view_gives_its_title_and_closing_another_gives_none() {
+    fn the_title_a_view_goes_by_is_the_one_its_agent_last_gave_it() {
         let mut views = AgentViews::default();
+        views.shown(shown(1, "ci"), None, false);
+        assert_eq!(views.title(PaneId(1), "ci"), Some("ci"));
         let mut view = shown(1, "ci");
         view.view.title = "Build status".into();
         views.shown(view, None, false);
-        views.shown(shown(1, "other"), None, false);
-        views.pop_out(PaneId(1), "ci".into());
-        assert_eq!(views.closed(PaneId(1), "other"), None);
-        assert_eq!(views.closed(PaneId(1), "ci").as_deref(), Some("Build status"));
+        assert_eq!(views.title(PaneId(1), "ci"), Some("Build status"));
+        views.closed(PaneId(1), "ci");
+        assert_eq!(views.title(PaneId(1), "ci"), None);
     }
 
     #[test]
     fn the_page_says_whether_buttons_can_be_pressed_without_that_alone_making_it_worth_sending() {
         let mut views = AgentViews::default();
-        assert!(views.take(false, true, |_| None).is_none(), "no views, nothing to hear");
+        assert!(views.take(false, true, None, |_| None).is_none(), "no views, nothing to hear");
         views.shown(shown(1, "ci"), None, false);
-        assert!(views.take(false, false, |_| None).is_some_and(|p| !p.can_press));
-        assert!(views.take(false, true, |_| None).is_some_and(|p| p.can_press), "a daemon upgrade is heard");
+        assert!(views.take(false, false, None, |_| None).is_some_and(|p| !p.can_press));
+        assert!(views.take(false, true, None, |_| None).is_some_and(|p| p.can_press), "a daemon upgrade is heard");
     }
 
     #[test]
@@ -542,17 +532,17 @@ mod tests {
         assert!(ci.unseen);
         // The panel coming out onto another view does not clear it.
         views.open(PaneId(1), "other".into());
-        views.take(true, true, |_| None);
+        views.take(true, true, None, |_| None);
         let page = views.page(|_| None);
         assert!(page.views.iter().find(|v| v.view.id == "ci").unwrap().unseen);
         // Opening it is seeing it: the marks flash once, and it is no longer unseen.
         assert!(views.open(PaneId(1), "ci".into()));
-        let page = views.take(true, true, |_| None).unwrap();
+        let page = views.take(true, true, None, |_| None).unwrap();
         let ci = page.views.iter().find(|v| v.view.id == "ci").unwrap();
         assert_eq!(ci.changed, ["0", "1"]);
         assert!(!ci.unseen);
         views.open(PaneId(1), "other".into());
-        let page = views.take(true, true, |_| None).unwrap();
+        let page = views.take(true, true, None, |_| None).unwrap();
         assert!(page.views.iter().find(|v| v.view.id == "ci").unwrap().changed.is_empty());
     }
 
