@@ -660,6 +660,7 @@ impl Session {
             Call::Peek { slug } => self.peek(&slug),
             Call::SetLayout { layout } => self.set_layout(layout),
             Call::ToggleFolded => self.toggle_folded(),
+            Call::FilterFeatures { filter } => self.filter_features(filter),
             Call::SetChime { on } => self.set_chime(on),
             Call::Setting { change } => self.set(change),
             Call::Hold { slug, reason } => self.hold(&slug, reason),
@@ -2357,6 +2358,12 @@ impl Session {
         self.finish()
     }
 
+    fn filter_features(&mut self, filter: String) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        self.features.set_filter(filter, scope.as_ref(), &self.tree, &mut self.out);
+        self.finish()
+    }
+
     fn hold(&mut self, slug: &str, reason: Option<String>) -> Vec<ClientMsg> {
         let scope = self.scope();
         self.features.hold(slug, reason, scope.as_ref(), &mut self.out);
@@ -2787,8 +2794,9 @@ impl Session {
         self.finish()
     }
 
-    /// A feature chosen in the palette: the Feature stage opens on it, with
-    /// held and archived features shown if it is one of them.
+    /// A feature chosen in the palette: the Feature stage opens on it,
+    /// listed, unfolded if the fold hides it and the filter cleared if that
+    /// hides it.
     fn go_to_feature(&mut self, slug: &str) -> Vec<ClientMsg> {
         self.go(Stage::Feature);
         let scope = self.scope();
@@ -4156,6 +4164,20 @@ mod tests {
     }
 
     #[test]
+    fn the_feature_filter_is_held_in_rust_and_echoed_to_the_page() {
+        let mut s = session(without_focus());
+        s.show_features(true);
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        s.events(0);
+        s.call(Call::FilterFeatures { filter: "#8".into() });
+        let Some(Event::Features(index)) = s.events(0).into_iter().find(|e| matches!(e, Event::Features(_))) else {
+            panic!("the index is drawn again");
+        };
+        let rows: Vec<&str> = index.rows.iter().map(|row| row.slug.as_str()).collect();
+        assert_eq!((index.filter.as_str(), rows), ("#8", vec!["bump"]));
+    }
+
+    #[test]
     fn an_edit_to_an_open_feature_is_sent_and_a_refused_one_is_said() {
         let mut s = session(without_focus());
         s.show_features(true);
@@ -4775,7 +4797,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 139] = [
+    const CALLS: [&str; 140] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -4843,6 +4865,7 @@ mod tests {
         r#"{"call":"peek","slug":"trim"}"#,
         r#"{"call":"set_layout","layout":"board"}"#,
         r#"{"call":"toggle_folded"}"#,
+        r##"{"call":"filter_features","filter":"#7"}"##,
         r#"{"call":"set_chime","on":false}"#,
         r#"{"call":"setting","change":{"set":"opacity","percent":80}}"#,
         r#"{"call":"hold","slug":"trim","reason":"waiting"}"#,

@@ -496,8 +496,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
 | `code_stage` | what the Code stage holds — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the go-to-file field, the search, and the review it was opened from — what its gestures ask of the daemon, and the page it draws |
 | `code_tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
-| `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout and the fold — and what its messages and gestures change, never leaving the cursor on a row the page does not draw |
-| `features` | what the Feature stage's index shows from a board: which features it lists and in what order — the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
+| `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout, the filter and the fold — and what its messages and gestures change, never leaving the cursor on a row the page does not draw |
+| `features` | what the Feature stage's index shows from a board: which features it lists and in what order — the filter, the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
 | `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through |
 | `work_lens` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key and a mark on each row changed since the last reconcile, and the task or decision under the cursor in full |
 | `link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — what its gestures ask of the daemon, and the page and gestures it trades with the page |
@@ -2031,8 +2031,9 @@ The desktop window's Feature stage is the same object read the same way, built i
 same `outline`, `standing` and `flow` (`feature_view` and a module per lens). Its index is a list
 grouped Active, Queued, Done — held and archived folded behind a toggle (`z`) that on the board
 folds the Archived column — beside a peek, or a board (`V`, remembered per repository in
-`desktop.json`) whose columns run Queued, Active, Done, then Archived and Held. Which features are
-listed and in what order are Rust's; the page draws the rows it is sent. Each card's footer says
+`desktop.json`) whose columns run Queued, Active, Done, then Archived and Held. A filter by title or
+`#number` narrows either; it is not saved, and going to a feature it hides clears it. Which
+features are listed and in what order are Rust's; the page draws the rows it is sent. Each card's footer says
 how it came to stand there and how long since the
 feature or a decision on it changed: the board keeps no history of moves, so that is the latest
 moment it can name. Only Held and Archived take a dropped card, a hold asking why, and each drop

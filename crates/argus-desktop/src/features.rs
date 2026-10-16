@@ -125,6 +125,7 @@ pub fn build(index: &Index) -> Features {
         repository: index.repository.to_string(),
         layout: index.listing.layout.word(),
         show_folded: index.listing.show_folded,
+        filter: index.listing.filter.clone(),
         loaded: index.board.is_some(),
         ..Features::default()
     };
@@ -592,6 +593,14 @@ mod tests {
         assert_eq!((folded(Layout::List, false, "mouse"), folded(Layout::Board, false, "mouse")), (1, 0));
         let index = built(&listing(Layout::List, false, "mouse", None));
         assert_eq!((index.held, index.archived, index.active), (1, 1, 1), "the heading counts the whole board");
+    }
+
+    #[test]
+    fn the_filter_keeps_titles_holding_its_words_and_the_number_typed_with_or_without_a_hash() {
+        let filtered = |filter| listed(&listing(Layout::List, true, filter, None));
+        assert_eq!(filtered("RATATUI"), ["bump"]);
+        assert_eq!((filtered("#6"), filtered("6")), (vec!["ctrlc".to_string()], vec!["ctrlc".to_string()]));
+        assert_eq!(filtered("  ").len(), 6, "a blank filter keeps every row");
     }
 
     #[test]

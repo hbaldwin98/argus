@@ -1,5 +1,5 @@
 // What the page holds: the last of each event Rust sent, and the little
-// view state that is the page's own — a menu open, a filter typed.
+// view state that is the page's own — a menu open, a draft typed.
 
 import type { AddProjectPage } from './bindings/AddProjectPage';
 import type { CapturePage } from './bindings/CapturePage';
@@ -37,7 +37,7 @@ export type Editing =
   | { what: 'step'; diagram: number; step: number; text: string };
 
 /** The selected flow's diagram over the whole window: how it is sized, and
- *  whether the steps are listed beside it. The page's own, like a filter. */
+ *  whether the steps are listed beside it. The page's own, like a draft. */
 export type Expanded = { zoom: number; fit: boolean; panel: boolean };
 
 export const state: {
@@ -90,8 +90,6 @@ export const state: {
   reviewDraft: string;
   /** The Code stage's comment as typed, kept across redraws. */
   codeDraft: string;
-  /** What the index's filter says. */
-  filter: string;
   /** The composer's draft: its picks and message, kept across redraws
    *  until a pane it started is made. */
   compose: { checkout: number | null; template: string | null; text: string };
@@ -151,6 +149,5 @@ export const state: {
   saved: null,
   reviewDraft: '',
   codeDraft: '',
-  filter: '',
   compose: { checkout: null, template: null, text: '' },
 };

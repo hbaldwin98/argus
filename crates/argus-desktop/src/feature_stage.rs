@@ -1,10 +1,10 @@
 //! What the Feature stage holds — the repository's board, the feature
 //! under the cursor and its tasks and flows, whether that feature is opened,
 //! the lens it is read through and where each lens's cursor is, how each
-//! repository lays its index out and the fold — and what its messages and
-//! gestures change, the cursor never resting on a row the page does not
-//! draw. Whether the stage is up is the session's; it says when the board
-//! is wanted.
+//! repository lays its index out, the filter and the fold — and what its
+//! messages and gestures change, the cursor never resting on a row the page
+//! does not draw. Whether the stage is up is the session's; it says when the
+//! board is wanted.
 //!
 //! The session says which repository the stage is about ([`Scope`]); the
 //! protocol's `BoardFollower` decides when to ask for its board and which
@@ -66,6 +66,13 @@ pub struct FeatureStage {
     /// is settled on its layout, not the chosen repository's.
     followed: Option<Scope>,
     show_folded: bool,
+    /// What the index's filter field says, as last applied; the page keeps
+    /// what is being typed.
+    filter: String,
+    /// The feature the person last put the cursor on, or a settle other than
+    /// the filter's left it on: a filter that lists it again lands back on it,
+    /// so a letter mistyped and taken back never loses their place.
+    chosen: Option<String>,
     /// The feature under the cursor is opened, drawn in place of the index.
     opened: bool,
     lens: Lens,
@@ -93,6 +100,8 @@ impl FeatureStage {
             board: BoardFollower::new(true),
             followed: None,
             show_folded: false,
+            filter: String::new(),
+            chosen: None,
             opened: false,
             lens: Lens::Work,
             cursor: None,
@@ -161,7 +170,7 @@ impl FeatureStage {
     pub fn receive_board(&mut self, board: DecisionBoard, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
         let before = self.peeked().map(str::to_string);
         if self.board.receive_board(board, tree, &self.listing(scope), out) {
-            self.settled(before);
+            self.settled(before, false);
             self.changed = true;
         }
     }
@@ -193,6 +202,7 @@ impl FeatureStage {
             self.flow = FlowCursor::default();
         }
         self.board.point(Some(slug), out);
+        self.chosen = self.board.feature().map(str::to_string);
         self.changed = true;
     }
 
@@ -262,15 +272,21 @@ impl FeatureStage {
         Ok(())
     }
 
-    /// Puts the cursor on a feature the index may be folding away, showing
-    /// the folded ones first: a peek on a row the index hides would be
-    /// moved off it by the next board.
+    /// Puts the cursor on a feature the index may be folding or filtering
+    /// away, showing the folded ones or clearing the filter first: a peek
+    /// on a row the index hides would be moved off it by the next board.
     pub fn reveal(&mut self, slug: &str, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
         let listing = self.listing(scope);
         let row = self.board().and_then(|board| standing::feature_rows(board, tree).into_iter().find(|row| row.slug == slug));
-        if row.is_some_and(|row| listing.folds(row.standing)) && !self.show_folded {
-            self.show_folded = true;
-            self.changed = true;
+        if let Some(row) = row {
+            if listing.folds(row.standing) && !self.show_folded {
+                self.show_folded = true;
+                self.changed = true;
+            }
+            if !listing.matches(&row) {
+                self.filter.clear();
+                self.changed = true;
+            }
         }
         self.peek(slug, out);
         self.settle(scope, tree, out);
@@ -302,12 +318,30 @@ impl FeatureStage {
         self.settle(scope, tree, out);
     }
 
+    /// What the filter field says now: the cursor moves onto a feature it
+    /// lists, the one chosen last whenever it lists that.
+    pub fn set_filter(&mut self, filter: String, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        if self.filter == filter {
+            return;
+        }
+        self.filter = filter;
+        self.changed = true;
+        let before = self.peeked().map(str::to_string);
+        let listing = self.listing(scope);
+        let chosen = self.chosen.clone().filter(|slug| self.board.listed(tree, &listing).iter().any(|row| row.slug == *slug));
+        if chosen.is_some() {
+            self.board.point(chosen.as_deref(), out);
+        }
+        self.board.settle(tree, &listing, out);
+        self.settled(before, true);
+    }
+
     /// Puts the cursor back on a listed feature after what the index lists
     /// may have changed.
     pub fn settle(&mut self, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
         let before = self.peeked().map(str::to_string);
         self.board.settle(tree, &self.listing(scope), out);
-        self.settled(before);
+        self.settled(before, false);
     }
 
     /// Holds a feature with a reason, or lifts its hold with `None`.
@@ -398,7 +432,7 @@ impl FeatureStage {
         Listing {
             layout: self.layout(self.followed.as_ref().or(scope)),
             show_folded: self.show_folded,
-            filter: String::new(),
+            filter: self.filter.clone(),
             opened: self.opened().map(str::to_string),
         }
     }
@@ -407,7 +441,11 @@ impl FeatureStage {
     /// its lenses afresh, since they were the last one's, and an opened
     /// feature it moved off closes. The listing keeps an opened feature, so
     /// that one left the board, and the view must not show its neighbour.
-    fn settled(&mut self, before: Option<String>) {
+    /// Unless `filtering`, where it lands is the feature chosen from now on.
+    fn settled(&mut self, before: Option<String>, filtering: bool) {
+        if !filtering {
+            self.chosen = self.peeked().map(str::to_string);
+        }
         if self.peeked() == before.as_deref() {
             return;
         }
@@ -807,6 +845,72 @@ mod tests {
         stage.receive_board(holding("bump"), Some(&scope()), &tree, &mut out);
         assert_eq!(stage.peeked(), Some("desktop"));
         assert_eq!((stage.cursor, stage.record, stage.flow), (None, None, FlowCursor::default()));
+    }
+
+    #[test]
+    fn filtering_moves_the_cursor_onto_a_feature_it_lists() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.set_filter("ctrl".into(), Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.peeked(), Some("ctrlc"));
+        assert_eq!(names(&out), ["tasks ctrlc", "flows ctrlc"]);
+        assert_eq!(slugs(&stage.everything(Some(&scope()), &tree, 0)), ["ctrlc"]);
+    }
+
+    #[test]
+    fn a_pushed_board_lands_the_cursor_only_on_a_feature_the_filter_lists() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.set_filter("c".into(), Some(&scope()), &tree, &mut out);
+        assert_eq!(slugs(&stage.everything(Some(&scope()), &tree, 0)), ["trim", "desktop", "ctrlc"]);
+        let mut board = fixtures::board();
+        board.features.iter_mut().find(|f| f.slug == "trim").unwrap().title = "Trim the brief".into();
+        stage.receive_board(board, Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.peeked(), Some("desktop"), "trim no longer matches");
+    }
+
+    #[test]
+    fn going_to_a_feature_the_filter_hides_clears_the_filter() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.set_filter("ctrl".into(), Some(&scope()), &tree, &mut out);
+        stage.reveal("bump", Some(&scope()), &tree, &mut out);
+        let index = stage.everything(Some(&scope()), &tree, 0);
+        assert_eq!((stage.peeked(), index.filter.as_str()), (Some("bump"), ""));
+        stage.set_filter("ratatui".into(), Some(&scope()), &tree, &mut out);
+        stage.reveal("bump", Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.filter, "ratatui", "a filter that lists it stays");
+    }
+
+    #[test]
+    fn a_filter_matching_nothing_peeks_nothing_and_widening_it_lands_back_on_the_feature_chosen() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.peek("ctrlc", &mut out);
+        stage.set_filter("zz".into(), Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.peeked(), None);
+        stage.set_filter(String::new(), Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.peeked(), Some("ctrlc"), "not the first");
+    }
+
+    #[test]
+    fn typing_a_filter_that_still_lists_the_chosen_feature_keeps_it_and_asks_nothing() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.peek("desktop", &mut out);
+        out.clear();
+        stage.set_filter("d".into(), Some(&scope()), &tree, &mut out);
+        stage.set_filter("de".into(), Some(&scope()), &tree, &mut out);
+        stage.take(Some(&scope()), &tree, 0);
+        stage.set_filter("de".into(), Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.peeked(), Some("desktop"));
+        assert!(out.is_empty(), "{:?}", names(&out));
+        assert!(stage.take(Some(&scope()), &tree, 0).is_none(), "the same text changes nothing");
     }
 
     #[test]

@@ -174,6 +174,8 @@ pub enum Call {
     Peek { slug: String },
     SetLayout { layout: Layout },
     ToggleFolded,
+    /// What the Feature index's filter field says now.
+    FilterFeatures { filter: String },
     SetChime { on: bool },
     /// One choice in the Settings dialog, saved as it is made.
     Setting { change: SettingChange },
@@ -839,6 +841,8 @@ pub struct Features {
     pub layout: &'static str,
     /// Whether the features the fold toggle covers are shown.
     pub show_folded: bool,
+    /// What the filter field says; only the features it matches are listed.
+    pub filter: String,
     /// Whether the board has arrived; until then the index says so.
     pub loaded: bool,
     pub active: usize,
@@ -846,13 +850,13 @@ pub struct Features {
     pub done: usize,
     pub held: usize,
     pub archived: usize,
-    /// How many features the fold toggle covers — the held and archived on
-    /// the list, the archived on the board — shown or not.
+    /// How many features the fold toggle covers that the filter matches — the
+    /// held and archived on the list, the archived on the board — shown or not.
     pub folded: usize,
     /// The features the index lists, in the order it lists them: grouped Active,
     /// Queued, Done, Held, Archived on the list; column by column — Queued, Active,
     /// Done, Archived, Held — on the board. Those the fold covers are in only
-    /// with `show_folded`.
+    /// with `show_folded`, and only those the filter matches.
     pub rows: Vec<FeatureRow>,
     pub peek: Option<Peek>,
     /// The feature opened from the index, drawn in place of it.
@@ -2262,6 +2266,7 @@ mod tests {
             layout: "board",
             loaded: true,
             active: 1,
+            filter: "#7".into(),
             folded: 2,
             rows: vec![FeatureRow {
                 slug: "trim".into(),
@@ -2287,7 +2292,7 @@ mod tests {
         let value = as_json(Event::Features(Box::new(features)));
         assert_eq!(value["type"], "features");
         assert_eq!(value["showFolded"], false);
-        assert_eq!(value["folded"], 2);
+        assert_eq!((value["folded"].as_u64(), value["filter"].as_str()), (Some(2), Some("#7")));
         let row = &value["rows"][0];
         assert_eq!((row["tasksDone"].clone(), row["tasksTotal"].clone()), (json!(3), json!(7)));
         assert_eq!(row["agent"]["needsYou"], false);

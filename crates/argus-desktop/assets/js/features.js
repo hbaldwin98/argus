@@ -4,7 +4,8 @@
 // board says so. Only Held and Archived take a dropped card: the other
 // columns follow the work. A feature opened from the index is `work.ts`'s,
 // and a new one written as a note `capture.ts`'s; either is drawn here in
-// place of the index.
+// place of the index. Which features are listed and in what order are
+// Rust's (`features`, `feature_stage`); this draws them.
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { closeExpanded } from './sequence.js';
@@ -34,16 +35,6 @@ const COLUMN_NOTE = {
 };
 function isGroup(word) {
     return word !== undefined && word in GROUP_LABEL;
-}
-/** The rows Rust lists, folded and ordered, that the filter keeps. */
-function visibleRows() {
-    const f = state.features;
-    if (!f)
-        return [];
-    const query = state.filter.trim().toLowerCase().replace(/^#/, '');
-    if (!query)
-        return f.rows;
-    return f.rows.filter((row) => row.title.toLowerCase().includes(query) || String(row.number) === query);
 }
 function rowBySlug(slug) {
     return state.features?.rows.find((row) => row.slug === slug);
@@ -102,6 +93,22 @@ function rowNote(row) {
 function empty(...body) {
     return el('div', { class: 'empty' }, el('div', { class: 'empty-body' }, body));
 }
+/** Puts back the filter as typed once the index is redrawn, while the field
+ *  has the keys: the echo being drawn may be older than the last keystroke. */
+function keepTyped() {
+    const field = document.activeElement;
+    if (!(field instanceof HTMLInputElement) || field.id !== 'feature-filter')
+        return () => { };
+    const { value, selectionStart, selectionEnd } = field;
+    return () => {
+        const again = document.getElementById('feature-filter');
+        if (!(again instanceof HTMLInputElement))
+            return;
+        again.value = value;
+        again.focus();
+        again.setSelectionRange(selectionStart, selectionEnd);
+    };
+}
 export function drawFeatures() {
     if (state.rail.stage !== 'feature') {
         closeExpanded();
@@ -123,16 +130,20 @@ export function drawFeatures() {
         stage.replaceChildren(empty(icon('folder'), el('div', { class: 'type-title' }, 'No repository'), el('div', { class: 'fg-muted' }, 'Choose one on the left.')));
         return;
     }
+    const typed = keepTyped();
     const head = indexHead(f);
     if (!f.loaded) {
         stage.replaceChildren(head, ghosts([[0.5], [0.8], [0.65], [0.75], [0.55], [0.7]]));
+        typed();
         return;
     }
     if (f.active + f.queued + f.done + f.held + f.archived === 0) {
         stage.replaceChildren(head, empty(icon('folder'), el('div', { class: 'type-title' }, `No features in ${f.repository} yet`), el('div', { class: 'fg-muted' }, 'Agents open them with ', el('span', { class: 'mono fg' }, 'argus-hook feature open'), ', or write one as a note with ', keycap('N'), '.'), el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
+        typed();
         return;
     }
     stage.replaceChildren(head, f.layout === 'board' ? board(f) : list(f));
+    typed();
     dress();
 }
 function keycap(key) {
@@ -159,18 +170,11 @@ function indexHead(f) {
         placeholder: 'Filter by title or #',
         'aria-label': 'Filter features',
         oninput: (e) => {
-            if (!(e.target instanceof HTMLInputElement))
-                return;
-            state.filter = e.target.value;
-            drawFeatures();
-            const again = document.getElementById('feature-filter');
-            if (again instanceof HTMLInputElement) {
-                again.focus();
-                again.setSelectionRange(again.value.length, again.value.length);
-            }
+            if (e.target instanceof HTMLInputElement)
+                call('filter_features', { filter: e.target.value });
         },
     });
-    filter.value = state.filter;
+    filter.value = f.filter;
     const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' }, ['list', 'board'].map((layout) => el('button', {
         class: `segb${f.layout === layout ? ' on' : ''}`,
         role: 'radio',
@@ -182,7 +186,7 @@ function indexHead(f) {
         el('button', { class: 'btn', onclick: () => call('toggle_folded', {}) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(f.folded))), seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
 }
 function list(f) {
-    const rows = visibleRows();
+    const rows = f.rows;
     const section = el('section', { class: 'index-list', 'aria-label': 'Features' }, el('div', { class: 'irow label' }, el('span', null), el('span', null, 'Feature'), el('span', null, 'Tasks'), el('span', null, 'Questions'), el('span', null, 'Checkout')));
     let group = null;
     for (const row of rows) {
@@ -205,9 +209,11 @@ function list(f) {
         }, el('span', { class: `n${row.peeked ? ' fg-accent' : ''}` }, `#${row.number}`), el('span', { class: `ttl${row.peeked ? ' strong' : ''} ${quiet}` }, row.title), tasks(row, 'fg-faint'), questions(row), el('span', { class: `mono ${quiet ? 'fg-faint' : 'fg-ref'} small-mono` }, row.branch || '—'), el('span', { class: 'sub2' }, rowNote(row))));
     }
     if (!rows.length) {
-        const why = state.filter
-            ? 'Nothing matches the filter.'
-            : 'Every feature here is held or archived.';
+        let why = 'Every feature here is held or archived.';
+        if (f.filter && f.folded === 0)
+            why = `Nothing matches “${f.filter}”.`;
+        else if (f.filter && !f.showFolded)
+            why = `Only held or archived features match “${f.filter}”.`;
         section.append(el('div', { class: 'meta group-label' }, why));
     }
     section.append(el('div', { class: 'meta index-foot' }, "Held and archived features are folded away. A feature's standing is read off its tasks and the agents on its checkouts; only holding and archiving are set by hand."));
@@ -266,9 +272,8 @@ function moveButtons(row) {
     ];
 }
 function board(f) {
-    const rows = visibleRows();
     const column = (group) => {
-        const cards = rows.filter((row) => row.group === group);
+        const cards = f.rows.filter((row) => row.group === group);
         // A folded Archived column still counts what it folds.
         const count = group === 'archived' && !f.showFolded ? f.folded : cards.length;
         const note = COLUMN_NOTE[group];
@@ -520,7 +525,7 @@ function goToPane(pane) {
 // ---- Keys --------------------------------------------------------------------
 /** Runs a Feature or Board card binding, saying whether it had a feature to act on. */
 export function featureAction(action) {
-    const rows = visibleRows();
+    const rows = state.features?.rows ?? [];
     const at = rows.findIndex((row) => row.peeked);
     const row = rows[at];
     const peekAt = (i) => {

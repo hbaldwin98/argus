@@ -1,5 +1,5 @@
 // What the page holds: the last of each event Rust sent, and the little
-// view state that is the page's own — a menu open, a filter typed.
+// view state that is the page's own — a menu open, a draft typed.
 export const state = {
     status: { connection: 'connecting', detail: null, alarm: null, chime: true, host: null },
     rail: {
@@ -56,6 +56,5 @@ export const state = {
     saved: null,
     reviewDraft: '',
     codeDraft: '',
-    filter: '',
     compose: { checkout: null, template: null, text: '' },
 };

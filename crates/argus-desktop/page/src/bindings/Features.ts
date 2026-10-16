@@ -21,19 +21,23 @@ layout: "list" | "board",
  */
 showFolded: boolean, 
 /**
+ * What the filter field says; only the features it matches are listed.
+ */
+filter: string, 
+/**
  * Whether the board has arrived; until then the index says so.
  */
 loaded: boolean, active: number, queued: number, done: number, held: number, archived: number, 
 /**
- * How many features the fold toggle covers — the held and archived on
- * the list, the archived on the board — shown or not.
+ * How many features the fold toggle covers that the filter matches — the
+ * held and archived on the list, the archived on the board — shown or not.
  */
 folded: number, 
 /**
  * The features the index lists, in the order it lists them: grouped Active,
  * Queued, Done, Held, Archived on the list; column by column — Queued, Active,
  * Done, Archived, Held — on the board. Those the fold covers are in only
- * with `show_folded`.
+ * with `show_folded`, and only those the filter matches.
  */
 rows: Array<FeatureRow>, peek: Peek | null, 
 /**
