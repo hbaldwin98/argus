@@ -58,7 +58,7 @@ use crate::keymap::{self, Action};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
-use crate::code_stage::{Back, CodeClick, CodePage, CodeStage};
+use crate::code_stage::{Back, CodeClick, CodeGesture, CodePage, CodeStage, Then as CodeThen};
 use crate::shown::workspace_grid::{self, Dir, Zone};
 use crate::stage::{Page, Stages};
 use crate::page::{
@@ -649,17 +649,12 @@ impl Session {
             Call::ShowFeatures { open } => self.show_features(open),
             Call::ShowCheckouts { open } => self.show_checkouts(open),
             Call::ShowCode { open } => self.show_code(open),
-            Call::CodeClick { target } => self.code_click(target),
-            Call::CodeAction { action } => self.code_action(action),
-            Call::CodeJump { gesture } => self.code_field(gesture, false),
-            Call::CodeSearch { gesture } => self.code_field(gesture, true),
-            Call::CodeComment { body } => self.code_comment(body),
-            Call::CodeSearchGlob { glob } => {
-                if let Some(code) = &mut self.code {
-                    code.set_glob(glob);
-                }
-                self.finish()
-            }
+            Call::CodeClick { target } => self.code_gesture(CodeGesture::Click { target }),
+            Call::CodeAction { action } => self.code_gesture(CodeGesture::Action { action }),
+            Call::CodeJump { gesture } => self.code_gesture(CodeGesture::Jump { gesture }),
+            Call::CodeSearch { gesture } => self.code_gesture(CodeGesture::Search { gesture }),
+            Call::CodeComment { body } => self.code_gesture(CodeGesture::Comment { body }),
+            Call::CodeSearchGlob { glob } => self.code_gesture(CodeGesture::Glob { glob }),
             Call::ShowComposer { open } => self.show_composer(open),
             Call::Compose { checkout, template, prompt } => self.compose(CheckoutId(checkout), template, prompt),
             Call::SelectCheckoutRow { key } => self.select_checkout_row(key),
@@ -2267,86 +2262,19 @@ impl Session {
         self.stages.leave_code();
     }
 
-    fn code_click(&mut self, target: CodeClick) -> Vec<ClientMsg> {
-        if matches!(target, CodeClick::Back) {
-            self.leave_code();
-        } else if let Some(code) = &mut self.code {
-            let msgs = code.click(target, || self.awaited.name());
-            self.out.extend(msgs);
-        }
-        self.finish()
-    }
-
-    /// Sends the Code stage's comment, or with no `body` puts the box away.
-    fn code_comment(&mut self, body: Option<String>) -> Vec<ClientMsg> {
-        let Some(code) = &mut self.code else {
-            return self.finish();
+    /// A gesture in the Code stage, and what it leaves to the window. B
+    /// goes back even with no stage open.
+    fn code_gesture(&mut self, gesture: CodeGesture) -> Vec<ClientMsg> {
+        let then = match &mut self.code {
+            Some(code) => code.gesture(gesture, self.tree.checkout(code.checkout()), || self.awaited.name(), &mut self.out),
+            None if matches!(gesture, CodeGesture::Click { target: CodeClick::Back }) => CodeThen::Back,
+            None => CodeThen::Nothing,
         };
-        let Some(body) = body else {
-            code.cancel_comment();
-            return self.finish();
-        };
-        match code.comment(self.tree.checkout(code.checkout()), &body) {
-            Ok(msg) => self.out.push(msg),
-            Err(text) => self.say(text),
-        }
-        self.finish()
-    }
-
-    fn code_field(&mut self, gesture: ReviewJumpGesture, search: bool) -> Vec<ClientMsg> {
-        if let Some(code) = &mut self.code {
-            let msgs = if search {
-                code.search(gesture, || self.awaited.name())
-            } else {
-                code.jump(gesture, || self.awaited.name())
-            };
-            self.out.extend(msgs);
-        }
-        self.finish()
-    }
-
-    /// A key of the Code stage. E opens the file at the cursor in the
-    /// person's editor, as the review's does.
-    fn code_action(&mut self, action: Action) -> Vec<ClientMsg> {
-        if action == Action::GoBack {
-            if self.code.as_ref().is_some_and(|c| c.back().is_some()) {
-                self.leave_code();
-            }
-            return self.finish();
-        }
-        let Some(code) = &mut self.code else {
-            return self.finish();
-        };
-        match action {
-            // Escape closes what is over the file and leaves the stage up:
-            // the stage keys and B are the ways out.
-            Action::CloseLayer => {
-                code.escape();
-            }
-            Action::ToggleOutline => code.toggle_outline(),
-            Action::Next => code.move_by(1),
-            Action::Previous => code.move_by(-1),
-            Action::First => code.ends(false),
-            Action::Last => code.ends(true),
-            Action::NextFile => code.next_change(true),
-            Action::PreviousFile => code.next_change(false),
-            Action::Filter => code.open_jump(),
-            Action::Search => code.open_search(),
-            Action::Pick => code.toggle_pick(),
-            Action::Comment => {
-                if let Err(text) = code.compose(self.tree.checkout(code.checkout())) {
-                    self.passing.push(Event::Notice { text: text.into() });
-                }
-            }
-            Action::Refresh => {
-                let msgs = code.refresh(|| self.awaited.name());
-                self.out.extend(msgs);
-            }
-            Action::OpenEditor => match code.editor_target() {
-                Some((checkout, path, line)) => self.open_in_editor(checkout, path, line),
-                None => self.say("no file to open"),
-            },
-            _ => {}
+        match then {
+            CodeThen::Nothing => {}
+            CodeThen::Back => self.leave_code(),
+            CodeThen::Edit { checkout, path, line } => self.open_in_editor(checkout, path, line),
+            CodeThen::Say(text) => self.say(&text),
         }
         self.finish()
     }
@@ -3578,9 +3506,9 @@ mod tests {
         assert!(s.dialogs.review().is_none(), "put away, not closed");
         assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("review · brief.rs:4"));
 
-        assert!(code_asks(s.code_action(Action::CloseLayer)).is_empty());
+        assert!(code_asks(s.code_gesture(CodeGesture::Action { action: Action::CloseLayer })).is_empty());
         assert!(s.stages.now() == Stage::Code, "Escape stays in Code");
-        let sent = code_asks(s.code_action(Action::GoBack));
+        let sent = code_asks(s.code_gesture(CodeGesture::Action { action: Action::GoBack }));
         assert!(sent.is_empty(), "the review comes back as it was, not read again");
         assert!(s.dialogs.review().is_some());
         assert!(s.stages.now() == Stage::Checkouts, "over the stage it was opened over");
@@ -3603,7 +3531,7 @@ mod tests {
         assert_eq!(s.stages.now(), Stage::Extension, "a page over Code");
         s.show_code(true);
         assert_eq!(s.stages.now(), Stage::Code);
-        s.code_action(Action::GoBack);
+        s.code_gesture(CodeGesture::Action { action: Action::GoBack });
         assert_eq!(s.stages.now(), Stage::Checkouts, "one way back, to what Code was opened over");
     }
 
@@ -3661,7 +3589,7 @@ mod tests {
         ));
         assert!(s.stages.now() == Stage::Code);
         assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("history"));
-        s.code_action(Action::GoBack);
+        s.code_gesture(CodeGesture::Action { action: Action::GoBack });
         assert!(s.stages.now() == Stage::Checkouts);
         assert!(s.dialogs.history_open(), "the history is back as it was");
     }
@@ -3726,7 +3654,7 @@ mod tests {
         let mut s = session(refusing());
         s.show_checkouts(true);
         s.show_code(true);
-        s.code_action(Action::Search);
+        s.code_gesture(CodeGesture::Action { action: Action::Search });
         let search = |s: &mut Session, text: &str| {
             s.call(Call::CodeSearch { gesture: ReviewJumpGesture::Query { text: text.into() } });
             let sent = code_asks(s.call(Call::CodeSearch { gesture: ReviewJumpGesture::Choose }));

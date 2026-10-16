@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::code_tree::{self, folders_of};
 use crate::comment_box::{CommentBox, CommentPage};
 use crate::file_jump::{FileJump, Jumped};
+use crate::keymap::Action;
 use crate::page::ReviewJumpGesture;
 use crate::review::parts;
 
@@ -233,6 +234,37 @@ pub enum CodeClick {
     Back,
 }
 
+/// What was done in the Code stage.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum CodeGesture {
+    Click { target: CodeClick },
+    /// A key of the stage, or a button standing for one.
+    Action { action: Action },
+    /// The go-to-file field.
+    Jump { gesture: ReviewJumpGesture },
+    /// The search field.
+    Search { gesture: ReviewJumpGesture },
+    /// What the files-to-include field says; it is searched with on Enter.
+    Glob { glob: String },
+    /// The comment sent, or with no `body` the box put away.
+    Comment { body: Option<String> },
+}
+
+/// What a gesture leaves for the window to do beyond the daemon's messages.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Then {
+    Nothing,
+    /// Back to the dialog the stage was opened from, over the stage it was
+    /// opened over.
+    Back,
+    /// The file and line under the cursor, for the person's editor.
+    Edit { checkout: CheckoutId, path: String, line: Option<u32> },
+    /// Why the gesture did nothing, for the person to hear.
+    Say(String),
+}
+
 /// How many of its matches the go-to-file field lists.
 const CODE_JUMP_SHOWN: usize = 50;
 
@@ -357,7 +389,7 @@ impl CodeStage {
     }
 
     /// Reads the version again: the agent kept working.
-    pub fn refresh(&mut self, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
+    fn refresh(&mut self, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
         let mut msgs = vec![self.ask_tree(id())];
         if let Some(path) = self.path.clone() {
             let line = Some(self.cursor as u32 + 1);
@@ -424,7 +456,70 @@ impl CodeStage {
         true
     }
 
-    pub fn click(&mut self, target: CodeClick, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
+    /// A gesture in the stage, given the checkout as the tree has it now:
+    /// its agents may have come or gone.
+    pub fn gesture(
+        &mut self,
+        gesture: CodeGesture,
+        checkout: Option<&CheckoutInfo>,
+        id: impl FnMut() -> u64,
+        out: &mut Vec<ClientMsg>,
+    ) -> Then {
+        match gesture {
+            CodeGesture::Click { target: CodeClick::Back } => return Then::Back,
+            CodeGesture::Click { target } => out.extend(self.click(target, id)),
+            CodeGesture::Action { action } => return self.act(action, checkout, id, out),
+            CodeGesture::Jump { gesture } => out.extend(self.jump(gesture, id)),
+            CodeGesture::Search { gesture } => out.extend(self.search(gesture, id)),
+            CodeGesture::Glob { glob } => self.set_glob(glob),
+            CodeGesture::Comment { body: None } => self.cancel_comment(),
+            CodeGesture::Comment { body: Some(body) } => match self.comment(checkout, &body) {
+                Ok(msg) => out.push(msg),
+                Err(text) => return Then::Say(text.into()),
+            },
+        }
+        Then::Nothing
+    }
+
+    /// A key of the stage. B goes back only to a dialog the stage was
+    /// opened from; E opens the file at the cursor in the person's editor,
+    /// as the review's does.
+    fn act(&mut self, action: Action, checkout: Option<&CheckoutInfo>, id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) -> Then {
+        match action {
+            Action::GoBack if self.back.is_some() => return Then::Back,
+            // Escape closes what is over the file and leaves the stage up:
+            // the stage keys and B are the ways out.
+            Action::CloseLayer => {
+                self.escape();
+            }
+            Action::ToggleOutline => self.toggle_outline(),
+            Action::Next => self.move_by(1),
+            Action::Previous => self.move_by(-1),
+            Action::First => self.ends(false),
+            Action::Last => self.ends(true),
+            Action::NextFile => self.next_change(true),
+            Action::PreviousFile => self.next_change(false),
+            Action::Filter => self.open_jump(),
+            Action::Search => self.open_search(),
+            Action::Pick => self.toggle_pick(),
+            Action::Comment => {
+                if let Err(text) = self.compose(checkout) {
+                    return Then::Say(text.into());
+                }
+            }
+            Action::Refresh => out.extend(self.refresh(id)),
+            Action::OpenEditor => {
+                return match self.editor_target() {
+                    Some((checkout, path, line)) => Then::Edit { checkout, path, line },
+                    None => Then::Say("no file to open".into()),
+                }
+            }
+            _ => {}
+        }
+        Then::Nothing
+    }
+
+    fn click(&mut self, target: CodeClick, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
         match target {
             CodeClick::Tree { path } => {
                 if self.files.binary_search(&path).is_ok() {
@@ -460,14 +555,14 @@ impl CodeStage {
                 }
             }
             CodeClick::SearchOption { option } => return self.toggle_option(&option, id),
-            // The session takes this: it brings back the dialog.
+            // `gesture` hands this to the window.
             CodeClick::Back => {}
         }
         Vec::new()
     }
 
     /// `O`: the outline shown, or put away for the file's width.
-    pub fn toggle_outline(&mut self) {
+    fn toggle_outline(&mut self) {
         self.outline = !self.outline;
     }
 
@@ -475,7 +570,7 @@ impl CodeStage {
     /// comment, the search, the go-to-file list, the picked range — and the
     /// file is what is left. Never the stage: false when there was nothing
     /// to close.
-    pub fn escape(&mut self) -> bool {
+    fn escape(&mut self) -> bool {
         if self.comment_box.is_open() {
             self.comment_box.close();
         } else if self.search.is_some() {
@@ -498,12 +593,12 @@ impl CodeStage {
         self.cursor = (line as usize).saturating_sub(1).min(self.lines().saturating_sub(1));
     }
 
-    pub fn move_by(&mut self, delta: isize) {
+    fn move_by(&mut self, delta: isize) {
         let last = self.lines().saturating_sub(1) as isize;
         self.cursor = (self.cursor as isize + delta).clamp(0, last.max(0)) as usize;
     }
 
-    pub fn ends(&mut self, bottom: bool) {
+    fn ends(&mut self, bottom: bool) {
         self.cursor = if bottom { self.lines().saturating_sub(1) } else { 0 };
     }
 
@@ -542,7 +637,7 @@ impl CodeStage {
 
     /// `]` and `[`: the next or previous change, whether lines changed or
     /// were removed there.
-    pub fn next_change(&mut self, forward: bool) {
+    fn next_change(&mut self, forward: bool) {
         let starts: Vec<usize> = self.runs().iter().map(Run::start).collect();
         let found = if forward {
             starts.iter().find(|&&s| s > self.cursor)
@@ -555,7 +650,7 @@ impl CodeStage {
     }
 
     /// `E`: the file and line under the cursor, for the person's editor.
-    pub fn editor_target(&self) -> Option<(CheckoutId, String, Option<u32>)> {
+    fn editor_target(&self) -> Option<(CheckoutId, String, Option<u32>)> {
         let path = self.path.clone()?;
         Some((self.checkout, path, self.file.as_ref().map(|_| self.cursor as u32 + 1)))
     }
@@ -563,7 +658,7 @@ impl CodeStage {
     // ---- comments --------------------------------------------------------
 
     /// `v`: a range starts at the cursor, or is let go.
-    pub fn toggle_pick(&mut self) {
+    fn toggle_pick(&mut self) {
         self.mark = match self.mark {
             Some(_) => None,
             None => Some(self.cursor),
@@ -607,17 +702,17 @@ impl CodeStage {
 
     /// `c`: the comment box, under the picked lines, when there are lines
     /// and an agent to read it.
-    pub fn compose(&mut self, checkout: Option<&CheckoutInfo>) -> Result<(), &'static str> {
+    fn compose(&mut self, checkout: Option<&CheckoutInfo>) -> Result<(), &'static str> {
         self.comment_box.open(self.anchor().as_ref(), checkout)
     }
 
-    pub fn cancel_comment(&mut self) {
+    fn cancel_comment(&mut self) {
         self.comment_box.close();
     }
 
     /// The comment, sent through the review's path: stored under the
     /// checkout, then told to the agent. The box stays until it is saved.
-    pub fn comment(&mut self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
+    fn comment(&mut self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
         let anchor = self.anchor();
         self.comment_box.send(anchor, checkout, body)
     }
@@ -632,14 +727,14 @@ impl CodeStage {
 
     // ---- go to a file ----------------------------------------------------
 
-    pub fn open_jump(&mut self) {
+    fn open_jump(&mut self) {
         self.search = None;
         if self.jump.is_none() {
             self.jump = Some(FileJump::new(CODE_JUMP_SHOWN));
         }
     }
 
-    pub fn jump(&mut self, gesture: ReviewJumpGesture, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
+    fn jump(&mut self, gesture: ReviewJumpGesture, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
         let Some(jump) = &mut self.jump else {
             return Vec::new();
         };
@@ -658,7 +753,7 @@ impl CodeStage {
 
     // ---- search ----------------------------------------------------------
 
-    pub fn open_search(&mut self) {
+    fn open_search(&mut self) {
         self.jump = None;
         if self.search.is_none() {
             self.search = Some(Search::default());
@@ -667,7 +762,7 @@ impl CodeStage {
 
     /// The search field: typing changes the query, Enter searches for it —
     /// and with the matches current, reads the one the cursor is on.
-    pub fn search(&mut self, gesture: ReviewJumpGesture, id: impl FnMut() -> u64) -> Vec<ClientMsg> {
+    fn search(&mut self, gesture: ReviewJumpGesture, id: impl FnMut() -> u64) -> Vec<ClientMsg> {
         let Some(search) = &mut self.search else {
             return Vec::new();
         };
@@ -682,7 +777,7 @@ impl CodeStage {
     }
 
     /// What the files-to-include field says. It is searched with on Enter.
-    pub fn set_glob(&mut self, glob: String) {
+    fn set_glob(&mut self, glob: String) {
         if let Some(search) = &mut self.search {
             search.options.glob = glob;
         }
@@ -1434,5 +1529,51 @@ mod tests {
         assert_eq!(s.page(None).pick.as_deref(), Some("lines 1–4"));
         s.click(CodeClick::Line { line: 2, extend: false }, || 0);
         assert!(s.page(None).pick.is_none());
+    }
+
+    /// `gesture` on `s`, with what it sent.
+    fn gesture(s: &mut CodeStage, gesture: CodeGesture, checkout: Option<&CheckoutInfo>) -> (Then, Vec<ClientMsg>) {
+        let mut out = Vec::new();
+        let then = s.gesture(gesture, checkout, || 9, &mut out);
+        (then, out)
+    }
+
+    fn key(action: Action) -> CodeGesture {
+        CodeGesture::Action { action }
+    }
+
+    #[test]
+    fn b_goes_back_only_to_the_dialog_the_stage_was_opened_from() {
+        let mut s = reading("src/a.rs", None);
+        assert_eq!(gesture(&mut s, key(Action::GoBack), None).0, Then::Nothing);
+        s.back = Some(Back { label: "history".into() });
+        assert_eq!(gesture(&mut s, key(Action::GoBack), None).0, Then::Back);
+    }
+
+    #[test]
+    fn e_hands_the_window_the_file_and_line_under_the_cursor() {
+        let mut s = reading("src/a.rs", Some(3));
+        let edit = Then::Edit { checkout: CheckoutId(100), path: "src/a.rs".into(), line: Some(3) };
+        assert_eq!(gesture(&mut s, key(Action::OpenEditor), None).0, edit);
+        let (mut none, _) = stage(None, None);
+        assert_eq!(gesture(&mut none, key(Action::OpenEditor), None).0, Then::Say("no file to open".into()));
+    }
+
+    #[test]
+    fn c_says_why_a_comment_cannot_be_written() {
+        let mut s = reading("src/a.rs", None);
+        let alone = checkout(100, "main", true, Vec::new());
+        let said = gesture(&mut s, key(Action::Comment), Some(&alone)).0;
+        assert_eq!(said, Then::Say("no agent running in this checkout".into()));
+        assert!(s.page(Some(&alone)).comment.is_none(), "not composing");
+    }
+
+    #[test]
+    fn an_empty_comment_is_refused_and_nothing_is_sent() {
+        let mut s = reading("src/a.rs", None);
+        assert_eq!(gesture(&mut s, key(Action::Comment), Some(&with_agent())).0, Then::Nothing);
+        let (said, sent) = gesture(&mut s, CodeGesture::Comment { body: Some("  ".into()) }, Some(&with_agent()));
+        assert_eq!(said, Then::Say("the comment is empty".into()));
+        assert!(sent.is_empty());
     }
 }
