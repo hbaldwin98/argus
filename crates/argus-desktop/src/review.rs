@@ -80,8 +80,8 @@ impl ReviewDialog {
         self.session.receive(review)
     }
 
-    pub fn failed(&mut self, checkout: CheckoutId, request_id: u64, message: String) -> Answered {
-        self.session.failed(checkout, request_id, message)
+    pub fn failed(&mut self, request_id: u64, message: String) -> Answered {
+        self.session.failed(request_id, message)
     }
 
     /// Enter on a fold, or one of its buttons (`row`, which the cursor
@@ -103,8 +103,8 @@ impl ReviewDialog {
     }
 
     /// Whether a fold that could not be read was this dialog's to say so.
-    pub fn context_failed(&mut self, checkout: CheckoutId, request_id: u64) -> bool {
-        self.session.context_failed(checkout, request_id)
+    pub fn context_failed(&mut self, request_id: u64) -> bool {
+        self.session.context_failed(request_id)
     }
 
     fn view(&self) -> Option<&ReviewView> {

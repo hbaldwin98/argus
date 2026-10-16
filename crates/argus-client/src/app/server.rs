@@ -163,10 +163,10 @@ impl App {
             }
             ServerMsg::ReviewFailed {
                 request_id,
-                checkout,
+                checkout: _,
                 message,
             } => {
-                self.receive_review_failure(request_id, checkout, message);
+                self.receive_review_failure(request_id, message);
             }
             // The Code stage is the desktop window's; this client never
             // asks for any of it.
@@ -181,13 +181,13 @@ impl App {
             }
             ServerMsg::ReviewContextFailed {
                 request_id,
-                checkout,
+                checkout: _,
                 message,
             } => {
                 if self
                     .review
                     .as_mut()
-                    .is_some_and(|s| s.context_failed(checkout, request_id))
+                    .is_some_and(|s| s.context_failed(request_id))
                 {
                     self.alert(message);
                 }
@@ -700,9 +700,9 @@ impl App {
         self.report(format!("{n} commits"));
     }
 
-    fn receive_review_failure(&mut self, request_id: u64, checkout: CheckoutId, message: String) {
+    fn receive_review_failure(&mut self, request_id: u64, message: String) {
         if let Some(session) = &mut self.review {
-            let answered = session.failed(checkout, request_id, message);
+            let answered = session.failed(request_id, message);
             self.review_answered(answered);
         }
     }

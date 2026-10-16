@@ -131,19 +131,20 @@ impl ReviewSession {
         self.bases().into_iter().map(|b| self.ask(b, id())).collect()
     }
 
-    /// The side `review` answers, if it was asked for here and is the
-    /// latest ask for that side.
-    fn asked_for(&self, checkout: CheckoutId, request_id: u64) -> Option<ReviewBase> {
-        if checkout != self.checkout {
-            return None;
-        }
+    /// The side `request_id` answers, if it was asked for here and is the
+    /// latest ask for that side. The id alone says so: a client names every
+    /// request from one count.
+    fn asked_for(&self, request_id: u64) -> Option<ReviewBase> {
         [ReviewBase::Unstaged, ReviewBase::Staged, ReviewBase::Commit]
             .into_iter()
             .find(|&b| self.side(b).asked == Some(request_id))
     }
 
     pub fn receive(&mut self, review: Review) -> Answered {
-        let Some(base) = self.asked_for(review.checkout, review.request_id) else {
+        if review.checkout != self.checkout {
+            return Answered::Stale;
+        }
+        let Some(base) = self.asked_for(review.request_id) else {
             return Answered::Stale;
         };
         let mut view = ReviewView::new(review, self.split);
@@ -165,8 +166,8 @@ impl ReviewSession {
         self.settle(base)
     }
 
-    pub fn failed(&mut self, checkout: CheckoutId, request_id: u64, message: String) -> Answered {
-        let Some(base) = self.asked_for(checkout, request_id) else {
+    pub fn failed(&mut self, request_id: u64, message: String) -> Answered {
+        let Some(base) = self.asked_for(request_id) else {
             return Answered::Stale;
         };
         let side = self.side_mut(base);
@@ -276,8 +277,8 @@ impl ReviewSession {
     }
 
     /// Whether a fold that could not be read was this review's latest ask.
-    pub fn context_failed(&mut self, checkout: CheckoutId, request_id: u64) -> bool {
-        checkout == self.checkout && self.unfolding.take_if(|u| u.request_id == request_id).is_some()
+    pub fn context_failed(&mut self, request_id: u64) -> bool {
+        self.unfolding.take_if(|u| u.request_id == request_id).is_some()
     }
 
     /// Both sides of a change side by side, or stacked, for every side held.
@@ -439,7 +440,7 @@ mod tests {
         let msgs = s.refresh(|| 5);
         assert_eq!(msgs.len(), 2);
         assert_eq!(s.receive(answer(1, Unstaged, &["a.rs"])), Answered::Stale, "asked again since");
-        assert_eq!(s.failed(CO, 2, "gone".into()), Answered::Stale);
+        assert_eq!(s.failed(2, "gone".into()), Answered::Stale);
     }
 
     #[test]
@@ -453,14 +454,14 @@ mod tests {
     #[test]
     fn a_failure_is_said_in_either_order_and_stale_ones_are_not() {
         let (mut s, _) = working();
-        assert_eq!(s.failed(CO, 1, "no repository".into()), Answered::Failed("no repository".into()));
+        assert_eq!(s.failed(1, "no repository".into()), Answered::Failed("no repository".into()));
         assert_eq!(s.failure(), Some("no repository"));
-        assert_eq!(s.failed(CO, 1, "again".into()), Answered::Stale);
+        assert_eq!(s.failed(1, "again".into()), Answered::Stale);
         assert_eq!(s.receive(answer(2, Staged, &["b.rs"])), Answered::Shown { base: Staged, gave_way: Some(Unstaged) });
 
         let (mut s, _) = working();
         s.receive(answer(1, Unstaged, &["a.rs"]));
-        assert_eq!(s.failed(CO, 2, "locked".into()), Answered::Failed("locked".into()));
+        assert_eq!(s.failed(2, "locked".into()), Answered::Failed("locked".into()));
         assert_eq!(s.failure(), None, "the side on screen read fine");
         assert_eq!(s.switch_side(), Err("locked".into()));
     }
@@ -629,8 +630,8 @@ mod tests {
         s.unfold(false, 50).unwrap();
         s.unfold(true, 51).unwrap();
         assert!(!s.receive_context(below(50)));
-        assert!(!s.context_failed(CO, 50));
-        assert!(s.context_failed(CO, 51));
-        assert!(!s.context_failed(CO, 51), "and answered once");
+        assert!(!s.context_failed(50));
+        assert!(s.context_failed(51));
+        assert!(!s.context_failed(51), "and answered once");
     }
 }

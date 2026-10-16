@@ -64,10 +64,10 @@ impl Dialogs {
                     dialog.receive(review);
                 }
             }
-            ServerMsg::ReviewFailed { request_id, checkout, message } => {
+            ServerMsg::ReviewFailed { request_id, message, .. } => {
                 let taken = self.histories().any(|h| h.diff_failed(request_id, message.clone()));
                 if let Some(dialog) = self.review_mut().filter(|_| !taken) {
-                    dialog.failed(checkout, request_id, message);
+                    dialog.failed(request_id, message);
                 }
             }
             ServerMsg::ReviewContext(context) => {
@@ -75,8 +75,8 @@ impl Dialogs {
                     dialog.receive_context(context);
                 }
             }
-            ServerMsg::ReviewContextFailed { request_id, checkout, message } => {
-                if self.review_mut().is_some_and(|d| d.context_failed(checkout, request_id)) {
+            ServerMsg::ReviewContextFailed { request_id, message, .. } => {
+                if self.review_mut().is_some_and(|d| d.context_failed(request_id)) {
                     say.push(Event::Notice { text: message });
                 }
             }
