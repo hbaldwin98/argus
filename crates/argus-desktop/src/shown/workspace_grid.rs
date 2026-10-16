@@ -49,6 +49,8 @@ pub enum Refusal {
     NoWorkspacePane,
     /// Another pane would leave one under `MIN_COLS` by `MIN_ROWS`.
     NoRoom,
+    /// The grid has as many cells as a side's number can name.
+    Full,
     /// The pane is on a side of the console, or is an extension's console view.
     OnConsole,
 }
@@ -58,6 +60,7 @@ impl std::fmt::Display for Refusal {
         match self {
             Refusal::NoWorkspacePane => f.write_str("show a pane in the Workspace first, then open another beside it"),
             Refusal::NoRoom => write!(f, "no room for another pane: each needs {MIN_COLS} columns by {MIN_ROWS} rows. Close one first"),
+            Refusal::Full => f.write_str("the grid holds as many panes as it can: close one first"),
             Refusal::OnConsole => f.write_str("that pane is open in the console: close it there first"),
         }
     }
@@ -194,6 +197,11 @@ impl WorkspaceGrid {
         }
         if let Some(side) = self.side_of(pane) {
             return Ok(side);
+        }
+        // A grid the page has not measured always has room, so the cells'
+        // numbers, which the page reads as bytes, are what bounds it.
+        if self.cells.len() > usize::from(u8::MAX) {
+            return Err(Refusal::Full);
         }
         if !self.has_room() {
             return Err(Refusal::NoRoom);
@@ -466,6 +474,23 @@ mod tests {
         assert!(Refusal::NoWorkspacePane.to_string().contains("in the Workspace first"));
         assert!(Refusal::NoRoom.to_string().contains("20 columns by 6 rows"));
         assert!(Refusal::OnConsole.to_string().contains("open in the console"));
+        assert!(Refusal::Full.to_string().contains("close one first"));
+    }
+
+    #[test]
+    fn the_grid_refuses_a_pane_past_the_most_its_page_can_number() {
+        let mut grid = unmeasured(1);
+        for pane in 2..=256 {
+            assert!(grid.join(PaneId(pane), &mut Vec::new()).is_ok(), "pane {pane}");
+        }
+        let mut out = Vec::new();
+        assert_eq!(grid.join(PaneId(257), &mut out), Err(Refusal::Full));
+        assert!(out.is_empty());
+        let sides = grid.sides();
+        let distinct: std::collections::HashSet<_> = sides.iter().map(|side| format!("{side:?}")).collect();
+        assert_eq!((sides.len(), distinct.len()), (256, 256), "no side's number repeats");
+        let cells: std::collections::HashSet<u8> = rows(&grid).into_iter().flatten().collect();
+        assert_eq!(cells.len(), 256, "nor does a cell's on the page");
     }
 
     #[test]
