@@ -269,7 +269,6 @@ function paneRow(checkout, pane) {
             },
             {
                 label: 'Open beside',
-                hint: 'in the Workspace, as another pane in the grid',
                 run: () => call('open_beside', { pane: pane.id }),
             },
         ])),

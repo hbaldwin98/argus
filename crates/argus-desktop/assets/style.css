@@ -705,6 +705,16 @@
   height: var(--control-h);
   cursor: pointer;
 }
+/* A label never wraps under its hint: a hint is a key or a word, and one
+   that runs long is cut rather than squeezing the label onto two lines. */
+.mi > span {
+  white-space: nowrap;
+}
+.mi > .meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .mi.on {
   background: var(--bg-selected);
 }
@@ -1832,11 +1842,20 @@ body.maximized .winbtn .restore {
 .gcell.keyed > .thead {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
+/* One height for every pane's header, close button or not: the terminal
+   under it gets what is left, so a header an icon taller sizes its pane a
+   row shorter than its neighbour's. */
 .thead.gripper {
+  height: var(--control-h-sm);
+  box-sizing: border-box;
   cursor: grab;
-  gap: var(--sp-3);
-  padding-left: var(--sp-5);
+  gap: var(--sp-6);
+  padding-left: var(--sp-8);
   user-select: none;
+}
+.thead.gripper .x-room {
+  width: 20px;
+  flex: none;
 }
 .thead.gripper .ttl {
   flex: 1;

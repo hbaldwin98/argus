@@ -120,8 +120,10 @@ function head(i: number, pane: Shown): HTMLElement {
     el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'),
     el('span', { class: 'ttl' }, pane.title),
     el('span', { class: `sdot ${pane.status}`, 'aria-hidden': 'true' }),
+    // The Workspace's own pane cannot be taken out, but keeps the button's
+    // room so the status dots line up across the headers.
     i === 0
-      ? ''
+      ? el('span', { class: 'x-room', 'aria-hidden': 'true' })
       : el(
           'button',
           {

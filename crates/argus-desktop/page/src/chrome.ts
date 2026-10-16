@@ -332,7 +332,6 @@ function paneRow(checkout: number, pane: RailPane): HTMLElement {
           },
           {
             label: 'Open beside',
-            hint: 'in the Workspace, as another pane in the grid',
             run: () => call('open_beside', { pane: pane.id }),
           },
         ]),
