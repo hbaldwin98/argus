@@ -16,9 +16,9 @@
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
 //! the project switcher (`switcher`) and the dialog adding a project
 //! (`add_project`), the Settings dialog's choices (`preferences`), the
-//! console (`console`), the views agents showed (`agent_views`), what
-//! fills the stage and where leaving it goes (`stage`), and what
-//! the daemon is making
+//! console (`console`), the views agents showed (`agent_views`), the
+//! extensions' views (`extension_views`), what fills the stage and where
+//! leaving it goes (`stage`), and what the daemon is making
 //! (`argus_protocol::awaited`). The session says which of them a message
 //! or gesture is for, and what one of them changing means for the rest.
 //!
@@ -45,7 +45,7 @@ use crate::add_project::{AddProject, AddProjectGesture, Adding};
 use crate::agent_views::AgentViews;
 use crate::extension_dialog::ExtensionDialogs;
 use crate::extension_keys::ExtensionKeys;
-use crate::extension_views::{first_place, ExtTable, ExtensionGesture, ExtensionViews, ExtensionsPage, Here};
+use crate::extension_views::{first_place, ExtensionGesture, ExtensionViews, Here, Placed};
 use crate::agents::Agents;
 use crate::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts_stage::{CheckoutsStage, Opened};
@@ -142,7 +142,6 @@ pub struct Session {
     /// board of its repository has arrived.
     opening_feature: PendingFeature,
     extension_keys: ExtensionKeys,
-    extensions_sent: Sent<ExtensionsPage>,
     extension_dialogs: ExtensionDialogs,
     rail_width: DraggedWidth,
     outline_width: DraggedWidth,
@@ -218,7 +217,6 @@ impl Session {
             extension_views: ExtensionViews::new(settings.extensions),
             opening_feature: PendingFeature::default(),
             extension_keys: ExtensionKeys::default(),
-            extensions_sent: Sent::default(),
             extension_dialogs: ExtensionDialogs::default(),
             rail_width: DraggedWidth::new(dragged_width::RAIL, settings.rail_width),
             outline_width: DraggedWidth::new(dragged_width::OUTLINE, settings.outline_width),
@@ -1735,32 +1733,22 @@ impl Session {
         self.shown.sync_views(&wanted, &mut self.out);
     }
 
-    fn extensions_page(&self) -> ExtensionsPage {
+    /// Where the window put the extension views listed here, for them to
+    /// draw.
+    fn placed_extensions(&self) -> Placed {
         let here = self.here();
-        let docks = &self.docks;
-        let page = self.stages.extension_page();
-        let on = |panel: &Panel| self.extension_on(panel);
-        let with_screen = |mut table: ExtTable| {
-            if let (Some(console), Panel::Extension(name)) = (&mut table.console, &table.panel) {
-                let side = self.shown.view_side(name);
-                console.side = side;
-                console.keyed = side.is_some_and(|side| side == self.shown.keys());
-            }
-            table
+        let present: Vec<Panel> = self.extension_views.present(&here).collect();
+        let screen = |panel: &Panel| match panel {
+            Panel::Extension(name) => self.shown.view_side(name),
+            _ => None,
         };
-        ExtensionsPage {
-            views: self.extension_views.tabs(&here, |panel| docks.place_of(panel) == Some(Place::Stage), on),
-            tables: self
-                .extension_views
-                .present(&here)
-                .filter(|panel| on(panel))
-                .filter_map(|panel| self.extension_views.table(&panel, &here, page == Some(&panel)))
-                .map(with_screen)
-                .collect(),
-            confirm: self.extension_views.confirm(),
-            listed: self.extension_views.listed(),
-            commands: self.extension_keys.page(),
-            groups: self.extension_keys.groups(self.extension_views.views()),
+        Placed {
+            page: self.stages.extension_page().cloned(),
+            on: present.iter().filter(|p| self.extension_on(p)).cloned().collect(),
+            staged: present.iter().filter(|p| self.docks.place_of(p) == Some(Place::Stage)).cloned().collect(),
+            screens: present.iter().filter_map(|p| Some((p.clone(), screen(p)?))).collect(),
+            keys: self.shown.keys(),
+            here,
         }
     }
 
@@ -3038,10 +3026,8 @@ impl Session {
             events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
         }
         events.extend(self.code.take(self.stages.now() == Stage::Code, &self.tree));
-        let extensions = self.extensions_page();
-        if let Some(page) = self.extensions_sent.take((extensions != ExtensionsPage::default()).then_some(extensions)) {
-            events.push(Event::Extensions(Box::new(page)));
-        }
+        let extensions = self.placed_extensions();
+        events.extend(self.extension_views.take(&extensions, &self.extension_keys));
         events.extend(self.extension_dialogs.take());
         let tree = &self.tree;
         // A view open as the page is in front of the person as much as the
@@ -3092,7 +3078,7 @@ impl Session {
         self.code.reload();
         self.views.forget();
         self.saved.forget();
-        self.extensions_sent.forget();
+        self.extension_views.reload();
         self.extension_dialogs.reload();
         // A page that has just loaded has no palette open.
         self.palette = false;
@@ -3167,6 +3153,7 @@ impl Session {
 mod tests {
     use super::*;
     use crate::docks::FloatBounds;
+    use crate::extension_views::ExtensionsPage;
     use crate::fixtures::{checkout, pane, project, repository};
     use crate::link_dialog::LinkPage;
     use argus_protocol::{PaneKind, PaneStatus};
@@ -6120,6 +6107,12 @@ mod tests {
         ServerMsg::ExtensionViews(serde_json::from_str(&json).unwrap())
     }
 
+    /// The extension views as the page would draw them now, whatever it
+    /// was last sent.
+    fn drawn(s: &Session) -> ExtensionsPage {
+        s.extension_views.page(&s.placed_extensions(), &s.extension_keys)
+    }
+
     fn extensions_page(s: &mut Session) -> Option<ExtensionsPage> {
         s.events(0).into_iter().rev().find_map(|e| match e {
             Event::Extensions(page) => Some(*page),
@@ -6138,7 +6131,7 @@ mod tests {
 
     /// The extension views on screen, by name.
     fn tables(s: &mut Session) -> Vec<String> {
-        s.extensions_page().tables.into_iter().map(|t| t.view).collect()
+        drawn(s).tables.into_iter().map(|t| t.view).collect()
     }
 
     #[test]
@@ -6293,7 +6286,7 @@ mod tests {
     }
 
     fn listed(s: &mut Session) -> Vec<String> {
-        s.extensions_page().views.into_iter().map(|t| t.view).collect()
+        drawn(s).views.into_iter().map(|t| t.view).collect()
     }
 
     #[test]
@@ -6491,11 +6484,11 @@ mod tests {
         s.receive(scoped());
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
         assert_eq!(s.stages.now(), Stage::Extension, "a page, as it asked");
-        assert!(s.extensions_page().tables.first().is_some_and(|t| t.page));
+        assert!(drawn(&s).tables.first().is_some_and(|t| t.page));
 
         s.call(Call::ExtensionMode { panel: panel("containers"), page: false });
         assert_eq!(s.stages.now(), Stage::Checkouts, "docking goes back to the stage it opened over");
-        assert!(s.extensions_page().tables.first().is_some_and(|t| !t.page));
+        assert!(drawn(&s).tables.first().is_some_and(|t| !t.page));
         let saved = s.take_settings().expect("saved").docks.unwrap();
         assert!(saved.right.tabs.contains(&panel("containers")) && saved.staged.is_empty());
 
@@ -6525,7 +6518,7 @@ mod tests {
         assert_eq!(s.stages.now(), Stage::Checkouts, "a view received is not opened as a page");
         docks(&mut s, DockGesture::Stage { panel: panel("containers") });
         assert_eq!(s.stages.now(), Stage::Extension);
-        assert!(s.extensions_page().tables.first().is_some_and(|t| t.page));
+        assert!(drawn(&s).tables.first().is_some_and(|t| t.page));
         assert_eq!(told_stage(&mut s, &panel("containers")), Some(true));
         docks(&mut s, DockGesture::Move { panel: panel("containers"), dock: Dock::Right });
         assert_eq!(s.stages.now(), Stage::Checkouts, "docked, back to the stage it opened over");
@@ -6610,7 +6603,7 @@ mod tests {
 
         s.receive(scoped());
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "argus".into() });
-        assert!(s.extensions_page().tables.first().is_some_and(|t| !t.page));
+        assert!(drawn(&s).tables.first().is_some_and(|t| !t.page));
         s.events(0);
         s.receive(ServerMsg::ExtensionViews(Vec::new()));
         assert!(tables(&mut s).is_empty());
@@ -6631,7 +6624,7 @@ mod tests {
     }
 
     fn dev_console(s: &mut Session) -> crate::extension_views::ExtTableConsole {
-        s.extensions_page().tables.into_iter().find(|t| t.view == "dev").and_then(|t| t.console).expect("on screen")
+        drawn(s).tables.into_iter().find(|t| t.view == "dev").and_then(|t| t.console).expect("on screen")
     }
 
     #[test]
@@ -6700,7 +6693,7 @@ mod tests {
         s.receive(console_view(Some(30), false));
         s.call(Call::ExtensionMode { panel: panel("dev"), page: true });
         assert_eq!(s.stages.now(), Stage::Extension);
-        let table = s.extensions_page().tables.remove(0);
+        let table = drawn(&s).tables.remove(0);
         assert!(table.page && table.rows.is_empty() && table.columns.is_empty() && table.selected.is_none());
         assert_eq!(s.shown.pane(), Some(PaneId(30)), "a page has the keys the moment it is up");
         assert!(table.console.as_ref().unwrap().keyed);
@@ -6728,7 +6721,7 @@ mod tests {
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
         assert_eq!(s.stages.now(), Stage::Extension);
         assert_eq!(tables(&mut s), ["containers", "argus"]);
-        let page = s.extensions_page();
+        let page = drawn(&s);
         assert_eq!(page.tables.iter().map(|t| t.page).collect::<Vec<_>>(), [true, false]);
         assert!(page.views.iter().all(|t| t.on || t.view == "api"));
 
@@ -6736,7 +6729,7 @@ mod tests {
         docks(&mut s, DockGesture::Move { panel: panel("containers"), dock: Dock::Bottom });
         assert_eq!(s.stages.now(), Stage::Workspace);
         assert_eq!(tables(&mut s), ["containers", "argus"]);
-        assert!(s.extensions_page().tables.iter().all(|t| !t.page));
+        assert!(drawn(&s).tables.iter().all(|t| !t.page));
         // The palette moves the view last used.
         s.call(Call::ExtensionKey { panel: panel("argus"), action: Action::Next });
         s.call(Call::Command { action: Action::ExtensionPage });
@@ -6750,9 +6743,9 @@ mod tests {
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
         s.call(Call::ShowFeatures { open: true });
         assert!(tables(&mut s).is_empty());
-        assert!(!s.extensions_page().listed);
+        assert!(!drawn(&s).listed);
         s.call(Call::ToggleExtensions);
-        assert!(s.extensions_page().listed);
+        assert!(drawn(&s).listed);
         assert!(s.take_settings().is_some_and(|saved| saved.extensions.open));
     }
 

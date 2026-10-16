@@ -1,13 +1,14 @@
 //! Which extension views the window holds, which are listed where the person
-//! is, each one's selected row, the question an action waits on, and what
-//! their gestures send.
+//! is, each one's selected row, the question an action waits on, what a
+//! gesture in one sends, and the page of them all — drawn where the window
+//! says each one is — as the page last heard it.
 //!
 //! The daemon owns the views. Like an agent's view, one changes only when
 //! its extension publishes it again: an action is sent as it stands, and
 //! nothing here moves until the extension answers with a new view. Where a
 //! view is — which dock, or a page — is `docks`'s, and the page up is
-//! `stage`'s; the extension's `place` is only where it goes the first time
-//! it opens.
+//! `stage`'s; both come in as `Placed`. The extension's `place` is only
+//! where it goes the first time it opens.
 
 use std::collections::BTreeMap;
 
@@ -15,9 +16,10 @@ use argus_protocol::{CheckoutId, ClientMsg, ExtPlace, ExtScope, ExtView, PaneId,
 use serde::{Deserialize, Serialize};
 
 use crate::docks::{Dock, Panel, Place};
-use crate::extension_keys::{ExtCommandPage, ExtGroup};
+use crate::extension_keys::{ExtCommandPage, ExtGroup, ExtensionKeys};
 use crate::keymap::Action;
-use crate::page::Side;
+use crate::page::{Event, Side};
+use crate::sent::Sent;
 use crate::settings::ExtensionsLayout;
 
 /// Where the person is, which decides the views a scoped one is listed in.
@@ -35,6 +37,24 @@ impl Here {
             ExtScope::Checkout(id) => self.checkout == Some(id),
         }
     }
+}
+
+/// Where the window put the views listed here, which only it knows: the
+/// docks, the stage and the screens it gave console views. Built by the
+/// session each time the page is told.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Placed {
+    pub here: Here,
+    /// The view the stage is up on, as a page.
+    pub page: Option<Panel>,
+    /// The views on screen: docked and shown, or the page.
+    pub on: Vec<Panel>,
+    /// The views that open as a page rather than docked.
+    pub staged: Vec<Panel>,
+    /// The screen each console view on screen is drawn on.
+    pub screens: Vec<(Panel, Side)>,
+    /// The screen with the keys.
+    pub keys: Side,
 }
 
 /// Where an extension says its view goes the first time it opens.
@@ -196,6 +216,7 @@ pub struct ExtensionViews {
     /// Whether the sidebar's Extensions are unfolded.
     listed: bool,
     unsaved: bool,
+    sent: Sent<ExtensionsPage>,
 }
 
 impl ExtensionViews {
@@ -230,10 +251,6 @@ impl ExtensionViews {
     pub fn get(&self, panel: &Panel, here: &Here) -> Option<&ExtView> {
         let (extension, view) = panel.extension_view()?;
         self.find(extension, view).filter(|v| here.holds(v.scope))
-    }
-
-    pub fn views(&self) -> &[ExtView] {
-        &self.views
     }
 
     /// The panel of every view listed here, for the docks to show.
@@ -347,17 +364,13 @@ impl ExtensionViews {
         yes.then_some(msg)
     }
 
-    pub fn confirm(&self) -> Option<ExtConfirm> {
+    fn confirm(&self) -> Option<ExtConfirm> {
         self.confirm.as_ref().map(|(_, confirm, _)| confirm.clone())
     }
 
     pub fn toggle_listed(&mut self) {
         self.listed = !self.listed;
         self.unsaved = true;
-    }
-
-    pub fn listed(&self) -> bool {
-        self.listed
     }
 
     /// What to keep between runs, once something in it changed.
@@ -369,12 +382,41 @@ impl ExtensionViews {
         ExtensionsLayout { open: self.listed, modes: BTreeMap::new() }
     }
 
+    /// The views as the page draws them: every one listed here, and a table
+    /// for each on screen.
+    pub fn page(&self, placed: &Placed, keys: &ExtensionKeys) -> ExtensionsPage {
+        ExtensionsPage {
+            views: self.tabs(placed),
+            tables: self
+                .present(&placed.here)
+                .filter(|panel| placed.on.contains(panel))
+                .filter_map(|panel| self.table(&panel, placed))
+                .collect(),
+            confirm: self.confirm(),
+            listed: self.listed,
+            commands: keys.page(),
+            groups: keys.groups(&self.views),
+        }
+    }
+
+    /// The page, if it differs from what the page was last sent. Empty is
+    /// the default, which is sent only once views have been and gone.
+    pub fn take(&mut self, placed: &Placed, keys: &ExtensionKeys) -> Option<Event> {
+        let page = self.page(placed, keys);
+        self.sent.take((page != ExtensionsPage::default()).then_some(page)).map(|page| Event::Extensions(Box::new(page)))
+    }
+
+    /// The page reloaded and holds nothing: the views are sent again.
+    pub fn reload(&mut self) {
+        self.sent.forget();
+    }
+
     /// The views listed here, each saying whether it opens as a page and
-    /// whether it is on screen, as `on` says.
-    pub fn tabs(&self, here: &Here, page: impl Fn(&Panel) -> bool, on: impl Fn(&Panel) -> bool) -> Vec<ExtTab> {
+    /// whether it is on screen.
+    fn tabs(&self, placed: &Placed) -> Vec<ExtTab> {
         self.views
             .iter()
-            .filter(|v| here.holds(v.scope))
+            .filter(|v| placed.here.holds(v.scope))
             .map(|v| {
                 let panel = Panel::extension(&v.extension, &v.name);
                 ExtTab {
@@ -383,8 +425,8 @@ impl ExtensionViews {
                     view: v.name.clone(),
                     title: v.title.clone(),
                     icon: v.icon.clone(),
-                    page: page(&panel),
-                    on: on(&panel),
+                    page: placed.staged.contains(&panel),
+                    on: placed.on.contains(&panel),
                 }
             })
             .collect()
@@ -403,14 +445,15 @@ impl ExtensionViews {
     }
 
     /// The view `panel` names, as its dock or the page draws it.
-    pub fn table(&self, panel: &Panel, here: &Here, page: bool) -> Option<ExtTable> {
-        let view = self.get(panel, here)?;
+    fn table(&self, panel: &Panel, placed: &Placed) -> Option<ExtTable> {
+        let view = self.get(panel, &placed.here)?;
+        let side = placed.screens.iter().find(|(p, _)| p == panel).map(|&(_, side)| side);
         Some(ExtTable {
             panel: panel.clone(),
             extension: view.extension.clone(),
             view: view.name.clone(),
             title: view.title.clone(),
-            page,
+            page: placed.page.as_ref() == Some(panel),
             columns: view.columns.clone(),
             rows: view
                 .rows
@@ -424,11 +467,12 @@ impl ExtensionViews {
                 .collect(),
             selected: self.selected_in(panel, view),
             default: view.default.clone(),
-            // The window fills in its screen and keys: only it knows them.
+            // Its screen and keys are the window's, as `placed` says.
             console: view.console.as_ref().map(|c| ExtTableConsole {
+                side,
                 pane: c.pane.map(|p| p.0),
                 ended: c.ended.map(|e| ExtConsoleEnd { code: e.code }),
-                ..ExtTableConsole::default()
+                keyed: side == Some(placed.keys),
             }),
         })
     }
@@ -469,6 +513,11 @@ mod tests {
         Panel::extension("docker", "images")
     }
 
+    /// Placed nowhere, `here`.
+    fn at(here: Here) -> Placed {
+        Placed { here, ..Placed::default() }
+    }
+
     fn key(action: Action) -> ExtensionGesture {
         ExtensionGesture::Key { action }
     }
@@ -493,9 +542,9 @@ mod tests {
     fn a_key_steps_the_selection_and_enter_takes_the_default_action() {
         let (mut views, here) = (defaulted(), Here::default());
         assert!(views.gesture(&containers(), &here, key(Action::Next)).unwrap().is_none());
-        assert_eq!(views.table(&containers(), &here, false).unwrap().selected.as_deref(), Some("db"));
+        assert_eq!(views.table(&containers(), &at(here)).unwrap().selected.as_deref(), Some("db"));
         assert!(views.gesture(&containers(), &here, key(Action::First)).unwrap().is_none());
-        assert_eq!(views.table(&containers(), &here, false).unwrap().selected.as_deref(), Some("web"));
+        assert_eq!(views.table(&containers(), &at(here)).unwrap().selected.as_deref(), Some("web"));
         views.gesture(&containers(), &here, key(Action::Last)).unwrap();
         let sent = views.gesture(&containers(), &here, key(Action::Choose)).unwrap();
         assert_eq!(sent_row(sent).as_deref(), Some("db"));
@@ -514,7 +563,7 @@ mod tests {
         assert!(views.gesture(&containers(), &here, key(Action::Choose)).unwrap().is_none());
         let double = ExtensionGesture::Default { row: "db".into() };
         assert!(views.gesture(&containers(), &here, double).unwrap().is_none());
-        assert_eq!(views.table(&containers(), &here, false).unwrap().selected.as_deref(), Some("db"), "only selected");
+        assert_eq!(views.table(&containers(), &at(here)).unwrap().selected.as_deref(), Some("db"), "only selected");
     }
 
     #[test]
@@ -543,9 +592,9 @@ mod tests {
     #[test]
     fn a_scoped_view_is_listed_only_where_its_scope_is() {
         let (views, nowhere) = held();
-        assert_eq!(views.tabs(&nowhere, |_| false, |_| false).len(), 1);
+        assert_eq!(views.tabs(&at(nowhere)).len(), 1);
         let here = Here { repository: Some(RepositoryId(4)), checkout: None };
-        let names: Vec<String> = views.tabs(&here, |_| false, |_| false).into_iter().map(|t| t.view).collect();
+        let names: Vec<String> = views.tabs(&at(here)).into_iter().map(|t| t.view).collect();
         assert_eq!(names, ["containers", "images"]);
         assert_eq!(views.present(&here).collect::<Vec<_>>(), [containers(), images()]);
     }
@@ -570,7 +619,7 @@ mod tests {
         ));
         let wide = views.act(&containers(), &here, "prune").unwrap().unwrap();
         assert!(matches!(wide, ClientMsg::ExtensionAction { row: None, .. }));
-        assert_eq!(views.table(&containers(), &here, false).unwrap().rows.len(), 2, "nothing predicted");
+        assert_eq!(views.table(&containers(), &at(here)).unwrap().rows.len(), 2, "nothing predicted");
     }
 
     #[test]
@@ -579,8 +628,8 @@ mod tests {
         let repo = Here { repository: Some(RepositoryId(4)), checkout: None };
         views.gesture(&containers(), &repo, key(Action::Next)).unwrap();
         views.gesture(&images(), &repo, key(Action::Last)).unwrap();
-        assert_eq!(views.table(&containers(), &repo, false).unwrap().selected.as_deref(), Some("db"));
-        assert_eq!(views.table(&images(), &repo, false).unwrap().selected.as_deref(), Some("b"));
+        assert_eq!(views.table(&containers(), &at(repo)).unwrap().selected.as_deref(), Some("db"));
+        assert_eq!(views.table(&images(), &at(repo)).unwrap().selected.as_deref(), Some("b"));
     }
 
     #[test]
@@ -627,7 +676,72 @@ mod tests {
         assert!(views.get(&images(), &here).is_none(), "out of scope");
         assert!(views.get(&containers(), &here).is_some());
         views.receive(Vec::new());
-        assert!(views.table(&containers(), &here, true).is_none());
+        assert!(views.table(&containers(), &at(here)).is_none());
         assert!(views.act(&containers(), &here, "logs").is_err());
+    }
+
+    fn keys() -> ExtensionKeys {
+        ExtensionKeys::default()
+    }
+
+    #[test]
+    fn the_page_lists_what_is_here_and_draws_only_what_is_on_screen() {
+        let (views, _) = held();
+        let repo = Here { repository: Some(RepositoryId(4)), checkout: None };
+        let placed = Placed { on: vec![images()], staged: vec![containers()], ..at(repo) };
+        let page = views.page(&placed, &keys());
+        let tabs: Vec<(&str, bool, bool)> = page.views.iter().map(|t| (t.view.as_str(), t.page, t.on)).collect();
+        assert_eq!(tabs, [("containers", true, false), ("images", false, true)]);
+        let tables: Vec<&str> = page.tables.iter().map(|t| t.view.as_str()).collect();
+        assert_eq!(tables, ["images"], "only the view on screen");
+        assert!(page.tables.iter().all(|t| !t.page), "docked, not the page");
+    }
+
+    #[test]
+    fn the_view_the_stage_is_up_on_is_drawn_as_the_page() {
+        let (views, here) = held();
+        let placed = Placed { page: Some(containers()), on: vec![containers()], ..at(here) };
+        assert!(views.page(&placed, &keys()).tables[0].page);
+        let docked = Placed { on: vec![containers()], ..at(here) };
+        assert!(!views.page(&docked, &keys()).tables[0].page);
+    }
+
+    #[test]
+    fn a_console_views_table_carries_the_screen_the_window_gave_it_and_whether_it_has_the_keys() {
+        let json = r#"[{"extension": "docker", "name": "dev", "title": "Dev",
+            "console": {"command": ["sh"], "pane": 9}}]"#;
+        let mut views = ExtensionViews::default();
+        views.receive(serde_json::from_str(json).unwrap());
+        let dev = Panel::extension("docker", "dev");
+        let console = |placed: &Placed| views.page(placed, &keys()).tables.remove(0).console.unwrap();
+        let waiting = console(&Placed { on: vec![dev.clone()], ..Placed::default() });
+        assert_eq!((waiting.side, waiting.pane, waiting.keyed), (None, Some(9), false), "no screen yet");
+        let screens = vec![(dev.clone(), Side::View(0))];
+        let drawn = console(&Placed { on: vec![dev.clone()], screens: screens.clone(), ..Placed::default() });
+        assert_eq!((drawn.side, drawn.keyed), (Some(Side::View(0)), false));
+        let keyed = console(&Placed { on: vec![dev.clone()], screens, keys: Side::View(0), ..Placed::default() });
+        assert!(keyed.keyed);
+    }
+
+    #[test]
+    fn nothing_is_sent_before_a_view_is_published_and_its_going_is_sent_once() {
+        let mut views = ExtensionViews::default();
+        let here = Placed::default();
+        assert!(views.take(&here, &keys()).is_none(), "nothing yet");
+        views.receive(published());
+        assert!(matches!(views.take(&here, &keys()), Some(Event::Extensions(page)) if page.views.len() == 1));
+        assert!(views.take(&here, &keys()).is_none(), "unchanged");
+        views.receive(Vec::new());
+        assert!(matches!(views.take(&here, &keys()), Some(Event::Extensions(page)) if *page == ExtensionsPage::default()));
+        assert!(views.take(&here, &keys()).is_none(), "once");
+    }
+
+    #[test]
+    fn a_reloaded_page_hears_the_views_again() {
+        let (mut views, _) = held();
+        let here = Placed::default();
+        views.take(&here, &keys());
+        views.reload();
+        assert!(matches!(views.take(&here, &keys()), Some(Event::Extensions(_))));
     }
 }
