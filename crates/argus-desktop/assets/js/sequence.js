@@ -7,7 +7,7 @@
 // dragged sideways, is sent as the flow's source rewritten — the diagram
 // moves when the daemon's pushed flows say it did.
 import { el } from './dom.js';
-import { bindMenu, flowSteps, nextFlow, selectStep, stepAt } from './flows.js';
+import { bindMenu, flowSteps, selectStep } from './flows.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { begin, drawWork, edit, field, formButtons, keycap, lineList, titled } from './work.js';
@@ -413,13 +413,9 @@ export function diagramAction(action) {
         case 'previous':
         case 'first':
         case 'last':
-            stepAt(flow, action);
-            return true;
         case 'nextFlow':
-            nextFlow(view, 1);
-            return true;
         case 'previousFlow':
-            nextFlow(view, -1);
+            call('feature_action', { action });
             return true;
         case 'zoomIn':
         case 'zoomOut':

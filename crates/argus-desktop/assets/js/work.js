@@ -674,24 +674,12 @@ export function workAction(action) {
         return recordAction(view, action);
     if (view.lens === 'flows')
         return flowsAction(view, action);
-    const at = view.rows.findIndex((row) => row.on);
-    const selectAt = (i) => {
-        const row = view.rows[Math.max(0, Math.min(view.rows.length - 1, i))];
-        if (row)
-            call('select_work', { at: row.at });
-    };
     switch (action) {
         case 'next':
-            selectAt(at + 1);
-            return true;
         case 'previous':
-            selectAt(at - 1);
-            return true;
         case 'first':
-            selectAt(0);
-            return true;
         case 'last':
-            selectAt(view.rows.length - 1);
+            call('feature_action', { action });
             return true;
         case 'edit':
             editRow();

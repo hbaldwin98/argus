@@ -2366,6 +2366,10 @@ impl Session {
             Action::Previous => -1,
             Action::First => isize::MIN,
             Action::Last => isize::MAX,
+            Action::NextFlow | Action::PreviousFlow => {
+                self.features.step_flow(if action == Action::NextFlow { 1 } else { -1 });
+                return self.finish();
+            }
             Action::Layout | Action::Folded => {
                 self.run_command(action);
                 return self.finish();

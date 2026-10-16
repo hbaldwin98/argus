@@ -83,27 +83,6 @@ function picture(flow) {
 export function selectStep(diagram, step) {
     call('select_step', { diagram, step });
 }
-export function stepAt(flow, action) {
-    const count = flow.rows.filter((row) => row.number !== null).length;
-    const at = (flow.step?.number ?? 1) - 1;
-    let to = at;
-    if (action === 'next')
-        to = at + 1;
-    else if (action === 'previous')
-        to = at - 1;
-    else if (action === 'first')
-        to = 0;
-    else
-        to = count - 1;
-    selectStep(flow.id, Math.max(0, Math.min(count - 1, to)));
-}
-export function nextFlow(view, by) {
-    const flows = view.flows?.flows ?? [];
-    const at = flows.findIndex((f) => f.on);
-    const next = flows[Math.max(0, Math.min(flows.length - 1, at + by))];
-    if (next)
-        selectStep(next.id, 0);
-}
 /** The decisions a step can be bound to, as a menu by the button or the
  *  step; choosing one writes its comment under the step. */
 export function bindMenu(flow, at) {
@@ -140,10 +119,12 @@ export function flowsAction(view, action) {
             begin({ what: 'addFlow', text: '' });
             return true;
         case 'nextFlow':
-            nextFlow(view, 1);
-            return true;
         case 'previousFlow':
-            nextFlow(view, -1);
+        case 'next':
+        case 'previous':
+        case 'first':
+        case 'last':
+            call('feature_action', { action });
             return true;
         default:
             break;
@@ -151,12 +132,6 @@ export function flowsAction(view, action) {
     if (!flow)
         return false;
     switch (action) {
-        case 'next':
-        case 'previous':
-        case 'first':
-        case 'last':
-            stepAt(flow, action);
-            return true;
         case 'expand':
         case 'choose':
             openExpanded();

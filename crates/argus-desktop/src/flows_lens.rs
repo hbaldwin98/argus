@@ -9,7 +9,7 @@
 
 use argus_protocol::flow::{self, FlowRow, Step};
 use argus_protocol::outline::Outline;
-use argus_protocol::DiagramList;
+use argus_protocol::{DiagramList, SequenceDiagram};
 
 use crate::page::{FlowDetail, FlowItem, FlowsLens, Line, StepDetail, StepRow};
 use crate::sequence;
@@ -20,6 +20,25 @@ use crate::sequence;
 pub struct FlowCursor {
     pub diagram: Option<i64>,
     pub step: usize,
+}
+
+/// The flow the cursor is on: its own while it is listed, else the first.
+pub fn on(list: Option<&DiagramList>, cursor: FlowCursor) -> Option<&SequenceDiagram> {
+    let list = list?;
+    cursor
+        .diagram
+        .and_then(|id| list.diagrams.iter().find(|d| d.id == id))
+        .or_else(|| list.diagrams.first())
+}
+
+/// A flow's steps in order, its branch lines left out.
+pub fn steps(rows: &[FlowRow]) -> Vec<&Step> {
+    rows.iter()
+        .filter_map(|row| match row {
+            FlowRow::Step(step) => Some(step),
+            FlowRow::Branch { .. } => None,
+        })
+        .collect()
 }
 
 /// The flows with the cursor on one; a flow gone lands on the first, and a
@@ -34,10 +53,7 @@ pub fn build(list: Option<&DiagramList>, outline: &Outline, cursor: FlowCursor) 
     let Some(list) = list else {
         return FlowsLens { loaded: false, flows: Vec::new(), flow: None, decisions };
     };
-    let on = cursor
-        .diagram
-        .filter(|id| list.diagrams.iter().any(|d| d.id == *id))
-        .or_else(|| list.diagrams.first().map(|d| d.id));
+    let on = on(Some(list), cursor).map(|d| d.id);
     let flows = list
         .diagrams
         .iter()
@@ -50,13 +66,7 @@ pub fn build(list: Option<&DiagramList>, outline: &Outline, cursor: FlowCursor) 
         .collect();
     let flow = list.diagrams.iter().find(|d| Some(d.id) == on).map(|diagram| {
         let rows = flow::rows(&diagram.body);
-        let steps: Vec<&Step> = rows
-            .iter()
-            .filter_map(|row| match row {
-                FlowRow::Step(step) => Some(step),
-                FlowRow::Branch { .. } => None,
-            })
-            .collect();
+        let steps = steps(&rows);
         let lit = steps.get(cursor.step.min(steps.len().saturating_sub(1))).map(|step| step.number);
         let participants = flow::participants(&diagram.body);
         let label = |name: &str| participants.iter().find(|p| p.id == name).map_or(name.to_string(), |p| p.label.clone());

@@ -3,7 +3,9 @@
 //! it is read through, each lens built by its own module off one outline.
 //!
 //! The Work lens is always built, since the outline is what every lens's
-//! detail reads; Record and Flows only while they are the one read.
+//! detail reads; Record and Flows only while they are the one read. The rows
+//! each lens's cursor steps over are read off the same outline, so a step
+//! moves exactly one row drawn.
 
 use std::collections::HashSet;
 
@@ -37,17 +39,42 @@ pub struct Opened<'a> {
     pub now: u64,
 }
 
-pub fn build(opened: &Opened) -> FeatureView {
-    let Opened { feature, row, board, tasks, diagrams, tree, lens, work, record, flow, views, now } = *opened;
-    let scoped = board.scoped(Some(&feature.slug));
+/// The rows each lens's cursor steps over, in the order the lens lists them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CursorRows {
+    pub work: Vec<WorkRef>,
+    pub record: Vec<i64>,
+}
+
+pub fn cursor_rows(slug: &str, board: &DecisionBoard, tasks: Option<&TaskList>) -> CursorRows {
+    with_outline(slug, board, tasks, |outline, _, _| CursorRows {
+        work: outline.rows.iter().map(|row| row.at).collect(),
+        record: outline.decisions.iter().map(|row| row.decision.id).collect(),
+    })
+}
+
+/// Reads a feature's outline, as every lens does, with the board scoped to
+/// it and the task list it was built from: tasks not yet arrived stand in
+/// as none.
+fn with_outline<R>(slug: &str, board: &DecisionBoard, tasks: Option<&TaskList>, read: impl FnOnce(&Outline, &DecisionBoard, &TaskList) -> R) -> R {
+    let scoped = board.scoped(Some(slug));
     let empty = TaskList {
         project_name: String::new(),
-        feature: Some(feature.slug.clone()),
+        feature: Some(slug.to_string()),
         tasks: Vec::new(),
         repositories: Vec::new(),
     };
     let list = tasks.unwrap_or(&empty);
     let outline = Outline::build(list.tree_rows(), scoped.tree_rows(), &HashSet::new());
+    read(&outline, &scoped, list)
+}
+
+pub fn build(opened: &Opened) -> FeatureView {
+    with_outline(&opened.feature.slug, opened.board, opened.tasks, |outline, scoped, list| view(opened, outline, scoped, list))
+}
+
+fn view(opened: &Opened, outline: &Outline, scoped: &DecisionBoard, list: &TaskList) -> FeatureView {
+    let Opened { feature, row, board: _, tasks, diagrams, tree, lens, work, record, flow, views, now } = *opened;
     // Counted only once the tasks are here: before, every task seen at the
     // last reconcile would read as gone.
     let filed: Vec<&Decision> = scoped.decisions.iter().collect();
@@ -56,7 +83,7 @@ pub fn build(opened: &Opened) -> FeatureView {
         .as_ref()
         .filter(|_| tasks.is_some())
         .map(|reconciled| Changes::since(reconciled, &list.tasks, &filed));
-    let work = work_lens::build(&outline, work, changes.as_ref());
+    let work = work_lens::build(outline, work, changes.as_ref());
     FeatureView {
         slug: feature.slug.clone(),
         number: feature.number,
@@ -81,8 +108,8 @@ pub fn build(opened: &Opened) -> FeatureView {
         rows: work.rows,
         task: work.task,
         decision: work.decision,
-        record: (lens == Lens::Record).then(|| record_lens::build(&outline, record)),
-        flows: (lens == Lens::Flows).then(|| flows_lens::build(diagrams, &outline, flow)),
+        record: (lens == Lens::Record).then(|| record_lens::build(outline, record)),
+        flows: (lens == Lens::Flows).then(|| flows_lens::build(diagrams, outline, flow)),
     }
 }
 
@@ -120,6 +147,20 @@ mod tests {
             views,
             now: 2 * 3600,
         })
+    }
+
+    #[test]
+    fn the_rows_a_cursor_steps_over_are_the_rows_each_lens_draws() {
+        let board = fixtures::open_board();
+        let tasks = fixtures::open_tasks();
+        let open = view(Lens::Record, Some(&tasks));
+        let rows = cursor_rows("trim", &board, Some(&tasks));
+        let drawn: Vec<WorkRef> = open.rows.iter().map(|row| work_lens::work_ref(row.at)).collect();
+        assert_eq!(rows.work, drawn);
+        let record: Vec<i64> = open.record.unwrap().rows.iter().map(|row| row.id).collect();
+        assert_eq!(rows.record, record);
+        assert!(rows.work.len() > 1 && rows.record.len() > 1, "enough rows to step over");
+        assert!(cursor_rows("trim", &board, None).work.iter().all(|at| matches!(at, WorkRef::Decision(_))), "no tasks until they arrive");
     }
 
     #[test]

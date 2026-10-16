@@ -20,13 +20,14 @@ use argus_protocol::{
     ProjectId, ProjectInfo, Received, RepositoryId, TaskList,
 };
 
-use argus_protocol::standing;
+use argus_protocol::{flow, standing};
 
 use argus_protocol::outline::WorkRef;
 
 use crate::feature_edits::{self, Target};
+use crate::feature_view;
 use crate::features::{self, Index, Layout, Listing};
-use crate::flows_lens::FlowCursor;
+use crate::flows_lens::{self, FlowCursor};
 use crate::page::{self, FeatureEdit, FeatureViewLink, Lens, WorkAt};
 use crate::work_lens;
 
@@ -345,12 +346,12 @@ impl FeatureStage {
     }
 
     /// Moves the cursor `by` rows of what is drawn, held at either end: on
-    /// the index the listed features. `isize::MIN`/`isize::MAX` are the first
-    /// and last, as `CheckoutsStage::step`. An opened feature is drawn in
-    /// place of the index, so the index's cursor stays where it is.
+    /// the index the listed features, on an opened feature the rows of the
+    /// lens read. `isize::MIN`/`isize::MAX` are the first and last, as
+    /// `CheckoutsStage::step`.
     pub fn step(&mut self, by: isize, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
         if self.opened().is_some() {
-            return;
+            return self.step_lens(by);
         }
         let listed = self.board.listed(tree, &self.listing(scope));
         let at = self.board.feature().and_then(|slug| listed.iter().position(|row| row.slug == slug));
@@ -358,6 +359,58 @@ impl FeatureStage {
             let slug = listed[next].slug.clone();
             self.peek(&slug, out);
         }
+    }
+
+    /// The Flows lens's flow switcher: `by` flows on, onto its first step.
+    pub fn step_flow(&mut self, by: isize) {
+        if self.opened().is_none() || self.lens != Lens::Flows {
+            return;
+        }
+        let Some(list) = self.board.diagrams() else {
+            return;
+        };
+        let at = flows_lens::on(Some(list), self.flow).and_then(|on| list.diagrams.iter().position(|d| d.id == on.id));
+        if let Some(next) = stepped(list.diagrams.len(), at, by) {
+            self.flow = FlowCursor { diagram: Some(list.diagrams[next].id), step: 0 };
+            self.changed = true;
+        }
+    }
+
+    /// Steps the opened feature's cursor in the lens read, over the rows it
+    /// draws. A cursor on nothing, or on a row gone, is drawn on the first,
+    /// so it steps from there.
+    fn step_lens(&mut self, by: isize) {
+        let (Some(slug), Some(board)) = (self.opened(), self.board()) else {
+            return;
+        };
+        match self.lens {
+            Lens::Work => {
+                let rows = feature_view::cursor_rows(slug, board, self.board.tasks()).work;
+                let at = self.cursor.and_then(|on| rows.iter().position(|row| *row == on)).unwrap_or(0);
+                if let Some(next) = stepped(rows.len(), Some(at), by) {
+                    self.cursor = Some(rows[next]);
+                }
+            }
+            Lens::Record => {
+                let rows = feature_view::cursor_rows(slug, board, self.board.tasks()).record;
+                let at = self.record.and_then(|on| rows.iter().position(|id| *id == on)).unwrap_or(0);
+                if let Some(next) = stepped(rows.len(), Some(at), by) {
+                    self.record = Some(rows[next]);
+                }
+            }
+            Lens::Flows => {
+                // The flow is named, as a click on a step names it: a push
+                // that reorders the flows must not move the cursor to another's.
+                let Some(on) = flows_lens::on(self.board.diagrams(), self.flow) else {
+                    return;
+                };
+                let (diagram, count) = (on.id, flows_lens::steps(&flow::rows(&on.body)).len());
+                if let Some(step) = stepped(count, Some(self.flow.step.min(count.saturating_sub(1))), by) {
+                    self.flow = FlowCursor { diagram: Some(diagram), step };
+                }
+            }
+        }
+        self.changed = true;
     }
 
     /// Holds a feature with a reason, or lifts its hold with `None`.
@@ -990,6 +1043,67 @@ mod tests {
         let (mut stage, _) = loaded();
         stage.open(Some("trim"), Some(&scope()), &fixtures::feature_tree(), &mut Vec::new());
         assert_eq!(steps(&mut stage, &[1, isize::MAX]), ["trim", "trim"]);
+    }
+
+    #[test]
+    fn an_open_feature_steps_the_cursor_of_the_lens_read() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.open(Some("trim"), Some(&scope()), &tree, &mut out);
+        stage.receive_tasks(fixtures::tasks("trim"));
+        let rows = feature_view::cursor_rows("trim", stage.board().unwrap(), stage.board.tasks());
+        out.clear();
+        stage.step(1, Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.cursor, Some(rows.work[1]), "from the first, drawn on with no cursor");
+        stage.step(isize::MAX, Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.cursor, rows.work.last().copied());
+        assert_eq!(stage.peeked(), Some("trim"));
+
+        stage.set_lens(Lens::Record);
+        stage.step(1, Some(&scope()), &tree, &mut out);
+        stage.step(1, Some(&scope()), &tree, &mut out);
+        assert_eq!((rows.record.len(), stage.record), (2, Some(rows.record[1])), "held at the last");
+        stage.step(isize::MIN, Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.record, rows.record.first().copied());
+        assert!(out.is_empty(), "a lens step asks nothing");
+    }
+
+    #[test]
+    fn the_flows_lens_steps_within_its_flow_and_a_flow_switched_to_starts_on_its_first_step() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.open(Some("trim"), Some(&scope()), &tree, &mut out);
+        stage.set_lens(Lens::Flows);
+        stage.receive_diagrams(fixtures::diagrams("trim"));
+        stage.step(1, Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.flow, FlowCursor { diagram: Some(11), step: 1 });
+        stage.step(isize::MAX, Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.flow.step, 4, "the last of its five steps, the branch lines left out");
+        stage.step_flow(1);
+        assert_eq!(stage.flow, FlowCursor { diagram: Some(12), step: 0 });
+        stage.step_flow(1);
+        assert_eq!(stage.flow.diagram, Some(12), "held at the last flow");
+        stage.step_flow(-1);
+        assert_eq!(stage.flow, FlowCursor { diagram: Some(11), step: 0 });
+    }
+
+    #[test]
+    fn a_step_names_its_flow_so_a_reordering_push_keeps_it() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.open(Some("trim"), Some(&scope()), &tree, &mut out);
+        stage.set_lens(Lens::Flows);
+        stage.receive_diagrams(fixtures::diagrams("trim"));
+        assert_eq!(stage.flow.diagram, None);
+        stage.step(1, Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.flow.diagram, Some(11));
+        let mut reversed = fixtures::diagrams("trim");
+        reversed.diagrams.reverse();
+        stage.receive_diagrams(reversed);
+        assert_eq!(stage.flow, FlowCursor { diagram: Some(11), step: 1 });
     }
 
     #[test]

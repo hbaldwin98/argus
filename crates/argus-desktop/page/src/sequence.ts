@@ -12,7 +12,7 @@ import type { FeatureView } from './bindings/FeatureView';
 import type { FlowDetail } from './bindings/FlowDetail';
 import type { Sequence } from './bindings/Sequence';
 import { el, type Child } from './dom.js';
-import { bindMenu, flowSteps, nextFlow, selectStep, stepAt } from './flows.js';
+import { bindMenu, flowSteps, selectStep } from './flows.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { begin, drawWork, edit, field, formButtons, keycap, lineList, titled } from './work.js';
@@ -634,13 +634,9 @@ export function diagramAction(action: Action): boolean {
     case 'previous':
     case 'first':
     case 'last':
-      stepAt(flow, action);
-      return true;
     case 'nextFlow':
-      nextFlow(view, 1);
-      return true;
     case 'previousFlow':
-      nextFlow(view, -1);
+      call('feature_action', { action });
       return true;
     case 'zoomIn':
     case 'zoomOut':

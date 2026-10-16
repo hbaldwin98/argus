@@ -50,26 +50,13 @@ function recordRow(row) {
 }
 /** Runs a Record lens binding, saying whether it had anything to do. */
 export function recordAction(view, action) {
-    const rows = view.record?.rows ?? [];
     const decision = view.record?.decision;
-    const at = rows.findIndex((row) => row.on);
-    const selectAt = (i) => {
-        const row = rows[Math.max(0, Math.min(rows.length - 1, i))];
-        if (row)
-            call('select_decision', { id: row.id });
-    };
     switch (action) {
         case 'next':
-            selectAt(at + 1);
-            return true;
         case 'previous':
-            selectAt(at - 1);
-            return true;
         case 'first':
-            selectAt(0);
-            return true;
         case 'last':
-            selectAt(rows.length - 1);
+            call('feature_action', { action });
             return true;
         case 'edit':
             if (decision)
