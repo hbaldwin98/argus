@@ -74,7 +74,7 @@ function slotRects(of) {
 }
 function head(i, pane) {
     const row = state.rail.row;
-    const keyed = i === 0 ? row.keyed === null : row.keyed === i - 1;
+    const keyed = row.keyed === i;
     return el('div', {
         class: `thead gripper${keyed ? ' on' : ''}`,
         title: 'Drag onto another pane to move this one',
@@ -132,7 +132,7 @@ export function drawSplit() {
         const rect = rects.get(i);
         if (rect)
             place(cell.box, rect);
-        const keyed = i === 0 ? state.rail.row.keyed === null : state.rail.row.keyed === i - 1;
+        const keyed = state.rail.row.keyed === i;
         cell.box.classList.toggle('keyed', split && keyed);
     }
     drawGutters(split);

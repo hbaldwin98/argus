@@ -101,3 +101,9 @@ export function zoneRect(zone: Zone): Rect {
       return { x: 0, y: 0, w: 1, h: 1 };
   }
 }
+
+/** The split whose screen has the keys, from the cell the rail says has
+ *  them: none for the Workspace's own cell, or off the grid. */
+export function keyedSplit(cell: number | null): number | null {
+  return cell === null || cell === 0 ? null : cell - 1;
+}

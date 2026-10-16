@@ -23,8 +23,8 @@ heights: Array<number>,
  */
 widths: Array<Array<number>>, 
 /**
- * The split with the keys, by its place in `beside`; none when the
- * Workspace's own pane has them.
+ * The cell with the keys, numbered as `grid` numbers them; none while
+ * the keys are off the grid, on the console or an extension's view.
  */
 keyed: number | null, 
 /**

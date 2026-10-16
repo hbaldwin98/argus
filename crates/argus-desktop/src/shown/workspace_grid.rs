@@ -33,8 +33,8 @@ pub struct GridPage {
     pub heights: Vec<u16>,
     /// Each pane's width in its row, in thousandths of the row's.
     pub widths: Vec<Vec<u16>>,
-    /// The split with the keys, by its place in `beside`; none when the
-    /// Workspace's own pane has them.
+    /// The cell with the keys, numbered as `grid` numbers them; none while
+    /// the keys are off the grid, on the console or an extension's view.
     pub keyed: Option<u8>,
     /// The least a pane of the grid may be, in columns and rows.
     pub min_cols: u16,
@@ -155,10 +155,7 @@ impl WorkspaceGrid {
             grid: self.layout.rows().iter().map(|row| row.iter().map(|&n| n as u8).collect()).collect(),
             heights: thousandths(self.layout.heights()),
             widths: self.layout.widths().iter().map(|w| thousandths(w)).collect(),
-            keyed: match keys {
-                Side::Beside(n) => Some(n),
-                _ => None,
-            },
+            keyed: number(keys).map(|n| n as u8),
             min_cols: MIN_COLS,
             min_rows: MIN_ROWS,
         }
@@ -394,7 +391,7 @@ mod tests {
                 "grid": [[0, 1]],
                 "heights": [1000],
                 "widths": [[500, 500]],
-                "keyed": null,
+                "keyed": 0,
                 "minCols": 20,
                 "minRows": 6,
             })
@@ -406,6 +403,21 @@ mod tests {
         let page = unmeasured(5).page(Side::Workspace, |_| None);
         assert_eq!(page.grid, [vec![0, 1, 4], vec![2, 3]]);
         assert_eq!((page.widths[0].clone(), page.heights), (vec![333, 333, 333], vec![500, 500]));
+    }
+
+    #[test]
+    fn the_page_names_the_cell_with_the_keys_as_the_grid_numbers_it() {
+        let grid = unmeasured(3);
+        assert_eq!(grid.page(Side::Workspace, |_| None).keyed, Some(0));
+        assert_eq!(grid.page(Side::Beside(1), |_| None).keyed, Some(2));
+    }
+
+    #[test]
+    fn no_cell_is_keyed_while_the_keys_are_off_the_grid() {
+        let grid = unmeasured(3);
+        for keys in [Side::First, Side::Second, Side::View(0)] {
+            assert_eq!(grid.page(keys, |_| None).keyed, None, "{keys:?}");
+        }
     }
 
     #[test]

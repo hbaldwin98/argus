@@ -23,6 +23,7 @@ import {
   screen,
   screens,
 } from './screen.js';
+import { keyedSplit } from './split_math.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -262,7 +263,7 @@ export function keyedScreen(): Screen {
   if (view) return view;
   const page = state.console;
   if (page?.typing == null) {
-    const split = state.rail.row.keyed;
+    const split = keyedSplit(state.rail.row.keyed);
     return (split === null ? null : besideScreen(split)) ?? screen;
   }
   if (page.typing === page.beside) return beside;

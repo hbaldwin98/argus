@@ -3,7 +3,14 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cellRects, dragGutter, dropZone, toThousandths, zoneRect } from '../src/split_math.ts';
+import {
+  cellRects,
+  dragGutter,
+  dropZone,
+  keyedSplit,
+  toThousandths,
+  zoneRect,
+} from '../src/split_math.ts';
 
 test('rectangles tile the grid row by row from the heights and widths', () => {
   const rects = cellRects([250, 750], [[400, 600], [1000]]);
@@ -52,4 +59,10 @@ test('the lit zone is the half it would take, or the whole pane to swap', () => 
   assert.deepEqual(zoneRect('left'), { x: 0, y: 0, w: 0.5, h: 1 });
   assert.deepEqual(zoneRect('bottom'), { x: 0, y: 0.5, w: 1, h: 0.5 });
   assert.deepEqual(zoneRect('centre'), { x: 0, y: 0, w: 1, h: 1 });
+});
+
+test("the keys on a split name its screen, and on the Workspace's or off the grid none", () => {
+  assert.equal(keyedSplit(null), null);
+  assert.equal(keyedSplit(0), null);
+  assert.equal(keyedSplit(3), 2);
 });

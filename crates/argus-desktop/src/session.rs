@@ -3698,8 +3698,23 @@ mod tests {
         assert_eq!(names(&s.open_beside(PaneId(2))), ["subscribe 2", "resize 2 30x100"]);
         assert_eq!(s.shown.pane(), Some(PaneId(2)));
         let row = s.rail(0).row;
-        assert_eq!((row.grid, row.keyed, row.beside.len()), (vec![vec![0, 1]], Some(0), 1));
+        assert_eq!((row.grid, row.keyed, row.beside.len()), (vec![vec![0, 1]], Some(1), 1));
         assert_eq!(row.widths, [[500, 500]]);
+    }
+
+    #[test]
+    fn the_grid_marks_no_cell_while_the_console_has_the_keys() {
+        let mut s = with_consoles();
+        s.open_beside(PaneId(2));
+        console(&mut s, ConsoleGesture::Toggle);
+        assert_eq!(s.on_screen(), Some(PaneId(8)), "the console is typed into");
+        assert_eq!(s.rail(0).row.keyed, None);
+        // The page routes keys by the console's typing before it reads the
+        // grid's cell, so the two must agree in the same frame.
+        assert_eq!(console_page(&mut s).typing, Some(8));
+        assert_eq!(typed(&mut s), ["input 8 [97]"], "not into a split or the Workspace");
+        s.select(PaneId(1));
+        assert_eq!(s.rail(0).row.keyed, Some(0), "the Workspace's own cell");
     }
 
     #[test]
