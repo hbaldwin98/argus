@@ -1413,6 +1413,17 @@ mod tests {
             }
         }
 
+        /// A harness whose client greeted listing `REQUEST_REFUSALS`.
+        pub(super) fn refused_by_id(repo: &std::path::Path) -> Self {
+            let mut h = Self::new(repo);
+            h.send(ClientMsg::Hello(argus_protocol::Hello {
+                capabilities: vec![argus_protocol::REQUEST_REFUSALS.into()],
+                ..argus_protocol::Hello::this_build()
+            }));
+            h.replies();
+            h
+        }
+
         pub(super) fn checkout(&self) -> CheckoutId {
             self.daemon.snapshot()[0].repositories[0].checkouts[0].id
         }
@@ -1440,6 +1451,18 @@ mod tests {
             match reply {
                 Some(ServerMsg::Error { message }) => message,
                 other => panic!("expected an error, got {other:?}"),
+            }
+        }
+
+        /// The next refusal by id, waiting past anything else on the way.
+        pub(super) async fn refusal(&mut self) -> argus_protocol::RequestRefusal {
+            loop {
+                let reply = tokio::time::timeout(std::time::Duration::from_secs(5), self.rx.recv())
+                    .await
+                    .expect("a refusal should arrive");
+                if let Some(ServerMsg::Refused(refusal)) = reply {
+                    return refusal;
+                }
             }
         }
     }

@@ -2,11 +2,10 @@
 //! to the protocol does not compile until it is given an arm here.
 //!
 //! Slow work leaves the message loop through the helper that fits its
-//! shape:
-//! - `spawn_reporting`: async subprocess work whose refusal is reported
-//!   as an Error; any answer is sent from inside the task.
-//! - `spawn_pane`: a blocking spawn, answered with `Created::Pane`.
-//! - `answered`/`answer_created`: answering a named request.
+//! shape, each carrying the request's `Reply`, so its answer or refusal
+//! reaches the client the one way `request_refusal` words it:
+//! - `spawn_reporting`: async subprocess work, refused through the reply.
+//! - `spawn_making`/`spawn_pane`: a make, answered with what it made.
 //! - `reply_with`: a blocking read of one checkout.
 //! - `ReviewLane`: one review at a time, one place in that turn per
 //!   connection; an ask repeated while its twin waits joins it, and every
@@ -17,7 +16,8 @@
 use super::*;
 use crate::state::FeaturePart;
 use crate::review_queue::ReviewAsk;
-use argus_protocol::{Created, ReviewBase};
+use argus_protocol::request_refusal::Asked;
+use argus_protocol::{Created, ReviewBase, REQUEST_REFUSALS};
 
 /// What one review generation comes to: the diff, or why it could not be read.
 pub(super) type Generated = Result<crate::diff::GeneratedReview, String>;
@@ -37,6 +37,7 @@ pub(super) fn dispatch(
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
     conn: &mut Connection,
 ) -> Outcome {
+    let reply = Reply::new(out_tx, Asked::of(&msg), conn.can(REQUEST_REFUSALS));
     let result = match msg {
         // This connection itself: who it is, what it watches, and the
         // daemon's lifetime.
@@ -85,27 +86,24 @@ pub(super) fn dispatch(
         ClientMsg::Scrollback { pane, offset, top } => {
             scrollback(daemon, out_tx, conn.subs.runs, pane, offset, top)
         }
-        ClientMsg::SpawnShell {
-            checkout,
-            request_id,
-        } => {
+        ClientMsg::SpawnShell { checkout, .. } => {
             let daemon = daemon.clone();
-            spawn_pane(out_tx, request_id, move || daemon.spawn_shell(checkout))
+            spawn_pane(&reply, move || daemon.spawn_shell(checkout))
         }
         ClientMsg::SpawnAgent {
             checkout,
             template,
             prompt,
-            request_id,
+            ..
         } => {
             let daemon = daemon.clone();
-            spawn_pane(out_tx, request_id, move || {
+            spawn_pane(&reply, move || {
                 daemon.spawn_agent_asking(checkout, &template, prompt.as_deref())
             })
         }
-        ClientMsg::SpawnConsole { request_id } => {
+        ClientMsg::SpawnConsole { .. } => {
             let daemon = daemon.clone();
-            spawn_pane(out_tx, request_id, move || daemon.spawn_console())
+            spawn_pane(&reply, move || daemon.spawn_console())
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
         ClientMsg::RenamePane { pane, title } => daemon.rename_pane(pane, &title),
@@ -166,10 +164,10 @@ pub(super) fn dispatch(
             line,
             external,
             command,
-            request_id,
+            ..
         } => {
             let daemon = daemon.clone();
-            spawn_pane(out_tx, request_id, move || {
+            spawn_pane(&reply, move || {
                 daemon.spawn_editor(checkout, &path, line, external, command.as_deref())
             })
         }
@@ -252,39 +250,27 @@ pub(super) fn dispatch(
         // own task, as `InitRepository` is.
         ClientMsg::AddProject {
             path,
-            request_id,
             name,
             skip,
             init: true,
-        } => {
-            let answer = out_tx.clone();
-            spawn_reporting(daemon, out_tx, move |d| async move {
-                let made = d.init_project(&path, name.as_deref(), &skip).await;
-                answered(&answer, request_id, made.map(Created::Project))
-            })
-        }
+            ..
+        } => spawn_making(daemon, &reply, move |d| async move {
+            d.init_project(&path, name.as_deref(), &skip).await.map(Created::Project)
+        }),
         ClientMsg::AddProject {
             path,
-            request_id,
             name,
             skip,
             init: false,
-        } => answered(
-            out_tx,
-            request_id,
-            daemon
-                .add_project(&path, name.as_deref(), &skip)
-                .map(Created::Project),
-        ),
-        ClientMsg::AddRepository {
-            project,
-            path,
-            request_id,
-        } => answered(
-            out_tx,
-            request_id,
-            daemon.add_repository(project, &path).map(Created::Repository),
-        ),
+            ..
+        } => {
+            reply.made(daemon.add_project(&path, name.as_deref(), &skip).map(Created::Project));
+            Ok(())
+        }
+        ClientMsg::AddRepository { project, path, .. } => {
+            reply.made(daemon.add_repository(project, &path).map(Created::Repository));
+            Ok(())
+        }
         // Removal only rewrites config and the tree — no subprocess, no
         // directory walk — so it stays on the message loop like AddProject.
         ClientMsg::RemoveProject { project } => daemon.remove_project(project),
@@ -321,49 +307,37 @@ pub(super) fn dispatch(
         // Writes to Git. Each is real subprocess I/O — a slow worktree op
         // must not stall keystrokes going to some other pane — so it runs
         // on its own task and reports a refusal on its own.
-        ClientMsg::CreateWorktree {
-            checkout,
-            branch,
-            request_id,
-        } => create_worktree(daemon, out_tx, checkout, branch, request_id),
+        ClientMsg::CreateWorktree { checkout, branch, .. } => create_worktree(daemon, &reply, checkout, branch),
         ClientMsg::RemoveCheckout { checkout } => {
-            spawn_reporting(daemon, out_tx, move |d| async move {
+            spawn_reporting(daemon, &reply, move |d| async move {
                 d.remove_checkout(checkout).await
             })
         }
         // `git init` again, and the directory it lands in may not exist yet.
-        ClientMsg::InitRepository {
-            project,
-            path,
-            request_id,
-        } => {
-            let answer = out_tx.clone();
-            spawn_reporting(daemon, out_tx, move |d| async move {
-                let made = d.init_repository(project, &path).await;
-                answered(&answer, request_id, made.map(Created::Repository))
-            })
-        }
+        ClientMsg::InitRepository { project, path, .. } => spawn_making(daemon, &reply, move |d| async move {
+            d.init_repository(project, &path).await.map(Created::Repository)
+        }),
         ClientMsg::SwitchBranch { checkout, branch } => {
-            spawn_reporting(daemon, out_tx, move |d| async move {
+            spawn_reporting(daemon, &reply, move |d| async move {
                 d.switch_branch(checkout, &branch).await
             })
         }
         ClientMsg::CreateBranch { checkout, branch } => {
-            spawn_reporting(daemon, out_tx, move |d| async move {
+            spawn_reporting(daemon, &reply, move |d| async move {
                 d.create_branch(checkout, &branch).await
             })
         }
         ClientMsg::Fetch { checkout } => {
             spawn_reporting(
                 daemon,
-                out_tx,
+                &reply,
                 move |d| async move { d.fetch(checkout).await },
             )
         }
         ClientMsg::Pull { checkout } => {
             spawn_reporting(
                 daemon,
-                out_tx,
+                &reply,
                 move |d| async move { d.pull(checkout).await },
             )
         }
@@ -371,60 +345,55 @@ pub(super) fn dispatch(
             checkout,
             branch,
             force,
-        } => delete_branch(daemon, out_tx, checkout, branch, force),
+        } => delete_branch(daemon, &reply, checkout, branch, force),
 
         // What a checkout contains, for the pickers and the history view.
         // Each walks the working tree or the object store, so it answers
         // from a blocking thread.
         ClientMsg::ListBranches { checkout } => {
-            reply_with(daemon, out_tx, checkout, move |path| ServerMsg::Branches {
+            reply_with(daemon, &reply, checkout, move |path| Ok(ServerMsg::Branches {
                 checkout,
                 branches: crate::browse::branches(&path),
-            })
+            }))
         }
         ClientMsg::ListFiles { checkout } => {
-            reply_with(daemon, out_tx, checkout, move |path| ServerMsg::Files {
+            reply_with(daemon, &reply, checkout, move |path| Ok(ServerMsg::Files {
                 checkout,
                 files: crate::browse::files(&path),
-            })
+            }))
         }
         ClientMsg::ListCommits {
             request_id,
             checkout,
-        } => reply_with(
-            daemon,
-            out_tx,
-            checkout,
-            move |path| match crate::diff::list_commits(&path) {
-                Ok(commits) => ServerMsg::Commits {
-                    request_id,
-                    checkout,
-                    commits,
-                },
-                Err(error) => ServerMsg::CommitsFailed {
-                    request_id,
-                    checkout,
-                    message: error.to_string(),
-                },
-            },
-        ),
-        ClientMsg::ListCommitFiles { checkout, commit } => reply_with(
-            daemon,
-            out_tx,
-            checkout,
-            move |path| match crate::diff::commit_summary(&path, &commit) {
-                Ok(files) => ServerMsg::CommitFiles {
-                    checkout,
-                    commit,
-                    files,
-                },
-                Err(error) => ServerMsg::CommitFilesFailed {
-                    checkout,
-                    commit,
-                    message: error.to_string(),
-                },
-            },
-        ),
+        } => reply_with(daemon, &reply, checkout, move |path| {
+            Ok(ServerMsg::Commits {
+                request_id,
+                checkout,
+                commits: crate::diff::list_commits(&path)?,
+            })
+        }),
+        // Keyed by the commit rather than an id, which `Asked` cannot
+        // carry, so a gone checkout is refused here as that commit's.
+        ClientMsg::ListCommitFiles { checkout, commit } => match daemon.checkout_path(checkout) {
+            Err(error) => {
+                reply.send(ServerMsg::CommitFilesFailed { checkout, commit, message: error.to_string() });
+                Ok(())
+            }
+            Ok(_) => reply_with(daemon, &reply, checkout, move |path| {
+                Ok(match crate::diff::commit_summary(&path, &commit) {
+                    Ok(files) => ServerMsg::CommitFiles {
+                        checkout,
+                        commit,
+                        files,
+                    },
+                    Err(error) => ServerMsg::CommitFilesFailed {
+                        checkout,
+                        commit,
+                        message: error.to_string(),
+                    },
+                })
+            }),
+        },
 
         // A repository's agent sessions, what one said, and reopening one.
         // A listing and a read open the harnesses' own files, a listing up
@@ -469,13 +438,13 @@ pub(super) fn dispatch(
             Ok(())
         }
         ClientMsg::ResumeSession {
-            request_id,
             checkout,
             harness,
             session_id,
+            ..
         } => {
             let daemon = daemon.clone();
-            spawn_pane(out_tx, request_id, move || {
+            spawn_pane(&reply, move || {
                 daemon.resume_session(checkout, &harness, &session_id)
             })
         }
@@ -487,73 +456,55 @@ pub(super) fn dispatch(
             checkout,
             base,
             commit,
-        } => review(daemon, out_tx, &mut conn.reviews, request_id, checkout, base, commit),
+        } => review(daemon, &reply, &mut conn.reviews, request_id, checkout, base, commit),
         // The Code stage: a version's files, one file of it, and a search.
         ClientMsg::ListCode {
             request_id,
             checkout,
             version,
-        } => reply_with(daemon, out_tx, checkout, move |repo| {
-            match crate::code::list(&repo, &version) {
-                Ok((files, changes)) => ServerMsg::CodeTree(argus_protocol::CodeTree {
-                    request_id,
-                    checkout,
-                    version,
-                    files,
-                    changes,
-                }),
-                Err(error) => ServerMsg::CodeFailed {
-                    request_id,
-                    checkout,
-                    message: error.to_string(),
-                },
-            }
+        } => reply_with(daemon, &reply, checkout, move |repo| {
+            let (files, changes) = crate::code::list(&repo, &version)?;
+            Ok(ServerMsg::CodeTree(argus_protocol::CodeTree {
+                request_id,
+                checkout,
+                version,
+                files,
+                changes,
+            }))
         }),
         ClientMsg::ReadCode {
             request_id,
             checkout,
             path,
             version,
-        } => reply_with(daemon, out_tx, checkout, move |repo| {
-            match crate::code::read(&repo, &path, &version) {
-                Ok(file) => ServerMsg::Code(Box::new(argus_protocol::CodeFile {
-                    request_id,
-                    checkout,
-                    path,
-                    version,
-                    lines: file.lines,
-                    removed: file.removed,
-                    symbols: file.symbols,
-                    note: file.note,
-                })),
-                Err(error) => ServerMsg::CodeFailed {
-                    request_id,
-                    checkout,
-                    message: error.to_string(),
-                },
-            }
+        } => reply_with(daemon, &reply, checkout, move |repo| {
+            let file = crate::code::read(&repo, &path, &version)?;
+            Ok(ServerMsg::Code(Box::new(argus_protocol::CodeFile {
+                request_id,
+                checkout,
+                path,
+                version,
+                lines: file.lines,
+                removed: file.removed,
+                symbols: file.symbols,
+                note: file.note,
+            })))
         }),
         ClientMsg::SearchCode {
             request_id,
             checkout,
             query,
             options,
-        } => reply_with(daemon, out_tx, checkout, move |repo| {
-            match crate::code_search::search(&repo, &query, &options) {
-                Ok((matches, truncated)) => ServerMsg::CodeMatches(argus_protocol::CodeMatches {
-                    request_id,
-                    checkout,
-                    query,
-                    options,
-                    matches,
-                    truncated,
-                }),
-                Err(error) => ServerMsg::CodeFailed {
-                    request_id,
-                    checkout,
-                    message: error.to_string(),
-                },
-            }
+        } => reply_with(daemon, &reply, checkout, move |repo| {
+            let (matches, truncated) = crate::code_search::search(&repo, &query, &options)?;
+            Ok(ServerMsg::CodeMatches(argus_protocol::CodeMatches {
+                request_id,
+                checkout,
+                query,
+                options,
+                matches,
+                truncated,
+            }))
         }),
         ClientMsg::ReviewContext {
             request_id,
@@ -562,19 +513,13 @@ pub(super) fn dispatch(
             path,
             start,
             end,
-        } => reply_with(daemon, out_tx, checkout, move |repo| {
-            match crate::diff::context(&repo, &blob, &path, start, end) {
-                Ok(lines) => ServerMsg::ReviewContext(argus_protocol::ReviewContext {
-                    request_id,
-                    checkout,
-                    lines,
-                }),
-                Err(error) => ServerMsg::ReviewContextFailed {
-                    request_id,
-                    checkout,
-                    message: error.to_string(),
-                },
-            }
+        } => reply_with(daemon, &reply, checkout, move |repo| {
+            let lines = crate::diff::context(&repo, &blob, &path, start, end)?;
+            Ok(ServerMsg::ReviewContext(argus_protocol::ReviewContext {
+                request_id,
+                checkout,
+                lines,
+            }))
         }),
         ClientMsg::ReviewComment {
             checkout,
@@ -600,10 +545,8 @@ pub(super) fn dispatch(
         }
         ClientMsg::ExtensionDialogAnswer { dialog, answer } => daemon.answer_dialog(conn.viewer, dialog, answer),
     };
-    if let Err(e) = result {
-        let _ = out_tx.send(ServerMsg::Error {
-            message: e.to_string(),
-        });
+    if let Err(error) = result {
+        reply.refuse(&error);
     }
     Outcome::Continue
 }
@@ -674,74 +617,66 @@ fn scrollback(
 
 fn create_worktree(
     daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    reply: &Reply,
     checkout: argus_protocol::CheckoutId,
     branch: String,
-    request_id: u64,
 ) -> anyhow::Result<()> {
-    let answer = out_tx.clone();
-    spawn_reporting(daemon, out_tx, move |d| async move {
+    let daemon = daemon.clone();
+    let reply = reply.clone();
+    tokio::spawn(async move {
+        let made = match daemon.create_worktree(checkout, branch).await {
+            Ok(made) => made,
+            Err(error) => return reply.refuse(&error),
+        };
         // Answered before setup runs: the worktree is there, and setup can
-        // take as long as an install does.
-        let made = d.create_worktree(checkout, branch).await;
-        let created = made.as_ref().ok().map(|id| Created::Checkout(*id));
-        answer_created(&answer, request_id, created);
-        d.setup_worktree(made?).await
-    })
+        // take as long as an install does. A failed setup is news after
+        // the answer rather than a refusal, which would contradict it.
+        reply.made(Ok(Created::Checkout(made)));
+        if let Err(error) = daemon.setup_worktree(made).await {
+            reply.say(&error);
+        }
+    });
+    Ok(())
 }
 
 /// Not `spawn_reporting`: an unmerged branch comes back as a question for
 /// the user rather than as an error, and only this call has one to send.
 fn delete_branch(
     daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    reply: &Reply,
     checkout: argus_protocol::CheckoutId,
     branch: String,
     force: bool,
 ) -> anyhow::Result<()> {
     let daemon = daemon.clone();
-    let out_tx = out_tx.clone();
+    let reply = reply.clone();
     tokio::spawn(async move {
-        let msg = match daemon.delete_branch(checkout, &branch, force).await {
-            Ok(BranchDeletion::Deleted) => return,
+        match daemon.delete_branch(checkout, &branch, force).await {
+            Ok(BranchDeletion::Deleted) => {}
             Ok(BranchDeletion::NotMerged(commits)) => {
-                ServerMsg::BranchNotMerged {
+                reply.send(ServerMsg::BranchNotMerged {
                     checkout,
                     branch,
                     commits,
-                }
+                });
             }
-            Err(error) => ServerMsg::Error {
-                message: error.to_string(),
-            },
-        };
-        let _ = out_tx.send(msg);
+            Err(error) => reply.refuse(&error),
+        }
     });
     Ok(())
 }
 
 fn review(
     daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    reply: &Reply,
     reviews: &mut ReviewLane<Generated>,
     request_id: u64,
     checkout: argus_protocol::CheckoutId,
     base: ReviewBase,
     commit: Option<String>,
 ) -> anyhow::Result<()> {
-    // Refused under its id: an untagged Error would leave the asker waiting.
-    let path = match daemon.checkout_path(checkout) {
-        Ok(path) => path,
-        Err(error) => {
-            let _ = out_tx.send(ServerMsg::ReviewFailed {
-                request_id,
-                checkout,
-                message: error.to_string(),
-            });
-            return Ok(());
-        }
-    };
-    let out_tx = out_tx.clone();
+    let path = daemon.checkout_path(checkout)?;
+    let reply = reply.clone();
     let ask = ReviewAsk::new(checkout, base, commit.clone());
     let generate = move || match commit.as_deref() {
         Some(rev) => crate::diff::generate_commit(&path, rev),
@@ -749,8 +684,8 @@ fn review(
     }
     .map_err(|error| error.to_string());
     reviews.submit(ask, generate, move |generated| {
-        let message = match generated.and_then(|generated| generated) {
-            Ok(generated) => ServerMsg::Review(argus_protocol::Review {
+        let answer = generated.and_then(|generated| generated).map(|generated| {
+            ServerMsg::Review(argus_protocol::Review {
                 request_id,
                 checkout,
                 base: if generated.commit.is_some() {
@@ -760,23 +695,18 @@ fn review(
                 },
                 files: generated.files,
                 commit: generated.commit,
-            }),
-            Err(message) => ServerMsg::ReviewFailed {
-                request_id,
-                checkout,
-                message,
-            },
-        };
-        let _ = out_tx.send(message);
+            })
+        });
+        reply.settle(answer.map_err(anyhow::Error::msg));
     });
     Ok(())
 }
 
-/// Runs a daemon call on its own task, reporting a refusal to the client
-/// that asked for it.
+/// Runs a daemon call on its own task, refusing the request through its
+/// reply when the call fails.
 fn spawn_reporting<F, Fut>(
     daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    reply: &Reply,
     work: F,
 ) -> anyhow::Result<()>
 where
@@ -784,74 +714,98 @@ where
     Fut: std::future::Future<Output = anyhow::Result<()>> + Send,
 {
     let daemon = daemon.clone();
-    let out_tx = out_tx.clone();
+    let reply = reply.clone();
     tokio::spawn(async move {
         if let Err(error) = work(daemon).await {
-            let _ = out_tx.send(ServerMsg::Error {
-                message: error.to_string(),
-            });
+            reply.refuse(&error);
         }
     });
+    Ok(())
+}
+
+/// Runs a make on its own task, answering with what it made.
+fn spawn_making<F, Fut>(daemon: &Arc<Daemon>, reply: &Reply, work: F) -> anyhow::Result<()>
+where
+    F: FnOnce(Arc<Daemon>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = anyhow::Result<Created>> + Send,
+{
+    let daemon = daemon.clone();
+    let reply = reply.clone();
+    tokio::spawn(async move { reply.made(work(daemon).await) });
     Ok(())
 }
 
 pub(super) fn spawn_pane(
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    request_id: u64,
+    reply: &Reply,
     spawn: impl FnOnce() -> anyhow::Result<PaneId> + Send + 'static,
 ) -> anyhow::Result<()> {
-    let out_tx = out_tx.clone();
-    tokio::task::spawn_blocking(move || {
-        let made = spawn().map(Created::Pane);
-        if let Err(error) = answered(&out_tx, request_id, made) {
-            let _ = out_tx.send(ServerMsg::Error {
-                message: error.to_string(),
-            });
-        }
-    });
+    let reply = reply.clone();
+    tokio::task::spawn_blocking(move || reply.made(spawn().map(Created::Pane)));
     Ok(())
-}
-
-/// Tells the client that named its request what the request made, or that
-/// it made nothing. A client that predates the answer names no requests —
-/// its id is zero — and so is never sent a message it cannot read.
-fn answer_created(
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    request_id: u64,
-    created: Option<Created>,
-) {
-    if request_id != 0 {
-        let _ = out_tx.send(ServerMsg::Created {
-            request_id,
-            created,
-        });
-    }
-}
-
-/// Answers a named request with what it made, and hands a refusal on to be
-/// reported the way it always was.
-fn answered(
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    request_id: u64,
-    made: anyhow::Result<Created>,
-) -> anyhow::Result<()> {
-    answer_created(out_tx, request_id, made.as_ref().ok().copied());
-    made.map(|_| ())
 }
 
 /// Resolves a checkout to its path, then answers on a blocking thread.
 fn reply_with(
     daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    reply: &Reply,
     checkout: argus_protocol::CheckoutId,
-    build: impl FnOnce(std::path::PathBuf) -> ServerMsg + Send + 'static,
+    build: impl FnOnce(std::path::PathBuf) -> anyhow::Result<ServerMsg> + Send + 'static,
 ) -> anyhow::Result<()> {
     let path = daemon.checkout_path(checkout)?;
-    let out_tx = out_tx.clone();
-    tokio::task::spawn_blocking(move || {
-        let _ = out_tx.send(build(path));
-    });
+    let reply = reply.clone();
+    tokio::task::spawn_blocking(move || reply.settle(build(path)));
     Ok(())
+}
+
+/// Where a request is answered, and how its refusal is put to the client
+/// that asked.
+#[derive(Clone)]
+pub(super) struct Reply {
+    out_tx: mpsc::UnboundedSender<ServerMsg>,
+    asked: Asked,
+    /// The client listed `REQUEST_REFUSALS`.
+    tagged: bool,
+}
+
+impl Reply {
+    pub(super) fn new(out_tx: &mpsc::UnboundedSender<ServerMsg>, asked: Asked, tagged: bool) -> Reply {
+        Reply { out_tx: out_tx.clone(), asked, tagged }
+    }
+
+    fn send(&self, msg: ServerMsg) {
+        let _ = self.out_tx.send(msg);
+    }
+
+    fn refuse(&self, error: &anyhow::Error) {
+        for msg in self.asked.refusal(error.to_string(), self.tagged) {
+            self.send(msg);
+        }
+    }
+
+    /// News that refuses nothing: the request was carried out, and what
+    /// followed it did not go well.
+    fn say(&self, error: &anyhow::Error) {
+        self.send(ServerMsg::Error { message: error.to_string() });
+    }
+
+    /// The answer `built` came to, or its refusal.
+    fn settle(&self, built: anyhow::Result<ServerMsg>) {
+        match built {
+            Ok(msg) => self.send(msg),
+            Err(error) => self.refuse(&error),
+        }
+    }
+
+    /// What a make made, told by its id — a zero id asks for no answer — or
+    /// its refusal.
+    fn made(&self, made: anyhow::Result<Created>) {
+        let request_id = self.asked.request_id;
+        match made {
+            Ok(created) if request_id != 0 => self.send(ServerMsg::Created { request_id, created: Some(created) }),
+            Ok(_) => {}
+            Err(error) => self.refuse(&error),
+        }
+    }
 }
 
 #[cfg(test)]

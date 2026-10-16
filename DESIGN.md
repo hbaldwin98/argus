@@ -391,7 +391,7 @@ to the type or its locking.
 | `state/board_address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
 | `state/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `conn` | one client connection, and which task each message runs on |
-| `conn/dispatch` | what each client message does |
+| `conn/dispatch` | what each client message does, and the one way its answer or refusal reaches the client that asked |
 | `hook_server` | the loopback pane API: which daemon call each agent's or extension's request reaches, behind its token |
 | `hook_server/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
 | `review_queue` | when a review's diff is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |

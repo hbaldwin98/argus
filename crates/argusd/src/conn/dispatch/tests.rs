@@ -319,7 +319,8 @@ async fn a_blocked_pane_launch_does_not_block_the_connection_task() {
     let (tx, _rx) = mpsc::unbounded_channel();
     let started = std::time::Instant::now();
 
-    dispatch::spawn_pane(&tx, 0, || {
+    let reply = dispatch::Reply::new(&tx, Asked::of(&ClientMsg::SpawnConsole { request_id: 0 }), false);
+    dispatch::spawn_pane(&reply, || {
         std::thread::sleep(std::time::Duration::from_millis(200));
         Ok(PaneId(1))
     })
@@ -683,6 +684,115 @@ async fn a_review_of_a_checkout_that_is_gone_is_refused_under_its_id() {
             message,
         } => assert!(message.contains("no such checkout"), "{message}"),
         other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_refused_make_is_answered_once_by_its_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::refused_by_id(dir.path());
+    h.send(ClientMsg::SpawnShell {
+        checkout: CheckoutId(9999),
+        request_id: 8,
+    });
+    match answer(&mut h).await {
+        ServerMsg::Refused(refusal) => {
+            assert_eq!((refusal.request_id, refusal.read), (8, false));
+            assert!(refusal.reason.contains("no such checkout"), "{}", refusal.reason);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+    // Whatever else the spawn's thread sent went with the refusal.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(h.replies().is_empty(), "no Created and no Error beside it");
+}
+
+#[tokio::test]
+async fn a_refused_feature_change_is_answered_by_its_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::refused_by_id(dir.path());
+    let (project, checkout) = (h.daemon.snapshot()[0].id, h.checkout());
+    h.send(ClientMsg::Feature {
+        project,
+        checkout,
+        action: argus_protocol::FeatureAction::Drop { slug: "nope".into() },
+        request_id: 5,
+    });
+    let refusal = h.refusal().await;
+    assert_eq!((refusal.request_id, refusal.read), (5, false));
+}
+
+#[tokio::test]
+async fn a_read_of_a_checkout_that_is_gone_is_refused_by_its_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::refused_by_id(dir.path());
+    let gone = CheckoutId(9999);
+    h.send(ClientMsg::ListCode { request_id: 1, checkout: gone, version: argus_protocol::CodeVersion::WorkingTree });
+    h.send(ClientMsg::ListCommits { request_id: 2, checkout: gone });
+    h.send(ClientMsg::Review { request_id: 3, checkout: gone, base: ReviewBase::Unstaged, commit: None });
+    let mut refused = Vec::new();
+    for _ in 0..3 {
+        let refusal = h.refusal().await;
+        assert!(refusal.read && refusal.reason.contains("no such checkout"), "{refusal:?}");
+        refused.push(refusal.request_id);
+    }
+    refused.sort();
+    assert_eq!(refused, [1, 2, 3]);
+}
+
+#[tokio::test]
+async fn a_code_read_that_cannot_be_answered_is_refused_by_its_id() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    let mut h = Harness::refused_by_id(dir.path());
+    let checkout = h.checkout();
+    h.send(ClientMsg::ReadCode {
+        request_id: 4,
+        checkout,
+        path: "../out".into(),
+        version: argus_protocol::CodeVersion::WorkingTree,
+    });
+    let refusal = h.refusal().await;
+    assert_eq!((refusal.request_id, refusal.read), (4, true));
+}
+
+#[tokio::test]
+async fn an_unnamed_request_is_still_refused_as_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::refused_by_id(dir.path());
+    h.send(ClientMsg::Fetch { checkout: CheckoutId(9999) });
+    let error = h.error().await;
+    assert!(error.contains("no such checkout"), "{error}");
+}
+
+#[tokio::test]
+async fn a_gone_checkouts_code_read_is_a_code_failure_to_an_older_client() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(ClientMsg::ReadCode {
+        request_id: 6,
+        checkout: CheckoutId(9999),
+        path: "a.rs".into(),
+        version: argus_protocol::CodeVersion::WorkingTree,
+    });
+    assert!(matches!(
+        answer(&mut h).await,
+        ServerMsg::CodeFailed { request_id: 6, checkout: CheckoutId(9999), .. }
+    ));
+}
+
+#[tokio::test]
+async fn a_gone_checkouts_commit_files_are_a_commit_files_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    for mut h in [Harness::new(dir.path()), Harness::refused_by_id(dir.path())] {
+        h.send(ClientMsg::ListCommitFiles { checkout: CheckoutId(9999), commit: "abc".into() });
+        match answer(&mut h).await {
+            ServerMsg::CommitFilesFailed { checkout: CheckoutId(9999), commit, message } => {
+                assert_eq!(commit, "abc");
+                assert!(message.contains("no such checkout"), "{message}");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 }
 
