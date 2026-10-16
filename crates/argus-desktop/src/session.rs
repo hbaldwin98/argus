@@ -58,11 +58,11 @@ use crate::keymap::{self, Action};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
-use crate::code_stage::{Back, CodeStage};
+use crate::code_stage::{Back, CodeClick, CodePage, CodeStage};
 use crate::shown::workspace_grid::{self, Dir, Zone};
 use crate::stage::{Page, Stages};
 use crate::page::{
-    self, Call, CodeClick, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
+    self, Call, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
     Stage,
 };
 use crate::palette;
@@ -169,7 +169,7 @@ pub struct Session {
     /// The Code stage, once opened: it keeps its checkout and file while
     /// another stage is up.
     code: Option<CodeStage>,
-    code_sent: Sent<page::CodePage>,
+    code_sent: Sent<CodePage>,
     focused: bool,
     choices: Chosen,
     /// Notifications for the system, raised by the last tree.

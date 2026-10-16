@@ -13,14 +13,12 @@ use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatches, CodeTree, CodeVersion, PaneId,
     ReviewAnchor, ReviewBase, SearchOptions,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::code_tree::{self, folders_of};
-use crate::comment_box::CommentBox;
+use crate::comment_box::{CommentBox, CommentPage};
 use crate::file_jump::{FileJump, Jumped};
-use crate::page::{
-    CodeChangeRow, CodeClick, CodeHit, CodeHitFile, CodeJump, CodeMark, CodeOutlineRow, CodePage, CodeRow,
-    CodeSearch, CodeTreeRow, ReviewJumpGesture,
-};
+use crate::page::ReviewJumpGesture;
 use crate::review::parts;
 
 /// What `B` goes back to: the dialog the stage was opened from, as the
@@ -28,6 +26,211 @@ use crate::review::parts;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Back {
     pub label: String,
+}
+
+/// The Code stage: one checkout's files, one of them read whole, its changes
+/// marked and ruled, and what it defines.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodePage {
+    pub open: bool,
+    pub checkout: u64,
+    pub name: String,
+    pub branch: String,
+    /// What is read when it is not the working tree, as the header says it:
+    /// `index`, or a commit's short oid.
+    pub version: Option<String>,
+    /// Whether the tree lists only the files this version changed.
+    pub changed_only: bool,
+    /// How many files this version changed.
+    pub changed: usize,
+    pub tree: Vec<CodeTreeRow>,
+    pub tree_loading: bool,
+    /// The file being read.
+    pub path: Option<String>,
+    /// Its language, by its extension, when there is a name for it.
+    pub language: Option<&'static str>,
+    pub added: u32,
+    pub removed: u32,
+    pub lines: Vec<CodeRow>,
+    /// Lines removed after the file's last line.
+    pub removed_at_end: u32,
+    /// The cursor's line, from one.
+    pub at: u32,
+    /// Where in the whole file it changed, and where the search matched it.
+    pub ruler: Vec<CodeMark>,
+    /// Whether the outline is shown.
+    pub outline: bool,
+    pub symbols: Vec<CodeOutlineRow>,
+    /// Each run of changed lines and each place lines were removed.
+    pub changes_here: Vec<CodeChangeRow>,
+    /// Why a file shows no lines: binary, or too large.
+    pub note: Option<String>,
+    pub file_loading: bool,
+    pub jump: Option<CodeJump>,
+    pub search: Option<CodeSearch>,
+    /// What `B` goes back to, `review · brief.rs:39` or `history`, when the
+    /// stage was opened from one.
+    pub back: Option<String>,
+    pub failed: Option<String>,
+    /// The picked lines, `lines 3–5`, while a range or a comment is open.
+    pub pick: Option<String>,
+    /// The comment box, while it is open.
+    pub comment: Option<CommentPage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeTreeRow {
+    pub path: String,
+    pub name: String,
+    pub depth: usize,
+    pub folder: bool,
+    pub open: bool,
+    pub changed: bool,
+    pub added: u32,
+    pub removed: u32,
+    /// The file being read.
+    pub on: bool,
+}
+
+/// One line of the file being read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeRow {
+    pub no: u32,
+    /// As a review line's: `[text, highlight]`.
+    pub parts: Vec<(String, &'static str)>,
+    /// This version added or changed it.
+    pub added: bool,
+    /// How many lines this version removed just above it.
+    pub removed_before: u32,
+    pub cursor: bool,
+    pub picked: bool,
+}
+
+/// A mark on the change ruler, at `line` of `lines` in the whole file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeMark {
+    pub line: u32,
+    /// How many lines the mark spans: a run of changed lines is as tall as
+    /// it is long.
+    pub span: u32,
+    #[cfg_attr(test, ts(type = "\"added\" | \"removed\" | \"hit\""))]
+    pub kind: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeOutlineRow {
+    pub name: String,
+    /// Short: `fn`, `type`, `mod`.
+    pub kind: &'static str,
+    pub line: u32,
+    /// The definition the cursor is in.
+    pub on: bool,
+    /// Something in it changed.
+    pub changed: bool,
+}
+
+/// A run of changed lines, or a place lines were removed, by its first
+/// line and what it says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeChangeRow {
+    pub line: u32,
+    pub text: String,
+    pub on: bool,
+}
+
+/// The go-to-file field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeJump {
+    pub query: String,
+    /// The paths it matches, best first.
+    pub matches: Vec<String>,
+    pub at: Option<usize>,
+}
+
+/// The search across the checkout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeSearch {
+    pub query: String,
+    pub glob: String,
+    pub regex: bool,
+    pub case: bool,
+    pub word: bool,
+    /// The matches are for the query and options as they stand.
+    pub current: bool,
+    pub loading: bool,
+    /// Why the search could not run: a pattern or glob it could not read.
+    pub error: Option<String>,
+    pub total: usize,
+    pub truncated: bool,
+    pub files: Vec<CodeHitFile>,
+}
+
+/// The matches in one file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeHitFile {
+    pub path: String,
+    pub dir: String,
+    pub name: String,
+    pub count: usize,
+    pub open: bool,
+    pub hits: Vec<CodeHit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeHit {
+    /// Which match it is, in the order the search returned them.
+    pub index: usize,
+    pub line: u32,
+    /// The line as `[text, matched]`, cut short where it is long before its
+    /// first match.
+    pub parts: Vec<(String, bool)>,
+    pub on: bool,
+}
+
+/// What a click in the Code stage landed on.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum CodeClick {
+    /// A folder opens or closes; a file is read.
+    Tree { path: String },
+    /// With `extend`, the range's other end stays where it was.
+    Line { line: u32, extend: bool },
+    Recipient { pane: u64 },
+    /// An outline row, a change, or a mark on the ruler.
+    Go { line: u32 },
+    ChangedOnly { only: bool },
+    Outline,
+    /// A search match, read where it is.
+    Match { index: usize },
+    /// A file of the search's results, folded or opened.
+    HitFile { path: String },
+    /// One of the search's options turned on or off.
+    SearchOption {
+        #[cfg_attr(test, ts(type = "\"regex\" | \"case\" | \"word\""))]
+        option: String,
+    },
+    Back,
 }
 
 /// How many of its matches the go-to-file field lists.

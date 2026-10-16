@@ -189,7 +189,7 @@ right dock's, and each extension view where the person had put it. Rust holds th
 `clock` and `tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types and the page and gesture types each surface's module keeps beside it
-(`console`, `docks`, `capture_note`, `checkouts`, `comment_box`, …), written as TypeScript by `cargo test` into
+(`console`, `docks`, `capture_note`, `checkouts`, `code_stage`, `comment_box`, …), written as TypeScript by `cargo test` into
 `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
 instance's config directory, so a dev window never shares it with the installed one, and it logs to
