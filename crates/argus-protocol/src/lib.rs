@@ -43,6 +43,7 @@ pub mod held_tree;
 pub mod history_view;
 pub mod hello;
 pub mod hook;
+pub mod hook_call;
 pub mod ids;
 pub mod inbox;
 pub mod keys;
