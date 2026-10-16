@@ -432,6 +432,16 @@ fn an_empty_comment_sends_nothing() {
 }
 
 #[test]
+fn a_comment_longer_than_the_daemon_takes_is_refused_and_sends_nothing() {
+    let mut h = review_with_agent();
+    h.key(KeyCode::Char('c'));
+    h.keys(&"x".repeat(4097));
+    h.key(KeyCode::Enter);
+    assert!(!h.sent().iter().any(|m| matches!(m, ClientMsg::ReviewComment { .. })));
+    assert!(h.app.status.contains("longer than 4096 bytes"), "{}", h.app.status);
+}
+
+#[test]
 fn escaping_the_comment_prompt_sends_nothing_and_leaves_the_review_up() {
     let mut h = review_with_agent();
     h.key(KeyCode::Char('c'));

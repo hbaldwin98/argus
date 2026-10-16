@@ -8,6 +8,7 @@
 //! cannot.
 
 pub mod adr;
+pub mod agent_comment;
 pub mod agent_launch;
 pub mod agent_view;
 pub mod view_check;

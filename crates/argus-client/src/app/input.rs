@@ -762,10 +762,11 @@ impl App {
             return;
         };
         let checkout = self.tree.checkout(session.checkout());
-        if let Err(refused) = session.can_comment(checkout) {
+        let anchor = session.anchor();
+        if let Err(refused) = agent_comment::can_comment(anchor.as_ref(), checkout) {
             return self.report(refused);
         }
-        let Some(anchor) = self.review_view().and_then(|v| v.anchor()) else {
+        let Some(anchor) = anchor else {
             return;
         };
         self.prompt = Some(Prompt::Comment {

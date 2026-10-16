@@ -5,8 +5,9 @@
 //! go are `argus_protocol::review_session`'s, so the dialog behaves as the
 //! terminal client's review does.
 
+use argus_protocol::agent_comment::{self, Comment};
 use argus_protocol::fuzzy::Fuzzy;
-use argus_protocol::review_session::{self, Answered, Comment, ReviewSession};
+use argus_protocol::review_session::{Answered, ReviewSession};
 use argus_protocol::review_view::{fold_of, marker, ReviewView, Row, FOLD_STEP};
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ChangeKind, ClientMsg, DiffLine, HighlightKind, HighlightSpan, LineKind, PaneId, Review,
@@ -291,7 +292,7 @@ impl ReviewDialog {
     /// `c`: the comment box, under the picked lines, when an agent is
     /// there to read it.
     pub fn compose(&mut self, checkout: Option<&CheckoutInfo>) -> Result<(), &'static str> {
-        self.session.can_comment(checkout)?;
+        agent_comment::can_comment(self.session.anchor().as_ref(), checkout)?;
         self.composing = true;
         Ok(())
     }
@@ -307,14 +308,14 @@ impl ReviewDialog {
     /// The agent a comment goes to: the one picked while it still runs,
     /// else the first that does.
     fn addressee(&self, checkout: Option<&CheckoutInfo>) -> Option<PaneId> {
-        let live: Vec<PaneId> = checkout.into_iter().flat_map(review_session::recipients).map(|p| p.id).collect();
+        let live: Vec<PaneId> = checkout.into_iter().flat_map(agent_comment::recipients).map(|p| p.id).collect();
         self.recipient.filter(|p| live.contains(p)).or(live.first().copied())
     }
 
     /// The comment, anchored to the picked lines and addressed to the
     /// chosen agent. The box stays open until the daemon says it is saved.
     pub fn comment(&self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
-        match self.session.comment(checkout, self.addressee(checkout), body)? {
+        match agent_comment::comment(self.session.anchor(), checkout, self.addressee(checkout), body)? {
             Comment::Send(msg) => Ok(*msg),
             // The page always names an addressee while an agent is live.
             Comment::Choose(_) => Err("choose the agent to send it to"),
@@ -332,7 +333,7 @@ impl ReviewDialog {
     pub fn page(&self, checkout: Option<&CheckoutInfo>) -> ReviewPage {
         let recipients: Vec<Recipient> = checkout
             .into_iter()
-            .flat_map(review_session::recipients)
+            .flat_map(agent_comment::recipients)
             .map(|p| Recipient { pane: p.id.0, title: p.title.clone() })
             .collect();
         let recipient = self.addressee(checkout).map(|p| p.0);

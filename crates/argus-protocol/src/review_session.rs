@@ -1,7 +1,8 @@
 //! One review's exchange with the daemon and what it comes to: which sides
 //! were asked for and which have answered, the side on screen and when an
-//! empty one gives way, and who a comment from it can go to. Both clients
-//! drive it and only draw it, so a review behaves the same in either.
+//! empty one gives way, and the picked lines a comment from it is anchored
+//! to. Both clients drive it and only draw it, so a review behaves the same
+//! in either.
 //!
 //! Working changes ask for both sides at once. One round trip settles
 //! everything the review can show — the side to open on, how many files the
@@ -9,9 +10,7 @@
 //! afterwards is a look at what is already in hand rather than another wait.
 
 use crate::review_view::ReviewView;
-use crate::{
-    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus, Review, ReviewBase, ReviewContext,
-};
+use crate::{CheckoutId, ClientMsg, Review, ReviewAnchor, ReviewBase, ReviewContext};
 
 /// What an answer from the daemon came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,14 +29,6 @@ pub enum Answered {
     Nothing,
     /// The daemon could not read a side.
     Failed(String),
-}
-
-/// A comment that passed: sent as it stands, or waiting on a choice
-/// between the agents that could take it.
-#[derive(Debug, Clone)]
-pub enum Comment {
-    Send(Box<ClientMsg>),
-    Choose(Vec<PaneId>),
 }
 
 #[derive(Default)]
@@ -73,14 +64,6 @@ struct Unfolding {
     file: usize,
     path: String,
     blob: String,
-}
-
-/// The agents a comment from `checkout` can go to. A shell has nothing to
-/// hear it with, and an exited agent nowhere to put it.
-pub fn recipients(checkout: &CheckoutInfo) -> impl Iterator<Item = &PaneInfo> {
-    checkout
-        .listed_panes()
-        .filter(|p| p.kind == PaneKind::Agent && !matches!(p.status, PaneStatus::Exited { .. }))
 }
 
 impl ReviewSession {
@@ -314,47 +297,9 @@ impl ReviewSession {
         }
     }
 
-    /// Whether a comment could be written now: there are lines to anchor it
-    /// to and an agent to read it.
-    pub fn can_comment(&self, checkout: Option<&CheckoutInfo>) -> Result<(), &'static str> {
-        if self.view().and_then(ReviewView::anchor).is_none() {
-            return Err("pick a line to comment on");
-        }
-        if checkout.is_none_or(|c| recipients(c).next().is_none()) {
-            return Err("no agent running in this checkout");
-        }
-        Ok(())
-    }
-
-    /// `body` on the picked lines, addressed to `to` — or, with nobody
-    /// chosen, to the one agent there is, or a choice between several.
-    /// `checkout` is as the tree has it now: agents come and go while a
-    /// comment is written.
-    pub fn comment(
-        &self,
-        checkout: Option<&CheckoutInfo>,
-        to: Option<PaneId>,
-        body: &str,
-    ) -> Result<Comment, &'static str> {
-        let body = body.trim();
-        if body.is_empty() {
-            return Err("the comment is empty");
-        }
-        let anchor = self.view().and_then(ReviewView::anchor).ok_or("pick a line to comment on")?;
-        let live: Vec<PaneId> = checkout.into_iter().flat_map(recipients).map(|p| p.id).collect();
-        let recipient = match (to, live.as_slice()) {
-            (_, []) => return Err("no agent running in this checkout"),
-            (Some(pane), _) if !live.contains(&pane) => return Err("that agent is no longer running"),
-            (Some(pane), _) => pane,
-            (None, [only]) => *only,
-            (None, _) => return Ok(Comment::Choose(live)),
-        };
-        Ok(Comment::Send(Box::new(ClientMsg::ReviewComment {
-            checkout: self.checkout,
-            recipient,
-            anchor: Box::new(anchor),
-            body: body.to_owned(),
-        })))
+    /// The picked lines of the side on screen, as a comment on them anchors.
+    pub fn anchor(&self) -> Option<ReviewAnchor> {
+        self.view().and_then(ReviewView::anchor)
     }
 
     pub fn checkout(&self) -> CheckoutId {
@@ -414,7 +359,7 @@ impl ReviewSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AgentTelemetry, ChangeKind, DiffLine, FileDiff, Hunk, LineKind};
+    use crate::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind};
     use ReviewBase::{Commit, Staged, Unstaged};
 
     const CO: CheckoutId = CheckoutId(100);
@@ -442,37 +387,6 @@ mod tests {
 
     fn answer(request_id: u64, base: ReviewBase, paths: &[&str]) -> Review {
         Review { request_id, checkout: CO, base, files: paths.iter().map(|p| file(p)).collect(), commit: None }
-    }
-
-    fn pane(id: u64, kind: PaneKind, status: PaneStatus) -> PaneInfo {
-        PaneInfo {
-            id: PaneId(id),
-            kind,
-            title: format!("pane {id}"),
-            status,
-            note: None,
-            template: None,
-            children: Vec::new(),
-            background: false,
-            telemetry: AgentTelemetry::default(),
-            since: None,
-            live: false,
-        }
-    }
-
-    fn checkout(panes: Vec<PaneInfo>) -> CheckoutInfo {
-        CheckoutInfo { id: CO, name: "main".into(), path: "/src/main".into(), panes, git: None, primary: true }
-    }
-
-    fn sent(comment: Result<Comment, &str>) -> ClientMsg {
-        match comment {
-            Ok(Comment::Send(msg)) => *msg,
-            other => panic!("not sent: {other:?}"),
-        }
-    }
-
-    fn agent(id: u64) -> PaneInfo {
-        pane(id, PaneKind::Agent, PaneStatus::Working)
     }
 
     /// A working review asked with ids 1 (unstaged) and 2 (staged).
@@ -619,47 +533,11 @@ mod tests {
     }
 
     #[test]
-    fn a_comment_needs_words_and_a_line() {
-        let co = checkout(vec![agent(7)]);
+    fn the_anchor_is_the_picked_lines_of_the_side_on_screen() {
         let (s, _) = working();
-        assert_eq!(s.can_comment(Some(&co)), Err("pick a line to comment on"));
-        assert_eq!(s.comment(Some(&co), None, "tidy").err(), Some("pick a line to comment on"));
+        assert!(s.anchor().is_none(), "nothing read yet");
         let s = showing_a_line();
-        assert_eq!(s.comment(Some(&co), None, "   ").err(), Some("the comment is empty"));
-    }
-
-    #[test]
-    fn a_comment_with_no_live_agent_is_refused() {
-        let s = showing_a_line();
-        let shells = checkout(vec![
-            pane(1, PaneKind::Shell, PaneStatus::Idle),
-            pane(2, PaneKind::Agent, PaneStatus::Exited { code: Some(0) }),
-        ]);
-        assert_eq!(s.can_comment(Some(&shells)), Err("no agent running in this checkout"));
-        assert_eq!(s.comment(Some(&shells), None, "hi").err(), Some("no agent running in this checkout"));
-        assert_eq!(s.comment(Some(&shells), Some(PaneId(2)), "hi").err(), Some("no agent running in this checkout"));
-        assert_eq!(s.comment(None, None, "hi").err(), Some("no agent running in this checkout"), "the checkout is gone");
-    }
-
-    #[test]
-    fn a_comment_goes_to_the_one_agent_or_asks_between_several() {
-        let s = showing_a_line();
-        let one = checkout(vec![pane(1, PaneKind::Shell, PaneStatus::Idle), agent(7)]);
-        assert_eq!(s.can_comment(Some(&one)), Ok(()));
-        let ClientMsg::ReviewComment { checkout: to, recipient, anchor, body } = sent(s.comment(Some(&one), None, " tidy "))
-        else {
-            panic!()
-        };
-        assert_eq!((to, recipient, body.as_str()), (CO, PaneId(7), "tidy"));
-        assert_eq!(anchor.path, "a.rs");
-
-        let several = checkout(vec![agent(7), pane(8, PaneKind::Agent, PaneStatus::Exited { code: None }), agent(9)]);
-        assert!(matches!(s.comment(Some(&several), None, "hi"), Ok(Comment::Choose(p)) if p == [PaneId(7), PaneId(9)]));
-        assert!(matches!(
-            sent(s.comment(Some(&several), Some(PaneId(9)), "hi")),
-            ClientMsg::ReviewComment { recipient: PaneId(9), .. }
-        ));
-        assert_eq!(s.comment(Some(&several), Some(PaneId(8)), "hi").err(), Some("that agent is no longer running"));
+        assert_eq!(s.anchor().map(|a| a.path), Some("a.rs".into()));
     }
 
     #[test]

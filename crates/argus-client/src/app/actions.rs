@@ -290,7 +290,7 @@ impl App {
             return;
         };
         let checkout = self.tree.checkout(session.checkout());
-        match session.comment(checkout, to, &body) {
+        match agent_comment::comment(session.anchor(), checkout, to, &body) {
             Ok(Comment::Send(msg)) => {
                 let _ = self.out.send(*msg);
                 self.report("saving comment…");

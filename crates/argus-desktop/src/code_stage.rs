@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 
 use argus_protocol::fuzzy::Fuzzy;
-use argus_protocol::review_session::recipients;
+use argus_protocol::agent_comment::recipients;
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatches, CodeTree, CodeVersion, PaneId,
     ReviewAnchor, ReviewBase, SearchOptions,
