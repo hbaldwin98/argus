@@ -33,6 +33,8 @@ function diff(h) {
     let body;
     if (!h.path)
         body = el('div', { class: 'review-empty fg-muted' }, 'Open a commit and pick a file.');
+    else if (h.diffEmpty)
+        body = el('div', { class: 'review-empty fg-muted' }, h.diffEmpty);
     else if (h.diffLoading)
         body = ghosts([[0.4], [0.9], [0.8], [0.85], [0.6]]);
     else

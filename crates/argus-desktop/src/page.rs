@@ -1714,6 +1714,9 @@ pub struct HistoryPage {
     pub path: Option<String>,
     pub diff: Vec<DiffRow>,
     pub diff_loading: bool,
+    /// Why the file under the cursor shows no diff: its commit's diff could
+    /// not be read, or does not hold it.
+    pub diff_empty: Option<String>,
     /// How many files the commit's diff holds, once read.
     pub files: usize,
 }

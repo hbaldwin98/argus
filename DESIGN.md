@@ -487,7 +487,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `rail` | what the rail lists from the tree, and what a row says |
 | `dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
-| `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
+| `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff or why it could not be read — and what its gestures ask of the daemon |
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, among them what each pane it resumed a session in was resumed from |
 | `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its full transcript is open in place of the list — and what each session offers: its pane, a resume by the exact command named, or only its transcript; the page it draws, last sent while open |
 | `transcript_reader` | the full-transcript reader: the person's turns as a jump list and the one it is on, what find looks for and the match it is on, and the page it draws |
@@ -1634,7 +1634,9 @@ as an ordinary review, so a commit diff is the same viewer, the same navigation,
 comment path as uncommitted work, with the comment's anchor recording which commit it was made
 against. `h` from a commit review returns to the list it was opened from; escape closes both. An
 unborn branch is an empty history rather than an error. Comparing a branch against its fork point,
-or against a remembered snapshot, remains out of scope: that is what a Git client is for.
+or against a remembered snapshot, remains out of scope: that is what a Git client is for. A commit
+whose diff cannot be read says why in the preview, and is asked for again when the cursor next
+lands on one of its files.
 
 Each request captures the index as a tree, and for the unstaged side also an immutable synthetic
 tree built from the index plus working-tree deletions, edits, and non-ignored untracked content.

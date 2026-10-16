@@ -24,6 +24,11 @@ commit: string | null,
  */
 path: string | null, diff: Array<DiffRow>, diffLoading: boolean, 
 /**
+ * Why the file under the cursor shows no diff: its commit's diff could
+ * not be read, or does not hold it.
+ */
+diffEmpty: string | null, 
+/**
  * How many files the commit's diff holds, once read.
  */
 files: number, };

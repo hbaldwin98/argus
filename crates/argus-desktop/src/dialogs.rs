@@ -49,18 +49,23 @@ impl Dialogs {
     }
 
     /// Hands a daemon message to the dialog that asked for it, giving back
-    /// any message neither takes. A commit's diff the history asked for is
-    /// the history's, though it comes as a review.
+    /// any message neither takes. A commit's diff the history asked for,
+    /// or why it could not be read, is the history's, though it comes as a
+    /// review.
     pub fn receive(&mut self, msg: ServerMsg, say: &mut Vec<Event>) -> Option<ServerMsg> {
         match msg {
             ServerMsg::Review(review) => {
-                let taken = self.history.as_mut().is_some_and(|h| h.receive_diff(review.clone()));
-                if let Some(dialog) = self.review.as_mut().filter(|_| !taken) {
+                let unasked = match self.history.as_mut() {
+                    Some(history) => history.receive_diff(review),
+                    None => Some(review),
+                };
+                if let (Some(review), Some(dialog)) = (unasked, self.review.as_mut()) {
                     dialog.receive(review);
                 }
             }
             ServerMsg::ReviewFailed { request_id, checkout, message } => {
-                if let Some(dialog) = &mut self.review {
+                let taken = self.history.as_mut().is_some_and(|h| h.diff_failed(request_id, message.clone()));
+                if let Some(dialog) = self.review.as_mut().filter(|_| !taken) {
                     dialog.failed(checkout, request_id, message);
                 }
             }
@@ -454,6 +459,56 @@ mod tests {
             assert!(dialogs.receive(msg, &mut Vec::new()).is_none());
         }
         assert_eq!(dialogs.review().unwrap().page(None).empty.as_deref(), Some("no such checkout"));
+    }
+
+    fn commit(oid: &str) -> argus_protocol::CommitInfo {
+        argus_protocol::CommitInfo { oid: oid.into(), short: oid[..4].into(), summary: "s".into(), author: "t".into(), time: 0 }
+    }
+
+    /// A history over one commit of one file, with the cursor on that file:
+    /// the id its diff was asked under. `id` is shared with any review open
+    /// beside it, so the two never ask under one id.
+    fn history_on_a_file(dialogs: &mut Dialogs, mut id: impl FnMut() -> u64) -> u64 {
+        let mut out = Vec::new();
+        dialogs.open_history(CheckoutId(100), &tree(), &mut id, &mut out);
+        let Some(ClientMsg::ListCommits { request_id, .. }) = out.pop() else {
+            panic!("the commits are asked for");
+        };
+        let say = &mut Vec::new();
+        dialogs.receive(ServerMsg::Commits { request_id, checkout: CheckoutId(100), commits: vec![commit("aaaa1")] }, say);
+        dialogs.history_action(Action::Unfold, None, &tree(), &mut id, &mut out);
+        let files = vec![argus_protocol::CommitFile { path: "DESKTOP.md".into(), old_path: None, kind: argus_protocol::ChangeKind::Modified, added: 1, removed: 0 }];
+        dialogs.receive(ServerMsg::CommitFiles { checkout: CheckoutId(100), commit: "aaaa1".into(), files }, say);
+        dialogs.history_action(Action::Next, None, &tree(), &mut id, &mut out);
+        let Some(ClientMsg::Review { request_id, .. }) = out.pop() else {
+            panic!("the file's diff is asked for");
+        };
+        request_id
+    }
+
+    fn history_page(dialogs: &mut Dialogs) -> HistoryPage {
+        dialogs.history_sent.forget();
+        dialogs
+            .take(&tree(), 0)
+            .into_iter()
+            .find_map(|e| match e {
+                Event::History(page) => Some(*page),
+                _ => None,
+            })
+            .expect("a history is open")
+    }
+
+    #[test]
+    fn a_failed_commit_diff_reaches_the_history_that_asked() {
+        let mut id = ids();
+        let mut dialogs = Dialogs::new(ReviewLayout::default());
+        dialogs.open_review(CheckoutId(100), &tree(), &mut id, &mut Vec::new());
+        let asked = history_on_a_file(&mut dialogs, &mut id);
+
+        let msg = ServerMsg::ReviewFailed { request_id: asked, checkout: CheckoutId(100), message: "bad object".into() };
+        assert!(dialogs.receive(msg, &mut Vec::new()).is_none());
+        let page = history_page(&mut dialogs);
+        assert_eq!((page.diff_empty.as_deref(), page.diff_loading), (Some("bad object"), false));
     }
 
     #[test]

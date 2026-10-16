@@ -3,7 +3,8 @@
 //! under the cursor — and what its gestures ask of the daemon. The rows
 //! and what unfolding asks for are `argus_protocol::history_view`'s, as in
 //! the terminal client; a commit's diff is asked for once and kept while
-//! the dialog is open.
+//! the dialog is open; a diff that could not be read says why, and is
+//! asked for again when the cursor comes back to it.
 
 use std::collections::HashMap;
 
@@ -23,8 +24,12 @@ pub struct HistoryDialog {
     failed: Option<String>,
     /// Each opened commit's diff against its parent, by oid.
     diffs: HashMap<String, ReviewView>,
-    /// Diffs asked for and not yet answered: request id to oid.
+    /// Diffs asked for and not yet answered: request id to oid. The daemon
+    /// answers every ask, so an entry leaves on a diff or a failure.
     pending: HashMap<u64, String>,
+    /// Commits whose diff could not be read, by oid, with why. The cursor
+    /// landing on one of their files again asks again.
+    unread: HashMap<String, String>,
     /// What the filter field says: the commits shown are those whose hash,
     /// subject or author holds every word of it.
     filter: String,
@@ -53,6 +58,7 @@ impl HistoryDialog {
             failed: None,
             diffs: HashMap::new(),
             pending: HashMap::new(),
+            unread: HashMap::new(),
             filter: String::new(),
             want: None,
         };
@@ -103,12 +109,22 @@ impl HistoryDialog {
         }
     }
 
-    /// A commit's diff, kept if this dialog asked for it.
-    pub fn receive_diff(&mut self, review: Review) -> bool {
+    /// A commit's diff, kept if this dialog asked for it; given back if not.
+    pub fn receive_diff(&mut self, review: Review) -> Option<Review> {
         let Some(oid) = self.pending.remove(&review.request_id) else {
-            return false;
+            return Some(review);
         };
         self.diffs.insert(oid, ReviewView::new(review, false));
+        None
+    }
+
+    /// A commit's diff the daemon could not read, taken if this dialog asked
+    /// for it.
+    pub fn diff_failed(&mut self, request_id: u64, message: String) -> bool {
+        let Some(oid) = self.pending.remove(&request_id) else {
+            return false;
+        };
+        self.unread.insert(oid, message);
         true
     }
 
@@ -248,6 +264,7 @@ impl HistoryDialog {
         if self.diffs.contains_key(&oid) || self.pending.values().any(|o| *o == oid) {
             return Then::Nothing;
         }
+        self.unread.remove(&oid);
         let request_id = id();
         self.pending.insert(request_id, oid.clone());
         Then::Ask(Box::new(ClientMsg::Review {
@@ -324,9 +341,16 @@ impl HistoryDialog {
         } else {
             None
         };
-        let diff = view.selected_oid().and_then(|oid| self.diffs.get(oid));
+        let held = view.selected_oid().filter(|_| file.is_some());
+        let diff = held.and_then(|oid| self.diffs.get(oid));
+        let unread = held.and_then(|oid| self.unread.get(oid));
         let shown = match (diff, &file) {
             (Some(d), Some(path)) => d.review.files.iter().position(|f| &f.path == path).map(|at| (d, at)),
+            _ => None,
+        };
+        let diff_empty = match (unread, &file) {
+            (Some(why), _) => Some(why.clone()),
+            (None, Some(path)) if diff.is_some() && shown.is_none() => Some(format!("{path} is not in this commit's diff.")),
             _ => None,
         };
         HistoryPage {
@@ -346,7 +370,10 @@ impl HistoryDialog {
                 .into_iter()
                 .filter(|r| r.kind != "fold")
                 .collect(),
-            diff_loading: file.is_some() && shown.is_none(),
+            // Neither held nor refused: asked and not yet answered, since
+            // every landing on a file row asks.
+            diff_loading: file.is_some() && diff.is_none() && unread.is_none(),
+            diff_empty,
             files: shown.map(|(d, _)| files_of(d).len()).unwrap_or(0),
         }
     }
@@ -459,12 +486,27 @@ mod tests {
         assert_eq!((base, commit.as_deref()), (ReviewBase::Commit, Some("aaaa1")));
         assert!(d.page(0).diff_loading);
         assert!(matches!(d.select_row(1, || 99), Then::Nothing), "asked once");
-        d.receive_diff(Review {
+        assert!(d.receive_diff(diff_of(request_id, "DESKTOP.md")).is_none());
+        let page = d.page(0);
+        assert_eq!(page.diff.len(), 2, "its hunk and its line");
+        assert!(matches!(
+            d.choose(),
+            Then::Review { commit, file } if commit == "aaaa1" && file.as_deref() == Some("DESKTOP.md")
+        ));
+    }
+
+    fn file(path: &str) -> CommitFile {
+        CommitFile { path: path.into(), old_path: None, kind: ChangeKind::Modified, added: 1, removed: 0 }
+    }
+
+    /// A commit's diff, answering `request_id`, that changed `path`.
+    fn diff_of(request_id: u64, path: &str) -> Review {
+        Review {
             request_id,
             checkout: CheckoutId(100),
             base: ReviewBase::Commit,
             files: vec![FileDiff {
-                path: "DESKTOP.md".into(),
+                path: path.into(),
                 old_path: None,
                 kind: ChangeKind::Modified,
                 hunks: vec![Hunk {
@@ -476,12 +518,81 @@ mod tests {
                 new_lines: None,
             }],
             commit: None,
-        });
+        }
+    }
+
+    /// The id a gesture asked a commit's diff under.
+    fn asked(then: Then) -> u64 {
+        let Then::Ask(msg) = then else {
+            panic!("the diff is asked for");
+        };
+        let ClientMsg::Review { request_id, .. } = *msg else {
+            panic!("a review of the commit");
+        };
+        request_id
+    }
+
+    /// The newest commit unfolded to its one file, with the cursor on it.
+    fn on_a_file() -> (HistoryDialog, u64) {
+        let mut d = opened();
+        d.unfold();
+        d.receive_files(CheckoutId(100), "aaaa1", vec![file("DESKTOP.md")]);
+        let id = asked(d.move_by(1, || 40));
+        (d, id)
+    }
+
+    #[test]
+    fn a_commit_diff_that_failed_says_why_and_is_asked_again_when_the_cursor_comes_back() {
+        let (mut d, id) = on_a_file();
+        assert_eq!(id, 40);
+        assert!(d.diff_failed(40, "bad object".into()));
         let page = d.page(0);
-        assert_eq!(page.diff.len(), 2, "its hunk and its line");
-        assert!(matches!(
-            d.choose(),
-            Then::Review { commit, file } if commit == "aaaa1" && file.as_deref() == Some("DESKTOP.md")
-        ));
+        assert!(!page.diff_loading, "not waiting on what was refused");
+        assert_eq!(page.diff_empty.as_deref(), Some("bad object"));
+
+        assert!(matches!(d.ends(false, || 99), Then::Nothing), "the commit row asks nothing");
+        let Then::Ask(msg) = d.move_by(1, || 41) else {
+            panic!("asked again");
+        };
+        assert!(matches!(*msg, ClientMsg::Review { request_id: 41, ref commit, .. } if commit.as_deref() == Some("aaaa1")));
+        let page = d.page(0);
+        assert!(page.diff_loading && page.diff_empty.is_none());
+    }
+
+    /// The history's stuck preview: the cursor crossed two commits' files
+    /// before either diff came, and both must still be kept.
+    #[test]
+    fn two_commits_asked_back_to_back_each_keep_their_diff() {
+        let mut d = opened();
+        d.unfold();
+        d.receive_files(CheckoutId(100), "aaaa1", vec![file("a.md")]);
+        d.select_row(2, || 99);
+        d.unfold();
+        d.receive_files(CheckoutId(100), "bbbb2", vec![file("b.md")]);
+        let a = asked(d.select_row(1, || 40));
+        let b = asked(d.select_row(3, || 41));
+
+        assert!(d.receive_diff(diff_of(b, "b.md")).is_none());
+        assert!(d.receive_diff(diff_of(a, "a.md")).is_none());
+        assert!(matches!(d.select_row(1, || 99), Then::Nothing), "already held");
+        let page = d.page(0);
+        assert_eq!((page.path.as_deref(), page.diff.len(), page.diff_loading), (Some("a.md"), 2, false));
+    }
+
+    #[test]
+    fn a_diff_this_dialog_did_not_ask_for_is_given_back() {
+        let (mut d, _) = on_a_file();
+        assert!(d.receive_diff(diff_of(7, "DESKTOP.md")).is_some());
+        assert!(!d.diff_failed(7, "not ours".into()));
+        assert!(d.page(0).diff_loading, "its own ask still waits");
+    }
+
+    #[test]
+    fn a_file_its_commits_diff_does_not_hold_says_so_rather_than_loading() {
+        let (mut d, id) = on_a_file();
+        assert!(d.receive_diff(diff_of(id, "OTHER.md")).is_none());
+        let page = d.page(0);
+        assert!(!page.diff_loading);
+        assert_eq!(page.diff_empty.as_deref(), Some("DESKTOP.md is not in this commit's diff."));
     }
 }
