@@ -1,8 +1,8 @@
-//! The panes this window shows — the Workspace's and any split beside it,
-//! the console's one or two sides, and a screen for each extension console view on screen —
-//! each with its subscription, size and view on this
-//! connection; which of them has the keys; whether the Workspace's fills
-//! the window; and whether the leader is waiting on the next key typed.
+//! The panes this window shows — the Workspace's grid (`workspace_grid`),
+//! the console's one or two sides, and a screen for each extension console
+//! view on screen — each with its subscription, size and view on this
+//! connection; which of them has the keys; whether the Workspace's pane
+//! fills the window; and whether the leader is waiting on the next key typed.
 //!
 //! Which panes are shown is the window's own choice, as the terminal
 //! client's selection is; the session checks the tree or the consoles hold
@@ -18,6 +18,10 @@ use argus_protocol::{ClientMsg, KeyboardMode, MouseTracking, PaneId, ServerMsg};
 use crate::page::{Frame, Side};
 use crate::screen::Screen;
 use crate::split_grid::{Dir, Layout, Zone};
+
+pub mod workspace_grid;
+
+use workspace_grid::WorkspaceGrid;
 
 #[derive(Default)]
 struct Slot {
@@ -60,24 +64,6 @@ impl Slot {
     }
 }
 
-/// Moves `from`'s pane, screen and the size it was last asked onto `to`,
-/// whose room stays: the page measures and remembers room by side, so a
-/// pane that takes another side takes that side's room.
-fn shift(from: &mut Slot, to: &mut Slot) {
-    to.pane = from.pane.take();
-    to.screen = from.screen.take();
-    to.sized = from.sized.take();
-}
-
-/// A slot whose pane came from another side: drawn whole, and resized
-/// only where its new side's room differs from what it was last asked.
-fn redraw(slot: &mut Slot, out: &mut Vec<ClientMsg>) {
-    if let Some(screen) = &mut slot.screen {
-        screen.refresh();
-    }
-    slot.send_size(out);
-}
-
 /// An extension's console view's screen. The daemon owns its pane, so the
 /// window follows what the view says rather than choosing it.
 struct ViewSlot {
@@ -88,41 +74,20 @@ struct ViewSlot {
 
 #[derive(Default)]
 pub struct ShownPane {
-    /// The Workspace's, then the console's first and second.
-    sides: [Slot; 3],
+    /// The Workspace's pane and those split beside it. Kept here and not
+    /// with the stage, so the grid survives a visit to another stage.
+    grid: WorkspaceGrid,
+    /// The console's first and second sides.
+    console: [Slot; 2],
     /// Extension console views' screens, as many as are on screen. A
     /// `Side::View(n)` is the `n`th, and a freed one is reused, so a side
     /// the page still names is never another view's for long.
     views: Vec<Option<ViewSlot>>,
-    /// Terminals split beside the Workspace's, left to right. Kept here
-    /// and not with the stage, so the split survives a visit to another
-    /// stage. A `Side::Beside(n)` is the `n`th; closing one shifts the rest
-    /// down, so a side the page still names is redrawn whole.
-    beside: Vec<Slot>,
-    /// Where the Workspace's pane and those beside it sit in the grid they
-    /// fill, and how big each is. Numbered as the slots are: 0 the
-    /// Workspace's, `n + 1` the `Beside(n)`. The window's own layout: the
-    /// daemon only learns each pane's rows and columns.
-    layout: Layout,
     keys: Side,
     /// The person asked for the Workspace's pane to fill the window.
     filled: bool,
     /// The leader was pressed in the pane: the next key is the window's.
     leader: bool,
-}
-
-const SIDES: [Side; 3] = [Side::Workspace, Side::First, Side::Second];
-
-/// The index of one of the three fixed sides. A view's or a split's side has
-/// no place among them: they are given and taken by `sync_views` and the
-/// split calls.
-fn at(side: Side) -> usize {
-    match side {
-        Side::Workspace => 0,
-        Side::First => 1,
-        Side::Second => 2,
-        Side::View(_) | Side::Beside(_) => unreachable!("a view's or a split's side is kept by its own list"),
-    }
 }
 
 impl ShownPane {
@@ -137,43 +102,45 @@ impl ShownPane {
 
     fn slot(&self, side: Side) -> Option<&Slot> {
         match side {
+            Side::Workspace | Side::Beside(_) => self.grid.cell(side),
+            Side::First => Some(&self.console[0]),
+            Side::Second => Some(&self.console[1]),
             Side::View(n) => self.views.get(usize::from(n))?.as_ref().map(|v| &v.slot),
-            Side::Beside(n) => self.beside.get(usize::from(n)),
-            fixed => Some(&self.sides[at(fixed)]),
         }
     }
 
     fn slot_mut(&mut self, side: Side) -> Option<&mut Slot> {
         match side {
+            Side::Workspace | Side::Beside(_) => self.grid.cell_mut(side),
+            Side::First => Some(&mut self.console[0]),
+            Side::Second => Some(&mut self.console[1]),
             Side::View(n) => self.views.get_mut(usize::from(n))?.as_mut().map(|v| &mut v.slot),
-            Side::Beside(n) => self.beside.get_mut(usize::from(n)),
-            fixed => Some(&mut self.sides[at(fixed)]),
         }
     }
 
-    /// Every side with its slot, the Workspace's first.
+    /// Every side with its slot: the grid's in opening order, then the
+    /// console's, then the views'.
     fn each(&mut self) -> impl Iterator<Item = (Side, &mut Slot)> {
-        let [workspace, first, second] = &mut self.sides;
+        let [first, second] = &mut self.console;
         let views = self.views.iter_mut().enumerate().filter_map(|(n, v)| Some((Side::View(n as u8), &mut v.as_mut()?.slot)));
-        let beside = self.beside.iter_mut().enumerate().map(|(n, slot)| (Side::Beside(n as u8), slot));
-        [(Side::Workspace, workspace), (Side::First, first), (Side::Second, second)].into_iter().chain(beside).chain(views)
+        self.grid.cells_mut().chain([(Side::First, first), (Side::Second, second)]).chain(views)
     }
 
     pub fn keys(&self) -> Side {
         self.keys
     }
 
-    /// Every pane the window chose to show, the Workspace's first. An
-    /// extension console's is not among them: the daemon holds it with its
-    /// view, so the tree and the consoles never say whether it is there.
+    /// Every pane the window chose to show: the grid's, the Workspace's
+    /// first, then the console's. An extension console's is not among them:
+    /// the daemon holds it with its view, so the tree and the consoles never
+    /// say whether it is there.
     pub fn panes(&self) -> Vec<PaneId> {
-        self.sides.iter().chain(&self.beside).filter_map(|slot| slot.pane).collect()
+        self.grid.panes().chain(self.console.iter().filter_map(|slot| slot.pane)).collect()
     }
 
     fn side_of(&self, pane: PaneId) -> Option<Side> {
-        let beside = (0..self.beside.len()).map(|n| Side::Beside(n as u8));
         let views = (0..self.views.len()).map(|n| Side::View(n as u8));
-        SIDES.into_iter().chain(beside).chain(views).find(|&side| self.on(side) == Some(pane))
+        self.grid.side_of(pane).or_else(|| [Side::First, Side::Second].into_iter().chain(views).find(|&side| self.on(side) == Some(pane)))
     }
 
     /// The extension console views' screens, in the order they were given.
@@ -227,20 +194,21 @@ impl ShownPane {
     }
 
     /// Whether `side` still has a pane to type into, and if not, hands the
-    /// keys on: to the nearest split on its left, or the console's first
-    /// side, or else the Workspace's.
+    /// keys on: to the console's first side, or else the Workspace's grid.
+    /// Keys on a split that went were handed left as the grid closed it.
     fn settle_keys(&mut self) {
         if self.pane().is_none() {
-            let near = match self.keys {
-                Side::Beside(n) => (0..n).rev().map(Side::Beside).chain([Side::Workspace]).find(|&s| self.on(s).is_some()),
-                _ => None,
-            };
-            self.keys = near
-                .or_else(|| [Side::First, Side::Workspace].into_iter().find(|&s| self.on(s).is_some()))
-                .or_else(|| (0..self.beside.len()).map(|n| Side::Beside(n as u8)).find(|&s| self.on(s).is_some()))
-                .unwrap_or_default();
+            let mut sides = [Side::First, Side::Workspace].into_iter().chain(self.grid.sides());
+            self.keys = sides.find(|&s| self.on(s).is_some()).unwrap_or_default();
             self.leader = false;
         }
+    }
+
+    /// A grid cell may have been emptied: the grid takes it out and
+    /// numbers the rest down, and keys left on nothing are handed on.
+    fn vacated(&mut self, out: &mut Vec<ClientMsg>) {
+        self.grid.close_empty(&mut self.keys, out);
+        self.settle_keys();
     }
 
     /// Draws `side` whole with the next frame: the page just made its
@@ -253,9 +221,11 @@ impl ShownPane {
 
     /// Shows `pane` on `side`, letting the one there go. A pane already on
     /// the console's other side moves over with its screen rather than
-    /// subscribing twice. False when it was there already.
+    /// subscribing twice. False when it was there already, and for a
+    /// split's side: a split is made only by `open_beside`, so the side a
+    /// caller names is never renumbered under it.
     pub fn show_on(&mut self, side: Side, pane: PaneId, out: &mut Vec<ClientMsg>) -> bool {
-        if self.on(side) == Some(pane) {
+        if matches!(side, Side::Beside(_)) || self.on(side) == Some(pane) {
             return false;
         }
         // As in the terminal client, filling and the leader are for the
@@ -269,18 +239,14 @@ impl ShownPane {
         let Some(slot) = self.slot_mut(side) else { return false };
         slot.clear(true, out);
         match self.side_of(pane) {
-            Some(from) => {
-                self.move_over(from, side, out);
-                if let Side::Beside(n) = from {
-                    self.remove_beside(usize::from(n), out);
-                }
-            }
+            Some(from) => self.move_over(from, side, out),
             None => {
                 if let Some(slot) = self.slot_mut(side) {
                     slot.subscribe(pane, out);
                 }
             }
         }
+        self.vacated(out);
         true
     }
 
@@ -301,7 +267,8 @@ impl ShownPane {
     }
 
     /// Lets `side`'s pane go. When the console's first side goes its second
-    /// moves over to it. Keys left on nothing go to the console's first
+    /// moves over to it, and when the Workspace's goes the first split
+    /// takes its place. Keys left on nothing go to the console's first
     /// side, or else the Workspace's.
     pub fn close(&mut self, side: Side, out: &mut Vec<ClientMsg>) {
         self.drop_side(side, true, out);
@@ -314,9 +281,6 @@ impl ShownPane {
         if let Some(slot) = self.slot_mut(side) {
             slot.clear(unsubscribe, out);
         }
-        if let Side::Beside(n) = side {
-            self.remove_beside(usize::from(n), out);
-        }
         if side == Side::First && self.on(Side::Second).is_some() {
             self.move_over(Side::Second, Side::First, out);
             if self.keys == Side::Second {
@@ -325,165 +289,67 @@ impl ShownPane {
         }
         if side == Side::Workspace {
             self.filled = false;
-            // The first split takes the Workspace's place, as the console's
-            // second takes its first's, so the Workspace is never the
-            // empty side of a split.
-            if self.on(Side::Beside(0)).is_some() {
-                shift(&mut self.beside[0], &mut self.sides[0]);
-                for j in 1..self.beside.len() {
-                    let (left, right) = self.beside.split_at_mut(j);
-                    shift(&mut right[0], &mut left[j - 1]);
-                }
-                self.beside.pop();
-                self.layout.remove(0);
-                for slot in std::iter::once(&mut self.sides[0]).chain(&mut self.beside) {
-                    redraw(slot, out);
-                }
-                self.keys = match self.keys {
-                    Side::Beside(0) => Side::Workspace,
-                    Side::Beside(k) => Side::Beside(k - 1),
-                    keys => keys,
-                };
-            }
         }
-        self.settle_keys();
+        self.vacated(out);
     }
 
     /// The panes of the grid the Workspace and its splits fill, in reading
     /// order.
     pub fn row(&self) -> Vec<Side> {
-        self.layout.order().into_iter().map(Self::side_numbered).collect()
-    }
-
-    fn side_numbered(n: usize) -> Side {
-        n.checked_sub(1).map_or(Side::Workspace, |n| Side::Beside(n as u8))
-    }
-
-    fn number_of(side: Side) -> Option<usize> {
-        match side {
-            Side::Workspace => Some(0),
-            Side::Beside(n) => Some(usize::from(n) + 1),
-            _ => None,
-        }
+        self.grid.sides()
     }
 
     /// Whether `pane` is one of the grid's.
     pub fn in_row(&self, pane: PaneId) -> bool {
-        matches!(self.side_of(pane), Some(Side::Workspace | Side::Beside(_)))
+        self.grid.holds(pane)
     }
 
-    /// Whether the grid has room for one more pane without any dropping
-    /// below `MIN_COLS` by `MIN_ROWS`, judged by the size the page last
-    /// reported for the panes; a grid not yet measured has room.
     pub fn has_room(&self) -> bool {
-        let Some((cols, rows)) = self.area() else { return true };
-        let mut next = self.layout.clone();
-        next.add();
-        next.fits(cols, rows)
+        self.grid.has_room()
     }
 
-    /// The cells the grid spans: the widest row's columns added up, and each
-    /// row's first pane's rows. None until the page has measured them all.
-    fn area(&self) -> Option<(u16, u16)> {
-        let room = |n: usize| self.slot(Self::side_numbered(n))?.capacity;
-        let cols = self.layout.rows().iter().map(|row| row.iter().map(|&n| Some(u32::from(room(n)?.1))).sum::<Option<u32>>()).collect::<Option<Vec<_>>>()?;
-        let rows = self.layout.rows().iter().map(|row| Some(u32::from(room(row[0])?.0))).sum::<Option<u32>>()?;
-        let cols = cols.into_iter().max()?;
-        Some((cols.min(u32::from(u16::MAX)) as u16, rows.min(u32::from(u16::MAX)) as u16))
-    }
-
-    /// Where the panes sit and how big each is.
     pub fn layout(&self) -> &Layout {
-        &self.layout
+        self.grid.layout()
     }
 
     /// The slots after the Workspace's, in the order they were opened.
     pub fn beside_sides(&self) -> Vec<Side> {
-        (0..self.beside.len()).map(|n| Side::Beside(n as u8)).collect()
+        (0..self.grid.sides().len() - 1).map(|n| Side::Beside(n as u8)).collect()
     }
 
     /// Splits `pane` off into the grid, placed by the grid rule. The
-    /// Workspace needs a pane to be split from. A pane the grid already
-    /// shows is not split again; its side is returned.
+    /// Workspace needs a pane to be split from, and a pane on the console
+    /// is not split off it. A pane the grid already shows is not split
+    /// again; its side is returned.
     pub fn open_beside(&mut self, pane: PaneId, out: &mut Vec<ClientMsg>) -> Option<Side> {
-        self.on(Side::Workspace)?;
-        if let Some(from) = self.side_of(pane) {
-            return matches!(from, Side::Workspace | Side::Beside(_)).then_some(from);
+        if self.side_of(pane).is_some_and(|side| !matches!(side, Side::Workspace | Side::Beside(_))) {
+            return None;
         }
-        let n = self.beside.len();
-        // The page measures a new side before it can size it, so a split
-        // asks for the room of its left neighbour until it has its own.
-        let mut slot = Slot { capacity: self.beside.last().or(self.sides.first()).and_then(|left| left.capacity), ..Slot::default() };
-        slot.subscribe(pane, out);
-        self.beside.push(slot);
-        self.layout.add();
-        Some(Side::Beside(n as u8))
+        self.grid.join(pane, out)
     }
 
-    /// Takes the emptied slot `n` out of the grid, its room going to a
-    /// neighbour, and the splits after it shift down onto the rooms of the
-    /// sides they take, drawn whole.
-    fn remove_beside(&mut self, n: usize, out: &mut Vec<ClientMsg>) {
-        if n >= self.beside.len() {
-            return;
-        }
-        for j in n + 1..self.beside.len() {
-            let (left, right) = self.beside.split_at_mut(j);
-            shift(&mut right[0], &mut left[j - 1]);
-        }
-        self.beside.pop();
-        // The keys follow their pane down the row; those on the one that
-        // went go to its neighbour on the left.
-        self.keys = match self.keys {
-            Side::Beside(k) if usize::from(k) == n => n.checked_sub(1).map_or(Side::Workspace, |left| Side::Beside(left as u8)),
-            Side::Beside(k) if usize::from(k) > n => Side::Beside(k - 1),
-            keys => keys,
-        };
-        self.layout.remove(n + 1);
-        for slot in &mut self.beside[n..] {
-            redraw(slot, out);
-        }
-    }
-
-    /// The sizes the person dragged the gutters to: each row's height, and
-    /// each pane's width in its row. Anything that does not fit the grid
-    /// changes nothing.
     pub fn resize_grid(&mut self, heights: &[f32], widths: &[Vec<f32>]) {
-        if let Some(layout) = self.layout.resized(heights, widths) {
-            self.layout = layout;
-        }
+        self.grid.resize(heights, widths);
     }
 
-    /// Evens one row's panes out, or with none the rows' heights.
     pub fn even_out(&mut self, row: Option<usize>) {
-        match row {
-            Some(row) => self.layout.even_row(row),
-            None => self.layout.even_rows(),
-        }
+        self.grid.even_out(row);
     }
 
-    /// `pane` dropped on `onto`'s `zone`; false when either is not in the
-    /// grid.
     pub fn place(&mut self, pane: PaneId, onto: PaneId, zone: Zone) -> bool {
-        let number = |pane| self.side_of(pane).and_then(Self::number_of);
-        let (Some(a), Some(b)) = (number(pane), number(onto)) else { return false };
-        self.layout.place(a, b, zone);
-        true
+        self.grid.place(pane, onto, zone)
     }
 
     /// The pane with the keys trades places with its neighbour in `dir`.
     /// False when the keys are not on the grid.
     pub fn step_pane(&mut self, dir: Dir) -> bool {
-        let Some(at) = Self::number_of(self.keys) else { return false };
-        self.layout.step(at, dir);
-        true
+        self.grid.step(self.keys, dir)
     }
 
     /// The pane next to the keys' in `dir`, which then has them.
     pub fn focus_towards(&mut self, dir: Dir) -> bool {
-        let Some(at) = Self::number_of(self.keys) else { return false };
-        let Some(next) = self.layout.neighbour(at, dir) else { return false };
-        self.keys = Self::side_numbered(next);
+        let Some(next) = self.grid.neighbour(self.keys, dir) else { return false };
+        self.keys = next;
         self.leader = false;
         true
     }
@@ -491,7 +357,7 @@ impl ShownPane {
     /// Moves the keys `by` panes along the grid in reading order, wrapping
     /// round. False when the keys are not in it or it has only one pane.
     pub fn step_keys(&mut self, by: isize) -> bool {
-        let row: Vec<Side> = self.row().into_iter().filter(|&s| self.on(s).is_some()).collect();
+        let row: Vec<Side> = self.grid.sides().into_iter().filter(|&s| self.on(s).is_some()).collect();
         let Some(at) = row.iter().position(|&s| s == self.keys) else { return false };
         if row.len() < 2 {
             return false;
@@ -537,7 +403,7 @@ impl ShownPane {
     /// own with the views it publishes, so those screens go until it does.
     pub fn reconnected(&mut self, out: &mut Vec<ClientMsg>) {
         self.views.clear();
-        for slot in self.sides.iter_mut().chain(&mut self.beside) {
+        for slot in self.grid.cells_mut().map(|(_, slot)| slot).chain(&mut self.console) {
             if let Some(pane) = slot.pane {
                 slot.subscribe(pane, out);
             }
@@ -774,20 +640,6 @@ mod tests {
     }
 
     #[test]
-    fn a_split_opens_to_the_right_with_an_even_share_and_the_size_of_its_neighbour() {
-        let mut shown = ShownPane::default();
-        shown.resize(Side::Workspace, 20, 60, &mut Vec::new());
-        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
-        let mut out = Vec::new();
-        assert_eq!(shown.open_beside(PaneId(4), &mut out), Some(Side::Beside(0)));
-        assert_eq!(names(&out), ["subscribe 4", "resize 4 20x60"]);
-        assert_eq!(shown.layout().rows(), [vec![0, 1]]);
-        shown.open_beside(PaneId(5), &mut Vec::new());
-        assert_eq!(shown.layout().rows(), [vec![0, 1], vec![2]], "two over one");
-        assert_eq!(shown.panes(), [PaneId(1), PaneId(4), PaneId(5)]);
-    }
-
-    #[test]
     fn a_grid_refuses_a_pane_that_would_leave_one_smaller_than_the_least() {
         let mut shown = ShownPane::default();
         shown.resize(Side::Workspace, 20, 70, &mut Vec::new());
@@ -810,11 +662,22 @@ mod tests {
     }
 
     #[test]
-    fn a_pane_already_in_the_row_is_not_split_again() {
+    fn a_pane_is_split_off_only_by_joining_the_grid() {
         let mut shown = ShownPane::default();
         row(&mut shown);
-        assert_eq!(shown.open_beside(PaneId(5), &mut Vec::new()), Some(Side::Beside(1)));
-        assert_eq!(shown.row().len(), 4);
+        assert!(sent(|out| assert!(!shown.show_on(Side::Beside(0), PaneId(9), out))).is_empty());
+        assert!(sent(|out| assert!(!shown.show_on(Side::Beside(1), PaneId(1), out))).is_empty());
+        let sides = [Side::Workspace, Side::Beside(0), Side::Beside(1), Side::Beside(2)];
+        assert_eq!(sides.map(|side| shown.on(side)), [1, 4, 5, 6].map(|pane| Some(PaneId(pane))));
+    }
+
+    #[test]
+    fn a_workspace_pane_moved_to_the_console_leaves_no_empty_cell() {
+        let mut shown = ShownPane::default();
+        row(&mut shown);
+        shown.show_on(Side::First, PaneId(1), &mut Vec::new());
+        assert_eq!((shown.on(Side::Workspace), shown.on(Side::First)), (Some(PaneId(4)), Some(PaneId(1))));
+        assert_eq!(shown.row().len(), 3);
     }
 
     #[test]
