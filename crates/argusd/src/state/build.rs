@@ -138,20 +138,10 @@ impl Daemon {
             .and_then(|name| workspaces.iter().find(|w| w.name == name).map(|w| w.id))
             .unwrap_or(default_ws);
 
-        let (tree_tx, _) = broadcast::channel(32);
-        let (telemetry_tx, _) = broadcast::channel(64);
-        let (workspaces_tx, _) = broadcast::channel(32);
-        let (decisions_tx, _) = broadcast::channel(32);
-        let (tasks_tx, _) = broadcast::channel(32);
-        let (diagrams_tx, _) = broadcast::channel(32);
-        let (views_tx, _) = broadcast::channel(16);
-        let (agent_views_tx, _) = broadcast::channel(64);
-        let (saved_views_tx, _) = broadcast::channel(64);
         let saved_views = saved_views::Held::load(store.saved_views().unwrap_or_else(|e| {
             tracing::warn!("could not read the saved views: {e}");
             Vec::new()
         }));
-        let (extensions_tx, _) = broadcast::channel(64);
         let daemon = Arc::new(Daemon {
             inner: StdMutex::new(Inner {
                 workspaces,
@@ -167,16 +157,9 @@ impl Daemon {
                 }),
             }),
             starting_agents: StdMutex::new(HashMap::new()),
-            workspaces_tx,
-            tree_tx,
-            telemetry_tx,
-            decisions_tx,
-            tasks_tx,
-            diagrams_tx,
+            pushes: super::pushes::Pushes::new(),
             agent_views: StdMutex::new(Default::default()),
-            agent_views_tx,
             saved_views: StdMutex::new(saved_views),
-            saved_views_tx,
             templates: StdMutex::new(templates),
             harnesses,
             hook_port: std::sync::atomic::AtomicU16::new(0),
@@ -187,11 +170,9 @@ impl Daemon {
             restart_attempts: StdMutex::new(HashMap::new()),
             board_keys: StdMutex::new(HashMap::new()),
             viewers: StdMutex::new(Viewers::default()),
-            views_tx,
             next_viewer: std::sync::atomic::AtomicU64::new(0),
             next_inbox: std::sync::atomic::AtomicU64::new(0),
             extensions: StdMutex::new(Default::default()),
-            extensions_tx,
             plugin_root: std::sync::OnceLock::new(),
             paste_root: std::sync::OnceLock::new(),
             git,

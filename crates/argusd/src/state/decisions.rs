@@ -284,7 +284,7 @@ impl Daemon {
             return;
         }
         let features = self.store.features(&address.key).unwrap_or_default();
-        let _ = self.decisions_tx.send(DecisionBoard {
+        self.pushes.decisions(DecisionBoard {
             repositories: address.repositories.clone(),
             project: Some(address.project),
             name: address.project_name.clone(),

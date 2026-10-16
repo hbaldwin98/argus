@@ -81,7 +81,7 @@ impl FeaturePart for DiagramAction {
             return;
         }
         if let Ok(list) = Self::list(daemon, target) {
-            let _ = daemon.diagrams_tx.send(list);
+            daemon.pushes.diagrams(list);
         }
     }
 }

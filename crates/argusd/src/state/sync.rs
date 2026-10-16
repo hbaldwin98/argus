@@ -64,7 +64,7 @@ impl Daemon {
                     daemon.drop_silent_children();
                     daemon.refresh_git_status(only_active);
                     daemon.refresh_branches();
-                    let _ = daemon.tree_tx.send(daemon.snapshot());
+                    daemon.pushes.tree(daemon.snapshot());
                     daemon.push_saved_views();
                 })
                 .await;
@@ -318,7 +318,7 @@ impl Daemon {
                             daemon.reconcile_worktrees();
                             daemon.refresh_git_status(false);
                             daemon.refresh_branches();
-                            let _ = daemon.tree_tx.send(daemon.snapshot());
+                            daemon.pushes.tree(daemon.snapshot());
                             daemon.push_saved_views();
                         })
                         .await;

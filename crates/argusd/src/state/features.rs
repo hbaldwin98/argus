@@ -292,7 +292,7 @@ impl Daemon {
                 // The tasks as well as the board: a client holding the
                 // feature's list open is owed the rows a note just added.
                 if address.is_pushed() {
-                    let _ = self.tasks_tx.send(argus_protocol::TaskList {
+                    self.pushes.tasks(argus_protocol::TaskList {
                         repositories: address.repositories.clone(),
                         project_name: address.project_name.clone(),
                         tasks: self.store.tasks(key, &slug)?,

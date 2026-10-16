@@ -148,7 +148,7 @@ impl Daemon {
             .iter()
             .filter_map(|row| held.told.get(&row.stored.id).map(|told| wire(row, told)))
             .collect();
-        (all, self.saved_views_tx.subscribe())
+        (all, self.pushes.subscribe_saved_views())
     }
 
     /// Tells the watchers what changed since they were last told: a row
@@ -181,7 +181,7 @@ impl Daemon {
         let gone: Vec<String> = held.told.keys().filter(|id| !current.contains_key(*id)).cloned().collect();
         for id in gone {
             held.told.remove(&id);
-            let _ = self.saved_views_tx.send(ServerMsg::SavedViewRemoved { id });
+            self.pushes.saved_view(ServerMsg::SavedViewRemoved { id });
         }
         for row in &held.rows {
             let Some(told) = current.remove(&row.stored.id) else { continue };
@@ -190,7 +190,7 @@ impl Daemon {
             }
             let msg = ServerMsg::SavedViewChanged(Box::new(wire(row, &told)));
             held.told.insert(row.stored.id.clone(), told);
-            let _ = self.saved_views_tx.send(msg);
+            self.pushes.saved_view(msg);
         }
     }
 

@@ -181,7 +181,7 @@ impl Daemon {
             (shown, viewers.refocus())
         };
         self.tell_focus(moved);
-        let _ = self.views_tx.send(());
+        self.pushes.focus_moved();
         for pane in shown {
             let _ = self.reconcile_size(pane);
         }
@@ -200,7 +200,7 @@ impl Daemon {
     /// A tick each time a client's view changes or goes; the focus is read
     /// again with [`Daemon::focus_in`].
     pub fn subscribe_views(&self) -> broadcast::Receiver<()> {
-        self.views_tx.subscribe()
+        self.pushes.subscribe_focus()
     }
 
     /// Where the person is working, read against `tree`: the view of the
@@ -249,7 +249,7 @@ impl Daemon {
         };
         self.tell_focus(moved);
         if forgot {
-            let _ = self.views_tx.send(());
+            self.pushes.focus_moved();
         }
         let touched: Vec<PaneId> = {
             let viewers = self.viewers.lock().unwrap();

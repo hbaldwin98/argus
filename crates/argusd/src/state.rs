@@ -6,9 +6,10 @@
 //! agent reports about itself, `viewers` for what each client shows (the
 //! size it asks a pty for, and the view that says where the person is),
 //! `git_ops` for the writes to Git, `git_reads` for the port its reads
-//! go through, `sync` for the polls and
-//! watchers that keep the tree level with the disk, `panel` for the rows
-//! the user adds and removes, `workspaces` for which scope is open,
+//! go through, `pushes` for what is published for connections to push,
+//! `sync` for the polls and watchers that keep the tree level with the
+//! disk, `panel` for the rows the user adds and removes, `workspaces` for
+//! which scope is open,
 //! `extensions` for what extensions publish and what goes back to them,
 //! `session` for what survives a restart, `sessions`
 //! for the agent sessions a repository's harnesses kept, `inbox` for
@@ -55,6 +56,7 @@ mod inbox;
 mod panel;
 mod panes;
 mod processes;
+mod pushes;
 mod session;
 mod sessions;
 mod sync;
@@ -338,28 +340,14 @@ pub struct Daemon {
     /// Hooks can fire after the child is spawned but before its pane is
     /// inserted into `inner`. Keep their latest bounded state until insertion.
     starting_agents: StdMutex<HashMap<PaneId, PendingStart>>,
-    tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
-    /// An agent's merged telemetry after each report. Apart from the tree
-    /// because it changes on every tool call, and a client that can take
-    /// one pane's record should not be sent every pane's.
-    telemetry_tx: broadcast::Sender<(PaneId, argus_protocol::AgentTelemetry)>,
-    workspaces_tx: broadcast::Sender<Vec<WorkspaceInfo>>,
-    /// Whole boards rather than one decision each: a client watching a
-    /// tree being built needs the tree, and a board is small enough that
-    /// sending the whole of it is cheaper than teaching both sides how to
-    /// splice a node into one.
-    decisions_tx: broadcast::Sender<argus_protocol::DecisionBoard>,
-    /// One feature's task list, whole for the same reason.
-    tasks_tx: broadcast::Sender<argus_protocol::TaskList>,
-    diagrams_tx: broadcast::Sender<argus_protocol::DiagramList>,
+    /// What is published for the connections to push.
+    pushes: pushes::Pushes,
     /// What agents have shown, in memory only. Changes are sent while this
     /// is locked, so a watcher's replay and the events after it do not cross.
     agent_views: StdMutex<views::Views>,
-    agent_views_tx: broadcast::Sender<views::ViewEvent>,
     /// The views agents kept, and what clients were last told of them.
     /// Changes are sent while this is locked, as the agents' are.
     saved_views: StdMutex<saved_views::Held>,
-    saved_views_tx: broadcast::Sender<ServerMsg>,
     /// Agent templates, replaceable: `reload_config` swaps them, and every
     /// start looks its template up by name at the time it runs.
     templates: StdMutex<Vec<AgentConfig>>,
@@ -403,16 +391,12 @@ pub struct Daemon {
     /// arrive.
     viewers: StdMutex<Viewers>,
     next_viewer: std::sync::atomic::AtomicU64,
-    /// A tick whenever a client's view changes or goes, for the
-    /// connections watching the focus to read it again.
-    views_tx: broadcast::Sender<()>,
     /// Names each inbox connection, so a stale one closing cannot close
     /// the one that replaced it.
     next_inbox: std::sync::atomic::AtomicU64,
     /// What the running extensions publish, and the dialogs they have open.
     /// See `extensions`.
     extensions: StdMutex<extensions::Registry>,
-    extensions_tx: broadcast::Sender<ExtensionNews>,
     /// Where a harness's plugin folder is written (see
     /// `harness::plugin_dir`); unset until `main` names it, so a daemon
     /// built in a test writes none.
@@ -536,29 +520,29 @@ impl Daemon {
     }
 
     pub fn subscribe_tree(&self) -> broadcast::Receiver<Vec<ProjectInfo>> {
-        self.tree_tx.subscribe()
+        self.pushes.subscribe_tree()
     }
 
     pub fn subscribe_telemetry(
         &self,
     ) -> broadcast::Receiver<(PaneId, argus_protocol::AgentTelemetry)> {
-        self.telemetry_tx.subscribe()
+        self.pushes.subscribe_telemetry()
     }
 
     pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
-        self.workspaces_tx.subscribe()
+        self.pushes.subscribe_workspaces()
     }
 
     pub fn subscribe_decisions(&self) -> broadcast::Receiver<argus_protocol::DecisionBoard> {
-        self.decisions_tx.subscribe()
+        self.pushes.subscribe_decisions()
     }
 
     pub fn subscribe_tasks(&self) -> broadcast::Receiver<argus_protocol::TaskList> {
-        self.tasks_tx.subscribe()
+        self.pushes.subscribe_tasks()
     }
 
     pub fn subscribe_diagrams(&self) -> broadcast::Receiver<argus_protocol::DiagramList> {
-        self.diagrams_tx.subscribe()
+        self.pushes.subscribe_diagrams()
     }
 
     fn broadcast_tree(&self) {
@@ -566,7 +550,7 @@ impl Daemon {
         // recording the session on the same edge is cheap and means the
         // file is never more than one spawn or close out of date.
         self.record_session();
-        let _ = self.tree_tx.send(self.snapshot());
+        self.pushes.tree(self.snapshot());
         self.push_saved_views();
     }
 
@@ -585,7 +569,7 @@ impl Daemon {
     }
 
     fn broadcast_workspaces(&self) {
-        let _ = self.workspaces_tx.send(self.workspaces());
+        self.pushes.workspaces(self.workspaces());
     }
 
     /// Binds the loopback pane API hook commands POST to (see

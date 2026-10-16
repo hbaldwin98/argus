@@ -80,11 +80,11 @@ impl Registry {
 
 impl Daemon {
     pub fn subscribe_extensions(&self) -> broadcast::Receiver<ExtensionNews> {
-        self.extensions_tx.subscribe()
+        self.pushes.subscribe_extensions()
     }
 
     pub(super) fn tell_extensions(&self, news: ExtensionNews) {
-        let _ = self.extensions_tx.send(news);
+        self.pushes.extension(news);
     }
 
     /// Lets `name` publish, with a token of its own, which it is handed

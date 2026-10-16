@@ -516,7 +516,7 @@ fn an_agent_moves_a_task_to_another_feature_and_back_and_both_lists_are_pushed()
     let (first, filed_here) = (add("stays"), add("filed in the wrong place"));
     let wire = open_feature(&d, &at, "the wire");
 
-    let mut pushed = d.tasks_tx.subscribe();
+    let mut pushed = d.subscribe_tasks();
     let left = d
         .agent_part_action(
             &at,

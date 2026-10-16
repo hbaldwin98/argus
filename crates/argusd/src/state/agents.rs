@@ -384,7 +384,7 @@ impl Daemon {
             }
         };
         if let Some(telemetry) = merged {
-            let _ = self.telemetry_tx.send((pane, telemetry));
+            self.pushes.telemetry(pane, telemetry);
         }
     }
 

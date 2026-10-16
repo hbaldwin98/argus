@@ -145,9 +145,9 @@ impl Daemon {
         // `watch_views` sees each change either in its replay or after it,
         // and never in the wrong order.
         if let Some(id) = views.show(shown.clone()) {
-            let _ = self.agent_views_tx.send(ServerMsg::ViewClosed { pane, id });
+            self.pushes.view(ServerMsg::ViewClosed { pane, id });
         }
-        let _ = self.agent_views_tx.send(ServerMsg::ViewShown(Box::new(shown)));
+        self.pushes.view(ServerMsg::ViewShown(Box::new(shown)));
         views.timers.keep(pane, &id, every, |every| spawn_timer(self, pane, &id, every));
         Ok(())
     }
@@ -156,7 +156,7 @@ impl Daemon {
     pub fn close_view(&self, pane: PaneId, id: &str) {
         let mut views = self.agent_views.lock().unwrap();
         if views.close(pane, id) {
-            let _ = self.agent_views_tx.send(ServerMsg::ViewClosed { pane, id: id.to_string() });
+            self.pushes.view(ServerMsg::ViewClosed { pane, id: id.to_string() });
         }
     }
 
@@ -164,7 +164,7 @@ impl Daemon {
     /// what follows it.
     pub fn watch_views(&self) -> (Vec<ShownView>, broadcast::Receiver<ViewEvent>) {
         let views = self.agent_views.lock().unwrap();
-        (views.shown.clone(), self.agent_views_tx.subscribe())
+        (views.shown.clone(), self.pushes.subscribe_views())
     }
 
     /// Asks the agent that showed a view to look again. The view stays as
@@ -204,7 +204,7 @@ impl Daemon {
     pub(super) fn drop_views_of(&self, pane: PaneId) {
         let mut views = self.agent_views.lock().unwrap();
         for id in views.drop_pane(pane) {
-            let _ = self.agent_views_tx.send(ServerMsg::ViewClosed { pane, id });
+            self.pushes.view(ServerMsg::ViewClosed { pane, id });
         }
     }
 }

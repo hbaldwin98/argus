@@ -357,6 +357,7 @@ to the type or its locking.
 | `main` | daemon startup, and running until asked to stop |
 | `state` | what the tree is, and what a client is shown of it |
 | `state/build` | turning what the config declares into the tree the daemon runs on |
+| `state/pushes` | what the daemon publishes for connections to push: one channel per topic, and how deep each is |
 | `state/panes` | a pane's lifecycle: spawned, restarted, written to, and retired — the one way out of the tree every removal takes |
 | `state/processes` | starting a pane's process and driving it once it runs: the port every pane is started through, a pty in a running daemon and a scripted process in tests |
 | `state/clock` | what time it is for the durations the daemon decides on — a resume's grace, a restart loop's window, a quiet child's age |
