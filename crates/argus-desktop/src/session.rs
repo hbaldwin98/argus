@@ -10,9 +10,9 @@
 //! Each subject keeps its own state and what the page last heard of it —
 //! the status bar (`status`), the panes on screen (`shown`), the agents
 //! offered (`agents`), the review and history (`dialogs`), the link and
-//! reconcile dialogs (`tracker_dialogs`), the two stages
-//! (`feature_stage`, `checkouts_stage`) and the note a new feature is
-//! written as (`capture_note`), a repository's past agent
+//! reconcile dialogs (`tracker_dialogs`), the three stages
+//! (`feature_stage`, `checkouts_stage`, `code_stage`) and the note a new
+//! feature is written as (`capture_note`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
 //! the project switcher (`switcher`) and the dialog adding a project
 //! (`add_project`), the Settings dialog's choices (`preferences`), the
@@ -58,7 +58,7 @@ use crate::keymap::{self, Action};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
-use crate::code_stage::{Back, CodeClick, CodeGesture, CodePage, CodeStage, Then as CodeThen};
+use crate::code_stage::{Back, Code, CodeGesture, Then as CodeThen};
 use crate::shown::workspace_grid::{self, Dir, Zone};
 use crate::stage::{Page, Stages};
 use crate::page::{
@@ -168,8 +168,7 @@ pub struct Session {
     palette_sent: Sent<page::Palette>,
     /// The Code stage, once opened: it keeps its checkout and file while
     /// another stage is up.
-    code: Option<CodeStage>,
-    code_sent: Sent<CodePage>,
+    code: Code,
     focused: bool,
     choices: Chosen,
     /// Notifications for the system, raised by the last tree.
@@ -234,8 +233,7 @@ impl Session {
             adding: Adding::default(),
             palette: false,
             palette_sent: Sent::default(),
-            code: None,
-            code_sent: Sent::default(),
+            code: Code::default(),
             focused: true,
             choices: Chosen::new(settings.preferences),
             alerts: Vec::new(),
@@ -355,11 +353,11 @@ impl Session {
     }
 
     fn route(&mut self, msg: ServerMsg) {
-        // The review's comment path is the Code stage's too: each box knows
-        // whether the comment the daemon saved was its own.
-        if let (ServerMsg::ReviewCommentSaved { .. }, Some(code)) = (&msg, &mut self.code) {
-            code.commented();
-        }
+        // First, so a saved comment reaches the Code stage's box before the
+        // review takes it: each box knows whether the save was its own.
+        let Some(msg) = self.code.receive(msg) else {
+            return;
+        };
         if let Some(effect) = self.shown.receive(&msg) {
             self.take(effect);
             return;
@@ -454,21 +452,6 @@ impl Session {
                 self.passing.push(Event::Notice { text });
             }
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
-            ServerMsg::CodeTree(tree) => {
-                if let Some(code) = &mut self.code {
-                    code.receive_tree(tree);
-                }
-            }
-            ServerMsg::Code(file) => {
-                if let Some(code) = &mut self.code {
-                    code.receive_file(*file);
-                }
-            }
-            ServerMsg::CodeMatches(found) => {
-                if let Some(code) = &mut self.code {
-                    code.receive_matches(found);
-                }
-            }
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
             _ => {}
@@ -476,17 +459,16 @@ impl Session {
     }
 
     /// A request this window named was refused. The part that asked takes
-    /// it: the add dialog, the review and history, the Code stage and the
-    /// sessions dialog say why where they asked; a note or a link waiting
-    /// on it lets go, and the reason is said under it. A refused change
-    /// nobody waits on is said all the same; a refused read nobody wants is
-    /// dropped, as its answer would have been.
+    /// it: the add dialog, the review and history and the sessions dialog
+    /// say why where they asked (the Code stage took its own in `route`); a
+    /// note or a link waiting on it lets go, and the reason is said under
+    /// it. A refused change nobody waits on is said all the same; a refused
+    /// read nobody wants is dropped, as its answer would have been.
     fn refused(&mut self, refusal: RequestRefusal) {
         let id = refusal.request_id;
         self.awaited.answer(id, None);
         let said = self.adding.get_mut().is_some_and(|d| d.refused(&refusal))
             || self.dialogs.refused(&refusal, &mut self.passing)
-            || self.code.as_mut().is_some_and(|c| c.failed(id, refusal.reason.clone()))
             || self.sessions.failed(id, &refusal.reason);
         if said {
             return;
@@ -2225,7 +2207,7 @@ impl Session {
             Stage::Checkouts => self.chosen_repository().cloned().and_then(|repo| self.checkouts.checkout(&repo)),
             _ => None,
         };
-        match (picked, self.code.as_ref().map(CodeStage::checkout)) {
+        match (picked, self.code.checkout()) {
             (Some(picked), Some(open)) if open != picked => {
                 self.open_code_at(picked, CodeVersion::WorkingTree, None, None, None)
             }
@@ -2241,8 +2223,7 @@ impl Session {
         let Some(info) = self.tree.checkout(checkout) else {
             return;
         };
-        let (code, msgs) = CodeStage::open(info, version, path, line, back, || self.awaited.name());
-        self.code = Some(code);
+        let msgs = self.code.open(info, version, path, line, back, || self.awaited.name());
         self.out.extend(msgs);
         self.enter_code();
     }
@@ -2254,23 +2235,15 @@ impl Session {
     /// Escape: back to the review the stage was opened from, as it was,
     /// over the stage it was opened over; or only to that stage.
     fn leave_code(&mut self) {
-        if self.code.as_ref().is_some_and(|c| c.back().is_some()) && self.dialogs.unpark() {
-            if let Some(code) = &mut self.code {
-                code.forget_back();
-            }
+        if self.code.back().is_some() && self.dialogs.unpark() {
+            self.code.forget_back();
         }
         self.stages.leave_code();
     }
 
-    /// A gesture in the Code stage, and what it leaves to the window. B
-    /// goes back even with no stage open.
+    /// A gesture in the Code stage, and what it leaves to the window.
     fn code_gesture(&mut self, gesture: CodeGesture) -> Vec<ClientMsg> {
-        let then = match &mut self.code {
-            Some(code) => code.gesture(gesture, self.tree.checkout(code.checkout()), || self.awaited.name(), &mut self.out),
-            None if matches!(gesture, CodeGesture::Click { target: CodeClick::Back }) => CodeThen::Back,
-            None => CodeThen::Nothing,
-        };
-        match then {
+        match self.code.gesture(gesture, &self.tree, || self.awaited.name(), &mut self.out) {
             CodeThen::Nothing => {}
             CodeThen::Back => self.leave_code(),
             CodeThen::Edit { checkout, path, line } => self.open_in_editor(checkout, path, line),
@@ -3103,15 +3076,7 @@ impl Session {
             let repo = self.chosen_repository().cloned();
             events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
         }
-        // Sent only while the stage is up, and never taken back when it goes:
-        // the page keeps what it last drew, scrolled where it was, for the
-        // person coming back to it.
-        if let Some(code) = self.code.as_ref().filter(|_| self.stages.now() == Stage::Code) {
-            let page = code.page(self.tree.checkout(code.checkout()));
-            if let Some(page) = self.code_sent.take(Some(page)) {
-                events.push(Event::Code(Box::new(page)));
-            }
-        }
+        events.extend(self.code.take(self.stages.now() == Stage::Code, &self.tree));
         let extensions = self.extensions_page();
         if let Some(page) = self.extensions_sent.take((extensions != ExtensionsPage::default()).then_some(extensions)) {
             events.push(Event::Extensions(Box::new(page)));
@@ -3163,7 +3128,7 @@ impl Session {
         self.console.reload();
         self.docks.reload();
         self.checkouts.reload();
-        self.code_sent.forget();
+        self.code.reload();
         self.views.forget();
         self.saved.forget();
         self.extensions_sent.forget();
@@ -3484,6 +3449,52 @@ mod tests {
             .collect()
     }
 
+    /// The Code stage as the page was last sent it.
+    fn code_page(s: &mut Session) -> crate::code_stage::CodePage {
+        s.events(0)
+            .into_iter()
+            .rev()
+            .find_map(|e| match e {
+                Event::Code(page) => Some(*page),
+                _ => None,
+            })
+            .expect("the stage is up and changed")
+    }
+
+    #[test]
+    fn a_saved_comment_closes_the_code_stages_box_and_is_said() {
+        let mut s = session(Hello::this_build());
+        s.open_code_at(CheckoutId(100), CodeVersion::WorkingTree, Some("src/a.rs".into()), None, None);
+        let sent = code_asks(s.finish());
+        let [_, ClientMsg::ReadCode { request_id, .. }] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        let line = argus_protocol::CodeLine { text: "fn a() {}".into(), spans: Vec::new(), added: false };
+        s.receive(ServerMsg::Code(Box::new(argus_protocol::CodeFile {
+            request_id: *request_id,
+            checkout: CheckoutId(100),
+            path: "src/a.rs".into(),
+            version: CodeVersion::WorkingTree,
+            lines: vec![line],
+            removed: Vec::new(),
+            symbols: Vec::new(),
+            note: None,
+        })));
+        s.code_gesture(CodeGesture::Action { action: Action::Comment });
+        let sent = s.code_gesture(CodeGesture::Comment { body: Some("why".into()) });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::ReviewComment { .. })), "{:?}", names(&sent));
+        assert!(code_page(&mut s).comment.is_some());
+
+        s.receive(ServerMsg::ReviewCommentSaved { id: 7, delivered: true });
+        let events = s.events(0);
+        let page = events.iter().rev().find_map(|e| match e {
+            Event::Code(page) => Some(page),
+            _ => None,
+        });
+        assert!(page.expect("the box closed").comment.is_none());
+        assert!(events.iter().any(|e| matches!(e, Event::Notice { text } if text == "comment #7 sent")));
+    }
+
     #[test]
     fn o_in_the_review_reads_the_cursors_file_in_code_and_escape_comes_back_to_it() {
         let mut s = session(Hello::this_build());
@@ -3504,7 +3515,7 @@ mod tests {
         ));
         assert!(s.stages.now() == Stage::Code);
         assert!(s.dialogs.review().is_none(), "put away, not closed");
-        assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("review · brief.rs:4"));
+        assert_eq!(code_page(&mut s).back.as_deref(), Some("review · brief.rs:4"));
 
         assert!(code_asks(s.code_gesture(CodeGesture::Action { action: Action::CloseLayer })).is_empty());
         assert!(s.stages.now() == Stage::Code, "Escape stays in Code");
@@ -3543,7 +3554,7 @@ mod tests {
         s.show_features(false);
         s.call(Call::Select { pane: 3 });
         assert!(code_asks(s.show_code(true)).is_empty(), "not read again for another checkout's pane");
-        assert_eq!(s.code.as_ref().unwrap().checkout(), CheckoutId(100));
+        assert_eq!(s.code.checkout(), Some(CheckoutId(100)));
     }
 
     #[test]
@@ -3588,7 +3599,7 @@ mod tests {
             [ClientMsg::ListCode { version: CodeVersion::Commit(oid), .. }] if *oid == "a".repeat(40)
         ));
         assert!(s.stages.now() == Stage::Code);
-        assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("history"));
+        assert_eq!(code_page(&mut s).back.as_deref(), Some("history"));
         s.code_gesture(CodeGesture::Action { action: Action::GoBack });
         assert!(s.stages.now() == Stage::Checkouts);
         assert!(s.dialogs.history_open(), "the history is back as it was");
@@ -3663,7 +3674,7 @@ mod tests {
             };
             *request_id
         };
-        let error = |s: &Session| s.code.as_ref().unwrap().page(None).search.unwrap().error;
+        let error = |s: &Session| s.code.page(&s.tree).unwrap().search.unwrap().error;
 
         let first = search(&mut s, "(");
         s.events(0);

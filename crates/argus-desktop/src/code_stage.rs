@@ -1,17 +1,19 @@
-//! What the Code stage holds — the checkout it reads, the version, that
-//! version's files and the ones it changed, the folders open, the file read
-//! and the cursor in it, the comment being written, whether the outline
-//! shows, the go-to-file field, the search and how it reads its query, and
-//! the dialog it was opened from — what its gestures ask of the daemon, and
-//! the page it draws. What the daemon read is shown as it said it; nothing
-//! is predicted, so a file that will not read says so where its lines would
-//! be. Whether a comment may go, and to whom, is `agent_comment`'s.
+//! The Code stage as the window holds it once opened — the checkout it
+//! reads, the version, that version's files and the ones it changed, the
+//! folders open, the file read and the cursor in it, the comment being
+//! written, whether the outline shows, the go-to-file field, the search and
+//! how it reads its query, and the dialog it was opened from — the daemon's
+//! answers it takes, what its gestures ask of the daemon and leave to the
+//! window, and the page it draws and last sent. What the daemon read is
+//! shown as it said it; nothing is predicted, so a file that will not read
+//! says so where its lines would be. Whether a comment may go, and to whom,
+//! is `agent_comment`'s.
 
 use std::collections::HashSet;
 
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatches, CodeTree, CodeVersion, PaneId,
-    ReviewAnchor, ReviewBase, SearchOptions,
+    CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatches, CodeTree, CodeVersion, HeldTree, PaneId,
+    ProjectInfo, ReviewAnchor, ReviewBase, SearchOptions, ServerMsg,
 };
 use serde::{Deserialize, Serialize};
 
@@ -19,8 +21,9 @@ use crate::code_tree::{self, folders_of};
 use crate::comment_box::{CommentBox, CommentPage};
 use crate::file_jump::{FileJump, Jumped};
 use crate::keymap::Action;
-use crate::page::ReviewJumpGesture;
+use crate::page::{Event, ReviewJumpGesture};
 use crate::review::parts;
+use crate::sent::Sent;
 
 /// What `B` goes back to: the dialog the stage was opened from, as the
 /// button says it — `review · brief.rs:39`, `history`.
@@ -289,7 +292,141 @@ impl Search {
     }
 }
 
-pub struct CodeStage {
+/// The Code stage as the window holds it once opened: kept, checkout, file
+/// and place, while another stage is up, and what the page last heard of it.
+#[derive(Default)]
+pub struct Code {
+    stage: Option<CodeStage>,
+    sent: Sent<CodePage>,
+}
+
+impl Code {
+    /// `checkout` at `version`, reading `path` at `line` when one is given,
+    /// in place of whatever stage was open: what to ask the daemon for it.
+    pub fn open(
+        &mut self,
+        checkout: &CheckoutInfo,
+        version: CodeVersion,
+        path: Option<String>,
+        line: Option<u32>,
+        back: Option<Back>,
+        id: impl FnMut() -> u64,
+    ) -> Vec<ClientMsg> {
+        let (stage, msgs) = CodeStage::open(checkout, version, path, line, back, id);
+        self.stage = Some(stage);
+        msgs
+    }
+
+    pub fn checkout(&self) -> Option<CheckoutId> {
+        self.stage.as_ref().map(|s| s.checkout)
+    }
+
+    pub fn back(&self) -> Option<&Back> {
+        self.stage.as_ref()?.back.as_ref()
+    }
+
+    /// The dialog it was opened from is back up: there is nothing more to
+    /// go back to.
+    pub fn forget_back(&mut self) {
+        if let Some(stage) = &mut self.stage {
+            stage.back = None;
+        }
+    }
+
+    /// Takes the daemon's answers to the stage's asks, giving back any
+    /// message that is not the stage's. An answer with no stage open is
+    /// dropped, as one to an older ask is. A saved comment is given back
+    /// too: the review's box may be the one it saved, and the review says
+    /// it. A refusal is the stage's only when it names one of its asks.
+    pub fn receive(&mut self, msg: ServerMsg) -> Option<ServerMsg> {
+        let stage = self.stage.as_mut();
+        match msg {
+            ServerMsg::CodeTree(tree) => {
+                if let Some(stage) = stage {
+                    stage.receive_tree(tree);
+                }
+            }
+            ServerMsg::Code(file) => {
+                if let Some(stage) = stage {
+                    stage.receive_file(*file);
+                }
+            }
+            ServerMsg::CodeMatches(found) => {
+                if let Some(stage) = stage {
+                    stage.receive_matches(found);
+                }
+            }
+            ServerMsg::Refused(refusal) => {
+                let mine = stage.is_some_and(|s| s.failed(refusal.request_id, refusal.reason.clone()));
+                return (!mine).then_some(ServerMsg::Refused(refusal));
+            }
+            ServerMsg::ReviewCommentSaved { .. } => {
+                if let Some(stage) = stage {
+                    stage.commented();
+                }
+                return Some(msg);
+            }
+            msg => return Some(msg),
+        }
+        None
+    }
+
+    /// A gesture in the stage, with the tree as it is now: its agents may
+    /// have come or gone. B goes back even with no stage open.
+    pub fn gesture(
+        &mut self,
+        gesture: CodeGesture,
+        tree: &[ProjectInfo],
+        id: impl FnMut() -> u64,
+        out: &mut Vec<ClientMsg>,
+    ) -> Then {
+        if matches!(gesture, CodeGesture::Click { target: CodeClick::Back }) {
+            return Then::Back;
+        }
+        let Some(stage) = &mut self.stage else {
+            return Then::Nothing;
+        };
+        let checkout = tree.checkout(stage.checkout);
+        match gesture {
+            CodeGesture::Click { target } => out.extend(stage.click(target, id)),
+            CodeGesture::Action { action } => return stage.act(action, checkout, id, out),
+            CodeGesture::Jump { gesture } => out.extend(stage.jump(gesture, id)),
+            CodeGesture::Search { gesture } => out.extend(stage.search(gesture, id)),
+            CodeGesture::Glob { glob } => stage.set_glob(glob),
+            CodeGesture::Comment { body: None } => stage.cancel_comment(),
+            CodeGesture::Comment { body: Some(body) } => match stage.comment(checkout, &body) {
+                Ok(msg) => out.push(msg),
+                Err(text) => return Then::Say(text.into()),
+            },
+        }
+        Then::Nothing
+    }
+
+    /// What the page has not heard of the stage. Sent only while `up`, and
+    /// never taken back when it goes: the page keeps what it last drew,
+    /// scrolled where it was, for the person coming back to it.
+    pub fn take(&mut self, up: bool, tree: &[ProjectInfo]) -> Option<Event> {
+        let stage = self.stage.as_ref().filter(|_| up)?;
+        let page = stage.page(tree.checkout(stage.checkout));
+        self.sent.take(Some(page)).map(|page| Event::Code(Box::new(page)))
+    }
+
+    /// The page reloaded and holds nothing: the stage is sent again once it
+    /// is up.
+    pub fn reload(&mut self) {
+        self.sent.forget();
+    }
+
+    /// The page as it stands, for a test to read without taking the
+    /// window's events, notices among them.
+    #[cfg(test)]
+    pub fn page(&self, tree: &[ProjectInfo]) -> Option<CodePage> {
+        let stage = self.stage.as_ref()?;
+        Some(stage.page(tree.checkout(stage.checkout)))
+    }
+}
+
+struct CodeStage {
     checkout: CheckoutId,
     name: String,
     branch: String,
@@ -318,7 +455,7 @@ pub struct CodeStage {
 
 impl CodeStage {
     /// `checkout` at `version`, reading `path` at `line` when one is given.
-    pub fn open(
+    fn open(
         checkout: &CheckoutInfo,
         version: CodeVersion,
         path: Option<String>,
@@ -356,20 +493,6 @@ impl CodeStage {
         (stage, msgs)
     }
 
-    pub fn checkout(&self) -> CheckoutId {
-        self.checkout
-    }
-
-    pub fn back(&self) -> Option<&Back> {
-        self.back.as_ref()
-    }
-
-    /// The dialog it was opened from is back up: there is nothing more to
-    /// go back to.
-    pub fn forget_back(&mut self) {
-        self.back = None;
-    }
-
     fn ask_tree(&mut self, request_id: u64) -> ClientMsg {
         self.tree_asked = Some(request_id);
         ClientMsg::ListCode { request_id, checkout: self.checkout, version: self.version.clone() }
@@ -398,7 +521,7 @@ impl CodeStage {
         msgs
     }
 
-    pub fn receive_tree(&mut self, tree: CodeTree) -> bool {
+    fn receive_tree(&mut self, tree: CodeTree) -> bool {
         if tree.checkout != self.checkout || self.tree_asked != Some(tree.request_id) {
             return false;
         }
@@ -408,7 +531,7 @@ impl CodeStage {
         true
     }
 
-    pub fn receive_file(&mut self, file: CodeFile) -> bool {
+    fn receive_file(&mut self, file: CodeFile) -> bool {
         if file.checkout != self.checkout || self.file_asked != Some(file.request_id) {
             return false;
         }
@@ -419,7 +542,7 @@ impl CodeStage {
         true
     }
 
-    pub fn receive_matches(&mut self, found: CodeMatches) -> bool {
+    fn receive_matches(&mut self, found: CodeMatches) -> bool {
         let Some(search) = self.search.as_mut() else {
             return false;
         };
@@ -438,7 +561,7 @@ impl CodeStage {
     /// id alone: the window names every request from one count. A file
     /// that would not read leaves nothing of an older one on screen; a
     /// search that could not run says why in the search.
-    pub fn failed(&mut self, request_id: u64, message: String) -> bool {
+    fn failed(&mut self, request_id: u64, message: String) -> bool {
         if let Some(search) = self.search.as_mut().filter(|s| s.asked == Some(request_id)) {
             search.asked = None;
             search.error = Some(message);
@@ -454,31 +577,6 @@ impl CodeStage {
         }
         self.failed = Some(message);
         true
-    }
-
-    /// A gesture in the stage, given the checkout as the tree has it now:
-    /// its agents may have come or gone.
-    pub fn gesture(
-        &mut self,
-        gesture: CodeGesture,
-        checkout: Option<&CheckoutInfo>,
-        id: impl FnMut() -> u64,
-        out: &mut Vec<ClientMsg>,
-    ) -> Then {
-        match gesture {
-            CodeGesture::Click { target: CodeClick::Back } => return Then::Back,
-            CodeGesture::Click { target } => out.extend(self.click(target, id)),
-            CodeGesture::Action { action } => return self.act(action, checkout, id, out),
-            CodeGesture::Jump { gesture } => out.extend(self.jump(gesture, id)),
-            CodeGesture::Search { gesture } => out.extend(self.search(gesture, id)),
-            CodeGesture::Glob { glob } => self.set_glob(glob),
-            CodeGesture::Comment { body: None } => self.cancel_comment(),
-            CodeGesture::Comment { body: Some(body) } => match self.comment(checkout, &body) {
-                Ok(msg) => out.push(msg),
-                Err(text) => return Then::Say(text.into()),
-            },
-        }
-        Then::Nothing
     }
 
     /// A key of the stage. B goes back only to a dialog the stage was
@@ -555,7 +653,7 @@ impl CodeStage {
                 }
             }
             CodeClick::SearchOption { option } => return self.toggle_option(&option, id),
-            // `gesture` hands this to the window.
+            // `Code::gesture` hands this to the window.
             CodeClick::Back => {}
         }
         Vec::new()
@@ -719,7 +817,7 @@ impl CodeStage {
 
     /// The daemon saved a comment. When it was this box's, the box closes
     /// and the range with it; one saved from the review leaves both.
-    pub fn commented(&mut self) {
+    fn commented(&mut self) {
         if self.comment_box.saved() {
             self.mark = None;
         }
@@ -841,7 +939,7 @@ impl CodeStage {
 
     /// The stage as the page draws it, given the checkout as the tree has
     /// it now: its agents may have come or gone.
-    pub fn page(&self, checkout: Option<&CheckoutInfo>) -> CodePage {
+    fn page(&self, checkout: Option<&CheckoutInfo>) -> CodePage {
         let (from, to) = self.picked();
         let picking = self.mark.is_some() || self.comment_box.is_open();
         let shown = self.shown();
@@ -1116,8 +1214,8 @@ fn language(path: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::{checkout, pane};
-    use argus_protocol::{CodeLine, CodeMatch, CodeSymbol, PaneKind, PaneStatus, Removed};
+    use crate::fixtures::{checkout, pane, project, repository};
+    use argus_protocol::{CodeLine, CodeMatch, CodeSymbol, PaneKind, PaneStatus, Removed, RequestRefusal};
 
     fn stage(path: Option<&str>, line: Option<u32>) -> (CodeStage, Vec<ClientMsg>) {
         let mut ids = 0;
@@ -1531,10 +1629,19 @@ mod tests {
         assert!(s.page(None).pick.is_none());
     }
 
-    /// `gesture` on `s`, with what it sent.
-    fn gesture(s: &mut CodeStage, gesture: CodeGesture, checkout: Option<&CheckoutInfo>) -> (Then, Vec<ClientMsg>) {
+    fn holding(stage: CodeStage) -> Code {
+        Code { stage: Some(stage), sent: Sent::default() }
+    }
+
+    /// A tree holding `co` alone.
+    fn held(co: CheckoutInfo) -> Vec<ProjectInfo> {
+        vec![project(1, "src", vec![repository(10, "argus", None, vec![co])])]
+    }
+
+    /// `gesture` on `code`, with what it sent.
+    fn gesture(code: &mut Code, gesture: CodeGesture, tree: &[ProjectInfo]) -> (Then, Vec<ClientMsg>) {
         let mut out = Vec::new();
-        let then = s.gesture(gesture, checkout, || 9, &mut out);
+        let then = code.gesture(gesture, tree, || 9, &mut out);
         (then, out)
     }
 
@@ -1544,36 +1651,120 @@ mod tests {
 
     #[test]
     fn b_goes_back_only_to_the_dialog_the_stage_was_opened_from() {
-        let mut s = reading("src/a.rs", None);
-        assert_eq!(gesture(&mut s, key(Action::GoBack), None).0, Then::Nothing);
-        s.back = Some(Back { label: "history".into() });
-        assert_eq!(gesture(&mut s, key(Action::GoBack), None).0, Then::Back);
+        let mut code = holding(reading("src/a.rs", None));
+        assert_eq!(gesture(&mut code, key(Action::GoBack), &[]).0, Then::Nothing);
+        code.stage.as_mut().unwrap().back = Some(Back { label: "history".into() });
+        assert_eq!(gesture(&mut code, key(Action::GoBack), &[]).0, Then::Back);
+        code.forget_back();
+        assert_eq!(gesture(&mut code, key(Action::GoBack), &[]).0, Then::Nothing, "the dialog is back up");
+    }
+
+    #[test]
+    fn the_back_button_is_the_windows_to_take_even_with_no_stage_open() {
+        let back = CodeGesture::Click { target: CodeClick::Back };
+        let (then, sent) = gesture(&mut Code::default(), back, &[]);
+        assert!(then == Then::Back && sent.is_empty());
     }
 
     #[test]
     fn e_hands_the_window_the_file_and_line_under_the_cursor() {
-        let mut s = reading("src/a.rs", Some(3));
+        let mut code = holding(reading("src/a.rs", Some(3)));
         let edit = Then::Edit { checkout: CheckoutId(100), path: "src/a.rs".into(), line: Some(3) };
-        assert_eq!(gesture(&mut s, key(Action::OpenEditor), None).0, edit);
-        let (mut none, _) = stage(None, None);
-        assert_eq!(gesture(&mut none, key(Action::OpenEditor), None).0, Then::Say("no file to open".into()));
+        assert_eq!(gesture(&mut code, key(Action::OpenEditor), &[]).0, edit);
+        let mut none = holding(stage(None, None).0);
+        assert_eq!(gesture(&mut none, key(Action::OpenEditor), &[]).0, Then::Say("no file to open".into()));
     }
 
     #[test]
     fn c_says_why_a_comment_cannot_be_written() {
-        let mut s = reading("src/a.rs", None);
-        let alone = checkout(100, "main", true, Vec::new());
-        let said = gesture(&mut s, key(Action::Comment), Some(&alone)).0;
+        let mut code = holding(reading("src/a.rs", None));
+        let projects = held(checkout(100, "main", true, Vec::new()));
+        let said = gesture(&mut code, key(Action::Comment), &projects).0;
         assert_eq!(said, Then::Say("no agent running in this checkout".into()));
-        assert!(s.page(Some(&alone)).comment.is_none(), "not composing");
+        assert!(code.page(&projects).unwrap().comment.is_none(), "not composing");
     }
 
     #[test]
     fn an_empty_comment_is_refused_and_nothing_is_sent() {
-        let mut s = reading("src/a.rs", None);
-        assert_eq!(gesture(&mut s, key(Action::Comment), Some(&with_agent())).0, Then::Nothing);
-        let (said, sent) = gesture(&mut s, CodeGesture::Comment { body: Some("  ".into()) }, Some(&with_agent()));
+        let mut code = holding(reading("src/a.rs", None));
+        let projects = held(with_agent());
+        assert_eq!(gesture(&mut code, key(Action::Comment), &projects).0, Then::Nothing);
+        let (said, sent) = gesture(&mut code, CodeGesture::Comment { body: Some("  ".into()) }, &projects);
         assert_eq!(said, Then::Say("the comment is empty".into()));
         assert!(sent.is_empty());
+    }
+
+    #[test]
+    fn a_gesture_with_no_stage_open_sends_nothing() {
+        let mut code = Code::default();
+        let projects = held(with_agent());
+        for g in [
+            key(Action::Next),
+            key(Action::Refresh),
+            key(Action::GoBack),
+            CodeGesture::Click { target: CodeClick::Tree { path: "src/a.rs".into() } },
+            CodeGesture::Search { gesture: ReviewJumpGesture::Choose },
+            CodeGesture::Glob { glob: "src/**".into() },
+            CodeGesture::Comment { body: Some("why".into()) },
+        ] {
+            let (then, sent) = gesture(&mut code, g, &projects);
+            assert!(then == Then::Nothing && sent.is_empty(), "{then:?}");
+        }
+        assert!(code.take(true, &projects).is_none());
+    }
+
+    #[test]
+    fn the_daemons_code_answers_are_the_stages_and_a_saved_comment_is_the_reviews_too() {
+        let mut code = holding(stage(Some("src/a.rs"), None).0);
+        let projects = held(with_agent());
+        assert!(code.receive(ServerMsg::CodeTree(tree(1))).is_none());
+        assert!(!code.page(&projects).unwrap().tree.is_empty(), "the tree is held");
+        assert!(code.receive(ServerMsg::Code(Box::new(file(2, "src/a.rs")))).is_none());
+        gesture(&mut code, key(Action::Comment), &projects);
+        let (_, sent) = gesture(&mut code, CodeGesture::Comment { body: Some("why".into()) }, &projects);
+        assert!(matches!(sent.as_slice(), [ClientMsg::ReviewComment { .. }]));
+
+        let saved = code.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true });
+        assert!(matches!(saved, Some(ServerMsg::ReviewCommentSaved { .. })), "the review says it");
+        assert!(code.page(&projects).unwrap().comment.is_none(), "the box closed");
+        assert!(code.receive(ServerMsg::Tree(Vec::new())).is_some());
+    }
+
+    #[test]
+    fn code_answers_with_no_stage_open_are_dropped() {
+        let mut code = Code::default();
+        assert!(code.receive(ServerMsg::CodeTree(tree(1))).is_none());
+        assert!(code.receive(ServerMsg::Code(Box::new(file(2, "src/a.rs")))).is_none());
+        assert!(code.receive(ServerMsg::CodeMatches(found(3, "a", SearchOptions::default()))).is_none());
+    }
+
+    #[test]
+    fn a_refusal_of_the_stages_read_is_its_own_and_any_other_is_given_back() {
+        let refused = |request_id| {
+            ServerMsg::Refused(RequestRefusal { request_id, reason: "gone.rs is not in this version".into(), read: true })
+        };
+        let mut code = holding(stage(Some("gone.rs"), None).0);
+        assert!(code.receive(refused(2)).is_none(), "the file it asked for");
+        assert_eq!(code.page(&[]).unwrap().failed.as_deref(), Some("gone.rs is not in this version"));
+        assert!(matches!(code.receive(refused(99)), Some(ServerMsg::Refused(r)) if r.request_id == 99));
+        assert!(Code::default().receive(refused(2)).is_some(), "with no stage open");
+    }
+
+    #[test]
+    fn the_page_is_sent_only_while_the_stage_is_up_and_never_taken_back() {
+        let mut code = holding(reading("src/a.rs", None));
+        assert!(matches!(code.take(true, &[]), Some(Event::Code(_))));
+        assert!(code.take(false, &[]).is_none(), "no closing is sent");
+        assert!(code.take(false, &[]).is_none());
+        assert!(code.take(true, &[]).is_none(), "unchanged");
+    }
+
+    #[test]
+    fn a_reloaded_page_hears_the_stage_again_once_it_is_up() {
+        let mut code = holding(reading("src/a.rs", None));
+        code.take(true, &[]);
+        code.reload();
+        assert!(code.take(false, &[]).is_none(), "not while it is down");
+        assert!(matches!(code.take(true, &[]), Some(Event::Code(_))));
     }
 }
