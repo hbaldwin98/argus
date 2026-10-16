@@ -91,7 +91,7 @@ pub use keys::KeyboardMode;
 pub use view_tree::Slot;
 pub use view_links::linked_views;
 pub use artifacts::ArtifactScope;
-pub use board_follower::{BoardFollower, BoardScope, Received};
+pub use board_follower::{BoardFollower, BoardScope, FeatureListing, Folding, Received};
 pub use cell::{
     Cell, CellSpan, Color, Cursor, CursorShape, MouseEncoding, MouseMode, MouseTracking,
     BLANK,

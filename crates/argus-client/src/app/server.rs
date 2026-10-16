@@ -7,7 +7,7 @@
 
 use super::*;
 use argus_protocol::review_session::Answered;
-use argus_protocol::{Hello, Received};
+use argus_protocol::{Folding, Hello, Received};
 
 impl App {
     /// Subscribes to everything currently on screen and drops the rest.
@@ -360,7 +360,7 @@ impl App {
     fn receive_decisions(&mut self, board: argus_protocol::DecisionBoard) {
         let row = self.selected_work();
         let mut out = Vec::new();
-        if !self.board_follower.receive_board(board, &self.tree, self.show_folded_features, &mut out) {
+        if !self.board_follower.receive_board(board, &self.tree, &Folding { show_folded: self.show_folded_features }, &mut out) {
             return;
         }
         self.send_board_requests(out);
@@ -472,7 +472,7 @@ impl App {
         self.follow_board();
         if self.view == View::Feature {
             let mut out = Vec::new();
-            self.board_follower.settle(&self.tree, self.show_folded_features, &mut out);
+            self.board_follower.settle(&self.tree, &Folding { show_folded: self.show_folded_features }, &mut out);
             self.send_board_requests(out);
             self.land_on_feature();
         }

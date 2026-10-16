@@ -1,6 +1,8 @@
 //! How a client follows one repository's board: what it asks the daemon
 //! for and when, which pushed boards and lists it keeps, and where the
 //! reader's cursor lands when one of them is replaced under it.
+//! Which features an index lists is the client's to say (`FeatureListing`):
+//! the cursor lands only on one it lists.
 //!
 //! Every board, task list and diagram list is pushed to every client,
 //! because the daemon does not track who is reading what. So each client
@@ -40,6 +42,26 @@ pub enum Received<C> {
     /// Held now. `lands` is what the cursor is on after it, `None` when
     /// the list has nothing left to be on.
     Adopted { lands: Option<C> },
+}
+
+/// Which of a board's features a client's index lists, in the order it lists
+/// them, so a cursor settled after a push lands only on a row that is drawn.
+pub trait FeatureListing {
+    /// `rows` are every feature on the board, as `standing::feature_rows` files them.
+    fn list(&self, rows: Vec<FeatureRow>) -> Vec<FeatureRow>;
+}
+
+/// The terminal client's index: every feature in `standing`'s order, the held
+/// and archived folded away unless `show_folded`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Folding {
+    pub show_folded: bool,
+}
+
+impl FeatureListing for Folding {
+    fn list(&self, rows: Vec<FeatureRow>) -> Vec<FeatureRow> {
+        rows.into_iter().filter(|row| self.show_folded || !row.standing.folded()).collect()
+    }
 }
 
 pub struct BoardFollower {
@@ -132,21 +154,21 @@ impl BoardFollower {
     /// A board, answered or pushed. Kept when it is the followed
     /// repository's (`DecisionBoard::is_for`), and the reader's feature
     /// then settled on it. Answers whether it was kept.
-    pub fn receive_board(&mut self, board: DecisionBoard, tree: &[ProjectInfo], show_folded: bool, out: &mut Vec<ClientMsg>) -> bool {
+    pub fn receive_board(&mut self, board: DecisionBoard, tree: &[ProjectInfo], listing: &impl FeatureListing, out: &mut Vec<ClientMsg>) -> bool {
         let ours = self.scope.as_ref().is_some_and(|scope| board.is_for(&scope.project_name, scope.repository));
         if !ours {
             return false;
         }
         self.board = Some(board);
-        self.settle(tree, show_folded, out);
+        self.settle(tree, listing, out);
         true
     }
 
     /// Puts the reader on a listed feature after the list changed: the one
     /// it was on while it is still listed, else the one that took its
     /// place, else the first.
-    pub fn settle(&mut self, tree: &[ProjectInfo], show_folded: bool, out: &mut Vec<ClientMsg>) {
-        let listed: Vec<String> = self.listed(tree, show_folded).into_iter().map(|row| row.slug).collect();
+    pub fn settle(&mut self, tree: &[ProjectInfo], listing: &impl FeatureListing, out: &mut Vec<ClientMsg>) {
+        let listed: Vec<String> = self.listed(tree, listing).into_iter().map(|row| row.slug).collect();
         let lands = match self.feature.as_deref() {
             Some(held) if listed.iter().any(|slug| slug == held) => Some(held.to_string()),
             held => {
@@ -215,16 +237,12 @@ impl BoardFollower {
         self.diagrams.as_ref()
     }
 
-    /// The features an index lists, grouped by how they stand, the held
-    /// and archived folded away unless `show_folded`.
-    pub fn listed(&self, tree: &[ProjectInfo], show_folded: bool) -> Vec<FeatureRow> {
+    /// The features an index lists, as `listing` says.
+    pub fn listed(&self, tree: &[ProjectInfo], listing: &impl FeatureListing) -> Vec<FeatureRow> {
         let Some(board) = &self.board else {
             return Vec::new();
         };
-        standing::feature_rows(board, tree)
-            .into_iter()
-            .filter(|row| show_folded || !row.standing.folded())
-            .collect()
+        listing.list(standing::feature_rows(board, tree))
     }
 
     fn on_board(&self, slug: &str) -> bool {
@@ -294,6 +312,9 @@ fn land_id(before: &[i64], now: &[i64], id: i64) -> Option<i64> {
 mod tests {
     use super::*;
     use crate::{Feature, SequenceDiagram, Task};
+
+    const FOLDED: Folding = Folding { show_folded: false };
+    const SHOWN: Folding = Folding { show_folded: true };
 
     fn scope() -> BoardScope {
         BoardScope {
@@ -368,7 +389,7 @@ mod tests {
         let mut follower = BoardFollower::new(true);
         let mut out = Vec::new();
         follower.follow(Some(scope()), &mut out);
-        assert!(follower.receive_board(board_of(&["trim", "bump", "mouse"]), &[], false, &mut out));
+        assert!(follower.receive_board(board_of(&["trim", "bump", "mouse"]), &[], &FOLDED, &mut out));
         follower
     }
 
@@ -380,7 +401,7 @@ mod tests {
         assert_eq!(names(&out), ["board 3"]);
         follower.follow(Some(scope()), &mut out);
         assert_eq!(out.len(), 1, "asked already on this connection");
-        assert!(follower.receive_board(board_of(&["trim", "bump"]), &[], false, &mut out));
+        assert!(follower.receive_board(board_of(&["trim", "bump"]), &[], &FOLDED, &mut out));
         assert_eq!(names(&out[1..]), ["tasks trim", "diagrams trim"]);
         assert_eq!(follower.feature(), Some("trim"));
     }
@@ -427,7 +448,7 @@ mod tests {
         let mut follower = BoardFollower::new(false);
         let mut out = Vec::new();
         follower.follow(Some(scope()), &mut out);
-        let _ = follower.receive_board(board_of(&["trim"]), &[], false, &mut out);
+        let _ = follower.receive_board(board_of(&["trim"]), &[], &FOLDED, &mut out);
         assert_eq!(names(&out), ["board 3", "tasks trim"]);
     }
 
@@ -436,9 +457,9 @@ mod tests {
         let mut follower = following();
         let mut out = Vec::new();
         let elsewhere = DecisionBoard { repositories: vec![RepositoryId(9)], ..board_of(&["other"]) };
-        assert!(!follower.receive_board(elsewhere, &[], false, &mut out));
+        assert!(!follower.receive_board(elsewhere, &[], &FOLDED, &mut out));
         let renamed = DecisionBoard { name: "work".into(), ..board_of(&["other"]) };
-        assert!(!follower.receive_board(renamed, &[], false, &mut out));
+        assert!(!follower.receive_board(renamed, &[], &FOLDED, &mut out));
         assert_eq!(follower.board().unwrap().features.len(), 3);
 
         let mut list = tasks("trim", vec![task(1, None)]);
@@ -449,7 +470,7 @@ mod tests {
         assert!(follower.tasks().is_none());
 
         let mut nothing = BoardFollower::new(true);
-        assert!(!nothing.receive_board(board_of(&["trim"]), &[], false, &mut out), "following nothing keeps nothing");
+        assert!(!nothing.receive_board(board_of(&["trim"]), &[], &FOLDED, &mut out), "following nothing keeps nothing");
     }
 
     #[test]
@@ -458,7 +479,7 @@ mod tests {
         let mut out = Vec::new();
         follower.point(Some("bump"), &mut out);
         out.clear();
-        assert!(follower.receive_board(board_of(&["new", "trim", "bump", "mouse"]), &[], false, &mut out));
+        assert!(follower.receive_board(board_of(&["new", "trim", "bump", "mouse"]), &[], &FOLDED, &mut out));
         assert_eq!(follower.feature(), Some("bump"));
         assert!(out.is_empty(), "the same feature's lists are not asked again");
     }
@@ -470,14 +491,38 @@ mod tests {
         follower.point(Some("bump"), &mut out);
         out.clear();
         let held = Feature { held: Some("waiting".into()), ..feature("bump") };
-        assert!(follower.receive_board(board(vec![feature("trim"), held, feature("mouse")]), &[], false, &mut out));
+        assert!(follower.receive_board(board(vec![feature("trim"), held, feature("mouse")]), &[], &FOLDED, &mut out));
         assert_eq!(follower.feature(), Some("mouse"), "bump is folded away");
         assert_eq!(names(&out), ["tasks mouse", "diagrams mouse"]);
 
-        follower.settle(&[], true, &mut out);
+        follower.settle(&[], &SHOWN, &mut out);
         assert_eq!(follower.feature(), Some("mouse"), "showing the folded keeps the cursor");
-        let _ = follower.receive_board(board_of(&[]), &[], false, &mut out);
+        let _ = follower.receive_board(board_of(&[]), &[], &FOLDED, &mut out);
         assert_eq!(follower.feature(), None, "nothing left to be on");
+    }
+
+    /// A listing in reverse, without the one feature it drops.
+    struct Reversed(&'static str);
+
+    impl FeatureListing for Reversed {
+        fn list(&self, rows: Vec<FeatureRow>) -> Vec<FeatureRow> {
+            rows.into_iter().rev().filter(|row| row.slug != self.0).collect()
+        }
+    }
+
+    #[test]
+    fn a_listing_decides_where_the_cursor_lands_when_its_feature_leaves() {
+        let mut follower = BoardFollower::new(true);
+        let mut out = Vec::new();
+        follower.follow(Some(scope()), &mut out);
+        assert!(follower.receive_board(board_of(&["trim", "bump", "mouse"]), &[], &Reversed(""), &mut out));
+        assert_eq!(follower.feature(), Some("mouse"), "the first the listing lists");
+        let slugs = |rows: Vec<FeatureRow>| rows.into_iter().map(|row| row.slug).collect::<Vec<_>>();
+        assert_eq!(slugs(follower.listed(&[], &Reversed(""))), ["mouse", "bump", "trim"]);
+
+        follower.point(Some("bump"), &mut out);
+        follower.settle(&[], &Reversed("bump"), &mut out);
+        assert_eq!(follower.feature(), Some("trim"), "the one in its place in the listing's order");
     }
 
     #[test]

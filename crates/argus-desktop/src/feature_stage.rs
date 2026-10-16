@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use argus_protocol::{
-    BoardFollower, BoardScope, CheckoutId, ClientMsg, DecisionBoard, DiagramList, FeatureAction,
+    BoardFollower, BoardScope, CheckoutId, ClientMsg, DecisionBoard, DiagramList, FeatureAction, Folding,
     ProjectId, ProjectInfo, Received, RepositoryId, TaskList,
 };
 
@@ -150,7 +150,7 @@ impl FeatureStage {
     /// A board, answered or pushed: kept when it is the followed
     /// repository's, which every client decides alike.
     pub fn receive_board(&mut self, board: DecisionBoard, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
-        if self.board.receive_board(board, tree, self.show_folded, out) {
+        if self.board.receive_board(board, tree, &Folding { show_folded: self.show_folded }, out) {
             self.changed = true;
         }
     }
@@ -281,7 +281,7 @@ impl FeatureStage {
     pub fn toggle_folded(&mut self, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
         self.show_folded = !self.show_folded;
         self.changed = true;
-        self.board.settle(tree, self.show_folded, out);
+        self.board.settle(tree, &Folding { show_folded: self.show_folded }, out);
     }
 
     /// Holds a feature with a reason, or lifts its hold with `None`.

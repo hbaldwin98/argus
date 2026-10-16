@@ -11,7 +11,7 @@
 use std::collections::HashSet;
 
 use argus_protocol::{
-    Decision, DecisionTreeRow, Feature, PaneInfo, SequenceDiagram, Task, TaskTreeRow,
+    Decision, DecisionTreeRow, Feature, Folding, PaneInfo, SequenceDiagram, Task, TaskTreeRow,
 };
 
 use super::*;
@@ -70,7 +70,7 @@ impl App {
     /// The features the index lists, grouped by how they stand. Held and
     /// archived ones are folded away unless asked for.
     pub fn feature_rows(&self) -> Vec<FeatureRow> {
-        self.board_follower.listed(&self.tree, self.show_folded_features)
+        self.board_follower.listed(&self.tree, &Folding { show_folded: self.show_folded_features })
     }
 
     /// The live agent panes on the checkouts this feature is worked in.
@@ -165,7 +165,7 @@ impl App {
     pub(super) fn toggle_folded_features(&mut self) {
         self.show_folded_features = !self.show_folded_features;
         let mut out = Vec::new();
-        self.board_follower.settle(&self.tree, self.show_folded_features, &mut out);
+        self.board_follower.settle(&self.tree, &Folding { show_folded: self.show_folded_features }, &mut out);
         self.send_board_requests(out);
         self.land_on_feature();
     }
