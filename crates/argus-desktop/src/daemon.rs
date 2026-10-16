@@ -78,8 +78,24 @@ impl Target {
     }
 }
 
-/// Keeps the window connected for as long as it is open.
-pub async fn run(shared: Arc<Shared>, target: Target) {
+/// Keeps the window connected for as long as it is open, to whichever host
+/// it is switched to: the bridge of the last is dropped, which kills it,
+/// and a connection loop starts for the next.
+pub async fn run(shared: Arc<Shared>) {
+    let mut host = shared.watch_host();
+    loop {
+        let target = Target::for_host(host.borrow_and_update().as_deref());
+        let keeping = tokio::spawn(keep(shared.clone(), target));
+        if host.changed().await.is_err() {
+            return;
+        }
+        keeping.abort();
+        // The aborted loop never reached its own `disconnected`.
+        shared.disconnected();
+    }
+}
+
+async fn keep(shared: Arc<Shared>, target: Target) {
     let mut greet = true;
     loop {
         match connect_once(&shared, &target, greet).await {

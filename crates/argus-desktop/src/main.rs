@@ -94,7 +94,13 @@ fn main() {
     };
     tauri::async_runtime::set(runtime.handle().clone());
 
-    let shared = Arc::new(Shared::new(settings::load()));
+    let mut saved = settings::load();
+    // Only where none was chosen: the person's own choice outlasts the
+    // environment's.
+    if saved.host.is_none() {
+        saved.host = std::env::var("ARGUS_DESKTOP_HOST").ok().filter(|host| !host.trim().is_empty());
+    }
+    let shared = Arc::new(Shared::new(saved));
     let built = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(shared.clone())
@@ -107,7 +113,7 @@ fn main() {
         .setup(move |app| {
             shared.set_app(app.handle().clone());
             open_window(app, &shared)?;
-            tauri::async_runtime::spawn(daemon::run(shared.clone(), daemon::Target::for_host(None)));
+            tauri::async_runtime::spawn(daemon::run(shared.clone()));
             let found = shared.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 let fonts = fonts::installed();

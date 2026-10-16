@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use argus_protocol::{ClientMsg, Hello, ServerMsg};
 use tauri::ipc::Channel;
 use tauri::AppHandle;
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{mpsc, watch, Notify};
 
 use crate::clipboard;
 use crate::notifications;
@@ -31,16 +31,20 @@ pub struct Shared {
     /// nothing, and the first tree is quiet anyway.
     app: OnceLock<AppHandle>,
     reconnect: Notify,
+    /// The host the daemon loop should be reaching, which it follows.
+    host: watch::Sender<Option<String>>,
 }
 
 impl Shared {
     pub fn new(settings: Settings) -> Shared {
+        let host = settings.host.clone();
         Shared {
             session: Mutex::new(Session::new(settings)),
             out: Mutex::new(None),
             page: Mutex::new(None),
             app: OnceLock::new(),
             reconnect: Notify::new(),
+            host: watch::channel(host).0,
         }
     }
 
@@ -129,6 +133,21 @@ impl Shared {
 
     /// The page asked to reconnect. Heard only while stopped, so a press at
     /// any other time cannot leave a reconnect waiting for the next stop.
+    /// Reaches the daemon on `host`, or this machine's. The session forgets
+    /// the last one at once; the connection loop drops its bridge and
+    /// starts another.
+    pub fn set_host(&self, host: Option<String>) {
+        let host = host.map(|host| host.trim().to_owned()).filter(|host| !host.is_empty());
+        self.act(|s| s.switch_host(host.clone()));
+        *lock(&self.out) = None;
+        self.host.send_replace(host);
+    }
+
+    /// The host the connection loop follows.
+    pub fn watch_host(&self) -> watch::Receiver<Option<String>> {
+        self.host.subscribe()
+    }
+
     pub fn ask_reconnect(&self) {
         if lock(&self.session).is_stopped() {
             self.reconnect.notify_one();

@@ -13,6 +13,8 @@ pub struct StatusBar {
     alarm: Option<String>,
     daemon: Option<Hello>,
     chime: bool,
+    /// The ssh host being reached; `None` for this machine's daemon.
+    host: Option<String>,
     /// The page has not heard the status since it changed.
     changed: bool,
     /// The chime was switched since the settings were saved.
@@ -27,6 +29,7 @@ impl StatusBar {
             alarm: None,
             daemon: None,
             chime,
+            host: None,
             changed: true,
             chime_changed: false,
         }
@@ -38,6 +41,24 @@ impl StatusBar {
         self.detail = detail;
         self.daemon = None;
         self.changed = true;
+    }
+
+    /// The status of a window that opens on `host`.
+    pub fn on_host(mut self, host: Option<String>) -> StatusBar {
+        self.host = host;
+        self
+    }
+
+    /// Another daemon is to be reached. Nothing of the last one's greeting
+    /// is true of it, so the bar goes back to connecting.
+    pub fn switch_host(&mut self, host: Option<String>) {
+        self.host = host;
+        self.connecting(None);
+        self.alarm = None;
+    }
+
+    pub fn host(&self) -> Option<&str> {
+        self.host.as_deref()
     }
 
     /// Someone stopped the daemon: nothing reconnects until the page asks.
@@ -103,6 +124,7 @@ impl StatusBar {
             detail: self.detail.clone(),
             alarm: self.alarm.clone(),
             chime: self.chime,
+            host: self.host.clone(),
         })
     }
 

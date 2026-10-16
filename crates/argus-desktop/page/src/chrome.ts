@@ -648,8 +648,10 @@ function dot(colour?: string): HTMLElement {
 /** The sidebar's foot: the tallies that need a look, a daemon's alarm,
  *  and the connection with the chime and the settings beside it. */
 function drawBar(): void {
-  const { connection, alarm } = state.status;
+  const { connection, alarm, host } = state.status;
   const { needsYou, working } = state.rail;
+  // A remote daemon is named, so what the rail lists is never taken for this machine's.
+  const where = host ? ` to ${host}` : '';
   const tallies: HTMLElement[] = [];
   const line: HTMLElement[] = [];
   if (connection === 'connected') {
@@ -659,7 +661,7 @@ function drawBar(): void {
     if (working > 0) tallies.push(el('span', { class: 'fg-accent' }, `⋮ ${working} working`));
     line.push(
       dot(),
-      el('span', { class: 'grow' }, 'Connected'),
+      el('span', { class: 'grow ellipsis', title: host ?? '' }, `Connected${where}`),
       consoleChip(),
       chimeSwitch(),
       settingsButton(),
@@ -667,7 +669,7 @@ function drawBar(): void {
   } else if (connection === 'connecting') {
     line.push(
       dot('var(--attention)'),
-      el('span', { class: 'grow' }, 'Connecting'),
+      el('span', { class: 'grow ellipsis', title: host ?? '' }, `Connecting${where}`),
       settingsButton(),
     );
   } else {
@@ -742,7 +744,7 @@ function settingsButton(): HTMLElement {
 }
 
 function drawStage(): void {
-  const { connection, detail } = state.status;
+  const { connection, detail, host } = state.status;
   const { loaded, project, shown } = state.rail;
   const empty = $('empty');
   $('terminal').hidden = !shown;
@@ -757,7 +759,11 @@ function drawStage(): void {
     measure = 'connecting';
     body = [
       ghosts([[0.6], [0.9], [0.75], [0.85], [0.4]]),
-      el('div', { class: 'meta' }, 'Connecting to argusd…'),
+      el(
+        'div',
+        { class: 'meta' },
+        host ? `Connecting to argusd on ${host}…` : 'Connecting to argusd…',
+      ),
       detail && el('div', { class: 'err' }, detail),
     ];
   } else if (!project) {

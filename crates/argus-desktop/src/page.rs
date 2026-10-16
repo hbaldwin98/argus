@@ -187,6 +187,9 @@ pub enum Call {
     Docks { gesture: DockGesture },
     /// Heard only while the daemon is stopped.
     Reconnect,
+    /// Reaches the daemon on this ssh host instead, or this machine's when
+    /// there is none.
+    SetHost { host: Option<String> },
     Minimize,
     ToggleMaximize,
     /// Closing the window ends the program, as the system's button would.
@@ -495,6 +498,8 @@ pub struct Status {
     pub alarm: Option<String>,
     /// Whether the window chimes, for the status bar's switch.
     pub chime: bool,
+    /// The ssh host being reached; none for this machine's daemon.
+    pub host: Option<String>,
 }
 
 /// The Settings dialog: what is chosen, and what shows through the window
@@ -2033,10 +2038,11 @@ mod tests {
             detail: Some("argusd not found".into()),
             alarm: None,
             chime: true,
+            host: Some("devbox".into()),
         });
         assert_eq!(
             as_json(event),
-            json!({"type": "status", "connection": "stopped", "detail": "argusd not found", "alarm": null, "chime": true})
+            json!({"type": "status", "connection": "stopped", "detail": "argusd not found", "alarm": null, "chime": true, "host": "devbox"})
         );
     }
 

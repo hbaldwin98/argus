@@ -36,7 +36,12 @@ and speaks the protocol over the child's stdin and stdout, as `argus --host` doe
 connect-or-start lives only in the terminal client. It greets like any client, keeps the last tree
 on screen while it tries again every two seconds, and shows what the bridge printed when a try
 fails. After `Stopping` it does not reconnect until the person presses Reconnect: a client never
-starts again a daemon somebody stopped. The system's title bar is put away: a sidebar runs to the window's top edge with Search (the palette), New, and the Workspace, Features and Checkouts stages above the project's rail, the connection, the chime and the settings at its foot, and a strip across the stage names what it shows beside the window's own buttons (macOS keeps its traffic lights; on Windows 11 resting on maximize opens snap layouts). The project heading above the
+starts again a daemon somebody stopped. The window can reach another machine's daemon instead: the
+saved `host` (or `ARGUS_DESKTOP_HOST` when none is saved) makes the same child `ssh -T -o BatchMode=yes
+-- <host> argus bridge`, with the arguments and the reading of ssh's failures shared with `argus --host`
+through the protocol's `ssh_bridge`. Switching host drops the old bridge, empties the tree and the rail
+back to connecting, and names the host in the sidebar's foot; the person's choice is kept in
+`desktop.json`. The system's title bar is put away: a sidebar runs to the window's top edge with Search (the palette), New, and the Workspace, Features and Checkouts stages above the project's rail, the connection, the chime and the settings at its foot, and a strip across the stage names what it shows beside the window's own buttons (macOS keeps its traffic lights; on Windows 11 resting on maximize opens snap layouts). The project heading above the
 rail opens the switcher: each project with how many of its agents need you or are working, then
 Add a project…, Switch workspace… (the daemon's, so every client follows), Connect to a host…
 (listed, for remote hosts after the MVP), and Remove, which asks first and leaves the folders alone.

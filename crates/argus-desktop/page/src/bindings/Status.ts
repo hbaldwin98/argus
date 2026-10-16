@@ -17,4 +17,8 @@ alarm: string | null,
 /**
  * Whether the window chimes, for the status bar's switch.
  */
-chime: boolean, };
+chime: boolean, 
+/**
+ * The ssh host being reached; none for this machine's daemon.
+ */
+host: string | null, };

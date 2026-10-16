@@ -160,6 +160,8 @@ pub struct Session {
     adding: Adding,
     /// The command palette is open, so what it can go to is sent.
     palette: bool,
+    /// The host was switched since the settings were saved.
+    host_unsaved: bool,
     palette_sent: Sent<page::Palette>,
     /// The Code stage, once opened: it keeps its checkout and file while
     /// another stage is up.
@@ -191,7 +193,8 @@ impl Session {
         Session {
             tree: Vec::new(),
             loaded: false,
-            status: StatusBar::new(settings.chime),
+            status: StatusBar::new(settings.chime).on_host(settings.host.clone()),
+            host_unsaved: false,
             project: None,
             repository: None,
             toggled: HashSet::new(),
@@ -253,6 +256,25 @@ impl Session {
 
     pub fn stopped(&mut self) {
         self.status.stopped();
+    }
+
+    /// The window is to reach another daemon: `host`, or this machine's.
+    /// What the last one's tree named is not the next one's, and a stale
+    /// rail would let a gesture reach for a pane that is not there, so the
+    /// window goes back to knowing nothing until the new daemon speaks.
+    pub fn switch_host(&mut self, host: Option<String>) -> Vec<ClientMsg> {
+        if self.status.host() == host.as_deref() {
+            return self.finish();
+        }
+        self.status.switch_host(host);
+        self.host_unsaved = true;
+        self.take_tree(Vec::new());
+        self.take_consoles(Vec::new());
+        self.loaded = false;
+        // Nothing about the last daemon's panes is worth saying now.
+        self.alerts.clear();
+        self.passing.retain(|event| !matches!(event, Event::Chime));
+        self.finish()
     }
 
     pub fn is_stopped(&self) -> bool {
@@ -660,6 +682,7 @@ impl Session {
             | Call::Copy { .. }
             | Call::CopyText { .. }
             | Call::Reconnect
+            | Call::SetHost { .. }
             | Call::Minimize
             | Call::ToggleMaximize
             | Call::CloseWindow
@@ -2778,7 +2801,7 @@ impl Session {
 
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
-        // All seven, not short-circuited: each flag is cleared as it is read.
+        // All eight, not short-circuited: each flag is cleared as it is read.
         let layouts = self.features.take_layouts_changed();
         let agent = self.agents.take_changed();
         let chime = self.status.take_chime_changed();
@@ -2789,8 +2812,10 @@ impl Session {
             | self.brief_height.take_unsaved()
             | self.extension_views.take_unsaved();
         let chosen = self.choices.take_unsaved();
-        (layouts || agent || chime || review || docks || rail || chosen).then(|| Settings {
+        let host = std::mem::take(&mut self.host_unsaved);
+        (layouts || agent || chime || review || docks || rail || chosen || host).then(|| Settings {
             layouts: self.features.layouts().clone(),
+            host: self.status.host().map(str::to_owned),
             last_agent: self.agents.last().cloned(),
             chime: self.status.chimes(),
             review: self.dialogs.layout(),
@@ -3714,6 +3739,31 @@ mod tests {
     }
 
     #[test]
+    fn switching_host_forgets_the_last_daemon_s_tree_and_asks_to_be_saved() {
+        let mut s = session(without_focus());
+        s.take_settings();
+        s.switch_host(Some("devbox".into()));
+        let events = s.events(0);
+        let status = events.iter().find_map(|e| match e {
+            Event::Status(status) => Some(status),
+            _ => None,
+        });
+        let status = status.expect("the page hears the new host");
+        assert_eq!(status.host.as_deref(), Some("devbox"));
+        assert_eq!(status.connection, crate::page::Connection::Connecting);
+        let rail = events.iter().find_map(|e| match e {
+            Event::Rail(rail) => Some(rail),
+            _ => None,
+        });
+        assert!(rail.expect("the rail is sent again").project.is_none(), "nothing of the last daemon's tree stays");
+        assert_eq!(s.take_settings().and_then(|s| s.host).as_deref(), Some("devbox"));
+        assert!(s.take_settings().is_none(), "saved once");
+
+        s.switch_host(Some("devbox".into()));
+        assert!(s.take_settings().is_none(), "the same host changes nothing");
+    }
+
+    #[test]
     fn turning_the_chime_off_silences_it_and_asks_to_be_saved() {
         let mut s = session(without_focus());
         assert!(s.take_settings().is_none());
@@ -4448,7 +4498,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 129] = [
+    const CALLS: [&str; 130] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
@@ -4546,6 +4596,7 @@ mod tests {
         r#"{"call":"extension_mode","panel":"extension:docker/containers","page":true}"#,
         r#"{"call":"toggle_extensions"}"#,
         r#"{"call":"reconnect"}"#,
+        r#"{"call":"set_host","host":"devbox"}"#,
         r#"{"call":"minimize"}"#,
         r#"{"call":"toggle_maximize"}"#,
         r#"{"call":"close_window"}"#,

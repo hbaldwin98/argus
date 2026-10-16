@@ -24,6 +24,11 @@ pub struct Settings {
     /// the path outlives the daemon's ids, which are handed out anew each run.
     #[serde(default)]
     pub layouts: BTreeMap<String, String>,
+    /// The ssh host whose daemon the window reaches, as `ssh <host>` names
+    /// it; absent for this machine's. Kept so the next run opens where this
+    /// one ended.
+    #[serde(default)]
+    pub host: Option<String>,
     /// The agent template this window last started, by name. Remembered
     /// rather than read off the tree: the tree knows only the agents still
     /// running, and a window whose agents have all closed, or that was
@@ -287,6 +292,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             layouts: BTreeMap::new(),
+            host: None,
             last_agent: None,
             chime: true,
             review: ReviewLayout::default(),
@@ -336,6 +342,7 @@ fn load_from(path: &Path) -> Settings {
     // `older_docks`; one written by an older window since keeps no docks.
     settings.console = None;
     settings.views_width = None;
+    settings.host = settings.host.take().filter(|host| !host.trim().is_empty());
     settings.extensions.modes.clear();
     settings
 }
@@ -387,6 +394,17 @@ mod tests {
         };
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path), settings);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_blank_host_is_this_machine() {
+        let path = scratch("host");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{ "host": " " }"#).unwrap();
+        assert_eq!(load_from(&path).host, None);
+        std::fs::write(&path, br#"{ "host": "devbox" }"#).unwrap();
+        assert_eq!(load_from(&path).host.as_deref(), Some("devbox"));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

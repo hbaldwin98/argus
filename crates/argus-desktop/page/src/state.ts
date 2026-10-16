@@ -96,7 +96,7 @@ export const state: {
    *  until a pane it started is made. */
   compose: { checkout: number | null; template: string | null; text: string };
 } = {
-  status: { connection: 'connecting', detail: null, alarm: null, chime: true },
+  status: { connection: 'connecting', detail: null, alarm: null, chime: true, host: null },
   rail: {
     projects: [],
     project: null,
