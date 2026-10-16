@@ -10,7 +10,7 @@
 use std::io::{Read, Write};
 
 use argus_protocol::{
-    AgentView, Block, Endpoint, SavedViewChange, SavedViewEntry, SavedViewWrite, ViewChange, WriteScope,
+    AgentView, Block, SavedViewChange, SavedViewEntry, SavedViewWrite, ViewChange, WriteScope,
 };
 
 use super::*;
@@ -72,16 +72,9 @@ pub(super) fn view_message(
         ["close", ..] => return "could not close the view: close wants the view's id".into(),
         _ => return USAGE.into(),
     };
-    let Ok(body) = serde_json::to_string(&change) else {
-        return "could not change the view: unencodable".into();
-    };
-    let url = endpoint_url(base_url, Endpoint::View);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return "could not change the view: daemon unavailable".into();
-    };
-    match status {
-        200 => done,
-        _ => format!("could not change the view: {}", response.trim()),
+    match call::<hook_call::ChangeView>(base_url, token, &change) {
+        Ok(()) => done,
+        Err(refusal) => refusal.said("could not change the view"),
     }
 }
 
@@ -111,30 +104,27 @@ fn saved_view_message(rest: &[&str], base_url: &str, token: &str, mut stdin: imp
         ["stale", id] if !id.trim().is_empty() => SavedViewChange::Stale { id: id.to_string() },
         _ => return USAGE.into(),
     };
-    let Ok(body) = serde_json::to_string(&change) else {
-        return "could not change the saved view: unencodable".into();
+    // The answer's shape is the change's, so it is read once as JSON and
+    // taken apart below; one that is not JSON still means the change landed.
+    let reply = match call::<hook_call::SavedView>(base_url, token, &change) {
+        Ok(reply) => Some(reply),
+        Err(Refusal::Unreadable) => None,
+        Err(refusal) => return refusal.said("could not change the saved view"),
     };
-    let url = endpoint_url(base_url, Endpoint::SavedView);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return "could not change the saved view: daemon unavailable".into();
-    };
-    if status != 200 {
-        return format!("could not change the saved view: {}", response.trim());
-    }
     match change {
         SavedViewChange::Save { view } => {
-            let entry: Option<SavedViewEntry> = serde_json::from_str(&response).ok();
+            let entry: Option<SavedViewEntry> = reply.and_then(|reply| serde_json::from_value(reply).ok());
             let id = entry.map_or_else(|| view.view.id.trim().to_string(), |e| e.id);
             format!("saved: {id}, {} blocks", view.view.blocks.len())
         }
-        SavedViewChange::List => match serde_json::from_str::<Vec<SavedViewEntry>>(&response) {
-            Ok(entries) if entries.is_empty() => "no saved views".into(),
-            Ok(entries) => entries.iter().map(entry_line).collect::<Vec<_>>().join("\n"),
-            Err(_) => "could not read the saved views".into(),
+        SavedViewChange::List => match reply.map(serde_json::from_value::<Vec<SavedViewEntry>>) {
+            Some(Ok(entries)) if entries.is_empty() => "no saved views".into(),
+            Some(Ok(entries)) => entries.iter().map(entry_line).collect::<Vec<_>>().join("\n"),
+            _ => "could not read the saved views".into(),
         },
-        SavedViewChange::Get { .. } => match serde_json::from_str::<serde_json::Value>(&response) {
-            Ok(record) => serde_json::to_string_pretty(&record).unwrap_or(response),
-            Err(_) => "could not read the saved view".into(),
+        SavedViewChange::Get { .. } => match reply {
+            Some(record) => serde_json::to_string_pretty(&record).unwrap_or_else(|_| record.to_string()),
+            None => "could not read the saved view".into(),
         },
         SavedViewChange::Delete { id } => format!("deleted: {id}"),
         SavedViewChange::Stale { id } => format!("marked stale: {id}"),
@@ -156,43 +146,9 @@ fn entry_line(entry: &SavedViewEntry) -> String {
 mod tests {
     use super::*;
     use std::io::Cursor;
-    use std::net::TcpListener;
 
     const BASE: &str = "http://127.0.0.1:1/pane/1";
     const VIEW: &str = r#"{"id":"eng-1","title":"ENG-1","blocks":[{"kind":"markdown","text":"hi"}]}"#;
-
-    /// A daemon that answers one request with `status` and `body`, and the
-    /// body it was sent, once it has.
-    fn answering(status: &str, body: &str) -> (String, std::thread::JoinHandle<String>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}/pane/1", listener.local_addr().unwrap());
-        let reply = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut seen = Vec::new();
-            let mut chunk = [0u8; 4096];
-            loop {
-                let n = stream.read(&mut chunk).unwrap();
-                seen.extend_from_slice(&chunk[..n]);
-                let text = String::from_utf8_lossy(&seen);
-                let Some((head, rest)) = text.split_once("\r\n\r\n") else { continue };
-                let length = head
-                    .lines()
-                    .find_map(|l| l.strip_prefix("Content-Length: "))
-                    .and_then(|n| n.parse::<usize>().ok())
-                    .unwrap_or(0);
-                if rest.len() >= length || n == 0 {
-                    break;
-                }
-            }
-            stream.write_all(reply.as_bytes()).unwrap();
-            String::from_utf8_lossy(&seen).to_string()
-        });
-        (base, server)
-    }
 
     #[test]
     fn showing_a_view_wraps_it_for_the_endpoint_and_counts_its_blocks() {

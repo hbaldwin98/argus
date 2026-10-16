@@ -13,11 +13,10 @@ pub(super) fn comments(rest: &[&str]) {
 }
 
 pub(super) fn comments_message(rest: &[&str], base_url: &str, token: &str) -> String {
-    let comments: Vec<ReviewComment> =
-        match read_json("comments", Endpoint::Comments, rest, base_url, token) {
-            Ok(comments) => comments,
-            Err(message) => return message,
-        };
+    let comments: Vec<ReviewComment> = match read::<hook_call::Comments>("comments", rest, base_url, token) {
+        Ok(comments) => comments,
+        Err(message) => return message,
+    };
     if comments.is_empty() {
         return "no review comments".to_string();
     }
@@ -474,24 +473,10 @@ fn parse_task_add_args(args: &[&str]) -> Result<TaskWrite, String> {
 }
 
 pub(super) fn write_task(action: TaskAction, base_url: &str, token: &str) -> String {
-    let Ok(body) = serde_json::to_string(&action) else {
-        return "could not change task: unencodable".to_string();
-    };
-    let url = endpoint_url(base_url, Endpoint::Tasks);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return "could not change task: daemon unavailable".to_string();
-    };
-    let response = response.trim();
-    if status != 200 {
-        return if response.is_empty() {
-            "could not change task: daemon refused the request".to_string()
-        } else {
-            format!("could not change task: {response}")
-        };
-    }
-    match serde_json::from_str::<TaskList>(response) {
+    match call::<hook_call::Tasks>(base_url, token, &action) {
         Ok(list) => format_tasks(&list),
-        Err(_) => "the task list changed".to_string(),
+        Err(Refusal::Unreadable) => "the task list changed".to_string(),
+        Err(refusal) => refusal.said("could not change task"),
     }
 }
 
@@ -670,24 +655,10 @@ fn parse_diagram_add_args(args: &[&str]) -> Result<DiagramWrite, String> {
 }
 
 pub(super) fn write_diagram(action: DiagramAction, base_url: &str, token: &str) -> String {
-    let Ok(body) = serde_json::to_string(&action) else {
-        return "could not change diagram: unencodable".to_string();
-    };
-    let url = endpoint_url(base_url, Endpoint::Diagrams);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return "could not change diagram: daemon unavailable".to_string();
-    };
-    let response = response.trim();
-    if status != 200 {
-        return if response.is_empty() {
-            "could not change diagram: daemon refused the request".to_string()
-        } else {
-            format!("could not change diagram: {response}")
-        };
-    }
-    match serde_json::from_str::<DiagramList>(response) {
+    match call::<hook_call::Diagrams>(base_url, token, &action) {
         Ok(list) => format_diagrams(&list),
-        Err(_) => "the diagram list changed".to_string(),
+        Err(Refusal::Unreadable) => "the diagram list changed".to_string(),
+        Err(refusal) => refusal.said("could not change diagram"),
     }
 }
 
@@ -742,17 +713,10 @@ pub(super) fn tracker_map_message(
         [other, ..] => return format!("tracker-map: `{other}` is not draft"),
     };
 
-    let url = endpoint_url(base_url, Endpoint::TrackerMap);
-    let Some((status, response)) = post_response(&url, token, &draft) else {
-        return "could not read the tracker map: daemon unavailable".to_string();
-    };
-    let response = response.trim();
-    if status != 200 {
-        return format!("could not read the tracker map: {response}");
-    }
-    match serde_json::from_str::<TrackerMap>(response) {
+    match call::<hook_call::TrackerMap>(base_url, token, &draft) {
         Ok(map) => format_tracker_map(&map, !draft.is_empty()),
-        Err(_) => "the tracker map changed".to_string(),
+        Err(Refusal::Unreadable) => "the tracker map changed".to_string(),
+        Err(refusal) => refusal.said("could not read the tracker map"),
     }
 }
 
@@ -790,29 +754,14 @@ pub(super) fn read_feature_board(
     base_url: &str,
     token: &str,
 ) -> Result<FeatureBoard, String> {
-    read_json("the feature", Endpoint::Features, rest, base_url, token)
+    read::<hook_call::Features>("the feature", rest, base_url, token)
 }
 
 pub(super) fn write_feature(action: FeatureAction, base_url: &str, token: &str) -> String {
-    let Ok(body) = serde_json::to_string(&action) else {
-        return "could not change feature: unencodable".to_string();
-    };
-    let url = endpoint_url(base_url, Endpoint::Feature);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return "could not change feature: daemon unavailable".to_string();
-    };
-    let response = response.trim();
-    if status != 200 {
-        return if response.is_empty() {
-            "could not change feature: daemon refused the request".to_string()
-        } else {
-            format!("could not change feature: {response}")
-        };
-    }
-    match serde_json::from_str::<FeatureBoard>(response) {
+    match call::<hook_call::ChangeFeature>(base_url, token, &action) {
         Ok(board) => format_feature(&board),
-        // The change landed; only the account of it did not.
-        Err(_) => "the feature changed".to_string(),
+        Err(Refusal::Unreadable) => "the feature changed".to_string(),
+        Err(refusal) => refusal.said("could not change feature"),
     }
 }
 
@@ -1062,11 +1011,10 @@ pub(super) fn decisions_message(rest: &[&str], base_url: &str, token: &str) -> S
         Some("rewrite") => return rewrite_decision(args, base_url, token),
         _ => {}
     }
-    let board: DecisionBoard =
-        match read_json("decisions", Endpoint::Decisions, rest, base_url, token) {
-            Ok(board) => board,
-            Err(message) => return message,
-        };
+    let board: DecisionBoard = match read::<hook_call::Decisions>("decisions", rest, base_url, token) {
+        Ok(board) => board,
+        Err(message) => return message,
+    };
     if board.decisions.is_empty() {
         return "nothing decided under this feature yet".to_string();
     }
@@ -1155,11 +1103,10 @@ fn show_decision(args: &[&str], base_url: &str, token: &str) -> String {
     let Some(id) = decision_id(Some(id)) else {
         return "could not read decisions: show wants the number `decisions` prints".to_string();
     };
-    let board: DecisionBoard =
-        match read_json("decisions", Endpoint::Decisions, &[], base_url, token) {
-            Ok(board) => board,
-            Err(message) => return message,
-        };
+    let board: DecisionBoard = match read::<hook_call::Decisions>("decisions", &[], base_url, token) {
+        Ok(board) => board,
+        Err(message) => return message,
+    };
     match board.decisions.iter().find(|d| d.id == id) {
         Some(decision) => DecisionText::from(decision)
             .markdown(decision.state == DecisionState::Open, false)
@@ -1195,23 +1142,13 @@ fn rewrite_decision(args: &[&str], base_url: &str, token: &str) -> String {
     }
 }
 
+/// The board the daemon answers with is not read: the change is what was
+/// asked, and it landed.
 fn post_decision_change(change: &DecisionChange, base_url: &str, token: &str) -> Result<(), String> {
-    let Ok(body) = serde_json::to_string(change) else {
-        return Err("could not change decision: unencodable".to_string());
-    };
-    let url = endpoint_url(base_url, Endpoint::DecisionChange);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return Err("could not change decision: daemon unavailable".to_string());
-    };
-    let response = response.trim();
-    if status == 200 {
-        return Ok(());
+    match call::<hook_call::ChangeDecision>(base_url, token, change) {
+        Ok(_) | Err(Refusal::Unreadable) => Ok(()),
+        Err(refusal) => Err(refusal.said("could not change decision")),
     }
-    Err(if response.is_empty() {
-        "could not change decision: daemon refused the request".to_string()
-    } else {
-        format!("could not change decision: {response}")
-    })
 }
 
 pub(super) fn format_decision_board(board: &DecisionBoard) -> String {
@@ -1332,23 +1269,7 @@ pub(super) fn decide_message(rest: &[&str], base_url: &str, token: &str) -> Stri
         Ok(write) => write,
         Err(message) => return format!("could not record the decision: {message}"),
     };
-    let body = match serde_json::to_string(&write) {
-        Ok(body) => body,
-        Err(_) => return "could not record the decision: unencodable".to_string(),
-    };
-    let url = endpoint_url(base_url, Endpoint::Decide);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return "could not record the decision: daemon unavailable".to_string();
-    };
-    let response = response.trim();
-    if status != 200 {
-        return if response.is_empty() {
-            "could not record the decision: daemon refused the request".to_string()
-        } else {
-            format!("could not record the decision: {response}")
-        };
-    }
-    match serde_json::from_str::<Decision>(response) {
+    match call::<hook_call::Decide>(base_url, token, &write) {
         Ok(decision) => {
             let place = match (decision.parent, write.supersedes) {
                 (_, Some(old)) => format!(" replacing #{old}"),
@@ -1373,7 +1294,8 @@ pub(super) fn decide_message(rest: &[&str], base_url: &str, token: &str) -> Stri
             }
         }
         // The write landed; only the account of it did not.
-        Err(_) => "recorded the decision".to_string(),
+        Err(Refusal::Unreadable) => "recorded the decision".to_string(),
+        Err(refusal) => refusal.said("could not record the decision"),
     }
 }
 
@@ -1442,31 +1364,18 @@ pub(super) fn id_arg(flag: &str, what: &str, raw: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("{flag} wants a {what} number, not {raw:?}"))
 }
 
-/// One JSON read from the pane API, with every way it can fail phrased for
-/// the agent that ran the command rather than for a log.
-pub(super) fn read_json<T: serde::de::DeserializeOwned>(
+/// One read from the pane API, with every way it can fail phrased for the
+/// agent that ran the command rather than for a log.
+pub(super) fn read<C: Call<Body = ()>>(
     what: &str,
-    endpoint: Endpoint,
     rest: &[&str],
     base_url: &str,
     token: &str,
-) -> Result<T, String> {
+) -> Result<C::Reply, String> {
     if !rest.is_empty() {
         return Err(format!("could not read {what}: {what} takes no arguments"));
     }
-    let Some((status, body)) = post_response(&endpoint_url(base_url, endpoint), token, "") else {
-        return Err(format!("could not read {what}: daemon unavailable"));
-    };
-    if status != 200 {
-        let reason = body.trim();
-        return Err(if reason.is_empty() {
-            format!("could not read {what}: daemon refused the request")
-        } else {
-            format!("could not read {what}: {reason}")
-        });
-    }
-    serde_json::from_str(&body)
-        .map_err(|_| format!("could not read {what}: invalid daemon response"))
+    call::<C>(base_url, token, &()).map_err(|refusal| refusal.said(&format!("could not read {what}")))
 }
 
 #[cfg(test)]

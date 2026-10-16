@@ -10,7 +10,7 @@
 use std::io::{Read, Write};
 
 use argus_protocol::reconcile::Stage;
-use argus_protocol::{Endpoint, Failed, Feature, ProposalWrite, ReconcileChange};
+use argus_protocol::{Failed, Feature, ProposalWrite, ReconcileChange};
 
 use super::*;
 
@@ -42,19 +42,10 @@ pub(super) fn reconcile_message(rest: &[&str], base_url: &str, token: &str, mut 
         },
         _ => return "reconcile: use `reconcile`, `reconcile propose --stdin` or `reconcile report`".into(),
     };
-    let Ok(body) = serde_json::to_string(&change) else {
-        return "could not reach the reconcile: unencodable".into();
-    };
-    let url = endpoint_url(base_url, Endpoint::Reconcile);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return "could not reach the reconcile: daemon unavailable".into();
-    };
-    if status != 200 {
-        return format!("refused: {}", response.trim());
-    }
-    match serde_json::from_str::<Feature>(&response) {
+    match call::<hook_call::Reconcile>(base_url, token, &change) {
         Ok(feature) => format_reconcile(&feature, &change),
-        Err(_) => "done".into(),
+        Err(Refusal::Unreadable) => "done".into(),
+        Err(refusal) => refusal.said("could not reach the reconcile"),
     }
 }
 

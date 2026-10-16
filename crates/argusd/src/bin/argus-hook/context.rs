@@ -45,16 +45,7 @@ pub(super) fn context_message(base_url: &str, token: &str) -> String {
 }
 
 fn read_tasks(base_url: &str, token: &str) -> Result<TaskList, String> {
-    let body = serde_json::to_string(&TaskAction::List).unwrap_or_default();
-    let url = endpoint_url(base_url, Endpoint::Tasks);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return Err("could not read tasks: daemon unavailable".to_string());
-    };
-    if status != 200 {
-        return Err("could not read tasks: daemon refused the request".to_string());
-    }
-    serde_json::from_str(&response)
-        .map_err(|_| "could not read tasks: invalid daemon response".to_string())
+    call::<hook_call::Tasks>(base_url, token, &TaskAction::List).map_err(|refusal| refusal.said("could not read tasks"))
 }
 
 pub(super) fn format_context(
@@ -140,6 +131,15 @@ mod tests {
     #[test]
     fn outside_argus_there_is_nothing_to_print() {
         assert_eq!(context_text(&[""], "", ""), "");
+    }
+
+    #[test]
+    fn the_context_names_why_the_tasks_were_refused() {
+        let (base, server) = answering("409 Conflict", "board unreadable");
+        let tasks = read_tasks(&base, "t");
+        server.join().unwrap();
+        let text = format_context("no review comments", Ok(board(Some("notes"))), tasks);
+        assert!(text.contains("could not read tasks: board unreadable"), "{text}");
     }
 
     fn tasks() -> TaskList {

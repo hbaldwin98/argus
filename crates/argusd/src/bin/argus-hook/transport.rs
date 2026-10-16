@@ -1,5 +1,8 @@
-//! How a request reaches the daemon: the loopback HTTP post, which URL a
-//! pane's reports go to, and the credentials the environment carries.
+//! How a request reaches the daemon: the loopback HTTP post, the typed call
+//! each endpoint answers, which URL a pane's reports go to, and the
+//! credentials the environment carries.
+
+use argus_protocol::hook_call::{Call, Form};
 
 use super::*;
 
@@ -147,13 +150,82 @@ pub(super) fn post_as(url: &str, token: &str, body: &str, session: Option<&str>)
     Some(())
 }
 
-pub(super) fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, String)> {
-    post_response_within(url, token, body, TIMEOUT)
+/// Why a call to the pane API brought back no reply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Refusal {
+    /// The body could not be written; nothing was sent.
+    Unencodable,
+    /// Larger than the endpoint takes; refused here, before it travelled.
+    TooLarge { size: usize, most: usize },
+    /// No daemon answered in time.
+    Unavailable,
+    /// The daemon refused, in its words; empty when it gave none.
+    Refused(String),
+    /// Answered, but not with what the endpoint replies: a write it carried
+    /// landed, only the account of it did not.
+    Unreadable,
 }
 
-/// [`post_response`], waiting up to `wait` for the answer: for a request
-/// whose work is slower than a report's, such as making a worktree.
-pub(super) fn post_response_within(
+impl Refusal {
+    /// The refusal after what was being done, for the agent that ran the
+    /// command rather than for a log.
+    pub(super) fn said(&self, doing: &str) -> String {
+        match self {
+            Refusal::Unencodable => format!("{doing}: unencodable"),
+            Refusal::TooLarge { size, most } => {
+                format!("{doing}: the request is {size} bytes, and this takes at most {most}")
+            }
+            Refusal::Unavailable => format!("{doing}: daemon unavailable"),
+            Refusal::Refused(words) if words.is_empty() => format!("{doing}: daemon refused the request"),
+            Refusal::Refused(words) => format!("{doing}: {words}"),
+            Refusal::Unreadable => format!("{doing}: invalid daemon response"),
+        }
+    }
+}
+
+/// One call to the pane API on this run's board, answered.
+pub(super) fn call<C: Call>(base_url: &str, token: &str, body: &C::Body) -> Result<C::Reply, Refusal> {
+    call_within::<C>(base_url, token, body, TIMEOUT)
+}
+
+/// [`call`], waiting up to `wait` for the answer: for work slower than a
+/// report's, such as making a worktree.
+pub(super) fn call_within<C: Call>(
+    base_url: &str,
+    token: &str,
+    body: &C::Body,
+    wait: Duration,
+) -> Result<C::Reply, Refusal> {
+    let body = encoded::<C>(body)?;
+    let url = endpoint_url(base_url, C::ENDPOINT);
+    let (status, answer) = post_response_within(&url, token, &body, wait).ok_or(Refusal::Unavailable)?;
+    if status != 200 {
+        return Err(Refusal::Refused(answer.trim().to_string()));
+    }
+    C::ReplyForm::read(answer.as_bytes()).map_err(|_| Refusal::Unreadable)
+}
+
+/// Best effort, the reply unread, as a hook's report is: nothing here may
+/// stall a turn.
+pub(super) fn send<C: Call>(base_url: &str, token: &str, body: &C::Body, session: Option<&str>) {
+    if let Ok(body) = encoded::<C>(body) {
+        let _ = post_as(&endpoint_url(base_url, C::ENDPOINT), token, &body, session);
+    }
+}
+
+/// The body as `C` writes it, refused here when the daemon would refuse it
+/// for its size: past the bound it would only be drained and dropped.
+fn encoded<C: Call>(body: &C::Body) -> Result<String, Refusal> {
+    let bytes = C::BodyForm::write(body).map_err(|_| Refusal::Unencodable)?;
+    let most = C::ENDPOINT.max_body();
+    if bytes.len() > most {
+        return Err(Refusal::TooLarge { size: bytes.len(), most });
+    }
+    // `request` writes text; every form writes UTF-8, so this never refuses.
+    String::from_utf8(bytes).map_err(|_| Refusal::Unencodable)
+}
+
+fn post_response_within(
     url: &str,
     token: &str,
     body: &str,
@@ -216,4 +288,102 @@ pub(super) fn request(
     req.push_str("Connection: close\r\n\r\n");
     req.push_str(body);
     req
+}
+
+#[cfg(test)]
+/// A daemon that answers one request with `status` and `body`, and the
+/// body it was sent, once it has. Shared by the commands' tests.
+pub(super) fn answering(status: &str, body: &str) -> (String, std::thread::JoinHandle<String>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/pane/1", listener.local_addr().unwrap());
+    let reply = format!(
+        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut seen = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let n = stream.read(&mut chunk).unwrap();
+            seen.extend_from_slice(&chunk[..n]);
+            let text = String::from_utf8_lossy(&seen);
+            let Some((head, rest)) = text.split_once("\r\n\r\n") else { continue };
+            let length = head
+                .lines()
+                .find_map(|l| l.strip_prefix("Content-Length: "))
+                .and_then(|n| n.parse::<usize>().ok())
+                .unwrap_or(0);
+            if rest.len() >= length || n == 0 {
+                break;
+            }
+        }
+        stream.write_all(reply.as_bytes()).unwrap();
+        String::from_utf8_lossy(&seen).to_string()
+    });
+    (base, server)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use argus_protocol::{AgentView, ViewChange, MAX_VIEW_BYTES};
+
+    const NOBODY: &str = "http://127.0.0.1:1/pane/1";
+
+    #[test]
+    fn a_call_is_posted_to_its_endpoint_and_answered_with_its_reply() {
+        let list = r#"{"project_name":"argus","feature":"pushes","tasks":[]}"#;
+        let (base, server) = answering("200 OK", list);
+        let answered = call::<hook_call::Tasks>(&base, "t", &TaskAction::List).unwrap();
+        assert_eq!(answered.feature.as_deref(), Some("pushes"));
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /pane/1/tasks"), "{request}");
+        assert!(request.ends_with(r#""List""#), "{request}");
+    }
+
+    #[test]
+    fn a_refusal_is_the_daemons_words_after_what_was_being_done() {
+        let (base, server) = answering("409 Conflict", "no such task\n");
+        let refusal = call::<hook_call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
+        server.join().unwrap();
+        assert_eq!(refusal, Refusal::Refused("no such task".into()));
+        assert_eq!(refusal.said("could not change task"), "could not change task: no such task");
+    }
+
+    #[test]
+    fn a_refusal_without_words_says_the_daemon_refused() {
+        let (base, server) = answering("409 Conflict", "");
+        let refusal = call::<hook_call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
+        server.join().unwrap();
+        assert_eq!(refusal.said("could not change task"), "could not change task: daemon refused the request");
+    }
+
+    #[test]
+    fn a_daemon_that_is_not_there_is_unavailable() {
+        let refusal = call::<hook_call::Tasks>(NOBODY, "t", &TaskAction::List).unwrap_err();
+        assert_eq!(refusal, Refusal::Unavailable);
+        assert_eq!(refusal.said("could not change task"), "could not change task: daemon unavailable");
+    }
+
+    #[test]
+    fn a_body_past_its_endpoints_bound_is_refused_before_it_is_sent() {
+        // Nothing listens on NOBODY: a body that travelled would come back
+        // unavailable, not too large.
+        let view = AgentView { id: "big".into(), title: "x".repeat(MAX_VIEW_BYTES), ..Default::default() };
+        let refusal = call::<hook_call::ChangeView>(NOBODY, "t", &ViewChange::Show { view }).unwrap_err();
+        let Refusal::TooLarge { size, most } = refusal else {
+            panic!("expected the size refused: {refusal:?}");
+        };
+        assert_eq!(most, MAX_VIEW_BYTES);
+        assert!(size > most);
+    }
+
+    #[test]
+    fn an_answer_that_is_not_the_reply_is_unreadable() {
+        let (base, server) = answering("200 OK", "not json");
+        let refusal = call::<hook_call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
+        server.join().unwrap();
+        assert_eq!(refusal, Refusal::Unreadable);
+    }
 }

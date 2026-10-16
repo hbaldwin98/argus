@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use argus_protocol::{AgentLaunch, AgentLaunched, LaunchPlace};
+use argus_protocol::{AgentLaunch, LaunchPlace};
 
 use super::*;
 
@@ -28,22 +28,15 @@ fn agent_message(rest: &[&str], stdin: Option<String>, base_url: &str, token: &s
         Ok(launch) => launch,
         Err(message) => return format!("Not started: {message}"),
     };
-    let Ok(body) = serde_json::to_string(&launch) else {
-        return "Not started: unencodable".into();
-    };
-    let url = endpoint_url(base_url, Endpoint::Agent);
-    match post_response_within(&url, token, &body, LAUNCH_WAIT) {
-        Some((200, answer)) => match serde_json::from_str::<AgentLaunched>(&answer) {
-            Ok(started) => format!(
-                "Started {} as pane {} in {}.",
-                started.template,
-                started.pane.0,
-                started.checkout.display()
-            ),
-            Err(_) => "Started.".into(),
-        },
-        Some((_, refusal)) => format!("Not started: {}", refusal.trim()),
-        None => "Not started: the Argus daemon did not answer.".into(),
+    match call_within::<hook_call::Launch>(base_url, token, &launch, LAUNCH_WAIT) {
+        Ok(started) => format!(
+            "Started {} as pane {} in {}.",
+            started.template,
+            started.pane.0,
+            started.checkout.display()
+        ),
+        Err(Refusal::Unreadable) => "Started.".into(),
+        Err(refusal) => refusal.said("Not started"),
     }
 }
 

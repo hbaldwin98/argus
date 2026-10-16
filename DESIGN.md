@@ -1167,6 +1167,11 @@ already moved to, the innermost checkout holding that directory takes the row, a
 since the last poll is looked for before the move is refused. The refusal is the answer's body,
 and the helper prints it, because a move that failed in silence left agents believing the row had
 followed them.
+What each endpoint is posted and answers with is declared once, in `argus_protocol::hook_call`:
+`argus-hook` makes its call through the declaration and the daemon answers through it. A body the
+endpoint cannot read is refused with a `400` in serde's words, a refusal is a `409` carrying the
+reason, and a body past the endpoint's bound (`Endpoint::max_body`) is refused by the helper before
+it travels and by the daemon with a `413` naming the bound if it arrives.
 
 When the person wants a task kept in a pane they can go back to, an agent starts another agent
 through the daemon rather than as a subagent of its own turn. It is an ability, not how worktree
@@ -2210,7 +2215,7 @@ it to the pane API's `view` endpoint; `view close <id>` takes one down. Argus st
 tracker, and the page draws strings as text, never as markup. The daemon checks every limit in
 `AgentView::checked` (256 KiB of JSON, 200 table rows, four levels of nesting, and an `http` or
 `https` subject) and answers a refusal with a `409` carrying the block's path, `blocks[2].rows`, in
-words the agent can act on; a body past the size limit is refused with a `413` before it is parsed. The same check refuses a number past 1e15 in magnitude (a finite one near the top of `f64` hangs a chart's axis), a control character in any id or label the agent is later typed, two actions sharing an id, a path that leaves the checkout (`checkout_path`), and a block or value kind this Argus does not know. A client decoding what the daemon sent keeps such a kind as `Unknown` and says it needs a newer Argus.
+words the agent can act on; a body past the size limit is refused by `argus-hook` before it is sent, and by the daemon with a `413` before it is parsed. The same check refuses a number past 1e15 in magnitude (a finite one near the top of `f64` hangs a chart's axis), a control character in any id or label the agent is later typed, two actions sharing an id, a path that leaves the checkout (`checkout_path`), and a block or value kind this Argus does not know. A client decoding what the daemon sent keeps such a kind as `Unknown` and says it needs a newer Argus.
 What it keeps it stamps with the pane that sent it and the time it arrived, and with the subject
 read as a tracker link. Views are held in the daemon's memory only (`state/views`) and never reach
 the store, so nothing read from a ticket outlives the agent's next look at it or the daemon's

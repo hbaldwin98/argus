@@ -64,13 +64,8 @@ pub(super) fn post_telemetry(
     report: &AgentTelemetry,
     session: Option<&str>,
 ) {
-    if let (Some(base), Ok(body)) = (pane_base(url), serde_json::to_string(report)) {
-        let _ = post_as(
-            &endpoint_url(&base, Endpoint::Telemetry),
-            token,
-            &body,
-            session,
-        );
+    if let Some(base) = pane_base(url) {
+        send::<hook_call::Telemetry>(&base, token, report, session);
     }
 }
 

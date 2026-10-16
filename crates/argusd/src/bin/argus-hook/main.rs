@@ -98,6 +98,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
+use argus_protocol::hook_call::{self, Call};
 use argus_protocol::{
     is_slug, parse_pane_url, requested_scope, Consequence, Decision, DecisionBoard,
     DecisionChange, DecisionState, DecisionText, DecisionWrite, DiagramAction,
@@ -241,11 +242,9 @@ fn checkout(rest: &[&str]) {
     // Said aloud either way: a move that silently failed left agents
     // believing their row had followed them.
     let Some(path) = reported_checkout(rest) else { return };
-    let url = endpoint_url(&env_url(), Endpoint::Checkout);
-    match post_response(&url, &env_token(), &path.to_string_lossy()) {
-        Some((200, _)) => println!("This pane now belongs to {}.", path.display()),
-        Some((_, refusal)) => println!("Not moved: {refusal}"),
-        None => println!("Not moved: the Argus daemon did not answer."),
+    match call::<hook_call::Checkout>(&env_url(), &env_token(), &path.to_string_lossy().into_owned()) {
+        Ok(()) => println!("This pane now belongs to {}.", path.display()),
+        Err(refusal) => println!("{}", refusal.said("Not moved")),
     }
 }
 
