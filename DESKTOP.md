@@ -145,8 +145,9 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
   selected pane, the page's last grid capacity `(rows, cols)`, per-pane last Resize sent, pending
   spawn `request_id`s, window focus, last `View` sent.
 - `select(pane)`: if different, `Unsubscribe` the old, drop its screen, `Subscribe` the new, then
-  `Resize` with the page's capacity (the daemon sizes a pane to the minimum over its viewers, so
-  the grid may come back smaller: the page pads). Selecting a pane not in the tree does nothing.
+  `Resize` with the page's capacity (the daemon applies the size of the client last active on
+  the pane, so while another client is the one the person was last at the grid may come back
+  another size: the page pads or crops). Selecting a pane not in the tree does nothing.
 - `resize(rows, cols)`: store; if a pane is selected and its last sent size differs, `Resize`.
 - A tree that no longer holds the selected pane: drop the selection and its screen (and
   Unsubscribe is unnecessary — the daemon already dropped it; check what the TUI does).
@@ -165,6 +166,23 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
 - Messages this client does not use are ignored explicitly (one arm, with a comment).
 - Emits page events: `status`, `rail` (whole rail view, on any tree/selection/status change),
   `frame` (from `Screen`, at most once per frame tick), `clipboard`.
+
+### Panes side by side
+
+The Workspace shows one pane, or several in a grid. `shown` holds the Workspace's slot and a
+list of slots beside it (`Side::Beside(n)`), each subscribed and sized on its own, and the
+layout: `split_grid` is the pure arithmetic of rows of panes, each row's column fractions and the
+rows' heights. A pane added is placed by the grid rule (`ceil(sqrt(n))` to a row, a short last row
+stretching across), after which the person moves it by dragging its header onto another (centre
+swaps, a side joins that row, the top or bottom starts a row) or with the keyboard, and sizes it by
+dragging a gutter (a double click evens a row, or the rows). Closing a pane gives its room to a
+neighbour and leaves every other size alone. The layout is the window's own: the daemon learns each
+pane's rows and columns only, and the sizes survive a visit to another stage because `shown`
+holds them. A pane that would leave another under 20 columns by 6 rows is refused with a note.
+The page draws the grid in `split.ts` (state and DOM) over `split_math.ts` (pure, tested under
+node), sending sizes once when a gutter is let go. Not yet: the sizes do not persist across
+restarts, and the move and focus keys are chords after the leader (`ArrowKeys`, with Shift to
+move), not yet remappable.
 
 ### `screen`
 
@@ -399,7 +417,8 @@ on Ubuntu 24.04 (rustc 1.97). Windows and macOS were not built.
 - **The screen on the wire.** Cells carry only bold, italic, underline and reverse; dim, strike,
   hidden and hyperlinks are dropped by the daemon. There is no width flag, but the lock has one
   `unicode-width`, shared with alacritty, so a width computed in Rust matches the daemon. Scroll is
-  inferred and only ever upward, and is applied before the runs. A pane is sized to the minimum over
-  its viewers, so a desktop window and a TUI on one pane share the smaller size.
+  inferred and only ever upward, and is applied before the runs. A pane takes the size of the client
+  last active on it, so a desktop window and a TUI on one pane trade sizes as the person moves
+  between them, and the grid that comes back is padded or cropped to the room the page has.
 - **Keys.** Only `MouseTracking` and the alternate screen reach clients; application cursor mode,
   bracketed paste and the kitty keyboard stay in the daemon, which brackets pastes itself.

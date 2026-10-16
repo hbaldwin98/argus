@@ -254,6 +254,22 @@ pub enum Action {
     DockBottom,
     /// The split's other side takes the keys.
     OtherSide,
+    /// The previous pane on screen takes the keys.
+    PreviousSide,
+    /// The pane next to the one with the keys, in a direction, takes them.
+    FocusLeft,
+    FocusRight,
+    FocusUp,
+    FocusDown,
+    /// The Workspace's pane with the keys trades places with its neighbour
+    /// in a direction: the keyboard's way of dragging its header.
+    MovePaneLeft,
+    MovePaneRight,
+    MovePaneUp,
+    MovePaneDown,
+    /// Takes the Workspace's pane with the keys out of the grid of panes
+    /// side by side; the pane keeps running.
+    CloseSplit,
     /// The whole window larger or smaller, the panes' text with the rest,
     /// or back to its own size.
     ZoomIn,
@@ -506,6 +522,15 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("z").after_leader()], ConsoleFullscreen, "the console fills the window, and back"),
     bind(Pane, &[Chord::key("\\").after_leader()], SplitConsole, "split the console in two, and back"),
     bind(Pane, &[Chord::key("o").after_leader()], OtherSide, "the keys to the next pane on screen"),
+    bind(Pane, &[Chord::key("O").after_leader()], PreviousSide, "the keys to the previous pane on screen"),
+    bind(Pane, &[Chord::key("ArrowLeft").after_leader()], FocusLeft, "the keys to the pane on the left"),
+    bind(Pane, &[Chord::key("ArrowRight").after_leader()], FocusRight, "the keys to the pane on the right"),
+    bind(Pane, &[Chord::key("ArrowUp").after_leader()], FocusUp, "the keys to the pane above"),
+    bind(Pane, &[Chord::key("ArrowDown").after_leader()], FocusDown, "the keys to the pane below"),
+    bind(Pane, &[Chord::key("ArrowLeft").shift().after_leader()], MovePaneLeft, "move the pane left, trading places"),
+    bind(Pane, &[Chord::key("ArrowRight").shift().after_leader()], MovePaneRight, "move the pane right, trading places"),
+    bind(Pane, &[Chord::key("ArrowUp").shift().after_leader()], MovePaneUp, "move the pane up, trading places"),
+    bind(Pane, &[Chord::key("ArrowDown").shift().after_leader()], MovePaneDown, "move the pane down, trading places"),
     bind(Pane, &[Chord::key("n").after_leader()], Compose, "start a shell or an agent"),
     bind(Pane, &[Chord::key("Tab").after_leader()], OpenReview, "review the pane's checkout"),
     bind(Pane, PASTE, Paste, "paste"),
@@ -712,6 +737,16 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (DockRight, None, "Dock the console on the right"),
     (DockBottom, None, "Dock the console at the bottom"),
     (OtherSide, Some(Pane), "Give the keys to the next pane on screen"),
+    (PreviousSide, Some(Pane), "Give the keys to the previous pane on screen"),
+    (FocusLeft, Some(Pane), "Give the keys to the pane on the left"),
+    (FocusRight, Some(Pane), "Give the keys to the pane on the right"),
+    (FocusUp, Some(Pane), "Give the keys to the pane above"),
+    (FocusDown, Some(Pane), "Give the keys to the pane below"),
+    (MovePaneLeft, Some(Pane), "Move the pane left, trading places with its neighbour"),
+    (MovePaneRight, Some(Pane), "Move the pane right, trading places with its neighbour"),
+    (MovePaneUp, Some(Pane), "Move the pane up, trading places with its neighbour"),
+    (MovePaneDown, Some(Pane), "Move the pane down, trading places with its neighbour"),
+    (CloseSplit, None, "Take the pane out of the grid of panes side by side"),
     (Compose, Some(Anywhere), "Start a shell or an agent…"),
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
     (Action::Settings, Some(Anywhere), "Open the settings"),
@@ -1294,6 +1329,14 @@ mod tests {
         for action in [LinkTicket, Action::Reconcile, TrackerMap] {
             assert!(commands().iter().any(|c| c.action == action && !c.chords.is_empty()), "{action:?} in the palette");
         }
+    }
+
+    #[test]
+    fn panes_side_by_side_are_focused_and_moved_after_the_leader() {
+        assert_eq!(in_pane(&page("O"), true), Some(PreviousSide));
+        assert_eq!(in_pane(&page("ArrowLeft"), true), Some(FocusLeft));
+        assert_eq!(in_pane(&PageKey { shift: true, ..page("ArrowDown") }, true), Some(MovePaneDown));
+        assert_eq!(in_pane(&page("ArrowLeft"), false), None, "an arrow is typed");
     }
 
     #[test]

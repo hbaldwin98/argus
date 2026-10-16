@@ -1008,8 +1008,17 @@ impl Session {
     }
 
     fn focus_towards(&mut self, dir: Dir) -> Vec<ClientMsg> {
-        self.shown.focus_towards(dir);
+        self.focus_in(dir);
         self.finish()
+    }
+
+    /// The keys go to the pane next to theirs in `dir`, or stay if none is.
+    fn focus_in(&mut self, dir: Dir) {
+        self.shown.focus_towards(dir);
+    }
+
+    fn move_in(&mut self, dir: Dir) {
+        self.shown.step_pane(dir);
     }
 
     fn step_row(&mut self, by: isize) -> Vec<ClientMsg> {
@@ -1091,6 +1100,25 @@ impl Session {
             Action::DockRight => self.move_panel(&Panel::Console, Dock::Right),
             Action::DockBottom => self.move_panel(&Panel::Console, Dock::Bottom),
             Action::OtherSide => self.other_side(),
+            Action::PreviousSide => {
+                self.shown.step_keys(-1);
+            }
+            Action::FocusLeft => self.focus_in(Dir::Left),
+            Action::FocusRight => self.focus_in(Dir::Right),
+            Action::FocusUp => self.focus_in(Dir::Up),
+            Action::FocusDown => self.focus_in(Dir::Down),
+            Action::MovePaneLeft => self.move_in(Dir::Left),
+            Action::MovePaneRight => self.move_in(Dir::Right),
+            Action::MovePaneUp => self.move_in(Dir::Up),
+            Action::MovePaneDown => self.move_in(Dir::Down),
+            Action::CloseSplit => {
+                let keys = self.shown.keys();
+                if matches!(keys, Side::Beside(_)) {
+                    self.shown.close(keys, &mut self.out);
+                } else {
+                    self.passing.push(Event::Notice { text: "the pane with the keys is not split beside another".into() });
+                }
+            }
             Action::OpenReview => {
                 if let Some(checkout) = self.view().checkout {
                     self.review_checkout(checkout);
@@ -2818,7 +2846,17 @@ impl Session {
             | Action::DockLeft
             | Action::DockRight
             | Action::DockBottom
-            | Action::OtherSide => self.run(action),
+            | Action::OtherSide
+            | Action::PreviousSide
+            | Action::FocusLeft
+            | Action::FocusRight
+            | Action::FocusUp
+            | Action::FocusDown
+            | Action::MovePaneLeft
+            | Action::MovePaneRight
+            | Action::MovePaneUp
+            | Action::MovePaneDown
+            | Action::CloseSplit => self.run(action),
             Action::Fill | Action::Close if self.on_screen().is_none() => {
                 self.passing.push(Event::Notice { text: "no pane is on screen".into() });
             }

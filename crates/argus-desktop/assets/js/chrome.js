@@ -267,6 +267,11 @@ function paneRow(checkout, pane) {
                     call('select', { pane: pane.id });
                 },
             },
+            {
+                label: 'Open beside',
+                hint: 'in the Workspace, as another pane in the grid',
+                run: () => call('open_beside', { pane: pane.id }),
+            },
         ])),
     }, el('button', {
         class: `pane${pane.on ? ' on' : ''}${picked ? ' picked' : ''}${pane.agent ? '' : ' sh'} ${pane.status}`,

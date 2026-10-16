@@ -44,6 +44,7 @@ pub const KEPT: &[Kept] = &[
     key("/"), key("\\"), key(","), key("["), key("]"),
     key("ArrowUp"), key("ArrowDown"), key("ArrowLeft"), key("ArrowRight"), key("Home"), key("End"),
     key("PageUp"), key("PageDown"), shift("PageUp"), shift("PageDown"),
+    shift("ArrowUp"), shift("ArrowDown"), shift("ArrowLeft"), shift("ArrowRight"),
     key("a"), key("b"), key("c"), key("d"), key("e"), key("f"), key("g"), key("h"), key("j"), key("k"),
     key("l"), key("m"), key("n"), key("o"), key("p"), key("r"), key("s"), key("v"), key("x"), key("y"),
     key("z"),

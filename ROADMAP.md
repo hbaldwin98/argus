@@ -169,9 +169,10 @@ set of blocks it draws: never markup, and never kept in the store.
 
 Remote hosts landed: the switcher's Connect to a host… reaches a daemon through `ssh … argus bridge`,
 names the host in the sidebar and in notifications, and refuses an editor that would open its own
-window on the remote machine.
+window on the remote machine. Several panes at once landed as a grid of terminals in the Workspace
+(see `DESKTOP.md`, "Panes side by side"); their sizes do not yet persist across restarts.
 
-Remaining: several panes at once; and packaging as
+Remaining: packaging as
 .app, .msi and AppImage. Landed for packaging: the desktop finds the `argus` beside it before PATH
 (what a GUI launch without a shell PATH needs), and `tauri.bundle.conf.json` lists the sidecars
 `argus`, `argusd` and `argus-hook`, read only by a bundle build. Still to do: icons (only
