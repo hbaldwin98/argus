@@ -294,6 +294,10 @@ impl Session {
         opening: Vec<ServerMsg>,
     ) -> Vec<ClientMsg> {
         self.status.connected(daemon, alarm);
+        // A page shows the last daemon's view; the next publishes its own, and
+        // nothing went that the person should be told of.
+        self.extension_views.set_page(None);
+        self.views.end_pop_out();
         // What another daemon published is not this one's; it sends its
         // own after its greeting, and the dialogs it put here it cancelled
         // when the connection went.
@@ -6324,6 +6328,29 @@ mod tests {
         assert_eq!(s.stages.now(), Stage::Extension);
         s.call(Call::ExtensionMode { panel: panel("containers"), page: false });
         assert_eq!(s.stages.now(), Stage::Checkouts, "not the views' page, which it took the place of");
+    }
+
+    #[test]
+    fn a_reconnect_closes_the_page_without_saying_its_view_went() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert_eq!(s.stages.now(), Stage::Extension);
+        s.events(0);
+        s.connecting(None);
+        s.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
+        assert_eq!(s.stages.now(), Stage::Checkouts);
+        assert!(!notices(&mut s).iter().any(|t| t.contains("no longer shown")), "the extension withdrew nothing");
+
+        agents_view(&mut s, 1);
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        assert_eq!(s.stages.now(), Stage::View);
+        s.events(0);
+        s.connecting(None);
+        s.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
+        assert_eq!(s.stages.now(), Stage::Checkouts);
+        assert!(!notices(&mut s).iter().any(|t| t.contains("was closed")), "the agent closed nothing");
     }
 
     #[test]
