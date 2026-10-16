@@ -8,14 +8,19 @@
 //! - `spawn_pane`: a blocking spawn, answered with `Created::Pane`.
 //! - `answered`/`answer_created`: answering a named request.
 //! - `reply_with`: a blocking read of one checkout.
-//! - `ReviewLane`: one review at a time, a newer one replacing an older
-//!   one per side.
+//! - `ReviewLane`: one review at a time, one place in that turn per
+//!   connection; an ask repeated while its twin waits joins it, and every
+//!   ask is answered.
 //! - a `Daemon` method that returns a closure: state taken under the lock
 //!   on the loop, the file I/O done off it.
 
 use super::*;
 use crate::state::FeaturePart;
+use crate::review_queue::ReviewAsk;
 use argus_protocol::{Created, ReviewBase};
+
+/// What one review generation comes to: the diff, or why it could not be read.
+pub(super) type Generated = Result<crate::diff::GeneratedReview, String>;
 
 /// What the loop does once a message is handled.
 #[derive(Debug, PartialEq, Eq)]
@@ -717,7 +722,7 @@ fn delete_branch(
 fn review(
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    reviews: &mut ReviewLane,
+    reviews: &mut ReviewLane<Generated>,
     request_id: u64,
     checkout: argus_protocol::CheckoutId,
     base: ReviewBase,
@@ -725,13 +730,15 @@ fn review(
 ) -> anyhow::Result<()> {
     let path = daemon.checkout_path(checkout)?;
     let out_tx = out_tx.clone();
+    let ask = ReviewAsk::new(checkout, base, commit.clone());
     let generate = move || match commit.as_deref() {
         Some(rev) => crate::diff::generate_commit(&path, rev),
         None => crate::diff::generate(&path, base),
-    };
-    reviews.submit(base, generate, move |generated| {
-        let message = match generated {
-            Ok(Ok(generated)) => ServerMsg::Review(argus_protocol::Review {
+    }
+    .map_err(|error| error.to_string());
+    reviews.submit(ask, generate, move |generated| {
+        let message = match generated.and_then(|generated| generated) {
+            Ok(generated) => ServerMsg::Review(argus_protocol::Review {
                 request_id,
                 checkout,
                 base: if generated.commit.is_some() {
@@ -742,15 +749,10 @@ fn review(
                 files: generated.files,
                 commit: generated.commit,
             }),
-            Ok(Err(error)) => ServerMsg::ReviewFailed {
+            Err(message) => ServerMsg::ReviewFailed {
                 request_id,
                 checkout,
-                message: error.to_string(),
-            },
-            Err(error) => ServerMsg::ReviewFailed {
-                request_id,
-                checkout,
-                message: error.to_string(),
+                message,
             },
         };
         let _ = out_tx.send(message);

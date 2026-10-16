@@ -257,7 +257,7 @@ struct Connection {
     /// for, so its requests have to be told apart from the other clients'.
     viewer: ViewerId,
     subs: Subscriptions,
-    reviews: ReviewLane,
+    reviews: ReviewLane<dispatch::Generated>,
     /// Set once the client asks to be told where the person is working.
     focus_watch: Option<FocusWatch>,
     /// Subscribed only when the client asks, so one that never does is

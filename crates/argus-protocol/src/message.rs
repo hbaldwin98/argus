@@ -152,6 +152,12 @@ pub enum ClientMsg {
     /// Ask for this checkout's uncommitted changes, for the review viewer
     /// (DESIGN.md §9 M4). A request rather than a subscription: a diff is
     /// expensive to compute and only interesting while it's on screen.
+    ///
+    /// Always answered under `request_id`, by a `ServerMsg::Review` or a
+    /// `ServerMsg::ReviewFailed`. One a connection asks again — the same
+    /// checkout, side and commit — while the first still waits for the
+    /// daemon's turn is answered by the same diff under both ids; any other
+    /// is read on its own, so asks for two commits never cancel each other.
     Review {
         request_id: u64,
         checkout: CheckoutId,

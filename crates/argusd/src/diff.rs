@@ -18,6 +18,7 @@ const MAX_DIFF_BYTES: i64 = 1024 * 1024;
 const BINARY_NOTE: &str = "binary file";
 const TOO_LARGE_NOTE: &str = "too large to display";
 
+#[derive(Clone)]
 pub struct GeneratedReview {
     pub files: Vec<FileDiff>,
     pub commit: Option<CommitInfo>,

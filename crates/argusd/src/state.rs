@@ -581,7 +581,7 @@ impl Daemon {
     }
 
     /// A client's place in the review queue, for as long as it holds it.
-    pub fn review_lane(&self) -> crate::review_queue::ReviewLane {
+    pub fn review_lane<R>(&self) -> crate::review_queue::ReviewLane<R> {
         self.reviews.lane()
     }
 

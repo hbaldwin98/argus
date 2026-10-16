@@ -382,7 +382,7 @@ to the type or its locking.
 | `state/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
-| `review_queue` | when a review's diff is generated: one at a time across the daemon, and only the newest of each side each client asked for |
+| `review_queue` | when a review's diff is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
 | `pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
@@ -1686,8 +1686,12 @@ are dropped. A daemon that names no blob offers no folds, so an older one is nev
 history's commit preview draws no folds; the review it opens into does.
 
 Every request has an id and the client accepts only the latest exact reply. Review capture is
-globally serialized, and a connection drops an older queued capture when a newer request replaces
-it.
+globally serialized, with each connection holding one place in that turn and its asks read in the
+order it made them, and every ask is answered under its own id, with the diff or with why it could
+not be read. One a connection asks again — the same checkout, side and commit — while the first
+still waits for its turn is answered by that one capture, which is read after both; any other is
+captured on its own, so two commits asked back to back are both answered and a history preview
+never waits on an ask that went nowhere.
 
 The client supports line and file navigation, single-file range marking, a changed-file fuzzy
 picker, refresh, and opening the selected line in an editor. A comment records the review side,

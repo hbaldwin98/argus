@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::conn::tests::Harness;
+use crate::review_queue::ReviewAsk;
 use argus_protocol::transcript::Conversation;
 use argus_protocol::{CheckoutId, PaneId, RepositoryId, ReviewBase};
 
@@ -512,19 +513,17 @@ async fn a_fold_is_read_from_the_blob_the_review_named() {
     ));
 }
 
-#[tokio::test]
-async fn a_new_review_replaces_an_older_queued_review() {
-    let dir = tempfile::tempdir().unwrap();
-    git2::Repository::init(dir.path()).unwrap();
-    std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
-    let mut h = Harness::new(dir.path());
-    let checkout = h.checkout();
-    // Another client's review holds the daemon's turn until released.
+/// Another client's review holding the daemon's turn until the sender is
+/// sent to or dropped.
+async fn hold_the_review_turn(
+    h: &Harness,
+    checkout: CheckoutId,
+) -> (crate::review_queue::ReviewLane<()>, std::sync::mpsc::Sender<()>) {
     let mut other = h.daemon.review_lane();
     let (release, held) = std::sync::mpsc::channel::<()>();
     let (started, mut generating) = tokio::sync::mpsc::unbounded_channel::<()>();
     other.submit(
-        ReviewBase::Unstaged,
+        ReviewAsk::new(checkout, ReviewBase::Unstaged, None),
         move || {
             let _ = started.send(());
             let _ = held.recv();
@@ -534,6 +533,17 @@ async fn a_new_review_replaces_an_older_queued_review() {
     tokio::time::timeout(std::time::Duration::from_secs(5), generating.recv())
         .await
         .expect("the other review takes the turn");
+    (other, release)
+}
+
+#[tokio::test]
+async fn a_review_asked_again_while_queued_is_answered_under_both_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    let (_other, release) = hold_the_review_turn(&h, checkout).await;
 
     for request_id in [1, 2] {
         h.send(ClientMsg::Review {
@@ -545,20 +555,75 @@ async fn a_new_review_replaces_an_older_queued_review() {
     }
     release.send(()).unwrap();
 
-    let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
-        .await
-        .expect("the newest diff should arrive")
-        .expect("channel open");
-    assert!(matches!(
-        reply,
-        ServerMsg::Review(argus_protocol::Review { request_id: 2, .. })
-    ));
+    let mut answered = Vec::new();
+    for _ in 0..2 {
+        let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+            .await
+            .expect("each ask should be answered")
+            .expect("channel open");
+        match reply {
+            ServerMsg::Review(review) => answered.push(review),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!((answered[0].request_id, answered[1].request_id), (1, 2));
+    assert_eq!(answered[0].files, answered[1].files, "one diff answers both");
     assert!(
         tokio::time::timeout(std::time::Duration::from_millis(100), h.rx.recv())
             .await
             .is_err(),
-        "the replaced review should not run"
+        "the joined ask is read once"
     );
+}
+
+/// The history's stuck preview: a cursor crossing two commits asked for
+/// both, and the second ask cancelled the first.
+#[tokio::test]
+async fn two_commits_diffs_asked_back_to_back_are_both_answered() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
+    let sig = git2::Signature::now("t", "t@example.com").unwrap();
+    let mut commits = Vec::new();
+    for text in ["one\n", "two\n"] {
+        std::fs::write(dir.path().join("a.txt"), text).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
+        let parents: Vec<&git2::Commit> = parent.iter().collect();
+        let oid = repo.commit(Some("HEAD"), &sig, &sig, text, &tree, &parents).unwrap();
+        commits.push(oid.to_string());
+    }
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    let (_other, release) = hold_the_review_turn(&h, checkout).await;
+
+    for (request_id, commit) in [(1, &commits[0]), (2, &commits[1])] {
+        h.send(ClientMsg::Review {
+            request_id,
+            checkout,
+            base: ReviewBase::Commit,
+            commit: Some(commit.clone()),
+        });
+    }
+    release.send(()).unwrap();
+
+    let mut answered = Vec::new();
+    for _ in 0..2 {
+        let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+            .await
+            .expect("each commit should be answered")
+            .expect("channel open");
+        match reply {
+            ServerMsg::Review(review) => {
+                answered.push((review.request_id, review.commit.expect("a commit diff").oid))
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    answered.sort();
+    assert_eq!(answered, [(1, commits[0].clone()), (2, commits[1].clone())]);
 }
 
 /// A review opens by asking for both of its sides at once; the second must
