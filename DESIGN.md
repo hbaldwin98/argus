@@ -303,6 +303,7 @@ live in this crate and a contract written twice drifts in silence.
 | `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
 | `pane_view` | a pane's view as a client holds it: the live grid, the view parked in its history, how the daemon's pane messages change them, and what a scroll gesture over the pane sends — the child's bytes, a request for history, or nothing |
 | `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
+| `ssh_bridge` | the ssh command that runs `argus bridge` on another machine, and what ssh's failure means |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
 | `code` | a checkout's code as the Code stage reads it: which version, a file's lines and the ones that version changed, what the file defines, and where text occurs across the checkout |

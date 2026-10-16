@@ -57,6 +57,7 @@ pub mod review_session;
 pub mod review_view;
 pub mod saved_view;
 pub mod sessions;
+pub mod ssh_bridge;
 pub mod standing;
 pub mod tasks;
 pub mod tracker_links;
