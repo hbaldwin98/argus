@@ -6,10 +6,10 @@
 // (`src/extension_views.rs`, `src/extension_keys.rs`), and `docks` puts a
 // docked view's element in its dock; a row changes only when its
 // extension publishes it again.
-import { DOCK_ICON, dockOf, moveItems } from './docks.js';
+import { dockMenuButton } from './docks.js';
 import { $, el, icon } from './dom.js';
 import { draggable } from './drag.js';
-import { closeLayer, openMenu } from './menu.js';
+import { closeLayer } from './menu.js';
 import { keycaps } from './keys.js';
 import { bindView, keyView, screen, viewScreen } from './screen.js';
 import { state } from './state.js';
@@ -84,25 +84,10 @@ function modeButton(view, page) {
         onclick: () => call('extension_mode', { panel: view.panel, page }),
     }, label, chord && [' ', keycaps(chord)]);
 }
-/** The dock menu, as the console's head has it. */
-function moveButton(view) {
-    const dock = dockOf(view.panel);
-    return el('button', {
-        class: 'icon',
-        type: 'button',
-        title: 'Move to another dock',
-        'aria-label': 'Move to another dock',
-        'aria-haspopup': 'menu',
-        onclick: (e) => {
-            const box = e.currentTarget.getBoundingClientRect();
-            openMenu(view.title, moveItems(view.panel, !view.page), { x: box.left, y: box.bottom + 4 });
-        },
-    }, icon(dock ? DOCK_ICON[dock] : 'down'));
-}
 function header(view) {
     // An ended console's actions are in the strip beside how it ended.
     const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
-    const head = el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), moveButton(view), !view.page &&
+    const head = el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), dockMenuButton(view.panel, view.title, !view.page), !view.page &&
         el('button', {
             class: 'icon',
             type: 'button',

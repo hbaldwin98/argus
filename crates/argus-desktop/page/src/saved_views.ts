@@ -12,11 +12,10 @@ import type { ViewCtx } from './viewctx.js';
 import { actionButton } from './actions.js';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
-import { DOCK_ICON, dockOf, moveItems } from './docks.js';
+import { dockMenuButton } from './docks.js';
 import { closesOnMiddle } from './middle.js';
 import { draggable } from './drag.js';
 import { $, el, icon } from './dom.js';
-import { openMenu } from './menu.js';
 import { savedCtx } from './saved_ctx.js';
 import { count, grouped, nested, type Nested } from './saved_logic.js';
 import { savedView } from './savedlink.js';
@@ -107,21 +106,7 @@ function panelHead(p: SavedPanel): HTMLElement {
     el('span', { class: 'ttl', title }, title),
     p.columns.length > 1 && el('span', { class: 'meta' }, `${p.columns.length} columns`),
     el('span', { class: 'grow' }),
-    el(
-      'button',
-      {
-        class: 'icon',
-        type: 'button',
-        title: 'Move to another dock',
-        'aria-label': 'Move to another dock',
-        'aria-haspopup': 'menu',
-        onclick: (e: MouseEvent) => {
-          const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          openMenu('Dock the view', moveItems(p.panel, true), { x: box.left, y: box.bottom + 4 });
-        },
-      },
-      icon(DOCK_ICON[dockOf(p.panel) ?? 'right']),
-    ),
+    dockMenuButton(p.panel, 'Dock the view', true),
     el(
       'button',
       {

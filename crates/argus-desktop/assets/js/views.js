@@ -6,10 +6,9 @@
 import { actionButton } from './actions.js';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
-import { DOCK_ICON, dockOf, moveItems } from './docks.js';
+import { dockMenuButton } from './docks.js';
 import { draggable } from './drag.js';
 import { $, el, icon } from './dom.js';
-import { openMenu } from './menu.js';
 import { closesOnMiddle } from './middle.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -82,17 +81,7 @@ function tabs(views, open) {
             'aria-label': `Close ${v.view.title}`,
             onclick: close,
         }, icon('close'))), close);
-    }), el('span', { class: 'grow' }), el('button', {
-        class: 'icon',
-        type: 'button',
-        title: 'Move to another dock',
-        'aria-label': 'Move to another dock',
-        'aria-haspopup': 'menu',
-        onclick: (e) => {
-            const box = e.currentTarget.getBoundingClientRect();
-            openMenu('Dock the views', moveItems('views', true), { x: box.left, y: box.bottom + 4 });
-        },
-    }, icon(DOCK_ICON[dockOf('views') ?? 'right'])), el('button', {
+    }), el('span', { class: 'grow' }), dockMenuButton('views', 'Dock the views', true), el('button', {
         class: 'icon',
         type: 'button',
         'aria-label': 'Hide the views',

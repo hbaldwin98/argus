@@ -167,15 +167,15 @@ comes back where it was put, and an extension's view gone with its extension fin
 when it comes back; an extension's view may instead be a page on the stage, which the console and
 the views never are. A dock shows one of the panels in it that exist now, is open or closed, and is
 as wide or tall as its sash left it; holding more than one, it draws a tab per panel over them, a
-tab's right-click offering the other docks. Each panel's own header has the same dock menu; what a
-panel can do there — float, take the stage, close for good — is the docks' to say (`PresentPanel`),
-and the page reads it from `panels.ts`, never from the panel's name. A panel is dragged where it
-goes (`drag.ts`): its dock tab, its header, or an extension's view's row in the sidebar picked up,
-the place it would land shown under the pointer — an edge of the stage for that dock, the stage's
-foot for the bottom one, the rest for the stage itself where the docks say the panel takes it (the
-Console stage, an extension's page) — and the same move the menus send reported when it is let go
-(`DockGesture::Stage` for the stage); Escape puts it back, and a press that never travels stays a
-click. So
+tab's right-click offering the other docks. Each panel's own header has the same dock menu, drawn by
+one button (`docks.ts`'s `dockMenuButton`); what a panel can do there — float, take the stage, close
+for good — is the docks' to say (`PresentPanel`), and the page reads it from `panels.ts`, never from
+the panel's name. A panel is dragged where it goes (`drag.ts`): its dock tab, its header, or an
+extension's view's row in the sidebar picked up, the place it would land shown under the pointer —
+an edge of the stage for that dock, the stage's foot for the bottom one, the rest for the stage
+itself where the docks say the panel takes it (the Console stage, an extension's page) — and the
+same move the menus send reported when it is let go (`DockGesture::Stage` for the stage); Escape
+puts it back, and a press that never travels stays a click. So
 several panels are on screen at once, one per dock — a console on the left, the agents' views on
 the right, an extension's table at the bottom — with only the keys moving between them. The Console
 stage and fullscreen take the console out of its dock without moving it, and leaving them puts it

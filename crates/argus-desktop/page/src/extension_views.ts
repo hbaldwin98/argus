@@ -13,10 +13,10 @@ import type { ExtTableAction } from './bindings/ExtTableAction';
 import type { ExtTableConsole } from './bindings/ExtTableConsole';
 import type { Panel } from './bindings/Panel';
 import type { Value } from './bindings/Value';
-import { DOCK_ICON, dockOf, moveItems } from './docks.js';
+import { dockMenuButton } from './docks.js';
 import { $, el, icon, type IconName } from './dom.js';
 import { draggable } from './drag.js';
-import { closeLayer, openMenu } from './menu.js';
+import { closeLayer } from './menu.js';
 import { keycaps } from './keys.js';
 import { bindView, keyView, type Screen, screen, viewScreen } from './screen.js';
 import { state } from './state.js';
@@ -132,26 +132,6 @@ function modeButton(view: ExtTable, page: boolean): HTMLElement {
   );
 }
 
-/** The dock menu, as the console's head has it. */
-function moveButton(view: ExtTable): HTMLElement {
-  const dock = dockOf(view.panel);
-  return el(
-    'button',
-    {
-      class: 'icon',
-      type: 'button',
-      title: 'Move to another dock',
-      'aria-label': 'Move to another dock',
-      'aria-haspopup': 'menu',
-      onclick: (e: MouseEvent) => {
-        const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        openMenu(view.title, moveItems(view.panel, !view.page), { x: box.left, y: box.bottom + 4 });
-      },
-    },
-    icon(dock ? DOCK_ICON[dock] : 'down'),
-  );
-}
-
 function header(view: ExtTable): HTMLElement {
   // An ended console's actions are in the strip beside how it ended.
   const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
@@ -162,7 +142,7 @@ function header(view: ExtTable): HTMLElement {
       'div',
       { class: 'vpanel-title' },
       el('span', { class: 'type-heading grow' }, view.title),
-      moveButton(view),
+      dockMenuButton(view.panel, view.title, !view.page),
       !view.page &&
         el(
           'button',

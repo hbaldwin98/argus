@@ -3,15 +3,15 @@
 // which dock holds each panel, which it shows and how big it is
 // (`src/docks.rs`); this puts each panel's element where that says — its
 // dock, the stage, a dialog (`floats`), or parked out of sight — draws a dock's tabs while it
-// holds more than one, and reports a tab picked, closed, a panel moved or
-// a sash let go.
+// holds more than one, and the dock menu every panel's head opens, and
+// reports a tab picked, closed, a panel moved or a sash let go.
 import { $, el, icon } from './dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
 import { extensionElement, extensionOnStage } from './extension_views.js';
 import { drawFloats } from './floats.js';
 import { savedElement } from './saved_views.js';
-import { contextMenu } from './menu.js';
+import { contextMenu, openMenu } from './menu.js';
 import { closesOnMiddle } from './middle.js';
 import { panelOf } from './panels.js';
 import { state } from './state.js';
@@ -59,6 +59,25 @@ export function moveItems(panel, docked) {
             disabled: floating && 'here',
         },
     ];
+}
+/** A panel head's "Move to another dock" button, opening the dock menu,
+ *  titled `label`, under itself. Its icon is the dock the panel sits in
+ *  while `docked`, and a chevron while it sits in none on screen. A head
+ *  with a Dock button of its own, which already shows that dock, asks for
+ *  the `chevron` always, so one icon never means two buttons there. */
+export function dockMenuButton(panel, label, docked, look = 'dock') {
+    const own = docked && look === 'dock' ? dockOf(panel) : null;
+    return el('button', {
+        class: 'icon',
+        type: 'button',
+        title: 'Move to another dock',
+        'aria-label': 'Move to another dock',
+        'aria-haspopup': 'menu',
+        onclick: (e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            openMenu(label, moveItems(panel, docked), { x: box.left, y: box.bottom + 4 });
+        },
+    }, icon(own ? DOCK_ICON[own] : 'down'));
 }
 /** The panel's element on screen in a dock, or `null` while it is on the
  *  stage instead: the console as the Console stage or fullscreen, an

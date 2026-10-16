@@ -8,10 +8,10 @@
 
 import type { ConsoleGesture } from './bindings/ConsoleGesture';
 import type { ConsoleTab } from './bindings/ConsoleTab';
-import { DOCK_ICON, dockOf, dockWords, drawDocks, moveItems } from './docks.js';
+import { DOCK_ICON, dockMenuButton, dockOf, dockWords, drawDocks } from './docks.js';
 import { $, el, icon } from './dom.js';
 import { chordsFor, presses } from './keys.js';
-import { contextMenu, type MenuItem, openMenu } from './menu.js';
+import { contextMenu, type MenuItem } from './menu.js';
 import { closesOnMiddle } from './middle.js';
 import { renameDialog } from './rename.js';
 import {
@@ -176,23 +176,7 @@ function drawHead(): void {
           },
           icon(DOCK_ICON[dock]),
         ),
-    el(
-      'button',
-      {
-        class: 'icon',
-        title: 'Move to another dock',
-        'aria-label': 'Move to another dock',
-        'aria-haspopup': 'menu',
-        onclick: (e: MouseEvent) => {
-          const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          openMenu('Dock the console', moveItems('console', docked), {
-            x: box.left,
-            y: box.bottom + 4,
-          });
-        },
-      },
-      icon('down'),
-    ),
+    dockMenuButton('console', 'Dock the console', docked, 'chevron'),
     el(
       'button',
       {
