@@ -47,6 +47,9 @@ pub(super) struct Vt {
     /// nothing of the kind, so it is read off the history growing — which
     /// the cap would hide, hence the headroom.
     screen_top: u64,
+    /// Every byte fed, for a test that needs to say what a console really sent.
+    #[cfg(test)]
+    pub(super) raw: Vec<u8>,
 }
 
 /// What a child asked of its terminal beyond drawing, held until the pump
@@ -114,10 +117,14 @@ impl Vt {
             requests,
             scrollback,
             screen_top: 0,
+            #[cfg(test)]
+            raw: Vec::new(),
         }
     }
 
     pub(super) fn process(&mut self, bytes: &[u8]) {
+        #[cfg(test)]
+        self.raw.extend_from_slice(bytes);
         self.end_overdue_sync();
         // A byte scrolls at most one line, so no slice of this size can
         // outgrow the headroom the count relies on.

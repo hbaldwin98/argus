@@ -1517,3 +1517,38 @@ fn paste_is_delimited_only_when_the_child_requested_it() {
         b"\x1b[200~one\ntwo\x1b[201~"
     );
 }
+
+/// Shows what ConPTY itself sends around a resize to a child that sits on
+/// the alternate screen, and that the pane stays there through it. ConPTY
+/// forwards `?1049h` but swallows the mouse modes (`?1000`-`?1007`), so the
+/// pane never learns of a child's mouse request; nothing here resets it.
+#[cfg(windows)]
+#[tokio::test]
+async fn a_child_on_the_alternate_screen_stays_there_through_resizes() {
+    let script = "$e=[char]27; [Console]::Out.Write(\"$e[?1049h$e[?1000h$e[?1002h$e[?1003h$e[?1006h$e[?1007h$e[?2004h$e[?2026h$e[?2026l$e[2J$e[Halt-marker\"); Start-Sleep 30";
+    let pane = PaneRuntime::spawn(
+        PaneId(77),
+        &std::env::temp_dir(),
+        Spawn::Program {
+            program: "powershell.exe".to_string(),
+            args: vec!["-NoProfile".to_string(), "-Command".to_string(), script.to_string()],
+            env: Vec::new(),
+            resource_policy: ResourcePolicy::Unrestricted,
+        },
+        |_| {},
+    )
+    .unwrap();
+    wait_for(&pane, |g| grid_contains(g, "alt-marker")).await;
+    let before = pane.vt.lock().unwrap().raw.len();
+    for (rows, cols) in [(30, 100), (20, 70), (40, 120), (24, 80)] {
+        pane.resize(rows, cols).unwrap();
+        tokio::time::sleep(Duration::from_millis(700)).await;
+    }
+    let vt = pane.vt.lock().unwrap();
+    eprintln!("startup bytes: {:?}", String::from_utf8_lossy(&vt.raw[..before]));
+    eprintln!("after resize bytes: {:?}", String::from_utf8_lossy(&vt.raw[before..]));
+    let alternate = vt.alternate_screen();
+    drop(vt);
+    let _ = pane.kill();
+    assert!(alternate, "the pane left the alternate screen");
+}
