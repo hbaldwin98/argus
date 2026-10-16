@@ -9,9 +9,8 @@
 //! go through, `sync` for the polls and
 //! watchers that keep the tree level with the disk, `panel` for the rows
 //! the user adds and removes, `workspaces` for which scope is open,
-//! `hook_server` for the
-//! loopback receiver, `extensions` for what extensions publish and what
-//! goes back to them, `session` for what survives a restart, `sessions`
+//! `extensions` for what extensions publish and what goes back to them,
+//! `session` for what survives a restart, `sessions`
 //! for the agent sessions a repository's harnesses kept, `inbox` for
 //! the way what Argus says reaches an agent, and `tree` for finding your
 //! way around.
@@ -52,7 +51,6 @@ mod view_timers;
 mod views;
 mod git_ops;
 mod git_reads;
-mod hook_server;
 mod inbox;
 mod panel;
 mod panes;
@@ -65,11 +63,12 @@ mod viewers;
 mod workspaces;
 
 pub use board_parts::FeaturePart;
+pub(crate) use features::Filing;
 pub use extensions::ExtensionNews;
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;
-use hook_server::{gen_token, valid_session_id};
+use crate::hook_server::{gen_token, valid_session_id};
 use session::{agent_args, first_message, nothing_to_resume, Recorded, Resumed};
 use tree::*;
 
@@ -587,6 +586,22 @@ impl Daemon {
 
     fn broadcast_workspaces(&self) {
         let _ = self.workspaces_tx.send(self.workspaces());
+    }
+
+    /// Binds the loopback pane API hook commands POST to (see
+    /// `hooks::install_claude_hooks`) and starts serving it in the
+    /// background. The bind itself is synchronous so `hook_port` is set
+    /// before the daemon's client socket starts accepting — no window where
+    /// a client could spawn an agent whose hooks point nowhere.
+    pub fn start_hook_server(self: &Arc<Self>) -> anyhow::Result<()> {
+        let port = crate::hook_server::start(self.clone())?;
+        self.hook_port.store(port, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// The bearer token every pane-API request has to carry.
+    pub(crate) fn hook_token(&self) -> &str {
+        &self.hook_token
     }
 }
 

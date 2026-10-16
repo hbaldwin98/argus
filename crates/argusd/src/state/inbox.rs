@@ -44,7 +44,7 @@ impl Daemon {
     /// Opens the pane's inbox for its own agent: the generation that names
     /// this connection, and where its items arrive. `None` for a pane that
     /// is gone or a report from an agent the pane does not belong to.
-    pub(super) fn open_inbox(
+    pub(crate) fn open_inbox(
         &self,
         pane: PaneId,
         reporter: Option<&str>,
@@ -71,7 +71,7 @@ impl Daemon {
 
     /// Closes the inbox a connection opened, unless a newer one has taken
     /// its place.
-    pub(super) fn close_inbox(&self, pane: PaneId, generation: u64) {
+    pub(crate) fn close_inbox(&self, pane: PaneId, generation: u64) {
         let closed = {
             let mut inner = self.inner.lock().unwrap();
             match find_pane(&mut inner.projects, pane) {

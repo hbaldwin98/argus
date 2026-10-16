@@ -9,7 +9,7 @@ use argus_protocol::{AgentLaunch, AgentLaunched, LaunchPlace};
 use super::*;
 
 impl Daemon {
-    pub(super) async fn launch_agent_for_agent(
+    pub(crate) async fn launch_agent_for_agent(
         self: &Arc<Self>,
         pane: PaneId,
         launch: AgentLaunch,

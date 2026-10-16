@@ -125,7 +125,7 @@ impl Daemon {
     }
 
     /// Whether `bearer` is the token `name` was admitted with.
-    pub(super) fn extension_authorized(&self, name: &str, bearer: Option<&str>) -> bool {
+    pub(crate) fn extension_authorized(&self, name: &str, bearer: Option<&str>) -> bool {
         let registry = self.extensions.lock().unwrap();
         match (registry.extensions.get(name), bearer) {
             (Some(extension), Some(bearer)) => extension.token == bearer,
@@ -322,7 +322,7 @@ impl Daemon {
 
     /// Opens `name`'s event stream: the generation naming this connection,
     /// and where its events arrive.
-    pub(super) fn open_extension_events(&self, name: &str) -> Option<(u64, UnboundedReceiver<ExtEvent>)> {
+    pub(crate) fn open_extension_events(&self, name: &str) -> Option<(u64, UnboundedReceiver<ExtEvent>)> {
         let mut registry = self.extensions.lock().unwrap();
         let generation = registry.id();
         let extension = registry.extensions.get_mut(name)?;
@@ -340,7 +340,7 @@ impl Daemon {
 
     /// Closes the stream a connection opened, unless a newer one replaced
     /// it.
-    pub(super) fn close_extension_events(&self, name: &str, generation: u64) {
+    pub(crate) fn close_extension_events(&self, name: &str, generation: u64) {
         let mut registry = self.extensions.lock().unwrap();
         if let Some(extension) = registry.extensions.get_mut(name) {
             if extension.events.as_ref().is_some_and(|(g, _)| *g == generation) {

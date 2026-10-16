@@ -337,7 +337,7 @@ impl Daemon {
     /// `background` is whether the reporter left work running behind its
     /// turn. Only the pane's own agent can say so: what a child leaves
     /// behind is not the pane's.
-    pub(super) fn report_pane_status(
+    pub(crate) fn report_pane_status(
         &self,
         pane: PaneId,
         reporter: Option<&str>,
@@ -392,7 +392,7 @@ impl Daemon {
     /// from a prompt-submit event so a column of agents is not four rows
     /// all called "claude"; the agent can still refine it with
     /// `argus-hook title`.
-    pub(super) fn report_pane_title(&self, pane: PaneId, reporter: Option<&str>, title: &str) {
+    pub(crate) fn report_pane_title(&self, pane: PaneId, reporter: Option<&str>, title: &str) {
         let title = clean_title(title);
         if title.is_empty() {
             return;
@@ -486,7 +486,7 @@ impl Daemon {
     /// identity the row resumes from. Owner, status and the claim are read
     /// and written in one hold of the locks: decided apart, the parent could
     /// start a turn between the check and the write and lose its row.
-    pub(super) fn set_pane_session_id(&self, pane: PaneId, raw: &str) {
+    pub(crate) fn set_pane_session_id(&self, pane: PaneId, raw: &str) {
         let Some(session_id) = valid_session_id(raw) else {
             return;
         };

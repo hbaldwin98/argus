@@ -20,7 +20,7 @@ impl Daemon {
     /// A CLI started inside the pane is not its owner, and its ask is
     /// dropped rather than refused: the row follows the agent Argus started
     /// in it, and the child has nothing to correct.
-    pub(super) fn move_agent_into(
+    pub(crate) fn move_agent_into(
         &self,
         pane: PaneId,
         reporter: Option<&str>,
@@ -46,7 +46,7 @@ impl Daemon {
     /// it by hand is not overruled by an agent still sitting where it was.
     /// Only the agent's own repository counts: a turn that ends after
     /// reading another repository has not moved there.
-    pub(super) fn follow_status_report(
+    pub(crate) fn follow_status_report(
         &self,
         pane: PaneId,
         reporter: Option<&str>,

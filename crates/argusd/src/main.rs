@@ -19,6 +19,7 @@ mod gitignore;
 mod grammar;
 mod harness;
 mod highlight;
+mod hook_server;
 mod logging;
 mod pastes;
 mod paths;

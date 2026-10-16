@@ -400,12 +400,6 @@ fn every_built_in_template_gets_a_harness_that_can_report() {
 }
 
 #[test]
-fn gen_token_is_not_a_fixed_string() {
-    assert_eq!(gen_token().len(), 32);
-    assert_ne!(gen_token(), gen_token());
-}
-
-#[test]
 fn reconciling_a_real_repo_does_not_duplicate_the_primary_checkout() {
     // The listing and the configured path are produced by different
     // things — libgit2's workdir (canonicalized, trailing separator,

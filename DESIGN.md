@@ -369,7 +369,6 @@ to the type or its locking.
 | `state/sync` | the polls and watchers that keep the tree level with the disk |
 | `state/panel` | the rows the user adds and removes by hand |
 | `state/workspaces` | which scope is open, daemon-wide |
-| `state/hook_server` | the loopback receiver agents report to and extensions publish through |
 | `state/extensions` | what the running extensions publish — views, commands, open dialogs — which client a dialog is put to, and what the person does with them on its way back |
 | `state/extension_consoles` | the consoles extensions' views run: started when a view is published, kept while it asks for the same run, ended with the view or the extension, and their ending recorded on the view |
 | `state/extension_host` | running the configured extensions: each started with its own URL and token, started again when it exits, stopped with the daemon |
@@ -388,6 +387,8 @@ to the type or its locking.
 | `state/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
+| `hook_server` | the loopback pane API: which daemon call each agent's or extension's request reaches, behind its token |
+| `hook_server/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
 | `review_queue` | when a review's diff is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
 | `pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |

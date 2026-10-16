@@ -18,17 +18,6 @@ fn a_title_from_a_model_is_flattened_and_cut_to_fit_a_row() {
     assert_eq!(clean_title("   "), "");
 }
 
-#[test]
-fn session_ids_are_validated_without_restricting_cli_specific_syntax() {
-    assert_eq!(
-        valid_session_id("  thread/abc:123  ").as_deref(),
-        Some("thread/abc:123")
-    );
-    assert!(valid_session_id("").is_none());
-    assert!(valid_session_id("bad\nid").is_none());
-    assert!(valid_session_id(&"x".repeat(513)).is_none());
-}
-
 /// A daemon holding one live agent pane, and that pane's id.
 async fn daemon_with_an_agent(dir: &std::path::Path) -> (ScriptedDaemon, PaneId) {
     let d = daemon_with_fake_claude(dir);
