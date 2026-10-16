@@ -3,7 +3,8 @@
 //! floats over the stage as a dialog, where and how big, in what order;
 //! which tab each dock shows, whether each dock is open, and how big;
 //! whether that changed since `desktop.json` kept it, and what the page
-//! last heard of it.
+//! last heard of it — each panel that exists told with what it can do
+//! there, so the page never reads that from its name.
 //!
 //! A panel the person placed stays placed whether or not it shows, or even
 //! exists: hidden and shown again it comes back where it was put, and an
@@ -112,6 +113,40 @@ impl Panel {
     /// console's terminal and the panels with a home stay docked.
     fn floats(&self) -> bool {
         matches!(self, Panel::Saved(_))
+    }
+
+    fn kind(&self) -> PanelKind {
+        match self {
+            Panel::Console => PanelKind::Console,
+            Panel::Views => PanelKind::Views,
+            Panel::Extension(_) => PanelKind::Extension,
+            Panel::Saved(_) => PanelKind::Saved,
+        }
+    }
+
+    /// Whether a drop on the stage takes the panel there. Every panel with
+    /// a page does; so does the console, whose stage is the Console stage
+    /// rather than a page, so it is never one of `staged`. No `_` arm, so a
+    /// new kind of panel is decided here rather than defaulted.
+    fn stages(&self) -> bool {
+        match self {
+            Panel::Console | Panel::Extension(_) => true,
+            Panel::Views | Panel::Saved(_) => false,
+        }
+    }
+
+    /// Whether its close takes it out for good: a saved view's panel goes
+    /// with its columns. The console, the views and an extension's view
+    /// are there while what they show is.
+    fn closes(&self) -> bool {
+        match self {
+            Panel::Saved(_) => true,
+            Panel::Console | Panel::Views | Panel::Extension(_) => false,
+        }
+    }
+
+    fn told(&self) -> PresentPanel {
+        PresentPanel { panel: self.clone(), kind: self.kind(), floats: self.floats(), stage: self.stages(), closes: self.closes() }
     }
 }
 
@@ -305,6 +340,36 @@ pub struct DockTab {
     pub title: String,
 }
 
+/// Which of the page's modules draws a panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum PanelKind {
+    Console,
+    Views,
+    Extension,
+    Saved,
+}
+
+/// A panel that exists now, as the page is told of it: which module draws
+/// it and what the person can do with it wherever it sits. The page offers
+/// only these, and Rust does nothing for the rest anyway.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PresentPanel {
+    pub panel: Panel,
+    pub kind: PanelKind,
+    /// Its dock menu offers to float it as a dialog.
+    pub floats: bool,
+    /// Dropped on the stage it goes there: an extension's view as its
+    /// page, the console as the Console stage.
+    pub stage: bool,
+    /// Its tab's close takes it out for good; a panel without one is put
+    /// away only by its dock's hide.
+    pub closes: bool,
+}
+
 /// A dock as the page draws it: only the panels that exist now.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
@@ -335,6 +400,9 @@ pub struct DocksPage {
     pub bottom: DockPage,
     /// The dialogs of the panels that exist now, back to front.
     pub floating: Vec<FloatPage>,
+    /// Every panel that exists now, docked, floating, a page or not yet
+    /// placed: a drag from the sidebar names one no dock lists.
+    pub present: Vec<PresentPanel>,
 }
 
 pub struct Docks {
@@ -592,7 +660,8 @@ impl Docks {
             .filter(|f| self.present.contains(&f.panel))
             .map(|f| FloatPage { panel: f.panel.clone(), title: title(&f.panel), bounds: f.bounds })
             .collect();
-        DocksPage { left: dock(Dock::Left), right: dock(Dock::Right), bottom: dock(Dock::Bottom), floating }
+        let present = self.present.iter().map(Panel::told).collect();
+        DocksPage { left: dock(Dock::Left), right: dock(Dock::Right), bottom: dock(Dock::Bottom), floating, present }
     }
 
     fn change(&mut self, f: impl FnOnce(&mut DocksLayout)) {
@@ -800,5 +869,92 @@ mod tests {
         assert_eq!(serde_json::from_str::<DocksLayout>("{}").unwrap(), DocksLayout::default());
         assert!(serde_json::from_str::<Panel>(r#""extension:docker""#).is_err(), "a view needs its name");
         assert_eq!(images().extension_view(), Some(("docker", "images")));
+    }
+
+    fn abilities(page: &DocksPage) -> Vec<(Panel, PanelKind, bool, bool, bool)> {
+        page.present.iter().map(|p| (p.panel.clone(), p.kind, p.floats, p.stage, p.closes)).collect()
+    }
+
+    #[test]
+    fn every_panel_that_exists_is_told_with_what_it_can_do() {
+        let mut docks = docks();
+        docks.set_present(vec![Panel::Console, Panel::Views, images(), plan()]);
+        assert_eq!(
+            abilities(&docks.page(|p| p.to_string())),
+            [
+                (Panel::Console, PanelKind::Console, false, true, false),
+                (Panel::Views, PanelKind::Views, false, false, false),
+                (images(), PanelKind::Extension, false, true, false),
+                (plan(), PanelKind::Saved, true, false, true),
+            ]
+        );
+        docks.set_present(vec![Panel::Console]);
+        assert_eq!(abilities(&docks.page(|p| p.to_string())), [(Panel::Console, PanelKind::Console, false, true, false)]);
+    }
+
+    #[test]
+    fn a_panel_no_dock_lists_is_still_told_what_it_can_do() {
+        let mut docks = docks();
+        let staged = Panel::extension("docker", "containers");
+        docks.set_present(vec![Panel::Console, images(), staged.clone()]);
+        docks.place(&staged, Place::Stage);
+        assert_eq!(docks.place_of(&images()), None, "never placed");
+        assert_eq!(docks.place_of(&staged), Some(Place::Stage));
+        let page = docks.page(|p| p.to_string());
+        let mut tabs = [&page.left, &page.right, &page.bottom].into_iter().flat_map(|d| &d.tabs);
+        assert!(!tabs.any(|t| t.panel == images() || t.panel == staged), "in no dock");
+        assert!(page.floating.is_empty(), "and no dialog");
+        let told = page.present.iter().map(|p| &p.panel).collect::<Vec<_>>();
+        assert!(told.contains(&&images()) && told.contains(&&staged), "a sidebar drag of either finds what it can do");
+    }
+
+    /// The page draws nothing for a panel it was not told of, so a panel
+    /// shown and missing here would be a dock left silently empty.
+    #[test]
+    fn every_panel_a_dock_or_dialog_shows_is_among_those_told() {
+        let mut docks = docks();
+        let other = Panel::Saved("other".into());
+        docks.set_present(vec![Panel::Console, Panel::Views, images(), plan(), other.clone()]);
+        docks.place(&images(), Place::Dock(Dock::Left));
+        docks.show(&images());
+        docks.move_to(&Panel::Console, Dock::Right);
+        docks.place(&other, Place::Dock(Dock::Bottom));
+        docks.show(&other);
+        docks.float(&plan());
+        let page = docks.page(|p| p.to_string());
+        let told = page.present.iter().map(|p| &p.panel).collect::<Vec<_>>();
+        let docked = [&page.left, &page.right, &page.bottom].into_iter().flat_map(|d| d.tabs.iter().map(|t| &t.panel).chain(&d.shown));
+        let shown = docked.chain(page.floating.iter().map(|f| &f.panel)).collect::<Vec<_>>();
+        assert_eq!(shown.len(), 8, "four tabs, three of them shown, and a dialog");
+        for panel in shown {
+            assert!(told.contains(&panel), "{panel} is drawn but not told");
+        }
+        let mut once = told.clone();
+        once.sort();
+        once.dedup();
+        assert_eq!(once.len(), told.len(), "each one told once");
+    }
+
+    #[test]
+    fn a_panel_floats_exactly_when_the_page_is_told_it_does() {
+        for panel in [Panel::Console, Panel::Views, images(), plan()] {
+            let mut docks = docks();
+            docks.set_present(vec![Panel::Console, Panel::Views, images(), plan()]);
+            docks.float(&panel);
+            assert_eq!(docks.place_of(&panel) == Some(Place::Float), panel.told().floats, "{panel} floats");
+            docks.stage(&panel);
+            if docks.place_of(&panel) == Some(Place::Stage) {
+                assert!(panel.told().stage, "{panel} has a page, so a drop on the stage takes it");
+            }
+        }
+    }
+
+    #[test]
+    fn a_panel_is_told_to_the_page_as_its_kind_and_abilities() {
+        assert_eq!(
+            serde_json::to_value(plan().told()).unwrap(),
+            serde_json::json!({"panel": "saved:release-plan", "kind": "saved", "floats": true, "stage": false, "closes": true})
+        );
+        assert_eq!(serde_json::to_value(PanelKind::Extension).unwrap(), "extension");
     }
 }
