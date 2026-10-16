@@ -12,7 +12,7 @@
 use argus_protocol::view_press::relay;
 use argus_protocol::view_requests;
 use argus_protocol::{
-    AgentView, PaneId, ServerMsg, ShownView, ViewChange, ViewPress, MAX_VIEWS_PER_PANE,
+    AgentView, PaneId, ShownView, ViewChange, ViewPress, MAX_VIEWS_PER_PANE,
 };
 use std::sync::Arc;
 
@@ -79,9 +79,13 @@ impl Views {
     }
 }
 
-/// What the daemon tells the connections watching views: a [`ServerMsg`]
-/// already, since each watcher is sent it as it is.
-pub(super) type ViewEvent = ServerMsg;
+/// What changed among the views agents have shown, for the connections
+/// watching them to say as they say it.
+#[derive(Debug, Clone)]
+pub enum ViewNews {
+    Shown(Box<ShownView>),
+    Closed { pane: PaneId, id: String },
+}
 
 impl Daemon {
     /// An agent's `view` request: shows the view, patches one, or closes one.
@@ -145,9 +149,9 @@ impl Daemon {
         // `watch_views` sees each change either in its replay or after it,
         // and never in the wrong order.
         if let Some(id) = views.show(shown.clone()) {
-            self.pushes.view(ServerMsg::ViewClosed { pane, id });
+            self.pushes.view(&views, ViewNews::Closed { pane, id });
         }
-        self.pushes.view(ServerMsg::ViewShown(Box::new(shown)));
+        self.pushes.view(&views, ViewNews::Shown(Box::new(shown)));
         views.timers.keep(pane, &id, every, |every| spawn_timer(self, pane, &id, every));
         Ok(())
     }
@@ -156,13 +160,13 @@ impl Daemon {
     pub fn close_view(&self, pane: PaneId, id: &str) {
         let mut views = self.agent_views.lock().unwrap();
         if views.close(pane, id) {
-            self.pushes.view(ServerMsg::ViewClosed { pane, id: id.to_string() });
+            self.pushes.view(&views, ViewNews::Closed { pane, id: id.to_string() });
         }
     }
 
     /// Everything a watcher is replayed, oldest first, and the receiver of
     /// what follows it.
-    pub fn watch_views(&self) -> (Vec<ShownView>, broadcast::Receiver<ViewEvent>) {
+    pub fn watch_views(&self) -> (Vec<ShownView>, broadcast::Receiver<ViewNews>) {
         let views = self.agent_views.lock().unwrap();
         (views.shown.clone(), self.pushes.subscribe_views())
     }
@@ -204,7 +208,7 @@ impl Daemon {
     pub(super) fn drop_views_of(&self, pane: PaneId) {
         let mut views = self.agent_views.lock().unwrap();
         for id in views.drop_pane(pane) {
-            self.pushes.view(ServerMsg::ViewClosed { pane, id });
+            self.pushes.view(&views, ViewNews::Closed { pane, id });
         }
     }
 }

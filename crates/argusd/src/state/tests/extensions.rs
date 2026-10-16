@@ -320,7 +320,7 @@ fn confirm(answers: Option<u64>) -> ExtDialog {
 fn put_to(news: &mut broadcast::Receiver<ExtensionNews>) -> (ViewerId, bool) {
     loop {
         match news.try_recv().expect("a dialog") {
-            ExtensionNews::Dialog { viewer, msg: ServerMsg::ExtensionDialog { prompted, .. } } => return (viewer, prompted),
+            ExtensionNews::Dialog { viewer, prompted, .. } => return (viewer, prompted),
             _ => continue,
         }
     }

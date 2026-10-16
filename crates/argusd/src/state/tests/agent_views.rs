@@ -1,7 +1,7 @@
 //! The views agents show: what the pane API accepts, refuses and holds,
 //! and who is told.
 
-use argus_protocol::{AgentView, ServerMsg, ViewChange, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES};
+use argus_protocol::{AgentView, ViewChange, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES};
 
 use super::*;
 
@@ -37,7 +37,7 @@ async fn a_shown_view_is_stamped_with_its_pane_and_the_link_its_subject_is() {
     let response = text(&post_agent_hook(&d, pane, Endpoint::View, &body).await);
     assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
 
-    let ServerMsg::ViewShown(shown) = rx.recv().await.unwrap() else {
+    let ViewNews::Shown(shown) = rx.recv().await.unwrap() else {
         panic!("expected the view");
     };
     assert_eq!(shown.pane, pane);
@@ -149,7 +149,7 @@ async fn closing_a_view_tells_watchers_and_closing_what_is_gone_is_no_error() {
 
     assert!(first.starts_with("HTTP/1.1 200") && again.starts_with("HTTP/1.1 200"));
     let closed = rx.recv().await.unwrap();
-    assert!(matches!(closed, ServerMsg::ViewClosed { pane: p, id } if p == pane && id == "a"));
+    assert!(matches!(closed, ViewNews::Closed { pane: p, id } if p == pane && id == "a"));
     assert!(rx.try_recv().is_err(), "the second close changed nothing");
     let _ = d.close_pane(pane);
 }
@@ -164,7 +164,7 @@ async fn showing_past_the_limit_closes_the_oldest_for_watchers() {
     }
     let mut closed = Vec::new();
     while let Ok(msg) = rx.try_recv() {
-        if let ServerMsg::ViewClosed { id, .. } = msg {
+        if let ViewNews::Closed { id, .. } = msg {
             closed.push(id);
         }
     }
@@ -184,7 +184,7 @@ async fn a_pane_that_is_closed_takes_its_views_with_it() {
     d.close_pane(pane).unwrap();
 
     let mut closed = Vec::new();
-    while let Ok(ServerMsg::ViewClosed { id, .. }) = rx.try_recv() {
+    while let Ok(ViewNews::Closed { id, .. }) = rx.try_recv() {
         closed.push(id);
     }
     assert_eq!(closed, ["a", "b"]);

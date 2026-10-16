@@ -10,12 +10,13 @@ use std::collections::VecDeque;
 use std::sync::Mutex as StdMutex;
 
 use argus_protocol::{
-    AgentTelemetry, DecisionBoard, DiagramList, PaneId, ProjectId, ProjectInfo, RepositoryId, ServerMsg,
-    TaskList, WorkspaceInfo,
+    AgentTelemetry, DecisionBoard, DiagramList, PaneId, ProjectId, ProjectInfo, RepositoryId, TaskList,
+    WorkspaceInfo,
 };
 use tokio::sync::broadcast;
 
-use super::views::ViewEvent;
+use super::saved_views::{self, SavedViewNews};
+use super::views::{self, ViewNews};
 use super::ExtensionNews;
 
 /// The 32 trees and 64 reports the two channels held before they were
@@ -98,8 +99,8 @@ pub struct Pushes {
     /// A tick whenever a client's view changes or goes, for the
     /// connections watching the focus to read it again.
     focus: broadcast::Sender<()>,
-    views: broadcast::Sender<ViewEvent>,
-    saved_views: broadcast::Sender<ServerMsg>,
+    views: broadcast::Sender<ViewNews>,
+    saved_views: broadcast::Sender<SavedViewNews>,
     extensions: broadcast::Sender<ExtensionNews>,
 }
 
@@ -153,15 +154,15 @@ impl Pushes {
         let _ = self.focus.send(());
     }
 
-    /// Sent under the views lock, so a watcher's replay and the changes
-    /// after it do not cross.
-    pub(super) fn view(&self, event: ViewEvent) {
-        let _ = self.views.send(event);
+    /// Sent under the views lock, whose guard `_held` is, so a watcher's
+    /// replay and the changes after it do not cross.
+    pub(super) fn view(&self, _held: &views::Views, news: ViewNews) {
+        let _ = self.views.send(news);
     }
 
     /// Sent under the saved-views lock, for the same reason.
-    pub(super) fn saved_view(&self, msg: ServerMsg) {
-        let _ = self.saved_views.send(msg);
+    pub(super) fn saved_view(&self, _held: &saved_views::Held, news: SavedViewNews) {
+        let _ = self.saved_views.send(news);
     }
 
     pub(super) fn extension(&self, news: ExtensionNews) {
@@ -206,12 +207,12 @@ impl Pushes {
     }
 
     /// Only under the views lock: see `Daemon::watch_views`.
-    pub(super) fn subscribe_views(&self) -> broadcast::Receiver<ViewEvent> {
+    pub(super) fn subscribe_views(&self) -> broadcast::Receiver<ViewNews> {
         self.views.subscribe()
     }
 
     /// Only under the saved-views lock: see `Daemon::watch_saved_views`.
-    pub(super) fn subscribe_saved_views(&self) -> broadcast::Receiver<ServerMsg> {
+    pub(super) fn subscribe_saved_views(&self) -> broadcast::Receiver<SavedViewNews> {
         self.saved_views.subscribe()
     }
 

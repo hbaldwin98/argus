@@ -16,7 +16,7 @@ use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::review_queue::ReviewLane;
-use crate::state::{BoardNews, BranchDeletion, Daemon, ExtensionNews, TreeNews, ViewerId};
+use crate::state::{BoardNews, BranchDeletion, Daemon, ExtensionNews, SavedViewNews, TreeNews, ViewNews, ViewerId};
 
 mod dispatch;
 
@@ -148,8 +148,8 @@ where
                 Ok(ExtensionNews::Notice { extension, text }) => {
                     let _ = out_tx.send(ServerMsg::ExtensionNotice { extension, text });
                 }
-                Ok(ExtensionNews::Dialog { viewer: to, msg }) if to == viewer => {
-                    let _ = out_tx.send(msg);
+                Ok(ExtensionNews::Dialog { viewer: to, extension, id, dialog, prompted }) if to == viewer => {
+                    let _ = out_tx.send(ServerMsg::ExtensionDialog { extension, id, dialog: *dialog, prompted });
                 }
                 Ok(ExtensionNews::Withdrawn { viewer: to, id }) if to == viewer => {
                     let _ = out_tx.send(ServerMsg::ExtensionDialogWithdrawn { id });
@@ -189,18 +189,24 @@ where
             // say, and the next change to it will.
             // A watcher that fell behind is sent the list whole, which
             // replaces what it held, so a removal it missed goes with it.
-            event = next_view_event(&mut conn.saved_views) => match event {
-                Ok(msg) => {
-                    let _ = out_tx.send(msg);
+            news = next_news(&mut conn.saved_views) => match news {
+                Ok(SavedViewNews::Changed(view)) => {
+                    let _ = out_tx.send(ServerMsg::SavedViewChanged(view));
+                }
+                Ok(SavedViewNews::Removed { id }) => {
+                    let _ = out_tx.send(ServerMsg::SavedViewRemoved { id });
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     conn.saved_views = Some(replay_saved_views(&daemon, &out_tx));
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
             },
-            event = next_view_event(&mut conn.agent_views) => match event {
-                Ok(msg) => {
-                    let _ = out_tx.send(msg);
+            news = next_news(&mut conn.agent_views) => match news {
+                Ok(ViewNews::Shown(view)) => {
+                    let _ = out_tx.send(ServerMsg::ViewShown(view));
+                }
+                Ok(ViewNews::Closed { pane, id }) => {
+                    let _ = out_tx.send(ServerMsg::ViewClosed { pane, id });
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     conn.agent_views = Some(replay_views(&daemon, &out_tx));
@@ -244,9 +250,9 @@ fn board_msg(board: BoardNews) -> ServerMsg {
 /// The next change to the views, or never for a connection that is not
 /// watching them. A `select!` branch's future is built whether or not its
 /// guard holds, so the absence has to be a future that does not finish.
-async fn next_view_event(
-    watch: &mut Option<broadcast::Receiver<ServerMsg>>,
-) -> Result<ServerMsg, broadcast::error::RecvError> {
+async fn next_news<N: Clone>(
+    watch: &mut Option<broadcast::Receiver<N>>,
+) -> Result<N, broadcast::error::RecvError> {
     match watch {
         Some(rx) => rx.recv().await,
         None => std::future::pending().await,
@@ -258,7 +264,7 @@ async fn next_view_event(
 fn replay_views(
     daemon: &Daemon,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> broadcast::Receiver<ServerMsg> {
+) -> broadcast::Receiver<ViewNews> {
     let (shown, rx) = daemon.watch_views();
     for view in shown {
         let _ = out_tx.send(ServerMsg::ViewShown(Box::new(view)));
@@ -271,7 +277,7 @@ fn replay_views(
 fn replay_saved_views(
     daemon: &Daemon,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> broadcast::Receiver<ServerMsg> {
+) -> broadcast::Receiver<SavedViewNews> {
     let (all, rx) = daemon.watch_saved_views();
     let _ = out_tx.send(ServerMsg::SavedViews(all));
     rx
@@ -296,9 +302,9 @@ struct Connection {
     focus_watch: Option<FocusWatch>,
     /// Subscribed only when the client asks, so one that never does is
     /// never sent a view.
-    agent_views: Option<broadcast::Receiver<ServerMsg>>,
+    agent_views: Option<broadcast::Receiver<ViewNews>>,
     /// The same for saved views, subscribed when the client asks.
-    saved_views: Option<broadcast::Receiver<ServerMsg>>,
+    saved_views: Option<broadcast::Receiver<SavedViewNews>>,
     /// What the client said it can take: nothing until it greets, and
     /// nothing for good from a client that never does.
     peer: Option<Hello>,

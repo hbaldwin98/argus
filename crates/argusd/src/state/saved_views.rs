@@ -27,7 +27,7 @@ use argus_protocol::view_press::relay;
 use argus_protocol::view_requests;
 use argus_protocol::{
     ArtifactScope, FeatureRef, PaneId, RepositoryId, SavedView, SavedViewChange, SavedViewEntry,
-    SavedViewRecord, SavedViewWrite, ServerMsg, ViewPress, ViewScope, WriteScope,
+    SavedViewRecord, SavedViewWrite, ViewPress, ViewScope, WriteScope,
 };
 use tokio::sync::broadcast;
 
@@ -136,11 +136,19 @@ fn wire(row: &Row, told: &Told) -> SavedView {
     }
 }
 
+/// What changed among the saved views, for the connections watching them
+/// to say as they say it.
+#[derive(Debug, Clone)]
+pub enum SavedViewNews {
+    Changed(Box<SavedView>),
+    Removed { id: String },
+}
+
 impl Daemon {
     /// The saved views as a client is replayed them, and the receiver of
     /// every change after. Told under the lock, as `watch_views` does, so
     /// the replay and what follows it do not cross.
-    pub fn watch_saved_views(&self) -> (Vec<SavedView>, broadcast::Receiver<ServerMsg>) {
+    pub fn watch_saved_views(&self) -> (Vec<SavedView>, broadcast::Receiver<SavedViewNews>) {
         self.push_saved_views();
         let held = self.saved_views.lock().unwrap();
         let all = held
@@ -181,16 +189,16 @@ impl Daemon {
         let gone: Vec<String> = held.told.keys().filter(|id| !current.contains_key(*id)).cloned().collect();
         for id in gone {
             held.told.remove(&id);
-            self.pushes.saved_view(ServerMsg::SavedViewRemoved { id });
+            self.pushes.saved_view(held, SavedViewNews::Removed { id });
         }
         for row in &held.rows {
             let Some(told) = current.remove(&row.stored.id) else { continue };
             if held.told.get(&row.stored.id) == Some(&told) {
                 continue;
             }
-            let msg = ServerMsg::SavedViewChanged(Box::new(wire(row, &told)));
+            let news = SavedViewNews::Changed(Box::new(wire(row, &told)));
             held.told.insert(row.stored.id.clone(), told);
-            self.pushes.saved_view(msg);
+            self.pushes.saved_view(held, news);
         }
     }
 

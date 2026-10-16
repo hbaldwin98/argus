@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use argus_protocol::{
-    CommitInfo, Endpoint, FeatureWrite, GitStatus, SavedView, SavedViewEntry, SavedViewRecord, ServerMsg,
+    CommitInfo, Endpoint, FeatureWrite, GitStatus, SavedView, SavedViewEntry, SavedViewRecord,
     ViewScope, ViewSource, WriteScope,
 };
 
@@ -51,9 +51,9 @@ fn board_of(d: &Daemon) -> String {
     d.board_key(std::path::Path::new(&path))
 }
 
-fn changed(msg: ServerMsg) -> SavedView {
-    match msg {
-        ServerMsg::SavedViewChanged(view) => *view,
+fn changed(news: SavedViewNews) -> SavedView {
+    match news {
+        SavedViewNews::Changed(view) => *view,
         other => panic!("expected a saved view, got {other:?}"),
     }
 }
@@ -250,7 +250,7 @@ async fn deleting_tells_the_watchers_and_forgets_the_view() {
     let response = text(&post(&d, pane, &change("delete", "deps")).await);
 
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
-    assert!(matches!(rx.recv().await.unwrap(), ServerMsg::SavedViewRemoved { id } if id == "deps"));
+    assert!(matches!(rx.recv().await.unwrap(), SavedViewNews::Removed { id } if id == "deps"));
     assert!(d.store.saved_views().unwrap().is_empty());
     // Gone is what was asked for.
     let response = text(&post(&d, pane, &change("delete", "deps")).await);
@@ -350,7 +350,7 @@ async fn a_person_marking_stale_and_deleting_is_told_to_the_watchers() {
     assert!(d.mark_saved_view_stale("nope").unwrap_err().contains("no longer saved"));
 
     d.delete_saved_view("deps").unwrap();
-    assert!(matches!(rx.recv().await.unwrap(), ServerMsg::SavedViewRemoved { .. }));
+    assert!(matches!(rx.recv().await.unwrap(), SavedViewNews::Removed { .. }));
     let _ = d.close_pane(pane);
 }
 

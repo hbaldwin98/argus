@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use argus_protocol::{
     CheckoutId, CheckoutInfo, Focus, GitStatus, IdGen, PaneId, PaneInfo, PaneKind,
-    PaneStatus, ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg, View,
+    PaneStatus, ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, View,
     WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::broadcast;
@@ -68,6 +68,8 @@ pub use board_parts::FeaturePart;
 pub(crate) use features::Filing;
 pub use extensions::ExtensionNews;
 pub use pushes::{BoardNews, Pushes, TreeNews};
+pub use saved_views::SavedViewNews;
+pub use views::ViewNews;
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;

@@ -63,7 +63,7 @@ pub enum ExtensionNews {
     Views,
     Commands,
     Notice { extension: String, text: String },
-    Dialog { viewer: ViewerId, msg: ServerMsg },
+    Dialog { viewer: ViewerId, extension: String, id: u64, dialog: Box<ExtDialog>, prompted: bool },
     Withdrawn { viewer: ViewerId, id: u64 },
 }
 
@@ -444,8 +444,13 @@ impl Daemon {
         let viewer = ran.or(focused).or(any).ok_or_else(|| anyhow::anyhow!("no window is open to ask"))?;
         extension.dialogs.push(OpenDialog { id, viewer, kind: dialog.kind.clone() });
         drop(registry);
-        let msg = ServerMsg::ExtensionDialog { extension: name.to_string(), id, dialog, prompted: ran.is_some() };
-        self.tell_extensions(ExtensionNews::Dialog { viewer, msg });
+        self.tell_extensions(ExtensionNews::Dialog {
+            viewer,
+            extension: name.to_string(),
+            id,
+            dialog: Box::new(dialog),
+            prompted: ran.is_some(),
+        });
         Ok(id)
     }
 
