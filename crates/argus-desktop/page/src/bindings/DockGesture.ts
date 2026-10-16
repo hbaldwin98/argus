@@ -6,4 +6,4 @@ import type { Panel } from "./Panel";
 /**
  * What was done to the docks.
  */
-export type DockGesture = { "on": "move", panel: Panel, dock: Dock, } | { "on": "show", panel: Panel, } | { "on": "hide", panel: Panel, } | { "on": "size", dock: Dock, size: number, } | { "on": "float", panel: Panel, } | { "on": "bounds", panel: Panel, bounds: FloatBounds, } | { "on": "raise", panel: Panel, };
+export type DockGesture = { "on": "move", panel: Panel, dock: Dock, } | { "on": "show", panel: Panel, } | { "on": "hide", panel: Panel, } | { "on": "size", dock: Dock, size: number, } | { "on": "float", panel: Panel, } | { "on": "bounds", panel: Panel, bounds: FloatBounds, } | { "on": "raise", panel: Panel, } | { "on": "stage", panel: Panel, } | { "on": "close", panel: Panel, };

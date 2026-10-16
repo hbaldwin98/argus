@@ -44,6 +44,12 @@ pub enum DockGesture {
     Bounds { panel: Panel, bounds: FloatBounds },
     /// A dialog pressed: it comes in front of the others.
     Raise { panel: Panel },
+    /// The panel dropped on the stage: where it goes is the session's —
+    /// the Console stage, an extension's page. One that cannot go stays.
+    Stage { panel: Panel },
+    /// A panel's close for good, which only a panel that `closes` has;
+    /// any other stays where it is.
+    Close { panel: Panel },
 }
 
 /// The edges of the stage a panel docks against. The sidebar keeps the
@@ -956,5 +962,12 @@ mod tests {
             serde_json::json!({"panel": "saved:release-plan", "kind": "saved", "floats": true, "stage": false, "closes": true})
         );
         assert_eq!(serde_json::to_value(PanelKind::Extension).unwrap(), "extension");
+    }
+
+    #[test]
+    fn a_dock_gesture_stages_or_closes_a_panel_by_name() {
+        let gesture = |json| serde_json::from_value::<DockGesture>(json).unwrap();
+        assert_eq!(gesture(serde_json::json!({"on": "stage", "panel": "console"})), DockGesture::Stage { panel: Panel::Console });
+        assert_eq!(gesture(serde_json::json!({"on": "close", "panel": "saved:a"})), DockGesture::Close { panel: Panel::Saved("a".into()) });
     }
 }

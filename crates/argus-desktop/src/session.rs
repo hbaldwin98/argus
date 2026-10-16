@@ -729,9 +729,7 @@ impl Session {
             Call::OpenSavedView { id, from } => self.open_saved(id, from),
             Call::CloseSavedColumn { panel, column } => {
                 if let Panel::Saved(owner) = panel {
-                    if self.saved.close_column(&owner, column) == Closed::Panel {
-                        self.docks.forget(&Panel::Saved(owner));
-                    }
+                    self.close_saved_column(&owner, column);
                 }
                 self.finish()
             }
@@ -1839,6 +1837,8 @@ impl Session {
             DockGesture::Float { panel } => self.docks.float(&panel),
             DockGesture::Bounds { panel, bounds } => self.docks.set_bounds(&panel, bounds),
             DockGesture::Raise { panel } => self.docks.raise(&panel),
+            DockGesture::Stage { panel } => self.stage_panel(&panel),
+            DockGesture::Close { panel } => self.close_panel(&panel),
         }
         self.finish()
     }
@@ -1876,6 +1876,36 @@ impl Session {
                 }
                 self.docks.show(panel);
             }
+        }
+    }
+
+    /// A panel dropped on the stage: the console as the Console stage, an
+    /// extension's view as its page. The views and a saved view have no
+    /// stage, and stay where they are. No `_` arm, like `Panel::stages`,
+    /// the rule the page is told.
+    fn stage_panel(&mut self, panel: &Panel) {
+        match panel {
+            Panel::Console => self.open_console_tab(),
+            Panel::Extension(_) => self.extension_mode(panel, true),
+            Panel::Views | Panel::Saved(_) => {}
+        }
+    }
+
+    /// A dock tab's close: a saved view's panel goes, columns and all. The
+    /// others are put away only by their dock's hide; a close that
+    /// sometimes hid would give one word two meanings.
+    fn close_panel(&mut self, panel: &Panel) {
+        match panel {
+            Panel::Saved(owner) => self.close_saved_column(owner, 0),
+            Panel::Console | Panel::Views | Panel::Extension(_) => {}
+        }
+    }
+
+    /// Closes one column of a saved panel; the first is the panel, which
+    /// leaves the docks with it.
+    fn close_saved_column(&mut self, owner: &str, column: usize) {
+        if self.saved.close_column(owner, column) == Closed::Panel {
+            self.docks.forget(&Panel::Saved(owner.to_string()));
         }
     }
 
@@ -6324,6 +6354,47 @@ mod tests {
         assert_eq!(tables(&mut s), ["containers"]);
     }
 
+    /// What the page is told a panel's drop on the stage does.
+    fn told_stage(s: &mut Session, panel: &Panel) -> Option<bool> {
+        s.docks.reload();
+        docks_page(s).and_then(|page| page.present.into_iter().find(|p| &p.panel == panel)).map(|p| p.stage)
+    }
+
+    #[test]
+    fn a_panel_dropped_on_the_stage_goes_there_only_if_the_docks_say_it_can() {
+        let mut s = with_consoles();
+        docks(&mut s, DockGesture::Stage { panel: Panel::Console });
+        assert_eq!(s.stages.now(), Stage::Console, "the console's stage is the Console stage");
+        assert_eq!(told_stage(&mut s, &Panel::Console), Some(true));
+
+        let mut s = session(Hello::this_build());
+        s.call(Call::ShowCheckouts { open: true });
+        s.receive(scoped());
+        assert_eq!(s.stages.now(), Stage::Checkouts, "a view received is not opened as a page");
+        docks(&mut s, DockGesture::Stage { panel: panel("containers") });
+        assert_eq!(s.stages.now(), Stage::Extension);
+        assert!(s.extensions_page().tables.first().is_some_and(|t| t.page));
+        assert_eq!(told_stage(&mut s, &panel("containers")), Some(true));
+        docks(&mut s, DockGesture::Move { panel: panel("containers"), dock: Dock::Right });
+        assert_eq!(s.stages.now(), Stage::Checkouts, "docked, back to the stage it opened over");
+        s.events(0);
+        docks(&mut s, DockGesture::Stage { panel: panel("api") });
+        assert_eq!(s.stages.now(), Stage::Checkouts, "a view of another repository stays off the stage");
+        assert_eq!(notices(&mut s), ["that extension's view is not shown here"]);
+
+        let mut s = with_saved(&["a"]);
+        open_saved(&mut s, "a");
+        agents_view(&mut s, 1);
+        let before = s.stages.now();
+        docks(&mut s, DockGesture::Stage { panel: saved_panel("a") });
+        assert_eq!(s.stages.now(), before, "a saved view has no stage");
+        assert_eq!(s.docks.place_of(&saved_panel("a")), Some(Place::Dock(Dock::Right)));
+        assert_eq!(told_stage(&mut s, &saved_panel("a")), Some(false));
+        docks(&mut s, DockGesture::Stage { panel: Panel::Views });
+        assert_eq!(s.stages.now(), before, "nor do the views");
+        assert_eq!(told_stage(&mut s, &Panel::Views), Some(false));
+    }
+
     #[test]
     fn an_extension_page_opened_over_a_views_page_goes_back_to_what_that_page_opened_over() {
         let mut s = session(Hello::this_build());
@@ -6712,6 +6783,26 @@ mod tests {
         s.call(Call::CloseSavedColumn { panel: saved_panel("a"), column: 0 });
         assert_eq!(s.docks.place_of(&saved_panel("a")), None);
         assert!(!s.take_settings().unwrap().docks.unwrap().right.tabs.contains(&saved_panel("a")));
+    }
+
+    #[test]
+    fn a_tabs_close_takes_a_saved_panel_out_and_leaves_one_that_only_hides() {
+        let mut s = with_saved(&["a", "b"]);
+        s.set(SettingChange::SavedLinks { opens: SavedLinks::Column });
+        open_saved(&mut s, "a");
+        follow(&mut s, "a", 0, "b");
+        s.take_settings();
+        docks(&mut s, DockGesture::Close { panel: saved_panel("a") });
+        assert_eq!(s.docks.place_of(&saved_panel("a")), None);
+        assert!(!s.take_settings().expect("saved").docks.unwrap().right.tabs.contains(&saved_panel("a")));
+        open_saved(&mut s, "a");
+        assert_eq!(columns(&mut s, "a"), ["a"], "its columns went with it");
+
+        let mut s = with_consoles();
+        console(&mut s, ConsoleGesture::Toggle);
+        docks(&mut s, DockGesture::Close { panel: Panel::Console });
+        assert_eq!(s.docks.dock_of(&Panel::Console), Some(Dock::Bottom));
+        assert!(s.docks.shows(&Panel::Console), "a close is not a hide");
     }
 
     #[test]
