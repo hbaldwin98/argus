@@ -6,10 +6,11 @@ import type { Shown } from "./Shown";
  */
 export type GridPage = { 
 /**
- * The panes split beside the first, in the order they were opened,
- * for the stage's header.
+ * The panes split beside the first, in the order they were opened:
+ * cell `n + 1` of `grid` is `beside[n]`. None for one the tree no
+ * longer names, so its cell keeps its place without a header.
  */
-beside: Array<Shown>, 
+beside: Array<Shown | null>, 
 /**
  * Which cells, the first's too, sit in each row of the grid.
  */

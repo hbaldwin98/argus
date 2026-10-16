@@ -24,9 +24,10 @@ pub use split_grid::{Dir, Zone};
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct GridPage {
-    /// The panes split beside the first, in the order they were opened,
-    /// for the stage's header.
-    pub beside: Vec<Shown>,
+    /// The panes split beside the first, in the order they were opened:
+    /// cell `n + 1` of `grid` is `beside[n]`. None for one the tree no
+    /// longer names, so its cell keeps its place without a header.
+    pub beside: Vec<Option<Shown>>,
     /// Which cells, the first's too, sit in each row of the grid.
     pub grid: Vec<Vec<u8>>,
     /// Each row's height, in thousandths of the grid's.
@@ -151,7 +152,7 @@ impl WorkspaceGrid {
     pub fn page(&self, keys: Side, describe: impl Fn(PaneId) -> Option<Shown>) -> GridPage {
         let thousandths = |list: &[f32]| list.iter().map(|s| (s * 1000.0).round() as u16).collect::<Vec<_>>();
         GridPage {
-            beside: self.cells[1..].iter().filter_map(|cell| cell.pane.and_then(&describe)).collect(),
+            beside: self.cells[1..].iter().map(|cell| cell.pane.and_then(&describe)).collect(),
             grid: self.layout.rows().iter().map(|row| row.iter().map(|&n| n as u8).collect()).collect(),
             heights: thousandths(self.layout.heights()),
             widths: self.layout.widths().iter().map(|w| thousandths(w)).collect(),
@@ -387,7 +388,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(page).unwrap(),
             serde_json::json!({
-                "beside": [],
+                "beside": [null],
                 "grid": [[0, 1]],
                 "heights": [1000],
                 "widths": [[500, 500]],
@@ -418,6 +419,28 @@ mod tests {
         for keys in [Side::First, Side::Second, Side::View(0)] {
             assert_eq!(grid.page(keys, |_| None).keyed, None, "{keys:?}");
         }
+    }
+
+    #[test]
+    fn a_split_the_tree_no_longer_names_keeps_its_place_without_a_header() {
+        let grid = unmeasured(3);
+        let describe = |pane: PaneId| {
+            let shown = Shown {
+                pane: pane.0,
+                repository: String::new(),
+                checkout: String::new(),
+                branch: String::new(),
+                agent: false,
+                title: format!("pane {pane}"),
+                status: "idle",
+                resumed: None,
+            };
+            (pane != PaneId(2)).then_some(shown)
+        };
+        let page = grid.page(Side::Workspace, describe);
+        let titles: Vec<Option<String>> = page.beside.iter().map(|b| b.as_ref().map(|s| s.title.clone())).collect();
+        assert_eq!(titles, [None, Some("pane 3".to_string())], "pane 3's header stays on its own cell");
+        assert_eq!(page.beside.len(), grid.sides().len() - 1);
     }
 
     #[test]
