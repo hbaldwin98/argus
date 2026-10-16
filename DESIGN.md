@@ -189,7 +189,7 @@ right dock's, and each extension view where the person had put it. Rust holds th
 `clock` and `tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types and the page and gesture types each surface's module keeps beside it
-(`console`, `docks`, `capture_note`, `checkouts`, `code_stage`, `comment_box`, …), written as TypeScript by `cargo test` into
+(`console`, `docks`, `capture_note`, `checkouts`, `code_stage`, `extension_views`, `extension_keys`, `comment_box`, …), written as TypeScript by `cargo test` into
 `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
 instance's config directory, so a dev window never shares it with the installed one, and it logs to
@@ -547,7 +547,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `view_refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
 | `stage` | what fills the stage — one of the stages, or a page (an agent's view or an extension's) opened over one — where closing, docking, Escape or its view going takes the person back to, the Code stage's way back included, and whether the Workspace's panes are drawn under it |
 | `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, and the question an action waits on |
-| `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension |
+| `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension, as the page draws them |
 | `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |
 | `opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
 | `logging` | where the window's own diagnostics go |

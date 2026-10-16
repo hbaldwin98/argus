@@ -7,9 +7,57 @@
 //! `keymap`'s; the window only decides where each is heard.
 
 use argus_protocol::{CommandScope, ExtCommand, ExtKey, ExtView};
+use serde::Serialize;
 
 use crate::keys::PageKey;
-use crate::page::{ExtBinding, ExtChord, ExtCommandPage, ExtGroup};
+
+/// A command an extension added: what the palette calls it, its key, and
+/// where that key is heard.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtCommandPage {
+    pub extension: String,
+    pub command: String,
+    pub title: String,
+    pub chords: Vec<ExtChord>,
+    #[cfg_attr(test, ts(type = "\"anywhere\" | \"view\" | \"checkout\" | \"pane\""))]
+    pub scope: &'static str,
+    /// The view its key is heard in, for one scoped to a view.
+    pub view: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtGroup {
+    pub title: String,
+    pub bindings: Vec<ExtBinding>,
+}
+
+/// One key an extension added, shaped as a keymap binding is so the sheet
+/// draws it with the same keycaps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtBinding {
+    pub label: String,
+    pub chords: Vec<ExtChord>,
+}
+
+/// A key as `keymap::Chord` crosses, owned: an extension's are not known
+/// until it says them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtChord {
+    pub key: String,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub meta: bool,
+    pub leader: bool,
+}
 
 #[derive(Default)]
 pub struct ExtensionKeys {

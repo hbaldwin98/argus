@@ -8,9 +8,9 @@
 //! these definitions rather than a copy.
 //!
 //! A surface that keeps what it last sent — a dialog, the console, the
-//! docks, the Checkouts and Code stages — defines its own page and
-//! gestures in its module, beside the code that builds and reads them; the
-//! events and calls here name them.
+//! docks, the Checkouts and Code stages, the extension views — defines its
+//! own page and gestures in its module, beside the code that builds and
+//! reads them; the events and calls here name them.
 
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +22,7 @@ use crate::comment_box::CommentPage;
 use crate::console::{ConsoleGesture, ConsolePage};
 use crate::docks::{DockGesture, DocksPage, Panel};
 use crate::extension_dialog::ExtDialogPage;
+use crate::extension_views::ExtensionsPage;
 use crate::features::Layout;
 use crate::keymap::{Action, Command, Group, KeyLayer};
 use crate::keys::PageKey;
@@ -1669,172 +1670,6 @@ pub const UNDERLINE: u8 = 4;
 pub const REVERSE: u8 = 8;
 /// One cell twice as wide as the rest; its spacer is not sent.
 pub const WIDE: u8 = 16;
-
-/// What the running extensions put in the window: the views listed where
-/// the person is, those on screen, their commands, and their
-/// keys as the sheet lists them.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtensionsPage {
-    /// Every view listed where the person is, for the sidebar's
-    /// Extensions.
-    pub views: Vec<ExtTab>,
-    /// Every view on screen: the one its dock shows, and the page.
-    pub tables: Vec<ExtTable>,
-    /// The question an action asks before it is sent.
-    pub confirm: Option<ExtConfirm>,
-    /// Whether the sidebar's Extensions are unfolded.
-    pub listed: bool,
-    pub commands: Vec<ExtCommandPage>,
-    /// A heading of the sheet per extension.
-    pub groups: Vec<ExtGroup>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtTab {
-    /// The panel it is, which a drag from the sidebar moves.
-    pub panel: Panel,
-    pub extension: String,
-    pub view: String,
-    pub title: String,
-    /// One of `EXT_ICONS`, or a name the page draws as its generic icon.
-    pub icon: Option<String>,
-    /// It opens as a page rather than docked.
-    pub page: bool,
-    /// It is on screen, docked or as the page.
-    pub on: bool,
-}
-
-/// An extension's view as the panel draws it: its table, the row selected,
-/// and what can be done.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtTable {
-    pub panel: Panel,
-    pub extension: String,
-    pub view: String,
-    pub title: String,
-    /// Open as a page, filling the stage, rather than docked.
-    pub page: bool,
-    pub columns: Vec<argus_protocol::Column>,
-    pub rows: Vec<ExtTableRow>,
-    pub actions: Vec<ExtTableAction>,
-    /// The selected row's key.
-    pub selected: Option<String>,
-    /// The row action a double-click or Enter on a row takes.
-    pub default: Option<String>,
-    /// Set for a view that is a console: the page draws a terminal where
-    /// the table would be, and the columns and rows are empty.
-    pub console: Option<ExtTableConsole>,
-}
-
-/// A console view as the page draws it. What the daemon says of it is here
-/// as it said it; the screen and the keys are the window's.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtTableConsole {
-    /// The screen drawing it, once the window has given it one; until then
-    /// the page has nowhere to send a size.
-    pub side: Option<Side>,
-    /// The pane running it, which the daemon fills in a moment after it
-    /// takes the view.
-    pub pane: Option<u64>,
-    /// How it ended, while its last screen stays up.
-    pub ended: Option<ExtConsoleEnd>,
-    /// This console's screen has the keys.
-    pub keyed: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtConsoleEnd {
-    /// The exit code; none when a signal ended it.
-    pub code: Option<i32>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtTableRow {
-    pub key: String,
-    pub cells: Vec<argus_protocol::Value>,
-    pub status: Option<argus_protocol::Chip>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtTableAction {
-    pub id: String,
-    pub label: String,
-    pub key: Option<String>,
-    pub view_wide: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtConfirm {
-    /// The extension that asks.
-    pub extension: String,
-    /// The action's label, for the yes button.
-    pub label: String,
-    pub question: String,
-}
-
-/// A command an extension added: what the palette calls it, its key, and
-/// where that key is heard.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtCommandPage {
-    pub extension: String,
-    pub command: String,
-    pub title: String,
-    pub chords: Vec<ExtChord>,
-    #[cfg_attr(test, ts(type = "\"anywhere\" | \"view\" | \"checkout\" | \"pane\""))]
-    pub scope: &'static str,
-    /// The view its key is heard in, for one scoped to a view.
-    pub view: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtGroup {
-    pub title: String,
-    pub bindings: Vec<ExtBinding>,
-}
-
-/// One key an extension added, shaped as a keymap binding is so the sheet
-/// draws it with the same keycaps.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtBinding {
-    pub label: String,
-    pub chords: Vec<ExtChord>,
-}
-
-/// A key as `keymap::Chord` crosses, owned: an extension's are not known
-/// until it says them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct ExtChord {
-    pub key: String,
-    pub ctrl: bool,
-    pub alt: bool,
-    pub shift: bool,
-    pub meta: bool,
-    pub leader: bool,
-}
 
 #[cfg(test)]
 mod tests {

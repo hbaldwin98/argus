@@ -45,7 +45,7 @@ use crate::add_project::{AddProject, AddProjectGesture, Adding};
 use crate::agent_views::AgentViews;
 use crate::extension_dialog::ExtensionDialogs;
 use crate::extension_keys::ExtensionKeys;
-use crate::extension_views::{first_place, ExtensionViews, Here};
+use crate::extension_views::{first_place, ExtTable, ExtensionViews, ExtensionsPage, Here};
 use crate::agents::Agents;
 use crate::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts_stage::{CheckoutsStage, Opened};
@@ -142,7 +142,7 @@ pub struct Session {
     /// board of its repository has arrived.
     opening_feature: PendingFeature,
     extension_keys: ExtensionKeys,
-    extensions_sent: Sent<page::ExtensionsPage>,
+    extensions_sent: Sent<ExtensionsPage>,
     extension_dialogs: ExtensionDialogs,
     rail_width: DraggedWidth,
     outline_width: DraggedWidth,
@@ -1797,12 +1797,12 @@ impl Session {
         self.shown.sync_views(&wanted, &mut self.out);
     }
 
-    fn extensions_page(&self) -> page::ExtensionsPage {
+    fn extensions_page(&self) -> ExtensionsPage {
         let here = self.here();
         let docks = &self.docks;
         let page = self.stages.extension_page();
         let on = |panel: &Panel| self.extension_on(panel);
-        let with_screen = |mut table: page::ExtTable| {
+        let with_screen = |mut table: ExtTable| {
             if let (Some(console), Panel::Extension(name)) = (&mut table.console, &table.panel) {
                 let side = self.shown.view_side(name);
                 console.side = side;
@@ -1810,7 +1810,7 @@ impl Session {
             }
             table
         };
-        page::ExtensionsPage {
+        ExtensionsPage {
             views: self.extension_views.tabs(&here, |panel| docks.place_of(panel) == Some(Place::Stage), on),
             tables: self
                 .extension_views
@@ -3185,7 +3185,7 @@ impl Session {
             }
         }
         let extensions = self.extensions_page();
-        if let Some(page) = self.extensions_sent.take((extensions != page::ExtensionsPage::default()).then_some(extensions)) {
+        if let Some(page) = self.extensions_sent.take((extensions != ExtensionsPage::default()).then_some(extensions)) {
             events.push(Event::Extensions(Box::new(page)));
         }
         events.extend(self.extension_dialogs.take());
@@ -6218,7 +6218,7 @@ mod tests {
         ServerMsg::ExtensionViews(serde_json::from_str(&json).unwrap())
     }
 
-    fn extensions_page(s: &mut Session) -> Option<page::ExtensionsPage> {
+    fn extensions_page(s: &mut Session) -> Option<ExtensionsPage> {
         s.events(0).into_iter().rev().find_map(|e| match e {
             Event::Extensions(page) => Some(*page),
             _ => None,
@@ -6314,7 +6314,7 @@ mod tests {
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
         assert_eq!(extensions_page(&mut s).expect("opened").tables.len(), 1);
         s.receive(ServerMsg::ExtensionViews(Vec::new()));
-        assert_eq!(extensions_page(&mut s), Some(page::ExtensionsPage::default()), "the page hears it went");
+        assert_eq!(extensions_page(&mut s), Some(ExtensionsPage::default()), "the page hears it went");
         assert!(extensions_page(&mut s).is_none(), "once");
         s.receive(containers(&["web"]));
         assert_eq!(tables(&mut s), ["containers"], "and comes back where it was, when it comes again");
@@ -6728,7 +6728,7 @@ mod tests {
         ServerMsg::ExtensionViews(serde_json::from_str(&json).unwrap())
     }
 
-    fn dev_console(s: &mut Session) -> page::ExtTableConsole {
+    fn dev_console(s: &mut Session) -> crate::extension_views::ExtTableConsole {
         s.extensions_page().tables.into_iter().find(|t| t.view == "dev").and_then(|t| t.console).expect("on screen")
     }
 
