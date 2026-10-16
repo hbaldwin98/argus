@@ -651,6 +651,7 @@ impl App {
                         slug: slug.clone(),
                         to: *destination,
                     },
+                    request_id: 0,
                 });
             }
             PickerKind::Ticket { urls } => {
@@ -694,6 +695,7 @@ impl App {
                     } else {
                         argus_protocol::FeatureAction::Wait { slug, on }
                     },
+                    request_id: 0,
                 });
             }
             PickerKind::Agent => {

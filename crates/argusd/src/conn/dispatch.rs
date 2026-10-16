@@ -186,6 +186,7 @@ pub(super) fn dispatch(
             project,
             checkout,
             action,
+            ..
         } => daemon.feature_action_for_client(project, checkout, action),
         ClientMsg::Task {
             project,

@@ -208,6 +208,7 @@ impl LinkDialog {
             project: scope.project,
             checkout: scope.checkout,
             action: FeatureAction::Link { slug: self.slug.clone(), link },
+            request_id: 0,
         });
         Then::Nothing
     }
@@ -217,6 +218,7 @@ impl LinkDialog {
             project: scope.project,
             checkout: scope.checkout,
             action: FeatureAction::Unlink { slug: self.slug.clone(), key },
+            request_id: 0,
         });
     }
 

@@ -87,6 +87,7 @@ pub fn messages(edit: FeatureEdit, target: &Target) -> Result<Vec<ClientMsg>, St
                 project: target.scope.project,
                 checkout: target.scope.checkout,
                 action: FeatureAction::Rewrite { slug: target.slug.to_string(), body },
+                request_id: 0,
             }]
         }
         FeatureEdit::Task { id, title, body } => {

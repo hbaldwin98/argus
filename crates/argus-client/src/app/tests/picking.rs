@@ -46,6 +46,7 @@ fn feature_transfer_picker_offers_sibling_checkout_and_sends_its_id() {
         project,
         checkout: source,
         action: argus_protocol::FeatureAction::Transfer { slug, to: destination },
+        ..
     }] = sent.as_slice()
     else {
         panic!("expected one feature transfer, got {sent:?}");

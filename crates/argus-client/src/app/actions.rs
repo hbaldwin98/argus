@@ -102,6 +102,7 @@ impl App {
                 project,
                 checkout: checkout.expect("a feature brief belongs to the selected checkout"),
                 action: argus_protocol::FeatureAction::Rewrite { slug, body },
+                request_id: 0,
             },
             BriefTarget::Decision {
                 project,

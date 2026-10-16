@@ -153,6 +153,7 @@ impl App {
                     project,
                     checkout,
                     action: FeatureAction::Retitle { slug, title: text },
+                    request_id: 0,
                 });
             }
             LineEdit::Hold(slug) => {
@@ -160,6 +161,7 @@ impl App {
                     project,
                     checkout,
                     action: FeatureAction::Hold { slug, reason: text },
+                    request_id: 0,
                 });
             }
             LineEdit::Link(slug) => {
@@ -177,6 +179,7 @@ impl App {
                     project,
                     checkout,
                     action: FeatureAction::Link { slug, link },
+                    request_id: 0,
                 });
             }
             LineEdit::NewTask => self.send_task(task(text, None)),
@@ -283,6 +286,7 @@ impl App {
                     project,
                     checkout,
                     action,
+                    request_id: 0,
                 });
                 self.capture = None;
             }
@@ -300,6 +304,7 @@ impl App {
             project,
             checkout,
             action: FeatureAction::Drop { slug },
+            request_id: 0,
         });
     }
 
@@ -322,6 +327,7 @@ impl App {
             project,
             checkout,
             action,
+            request_id: 0,
         });
         self.report(format!("{slug} {said}"));
     }
@@ -446,6 +452,7 @@ impl App {
             project,
             checkout,
             action: FeatureAction::Unhold { slug: slug.clone() },
+            request_id: 0,
         });
         self.report(format!("{slug} is no longer held"));
     }

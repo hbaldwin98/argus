@@ -104,7 +104,7 @@ impl CaptureNote {
         let action = Capture::write(&self.note, None).map_err(str::to_string)?;
         let before = board.map(|b| b.features.iter().map(|f| f.slug.clone()).collect()).unwrap_or_default();
         self.sent = Some((Capture::parse(&self.note).title, before));
-        out.push(ClientMsg::Feature { project: scope.project, checkout: scope.checkout, action });
+        out.push(ClientMsg::Feature { project: scope.project, checkout: scope.checkout, action, request_id: 0 });
         Ok(())
     }
 

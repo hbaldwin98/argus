@@ -272,6 +272,11 @@ pub enum ClientMsg {
         project: ProjectId,
         checkout: CheckoutId,
         action: FeatureAction,
+        /// Names the change, so a refusal of it is told by this id
+        /// ([`ServerMsg::Refused`]). Zero, the default, names nothing: what
+        /// a client that predates it sends.
+        #[serde(default)]
+        request_id: u64,
     },
     /// Write the repository's tracker map, or approve or turn down the
     /// draft an agent proposed for it.
@@ -940,13 +945,15 @@ mod tests {
     }
 
     /// `SpawnShell` as a client built before requests were named sent it,
-    /// `Scrollback` as one built before lines were numbered, and
-    /// `AddProject` as one built before a project could be named.
+    /// `Scrollback` as one built before lines were numbered, `AddProject`
+    /// as one built before a project could be named, and `Feature` as one
+    /// built before a change to a feature could name itself.
     #[derive(Serialize, Deserialize)]
     enum OlderClientMsg {
         SpawnShell { checkout: CheckoutId },
         Scrollback { pane: PaneId, offset: u32 },
         AddProject { path: String, request_id: u64 },
+        Feature { project: ProjectId, checkout: CheckoutId, action: FeatureAction },
     }
 
     #[test]
@@ -1023,6 +1030,33 @@ mod tests {
             OlderClientMsg::SpawnShell {
                 checkout: CheckoutId(4)
             }
+        ));
+    }
+
+    #[test]
+    fn a_feature_change_from_an_older_client_names_no_request() {
+        let older = wire(&OlderClientMsg::Feature {
+            project: ProjectId(1),
+            checkout: CheckoutId(2),
+            action: FeatureAction::Drop { slug: "trim".into() },
+        });
+        let read: ClientMsg = rmp_serde::from_slice(&older).unwrap();
+        assert!(matches!(read, ClientMsg::Feature { request_id: 0, .. }), "{read:?}");
+    }
+
+    #[test]
+    fn an_older_daemon_reads_a_named_feature_change_and_ignores_the_name() {
+        let newer = wire(&ClientMsg::Feature {
+            project: ProjectId(1),
+            checkout: CheckoutId(2),
+            action: FeatureAction::Drop { slug: "trim".into() },
+            request_id: 5,
+        });
+        let read: OlderClientMsg = rmp_serde::from_slice(&newer).unwrap();
+        assert!(matches!(
+            read,
+            OlderClientMsg::Feature { project: ProjectId(1), checkout: CheckoutId(2), action: FeatureAction::Drop { slug } }
+                if slug == "trim"
         ));
     }
 

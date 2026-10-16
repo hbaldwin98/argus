@@ -425,6 +425,7 @@ impl FeatureStage {
                     Some(reason) => FeatureAction::Hold { slug, reason },
                     None => FeatureAction::Unhold { slug },
                 },
+                request_id: 0,
             });
         }
     }
@@ -437,6 +438,7 @@ impl FeatureStage {
                 project: scope.project,
                 checkout: scope.checkout,
                 action: if waits { FeatureAction::Wait { slug, on } } else { FeatureAction::Unwait { slug, on } },
+                request_id: 0,
             });
         }
     }
@@ -449,6 +451,7 @@ impl FeatureStage {
                 project: scope.project,
                 checkout: scope.checkout,
                 action: if archived { FeatureAction::Done { slug, detail } } else { FeatureAction::Reopen { slug, detail } },
+                request_id: 0,
             });
         }
     }

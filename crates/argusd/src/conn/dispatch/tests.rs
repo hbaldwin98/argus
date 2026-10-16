@@ -172,6 +172,7 @@ async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
             into: None,
             capture: Box::new(Capture::parse(note)),
         },
+        request_id: 0,
     });
     let board = boards.try_recv().expect("the feature a note opened is pushed");
     let feature = board.features[0].clone();
@@ -188,6 +189,7 @@ async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
             into: Some(feature.slug.clone()),
             capture: Box::new(Capture::parse("any first line\n- drain it")),
         },
+        request_id: 0,
     });
     let board = boards.try_recv().unwrap();
     assert_eq!(board.features.len(), 1, "a note added to a feature opens none");
@@ -243,6 +245,7 @@ async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
             into: None,
             capture: Box::new(Capture::parse("Half a note\nstray prose\n- a task\n  stray prose")),
         },
+        request_id: 0,
     });
     let error = h.error().await;
     assert!(error.contains("some lines read as nothing"), "{error}");
