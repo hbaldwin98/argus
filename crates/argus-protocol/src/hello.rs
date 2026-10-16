@@ -117,9 +117,14 @@ pub const SAVED_VIEWS: &str = "saved-views";
 
 /// The Code stage: `ClientMsg::ListCode`, `ClientMsg::ReadCode` and
 /// `ClientMsg::SearchCode` from a client, `ServerMsg::CodeTree`,
-/// `ServerMsg::Code`, `ServerMsg::CodeMatches` and `ServerMsg::CodeFailed`
-/// from the daemon.
+/// `ServerMsg::Code`, `ServerMsg::CodeMatches` and their refusals from the
+/// daemon.
 pub const CODE: &str = "code";
+
+/// `ServerMsg::Refused`: a refusal of a request that named itself, by its
+/// id, in place of `Created` with nothing and an `Error`, or the request's
+/// own `…Failed`. See `request_refusal`.
+pub const REQUEST_REFUSALS: &str = "request-refusals";
 
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

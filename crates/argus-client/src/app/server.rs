@@ -314,6 +314,14 @@ impl App {
             ServerMsg::Error { message } => {
                 self.alert(format!("error: {message}"));
             }
+            // Sent only to a client that listed REQUEST_REFUSALS, which this
+            // one does not; should one arrive, a refused change is the user's
+            // to read.
+            ServerMsg::Refused(refusal) => {
+                if !refusal.read {
+                    self.alert(format!("error: {}", refusal.reason));
+                }
+            }
             ServerMsg::Created {
                 request_id,
                 created,

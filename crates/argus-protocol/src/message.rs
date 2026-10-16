@@ -153,11 +153,13 @@ pub enum ClientMsg {
     /// (DESIGN.md §9 M4). A request rather than a subscription: a diff is
     /// expensive to compute and only interesting while it's on screen.
     ///
-    /// Always answered under `request_id`, by a `ServerMsg::Review` or a
-    /// `ServerMsg::ReviewFailed`. One a connection asks again — the same
-    /// checkout, side and commit — while the first still waits for the
-    /// daemon's turn is answered by the same diff under both ids; any other
-    /// is read on its own, so asks for two commits never cancel each other.
+    /// Always answered under `request_id`, by a `ServerMsg::Review` or its
+    /// refusal (`ServerMsg::ReviewFailed`, or `ServerMsg::Refused` to a
+    /// client that listed `REQUEST_REFUSALS`). One a connection asks again
+    /// — the same checkout, side and commit — while the first still waits
+    /// for the daemon's turn is answered by the same diff under both ids;
+    /// any other is read on its own, so asks for two commits never cancel
+    /// each other.
     Review {
         request_id: u64,
         checkout: CheckoutId,
@@ -673,7 +675,8 @@ pub enum ServerMsg {
     /// The answer to `ClientMsg::Review`.
     Review(Review),
     /// A review that could not be read, a checkout that is gone included,
-    /// correlated so stale failures are dropped.
+    /// correlated so stale failures are dropped. To a client that did not
+    /// list `REQUEST_REFUSALS`; one that did is sent `Refused`.
     ReviewFailed {
         request_id: u64,
         checkout: CheckoutId,
@@ -686,6 +689,8 @@ pub enum ServerMsg {
     /// The answer to `ClientMsg::SearchCode`.
     CodeMatches(CodeMatches),
     /// Any of the three that could not be answered, correlated by its id.
+    /// To a client that did not list `REQUEST_REFUSALS`; one that did is
+    /// sent `Refused`.
     CodeFailed {
         request_id: u64,
         checkout: CheckoutId,
@@ -693,7 +698,9 @@ pub enum ServerMsg {
     },
     /// The answer to `ClientMsg::ReviewContext`.
     ReviewContext(ReviewContext),
-    /// A fold that could not be read, correlated like `ReviewFailed`.
+    /// A fold that could not be read, correlated like `ReviewFailed`. To a
+    /// client that did not list `REQUEST_REFUSALS`; one that did is sent
+    /// `Refused`.
     ReviewContextFailed {
         request_id: u64,
         checkout: CheckoutId,
@@ -752,7 +759,8 @@ pub enum ServerMsg {
     },
     /// A failed history walk. Correlated like `ReviewFailed` rather than
     /// folded into `Error`, so a client that has moved on drops it instead
-    /// of showing an alert for a list it no longer wants.
+    /// of showing an alert for a list it no longer wants. To a client that
+    /// did not list `REQUEST_REFUSALS`; one that did is sent `Refused`.
     CommitsFailed {
         request_id: u64,
         checkout: CheckoutId,
@@ -795,12 +803,18 @@ pub enum ServerMsg {
         #[serde(default)]
         commits: Vec<crate::CommitInfo>,
     },
+    /// A refusal of a request that named none, or any refusal to a client
+    /// that did not list `REQUEST_REFUSALS`, in words for the person.
     Error {
         message: String,
     },
+    /// A request that named itself, turned down: to its client alone, and
+    /// only to one that listed `REQUEST_REFUSALS` (`request_refusal`).
+    Refused(crate::request_refusal::RequestRefusal),
     /// What a request that named itself made: a pane, a checkout, a
-    /// project or a repository — or `None` when it was refused, whose
-    /// reason arrives as an [`ServerMsg::Error`] as it always has.
+    /// project or a repository. `None` only to a client that did not list
+    /// `REQUEST_REFUSALS`, followed by the reason as an
+    /// [`ServerMsg::Error`]; one that did is sent `Refused` instead.
     ///
     /// Answered only to the client that asked, and only when it gave a
     /// non-zero `request_id`, so a client that predates this never receives

@@ -55,6 +55,7 @@ pub mod pane_view;
 pub mod paste;
 pub mod paths;
 pub mod reconcile;
+pub mod request_refusal;
 pub mod review;
 pub mod review_session;
 pub mod review_view;
@@ -126,8 +127,9 @@ pub use held_tree::{transitions, HeldTree, Lineage, Transition};
 pub use hello::{
     ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
-    RENAME_PANE, SAVED_VIEWS, CODE,
+    RENAME_PANE, SAVED_VIEWS, CODE, REQUEST_REFUSALS,
 };
+pub use request_refusal::RequestRefusal;
 pub use code::{
     CodeChange, CodeFile, CodeLine, CodeMatch, CodeMatches, CodeSymbol, CodeTree, CodeVersion, Removed, SearchOptions,
     MAX_CODE_MATCHES,
