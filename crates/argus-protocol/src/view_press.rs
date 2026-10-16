@@ -11,8 +11,9 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent_view::{AgentView, Block, FormField, FormInput, RowItem, Tone};
+use crate::agent_view::{AgentView, FormField, FormInput, Tone};
 use crate::view_check::MAX_VIEW_NUMBER;
+use crate::view_tree::{leaves_within, ActionPlace, Leaf};
 
 /// The longest text one form answer carries; past it the answer is cut.
 /// A form field is a line or a note, not a document.
@@ -70,60 +71,20 @@ pub enum AnswerValue {
     Bool(bool),
 }
 
-/// Where in a view an action sits, which decides what a press of it may carry.
-enum Offer<'a> {
-    /// A header, card or row button: nothing but itself.
-    Button,
-    /// A table's action: the rows its table keys.
-    Rows(&'a [String]),
-    /// A form's submit: the answers its fields take.
-    Form(&'a str, &'a [FormField]),
-}
-
 /// The view's action with this id, wherever the view offers one.
 pub fn find_action<'a>(view: &'a AgentView, id: &str) -> Option<&'a ViewAction> {
     find(view, id).map(|(action, _)| action)
 }
 
-fn find<'a>(view: &'a AgentView, id: &str) -> Option<(&'a ViewAction, Offer<'a>)> {
+/// The header's actions first, then the first the blocks offer in reading order.
+fn find<'a>(view: &'a AgentView, id: &str) -> Option<(&'a ViewAction, ActionPlace<'a>)> {
     if let Some(action) = view.actions.iter().find(|a| a.id == id) {
-        return Some((action, Offer::Button));
+        return Some((action, ActionPlace::Button));
     }
-    find_in(&view.blocks, id)
-}
-
-fn find_in<'a>(blocks: &'a [Block], id: &str) -> Option<(&'a ViewAction, Offer<'a>)> {
-    for block in blocks {
-        match block {
-            Block::Card { actions, .. } => {
-                if let Some(action) = actions.iter().find(|a| a.id == id) {
-                    return Some((action, Offer::Button));
-                }
-            }
-            Block::Table { actions, row_keys, .. } => {
-                if let Some(action) = actions.iter().find(|a| a.id == id) {
-                    return Some((action, Offer::Rows(row_keys)));
-                }
-            }
-            Block::Form { id: form, fields, submit } if submit.id == id => {
-                return Some((submit, Offer::Form(form, fields)));
-            }
-            Block::Row { items, .. } => {
-                let found = items.iter().find_map(|item| match item {
-                    RowItem::Action { action } if action.id == id => Some(action),
-                    _ => None,
-                });
-                if let Some(action) = found {
-                    return Some((action, Offer::Button));
-                }
-            }
-            _ => {}
-        }
-        if let Some(found) = block.children().into_iter().find_map(|(_, inner)| find_in(inner, id)) {
-            return Some(found);
-        }
-    }
-    None
+    leaves_within(&view.blocks).into_iter().find_map(|leaf| match leaf {
+        Leaf::Action(action, place) if action.id == id => Some((action, place)),
+        _ => None,
+    })
 }
 
 impl ViewPress {
@@ -134,16 +95,16 @@ impl ViewPress {
     /// no such action. A client could send anything; the agent hears only
     /// what its own view could have produced.
     pub fn offered_by(mut self, view: &AgentView) -> Option<ViewPress> {
-        let (_, offer) = find(view, &self.action)?;
-        match offer {
-            Offer::Rows(keys) => {
+        let (_, place) = find(view, &self.action)?;
+        match place {
+            ActionPlace::Table { row_keys: keys } => {
                 let keys: HashSet<&str> = keys.iter().map(String::as_str).collect();
                 let mut seen = HashSet::new();
                 self.rows.retain(|row| keys.contains(row.as_str()) && seen.insert(row.clone()));
                 self.form = None;
                 self.answers.clear();
             }
-            Offer::Form(form, fields) if self.form.as_deref() == Some(form) => {
+            ActionPlace::Form { id: form, fields } if self.form.as_deref() == Some(form) => {
                 self.rows.clear();
                 let mut seen = HashSet::new();
                 let answers = std::mem::take(&mut self.answers);
@@ -158,7 +119,7 @@ impl ViewPress {
                     })
                     .collect();
             }
-            Offer::Form(..) | Offer::Button => {
+            ActionPlace::Form { .. } | ActionPlace::Button => {
                 self.rows.clear();
                 self.form = None;
                 self.answers.clear();
@@ -252,7 +213,7 @@ pub fn press_request(view: &AgentView, action: &ViewAction, press: &ViewPress) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_view::{Column, RowSelect, Value};
+    use crate::agent_view::{Block, Column, RowItem, RowSelect, Value};
 
     fn action(id: &str) -> ViewAction {
         ViewAction { id: id.into(), label: format!("label {id}"), tone: Default::default(), confirm: None }
