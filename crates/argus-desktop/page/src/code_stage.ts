@@ -51,7 +51,7 @@ function head(c: CodePage): HTMLElement {
       el(
         'button',
         { class: 'btn sm', onclick: () => click({ on: 'back' }) },
-        `Back to review · ${c.back}`,
+        `Back to ${c.back}`,
         el('span', { class: 'kbd' }, 'Esc'),
       ),
   );
@@ -191,8 +191,8 @@ function line(r: CodeRow): HTMLElement[] {
   const row = el(
     'div',
     {
-      class: `cline${r.added ? ' add' : ''}${r.cursor ? ' cursor' : ''}`,
-      onclick: () => click({ on: 'line', line: r.no }),
+      class: `cline${r.added ? ' add' : ''}${r.cursor ? ' cursor' : ''}${r.picked ? ' picked' : ''}`,
+      onclick: (e: MouseEvent) => click({ on: 'line', line: r.no, extend: e.shiftKey }),
     },
     el('span', { class: 'dno' }, String(r.no)),
     el('span', { class: 'dmark' }, r.added ? '+' : ' '),
@@ -218,7 +218,19 @@ function file(c: CodePage): HTMLElement {
   else if (c.fileLoading && c.lines.length === 0)
     body = ghosts([[0.5], [0.9], [0.8], [0.7], [0.6]]);
   else if (c.note) body = el('div', { class: 'review-empty fg-muted' }, `${c.path}: ${c.note}`);
-  else body = [...c.lines.flatMap(line), ...(c.removedAtEnd > 0 ? [gone(c.removedAtEnd)] : [])];
+  else {
+    // The comment box sits under the last picked line, or the cursor's.
+    let under = -1;
+    c.lines.forEach((r, i) => {
+      if (r.picked || (r.cursor && under < 0)) under = i;
+    });
+    body = [
+      ...c.lines.flatMap((r, i) =>
+        c.composing && i === under ? [...line(r), commentBox(c)] : line(r),
+      ),
+      ...(c.removedAtEnd > 0 ? [gone(c.removedAtEnd)] : []),
+    ];
+  }
   return el(
     'section',
     { class: 'code-file' },
@@ -238,6 +250,77 @@ function file(c: CodePage): HTMLElement {
           ),
       ),
     el('div', { class: 'cbody', id: 'code-body' }, body),
+  );
+}
+
+function sendComment(): void {
+  call('code_comment', { body: state.codeDraft });
+}
+
+function commentBox(c: CodePage): HTMLElement {
+  const body = el('textarea', {
+    class: 'field comment-body',
+    id: 'code-comment',
+    'aria-label': 'Comment',
+    rows: '3',
+    oninput: (e: Event) => {
+      if (e.target instanceof HTMLTextAreaElement) state.codeDraft = e.target.value;
+    },
+    onkeydown: (e: KeyboardEvent) => {
+      const action = actionFor(['writing'], e);
+      if (action === 'save') {
+        e.preventDefault();
+        sendComment();
+      } else if (action === 'closeLayer') {
+        e.preventDefault();
+        e.stopPropagation();
+        call('code_comment', { body: null });
+      }
+    },
+  });
+  body.value = state.codeDraft;
+  const chosen = c.recipients.find((p) => p.pane === c.recipient);
+  return el(
+    'div',
+    { class: 'comment-card' },
+    el(
+      'div',
+      { class: 'actions' },
+      el('span', { class: 'fg-accent strong' }, 'Comment'),
+      el('span', { class: 'meta' }, `${c.pick ?? ''} · ${c.path ?? ''}`),
+    ),
+    body,
+    el(
+      'div',
+      { class: 'actions' },
+      el('span', { class: 'meta' }, 'Send to'),
+      c.recipients.length > 1
+        ? c.recipients.map((p) =>
+            el(
+              'button',
+              {
+                class: `chipf${p.pane === c.recipient ? ' on' : ''}`,
+                onclick: () => click({ on: 'recipient', pane: p.pane }),
+              },
+              el('span', { class: 'glyph' }, '◆'),
+              p.title,
+            ),
+          )
+        : el(
+            'span',
+            { class: 'chipf on' },
+            el('span', { class: 'glyph' }, '◆'),
+            chosen?.title ?? '',
+          ),
+      el('span', { class: 'grow' }),
+      el('button', { class: 'btn', onclick: () => call('code_comment', { body: null }) }, 'Cancel'),
+      el(
+        'button',
+        { class: 'btn primary', onclick: sendComment },
+        'Comment',
+        el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'),
+      ),
+    ),
   );
 }
 
@@ -271,13 +354,15 @@ export function drawCode(): void {
     return;
   }
   const scrolled = document.getElementById('code-body')?.scrollTop ?? 0;
+  if (!c.composing) state.codeDraft = '';
+  const typing = document.activeElement?.id === 'code-comment';
   stage.replaceChildren(
     head(c),
     el('div', { class: 'code-split' }, tree(c), file(c), outline(c)),
     el(
       'div',
       { class: 'dfoot meta' },
-      'J K line · ] [ change · Ctrl P file · Ctrl F search · E editor · R read again',
+      'J K line · ] [ change · V pick · C comment · Ctrl P file · Ctrl F search · E editor · R read again',
     ),
   );
   const body = document.getElementById('code-body');
@@ -285,7 +370,21 @@ export function drawCode(): void {
   stage.querySelector('.cline.cursor')?.scrollIntoView({ block: 'nearest' });
   stage.querySelector('.code-list .on')?.scrollIntoView({ block: 'nearest' });
   // A field just opened takes the keys; one being typed in keeps them.
-  const want = c.search ? 'code-search' : c.jump ? 'code-jump' : null;
+  const want = c.composing
+    ? 'code-comment'
+    : c.search
+      ? 'code-search'
+      : c.jump
+        ? 'code-jump'
+        : null;
+  if (want === 'code-comment' && !typing) {
+    const box = document.getElementById(want);
+    if (box instanceof HTMLTextAreaElement) {
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }
+    return;
+  }
   const input = want ? document.getElementById(want) : null;
   if (input instanceof HTMLInputElement) {
     input.focus();

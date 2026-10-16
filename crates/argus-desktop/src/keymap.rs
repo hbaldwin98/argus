@@ -193,7 +193,8 @@ pub enum Action {
     UnfoldAll,
     /// The Code stage.
     Code,
-    /// The file at the review's cursor, read in the Code stage.
+    /// The file at the review's cursor, or the history's commit, read in
+    /// the Code stage.
     OpenCode,
     /// Search the checkout's files.
     Search,
@@ -615,6 +616,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Code, &[Chord::key("p").ctrl()], Filter, "go to a file"),
     bind(Place::Code, &[Chord::key("f").ctrl()], Search, "search the checkout"),
     bind(Place::Code, &[Chord::key("e"), Chord::key("E")], OpenEditor, "open in your editor"),
+    bind(Place::Code, &[Chord::key("v"), Chord::key("V")], Pick, "pick a range"),
+    bind(Place::Code, &[Chord::key("c"), Chord::key("C")], Comment, "comment to an agent"),
     bind(Place::Code, &[Chord::key("r"), Chord::key("R")], Refresh, "read the files again"),
     bind(Jump, &[Chord::key("ArrowDown"), Chord::key("n").ctrl()], Next, "next file"),
     bind(Jump, &[Chord::key("ArrowUp"), Chord::key("p").ctrl()], Previous, "previous file"),
@@ -628,6 +631,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(History, &[Chord::key("h"), Chord::key("ArrowLeft")], Fold, "fold it"),
     bind(History, &[Chord::key("Enter")], Choose, "open a commit, or a file as a review"),
     bind(History, &[Chord::key("o"), Chord::key("O")], AsReview, "open as a review"),
+    bind(History, &[Chord::key("c"), Chord::key("C")], OpenCode, "read its files in Code"),
     bind(History, &[Chord::key("/")], Filter, "filter commits"),
     bind(Sessions, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next session"),
     bind(Sessions, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous session"),

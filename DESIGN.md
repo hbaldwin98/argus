@@ -1702,7 +1702,14 @@ the stage to the working tree, where it was found.
 version that line is in: the working tree for unstaged work, the index for staged, the commit for
 one commit. A removed line has no number there, so the cursor goes to the line after it. Escape
 brings the review back exactly as it was, cursor and folds included, over the stage it was opened
-over; it is not read again.
+over; it is not read again. `c` in the history does the same with the commit under its cursor,
+reading it at that commit, on the file the cursor is on when it is on one.
+
+A comment is made in Code as in a review — `v` picks a range, `c` opens the box — and goes the same
+way, as a review comment, stored and then told to an agent in the checkout. Its anchor is the side
+of a review the version is: the working tree as unstaged work, the index as staged, a commit as
+that commit. It carries the version's line numbers only; the other side's would need a diff, and
+an agent reading the comment needs no more than one.
 
 ## Features and the decision board
 

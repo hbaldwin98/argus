@@ -44,6 +44,7 @@ export const state = {
     extensions: null,
     saved: null,
     reviewDraft: '',
+    codeDraft: '',
     filter: '',
     archivedOpen: false,
     compose: { checkout: null, template: null, text: '' },

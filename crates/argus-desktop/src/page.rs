@@ -99,6 +99,8 @@ pub enum Call {
     CodeJump { gesture: ReviewJumpGesture },
     /// The same in the search field, where Enter searches.
     CodeSearch { gesture: ReviewJumpGesture },
+    /// Sends the Code stage's comment, or with no `body` puts the box away.
+    CodeComment { body: Option<String> },
     /// `open` true shows the composer, false goes back to the Workspace.
     ShowComposer { open: bool },
     /// The composer's start: a shell without a `template`, else an agent
@@ -1381,10 +1383,15 @@ pub struct CodePage {
     pub file_loading: bool,
     pub jump: Option<CodeJump>,
     pub search: Option<CodeSearch>,
-    /// Where Escape goes back to, `brief.rs:39`, when the stage was opened
-    /// from a review.
+    /// Where Escape goes back to, `review · brief.rs:39` or `history`, when
+    /// the stage was opened from one.
     pub back: Option<String>,
     pub failed: Option<String>,
+    /// The picked lines, `lines 3–5`, while a range or a comment is open.
+    pub pick: Option<String>,
+    pub composing: bool,
+    pub recipients: Vec<Recipient>,
+    pub recipient: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1416,6 +1423,7 @@ pub struct CodeRow {
     /// How many lines this version removed just above it.
     pub removed_before: u32,
     pub cursor: bool,
+    pub picked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1473,7 +1481,9 @@ pub struct CodeMatchRow {
 pub enum CodeClick {
     /// A folder opens or closes; a file is read.
     Tree { path: String },
-    Line { line: u32 },
+    /// With `extend`, the range's other end stays where it was.
+    Line { line: u32, extend: bool },
+    Recipient { pane: u64 },
     Symbol { line: u32 },
     Version {
         #[cfg_attr(test, ts(type = "\"working\" | \"index\" | \"head\""))]

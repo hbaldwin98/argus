@@ -4,6 +4,7 @@ import type { CodeOutlineRow } from "./CodeOutlineRow";
 import type { CodeRow } from "./CodeRow";
 import type { CodeSearch } from "./CodeSearch";
 import type { CodeTreeRow } from "./CodeTreeRow";
+import type { Recipient } from "./Recipient";
 
 /**
  * The Code stage: one checkout's files at one version, and one of them
@@ -35,7 +36,11 @@ removedAtEnd: number, symbols: Array<CodeOutlineRow>,
  */
 note: string | null, fileLoading: boolean, jump: CodeJump | null, search: CodeSearch | null, 
 /**
- * Where Escape goes back to, `brief.rs:39`, when the stage was opened
- * from a review.
+ * Where Escape goes back to, `review · brief.rs:39` or `history`, when
+ * the stage was opened from one.
  */
-back: string | null, failed: string | null, };
+back: string | null, failed: string | null, 
+/**
+ * The picked lines, `lines 3–5`, while a range or a comment is open.
+ */
+pick: string | null, composing: boolean, recipients: Array<Recipient>, recipient: number | null, };

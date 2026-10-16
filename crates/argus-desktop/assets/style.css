@@ -3150,6 +3150,13 @@ body.console-fullscreen #bar {
 .cline.add .dmark {
   color: var(--ok);
 }
+.cline.picked {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.cbody .comment-card {
+  margin: var(--sp-8) var(--sp-16) var(--sp-8) 68px;
+  font-family: var(--font-ui);
+}
 .cline.cursor {
   box-shadow: inset 3px 0 0 var(--accent);
   background-image: linear-gradient(var(--fill), var(--fill));

@@ -15,4 +15,4 @@ added: boolean,
 /**
  * How many lines this version removed just above it.
  */
-removedBefore: number, cursor: boolean, };
+removedBefore: number, cursor: boolean, picked: boolean, };

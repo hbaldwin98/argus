@@ -86,6 +86,8 @@ export const state: {
   saved: SavedViewsPage | null;
   /** The comment being written, kept across the dialog's redraws. */
   reviewDraft: string;
+  /** The Code stage's comment as typed, kept across redraws. */
+  codeDraft: string;
   /** What the index's filter says. */
   filter: string;
   /** Whether the board's archived column is unfolded. */
@@ -137,6 +139,7 @@ export const state: {
   extensions: null,
   saved: null,
   reviewDraft: '',
+  codeDraft: '',
   filter: '',
   archivedOpen: false,
   compose: { checkout: null, template: null, text: '' },

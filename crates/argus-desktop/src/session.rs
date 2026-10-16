@@ -312,6 +312,11 @@ impl Session {
     }
 
     fn apply(&mut self, msg: ServerMsg) {
+        // The review's comment path is the Code stage's too: whichever box
+        // was open is the one the daemon saved.
+        if let (ServerMsg::ReviewCommentSaved { .. }, Some(code)) = (&msg, &mut self.code) {
+            code.commented();
+        }
         if let Some(effect) = self.shown.receive(&msg) {
             self.take(effect);
             return;
@@ -584,6 +589,7 @@ impl Session {
             Call::CodeAction { action } => self.code_action(action),
             Call::CodeJump { gesture } => self.code_field(gesture, false),
             Call::CodeSearch { gesture } => self.code_field(gesture, true),
+            Call::CodeComment { body } => self.code_comment(body),
             Call::ShowComposer { open } => self.show_composer(open),
             Call::Compose { checkout, template, prompt } => self.compose(CheckoutId(checkout), template, prompt),
             Call::SelectCheckoutRow { key } => self.select_checkout_row(key),
@@ -2039,7 +2045,7 @@ impl Session {
     /// Escape: back to the review the stage was opened from, as it was,
     /// over the stage it was opened over; or only to that stage.
     fn leave_code(&mut self) {
-        if self.code.as_ref().is_some_and(|c| c.back().is_some()) && self.dialogs.unpark_review() {
+        if self.code.as_ref().is_some_and(|c| c.back().is_some()) && self.dialogs.unpark() {
             if let Some(code) = &mut self.code {
                 code.forget_back();
             }
@@ -2053,6 +2059,22 @@ impl Session {
         } else if let Some(code) = &mut self.code {
             let msgs = code.click(target, || self.awaited.name());
             self.out.extend(msgs);
+        }
+        self.finish()
+    }
+
+    /// Sends the Code stage's comment, or with no `body` puts the box away.
+    fn code_comment(&mut self, body: Option<String>) -> Vec<ClientMsg> {
+        let Some(code) = &mut self.code else {
+            return self.finish();
+        };
+        let Some(body) = body else {
+            code.cancel_comment();
+            return self.finish();
+        };
+        match code.comment(self.tree.checkout(code.checkout()), &body) {
+            Ok(msg) => self.out.push(msg),
+            Err(text) => self.say(text),
         }
         self.finish()
     }
@@ -2088,6 +2110,12 @@ impl Session {
             Action::PreviousFile => code.next_change(false),
             Action::Filter => code.open_jump(),
             Action::Search => code.open_search(),
+            Action::Pick => code.toggle_pick(),
+            Action::Comment => {
+                if let Err(text) = code.compose(self.tree.checkout(code.checkout())) {
+                    self.passing.push(Event::Notice { text: text.into() });
+                }
+            }
             Action::Refresh => {
                 let msgs = code.refresh(|| self.awaited.name());
                 self.out.extend(msgs);
@@ -2363,6 +2391,15 @@ impl Session {
 
     /// A key or click of the history dialog; `row` is a clicked row.
     fn history_action(&mut self, action: Action, row: Option<usize>) -> Vec<ClientMsg> {
+        if action == Action::OpenCode {
+            if !self.status.daemon_can(CODE) {
+                self.say(TOO_OLD_FOR_CODE);
+            } else if let Some((checkout, oid, path)) = self.dialogs.park_history() {
+                let back = Back { label: "history".into() };
+                self.open_code_at(checkout, CodeVersion::Commit(oid), path, None, Some(back));
+            }
+            return self.finish();
+        }
         self.dialogs.history_action(action, row, &self.tree, || self.awaited.name(), &mut self.out);
         self.finish()
     }
@@ -2382,7 +2419,8 @@ impl Session {
             if !self.status.daemon_can(CODE) {
                 self.say(TOO_OLD_FOR_CODE);
             } else if let Some((checkout, path, line, version)) = self.dialogs.park_review() {
-                let back = Back { path: path.clone(), line };
+                let name = path.rsplit('/').next().unwrap_or(&path);
+                let back = Back { label: format!("review · {name}:{line}") };
                 self.open_code_at(checkout, version, Some(path), Some(line), Some(back));
             }
             return self.finish();
@@ -2873,7 +2911,11 @@ impl Session {
             let repo = self.chosen_repository().cloned();
             events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
         }
-        let code = self.code.as_ref().filter(|_| self.stage == Stage::Code).map(CodeStage::page);
+        let code = self
+            .code
+            .as_ref()
+            .filter(|_| self.stage == Stage::Code)
+            .map(|code| code.page(self.tree.checkout(code.checkout())));
         if let Some(page) = self.code_sent.take(code) {
             events.push(Event::Code(Box::new(page)));
         }
@@ -3253,7 +3295,7 @@ mod tests {
         ));
         assert!(s.stage == Stage::Code);
         assert!(s.dialogs.review().is_none(), "put away, not closed");
-        assert_eq!(s.code.as_ref().unwrap().page().back.as_deref(), Some("brief.rs:4"));
+        assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("review · brief.rs:4"));
 
         let sent = code_asks(s.code_action(Action::CloseLayer));
         assert!(sent.is_empty(), "the review comes back as it was, not read again");
@@ -3269,6 +3311,34 @@ mod tests {
         assert!(sent.is_empty());
         assert!(s.stage == Stage::Checkouts);
         assert!(notices(&mut s).iter().any(|n| n.contains("too old to read code")));
+    }
+
+    #[test]
+    fn c_in_the_history_reads_its_commit_in_code_and_escape_brings_the_history_back() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        let sent = s.open_history(CheckoutId(100));
+        let Some(ClientMsg::ListCommits { request_id, .. }) = sent.iter().find(|m| matches!(m, ClientMsg::ListCommits { .. })) else {
+            panic!("{:?}", names(&sent));
+        };
+        let commit = argus_protocol::CommitInfo {
+            oid: "a".repeat(40),
+            short: "aaaaaaa".into(),
+            summary: "Wake a pane's pump".into(),
+            author: "hunt".into(),
+            time: 0,
+        };
+        s.receive(ServerMsg::Commits { request_id: *request_id, checkout: CheckoutId(100), commits: vec![commit] });
+        let sent = code_asks(s.history_action(Action::OpenCode, None));
+        assert!(matches!(
+            sent.as_slice(),
+            [ClientMsg::ListCode { version: CodeVersion::Commit(oid), .. }] if *oid == "a".repeat(40)
+        ));
+        assert!(s.stage == Stage::Code);
+        assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("history"));
+        s.code_action(Action::CloseLayer);
+        assert!(s.stage == Stage::Checkouts);
+        assert!(s.dialogs.history_open(), "the history is back as it was");
     }
 
     #[test]
@@ -4292,7 +4362,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 127] = [
+    const CALLS: [&str; 128] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
@@ -4324,6 +4394,7 @@ mod tests {
         r#"{"call":"code_action","action":"next"}"#,
         r#"{"call":"code_jump","gesture":{"on":"query","text":"br"}}"#,
         r#"{"call":"code_search","gesture":{"on":"choose"}}"#,
+        r#"{"call":"code_comment","body":null}"#,
         r#"{"call":"show_composer","open":true}"#,
         r#"{"call":"compose","checkout":100,"template":null,"prompt":null}"#,
         r#"{"call":"select_checkout_row","key":"c100"}"#,

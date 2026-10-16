@@ -8,22 +8,24 @@
 use std::collections::HashSet;
 
 use argus_protocol::fuzzy::Fuzzy;
+use argus_protocol::review_session::recipients;
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatch, CodeMatches, CodeTree, CodeVersion,
+    CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatch, CodeMatches, CodeTree, CodeVersion, PaneId,
+    ReviewAnchor, ReviewBase,
 };
 
 use crate::code_tree::{self, folders_of};
 use crate::page::{
-    CodeClick, CodeJump, CodeMatchRow, CodeOutlineRow, CodePage, CodeRow, CodeSearch, CodeTreeRow, ReviewJumpGesture,
+    CodeClick, CodeJump, CodeMatchRow, CodeOutlineRow, CodePage, CodeRow, CodeSearch, CodeTreeRow, Recipient,
+    ReviewJumpGesture,
 };
 use crate::review::parts;
 
-/// Where Escape goes back to: the review the stage was opened from, at the
-/// line it was on.
+/// Where Escape goes back to: the dialog the stage was opened from, as the
+/// button says it — `review · brief.rs:39`, `history`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Back {
-    pub path: String,
-    pub line: u32,
+    pub label: String,
 }
 
 #[derive(Default)]
@@ -55,6 +57,11 @@ pub struct CodeStage {
     file_asked: Option<u64>,
     /// The line the cursor is on, from zero.
     cursor: usize,
+    /// The other end of a `v` range, from zero.
+    mark: Option<usize>,
+    composing: bool,
+    /// The agent picked to read a comment; the first live one until then.
+    recipient: Option<PaneId>,
     /// The line to put the cursor on once the file asked for arrives.
     land: Option<u32>,
     jump: Option<Jump>,
@@ -87,6 +94,9 @@ impl CodeStage {
             file: None,
             file_asked: None,
             cursor: 0,
+            mark: None,
+            composing: false,
+            recipient: None,
             land: None,
             jump: None,
             search: None,
@@ -124,6 +134,8 @@ impl CodeStage {
         self.open.extend(folders_of(&path).map(str::to_owned));
         self.file_asked = Some(request_id);
         self.land = line;
+        self.mark = None;
+        self.composing = false;
         self.failed = None;
         self.path = Some(path.clone());
         ClientMsg::ReadCode { request_id, checkout: self.checkout, path, version: self.version.clone() }
@@ -203,7 +215,16 @@ impl CodeStage {
                     self.open.insert(path);
                 }
             }
-            CodeClick::Line { line } | CodeClick::Symbol { line } => self.go_to(line),
+            CodeClick::Line { line, extend } => {
+                if extend && self.mark.is_none() {
+                    self.mark = Some(self.cursor);
+                } else if !extend {
+                    self.mark = None;
+                }
+                self.go_to(line);
+            }
+            CodeClick::Symbol { line } => self.go_to(line),
+            CodeClick::Recipient { pane } => self.recipient = Some(PaneId(pane)),
             CodeClick::Version { version } => {
                 let version = match version.as_str() {
                     "index" => CodeVersion::Index,
@@ -270,6 +291,95 @@ impl CodeStage {
     pub fn editor_target(&self) -> Option<(CheckoutId, String, Option<u32>)> {
         let path = self.path.clone()?;
         Some((self.checkout, path, self.file.as_ref().map(|_| self.cursor as u32 + 1)))
+    }
+
+    // ---- comments --------------------------------------------------------
+
+    /// `v`: a range starts at the cursor, or is let go.
+    pub fn toggle_pick(&mut self) {
+        self.mark = match self.mark {
+            Some(_) => None,
+            None => Some(self.cursor),
+        };
+    }
+
+    /// The picked lines, from zero, top first: the cursor's alone with no
+    /// range.
+    fn picked(&self) -> (usize, usize) {
+        let mark = self.mark.unwrap_or(self.cursor);
+        (mark.min(self.cursor), mark.max(self.cursor))
+    }
+
+    /// What a comment written now attaches to: the picked lines of the file
+    /// read, on the side of a review the version is — the working tree as
+    /// unstaged work, the index as staged, a commit as that commit. A line
+    /// read here has only the version's number; the other side's is not
+    /// known without a diff, and a comment needs no more than one.
+    fn anchor(&self) -> Option<ReviewAnchor> {
+        let file = self.file.as_ref().filter(|f| Some(&f.path) == self.path.as_ref())?;
+        let (from, to) = self.picked();
+        let lines = file.lines.get(from..=to)?;
+        let (base, commit) = match &self.version {
+            CodeVersion::WorkingTree => (ReviewBase::Unstaged, None),
+            CodeVersion::Index => (ReviewBase::Staged, None),
+            CodeVersion::Head => (ReviewBase::Commit, None),
+            CodeVersion::Commit(oid) => (ReviewBase::Commit, Some(oid.clone())),
+        };
+        Some(ReviewAnchor {
+            base,
+            commit,
+            path: file.path.clone(),
+            old_path: None,
+            old_start: None,
+            old_end: None,
+            new_start: Some(from as u32 + 1),
+            new_end: Some(to as u32 + 1),
+            text: lines.iter().map(|l| format!("{}{}", if l.added { '+' } else { ' ' }, l.text)).collect(),
+        })
+    }
+
+    /// The agent a comment goes to: the one picked while it still runs,
+    /// else the first that does.
+    fn addressee(&self, checkout: Option<&CheckoutInfo>) -> Option<PaneId> {
+        let live: Vec<PaneId> = checkout.into_iter().flat_map(recipients).map(|p| p.id).collect();
+        self.recipient.filter(|p| live.contains(p)).or(live.first().copied())
+    }
+
+    /// `c`: the comment box, under the picked lines, when there are lines
+    /// and an agent to read it.
+    pub fn compose(&mut self, checkout: Option<&CheckoutInfo>) -> Result<(), &'static str> {
+        if self.anchor().is_none() {
+            return Err("read a file to comment on");
+        }
+        if self.addressee(checkout).is_none() {
+            return Err("no agent running in this checkout");
+        }
+        self.composing = true;
+        Ok(())
+    }
+
+    pub fn cancel_comment(&mut self) {
+        self.composing = false;
+    }
+
+    /// The comment, sent through the review's path: stored under the
+    /// checkout, then told to the agent. The box stays until it is saved.
+    pub fn comment(&self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
+        let body = body.trim();
+        if body.is_empty() {
+            return Err("the comment is empty");
+        }
+        let anchor = self.anchor().ok_or("read a file to comment on")?;
+        let recipient = self.addressee(checkout).ok_or("no agent running in this checkout")?;
+        Ok(ClientMsg::ReviewComment { checkout: self.checkout, recipient, anchor: Box::new(anchor), body: body.to_owned() })
+    }
+
+    /// The daemon saved a comment: the box closes and the range with it.
+    pub fn commented(&mut self) {
+        if self.composing {
+            self.composing = false;
+            self.mark = None;
+        }
     }
 
     // ---- go to a file ----------------------------------------------------
@@ -368,7 +478,11 @@ impl CodeStage {
 
     // ---- the page --------------------------------------------------------
 
-    pub fn page(&self) -> CodePage {
+    /// The stage as the page draws it, given the checkout as the tree has
+    /// it now: its agents may have come or gone.
+    pub fn page(&self, checkout: Option<&CheckoutInfo>) -> CodePage {
+        let (from, to) = self.picked();
+        let picking = self.mark.is_some() || self.composing;
         let shown = self.file.as_ref().filter(|f| Some(&f.path) == self.path.as_ref());
         let change = self.path.as_ref().and_then(|p| self.changes.iter().find(|c| &c.path == p));
         let mut lines: Vec<CodeRow> = shown
@@ -382,6 +496,7 @@ impl CodeStage {
                         added: l.added,
                         removed_before: 0,
                         cursor: i == self.cursor,
+                        picked: picking && (from..=to).contains(&i),
                     })
                     .collect()
             })
@@ -464,10 +579,17 @@ impl CodeStage {
                 truncated: s.found.as_ref().is_some_and(|f| f.truncated),
                 at: s.found.as_ref().filter(|f| !f.matches.is_empty()).map(|_| s.at),
             }),
-            back: self.back.as_ref().map(|b| {
-                let name = b.path.rsplit('/').next().unwrap_or(&b.path);
-                format!("{name}:{}", b.line)
+            back: self.back.as_ref().map(|b| b.label.clone()),
+            pick: (picking && shown.is_some()).then(|| {
+                if from == to { format!("line {}", from + 1) } else { format!("lines {}–{}", from + 1, to + 1) }
             }),
+            composing: self.composing,
+            recipients: checkout
+                .into_iter()
+                .flat_map(recipients)
+                .map(|p| Recipient { pane: p.id.0, title: p.title.clone() })
+                .collect(),
+            recipient: self.addressee(checkout).map(|p| p.0),
             failed: self.failed.clone(),
         }
     }
@@ -496,8 +618,8 @@ fn match_row(m: &CodeMatch) -> CodeMatchRow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::checkout;
-    use argus_protocol::{CodeLine, CodeSymbol, Removed};
+    use crate::fixtures::{checkout, pane};
+    use argus_protocol::{CodeLine, CodeSymbol, PaneKind, PaneStatus, Removed};
 
     fn stage(path: Option<&str>, line: Option<u32>) -> (CodeStage, Vec<ClientMsg>) {
         let mut ids = 0;
@@ -553,7 +675,7 @@ mod tests {
         ));
         assert!(s.receive_tree(tree(1)));
         assert!(s.receive_file(file(2, "src/a.rs")));
-        let page = s.page();
+        let page = s.page(None);
         assert_eq!(page.lines.iter().position(|r| r.cursor), Some(2));
         let names: Vec<(&str, bool)> = page.tree.iter().map(|r| (r.name.as_str(), r.on)).collect();
         assert_eq!(names, [("README.md", false), ("src", false), ("a.rs", true), ("b.rs", false)], "its folder opened");
@@ -566,7 +688,7 @@ mod tests {
         s.receive_tree(tree(1));
         s.click(CodeClick::Tree { path: "src/b.rs".into() }, || 9);
         assert!(!s.receive_file(file(2, "src/a.rs")));
-        assert!(s.page().file_loading);
+        assert!(s.page(None).file_loading);
         assert!(s.receive_file(file(9, "src/b.rs")));
     }
 
@@ -574,7 +696,7 @@ mod tests {
     fn removed_lines_are_counted_above_the_line_after_them() {
         let (mut s, _) = stage(Some("src/a.rs"), None);
         s.receive_file(file(2, "src/a.rs"));
-        let page = s.page();
+        let page = s.page(None);
         assert_eq!(page.lines[1].removed_before, 1);
         assert_eq!(page.removed_at_end, 2, "after the last line");
     }
@@ -596,22 +718,22 @@ mod tests {
     fn the_outline_marks_the_definition_the_cursor_is_in() {
         let (mut s, _) = stage(Some("src/a.rs"), Some(4));
         s.receive_file(file(2, "src/a.rs"));
-        let on: Vec<bool> = s.page().symbols.iter().map(|r| r.on).collect();
+        let on: Vec<bool> = s.page(None).symbols.iter().map(|r| r.on).collect();
         assert_eq!(on, [true, false]);
         s.click(CodeClick::Symbol { line: 5 }, || 0);
-        assert_eq!(s.page().symbols.iter().map(|r| r.on).collect::<Vec<_>>(), [false, true]);
+        assert_eq!(s.page(None).symbols.iter().map(|r| r.on).collect::<Vec<_>>(), [false, true]);
     }
 
     #[test]
     fn a_folder_click_opens_and_closes_it_and_a_file_click_reads_it() {
         let (mut s, _) = stage(None, None);
         s.receive_tree(tree(1));
-        assert_eq!(s.page().tree.len(), 2, "README.md and a closed src");
+        assert_eq!(s.page(None).tree.len(), 2, "README.md and a closed src");
         assert!(s.click(CodeClick::Tree { path: "src".into() }, || 5).is_empty());
-        assert_eq!(s.page().tree.len(), 4);
+        assert_eq!(s.page(None).tree.len(), 4);
         assert!(matches!(s.click(CodeClick::Tree { path: "src/b.rs".into() }, || 5).as_slice(), [ClientMsg::ReadCode { .. }]));
         s.click(CodeClick::Tree { path: "src".into() }, || 6);
-        assert_eq!(s.page().tree.len(), 2);
+        assert_eq!(s.page(None).tree.len(), 2);
     }
 
     #[test]
@@ -619,7 +741,7 @@ mod tests {
         let (mut s, _) = stage(None, None);
         s.receive_tree(tree(1));
         s.click(CodeClick::ChangedOnly { only: true }, || 0);
-        let names: Vec<String> = s.page().tree.into_iter().map(|r| r.name).collect();
+        let names: Vec<String> = s.page(None).tree.into_iter().map(|r| r.name).collect();
         assert_eq!(names, ["src", "a.rs"]);
     }
 
@@ -635,7 +757,7 @@ mod tests {
             sent.as_slice(),
             [ClientMsg::ListCode { version: CodeVersion::Head, .. }, ClientMsg::ReadCode { version: CodeVersion::Head, .. }]
         ));
-        assert_eq!(s.page().version, "head");
+        assert_eq!(s.page(None).version, "head");
         assert!(s.click(CodeClick::Version { version: "head".into() }, || 0).is_empty(), "already there");
     }
 
@@ -645,10 +767,10 @@ mod tests {
         s.receive_tree(tree(1));
         s.open_jump();
         s.jump(ReviewJumpGesture::Query { text: "b.rs".into() }, || 0);
-        assert_eq!(s.page().jump.unwrap().matches[0], "src/b.rs");
+        assert_eq!(s.page(None).jump.unwrap().matches[0], "src/b.rs");
         let sent = s.jump(ReviewJumpGesture::Choose, || 7);
         assert!(matches!(sent.as_slice(), [ClientMsg::ReadCode { request_id: 7, path, .. }] if path == "src/b.rs"));
-        assert!(s.page().jump.is_none());
+        assert!(s.page(None).jump.is_none());
     }
 
     #[test]
@@ -658,7 +780,7 @@ mod tests {
         s.search(ReviewJumpGesture::Query { text: "more".into() }, || 0);
         let sent = s.search(ReviewJumpGesture::Choose, || 20);
         assert!(matches!(sent.as_slice(), [ClientMsg::SearchCode { request_id: 20, query, .. }] if query == "more"));
-        assert!(s.page().search.unwrap().loading);
+        assert!(s.page(None).search.unwrap().loading);
         let hit = CodeMatch { path: "src/a.rs".into(), line: 3, text: "    more()".into(), start: 4, end: 8 };
         assert!(s.receive_matches(CodeMatches {
             request_id: 20,
@@ -667,7 +789,7 @@ mod tests {
             matches: vec![hit],
             truncated: false,
         }));
-        let row = &s.page().search.unwrap().matches[0];
+        let row = &s.page(None).search.unwrap().matches[0];
         assert_eq!((row.before.as_str(), row.hit.as_str(), row.after.as_str()), ("", "more", "()"));
         let sent = s.search(ReviewJumpGesture::Choose, || 21);
         assert!(matches!(sent.as_slice(), [ClientMsg::ReadCode { request_id: 21, .. }]));
@@ -679,7 +801,7 @@ mod tests {
     fn a_file_that_will_not_read_says_why_where_its_lines_would_be() {
         let (mut s, _) = stage(Some("gone.rs"), None);
         assert!(s.failed(CheckoutId(100), 2, "gone.rs is not in this version".into()));
-        let page = s.page();
+        let page = s.page(None);
         assert_eq!(page.failed.as_deref(), Some("gone.rs is not in this version"));
         assert!(page.lines.is_empty() && !page.file_loading);
         assert!(!s.failed(CheckoutId(100), 99, "not mine".into()));
@@ -693,12 +815,79 @@ mod tests {
             CodeVersion::WorkingTree,
             Some("src/brief.rs".into()),
             Some(39),
-            Some(Back { path: "src/brief.rs".into(), line: 39 }),
+            Some(Back { label: "review · brief.rs:39".into() }),
             || {
                 ids += 1;
                 ids
             },
         );
-        assert_eq!(s.page().back.as_deref(), Some("brief.rs:39"));
+        assert_eq!(s.page(None).back.as_deref(), Some("review · brief.rs:39"));
+    }
+
+    fn with_agent() -> CheckoutInfo {
+        checkout(100, "main", true, vec![pane(7, PaneKind::Agent, "claude", PaneStatus::Working)])
+    }
+
+    #[test]
+    fn a_picked_range_is_commented_on_through_the_reviews_path() {
+        let (mut s, _) = stage(Some("src/a.rs"), Some(2));
+        s.receive_file(file(2, "src/a.rs"));
+        s.toggle_pick();
+        s.move_by(1);
+        let co = with_agent();
+        assert_eq!(s.page(Some(&co)).pick.as_deref(), Some("lines 2–3"));
+        s.compose(Some(&co)).unwrap();
+        let ClientMsg::ReviewComment { recipient, anchor, body, .. } = s.comment(Some(&co), " why two? ").unwrap() else {
+            panic!()
+        };
+        assert_eq!((recipient, body.as_str()), (PaneId(7), "why two?"));
+        assert_eq!(anchor.base, ReviewBase::Unstaged, "the working tree is unstaged work");
+        assert_eq!((anchor.new_start, anchor.new_end), (Some(2), Some(3)));
+        assert_eq!(anchor.text, ["+    new()", "+    more()"]);
+        s.commented();
+        let page = s.page(Some(&co));
+        assert!(!page.composing && page.pick.is_none() && page.lines.iter().all(|r| !r.picked));
+    }
+
+    #[test]
+    fn a_comment_needs_a_file_and_an_agent() {
+        let (mut s, _) = stage(Some("src/a.rs"), None);
+        assert_eq!(s.compose(Some(&with_agent())), Err("read a file to comment on"));
+        s.receive_file(file(2, "src/a.rs"));
+        assert_eq!(s.compose(Some(&checkout(100, "main", true, Vec::new()))), Err("no agent running in this checkout"));
+        assert!(!s.page(None).composing);
+    }
+
+    #[test]
+    fn a_comment_on_a_commit_records_the_commit() {
+        let mut ids = 0;
+        let (mut s, _) = CodeStage::open(
+            &with_agent(),
+            CodeVersion::Commit("abc123".into()),
+            Some("src/a.rs".into()),
+            None,
+            None,
+            || {
+                ids += 1;
+                ids
+            },
+        );
+        let mut read = file(2, "src/a.rs");
+        read.version = CodeVersion::Commit("abc123".into());
+        s.receive_file(read);
+        let ClientMsg::ReviewComment { anchor, .. } = s.comment(Some(&with_agent()), "x").unwrap() else {
+            panic!()
+        };
+        assert_eq!((anchor.base, anchor.commit.as_deref()), (ReviewBase::Commit, Some("abc123")));
+    }
+
+    #[test]
+    fn a_shift_click_extends_the_range_from_the_cursor() {
+        let (mut s, _) = stage(Some("src/a.rs"), Some(1));
+        s.receive_file(file(2, "src/a.rs"));
+        s.click(CodeClick::Line { line: 4, extend: true }, || 0);
+        assert_eq!(s.page(None).pick.as_deref(), Some("lines 1–4"));
+        s.click(CodeClick::Line { line: 2, extend: false }, || 0);
+        assert!(s.page(None).pick.is_none());
     }
 }

@@ -792,11 +792,14 @@ editor.
 | `]` / `[` | The next or previous change |
 | Ctrl P | Go to a file |
 | Ctrl F | Search the checkout; Enter searches, then reads the match picked |
+| `v` / `V` | Start or clear a line-range selection |
+| `c` | Comment on the picked lines to an agent in the checkout, as a review comment |
 | `e` | Open the file in your editor at the cursor's line |
 | `r` / `R` | Read the files again |
-| Escape | Back to the review it was opened from, as it was, or to the stage before |
+| Escape | Back to the review or history it was opened from, as it was, or to the stage before |
 
-The outline lists what the file defines for Rust, TypeScript and JavaScript, Python and C#.
+The outline lists what the file defines for Rust, TypeScript and JavaScript, Python and C#. In the
+history, `c` reads the commit under the cursor in Code, at the file the cursor is on.
 
 ## Sessions and Git Data
 

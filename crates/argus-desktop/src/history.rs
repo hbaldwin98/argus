@@ -218,6 +218,14 @@ impl HistoryDialog {
         }
     }
 
+    /// `c`: the commit under the cursor, and the file when the cursor is on
+    /// one, to be read in the Code stage at that commit.
+    pub fn code_target(&self) -> Option<(CheckoutId, String, Option<String>)> {
+        let view = self.view.as_ref().filter(|_| self.cursor_shown())?;
+        let oid = view.selected_oid()?.to_owned();
+        Some((self.checkout, oid, view.selected_file().map(|f| f.path.clone())))
+    }
+
     fn selected_row(&self) -> Option<HistoryRow> {
         self.view.as_ref().filter(|_| self.cursor_shown()).and_then(|v| v.rows.get(v.sel).copied())
     }

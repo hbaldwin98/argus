@@ -16,11 +16,17 @@ use crate::settings::ReviewLayout;
 /// A file at a line, to open in the person's editor.
 pub type EditorAt = (CheckoutId, String, Option<u32>);
 
+/// A dialog put away while the Code stage is up.
+enum Parked {
+    Review(Box<ReviewDialog>),
+    History(Box<HistoryDialog>),
+}
+
 pub struct Dialogs {
     review: Option<ReviewDialog>,
-    /// A review put away while the Code stage reads its file, to be come
-    /// back to as it was.
-    parked: Option<ReviewDialog>,
+    /// A dialog put away while the Code stage reads what it was on, to be
+    /// come back to as it was.
+    parked: Option<Parked>,
     review_sent: Sent<ReviewPage>,
     history: Option<HistoryDialog>,
     history_sent: Sent<HistoryPage>,
@@ -324,23 +330,35 @@ impl Dialogs {
         }
     }
 
-    /// `O`: the review is put away to be come back to, at the file and line
-    /// its cursor is on, which come back to be read in the Code stage.
+    /// `o` in a review: it is put away to be come back to, at the file and
+    /// line its cursor is on, which come back to be read in the Code stage.
     pub fn park_review(&mut self) -> Option<(CheckoutId, String, u32, argus_protocol::CodeVersion)> {
         let target = self.review.as_ref()?.code_target()?;
-        self.parked = self.review.take();
+        self.parked = self.review.take().map(|dialog| Parked::Review(Box::new(dialog)));
         Some(target)
     }
 
-    /// Escape in the Code stage: the review it was opened from, as it was.
-    pub fn unpark_review(&mut self) -> bool {
+    /// `c` in the history: it is put away, and the commit under its cursor
+    /// comes back, with the file when the cursor is on one.
+    pub fn park_history(&mut self) -> Option<(CheckoutId, String, Option<String>)> {
+        let target = self.history.as_ref()?.code_target()?;
+        self.parked = self.history.take().map(|dialog| Parked::History(Box::new(dialog)));
+        Some(target)
+    }
+
+    /// Escape in the Code stage: the dialog it was opened from, as it was.
+    pub fn unpark(&mut self) -> bool {
         match self.parked.take() {
-            Some(dialog) => {
-                self.review = Some(dialog);
-                true
-            }
-            None => false,
+            Some(Parked::Review(dialog)) => self.review = Some(*dialog),
+            Some(Parked::History(dialog)) => self.history = Some(*dialog),
+            None => return false,
         }
+        true
+    }
+
+    #[cfg(test)]
+    pub fn history_open(&self) -> bool {
+        self.history.is_some()
     }
 
     #[cfg(test)]
