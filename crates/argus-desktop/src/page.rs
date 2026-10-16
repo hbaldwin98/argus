@@ -58,6 +58,10 @@ pub enum Call {
     /// A pane's header dropped on another pane: on its centre they swap, on
     /// a side it joins that row there, on the top or bottom it starts a row.
     MovePane { pane: u64, onto: u64, zone: Zone },
+    /// A pane dragged from the rail onto the Workspace: shown there when it
+    /// holds nothing, else into the grid where it landed, as a header's
+    /// drop would put it; `onto` is none for a drop on no pane.
+    DropPane { pane: u64, onto: Option<u64>, zone: Zone },
     /// The pane with the keys trades places with its neighbour in `dir`.
     MoveHeld { dir: Dir },
     /// The keys go to the pane next to the one that has them in `dir`.

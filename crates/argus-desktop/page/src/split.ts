@@ -320,13 +320,29 @@ function target(
   return null;
 }
 
-function startMove(e: MouseEvent, slot: number, pane: number): void {
+/** Where a dragged pane was let go: on a cell's zone, or over the stage
+ *  on no cell, or neither. */
+type Landing = { onto: Shown; zone: Zone } | 'stage' | null;
+
+/** Drags a pane by a press at `e`, lighting the zone of the cell under the
+ *  pointer, and hands `drop` where it was let go. `slot` is the cell the
+ *  pane is already in, which is never a target, or -1 for one coming from
+ *  the rail. Esc cancels. */
+function dragPane(e: MouseEvent, slot: number, drop: (landing: Landing) => void): void {
   if (e.button !== 0) return;
   const origin = [e.clientX, e.clientY];
   let marker: HTMLElement | null = null;
   let over: ReturnType<typeof target> = null;
+  let onStage = false;
   const lit = (m: MouseEvent): void => {
-    over = target(m.clientX, m.clientY, slot);
+    over = splitEl().hidden ? null : target(m.clientX, m.clientY, slot);
+    const stage = $('body').getBoundingClientRect();
+    onStage =
+      m.clientX >= stage.left &&
+      m.clientX < stage.right &&
+      m.clientY >= stage.top &&
+      m.clientY < stage.bottom;
+    document.body.classList.toggle('dropping-on-stage', onStage && !over);
     if (!over) {
       marker?.remove();
       marker = null;
@@ -351,16 +367,17 @@ function startMove(e: MouseEvent, slot: number, pane: number): void {
     document.body.classList.add('moving-pane');
     lit(m);
   };
-  const end = (drop: boolean): void => {
+  const end = (dropped: boolean): void => {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
     window.removeEventListener('keydown', key, true);
-    document.body.classList.remove('moving-pane');
+    document.body.classList.remove('moving-pane', 'dropping-on-stage');
     marker?.remove();
-    const landing = over ? cells[over.slot] && paneAt(over.slot) : null;
-    const zone = over?.zone;
+    const moved = busy;
+    const onto = over && cells[over.slot] ? paneAt(over.slot) : null;
+    const landing: Landing = onto && over ? { onto, zone: over.zone } : onStage ? 'stage' : null;
     busy = false;
-    if (drop && landing && zone) call('move_pane', { pane, onto: landing.pane, zone });
+    if (dropped && moved) drop(landing);
     else drawSplit();
   };
   const up = (): void => end(true);
@@ -373,4 +390,28 @@ function startMove(e: MouseEvent, slot: number, pane: number): void {
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', up);
   window.addEventListener('keydown', key, true);
+}
+
+/** A header dragged onto another pane moves it there. */
+function startMove(e: MouseEvent, slot: number, pane: number): void {
+  dragPane(e, slot, (landing) => {
+    if (landing && landing !== 'stage')
+      call('move_pane', { pane, onto: landing.onto.pane, zone: landing.zone });
+    else drawSplit();
+  });
+}
+
+/** A pane dragged from the rail and let go over the stage opens there: on
+ *  a pane's zone it lands as a header's drop would put it, and anywhere
+ *  else on the stage it joins the grid by the grid rule. A click is left to
+ *  the row, since no drag began. */
+export function dragFromRail(e: MouseEvent, pane: number): void {
+  // No text is selected across the rail while the pane is carried.
+  if (e.button === 0) e.preventDefault();
+  dragPane(e, -1, (landing) => {
+    if (landing === 'stage') call('drop_pane', { pane, onto: null, zone: 'centre' });
+    else if (landing && landing.onto.pane !== pane) {
+      call('drop_pane', { pane, onto: landing.onto.pane, zone: landing.zone });
+    } else drawSplit();
+  });
 }

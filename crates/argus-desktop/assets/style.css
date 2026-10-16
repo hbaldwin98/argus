@@ -1904,6 +1904,11 @@ body.maximized .winbtn .restore {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+/* A pane from the rail over the stage but no pane: it joins the grid. */
+body.dropping-on-stage #body {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 body.moving-pane,
 body.moving-pane * {
   cursor: grabbing !important;

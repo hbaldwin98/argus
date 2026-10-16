@@ -15,7 +15,7 @@ import { closesOnMiddle } from './middle.js';
 import { drawHeading, drawRemoving } from './projects.js';
 import { renameDialog } from './rename.js';
 import { screen } from './screen.js';
-import { drawSplit } from './split.js';
+import { dragFromRail, drawSplit } from './split.js';
 import { openSettings } from './settings.js';
 import { dragEdge } from './edge.js';
 import { state } from './state.js';
@@ -276,6 +276,8 @@ function paneRow(checkout, pane) {
         class: `pane${pane.on ? ' on' : ''}${picked ? ' picked' : ''}${pane.agent ? '' : ' sh'} ${pane.status}`,
         title: pane.note ?? `${pane.agent ? 'agent' : 'shell'}, ${pane.status}`,
         'aria-current': pane.on ? 'true' : null,
+        // Dragged onto the stage it opens there, beside what is shown.
+        onmousedown: (e) => dragFromRail(e, pane.id),
         // The pane comes on screen, but the keys stay in the rail
         // until Enter or a click on the terminal, so x closes it.
         onclick: () => {

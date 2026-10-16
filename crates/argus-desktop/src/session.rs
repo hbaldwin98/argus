@@ -598,6 +598,7 @@ impl Session {
             Call::EvenShares { row } => self.even_shares(row.map(usize::from)),
             Call::StepRow { by } => self.step_row(isize::from(by)),
             Call::MovePane { pane, onto, zone } => self.move_pane(PaneId(pane), PaneId(onto), zone),
+            Call::DropPane { pane, onto, zone } => self.drop_pane(PaneId(pane), onto.map(PaneId), zone),
             Call::MoveHeld { dir } => self.move_held(dir),
             Call::FocusTowards { dir } => self.focus_towards(dir),
             Call::Key { key } => self.key(&key),
@@ -951,25 +952,54 @@ impl Session {
     /// Workspace needs a pane of its own to split from, and the row a pane's
     /// worth of room: a refusal says which, and the row stays as it was.
     fn open_beside(&mut self, pane: PaneId) -> Vec<ClientMsg> {
+        match self.join_grid(pane) {
+            Err(Some(refusal)) => self.note(refusal),
+            _ => self.finish(),
+        }
+    }
+
+    /// Puts `pane` in the grid and gives it the keys, or says why not: a
+    /// refusal is the note to show, and none is a pane that is not there.
+    fn join_grid(&mut self, pane: PaneId) -> Result<(), Option<String>> {
         if self.project_of(pane).is_none() {
-            return self.finish();
+            return Err(None);
         }
         if self.shown.on(Side::Workspace).is_none() {
-            return self.note("show a pane in the Workspace first, then open another beside it");
+            return Err(Some("show a pane in the Workspace first, then open another beside it".into()));
         }
         if !self.shown.in_row(pane) && !self.shown.has_room() {
-            return self.note(format!(
+            return Err(Some(format!(
                 "no room for another pane: each needs {} columns by {} rows. Close one first",
                 split_grid::MIN_COLS,
                 split_grid::MIN_ROWS
-            ));
+            )));
         }
         self.leave_stages();
         self.console.set_fullscreen(false);
         if self.shown.open_beside(pane, &mut self.out).is_none() {
-            return self.note("that pane is open in the console: close it there first");
+            return Err(Some("that pane is open in the console: close it there first".into()));
         }
         self.shown.focus(pane);
+        Ok(())
+    }
+
+    /// A pane dragged from the rail and let go over the Workspace. With no
+    /// pane there it is simply shown; otherwise it joins the grid by the
+    /// grid rule and is then placed where it was dropped, so a drop on a
+    /// pane's edge splits that pane and one on its centre swaps them.
+    fn drop_pane(&mut self, pane: PaneId, onto: Option<PaneId>, zone: Zone) -> Vec<ClientMsg> {
+        if self.shown.on(Side::Workspace).is_none() {
+            return self.select(pane);
+        }
+        if let Err(refusal) = self.join_grid(pane) {
+            return match refusal {
+                Some(refusal) => self.note(refusal),
+                None => self.finish(),
+            };
+        }
+        if let Some(onto) = onto.filter(|&onto| onto != pane) {
+            self.shown.place(pane, onto, zone);
+        }
         self.finish()
     }
 
@@ -3700,6 +3730,30 @@ mod tests {
     }
 
     #[test]
+    fn a_pane_dragged_from_the_rail_onto_an_empty_workspace_is_shown_there() {
+        let mut s = session(without_focus());
+        assert_eq!(names(&s.drop_pane(PaneId(1), None, Zone::Centre)), ["subscribe 1"]);
+        assert_eq!((s.shown.pane(), s.shown.panes()), (Some(PaneId(1)), vec![PaneId(1)]));
+    }
+
+    #[test]
+    fn a_pane_dragged_from_the_rail_lands_where_it_was_dropped() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.drop_pane(PaneId(2), Some(PaneId(1)), Zone::Top);
+        assert_eq!(s.rail(0).row.grid, [vec![1], vec![0]], "above the pane it was dropped on");
+        assert_eq!(s.shown.pane(), Some(PaneId(2)), "with the keys");
+    }
+
+    #[test]
+    fn a_pane_dragged_from_the_rail_onto_no_pane_joins_by_the_grid_rule() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.drop_pane(PaneId(2), None, Zone::Centre);
+        assert_eq!(s.rail(0).row.grid, [vec![0, 1]]);
+    }
+
+    #[test]
     fn dropping_a_pane_on_another_rearranges_the_grid_the_rail_reports() {
         let mut s = session(without_focus());
         s.select(PaneId(1));
@@ -4712,7 +4766,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 138] = [
+    const CALLS: [&str; 139] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -4721,6 +4775,7 @@ mod tests {
         r#"{"call":"even_shares","row":null}"#,
         r#"{"call":"step_row","by":1}"#,
         r#"{"call":"move_pane","pane":2,"onto":1,"zone":"left"}"#,
+        r#"{"call":"drop_pane","pane":2,"onto":1,"zone":"top"}"#,
         r#"{"call":"move_held","dir":"down"}"#,
         r#"{"call":"focus_towards","dir":"up"}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
