@@ -3129,7 +3129,7 @@ body.console-fullscreen #bar {
   display: flex;
   flex-direction: column;
 }
-.cbody {
+.code-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -3153,7 +3153,7 @@ body.console-fullscreen #bar {
 .cline.picked {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
-.cbody .comment-card {
+.code-body .comment-card {
   margin: var(--sp-8) var(--sp-16) var(--sp-8) 68px;
   font-family: var(--font-ui);
 }

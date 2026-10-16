@@ -34,9 +34,10 @@ function head(c: CodePage): HTMLElement {
   return el(
     'div',
     { class: 'code-head' },
-    el('span', { class: 'meta' }, c.name),
-    c.branch && el('span', { class: 'mono fg-ref' }, c.branch),
-    el('span', { class: 'type-heading' }, 'Code'),
+    // The window's title already says Code; the checkout, and its branch
+    // only where it is named otherwise, is what this adds.
+    el('span', { class: 'mono fg-ref' }, c.name),
+    c.branch && c.branch !== c.name && el('span', { class: 'meta mono' }, c.branch),
     c.version === 'commit'
       ? el('span', { class: 'pill mono' }, c.commit ?? 'commit')
       : el(
@@ -249,7 +250,7 @@ function file(c: CodePage): HTMLElement {
             el('span', { class: 'fg-danger' }, `−${c.removed}`),
           ),
       ),
-    el('div', { class: 'cbody', id: 'code-body' }, body),
+    el('div', { class: 'code-body', id: 'code-body' }, body),
   );
 }
 

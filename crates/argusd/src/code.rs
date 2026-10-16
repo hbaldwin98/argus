@@ -190,9 +190,13 @@ pub fn read(root: &Path, file: &str, version: &CodeVersion) -> anyhow::Result<Re
             .and_then(|entry| repo.find_blob(entry.id()).ok())
             .map(|b| b.content().to_vec())
             .unwrap_or_default();
+        // A checkout made with autocrlf has CRLF on disk and LF in Git; the
+        // lines are read without their endings, so they are compared so too,
+        // or every line of an untouched file reads as changed.
+        let (old, new) = (unix_endings(&old), unix_endings(&bytes));
         let mut opts = git2::DiffOptions::new();
         opts.context_lines(0);
-        let patch = git2::Patch::from_buffers(&old, Some(Path::new(file)), &bytes, Some(Path::new(file)), Some(&mut opts))
+        let patch = git2::Patch::from_buffers(&old, Some(Path::new(file)), &new, Some(Path::new(file)), Some(&mut opts))
             .context("could not compare the file with its base")?;
         for h in 0..patch.num_hunks() {
             let (hunk, count) = patch.hunk(h)?;
@@ -218,6 +222,17 @@ pub fn read(root: &Path, file: &str, version: &CodeVersion) -> anyhow::Result<Re
         }
     }
     Ok(ReadFile { symbols: crate::symbols::of(file, &text), lines, removed, note: None })
+}
+
+/// `bytes` with each CRLF a bare LF.
+fn unix_endings(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, &b) in bytes.iter().enumerate() {
+        if !(b == b'\r' && bytes.get(i + 1) == Some(&b'\n')) {
+            out.push(b);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -276,6 +291,19 @@ mod tests {
         let file = read(&root, "a.rs", &CodeVersion::WorkingTree).unwrap();
         assert_eq!(texts(&file), ["one", "TWO", "three", "four"]);
         assert_eq!(added(&file), [2, 4]);
+        assert_eq!(file.removed, [Removed { before: 2, count: 1 }]);
+    }
+
+    #[test]
+    fn crlf_on_disk_against_lf_in_git_is_not_a_change() {
+        // A Windows checkout with autocrlf: every line differs byte for byte
+        // and none of them was changed.
+        let (_dir, root) = repo_with(&[("a.rs", "one\ntwo\n")]);
+        write(&root, "a.rs", "one\r\nTWO\r\n");
+
+        let file = read(&root, "a.rs", &CodeVersion::WorkingTree).unwrap();
+        assert_eq!(texts(&file), ["one", "TWO"]);
+        assert_eq!(added(&file), [2], "only the line that was edited");
         assert_eq!(file.removed, [Removed { before: 2, count: 1 }]);
     }
 

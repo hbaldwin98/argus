@@ -15,7 +15,10 @@ function segment(label, on, pick) {
 }
 function head(c) {
     const version = (name, label) => segment(label, c.version === name, () => click({ on: 'version', version: name }));
-    return el('div', { class: 'code-head' }, el('span', { class: 'meta' }, c.name), c.branch && el('span', { class: 'mono fg-ref' }, c.branch), el('span', { class: 'type-heading' }, 'Code'), c.version === 'commit'
+    return el('div', { class: 'code-head' }, 
+    // The window's title already says Code; the checkout, and its branch
+    // only where it is named otherwise, is what this adds.
+    el('span', { class: 'mono fg-ref' }, c.name), c.branch && c.branch !== c.name && el('span', { class: 'meta mono' }, c.branch), c.version === 'commit'
         ? el('span', { class: 'pill mono' }, c.commit ?? 'commit')
         : el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Which version of the files' }, version('working', 'Working tree'), version('index', 'Index'), version('head', 'HEAD')), el('span', { class: 'grow' }), c.back &&
         el('button', { class: 'btn sm', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, el('span', { class: 'kbd' }, 'Esc')));
@@ -130,7 +133,7 @@ function file(c) {
     }
     return el('section', { class: 'code-file' }, c.path &&
         el('div', { class: 'fhdr' }, el('span', { class: 'mono' }, c.path), el('span', { class: 'grow' }), (c.added > 0 || c.removed > 0) &&
-            el('span', { class: 'meta' }, el('span', { class: 'fg-ok' }, `+${c.added}`), ' ', el('span', { class: 'fg-danger' }, `−${c.removed}`))), el('div', { class: 'cbody', id: 'code-body' }, body));
+            el('span', { class: 'meta' }, el('span', { class: 'fg-ok' }, `+${c.added}`), ' ', el('span', { class: 'fg-danger' }, `−${c.removed}`))), el('div', { class: 'code-body', id: 'code-body' }, body));
 }
 function sendComment() {
     call('code_comment', { body: state.codeDraft });
