@@ -6,6 +6,8 @@
 //! so a refusal is said at once rather than as the daemon's; the daemon
 //! checks it again. Nothing here changes what the window shows: the pushed
 //! board and tasks do, so a refused edit leaves the feature as it is.
+//! A new row saved blank is a form put away: it sends nothing and says
+//! nothing.
 
 use argus_protocol::flow;
 use argus_protocol::{
@@ -63,6 +65,15 @@ pub fn messages(edit: FeatureEdit, target: &Target) -> Result<Vec<ClientMsg>, St
             None => Vec::new(),
         })
     };
+    let added = match &edit {
+        FeatureEdit::AddCriterion { text, .. } => Some(text),
+        FeatureEdit::AddTask { title, .. } | FeatureEdit::AddFlow { title } => Some(title),
+        FeatureEdit::AddDecision { line, .. } | FeatureEdit::Supersede { line, .. } => Some(line),
+        _ => None,
+    };
+    if added.is_some_and(|text| text.trim().is_empty()) {
+        return Ok(Vec::new());
+    }
     Ok(match edit {
         FeatureEdit::Brief { body } => {
             let feature = target.board.features.iter().find(|f| f.slug == target.slug).ok_or("that feature is gone")?;
@@ -264,7 +275,7 @@ mod tests {
             panic!();
         };
         assert_eq!((write.title.as_str(), steps(&write.body).len()), ("Retry", 2));
-        assert!(send(FeatureEdit::AddFlow { title: " ".into() }).is_err());
+        assert!(send(FeatureEdit::AddFlow { title: " ".into() }).unwrap().is_empty());
         let same = FeatureEdit::Flow { id: 11, title: "Asking for the brief".into(), source: fixtures::FLOW.into() };
         assert!(send(same).unwrap().is_empty());
         let body = rewritten(FeatureEdit::Flow { id: 11, title: "Asking for the brief".into(), source: "sequenceDiagram\n    a->>b: x".into() });
@@ -378,7 +389,23 @@ mod tests {
             panic!();
         };
         assert_eq!(action, TaskAction::AddCriterion { id: 3, text: "A test covers it".into() });
-        assert!(send(FeatureEdit::AddCriterion { id: 3, text: String::new() }).is_err());
+        assert!(send(FeatureEdit::AddCriterion { id: 3, text: String::new() }).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_new_row_saved_blank_sends_nothing() {
+        let blank = || "  ".to_string();
+        let added = [
+            FeatureEdit::AddCriterion { id: 3, text: blank() },
+            FeatureEdit::AddTask { parent: None, title: blank() },
+            FeatureEdit::AddDecision { under: None, task: None, line: blank() },
+            FeatureEdit::Supersede { id: 1, line: blank() },
+            FeatureEdit::AddFlow { title: blank() },
+        ];
+        for edit in added {
+            assert_eq!(send(edit).map(|out| out.len()), Ok(0));
+        }
+        assert!(send(FeatureEdit::Answer { id: 2, answer: blank(), because: None }).is_err(), "an existing row's blank is refused");
     }
 
     #[test]

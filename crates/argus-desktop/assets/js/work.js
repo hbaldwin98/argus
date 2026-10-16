@@ -66,29 +66,23 @@ function send(editing) {
                 on: 'answer',
                 id: editing.id,
                 answer: editing.text,
-                because: editing.because.trim() ? editing.because : null,
+                because: editing.because,
             });
             break;
         case 'criterion':
-            if (editing.text.trim())
-                edit({ on: 'addCriterion', id: editing.id, text: editing.text });
+            edit({ on: 'addCriterion', id: editing.id, text: editing.text });
             break;
         case 'addTask':
-            if (editing.text.trim())
-                edit({ on: 'addTask', parent: editing.parent, title: editing.text });
+            edit({ on: 'addTask', parent: editing.parent, title: editing.text });
             break;
         case 'addDecision':
-            if (editing.text.trim()) {
-                edit({ on: 'addDecision', under: editing.under, task: editing.task, line: editing.text });
-            }
+            edit({ on: 'addDecision', under: editing.under, task: editing.task, line: editing.text });
             break;
         case 'supersede':
-            if (editing.text.trim())
-                edit({ on: 'supersede', id: editing.id, line: editing.text });
+            edit({ on: 'supersede', id: editing.id, line: editing.text });
             break;
         case 'addFlow':
-            if (editing.text.trim())
-                edit({ on: 'addFlow', title: editing.text });
+            edit({ on: 'addFlow', title: editing.text });
             break;
         case 'flow':
             edit({ on: 'flow', id: editing.id, title: editing.title, source: editing.text });
