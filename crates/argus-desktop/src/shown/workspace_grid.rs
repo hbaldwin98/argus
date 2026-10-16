@@ -12,7 +12,28 @@ use argus_protocol::{ClientMsg, PaneId};
 
 use super::Slot;
 use crate::page::Side;
-use crate::split_grid::{Dir, Layout, Zone};
+use crate::split_grid::{Dir, Layout, Zone, MIN_COLS, MIN_ROWS};
+
+/// Why a pane may not join the grid. Its words are the note the window shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refusal {
+    /// The Workspace has no pane of its own to split from.
+    NoWorkspacePane,
+    /// Another pane would leave one under `MIN_COLS` by `MIN_ROWS`.
+    NoRoom,
+    /// The pane is on a side of the console, or is an extension's console view.
+    OnConsole,
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Refusal::NoWorkspacePane => f.write_str("show a pane in the Workspace first, then open another beside it"),
+            Refusal::NoRoom => write!(f, "no room for another pane: each needs {MIN_COLS} columns by {MIN_ROWS} rows. Close one first"),
+            Refusal::OnConsole => f.write_str("that pane is open in the console: close it there first"),
+        }
+    }
+}
 
 /// Moves `from`'s pane, screen and the size it was last asked onto `to`,
 /// whose room stays: the page measures and remembers room by side, so a
@@ -126,18 +147,22 @@ impl WorkspaceGrid {
     /// Splits `pane` off into a new cell placed by the grid rule, sized to
     /// the room of the cell before it until the page measures its own. A
     /// pane the grid holds already is not split again; its side is returned.
-    /// None while the Workspace has no pane to split from.
-    pub(super) fn join(&mut self, pane: PaneId, out: &mut Vec<ClientMsg>) -> Option<Side> {
-        self.cells[0].pane?;
+    pub(super) fn join(&mut self, pane: PaneId, out: &mut Vec<ClientMsg>) -> Result<Side, Refusal> {
+        if self.cells[0].pane.is_none() {
+            return Err(Refusal::NoWorkspacePane);
+        }
         if let Some(side) = self.side_of(pane) {
-            return Some(side);
+            return Ok(side);
+        }
+        if !self.has_room() {
+            return Err(Refusal::NoRoom);
         }
         let mut cell = Slot { capacity: self.cells.last().and_then(|cell| cell.capacity), ..Slot::default() };
         cell.subscribe(pane, out);
         self.cells.push(cell);
         self.layout.add();
         debug_assert!(self.whole());
-        Some(side(self.cells.len() - 1))
+        Ok(side(self.cells.len() - 1))
     }
 
     /// Takes every emptied cell out — the Workspace's too while another
@@ -184,7 +209,7 @@ impl WorkspaceGrid {
     /// Whether the grid has room for one more pane without any dropping
     /// below `MIN_COLS` by `MIN_ROWS`, judged by the size the page last
     /// reported for the panes; a grid not yet measured has room.
-    pub(super) fn has_room(&self) -> bool {
+    fn has_room(&self) -> bool {
         let Some((cols, rows)) = self.area() else { return true };
         let mut next = self.layout.clone();
         next.add();
@@ -226,19 +251,23 @@ mod tests {
             .collect()
     }
 
-    /// Pane 1 in the Workspace's cell at 20x60, and nothing beside it.
-    fn workspace() -> WorkspaceGrid {
+    /// Pane 1 in the Workspace's cell with `room`, and nothing beside it.
+    fn workspace(room: (u16, u16)) -> WorkspaceGrid {
         let mut grid = WorkspaceGrid::default();
         let cell = grid.cell_mut(Side::Workspace).unwrap();
-        cell.capacity = Some((20, 60));
+        cell.capacity = Some(room);
         cell.subscribe(PaneId(1), &mut Vec::new());
         grid
+    }
+
+    fn room(grid: &mut WorkspaceGrid, side: Side, room: (u16, u16)) {
+        grid.cell_mut(side).unwrap().capacity = Some(room);
     }
 
     /// The Workspace's pane 1 and 4, 5 and 6 beside it, each cell's room
     /// 20 rows by 30 columns and one more for each cell after the first.
     fn four() -> WorkspaceGrid {
-        let mut grid = workspace();
+        let mut grid = workspace((20, 60));
         for pane in [4, 5, 6] {
             grid.join(PaneId(pane), &mut Vec::new()).unwrap();
         }
@@ -252,23 +281,56 @@ mod tests {
 
     #[test]
     fn a_pane_joins_by_the_grid_rule_at_the_room_of_the_cell_before_it() {
-        let mut grid = workspace();
+        let mut grid = workspace((20, 60));
         let mut out = Vec::new();
-        assert_eq!(grid.join(PaneId(4), &mut out), Some(Side::Beside(0)));
+        assert_eq!(grid.join(PaneId(4), &mut out), Ok(Side::Beside(0)));
         assert_eq!(names(&out), ["subscribe 4", "resize 4 20x60"]);
         assert_eq!(grid.layout().rows(), [vec![0, 1]]);
-        grid.join(PaneId(5), &mut Vec::new());
+        grid.join(PaneId(5), &mut Vec::new()).unwrap();
         assert_eq!(grid.layout().rows(), [vec![0, 1], vec![2]], "two over one");
         assert_eq!(grid.panes().collect::<Vec<_>>(), [PaneId(1), PaneId(4), PaneId(5)]);
     }
 
     #[test]
-    fn a_pane_already_in_the_grid_is_not_split_again() {
+    fn a_pane_already_in_the_row_is_not_split_again() {
         let mut grid = four();
         let mut out = Vec::new();
-        assert_eq!(grid.join(PaneId(5), &mut out), Some(Side::Beside(1)));
+        assert_eq!(grid.join(PaneId(5), &mut out), Ok(Side::Beside(1)));
         assert!(out.is_empty());
         assert_eq!(grid.sides().len(), 4);
+    }
+
+    #[test]
+    fn a_grid_refuses_a_pane_that_would_leave_one_smaller_than_the_least() {
+        let mut grid = workspace((20, 70));
+        assert_eq!(grid.join(PaneId(4), &mut Vec::new()), Ok(Side::Beside(0)), "70 columns make two of 35");
+        room(&mut grid, Side::Beside(0), (20, 35));
+        assert!(grid.has_room(), "two over one of 20 rows makes 10 each");
+        room(&mut grid, Side::Workspace, (20, 20));
+        room(&mut grid, Side::Beside(0), (20, 19));
+        let mut out = Vec::new();
+        assert_eq!(grid.join(PaneId(5), &mut out), Err(Refusal::NoRoom), "39 columns cannot make two of 20 over a third");
+        room(&mut grid, Side::Workspace, (11, 40));
+        room(&mut grid, Side::Beside(0), (11, 40));
+        assert_eq!(grid.join(PaneId(5), &mut out), Err(Refusal::NoRoom), "11 rows cannot make two of 6");
+        assert!(out.is_empty(), "nothing subscribed");
+        assert_eq!(grid.sides(), [Side::Workspace, Side::Beside(0)]);
+    }
+
+    #[test]
+    fn nothing_splits_off_a_workspace_with_no_pane() {
+        let mut grid = WorkspaceGrid::default();
+        let mut out = Vec::new();
+        assert_eq!(grid.join(PaneId(4), &mut out), Err(Refusal::NoWorkspacePane));
+        assert!(out.is_empty());
+        assert_eq!(grid.sides(), [Side::Workspace]);
+    }
+
+    #[test]
+    fn a_refusal_says_why_in_the_words_the_note_shows() {
+        assert!(Refusal::NoWorkspacePane.to_string().contains("in the Workspace first"));
+        assert!(Refusal::NoRoom.to_string().contains("20 columns by 6 rows"));
+        assert!(Refusal::OnConsole.to_string().contains("open in the console"));
     }
 
     #[test]
@@ -292,8 +354,8 @@ mod tests {
 
     #[test]
     fn the_workspaces_cell_alone_stays_when_emptied() {
-        let mut grid = workspace();
-        grid.join(PaneId(4), &mut Vec::new());
+        let mut grid = workspace((20, 60));
+        grid.join(PaneId(4), &mut Vec::new()).unwrap();
         let mut keys = Side::Workspace;
         grid.cell_mut(Side::Workspace).unwrap().clear(true, &mut Vec::new());
         grid.close_empty(&mut keys, &mut Vec::new());

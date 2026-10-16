@@ -58,6 +58,7 @@ use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, CodeStage};
 use crate::split_grid::{self, Dir, Zone};
+use crate::shown::workspace_grid;
 use crate::stage::{Settled, Stages};
 use crate::page::{
     self, Call, CodeClick, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
@@ -955,32 +956,21 @@ impl Session {
     /// worth of room: a refusal says which, and the row stays as it was.
     fn open_beside(&mut self, pane: PaneId) -> Vec<ClientMsg> {
         match self.join_grid(pane) {
-            Err(Some(refusal)) => self.note(refusal),
+            Err(Some(refusal)) => self.note(refusal.to_string()),
             _ => self.finish(),
         }
     }
 
     /// Puts `pane` in the grid and gives it the keys, or says why not: a
     /// refusal is the note to show, and none is a pane that is not there.
-    fn join_grid(&mut self, pane: PaneId) -> Result<(), Option<String>> {
+    /// Nothing moves on a refusal.
+    fn join_grid(&mut self, pane: PaneId) -> Result<(), Option<workspace_grid::Refusal>> {
         if self.project_of(pane).is_none() {
             return Err(None);
         }
-        if self.shown.on(Side::Workspace).is_none() {
-            return Err(Some("show a pane in the Workspace first, then open another beside it".into()));
-        }
-        if !self.shown.in_row(pane) && !self.shown.has_room() {
-            return Err(Some(format!(
-                "no room for another pane: each needs {} columns by {} rows. Close one first",
-                split_grid::MIN_COLS,
-                split_grid::MIN_ROWS
-            )));
-        }
+        self.shown.open_beside(pane, &mut self.out).map_err(Some)?;
         self.leave_stages();
         self.console.set_fullscreen(false);
-        if self.shown.open_beside(pane, &mut self.out).is_none() {
-            return Err(Some("that pane is open in the console: close it there first".into()));
-        }
         self.shown.focus(pane);
         Ok(())
     }
@@ -995,7 +985,7 @@ impl Session {
         }
         if let Err(refusal) = self.join_grid(pane) {
             return match refusal {
-                Some(refusal) => self.note(refusal),
+                Some(refusal) => self.note(refusal.to_string()),
                 None => self.finish(),
             };
         }
@@ -3742,6 +3732,17 @@ mod tests {
         s.open_beside(PaneId(2));
         assert!(notices(&mut s).iter().any(|n| n.contains("20 columns by 6 rows")), "30 columns do not make two of 20");
         assert_eq!(s.shown.panes(), [PaneId(1)]);
+    }
+
+    #[test]
+    fn a_pane_the_grid_refuses_leaves_the_stage_it_was_on() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.resize(Side::Workspace, 30, 30);
+        s.show_features(true);
+        s.open_beside(PaneId(2));
+        assert!(notices(&mut s).iter().any(|n| n.contains("20 columns")));
+        assert_eq!((s.stages.now(), s.shown.panes()), (Stage::Feature, vec![PaneId(1)]));
     }
 
     #[test]

@@ -21,7 +21,7 @@ use crate::split_grid::{Dir, Layout, Zone};
 
 pub mod workspace_grid;
 
-use workspace_grid::WorkspaceGrid;
+use workspace_grid::{Refusal, WorkspaceGrid};
 
 #[derive(Default)]
 struct Slot {
@@ -304,10 +304,6 @@ impl ShownPane {
         self.grid.holds(pane)
     }
 
-    pub fn has_room(&self) -> bool {
-        self.grid.has_room()
-    }
-
     pub fn layout(&self) -> &Layout {
         self.grid.layout()
     }
@@ -317,13 +313,12 @@ impl ShownPane {
         (0..self.grid.sides().len() - 1).map(|n| Side::Beside(n as u8)).collect()
     }
 
-    /// Splits `pane` off into the grid, placed by the grid rule. The
-    /// Workspace needs a pane to be split from, and a pane on the console
-    /// is not split off it. A pane the grid already shows is not split
-    /// again; its side is returned.
-    pub fn open_beside(&mut self, pane: PaneId, out: &mut Vec<ClientMsg>) -> Option<Side> {
+    /// Splits `pane` off into the grid; nothing is subscribed on a refusal.
+    /// A pane on the console is refused before the grid is asked, so it is
+    /// never subscribed twice.
+    pub fn open_beside(&mut self, pane: PaneId, out: &mut Vec<ClientMsg>) -> Result<Side, Refusal> {
         if self.side_of(pane).is_some_and(|side| !matches!(side, Side::Workspace | Side::Beside(_))) {
-            return None;
+            return Err(Refusal::OnConsole);
         }
         self.grid.join(pane, out)
     }
@@ -628,37 +623,30 @@ mod tests {
     }
 
     /// Pane 1 on the Workspace and 4, 5 and 6 split beside it, in rooms of
-    /// 20x30 each.
+    /// 20x30 each: split before the page measures, which a grid 30 columns
+    /// wide would refuse.
     fn row(shown: &mut ShownPane) {
         let mut out = Vec::new();
-        shown.resize(Side::Workspace, 20, 30, &mut out);
         shown.show_on(Side::Workspace, PaneId(1), &mut out);
         for pane in [4, 5, 6] {
-            let side = shown.open_beside(PaneId(pane), &mut out).unwrap();
+            shown.open_beside(PaneId(pane), &mut out).unwrap();
+        }
+        for side in shown.row() {
             shown.resize(side, 20, 30, &mut out);
         }
     }
 
     #[test]
-    fn a_grid_refuses_a_pane_that_would_leave_one_smaller_than_the_least() {
+    fn a_pane_on_the_console_is_refused_and_nothing_is_subscribed() {
         let mut shown = ShownPane::default();
-        shown.resize(Side::Workspace, 20, 70, &mut Vec::new());
-        shown.show_on(Side::Workspace, PaneId(1), &mut Vec::new());
-        assert!(shown.has_room(), "70 columns make two of 35");
-        let side = shown.open_beside(PaneId(4), &mut Vec::new()).unwrap();
-        shown.resize(side, 20, 35, &mut Vec::new());
-        assert!(shown.has_room(), "two over one of 20 rows makes 10 each");
-        shown.resize(Side::Workspace, 20, 20, &mut Vec::new());
-        shown.resize(side, 20, 19, &mut Vec::new());
-        assert!(!shown.has_room(), "39 columns cannot make two of 20 over a third");
-        shown.resize(Side::Workspace, 11, 40, &mut Vec::new());
-        shown.resize(side, 11, 40, &mut Vec::new());
-        assert!(!shown.has_room(), "11 rows cannot make two of 6");
-    }
-
-    #[test]
-    fn nothing_splits_off_a_workspace_with_no_pane() {
-        assert_eq!(ShownPane::default().open_beside(PaneId(4), &mut Vec::new()), None);
+        split(&mut shown);
+        shown.sync_views(&wanted(&[("ops/dev", Some(7))]), &mut Vec::new());
+        for pane in [2, 3, 7] {
+            let mut out = Vec::new();
+            assert_eq!(shown.open_beside(PaneId(pane), &mut out), Err(Refusal::OnConsole));
+            assert!(out.is_empty());
+        }
+        assert_eq!(shown.row(), [Side::Workspace]);
     }
 
     #[test]
