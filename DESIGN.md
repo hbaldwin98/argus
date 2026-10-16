@@ -520,7 +520,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `saved_views` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
 | `view_changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
 | `view_refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
-| `page_over` | which stage a page, an agent's view or an extension's, opened over, so that docking or closing it goes back there |
+| `stage` | which stage is up, and the stage a page (an agent's view, an extension's, the Code stage) opened over, so that docking, closing or Escape goes back there |
 | `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, the question an action waits on, and the one open as a page |
 | `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension |
 | `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |

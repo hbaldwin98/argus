@@ -177,10 +177,8 @@ Remaining: several panes at once; and packaging as
 `argus`, `argusd` and `argus-hook`, read only by a bundle build. Still to do: icons (only
 `icon.png` and `icon.ico` exist, no `.icns` for macOS), enabling the `app`, `msi` and `appimage`
 targets (`bundle.active` is still `false`), a CI job that stages the sidecars and bundles per
-platform, signing, and the updater. See DESKTOP.md §Bundling. The window's stage
-moves out of `session` into a module of its own (the stage, the stage an extension's page was
-opened over, and the ways into and out of fullscreen) once a second panel can be a page, or
-side-by-side stages need somewhere to return to beyond `before_page`.
+platform, signing, and the updater. See DESKTOP.md §Bundling. The window's stage has moved out of `session` into `stage` (the stage, and the stage each page opened
+over); the console's fullscreen is still the console's own state.
 
 Extensions (HUN-191) landed for the daemon and the desktop window. An outside process publishes
 views of rows (running dev servers, a repository's containers) in the agent views' vocabulary,

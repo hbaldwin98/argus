@@ -46,7 +46,7 @@ mod logging;
 mod notifications;
 mod opener;
 mod page;
-mod page_over;
+mod stage;
 mod palette;
 mod preferences;
 mod reconcile_dialog;

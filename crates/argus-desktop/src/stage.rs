@@ -1,11 +1,53 @@
-//! Which stage a page opened over, so that closing or docking it goes back
-//! there: an agent's view popped out, or an extension's view moved to a page.
+//! Which stage is up, and the stages a page opened over, so that closing or
+//! docking it goes back there: an agent's view popped out, an extension's
+//! view moved to a page, or the Code stage opened from another.
 //!
-//! Neither page is a stage of its own choosing. Each is opened over whatever
-//! stage was up, and the person is returned to that stage, the Workspace if
-//! it is not known. The session does the going; this only says where.
+//! The session does the going and the rest of what a stage means; this
+//! only says where the person is and where they return to. A page is never
+//! a stage of its own choosing: it is opened over whatever stage was up,
+//! and the person is returned to that stage, the Workspace if it is not
+//! known. The console's fullscreen is the console's own state and stays in
+//! `console`.
 
 use crate::page::Stage;
+
+/// Where the window is, and where each way out of a page leads back to.
+pub struct Stages {
+    now: Stage,
+    /// The stage the Code stage was opened over, which Escape goes back to.
+    before_code: Stage,
+    pub over: PageOver,
+}
+
+impl Default for Stages {
+    fn default() -> Self {
+        Stages { now: Stage::Workspace, before_code: Stage::Workspace, over: PageOver::default() }
+    }
+}
+
+impl Stages {
+    pub fn now(&self) -> Stage {
+        self.now
+    }
+
+    /// Puts `stage` up, and whichever was up away.
+    pub fn go(&mut self, stage: Stage) {
+        self.now = stage;
+    }
+
+    /// The Code stage opens over whichever stage is up, unless it already is.
+    pub fn enter_code(&mut self) {
+        if self.now != Stage::Code {
+            self.before_code = self.now;
+        }
+        self.go(Stage::Code);
+    }
+
+    /// Leaves the Code stage for the one it was opened over.
+    pub fn leave_code(&mut self) {
+        self.go(self.before_code);
+    }
+}
 
 #[derive(Default)]
 pub struct PageOver {
@@ -101,5 +143,16 @@ mod tests {
         over.open_extension(Stage::Console);
         assert_eq!(over.leave_extension(Stage::Workspace), None);
         assert_eq!(over.leave_extension(Stage::Extension), Some(Stage::Console));
+    }
+
+    #[test]
+    fn the_code_stage_goes_back_to_the_stage_it_was_opened_over() {
+        let mut stages = Stages::default();
+        stages.go(Stage::Checkouts);
+        stages.enter_code();
+        stages.enter_code();
+        assert_eq!(stages.now(), Stage::Code);
+        stages.leave_code();
+        assert_eq!(stages.now(), Stage::Checkouts, "re-entering does not forget what it was over");
     }
 }

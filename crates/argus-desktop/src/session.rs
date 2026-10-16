@@ -57,7 +57,7 @@ use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, CodeStage};
-use crate::page_over::{PageOver, Settled};
+use crate::stage::{Settled, Stages};
 use crate::page::{
     self, Call, CodeClick, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
     Stage,
@@ -117,7 +117,7 @@ pub struct Session {
     toggled: HashSet<RepositoryId>,
     /// Checkouts the person folded; open is the default.
     folded: HashSet<CheckoutId>,
-    stage: Stage,
+    stages: Stages,
     features: FeatureStage,
     /// The note a new feature is being written as.
     capture: Capturing,
@@ -133,8 +133,6 @@ pub struct Session {
     /// What the extensions publish: their views, the one out in the side
     /// panel in place of an agent's, their commands and their dialogs.
     extension_views: ExtensionViews,
-    /// The stage a page, an agent's view or an extension's, opened over.
-    over: PageOver,
     /// A feature a reference in an agent's view named, to reveal once the
     /// board of its repository has arrived.
     opening_feature: PendingFeature,
@@ -167,8 +165,6 @@ pub struct Session {
     /// another stage is up.
     code: Option<CodeStage>,
     code_sent: Sent<page::CodePage>,
-    /// The stage the Code stage was opened over, which Escape goes back to.
-    before_code: Stage,
     focused: bool,
     choices: Chosen,
     /// Notifications for the system, raised by the last tree.
@@ -199,7 +195,7 @@ impl Session {
             repository: None,
             toggled: HashSet::new(),
             folded: HashSet::new(),
-            stage: Stage::Workspace,
+            stages: Stages::default(),
             features: {
                 let mut stage = FeatureStage::new(settings.layouts);
                 stage.set_opens_as(settings.preferences.feature_layout);
@@ -215,7 +211,6 @@ impl Session {
             views: AgentViews::default(),
             saved: SavedViews::default(),
             extension_views: ExtensionViews::new(settings.extensions),
-            over: PageOver::default(),
             opening_feature: PendingFeature::default(),
             extension_keys: ExtensionKeys::default(),
             extensions_sent: Sent::default(),
@@ -235,7 +230,6 @@ impl Session {
             palette_sent: Sent::default(),
             code: None,
             code_sent: Sent::default(),
-            before_code: Stage::Workspace,
             focused: true,
             choices: Chosen::new(settings.preferences),
             alerts: Vec::new(),
@@ -919,7 +913,7 @@ impl Session {
         }
         if changed || keyed {
             self.console.set_fullscreen(false);
-            if self.stage == Stage::Console {
+            if self.stages.now() == Stage::Console {
                 self.go(Stage::Workspace);
             }
         }
@@ -1316,7 +1310,7 @@ impl Session {
 
     /// Puts `stage` up, and whichever was up away.
     fn go(&mut self, stage: Stage) {
-        self.stage = stage;
+        self.stages.go(stage);
     }
 
     /// Leaves whichever stage is open for the Workspace.
@@ -1371,13 +1365,13 @@ impl Session {
     /// An agent's view over the stage up, which it goes back to when the
     /// view docks or closes. An extension's page gives way to it.
     fn show_view_page(&mut self) {
-        if let Some(stage) = self.over.open_view(self.stage) {
+        if let Some(stage) = self.stages.over.open_view(self.stages.now()) {
             self.go(stage);
         }
     }
 
     fn settle_view_page(&mut self) {
-        match self.over.settle_view(self.views.popped(), self.stage) {
+        match self.stages.over.settle_view(self.views.popped(), self.stages.now()) {
             Some(Settled::EndPopOut) => self.views.end_pop_out(),
             Some(Settled::Back(stage)) => self.go(stage),
             None => {}
@@ -1467,7 +1461,7 @@ impl Session {
     }
 
     fn opened_feature_number(&self) -> Option<i64> {
-        let slug = self.features.opened().filter(|_| self.stage == Stage::Feature)?;
+        let slug = self.features.opened().filter(|_| self.stages.now() == Stage::Feature)?;
         self.features.board()?.features.iter().find(|f| f.slug == slug).map(|f| f.number)
     }
 
@@ -1475,7 +1469,7 @@ impl Session {
     /// repository is here to say which one is numbered so. The person going
     /// elsewhere meanwhile abandons it.
     fn settle_feature_ref(&mut self) {
-        let (stage, chosen) = (self.stage, self.repository);
+        let (stage, chosen) = (self.stages.now(), self.repository);
         let there = |repository| stage == Stage::Feature && chosen == Some(repository);
         match self.opening_feature.settle(there, self.features.board()) {
             Some(Found::Slug(slug)) => self.features.reveal(&slug, &self.tree, &mut self.out),
@@ -1514,7 +1508,7 @@ impl Session {
     }
 
     fn show_extension_page(&mut self) {
-        if let Some(stage) = self.over.open_extension(self.stage) {
+        if let Some(stage) = self.stages.over.open_extension(self.stages.now()) {
             self.go(stage);
         }
         self.key_page_console();
@@ -1526,7 +1520,7 @@ impl Session {
     /// waiting for its pane is clicked into once it has one.
     fn key_page_console(&mut self) {
         self.settle_view_consoles();
-        let page = self.extension_views.page().cloned().filter(|_| self.stage == Stage::Extension);
+        let page = self.extension_views.page().cloned().filter(|_| self.stages.now() == Stage::Extension);
         let name = page.and_then(|panel| match panel {
             Panel::Extension(name) => Some(name),
             _ => None,
@@ -1539,7 +1533,7 @@ impl Session {
 
     /// Back to the stage the page opened over, or the Workspace.
     fn leave_extension_page(&mut self) {
-        if let Some(stage) = self.over.leave_extension(self.stage) {
+        if let Some(stage) = self.stages.over.leave_extension(self.stages.now()) {
             self.go(stage);
         }
     }
@@ -1584,7 +1578,7 @@ impl Session {
     /// never up with no page on it. A docked view gone or out of scope is
     /// only not drawn, by `docks`.
     fn settle_extension(&mut self) {
-        let paged = self.stage == Stage::Extension;
+        let paged = self.stages.now() == Stage::Extension;
         match self.extension_views.page().cloned() {
             Some(panel) if self.extension_views.get(&panel, &self.here()).is_none() => {
                 if paged {
@@ -1646,7 +1640,7 @@ impl Session {
             self.passing.push(Event::Notice { text: format!("{extension} has no command {command}") });
             return;
         }
-        let staged = (self.stage == Stage::Checkouts)
+        let staged = (self.stages.now() == Stage::Checkouts)
             .then(|| self.chosen_repository().and_then(|repo| self.checkouts.checkout(repo)))
             .flatten();
         let pane = pane.or_else(|| checkout.is_none().then(|| self.shown.pane()).flatten());
@@ -1662,7 +1656,7 @@ impl Session {
     /// Whether an extension's view is on screen: shown in its dock, or the
     /// page the stage is up on.
     fn extension_on(&self, panel: &Panel) -> bool {
-        self.docks.shows(panel) || (self.stage == Stage::Extension && self.extension_views.page() == Some(panel))
+        self.docks.shows(panel) || (self.stages.now() == Stage::Extension && self.extension_views.page() == Some(panel))
     }
 
     /// Gives each console view on screen a screen of its own, and takes it
@@ -1675,7 +1669,7 @@ impl Session {
     fn extensions_page(&self) -> page::ExtensionsPage {
         let here = self.here();
         let docks = &self.docks;
-        let page = self.extension_views.page().filter(|_| self.stage == Stage::Extension);
+        let page = self.extension_views.page().filter(|_| self.stages.now() == Stage::Extension);
         let on = |panel: &Panel| self.extension_on(panel);
         let with_screen = |mut table: page::ExtTable| {
             if let (Some(console), Panel::Extension(name)) = (&mut table.console, &table.panel) {
@@ -1785,7 +1779,7 @@ impl Session {
 
     /// Where the console is with the stage up now.
     fn console_place(&self) -> ConsolePlace {
-        self.console.place(self.stage, self.docks.shows(&Panel::Console))
+        self.console.place(self.stages.now(), self.docks.shows(&Panel::Console))
     }
 
     /// Whether the keys are a console's rather than the Workspace's pane's.
@@ -1805,7 +1799,7 @@ impl Session {
     fn reveal_console(&mut self) {
         if self.console_place() == ConsolePlace::Hidden {
             self.docks.show(&Panel::Console);
-            if self.stage == Stage::Composer {
+            if self.stages.now() == Stage::Composer {
                 self.go(Stage::Workspace);
             }
         }
@@ -1923,7 +1917,7 @@ impl Session {
         match side {
             Side::Workspace => {
                 !matches!(
-                    self.stage,
+                    self.stages.now(),
                     Stage::Feature | Stage::Checkouts | Stage::Code | Stage::Console | Stage::Extension | Stage::View
                 )
                     && !self.console.fullscreen()
@@ -1978,7 +1972,7 @@ impl Session {
     fn dock_console(&mut self) {
         self.console.set_fullscreen(false);
         self.docks.show(&Panel::Console);
-        if matches!(self.stage, Stage::Console | Stage::Composer) {
+        if matches!(self.stages.now(), Stage::Console | Stage::Composer) {
             self.go(Stage::Workspace);
         }
         self.console_takes();
@@ -1989,7 +1983,7 @@ impl Session {
     fn hide_console(&mut self) {
         self.console.set_fullscreen(false);
         self.docks.hide(&Panel::Console);
-        if self.stage == Stage::Console {
+        if self.stages.now() == Stage::Console {
             self.go(Stage::Workspace);
         }
     }
@@ -2053,7 +2047,7 @@ impl Session {
     fn show_code(&mut self, open: bool) -> Vec<ClientMsg> {
         if open {
             self.open_code();
-        } else if self.stage == Stage::Code {
+        } else if self.stages.now() == Stage::Code {
             self.go(Stage::Workspace);
         }
         self.finish()
@@ -2069,7 +2063,7 @@ impl Session {
             self.say(TOO_OLD_FOR_CODE);
             return;
         }
-        let picked = match self.stage {
+        let picked = match self.stages.now() {
             Stage::Checkouts => self.chosen_repository().cloned().and_then(|repo| self.checkouts.checkout(&repo)),
             _ => None,
         };
@@ -2096,10 +2090,7 @@ impl Session {
     }
 
     fn enter_code(&mut self) {
-        if self.stage != Stage::Code {
-            self.before_code = self.stage;
-        }
-        self.go(Stage::Code);
+        self.stages.enter_code();
     }
 
     /// Escape: back to the review the stage was opened from, as it was,
@@ -2110,7 +2101,7 @@ impl Session {
                 code.forget_back();
             }
         }
-        self.go(self.before_code);
+        self.stages.leave_code();
     }
 
     fn code_click(&mut self, target: CodeClick) -> Vec<ClientMsg> {
@@ -2201,7 +2192,7 @@ impl Session {
     fn show_checkouts(&mut self, open: bool) -> Vec<ClientMsg> {
         if open {
             self.go(Stage::Checkouts);
-        } else if self.stage == Stage::Checkouts {
+        } else if self.stages.now() == Stage::Checkouts {
             self.go(Stage::Workspace);
         }
         self.finish()
@@ -2795,7 +2786,7 @@ impl Session {
     fn on_this_checkout(&mut self, action: Action) {
         // Each of these finishes on its own; what it sent is this
         // command's, and goes out when the command finishes.
-        let sent = if self.stage == Stage::Checkouts {
+        let sent = if self.stages.now() == Stage::Checkouts {
             self.checkouts_action(action)
         } else if let Some(checkout) = self.shown_checkout() {
             match action {
@@ -2902,7 +2893,7 @@ impl Session {
             let request_id = self.awaited.name();
             self.out.extend(self.sessions.read(&self.status, &wanted, request_id));
         }
-        let reads_board = matches!(self.stage, Stage::Feature | Stage::Checkouts) || self.palette;
+        let reads_board = matches!(self.stages.now(), Stage::Feature | Stage::Checkouts) || self.palette;
         self.features.set_board_wanted(reads_board);
         // Whatever changed may have changed which board the stage reads.
         let scope = self.scope();
@@ -2972,14 +2963,14 @@ impl Session {
         if let Some(listing) = self.palette_sent.take(listing) {
             events.push(Event::Palette(Box::new(listing)));
         }
-        if self.stage == Stage::Checkouts {
+        if self.stages.now() == Stage::Checkouts {
             let repo = self.chosen_repository().cloned();
             events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
         }
         // Sent only while the stage is up, and never taken back when it goes:
         // the page keeps what it last drew, scrolled where it was, for the
         // person coming back to it.
-        if let Some(code) = self.code.as_ref().filter(|_| self.stage == Stage::Code) {
+        if let Some(code) = self.code.as_ref().filter(|_| self.stages.now() == Stage::Code) {
             let page = code.page(self.tree.checkout(code.checkout()));
             if let Some(page) = self.code_sent.take(Some(page)) {
                 events.push(Event::Code(Box::new(page)));
@@ -3081,8 +3072,8 @@ impl Session {
         };
         let mut rail = rail::build(&self.tree, &choices, self.loaded);
         rail.repository = self.chosen_repository().map(|r| r.id.0);
-        rail.stage = self.stage;
-        rail.filled = self.shown.filled() && self.stage == Stage::Workspace && self.on_screen().is_some() && !self.console_typing();
+        rail.stage = self.stages.now();
+        rail.filled = self.shown.filled() && self.stages.now() == Stage::Workspace && self.on_screen().is_some() && !self.console_typing();
         rail.templates = self.agents.offered();
         rail.workspaces = self.switcher.workspaces();
         rail.hosts = self.switcher.hosts(self.status.host());
@@ -3325,13 +3316,13 @@ mod tests {
         };
         assert_eq!((*checkout, path.as_str(), *line), (CheckoutId(100), "src/brief.rs", Some(4)));
         assert!(s.dialogs.review().is_none(), "the review gives way");
-        assert!(s.stage == Stage::Checkouts, "nothing predicted");
+        assert!(s.stages.now() == Stage::Checkouts, "nothing predicted");
         s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(9))) });
         let mut grown = tree();
         grown[0].repositories[0].checkouts[0].panes.push(pane(9, PaneKind::Editor, "brief.rs", PaneStatus::Idle));
         s.receive(with_tree(grown));
         assert_eq!(s.shown.pane(), Some(PaneId(9)));
-        assert!(s.stage != Stage::Checkouts, "the editor is on screen");
+        assert!(s.stages.now() != Stage::Checkouts, "the editor is on screen");
     }
 
     /// What a gesture asked of the daemon for the Code stage, the focus it
@@ -3360,16 +3351,16 @@ mod tests {
                 ClientMsg::ReadCode { path, .. },
             ] if path == "src/brief.rs"
         ));
-        assert!(s.stage == Stage::Code);
+        assert!(s.stages.now() == Stage::Code);
         assert!(s.dialogs.review().is_none(), "put away, not closed");
         assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("review · brief.rs:4"));
 
         assert!(code_asks(s.code_action(Action::CloseLayer)).is_empty());
-        assert!(s.stage == Stage::Code, "Escape stays in Code");
+        assert!(s.stages.now() == Stage::Code, "Escape stays in Code");
         let sent = code_asks(s.code_action(Action::GoBack));
         assert!(sent.is_empty(), "the review comes back as it was, not read again");
         assert!(s.dialogs.review().is_some());
-        assert!(s.stage == Stage::Checkouts, "over the stage it was opened over");
+        assert!(s.stages.now() == Stage::Checkouts, "over the stage it was opened over");
     }
 
     #[test]
@@ -3399,7 +3390,7 @@ mod tests {
         s.show_checkouts(true);
         let sent = s.show_code(true);
         assert!(sent.is_empty());
-        assert!(s.stage == Stage::Checkouts);
+        assert!(s.stages.now() == Stage::Checkouts);
         assert!(notices(&mut s).iter().any(|n| n.contains("too old to read code")));
     }
 
@@ -3424,10 +3415,10 @@ mod tests {
             sent.as_slice(),
             [ClientMsg::ListCode { version: CodeVersion::Commit(oid), .. }] if *oid == "a".repeat(40)
         ));
-        assert!(s.stage == Stage::Code);
+        assert!(s.stages.now() == Stage::Code);
         assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("history"));
         s.code_action(Action::GoBack);
-        assert!(s.stage == Stage::Checkouts);
+        assert!(s.stages.now() == Stage::Checkouts);
         assert!(s.dialogs.history_open(), "the history is back as it was");
     }
 
@@ -3439,7 +3430,7 @@ mod tests {
         assert!(matches!(sent.as_slice(), [ClientMsg::ListCode { checkout: CheckoutId(100), .. }]));
         s.show_features(false);
         assert!(code_asks(s.show_code(true)).is_empty(), "left as it was, not read again");
-        assert!(s.stage == Stage::Code);
+        assert!(s.stages.now() == Stage::Code);
     }
 
     #[test]
@@ -3887,7 +3878,7 @@ mod tests {
         s.finish();
         s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
         let page = capture_page(&mut s).expect("the note opens");
-        assert!(page.open && s.stage == Stage::Feature);
+        assert!(page.open && s.stages.now() == Stage::Feature);
 
         let note = "Bring the readers back\n- Restore them\n? Where is the transcript\n  - a key\n";
         s.call(Call::Capture { gesture: CaptureGesture::Note { note: note.into() } });
@@ -4021,10 +4012,10 @@ mod tests {
         let mut s = session(without_focus());
         s.show_features(true);
         s.select(PaneId(2));
-        assert!(s.stage != Stage::Feature);
+        assert!(s.stages.now() != Stage::Feature);
         s.show_features(true);
         s.select(PaneId(99));
-        assert!(s.stage == Stage::Feature, "a pane that is not there changes nothing");
+        assert!(s.stages.now() == Stage::Feature, "a pane that is not there changes nothing");
     }
 
     #[test]
@@ -4032,7 +4023,7 @@ mod tests {
         let mut s = session(without_focus());
         s.show_features(true);
         assert_eq!(names(&s.go_to_pane(PaneId(1))), ["subscribe 1"]);
-        assert!(s.stage != Stage::Feature);
+        assert!(s.stages.now() != Stage::Feature);
     }
 
 
@@ -4177,10 +4168,10 @@ mod tests {
         s.key(&ctrl_space());
         let typed = |msgs: Vec<ClientMsg>| msgs.iter().any(|m| matches!(m, ClientMsg::Input { .. }));
         assert!(!typed(s.key(&press("2"))), "nothing typed");
-        assert!(s.stage == Stage::Feature);
+        assert!(s.stages.now() == Stage::Feature);
         s.key(&ctrl_space());
         s.key(&press("1"));
-        assert!(s.stage != Stage::Feature);
+        assert!(s.stages.now() != Stage::Feature);
         s.key(&ctrl_space());
         assert!(s.key(&press("q")).is_empty(), "an unbound key after the leader is dropped");
         assert_eq!(names(&s.key(&press("2"))), ["input 2 [50]"], "a digit alone is typed");
@@ -4430,7 +4421,7 @@ mod tests {
         let mut s = session(without_focus());
         s.go(Stage::Feature);
         let sent = s.show_checkouts(true);
-        assert!(s.stage == Stage::Checkouts, "one stage at a time");
+        assert!(s.stages.now() == Stage::Checkouts, "one stage at a time");
         assert!(sent.iter().any(|m| matches!(m, ClientMsg::GetDecisions { .. })), "{sent:?}");
         let events = s.events(0);
         assert!(events.iter().any(|e| matches!(e, Event::Checkouts(table) if table.repository.as_deref() == Some("argus"))));
@@ -4445,7 +4436,7 @@ mod tests {
         s.select_checkout_row("c100".into());
         s.checkouts_action(Action::Choose);
         assert_eq!(s.shown.pane(), Some(PaneId(1)));
-        assert!(s.stage != Stage::Checkouts);
+        assert!(s.stages.now() != Stage::Checkouts);
     }
 
     #[test]
@@ -4484,7 +4475,7 @@ mod tests {
         s.events(0);
         let sent = s.remove_checkout(CheckoutId(101));
         assert!(!sent.iter().any(|m| matches!(m, ClientMsg::RemoveCheckout { .. })), "nothing is removed before the answer");
-        assert!(s.stage == Stage::Checkouts);
+        assert!(s.stages.now() == Stage::Checkouts);
         assert_eq!(s.checkouts.selected_key(), Some("c101"));
         let asked = s.events(0).into_iter().find_map(|e| match e {
             Event::Checkouts(table) => table.confirm,
@@ -4778,7 +4769,7 @@ mod tests {
         s.receive(with_tree(more));
         s.select(PaneId(1));
         s.go_to_checkout(CheckoutId(101));
-        assert!(s.stage == Stage::Checkouts);
+        assert!(s.stages.now() == Stage::Checkouts);
         assert_eq!(s.checkouts.selected_key(), Some("c101"));
     }
 
@@ -5136,7 +5127,7 @@ mod tests {
         assert_eq!(names(&sent)[..1], ["subscribe 8"], "the Workspace's pane stays subscribed");
         let page = console_page(&mut s);
         assert_eq!((page.place, page.showing, page.typing), (ConsolePlace::Docked, Some(8), Some(8)));
-        assert_eq!(s.stage, Stage::Workspace, "docked under the stage it was on");
+        assert_eq!(s.stages.now(), Stage::Workspace, "docked under the stage it was on");
         assert_eq!(s.on_screen(), Some(PaneId(8)), "the keys are the console's");
         assert_eq!(s.shown.panes(), [PaneId(1), PaneId(8)], "the agent and the console both on screen");
         assert_eq!(s.rail(0).shown.map(|p| p.pane), Some(1), "the Workspace still shows its pane");
@@ -5171,7 +5162,7 @@ mod tests {
     fn four_opens_the_console_stage_and_another_stage_docks_or_hides_it() {
         let mut s = with_consoles();
         leader_then(&mut s, "4");
-        assert_eq!(s.stage, Stage::Console);
+        assert_eq!(s.stages.now(), Stage::Console);
         let page = console_page(&mut s);
         assert_eq!((page.place, page.showing), (ConsolePlace::Tab, Some(8)));
         assert_eq!(s.rail(0).stage, Stage::Console, "the sidebar marks it");
@@ -5182,7 +5173,7 @@ mod tests {
 
         console(&mut s, ConsoleGesture::Tab);
         console(&mut s, ConsoleGesture::Dock);
-        assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(s.stages.now(), Stage::Workspace);
         assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
     }
 
@@ -5225,7 +5216,7 @@ mod tests {
             s.show_composer(true);
             s.events(0);
             console(&mut s, gesture);
-            assert_eq!(s.stage, Stage::Workspace, "{gesture:?}");
+            assert_eq!(s.stages.now(), Stage::Workspace, "{gesture:?}");
             assert_eq!(drawn_stage(&mut s), Some(Stage::Workspace), "{gesture:?}");
         }
     }
@@ -5236,7 +5227,7 @@ mod tests {
         s.show_composer(true);
         s.events(0);
         console(&mut s, ConsoleGesture::Fullscreen);
-        assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(s.stages.now(), Stage::Workspace);
         assert_eq!(drawn_stage(&mut s), Some(Stage::Workspace));
         assert_eq!(console_page(&mut s).place, ConsolePlace::Fullscreen);
     }
@@ -5247,7 +5238,7 @@ mod tests {
         leader_then(&mut s, "4");
         s.events(0);
         s.select(PaneId(2));
-        assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(s.stages.now(), Stage::Workspace);
         assert_eq!(drawn_stage(&mut s), Some(Stage::Workspace));
         assert_eq!(console_page(&mut s).place, ConsolePlace::Hidden);
     }
@@ -5335,7 +5326,7 @@ mod tests {
         assert_eq!(page.right.shown, Some(Panel::Console));
         assert_eq!(page.right.tabs.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["Console"]);
         assert!(page.bottom.tabs.is_empty());
-        assert_eq!(s.stage, Stage::Workspace, "out of the Console stage, beside the Workspace");
+        assert_eq!(s.stages.now(), Stage::Workspace, "out of the Console stage, beside the Workspace");
         assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
         assert_eq!(sides(&mut s), (Some(8), None, Some(8)), "the console has the keys");
 
@@ -5786,7 +5777,7 @@ mod tests {
     fn a_feature_in_a_view_is_shown_once_the_board_of_the_panes_repository_says_which_it_is() {
         let mut s = session(without_focus());
         s.call(Call::OpenRef { pane: Some(1), reference: Reference::Feature { number: 7 } });
-        assert_eq!(s.stage, Stage::Feature);
+        assert_eq!(s.stages.now(), Stage::Feature);
         s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
         assert_eq!(s.features.peeked(), Some("trim"));
         s.call(Call::OpenRef { pane: Some(1), reference: Reference::Feature { number: 99 } });
@@ -5798,19 +5789,19 @@ mod tests {
         let mut s = session(Hello::this_build());
         agents_view(&mut s, 1);
         s.call(Call::PopOutView { pane: 1, id: "ci".into() });
-        assert_eq!(s.stage, Stage::View);
+        assert_eq!(s.stages.now(), Stage::View);
         assert!(!s.docks.shows(&Panel::Views), "it is in the page, not also in a dock");
         assert!(s.views.take(false, true, |_| None).unwrap().popped.is_some());
 
         s.call(Call::OpenView { pane: 1, id: "ci".into() });
-        assert_eq!(s.stage, Stage::Workspace, "docking it goes back to the stage it opened over");
+        assert_eq!(s.stages.now(), Stage::Workspace, "docking it goes back to the stage it opened over");
         assert!(s.docks.shows(&Panel::Views));
 
         s.call(Call::PopOutView { pane: 1, id: "ci".into() });
         s.receive(ServerMsg::ViewClosed { pane: PaneId(1), id: "ci".into() });
-        assert_eq!(s.stage, Stage::Workspace, "a view that closes is no page");
+        assert_eq!(s.stages.now(), Stage::Workspace, "a view that closes is no page");
         s.call(Call::PopOutView { pane: 1, id: "gone".into() });
-        assert_eq!(s.stage, Stage::Workspace, "a view the window does not hold opens nothing");
+        assert_eq!(s.stages.now(), Stage::Workspace, "a view the window does not hold opens nothing");
     }
 
     #[test]
@@ -5877,11 +5868,11 @@ mod tests {
         s.call(Call::ShowCheckouts { open: true });
         s.receive(scoped());
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
-        assert_eq!(s.stage, Stage::Extension, "a page, as it asked");
+        assert_eq!(s.stages.now(), Stage::Extension, "a page, as it asked");
         assert!(s.extensions_page().tables.first().is_some_and(|t| t.page));
 
         s.call(Call::ExtensionMode { panel: panel("containers"), page: false });
-        assert_eq!(s.stage, Stage::Checkouts, "docking goes back to the stage it opened over");
+        assert_eq!(s.stages.now(), Stage::Checkouts, "docking goes back to the stage it opened over");
         assert!(s.extensions_page().tables.first().is_some_and(|t| !t.page));
         let saved = s.take_settings().expect("saved").docks.unwrap();
         assert!(saved.right.tabs.contains(&panel("containers")) && saved.staged.is_empty());
@@ -5889,7 +5880,7 @@ mod tests {
         s.receive(scoped());
         docks(&mut s, DockGesture::Hide { panel: panel("containers") });
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
-        assert_eq!(s.stage, Stage::Checkouts, "docked again after its extension republished");
+        assert_eq!(s.stages.now(), Stage::Checkouts, "docked again after its extension republished");
         assert_eq!(tables(&mut s), ["containers"]);
     }
 
@@ -5900,7 +5891,7 @@ mod tests {
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
         s.events(0);
         s.receive(ServerMsg::ExtensionViews(Vec::new()));
-        assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(s.stages.now(), Stage::Workspace);
         assert!(notices(&mut s).iter().any(|n| n.contains("Containers")), "said");
 
         s.receive(scoped());
@@ -5909,7 +5900,7 @@ mod tests {
         s.events(0);
         s.receive(ServerMsg::ExtensionViews(Vec::new()));
         assert!(tables(&mut s).is_empty());
-        assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(s.stages.now(), Stage::Workspace);
     }
 
     /// The `docker/dev` view, a console, published running in `pane` or
@@ -5994,7 +5985,7 @@ mod tests {
         let mut s = session(Hello::this_build());
         s.receive(console_view(Some(30), false));
         s.call(Call::ExtensionMode { panel: panel("dev"), page: true });
-        assert_eq!(s.stage, Stage::Extension);
+        assert_eq!(s.stages.now(), Stage::Extension);
         let table = s.extensions_page().tables.remove(0);
         assert!(table.page && table.rows.is_empty() && table.columns.is_empty() && table.selected.is_none());
         assert_eq!(s.shown.pane(), Some(PaneId(30)), "a page has the keys the moment it is up");
@@ -6021,7 +6012,7 @@ mod tests {
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "argus".into() });
         docks(&mut s, DockGesture::Move { panel: panel("argus"), dock: Dock::Left });
         s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
-        assert_eq!(s.stage, Stage::Extension);
+        assert_eq!(s.stages.now(), Stage::Extension);
         assert_eq!(tables(&mut s), ["containers", "argus"]);
         let page = s.extensions_page();
         assert_eq!(page.tables.iter().map(|t| t.page).collect::<Vec<_>>(), [true, false]);
@@ -6029,13 +6020,13 @@ mod tests {
 
         // A page moved into a dock leaves the stage for it.
         docks(&mut s, DockGesture::Move { panel: panel("containers"), dock: Dock::Bottom });
-        assert_eq!(s.stage, Stage::Workspace);
+        assert_eq!(s.stages.now(), Stage::Workspace);
         assert_eq!(tables(&mut s), ["containers", "argus"]);
         assert!(s.extensions_page().tables.iter().all(|t| !t.page));
         // The palette moves the view last used.
         s.call(Call::ExtensionKey { panel: panel("argus"), action: Action::Next });
         s.call(Call::Command { action: Action::ExtensionPage });
-        assert_eq!((s.stage, s.docks.place_of(&panel("argus"))), (Stage::Extension, Some(Place::Stage)));
+        assert_eq!((s.stages.now(), s.docks.place_of(&panel("argus"))), (Stage::Extension, Some(Place::Stage)));
     }
 
     #[test]
