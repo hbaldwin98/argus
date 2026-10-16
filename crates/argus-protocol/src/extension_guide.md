@@ -171,7 +171,7 @@ When it does not run:
 | Not in the list, and no log at all | The block was skipped (bad `name`, a name used twice, no `command`), or the daemon was not restarted. `argusd.log` says which. |
 | In the list now and then, with a traceback in its log | It keeps exiting, and the daemon keeps restarting it, waiting longer each time up to a minute. Read the traceback. |
 | `HTTP Error 409: Conflict` in the log | A put broke a rule. The answer's body names the field, such as `views[0].rows[1].key: each row needs a key of its own, not "web"`; print `error.read()` to see it. Nothing of that put was taken. |
-| `HTTP Error 400: Bad Request` | The body is not the JSON the endpoint takes: `not a view`. |
+| `HTTP Error 400: Bad Request` | The body is not the JSON the endpoint takes. The answer says what it is not, why, and where in the body the reading stopped, such as `` not a view: missing field `name` at line 1 column 15 ``; print `error.read()` to see it. |
 | `HTTP Error 401: Unauthorized` | The token is not this run's: the program was run by hand with copied variables, or kept them from before a restart. Let the daemon start it. |
 | `argus extension list`: `argusd is not running` | No daemon under this `ARGUS_INSTANCE`. Start one. |
 
@@ -353,7 +353,7 @@ A refusal is one of these, its body plain text:
 | `401` | No token, a wrong one, or an extension the daemon is not running | empty |
 | `405` | The wrong method for the endpoint | `view takes PUT` |
 | `413` | A body over {{MAX_EXTENSION_BODY}} bytes | `request body is too large` |
-| `400` | A body that does not parse as what the endpoint takes | `not a view`, `not a list of commands`, `not a summary and guide`, `not a dialog`, `not a pane` |
+| `400` | A body that does not parse as what the endpoint takes | what it is not, and why: `not a view: <why>`, `not a list of commands: <why>`, `not a summary and guide: <why>`, `not a dialog: <why>`, `not a pane: <why>` |
 | `409` | It parses but breaks a rule; nothing of it was taken | the rule, by the path to what broke it, such as `views[0].rows[3][1]: a link is an http or https URL` |
 
 A `409` names the field: `views[1].name: "web" is another view's`,

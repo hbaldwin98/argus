@@ -2,6 +2,7 @@
 //! agent may and may not change, and how a pane is sized and restarted.
 
 use super::*;
+use argus_protocol::hook_call;
 // --- the pane API ------------------------------------------------------
 
 #[test]
@@ -1159,5 +1160,83 @@ async fn a_body_past_its_endpoints_bound_is_refused_with_the_bound() {
     assert!(response.starts_with("HTTP/1.1 413"), "{response}");
     let (_, words) = response.split_once("\r\n\r\n").expect("a head and a body");
     assert!(words.ends_with(&format!("at most {bound} bytes")), "the agent is told the bound: {response}");
+    close_all(&d);
+}
+
+/// Posts `body` as `C` writes it, and reads a 200's answer as `C`'s reply.
+/// Never a 400: the arm reads the body the declaration says it is.
+async fn answered<C: hook_call::Call>(d: &Arc<Daemon>, pane: PaneId, body: C::Body) -> u16 {
+    use hook_call::Form;
+
+    let body = C::BodyForm::write(&body).unwrap();
+    let response = post_agent_hook(d, pane, C::ENDPOINT, std::str::from_utf8(&body).unwrap()).await;
+    let at = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    let head = String::from_utf8_lossy(&response[..at]).into_owned();
+    let status: u16 = head.split(' ').nth(1).unwrap().parse().unwrap();
+    let answer = &response[at + 4..];
+    assert_ne!(status, 400, "{:?}: {}", C::ENDPOINT, String::from_utf8_lossy(answer));
+    if status == 200 {
+        if let Err(why) = C::ReplyForm::read(answer) {
+            panic!("{:?} answered with something else: {why}", C::ENDPOINT);
+        }
+    }
+    status
+}
+
+#[tokio::test]
+async fn every_declared_call_is_answered_at_its_endpoint() {
+    use argus_protocol::{
+        AgentLaunch, AgentTelemetry, DecisionChange, DecisionWrite, DiagramAction, FeatureAction, ReconcileChange,
+        SavedViewChange, TaskAction, ViewChange,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    d.start_hook_server().unwrap();
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    let slug = open_feature(&d, pane, "Pushes");
+
+    let decide = DecisionWrite { chose: "one channel".into(), ..Default::default() };
+    let statuses = [
+        answered::<hook_call::Checkout>(&d, pane, "/no/such/directory".into()).await,
+        answered::<hook_call::Comments>(&d, pane, ()).await,
+        answered::<hook_call::Decisions>(&d, pane, ()).await,
+        answered::<hook_call::Decide>(&d, pane, decide).await,
+        answered::<hook_call::ChangeDecision>(&d, pane, DecisionChange::Withdraw { id: 1 }).await,
+        answered::<hook_call::Features>(&d, pane, ()).await,
+        answered::<hook_call::ChangeFeature>(&d, pane, FeatureAction::Select { slug }).await,
+        answered::<hook_call::Tasks>(&d, pane, TaskAction::List).await,
+        answered::<hook_call::Diagrams>(&d, pane, DiagramAction::List).await,
+        answered::<hook_call::TrackerMap>(&d, pane, String::new()).await,
+        answered::<hook_call::Reconcile>(&d, pane, ReconcileChange::Read).await,
+        answered::<hook_call::Telemetry>(&d, pane, AgentTelemetry::default()).await,
+        answered::<hook_call::ChangeView>(&d, pane, ViewChange::Close { id: "none".into() }).await,
+        answered::<hook_call::SavedView>(&d, pane, SavedViewChange::List).await,
+        answered::<hook_call::Launch>(
+            &d,
+            pane,
+            AgentLaunch { template: Some("no-such-template".into()), ..Default::default() },
+        )
+        .await,
+    ];
+    // Most must answer, or the reply's form went unchecked.
+    let answered = statuses.iter().filter(|s| **s == 200).count();
+    assert!(answered >= 10, "{statuses:?}");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn a_body_an_endpoint_cannot_read_is_refused_with_what_is_wrong() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    d.start_hook_server().unwrap();
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+
+    let response = post_agent_hook(&d, pane, Endpoint::Tasks, r#"{"Juggle":{}}"#).await;
+    let response = String::from_utf8_lossy(&response);
+
+    assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+    assert!(response.contains("not a task change: "), "{response}");
+    assert!(response.contains("Juggle"), "serde's words reach the agent: {response}");
     close_all(&d);
 }

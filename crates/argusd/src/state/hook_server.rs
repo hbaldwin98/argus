@@ -12,6 +12,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use argus_protocol::hook_call::{self, Call, Form, Json};
 use argus_protocol::{parse_request_target, Endpoint, PaneId, MAX_HOOK_BODY};
 
 use super::Daemon;
@@ -97,28 +98,47 @@ impl HookResponse {
     }
 }
 
-/// What the daemon now holds, as JSON, or its refusal as text the agent
-/// can put in front of the user. Every read and write an agent makes here
-/// is answered this way.
-fn json_reply<T: serde::Serialize>(result: anyhow::Result<T>) -> HookResponse {
+/// A body as `F` reads it, or the 400 that says what it is not, in the
+/// reader's own words: an agent that sent a block kind the schema lacks is
+/// told which.
+fn read_as<T, F: Form<T>>(body: &[u8], noun: &str) -> Result<T, HookResponse> {
+    F::read(body).map_err(|why| HookResponse::text(400, "Bad Request", format!("not a {noun}: {why}")))
+}
+
+fn read<C: Call>(body: &[u8]) -> Result<C::Body, HookResponse> {
+    read_as::<_, C::BodyForm>(body, C::BODY)
+}
+
+/// The answer as `F` writes it; a refusal is a 409 carrying the daemon's
+/// words, for the agent to put in front of the person.
+fn written<T, F: Form<T>>(result: anyhow::Result<T>) -> HookResponse {
     let value = match result {
         Ok(value) => value,
         Err(error) => return HookResponse::text(409, "Conflict", error.to_string()),
     };
-    match serde_json::to_vec(&value) {
-        Ok(body) => HookResponse {
-            code: 200,
-            reason: "OK",
-            body,
-        },
-        Err(e) => HookResponse::text(500, "Internal Server Error", e.to_string()),
+    match F::write(&value) {
+        Ok(body) => HookResponse { code: 200, reason: "OK", body },
+        Err(why) => HookResponse::text(500, "Internal Server Error", why),
     }
 }
 
-/// A write's body, or the refusal that says it was not one.
-fn decode<T: serde::de::DeserializeOwned>(body: &[u8], what: &str) -> Result<T, HookResponse> {
-    serde_json::from_slice(body)
-        .map_err(|_| HookResponse::text(400, "Bad Request", format!("not a {what}")))
+/// The call's reply, 200 with its form's bytes (none for `Empty`).
+fn reply<C: Call>(result: anyhow::Result<C::Reply>) -> HookResponse {
+    written::<_, C::ReplyForm>(result)
+}
+
+/// An extension's answer, which has no declaration: its other side is any
+/// language, not a Rust binary.
+fn reply_json<T: serde::Serialize + serde::de::DeserializeOwned>(result: anyhow::Result<T>) -> HookResponse {
+    written::<_, Json>(result)
+}
+
+/// Read, then run, then reply: every synchronous call.
+fn answer<C: Call>(body: &[u8], run: impl FnOnce(C::Body) -> anyhow::Result<C::Reply>) -> HookResponse {
+    match read::<C>(body) {
+        Ok(body) => reply::<C>(run(body)),
+        Err(refusal) => refusal,
+    }
 }
 
 async fn handle_hook_request(
@@ -210,82 +230,66 @@ async fn handle_hook_request(
                 );
                 HookResponse::empty(200, "OK")
             }
-            Some((pane, Endpoint::Checkout)) => {
-                let destination = PathBuf::from(String::from_utf8_lossy(&body).trim());
-                let daemon = daemon.clone();
-                let reporter = reporter.clone();
-                let moved = tokio::task::spawn_blocking(move || {
-                    daemon.move_agent_into(pane, reporter.as_deref(), &destination)
-                })
-                .await
-                .unwrap_or_else(|error| Err(error.into()));
-                match moved {
-                    Ok(()) => HookResponse::empty(200, "OK"),
-                    Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+            Some((pane, Endpoint::Checkout)) => match read::<hook_call::Checkout>(&body) {
+                Ok(directory) => {
+                    let destination = PathBuf::from(directory.trim());
+                    let daemon = daemon.clone();
+                    let reporter = reporter.clone();
+                    let moved = tokio::task::spawn_blocking(move || {
+                        daemon.move_agent_into(pane, reporter.as_deref(), &destination)
+                    })
+                    .await
+                    .unwrap_or_else(|error| Err(error.into()));
+                    reply::<hook_call::Checkout>(moved)
                 }
-            }
+                Err(refusal) => refusal,
+            },
             Some((pane, Endpoint::Session)) => {
                 daemon.set_pane_session_id(pane, &String::from_utf8_lossy(&body));
                 HookResponse::empty(200, "OK")
             }
-            Some((pane, Endpoint::Comments)) => json_reply(daemon.review_comments_for_agent(pane)),
+            Some((pane, Endpoint::Comments)) => {
+                reply::<hook_call::Comments>(daemon.review_comments_for_agent(pane))
+            }
             Some((pane, Endpoint::Decisions)) => {
-                json_reply(daemon.decisions_for_agent(pane, filing))
+                reply::<hook_call::Decisions>(daemon.decisions_for_agent(pane, filing))
             }
-            Some((pane, Endpoint::Decide)) => {
-                decide_response(&daemon, pane, reporter.as_deref(), &body, filing)
-            }
-            Some((pane, Endpoint::DecisionChange)) => match decode(&body, "decision change") {
-                Ok(change) => json_reply(daemon.change_decision_for_agent(pane, change, filing)),
-                Err(refusal) => refusal,
-            },
+            Some((pane, Endpoint::Decide)) => answer::<hook_call::Decide>(&body, |write| {
+                daemon.record_agent_decision(pane, reporter.as_deref(), write, filing)
+            }),
+            Some((pane, Endpoint::DecisionChange)) => answer::<hook_call::ChangeDecision>(&body, |change| {
+                daemon.change_decision_for_agent(pane, change, filing)
+            }),
             Some((pane, Endpoint::Features)) => {
-                json_reply(daemon.feature_board_for_agent(pane, filing))
+                reply::<hook_call::Features>(daemon.feature_board_for_agent(pane, filing))
             }
-            Some((pane, Endpoint::Feature)) => {
-                feature_response(&daemon, pane, reporter.as_deref(), &body, filing)
+            Some((pane, Endpoint::Feature)) => answer::<hook_call::ChangeFeature>(&body, |action| {
+                daemon.feature_action_for_agent(pane, reporter.as_deref(), action, filing)
+            }),
+            Some((pane, Endpoint::Telemetry)) => answer::<hook_call::Telemetry>(&body, |report| {
+                daemon.report_pane_telemetry(pane, reporter.as_deref(), report);
+                Ok(())
+            }),
+            Some((pane, Endpoint::Tasks)) => answer::<hook_call::Tasks>(&body, |action| {
+                daemon.part_action_for_agent(pane, reporter.as_deref(), action, filing)
+            }),
+            Some((pane, Endpoint::Diagrams)) => answer::<hook_call::Diagrams>(&body, |action| {
+                daemon.part_action_for_agent(pane, reporter.as_deref(), action, filing)
+            }),
+            Some((pane, Endpoint::Reconcile)) => answer::<hook_call::Reconcile>(&body, |change| {
+                daemon.reconcile_for_agent(pane, change, filing)
+            }),
+            Some((pane, Endpoint::TrackerMap)) => answer::<hook_call::TrackerMap>(&body, |draft| {
+                daemon.tracker_map_for_agent(pane, &draft, filing.scope)
+            }),
+            Some((pane, Endpoint::View)) => {
+                answer::<hook_call::ChangeView>(&body, |change| daemon.change_view_for_agent(pane, change))
             }
-            Some((pane, Endpoint::Telemetry)) => match decode(&body, "telemetry report") {
-                Ok(report) => {
-                    daemon.report_pane_telemetry(pane, reporter.as_deref(), report);
-                    HookResponse::empty(200, "OK")
-                }
-                Err(refusal) => refusal,
-            },
-            Some((pane, Endpoint::Tasks)) => {
-                tasks_response(&daemon, pane, reporter.as_deref(), &body, filing)
+            Some((pane, Endpoint::SavedView)) => {
+                answer::<hook_call::SavedView>(&body, |change| daemon.saved_view_for_agent(pane, change))
             }
-            Some((pane, Endpoint::Diagrams)) => {
-                diagrams_response(&daemon, pane, reporter.as_deref(), &body, filing)
-            }
-            Some((pane, Endpoint::Reconcile)) => match decode(&body, "reconcile change") {
-                Ok(change) => json_reply(daemon.reconcile_for_agent(pane, change, filing)),
-                Err(refusal) => refusal,
-            },
-            Some((pane, Endpoint::TrackerMap)) => json_reply(daemon.tracker_map_for_agent(
-                pane,
-                &String::from_utf8_lossy(&body),
-                filing.scope,
-            )),
-            // The parse error rides along: an agent that sent a block kind
-            // the schema lacks needs to be told which.
-            Some((pane, Endpoint::View)) => match serde_json::from_slice(&body) {
-                Ok(change) => match daemon.change_view_for_agent(pane, change) {
-                    Ok(()) => HookResponse::empty(200, "OK"),
-                    Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-                },
-                Err(error) => {
-                    HookResponse::text(400, "Bad Request", format!("not a view change: {error}"))
-                }
-            },
-            Some((pane, Endpoint::SavedView)) => match serde_json::from_slice(&body) {
-                Ok(change) => json_reply(daemon.saved_view_for_agent(pane, change)),
-                Err(error) => {
-                    HookResponse::text(400, "Bad Request", format!("not a saved view change: {error}"))
-                }
-            },
-            Some((pane, Endpoint::Agent)) => match decode(&body, "agent launch") {
-                Ok(launch) => json_reply(daemon.launch_agent_for_agent(pane, launch).await),
+            Some((pane, Endpoint::Agent)) => match read::<hook_call::Launch>(&body) {
+                Ok(launch) => reply::<hook_call::Launch>(daemon.launch_agent_for_agent(pane, launch).await),
                 Err(refusal) => refusal,
             },
             _ => HookResponse::empty(200, "OK"),
@@ -328,36 +332,36 @@ where
     } else {
         match endpoint {
             ExtEndpoint::Events => return serve_extension_events(reader, wr, daemon, name).await,
-            ExtEndpoint::View => match decode::<OneOrMany<argus_protocol::ExtView>>(&body, "view") {
-                Ok(views) => json_reply(daemon.publish_views(name, views.into_vec())),
+            ExtEndpoint::View => match read_views(&body) {
+                Ok(views) => reply_json(daemon.publish_views(name, views)),
                 Err(refusal) => refusal,
             },
-            ExtEndpoint::Commands => match decode::<Vec<argus_protocol::ExtCommand>>(&body, "list of commands") {
-                Ok(commands) => json_reply(daemon.publish_commands(name, commands)),
+            ExtEndpoint::Commands => match read_as::<Vec<argus_protocol::ExtCommand>, Json>(&body, "list of commands") {
+                Ok(commands) => reply_json(daemon.publish_commands(name, commands)),
                 Err(refusal) => refusal,
             },
-            ExtEndpoint::Dialog => match decode::<argus_protocol::ExtDialog>(&body, "dialog") {
-                Ok(dialog) => json_reply(daemon.raise_dialog(name, dialog).map(|dialog| ExtDialogRaised { dialog })),
+            ExtEndpoint::Dialog => match read_as::<argus_protocol::ExtDialog, Json>(&body, "dialog") {
+                Ok(dialog) => reply_json(daemon.raise_dialog(name, dialog).map(|dialog| ExtDialogRaised { dialog })),
                 Err(refusal) => refusal,
             },
             ExtEndpoint::Notice => match daemon.extension_notice(name, &String::from_utf8_lossy(&body)) {
                 Ok(()) => HookResponse::empty(200, "OK"),
                 Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
             },
-            ExtEndpoint::About => match decode::<argus_protocol::ExtAbout>(&body, "summary and guide") {
+            ExtEndpoint::About => match read_as::<argus_protocol::ExtAbout, Json>(&body, "summary and guide") {
                 Ok(about) => match daemon.publish_about(name, about) {
                     Ok(()) => HookResponse::empty(200, "OK"),
                     Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
                 },
                 Err(refusal) => refusal,
             },
-            ExtEndpoint::Pane => match decode::<argus_protocol::ExtPane>(&body, "pane") {
+            ExtEndpoint::Pane => match read_as::<argus_protocol::ExtPane, Json>(&body, "pane") {
                 Ok(pane) => {
                     let (daemon, name) = (daemon.clone(), name.to_string());
                     let opened = tokio::task::spawn_blocking(move || daemon.open_extension_pane(&name, pane))
                         .await
                         .unwrap_or_else(|error| Err(error.into()));
-                    json_reply(opened.map(|pane| ExtPaneOpened { pane }))
+                    reply_json(opened.map(|pane| ExtPaneOpened { pane }))
                 }
                 Err(refusal) => refusal,
             },
@@ -368,20 +372,14 @@ where
 }
 
 /// A whole model, or one view of it: an extension with one view need not
-/// wrap it in a list.
-#[derive(serde::Deserialize)]
-#[serde(untagged)]
-enum OneOrMany<T> {
-    Many(Vec<T>),
-    One(T),
-}
-
-impl<T> OneOrMany<T> {
-    fn into_vec(self) -> Vec<T> {
-        match self {
-            OneOrMany::Many(all) => all,
-            OneOrMany::One(one) => vec![one],
-        }
+/// wrap it in a list. Read as a list or as one view by its first byte,
+/// rather than as an untagged pair, whose refusal says only that neither
+/// matched.
+fn read_views(body: &[u8]) -> Result<Vec<argus_protocol::ExtView>, HookResponse> {
+    if body.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'[') {
+        read_as::<_, Json>(body, "view")
+    } else {
+        read_as::<_, Json>(body, "view").map(|view| vec![view])
     }
 }
 
@@ -527,68 +525,6 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
         }
     }
     Ok(headers)
-}
-
-/// Answers with the decision as recorded, because its id is what the next
-/// decision hangs off — the one write here whose answer the agent has to
-/// keep.
-fn decide_response(
-    daemon: &Arc<Daemon>,
-    source: PaneId,
-    session: Option<&str>,
-    body: &[u8],
-    filing: super::features::Filing,
-) -> HookResponse {
-    match decode(body, "decision") {
-        Ok(write) => json_reply(daemon.record_agent_decision(source, session, write, filing)),
-        Err(refusal) => refusal,
-    }
-}
-
-/// Answers with the board as it stands afterwards; the daemon's
-/// `feature_action_for_agent` says why.
-fn feature_response(
-    daemon: &Arc<Daemon>,
-    source: PaneId,
-    session: Option<&str>,
-    body: &[u8],
-    filing: super::features::Filing,
-) -> HookResponse {
-    match decode::<argus_protocol::FeatureAction>(body, "feature change") {
-        Ok(action) => json_reply(daemon.feature_action_for_agent(source, session, action, filing)),
-        Err(refusal) => refusal,
-    }
-}
-
-/// Every change to the current feature's task list, and the read.
-///
-/// One endpoint rather than five: they all answer with the same list, and
-/// an agent that has just added three tasks needs to see the ids they were
-/// given before it can take one up.
-fn tasks_response(
-    daemon: &Arc<Daemon>,
-    source: PaneId,
-    session: Option<&str>,
-    body: &[u8],
-    filing: super::features::Filing,
-) -> HookResponse {
-    match decode::<argus_protocol::TaskAction>(body, "task change") {
-        Ok(action) => json_reply(daemon.part_action_for_agent(source, session, action, filing)),
-        Err(refusal) => refusal,
-    }
-}
-
-fn diagrams_response(
-    daemon: &Arc<Daemon>,
-    source: PaneId,
-    session: Option<&str>,
-    body: &[u8],
-    filing: super::features::Filing,
-) -> HookResponse {
-    match decode::<argus_protocol::DiagramAction>(body, "diagram change") {
-        Ok(action) => json_reply(daemon.part_action_for_agent(source, session, action, filing)),
-        Err(refusal) => refusal,
-    }
 }
 
 /// A harness session id is opaque to Argus — it only has to be one

@@ -103,6 +103,9 @@ impl Call for Decisions {
     type ReplyForm = Json;
 }
 
+/// Answered with the decision as recorded, because its id is what the next
+/// decision hangs off — the one write here whose answer the agent has to
+/// keep.
 pub enum Decide {}
 impl Call for Decide {
     const ENDPOINT: Endpoint = Endpoint::Decide;
@@ -145,6 +148,11 @@ impl Call for ChangeFeature {
     type ReplyForm = Json;
 }
 
+/// Every change to the current feature's task list, and the read.
+///
+/// One endpoint rather than five: they all answer with the same list, and
+/// an agent that has just added three tasks needs to see the ids they were
+/// given before it can take one up.
 pub enum Tasks {}
 impl Call for Tasks {
     const ENDPOINT: Endpoint = Endpoint::Tasks;

@@ -207,6 +207,20 @@ async fn a_view_that_breaks_a_limit_is_refused_whole_by_its_path() {
 }
 
 #[tokio::test]
+async fn a_view_that_is_not_one_is_refused_in_the_views_own_words() {
+    // One view or a list of them, told apart by the first byte past any
+    // blanks: read as an untagged pair, either refusal said only that
+    // neither matched.
+    let d = served();
+    let token = d.admit_extension("docker");
+    for (body, column) in [(r#"{"title":"Web"}"#, 15), (r#"  [{"title":"Web"}]"#, 18)] {
+        let (code, answer) = request(&d, "PUT", "docker", ExtEndpoint::View, &token, body).await;
+        let words = format!("not a view: missing field `name` at line 1 column {column}");
+        assert_eq!((code, answer), (400, words), "{body}");
+    }
+}
+
+#[tokio::test]
 async fn a_views_place_and_icon_reach_the_clients_and_a_bad_icon_is_refused_by_its_path() {
     let d = served();
     let token = d.admit_extension("docker");
