@@ -95,7 +95,7 @@ function field(
 function jumpList(j: CodeJump): HTMLElement {
   return el(
     'div',
-    { class: 'code-list' },
+    { class: 'code-list', id: 'code-list' },
     j.matches.map((path, i) =>
       el(
         'button',
@@ -114,7 +114,7 @@ function searchList(s: CodeSearch): HTMLElement {
   else if (s.matches.length === 0) said = `Nothing matches “${s.searched}”.`;
   return el(
     'div',
-    { class: 'code-list' },
+    { class: 'code-list', id: 'code-list' },
     said && el('div', { class: 'meta' }, said),
     s.searched === s.query &&
       s.matches.map((m, index) =>
@@ -145,7 +145,7 @@ function tree(c: CodePage): HTMLElement {
   else
     body = el(
       'div',
-      { class: 'code-list' },
+      { class: 'code-list', id: 'code-list' },
       c.tree.map((r) =>
         el(
           'button',
@@ -346,6 +346,9 @@ function outline(c: CodePage): HTMLElement {
   );
 }
 
+/** What the last redraw showed, to tell a move from a redraw. */
+let drawn = { list: '', on: '', cursor: '' };
+
 export function drawCode(): void {
   if (state.rail.stage !== 'code') return;
   const stage = $('kstage');
@@ -354,7 +357,15 @@ export function drawCode(): void {
     stage.replaceChildren(ghosts([[0.3], [0.9], [0.85], [0.6]]));
     return;
   }
+  // Each redraw builds the stage anew, so both lists keep where they were
+  // scrolled, and are moved only to bring a row the person moved to into
+  // view: scrolling on every redraw moved the tree from under a click.
   const scrolled = document.getElementById('code-body')?.scrollTop ?? 0;
+  const list = c.search ? 'search' : c.jump ? 'jump' : 'tree';
+  const listScrolled =
+    list === drawn.list ? (document.getElementById('code-list')?.scrollTop ?? 0) : 0;
+  const on = `${list}:${c.search?.at ?? c.jump?.at ?? c.path ?? ''}`;
+  const cursor = `${c.path ?? ''}:${c.lines.find((r) => r.cursor)?.no ?? ''}`;
   if (!c.composing) state.codeDraft = '';
   const typing = document.activeElement?.id === 'code-comment';
   stage.replaceChildren(
@@ -368,8 +379,12 @@ export function drawCode(): void {
   );
   const body = document.getElementById('code-body');
   if (body) body.scrollTop = scrolled;
-  stage.querySelector('.cline.cursor')?.scrollIntoView({ block: 'nearest' });
-  stage.querySelector('.code-list .on')?.scrollIntoView({ block: 'nearest' });
+  const listed = document.getElementById('code-list');
+  if (listed) listed.scrollTop = listScrolled;
+  if (cursor !== drawn.cursor)
+    stage.querySelector('.cline.cursor')?.scrollIntoView({ block: 'nearest' });
+  if (on !== drawn.on) stage.querySelector('.code-list .on')?.scrollIntoView({ block: 'nearest' });
+  drawn = { list, on, cursor };
   // A field just opened takes the keys; one being typed in keeps them.
   const want = c.composing
     ? 'code-comment'

@@ -56,7 +56,7 @@ function field(id, call_, placeholder, query) {
     return input;
 }
 function jumpList(j) {
-    return el('div', { class: 'code-list' }, j.matches.map((path, i) => el('button', { class: `trow${i === j.at ? ' on' : ''}`, onclick: () => click({ on: 'tree', path }) }, el('span', { class: 'ttl mono' }, path))), j.matches.length === 0 && el('div', { class: 'meta' }, `No file matches “${j.query}”.`));
+    return el('div', { class: 'code-list', id: 'code-list' }, j.matches.map((path, i) => el('button', { class: `trow${i === j.at ? ' on' : ''}`, onclick: () => click({ on: 'tree', path }) }, el('span', { class: 'ttl mono' }, path))), j.matches.length === 0 && el('div', { class: 'meta' }, `No file matches “${j.query}”.`));
 }
 function searchList(s) {
     let said = null;
@@ -66,7 +66,7 @@ function searchList(s) {
         said = 'Enter searches the working tree.';
     else if (s.matches.length === 0)
         said = `Nothing matches “${s.searched}”.`;
-    return el('div', { class: 'code-list' }, said && el('div', { class: 'meta' }, said), s.searched === s.query &&
+    return el('div', { class: 'code-list', id: 'code-list' }, said && el('div', { class: 'meta' }, said), s.searched === s.query &&
         s.matches.map((m, index) => el('button', {
             class: `mrow${index === s.at ? ' on' : ''}`,
             onclick: () => click({ on: 'match', index }),
@@ -86,7 +86,7 @@ function tree(c) {
     else if (c.treeLoading)
         body = ghosts([[0.6], [0.8], [0.5], [0.7]]);
     else
-        body = el('div', { class: 'code-list' }, c.tree.map((r) => el('button', {
+        body = el('div', { class: 'code-list', id: 'code-list' }, c.tree.map((r) => el('button', {
             class: `trow${r.folder ? ' dir' : ''}${r.on ? ' on' : ''}`,
             style: `padding-left: ${8 + r.depth * 14}px`,
             title: r.path,
@@ -178,6 +178,8 @@ function outline(c) {
             onclick: () => click({ on: 'symbol', line: s.line }),
         }, el('span', { class: 'okind' }, s.kind), el('span', { class: 'mono' }, s.name))));
 }
+/** What the last redraw showed, to tell a move from a redraw. */
+let drawn = { list: '', on: '', cursor: '' };
 export function drawCode() {
     if (state.rail.stage !== 'code')
         return;
@@ -187,7 +189,14 @@ export function drawCode() {
         stage.replaceChildren(ghosts([[0.3], [0.9], [0.85], [0.6]]));
         return;
     }
+    // Each redraw builds the stage anew, so both lists keep where they were
+    // scrolled, and are moved only to bring a row the person moved to into
+    // view: scrolling on every redraw moved the tree from under a click.
     const scrolled = document.getElementById('code-body')?.scrollTop ?? 0;
+    const list = c.search ? 'search' : c.jump ? 'jump' : 'tree';
+    const listScrolled = list === drawn.list ? (document.getElementById('code-list')?.scrollTop ?? 0) : 0;
+    const on = `${list}:${c.search?.at ?? c.jump?.at ?? c.path ?? ''}`;
+    const cursor = `${c.path ?? ''}:${c.lines.find((r) => r.cursor)?.no ?? ''}`;
     if (!c.composing)
         state.codeDraft = '';
     const typing = document.activeElement?.id === 'code-comment';
@@ -195,8 +204,14 @@ export function drawCode() {
     const body = document.getElementById('code-body');
     if (body)
         body.scrollTop = scrolled;
-    stage.querySelector('.cline.cursor')?.scrollIntoView({ block: 'nearest' });
-    stage.querySelector('.code-list .on')?.scrollIntoView({ block: 'nearest' });
+    const listed = document.getElementById('code-list');
+    if (listed)
+        listed.scrollTop = listScrolled;
+    if (cursor !== drawn.cursor)
+        stage.querySelector('.cline.cursor')?.scrollIntoView({ block: 'nearest' });
+    if (on !== drawn.on)
+        stage.querySelector('.code-list .on')?.scrollIntoView({ block: 'nearest' });
+    drawn = { list, on, cursor };
     // A field just opened takes the keys; one being typed in keeps them.
     const want = c.composing
         ? 'code-comment'
