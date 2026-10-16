@@ -189,25 +189,3 @@ fn a_save_at_every_limit_fits_the_body_it_may_arrive_in() {
     let body = serde_json::to_vec(&SavedViewChange::Save { view: Box::new(write) }).unwrap();
     assert!(body.len() <= MAX_SAVED_VIEW_WRITE_BYTES, "{} > {MAX_SAVED_VIEW_WRITE_BYTES}", body.len());
 }
-
-#[test]
-fn a_refresh_request_is_one_line_naming_the_recipe_and_sources() {
-    let s = saved();
-    let text = refresh_request(&s.view, s.recipe.as_deref(), &s.sources);
-    assert!(!text.chars().any(char::is_control), "{text:?}");
-    for part in ["`deps`", "run cargo tree and summarise", "file Cargo.lock", "url https://crates.io"] {
-        assert!(text.contains(part), "{part}: {text}");
-    }
-    assert!(text.contains("argus-hook view save --stdin"), "{text}");
-}
-
-#[test]
-fn a_refresh_request_strips_control_characters_from_every_part() {
-    let mut s = saved();
-    s.view.id = "d\u{1b}x".into();
-    s.view.title = "a\nb".into();
-    s.recipe = Some("c\u{7}d".into());
-    s.sources = vec![ViewSource::Note { text: "e\rf".into() }];
-    let text = refresh_request(&s.view, s.recipe.as_deref(), &s.sources);
-    assert!(!text.chars().any(char::is_control), "{text:?}");
-}

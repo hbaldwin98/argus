@@ -24,10 +24,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use argus_protocol::view_press::relay;
+use argus_protocol::view_requests;
 use argus_protocol::{
-    saved_view_refresh_request, ArtifactScope, FeatureRef, PaneId,
-    RepositoryId, SavedView, SavedViewChange, SavedViewEntry, SavedViewRecord, SavedViewWrite, ServerMsg,
-    ViewPress, ViewScope, WriteScope,
+    ArtifactScope, FeatureRef, PaneId, RepositoryId, SavedView, SavedViewChange, SavedViewEntry,
+    SavedViewRecord, SavedViewWrite, ServerMsg, ViewPress, ViewScope, WriteScope,
 };
 use tokio::sync::broadcast;
 
@@ -378,7 +378,7 @@ impl Daemon {
     /// not be asked is a sentence for the person.
     pub fn refresh_saved_view(&self, id: &str) -> Result<(), String> {
         let (pane, text) = self.relay_target(id, |stored| {
-            saved_view_refresh_request(&stored.view, stored.recipe.as_deref(), &stored.sources)
+            view_requests::refresh_saved(&stored.view, stored.recipe.as_deref(), &stored.sources)
         })?;
         if !self.notify(pane, &text) {
             return Err("The agent that saved it is not running, so it could not be asked.".into());

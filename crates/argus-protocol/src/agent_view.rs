@@ -7,8 +7,9 @@
 //! colour, size or font, and no markup crosses: every string is drawn as
 //! text, Markdown included. A view is held in the daemon's memory only,
 //! never in the store, so nothing read from a ticket outlives the agent's
-//! next look at it. The limits a view keeps are in `view_check`, and what a
-//! press of its buttons carries in `view_press`.
+//! next look at it. The limits a view keeps are in `view_check`, what a
+//! press of its buttons carries in `view_press`, and what the agent is typed
+//! of a press or refresh in `view_requests`.
 
 use serde::{Deserialize, Serialize};
 

@@ -10,6 +10,7 @@
 //! sees each change in the order it was made.
 
 use argus_protocol::view_press::relay;
+use argus_protocol::view_requests;
 use argus_protocol::{
     AgentView, PaneId, ServerMsg, ShownView, ViewChange, ViewPress, MAX_VIEWS_PER_PANE,
 };
@@ -171,10 +172,9 @@ impl Daemon {
     /// answer leaves the person looking at what was true when it was read.
     /// A view that is not held is ignored, and `false` says so.
     pub fn refresh_view(&self, pane: PaneId, id: &str) -> bool {
-        let Some(shown) = self.agent_views.lock().unwrap().get(pane, id).cloned() else {
-            return false;
-        };
-        self.notify(pane, &refresh_request(&shown.view));
+        let line = self.agent_views.lock().unwrap().get(pane, id).map(|s| view_requests::refresh_shown(&s.view));
+        let Some(line) = line else { return false };
+        self.notify(pane, &line);
         true
     }
 
@@ -207,21 +207,6 @@ impl Daemon {
             let _ = self.agent_views_tx.send(ServerMsg::ViewClosed { pane, id });
         }
     }
-}
-
-/// What is typed to the agent when it has no inbox, so it must stay one
-/// line: a newline in a title would send the request early.
-fn refresh_request(view: &AgentView) -> String {
-    let title = argus_protocol::view_press::plain(&view.title);
-    let source = match &view.subject {
-        Some(url) => argus_protocol::view_press::plain(url),
-        None => "its source".to_string(),
-    };
-    format!(
-        "Refresh the view `{id}` (\"{title}\"): read {source} again with your own tools and show \
-         it anew with `argus-hook view show --stdin`, same id.",
-        id = argus_protocol::view_press::plain(&view.id),
-    )
 }
 
 #[cfg(test)]
@@ -356,26 +341,5 @@ mod tests {
         views.drop_pane(PaneId(1));
         assert!(stopped(&mine).await);
         assert!(!other.is_finished());
-    }
-
-    #[test]
-    fn a_refresh_request_stays_on_one_line_and_names_the_source() {
-        let mut view = shown(1, "t").view;
-        view.title = "line\none".into();
-        view.subject = Some("https://example.com/browse/ENG-1".into());
-        let text = refresh_request(&view);
-        assert!(!text.contains('\n'), "{text}");
-        assert!(text.contains("`t`") && text.contains("https://example.com/browse/ENG-1"), "{text}");
-        view.subject = None;
-        assert!(refresh_request(&view).contains("its source"));
-    }
-
-    #[test]
-    fn a_refresh_request_has_no_control_character_in_any_part() {
-        let mut view = shown(1, "t\u{1b}x").view;
-        view.title = "a\u{7}b".into();
-        view.subject = Some("https://example.com/a\nb".into());
-        let text = refresh_request(&view);
-        assert!(!text.chars().any(char::is_control), "{text:?}");
     }
 }

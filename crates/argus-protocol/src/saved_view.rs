@@ -240,40 +240,5 @@ pub enum SavedViewChange {
     Stale { id: String },
 }
 
-/// What is typed to the agent that last saved a view when the person asks
-/// for it to be refreshed, on one line with no control character in it: a
-/// newline would send the request early.
-pub fn refresh_request(view: &AgentView, recipe: Option<&str>, sources: &[ViewSource]) -> String {
-    use crate::view_press::plain;
-    let mut text = format!(
-        "Refresh the saved view `{id}` (\"{title}\")",
-        id = plain(&view.id),
-        title = plain(&view.title),
-    );
-    if let Some(recipe) = recipe.filter(|r| !r.trim().is_empty()) {
-        text.push_str(&format!(". Recipe: {}", plain(recipe.trim())));
-    }
-    let sources: Vec<String> = sources
-        .iter()
-        .filter_map(|source| match source {
-            ViewSource::File { path } => Some(format!("file {}", plain(path))),
-            ViewSource::Commit { sha } => Some(format!("commit {}", plain(sha))),
-            ViewSource::Url { url } => Some(format!("url {}", plain(url))),
-            ViewSource::Note { text } => Some(format!("note {}", plain(text))),
-            ViewSource::Unknown => None,
-        })
-        .collect();
-    if !sources.is_empty() {
-        text.push_str(&format!(". Sources: {}", sources.join("; ")));
-    }
-    text.push_str(&format!(
-        ". Read them again with your own tools, then save it anew with \
-         `argus-hook view save --stdin`, same id `{}`; `argus-hook view get {}` prints it as it is.",
-        plain(&view.id),
-        plain(&view.id),
-    ));
-    text
-}
-
 #[cfg(test)]
 mod tests;

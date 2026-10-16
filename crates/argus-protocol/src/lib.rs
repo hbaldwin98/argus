@@ -14,6 +14,7 @@ pub mod view_check;
 pub mod view_links;
 pub mod view_patch;
 pub mod view_press;
+pub mod view_requests;
 pub mod view_tree;
 pub mod ago;
 pub mod artifacts;
@@ -82,9 +83,9 @@ pub use view_check::{
 };
 pub use view_press::{Answer, AnswerValue, NotOffered, ViewAction, ViewPress, MAX_ANSWER_BYTES};
 pub use saved_view::{
-    refresh_request as saved_view_refresh_request, FeatureRef, SavedView, SavedViewChange, SavedViewEntry,
-    SavedViewRecord, SavedViewWrite, ViewScope, ViewSource, WriteScope, MAX_ATTACHED_FEATURES, MAX_EMBED_DEPTH,
-    MAX_RECIPE_BYTES, MAX_SAVED_VIEWS, MAX_SAVED_VIEW_WRITE_BYTES, MAX_SOURCE_BYTES, MAX_VIEW_SOURCES,
+    FeatureRef, SavedView, SavedViewChange, SavedViewEntry, SavedViewRecord, SavedViewWrite, ViewScope,
+    ViewSource, WriteScope, MAX_ATTACHED_FEATURES, MAX_EMBED_DEPTH, MAX_RECIPE_BYTES, MAX_SAVED_VIEWS,
+    MAX_SAVED_VIEW_WRITE_BYTES, MAX_SOURCE_BYTES, MAX_VIEW_SOURCES,
 };
 pub use keys::KeyboardMode;
 pub use view_tree::Slot;

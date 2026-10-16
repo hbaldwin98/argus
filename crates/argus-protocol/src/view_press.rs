@@ -4,8 +4,7 @@
 //! A client could send anything in a [`ViewPress`], and what reaches the
 //! agent is typed into its terminal, so [`relay`] reads the press against
 //! the view it claims to come from and keeps only what that view could have
-//! produced, or refuses it, and writes what it kept on one line with no
-//! control characters in it.
+//! produced, or refuses it. The words typed are `view_requests`'s.
 
 use std::collections::HashSet;
 
@@ -88,7 +87,7 @@ impl std::fmt::Display for NotOffered {
 /// view said.
 pub fn relay(view: &AgentView, press: ViewPress) -> Result<String, NotOffered> {
     let (action, place) = find(view, &press.action).ok_or(NotOffered)?;
-    Ok(press_request(view, action, &press.kept(place)))
+    Ok(crate::view_requests::press(view, action, &press.kept(place)))
 }
 
 /// The header's actions first, then the first the blocks offer in reading order.
@@ -166,60 +165,6 @@ fn capped(text: &str) -> String {
         end -= 1;
     }
     text[..end].to_string()
-}
-
-/// Control characters made spaces, since a request may be typed into a
-/// terminal where a newline sends it early and an escape does worse.
-pub fn plain(text: &str) -> String {
-    text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
-}
-
-/// The same, through every string of `value`, keys included.
-fn plain_json(value: serde_json::Value) -> serde_json::Value {
-    use serde_json::Value;
-    match value {
-        Value::String(s) => Value::String(plain(&s)),
-        Value::Array(items) => Value::Array(items.into_iter().map(plain_json).collect()),
-        Value::Object(map) => Value::Object(map.into_iter().map(|(k, v)| (plain(&k), plain_json(v))).collect()),
-        other => other,
-    }
-}
-
-/// What is typed to the agent for a press, on one line. The rows and
-/// answers are JSON, so the agent can parse them.
-fn press_request(view: &AgentView, action: &ViewAction, press: &ViewPress) -> String {
-    let mut text = format!(
-        "The person pressed `{action_id}` (\"{label}\") in the view `{id}`.",
-        action_id = plain(&action.id),
-        label = plain(&action.label),
-        id = plain(&view.id),
-    );
-    if !press.rows.is_empty() {
-        let rows = plain_json(serde_json::json!(press.rows));
-        text.push_str(&format!(" Selected rows: {rows}."));
-    }
-    if let Some(form) = &press.form {
-        let answers: serde_json::Map<String, serde_json::Value> = press
-            .answers
-            .iter()
-            .map(|a| {
-                let value = match &a.value {
-                    AnswerValue::Text(t) => serde_json::json!(t),
-                    AnswerValue::Number(n) => serde_json::json!(n),
-                    AnswerValue::Bool(b) => serde_json::json!(b),
-                };
-                (a.name.clone(), value)
-            })
-            .collect();
-        let answers = plain_json(serde_json::Value::Object(answers));
-        text.push_str(&format!(" Form `{}` answers: {answers}.", plain(form)));
-    }
-    text.push_str(&format!(
-        " Do what it asks with your own tools, then show the view again with \
-         `argus-hook view show --stdin`, same id `{}`, so the person sees it done.",
-        plain(&view.id),
-    ));
-    text
 }
 
 #[cfg(test)]
@@ -418,31 +363,5 @@ mod tests {
     fn a_press_the_view_does_not_offer_is_refused_in_the_persons_words() {
         assert_eq!(relay(&view(), press("rm-rf")), Err(NotOffered));
         assert_eq!(NotOffered.to_string(), "That view no longer offers that action.");
-    }
-
-    #[test]
-    fn a_press_request_stays_on_one_line_and_carries_rows_and_answers() {
-        let v = view();
-        let mut act = action("ship");
-        act.label = "Ship\nit".into();
-        let mut p = press("ship");
-        p.rows = vec!["r1".into(), "r\n2".into()];
-        p.form = Some("f".into());
-        p.answers = vec![
-            answer("note", AnswerValue::Text("a\nb\u{1b}[0m".into())),
-            answer("n", AnswerValue::Number(3.0)),
-            answer("ok", AnswerValue::Bool(true)),
-        ];
-        let text = press_request(&v, &act, &p);
-        assert!(!text.chars().any(char::is_control), "{text:?}");
-        assert!(text.contains("`ship`") && text.contains("`v`") && text.contains("Ship it"), "{text}");
-        assert!(text.contains(r#"["r1","r 2"]"#), "{text}");
-        assert!(text.contains(r#""n":3.0"#) && text.contains(r#""ok":true"#), "{text}");
-        assert!(text.contains("view show --stdin"), "{text}");
-    }
-
-    #[test]
-    fn plain_turns_every_control_character_into_a_space() {
-        assert_eq!(plain("a\nb\tc\u{1b}[0m\r"), "a b c [0m ");
     }
 }
