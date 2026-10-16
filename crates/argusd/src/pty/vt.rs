@@ -319,6 +319,12 @@ impl Vt {
         self.term.mode().contains(TermMode::ALT_SCREEN)
     }
 
+    /// Whether the child asked to be told when its pane gains or loses the
+    /// person's focus (DECSET 1004).
+    pub(super) fn focus_events(&self) -> bool {
+        self.term.mode().contains(TermMode::FOCUS_IN_OUT)
+    }
+
     pub(super) fn bracketed_paste(&self) -> bool {
         self.term.mode().contains(TermMode::BRACKETED_PASTE)
     }

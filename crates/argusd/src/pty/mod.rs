@@ -258,6 +258,22 @@ impl PaneInput {
             .write_all(&paste_bytes(bytes, bracketed))?;
         Ok(())
     }
+
+    /// Tells the child its pane gained or lost the person's focus, if it
+    /// asked to hear of it. A child that did not would read the report as
+    /// typed text.
+    pub fn focus(&self, focused: bool) -> anyhow::Result<()> {
+        let asked = self.vt.lock().unwrap().focus_events();
+        if let Some(report) = focus_report(asked, focused) {
+            self.writer.lock().unwrap().write_all(report)?;
+        }
+        Ok(())
+    }
+}
+
+/// `CSI I` or `CSI O`, for a child that enabled focus reporting.
+fn focus_report(asked: bool, focused: bool) -> Option<&'static [u8]> {
+    asked.then_some(if focused { b"\x1b[I" } else { b"\x1b[O" })
 }
 
 impl PaneRuntime {

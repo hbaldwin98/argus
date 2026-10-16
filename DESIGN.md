@@ -985,6 +985,11 @@ acted on, since a client only presses and a `Key` carries no layout or text. mod
 tracked: the emulator ignores it, and the CLIs that want modified Enter ask for kitty first. The
 terminal client still types legacy bytes.
 
+A child that enabled focus reporting (DECSET 1004) is told when its pane gains or loses the person's
+focus: the daemon writes `CSI I` or `CSI O` as the focused view (see "Where the person is working")
+moves between panes, goes inactive because its window lost focus, or goes with its client. A child
+that did not enable it is told nothing, since it would read the report as typed text.
+
 A selection dragged in a pane is copied two ways at once: to the desktop clipboard, and to the
 host terminal as OSC 52, which is the only route out over SSH or through a multiplexer (herdr
 forwards it; tmux needs `set-clipboard on`). A child's own OSC 52 copy (Claude Code's `/copy`, a

@@ -22,6 +22,8 @@ pub(super) struct Viewers {
     /// focus is the last view, and falls back to the one before it when
     /// that client goes.
     views: Vec<(ViewerId, View)>,
+    /// The pane the child was last told it has the person's focus.
+    focused_pane: Option<PaneId>,
 }
 
 impl Viewers {
@@ -65,6 +67,19 @@ impl Viewers {
         let before = self.views.len();
         self.views.retain(|(v, _)| *v != viewer);
         self.views.len() != before
+    }
+
+    /// Moves the focused pane to wherever the person is now, and returns
+    /// what its children are to be told: the pane left, then the pane
+    /// entered. A pane has focus only while the client showing it is the
+    /// active one, so a window losing focus tells its pane too.
+    fn refocus(&mut self) -> Vec<(PaneId, bool)> {
+        let now = self.focused_view().filter(|view| view.active).and_then(|view| view.pane);
+        if now == self.focused_pane {
+            return Vec::new();
+        }
+        let left = std::mem::replace(&mut self.focused_pane, now);
+        left.map(|pane| (pane, false)).into_iter().chain(now.map(|pane| (pane, true))).collect()
     }
 
     fn focused_view(&self) -> Option<&View> {
@@ -159,14 +174,26 @@ impl Daemon {
     /// focus that it may have moved. A client becoming the latest takes
     /// the size of every pane it shows.
     pub fn report_view(&self, viewer: ViewerId, view: View) {
-        let shown: Vec<PaneId> = {
+        let (shown, moved) = {
             let mut viewers = self.viewers.lock().unwrap();
             viewers.record_view(viewer, view);
-            viewers.wanted.keys().copied().collect()
+            let shown: Vec<PaneId> = viewers.wanted.keys().copied().collect();
+            (shown, viewers.refocus())
         };
+        self.tell_focus(moved);
         let _ = self.views_tx.send(());
         for pane in shown {
             let _ = self.reconcile_size(pane);
+        }
+    }
+
+    /// Tells each pane's child it gained or lost focus, if it asked. Run
+    /// without the viewers lock: a write to a full pty can block.
+    fn tell_focus(&self, moved: Vec<(PaneId, bool)>) {
+        for (pane, focused) in moved {
+            if let Some(input) = self.pane_input(pane) {
+                let _ = input.focus(focused);
+            }
         }
     }
 
@@ -215,7 +242,13 @@ impl Daemon {
 
     /// Drops every claim a disconnecting client held, and its view.
     pub fn release_viewer(&self, viewer: ViewerId) {
-        if self.viewers.lock().unwrap().forget_view(viewer) {
+        let (forgot, moved) = {
+            let mut viewers = self.viewers.lock().unwrap();
+            let forgot = viewers.forget_view(viewer);
+            (forgot, viewers.refocus())
+        };
+        self.tell_focus(moved);
+        if forgot {
             let _ = self.views_tx.send(());
         }
         let touched: Vec<PaneId> = {

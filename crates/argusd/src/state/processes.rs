@@ -43,6 +43,9 @@ pub(super) trait Keyboard: Send + Sync {
     fn write(&self, bytes: &[u8]) -> anyhow::Result<()>;
     /// Pasted text, bracketed when the program asked for that.
     fn paste(&self, bytes: &[u8]) -> anyhow::Result<()>;
+    /// The pane gained or lost the person's focus; said to the program
+    /// only if it asked to hear.
+    fn focus(&self, focused: bool) -> anyhow::Result<()>;
 }
 
 /// Every pane in a pty of its own.
@@ -93,5 +96,9 @@ impl Keyboard for pty::PaneInput {
 
     fn paste(&self, bytes: &[u8]) -> anyhow::Result<()> {
         pty::PaneInput::paste(self, bytes)
+    }
+
+    fn focus(&self, focused: bool) -> anyhow::Result<()> {
+        pty::PaneInput::focus(self, focused)
     }
 }

@@ -229,6 +229,12 @@ impl Keyboard for ScriptedKeyboard {
     fn paste(&self, bytes: &[u8]) -> anyhow::Result<()> {
         self.write(bytes)
     }
+
+    /// A scripted program has enabled focus reporting, so the report is
+    /// always written; the pty's own gate is tested in `pty`.
+    fn focus(&self, focused: bool) -> anyhow::Result<()> {
+        self.write(if focused { b"\x1b[I" } else { b"\x1b[O" })
+    }
 }
 
 /// Starts at the moment it is made and moves only by [`Self::advance`].

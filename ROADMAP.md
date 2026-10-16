@@ -119,7 +119,9 @@ up durable artifacts, and later agents receive the relevant subset without brows
 - Extended keys have landed for the desktop (DESIGN.md, "Panes and terminal state"): the daemon relays
   a child's kitty keyboard flags and the shared encoder emits `CSI u` for the disambiguate level. The
   terminal client still types legacy bytes.
-- Add child-negotiated mouse behavior, bracketed paste, focus events, and OSC 52.
+- Focus events have landed (DESIGN.md, "Panes and terminal state"): a child that enabled DECSET 1004
+  hears when the focused view moves to or from its pane.
+- Add child-negotiated mouse behavior, bracketed paste, and OSC 52.
 - Idle pane wakeups are gone (DESIGN.md, "Panes and terminal state"): a thread waits on each child's
   exit, so a quiet pane's task sleeps until its child speaks or exits.
 - Implement packed, byte-bounded scrollback, then cold eviction, spill, and redaction.

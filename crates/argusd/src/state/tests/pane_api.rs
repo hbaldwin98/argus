@@ -1115,3 +1115,31 @@ async fn a_telemetry_report_sends_that_panes_record_and_no_tree() {
 
     d.close_pane(pane).unwrap();
 }
+
+#[tokio::test]
+async fn a_pane_is_told_when_the_person_moves_to_it_and_away() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let (first, second) = (d.spawn_agent(checkout, "claude").unwrap(), d.spawn_agent(checkout, "claude").unwrap());
+    let window = d.new_viewer();
+    let at = |pane: PaneId, active: bool| View { pane: Some(pane), active, ..View::default() };
+
+    d.report_view(window, at(first, true));
+    assert_eq!(d.processes.written(first), b"\x1b[I");
+
+    d.report_view(window, at(first, true));
+    assert_eq!(d.processes.written(first), b"\x1b[I", "the same view says nothing again");
+
+    d.report_view(window, at(second, true));
+    assert_eq!(d.processes.written(first), b"\x1b[I\x1b[O");
+    assert_eq!(d.processes.written(second), b"\x1b[I");
+
+    d.report_view(window, at(second, false));
+    assert_eq!(d.processes.written(second), b"\x1b[I\x1b[O", "a window that lost focus took its pane's");
+
+    d.report_view(window, at(second, true));
+    d.release_viewer(window);
+    assert_eq!(d.processes.written(second), b"\x1b[I\x1b[O\x1b[I\x1b[O", "a client going takes the focus with it");
+    close_all(&d);
+}

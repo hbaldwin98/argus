@@ -235,6 +235,19 @@ fn a_keyboard_push_alone_is_broadcast_to_watchers() {
 }
 
 #[test]
+fn focus_is_reported_only_to_a_child_that_asked_for_it() {
+    let mut vt = Vt::new(24, 80, 0);
+    assert_eq!(focus_report(vt.focus_events(), true), None);
+
+    vt.process(b"\x1b[?1004h");
+    assert_eq!(focus_report(vt.focus_events(), true), Some(&b"\x1b[I"[..]));
+    assert_eq!(focus_report(vt.focus_events(), false), Some(&b"\x1b[O"[..]));
+
+    vt.process(b"\x1b[?1004l");
+    assert_eq!(focus_report(vt.focus_events(), false), None);
+}
+
+#[test]
 fn a_childs_osc_52_copy_is_held_for_the_client() {
     let mut vt = Vt::new(24, 80, 0);
 
