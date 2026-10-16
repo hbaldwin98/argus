@@ -1115,7 +1115,7 @@ async fn a_watcher_rebuilt_from_damage_alone_ends_on_the_screen() {
         |_| {},
     )
     .unwrap();
-    let (_, _, mut watcher, _, _, _, mut rx) = pane.snapshot_and_subscribe();
+    let (_, _, mut watcher, _, _, _, _, mut rx) = pane.snapshot_and_subscribe();
     let mut frames = 0;
     tokio::time::timeout(Duration::from_secs(20), async {
         while !grid_contains(&watcher, "stream-done") {

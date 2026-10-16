@@ -17,7 +17,7 @@ fn daemon_keeping_pastes(dir: &std::path::Path) -> Arc<Daemon> {
 
 #[cfg(unix)]
 fn screen(d: &Daemon, pane: PaneId) -> String {
-    let (_, _, cells, _, _, _, _) = d.subscribe_pane(pane).unwrap();
+    let (_, _, cells, _, _, _, _, _) = d.subscribe_pane(pane).unwrap();
     cells
         .iter()
         .map(|row| row.iter().map(|c| c.ch.as_str()).collect::<String>())
