@@ -155,9 +155,18 @@ where
                     let _ = out_tx.send(ServerMsg::ExtensionDialogWithdrawn { id });
                 }
                 Ok(_) => {}
-                // What was missed is read whole; a dialog missed is one the
-                // extension is told was not answered when this client goes.
-                Err(broadcast::error::RecvError::Lagged(_)) => send_extensions(&daemon, &out_tx),
+                // What was missed is read whole, and every dialog still put
+                // to this client is put again, oldest first, from a fresh
+                // receiver taken before the reads so nothing falls between.
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    extensions_rx = daemon.subscribe_extensions();
+                    send_extensions(&daemon, &out_tx);
+                    for news in daemon.dialogs_put_to(viewer) {
+                        if let ExtensionNews::Dialog { extension, id, dialog, prompted, .. } = news {
+                            let _ = out_tx.send(ServerMsg::ExtensionDialog { extension, id, dialog: *dialog, prompted });
+                        }
+                    }
+                }
                 Err(broadcast::error::RecvError::Closed) => break,
             },
             Ok(ws) = workspaces_rx.recv() => {

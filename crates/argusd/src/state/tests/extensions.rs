@@ -365,6 +365,29 @@ async fn a_dialog_answering_a_command_goes_to_where_it_was_run_and_takes_the_key
 }
 
 #[tokio::test]
+async fn a_viewer_is_put_the_dialogs_still_asked_of_it() {
+    let d = served();
+    let token = d.admit_extension("docker");
+    d.publish_commands("docker", vec![command("up", None, CommandScope::Anywhere)]).unwrap();
+    let mut stream = events(&d, "docker", &token).await;
+    listening(&d, "docker").await;
+    let (window, other) = (d.new_viewer(), d.new_viewer());
+    d.extension_asker(window, true);
+    d.extension_command(window, "docker", "up", &View::default()).unwrap();
+    let ExtEvent::Command { id: ran, .. } = next_event(&mut stream).await else { panic!("not a command") };
+
+    let answered = d.raise_dialog("docker", confirm(None)).unwrap();
+    let asked = d.raise_dialog("docker", confirm(Some(ran))).unwrap();
+    d.answer_dialog(window, answered, Some(ExtAnswer::Yes)).unwrap();
+
+    let put = d.dialogs_put_to(window);
+    assert_eq!(put.len(), 1, "{put:?}");
+    let ExtensionNews::Dialog { viewer, extension, id, prompted, .. } = &put[0] else { panic!("a dialog") };
+    assert_eq!((*viewer, extension.as_str(), *id, *prompted), (window, "docker", asked, true));
+    assert!(d.dialogs_put_to(other).is_empty(), "nothing was put to another client");
+}
+
+#[tokio::test]
 async fn an_answer_or_its_window_going_reaches_the_extension_once() {
     let d = served();
     let token = d.admit_extension("docker");

@@ -49,10 +49,13 @@ struct Extension {
     runs: VecDeque<(u64, ViewerId)>,
 }
 
+/// A dialog still asked, kept whole so a client that missed it can be
+/// put it again.
 struct OpenDialog {
     id: u64,
     viewer: ViewerId,
-    kind: ExtDialogKind,
+    dialog: ExtDialog,
+    prompted: bool,
 }
 
 /// What a connection is told when an extension changes something. Views
@@ -442,16 +445,40 @@ impl Daemon {
         let focused = recent.into_iter().find(|viewer| askers.contains(viewer));
         let any = askers.iter().min_by_key(|viewer| viewer.0).copied();
         let viewer = ran.or(focused).or(any).ok_or_else(|| anyhow::anyhow!("no window is open to ask"))?;
-        extension.dialogs.push(OpenDialog { id, viewer, kind: dialog.kind.clone() });
+        let prompted = ran.is_some();
+        extension.dialogs.push(OpenDialog { id, viewer, dialog: dialog.clone(), prompted });
         drop(registry);
         self.tell_extensions(ExtensionNews::Dialog {
             viewer,
             extension: name.to_string(),
             id,
             dialog: Box::new(dialog),
-            prompted: ran.is_some(),
+            prompted,
         });
         Ok(id)
+    }
+
+    /// The news of every dialog still put to `viewer`, oldest first, for a
+    /// connection that fell behind what it was put.
+    pub(crate) fn dialogs_put_to(&self, viewer: ViewerId) -> Vec<ExtensionNews> {
+        let registry = self.extensions.lock().unwrap();
+        let mut open: Vec<(&str, &OpenDialog)> = registry
+            .extensions
+            .iter()
+            .flat_map(|(name, extension)| extension.dialogs.iter().map(move |d| (name.as_str(), d)))
+            .filter(|(_, d)| d.viewer == viewer)
+            .collect();
+        // Ids are counted up daemon-wide, so they are the order asked in.
+        open.sort_by_key(|(_, d)| d.id);
+        open.into_iter()
+            .map(|(name, d)| ExtensionNews::Dialog {
+                viewer,
+                extension: name.to_string(),
+                id: d.id,
+                dialog: Box::new(d.dialog.clone()),
+                prompted: d.prompted,
+            })
+            .collect()
     }
 
     /// The answer `viewer` gave, or `None` for a dialog put away. Only the
@@ -465,7 +492,7 @@ impl Daemon {
             .ok_or_else(|| anyhow::anyhow!("that question is no longer asked"))?;
         let at = extension.dialogs.iter().position(|d| d.id == dialog).expect("found above");
         if let Some(answer) = &answer {
-            anyhow::ensure!(answer.fits(&extension.dialogs[at].kind), "that does not answer the question asked");
+            anyhow::ensure!(answer.fits(&extension.dialogs[at].dialog.kind), "that does not answer the question asked");
         }
         extension.dialogs.remove(at);
         let event = match answer {
