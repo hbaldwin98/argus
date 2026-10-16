@@ -631,12 +631,7 @@ impl Session {
             Call::ShowFeatures { open } => self.show_features(open),
             Call::ShowCheckouts { open } => self.show_checkouts(open),
             Call::ShowCode { open } => self.show_code(open),
-            Call::CodeClick { target } => self.code_gesture(CodeGesture::Click { target }),
-            Call::CodeAction { action } => self.code_gesture(CodeGesture::Action { action }),
-            Call::CodeJump { gesture } => self.code_gesture(CodeGesture::Jump { gesture }),
-            Call::CodeSearch { gesture } => self.code_gesture(CodeGesture::Search { gesture }),
-            Call::CodeComment { body } => self.code_gesture(CodeGesture::Comment { body }),
-            Call::CodeSearchGlob { glob } => self.code_gesture(CodeGesture::Glob { glob }),
+            Call::Code { gesture } => self.code_gesture(gesture),
             Call::ShowComposer { open } => self.show_composer(open),
             Call::Compose { checkout, template, prompt } => self.compose(CheckoutId(checkout), template, prompt),
             Call::SelectCheckoutRow { key } => self.select_checkout_row(key),
@@ -3667,8 +3662,10 @@ mod tests {
         s.show_code(true);
         s.code_gesture(CodeGesture::Action { action: Action::Search });
         let search = |s: &mut Session, text: &str| {
-            s.call(Call::CodeSearch { gesture: ReviewJumpGesture::Query { text: text.into() } });
-            let sent = code_asks(s.call(Call::CodeSearch { gesture: ReviewJumpGesture::Choose }));
+            let query = CodeGesture::Search { gesture: ReviewJumpGesture::Query { text: text.into() } };
+            s.call(Call::Code { gesture: query });
+            let choose = CodeGesture::Search { gesture: ReviewJumpGesture::Choose };
+            let sent = code_asks(s.call(Call::Code { gesture: choose }));
             let [ClientMsg::SearchCode { request_id, .. }] = sent.as_slice() else {
                 panic!("{:?}", names(&sent));
             };
@@ -5020,12 +5017,12 @@ mod tests {
         r#"{"call":"show_features","open":true}"#,
         r#"{"call":"show_checkouts","open":true}"#,
         r#"{"call":"show_code","open":true}"#,
-        r#"{"call":"code_click","target":{"on":"tree","path":"src"}}"#,
-        r#"{"call":"code_action","action":"next"}"#,
-        r#"{"call":"code_jump","gesture":{"on":"query","text":"br"}}"#,
-        r#"{"call":"code_search","gesture":{"on":"choose"}}"#,
-        r#"{"call":"code_comment","body":null}"#,
-        r#"{"call":"code_search_glob","glob":"src/**"}"#,
+        r#"{"call":"code","gesture":{"on":"click","target":{"on":"tree","path":"src"}}}"#,
+        r#"{"call":"code","gesture":{"on":"action","action":"next"}}"#,
+        r#"{"call":"code","gesture":{"on":"jump","gesture":{"on":"query","text":"br"}}}"#,
+        r#"{"call":"code","gesture":{"on":"search","gesture":{"on":"choose"}}}"#,
+        r#"{"call":"code","gesture":{"on":"comment","body":null}}"#,
+        r#"{"call":"code","gesture":{"on":"glob","glob":"src/**"}}"#,
         r#"{"call":"show_composer","open":true}"#,
         r#"{"call":"compose","checkout":100,"template":null,"prompt":null}"#,
         r#"{"call":"select_checkout_row","key":"c100"}"#,

@@ -8,13 +8,16 @@ import { $, el, ghosts, icon } from './dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
+function gesture(g) {
+    call('code', { gesture: g });
+}
 const ways = {
     id: 'code-comment',
-    send: (body) => call('code_comment', { body }),
+    send: (body) => gesture({ on: 'comment', body }),
     choose: (pane) => click({ on: 'recipient', pane }),
 };
 function click(target) {
-    call('code_click', { target });
+    gesture({ on: 'click', target });
 }
 function kbd(key) {
     return el('span', { class: 'kbd' }, key);
@@ -37,8 +40,8 @@ function head(c) {
 }
 /** A field whose letters and keys go to Rust as gestures. It keeps the
  *  caret across redraws, as the review's jump does. */
-function field(id, gestures, placeholder, query, extra = {}) {
-    const send = (gesture) => call(gestures, { gesture });
+function field(id, kind, placeholder, query, extra = {}) {
+    const send = (g) => gesture({ on: kind, gesture: g });
     const live = document.getElementById(id);
     const input = el('input', {
         class: 'field',
@@ -50,7 +53,7 @@ function field(id, gestures, placeholder, query, extra = {}) {
                 send({ on: 'query', text: e.target.value });
         },
         onkeydown: (e) => {
-            const flip = gestures === 'code_search' ? actionFor(['filter'], e) : null;
+            const flip = kind === 'search' ? actionFor(['filter'], e) : null;
             if (flip === 'matchCase' || flip === 'wholeWord' || flip === 'useRegex') {
                 e.preventDefault();
                 const which = flip === 'matchCase' ? 'case' : flip === 'wholeWord' ? 'word' : 'regex';
@@ -135,7 +138,7 @@ function searchPanel(s) {
         said = el('div', { class: 'sum' }, `${s.total}${s.truncated ? '+' : ''} matches in ${files} ${files === 1 ? 'file' : 'files'}`);
     }
     return [
-        el('div', { class: 'sbox' }, field('code-search', 'code_search', 'Search the checkout', s.query, { class: 'field mono' }), el('div', { class: 'sopts', role: 'group', 'aria-label': 'How to match' }, option('Aa', s.case, 'case', 'Match case  Alt C'), option('ab', s.word, 'word', 'Whole word  Alt W'), option('.*', s.regex, 'regex', 'Regular expression  Alt R'))),
+        el('div', { class: 'sbox' }, field('code-search', 'search', 'Search the checkout', s.query, { class: 'field mono' }), el('div', { class: 'sopts', role: 'group', 'aria-label': 'How to match' }, option('Aa', s.case, 'case', 'Match case  Alt C'), option('ab', s.word, 'word', 'Whole word  Alt W'), option('.*', s.regex, 'regex', 'Regular expression  Alt R'))),
         el('input', {
             class: 'field mono',
             id: 'code-glob',
@@ -144,15 +147,15 @@ function searchPanel(s) {
             value: s.glob,
             oninput: (e) => {
                 if (e.target instanceof HTMLInputElement)
-                    call('code_search_glob', { glob: e.target.value });
+                    gesture({ on: 'glob', glob: e.target.value });
             },
             onkeydown: (e) => {
                 const action = actionFor(['jump'], e);
                 if (action === 'choose')
-                    call('code_search', { gesture: { on: 'choose' } });
+                    gesture({ on: 'search', gesture: { on: 'choose' } });
                 else if (action === 'closeLayer') {
                     e.stopPropagation();
-                    call('code_search', { gesture: { on: 'close' } });
+                    gesture({ on: 'search', gesture: { on: 'close' } });
                 }
                 else
                     return;
@@ -167,7 +170,7 @@ function side(c) {
     const body = c.search
         ? searchPanel(c.search)
         : [
-            field('code-jump', 'code_jump', 'Go to a file   Ctrl P', c.jump?.query ?? '', {
+            field('code-jump', 'jump', 'Go to a file   Ctrl P', c.jump?.query ?? '', {
                 // The field is always there; reaching it opens the list it filters.
                 onfocus: () => c.jump || codeAction('filter'),
             }),
@@ -396,6 +399,6 @@ export function drawCode() {
 }
 /** Runs a Code stage key. */
 export function codeAction(action) {
-    call('code_action', { action });
+    gesture({ on: 'action', action });
     return true;
 }

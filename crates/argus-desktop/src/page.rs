@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::add_project::{AddProjectGesture, AddProjectPage};
 use crate::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::Checkouts;
-use crate::code_stage::{CodeClick, CodePage};
+use crate::code_stage::{CodeGesture, CodePage};
 use crate::comment_box::CommentPage;
 use crate::console::{ConsoleGesture, ConsolePage};
 use crate::docks::{DockGesture, DocksPage, Panel};
@@ -121,17 +121,8 @@ pub enum Call {
     /// `open` true shows the Code stage on the checkout on screen, false
     /// goes back to the Workspace.
     ShowCode { open: bool },
-    CodeClick { target: CodeClick },
-    /// A key of the Code stage.
-    CodeAction { action: Action },
-    /// A letter, a step, Enter or Escape in the go-to-file field.
-    CodeJump { gesture: ReviewJumpGesture },
-    /// The same in the search field, where Enter searches.
-    CodeSearch { gesture: ReviewJumpGesture },
-    /// What the search's files-to-include field says.
-    CodeSearchGlob { glob: String },
-    /// Sends the Code stage's comment, or with no `body` puts the box away.
-    CodeComment { body: Option<String> },
+    /// A gesture in the Code stage.
+    Code { gesture: CodeGesture },
     /// `open` true shows the composer, false goes back to the Workspace.
     ShowComposer { open: bool },
     /// The composer's start: a shell without a `template`, else an agent

@@ -6,6 +6,7 @@
 
 import type { Action } from './bindings/Action';
 import type { CodeClick } from './bindings/CodeClick';
+import type { CodeGesture } from './bindings/CodeGesture';
 import type { CodeHitFile } from './bindings/CodeHitFile';
 import type { CodeJump } from './bindings/CodeJump';
 import type { CodePage } from './bindings/CodePage';
@@ -18,14 +19,18 @@ import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
+function gesture(g: CodeGesture): void {
+  call('code', { gesture: g });
+}
+
 const ways: CommentWays = {
   id: 'code-comment',
-  send: (body) => call('code_comment', { body }),
+  send: (body) => gesture({ on: 'comment', body }),
   choose: (pane) => click({ on: 'recipient', pane }),
 };
 
 function click(target: CodeClick): void {
-  call('code_click', { target });
+  gesture({ on: 'click', target });
 }
 
 function kbd(key: string): HTMLElement {
@@ -81,12 +86,12 @@ function head(c: CodePage): HTMLElement {
  *  caret across redraws, as the review's jump does. */
 function field(
   id: string,
-  gestures: 'code_jump' | 'code_search',
+  kind: 'jump' | 'search',
   placeholder: string,
   query: string,
   extra: Record<string, unknown> = {},
 ): HTMLInputElement {
-  const send = (gesture: ReviewJumpGesture) => call(gestures, { gesture });
+  const send = (g: ReviewJumpGesture) => gesture({ on: kind, gesture: g });
   const live = document.getElementById(id);
   const input = el('input', {
     class: 'field',
@@ -97,7 +102,7 @@ function field(
       if (e.target instanceof HTMLInputElement) send({ on: 'query', text: e.target.value });
     },
     onkeydown: (e: KeyboardEvent) => {
-      const flip = gestures === 'code_search' ? actionFor(['filter'], e) : null;
+      const flip = kind === 'search' ? actionFor(['filter'], e) : null;
       if (flip === 'matchCase' || flip === 'wholeWord' || flip === 'useRegex') {
         e.preventDefault();
         const which = flip === 'matchCase' ? 'case' : flip === 'wholeWord' ? 'word' : 'regex';
@@ -248,7 +253,7 @@ function searchPanel(s: CodeSearch): HTMLElement[] {
     el(
       'div',
       { class: 'sbox' },
-      field('code-search', 'code_search', 'Search the checkout', s.query, { class: 'field mono' }),
+      field('code-search', 'search', 'Search the checkout', s.query, { class: 'field mono' }),
       el(
         'div',
         { class: 'sopts', role: 'group', 'aria-label': 'How to match' },
@@ -264,15 +269,14 @@ function searchPanel(s: CodeSearch): HTMLElement[] {
       'aria-label': 'Files to include, as globs',
       value: s.glob,
       oninput: (e: Event) => {
-        if (e.target instanceof HTMLInputElement)
-          call('code_search_glob', { glob: e.target.value });
+        if (e.target instanceof HTMLInputElement) gesture({ on: 'glob', glob: e.target.value });
       },
       onkeydown: (e: KeyboardEvent) => {
         const action = actionFor(['jump'], e);
-        if (action === 'choose') call('code_search', { gesture: { on: 'choose' } });
+        if (action === 'choose') gesture({ on: 'search', gesture: { on: 'choose' } });
         else if (action === 'closeLayer') {
           e.stopPropagation();
-          call('code_search', { gesture: { on: 'close' } });
+          gesture({ on: 'search', gesture: { on: 'close' } });
         } else return;
         e.preventDefault();
       },
@@ -286,7 +290,7 @@ function side(c: CodePage): HTMLElement {
   const body: (HTMLElement | false)[] = c.search
     ? searchPanel(c.search)
     : [
-        field('code-jump', 'code_jump', 'Go to a file   Ctrl P', c.jump?.query ?? '', {
+        field('code-jump', 'jump', 'Go to a file   Ctrl P', c.jump?.query ?? '', {
           // The field is always there; reaching it opens the list it filters.
           onfocus: () => c.jump || codeAction('filter'),
         }),
@@ -615,6 +619,6 @@ export function drawCode(): void {
 
 /** Runs a Code stage key. */
 export function codeAction(action: Action): boolean {
-  call('code_action', { action });
+  gesture({ on: 'action', action });
   return true;
 }
