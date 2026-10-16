@@ -47,16 +47,15 @@ function isGroup(word: string | undefined): word is Group {
   return word !== undefined && word in GROUP_LABEL;
 }
 
+/** The rows Rust lists, folded and ordered, that the filter keeps. */
 function visibleRows(): FeatureRow[] {
   const f = state.features;
   if (!f) return [];
   const query = state.filter.trim().toLowerCase().replace(/^#/, '');
-  return f.rows.filter((row) => {
-    const folded = row.group === 'held' || row.group === 'archived';
-    if (f.layout === 'list' && !f.showFolded && folded) return false;
-    if (!query) return true;
-    return row.title.toLowerCase().includes(query) || String(row.number) === query;
-  });
+  if (!query) return f.rows;
+  return f.rows.filter(
+    (row) => row.title.toLowerCase().includes(query) || String(row.number) === query,
+  );
 }
 
 function rowBySlug(slug: string): FeatureRow | undefined {
@@ -157,7 +156,7 @@ export function drawFeatures(): void {
     stage.replaceChildren(head, ghosts([[0.5], [0.8], [0.65], [0.75], [0.55], [0.7]]));
     return;
   }
-  if (!f.rows.length) {
+  if (f.active + f.queued + f.done + f.held + f.archived === 0) {
     stage.replaceChildren(
       head,
       empty(
@@ -177,7 +176,7 @@ export function drawFeatures(): void {
     );
     return;
   }
-  stage.replaceChildren(head, f.layout === 'board' ? board() : list(f));
+  stage.replaceChildren(head, f.layout === 'board' ? board(f) : list(f));
   dress();
 }
 
@@ -199,7 +198,6 @@ function indexHead(f: Features): HTMLElement {
     f.done > 0 && el('span', { class: 'fg-ok' }, `${f.done} done`),
   ].filter((part): part is HTMLElement => part !== false);
   const counts = parts.flatMap((part, i): Child[] => (i ? [' · ', part] : [part]));
-  const folded = f.held + f.archived;
   const filter = el('input', {
     class: 'field filter',
     id: 'feature-filter',
@@ -264,12 +262,12 @@ function indexHead(f: Features): HTMLElement {
       el('span', { class: 'grow' }),
       filter,
       f.layout === 'list' &&
-        folded > 0 &&
+        f.folded > 0 &&
         el(
           'button',
           { class: 'btn', onclick: () => call('toggle_folded', {}) },
           f.showFolded ? 'Fold held and archived ' : 'Show held and archived ',
-          el('span', { class: 'fg-faint' }, String(folded)),
+          el('span', { class: 'fg-faint' }, String(f.folded)),
         ),
       seg,
       el('button', { class: 'btn primary', onclick: openCapture }, 'New feature'),
@@ -333,8 +331,12 @@ function list(f: Features): HTMLElement {
       ),
     );
   }
-  if (!rows.length)
-    section.append(el('div', { class: 'meta group-label' }, 'Nothing matches the filter.'));
+  if (!rows.length) {
+    const why = state.filter
+      ? 'Nothing matches the filter.'
+      : 'Every feature here is held or archived.';
+    section.append(el('div', { class: 'meta group-label' }, why));
+  }
   section.append(
     el(
       'div',
@@ -493,41 +495,36 @@ function moveButtons(row: FeatureRow): HTMLElement[] {
   ];
 }
 
-function board(): HTMLElement {
+function board(f: Features): HTMLElement {
   const rows = visibleRows();
   const column = (group: Group): HTMLElement => {
     const cards = rows.filter((row) => row.group === group);
+    // A folded Archived column still counts what it folds.
+    const count = group === 'archived' && !f.showFolded ? f.folded : cards.length;
     const note = COLUMN_NOTE[group];
     const section = el(
       'section',
       {
         class: 'kcol',
-        'aria-label': `${GROUP_LABEL[group]}, ${cards.length} features`,
+        'aria-label': `${GROUP_LABEL[group]}, ${count} features`,
         'data-group': group,
       },
       el(
         'div',
         { class: 'khead' },
         el('span', { class: GROUP_CLASS[group] ?? '' }, GROUP_LABEL[group]),
-        el('span', { class: 'fg-faint' }, String(cards.length)),
+        el('span', { class: 'fg-faint' }, String(count)),
         el('span', { class: 'grow' }),
         note && el('span', { class: 'regular meta' }, note),
       ),
     );
-    const shown = group === 'archived' && !state.archivedOpen ? [] : cards;
-    for (const row of shown) section.append(card(row));
-    if (group === 'archived' && cards.length) {
+    for (const row of cards) section.append(card(row));
+    if (group === 'archived' && f.folded > 0) {
       section.append(
         el(
           'button',
-          {
-            class: 'kmore',
-            onclick: () => {
-              state.archivedOpen = !state.archivedOpen;
-              drawFeatures();
-            },
-          },
-          state.archivedOpen ? 'Fold the archived' : `Show the ${cards.length} archived`,
+          { class: 'kmore', onclick: () => call('toggle_folded', {}) },
+          f.showFolded ? 'Fold the archived' : `Show the ${f.folded} archived`,
         ),
       );
     }

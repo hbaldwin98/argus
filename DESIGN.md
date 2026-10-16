@@ -496,8 +496,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
 | `code_stage` | what the Code stage holds — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the go-to-file field, the search, and the review it was opened from — what its gestures ask of the daemon, and the page it draws |
 | `code_tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
-| `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout — and what its messages and gestures change |
-| `features` | what the Feature stage's index shows from a board: its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
+| `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout and the fold — and what its messages and gestures change, never leaving the cursor on a row the page does not draw |
+| `features` | what the Feature stage's index shows from a board: which features it lists and in what order — the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
 | `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through |
 | `work_lens` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key and a mark on each row changed since the last reconcile, and the task or decision under the cursor in full |
 | `link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — what its gestures ask of the daemon, and the page and gestures it trades with the page |
@@ -1952,15 +1952,16 @@ through `argus_protocol::board_follower`: the board is asked for once per reposi
 connection, so another checkout of the same repository asks nothing, another repository drops the
 board at once rather than drawing the wrong one while its own is fetched, and a reconnect asks again
 while keeping what it holds; between those the pushes keep it current. Across a push the cursor
-stays on the same feature by slug and the same task or diagram by id, and one that is gone hands it
-to its parent or to whatever took its place. The project's name
-alone is not enough: every repository of a project shares it, and a write to one repository's board
-once replaced the board on screen for another. The daemon reads each repository's board key once
-and keeps it, so a push costs no repository opens. `DecisionBoard::scoped` is what narrows that to
-one feature in the client, so switching scope costs no round trip. The tree is drawn two lines per
-decision with branch rails and elbows connecting every child to its parent, and `argus-hook
-decisions` draws the same topology for agents. Decisions from before features existed are reported
-as unfiled by the daemon, but the feature list offers features only.
+stays on the same feature by slug — among the features the client's index lists, so it never lands
+on one the index folds or filters away; the feature open is listed whatever they say — and the same
+task or diagram by id, and one that is gone hands it to its parent or to whatever took its place.
+The project's name alone is not enough: every repository of a project shares it, and a write to one
+repository's board once replaced the board on screen for another. The daemon reads each repository's
+board key once and keeps it, so a push costs no repository opens. `DecisionBoard::scoped` is what
+narrows that to one feature in the client, so switching scope costs no round trip. The tree is drawn
+two lines per decision with branch rails and elbows connecting every child to its parent, and
+`argus-hook decisions` draws the same topology for agents. Decisions from before features existed
+are reported as unfiled by the daemon, but the feature list offers features only.
 
 ### The feature view
 
@@ -2028,9 +2029,11 @@ pushed list says so; the one optimistic write the old view made is gone with it.
 
 The desktop window's Feature stage is the same object read the same way, built in Rust off the
 same `outline`, `standing` and `flow` (`feature_view` and a module per lens). Its index is a list
-grouped Active, Queued, Done — held and archived folded behind a toggle — beside a peek, or a board
-(`V`, remembered per repository in `desktop.json`) whose columns run Queued, Active, Done, then
-Archived and Held, each card's footer saying how it came to stand there and how long since the
+grouped Active, Queued, Done — held and archived folded behind a toggle (`z`) that on the board
+folds the Archived column — beside a peek, or a board (`V`, remembered per repository in
+`desktop.json`) whose columns run Queued, Active, Done, then Archived and Held. Which features are
+listed and in what order are Rust's; the page draws the rows it is sent. Each card's footer says
+how it came to stand there and how long since the
 feature or a decision on it changed: the board keeps no history of moves, so that is the latest
 moment it can name. Only Held and Archived take a dropped card, a hold asking why, and each drop
 has its key (`H`, `Shift-A`) and its Move to… item; the peek's After… sets what a feature comes

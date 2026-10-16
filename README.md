@@ -235,8 +235,8 @@ program except the zoom keys and the leader, `Ctrl-Space`: after it, `f` fills t
 gives the rail back, `x` closes the pane, `Tab` reviews the pane's checkout, `1`, `2` and `3` open
 the Workspace, the Feature and the Checkouts stage, `n` opens the composer, and a second `Ctrl-Space` sends one to the program. Outside a pane `1`, `2` and `3`
 open them directly, and the
-Feature stage takes `j`/`k`, Home/End, `v`, `z`, `/`, and on the feature under the cursor `m`,
-`h`, `A` and `g`. `N` writes a new feature as one note — the first line its title, a paragraph its
+Feature stage takes `j`/`k`, Home/End, `v`, `z` (on the board, the Archived column), `/`, and on
+the feature under the cursor `m`, `h`, `A` and `g`. `N` writes a new feature as one note — the first line its title, a paragraph its
 brief, `-` a task (indented, a subtask), `?` an open decision with its options indented beneath,
 `!` a decision made with its reason beneath — beside what the note reads as by the daemon's own
 grammar, naming any line it cannot place; `Ctrl-Enter` creates it, and it opens once the daemon

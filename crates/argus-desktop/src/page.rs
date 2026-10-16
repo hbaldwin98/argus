@@ -837,7 +837,7 @@ pub struct Features {
     /// `list` or `board`, as remembered for this repository.
     #[cfg_attr(test, ts(type = "\"list\" | \"board\""))]
     pub layout: &'static str,
-    /// Whether held and archived features are shown in the list.
+    /// Whether the features the fold toggle covers are shown.
     pub show_folded: bool,
     /// Whether the board has arrived; until then the index says so.
     pub loaded: bool,
@@ -846,9 +846,13 @@ pub struct Features {
     pub done: usize,
     pub held: usize,
     pub archived: usize,
-    /// Every feature, grouped Active, Queued, Done, Held, Archived. The
-    /// list folds the last two away unless `show_folded`; the board shows
-    /// them as columns.
+    /// How many features the fold toggle covers — the held and archived on
+    /// the list, the archived on the board — shown or not.
+    pub folded: usize,
+    /// The features the index lists, in the order it lists them: grouped Active,
+    /// Queued, Done, Held, Archived on the list; column by column — Queued, Active,
+    /// Done, Archived, Held — on the board. Those the fold covers are in only
+    /// with `show_folded`.
     pub rows: Vec<FeatureRow>,
     pub peek: Option<Peek>,
     /// The feature opened from the index, drawn in place of it.
@@ -2258,6 +2262,7 @@ mod tests {
             layout: "board",
             loaded: true,
             active: 1,
+            folded: 2,
             rows: vec![FeatureRow {
                 slug: "trim".into(),
                 number: 7,
@@ -2282,6 +2287,7 @@ mod tests {
         let value = as_json(Event::Features(Box::new(features)));
         assert_eq!(value["type"], "features");
         assert_eq!(value["showFolded"], false);
+        assert_eq!(value["folded"], 2);
         let row = &value["rows"][0];
         assert_eq!((row["tasksDone"].clone(), row["tasksTotal"].clone()), (json!(3), json!(7)));
         assert_eq!(row["agent"]["needsYou"], false);

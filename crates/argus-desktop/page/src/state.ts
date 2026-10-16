@@ -92,8 +92,6 @@ export const state: {
   codeDraft: string;
   /** What the index's filter says. */
   filter: string;
-  /** Whether the board's archived column is unfolded. */
-  archivedOpen: boolean;
   /** The composer's draft: its picks and message, kept across redraws
    *  until a pane it started is made. */
   compose: { checkout: number | null; template: string | null; text: string };
@@ -154,6 +152,5 @@ export const state: {
   reviewDraft: '',
   codeDraft: '',
   filter: '',
-  archivedOpen: false,
   compose: { checkout: null, template: null, text: '' },
 };

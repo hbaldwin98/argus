@@ -1,6 +1,6 @@
-//! What the Feature stage's index shows from a repository's board: its
-//! rows, the places a person may move each, and the peek at the one under
-//! the cursor.
+//! What the Feature stage's index shows from a repository's board: which
+//! features it lists and in what order, each row, the places a person may move
+//! each, and the peek at the one under the cursor.
 //!
 //! How a feature stands is `argus_protocol::standing`'s to say, so this
 //! window files a feature under the heading the terminal client does; this
@@ -8,7 +8,7 @@
 //! the index is `feature_view`'s.
 
 use argus_protocol::standing::{self, FeatureRow, Standing};
-use argus_protocol::{DecisionBoard, DiagramList, Feature, FeatureState, PaneInfo, ProjectInfo, TaskList, TaskState};
+use argus_protocol::{DecisionBoard, DiagramList, Feature, FeatureListing, FeatureState, PaneInfo, ProjectInfo, TaskList, TaskState};
 
 use argus_protocol::outline::WorkRef;
 
@@ -21,8 +21,7 @@ pub struct Index<'a> {
     pub repository: &'a str,
     pub board: Option<&'a DecisionBoard>,
     pub tree: &'a [ProjectInfo],
-    pub layout: Layout,
-    pub show_folded: bool,
+    pub listing: &'a Listing,
     /// The feature under the cursor, and its tasks and flows once they
     /// arrived.
     pub peek: Option<&'a str>,
@@ -68,11 +67,64 @@ impl Layout {
     }
 }
 
+/// The board's columns in the order they are drawn and read: the three that
+/// follow the work, then the side's Archived over Held.
+const COLUMNS: [Standing; 5] = [Standing::Queued, Standing::Active, Standing::Done, Standing::Archived, Standing::Held];
+
+/// Which features the index lists and in what order: the fold, the filter and
+/// the layout's order, and the feature opened from it, which is listed whatever
+/// they say, so a hold pushed while it is read does not swap it for another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listing {
+    pub layout: Layout,
+    pub show_folded: bool,
+    /// What the filter field says, as typed.
+    pub filter: String,
+    pub opened: Option<String>,
+}
+
+impl Listing {
+    /// Whether the fold toggle covers a feature standing so: on the list the
+    /// held and archived, on the board only the archived, since Held is a
+    /// column a card is dropped on.
+    pub fn folds(&self, standing: Standing) -> bool {
+        match self.layout {
+            Layout::List => standing.folded(),
+            Layout::Board => standing.group() == Standing::Archived,
+        }
+    }
+
+    /// Whether the filter keeps a row: its title holds the words, or its
+    /// number is the one typed, with or without `#`. An empty filter keeps all.
+    pub fn matches(&self, row: &FeatureRow) -> bool {
+        let query = self.filter.trim().to_lowercase();
+        let query = query.strip_prefix('#').unwrap_or(&query);
+        query.is_empty() || row.title.to_lowercase().contains(query) || row.number.to_string() == query
+    }
+
+    /// Whether the index lists the row now.
+    pub fn lists(&self, row: &FeatureRow) -> bool {
+        self.opened.as_deref() == Some(row.slug.as_str())
+            || (!(self.folds(row.standing) && !self.show_folded) && self.matches(row))
+    }
+}
+
+impl FeatureListing for Listing {
+    fn list(&self, rows: Vec<FeatureRow>) -> Vec<FeatureRow> {
+        let mut rows: Vec<FeatureRow> = rows.into_iter().filter(|row| self.lists(row)).collect();
+        if self.layout == Layout::Board {
+            // Stable: within a column the board's own order stays.
+            rows.sort_by_key(|row| COLUMNS.iter().position(|c| *c == row.standing.group()));
+        }
+        rows
+    }
+}
+
 pub fn build(index: &Index) -> Features {
     let mut features = Features {
         repository: index.repository.to_string(),
-        layout: index.layout.word(),
-        show_folded: index.show_folded,
+        layout: index.listing.layout.word(),
+        show_folded: index.listing.show_folded,
         loaded: index.board.is_some(),
         ..Features::default()
     };
@@ -90,7 +142,10 @@ pub fn build(index: &Index) -> Features {
             Standing::New => {}
         }
     }
-    features.rows = rows
+    features.folded = rows.iter().filter(|row| index.listing.folds(row.standing) && index.listing.matches(row)).count();
+    features.rows = index
+        .listing
+        .list(rows.clone())
         .iter()
         .map(|row| {
             let feature = board.features.iter().find(|f| f.slug == row.slug);
@@ -125,11 +180,6 @@ pub fn build(index: &Index) -> Features {
             })
         });
     features
-}
-
-/// Whether the index lists `slug` only with held and archived features shown.
-pub fn is_folded(board: &DecisionBoard, tree: &[ProjectInfo], slug: &str) -> bool {
-    standing::feature_rows(board, tree).iter().any(|row| row.slug == slug && row.standing.folded())
 }
 
 fn page_row(row: &FeatureRow, feature: Option<&Feature>, index: &Index) -> page::FeatureRow {
@@ -340,13 +390,16 @@ mod tests {
     use super::*;
     use crate::fixtures;
 
+    /// Every feature in `standing`'s order, as the list draws them with the
+    /// folded shown.
+    static SHOWN: Listing = Listing { layout: Layout::List, show_folded: true, filter: String::new(), opened: None };
+
     fn index<'a>(board: &'a DecisionBoard, tree: &'a [ProjectInfo], peek: Option<&'a str>) -> Index<'a> {
         Index {
             repository: "argus",
             board: Some(board),
             tree,
-            layout: Layout::Board,
-            show_folded: false,
+            listing: &SHOWN,
             peek,
             peek_tasks: None,
             peek_diagrams: None,
@@ -491,6 +544,54 @@ mod tests {
         idx.board = None;
         let features = build(&idx);
         assert!(!features.loaded && features.rows.is_empty());
+    }
+
+    fn listing(layout: Layout, show_folded: bool, filter: &str, opened: Option<&str>) -> Listing {
+        Listing { layout, show_folded, filter: filter.into(), opened: opened.map(str::to_string) }
+    }
+
+    /// The fixture's index as `listing` lists it.
+    fn built(listing: &Listing) -> Features {
+        let (board, tree) = (fixtures::board(), fixtures::feature_tree());
+        let mut idx = index(&board, &tree, None);
+        idx.listing = listing;
+        build(&idx)
+    }
+
+    fn listed(listing: &Listing) -> Vec<String> {
+        built(listing).rows.into_iter().map(|row| row.slug).collect()
+    }
+
+    #[test]
+    fn the_list_folds_the_held_and_archived_and_the_board_only_the_archived() {
+        let list = listing(Layout::List, false, "", None);
+        let board = listing(Layout::Board, false, "", None);
+        assert!(list.folds(Standing::Held) && list.folds(Standing::Archived) && !list.folds(Standing::Done));
+        assert!(!board.folds(Standing::Held) && board.folds(Standing::Archived) && !board.folds(Standing::New));
+        assert_eq!(listed(&list), ["trim", "bump", "desktop", "ctrlc"]);
+        assert_eq!(listed(&board), ["bump", "desktop", "trim", "ctrlc", "mouse"], "Held is a column a card is dropped on");
+    }
+
+    #[test]
+    fn the_board_lists_its_features_column_by_column_as_it_draws_them() {
+        assert_eq!(listed(&listing(Layout::Board, true, "", None)), ["bump", "desktop", "trim", "ctrlc", "old", "mouse"]);
+        assert!(!listed(&listing(Layout::Board, false, "", None)).contains(&"old".to_string()));
+    }
+
+    #[test]
+    fn the_feature_opened_is_listed_whatever_the_fold_and_the_filter_say() {
+        assert_eq!(listed(&listing(Layout::List, false, "", Some("mouse"))), ["trim", "bump", "desktop", "ctrlc", "mouse"]);
+        assert_eq!(listed(&listing(Layout::Board, false, "zz", Some("old"))), ["old"]);
+    }
+
+    #[test]
+    fn the_fold_counts_what_it_covers_that_the_filter_matches() {
+        let folded = |layout, show_folded, filter| built(&listing(layout, show_folded, filter, None)).folded;
+        assert_eq!((folded(Layout::List, false, ""), folded(Layout::List, true, "")), (2, 2), "shown or not");
+        assert_eq!(folded(Layout::Board, false, ""), 1, "only the archived");
+        assert_eq!((folded(Layout::List, false, "mouse"), folded(Layout::Board, false, "mouse")), (1, 0));
+        let index = built(&listing(Layout::List, false, "mouse", None));
+        assert_eq!((index.held, index.archived, index.active), (1, 1, 1), "the heading counts the whole board");
     }
 
     #[test]

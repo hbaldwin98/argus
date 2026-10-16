@@ -35,19 +35,15 @@ const COLUMN_NOTE = {
 function isGroup(word) {
     return word !== undefined && word in GROUP_LABEL;
 }
+/** The rows Rust lists, folded and ordered, that the filter keeps. */
 function visibleRows() {
     const f = state.features;
     if (!f)
         return [];
     const query = state.filter.trim().toLowerCase().replace(/^#/, '');
-    return f.rows.filter((row) => {
-        const folded = row.group === 'held' || row.group === 'archived';
-        if (f.layout === 'list' && !f.showFolded && folded)
-            return false;
-        if (!query)
-            return true;
-        return row.title.toLowerCase().includes(query) || String(row.number) === query;
-    });
+    if (!query)
+        return f.rows;
+    return f.rows.filter((row) => row.title.toLowerCase().includes(query) || String(row.number) === query);
 }
 function rowBySlug(slug) {
     return state.features?.rows.find((row) => row.slug === slug);
@@ -132,11 +128,11 @@ export function drawFeatures() {
         stage.replaceChildren(head, ghosts([[0.5], [0.8], [0.65], [0.75], [0.55], [0.7]]));
         return;
     }
-    if (!f.rows.length) {
+    if (f.active + f.queued + f.done + f.held + f.archived === 0) {
         stage.replaceChildren(head, empty(icon('folder'), el('div', { class: 'type-title' }, `No features in ${f.repository} yet`), el('div', { class: 'fg-muted' }, 'Agents open them with ', el('span', { class: 'mono fg' }, 'argus-hook feature open'), ', or write one as a note with ', keycap('N'), '.'), el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
         return;
     }
-    stage.replaceChildren(head, f.layout === 'board' ? board() : list(f));
+    stage.replaceChildren(head, f.layout === 'board' ? board(f) : list(f));
     dress();
 }
 function keycap(key) {
@@ -157,7 +153,6 @@ function indexHead(f) {
         f.done > 0 && el('span', { class: 'fg-ok' }, `${f.done} done`),
     ].filter((part) => part !== false);
     const counts = parts.flatMap((part, i) => (i ? [' · ', part] : [part]));
-    const folded = f.held + f.archived;
     const filter = el('input', {
         class: 'field filter',
         id: 'feature-filter',
@@ -183,8 +178,8 @@ function indexHead(f) {
         onclick: () => call('set_layout', { layout }),
     }, layout === 'list' ? 'List' : 'Board')));
     return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Features'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('N'), ' new · ', keycap('Enter'), ' open · ', keycap('V'), ' list or board · ', keycap('M'), ' move to… · ', keycap('G'), ' go to its pane')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Features in ${f.repository}`), el('span', { class: 'meta' }, counts), el('span', { class: 'grow' }), filter, f.layout === 'list' &&
-        folded > 0 &&
-        el('button', { class: 'btn', onclick: () => call('toggle_folded', {}) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(folded))), seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
+        f.folded > 0 &&
+        el('button', { class: 'btn', onclick: () => call('toggle_folded', {}) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(f.folded))), seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
 }
 function list(f) {
     const rows = visibleRows();
@@ -209,8 +204,12 @@ function list(f) {
             },
         }, el('span', { class: `n${row.peeked ? ' fg-accent' : ''}` }, `#${row.number}`), el('span', { class: `ttl${row.peeked ? ' strong' : ''} ${quiet}` }, row.title), tasks(row, 'fg-faint'), questions(row), el('span', { class: `mono ${quiet ? 'fg-faint' : 'fg-ref'} small-mono` }, row.branch || '—'), el('span', { class: 'sub2' }, rowNote(row))));
     }
-    if (!rows.length)
-        section.append(el('div', { class: 'meta group-label' }, 'Nothing matches the filter.'));
+    if (!rows.length) {
+        const why = state.filter
+            ? 'Nothing matches the filter.'
+            : 'Every feature here is held or archived.';
+        section.append(el('div', { class: 'meta group-label' }, why));
+    }
     section.append(el('div', { class: 'meta index-foot' }, "Held and archived features are folded away. A feature's standing is read off its tasks and the agents on its checkouts; only holding and archiving are set by hand."));
     return el('div', { class: 'split' }, section, peekPanel(f.peek));
 }
@@ -266,27 +265,22 @@ function moveButtons(row) {
             : el('button', { class: 'btn', onclick: () => call('archive', { slug: row.slug, archived: true }) }, 'Archive'),
     ];
 }
-function board() {
+function board(f) {
     const rows = visibleRows();
     const column = (group) => {
         const cards = rows.filter((row) => row.group === group);
+        // A folded Archived column still counts what it folds.
+        const count = group === 'archived' && !f.showFolded ? f.folded : cards.length;
         const note = COLUMN_NOTE[group];
         const section = el('section', {
             class: 'kcol',
-            'aria-label': `${GROUP_LABEL[group]}, ${cards.length} features`,
+            'aria-label': `${GROUP_LABEL[group]}, ${count} features`,
             'data-group': group,
-        }, el('div', { class: 'khead' }, el('span', { class: GROUP_CLASS[group] ?? '' }, GROUP_LABEL[group]), el('span', { class: 'fg-faint' }, String(cards.length)), el('span', { class: 'grow' }), note && el('span', { class: 'regular meta' }, note)));
-        const shown = group === 'archived' && !state.archivedOpen ? [] : cards;
-        for (const row of shown)
+        }, el('div', { class: 'khead' }, el('span', { class: GROUP_CLASS[group] ?? '' }, GROUP_LABEL[group]), el('span', { class: 'fg-faint' }, String(count)), el('span', { class: 'grow' }), note && el('span', { class: 'regular meta' }, note)));
+        for (const row of cards)
             section.append(card(row));
-        if (group === 'archived' && cards.length) {
-            section.append(el('button', {
-                class: 'kmore',
-                onclick: () => {
-                    state.archivedOpen = !state.archivedOpen;
-                    drawFeatures();
-                },
-            }, state.archivedOpen ? 'Fold the archived' : `Show the ${cards.length} archived`));
+        if (group === 'archived' && f.folded > 0) {
+            section.append(el('button', { class: 'kmore', onclick: () => call('toggle_folded', {}) }, f.showFolded ? 'Fold the archived' : `Show the ${f.folded} archived`));
         }
         return section;
     };

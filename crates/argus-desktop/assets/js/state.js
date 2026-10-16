@@ -57,6 +57,5 @@ export const state = {
     reviewDraft: '',
     codeDraft: '',
     filter: '',
-    archivedOpen: false,
     compose: { checkout: null, template: null, text: '' },
 };

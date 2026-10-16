@@ -400,7 +400,8 @@ impl Session {
                 text: "argusd is restarting".into(),
             }),
             ServerMsg::Decisions(board) => {
-                self.features.receive_board(*board, &self.tree, &mut self.out);
+                let scope = self.scope();
+                self.features.receive_board(*board, scope.as_ref(), &self.tree, &mut self.out);
                 self.capture_landed();
                 if let Some(board) = self.features.board() {
                     self.tracker_dialogs.settle(board);
@@ -1610,8 +1611,9 @@ impl Session {
     fn settle_feature_ref(&mut self) {
         let (stage, chosen) = (self.stages.now(), self.repository);
         let there = |repository| stage == Stage::Feature && chosen == Some(repository);
+        let scope = self.scope();
         match self.opening_feature.settle(there, self.features.board()) {
-            Some(Found::Slug(slug)) => self.features.reveal(&slug, &self.tree, &mut self.out),
+            Some(Found::Slug(slug)) => self.features.reveal(&slug, scope.as_ref(), &self.tree, &mut self.out),
             Some(Found::Missing(number)) => {
                 self.passing.push(Event::Notice { text: format!("no feature #{number} in this repository") })
             }
@@ -2345,12 +2347,13 @@ impl Session {
 
     fn set_layout(&mut self, layout: Layout) -> Vec<ClientMsg> {
         let scope = self.scope();
-        self.features.set_layout(layout, scope.as_ref());
+        self.features.set_layout(layout, scope.as_ref(), &self.tree, &mut self.out);
         self.finish()
     }
 
     fn toggle_folded(&mut self) -> Vec<ClientMsg> {
-        self.features.toggle_folded(&self.tree, &mut self.out);
+        let scope = self.scope();
+        self.features.toggle_folded(scope.as_ref(), &self.tree, &mut self.out);
         self.finish()
     }
 
@@ -2405,12 +2408,14 @@ impl Session {
     fn capture_landed(&mut self) {
         let landed = self.features.board().and_then(|board| self.capture.landed(board));
         if let Some(slug) = landed {
-            self.features.open(Some(&slug), &self.tree, &mut self.out);
+            let scope = self.scope();
+            self.features.open(Some(&slug), scope.as_ref(), &self.tree, &mut self.out);
         }
     }
 
     fn open_feature(&mut self, slug: Option<&str>) -> Vec<ClientMsg> {
-        self.features.open(slug, &self.tree, &mut self.out);
+        let scope = self.scope();
+        self.features.open(slug, scope.as_ref(), &self.tree, &mut self.out);
         self.finish()
     }
 
@@ -2786,7 +2791,8 @@ impl Session {
     /// held and archived features shown if it is one of them.
     fn go_to_feature(&mut self, slug: &str) -> Vec<ClientMsg> {
         self.go(Stage::Feature);
-        self.features.reveal(slug, &self.tree, &mut self.out);
+        let scope = self.scope();
+        self.features.reveal(slug, scope.as_ref(), &self.tree, &mut self.out);
         self.finish()
     }
 
@@ -2825,6 +2831,8 @@ impl Session {
             self.passing.push(Event::Notice { text: reason });
         }
         self.features.set_opens_as(self.choices.get().feature_layout);
+        let scope = self.scope();
+        self.features.settle(scope.as_ref(), &self.tree, &mut self.out);
         self.finish()
     }
 
@@ -2897,10 +2905,11 @@ impl Session {
                     Layout::List => Layout::Board,
                     Layout::Board => Layout::List,
                 };
-                self.features.set_layout(other, scope.as_ref());
+                self.features.set_layout(other, scope.as_ref(), &self.tree, &mut self.out);
             }
             Action::Folded => {
-                self.features.toggle_folded(&self.tree, &mut self.out);
+                let scope = self.scope();
+                self.features.toggle_folded(scope.as_ref(), &self.tree, &mut self.out);
             }
             Action::NewFeature => self.open_capture(),
             Action::LinkTicket => self.open_link(false),

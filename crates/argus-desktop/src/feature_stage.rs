@@ -1,9 +1,10 @@
 //! What the Feature stage holds — the repository's board, the feature
 //! under the cursor and its tasks and flows, whether that feature is opened,
 //! the lens it is read through and where each lens's cursor is, how each
-//! repository lays its index out — and what its messages and gestures
-//! change. Whether the stage is up is
-//! the session's; it says when the board is wanted.
+//! repository lays its index out and the fold — and what its messages and
+//! gestures change, the cursor never resting on a row the page does not
+//! draw. Whether the stage is up is the session's; it says when the board
+//! is wanted.
 //!
 //! The session says which repository the stage is about ([`Scope`]); the
 //! protocol's `BoardFollower` decides when to ask for its board and which
@@ -15,14 +16,16 @@
 use std::collections::BTreeMap;
 
 use argus_protocol::{
-    BoardFollower, BoardScope, CheckoutId, ClientMsg, DecisionBoard, DiagramList, FeatureAction, Folding,
+    BoardFollower, BoardScope, CheckoutId, ClientMsg, DecisionBoard, DiagramList, FeatureAction,
     ProjectId, ProjectInfo, Received, RepositoryId, TaskList,
 };
+
+use argus_protocol::standing;
 
 use argus_protocol::outline::WorkRef;
 
 use crate::feature_edits::{self, Target};
-use crate::features::{self, Index, Layout};
+use crate::features::{self, Index, Layout, Listing};
 use crate::flows_lens::FlowCursor;
 use crate::page::{self, FeatureEdit, FeatureViewLink, Lens, WorkAt};
 use crate::work_lens;
@@ -58,6 +61,10 @@ pub struct FeatureStage {
     /// The board, the feature under the cursor, which is the one peeked
     /// at, and its tasks and flows.
     board: BoardFollower,
+    /// The scope the follower last followed. Put away, the stage keeps
+    /// following it while the session's moves on, and a push of its board
+    /// is settled on its layout, not the chosen repository's.
+    followed: Option<Scope>,
     show_folded: bool,
     /// The feature under the cursor is opened, drawn in place of the index.
     opened: bool,
@@ -84,6 +91,7 @@ impl FeatureStage {
         FeatureStage {
             board_wanted: false,
             board: BoardFollower::new(true),
+            followed: None,
             show_folded: false,
             opened: false,
             lens: Lens::Work,
@@ -141,6 +149,7 @@ impl FeatureStage {
         if !self.board_wanted {
             return;
         }
+        self.followed = scope.cloned();
         let asked = out.len();
         if self.board.follow(scope.map(Scope::board), out) || out.len() > asked {
             self.changed = true;
@@ -149,8 +158,10 @@ impl FeatureStage {
 
     /// A board, answered or pushed: kept when it is the followed
     /// repository's, which every client decides alike.
-    pub fn receive_board(&mut self, board: DecisionBoard, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
-        if self.board.receive_board(board, tree, &Folding { show_folded: self.show_folded }, out) {
+    pub fn receive_board(&mut self, board: DecisionBoard, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        let before = self.peeked().map(str::to_string);
+        if self.board.receive_board(board, tree, &self.listing(scope), out) {
+            self.settled(before);
             self.changed = true;
         }
     }
@@ -186,17 +197,19 @@ impl FeatureStage {
     }
 
     /// Opens a feature to read and edit, or with `None` goes back to the
-    /// index, still peeking at the one that was open.
-    pub fn open(&mut self, slug: Option<&str>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+    /// index, still peeking at the one that was open while the index lists
+    /// it: one folded away while it was read hands the cursor on.
+    pub fn open(&mut self, slug: Option<&str>, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
         match slug {
             Some(slug) if self.has(slug) => {
-                self.reveal(slug, tree, out);
+                self.reveal(slug, scope, tree, out);
                 self.opened = true;
             }
             Some(_) => return,
             None => {
                 self.opened = false;
                 self.lens = Lens::Work;
+                self.settle(scope, tree, out);
             }
         }
         self.changed = true;
@@ -252,13 +265,15 @@ impl FeatureStage {
     /// Puts the cursor on a feature the index may be folding away, showing
     /// the folded ones first: a peek on a row the index hides would be
     /// moved off it by the next board.
-    pub fn reveal(&mut self, slug: &str, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
-        let folded = self.board().is_some_and(|board| features::is_folded(board, tree, slug));
-        if folded && !self.show_folded {
+    pub fn reveal(&mut self, slug: &str, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        let listing = self.listing(scope);
+        let row = self.board().and_then(|board| standing::feature_rows(board, tree).into_iter().find(|row| row.slug == slug));
+        if row.is_some_and(|row| listing.folds(row.standing)) && !self.show_folded {
             self.show_folded = true;
             self.changed = true;
         }
         self.peek(slug, out);
+        self.settle(scope, tree, out);
     }
 
     /// How the scope's index is laid out, as remembered for it.
@@ -269,19 +284,30 @@ impl FeatureStage {
             .unwrap_or(self.opens_as)
     }
 
-    pub fn set_layout(&mut self, layout: Layout, scope: Option<&Scope>) {
-        let Some(scope) = scope else {
+    pub fn set_layout(&mut self, layout: Layout, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        let Some(key) = scope.map(|scope| scope.key.clone()) else {
             return;
         };
-        self.layouts.insert(scope.key.clone(), layout.word().to_string());
+        self.layouts.insert(key, layout.word().to_string());
         self.layouts_changed = true;
         self.changed = true;
+        self.settle(scope, tree, out);
     }
 
-    pub fn toggle_folded(&mut self, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+    /// Shows the features the fold covers, or folds them: on the list the
+    /// held and archived, on the board the Archived column.
+    pub fn toggle_folded(&mut self, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
         self.show_folded = !self.show_folded;
         self.changed = true;
-        self.board.settle(tree, &Folding { show_folded: self.show_folded }, out);
+        self.settle(scope, tree, out);
+    }
+
+    /// Puts the cursor back on a listed feature after what the index lists
+    /// may have changed.
+    pub fn settle(&mut self, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        let before = self.peeked().map(str::to_string);
+        self.board.settle(tree, &self.listing(scope), out);
+        self.settled(before);
     }
 
     /// Holds a feature with a reason, or lifts its hold with `None`.
@@ -348,13 +374,11 @@ impl FeatureStage {
     }
 
     fn index(&self, scope: Option<&Scope>, tree: &[ProjectInfo], now: u64) -> page::Features {
-        let layout = self.layout(scope);
         features::build(&Index {
             repository: scope.map_or("", |scope| scope.repository_name.as_str()),
             board: self.board.board(),
             tree,
-            layout,
-            show_folded: self.show_folded,
+            listing: &self.listing(scope),
             peek: self.board.feature(),
             peek_tasks: self.board.tasks(),
             peek_diagrams: self.board.diagrams(),
@@ -366,6 +390,35 @@ impl FeatureStage {
             views: &self.views,
             now,
         })
+    }
+
+    /// What the index lists now. Owned, so it can be built while the
+    /// follower is borrowed to settle on it.
+    fn listing(&self, scope: Option<&Scope>) -> Listing {
+        Listing {
+            layout: self.layout(self.followed.as_ref().or(scope)),
+            show_folded: self.show_folded,
+            filter: String::new(),
+            opened: self.opened().map(str::to_string),
+        }
+    }
+
+    /// After the follower settled the cursor: a feature it moved onto starts
+    /// its lenses afresh, since they were the last one's, and an opened
+    /// feature it moved off closes. The listing keeps an opened feature, so
+    /// that one left the board, and the view must not show its neighbour.
+    fn settled(&mut self, before: Option<String>) {
+        if self.peeked() == before.as_deref() {
+            return;
+        }
+        self.cursor = None;
+        self.record = None;
+        self.flow = FlowCursor::default();
+        if self.opened {
+            self.opened = false;
+            self.lens = Lens::Work;
+        }
+        self.changed = true;
     }
 
     fn has(&self, slug: &str) -> bool {
@@ -415,7 +468,7 @@ mod tests {
         stage.set_board_wanted(true);
         let mut out = Vec::new();
         stage.refresh(Some(&scope()), &mut out);
-        stage.receive_board(fixtures::board(), &fixtures::feature_tree(), &mut out);
+        stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
         (stage, out)
     }
 
@@ -444,12 +497,12 @@ mod tests {
         let mut stage = FeatureStage::new(BTreeMap::new());
         stage.set_board_wanted(true);
         let mut out = Vec::new();
-        stage.receive_board(fixtures::board(), &fixtures::feature_tree(), &mut out);
+        stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert!(!stage.everything(Some(&scope()), &[], 0).loaded, "nothing was asked");
 
         stage.refresh(Some(&scope()), &mut out);
         let other = DecisionBoard { name: "work".into(), ..fixtures::board() };
-        stage.receive_board(other, &fixtures::feature_tree(), &mut out);
+        stage.receive_board(other, Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert!(!stage.everything(Some(&scope()), &[], 0).loaded, "another project's board");
     }
 
@@ -460,11 +513,11 @@ mod tests {
         let mut out = Vec::new();
         stage.refresh(Some(&scope()), &mut out);
         let elsewhere = DecisionBoard { repositories: vec![RepositoryId(9)], ..fixtures::board() };
-        stage.receive_board(elsewhere, &fixtures::feature_tree(), &mut out);
+        stage.receive_board(elsewhere, Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert!(!stage.everything(Some(&scope()), &[], 0).loaded, "the same project, another repository");
 
         let ours = DecisionBoard { repositories: vec![RepositoryId(2)], ..fixtures::board() };
-        stage.receive_board(ours, &fixtures::feature_tree(), &mut out);
+        stage.receive_board(ours, Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert!(stage.everything(Some(&scope()), &[], 0).loaded);
     }
 
@@ -497,14 +550,14 @@ mod tests {
     fn an_archived_feature_revealed_is_listed_and_stays_peeked_past_the_next_board() {
         let (mut stage, _) = loaded();
         let mut out = Vec::new();
-        stage.reveal("old", &fixtures::feature_tree(), &mut out);
+        stage.reveal("old", Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert_eq!(names(&out), ["tasks old", "flows old"]);
-        stage.receive_board(fixtures::board(), &fixtures::feature_tree(), &mut out);
+        stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert_eq!(stage.peeked(), Some("old"));
         assert!(stage.everything(Some(&scope()), &fixtures::feature_tree(), 0).show_folded, "the index lists it");
 
         let (mut stage, _) = loaded();
-        stage.reveal("bump", &fixtures::feature_tree(), &mut out);
+        stage.reveal("bump", Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert_eq!(stage.peeked(), Some("bump"));
         assert!(!stage.show_folded, "a listed feature leaves the folded ones folded");
     }
@@ -536,7 +589,7 @@ mod tests {
         let refused = stage.edit(FeatureEdit::Withdraw { id: 1, withdrawn: true }, Some(&scope()), &mut out);
         assert!(refused.is_err() && out.is_empty(), "nothing is open");
 
-        stage.open(Some("trim"), &fixtures::feature_tree(), &mut out);
+        stage.open(Some("trim"), Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert_eq!(stage.opened(), Some("trim"));
         stage.receive_tasks(fixtures::tasks("trim"));
         stage.select(WorkAt::Decision { id: 2 });
@@ -546,7 +599,7 @@ mod tests {
         assert_eq!(stage.everything(Some(&scope()), &fixtures::feature_tree(), 0), before, "the push is what changes it");
         assert_eq!(before.open.unwrap().decision.unwrap().id, 2);
 
-        stage.open(None, &fixtures::feature_tree(), &mut out);
+        stage.open(None, Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert_eq!((stage.opened(), stage.peeked()), (None, Some("trim")), "back on the index, still peeking");
     }
 
@@ -557,13 +610,13 @@ mod tests {
         let mut out = Vec::new();
         stage.set_lens(Lens::Record);
         assert_eq!(stage.lens, Lens::Work, "nothing is open to read");
-        stage.open(Some("trim"), &tree, &mut out);
+        stage.open(Some("trim"), Some(&scope()), &tree, &mut out);
         stage.set_lens(Lens::Record);
         stage.select_decision(2);
         let open = stage.everything(Some(&scope()), &tree, 0).open.unwrap();
         assert_eq!((open.lens, open.record.unwrap().decision.unwrap().id), (Lens::Record, 2));
-        stage.open(None, &tree, &mut out);
-        stage.open(Some("trim"), &tree, &mut out);
+        stage.open(None, Some(&scope()), &tree, &mut out);
+        stage.open(Some("trim"), Some(&scope()), &tree, &mut out);
         assert_eq!(stage.everything(Some(&scope()), &tree, 0).open.unwrap().lens, Lens::Work);
     }
 
@@ -572,7 +625,7 @@ mod tests {
         let (mut stage, _) = loaded();
         let tree = fixtures::feature_tree();
         let mut out = Vec::new();
-        stage.open(Some("trim"), &tree, &mut out);
+        stage.open(Some("trim"), Some(&scope()), &tree, &mut out);
         stage.set_lens(Lens::Flows);
         stage.receive_diagrams(fixtures::diagrams("trim"));
         stage.select_step(12, Some(0));
@@ -606,7 +659,7 @@ mod tests {
     fn a_feature_not_on_the_board_does_not_open() {
         let (mut stage, _) = loaded();
         let mut out = Vec::new();
-        stage.open(Some("nowhere"), &fixtures::feature_tree(), &mut out);
+        stage.open(Some("nowhere"), Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert_eq!(stage.opened(), None);
     }
 
@@ -614,24 +667,27 @@ mod tests {
     fn a_layout_is_remembered_per_repository_and_asks_to_be_saved() {
         let (mut stage, _) = loaded();
         assert_eq!(stage.everything(Some(&scope()), &[], 0).layout, "list");
-        stage.set_layout(Layout::Board, Some(&scope()));
+        stage.set_layout(Layout::Board, Some(&scope()), &[], &mut Vec::new());
         assert_eq!(stage.everything(Some(&scope()), &[], 0).layout, "board");
         assert!(stage.take_layouts_changed());
         assert_eq!(stage.layouts().get("/src/main").map(String::as_str), Some("board"));
         assert!(!stage.take_layouts_changed());
         let other = Scope { key: "/src/other".into(), ..scope() };
+        stage.refresh(Some(&other), &mut Vec::new());
         assert_eq!(stage.everything(Some(&other), &[], 0).layout, "list");
     }
 
     #[test]
     fn a_repository_that_remembers_no_layout_opens_as_the_settings_say() {
         let (mut stage, _) = loaded();
-        stage.set_layout(Layout::List, Some(&scope()));
+        stage.set_layout(Layout::List, Some(&scope()), &[], &mut Vec::new());
         let other = Scope { key: "/src/other".into(), ..scope() };
+        stage.refresh(Some(&other), &mut Vec::new());
         stage.take(Some(&other), &[], 0);
         stage.set_opens_as(Layout::Board);
         assert!(stage.take(Some(&other), &[], 0).is_some(), "the index is drawn again");
         assert_eq!(stage.everything(Some(&other), &[], 0).layout, "board");
+        stage.refresh(Some(&scope()), &mut Vec::new());
         assert_eq!(stage.everything(Some(&scope()), &[], 0).layout, "list", "its own is kept");
     }
 
@@ -640,11 +696,127 @@ mod tests {
         let (mut stage, _) = loaded();
         let tree = fixtures::feature_tree();
         let mut out = Vec::new();
-        stage.toggle_folded(&tree, &mut out);
+        stage.toggle_folded(Some(&scope()), &tree, &mut out);
         stage.peek("mouse", &mut out);
         out.clear();
-        stage.toggle_folded(&tree, &mut out);
+        stage.toggle_folded(Some(&scope()), &tree, &mut out);
         assert_eq!(stage.peeked(), Some("ctrlc"), "mouse is held, folded away again");
         assert_eq!(names(&out), ["tasks ctrlc", "flows ctrlc"]);
+    }
+
+    /// The fixture board with `slug` held.
+    fn holding(slug: &str) -> DecisionBoard {
+        let mut board = fixtures::board();
+        board.features.iter_mut().find(|f| f.slug == slug).unwrap().held = Some("waiting".into());
+        board
+    }
+
+    fn slugs(features: &page::Features) -> Vec<&str> {
+        features.rows.iter().map(|row| row.slug.as_str()).collect()
+    }
+
+    #[test]
+    fn a_held_card_peeked_on_the_board_stays_peeked_past_the_next_board() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.set_layout(Layout::Board, Some(&scope()), &tree, &mut out);
+        stage.peek("mouse", &mut out);
+        stage.receive_board(fixtures::board(), Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.peeked(), Some("mouse"), "the board draws its Held column");
+    }
+
+    #[test]
+    fn a_board_pushed_while_another_repository_is_chosen_settles_on_its_own_layout() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.set_layout(Layout::Board, Some(&scope()), &tree, &mut out);
+        stage.peek("mouse", &mut out);
+        // Put away, the stage still follows this repository's board.
+        stage.set_board_wanted(false);
+        let other = Scope { repository: RepositoryId(9), key: "/src/other".into(), ..scope() };
+        stage.refresh(Some(&other), &mut out);
+        stage.receive_board(fixtures::board(), Some(&other), &tree, &mut out);
+        assert_eq!(stage.peeked(), Some("mouse"), "settled on the board layout, not the list's");
+    }
+
+    #[test]
+    fn an_archived_feature_gone_to_on_the_board_unfolds_its_column() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.set_layout(Layout::Board, Some(&scope()), &tree, &mut out);
+        stage.reveal("mouse", Some(&scope()), &tree, &mut out);
+        assert!(!stage.show_folded, "a held card is drawn on the board already");
+        stage.reveal("old", Some(&scope()), &tree, &mut out);
+        stage.receive_board(fixtures::board(), Some(&scope()), &tree, &mut out);
+        let index = stage.everything(Some(&scope()), &tree, 0);
+        assert!(index.show_folded && slugs(&index).contains(&"old"));
+        assert_eq!(stage.peeked(), Some("old"));
+    }
+
+    #[test]
+    fn the_boards_archived_column_folds_behind_the_same_toggle() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.set_layout(Layout::Board, Some(&scope()), &tree, &mut out);
+        let folded = stage.everything(Some(&scope()), &tree, 0);
+        assert_eq!((slugs(&folded), folded.folded), (vec!["bump", "desktop", "trim", "ctrlc", "mouse"], 1));
+        stage.toggle_folded(Some(&scope()), &tree, &mut out);
+        let shown = stage.everything(Some(&scope()), &tree, 0);
+        assert_eq!(slugs(&shown), ["bump", "desktop", "trim", "ctrlc", "old", "mouse"]);
+    }
+
+    #[test]
+    fn a_feature_held_while_it_is_open_stays_open_and_closing_it_moves_the_cursor_on() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.open(Some("trim"), Some(&scope()), &tree, &mut out);
+        stage.receive_board(holding("trim"), Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.opened(), Some("trim"), "not swapped for its neighbour");
+        assert!(slugs(&stage.everything(Some(&scope()), &tree, 0)).contains(&"trim"));
+        stage.open(None, Some(&scope()), &tree, &mut out);
+        assert_eq!((stage.opened(), stage.peeked()), (None, Some("ctrlc")), "the one in its place");
+    }
+
+    #[test]
+    fn an_opened_feature_that_leaves_the_board_closes_rather_than_showing_another() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.open(Some("trim"), Some(&scope()), &tree, &mut out);
+        stage.set_lens(Lens::Record);
+        let mut board = fixtures::board();
+        board.features.retain(|f| f.slug != "trim");
+        stage.receive_board(board, Some(&scope()), &tree, &mut out);
+        assert_eq!((stage.opened(), stage.peeked(), stage.lens), (None, Some("bump"), Lens::Work));
+    }
+
+    #[test]
+    fn a_cursor_moved_by_a_push_starts_the_lenses_afresh() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.peek("bump", &mut out);
+        stage.select(WorkAt::Decision { id: 2 });
+        stage.select_decision(2);
+        stage.select_step(11, Some(1));
+        stage.receive_board(holding("bump"), Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.peeked(), Some("desktop"));
+        assert_eq!((stage.cursor, stage.record, stage.flow), (None, None, FlowCursor::default()));
+    }
+
+    #[test]
+    fn changing_the_layout_moves_the_cursor_off_a_feature_the_new_one_folds() {
+        let (mut stage, _) = loaded();
+        let tree = fixtures::feature_tree();
+        let mut out = Vec::new();
+        stage.set_layout(Layout::Board, Some(&scope()), &tree, &mut out);
+        stage.peek("mouse", &mut out);
+        stage.set_layout(Layout::List, Some(&scope()), &tree, &mut out);
+        assert_eq!(stage.peeked(), Some("ctrlc"));
     }
 }
