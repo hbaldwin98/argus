@@ -180,6 +180,21 @@ async fn an_action_for_an_extension_not_listening_is_refused_in_words() {
     assert!(refused.to_string().contains("not listening"), "{refused}");
 }
 
+/// The window refuses a stale action in these same words, from the same
+/// rule, before it sends; the daemon's are for a window a publish behind.
+#[tokio::test]
+async fn an_action_is_refused_in_the_words_the_window_uses() {
+    let d = served();
+    d.admit_extension("docker");
+    d.publish_views("docker", vec![view(CONTAINERS)]).unwrap();
+    let refused = |row: Option<&str>, action: &str| {
+        d.extension_action("docker", "containers", row.map(str::to_string), action).unwrap_err().to_string()
+    };
+    assert_eq!(refused(Some("web"), "delete"), "Containers offers no delete");
+    assert_eq!(refused(Some("gone"), "restart"), "Containers has no row gone");
+    assert_eq!(refused(None, "restart"), "Restart needs a row");
+}
+
 #[tokio::test]
 async fn a_view_that_breaks_a_limit_is_refused_whole_by_its_path() {
     let d = served();

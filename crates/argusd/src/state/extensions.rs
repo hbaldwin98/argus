@@ -358,8 +358,9 @@ impl Daemon {
     }
 
     /// An action taken in a view, forwarded as it stands. One the view does
-    /// not offer, or a row it does not hold, is refused: a client a publish
-    /// behind cannot act on what the extension has since taken away.
+    /// not offer, or a row it does not hold, is refused in the words the
+    /// window uses (`ExtView::offers`): a client a publish behind cannot act
+    /// on what the extension has since taken away.
     pub fn extension_action(&self, name: &str, view: &str, row: Option<String>, action: &str) -> anyhow::Result<()> {
         let mut registry = self.extensions.lock().unwrap();
         let extension = registry.get(name)?;
@@ -368,19 +369,12 @@ impl Daemon {
             .iter()
             .find(|v| v.name == view)
             .ok_or_else(|| anyhow::anyhow!("{name} shows no view {view}"))?;
-        let offered = shown
-            .actions
-            .iter()
-            .find(|a| a.id == action)
-            .ok_or_else(|| anyhow::anyhow!("{view} offers no {action}"))?;
-        let row = if offered.view_wide {
-            None
-        } else {
-            let row = row.ok_or_else(|| anyhow::anyhow!("{} needs a row", offered.label))?;
-            anyhow::ensure!(shown.rows.iter().any(|r| r.key == row), "{view} has no row {row}");
-            Some(row)
+        let taken = shown.offers(action, row.as_deref()).map_err(anyhow::Error::msg)?;
+        let event = ExtEvent::Action {
+            view: view.to_string(),
+            action: action.to_string(),
+            row: taken.row.map(str::to_string),
         };
-        let event = ExtEvent::Action { view: view.to_string(), action: action.to_string(), row };
         Self::send_extension(extension, name, event)
     }
 

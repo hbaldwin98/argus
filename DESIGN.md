@@ -298,7 +298,7 @@ live in this crate and a contract written twice drifts in silence.
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `held_tree` | a client's copy of the tree, and finding things in it: every pane and checkout, where a pane or checkout sits, telemetry applied between trees, and which panes changed state from the copy before |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses — an extension's endpoints among them |
-| `extensions` | what an extension publishes for Argus to draw — its views, commands and dialogs — and what the person does with them on the way back |
+| `extensions` | what an extension publishes for Argus to draw — its views, commands and dialogs — and what the person does with them on the way back: what taking an action on a view carries, a row or none, or the words it is refused in |
 | `ext_console` | what an extension's console view runs and where — its command, working directory and environment as the extension asks, and the pane and ending the daemon reports |
 | `extension_keys` | which keys an extension may bind, and the words a refused one is refused in: the keys Argus keeps where an extension's would be heard |
 | `extension_guide` | how to build an extension from nothing, as `argus extension guide` prints it: a walkthrough, then the reference, its examples read through the types and its limits filled from the constants |
@@ -2568,12 +2568,13 @@ one character the view's own stage does not keep for moving and filtering.
 The protocol carries it to a client that listed `extensions` in its greeting, and to no other:
 `ExtensionViews` and `ExtensionCommands` whole after the daemon's greeting and on each change, `ExtensionNotice`
 for a notice; the client sends `ExtensionAction` and `ExtensionCommand`, which the daemon checks against what is
-published before forwarding — a client a publish behind cannot act on what has been taken away. A
-dialog goes to one client, so only one window asks: the one that ran the command it answers, when
-it names one (`answers`, the command's id), else the client the person was last at among those
-that listed `extension-dialogs`. Only that client may answer it, in its own kind (`ExtensionDialogAnswer`),
-and a dialog nobody answered is withdrawn, its extension told it was cancelled, when that client
-goes.
+published before forwarding (`ExtView::offers`, which the window reads as well, to decide what an
+action sends and whether it asks first) — a client a publish behind cannot act on what has been
+taken away. A dialog goes to one client, so only one window asks: the one that ran the command it
+answers, when it names one (`answers`, the command's id), else the client the person was last at
+among those that listed `extension-dialogs`. Only that client may answer it, in its own kind
+(`ExtensionDialogAnswer`), and a dialog nobody answered is withdrawn, its extension told it was
+cancelled, when that client goes.
 
 The desktop window lists every extension view whose scope holds — a repository's while the rail
 reads that repository, as the Checkouts stage does, a checkout's while its pane is on screen or it

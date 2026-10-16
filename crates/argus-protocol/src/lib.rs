@@ -115,7 +115,7 @@ pub use features::{
 pub use ext_console::{ConsoleEnd, ExtConsole, MAX_CONSOLE_ARGS, MAX_CONSOLE_ARG_BYTES, MAX_CONSOLE_ENV};
 pub use extensions::{
     CommandScope, ExtAbout, ExtAction, ExtAnswer, ExtPlace, ExtCommand, ExtDescription, ExtDialog, ExtDialogKind,
-    ExtDialogRaised, ExtEvent, ExtField, ExtItem, ExtKey, ExtPane, ExtPaneOpened, ExtRow, ExtScope, ExtView,
+    ExtDialogRaised, ExtEvent, ExtField, ExtItem, ExtKey, ExtPane, ExtPaneOpened, ExtRow, ExtScope, ExtTaken, ExtView,
     Refusals, Refused,
 };
 pub use focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, View};

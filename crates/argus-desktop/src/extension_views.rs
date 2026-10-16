@@ -75,11 +75,11 @@ impl ExtensionViews {
 
     pub fn receive(&mut self, views: Vec<ExtView>) {
         self.views = views;
-        // A question about a row the extension has since taken away, or a
-        // view it no longer publishes, is no longer one to answer.
+        // A question about a row or an action the extension has since taken
+        // away, or a view it no longer publishes, is no longer one to answer.
         let still = self.confirm.as_ref().is_none_or(|(_, _, msg)| {
-            let ClientMsg::ExtensionAction { extension, view, row, .. } = msg else { return false };
-            self.find(extension, view).is_some_and(|v| row.as_ref().is_none_or(|row| v.rows.iter().any(|r| &r.key == row)))
+            let ClientMsg::ExtensionAction { extension, view, row, action } = msg else { return false };
+            self.find(extension, view).is_some_and(|v| v.offers(action, row.as_deref()).is_ok())
         });
         if !still {
             self.confirm = None;
@@ -174,21 +174,17 @@ impl ExtensionViews {
     /// view-wide: what to send now, or nothing when it asks first.
     pub fn act(&mut self, panel: &Panel, here: &Here, id: &str) -> Result<Option<ClientMsg>, String> {
         let view = self.get(panel, here).ok_or("that extension's view is not shown here")?;
-        let action = view.actions.iter().find(|a| a.id == id).ok_or_else(|| format!("{} offers no {id}", view.title))?;
-        let row = if action.view_wide {
-            None
-        } else {
-            Some(self.selected_in(panel, view).ok_or_else(|| format!("{} needs a row", action.label))?)
-        };
+        let picked = self.selected_in(panel, view);
+        let taken = view.offers(id, picked.as_deref())?;
         let msg = ClientMsg::ExtensionAction {
             extension: view.extension.clone(),
             view: view.name.clone(),
-            row,
-            action: action.id.clone(),
+            row: taken.row.map(str::to_string),
+            action: taken.action.id.clone(),
         };
-        let question = action.confirm.clone().map(|question| ExtConfirm {
+        let question = taken.action.confirm.clone().map(|question| ExtConfirm {
             extension: view.extension.clone(),
-            label: action.label.clone(),
+            label: taken.action.label.clone(),
             question,
         });
         match question {
@@ -394,6 +390,22 @@ mod tests {
         views.act(&containers(), &here, "restart").unwrap();
         let mut republished = published();
         republished[0].rows.remove(0);
+        views.receive(republished);
+        assert!(views.answer(true).is_none());
+    }
+
+    #[test]
+    fn an_action_the_view_does_not_offer_is_refused_by_its_title() {
+        let (mut views, here) = held();
+        assert_eq!(views.act(&containers(), &here, "delete").unwrap_err(), "Containers offers no delete");
+    }
+
+    #[test]
+    fn a_question_about_an_action_since_taken_away_is_dropped() {
+        let (mut views, here) = held();
+        views.act(&containers(), &here, "restart").unwrap();
+        let mut republished = published();
+        republished[0].actions.retain(|a| a.id != "restart");
         views.receive(republished);
         assert!(views.answer(true).is_none());
     }

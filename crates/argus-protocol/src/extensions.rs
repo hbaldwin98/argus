@@ -176,6 +176,40 @@ impl ExtView {
     }
 }
 
+/// An action as taken on a view: the action, and the row it is taken on,
+/// none for a view-wide one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtTaken<'a> {
+    pub action: &'a ExtAction,
+    pub row: Option<&'a str>,
+}
+
+impl ExtView {
+    /// The action `id` taken on `row`, as this view offers it: a view-wide
+    /// action on no row, whatever was picked, and a row action on `row`,
+    /// which the view must hold. Refused in words for the person, the view
+    /// named by its title. The window reads it to decide what to send and
+    /// whether to ask first; the daemon reads it again against what is
+    /// published now, which a window a publish behind may not have.
+    pub fn offers(&self, id: &str, row: Option<&str>) -> Result<ExtTaken<'_>, String> {
+        let action = self
+            .actions
+            .iter()
+            .find(|a| a.id == id)
+            .ok_or_else(|| format!("{} offers no {id}", self.title))?;
+        if action.view_wide {
+            return Ok(ExtTaken { action, row: None });
+        }
+        let row = row.ok_or_else(|| format!("{} needs a row", action.label))?;
+        let held = self
+            .rows
+            .iter()
+            .find(|r| r.key == row)
+            .ok_or_else(|| format!("{} has no row {row}", self.title))?;
+        Ok(ExtTaken { action, row: Some(held.key.as_str()) })
+    }
+}
+
 /// Where the desktop window first opens a view.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -629,6 +663,46 @@ mod tests {
 
     fn row(key: &str, cells: Vec<Value>) -> ExtRow {
         ExtRow { key: key.into(), cells, status: None }
+    }
+
+    /// Containers holding `web`, with a row action `restart` and a
+    /// view-wide `prune`.
+    fn acting() -> ExtView {
+        let action = |id: &str, label: &str, view_wide: bool| ExtAction {
+            id: id.into(),
+            label: label.into(),
+            key: None,
+            view_wide,
+            confirm: None,
+            help: None,
+        };
+        ExtView {
+            actions: vec![action("restart", "Restart", false), action("prune", "Prune", true)],
+            ..containers(vec![row("web", vec![text("web")])])
+        }
+    }
+
+    #[test]
+    fn a_view_wide_action_is_taken_on_no_row_whatever_was_picked() {
+        let view = acting();
+        for picked in [None, Some("web"), Some("gone")] {
+            let taken = view.offers("prune", picked).unwrap();
+            assert_eq!((taken.action.id.as_str(), taken.row), ("prune", None), "{picked:?}");
+        }
+    }
+
+    #[test]
+    fn a_row_action_is_taken_only_on_a_row_the_view_holds() {
+        let view = acting();
+        let taken = view.offers("restart", Some("web")).unwrap();
+        assert_eq!((taken.action.id.as_str(), taken.row), ("restart", Some("web")));
+        assert_eq!(view.offers("restart", None).unwrap_err(), "Restart needs a row");
+        assert_eq!(view.offers("restart", Some("gone")).unwrap_err(), "Containers has no row gone");
+    }
+
+    #[test]
+    fn an_action_the_view_does_not_offer_is_refused_by_the_views_title() {
+        assert_eq!(acting().offers("delete", Some("web")).unwrap_err(), "Containers offers no delete");
     }
 
     #[test]
