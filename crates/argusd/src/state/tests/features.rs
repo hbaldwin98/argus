@@ -7,7 +7,6 @@ use argus_protocol::{
     ArtifactScope, DecisionBoard, DecisionWrite, Feature, FeatureAction, FeatureState,
     FeatureWrite, LinkWrite, TaskAction, TaskWrite,
 };
-use tokio::sync::broadcast::Receiver;
 
 /// A daemon whose one checkout has an agent in it: the person's address
 /// for the board and the agent's pane, which name the same one.
@@ -28,7 +27,7 @@ fn open(title: &str) -> FeatureAction {
 
 /// The one board a change pushed. Every change pushes exactly one, so a
 /// second is a change pushed twice and none is one that went nowhere.
-fn pushed(rx: &mut Receiver<DecisionBoard>) -> DecisionBoard {
+fn pushed(rx: &mut crate::state::pushes::Pushed<BoardNews, DecisionBoard>) -> DecisionBoard {
     let board = rx.try_recv().expect("the change is pushed to every client");
     assert!(rx.try_recv().is_err(), "and pushed once");
     board

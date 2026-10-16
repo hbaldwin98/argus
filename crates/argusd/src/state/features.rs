@@ -292,12 +292,12 @@ impl Daemon {
                 // The tasks as well as the board: a client holding the
                 // feature's list open is owed the rows a note just added.
                 if address.is_pushed() {
-                    self.pushes.tasks(argus_protocol::TaskList {
+                    self.pushes.board(super::BoardNews::Tasks(Box::new(argus_protocol::TaskList {
                         repositories: address.repositories.clone(),
                         project_name: address.project_name.clone(),
                         tasks: self.store.tasks(key, &slug)?,
                         feature: Some(slug),
-                    });
+                    })));
                 }
             }
         }

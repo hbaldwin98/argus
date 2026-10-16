@@ -1,14 +1,17 @@
 //! What the daemon publishes for its connections to push: one channel per
-//! topic, each as deep as its bursts.
+//! topic, each as deep as its bursts, and the latest board of each key for
+//! a connection that fell behind them.
 //!
 //! Every push goes through here, so a send site elsewhere that names a
 //! `broadcast::Sender` is one this module does not know about. A send with
 //! no receiver is not an error: no client need be connected.
 
+use std::collections::VecDeque;
 use std::sync::Mutex as StdMutex;
 
 use argus_protocol::{
-    AgentTelemetry, DecisionBoard, DiagramList, PaneId, ProjectInfo, ServerMsg, TaskList, WorkspaceInfo,
+    AgentTelemetry, DecisionBoard, DiagramList, PaneId, ProjectId, ProjectInfo, RepositoryId, ServerMsg,
+    TaskList, WorkspaceInfo,
 };
 use tokio::sync::broadcast;
 
@@ -20,9 +23,12 @@ use super::ExtensionNews;
 /// every tool call.
 const TREE_DEPTH: usize = 128;
 const WORKSPACES_DEPTH: usize = 32;
-const DECISIONS_DEPTH: usize = 32;
-const TASKS_DEPTH: usize = 32;
-const DIAGRAMS_DEPTH: usize = 32;
+/// The three channels of 32 the boards had before they were one.
+const BOARDS_DEPTH: usize = 64;
+/// How many boards' latest pushes are kept for a connection that fell
+/// behind. A board is one feature's or one project's, so this is more than
+/// the person has open at once.
+const REMEMBERED_BOARDS: usize = 64;
 /// A tick carries nothing, and a watcher that misses some reads the focus
 /// whole anyway.
 const FOCUS_DEPTH: usize = 16;
@@ -41,6 +47,34 @@ pub enum TreeNews {
     Telemetry { pane: PaneId, telemetry: Box<AgentTelemetry> },
 }
 
+/// A feature board's part, pushed whole. Pushed at every client; one
+/// reading another repository's or feature's drops it.
+#[derive(Debug, Clone)]
+pub enum BoardNews {
+    Decisions(Box<DecisionBoard>),
+    Tasks(Box<TaskList>),
+    Diagrams(Box<DiagramList>),
+}
+
+/// Which board a push is the latest of: a later push of the same key
+/// replaces it whole.
+#[derive(PartialEq, Eq)]
+enum BoardKey {
+    Decisions(Vec<RepositoryId>, Option<ProjectId>),
+    Tasks(Vec<RepositoryId>, Option<String>),
+    Diagrams(Vec<RepositoryId>, Option<String>),
+}
+
+impl BoardNews {
+    fn key(&self) -> BoardKey {
+        match self {
+            BoardNews::Decisions(board) => BoardKey::Decisions(board.repositories.clone(), board.project),
+            BoardNews::Tasks(list) => BoardKey::Tasks(list.repositories.clone(), list.feature.clone()),
+            BoardNews::Diagrams(list) => BoardKey::Diagrams(list.repositories.clone(), list.feature.clone()),
+        }
+    }
+}
+
 pub struct Pushes {
     tree: broadcast::Sender<TreeNews>,
     /// Held while a tree or a report is read and sent, so a tree taken
@@ -50,14 +84,17 @@ pub struct Pushes {
     /// snapshot and the merge each lock for themselves.
     tree_order: StdMutex<()>,
     workspaces: broadcast::Sender<Vec<WorkspaceInfo>>,
-    /// Whole boards rather than one decision each: a client watching a
-    /// tree being built needs the tree, and a board is small enough that
-    /// sending the whole of it is cheaper than teaching both sides how to
-    /// splice a node into one.
-    decisions: broadcast::Sender<DecisionBoard>,
-    /// One feature's task list, whole for the same reason.
-    tasks: broadcast::Sender<TaskList>,
-    diagrams: broadcast::Sender<DiagramList>,
+    /// Whole boards rather than one decision or task each: a client
+    /// watching a tree being built needs the tree, and a board is small
+    /// enough that sending the whole of it is cheaper than teaching both
+    /// sides how to splice a node into one.
+    boards: broadcast::Sender<BoardNews>,
+    /// The latest push of each board, oldest first, for a connection that
+    /// fell behind: the daemon cannot know which boards a client shows, and
+    /// a client drops those it does not. Written, and each push sent, under
+    /// this lock, so the record's order is the channel's. Workspace boards
+    /// are never pushed, so never kept.
+    latest_boards: StdMutex<VecDeque<BoardNews>>,
     /// A tick whenever a client's view changes or goes, for the
     /// connections watching the focus to read it again.
     focus: broadcast::Sender<()>,
@@ -72,9 +109,8 @@ impl Pushes {
             tree: broadcast::channel(TREE_DEPTH).0,
             tree_order: StdMutex::new(()),
             workspaces: broadcast::channel(WORKSPACES_DEPTH).0,
-            decisions: broadcast::channel(DECISIONS_DEPTH).0,
-            tasks: broadcast::channel(TASKS_DEPTH).0,
-            diagrams: broadcast::channel(DIAGRAMS_DEPTH).0,
+            boards: broadcast::channel(BOARDS_DEPTH).0,
+            latest_boards: StdMutex::new(VecDeque::new()),
             focus: broadcast::channel(FOCUS_DEPTH).0,
             views: broadcast::channel(VIEWS_DEPTH).0,
             saved_views: broadcast::channel(SAVED_VIEWS_DEPTH).0,
@@ -101,16 +137,16 @@ impl Pushes {
         let _ = self.workspaces.send(all);
     }
 
-    pub(super) fn decisions(&self, board: DecisionBoard) {
-        let _ = self.decisions.send(board);
-    }
-
-    pub(super) fn tasks(&self, list: TaskList) {
-        let _ = self.tasks.send(list);
-    }
-
-    pub(super) fn diagrams(&self, list: DiagramList) {
-        let _ = self.diagrams.send(list);
+    /// Kept as its key's latest, and sent while that is held.
+    pub(super) fn board(&self, board: BoardNews) {
+        let mut latest = self.latest_boards.lock().unwrap();
+        let key = board.key();
+        latest.retain(|kept| kept.key() != key);
+        if latest.len() == REMEMBERED_BOARDS {
+            latest.pop_front();
+        }
+        latest.push_back(board.clone());
+        let _ = self.boards.send(board);
     }
 
     pub(super) fn focus_moved(&self) {
@@ -149,16 +185,20 @@ impl Pushes {
         self.workspaces.subscribe()
     }
 
-    pub(super) fn subscribe_decisions(&self) -> broadcast::Receiver<DecisionBoard> {
-        self.decisions.subscribe()
+    /// The latest push of each board, oldest first, and the receiver of
+    /// every push after them, taken under one lock: nothing pushed between
+    /// them is missed, and none of what the receiver holds is older than
+    /// what was replayed. A lagged receiver is never caught up from: its
+    /// backlog holds older boards of keys the replay has sent newer.
+    pub(crate) fn follow_boards(&self) -> (Vec<BoardNews>, broadcast::Receiver<BoardNews>) {
+        let latest = self.latest_boards.lock().unwrap();
+        (latest.iter().cloned().collect(), self.boards.subscribe())
     }
 
-    pub(super) fn subscribe_tasks(&self) -> broadcast::Receiver<TaskList> {
-        self.tasks.subscribe()
-    }
-
-    pub(super) fn subscribe_diagrams(&self) -> broadcast::Receiver<DiagramList> {
-        self.diagrams.subscribe()
+    /// Every push from now on, with no replay: for a connection that asks
+    /// for the boards it shows, which needs no copy of every kept one.
+    pub(crate) fn subscribe_boards(&self) -> broadcast::Receiver<BoardNews> {
+        self.boards.subscribe()
     }
 
     pub(super) fn subscribe_focus(&self) -> broadcast::Receiver<()> {
@@ -227,6 +267,20 @@ impl super::Daemon {
         Pushed::new(rx, |news| match news {
             TreeNews::Telemetry { pane, telemetry } => Some((pane, *telemetry)),
             TreeNews::Tree(_) => None,
+        })
+    }
+
+    pub(crate) fn subscribe_decisions(&self) -> Pushed<BoardNews, DecisionBoard> {
+        Pushed::new(self.pushes.subscribe_boards(), |news| match news {
+            BoardNews::Decisions(board) => Some(*board),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn subscribe_tasks(&self) -> Pushed<BoardNews, TaskList> {
+        Pushed::new(self.pushes.subscribe_boards(), |news| match news {
+            BoardNews::Tasks(list) => Some(*list),
+            _ => None,
         })
     }
 }

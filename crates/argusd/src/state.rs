@@ -67,7 +67,7 @@ mod workspaces;
 pub use board_parts::FeaturePart;
 pub(crate) use features::Filing;
 pub use extensions::ExtensionNews;
-pub use pushes::{Pushes, TreeNews};
+pub use pushes::{BoardNews, Pushes, TreeNews};
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;
@@ -527,18 +527,6 @@ impl Daemon {
 
     pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
         self.pushes.subscribe_workspaces()
-    }
-
-    pub fn subscribe_decisions(&self) -> broadcast::Receiver<argus_protocol::DecisionBoard> {
-        self.pushes.subscribe_decisions()
-    }
-
-    pub fn subscribe_tasks(&self) -> broadcast::Receiver<argus_protocol::TaskList> {
-        self.pushes.subscribe_tasks()
-    }
-
-    pub fn subscribe_diagrams(&self) -> broadcast::Receiver<argus_protocol::DiagramList> {
-        self.pushes.subscribe_diagrams()
     }
 
     fn broadcast_tree(&self) {

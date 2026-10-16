@@ -81,7 +81,7 @@ impl FeaturePart for DiagramAction {
             return;
         }
         if let Ok(list) = Self::list(daemon, target) {
-            daemon.pushes.diagrams(list);
+            daemon.pushes.board(super::BoardNews::Diagrams(Box::new(list)));
         }
     }
 }

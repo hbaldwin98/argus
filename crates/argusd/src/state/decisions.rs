@@ -284,14 +284,14 @@ impl Daemon {
             return;
         }
         let features = self.store.features(&address.key).unwrap_or_default();
-        self.pushes.decisions(DecisionBoard {
+        self.pushes.board(super::BoardNews::Decisions(Box::new(DecisionBoard {
             repositories: address.repositories.clone(),
             project: Some(address.project),
             name: address.project_name.clone(),
             features,
             decisions,
             tracker_map: self.store.tracker_map(&address.key).unwrap_or_default(),
-        });
+        })));
     }
 }
 

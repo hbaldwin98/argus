@@ -132,7 +132,7 @@ impl FeaturePart for TaskAction {
         // An unreadable list is not pushed as an empty one, which would
         // blank every reader's board for a fault in reading it.
         if let Ok(list) = Self::list(daemon, target) {
-            daemon.pushes.tasks(list);
+            daemon.pushes.board(super::BoardNews::Tasks(Box::new(list)));
         }
         daemon.broadcast_decisions(
             target.address,

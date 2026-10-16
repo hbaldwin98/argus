@@ -16,7 +16,7 @@ use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::review_queue::ReviewLane;
-use crate::state::{BranchDeletion, Daemon, ExtensionNews, TreeNews, ViewerId};
+use crate::state::{BoardNews, BranchDeletion, Daemon, ExtensionNews, TreeNews, ViewerId};
 
 mod dispatch;
 
@@ -68,9 +68,9 @@ where
     let viewer = conn.viewer;
 
     let mut workspaces_rx = daemon.subscribe_workspaces();
-    let mut decisions_rx = daemon.subscribe_decisions();
-    let mut tasks_rx = daemon.subscribe_tasks();
-    let mut diagrams_rx = daemon.subscribe_diagrams();
+    // A client asks for the boards it shows; only what changes after is
+    // pushed.
+    let mut boards_rx = daemon.pushes().subscribe_boards();
     let mut views_rx = daemon.subscribe_views();
     let mut extensions_rx = daemon.subscribe_extensions();
 
@@ -164,19 +164,25 @@ where
                 let _ = out_tx.send(ServerMsg::Workspaces(ws));
             }
             // Every client is told, and one reading another repository's
-            // board drops it by the repositories it names. The view a client reports is for saying
-            // where the person is, never for deciding what it is sent.
-            Ok(board) = decisions_rx.recv() => {
-                let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
-            }
-            // Same reasoning as the board above: pushed at everyone, and a
-            // client holding another feature's list open drops it.
-            Ok(list) = tasks_rx.recv() => {
-                let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
-            }
-            Ok(list) = diagrams_rx.recv() => {
-                let _ = out_tx.send(ServerMsg::SequenceDiagrams(Box::new(list)));
-            }
+            // or feature's board drops it by the repositories it names. The
+            // view a client reports is for saying where the person is,
+            // never for deciding what it is sent.
+            news = boards_rx.recv() => match news {
+                Ok(board) => {
+                    let _ = out_tx.send(board_msg(board));
+                }
+                // One that fell behind is sent each board's latest push,
+                // from a fresh receiver: the lagged one would follow them
+                // with older pushes of the same boards.
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let (latest, fresh) = daemon.pushes().follow_boards();
+                    boards_rx = fresh;
+                    for board in latest {
+                        let _ = out_tx.send(board_msg(board));
+                    }
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
             // Only for a watcher. One that fell behind lost changes it
             // cannot name, so it is replayed the views as they stand; a
             // view closed in the gap is the one thing that replay cannot
@@ -224,6 +230,14 @@ fn send_tree(
     let _ = out_tx.send(ServerMsg::Tree(tree));
     if conn.can(CONSOLES) {
         let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
+    }
+}
+
+fn board_msg(board: BoardNews) -> ServerMsg {
+    match board {
+        BoardNews::Decisions(board) => ServerMsg::Decisions(board),
+        BoardNews::Tasks(list) => ServerMsg::Tasks(list),
+        BoardNews::Diagrams(list) => ServerMsg::SequenceDiagrams(list),
     }
 }
 
