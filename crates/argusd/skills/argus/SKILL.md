@@ -63,8 +63,9 @@ the new checkout afterwards.
 
 ## Other agents
 
-When the user asks for work to run in parallel, start each piece as an agent in
-a pane of its own, rather than as a subagent that ends with your turn:
+Only when the user asks for a task to persist in a pane of its own, one they
+can go back to, start it as another agent. Working in a worktree yourself, or
+delegating to a subagent, needs none of this:
 
 ```sh
 "$ARGUS_HOOK" agent --worktree fix-resize "fix the resize race; see task 12"

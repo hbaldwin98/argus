@@ -1133,7 +1133,9 @@ since the last poll is looked for before the move is refused. The refusal is the
 and the helper prints it, because a move that failed in silence left agents believing the row had
 followed them.
 
-An agent starts another agent through the daemon rather than as a subagent of its own turn:
+When the person wants a task kept in a pane they can go back to, an agent starts another agent
+through the daemon rather than as a subagent of its own turn. It is an ability, not how worktree
+work is done: an agent still works in a worktree itself, or delegates to a subagent, unless asked.
 `argus-hook agent [--template T] [--worktree B [--from C] | --in C] (--stdin | <prompt>)` posts an
 `AgentLaunch` to `/pane/<id>/agent` (`agent_launch`, `state/agent_launch`). The new agent gets a pane
 of its own, as one the person started would, so it outlives the asking turn and the person can watch
