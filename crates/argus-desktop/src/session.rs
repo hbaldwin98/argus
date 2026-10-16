@@ -36,7 +36,7 @@ use argus_protocol::paste;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS, PASTE_FILE,
-    RENAME_PANE, SAVED_VIEWS,
+    RENAME_PANE, SAVED_VIEWS, CODE, CodeVersion,
 };
 
 use crate::add_project::{AddProject, AddProjectGesture, Adding};
@@ -56,9 +56,11 @@ use crate::keymap::{self, Action};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
+use crate::code_stage::{Back, CodeStage};
 use crate::page_over::{PageOver, Settled};
 use crate::page::{
-    self, Call, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
+    self, Call, CodeClick, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
+    Stage,
 };
 use crate::palette;
 use crate::preferences::Chosen;
@@ -99,6 +101,9 @@ enum Made {
     /// Show the new console on the second side of the split asked for.
     ShowBeside,
 }
+
+/// Said where the Code stage is asked of a daemon that cannot read code.
+const TOO_OLD_FOR_CODE: &str = "argusd is too old to read code; restart it to update";
 
 pub struct Session {
     tree: Vec<ProjectInfo>,
@@ -156,6 +161,12 @@ pub struct Session {
     /// The command palette is open, so what it can go to is sent.
     palette: bool,
     palette_sent: Sent<page::Palette>,
+    /// The Code stage, once opened: it keeps its checkout and file while
+    /// another stage is up.
+    code: Option<CodeStage>,
+    code_sent: Sent<page::CodePage>,
+    /// The stage the Code stage was opened over, which Escape goes back to.
+    before_code: Stage,
     focused: bool,
     choices: Chosen,
     /// Notifications for the system, raised by the last tree.
@@ -219,6 +230,9 @@ impl Session {
             adding: Adding::default(),
             palette: false,
             palette_sent: Sent::default(),
+            code: None,
+            code_sent: Sent::default(),
+            before_code: Stage::Workspace,
             focused: true,
             choices: Chosen::new(settings.preferences),
             alerts: Vec::new(),
@@ -404,6 +418,26 @@ impl Session {
                 self.passing.push(Event::Notice { text });
             }
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
+            ServerMsg::CodeTree(tree) => {
+                if let Some(code) = &mut self.code {
+                    code.receive_tree(tree);
+                }
+            }
+            ServerMsg::Code(file) => {
+                if let Some(code) = &mut self.code {
+                    code.receive_file(*file);
+                }
+            }
+            ServerMsg::CodeMatches(found) => {
+                if let Some(code) = &mut self.code {
+                    code.receive_matches(found);
+                }
+            }
+            ServerMsg::CodeFailed { request_id, checkout, message } => {
+                if let Some(code) = &mut self.code {
+                    code.failed(checkout, request_id, message);
+                }
+            }
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
             _ => {}
@@ -545,6 +579,11 @@ impl Session {
             Call::ChooseRepository { repository } => self.choose_repository(RepositoryId(repository)),
             Call::ShowFeatures { open } => self.show_features(open),
             Call::ShowCheckouts { open } => self.show_checkouts(open),
+            Call::ShowCode { open } => self.show_code(open),
+            Call::CodeClick { target } => self.code_click(target),
+            Call::CodeAction { action } => self.code_action(action),
+            Call::CodeJump { gesture } => self.code_field(gesture, false),
+            Call::CodeSearch { gesture } => self.code_field(gesture, true),
             Call::ShowComposer { open } => self.show_composer(open),
             Call::Compose { checkout, template, prompt } => self.compose(CheckoutId(checkout), template, prompt),
             Call::SelectCheckoutRow { key } => self.select_checkout_row(key),
@@ -910,6 +949,7 @@ impl Session {
             Action::Workspace => self.back_to_workspace(),
             Action::Feature => self.go(Stage::Feature),
             Action::Checkouts => self.go(Stage::Checkouts),
+            Action::Code => self.open_code(),
             Action::Compose => self.go(Stage::Composer),
             Action::Console => self.open_console_tab(),
             Action::ToggleConsole => self.toggle_console(),
@@ -1835,7 +1875,10 @@ impl Session {
     fn side_visible(&self, side: Side) -> bool {
         match side {
             Side::Workspace => {
-                !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console | Stage::Extension | Stage::View)
+                !matches!(
+                    self.stage,
+                    Stage::Feature | Stage::Checkouts | Stage::Code | Stage::Console | Stage::Extension | Stage::View
+                )
                     && !self.console.fullscreen()
             }
             Side::First | Side::Second => self.console_place() != ConsolePlace::Hidden,
@@ -1935,6 +1978,130 @@ impl Session {
     /// Shows the composer, or goes back to the Workspace.
     fn show_composer(&mut self, open: bool) -> Vec<ClientMsg> {
         self.go(if open { Stage::Composer } else { Stage::Workspace });
+        self.finish()
+    }
+
+    /// A notice on the bar, said partway through a gesture: `note` would
+    /// finish the gesture there and then.
+    fn say(&mut self, text: &str) {
+        self.passing.push(Event::Notice { text: text.to_owned() });
+    }
+
+    /// Shows the Code stage, or puts it away for the Workspace.
+    fn show_code(&mut self, open: bool) -> Vec<ClientMsg> {
+        if open {
+            self.open_code();
+        } else if self.stage == Stage::Code {
+            self.go(Stage::Workspace);
+        }
+        self.finish()
+    }
+
+    /// The Code stage as it was left, or on the checkout the person is on
+    /// when it was left on another or has not been opened.
+    fn open_code(&mut self) {
+        if !self.status.daemon_can(CODE) {
+            self.say(TOO_OLD_FOR_CODE);
+            return;
+        }
+        let checkout = match self.stage {
+            Stage::Checkouts => self.chosen_repository().cloned().and_then(|repo| self.checkouts.checkout(&repo)),
+            _ => None,
+        }
+        .or_else(|| self.shown_checkout());
+        match (checkout, self.code.as_ref().map(CodeStage::checkout)) {
+            (Some(checkout), Some(open)) if open != checkout => {
+                self.open_code_at(checkout, CodeVersion::WorkingTree, None, None, None)
+            }
+            (_, Some(_)) => self.enter_code(),
+            (Some(checkout), None) => self.open_code_at(checkout, CodeVersion::WorkingTree, None, None, None),
+            (None, None) => self.say("show a pane, or pick a checkout in Checkouts, first"),
+        }
+    }
+
+    fn open_code_at(&mut self, checkout: CheckoutId, version: CodeVersion, path: Option<String>, line: Option<u32>, back: Option<Back>) {
+        let Some(info) = self.tree.checkout(checkout) else {
+            return;
+        };
+        let (code, msgs) = CodeStage::open(info, version, path, line, back, || self.awaited.name());
+        self.code = Some(code);
+        self.out.extend(msgs);
+        self.enter_code();
+    }
+
+    fn enter_code(&mut self) {
+        if self.stage != Stage::Code {
+            self.before_code = self.stage;
+        }
+        self.go(Stage::Code);
+    }
+
+    /// Escape: back to the review the stage was opened from, as it was,
+    /// over the stage it was opened over; or only to that stage.
+    fn leave_code(&mut self) {
+        if self.code.as_ref().is_some_and(|c| c.back().is_some()) && self.dialogs.unpark_review() {
+            if let Some(code) = &mut self.code {
+                code.forget_back();
+            }
+        }
+        self.go(self.before_code);
+    }
+
+    fn code_click(&mut self, target: CodeClick) -> Vec<ClientMsg> {
+        if matches!(target, CodeClick::Back) {
+            self.leave_code();
+        } else if let Some(code) = &mut self.code {
+            let msgs = code.click(target, || self.awaited.name());
+            self.out.extend(msgs);
+        }
+        self.finish()
+    }
+
+    fn code_field(&mut self, gesture: ReviewJumpGesture, search: bool) -> Vec<ClientMsg> {
+        if let Some(code) = &mut self.code {
+            let msgs = if search {
+                code.search(gesture, || self.awaited.name())
+            } else {
+                code.jump(gesture, || self.awaited.name())
+            };
+            self.out.extend(msgs);
+        }
+        self.finish()
+    }
+
+    /// A key of the Code stage. E opens the file at the cursor in the
+    /// person's editor, as the review's does.
+    fn code_action(&mut self, action: Action) -> Vec<ClientMsg> {
+        if action == Action::CloseLayer {
+            self.leave_code();
+            return self.finish();
+        }
+        let Some(code) = &mut self.code else {
+            return self.finish();
+        };
+        match action {
+            Action::Next => code.move_by(1),
+            Action::Previous => code.move_by(-1),
+            Action::First => code.ends(false),
+            Action::Last => code.ends(true),
+            Action::NextFile => code.next_change(true),
+            Action::PreviousFile => code.next_change(false),
+            Action::Filter => code.open_jump(),
+            Action::Search => code.open_search(),
+            Action::Refresh => {
+                let msgs = code.refresh(|| self.awaited.name());
+                self.out.extend(msgs);
+            }
+            Action::OpenEditor => match code.editor_target() {
+                Some((checkout, path, line)) => {
+                    let request_id = self.awaited.ask(Made::ShowOverStages);
+                    let (external, command) = self.choices.editor();
+                    self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external, command, request_id });
+                }
+                None => self.say("no file to open"),
+            },
+            _ => {}
+        }
         self.finish()
     }
 
@@ -2211,6 +2378,15 @@ impl Session {
     /// is a pane or brings its own window, and a pane leaves the stages
     /// once shown, since E was pressed to look at it.
     fn review_action(&mut self, action: Action) -> Vec<ClientMsg> {
+        if action == Action::OpenCode {
+            if !self.status.daemon_can(CODE) {
+                self.say(TOO_OLD_FOR_CODE);
+            } else if let Some((checkout, path, line, version)) = self.dialogs.park_review() {
+                let back = Back { path: path.clone(), line };
+                self.open_code_at(checkout, version, Some(path), Some(line), Some(back));
+            }
+            return self.finish();
+        }
         if matches!(action, Action::Unfold | Action::UnfoldAll) {
             self.dialogs.review_unfold(None, action == Action::UnfoldAll, || self.awaited.name(), &mut self.out);
             return self.finish();
@@ -2454,6 +2630,7 @@ impl Session {
             Action::Workspace
             | Action::Feature
             | Action::Checkouts
+            | Action::Code
             | Action::Compose
             | Action::Shortcuts
             | Action::Settings
@@ -2696,6 +2873,10 @@ impl Session {
             let repo = self.chosen_repository().cloned();
             events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
         }
+        let code = self.code.as_ref().filter(|_| self.stage == Stage::Code).map(CodeStage::page);
+        if let Some(page) = self.code_sent.take(code) {
+            events.push(Event::Code(Box::new(page)));
+        }
         let extensions = self.extensions_page();
         if let Some(page) = self.extensions_sent.take((extensions != page::ExtensionsPage::default()).then_some(extensions)) {
             events.push(Event::Extensions(Box::new(page)));
@@ -2744,6 +2925,7 @@ impl Session {
         self.console.reload();
         self.docks.reload();
         self.checkouts.reload();
+        self.code_sent.forget();
         self.views.forget();
         self.saved.forget();
         self.extensions_sent.forget();
@@ -3041,6 +3223,63 @@ mod tests {
         s.receive(with_tree(grown));
         assert_eq!(s.shown.pane(), Some(PaneId(9)));
         assert!(s.stage != Stage::Checkouts, "the editor is on screen");
+    }
+
+    /// What a gesture asked of the daemon for the Code stage, the focus it
+    /// reports along the way left out.
+    fn code_asks(sent: Vec<ClientMsg>) -> Vec<ClientMsg> {
+        sent.into_iter()
+            .filter(|m| matches!(m, ClientMsg::ListCode { .. } | ClientMsg::ReadCode { .. } | ClientMsg::SearchCode { .. }))
+            .collect()
+    }
+
+    #[test]
+    fn o_in_the_review_reads_the_cursors_file_in_code_and_escape_comes_back_to_it() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        let sent = s.open_review(CheckoutId(100));
+        let [ClientMsg::Review { request_id: unstaged, .. }, ..] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        s.receive(reviewed(argus_protocol::ReviewBase::Unstaged, *unstaged));
+        s.review_action(Action::Next);
+        let sent = code_asks(s.review_action(Action::OpenCode));
+        assert!(matches!(
+            sent.as_slice(),
+            [
+                ClientMsg::ListCode { checkout: CheckoutId(100), version: CodeVersion::WorkingTree, .. },
+                ClientMsg::ReadCode { path, .. },
+            ] if path == "src/brief.rs"
+        ));
+        assert!(s.stage == Stage::Code);
+        assert!(s.dialogs.review().is_none(), "put away, not closed");
+        assert_eq!(s.code.as_ref().unwrap().page().back.as_deref(), Some("brief.rs:4"));
+
+        let sent = code_asks(s.code_action(Action::CloseLayer));
+        assert!(sent.is_empty(), "the review comes back as it was, not read again");
+        assert!(s.dialogs.review().is_some());
+        assert!(s.stage == Stage::Checkouts, "over the stage it was opened over");
+    }
+
+    #[test]
+    fn the_code_stage_is_not_offered_by_a_daemon_that_cannot_read_code() {
+        let mut s = session(Hello { capabilities: Vec::new(), ..Hello::this_build() });
+        s.show_checkouts(true);
+        let sent = s.show_code(true);
+        assert!(sent.is_empty());
+        assert!(s.stage == Stage::Checkouts);
+        assert!(notices(&mut s).iter().any(|n| n.contains("too old to read code")));
+    }
+
+    #[test]
+    fn the_code_stage_opens_on_the_checkout_picked_in_checkouts_and_keeps_it() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        let sent = code_asks(s.show_code(true));
+        assert!(matches!(sent.as_slice(), [ClientMsg::ListCode { checkout: CheckoutId(100), .. }]));
+        s.show_features(false);
+        assert!(code_asks(s.show_code(true)).is_empty(), "left as it was, not read again");
+        assert!(s.stage == Stage::Code);
     }
 
     #[test]
@@ -4053,7 +4292,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 122] = [
+    const CALLS: [&str; 127] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
@@ -4080,6 +4319,11 @@ mod tests {
         r#"{"call":"choose_repository","repository":10}"#,
         r#"{"call":"show_features","open":true}"#,
         r#"{"call":"show_checkouts","open":true}"#,
+        r#"{"call":"show_code","open":true}"#,
+        r#"{"call":"code_click","target":{"on":"tree","path":"src"}}"#,
+        r#"{"call":"code_action","action":"next"}"#,
+        r#"{"call":"code_jump","gesture":{"on":"query","text":"br"}}"#,
+        r#"{"call":"code_search","gesture":{"on":"choose"}}"#,
         r#"{"call":"show_composer","open":true}"#,
         r#"{"call":"compose","checkout":100,"template":null,"prompt":null}"#,
         r#"{"call":"select_checkout_row","key":"c100"}"#,

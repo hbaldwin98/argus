@@ -3020,6 +3020,166 @@ body.console-fullscreen #bar {
 .cstage {
   container-type: inline-size;
 }
+/* The Code stage: the files, one read whole, and what it defines. */
+.code-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-8) var(--sp-16);
+  border-bottom: 1px solid var(--line);
+  min-height: 48px;
+  box-sizing: border-box;
+}
+.code-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.code-tree {
+  width: 280px;
+  flex: none;
+  border-right: 1px solid var(--line);
+  padding: var(--sp-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+  min-height: 0;
+}
+.code-tree .seg {
+  align-self: flex-start;
+}
+.code-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.trow,
+.mrow,
+.orow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-md);
+  text-align: left;
+  padding: 0 var(--sp-8);
+  min-height: 26px;
+  cursor: pointer;
+}
+.trow.dir {
+  color: var(--fg-muted);
+}
+.trow.on,
+.mrow.on,
+.orow.on {
+  background: var(--bg-selected);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.trow .ttl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tchg {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--changed);
+  flex: none;
+}
+.tsp {
+  width: 6px;
+  flex: none;
+}
+.cnum {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.mrow {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: var(--sp-4) var(--sp-8);
+  font-size: var(--fs-sm);
+}
+.mtext {
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.mtext mark {
+  background: color-mix(in srgb, var(--attention) 30%, transparent);
+  color: inherit;
+}
+.code-file {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cbody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  padding-top: var(--sp-4);
+}
+.cline {
+  display: grid;
+  grid-template-columns: 52px 16px 1fr;
+  cursor: text;
+}
+.cline.add {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.cline.add .dmark {
+  color: var(--ok);
+}
+.cline.cursor {
+  box-shadow: inset 3px 0 0 var(--accent);
+  background-image: linear-gradient(var(--fill), var(--fill));
+}
+.cgone {
+  padding-left: 68px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.code-outline {
+  width: 232px;
+  flex: none;
+  border-left: 1px solid var(--line);
+  padding: var(--sp-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  overflow-y: auto;
+}
+.orow {
+  font-size: var(--fs-sm);
+}
+.okind {
+  color: var(--fg-faint);
+  font-size: var(--fs-xs);
+  min-width: 52px;
+}
 @container (max-width: 980px) {
   .ctable .col-last {
     display: none;

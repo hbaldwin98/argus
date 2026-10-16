@@ -747,6 +747,7 @@ session the client has no clipboard, so run `argus --host <machine>` on the desk
 | `d` / `u`, Page Down / Page Up | Move ten lines |
 | `]` / `[` | Next or previous changed file |
 | `g` / `G`, Home / End | First or last changed line |
+| Enter / `z` | On a fold, the lines the diff left out: show twenty more of them, or all |
 | `v` / `V` | Start or clear a line-range selection |
 | `f` | Open the changed-file picker |
 | `c` | Send a comment to an agent in the checkout; choose one when several are running |
@@ -769,9 +770,33 @@ JSON, and Markdown, picked by file extension; anything else is shown as plain te
 removed lines are marked by a background wash and by their `+` and `-` markers, leaving the
 foreground to the syntax colours.
 
+In the desktop window, `o` reads the file under the cursor whole in the Code stage, at that line.
+
 Comments are stored in `runtime.db` before Argus notifies the selected live agent. They remain
 visible to every live agent in that checkout through `argus-hook comments`; the command returns the
 newest 100 comments in order. If terminal delivery fails after the save, the comment remains stored.
+
+### Code
+
+The desktop window's Code stage (`5`, or **Code** in the sidebar) reads a checkout's files rather
+than its diff: a tree of them with each changed file marked and counted, one file whole with the
+lines it changed washed as a review washes them and a mark where lines were removed, and that
+file's outline. Above the tree it switches between the working tree, the index and `HEAD`; the
+working tree and the index are marked against `HEAD`. It is read-only; `e` opens the file in your
+editor.
+
+| Key | Action |
+| --- | --- |
+| `j` / `k`, arrows | Move through the file's lines |
+| Home / End | First or last line |
+| `]` / `[` | The next or previous change |
+| Ctrl P | Go to a file |
+| Ctrl F | Search the checkout; Enter searches, then reads the match picked |
+| `e` | Open the file in your editor at the cursor's line |
+| `r` / `R` | Read the files again |
+| Escape | Back to the review it was opened from, as it was, or to the stage before |
+
+The outline lists what the file defines for Rust, TypeScript and JavaScript, Python and C#.
 
 ## Sessions and Git Data
 

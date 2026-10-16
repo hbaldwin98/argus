@@ -1,6 +1,7 @@
 // The window's frame around the stage: the sidebar and its nav, the strip's
 // words, the sidebar's foot, the empty stage, and notices that pass.
 import { drawCheckouts } from './checkouts.js';
+import { drawCode } from './code_stage.js';
 import { clock } from './clock.js';
 import { drawComposer } from './compose.js';
 import { drawConsole } from './console.js';
@@ -27,11 +28,13 @@ export function drawChrome() {
     const stage = state.rail.stage;
     $('fstage').hidden = stage !== 'feature';
     $('cstage').hidden = stage !== 'checkouts';
+    $('kstage').hidden = stage !== 'code';
     $('xstage').hidden = stage !== 'extension';
     $('vstage').hidden = stage !== 'view';
     $('body').hidden = stage !== 'workspace';
     drawFeatures();
     drawCheckouts();
+    drawCode();
     drawExtensionPage();
     drawComposer();
     drawConsole();
@@ -58,6 +61,7 @@ function drawNav() {
         ['workspace', 'workspace'],
         ['feature', 'feature'],
         ['checkouts', 'checkouts'],
+        ['code', 'code'],
         ['console', 'console'],
     ]) {
         const nav = $(`nav-${name}`);
@@ -75,6 +79,7 @@ function drawNav() {
 const STAGE_NAME = {
     feature: 'Features',
     checkouts: 'Checkouts',
+    code: 'Code',
     new: 'New',
     console: 'Console',
     extension: 'Extensions',

@@ -18,6 +18,9 @@ pub type EditorAt = (CheckoutId, String, Option<u32>);
 
 pub struct Dialogs {
     review: Option<ReviewDialog>,
+    /// A review put away while the Code stage reads its file, to be come
+    /// back to as it was.
+    parked: Option<ReviewDialog>,
     review_sent: Sent<ReviewPage>,
     history: Option<HistoryDialog>,
     history_sent: Sent<HistoryPage>,
@@ -30,6 +33,7 @@ impl Dialogs {
     pub fn new(layout: ReviewLayout) -> Dialogs {
         Dialogs {
             review: None,
+            parked: None,
             review_sent: Sent::default(),
             history: None,
             history_sent: Sent::default(),
@@ -317,6 +321,25 @@ impl Dialogs {
         if chosen != self.layout {
             self.layout = chosen;
             self.layout_changed = true;
+        }
+    }
+
+    /// `O`: the review is put away to be come back to, at the file and line
+    /// its cursor is on, which come back to be read in the Code stage.
+    pub fn park_review(&mut self) -> Option<(CheckoutId, String, u32, argus_protocol::CodeVersion)> {
+        let target = self.review.as_ref()?.code_target()?;
+        self.parked = self.review.take();
+        Some(target)
+    }
+
+    /// Escape in the Code stage: the review it was opened from, as it was.
+    pub fn unpark_review(&mut self) -> bool {
+        match self.parked.take() {
+            Some(dialog) => {
+                self.review = Some(dialog);
+                true
+            }
+            None => false,
         }
     }
 

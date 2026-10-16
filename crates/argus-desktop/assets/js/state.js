@@ -34,6 +34,7 @@ export const state = {
     start: null,
     railPick: null,
     checkouts: null,
+    code: null,
     review: null,
     history: null,
     sessions: null,

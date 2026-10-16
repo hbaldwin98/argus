@@ -86,6 +86,8 @@ pub enum Place {
     /// An extension's view in its dock or as the page, once a click there gives
     /// it the keys: these, and the view's own action keys.
     Extension,
+    /// The Code stage, reading a checkout's files.
+    Code,
     /// The link dialog while it is open and no field has the keys.
     Link,
     /// The reconcile dialog while it is open and no field has the keys.
@@ -189,6 +191,14 @@ pub enum Action {
     Unfold,
     /// Show the whole of a review's fold.
     UnfoldAll,
+    /// The Code stage.
+    Code,
+    /// The file at the review's cursor, read in the Code stage.
+    OpenCode,
+    /// Search the checkout's files.
+    Search,
+    /// Read what is on screen again: the agent kept working.
+    Refresh,
     Fold,
     /// The commit under the cursor as a review.
     AsReview,
@@ -336,6 +346,7 @@ pub enum Layer {
     /// The Feature stage's index.
     Features,
     Checkouts,
+    Code,
     /// An extension's view as the page.
     ExtensionPage,
     /// Any other stage.
@@ -415,6 +426,7 @@ impl Place {
             Place::Filter => "A filter or search field",
             Place::Palette => "Palette",
             Place::Extension => "An extension's view",
+            Place::Code => "Code",
             Place::Link => "Linking a ticket",
             Place::Reconcile => "Reconciling with the tickets",
         }
@@ -464,6 +476,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Anywhere, &[Chord::key("2")], Feature, "Feature"),
     bind(Anywhere, &[Chord::key("3")], Action::Checkouts, "Checkouts"),
     bind(Anywhere, &[Chord::key("4")], Action::Console, "Console"),
+    bind(Anywhere, &[Chord::key("5")], Action::Code, "Code"),
     bind(Anywhere, &[Chord::key("`")], ToggleConsole, "show or hide the console"),
     bind(Anywhere, &[Chord::key("n").ctrl()], Compose, "start a shell or an agent"),
     bind(Anywhere, &[Chord::key("Escape")], CloseLayer, "close the menu or dialog"),
@@ -478,6 +491,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("x").after_leader()], Close, "close the pane, ending its program"),
     bind(Pane, &[Chord::key("3").after_leader()], Action::Checkouts, "Checkouts"),
     bind(Pane, &[Chord::key("4").after_leader()], Action::Console, "Console"),
+    bind(Pane, &[Chord::key("5").after_leader()], Action::Code, "Code"),
     bind(Pane, &[Chord::key("`").after_leader()], ToggleConsole, "show or hide the console"),
     bind(Pane, &[Chord::key("z").after_leader()], ConsoleFullscreen, "the console fills the window, and back"),
     bind(Pane, &[Chord::key("\\").after_leader()], SplitConsole, "split the console in two, and back"),
@@ -591,6 +605,17 @@ pub static BINDINGS: &[Binding] = &[
     bind(Review, &[Chord::key("e"), Chord::key("E")], OpenEditor, "open in your editor"),
     bind(Review, &[Chord::key("Enter")], Unfold, "show more of the lines between hunks"),
     bind(Review, &[Chord::key("z")], UnfoldAll, "show all of them"),
+    bind(Review, &[Chord::key("o"), Chord::key("O")], OpenCode, "read the file in Code, at this line"),
+    bind(Place::Code, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next line"),
+    bind(Place::Code, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous line"),
+    bind(Place::Code, &[Chord::key("Home")], First, "first line"),
+    bind(Place::Code, &[Chord::key("End")], Last, "last line"),
+    bind(Place::Code, &[Chord::key("]")], NextFile, "next change"),
+    bind(Place::Code, &[Chord::key("[")], PreviousFile, "previous change"),
+    bind(Place::Code, &[Chord::key("p").ctrl()], Filter, "go to a file"),
+    bind(Place::Code, &[Chord::key("f").ctrl()], Search, "search the checkout"),
+    bind(Place::Code, &[Chord::key("e"), Chord::key("E")], OpenEditor, "open in your editor"),
+    bind(Place::Code, &[Chord::key("r"), Chord::key("R")], Refresh, "read the files again"),
     bind(Jump, &[Chord::key("ArrowDown"), Chord::key("n").ctrl()], Next, "next file"),
     bind(Jump, &[Chord::key("ArrowUp"), Chord::key("p").ctrl()], Previous, "previous file"),
     bind(Jump, &[Chord::key("Enter")], Choose, "open the file"),
@@ -660,6 +685,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Action::Feature, Some(Anywhere), "Go to the Feature stage"),
     (Action::Checkouts, Some(Anywhere), "Go to the Checkouts stage"),
     (Action::Console, Some(Anywhere), "Go to the Console"),
+    (Action::Code, Some(Anywhere), "Read the code of the checkout on screen"),
     (ToggleConsole, Some(Anywhere), "Show or hide the console"),
     (ConsoleFullscreen, Some(Pane), "Console fullscreen beside the sidebar, and back"),
     (NewConsole, None, "Start a console shell in the home directory"),
@@ -694,7 +720,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (TrackerMap, Some(Outline), "Edit the repository's tracker map…"),
 ];
 
-const ORDER: [Place; 22] = [
+const ORDER: [Place; 23] = [
     Anywhere,
     Pane,
     Window,
@@ -705,6 +731,7 @@ const ORDER: [Place; 22] = [
     Diagram,
     Writing,
     CheckoutsTable,
+    Place::Code,
     Start,
     Menu,
     Review,
@@ -757,6 +784,7 @@ pub static LAYERS: &[KeyLayer] = &[
     layer(Layer::Outline, Some(&[Outline, Anywhere]), false),
     layer(Layer::Features, Some(&[Anywhere, Place::Feature, Card]), false),
     layer(Layer::Checkouts, Some(&[Anywhere, CheckoutsTable]), false),
+    layer(Layer::Code, Some(&[Anywhere, Place::Code]), false),
     layer(Layer::ExtensionPage, Some(&[Anywhere, Place::Extension]), false),
     layer(Layer::Stage, Some(&[Anywhere]), false),
 ];
@@ -843,6 +871,7 @@ mod tests {
                 "An expanded diagram",
                 "Writing in a field",
                 "Checkouts",
+                "Code",
                 "A checkout's + menu",
                 "A menu",
                 "Review",

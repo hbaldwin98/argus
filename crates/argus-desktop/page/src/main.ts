@@ -14,6 +14,7 @@ import {
   unpickRail,
 } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
+import { drawCode } from './code_stage.js';
 import { drawDocks, listen as listenToDocks } from './docks.js';
 import { clearComposer, focusComposer } from './compose.js';
 import { $ } from './dom.js';
@@ -142,6 +143,10 @@ function receive(event: Event): void {
       state.checkouts = event;
       drawCheckouts();
       break;
+    case 'code':
+      state.code = event;
+      drawCode();
+      break;
     case 'features':
       state.features = event;
       drawFeatures();
@@ -225,6 +230,7 @@ $('nav-new').addEventListener('click', () => call('show_composer', { open: true 
 $('nav-workspace').addEventListener('click', () => call('show_features', { open: false }));
 $('nav-feature').addEventListener('click', () => call('show_features', { open: true }));
 $('nav-checkouts').addEventListener('click', () => call('show_checkouts', { open: true }));
+$('nav-code').addEventListener('click', () => call('show_code', { open: true }));
 $('nav-console').addEventListener('click', () => call('console', { gesture: { on: 'tab' } }));
 
 drawChrome();

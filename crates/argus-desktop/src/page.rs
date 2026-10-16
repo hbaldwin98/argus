@@ -89,6 +89,16 @@ pub enum Call {
     ShowFeatures { open: bool },
     /// `open` true shows the Checkouts stage, false goes back to the Workspace.
     ShowCheckouts { open: bool },
+    /// `open` true shows the Code stage on the checkout on screen, false
+    /// goes back to the Workspace.
+    ShowCode { open: bool },
+    CodeClick { target: CodeClick },
+    /// A key of the Code stage.
+    CodeAction { action: Action },
+    /// A letter, a step, Enter or Escape in the go-to-file field.
+    CodeJump { gesture: ReviewJumpGesture },
+    /// The same in the search field, where Enter searches.
+    CodeSearch { gesture: ReviewJumpGesture },
     /// `open` true shows the composer, false goes back to the Workspace.
     ShowComposer { open: bool },
     /// The composer's start: a shell without a `template`, else an agent
@@ -406,6 +416,9 @@ pub enum Event {
     // and every other one would otherwise be sized to carry them.
     Features(Box<Features>),
     Checkouts(Box<Checkouts>),
+    /// The Code stage, whole, whenever it changes; `open` false once it
+    /// goes away.
+    Code(Box<CodePage>),
     /// The note a new feature is written as, whole, whenever it changes;
     /// `open` false once it closes.
     Capture(Box<CapturePage>),
@@ -705,6 +718,8 @@ pub enum Stage {
     Extension,
     /// A view an agent showed, open as a page.
     View,
+    /// A checkout's files, one of them read whole.
+    Code,
 }
 
 /// The pane on screen, as the stage's header names it.
@@ -1331,6 +1346,142 @@ pub struct Frame {
     pub lines: Vec<(u16, Vec<Segment>)>,
     /// Set while the view is parked above the live screen.
     pub parked: Option<Parked>,
+}
+
+/// The Code stage: one checkout's files at one version, and one of them
+/// read whole.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodePage {
+    pub open: bool,
+    pub checkout: u64,
+    pub name: String,
+    pub branch: String,
+    #[cfg_attr(test, ts(type = "\"working\" | \"index\" | \"head\" | \"commit\""))]
+    pub version: &'static str,
+    /// The commit's short oid, when the version is one.
+    pub commit: Option<String>,
+    /// Whether the tree lists only the files this version changed.
+    pub changed_only: bool,
+    /// How many files this version changed.
+    pub changed: usize,
+    pub tree: Vec<CodeTreeRow>,
+    pub tree_loading: bool,
+    /// The file being read.
+    pub path: Option<String>,
+    pub added: u32,
+    pub removed: u32,
+    pub lines: Vec<CodeRow>,
+    /// Lines removed after the file's last line.
+    pub removed_at_end: u32,
+    pub symbols: Vec<CodeOutlineRow>,
+    /// Why a file shows no lines: binary, or too large.
+    pub note: Option<String>,
+    pub file_loading: bool,
+    pub jump: Option<CodeJump>,
+    pub search: Option<CodeSearch>,
+    /// Where Escape goes back to, `brief.rs:39`, when the stage was opened
+    /// from a review.
+    pub back: Option<String>,
+    pub failed: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeTreeRow {
+    pub path: String,
+    pub name: String,
+    pub depth: usize,
+    pub folder: bool,
+    pub open: bool,
+    pub changed: bool,
+    pub added: u32,
+    pub removed: u32,
+    /// The file being read.
+    pub on: bool,
+}
+
+/// One line of the file being read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeRow {
+    pub no: u32,
+    /// As a review line's: `[text, highlight]`.
+    pub parts: Vec<(String, &'static str)>,
+    /// This version added or changed it.
+    pub added: bool,
+    /// How many lines this version removed just above it.
+    pub removed_before: u32,
+    pub cursor: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeOutlineRow {
+    pub name: String,
+    pub kind: String,
+    pub line: u32,
+    /// The definition the cursor is in.
+    pub on: bool,
+}
+
+/// The go-to-file field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeJump {
+    pub query: String,
+    /// The paths it matches, best first.
+    pub matches: Vec<String>,
+    pub at: Option<usize>,
+}
+
+/// The search across the checkout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeSearch {
+    pub query: String,
+    /// The query the matches are for, once one was searched.
+    pub searched: Option<String>,
+    pub loading: bool,
+    pub matches: Vec<CodeMatchRow>,
+    pub truncated: bool,
+    pub at: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeMatchRow {
+    pub path: String,
+    pub line: u32,
+    /// The line cut around its match.
+    pub before: String,
+    pub hit: String,
+    pub after: String,
+}
+
+/// What a click in the Code stage landed on.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum CodeClick {
+    /// A folder opens or closes; a file is read.
+    Tree { path: String },
+    Line { line: u32 },
+    Symbol { line: u32 },
+    Version {
+        #[cfg_attr(test, ts(type = "\"working\" | \"index\" | \"head\""))]
+        version: String,
+    },
+    ChangedOnly { only: bool },
+    Match { index: usize },
+    Back,
 }
 
 /// The review dialog: one checkout's diff, a side at a time.

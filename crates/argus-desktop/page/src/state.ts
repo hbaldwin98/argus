@@ -4,6 +4,7 @@
 import type { AddProjectPage } from './bindings/AddProjectPage';
 import type { CapturePage } from './bindings/CapturePage';
 import type { Checkouts } from './bindings/Checkouts';
+import type { CodePage } from './bindings/CodePage';
 import type { Command } from './bindings/Command';
 import type { ConsolePage } from './bindings/ConsolePage';
 import type { DocksPage } from './bindings/DocksPage';
@@ -69,6 +70,7 @@ export const state: {
    *  elsewhere: a checkout, or a pane and its checkout. */
   railPick: { checkout: number; pane: number | null } | null;
   checkouts: Checkouts | null;
+  code: CodePage | null;
   review: ReviewPage | null;
   history: HistoryPage | null;
   sessions: SessionsPage | null;
@@ -125,6 +127,7 @@ export const state: {
   start: null,
   railPick: null,
   checkouts: null,
+  code: null,
   review: null,
   history: null,
   sessions: null,

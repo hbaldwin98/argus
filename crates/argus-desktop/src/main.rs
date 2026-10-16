@@ -19,6 +19,8 @@ mod capture_note;
 mod clipboard;
 mod checkouts;
 mod checkouts_stage;
+mod code_stage;
+mod code_tree;
 mod commands;
 mod console;
 mod daemon;

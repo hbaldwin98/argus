@@ -9,8 +9,8 @@ use argus_protocol::fuzzy::Fuzzy;
 use argus_protocol::review_session::{self, Answered, Comment, ReviewSession};
 use argus_protocol::review_view::{fold_of, marker, ReviewView, Row, FOLD_STEP};
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ChangeKind, ClientMsg, DiffLine, HighlightKind, LineKind, PaneId, Review, ReviewBase,
-    ReviewContext,
+    CheckoutId, CheckoutInfo, ChangeKind, ClientMsg, DiffLine, HighlightKind, HighlightSpan, LineKind, PaneId, Review,
+    CodeVersion, ReviewBase, ReviewContext,
 };
 
 use crate::page::{DiffRow, DiffSide, Recipient, ReviewFile, ReviewJump, ReviewPage};
@@ -250,6 +250,37 @@ impl ReviewDialog {
         Some((checkout, view.review.files.get(file)?.path.clone(), None))
     }
 
+    /// `O`: the file the cursor is in and its line, and the version of the
+    /// checkout that line is in — the working tree for unstaged work, the
+    /// index for staged, the commit for one commit.
+    pub fn code_target(&self) -> Option<(CheckoutId, String, u32, CodeVersion)> {
+        let view = self.view()?;
+        let row = *view.rows.get(view.sel)?;
+        let file = view.review.files.get(row.file())?;
+        // A removed line has no number in the version read, so the cursor
+        // goes to the line that replaced it, or the nearest one after.
+        let line = match row {
+            Row::Fold { gap, .. } => fold_of(file, gap).map(|f| f.first),
+            _ => row
+                .lines()
+                .find_map(|(f, h, l)| view.review.files[f].hunks[h].lines[l].new_lineno)
+                .or_else(|| {
+                    view.rows[view.sel..]
+                        .iter()
+                        .filter(|r| r.file() == row.file())
+                        .flat_map(|r| r.lines())
+                        .find_map(|(f, h, l)| view.review.files[f].hunks[h].lines[l].new_lineno)
+                }),
+        }
+        .unwrap_or(1);
+        let version = match (self.session.base(), self.session.commit()) {
+            (ReviewBase::Staged, _) => CodeVersion::Index,
+            (ReviewBase::Commit, Some(oid)) => CodeVersion::Commit(oid.to_owned()),
+            _ => CodeVersion::WorkingTree,
+        };
+        Some((self.session.checkout(), file.path.clone(), line, version))
+    }
+
     /// `v`: starts a range at the cursor, or lets it go.
     pub fn toggle_pick(&mut self) {
         if let Some(view) = self.view_mut() {
@@ -429,22 +460,7 @@ fn diff_row(view: &ReviewView, index: usize, row: Row, cursor: bool, picked: boo
 /// A line with its highlighting cut into pieces here, where the byte
 /// offsets the daemon sends mean what they say: the page counts in UTF-16.
 fn side(l: &DiffLine) -> DiffSide {
-    let mut parts = Vec::new();
-    let mut at = 0usize;
-    for span in &l.spans {
-        let (start, end) = (span.start as usize, span.end as usize);
-        if start < at || end > l.text.len() || !l.text.is_char_boundary(start) || !l.text.is_char_boundary(end) {
-            continue;
-        }
-        if start > at {
-            parts.push((l.text[at..start].to_owned(), ""));
-        }
-        parts.push((l.text[start..end].to_owned(), highlight(span.kind)));
-        at = end;
-    }
-    if at < l.text.len() {
-        parts.push((l.text[at..].to_owned(), ""));
-    }
+    let parts = parts(&l.text, &l.spans);
     DiffSide {
         old: l.old_lineno,
         new: l.new_lineno,
@@ -460,6 +476,29 @@ fn side(l: &DiffLine) -> DiffSide {
         },
         parts,
     }
+}
+
+/// A line's text cut at its highlighting, as `[text, highlight]`. A span
+/// that does not land on character boundaries inside the text is dropped:
+/// colour is not worth a wrong slice.
+pub fn parts(text: &str, spans: &[HighlightSpan]) -> Vec<(String, &'static str)> {
+    let mut parts = Vec::new();
+    let mut at = 0usize;
+    for span in spans {
+        let (start, end) = (span.start as usize, span.end as usize);
+        if start < at || end > text.len() || !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+            continue;
+        }
+        if start > at {
+            parts.push((text[at..start].to_owned(), ""));
+        }
+        parts.push((text[start..end].to_owned(), highlight(span.kind)));
+        at = end;
+    }
+    if at < text.len() {
+        parts.push((text[at..].to_owned(), ""));
+    }
+    parts
 }
 
 fn highlight(kind: HighlightKind) -> &'static str {

@@ -482,6 +482,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `transcript_reader` | the full-transcript reader: the person's turns as a jump list and the one it is on, what find looks for and the match it is on, and the page it draws |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — which of its keys and buttons are the `column_verbs` it sends, and the table the page last heard |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
+| `code_stage` | what the Code stage holds — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the go-to-file field, the search, and the review it was opened from — what its gestures ask of the daemon, and the page it draws |
+| `code_tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
 | `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through |
@@ -1686,6 +1688,21 @@ grammar reads a file is decided once, by extension, for highlighting and outline
 Search is literal and smart-cased — case matters only when the query has a capital — over the
 files `.gitignore` leaves, skipping binary files and ones over 1 MiB. It returns the first match on
 each line, in path order, and stops at 500, saying so.
+
+The stage is the desktop window's; the terminal client has none and asks for none of this. It
+opens on the checkout picked in Checkouts, else the one on screen, and stays on it, its file and
+cursor kept, while another stage is up. Its tree lists every file of the version, folders closed
+until opened, or with **Changed** only the changed files, every folder open; a folder with a change
+under it is marked. Reading a file opens the folders above it. A change counts its run of changed
+lines once for `]` and `[`, and a place lines were removed counts as one. Search runs on Enter
+rather than on every letter — a search reads the whole working tree — and reading a match switches
+the stage to the working tree, where it was found.
+
+`o` in a review puts the review away and reads the cursor's file in Code at its line, in the
+version that line is in: the working tree for unstaged work, the index for staged, the commit for
+one commit. A removed line has no number there, so the cursor goes to the line after it. Escape
+brings the review back exactly as it was, cursor and folds included, over the stage it was opened
+over; it is not read again.
 
 ## Features and the decision board
 

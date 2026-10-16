@@ -9,6 +9,7 @@ import type { KeyLayer } from './bindings/KeyLayer';
 import type { Place } from './bindings/Place';
 import { captureOpen, discardCapture } from './capture.js';
 import { answerNo, checkoutsAction } from './checkouts.js';
+import { codeAction } from './code_stage.js';
 import { focusHistoryFilter, historyOpen } from './history.js';
 import { linkAction, linkOpen } from './link.js';
 import { reconcileAction, reconcileOpen } from './reconcile.js';
@@ -110,6 +111,9 @@ function run(action: Action): boolean {
     case 'checkouts':
       call('show_checkouts', { open: true });
       return true;
+    case 'code':
+      call('show_code', { open: true });
+      return true;
     case 'compose':
       call('show_composer', { open: true });
       return true;
@@ -139,6 +143,7 @@ function run(action: Action): boolean {
       return true;
     default:
       if (state.rail.stage === 'checkouts') return checkoutsAction(action);
+      if (state.rail.stage === 'code') return codeAction(action);
       if (state.rail.stage === 'extension') {
         const moves =
           action === 'next' ||
@@ -323,6 +328,12 @@ const handlers: Handlers = {
   },
   features: { open: () => state.rail.stage === 'feature', keys: stageKeys },
   checkouts: { open: () => state.rail.stage === 'checkouts', keys: stageKeys },
+  code: {
+    open: () => state.rail.stage === 'code',
+    keys: stageKeys,
+    // Back to the review it was opened from, or to the stage before.
+    escape: () => state.rail.stage === 'code' && codeAction('closeLayer'),
+  },
   extensionPage: { open: () => state.rail.stage === 'extension', keys: stageKeys },
   stage: { open: () => true, keys: stageKeys },
 };

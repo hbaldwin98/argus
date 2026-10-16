@@ -4,6 +4,7 @@
 import type { Action } from './bindings/Action';
 import type { Resumed } from './bindings/Resumed';
 import { drawCheckouts } from './checkouts.js';
+import { drawCode } from './code_stage.js';
 import { clock } from './clock.js';
 import { drawComposer } from './compose.js';
 import { drawConsole } from './console.js';
@@ -32,11 +33,13 @@ export function drawChrome(): void {
   const stage = state.rail.stage;
   $('fstage').hidden = stage !== 'feature';
   $('cstage').hidden = stage !== 'checkouts';
+  $('kstage').hidden = stage !== 'code';
   $('xstage').hidden = stage !== 'extension';
   $('vstage').hidden = stage !== 'view';
   $('body').hidden = stage !== 'workspace';
   drawFeatures();
   drawCheckouts();
+  drawCode();
   drawExtensionPage();
   drawComposer();
   drawConsole();
@@ -63,6 +66,7 @@ function drawNav(): void {
     ['workspace', 'workspace'],
     ['feature', 'feature'],
     ['checkouts', 'checkouts'],
+    ['code', 'code'],
     ['console', 'console'],
   ] as const) {
     const nav = $(`nav-${name}`);
@@ -79,6 +83,7 @@ function drawNav(): void {
 const STAGE_NAME = {
   feature: 'Features',
   checkouts: 'Checkouts',
+  code: 'Code',
   new: 'New',
   console: 'Console',
   extension: 'Extensions',
