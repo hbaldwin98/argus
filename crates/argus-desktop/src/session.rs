@@ -6313,6 +6313,20 @@ mod tests {
     }
 
     #[test]
+    fn an_extension_page_opened_over_a_views_page_goes_back_to_what_that_page_opened_over() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        agents_view(&mut s, 1);
+        s.call(Call::PopOutView { pane: 1, id: "ci".into() });
+        assert_eq!(s.stages.now(), Stage::View);
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert_eq!(s.stages.now(), Stage::Extension);
+        s.call(Call::ExtensionMode { panel: panel("containers"), page: false });
+        assert_eq!(s.stages.now(), Stage::Checkouts, "not the views' page, which it took the place of");
+    }
+
+    #[test]
     fn a_page_whose_view_goes_falls_back_saying_so_and_a_docked_one_just_closes() {
         let mut s = session(Hello::this_build());
         s.receive(scoped());

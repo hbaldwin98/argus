@@ -85,12 +85,15 @@ impl PageOver {
         Some(Stage::View)
     }
 
-    /// An extension's page opened while `now` is up.
+    /// An extension's page opened while `now` is up. An agent's view's
+    /// page, which it replaces, stays what the stage under it is.
     pub fn open_extension(&mut self, now: Stage) -> Option<Stage> {
         if now == Stage::Extension {
             return None;
         }
-        self.before = Some(now);
+        if now != Stage::View {
+            self.before = Some(now);
+        }
         Some(Stage::Extension)
     }
 
@@ -134,6 +137,14 @@ mod tests {
         assert_eq!(over.open_extension(Stage::Checkouts), Some(Stage::Extension));
         assert_eq!(over.open_view(Stage::Extension), Some(Stage::View));
         assert_eq!(over.settle_view(false, Stage::View), Some(Settled::Back(Stage::Checkouts)));
+    }
+
+    #[test]
+    fn an_extensions_page_opened_over_a_views_page_leaves_what_is_under_that_page_alone() {
+        let mut over = PageOver::default();
+        assert_eq!(over.open_view(Stage::Checkouts), Some(Stage::View));
+        assert_eq!(over.open_extension(Stage::View), Some(Stage::Extension));
+        assert_eq!(over.leave_extension(Stage::Extension), Some(Stage::Checkouts));
     }
 
     #[test]

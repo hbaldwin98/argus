@@ -2619,7 +2619,8 @@ view names it, since several may be on screen at once. An action that asks first
 dialog the Checkouts stage asks before a removal in, and an action is sent as it stands — the table
 changes when the extension publishes again. A view taken away, or out of scope where the person now
 is, closes: a page of it goes back to the stage it opened over and says so, a docked one is only no
-longer drawn, keeping its dock, and a page left for another stage closes. Commands (`extension_keys`) are in the palette with
+longer drawn, keeping its dock, and a page left for another stage closes. A page opened over another
+takes its place, and going back goes to what the first opened over. Commands (`extension_keys`) are in the palette with
 their keys, and on the shortcuts sheet under a heading per extension beside the keymap's: a command
 heard anywhere runs from wherever the page has the keys and, through the leader, from a pane; one
 on a checkout from the Checkouts stage or a checkout picked on the rail; one on a pane from a pane
