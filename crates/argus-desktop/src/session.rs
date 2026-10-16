@@ -919,7 +919,7 @@ impl Session {
         };
         // A pane already side by side with the others is only given the
         // keys: showing it on the Workspace would take it out of the row.
-        let changed = !self.shown.in_row(pane) && self.shown.show_on(Side::Workspace, pane, &mut self.out);
+        let changed = !self.shown.grid().holds(pane) && self.shown.show_on(Side::Workspace, pane, &mut self.out);
         let keyed = self.shown.keys() != Side::Workspace;
         self.shown.focus(pane);
         if changed {
@@ -990,35 +990,31 @@ impl Session {
             };
         }
         if let Some(onto) = onto.filter(|&onto| onto != pane) {
-            self.shown.place(pane, onto, zone);
+            self.shown.grid_mut().place(pane, onto, zone);
         }
         self.finish()
     }
 
-    /// Takes a split out of the row. Its pane keeps running, and is on the
+    /// Takes a split out of the grid. Its pane keeps running, and is on the
     /// rail to be shown again.
     fn close_beside(&mut self, side: Side) -> Vec<ClientMsg> {
-        if matches!(side, Side::Beside(_)) {
-            self.shown.close(side, &mut self.out);
-        }
+        self.shown.close_split(side, &mut self.out);
         self.finish()
     }
 
     fn set_shares(&mut self, heights: &[u16], widths: &[Vec<u16>]) -> Vec<ClientMsg> {
-        let thousandths = |list: &[u16]| list.iter().map(|&p| f32::from(p)).collect::<Vec<_>>();
-        let widths: Vec<Vec<f32>> = widths.iter().map(|w| thousandths(w)).collect();
-        self.shown.resize_grid(&thousandths(heights), &widths);
+        self.shown.grid_mut().share(heights, widths);
         self.finish()
     }
 
     fn even_shares(&mut self, row: Option<usize>) -> Vec<ClientMsg> {
-        self.shown.even_out(row);
+        self.shown.grid_mut().even_out(row);
         self.finish()
     }
 
     /// A pane dropped on another's centre or edge, from its header.
     fn move_pane(&mut self, pane: PaneId, onto: PaneId, zone: Zone) -> Vec<ClientMsg> {
-        self.shown.place(pane, onto, zone);
+        self.shown.grid_mut().place(pane, onto, zone);
         self.finish()
     }
 
@@ -1135,9 +1131,7 @@ impl Session {
             Action::MovePaneDown => self.move_in(Dir::Down),
             Action::CloseSplit => {
                 let keys = self.shown.keys();
-                if matches!(keys, Side::Beside(_)) {
-                    self.shown.close(keys, &mut self.out);
-                } else {
+                if !self.shown.close_split(keys, &mut self.out) {
                     self.passing.push(Event::Notice { text: "the pane with the keys is not split beside another".into() });
                 }
             }
@@ -2032,7 +2026,7 @@ impl Session {
     /// drawn: the Workspace's and the panes split beside it, then the
     /// console's sides.
     fn other_side(&mut self) {
-        let sides = self.shown.row().into_iter().chain([Side::First, Side::Second]).chain(self.shown.view_sides());
+        let sides = self.shown.grid().sides().into_iter().chain([Side::First, Side::Second]).chain(self.shown.view_sides());
         let visible: Vec<PaneId> = sides
             .filter(|&side| self.side_visible(side))
             .filter_map(|side| self.shown.on(side))
@@ -3740,6 +3734,18 @@ mod tests {
         let sent = s.close_beside(Side::Beside(0));
         assert_eq!(names(&sent), ["unsubscribe 2"]);
         assert_eq!((s.shown.pane(), s.rail(0).row.beside.len()), (Some(PaneId(1)), 0));
+    }
+
+    #[test]
+    fn the_split_key_takes_the_keyed_split_out_and_says_so_for_the_workspaces_pane() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.open_beside(PaneId(2));
+        assert_eq!(names(&s.command(Action::CloseSplit)), ["unsubscribe 2"]);
+        assert_eq!((s.shown.pane(), s.shown.panes()), (Some(PaneId(1)), vec![PaneId(1)]));
+        assert!(s.command(Action::CloseSplit).is_empty(), "the Workspace's own pane stays");
+        assert!(notices(&mut s).iter().any(|n| n.contains("not split beside another")));
+        assert_eq!(s.shown.panes(), [PaneId(1)]);
     }
 
     #[test]

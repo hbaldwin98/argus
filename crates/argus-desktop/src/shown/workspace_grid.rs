@@ -113,13 +113,16 @@ impl WorkspaceGrid {
         self.side_of(pane).is_some()
     }
 
-    /// The sizes the person dragged the gutters to: each row's height, and
-    /// each pane's width in its row. Anything that does not fit the grid
-    /// changes nothing.
-    pub fn resize(&mut self, heights: &[f32], widths: &[Vec<f32>]) {
-        if let Some(layout) = self.layout.resized(heights, widths) {
-            self.layout = layout;
-        }
+    /// The sizes the person dragged the gutters to, in thousandths: each
+    /// row's height and each pane's width in its row. False, and nothing
+    /// changes, for sizes that are not the grid's shape.
+    pub fn share(&mut self, heights: &[u16], widths: &[Vec<u16>]) -> bool {
+        // The layout normalises the shares, so thousandths need no division.
+        let shares = |list: &[u16]| list.iter().map(|&p| f32::from(p)).collect::<Vec<_>>();
+        let widths: Vec<Vec<f32>> = widths.iter().map(|w| shares(w)).collect();
+        let Some(layout) = self.layout.resized(&shares(heights), &widths) else { return false };
+        self.layout = layout;
+        true
     }
 
     /// Evens one row's panes out, or with none the rows' heights.
@@ -399,6 +402,24 @@ mod tests {
         let page = unmeasured(5).page(Side::Workspace, |_| None);
         assert_eq!(page.grid, [vec![0, 1, 4], vec![2, 3]]);
         assert_eq!((page.widths[0].clone(), page.heights), (vec![333, 333, 333], vec![500, 500]));
+    }
+
+    #[test]
+    fn dragged_sizes_that_do_not_fit_the_grid_change_nothing() {
+        let mut grid = unmeasured(4);
+        let page = |grid: &WorkspaceGrid| grid.page(Side::Workspace, |_| None);
+        assert!(grid.share(&[250, 750], &[vec![750, 250], vec![500, 500]]));
+        assert_eq!((page(&grid).heights, page(&grid).widths[0].clone()), (vec![250, 750], vec![750, 250]));
+        assert!(grid.share(&[1, 3], &[vec![1, 1], vec![1, 1]]), "normalised");
+        assert_eq!(page(&grid).widths[0], [500, 500]);
+        assert!(!grid.share(&[1000, 0], &[vec![500, 500], vec![500, 500]]), "a zero share");
+        assert!(!grid.share(&[1000], &[vec![1000]]), "the wrong shape");
+        assert_eq!(page(&grid).heights, [250, 750]);
+        grid.share(&[250, 750], &[vec![750, 250], vec![500, 500]]);
+        grid.even_out(Some(0));
+        assert_eq!(page(&grid).widths[0], [500, 500]);
+        grid.even_out(None);
+        assert_eq!(page(&grid).heights, [500, 500]);
     }
 
     #[test]

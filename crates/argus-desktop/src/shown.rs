@@ -17,7 +17,7 @@ use argus_protocol::{ClientMsg, KeyboardMode, MouseTracking, PaneId, ServerMsg};
 
 use crate::page::{Frame, Side};
 use crate::screen::Screen;
-use crate::split_grid::{Dir, Zone};
+use crate::split_grid::Dir;
 
 pub mod workspace_grid;
 
@@ -293,19 +293,13 @@ impl ShownPane {
         self.vacated(out);
     }
 
-    /// The panes of the grid the Workspace and its splits fill, in reading
-    /// order.
-    pub fn row(&self) -> Vec<Side> {
-        self.grid.sides()
-    }
-
-    /// Whether `pane` is one of the grid's.
-    pub fn in_row(&self, pane: PaneId) -> bool {
-        self.grid.holds(pane)
-    }
-
     pub fn grid(&self) -> &WorkspaceGrid {
         &self.grid
+    }
+
+    /// The grid to arrange: only its layout-shaping half is the session's.
+    pub fn grid_mut(&mut self) -> &mut WorkspaceGrid {
+        &mut self.grid
     }
 
     /// Splits `pane` off into the grid; nothing is subscribed on a refusal.
@@ -318,16 +312,15 @@ impl ShownPane {
         self.grid.join(pane, out)
     }
 
-    pub fn resize_grid(&mut self, heights: &[f32], widths: &[Vec<f32>]) {
-        self.grid.resize(heights, widths);
-    }
-
-    pub fn even_out(&mut self, row: Option<usize>) {
-        self.grid.even_out(row);
-    }
-
-    pub fn place(&mut self, pane: PaneId, onto: PaneId, zone: Zone) -> bool {
-        self.grid.place(pane, onto, zone)
+    /// Takes the split on `side` out of the grid; its pane keeps running.
+    /// False for any side but a split's: the Workspace's own pane is not
+    /// taken out of its grid.
+    pub fn close_split(&mut self, side: Side, out: &mut Vec<ClientMsg>) -> bool {
+        if !matches!(side, Side::Beside(_)) || self.on(side).is_none() {
+            return false;
+        }
+        self.close(side, out);
+        true
     }
 
     /// The pane with the keys trades places with its neighbour in `dir`.
@@ -482,6 +475,7 @@ impl ShownPane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::split_grid::Zone;
 
     fn names(msgs: &[ClientMsg]) -> Vec<String> {
         msgs.iter()
@@ -631,7 +625,7 @@ mod tests {
         for pane in [4, 5, 6] {
             shown.open_beside(PaneId(pane), &mut out).unwrap();
         }
-        for side in shown.row() {
+        for side in shown.grid().sides() {
             shown.resize(side, 20, 30, &mut out);
         }
     }
@@ -646,7 +640,7 @@ mod tests {
             assert_eq!(shown.open_beside(PaneId(pane), &mut out), Err(Refusal::OnConsole));
             assert!(out.is_empty());
         }
-        assert_eq!(shown.row(), [Side::Workspace]);
+        assert_eq!(shown.grid().sides(), [Side::Workspace]);
     }
 
     #[test]
@@ -665,7 +659,7 @@ mod tests {
         row(&mut shown);
         shown.show_on(Side::First, PaneId(1), &mut Vec::new());
         assert_eq!((shown.on(Side::Workspace), shown.on(Side::First)), (Some(PaneId(4)), Some(PaneId(1))));
-        assert_eq!(shown.row().len(), 3);
+        assert_eq!(shown.grid().sides().len(), 3);
     }
 
     #[test]
@@ -734,29 +728,24 @@ mod tests {
     }
 
     #[test]
-    fn dragged_sizes_that_do_not_fit_the_grid_change_nothing() {
+    fn only_a_split_is_taken_out_of_the_grid() {
         let mut shown = ShownPane::default();
         row(&mut shown);
-        let page = |shown: &ShownPane| shown.grid().page(shown.keys(), |_| None);
-        shown.resize_grid(&[1.0, 3.0], &[vec![3.0, 1.0], vec![1.0, 1.0]]);
-        assert_eq!(page(&shown).heights, [250, 750], "normalised");
-        assert_eq!(page(&shown).widths[0], [750, 250]);
-        shown.resize_grid(&[1.0, 0.0], &[vec![1.0, 1.0], vec![1.0, 1.0]]);
-        shown.resize_grid(&[1.0], &[vec![1.0]]);
-        assert_eq!(page(&shown).heights, [250, 750]);
-        shown.even_out(Some(0));
-        assert_eq!(page(&shown).widths[0], [500, 500]);
-        shown.even_out(None);
-        assert_eq!(page(&shown).heights, [500, 500]);
+        shown.show_on(Side::First, PaneId(2), &mut Vec::new());
+        assert!(sent(|out| assert!(!shown.close_split(Side::Workspace, out))).is_empty());
+        assert!(sent(|out| assert!(!shown.close_split(Side::First, out))).is_empty());
+        assert!(sent(|out| assert!(!shown.close_split(Side::Beside(7), out))).is_empty(), "no such split");
+        assert_eq!(sent(|out| assert!(shown.close_split(Side::Beside(0), out))), ["unsubscribe 4"]);
+        assert_eq!(shown.panes(), [PaneId(1), PaneId(5), PaneId(6), PaneId(2)]);
     }
 
     #[test]
     fn a_pane_dropped_on_another_moves_in_the_grid_and_the_keys_read_in_the_new_order() {
         let mut shown = ShownPane::default();
         row(&mut shown);
-        assert!(shown.place(PaneId(6), PaneId(1), Zone::Left));
-        assert_eq!(shown.row(), [Side::Beside(2), Side::Workspace, Side::Beside(0), Side::Beside(1)]);
-        assert!(!shown.place(PaneId(9), PaneId(1), Zone::Left), "not in the grid");
+        assert!(shown.grid_mut().place(PaneId(6), PaneId(1), Zone::Left));
+        assert_eq!(shown.grid().sides(), [Side::Beside(2), Side::Workspace, Side::Beside(0), Side::Beside(1)]);
+        assert!(!shown.grid_mut().place(PaneId(9), PaneId(1), Zone::Left), "not in the grid");
         shown.focus(PaneId(6));
         assert!(shown.step_keys(1) && shown.keys() == Side::Workspace, "reading order, not opening order");
     }
