@@ -1,16 +1,19 @@
-//! Reaching this machine's daemon through `argus bridge`: starting the
-//! bridge, greeting, and connecting again when it goes.
+//! Reaching a daemon through `argus bridge`: starting the bridge, here or
+//! on another machine over ssh, greeting, and connecting again when it goes.
 //!
 //! The window never opens the daemon's socket and never starts `argusd`
 //! itself. It runs `argus bridge` and speaks the protocol over the child's
 //! stdin and stdout, as `argus --host` does over ssh, so connect-or-start
-//! stays in one place: the terminal client's `launch`.
+//! stays in one place: the terminal client's `launch`. A remote host is the
+//! same child with ssh in front, and ssh's own words are turned into what
+//! to do about them by the protocol's `ssh_bridge`, as the terminal client's.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use argus_protocol::ssh_bridge::{ssh_args, ssh_failure};
 use argus_protocol::{
     read_known_msg, write_msg, ClientMsg, Greeting, Hello, Refusal, ServerMsg, GREETING_WAIT,
     PROTOCOL,
@@ -32,11 +35,54 @@ const SAID_LIMIT: usize = 16 * 1024;
 /// How long a bridge that closed on us is given to exit, for its code.
 const EXIT_WAIT: Duration = Duration::from_secs(2);
 
+/// Which daemon the window reaches, and by what program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Target {
+    /// This machine's, through the `argus` at this path.
+    Local(PathBuf),
+    /// The one on `host`, through `ssh`. The program is a field so a test
+    /// can stand a script in for ssh.
+    Ssh { ssh: PathBuf, host: String },
+}
+
+impl Target {
+    /// This machine's daemon, or `host`'s when one is named.
+    pub fn for_host(host: Option<&str>) -> Target {
+        match host {
+            Some(host) => Target::Ssh { ssh: PathBuf::from("ssh"), host: host.to_owned() },
+            None => Target::Local(argus_exe()),
+        }
+    }
+
+    fn command(&self) -> Command {
+        match self {
+            Target::Local(exe) => {
+                let mut command = Command::new(exe);
+                command.arg("bridge");
+                command
+            }
+            Target::Ssh { ssh, host } => {
+                let mut command = Command::new(ssh);
+                command.args(ssh_args(host));
+                command
+            }
+        }
+    }
+
+    /// What was being run, for the error of failing to run it.
+    fn describe(&self) -> String {
+        match self {
+            Target::Local(exe) => format!("{} bridge", exe.display()),
+            Target::Ssh { ssh, host } => format!("{} {host}", ssh.display()),
+        }
+    }
+}
+
 /// Keeps the window connected for as long as it is open.
-pub async fn run(shared: Arc<Shared>) {
+pub async fn run(shared: Arc<Shared>, target: Target) {
     let mut greet = true;
     loop {
-        match connect_once(&shared, greet).await {
+        match connect_once(&shared, &target, greet).await {
             // A daemon from before the greeting hung up on it: it is
             // reached again at once, without one.
             Ended::Predates => {
@@ -87,12 +133,11 @@ enum Ended {
     Closed { stopped: bool },
 }
 
-async fn connect_once(shared: &Shared, greet: bool) -> Ended {
-    let exe = argus_exe();
-    let mut bridge = match Bridge::start(&exe) {
+async fn connect_once(shared: &Shared, target: &Target, greet: bool) -> Ended {
+    let mut bridge = match Bridge::start(target) {
         Ok(bridge) => bridge,
         Err(err) => {
-            return Ended::Failed(format!("could not run {} bridge: {err}", exe.display()));
+            return Ended::Failed(format!("could not run {}: {err}", target.describe()));
         }
     };
     let (Some(stdout), Some(stdin)) = (bridge.child.stdout.take(), bridge.child.stdin.take()) else {
@@ -151,6 +196,7 @@ fn locate(file: &str, dirs: &[PathBuf], exists: impl Fn(&Path) -> bool) -> PathB
 }
 
 struct Bridge {
+    host: Option<String>,
     child: Child,
     /// The end of what the bridge printed on stderr: the only account of a
     /// daemon that could not be reached.
@@ -158,15 +204,14 @@ struct Bridge {
 }
 
 impl Bridge {
-    fn start(exe: &std::path::Path) -> std::io::Result<Bridge> {
-        let mut command = Command::new(exe);
+    fn start(target: &Target) -> std::io::Result<Bridge> {
+        let mut command = target.command();
         command
-            .arg("bridge")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        // `argus` is a console program; started from a window it would
+        // `argus` and ssh are console programs; started from a window it would
         // flash a console of its own without this (CREATE_NO_WINDOW).
         #[cfg(windows)]
         command.creation_flags(0x0800_0000);
@@ -187,7 +232,11 @@ impl Bridge {
                 }
             });
         }
-        Ok(Bridge { child, said })
+        let host = match target {
+            Target::Ssh { host, .. } => Some(host.clone()),
+            Target::Local(_) => None,
+        };
+        Ok(Bridge { host, child, said })
     }
 
     /// What the bridge said as it ended, with its exit code.
@@ -199,7 +248,10 @@ impl Bridge {
         // The stderr reader may still be draining what came before exit.
         tokio::time::sleep(Duration::from_millis(50)).await;
         let said = self.said.lock().map(|s| s.clone()).unwrap_or_default();
-        last_words(&said, code)
+        match &self.host {
+            Some(host) => ssh_failure(host, &String::from_utf8_lossy(&said), code),
+            None => last_words(&said, code),
+        }
     }
 }
 
@@ -316,6 +368,35 @@ mod tests {
         assert_eq!(last_words(said, Some(1)), "starting\nerror: could not start argusd\ncaused by: not found");
         let long = b"1\n2\n3\n4\n5\n";
         assert_eq!(last_words(long, None), "3\n4\n5");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_failed_ssh_is_reported_in_its_own_words() {
+        // A stand-in for ssh that fails the way a refused login does.
+        let fake = std::env::temp_dir().join(format!("argus-desktop-fake-ssh-{}", std::process::id()));
+        std::fs::write(&fake, "#!/bin/sh\necho 'me@devbox: Permission denied (publickey).' >&2\nexit 255\n")
+            .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let target = Target::Ssh { ssh: fake.clone(), host: "devbox".into() };
+        let mut bridge = Bridge::start(&target).unwrap();
+        let (stdout, stdin) = (bridge.child.stdout.take().unwrap(), bridge.child.stdin.take().unwrap());
+        let (_link, greeting) = open(stdout, stdin, true).await;
+        assert!(matches!(greeting, Greeting::Closed), "{greeting:?}");
+        let words = bridge.last_words().await;
+        let _ = std::fs::remove_file(&fake);
+        assert!(words.contains("ssh-agent") && words.contains("devbox"), "{words}");
+    }
+
+    #[test]
+    fn a_host_is_reached_through_ssh_and_none_through_argus() {
+        let Target::Ssh { host, .. } = Target::for_host(Some("devbox")) else {
+            panic!("a host goes through ssh");
+        };
+        assert_eq!(host, "devbox");
+        assert!(matches!(Target::for_host(None), Target::Local(_)));
     }
 
     #[test]

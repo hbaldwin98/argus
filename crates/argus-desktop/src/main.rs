@@ -107,7 +107,7 @@ fn main() {
         .setup(move |app| {
             shared.set_app(app.handle().clone());
             open_window(app, &shared)?;
-            tauri::async_runtime::spawn(daemon::run(shared.clone()));
+            tauri::async_runtime::spawn(daemon::run(shared.clone(), daemon::Target::for_host(None)));
             let found = shared.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 let fonts = fonts::installed();
