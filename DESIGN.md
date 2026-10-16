@@ -305,6 +305,7 @@ live in this crate and a contract written twice drifts in silence.
 | `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
+| `code` | a checkout's code as the Code stage reads it: which version, a file's lines and the ones that version changed, what the file defines, and where text occurs across the checkout |
 | `review_session` | one review's exchange with the daemon, as both clients hold it: which sides were asked for and answered, the side on screen and when an empty one gives way, and who a comment can go to |
 | `history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
 | `awaited` | requests a client waits on the daemon to make something for, matched by the id it answers with, and which of the things made the tree now holds |
@@ -388,6 +389,8 @@ to the type or its locking.
 | `store/panel`, `store/session` | runtime changes to the panel and when each repository was last used, and the panes to bring back after a restart |
 | `store/seen_sessions` | the sessions Argus saw agents run under a harness that keeps no transcript — title, checkout, first and last seen — so one still lists once its pane is gone |
 | `git`, `diff`, `browse`, `highlight` | the read-only questions asked of a repository |
+| `grammar` | which tree-sitter grammar reads a file, chosen by its extension, so highlighting and outlines agree on its language |
+| `code`, `code_search`, `symbols` | what the Code stage reads: a version's files and how much each changed, one file's lines with the ones it changed, where text occurs in the working tree, and what a file defines |
 | `gitignore` | the repository-local excludes for generated Argus files |
 | `config` | `projects.toml`, which is read and never written |
 | `daemon_lock`, `editor`, `watch`, `command`, `logging`, `paths` | the one daemon allowed to own an instance, and the small services the rest of the daemon uses |
@@ -1657,6 +1660,32 @@ selected range still shows which side each line was on.
 
 Review is a viewer. There is no vetted state, no stage/unstage/revert action, and no
 comment-resolution lifecycle. Closing the review sends no daemon message.
+
+## Code
+
+The Code stage reads a checkout's code rather than its diff, and the daemon answers three requests
+for it, each only to a client that listed `CODE`. `ListCode` names every file of one version and
+how many lines each changed; `ReadCode` sends one file of it, highlighted as a review is, with the
+lines that version added or changed marked, where it removed lines (a count before a line, since a
+removed line has no line of its own to be drawn on), and the file's outline; `SearchCode` finds a
+string across the working tree.
+
+A version is the working tree, the index, `HEAD`, or one commit, and each is read against a base:
+the working tree and the index against `HEAD`, a commit against its first parent, and `HEAD`
+against nothing, so nothing in it is marked. The working tree is read off disk, untracked files
+included, and the rest out of trees Git already holds; nothing is written to the object database.
+A path is checked to stay inside the checkout before anything is read. Files over 1 MiB, and
+binary ones by Git's NUL heuristic, are named but not drawn.
+
+The outline is what the grammar's own tag queries call a definition — functions, types, methods,
+modules — in file order, with the grammar's word for each kind shown as it is. It covers the
+grammars that ship such a query (Rust, TypeScript and JavaScript, Python, C#); TypeScript's query
+is only its additions, so it runs with JavaScript's underneath, as its highlighting does. Which
+grammar reads a file is decided once, by extension, for highlighting and outlines alike.
+
+Search is literal and smart-cased — case matters only when the query has a capital — over the
+files `.gitignore` leaves, skipping binary files and ones over 1 MiB. It returns the first match on
+each line, in path order, and stops at 500, saying so.
 
 ## Features and the decision board
 

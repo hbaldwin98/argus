@@ -482,6 +482,65 @@ pub(super) fn dispatch(
             base,
             commit,
         } => review(daemon, out_tx, &mut conn.reviews, request_id, checkout, base, commit),
+        // The Code stage: a version's files, one file of it, and a search.
+        ClientMsg::ListCode {
+            request_id,
+            checkout,
+            version,
+        } => reply_with(daemon, out_tx, checkout, move |repo| {
+            match crate::code::list(&repo, &version) {
+                Ok((files, changes)) => ServerMsg::CodeTree(argus_protocol::CodeTree {
+                    request_id,
+                    checkout,
+                    version,
+                    files,
+                    changes,
+                }),
+                Err(error) => ServerMsg::CodeFailed {
+                    request_id,
+                    checkout,
+                    message: error.to_string(),
+                },
+            }
+        }),
+        ClientMsg::ReadCode {
+            request_id,
+            checkout,
+            path,
+            version,
+        } => reply_with(daemon, out_tx, checkout, move |repo| {
+            match crate::code::read(&repo, &path, &version) {
+                Ok(file) => ServerMsg::Code(Box::new(argus_protocol::CodeFile {
+                    request_id,
+                    checkout,
+                    path,
+                    version,
+                    lines: file.lines,
+                    removed: file.removed,
+                    symbols: file.symbols,
+                    note: file.note,
+                })),
+                Err(error) => ServerMsg::CodeFailed {
+                    request_id,
+                    checkout,
+                    message: error.to_string(),
+                },
+            }
+        }),
+        ClientMsg::SearchCode {
+            request_id,
+            checkout,
+            query,
+        } => reply_with(daemon, out_tx, checkout, move |repo| {
+            let (matches, truncated) = crate::code_search::search(&repo, &query);
+            ServerMsg::CodeMatches(argus_protocol::CodeMatches {
+                request_id,
+                checkout,
+                query,
+                matches,
+                truncated,
+            })
+        }),
         ClientMsg::ReviewContext {
             request_id,
             checkout,

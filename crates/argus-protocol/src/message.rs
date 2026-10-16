@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_view::ShownView;
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
+use crate::code::{CodeFile, CodeMatches, CodeTree, CodeVersion};
 use crate::damage::{CellRun, Scroll};
 use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
 use crate::extensions::{ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtView};
@@ -170,6 +171,29 @@ pub enum ClientMsg {
         path: String,
         start: u32,
         end: u32,
+    },
+    /// Every file of one version of a checkout, and the ones that version
+    /// changed against its base. Only to a daemon that listed `CODE`.
+    ListCode {
+        request_id: u64,
+        checkout: CheckoutId,
+        version: CodeVersion,
+    },
+    /// One file of one version, highlighted, with what it changed and what
+    /// it defines. Only to a daemon that listed `CODE`.
+    ReadCode {
+        request_id: u64,
+        checkout: CheckoutId,
+        path: String,
+        version: CodeVersion,
+    },
+    /// Where `query` occurs in the checkout's working tree: literal, and
+    /// matching case only when it has a capital. Only to a daemon that
+    /// listed `CODE`.
+    SearchCode {
+        request_id: u64,
+        checkout: CheckoutId,
+        query: String,
     },
     /// Newest commits on this checkout's HEAD, identities only. What each
     /// one changed is [`ClientMsg::ListCommitFiles`], asked for one commit
@@ -626,6 +650,18 @@ pub enum ServerMsg {
     Review(Review),
     /// A failed review capture/diff, correlated so stale failures are dropped.
     ReviewFailed {
+        request_id: u64,
+        checkout: CheckoutId,
+        message: String,
+    },
+    /// The answer to `ClientMsg::ListCode`.
+    CodeTree(CodeTree),
+    /// The answer to `ClientMsg::ReadCode`.
+    Code(Box<CodeFile>),
+    /// The answer to `ClientMsg::SearchCode`.
+    CodeMatches(CodeMatches),
+    /// Any of the three that could not be answered, correlated by its id.
+    CodeFailed {
         request_id: u64,
         checkout: CheckoutId,
         message: String,

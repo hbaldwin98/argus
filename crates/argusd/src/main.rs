@@ -2,6 +2,8 @@
 //! hook receiver, then accept clients until the process is asked to stop.
 
 mod browse;
+mod code;
+mod code_search;
 mod command;
 mod config;
 mod conn;
@@ -14,6 +16,7 @@ mod dll_search;
 mod editor;
 mod git;
 mod gitignore;
+mod grammar;
 mod harness;
 mod highlight;
 mod logging;
@@ -23,6 +26,7 @@ mod pty;
 mod review_queue;
 mod state;
 mod store;
+mod symbols;
 mod watch;
 
 #[tokio::main]

@@ -423,6 +423,45 @@ async fn a_review_request_answers_with_that_checkouts_diff() {
     }
 }
 
+/// The next message the daemon sends this connection, waited for.
+async fn answer(h: &mut Harness) -> ServerMsg {
+    tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+        .await
+        .expect("an answer")
+        .expect("channel open")
+}
+
+#[tokio::test]
+async fn the_code_stage_reads_a_versions_files_one_file_and_a_search() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::write(dir.path().join("a.rs"), "fn brief() {}\n").unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    let version = argus_protocol::CodeVersion::WorkingTree;
+
+    h.send(ClientMsg::ListCode { request_id: 1, checkout, version: version.clone() });
+    match answer(&mut h).await {
+        ServerMsg::CodeTree(tree) => assert_eq!((tree.request_id, tree.files), (1, vec!["a.rs".to_string()])),
+        other => panic!("unexpected {other:?}"),
+    }
+
+    h.send(ClientMsg::ReadCode { request_id: 2, checkout, path: "a.rs".into(), version: version.clone() });
+    match answer(&mut h).await {
+        ServerMsg::Code(file) => {
+            assert_eq!(file.lines[0].text, "fn brief() {}");
+            assert_eq!(file.symbols[0].name, "brief");
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+
+    h.send(ClientMsg::SearchCode { request_id: 3, checkout, query: "brief".into() });
+    assert!(matches!(answer(&mut h).await, ServerMsg::CodeMatches(m) if m.request_id == 3 && m.matches.len() == 1));
+
+    h.send(ClientMsg::ReadCode { request_id: 4, checkout, path: "../out".into(), version });
+    assert!(matches!(answer(&mut h).await, ServerMsg::CodeFailed { request_id: 4, .. }));
+}
+
 #[tokio::test]
 async fn a_fold_is_read_from_the_blob_the_review_named() {
     let dir = tempfile::tempdir().unwrap();

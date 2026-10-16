@@ -168,6 +168,12 @@ impl App {
             } => {
                 self.receive_review_failure(request_id, checkout, message);
             }
+            // The Code stage is the desktop window's; this client never
+            // asks for any of it.
+            ServerMsg::CodeTree(_)
+            | ServerMsg::Code(_)
+            | ServerMsg::CodeMatches(_)
+            | ServerMsg::CodeFailed { .. } => {}
             ServerMsg::ReviewContext(context) => {
                 if let Some(session) = &mut self.review {
                     session.receive_context(context);

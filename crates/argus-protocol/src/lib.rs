@@ -20,6 +20,7 @@ pub mod awaited;
 pub mod board_follower;
 pub mod capture;
 pub mod checkout_path;
+pub mod code;
 pub mod cell;
 pub mod column;
 pub mod column_verbs;
@@ -117,7 +118,11 @@ pub use held_tree::{transitions, HeldTree, Lineage, Transition};
 pub use hello::{
     ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
-    RENAME_PANE, SAVED_VIEWS,
+    RENAME_PANE, SAVED_VIEWS, CODE,
+};
+pub use code::{
+    CodeChange, CodeFile, CodeLine, CodeMatch, CodeMatches, CodeSymbol, CodeTree, CodeVersion, Removed,
+    MAX_CODE_MATCHES,
 };
 pub use hook::{
     endpoint_url, extension_path, extension_prefix, extension_url, parse_extension_path, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,

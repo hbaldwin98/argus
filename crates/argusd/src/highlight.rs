@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use argus_protocol::{HighlightKind, HighlightSpan};
-use tree_sitter::Language;
+
+use crate::grammar::Grammar;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 /// Anything larger is shipped unhighlighted. Parsing is linear in the source,
@@ -44,42 +45,6 @@ const CAPTURES: &[(&str, HighlightKind)] = &[
     ("type", HighlightKind::Type),
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-enum Grammar {
-    Rust,
-    TypeScript,
-    Tsx,
-    Python,
-    CSharp,
-    Css,
-    Yaml,
-    Toml,
-    Json,
-    Markdown,
-}
-
-/// Extension alone. Content sniffing and shebang lines would buy a handful of
-/// extensionless files at the cost of reading every blob twice.
-fn grammar_for(path: &str) -> Option<Grammar> {
-    let name = path.rsplit('/').next().unwrap_or(path);
-    let (_, ext) = name.rsplit_once('.')?;
-    Some(match ext.to_ascii_lowercase().as_str() {
-        "rs" => Grammar::Rust,
-        "ts" | "mts" | "cts" => Grammar::TypeScript,
-        // The TSX grammar is a superset, and plain TypeScript rejects JSX, so
-        // JavaScript in any spelling is better served by TSX than by nothing.
-        "tsx" | "js" | "jsx" | "mjs" | "cjs" => Grammar::Tsx,
-        "py" | "pyi" => Grammar::Python,
-        "cs" | "csx" => Grammar::CSharp,
-        "css" => Grammar::Css,
-        "yaml" | "yml" => Grammar::Yaml,
-        "toml" => Grammar::Toml,
-        "json" | "jsonc" => Grammar::Json,
-        "md" | "markdown" => Grammar::Markdown,
-        _ => return None,
-    })
-}
-
 /// TypeScript's own query is only its additions to JavaScript's — types,
 /// generics, decorators. Without the base query underneath it, `const` and
 /// `return` and every string literal come back unhighlighted, so both
@@ -100,62 +65,23 @@ fn typescript_query(jsx: bool) -> String {
 }
 
 fn build(grammar: Grammar) -> Option<HighlightConfiguration> {
-    let (language, name, highlights): (Language, &str, String) = match grammar {
-        Grammar::Rust => (
-            tree_sitter_rust::LANGUAGE.into(),
-            "rust",
-            tree_sitter_rust::HIGHLIGHTS_QUERY.to_string(),
-        ),
-        Grammar::TypeScript => (
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            "typescript",
-            typescript_query(false),
-        ),
-        Grammar::Tsx => (
-            tree_sitter_typescript::LANGUAGE_TSX.into(),
-            "tsx",
-            typescript_query(true),
-        ),
-        Grammar::Python => (
-            tree_sitter_python::LANGUAGE.into(),
-            "python",
-            tree_sitter_python::HIGHLIGHTS_QUERY.to_string(),
-        ),
-        Grammar::CSharp => (
-            tree_sitter_c_sharp::LANGUAGE.into(),
-            "c-sharp",
-            tree_sitter_c_sharp::HIGHLIGHTS_QUERY.to_string(),
-        ),
-        Grammar::Css => (
-            tree_sitter_css::LANGUAGE.into(),
-            "css",
-            tree_sitter_css::HIGHLIGHTS_QUERY.to_string(),
-        ),
-        Grammar::Yaml => (
-            tree_sitter_yaml::LANGUAGE.into(),
-            "yaml",
-            tree_sitter_yaml::HIGHLIGHTS_QUERY.to_string(),
-        ),
-        Grammar::Toml => (
-            tree_sitter_toml_ng::LANGUAGE.into(),
-            "toml",
-            tree_sitter_toml_ng::HIGHLIGHTS_QUERY.to_string(),
-        ),
-        Grammar::Json => (
-            tree_sitter_json::LANGUAGE.into(),
-            "json",
-            tree_sitter_json::HIGHLIGHTS_QUERY.to_string(),
-        ),
+    let highlights = match grammar {
+        Grammar::Rust => tree_sitter_rust::HIGHLIGHTS_QUERY.to_string(),
+        Grammar::TypeScript => typescript_query(false),
+        Grammar::Tsx => typescript_query(true),
+        Grammar::Python => tree_sitter_python::HIGHLIGHTS_QUERY.to_string(),
+        Grammar::CSharp => tree_sitter_c_sharp::HIGHLIGHTS_QUERY.to_string(),
+        Grammar::Css => tree_sitter_css::HIGHLIGHTS_QUERY.to_string(),
+        Grammar::Yaml => tree_sitter_yaml::HIGHLIGHTS_QUERY.to_string(),
+        Grammar::Toml => tree_sitter_toml_ng::HIGHLIGHTS_QUERY.to_string(),
+        Grammar::Json => tree_sitter_json::HIGHLIGHTS_QUERY.to_string(),
         // Block structure only. Markdown splits its inline syntax into a second
         // grammar reached through injections, which buys emphasis and link text
         // for a second parse of every file; headings and fences are the part
         // that helps you find your place in a diff.
-        Grammar::Markdown => (
-            tree_sitter_md::LANGUAGE.into(),
-            "markdown",
-            tree_sitter_md::HIGHLIGHT_QUERY_BLOCK.to_string(),
-        ),
+        Grammar::Markdown => tree_sitter_md::HIGHLIGHT_QUERY_BLOCK.to_string(),
     };
+    let (language, name) = (grammar.language(), grammar.name());
 
     let mut config = match HighlightConfiguration::new(language, name, &highlights, "", "") {
         Ok(config) => config,
@@ -192,7 +118,7 @@ pub fn line_spans(path: &str, source: &str) -> Option<Vec<Vec<HighlightSpan>>> {
     if source.len() > MAX_HIGHLIGHT_BYTES {
         return None;
     }
-    let config = config(grammar_for(path)?)?;
+    let config = config(Grammar::for_path(path)?)?;
 
     // Byte offsets into `source`. A line's usable width stops before its
     // terminator, matching the text the diff itself carries.
