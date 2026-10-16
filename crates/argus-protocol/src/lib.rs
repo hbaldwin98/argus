@@ -80,7 +80,7 @@ pub use view_check::{
     MAX_VIEWS_PER_PANE, MAX_VIEW_ACTIONS, MAX_VIEW_BYTES, MAX_VIEW_ID_BYTES, MAX_VIEW_NUMBER,
     MAX_VIEW_TITLE_BYTES, MIN_REFRESH_SECS,
 };
-pub use view_press::{find_action, press_request, Answer, AnswerValue, ViewAction, ViewPress, MAX_ANSWER_BYTES};
+pub use view_press::{Answer, AnswerValue, NotOffered, ViewAction, ViewPress, MAX_ANSWER_BYTES};
 pub use saved_view::{
     refresh_request as saved_view_refresh_request, FeatureRef, SavedView, SavedViewChange, SavedViewEntry,
     SavedViewRecord, SavedViewWrite, ViewScope, ViewSource, WriteScope, MAX_ATTACHED_FEATURES, MAX_EMBED_DEPTH,

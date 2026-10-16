@@ -336,7 +336,7 @@ live in this crate and a contract written twice drifts in silence.
 | `saved_view` | what a saved view is: its body, its scope, and the metadata an agent refreshes it from (recipe, sources, the commit it was built at, stale); what an agent writes to save one and reads back; and the line an agent is typed to refresh one |
 | `view_tree` | what each kind of block holds: the lists of blocks inside a container and the links, values and actions it holds itself, each by the step a refusal names it with, and each list as the desktop page names it |
 | `view_links` | which saved views a view links to, in the order it names them, reached through values, `opens` and embeds at any depth: the terminal's links list and the desktop's nesting of a linked view under the view that names it |
-| `view_press` | what a press of a view's action carries back, which of it the view offered, and the one line the agent is told of it |
+| `view_press` | what a press of a view's action carries back, which of it the view offered, whether it is relayed to the agent or refused in the person's words, and the one line the agent is told of it |
 | `checkout_path` | whether a path an agent wrote stays inside the checkout it is read against |
 | `view_patch` | how a patch replaces one block of a held view: the block path an agent names it by, and the view with that block swapped |
 | `transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
@@ -2312,7 +2312,7 @@ form's submit. Argus runs nothing for one: `ClientMsg::PressView` (under `VIEW_A
 to the agent as one line, as a refresh is, naming the action, the selected row keys and a form's
 answers as JSON. The daemon relays it only when the held view offers that action id, and keeps only
 the row keys of a table that carries it and the answers of the form it submits, so the agent hears
-nothing its own view could not have produced. Row keys and answers count once, an answer must be of the kind its field takes and inside its options and range, and text is cut at 4 KiB (`ViewPress::offered_by`). A press that cannot be relayed — the view is gone, it no longer offers the action, or its agent is not running — is answered to the client that pressed with `ServerMsg::ViewPressFailed`, so the button does not wait on an agent that was never asked. The pressed button waits until the agent shows the
+nothing its own view could not have produced. Row keys and answers count once, an answer must be of the kind its field takes and inside its options and range, and text is cut at 4 KiB (`view_press::relay`). A press that cannot be relayed — the view is gone, it no longer offers the action, or its agent is not running — is answered to the client that pressed with `ServerMsg::ViewPressFailed`, so the button does not wait on an agent that was never asked. The pressed button waits until the agent shows the
 view again. `ViewChange::Patch` (`argus-hook view patch <id> <path> --stdin`) replaces one block
 by the path refusals name blocks by (`view_patch`), and the daemon shows the whole view anew, so a
 progress bar or a log tail moves without the view being sent again. A view's `refresh_every` (at

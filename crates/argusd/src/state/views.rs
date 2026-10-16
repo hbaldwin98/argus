@@ -9,9 +9,9 @@
 //! is made, and told to the watchers, under the one lock, so a watcher
 //! sees each change in the order it was made.
 
+use argus_protocol::view_press::relay;
 use argus_protocol::{
-    find_action, press_request, AgentView, PaneId, ServerMsg, ShownView, ViewChange, ViewPress,
-    MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES,
+    AgentView, PaneId, ServerMsg, ShownView, ViewChange, ViewPress, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES,
 };
 use std::sync::Arc;
 
@@ -187,12 +187,14 @@ impl Daemon {
     /// running. Each is the person's to hear of, so the reason comes back
     /// as the `Err`, in words for them.
     pub fn press_view(&self, pane: PaneId, press: ViewPress) -> Result<(), String> {
-        let shown = self.agent_views.lock().unwrap().get(pane, &press.view).cloned();
-        let shown = shown.ok_or("That view is no longer shown.")?;
-        let not_offered = "That view no longer offers that action.";
-        let action = find_action(&shown.view, &press.action).ok_or(not_offered)?;
-        let press = press.offered_by(&shown.view).ok_or(not_offered)?;
-        if !self.notify(pane, &press_request(&shown.view, action, &press)) {
+        // Composed under the lock rather than cloning a view of up to
+        // 256 KiB; the agent is told after it is released.
+        let line = {
+            let views = self.agent_views.lock().unwrap();
+            let shown = views.get(pane, &press.view).ok_or("That view is no longer shown.")?;
+            relay(&shown.view, press).map_err(|e| e.to_string())?
+        };
+        if !self.notify(pane, &line) {
             return Err("The agent is not running, so it could not be told.".into());
         }
         Ok(())

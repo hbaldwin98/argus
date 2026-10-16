@@ -1,11 +1,11 @@
-//! What a press of an agent view's action carries back, and what the agent
-//! is told of it.
+//! What a press of an agent view's action carries back, and what of it is
+//! relayed to the agent.
 //!
 //! A client could send anything in a [`ViewPress`], and what reaches the
-//! agent is typed into its terminal as text, so the press is read against
-//! the view it claims to come from: [`ViewPress::offered_by`] keeps only
-//! what that view could have produced, and [`press_request`] writes it on
-//! one line with no control characters in it.
+//! agent is typed into its terminal, so [`relay`] reads the press against
+//! the view it claims to come from and keeps only what that view could have
+//! produced, or refuses it, and writes what it kept on one line with no
+//! control characters in it.
 
 use std::collections::HashSet;
 
@@ -71,9 +71,24 @@ pub enum AnswerValue {
     Bool(bool),
 }
 
-/// The view's action with this id, wherever the view offers one.
-pub fn find_action<'a>(view: &'a AgentView, id: &str) -> Option<&'a ViewAction> {
-    find(view, id).map(|(action, _)| action)
+/// Why a press is not relayed: its view offers no such action, or no
+/// longer does. The words are the person's, who pressed it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotOffered;
+
+impl std::fmt::Display for NotOffered {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("That view no longer offers that action.")
+    }
+}
+
+/// What the agent is told of `press`, read against `view`, the view it
+/// claims to come from: only what that view could have produced, on one
+/// line. A client could send anything; the agent hears only what its own
+/// view said.
+pub fn relay(view: &AgentView, press: ViewPress) -> Result<String, NotOffered> {
+    let (action, place) = find(view, &press.action).ok_or(NotOffered)?;
+    Ok(press_request(view, action, &press.kept(place)))
 }
 
 /// The header's actions first, then the first the blocks offer in reading order.
@@ -88,14 +103,11 @@ fn find<'a>(view: &'a AgentView, id: &str) -> Option<(&'a ViewAction, ActionPlac
 }
 
 impl ViewPress {
-    /// The press with only what `view` offered for its action: the row
-    /// keys of the table that carries the action, each once, and the
+    /// The press with only what its action, sitting at `place`, offered:
+    /// the row keys of the table that carries it, each once, and the
     /// answers of the form it submits, each field once, of the kind the
-    /// field takes and within what it allows. `None` when the view offers
-    /// no such action. A client could send anything; the agent hears only
-    /// what its own view could have produced.
-    pub fn offered_by(mut self, view: &AgentView) -> Option<ViewPress> {
-        let (_, place) = find(view, &self.action)?;
+    /// field takes and within what it allows.
+    fn kept(mut self, place: ActionPlace<'_>) -> ViewPress {
         match place {
             ActionPlace::Table { row_keys: keys } => {
                 let keys: HashSet<&str> = keys.iter().map(String::as_str).collect();
@@ -125,7 +137,7 @@ impl ViewPress {
                 self.answers.clear();
             }
         }
-        Some(self)
+        self
     }
 }
 
@@ -175,7 +187,7 @@ fn plain_json(value: serde_json::Value) -> serde_json::Value {
 
 /// What is typed to the agent for a press, on one line. The rows and
 /// answers are JSON, so the agent can parse them.
-pub fn press_request(view: &AgentView, action: &ViewAction, press: &ViewPress) -> String {
+fn press_request(view: &AgentView, action: &ViewAction, press: &ViewPress) -> String {
     let mut text = format!(
         "The person pressed `{action_id}` (\"{label}\") in the view `{id}`.",
         action_id = plain(&action.id),
@@ -262,11 +274,17 @@ mod tests {
         AgentView { id: "v".into(), title: "v".into(), actions: vec![action("head")], blocks: vec![table, form], ..Default::default() }
     }
 
+    /// What a press keeps, through the seam `relay` reads it by.
+    fn offered(p: ViewPress, v: &AgentView) -> Option<ViewPress> {
+        let (_, place) = find(v, &p.action)?;
+        Some(p.kept(place))
+    }
+
     fn submit(answers: Vec<Answer>) -> Vec<Answer> {
         let mut p = press("go");
         p.form = Some("deploy".into());
         p.answers = answers;
-        p.offered_by(&view()).unwrap().answers
+        offered(p, &view()).unwrap().answers
     }
 
     #[test]
@@ -278,19 +296,19 @@ mod tests {
             form: Some("deploy".into()),
             answers: vec![answer("dry", AnswerValue::Bool(true)), answer("extra", AnswerValue::Bool(true))],
         };
-        let rerun = press("rerun").offered_by(&view()).unwrap();
+        let rerun = offered(press("rerun"), &view()).unwrap();
         assert_eq!(rerun.rows, ["r1"]);
         assert!(rerun.form.is_none() && rerun.answers.is_empty());
-        let go = press("go").offered_by(&view()).unwrap();
+        let go = offered(press("go"), &view()).unwrap();
         assert!(go.rows.is_empty());
         assert_eq!(go.answers, [answer("dry", AnswerValue::Bool(true))]);
-        let head = press("head").offered_by(&view()).unwrap();
+        let head = offered(press("head"), &view()).unwrap();
         assert!(head.rows.is_empty() && head.form.is_none() && head.answers.is_empty());
     }
 
     #[test]
     fn an_action_the_view_does_not_offer_is_no_press() {
-        assert!(press("rm-rf").offered_by(&view()).is_none());
+        assert!(offered(press("rm-rf"), &view()).is_none());
     }
 
     #[test]
@@ -298,7 +316,7 @@ mod tests {
         let mut p = press("go");
         p.form = Some("other".into());
         p.answers = vec![answer("dry", AnswerValue::Bool(true))];
-        let p = p.offered_by(&view()).unwrap();
+        let p = offered(p, &view()).unwrap();
         assert!(p.form.is_none() && p.answers.is_empty());
     }
 
@@ -306,7 +324,7 @@ mod tests {
     fn a_row_key_or_an_answer_sent_twice_counts_once_and_the_first_wins() {
         let mut p = press("rerun");
         p.rows = vec!["r2".into(), "r1".into(), "r2".into()];
-        assert_eq!(p.offered_by(&view()).unwrap().rows, ["r2", "r1"]);
+        assert_eq!(offered(p, &view()).unwrap().rows, ["r2", "r1"]);
         let kept = submit(vec![
             answer("note", AnswerValue::Text("first".into())),
             answer("note", AnswerValue::Text("second".into())),
@@ -352,7 +370,7 @@ mod tests {
         let mut p = press("go");
         p.form = Some("deploy".into());
         p.answers = vec![answer("count", AnswerValue::Number(MAX_VIEW_NUMBER * 10.0))];
-        assert!(p.offered_by(&v).unwrap().answers.is_empty());
+        assert!(offered(p, &v).unwrap().answers.is_empty());
     }
 
     #[test]
@@ -381,9 +399,25 @@ mod tests {
         v.blocks = vec![Block::Section { heading: "s".into(), blocks: vec![card, row], opens: None }];
         v.blocks.extend(view().blocks);
         for id in ["head", "card", "send", "inrow", "rerun", "go"] {
-            assert_eq!(find_action(&v, id).map(|a| a.id.as_str()), Some(id));
+            let line = relay(&v, press(id)).unwrap();
+            assert!(line.contains(&format!("`{id}`")), "{line}");
         }
-        assert!(find_action(&v, "rm-rf").is_none());
+        assert_eq!(relay(&v, press("rm-rf")), Err(NotOffered));
+    }
+
+    #[test]
+    fn a_press_is_relayed_as_one_line_naming_only_what_the_view_offered() {
+        let mut p = press("rerun");
+        p.rows = vec!["r1".into(), "made-up".into()];
+        let line = relay(&view(), p).unwrap();
+        assert!(line.contains(r#"["r1"]"#) && !line.contains("made-up"), "{line}");
+        assert!(!line.chars().any(char::is_control), "{line:?}");
+    }
+
+    #[test]
+    fn a_press_the_view_does_not_offer_is_refused_in_the_persons_words() {
+        assert_eq!(relay(&view(), press("rm-rf")), Err(NotOffered));
+        assert_eq!(NotOffered.to_string(), "That view no longer offers that action.");
     }
 
     #[test]

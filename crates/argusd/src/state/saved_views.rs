@@ -23,8 +23,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use argus_protocol::view_press::relay;
 use argus_protocol::{
-    find_action, press_request, saved_view_refresh_request, ArtifactScope, FeatureRef, PaneId,
+    saved_view_refresh_request, ArtifactScope, FeatureRef, PaneId,
     RepositoryId, SavedView, SavedViewChange, SavedViewEntry, SavedViewRecord, SavedViewWrite, ServerMsg,
     ViewPress, ViewScope, WriteScope, MAX_VIEW_BYTES,
 };
@@ -390,13 +391,8 @@ impl Daemon {
     /// Tells the agent that last saved a view which of its actions the
     /// person pressed, against what that view offers, as `press_view` does.
     pub fn press_saved_view(&self, id: &str, press: ViewPress) -> Result<(), String> {
-        let not_offered = "That view no longer offers that action.";
-        let (pane, text) = self.relay_target(id, |stored| {
-            let action = find_action(&stored.view, &press.action)?;
-            let press = press.clone().offered_by(&stored.view)?;
-            Some(press_request(&stored.view, action, &press))
-        })?;
-        let Some(text) = text else { return Err(not_offered.into()) };
+        let (pane, text) = self.relay_target(id, |stored| relay(&stored.view, press))?;
+        let text = text.map_err(|e| e.to_string())?;
         if !self.notify(pane, &text) {
             return Err("The agent that saved it is not running, so it could not be told.".into());
         }
