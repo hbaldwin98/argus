@@ -1,14 +1,15 @@
 // Dragging a panel to where it goes: a dock's tab, a panel's header or an
 // extension's view in the sidebar picked up, the place it would land shown
 // under the pointer — the left, right or bottom dock, or the stage for a
-// panel that has a page — and the move reported when it is let go, the
-// same move the dock menus send. Rust decides what comes of it
+// panel Rust says takes it (`panels`) — and the move reported when it is
+// let go, the same move the dock menus send. Rust decides what comes of it
 // (`src/docks.rs`); nothing here moves a panel itself.
 //
 // Mouse events rather than the browser's drag and drop, so the preview
 // follows the pointer over the panes' canvases as well as the page, and a
 // press that never travels stays the click it was.
 import { $, el } from './dom.js';
+import { panelOf } from './panels.js';
 import { call } from './tauri.js';
 /** How far the pointer goes before a press is a drag. */
 const THRESHOLD = 5;
@@ -52,15 +53,8 @@ const WORDS = {
 function drop(panel, target) {
     if (target !== 'stage')
         call('docks', { gesture: { on: 'move', panel, dock: target } });
-    else if (panel === 'console')
-        call('console', { gesture: { on: 'tab' } });
     else
-        call('extension_mode', { panel, page: true });
-}
-/** The console has the Console stage and an extension's view its page;
- *  the agents' views and the saved views are only ever docked. */
-function hasStage(panel) {
-    return panel !== 'views' && !panel.startsWith('saved:');
+        call('docks', { gesture: { on: 'stage', panel } });
 }
 function box(id) {
     return $(id).getBoundingClientRect();
@@ -104,7 +98,7 @@ export function draggable(handle, panel, title) {
             ghost.style.top = `${m.clientY + 12}px`;
             const work = box('work');
             const center = box('center');
-            target = targetAt(m.clientX, m.clientY, work, center, hasStage(panel));
+            target = targetAt(m.clientX, m.clientY, work, center, panelOf(panel)?.stage ?? false);
             preview.hidden = target === null;
             if (target) {
                 const at = landing(target, work, center);

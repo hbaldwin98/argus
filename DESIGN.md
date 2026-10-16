@@ -167,12 +167,15 @@ comes back where it was put, and an extension's view gone with its extension fin
 when it comes back; an extension's view may instead be a page on the stage, which the console and
 the views never are. A dock shows one of the panels in it that exist now, is open or closed, and is
 as wide or tall as its sash left it; holding more than one, it draws a tab per panel over them, a
-tab's right-click offering the other docks. Each panel's own header has the same dock menu, and a
-panel is dragged where it goes (`drag.ts`): its dock tab, its header, or an extension's view's row
-in the sidebar picked up, the place it would land shown under the pointer — an edge of the stage for
-that dock, the stage's foot for the bottom one, the rest for the stage itself where the panel has a
-page (the Console stage, an extension's page) — and the same move the menus send reported when it is
-let go; Escape puts it back, and a press that never travels stays a click. So
+tab's right-click offering the other docks. Each panel's own header has the same dock menu; what a
+panel can do there — float, take the stage, close for good — is the docks' to say (`PresentPanel`),
+and the page reads it from `panels.ts`, never from the panel's name. A panel is dragged where it
+goes (`drag.ts`): its dock tab, its header, or an extension's view's row in the sidebar picked up,
+the place it would land shown under the pointer — an edge of the stage for that dock, the stage's
+foot for the bottom one, the rest for the stage itself where the docks say the panel takes it (the
+Console stage, an extension's page) — and the same move the menus send reported when it is let go
+(`DockGesture::Stage` for the stage); Escape puts it back, and a press that never travels stays a
+click. So
 several panels are on screen at once, one per dock — a console on the left, the agents' views on
 the right, an extension's table at the bottom — with only the keys moving between them. The Console
 stage and fullscreen take the console out of its dock without moving it, and leaving them puts it
@@ -181,7 +184,7 @@ the dock it left shows the tab before it, or closes once empty. A `desktop.json`
 docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `drag`, `screen`, `input`, `keymap`, `focus` (which layer has a key),
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `drag`, `panels` (what Rust says each panel that exists is and can do), `screen`, `input`, `keymap`, `focus` (which layer has a key),
 `palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `middle` (a middle click closing the tab or row it lands on), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
@@ -2323,10 +2326,11 @@ feature or all, a stale one marked. A view another of its scope links to (`view_
 under the first that does, folded, so the views saved to be reached from one do not crowd its group;
 views that only reach each other are cut at the first. The window says which (`PageSaved::under`)
 and the page draws the folds. A saved panel's `✕`, its dock tab's `✕` and a middle click on either
-close the panel, not the dock. A saved panel can also float as a dialog over the stage (`Place::Float`),
-moved by its header, resized by its corner and brought in front when pressed, the docks keeping
-where and how big in `desktop.json`; its dock menu docks it again or floats a docked one, and a
-column's dialog button takes that column out into one. A link followed inside a saved view opens
+close the panel, not the dock (the tab's as `DockGesture::Close`). A saved panel can also float as a
+dialog over the stage (`Place::Float`), moved by its header, resized by its corner and brought in
+front when pressed, the docks keeping where and how big in `desktop.json`; its dock menu docks it
+again or floats a docked one, and a column's dialog button takes that column out into one. A link
+followed inside a saved view opens
 its target as a dialog by default, so the view it came from keeps its dock, or brings out the panel
 already showing it; the Settings dialog's Views section (`saved_links`) makes it the next column
 instead; the Feature stage lists those scoped or attached to the open

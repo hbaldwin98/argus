@@ -13,6 +13,7 @@ import { drawFloats } from './floats.js';
 import { savedElement } from './saved_views.js';
 import { contextMenu } from './menu.js';
 import { closesOnMiddle } from './middle.js';
+import { panelOf } from './panels.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 const DOCKS = ['left', 'right', 'bottom'];
@@ -38,7 +39,7 @@ export function dockWords(dock) {
     return `Dock ${WHERE[dock]}`;
 }
 /** A menu's items moving `panel` to each dock, the one it is shown in
- *  marked, and for a saved view, floating it as a dialog. */
+ *  marked, and for a panel that floats, floating it as a dialog. */
 export function moveItems(panel, docked) {
     const own = dockOf(panel);
     const items = DOCKS.map((dock) => ({
@@ -46,7 +47,7 @@ export function moveItems(panel, docked) {
         run: () => call('docks', { gesture: { on: 'move', panel, dock } }),
         disabled: docked && dock === own && 'here',
     }));
-    if (!panel.startsWith('saved:'))
+    if (!panelOf(panel)?.floats)
         return items;
     const floating = state.docks?.floating.some((f) => f.panel === panel) ?? false;
     return [
@@ -61,15 +62,20 @@ export function moveItems(panel, docked) {
 }
 /** The panel's element on screen in a dock, or `null` while it is on the
  *  stage instead: the console as the Console stage or fullscreen, an
- *  extension's view as the page. */
+ *  extension's view as the page. A panel Rust did not say exists has none. */
 function element(panel) {
-    if (panel === 'console')
-        return state.console?.place === 'docked' ? $('console') : null;
-    if (panel === 'views')
-        return $('views');
-    if (panel.startsWith('saved:'))
-        return savedElement(panel);
-    return extensionOnStage(panel) ? null : extensionElement(panel);
+    switch (panelOf(panel)?.kind) {
+        case 'console':
+            return state.console?.place === 'docked' ? $('console') : null;
+        case 'views':
+            return $('views');
+        case 'saved':
+            return savedElement(panel);
+        case 'extension':
+            return extensionOnStage(panel) ? null : extensionElement(panel);
+        case undefined:
+            return null;
+    }
 }
 /** Puts each dock's shown panel in it and parks the rest; the console on
  *  the stage goes to the stage. The keys' text area may be in a panel
@@ -149,14 +155,12 @@ function drawTabs(dock, page, shown) {
         return close ? closesOnMiddle(node, close) : node;
     }));
 }
-/** What closing a panel's tab does, or `null` for one with no close of its
- *  own: a saved view's panel goes, with its columns. The console, the
- *  agents' views and an extension's view are there while what they show
- *  is, and their dock's hide puts them away. */
+/** What closing a panel's tab does, or `null` for a panel Rust says has no
+ *  close of its own: its dock's hide puts it away. */
 function closeOf(panel) {
-    if (!panel.startsWith('saved:'))
+    if (!panelOf(panel)?.closes)
         return null;
-    return () => call('close_saved_column', { panel, column: 0 });
+    return () => call('docks', { gesture: { on: 'close', panel } });
 }
 /** Each dock follows its sash while it is held, and its size is reported
  *  once it is let go, for Rust to keep and send back. */
