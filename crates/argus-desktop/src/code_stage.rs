@@ -9,7 +9,6 @@
 
 use std::collections::HashSet;
 
-use argus_protocol::fuzzy::Fuzzy;
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatches, CodeTree, CodeVersion, PaneId,
     ReviewAnchor, ReviewBase, SearchOptions,
@@ -17,6 +16,7 @@ use argus_protocol::{
 
 use crate::code_tree::{self, folders_of};
 use crate::comment_box::CommentBox;
+use crate::file_jump::{FileJump, Jumped};
 use crate::page::{
     CodeChangeRow, CodeClick, CodeHit, CodeHitFile, CodeJump, CodeMark, CodeOutlineRow, CodePage, CodeRow,
     CodeSearch, CodeTreeRow, ReviewJumpGesture,
@@ -30,11 +30,8 @@ pub struct Back {
     pub label: String,
 }
 
-#[derive(Default)]
-struct Jump {
-    query: String,
-    at: usize,
-}
+/// How many of its matches the go-to-file field lists.
+const CODE_JUMP_SHOWN: usize = 50;
 
 #[derive(Default)]
 struct Search {
@@ -78,7 +75,7 @@ pub struct CodeStage {
     /// The line to put the cursor on once the file asked for arrives.
     land: Option<u32>,
     outline: bool,
-    jump: Option<Jump>,
+    jump: Option<FileJump>,
     search: Option<Search>,
     back: Option<Back>,
     failed: Option<String>,
@@ -437,39 +434,25 @@ impl CodeStage {
     pub fn open_jump(&mut self) {
         self.search = None;
         if self.jump.is_none() {
-            self.jump = Some(Jump::default());
-        }
-    }
-
-    fn jump_matches(&self) -> Vec<usize> {
-        match &self.jump {
-            Some(jump) => Fuzzy::paths().filter(&jump.query, &self.files),
-            None => Vec::new(),
+            self.jump = Some(FileJump::new(CODE_JUMP_SHOWN));
         }
     }
 
     pub fn jump(&mut self, gesture: ReviewJumpGesture, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
-        let last = self.jump_matches().len().saturating_sub(1);
         let Some(jump) = &mut self.jump else {
             return Vec::new();
         };
-        match gesture {
-            ReviewJumpGesture::Query { text } => {
-                jump.query = text;
-                jump.at = 0;
-            }
-            ReviewJumpGesture::Step { by } => jump.at = jump.at.saturating_add_signed(by).min(last),
-            ReviewJumpGesture::Close => self.jump = None,
-            ReviewJumpGesture::Choose => {
-                let at = jump.at;
-                let path = self.jump_matches().get(at).map(|&i| self.files[i].clone());
+        match jump.gesture(gesture, &self.files) {
+            Jumped::Kept => Vec::new(),
+            Jumped::Closed => {
                 self.jump = None;
-                if let Some(path) = path {
-                    return vec![self.read(path, None, id())];
-                }
+                Vec::new()
+            }
+            Jumped::Open(file) => {
+                self.jump = None;
+                vec![self.read(self.files[file].clone(), None, id())]
             }
         }
-        Vec::new()
     }
 
     // ---- search ----------------------------------------------------------
@@ -682,11 +665,11 @@ impl CodeStage {
             note: shown.and_then(|f| f.note.clone()),
             file_loading: self.file_asked.is_some(),
             jump: self.jump.as_ref().map(|j| {
-                let matches = self.jump_matches();
+                let m = j.matches(&self.files);
                 CodeJump {
-                    query: j.query.clone(),
-                    at: (!matches.is_empty()).then_some(j.at),
-                    matches: matches.into_iter().take(50).map(|i| self.files[i].clone()).collect(),
+                    query: j.query().to_owned(),
+                    at: m.lit,
+                    matches: m.found.into_iter().map(|i| self.files[i].clone()).collect(),
                 }
             }),
             search: self.search.as_ref().map(search_page),
@@ -1031,6 +1014,20 @@ mod tests {
         let sent = s.jump(ReviewJumpGesture::Choose, || 7);
         assert!(matches!(sent.as_slice(), [ClientMsg::ReadCode { request_id: 7, path, .. }] if path == "src/b.rs"));
         assert!(s.page(None).jump.is_none());
+    }
+
+    #[test]
+    fn go_to_file_lights_only_a_match_it_shows() {
+        let (mut s, _) = stage(None, None);
+        let mut many = tree(1);
+        many.files = (0..60).map(|i| format!("src/f{i:02}.rs")).collect();
+        s.receive_tree(many);
+        s.open_jump();
+        s.jump(ReviewJumpGesture::Step { by: 55 }, || 0);
+        let jump = s.page(None).jump.unwrap();
+        assert_eq!((jump.matches.len(), jump.at), (50, Some(49)));
+        let sent = s.jump(ReviewJumpGesture::Choose, || 7);
+        assert!(matches!(sent.as_slice(), [ClientMsg::ReadCode { path, .. }] if path == "src/f49.rs"), "the row lit is the one read");
     }
 
     fn found(request_id: u64, query: &str, options: SearchOptions) -> CodeMatches {

@@ -490,7 +490,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
 | `dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
-| `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, its comment box, the file being jumped to — and the page it draws |
+| `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, its comment box, its go-to-file field — and the page it draws |
 | `comment_box` | the comment box the review and the Code stage share: whether it is open, the agent it is lit on, whether a comment the daemon saved was its own, and what the page draws of it |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff or why it could not be read — and what its gestures ask of the daemon |
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, among them what each pane it resumed a session in was resumed from |
@@ -500,6 +500,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
 | `code_stage` | what the Code stage holds — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the comment being written, the go-to-file field, the search, and the review it was opened from — what its gestures ask of the daemon, and the page it draws |
 | `code_tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
+| `file_jump` | the go-to-file field the review and the Code stage share: what is typed, which match is lit, and the file Enter opens |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout, the filter and the fold — and what its messages and gestures change, and where each cursor steps, never onto a row the page does not draw |
 | `features` | what the Feature stage's index shows from a board: which features it lists and in what order — the filter, the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
 | `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through, and the rows each lens's cursor steps over |

@@ -247,14 +247,8 @@ impl Dialogs {
 
     /// A letter, a step, Enter or Escape in the review's jump field.
     pub fn review_jump(&mut self, gesture: ReviewJumpGesture) {
-        let Some(dialog) = &mut self.review else {
-            return;
-        };
-        match gesture {
-            ReviewJumpGesture::Query { text } => dialog.type_jump(text),
-            ReviewJumpGesture::Step { by } => dialog.step_jump(by),
-            ReviewJumpGesture::Choose => dialog.choose_jump(),
-            ReviewJumpGesture::Close => dialog.close_jump(),
+        if let Some(dialog) = &mut self.review {
+            dialog.jump(gesture);
         }
     }
 

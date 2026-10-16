@@ -1,11 +1,10 @@
 //! What the review dialog holds beyond the review itself — the checkout's
-//! name, the side and layout the person chose, its comment box, and the
-//! file being jumped to — and the page it draws. Which sides were asked for
+//! name, the side and layout the person chose, its comment box, and its
+//! go-to-file field — and the page it draws. Which sides were asked for
 //! and which one shows are `review_session`'s, and whether a comment may go
 //! and to whom is `agent_comment`'s, so the dialog behaves as the terminal
 //! client's review does.
 
-use argus_protocol::fuzzy::Fuzzy;
 use argus_protocol::review_session::{Answered, ReviewSession};
 use argus_protocol::review_view::{fold_of, marker, ReviewView, Row, FOLD_STEP};
 use argus_protocol::{
@@ -14,7 +13,8 @@ use argus_protocol::{
 };
 
 use crate::comment_box::CommentBox;
-use crate::page::{DiffRow, DiffSide, ReviewFile, ReviewJump, ReviewPage};
+use crate::file_jump::{FileJump, Jumped};
+use crate::page::{DiffRow, DiffSide, ReviewFile, ReviewJump, ReviewJumpGesture, ReviewPage};
 use crate::settings::ReviewLayout;
 
 pub struct ReviewDialog {
@@ -26,14 +26,7 @@ pub struct ReviewDialog {
     /// on. Not always the side on screen: one that gave way from an empty
     /// side was not chosen.
     chosen: ReviewLayout,
-    jump: Option<Jump>,
-}
-
-/// The Ctrl-P field: what is typed, and which of its matches is lit.
-#[derive(Default)]
-struct Jump {
-    query: String,
-    at: usize,
+    jump: Option<FileJump>,
 }
 
 impl ReviewDialog {
@@ -136,7 +129,7 @@ impl ReviewDialog {
         self.comment_box.close();
         self.chosen.staged = staged;
         if let Some(jump) = &mut self.jump {
-            jump.at = 0;
+            jump.rewind();
         }
         Ok(())
     }
@@ -196,44 +189,26 @@ impl ReviewDialog {
 
     /// Ctrl-P: the field over the file list, which jumps to the file typed.
     pub fn open_jump(&mut self) {
-        self.jump = Some(Jump::default());
+        self.jump = Some(FileJump::new(usize::MAX));
     }
 
-    pub fn type_jump(&mut self, query: String) {
-        if let Some(jump) = &mut self.jump {
-            jump.query = query;
-            jump.at = 0;
+    /// A letter, a step, Enter or Escape in the field: Enter opens the lit
+    /// match, and it and Escape close the field.
+    pub fn jump(&mut self, gesture: ReviewJumpGesture) {
+        let paths = self.paths();
+        let Some(jump) = &mut self.jump else {
+            return;
+        };
+        match jump.gesture(gesture, &paths) {
+            Jumped::Kept => {}
+            Jumped::Closed => self.jump = None,
+            Jumped::Open(file) => self.open_file(file),
         }
     }
 
-    pub fn step_jump(&mut self, by: isize) {
-        let last = self.jump_matches().len().saturating_sub(1);
-        if let Some(jump) = &mut self.jump {
-            jump.at = jump.at.saturating_add_signed(by).min(last);
-        }
-    }
-
-    /// Enter in the field: the lit match opens and the field closes.
-    pub fn choose_jump(&mut self) {
-        let file = self.jump.as_ref().and_then(|j| self.jump_matches().get(j.at).copied());
-        self.jump = None;
-        if let Some(file) = file {
-            self.open_file(file);
-        }
-    }
-
-    pub fn close_jump(&mut self) {
-        self.jump = None;
-    }
-
-    fn jump_matches(&self) -> Vec<usize> {
-        match (&self.jump, self.view()) {
-            (Some(jump), Some(view)) => {
-                let paths: Vec<String> = view.review.files.iter().map(|f| f.path.clone()).collect();
-                Fuzzy::paths().filter(&jump.query, &paths)
-            }
-            _ => Vec::new(),
-        }
+    /// The files of the side on screen, as the jump field matches them.
+    fn paths(&self) -> Vec<String> {
+        self.view().map(|v| v.review.files.iter().map(|f| f.path.clone()).collect()).unwrap_or_default()
     }
 
     /// `E`: where the editor opens — at the picked lines' first, else the
@@ -365,8 +340,8 @@ impl ReviewDialog {
             empty,
             comment,
             jump: self.jump.as_ref().map(|j| {
-                let matches = self.jump_matches();
-                ReviewJump { query: j.query.clone(), at: matches.get(j.at).copied(), matches }
+                let m = j.matches(&self.paths());
+                ReviewJump { query: j.query().to_owned(), at: m.lit.map(|l| m.found[l]), matches: m.found }
             }),
         }
     }
@@ -638,12 +613,12 @@ mod tests {
         d.receive(files(1, &["docs/prereview.md", "src/review.rs", "README.md"]));
         d.open_jump();
         assert_eq!(d.page(None).jump.unwrap().matches, [0, 1, 2], "everything, before a letter");
-        d.type_jump("rev".into());
+        d.jump(ReviewJumpGesture::Query { text: "rev".into() });
         let jump = d.page(None).jump.unwrap();
         assert_eq!((jump.matches, jump.at), (vec![1, 0], Some(1)));
-        d.step_jump(5);
+        d.jump(ReviewJumpGesture::Step { by: 5 });
         assert_eq!(d.page(None).jump.unwrap().at, Some(0), "held at the last match");
-        d.choose_jump();
+        d.jump(ReviewJumpGesture::Choose);
         let page = d.page(None);
         assert!(page.jump.is_none());
         assert_eq!(page.file, Some(0));
@@ -655,9 +630,9 @@ mod tests {
         d.receive(files(1, &["src/app.rs", "README.md"]));
         d.jump_file(true);
         d.open_jump();
-        d.type_jump("zzz".into());
+        d.jump(ReviewJumpGesture::Query { text: "zzz".into() });
         assert_eq!(d.page(None).jump.unwrap().at, None);
-        d.choose_jump();
+        d.jump(ReviewJumpGesture::Choose);
         assert_eq!(d.page(None).file, Some(1), "where it was");
     }
 

@@ -35,6 +35,7 @@ mod feature_edits;
 mod feature_stage;
 mod feature_view;
 mod features;
+mod file_jump;
 mod flows_lens;
 mod fonts;
 #[cfg(test)]
