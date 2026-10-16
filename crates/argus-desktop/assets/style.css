@@ -3051,8 +3051,10 @@ body.console-fullscreen #bar {
   gap: var(--sp-6);
   min-height: 0;
 }
-.code-tree > .seg {
-  align-self: flex-start;
+.code-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
 }
 .code-list {
   flex: 1;
@@ -3299,14 +3301,29 @@ body.console-fullscreen #bar {
   border-left: 1px solid var(--line);
   background: var(--bg-chrome);
 }
+.code-ruler {
+  cursor: default;
+  touch-action: none;
+  user-select: none;
+}
+/* The ruler is the file's scrollbar; the body's own would be a second one
+   beside it saying the same thing at a different scale. */
+.code-body::-webkit-scrollbar:vertical {
+  width: 0;
+}
 .code-ruler .view {
   position: absolute;
   left: 0;
   right: 0;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  min-height: 12px;
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
   border-top: 1px solid var(--line-strong);
   border-bottom: 1px solid var(--line-strong);
   pointer-events: none;
+}
+.code-ruler:hover .view,
+.code-ruler.dragging .view {
+  background: color-mix(in srgb, var(--fg) 20%, transparent);
 }
 .code-ruler .m {
   position: absolute;
@@ -3322,7 +3339,6 @@ body.console-fullscreen #bar {
 }
 .code-ruler .m.removed {
   background: var(--danger);
-  max-height: 2px;
 }
 .code-ruler .m.hit {
   background: var(--attention);

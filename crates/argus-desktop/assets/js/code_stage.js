@@ -166,7 +166,10 @@ function side(c) {
                 onfocus: () => c.jump || codeAction('filter'),
             }),
             !c.jump &&
-                el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Which files' }, segment('All', !c.changedOnly, () => click({ on: 'changedOnly', only: false })), segment(`Changed ${c.changed}`, c.changedOnly, () => click({ on: 'changedOnly', only: true }))),
+                el('div', { class: 'code-tools' }, el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Which files' }, segment('All', !c.changedOnly, () => click({ on: 'changedOnly', only: false })), segment(`Changed ${c.changed}`, c.changedOnly, () => click({ on: 'changedOnly', only: true }))), el('span', { class: 'grow' }), 
+                // Search is a key, Ctrl F, and a key nobody can see is a feature
+                // nobody finds.
+                el('button', { class: 'btn sm', onclick: () => codeAction('search') }, 'Search', kbd('Ctrl F'))),
             c.jump ? jumpList(c.jump) : tree(c),
         ];
     return el('aside', { class: 'code-tree', 'aria-label': 'Files in the checkout' }, body);
@@ -174,6 +177,7 @@ function side(c) {
 function line(r) {
     const row = el('div', {
         class: `cline${r.added ? ' add' : ''}${r.cursor ? ' cursor' : ''}${r.picked ? ' picked' : ''}`,
+        'data-no': r.no,
         onclick: (e) => click({ on: 'line', line: r.no, extend: e.shiftKey }),
     }, el('span', { class: 'dno' }, String(r.no)), el('span', { class: 'dmark' }, r.added ? '+' : ' '), el('span', { class: 'dcode' }, r.parts.map(([text, kind]) => (kind ? el('span', { class: `sx-${kind}` }, text) : text))));
     return r.removedBefore > 0 ? [gone(r.removedBefore), row] : [row];
@@ -181,26 +185,97 @@ function line(r) {
 function gone(n) {
     return el('div', { class: 'cgone' }, `− ${n} ${n === 1 ? 'line' : 'lines'} removed here`);
 }
-/** The change ruler: each change where it is in the whole file, and the
- *  band of it on screen, which `trackView` keeps up as the file scrolls. */
+/** The change ruler, which is the file's scrollbar: each change where it
+ *  is in the whole file, and the band of the file on screen as its thumb.
+ *  Marks and band are measured off the same rendered rows, so a removal
+ *  marker or a comment box between lines moves them together rather than
+ *  sliding one past the other. */
 function ruler(c) {
-    const lines = Math.max(c.lines.length, 1);
-    return el('div', { class: 'code-ruler', 'aria-label': 'Where this file changed' }, el('span', { class: 'view', id: 'code-view' }), c.ruler.map((m) => el('button', {
+    return el('div', {
+        class: 'code-ruler',
+        id: 'code-ruler',
+        role: 'scrollbar',
+        'aria-controls': 'code-body',
+        'aria-orientation': 'vertical',
+        'aria-label': 'Where this file changed',
+        onpointerdown: grab,
+    }, el('span', { class: 'view', id: 'code-view' }), c.ruler.map((m) => el('button', {
         class: `m ${m.kind}`,
-        style: `top: ${((m.line - 1) / lines) * 100}%; height: max(3px, ${(m.span / lines) * 100}%)`,
+        'data-line': m.line,
+        'data-span': m.span,
         title: m.kind === 'hit' ? `A match at line ${m.line}` : `Changed at line ${m.line}`,
         'aria-label': m.kind === 'hit' ? `A match at line ${m.line}` : `A change at line ${m.line}`,
         onclick: () => click({ on: 'go', line: m.line }),
     })));
 }
+/** Puts each mark where its rows are in the scrolled body. */
+function placeMarks() {
+    const body = document.getElementById('code-body');
+    const bar = document.getElementById('code-ruler');
+    if (!body || !bar || body.scrollHeight === 0)
+        return;
+    const scale = bar.clientHeight / body.scrollHeight;
+    const row = (no) => body.querySelector(`.cline[data-no="${no}"]`);
+    for (const mark of bar.querySelectorAll('.m')) {
+        const at = Number(mark.dataset['line']);
+        const first = row(at);
+        if (!first)
+            continue;
+        const last = row(at + Math.max(1, Number(mark.dataset['span'])) - 1) ?? first;
+        mark.style.top = `${first.offsetTop * scale}px`;
+        mark.style.height = `${Math.max(3, (last.offsetTop + last.offsetHeight - first.offsetTop) * scale)}px`;
+    }
+}
 function trackView() {
     const body = document.getElementById('code-body');
+    const bar = document.getElementById('code-ruler');
     const view = document.getElementById('code-view');
-    if (!body || !view || body.scrollHeight === 0)
+    if (!body || !bar || !view || body.scrollHeight === 0)
         return;
-    view.style.top = `${(body.scrollTop / body.scrollHeight) * 100}%`;
-    view.style.height = `${Math.min(1, body.clientHeight / body.scrollHeight) * 100}%`;
+    const scale = bar.clientHeight / body.scrollHeight;
+    view.style.top = `${body.scrollTop * scale}px`;
+    view.style.height = `${Math.min(bar.clientHeight, body.clientHeight * scale)}px`;
 }
+/** A press on the ruler: on the band, it is dragged; anywhere else the band
+ *  centres there and is dragged from it. A mark is a button of its own. */
+function grab(e) {
+    const body = document.getElementById('code-body');
+    const bar = document.getElementById('code-ruler');
+    const view = document.getElementById('code-view');
+    if (!body || !bar || !view || e.button !== 0)
+        return;
+    if (e.target instanceof HTMLElement && e.target.classList.contains('m'))
+        return;
+    e.preventDefault();
+    const top = bar.getBoundingClientRect().top;
+    const scale = body.scrollHeight / bar.clientHeight;
+    const band = view.getBoundingClientRect();
+    const onBand = e.clientY >= band.top && e.clientY <= band.bottom;
+    const hold = onBand ? e.clientY - band.top : band.height / 2;
+    const move = (y) => {
+        body.scrollTop = (y - top - hold) * scale;
+    };
+    if (!onBand)
+        move(e.clientY);
+    bar.setPointerCapture(e.pointerId);
+    bar.classList.add('dragging');
+    const drag = (m) => move(m.clientY);
+    const drop = () => {
+        bar.classList.remove('dragging');
+        bar.removeEventListener('pointermove', drag);
+        bar.removeEventListener('pointerup', drop);
+        bar.removeEventListener('pointercancel', drop);
+    };
+    bar.addEventListener('pointermove', drag);
+    bar.addEventListener('pointerup', drop);
+    bar.addEventListener('pointercancel', drop);
+}
+window.addEventListener('resize', () => {
+    if (state.rail.stage !== 'code')
+        return;
+    placeMarks();
+    trackView();
+});
 function file(c) {
     let body;
     if (c.failed && c.lines.length === 0)
@@ -287,6 +362,19 @@ function outline(c) {
 }
 /** What the last redraw showed, to tell a move from a redraw. */
 let drawn = { list: '', on: '', cursor: '' };
+/** Where each file was scrolled, by path, and each list, by which list it
+ *  is. Kept here rather than read off the page: a stage put away is hidden,
+ *  and a hidden element forgets how far it was scrolled. */
+const scrolledTo = { file: new Map(), list: new Map() };
+function rememberScroll() {
+    const c = state.code;
+    const body = document.getElementById('code-body');
+    const listed = document.getElementById('code-list');
+    if (c?.path && body)
+        scrolledTo.file.set(c.path, body.scrollTop);
+    if (listed)
+        scrolledTo.list.set(drawn.list, listed.scrollTop);
+}
 export function drawCode() {
     if (state.rail.stage !== 'code')
         return;
@@ -299,9 +387,7 @@ export function drawCode() {
     // Each redraw builds the stage anew, so both lists keep where they were
     // scrolled, and are moved only to bring a row the person moved to into
     // view: scrolling on every redraw moved the tree from under a click.
-    const scrolled = document.getElementById('code-body')?.scrollTop ?? 0;
     const list = c.search ? 'search' : c.jump ? 'jump' : 'tree';
-    const listScrolled = list === drawn.list ? (document.getElementById('code-list')?.scrollTop ?? 0) : 0;
     const hit = c.search?.files.flatMap((f) => f.hits).find((h) => h.on);
     const on = `${list}:${c.search ? (hit?.index ?? '') : (c.jump?.at ?? c.path ?? '')}`;
     const cursor = `${c.path ?? ''}:${c.at}`;
@@ -310,16 +396,22 @@ export function drawCode() {
     const typing = document.activeElement?.id;
     stage.replaceChildren(head(c), el('div', { class: 'code-split' }, side(c), file(c), c.outline && outline(c)));
     const body = document.getElementById('code-body');
-    if (body)
-        body.scrollTop = scrolled;
+    if (body) {
+        body.scrollTop = scrolledTo.file.get(c.path ?? '') ?? 0;
+        body.addEventListener('scroll', rememberScroll);
+    }
     const listed = document.getElementById('code-list');
-    if (listed)
-        listed.scrollTop = listScrolled;
+    if (listed) {
+        listed.scrollTop = scrolledTo.list.get(list) ?? 0;
+        listed.addEventListener('scroll', rememberScroll);
+    }
     if (cursor !== drawn.cursor)
         stage.querySelector('.cline.cursor')?.scrollIntoView({ block: 'nearest' });
     if (on !== drawn.on)
         stage.querySelector('.code-list .on')?.scrollIntoView({ block: 'nearest' });
     drawn = { list, on, cursor };
+    rememberScroll();
+    placeMarks();
     trackView();
     // The field with the keys keeps them; one just opened takes them.
     const want = c.composing

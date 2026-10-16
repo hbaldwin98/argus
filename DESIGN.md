@@ -1698,13 +1698,18 @@ on it, in path order, and stops at 500, saying so. A pattern or glob it cannot r
 of its own (`CodeFailed`), said in the search, rather than nothing found.
 
 The stage is the desktop window's; the terminal client has none and asks for none of this. It
-opens on the checkout picked in Checkouts, else the one on screen, and stays on it, its file and
-cursor kept, while another stage is up. Its tree lists every file of the version, folders closed
+opens first on the checkout picked in Checkouts, else the one on screen, and after that comes back
+as it was left — checkout, file, cursor, scroll — whatever pane the Workspace has shown since;
+only a checkout picked in Checkouts moves it to another. The page keeps what it last drew while
+another stage is up rather than being told the stage closed, and remembers each file's scroll and
+each list's, which a hidden element would forget. Its tree lists every file of the version, folders closed
 until opened, or with **Changed** only the changed files, every folder open; a folder with a change
 under it is marked. Reading a file opens the folders above it. A change counts its run of changed
 lines once for `]` and `[`, and a place lines were removed counts as one; the same changes are
 listed under the outline and marked on a ruler beside the file, each at its place in the whole
-file, with the band of it on screen, and the open file's search matches are marked there too.
+file, and the open file's search matches are marked there too. The ruler is the file's scrollbar:
+its band is the part on screen, dragged to scroll, and marks and band are measured off the same
+rendered rows, so a removal marker or a comment box between lines moves them together.
 The outline is put away and brought back with `O`, and a narrow window gives it up before the
 file loses its width. Search runs on Enter rather than on every letter — a search reads the whole
 working tree — while flipping an option on a search made searches again at once. Its matches are

@@ -2009,25 +2009,29 @@ impl Session {
         self.finish()
     }
 
-    /// The Code stage as it was left, or on the checkout the person is on
-    /// when it was left on another or has not been opened.
+    /// The Code stage as it was left. Only a checkout picked in Checkouts
+    /// moves it to another; the pane on screen picks one only the first
+    /// time, since the Workspace showing a pane of another checkout is not
+    /// a request to read it, and reading it would lose the file and the
+    /// place in it.
     fn open_code(&mut self) {
         if !self.status.daemon_can(CODE) {
             self.say(TOO_OLD_FOR_CODE);
             return;
         }
-        let checkout = match self.stage {
+        let picked = match self.stage {
             Stage::Checkouts => self.chosen_repository().cloned().and_then(|repo| self.checkouts.checkout(&repo)),
             _ => None,
-        }
-        .or_else(|| self.shown_checkout());
-        match (checkout, self.code.as_ref().map(CodeStage::checkout)) {
-            (Some(checkout), Some(open)) if open != checkout => {
-                self.open_code_at(checkout, CodeVersion::WorkingTree, None, None, None)
+        };
+        match (picked, self.code.as_ref().map(CodeStage::checkout)) {
+            (Some(picked), Some(open)) if open != picked => {
+                self.open_code_at(picked, CodeVersion::WorkingTree, None, None, None)
             }
             (_, Some(_)) => self.enter_code(),
-            (Some(checkout), None) => self.open_code_at(checkout, CodeVersion::WorkingTree, None, None, None),
-            (None, None) => self.say("show a pane, or pick a checkout in Checkouts, first"),
+            (picked, None) => match picked.or_else(|| self.shown_checkout()) {
+                Some(checkout) => self.open_code_at(checkout, CodeVersion::WorkingTree, None, None, None),
+                None => self.say("show a pane, or pick a checkout in Checkouts, first"),
+            },
         }
     }
 
@@ -2925,13 +2929,14 @@ impl Session {
             let repo = self.chosen_repository().cloned();
             events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
         }
-        let code = self
-            .code
-            .as_ref()
-            .filter(|_| self.stage == Stage::Code)
-            .map(|code| code.page(self.tree.checkout(code.checkout())));
-        if let Some(page) = self.code_sent.take(code) {
-            events.push(Event::Code(Box::new(page)));
+        // Sent only while the stage is up, and never taken back when it goes:
+        // the page keeps what it last drew, scrolled where it was, for the
+        // person coming back to it.
+        if let Some(code) = self.code.as_ref().filter(|_| self.stage == Stage::Code) {
+            let page = code.page(self.tree.checkout(code.checkout()));
+            if let Some(page) = self.code_sent.take(Some(page)) {
+                events.push(Event::Code(Box::new(page)));
+            }
         }
         let extensions = self.extensions_page();
         if let Some(page) = self.extensions_sent.take((extensions != page::ExtensionsPage::default()).then_some(extensions)) {
@@ -3317,6 +3322,27 @@ mod tests {
         assert!(sent.is_empty(), "the review comes back as it was, not read again");
         assert!(s.dialogs.review().is_some());
         assert!(s.stage == Stage::Checkouts, "over the stage it was opened over");
+    }
+
+    #[test]
+    fn the_code_stage_comes_back_as_it_was_left_whatever_pane_is_on_screen() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        s.show_code(true);
+        s.show_features(false);
+        s.call(Call::Select { pane: 3 });
+        assert!(code_asks(s.show_code(true)).is_empty(), "not read again for another checkout's pane");
+        assert_eq!(s.code.as_ref().unwrap().checkout(), CheckoutId(100));
+    }
+
+    #[test]
+    fn leaving_the_code_stage_leaves_the_page_what_it_drew() {
+        let mut s = session(Hello::this_build());
+        s.show_checkouts(true);
+        s.show_code(true);
+        s.events(0);
+        s.show_features(false);
+        assert!(s.events(0).iter().all(|e| !matches!(e, Event::Code(_))), "no closed page sent");
     }
 
     #[test]

@@ -792,7 +792,7 @@ header. It is read-only; `e` opens the file in your editor.
 | Home / End | First or last line |
 | `]` / `[` | The next or previous change |
 | Ctrl P | Go to a file |
-| Ctrl F | Search the checkout; Enter searches, then reads the match picked. Alt C makes case always matter, Alt W matches whole words only, Alt R reads the query as a regular expression, and a second field takes globs of the files to include (`src/**/*.rs`, `!*.lock`) |
+| Ctrl F, or **Search** above the tree | Search the checkout; Enter searches, then reads the match picked. Alt C makes case always matter, Alt W matches whole words only, Alt R reads the query as a regular expression, and a second field takes globs of the files to include (`src/**/*.rs`, `!*.lock`) |
 | `o` / `O` | Show or hide the outline |
 | `v` / `V` | Start or clear a line-range selection |
 | `c` | Comment on the picked lines to an agent in the checkout, as a review comment |
