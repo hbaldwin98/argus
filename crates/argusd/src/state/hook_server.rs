@@ -386,56 +386,26 @@ fn read_views(body: &[u8]) -> Result<Vec<argus_protocol::ExtView>, HookResponse>
 /// Holds an extension's event stream open, as a pane's inbox is held: the
 /// newest connection takes over, and it closes the moment the extension's
 /// end of the socket does.
-async fn serve_extension_events<R, W>(mut rd: R, mut wr: W, daemon: Arc<Daemon>, name: &str) -> anyhow::Result<()>
+async fn serve_extension_events<R, W>(rd: R, mut wr: W, daemon: Arc<Daemon>, name: &str) -> anyhow::Result<()>
 where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
 {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncWriteExt;
 
-    let Some((generation, mut events)) = daemon.open_extension_events(name) else {
+    let Some((generation, events)) = daemon.open_extension_events(name) else {
         wr.write_all(&HookResponse::empty(409, "Conflict").bytes()).await?;
         return Ok(());
     };
-    let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n\r\n";
-    let mut result = async {
-        wr.write_all(head.as_bytes()).await?;
-        wr.flush().await
-    }
-    .await;
-    let mut scratch = [0u8; 64];
-    while result.is_ok() {
-        let event = tokio::select! {
-            event = events.recv() => match event {
-                Some(event) => format!("data: {}\n\n", serde_json::to_string(&event)?),
-                None => break,
-            },
-            _ = rd.read(&mut scratch) => break,
-            _ = tokio::time::sleep(INBOX_HEARTBEAT) => ": still here\n\n".to_string(),
-        };
-        result = async {
-            wr.write_all(event.as_bytes()).await?;
-            wr.flush().await
-        }
-        .await;
-    }
+    let ended = serve_events(rd, wr, events).await;
     daemon.close_extension_events(name, generation);
-    Ok(())
+    ended
 }
-
-/// How often a quiet inbox says it is still there, so a plugin notices a
-/// daemon that went away and a daemon notices a plugin that did.
-const INBOX_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Holds a pane's inbox open, one server-sent event per item, until the
 /// plugin hangs up or a newer connection takes the pane.
-///
-/// The plugin never writes after its request, so anything read — its end of
-/// the socket closing — means it has gone, and the inbox closes at once
-/// rather than at the next item, which would otherwise be sent into a
-/// connection nobody holds and lost.
 async fn serve_inbox<R, W>(
-    mut rd: R,
+    rd: R,
     mut wr: W,
     daemon: Arc<Daemon>,
     pane: PaneId,
@@ -445,32 +415,59 @@ where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
 {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncWriteExt;
 
-    let Some((generation, mut items)) = daemon.open_inbox(pane, reporter.as_deref()) else {
+    let Some((generation, items)) = daemon.open_inbox(pane, reporter.as_deref()) else {
         wr.write_all(&HookResponse::empty(409, "Conflict").bytes()).await?;
         return Ok(());
     };
-    let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n\r\n";
-    let mut result = wr.write_all(head.as_bytes()).await;
-    let mut scratch = [0u8; 64];
-    while result.is_ok() {
-        let event = tokio::select! {
-            item = items.recv() => match item {
-                Some(item) => format!("data: {}\n\n", serde_json::to_string(&item)?),
-                None => break,
-            },
-            _ = rd.read(&mut scratch) => break,
-            _ = tokio::time::sleep(INBOX_HEARTBEAT) => ": still here\n\n".to_string(),
-        };
-        result = async {
-            wr.write_all(event.as_bytes()).await?;
-            wr.flush().await
-        }
-        .await;
-    }
+    let ended = serve_events(rd, wr, items).await;
     daemon.close_inbox(pane, generation);
-    Ok(())
+    ended
+}
+
+/// How often a quiet event stream says it is still there, so the other end
+/// notices a daemon that went away and the daemon notices one that did.
+const HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// An event stream's head, then one server-sent event per item and a
+/// heartbeat while it is quiet, until the channel closes or the other end
+/// goes. Whatever ends it, the caller closes its end of the bookkeeping.
+///
+/// The other end never writes after its request, so anything read — its
+/// end of the socket closing — means it has gone, and the stream ends at
+/// once rather than at the next item, which would otherwise be sent into a
+/// connection nobody holds and lost. An item that cannot be written as JSON
+/// ends the stream the same way.
+async fn serve_events<T, R, W>(
+    mut rd: R,
+    mut wr: W,
+    mut events: tokio::sync::mpsc::UnboundedReceiver<T>,
+) -> anyhow::Result<()>
+where
+    T: serde::Serialize,
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n\r\n";
+    wr.write_all(head.as_bytes()).await?;
+    wr.flush().await?;
+    let mut scratch = [0u8; 64];
+    loop {
+        let event = tokio::select! {
+            event = events.recv() => match event.map(|event| serde_json::to_string(&event)) {
+                Some(Ok(event)) => format!("data: {event}\n\n"),
+                Some(Err(error)) => return Err(error.into()),
+                None => return Ok(()),
+            },
+            _ = rd.read(&mut scratch) => return Ok(()),
+            _ = tokio::time::sleep(HEARTBEAT) => ": still here\n\n".to_string(),
+        };
+        wr.write_all(event.as_bytes()).await?;
+        wr.flush().await?;
+    }
 }
 
 /// What a hook request's headers say about it.
@@ -557,4 +554,56 @@ pub(super) fn gen_token() -> String {
 fn strip_header<'a>(line: &'a str, name: &str) -> Option<&'a str> {
     let (head, value) = line.split_once(':')?;
     head.eq_ignore_ascii_case(name).then(|| value.trim())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncReadExt;
+
+    /// An item no JSON can say.
+    struct Unsayable;
+
+    impl serde::Serialize for Unsayable {
+        fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("unsayable"))
+        }
+    }
+
+    #[tokio::test]
+    async fn an_event_stream_ends_on_an_item_it_cannot_write() {
+        // It used to return past the caller's close, leaving the stream's
+        // generation open until a newer connection replaced it.
+        let (client, server) = tokio::io::duplex(4096);
+        let (rd, wr) = tokio::io::split(server);
+        let (tx, events) = tokio::sync::mpsc::unbounded_channel();
+        tx.send(Unsayable).unwrap();
+
+        let ended = tokio::time::timeout(std::time::Duration::from_secs(1), serve_events(rd, wr, events)).await;
+        assert!(ended.expect("the stream ended").is_err());
+        drop(tx);
+
+        let mut seen = String::new();
+        let (mut client, _) = tokio::io::split(client);
+        let _ = client.read_to_string(&mut seen).await;
+        assert!(seen.starts_with("HTTP/1.1 200 OK"), "{seen}");
+        assert!(!seen.contains("data:"), "{seen}");
+    }
+
+    #[tokio::test]
+    async fn an_event_stream_ends_when_its_channel_closes() {
+        let (client, server) = tokio::io::duplex(4096);
+        let (rd, wr) = tokio::io::split(server);
+        let (tx, events) = tokio::sync::mpsc::unbounded_channel();
+        tx.send("one").unwrap();
+        drop(tx);
+
+        let ended = tokio::time::timeout(std::time::Duration::from_secs(1), serve_events(rd, wr, events)).await;
+        assert!(ended.expect("the stream ended").is_ok());
+
+        let mut seen = String::new();
+        let (mut client, _) = tokio::io::split(client);
+        let _ = client.read_to_string(&mut seen).await;
+        assert!(seen.ends_with("data: \"one\"\n\n"), "{seen}");
+    }
 }
