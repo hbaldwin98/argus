@@ -778,12 +778,13 @@ newest 100 comments in order. If terminal delivery fails after the save, the com
 
 ### Code
 
-The desktop window's Code stage (`5`, or **Code** in the sidebar) reads a checkout's files rather
-than its diff: a tree of them with each changed file marked and counted, one file whole with the
-lines it changed washed as a review washes them and a mark where lines were removed, and that
-file's outline. Above the tree it switches between the working tree, the index and `HEAD`; the
-working tree and the index are marked against `HEAD`. It is read-only; `e` opens the file in your
-editor.
+The desktop window's Code stage (`5`, or **Code** in the sidebar) reads a checkout's working tree
+rather than its diff: a tree of its files with each changed file marked and counted, one file whole
+with the lines it changed washed as a review washes them and a mark where lines were removed, a
+ruler beside it marking where in the whole file it changed, and that file's outline with the
+changes in it listed. A file whose only change is its line endings is not counted as changed.
+Opened from a staged review it reads the index, and from the history a commit, and says so in its
+header. It is read-only; `e` opens the file in your editor.
 
 | Key | Action |
 | --- | --- |
@@ -791,12 +792,14 @@ editor.
 | Home / End | First or last line |
 | `]` / `[` | The next or previous change |
 | Ctrl P | Go to a file |
-| Ctrl F | Search the checkout; Enter searches, then reads the match picked |
+| Ctrl F | Search the checkout; Enter searches, then reads the match picked. Alt C makes case always matter, Alt W matches whole words only, Alt R reads the query as a regular expression, and a second field takes globs of the files to include (`src/**/*.rs`, `!*.lock`) |
+| `o` / `O` | Show or hide the outline |
 | `v` / `V` | Start or clear a line-range selection |
 | `c` | Comment on the picked lines to an agent in the checkout, as a review comment |
 | `e` | Open the file in your editor at the cursor's line |
 | `r` / `R` | Read the files again |
-| Escape | Back to the review or history it was opened from, as it was, or to the stage before |
+| Escape | Close what is over the file — a comment, the search, go to file, a picked range — and stay on the file |
+| `b` / `B` | Back to the review or history it was opened from, as it was |
 
 The outline lists what the file defines for Rust, TypeScript and JavaScript, Python and C#. In the
 history, `c` reads the commit under the cursor in Code, at the file the cursor is on.

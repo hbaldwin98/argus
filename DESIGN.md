@@ -1669,15 +1669,18 @@ The Code stage reads a checkout's code rather than its diff, and the daemon answ
 for it, each only to a client that listed `CODE`. `ListCode` names every file of one version and
 how many lines each changed; `ReadCode` sends one file of it, highlighted as a review is, with the
 lines that version added or changed marked, where it removed lines (a count before a line, since a
-removed line has no line of its own to be drawn on), and the file's outline; `SearchCode` finds a
-string across the working tree.
+removed line has no line of its own to be drawn on), and the file's outline; `SearchCode` finds
+text across the working tree.
 
 A version is the working tree, the index, `HEAD`, or one commit, and each is read against a base:
 the working tree and the index against `HEAD`, a commit against its first parent, and `HEAD`
 against nothing, so nothing in it is marked. The working tree is read off disk, untracked files
 included, and the rest out of trees Git already holds; nothing is written to the object database.
 A path is checked to stay inside the checkout before anything is read. Files over 1 MiB, and
-binary ones by Git's NUL heuristic, are named but not drawn.
+binary ones by Git's NUL heuristic, are named but not drawn. A file Git calls modified whose patch
+changes no line — its line endings moved, as on a checkout with autocrlf — is not listed as
+changed, and a file read is compared with its base with CRLF folded to LF, so neither marks every
+line of an untouched file.
 
 The outline is what the grammar's own tag queries call a definition — functions, types, methods,
 modules — in file order, with the grammar's word for each kind shown as it is. It covers the
@@ -1685,22 +1688,36 @@ grammars that ship such a query (Rust, TypeScript and JavaScript, Python, C#); T
 is only its additions, so it runs with JavaScript's underneath, as its highlighting does. Which
 grammar reads a file is decided once, by extension, for highlighting and outlines alike.
 
-Search is literal and smart-cased — case matters only when the query has a capital — over the
-files `.gitignore` leaves, skipping binary files and ones over 1 MiB. It returns the first match on
-each line, in path order, and stops at 500, saying so.
+Search keeps ripgrep's rules, with ripgrep's own crates (`regex`, `ignore`) in the daemon rather
+than an `rg` that may not be installed: literal text unless the query is asked for as a regular
+expression, smart case — case matters only when the query has a capital — unless it is asked to
+always matter, anywhere in a line unless only whole words are asked for, over the files
+`.gitignore` leaves, narrowed by include globs read as ripgrep's `-g` reads them (`!` excludes).
+Binary files and ones over 1 MiB are skipped. It returns every line with a match and every match
+on it, in path order, and stops at 500, saying so. A pattern or glob it cannot read is an answer
+of its own (`CodeFailed`), said in the search, rather than nothing found.
 
 The stage is the desktop window's; the terminal client has none and asks for none of this. It
 opens on the checkout picked in Checkouts, else the one on screen, and stays on it, its file and
 cursor kept, while another stage is up. Its tree lists every file of the version, folders closed
 until opened, or with **Changed** only the changed files, every folder open; a folder with a change
 under it is marked. Reading a file opens the folders above it. A change counts its run of changed
-lines once for `]` and `[`, and a place lines were removed counts as one. Search runs on Enter
-rather than on every letter — a search reads the whole working tree — and reading a match switches
-the stage to the working tree, where it was found.
+lines once for `]` and `[`, and a place lines were removed counts as one; the same changes are
+listed under the outline and marked on a ruler beside the file, each at its place in the whole
+file, with the band of it on screen, and the open file's search matches are marked there too.
+The outline is put away and brought back with `O`, and a narrow window gives it up before the
+file loses its width. Search runs on Enter rather than on every letter — a search reads the whole
+working tree — while flipping an option on a search made searches again at once. Its matches are
+grouped by file, each file foldable, and reading a match switches the stage to the working tree,
+where it was found.
+
+Escape never leaves the stage. It closes what is over the file, one thing at a time — the comment,
+the search, the go-to-file list, a picked range — and stops at the file; the stage keys leave, and
+`B` goes back to the dialog Code was opened from.
 
 `o` in a review puts the review away and reads the cursor's file in Code at its line, in the
 version that line is in: the working tree for unstaged work, the index for staged, the commit for
-one commit. A removed line has no number there, so the cursor goes to the line after it. Escape
+one commit. A removed line has no number there, so the cursor goes to the line after it. `B`
 brings the review back exactly as it was, cursor and folds included, over the stage it was opened
 over; it is not read again. `c` in the history does the same with the commit under its cursor,
 reading it at that commit, on the file the cursor is on when it is on one.

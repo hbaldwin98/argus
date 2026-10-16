@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_view::ShownView;
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
-use crate::code::{CodeFile, CodeMatches, CodeTree, CodeVersion};
+use crate::code::{CodeFile, CodeMatches, CodeTree, CodeVersion, SearchOptions};
 use crate::damage::{CellRun, Scroll};
 use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
 use crate::extensions::{ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtView};
@@ -187,13 +187,14 @@ pub enum ClientMsg {
         path: String,
         version: CodeVersion,
     },
-    /// Where `query` occurs in the checkout's working tree: literal, and
-    /// matching case only when it has a capital. Only to a daemon that
-    /// listed `CODE`.
+    /// Where `query` occurs in the checkout's working tree, read as
+    /// `options` say. Only to a daemon that listed `CODE`.
     SearchCode {
         request_id: u64,
         checkout: CheckoutId,
         query: String,
+        #[serde(default)]
+        options: SearchOptions,
     },
     /// Newest commits on this checkout's HEAD, identities only. What each
     /// one changed is [`ClientMsg::ListCommitFiles`], asked for one commit

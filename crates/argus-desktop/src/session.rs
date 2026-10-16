@@ -590,6 +590,12 @@ impl Session {
             Call::CodeJump { gesture } => self.code_field(gesture, false),
             Call::CodeSearch { gesture } => self.code_field(gesture, true),
             Call::CodeComment { body } => self.code_comment(body),
+            Call::CodeSearchGlob { glob } => {
+                if let Some(code) = &mut self.code {
+                    code.set_glob(glob);
+                }
+                self.finish()
+            }
             Call::ShowComposer { open } => self.show_composer(open),
             Call::Compose { checkout, template, prompt } => self.compose(CheckoutId(checkout), template, prompt),
             Call::SelectCheckoutRow { key } => self.select_checkout_row(key),
@@ -2094,14 +2100,22 @@ impl Session {
     /// A key of the Code stage. E opens the file at the cursor in the
     /// person's editor, as the review's does.
     fn code_action(&mut self, action: Action) -> Vec<ClientMsg> {
-        if action == Action::CloseLayer {
-            self.leave_code();
+        if action == Action::GoBack {
+            if self.code.as_ref().is_some_and(|c| c.back().is_some()) {
+                self.leave_code();
+            }
             return self.finish();
         }
         let Some(code) = &mut self.code else {
             return self.finish();
         };
         match action {
+            // Escape closes what is over the file and leaves the stage up:
+            // the stage keys and B are the ways out.
+            Action::CloseLayer => {
+                code.escape();
+            }
+            Action::ToggleOutline => code.toggle_outline(),
             Action::Next => code.move_by(1),
             Action::Previous => code.move_by(-1),
             Action::First => code.ends(false),
@@ -3297,7 +3311,9 @@ mod tests {
         assert!(s.dialogs.review().is_none(), "put away, not closed");
         assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("review · brief.rs:4"));
 
-        let sent = code_asks(s.code_action(Action::CloseLayer));
+        assert!(code_asks(s.code_action(Action::CloseLayer)).is_empty());
+        assert!(s.stage == Stage::Code, "Escape stays in Code");
+        let sent = code_asks(s.code_action(Action::GoBack));
         assert!(sent.is_empty(), "the review comes back as it was, not read again");
         assert!(s.dialogs.review().is_some());
         assert!(s.stage == Stage::Checkouts, "over the stage it was opened over");
@@ -3336,7 +3352,7 @@ mod tests {
         ));
         assert!(s.stage == Stage::Code);
         assert_eq!(s.code.as_ref().unwrap().page(None).back.as_deref(), Some("history"));
-        s.code_action(Action::CloseLayer);
+        s.code_action(Action::GoBack);
         assert!(s.stage == Stage::Checkouts);
         assert!(s.dialogs.history_open(), "the history is back as it was");
     }
@@ -4362,7 +4378,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 128] = [
+    const CALLS: [&str; 129] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
@@ -4395,6 +4411,7 @@ mod tests {
         r#"{"call":"code_jump","gesture":{"on":"query","text":"br"}}"#,
         r#"{"call":"code_search","gesture":{"on":"choose"}}"#,
         r#"{"call":"code_comment","body":null}"#,
+        r#"{"call":"code_search_glob","glob":"src/**"}"#,
         r#"{"call":"show_composer","open":true}"#,
         r#"{"call":"compose","checkout":100,"template":null,"prompt":null}"#,
         r#"{"call":"select_checkout_row","key":"c100"}"#,

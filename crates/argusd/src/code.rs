@@ -109,6 +109,13 @@ fn changes(repo: &git2::Repository, version: &CodeVersion) -> anyhow::Result<Vec
             Ok(Some(patch)) => patch.line_stats().map(|(_, a, r)| (a as u32, r as u32)).unwrap_or((0, 0)),
             _ => (0, 0),
         };
+        // Git calls a file modified when only its line endings moved — a
+        // checkout with autocrlf, a tool that rewrote it — and the patch it
+        // makes of it, read through the same filters, changes no line. That
+        // is not a change anyone reading the code would call one.
+        if delta.status() == git2::Delta::Modified && added == 0 && removed == 0 {
+            continue;
+        }
         out.push(CodeChange { path: path.to_string_lossy().replace('\\', "/"), added, removed });
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
@@ -305,6 +312,19 @@ mod tests {
         assert_eq!(texts(&file), ["one", "TWO"]);
         assert_eq!(added(&file), [2], "only the line that was edited");
         assert_eq!(file.removed, [Removed { before: 2, count: 1 }]);
+    }
+
+    #[test]
+    fn a_file_whose_only_change_is_its_line_endings_is_not_listed_as_changed() {
+        let (_dir, root) = repo_with(&[("a.rs", "one\ntwo\n"), ("b.rs", "x\n")]);
+        let repo = git2::Repository::open(&root).unwrap();
+        repo.config().unwrap().set_bool("core.autocrlf", true).unwrap();
+        write(&root, "a.rs", "one\r\ntwo\r\n");
+        write(&root, "b.rs", "y\r\n");
+
+        let (_, changes) = list(&root, &CodeVersion::WorkingTree).unwrap();
+        let paths: Vec<&str> = changes.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(paths, ["b.rs"], "{changes:?}");
     }
 
     #[test]

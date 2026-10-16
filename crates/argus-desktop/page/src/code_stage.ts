@@ -1,11 +1,12 @@
-// The Code stage: a checkout's files at one version, in a tree that marks
-// what changed, one file read whole with its changed lines washed as a
-// review washes them, and its outline. Rust holds the files, the cursor
-// and both fields (`src/code_stage.rs`); the page draws them and says what
-// was clicked or typed.
+// The Code stage: a checkout's files in a tree that marks what changed, one
+// file read whole with its changes washed and ruled beside it, and what the
+// file defines. Rust holds the files, the cursor, the fields and the search
+// (`src/code_stage.rs`); the page draws them and says what was clicked or
+// typed.
 
 import type { Action } from './bindings/Action';
 import type { CodeClick } from './bindings/CodeClick';
+import type { CodeHitFile } from './bindings/CodeHitFile';
 import type { CodeJump } from './bindings/CodeJump';
 import type { CodePage } from './bindings/CodePage';
 import type { CodeRow } from './bindings/CodeRow';
@@ -20,6 +21,10 @@ function click(target: CodeClick): void {
   call('code_click', { target });
 }
 
+function kbd(key: string): HTMLElement {
+  return el('span', { class: 'kbd' }, key);
+}
+
 function segment(label: string, on: boolean, pick: () => void): HTMLElement {
   return el(
     'button',
@@ -29,8 +34,6 @@ function segment(label: string, on: boolean, pick: () => void): HTMLElement {
 }
 
 function head(c: CodePage): HTMLElement {
-  const version = (name: 'working' | 'index' | 'head', label: string) =>
-    segment(label, c.version === name, () => click({ on: 'version', version: name }));
   return el(
     'div',
     { class: 'code-head' },
@@ -38,35 +41,45 @@ function head(c: CodePage): HTMLElement {
     // only where it is named otherwise, is what this adds.
     el('span', { class: 'mono fg-ref' }, c.name),
     c.branch && c.branch !== c.name && el('span', { class: 'meta mono' }, c.branch),
-    c.version === 'commit'
-      ? el('span', { class: 'pill mono' }, c.commit ?? 'commit')
-      : el(
-          'div',
-          { class: 'seg', role: 'radiogroup', 'aria-label': 'Which version of the files' },
-          version('working', 'Working tree'),
-          version('index', 'Index'),
-          version('head', 'HEAD'),
-        ),
+    c.version && el('span', { class: 'pill mono' }, c.version),
     el('span', { class: 'grow' }),
     c.back &&
       el(
         'button',
         { class: 'btn sm', onclick: () => click({ on: 'back' }) },
         `Back to ${c.back}`,
-        el('span', { class: 'kbd' }, 'Esc'),
+        kbd('B'),
       ),
+    c.path &&
+      el(
+        'button',
+        { class: 'btn sm', onclick: () => codeAction('openEditor') },
+        'Open in editor',
+        kbd('E'),
+      ),
+    el(
+      'button',
+      {
+        class: 'icon',
+        title: 'Keys for this view  ?',
+        'aria-label': 'Keys for this view',
+        onclick: () => call('command', { action: 'shortcuts' }),
+      },
+      kbd('?'),
+    ),
   );
 }
 
-/** A field whose letters and keys go to Rust as gestures: go to a file, or
- *  search. It keeps the caret across redraws, as the review's jump does. */
+/** A field whose letters and keys go to Rust as gestures. It keeps the
+ *  caret across redraws, as the review's jump does. */
 function field(
   id: string,
-  call_: 'code_jump' | 'code_search',
+  gestures: 'code_jump' | 'code_search',
   placeholder: string,
   query: string,
-): HTMLElement {
-  const send = (gesture: ReviewJumpGesture) => call(call_, { gesture });
+  extra: Record<string, unknown> = {},
+): HTMLInputElement {
+  const send = (gesture: ReviewJumpGesture) => call(gestures, { gesture });
   const live = document.getElementById(id);
   const input = el('input', {
     class: 'field',
@@ -77,6 +90,13 @@ function field(
       if (e.target instanceof HTMLInputElement) send({ on: 'query', text: e.target.value });
     },
     onkeydown: (e: KeyboardEvent) => {
+      const flip = gestures === 'code_search' ? actionFor(['filter'], e) : null;
+      if (flip === 'matchCase' || flip === 'wholeWord' || flip === 'useRegex') {
+        e.preventDefault();
+        const which = flip === 'matchCase' ? 'case' : flip === 'wholeWord' ? 'word' : 'regex';
+        click({ on: 'searchOption', option: which });
+        return;
+      }
       const action = actionFor(['jump'], e);
       if (action === 'next' || action === 'previous')
         send({ on: 'step', by: action === 'next' ? 1 : -1 });
@@ -87,9 +107,56 @@ function field(
       } else return;
       e.preventDefault();
     },
+    ...extra,
   });
   input.value = live instanceof HTMLInputElement ? live.value : query;
   return input;
+}
+
+function chevron(open: boolean): HTMLElement {
+  return el('span', { class: 'chev' }, icon(open ? 'down' : 'right'));
+}
+
+function counts(added: number, removed: number): HTMLElement {
+  return el(
+    'span',
+    { class: 'tright cnum' },
+    added > 0 && el('span', { class: 'fg-ok' }, `+${added}`),
+    removed > 0 && el('span', { class: 'fg-danger' }, `−${removed}`),
+  );
+}
+
+function tree(c: CodePage): HTMLElement {
+  return el(
+    'div',
+    { class: 'code-list', id: 'code-list' },
+    c.treeLoading
+      ? ghosts([[0.6], [0.8], [0.5], [0.7]])
+      : c.tree.map((r) =>
+          el(
+            'button',
+            {
+              class: `trow${r.folder ? ' dir' : ''}${r.on ? ' on' : ''}`,
+              style: `--d: ${r.depth}`,
+              title: r.path,
+              onclick: () => click({ on: 'tree', path: r.path }),
+            },
+            r.folder ? chevron(r.open) : el('span', null),
+            el('span', { class: 'ttl' }, r.name),
+            r.folder
+              ? r.changed
+                ? el(
+                    'span',
+                    { class: 'tright' },
+                    el('span', { class: 'tchg', 'aria-label': 'changes under it' }),
+                  )
+                : el('span', null)
+              : r.changed
+                ? counts(r.added, r.removed)
+                : el('span', null),
+          ),
+        ),
+  );
 }
 
 function jumpList(j: CodeJump): HTMLElement {
@@ -100,92 +167,134 @@ function jumpList(j: CodeJump): HTMLElement {
       el(
         'button',
         { class: `trow${i === j.at ? ' on' : ''}`, onclick: () => click({ on: 'tree', path }) },
+        el('span', null),
         el('span', { class: 'ttl mono' }, path),
+        el('span', null),
       ),
     ),
     j.matches.length === 0 && el('div', { class: 'meta' }, `No file matches “${j.query}”.`),
   );
 }
 
-function searchList(s: CodeSearch): HTMLElement {
-  let said: string | null = null;
-  if (s.loading) said = 'Searching…';
-  else if (s.searched === null || s.searched !== s.query) said = 'Enter searches the working tree.';
-  else if (s.matches.length === 0) said = `Nothing matches “${s.searched}”.`;
+function option(
+  label: string,
+  on: boolean,
+  which: 'regex' | 'case' | 'word',
+  title: string,
+): HTMLElement {
   return el(
-    'div',
-    { class: 'code-list', id: 'code-list' },
-    said && el('div', { class: 'meta' }, said),
-    s.searched === s.query &&
-      s.matches.map((m, index) =>
-        el(
-          'button',
-          {
-            class: `mrow${index === s.at ? ' on' : ''}`,
-            onclick: () => click({ on: 'match', index }),
-          },
-          el('span', { class: 'mono fg-faint' }, `${m.path}:${m.line}`),
-          el('span', { class: 'mono mtext' }, m.before, el('mark', {}, m.hit), m.after),
-        ),
-      ),
-    s.truncated && el('div', { class: 'meta' }, 'Only the first 500 are listed.'),
+    'button',
+    {
+      class: `sopt${on ? ' on' : ''}`,
+      'aria-pressed': String(on),
+      title,
+      onclick: () => click({ on: 'searchOption', option: which }),
+    },
+    label,
   );
 }
 
-function tree(c: CodePage): HTMLElement {
-  const top = c.search
-    ? field('code-search', 'code_search', 'Search the checkout  Ctrl F', c.search.query)
-    : c.jump
-      ? field('code-jump', 'code_jump', 'Go to a file', c.jump.query)
-      : null;
-  let body: HTMLElement;
-  if (c.search) body = searchList(c.search);
-  else if (c.jump) body = jumpList(c.jump);
-  else if (c.treeLoading) body = ghosts([[0.6], [0.8], [0.5], [0.7]]);
-  else
-    body = el(
-      'div',
-      { class: 'code-list', id: 'code-list' },
-      c.tree.map((r) =>
+function hitFile(f: CodeHitFile): HTMLElement[] {
+  const top = el(
+    'button',
+    { class: 'hfile', title: f.path, onclick: () => click({ on: 'hitFile', path: f.path }) },
+    chevron(f.open),
+    el('span', { class: 'ttl' }, el('span', { class: 'fg-faint' }, f.dir), f.name),
+    el('span', { class: 'hcount' }, String(f.count)),
+  );
+  if (!f.open) return [top];
+  return [
+    top,
+    ...f.hits.map((h) =>
+      el(
+        'button',
+        {
+          class: `hline${h.on ? ' on' : ''}`,
+          onclick: () => click({ on: 'match', index: h.index }),
+        },
+        el('span', { class: 'no' }, String(h.line)),
         el(
-          'button',
-          {
-            class: `trow${r.folder ? ' dir' : ''}${r.on ? ' on' : ''}`,
-            style: `padding-left: ${8 + r.depth * 14}px`,
-            title: r.path,
-            onclick: () => click({ on: 'tree', path: r.path }),
-          },
-          r.folder ? icon(r.open ? 'down' : 'right') : el('span', { class: 'tsp' }),
-          r.changed
-            ? el('span', { class: 'tchg', 'aria-label': 'changed' })
-            : el('span', { class: 'tsp' }),
-          el('span', { class: 'ttl' }, r.name),
-          !r.folder &&
-            r.changed &&
-            el(
-              'span',
-              { class: 'cnum' },
-              el('span', { class: 'fg-ok' }, `+${r.added}`),
-              ' ',
-              el('span', { class: 'fg-danger' }, `−${r.removed}`),
-            ),
+          'span',
+          { class: 'tx' },
+          h.parts.map(([text, hit]) => (hit ? el('mark', {}, text) : text)),
         ),
       ),
+    ),
+  ];
+}
+
+function searchPanel(s: CodeSearch): HTMLElement[] {
+  let said: HTMLElement;
+  if (s.error) said = el('div', { class: 'sum fg-danger' }, s.error);
+  else if (s.loading) said = el('div', { class: 'sum' }, 'Searching…');
+  else if (!s.current) said = el('div', { class: 'sum' }, 'Enter searches the working tree.');
+  else if (s.total === 0) said = el('div', { class: 'sum' }, `Nothing matches “${s.query}”.`);
+  else {
+    const files = s.files.length;
+    said = el(
+      'div',
+      { class: 'sum' },
+      `${s.total}${s.truncated ? '+' : ''} matches in ${files} ${files === 1 ? 'file' : 'files'}`,
     );
-  return el(
-    'aside',
-    { class: 'code-tree', 'aria-label': 'Files in the checkout' },
-    top ??
+  }
+  return [
+    el(
+      'div',
+      { class: 'sbox' },
+      field('code-search', 'code_search', 'Search the checkout', s.query, { class: 'field mono' }),
       el(
         'div',
-        { class: 'seg', role: 'radiogroup', 'aria-label': 'Which files' },
-        segment('All', !c.changedOnly, () => click({ on: 'changedOnly', only: false })),
-        segment(`Changed ${c.changed}`, c.changedOnly, () =>
-          click({ on: 'changedOnly', only: true }),
-        ),
+        { class: 'sopts', role: 'group', 'aria-label': 'How to match' },
+        option('Aa', s.case, 'case', 'Match case  Alt C'),
+        option('ab', s.word, 'word', 'Whole word  Alt W'),
+        option('.*', s.regex, 'regex', 'Regular expression  Alt R'),
       ),
-    body,
-  );
+    ),
+    el('input', {
+      class: 'field mono',
+      id: 'code-glob',
+      placeholder: 'Files to include, as globs',
+      'aria-label': 'Files to include, as globs',
+      value: s.glob,
+      oninput: (e: Event) => {
+        if (e.target instanceof HTMLInputElement)
+          call('code_search_glob', { glob: e.target.value });
+      },
+      onkeydown: (e: KeyboardEvent) => {
+        const action = actionFor(['jump'], e);
+        if (action === 'choose') call('code_search', { gesture: { on: 'choose' } });
+        else if (action === 'closeLayer') {
+          e.stopPropagation();
+          call('code_search', { gesture: { on: 'close' } });
+        } else return;
+        e.preventDefault();
+      },
+    }),
+    said,
+    el('div', { class: 'code-list hits', id: 'code-list' }, s.current && s.files.flatMap(hitFile)),
+  ];
+}
+
+function side(c: CodePage): HTMLElement {
+  const body: (HTMLElement | false)[] = c.search
+    ? searchPanel(c.search)
+    : [
+        field('code-jump', 'code_jump', 'Go to a file   Ctrl P', c.jump?.query ?? '', {
+          // The field is always there; reaching it opens the list it filters.
+          onfocus: () => c.jump || codeAction('filter'),
+        }),
+        !c.jump &&
+          el(
+            'div',
+            { class: 'seg', role: 'radiogroup', 'aria-label': 'Which files' },
+            segment('All', !c.changedOnly, () => click({ on: 'changedOnly', only: false })),
+            segment(`Changed ${c.changed}`, c.changedOnly, () =>
+              click({ on: 'changedOnly', only: true }),
+            ),
+          ),
+        c.jump ? jumpList(c.jump) : tree(c),
+      ];
+  return el('aside', { class: 'code-tree', 'aria-label': 'Files in the checkout' }, body);
 }
 
 function line(r: CodeRow): HTMLElement[] {
@@ -210,6 +319,34 @@ function gone(n: number): HTMLElement {
   return el('div', { class: 'cgone' }, `− ${n} ${n === 1 ? 'line' : 'lines'} removed here`);
 }
 
+/** The change ruler: each change where it is in the whole file, and the
+ *  band of it on screen, which `trackView` keeps up as the file scrolls. */
+function ruler(c: CodePage): HTMLElement {
+  const lines = Math.max(c.lines.length, 1);
+  return el(
+    'div',
+    { class: 'code-ruler', 'aria-label': 'Where this file changed' },
+    el('span', { class: 'view', id: 'code-view' }),
+    c.ruler.map((m) =>
+      el('button', {
+        class: `m ${m.kind}`,
+        style: `top: ${((m.line - 1) / lines) * 100}%; height: max(3px, ${(m.span / lines) * 100}%)`,
+        title: m.kind === 'hit' ? `A match at line ${m.line}` : `Changed at line ${m.line}`,
+        'aria-label': m.kind === 'hit' ? `A match at line ${m.line}` : `A change at line ${m.line}`,
+        onclick: () => click({ on: 'go', line: m.line }),
+      }),
+    ),
+  );
+}
+
+function trackView(): void {
+  const body = document.getElementById('code-body');
+  const view = document.getElementById('code-view');
+  if (!body || !view || body.scrollHeight === 0) return;
+  view.style.top = `${(body.scrollTop / body.scrollHeight) * 100}%`;
+  view.style.height = `${Math.min(1, body.clientHeight / body.scrollHeight) * 100}%`;
+}
+
 function file(c: CodePage): HTMLElement {
   let body: HTMLElement | HTMLElement[];
   if (c.failed && c.lines.length === 0)
@@ -232,6 +369,11 @@ function file(c: CodePage): HTMLElement {
       ...(c.removedAtEnd > 0 ? [gone(c.removedAtEnd)] : []),
     ];
   }
+  const facts = [
+    c.lines.length > 0 && `Ln ${c.at}`,
+    c.language,
+    c.lines.length > 0 && `${c.lines.length} lines`,
+  ].filter(Boolean);
   return el(
     'section',
     { class: 'code-file' },
@@ -239,18 +381,31 @@ function file(c: CodePage): HTMLElement {
       el(
         'div',
         { class: 'fhdr' },
-        el('span', { class: 'mono' }, c.path),
+        el('span', { class: 'mono path' }, c.path),
         el('span', { class: 'grow' }),
-        (c.added > 0 || c.removed > 0) &&
+        el(
+          'span',
+          { class: 'meta' },
+          facts.join(' · '),
+          (c.added > 0 || c.removed > 0) && ' · ',
+          c.added > 0 && el('span', { class: 'fg-ok' }, `+${c.added}`),
+          c.added > 0 && c.removed > 0 && ' ',
+          c.removed > 0 && el('span', { class: 'fg-danger' }, `−${c.removed}`),
+        ),
+        !c.outline &&
           el(
-            'span',
-            { class: 'meta' },
-            el('span', { class: 'fg-ok' }, `+${c.added}`),
-            ' ',
-            el('span', { class: 'fg-danger' }, `−${c.removed}`),
+            'button',
+            { class: 'btn sm outline-show', onclick: () => click({ on: 'outline' }) },
+            'Outline',
+            kbd('O'),
           ),
       ),
-    el('div', { class: 'code-body', id: 'code-body' }, body),
+    el(
+      'div',
+      { class: 'code-wrap' },
+      el('div', { class: 'code-body', id: 'code-body', onscroll: trackView }, body),
+      c.lines.length > 0 && ruler(c),
+    ),
   );
 }
 
@@ -329,7 +484,21 @@ function outline(c: CodePage): HTMLElement {
   return el(
     'aside',
     { class: 'code-outline', 'aria-label': 'Outline' },
-    el('div', { class: 'mlabel' }, 'Outline'),
+    el(
+      'div',
+      { class: 'ohd' },
+      el('span', { class: 'mlabel grow' }, 'Outline'),
+      el(
+        'button',
+        {
+          class: 'icon sm',
+          'aria-label': 'Close the outline  O',
+          title: 'Close the outline  O',
+          onclick: () => click({ on: 'outline' }),
+        },
+        icon('close'),
+      ),
+    ),
     c.symbols.length === 0
       ? el('div', { class: 'meta' }, c.path ? 'Nothing defined that the outline knows of.' : '')
       : c.symbols.map((s) =>
@@ -337,12 +506,28 @@ function outline(c: CodePage): HTMLElement {
             'button',
             {
               class: `orow${s.on ? ' on' : ''}`,
-              onclick: () => click({ on: 'symbol', line: s.line }),
+              title: s.name,
+              onclick: () => click({ on: 'go', line: s.line }),
             },
             el('span', { class: 'okind' }, s.kind),
-            el('span', { class: 'mono' }, s.name),
+            el('span', { class: 't' }, s.name),
+            s.changed ? el('span', { class: 'tchg', 'aria-label': 'changed' }) : el('span', null),
           ),
         ),
+    c.changesHere.length > 0 && el('div', { class: 'mlabel osec' }, 'Changes in this file'),
+    c.changesHere.map((ch) =>
+      el(
+        'button',
+        {
+          class: `orow${ch.on ? ' on' : ''}`,
+          title: ch.text,
+          onclick: () => click({ on: 'go', line: ch.line }),
+        },
+        el('span', { class: 'okind' }, String(ch.line)),
+        el('span', { class: 't' }, ch.text),
+        el('span', null),
+      ),
+    ),
   );
 }
 
@@ -364,18 +549,14 @@ export function drawCode(): void {
   const list = c.search ? 'search' : c.jump ? 'jump' : 'tree';
   const listScrolled =
     list === drawn.list ? (document.getElementById('code-list')?.scrollTop ?? 0) : 0;
-  const on = `${list}:${c.search?.at ?? c.jump?.at ?? c.path ?? ''}`;
-  const cursor = `${c.path ?? ''}:${c.lines.find((r) => r.cursor)?.no ?? ''}`;
+  const hit = c.search?.files.flatMap((f) => f.hits).find((h) => h.on);
+  const on = `${list}:${c.search ? (hit?.index ?? '') : (c.jump?.at ?? c.path ?? '')}`;
+  const cursor = `${c.path ?? ''}:${c.at}`;
   if (!c.composing) state.codeDraft = '';
-  const typing = document.activeElement?.id === 'code-comment';
+  const typing = document.activeElement?.id;
   stage.replaceChildren(
     head(c),
-    el('div', { class: 'code-split' }, tree(c), file(c), outline(c)),
-    el(
-      'div',
-      { class: 'dfoot meta' },
-      'J K line · ] [ change · V pick · C comment · Ctrl P file · Ctrl F search · E editor · R read again',
-    ),
+    el('div', { class: 'code-split' }, side(c), file(c), c.outline && outline(c)),
   );
   const body = document.getElementById('code-body');
   if (body) body.scrollTop = scrolled;
@@ -385,7 +566,8 @@ export function drawCode(): void {
     stage.querySelector('.cline.cursor')?.scrollIntoView({ block: 'nearest' });
   if (on !== drawn.on) stage.querySelector('.code-list .on')?.scrollIntoView({ block: 'nearest' });
   drawn = { list, on, cursor };
-  // A field just opened takes the keys; one being typed in keeps them.
+  trackView();
+  // The field with the keys keeps them; one just opened takes them.
   const want = c.composing
     ? 'code-comment'
     : c.search
@@ -393,18 +575,11 @@ export function drawCode(): void {
       : c.jump
         ? 'code-jump'
         : null;
-  if (want === 'code-comment' && !typing) {
-    const box = document.getElementById(want);
-    if (box instanceof HTMLTextAreaElement) {
-      box.focus();
-      box.setSelectionRange(box.value.length, box.value.length);
-    }
-    return;
-  }
-  const input = want ? document.getElementById(want) : null;
-  if (input instanceof HTMLInputElement) {
-    input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
+  const keep = typing && document.getElementById(typing);
+  const focus = keep && typing !== 'code-jump' ? keep : want ? document.getElementById(want) : null;
+  if (focus instanceof HTMLInputElement || focus instanceof HTMLTextAreaElement) {
+    if (document.activeElement !== focus) focus.focus();
+    if (typing !== focus.id) focus.setSelectionRange(focus.value.length, focus.value.length);
   }
 }
 

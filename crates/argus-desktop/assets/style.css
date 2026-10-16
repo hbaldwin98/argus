@@ -3020,15 +3020,20 @@ body.console-fullscreen #bar {
 .cstage {
   container-type: inline-size;
 }
-/* The Code stage: the files, one read whole, and what it defines. */
+/* The Code stage: the files, one read whole with its changes ruled, and
+   what it defines. The side columns give way before the file does. */
+.kstage {
+  container-type: inline-size;
+}
 .code-head {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  padding: var(--sp-8) var(--sp-16);
+  padding: 0 var(--sp-16);
   border-bottom: 1px solid var(--line);
-  min-height: 48px;
+  height: 40px;
   box-sizing: border-box;
+  flex: none;
 }
 .code-split {
   flex: 1;
@@ -3036,16 +3041,17 @@ body.console-fullscreen #bar {
   display: flex;
 }
 .code-tree {
-  width: 280px;
+  width: 264px;
   flex: none;
+  box-sizing: border-box;
   border-right: 1px solid var(--line);
-  padding: var(--sp-12);
+  padding: var(--sp-8);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-8);
+  gap: var(--sp-6);
   min-height: 0;
 }
-.code-tree .seg {
+.code-tree > .seg {
   align-self: flex-start;
 }
 .code-list {
@@ -3054,14 +3060,15 @@ body.console-fullscreen #bar {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: 1px;
 }
-.trow,
-.mrow,
-.orow {
-  display: flex;
+/* A tree row: a chevron slot, the name, and the change at the right edge,
+   indented by depth, so names line up whatever the row is. */
+.trow {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--sp-6);
+  column-gap: var(--sp-6);
   width: 100%;
   box-sizing: border-box;
   border: 0;
@@ -3071,78 +3078,192 @@ body.console-fullscreen #bar {
   font: inherit;
   font-size: var(--fs-md);
   text-align: left;
-  padding: 0 var(--sp-8);
-  min-height: 26px;
+  height: 26px;
+  flex: none;
+  padding: 0 var(--sp-8) 0 calc(var(--sp-6) + var(--d, 0) * 14px);
   cursor: pointer;
 }
 .trow.dir {
   color: var(--fg-muted);
 }
 .trow.on,
-.mrow.on,
+.hline.on,
 .orow.on {
   background: var(--bg-selected);
   box-shadow: inset 3px 0 0 var(--accent);
 }
-.trow .ttl {
-  flex: 1;
-  min-width: 0;
+.trow .ttl,
+.hfile .ttl {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.chev {
+  display: inline-flex;
+  color: var(--fg-faint);
+}
+.tright {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
 }
 .tchg {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--changed);
-  flex: none;
-}
-.tsp {
-  width: 6px;
-  flex: none;
+  display: inline-block;
 }
 .cnum {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
-.mrow {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0;
-  padding: var(--sp-4) var(--sp-8);
-  font-size: var(--fs-sm);
+
+/* search, ripgrep's rules with its options shown */
+.sbox {
+  position: relative;
 }
-.mtext {
-  white-space: pre;
+.sbox .field {
+  padding-right: 84px;
+}
+.sopts {
+  position: absolute;
+  right: 4px;
+  top: 3px;
+  display: flex;
+  gap: 2px;
+}
+.sopt {
+  width: 24px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  padding: 0;
+}
+.sopt.on {
+  background: var(--bg-selected);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+.sum {
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  padding: 0 var(--sp-4);
+}
+.hfile {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-6);
+  flex: none;
+  height: 26px;
+  padding: 0 var(--sp-8) 0 var(--sp-6);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+}
+.hcount {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 0 var(--sp-6);
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--fg-muted);
+}
+.hline {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: var(--sp-6);
+  align-items: center;
+  flex: none;
+  height: 24px;
+  padding: 0 var(--sp-8) 0 26px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+}
+.hline .no {
+  color: var(--fg-faint);
+  text-align: right;
+}
+.hline .tx {
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  white-space: pre;
 }
-.mtext mark {
-  background: color-mix(in srgb, var(--attention) 30%, transparent);
-  color: inherit;
+.hline mark {
+  background: color-mix(in srgb, var(--attention) 32%, transparent);
+  color: var(--fg);
+  border-radius: 2px;
 }
+.hline.on {
+  color: var(--fg);
+}
+
+/* the file */
 .code-file {
   flex: 1;
-  min-width: 0;
+  min-width: 320px;
   display: flex;
   flex-direction: column;
 }
+.code-file .fhdr {
+  min-width: 0;
+}
+.code-file .fhdr .path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.code-file .fhdr .meta {
+  white-space: nowrap;
+}
+.code-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
 .code-body {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   background: var(--bg-sunken);
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   line-height: 20px;
   padding-top: var(--sp-4);
 }
 .cline {
   display: grid;
-  grid-template-columns: 52px 16px 1fr;
+  grid-template-columns: 52px 16px max-content;
+  min-width: 100%;
   cursor: text;
+}
+.cline .dcode {
+  white-space: pre;
+  padding-right: var(--sp-16);
 }
 .cline.add {
   background: color-mix(in srgb, var(--ok) 12%, transparent);
@@ -3152,10 +3273,6 @@ body.console-fullscreen #bar {
 }
 .cline.picked {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-.code-body .comment-card {
-  margin: var(--sp-8) var(--sp-16) var(--sp-8) 68px;
-  font-family: var(--font-ui);
 }
 .cline.cursor {
   box-shadow: inset 3px 0 0 var(--accent);
@@ -3169,23 +3286,118 @@ body.console-fullscreen #bar {
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-top: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
 }
+.code-body .comment-card {
+  margin: var(--sp-8) var(--sp-16) var(--sp-8) 68px;
+  font-family: var(--font-ui);
+  max-width: 720px;
+}
+/* The change ruler: where in the whole file it changed, beside the file. */
+.code-ruler {
+  position: relative;
+  width: 12px;
+  flex: none;
+  border-left: 1px solid var(--line);
+  background: var(--bg-chrome);
+}
+.code-ruler .view {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  pointer-events: none;
+}
+.code-ruler .m {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  border: 0;
+  padding: 0;
+  border-radius: 1px;
+  cursor: pointer;
+}
+.code-ruler .m.added {
+  background: var(--ok);
+}
+.code-ruler .m.removed {
+  background: var(--danger);
+  max-height: 2px;
+}
+.code-ruler .m.hit {
+  background: var(--attention);
+  left: 4px;
+  right: 4px;
+  max-height: 3px;
+}
+
+/* the outline: closable, and gone when the stage is narrow */
 .code-outline {
   width: 232px;
   flex: none;
+  box-sizing: border-box;
   border-left: 1px solid var(--line);
-  padding: var(--sp-12);
+  padding: var(--sp-8) var(--sp-8) var(--sp-12);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: 1px;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+.ohd {
+  display: flex;
+  align-items: center;
+  padding-left: var(--sp-8);
+}
+.osec {
+  margin-top: var(--sp-12);
 }
 .orow {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-6);
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
+  text-align: left;
+  padding: 0 var(--sp-8);
+  height: 24px;
+  cursor: pointer;
+}
+.orow .t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .okind {
   color: var(--fg-faint);
   font-size: var(--fs-xs);
-  min-width: 52px;
+}
+@container (max-width: 1100px) {
+  .code-tree {
+    width: 220px;
+  }
+  .code-outline {
+    width: 200px;
+  }
+}
+@container (max-width: 900px) {
+  .code-outline,
+  .outline-show {
+    display: none;
+  }
+}
+@container (max-width: 640px) {
+  .code-tree {
+    width: 180px;
+  }
 }
 @container (max-width: 980px) {
   .ctable .col-last {

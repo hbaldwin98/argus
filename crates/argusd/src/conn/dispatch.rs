@@ -531,15 +531,23 @@ pub(super) fn dispatch(
             request_id,
             checkout,
             query,
+            options,
         } => reply_with(daemon, out_tx, checkout, move |repo| {
-            let (matches, truncated) = crate::code_search::search(&repo, &query);
-            ServerMsg::CodeMatches(argus_protocol::CodeMatches {
-                request_id,
-                checkout,
-                query,
-                matches,
-                truncated,
-            })
+            match crate::code_search::search(&repo, &query, &options) {
+                Ok((matches, truncated)) => ServerMsg::CodeMatches(argus_protocol::CodeMatches {
+                    request_id,
+                    checkout,
+                    query,
+                    options,
+                    matches,
+                    truncated,
+                }),
+                Err(error) => ServerMsg::CodeFailed {
+                    request_id,
+                    checkout,
+                    message: error.to_string(),
+                },
+            }
         }),
         ClientMsg::ReviewContext {
             request_id,

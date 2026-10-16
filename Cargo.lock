@@ -186,6 +186,7 @@ dependencies = [
  "libc",
  "notify",
  "portable-pty",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

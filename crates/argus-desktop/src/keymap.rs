@@ -200,6 +200,15 @@ pub enum Action {
     Search,
     /// Read what is on screen again: the agent kept working.
     Refresh,
+    /// The Code stage's outline, shown or put away.
+    ToggleOutline,
+    /// Back to the dialog the Code stage was opened from.
+    GoBack,
+    /// The Code stage's search: case always matters, only whole words, or
+    /// the query read as a regular expression — each on or off.
+    MatchCase,
+    WholeWord,
+    UseRegex,
     Fold,
     /// The commit under the cursor as a review.
     AsReview,
@@ -619,6 +628,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Code, &[Chord::key("v"), Chord::key("V")], Pick, "pick a range"),
     bind(Place::Code, &[Chord::key("c"), Chord::key("C")], Comment, "comment to an agent"),
     bind(Place::Code, &[Chord::key("r"), Chord::key("R")], Refresh, "read the files again"),
+    bind(Place::Code, &[Chord::key("o"), Chord::key("O")], ToggleOutline, "show or hide the outline"),
+    bind(Place::Code, &[Chord::key("b"), Chord::key("B")], GoBack, "back to the review or history it was opened from"),
     bind(Jump, &[Chord::key("ArrowDown"), Chord::key("n").ctrl()], Next, "next file"),
     bind(Jump, &[Chord::key("ArrowUp"), Chord::key("p").ctrl()], Previous, "previous file"),
     bind(Jump, &[Chord::key("Enter")], Choose, "open the file"),
@@ -654,6 +665,9 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Transcript, &[Chord::key("r"), Chord::key("R")], Resume, "resume in a new pane"),
     bind(Place::Transcript, &[Chord::key("Enter")], Choose, "go to its pane, while it runs"),
     bind(Place::Filter, &[Chord::key("Enter"), Chord::key("Escape")], Leave, "back to the list, filtered"),
+    bind(Place::Filter, &[Chord::key("c").alt()], MatchCase, "in Code's search: case always matters"),
+    bind(Place::Filter, &[Chord::key("w").alt()], WholeWord, "in Code's search: whole words only"),
+    bind(Place::Filter, &[Chord::key("r").alt()], UseRegex, "in Code's search: a regular expression"),
     bind(Place::Palette, &[Chord::key("ArrowDown")], Next, "next result"),
     bind(Place::Palette, &[Chord::key("ArrowUp")], Previous, "previous result"),
     bind(Place::Palette, &[Chord::key("Enter")], Choose, "run it, or go to it"),

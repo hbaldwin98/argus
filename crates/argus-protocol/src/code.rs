@@ -89,15 +89,33 @@ pub struct CodeTree {
     pub changes: Vec<CodeChange>,
 }
 
-/// A line text was found on. `start..end` is the first match on it, in
-/// bytes.
+/// How a search reads its query, as ripgrep's flags do. Off, the query is
+/// literal text matched in either case unless it has a capital (ripgrep's
+/// smart case), anywhere in a line, in every file `.gitignore` leaves.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchOptions {
+    /// A regular expression rather than literal text.
+    #[serde(default)]
+    pub regex: bool,
+    /// Case always matters, capital or not.
+    #[serde(default)]
+    pub case: bool,
+    /// Only where the query is a whole word.
+    #[serde(default)]
+    pub word: bool,
+    /// The files searched, as globs separated by commas — `src/**/*.rs`,
+    /// `!*.lock` — or every file when empty.
+    #[serde(default)]
+    pub glob: String,
+}
+
+/// A line text was found on, with every match on it as byte ranges.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CodeMatch {
     pub path: String,
     pub line: u32,
     pub text: String,
-    pub start: u32,
-    pub end: u32,
+    pub ranges: Vec<(u32, u32)>,
 }
 
 /// Where a search's text occurs in a checkout's working tree.
@@ -106,6 +124,10 @@ pub struct CodeMatches {
     pub request_id: u64,
     pub checkout: CheckoutId,
     pub query: String,
+    /// What the matches were searched with, so a client can tell an answer
+    /// to the search it shows from one to an earlier.
+    #[serde(default)]
+    pub options: SearchOptions,
     pub matches: Vec<CodeMatch>,
     /// More matched than [`MAX_CODE_MATCHES`].
     pub truncated: bool,

@@ -99,6 +99,8 @@ pub enum Call {
     CodeJump { gesture: ReviewJumpGesture },
     /// The same in the search field, where Enter searches.
     CodeSearch { gesture: ReviewJumpGesture },
+    /// What the search's files-to-include field says.
+    CodeSearchGlob { glob: String },
     /// Sends the Code stage's comment, or with no `body` puts the box away.
     CodeComment { body: Option<String> },
     /// `open` true shows the composer, false goes back to the Workspace.
@@ -1350,8 +1352,8 @@ pub struct Frame {
     pub parked: Option<Parked>,
 }
 
-/// The Code stage: one checkout's files at one version, and one of them
-/// read whole.
+/// The Code stage: one checkout's files, one of them read whole, its changes
+/// marked and ruled, and what it defines.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -1360,10 +1362,9 @@ pub struct CodePage {
     pub checkout: u64,
     pub name: String,
     pub branch: String,
-    #[cfg_attr(test, ts(type = "\"working\" | \"index\" | \"head\" | \"commit\""))]
-    pub version: &'static str,
-    /// The commit's short oid, when the version is one.
-    pub commit: Option<String>,
+    /// What is read when it is not the working tree, as the header says it:
+    /// `index`, or a commit's short oid.
+    pub version: Option<String>,
     /// Whether the tree lists only the files this version changed.
     pub changed_only: bool,
     /// How many files this version changed.
@@ -1372,19 +1373,29 @@ pub struct CodePage {
     pub tree_loading: bool,
     /// The file being read.
     pub path: Option<String>,
+    /// Its language, by its extension, when there is a name for it.
+    pub language: Option<&'static str>,
     pub added: u32,
     pub removed: u32,
     pub lines: Vec<CodeRow>,
     /// Lines removed after the file's last line.
     pub removed_at_end: u32,
+    /// The cursor's line, from one.
+    pub at: u32,
+    /// Where in the whole file it changed, and where the search matched it.
+    pub ruler: Vec<CodeMark>,
+    /// Whether the outline is shown.
+    pub outline: bool,
     pub symbols: Vec<CodeOutlineRow>,
+    /// Each run of changed lines and each place lines were removed.
+    pub changes_here: Vec<CodeChangeRow>,
     /// Why a file shows no lines: binary, or too large.
     pub note: Option<String>,
     pub file_loading: bool,
     pub jump: Option<CodeJump>,
     pub search: Option<CodeSearch>,
-    /// Where Escape goes back to, `review · brief.rs:39` or `history`, when
-    /// the stage was opened from one.
+    /// What `B` goes back to, `review · brief.rs:39` or `history`, when the
+    /// stage was opened from one.
     pub back: Option<String>,
     pub failed: Option<String>,
     /// The picked lines, `lines 3–5`, while a range or a comment is open.
@@ -1426,14 +1437,41 @@ pub struct CodeRow {
     pub picked: bool,
 }
 
+/// A mark on the change ruler, at `line` of `lines` in the whole file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeMark {
+    pub line: u32,
+    /// How many lines the mark spans: a run of changed lines is as tall as
+    /// it is long.
+    pub span: u32,
+    #[cfg_attr(test, ts(type = "\"added\" | \"removed\" | \"hit\""))]
+    pub kind: &'static str,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct CodeOutlineRow {
     pub name: String,
-    pub kind: String,
+    /// Short: `fn`, `type`, `mod`.
+    pub kind: &'static str,
     pub line: u32,
     /// The definition the cursor is in.
+    pub on: bool,
+    /// Something in it changed.
+    pub changed: bool,
+}
+
+/// A run of changed lines, or a place lines were removed, by its first
+/// line and what it says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeChangeRow {
+    pub line: u32,
+    pub text: String,
     pub on: bool,
 }
 
@@ -1454,24 +1492,44 @@ pub struct CodeJump {
 #[serde(rename_all = "camelCase")]
 pub struct CodeSearch {
     pub query: String,
-    /// The query the matches are for, once one was searched.
-    pub searched: Option<String>,
+    pub glob: String,
+    pub regex: bool,
+    pub case: bool,
+    pub word: bool,
+    /// The matches are for the query and options as they stand.
+    pub current: bool,
     pub loading: bool,
-    pub matches: Vec<CodeMatchRow>,
+    /// Why the search could not run: a pattern or glob it could not read.
+    pub error: Option<String>,
+    pub total: usize,
     pub truncated: bool,
-    pub at: Option<usize>,
+    pub files: Vec<CodeHitFile>,
+}
+
+/// The matches in one file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeHitFile {
+    pub path: String,
+    pub dir: String,
+    pub name: String,
+    pub count: usize,
+    pub open: bool,
+    pub hits: Vec<CodeHit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
-pub struct CodeMatchRow {
-    pub path: String,
+pub struct CodeHit {
+    /// Which match it is, in the order the search returned them.
+    pub index: usize,
     pub line: u32,
-    /// The line cut around its match.
-    pub before: String,
-    pub hit: String,
-    pub after: String,
+    /// The line as `[text, matched]`, cut short where it is long before its
+    /// first match.
+    pub parts: Vec<(String, bool)>,
+    pub on: bool,
 }
 
 /// What a click in the Code stage landed on.
@@ -1484,13 +1542,19 @@ pub enum CodeClick {
     /// With `extend`, the range's other end stays where it was.
     Line { line: u32, extend: bool },
     Recipient { pane: u64 },
-    Symbol { line: u32 },
-    Version {
-        #[cfg_attr(test, ts(type = "\"working\" | \"index\" | \"head\""))]
-        version: String,
-    },
+    /// An outline row, a change, or a mark on the ruler.
+    Go { line: u32 },
     ChangedOnly { only: bool },
+    Outline,
+    /// A search match, read where it is.
     Match { index: usize },
+    /// A file of the search's results, folded or opened.
+    HitFile { path: String },
+    /// One of the search's options turned on or off.
+    SearchOption {
+        #[cfg_attr(test, ts(type = "\"regex\" | \"case\" | \"word\""))]
+        option: String,
+    },
     Back,
 }
 

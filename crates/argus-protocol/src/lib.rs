@@ -121,7 +121,7 @@ pub use hello::{
     RENAME_PANE, SAVED_VIEWS, CODE,
 };
 pub use code::{
-    CodeChange, CodeFile, CodeLine, CodeMatch, CodeMatches, CodeSymbol, CodeTree, CodeVersion, Removed,
+    CodeChange, CodeFile, CodeLine, CodeMatch, CodeMatches, CodeSymbol, CodeTree, CodeVersion, Removed, SearchOptions,
     MAX_CODE_MATCHES,
 };
 pub use hook::{

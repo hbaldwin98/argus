@@ -455,7 +455,7 @@ async fn the_code_stage_reads_a_versions_files_one_file_and_a_search() {
         other => panic!("unexpected {other:?}"),
     }
 
-    h.send(ClientMsg::SearchCode { request_id: 3, checkout, query: "brief".into() });
+    h.send(ClientMsg::SearchCode { request_id: 3, checkout, query: "brief".into(), options: Default::default() });
     assert!(matches!(answer(&mut h).await, ServerMsg::CodeMatches(m) if m.request_id == 3 && m.matches.len() == 1));
 
     h.send(ClientMsg::ReadCode { request_id: 4, checkout, path: "../out".into(), version });
