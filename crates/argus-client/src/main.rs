@@ -30,7 +30,6 @@ mod remote;
 mod selection;
 mod settings;
 mod sibling;
-mod ssh_hosts;
 mod terminal;
 mod theme;
 mod ui;

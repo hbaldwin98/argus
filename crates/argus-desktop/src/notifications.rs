@@ -51,6 +51,15 @@ pub fn alerts(transitions: &[Transition<'_>], tree: &[ProjectInfo], chosen: &Pre
         .collect()
 }
 
+/// Says which machine the panes in `alerts` run on, for a window reaching a
+/// daemon over ssh: a notification from a remote agent that looked like a
+/// local one would send the person to the wrong terminal.
+pub fn on_host(alerts: &mut [Alert], host: &str) {
+    for alert in alerts {
+        alert.body = format!("{} · on {host}", alert.body);
+    }
+}
+
 /// `repository / checkout`, where the pane runs.
 fn place(tree: &[ProjectInfo], pane: PaneId) -> Option<String> {
     let (lineage, _) = tree.lineage_of_pane(pane)?;
@@ -101,6 +110,13 @@ mod tests {
         assert_eq!(review[0].body, "Needs a review · argus / main");
         let failed = raised(&Preferences::default(), &BACKGROUND, PaneStatus::Failed);
         assert_eq!(failed[0].body, "Failed · argus / main");
+    }
+
+    #[test]
+    fn a_remote_agent_is_named_with_its_host() {
+        let mut alerts = raised(&Preferences::default(), &BACKGROUND, PaneStatus::Waiting);
+        on_host(&mut alerts, "devbox");
+        assert_eq!(alerts[0].body, "Is waiting for you · argus / main · on devbox");
     }
 
     #[test]

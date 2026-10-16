@@ -208,6 +208,7 @@ document.addEventListener('click', (e) => {
     if (state.menuOpen && !e.composedPath().includes($('heading'))) {
         state.menuOpen = false;
         state.workspacesOpen = false;
+        state.hostsOpen = false;
         drawHeading();
     }
 });

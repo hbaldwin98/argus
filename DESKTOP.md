@@ -24,7 +24,9 @@ recent sessions need.
    spawns argusd. It runs `argus bridge` — the `argus` executable beside its own, falling back to
    `argus` on PATH — and speaks the protocol over the child's stdin/stdout, exactly as
    `argus --host` does over ssh (`crates/argus-client/src/remote.rs`). Connect-or-start stays only
-   in `argus`'s `launch.rs`. Later, `ssh -T host argus bridge` gives the desktop remote hosts for free.
+   in `argus`'s `launch.rs`. A remote host is the same child behind
+   `ssh -T -o BatchMode=yes -- <host> argus bridge` (the project switcher's Connect to a host…, or
+   `ARGUS_DESKTOP_HOST` when no host is saved), so the daemon, not the window, decides everything else.
 2. **The client never predicts.** The rail changes when the daemon's tree says so. A spawned shell
    is selected only once `Created` names it AND the tree holds it (see the TUI's `app/awaited.rs`).
    Choosing which pane to *show* is local view state, like the TUI's selection.
@@ -308,7 +310,7 @@ documents the tokens.
   feature stage and trackers, HUN-172/173; recent sessions, HUN-174; the parity issues under
   HUN-181 — checkouts, review and history, palette and shortcuts, settings and notifications,
   projects, feature editing, starting an agent, mouse, selection and scrollback, the full transcript;
-  remote hosts through `ssh … argus bridge`; packaging as .app/.msi/AppImage with signing and
+  packaging as .app/.msi/AppImage with signing and
   updates, which no issue tracks yet).
 
 ## Bundling (not built yet)

@@ -18,6 +18,7 @@ import { call } from './tauri.js';
 function closeMenu(): void {
   state.menuOpen = false;
   state.workspacesOpen = false;
+  state.hostsOpen = false;
   drawHeading();
 }
 
@@ -72,9 +73,43 @@ function workspaceRows(): Child {
   );
 }
 
+/** One host in the list; choosing it switches the daemon the window reaches. */
+function hostRow(name: string, current: boolean, host: string | null): HTMLElement {
+  return el(
+    'button',
+    {
+      class: `mi sub${current ? ' on' : ''}`,
+      role: 'menuitemradio',
+      'aria-checked': String(current),
+      onclick: () => {
+        closeMenu();
+        if (!current) call('set_host', { host });
+      },
+    },
+    el('span', { class: 'glyph fg-ok' }, current ? '✓' : ''),
+    el('span', { class: 'grow ellipsis' }, name),
+  );
+}
+
+/** The machines whose daemon the window can reach over ssh, unfolded under
+ *  Connect to a host…: this machine's, the ssh config's, and the ones used
+ *  before. Choosing one drops the rail until that daemon answers. */
+function hostRows(): Child {
+  if (!state.hostsOpen) return null;
+  const { hosts } = state.rail;
+  const remote = hosts.some((h) => h.current);
+  return [
+    hostRow('This machine', !remote, null),
+    ...hosts.map((h) => hostRow(h.name, h.current, h.name)),
+    hosts.length === 0 &&
+      el('div', { class: 'mi sub meta' }, 'No hosts in ~/.ssh/config, or set ARGUS_DESKTOP_HOST'),
+  ];
+}
+
 function projectMenu(): HTMLElement {
   const { project, projects, workspaces } = state.rail;
   const open = workspaces.find((w) => w.open);
+  const connected = state.rail.hosts.find((h) => h.current);
   return el(
     'div',
     { class: 'menu projects-menu', role: 'menu', 'aria-label': 'Projects' },
@@ -112,22 +147,24 @@ function projectMenu(): HTMLElement {
         open && el('span', { class: 'meta' }, open.name),
       ),
     workspaceRows(),
-    // Remote hosts come after the MVP; listed so the menu says where they
-    // will be.
     el(
       'button',
       {
         class: 'mi',
         role: 'menuitem',
-        disabled: true,
-        'aria-disabled': 'true',
-        title: 'Not in the desktop window yet: argus --host reaches one from a terminal',
+        'aria-expanded': String(state.hostsOpen),
+        title: 'Reach the daemon on another machine over ssh, as argus --host does',
+        onclick: () => {
+          state.hostsOpen = !state.hostsOpen;
+          drawHeading();
+        },
       },
       el('span', { class: 'glyph sh' }, '⇆'),
       'Connect to a host…',
       el('span', { class: 'grow' }),
-      el('span', { class: 'meta' }, 'later'),
+      connected && el('span', { class: 'meta' }, connected.name),
     ),
+    hostRows(),
     project && el('div', { class: 'msep' }),
     project &&
       el(
@@ -165,6 +202,7 @@ export function drawHeading(): void {
       onclick: () => {
         state.menuOpen = !state.menuOpen;
         state.workspacesOpen = false;
+        state.hostsOpen = false;
         drawHeading();
       },
     },

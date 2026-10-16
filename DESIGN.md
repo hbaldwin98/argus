@@ -40,11 +40,14 @@ starts again a daemon somebody stopped. The window can reach another machine's d
 saved `host` (or `ARGUS_DESKTOP_HOST` when none is saved) makes the same child `ssh -T -o BatchMode=yes
 -- <host> argus bridge`, with the arguments and the reading of ssh's failures shared with `argus --host`
 through the protocol's `ssh_bridge`. Switching host drops the old bridge, empties the tree and the rail
-back to connecting, and names the host in the sidebar's foot; the person's choice is kept in
+back to connecting, and names the host in the sidebar's foot and in each notification; a host that
+cannot be reached leaves a Use this machine button on the connecting screen, since no rail is loaded
+to open the switcher from. An editor set to open in a window of its own is not asked for over ssh,
+where that window would open on the remote machine. The person's choice and the hosts used are kept in
 `desktop.json`. The system's title bar is put away: a sidebar runs to the window's top edge with Search (the palette), New, and the Workspace, Features and Checkouts stages above the project's rail, the connection, the chime and the settings at its foot, and a strip across the stage names what it shows beside the window's own buttons (macOS keeps its traffic lights; on Windows 11 resting on maximize opens snap layouts). The project heading above the
 rail opens the switcher: each project with how many of its agents need you or are working, then
 Add a project…, Switch workspace… (the daemon's, so every client follows), Connect to a host…
-(listed, for remote hosts after the MVP), and Remove, which asks first and leaves the folders alone.
+(the hosts in `~/.ssh/config` and the ones used before, unfolded under it), and Remove, which asks first and leaves the folders alone.
 Add a project is a dialog over a folder browsed on the daemon's machine (`ListDirectories`): a folder
 of repositories, one repository, or a new one made with `git init`, with what the daemon's scan would
 add (`PreviewProject`) beside the folders, then a name and folders to skip; it stays up until the
@@ -308,6 +311,7 @@ live in this crate and a contract written twice drifts in silence.
 | `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
 | `pane_view` | a pane's view as a client holds it: the live grid, the view parked in its history, how the daemon's pane messages change them, and what a scroll gesture over the pane sends — the child's bytes, a request for history, or nothing |
 | `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
+| `ssh_hosts` | the hosts the user's ssh config names, for either client's host picker |
 | `ssh_bridge` | the ssh command that runs `argus bridge` on another machine, and what ssh's failure means |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
@@ -418,7 +422,6 @@ result of a request; `ui` is a pure function of it.
 | `extension` | the `argus extension` command: the guide to building one, and the running extensions listed or one shown whole, as the daemon here or under `--host` describes them |
 | `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
 | `remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
-| `ssh_hosts` | the hosts the user's ssh config names, for the host picker |
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |

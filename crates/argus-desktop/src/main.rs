@@ -119,6 +119,14 @@ fn main() {
                 let fonts = fonts::installed();
                 found.act(|session| session.found_fonts(fonts));
             });
+            let configured = shared.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let hosts = argus_protocol::ssh_hosts::hosts();
+                configured.act(|session| {
+                    session.found_hosts(hosts);
+                    Vec::new()
+                });
+            });
             tauri::async_runtime::spawn(frames(shared));
             Ok(())
         })

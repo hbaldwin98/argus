@@ -29,6 +29,10 @@ pub struct Settings {
     /// one ended.
     #[serde(default)]
     pub host: Option<String>,
+    /// Every host the window has been switched to, for the switcher to offer
+    /// beside the ssh config's.
+    #[serde(default)]
+    pub hosts: Vec<String>,
     /// The agent template this window last started, by name. Remembered
     /// rather than read off the tree: the tree knows only the agents still
     /// running, and a window whose agents have all closed, or that was
@@ -293,6 +297,7 @@ impl Default for Settings {
         Settings {
             layouts: BTreeMap::new(),
             host: None,
+            hosts: Vec::new(),
             last_agent: None,
             chime: true,
             review: ReviewLayout::default(),

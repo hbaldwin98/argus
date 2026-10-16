@@ -225,8 +225,9 @@ transcript. The project heading at the top of the rail opens the switcher: every
 how many of its agents need you or are working, Add a project… (a folder of repositories, one
 repository, or a new one made with `git init`, previewing what it would add before anything is
 written, then a name and folders to skip), Switch workspace…, and Remove, which asks first and
-leaves the folders where they are. Connect to a host… is listed but not there yet: `argus --host`
-reaches one from a terminal. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+leaves the folders where they are. Connect to a host… lists the hosts in `~/.ssh/config` and the ones used before, and reaches the
+chosen one's daemon through ssh as `argus --host` does (keys or ssh-agent only; argus must already
+be installed there). `ARGUS_DESKTOP_HOST` names one on a first run. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
 again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the

@@ -596,6 +596,10 @@ function drawStage() {
             ghosts([[0.6], [0.9], [0.75], [0.85], [0.4]]),
             el('div', { class: 'meta' }, host ? `Connecting to argusd on ${host}…` : 'Connecting to argusd…'),
             detail && el('div', { class: 'err' }, detail),
+            // Nothing is loaded to open the switcher from, so a host that cannot be
+            // reached needs its own way back.
+            host &&
+                el('button', { class: 'btn', onclick: () => call('set_host', { host: null }) }, 'Use this machine'),
         ];
     }
     else if (!project) {

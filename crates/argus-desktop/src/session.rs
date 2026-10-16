@@ -229,7 +229,7 @@ impl Session {
             copied: None,
             opening: None,
             tracker_dialogs: TrackerDialogs::default(),
-            switcher: Switcher::default(),
+            switcher: Switcher::with_visited(settings.hosts.clone()),
             adding: Adding::default(),
             palette: false,
             palette_sent: Sent::default(),
@@ -266,6 +266,9 @@ impl Session {
         if self.status.host() == host.as_deref() {
             return self.finish();
         }
+        if let Some(host) = &host {
+            self.switcher.visit(host);
+        }
         self.status.switch_host(host);
         self.host_unsaved = true;
         self.take_tree(Vec::new());
@@ -275,6 +278,11 @@ impl Session {
         self.alerts.clear();
         self.passing.retain(|event| !matches!(event, Event::Chime));
         self.finish()
+    }
+
+    /// The hosts the ssh config names, read after the window opened.
+    pub fn found_hosts(&mut self, hosts: Vec<String>) {
+        self.switcher.found_ssh_config(hosts);
     }
 
     pub fn is_stopped(&self) -> bool {
@@ -482,7 +490,11 @@ impl Session {
             self.passing.push(Event::Chime);
         }
         let looking = Looking { focused: self.focused, watched };
+        let raised = self.alerts.len();
         self.alerts.extend(notifications::alerts(&changes, &tree, self.choices.get(), &looking));
+        if let Some(host) = self.status.host() {
+            notifications::on_host(&mut self.alerts[raised..], host);
+        }
         self.tree = tree;
         self.loaded = true;
         self.features.tree_changed();
@@ -1380,11 +1392,7 @@ impl Session {
         match view_refs::resolve(&reference, from, self.here().checkout, &self.tree) {
             Err(text) => return self.note(text),
             Ok(Target::Pane(pane)) => return self.go_to_pane(pane),
-            Ok(Target::Editor { checkout, path, line }) => {
-                let request_id = self.awaited.ask(Made::ShowOverStages);
-                let (external, command) = self.choices.editor();
-                self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external, command, request_id });
-            }
+            Ok(Target::Editor { checkout, path, line }) => self.open_in_editor(checkout, path, line),
             Ok(Target::History { checkout, sha }) => {
                 self.dialogs.open_history_at(checkout, &sha, &self.tree, || self.awaited.name(), &mut self.out);
             }
@@ -2022,6 +2030,21 @@ impl Session {
 
     /// A notice on the bar, said partway through a gesture: `note` would
     /// finish the gesture there and then.
+    /// Asks the daemon to open `path` in the person's editor. The daemon
+    /// opens it on its own machine, so an editor that brings a window of its
+    /// own would put that window on a host nobody is sitting at: over ssh
+    /// only an editor in a pane, which this window draws, is asked for.
+    fn open_in_editor(&mut self, checkout: CheckoutId, path: String, line: Option<u32>) {
+        let (external, command) = self.choices.editor();
+        if let (true, Some(host)) = (external, self.status.host()) {
+            let said = format!("an editor with a window of its own would open on {host}: set it to open in a pane in Settings");
+            self.say(&said);
+            return;
+        }
+        let request_id = self.awaited.ask(Made::ShowOverStages);
+        self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external, command, request_id });
+    }
+
     fn say(&mut self, text: &str) {
         self.passing.push(Event::Notice { text: text.to_owned() });
     }
@@ -2166,11 +2189,7 @@ impl Session {
                 self.out.extend(msgs);
             }
             Action::OpenEditor => match code.editor_target() {
-                Some((checkout, path, line)) => {
-                    let request_id = self.awaited.ask(Made::ShowOverStages);
-                    let (external, command) = self.choices.editor();
-                    self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external, command, request_id });
-                }
+                Some((checkout, path, line)) => self.open_in_editor(checkout, path, line),
                 None => self.say("no file to open"),
             },
             _ => {}
@@ -2475,9 +2494,7 @@ impl Session {
             return self.finish();
         }
         if let Some((checkout, path, line)) = self.dialogs.review_action(action, &self.tree, &mut self.passing) {
-            let request_id = self.awaited.ask(Made::ShowOverStages);
-            let (external, command) = self.choices.editor();
-            self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external, command, request_id });
+            self.open_in_editor(checkout, path, line);
         }
         self.finish()
     }
@@ -2816,6 +2833,7 @@ impl Session {
         (layouts || agent || chime || review || docks || rail || chosen || host).then(|| Settings {
             layouts: self.features.layouts().clone(),
             host: self.status.host().map(str::to_owned),
+            hosts: self.switcher.visited().to_vec(),
             last_agent: self.agents.last().cloned(),
             chime: self.status.chimes(),
             review: self.dialogs.layout(),
@@ -3067,6 +3085,7 @@ impl Session {
         rail.filled = self.shown.filled() && self.stage == Stage::Workspace && self.on_screen().is_some() && !self.console_typing();
         rail.templates = self.agents.offered();
         rail.workspaces = self.switcher.workspaces();
+        rail.hosts = self.switcher.hosts(self.status.host());
         let panes = rail.project.iter_mut().flat_map(|p| &mut p.repositories).flat_map(|r| &mut r.checkouts);
         for pane in panes.flat_map(|c| &mut c.panes) {
             pane.views = self.views.count(PaneId(pane.id));
@@ -3736,6 +3755,22 @@ mod tests {
         s.connecting(None);
         s.connected(Some(without_focus()), None, vec![with_status(0, PaneStatus::NeedsReview)]);
         assert_eq!(chimes(&mut s), 1);
+    }
+
+    #[test]
+    fn an_editor_with_a_window_of_its_own_is_not_opened_on_a_remote_host() {
+        let mut s = session(without_focus());
+        s.set(SettingChange::Editor { mode: crate::settings::EditorMode::Separately });
+        s.switch_host(Some("devbox".into()));
+        s.open_in_editor(CheckoutId(100), "src/lib.rs".into(), None);
+        let sent = std::mem::take(&mut s.out);
+        assert!(!sent.iter().any(|m| matches!(m, ClientMsg::OpenInEditor { .. })), "{sent:?}");
+        let said = s.events(0).into_iter().any(|e| matches!(e, Event::Notice { text } if text.contains("devbox")));
+        assert!(said, "the person is told why");
+
+        s.switch_host(None);
+        s.open_in_editor(CheckoutId(100), "src/lib.rs".into(), None);
+        assert!(s.out.iter().any(|m| matches!(m, ClientMsg::OpenInEditor { external: true, .. })));
     }
 
     #[test]

@@ -338,7 +338,7 @@ impl App {
             .iter()
             .filter_map(|attached| attached.host.clone())
             .chain(crate::settings::load().hosts)
-            .chain(crate::ssh_hosts::hosts());
+            .chain(argus_protocol::ssh_hosts::hosts());
         for name in known {
             if !hosts.iter().flatten().any(|listed| *listed == name) {
                 hosts.push(Some(name));

@@ -62,6 +62,8 @@ export const state: {
   /** The project switcher's menu, and its workspaces unfolded. */
   menuOpen: boolean;
   workspacesOpen: boolean;
+  /** The hosts unfolded under Connect to a host…. */
+  hostsOpen: boolean;
   addProject: AddProjectPage | null;
   /** The checkout whose + menu is open, where it opened from, and its
    *  highlighted item. */
@@ -109,6 +111,7 @@ export const state: {
     filled: false,
     templates: [],
     workspaces: [],
+    hosts: [],
     removing: null,
     width: null,
     outlineWidth: null,
@@ -125,6 +128,7 @@ export const state: {
   palette: null,
   menuOpen: false,
   workspacesOpen: false,
+  hostsOpen: false,
   addProject: null,
   start: null,
   railPick: null,

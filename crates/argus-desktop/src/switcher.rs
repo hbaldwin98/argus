@@ -1,21 +1,60 @@
 //! What the project switcher offers beyond the tree's projects — the
-//! daemon's workspaces — and the project waiting on a yes to be removed.
+//! daemon's workspaces and the hosts the window can reach instead — and the
+//! project waiting on a yes to be removed.
 //!
-//! Both act only through the daemon: a workspace opened or a project
+//! Workspaces and removal act only through the daemon: a workspace opened or a project
 //! removed shows when the daemon's tree and workspaces say so, never
 //! before, so a refusal leaves the switcher showing what is true.
 
 use argus_protocol::{ClientMsg, ProjectId, ProjectInfo, WorkspaceId, WorkspaceInfo};
 
-use crate::page::{Removing, WorkspaceChoice};
+use crate::page::{HostChoice, Removing, WorkspaceChoice};
 
 #[derive(Default)]
 pub struct Switcher {
     workspaces: Vec<WorkspaceInfo>,
+    /// The hosts the ssh config names, read once the window is up.
+    ssh_config: Vec<String>,
+    /// Hosts this window has been switched to, so one typed into the
+    /// config for a day is not lost from the list when it is taken out.
+    visited: Vec<String>,
     removing: Option<ProjectId>,
 }
 
 impl Switcher {
+    pub fn with_visited(visited: Vec<String>) -> Switcher {
+        Switcher { visited, ..Switcher::default() }
+    }
+
+    pub fn found_ssh_config(&mut self, hosts: Vec<String>) {
+        self.ssh_config = hosts;
+    }
+
+    /// Remembers a host the window was switched to; whether it was new.
+    pub fn visit(&mut self, host: &str) -> bool {
+        let new = !self.visited.iter().any(|visited| visited == host);
+        if new {
+            self.visited.push(host.to_owned());
+        }
+        new
+    }
+
+    pub fn visited(&self) -> &[String] {
+        &self.visited
+    }
+
+    /// The hosts to offer: the ssh config's, then the ones visited, then the
+    /// one being reached if neither names it, so it is always there to see.
+    pub fn hosts(&self, current: Option<&str>) -> Vec<HostChoice> {
+        let mut names: Vec<&str> = Vec::new();
+        for name in self.ssh_config.iter().chain(&self.visited).map(String::as_str).chain(current) {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        names.into_iter().map(|name| HostChoice { name: name.to_owned(), current: Some(name) == current }).collect()
+    }
+
     pub fn receive_workspaces(&mut self, workspaces: Vec<WorkspaceInfo>) {
         self.workspaces = workspaces;
     }
@@ -81,6 +120,22 @@ mod tests {
 
     fn workspace(id: u64, name: &str, open: bool) -> WorkspaceInfo {
         WorkspaceInfo { id: WorkspaceId(id), name: name.into(), projects: 1, panes: 0, open }
+    }
+
+    #[test]
+    fn the_hosts_offered_are_the_config_s_then_the_visited_then_the_current() {
+        let mut switcher = Switcher::with_visited(vec!["old".into(), "devbox".into()]);
+        switcher.found_ssh_config(vec!["devbox".into(), "build".into()]);
+        let names = |current| -> Vec<(String, bool)> {
+            switcher.hosts(current).into_iter().map(|h| (h.name, h.current)).collect()
+        };
+        assert_eq!(
+            names(Some("adhoc")),
+            [("devbox".to_owned(), false), ("build".to_owned(), false), ("old".to_owned(), false), ("adhoc".to_owned(), true)]
+        );
+        assert!(names(None).iter().all(|(_, current)| !current));
+        assert!(switcher.visit("adhoc"));
+        assert!(!switcher.visit("adhoc"), "remembered once");
     }
 
     #[test]

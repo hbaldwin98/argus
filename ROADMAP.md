@@ -167,7 +167,11 @@ is proposed by an agent and carried out only as far as the person ticks it (HUN-
 Agent views (HUN-216) are data an agent read with its own tools, handed to the window as a fixed
 set of blocks it draws: never markup, and never kept in the store.
 
-Remaining: several panes at once; remote hosts through `ssh … argus bridge`; and packaging as
+Remote hosts landed: the switcher's Connect to a host… reaches a daemon through `ssh … argus bridge`,
+names the host in the sidebar and in notifications, and refuses an editor that would open its own
+window on the remote machine.
+
+Remaining: several panes at once; and packaging as
 .app, .msi and AppImage. Landed for packaging: the desktop finds the `argus` beside it before PATH
 (what a GUI launch without a shell PATH needs), and `tauri.bundle.conf.json` lists the sidecars
 `argus`, `argusd` and `argus-hook`, read only by a bundle build. Still to do: icons (only

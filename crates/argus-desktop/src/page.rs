@@ -576,6 +576,9 @@ pub struct Rail {
     pub templates: Vec<String>,
     /// The daemon's workspaces, for the switcher's Switch workspace….
     pub workspaces: Vec<WorkspaceChoice>,
+    /// The hosts the switcher's Connect to a host… offers, other than this
+    /// machine.
+    pub hosts: Vec<HostChoice>,
     /// A project waiting on a yes to be removed.
     pub removing: Option<Removing>,
     /// The width the person dragged the rail to, in CSS pixels; `None`
@@ -607,6 +610,17 @@ pub struct WorkspaceChoice {
     pub projects: usize,
     /// Live panes in it, open or not.
     pub panes: usize,
+}
+
+/// A host whose daemon the window can reach over ssh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct HostChoice {
+    /// As `ssh` takes it: a name from the ssh config, or any it can resolve.
+    pub name: String,
+    /// The one being reached now.
+    pub current: bool,
 }
 
 /// The question before a project is taken out of the window.
@@ -2077,6 +2091,7 @@ mod tests {
     fn the_rail_names_its_rows_in_camel_case() {
         let rail = Rail {
             projects: vec![ProjectChoice { id: 1, name: "src".into(), needs_you: 2, working: 1 }],
+            hosts: vec![HostChoice { name: "devbox".into(), current: true }],
             project: Some(Project {
                 id: 1,
                 name: "src".into(),
@@ -2148,6 +2163,7 @@ mod tests {
         assert_eq!(value["loaded"], true);
         assert_eq!(value["stage"], "new");
         assert_eq!(value["workspaces"][0]["open"], true);
+        assert_eq!(value["hosts"][0], json!({"name": "devbox", "current": true}));
         assert_eq!(value["removing"]["repositories"], 1);
     }
 
