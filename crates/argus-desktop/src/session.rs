@@ -1897,9 +1897,10 @@ impl Session {
     }
 
     /// The next pane on screen takes the keys, in the order they are
-    /// drawn: the Workspace's, then the console's sides.
+    /// drawn: the Workspace's and the panes split beside it, then the
+    /// console's sides.
     fn other_side(&mut self) {
-        let sides = [Side::Workspace, Side::First, Side::Second].into_iter().chain(self.shown.view_sides());
+        let sides = self.shown.row().into_iter().chain([Side::First, Side::Second]).chain(self.shown.view_sides());
         let visible: Vec<PaneId> = sides
             .filter(|&side| self.side_visible(side))
             .filter_map(|side| self.shown.on(side))
@@ -1915,7 +1916,7 @@ impl Session {
     /// and the console's while it is not hidden.
     fn side_visible(&self, side: Side) -> bool {
         match side {
-            Side::Workspace => {
+            Side::Workspace | Side::Beside(_) => {
                 !matches!(
                     self.stages.now(),
                     Stage::Feature | Stage::Checkouts | Stage::Code | Stage::Console | Stage::Extension | Stage::View

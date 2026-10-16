@@ -5,4 +5,4 @@
  * two sides beneath it, so an agent and a docked console are on screen at
  * once.
  */
-export type Side = "workspace" | "first" | "second" | { "view": number };
+export type Side = "workspace" | "first" | "second" | { "beside": number } | { "view": number };

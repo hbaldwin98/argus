@@ -394,6 +394,9 @@ pub enum Side {
     First,
     /// The console's right side, while it is split.
     Second,
+    /// A terminal split beside the Workspace's, numbered left to right from
+    /// the one next to it. Closing one shifts the rest down.
+    Beside(u8),
     /// The screen of an extension's console view, numbered as the window
     /// gives them out: one for each such view on screen, however many.
     View(u8),
