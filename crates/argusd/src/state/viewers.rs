@@ -267,6 +267,9 @@ impl Daemon {
         let p =
             find_any_pane_ref(&inner, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         p.runtime.resize(rows, cols)?;
+        // Logged so a full-screen child that drops to the normal screen can
+        // be lined up against the resizes around it (`pty::feed`).
+        tracing::info!("pane {pane} resized to {rows}x{cols}");
         // Only once it took. Recording a size the pty rejected would make
         // every later request agreeing with it a no-op.
         self.viewers

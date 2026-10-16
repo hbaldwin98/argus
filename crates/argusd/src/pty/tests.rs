@@ -1613,3 +1613,20 @@ async fn a_child_on_the_alternate_screen_stays_there_through_resizes() {
     let _ = pane.kill();
     assert!(alternate, "the pane left the alternate screen");
 }
+
+#[test]
+fn a_screen_switch_is_logged_with_the_request_that_made_it() {
+    let mut chunk = vec![b'x'; 500];
+    chunk.extend_from_slice(b"\x1b[?1049l");
+    chunk.extend_from_slice(&[b'y'; 500]);
+    let context = switch_context(&chunk);
+    assert!(context.contains("\\x1b[?1049l"), "{context}");
+    assert!(context.len() < 300, "only the bytes around it: {context}");
+}
+
+#[test]
+fn a_switch_with_no_request_in_the_chunk_logs_its_tail() {
+    let mut chunk = vec![b'x'; 500];
+    chunk.extend_from_slice(b"end");
+    assert!(switch_context(&chunk).ends_with("end"));
+}

@@ -400,7 +400,7 @@ impl PaneRuntime {
                     let mut dirty = vt.lock().unwrap().end_overdue_sync();
                     let mut budget = MAX_CHUNKS_PER_FRAME;
                     if let Some(chunk) = first {
-                        vt.lock().unwrap().process(&chunk);
+                        feed(&mut vt.lock().unwrap(), &chunk, id);
                         dirty = true;
                         budget -= 1;
                     }
@@ -408,7 +408,7 @@ impl PaneRuntime {
                     // frame rather than costing one of its own.
                     for _ in 0..budget {
                         let Ok(chunk) = byte_rx.try_recv() else { break };
-                        vt.lock().unwrap().process(&chunk);
+                        feed(&mut vt.lock().unwrap(), &chunk, id);
                         dirty = true;
                     }
                     // Sent whether or not anyone is watching the grid: a
@@ -603,6 +603,45 @@ impl PaneRuntime {
     pub fn broadcast_snapshot(&self, pane: PaneId) {
         publish_snapshot(&self.vt, &self.damage_tx, pane);
     }
+}
+
+/// Feeds the child's output to the emulator, logging each switch between
+/// the normal and alternate screens with the bytes that made it. A
+/// full-screen child that lands back on the normal screen has its frames
+/// pile into the history and the wheel scroll that instead of the child;
+/// the log is what tells whether the child asked for that or something
+/// between it and the emulator did.
+fn feed(vt: &mut Vt, chunk: &[u8], pane: PaneId) {
+    let was = vt.alternate_screen();
+    vt.process(chunk);
+    let now = vt.alternate_screen();
+    if was != now {
+        let (rows, cols) = vt.size();
+        let switched = if now { "entered" } else { "left" };
+        tracing::info!(
+            "pane {pane} {switched} the alternate screen at {rows}x{cols}, after: {}",
+            switch_context(chunk)
+        );
+    }
+}
+
+/// The part of `chunk` worth reading after a screen switch: the bytes
+/// around the last request that switches screens or resets the terminal,
+/// or the tail when the switch came out of a synchronized update an
+/// earlier chunk began. Escaped, so the log stays one line of text.
+fn switch_context(chunk: &[u8]) -> String {
+    const SWITCHES: &[&[u8]] = &[b"\x1b[?1049", b"\x1b[?1047", b"\x1b[?47", b"\x1bc"];
+    const BEFORE: usize = 120;
+    const AFTER: usize = 40;
+    let at = SWITCHES
+        .iter()
+        .filter_map(|switch| chunk.windows(switch.len()).rposition(|w| w == *switch))
+        .max();
+    let (start, end) = match at {
+        Some(at) => (at.saturating_sub(BEFORE), (at + AFTER).min(chunk.len())),
+        None => (chunk.len().saturating_sub(BEFORE + AFTER), chunk.len()),
+    };
+    chunk[start..end].escape_ascii().to_string()
 }
 
 fn set_pty_terminal(command: &mut CommandBuilder) {
