@@ -98,15 +98,24 @@ impl HistoryDialog {
     }
 
     pub fn receive_files(&mut self, checkout: CheckoutId, commit: &str, files: Vec<CommitFile>) {
-        if let Some(view) = self.view.as_mut().filter(|_| checkout == self.checkout) {
+        if let Some(view) = self.waiting_on(checkout, commit) {
             view.receive_files(commit, files);
         }
     }
 
     pub fn files_failed(&mut self, checkout: CheckoutId, commit: &str) {
-        if let Some(view) = self.view.as_mut().filter(|_| checkout == self.checkout) {
+        if let Some(view) = self.waiting_on(checkout, commit) {
             view.fail_files(commit);
         }
+    }
+
+    /// The view, while it waits on a commit's files. Files are answered by
+    /// commit, not by id, and another history on the checkout, open or
+    /// parked, asks for the same commits: its refusal must not fold this
+    /// one's.
+    fn waiting_on(&mut self, checkout: CheckoutId, commit: &str) -> Option<&mut HistoryView> {
+        let view = self.view.as_mut().filter(|_| checkout == self.checkout)?;
+        view.commits.iter().any(|c| c.pending && c.info.oid == commit).then_some(view)
     }
 
     /// A commit's diff, kept if this dialog asked for it; given back if not.
@@ -382,12 +391,7 @@ impl HistoryDialog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::checkout;
-    use argus_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind};
-
-    fn commit(oid: &str, summary: &str) -> CommitInfo {
-        CommitInfo { oid: oid.into(), short: oid[..4].into(), summary: summary.into(), author: "t".into(), time: 0 }
-    }
+    use crate::fixtures::{checkout, commit, commit_file, diff_of};
 
     fn opened() -> HistoryDialog {
         let (mut d, msg) = HistoryDialog::open(&checkout(100, "main", true, Vec::new()), 5);
@@ -454,13 +458,7 @@ mod tests {
         let mut d = opened();
         assert!(matches!(d.unfold(), Then::Ask(msg) if matches!(&*msg, ClientMsg::ListCommitFiles { commit, .. } if commit == "aaaa1")));
         assert!(d.page(0).rows[0].loading);
-        d.receive_files(CheckoutId(100), "aaaa1", vec![CommitFile {
-            path: "DESKTOP.md".into(),
-            old_path: None,
-            kind: ChangeKind::Modified,
-            added: 3,
-            removed: 1,
-        }]);
+        d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("DESKTOP.md")]);
         let page = d.page(0);
         assert_eq!(page.rows.iter().map(|r| r.kind).collect::<Vec<_>>(), ["commit", "file", "commit"]);
     }
@@ -469,13 +467,7 @@ mod tests {
     fn a_file_under_the_cursor_shows_its_commits_diff_asked_for_once() {
         let mut d = opened();
         d.unfold();
-        d.receive_files(CheckoutId(100), "aaaa1", vec![CommitFile {
-            path: "DESKTOP.md".into(),
-            old_path: None,
-            kind: ChangeKind::Modified,
-            added: 1,
-            removed: 0,
-        }]);
+        d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("DESKTOP.md")]);
         let mut ids = 40..;
         let Then::Ask(msg) = d.move_by(1, || ids.next().unwrap()) else {
             panic!("the diff is asked for");
@@ -495,32 +487,6 @@ mod tests {
         ));
     }
 
-    fn file(path: &str) -> CommitFile {
-        CommitFile { path: path.into(), old_path: None, kind: ChangeKind::Modified, added: 1, removed: 0 }
-    }
-
-    /// A commit's diff, answering `request_id`, that changed `path`.
-    fn diff_of(request_id: u64, path: &str) -> Review {
-        Review {
-            request_id,
-            checkout: CheckoutId(100),
-            base: ReviewBase::Commit,
-            files: vec![FileDiff {
-                path: path.into(),
-                old_path: None,
-                kind: ChangeKind::Modified,
-                hunks: vec![Hunk {
-                    header: "@@ -1 +1,2 @@".into(),
-                    lines: vec![DiffLine { kind: LineKind::Added, old_lineno: None, new_lineno: Some(2), text: "more".into(), spans: Vec::new() }],
-                }],
-                note: None,
-                new_blob: None,
-                new_lines: None,
-            }],
-            commit: None,
-        }
-    }
-
     /// The id a gesture asked a commit's diff under.
     fn asked(then: Then) -> u64 {
         let Then::Ask(msg) = then else {
@@ -536,7 +502,7 @@ mod tests {
     fn on_a_file() -> (HistoryDialog, u64) {
         let mut d = opened();
         d.unfold();
-        d.receive_files(CheckoutId(100), "aaaa1", vec![file("DESKTOP.md")]);
+        d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("DESKTOP.md")]);
         let id = asked(d.move_by(1, || 40));
         (d, id)
     }
@@ -565,10 +531,10 @@ mod tests {
     fn two_commits_asked_back_to_back_each_keep_their_diff() {
         let mut d = opened();
         d.unfold();
-        d.receive_files(CheckoutId(100), "aaaa1", vec![file("a.md")]);
+        d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("a.md")]);
         d.select_row(2, || 99);
         d.unfold();
-        d.receive_files(CheckoutId(100), "bbbb2", vec![file("b.md")]);
+        d.receive_files(CheckoutId(100), "bbbb2", vec![commit_file("b.md")]);
         let a = asked(d.select_row(1, || 40));
         let b = asked(d.select_row(3, || 41));
 
@@ -577,6 +543,18 @@ mod tests {
         assert!(matches!(d.select_row(1, || 99), Then::Nothing), "already held");
         let page = d.page(0);
         assert_eq!((page.path.as_deref(), page.diff.len(), page.diff_loading), (Some("a.md"), 2, false));
+    }
+
+    /// Files are answered by commit: another history on the checkout asked
+    /// for these, and their refusal is not this one's to fold.
+    #[test]
+    fn a_commits_files_this_dialog_is_not_waiting_on_leave_it_as_it_is() {
+        let (mut d, _) = on_a_file();
+        d.files_failed(CheckoutId(100), "aaaa1");
+        d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("OTHER.md")]);
+        let page = d.page(0);
+        assert_eq!(page.rows.iter().map(|r| r.kind).collect::<Vec<_>>(), ["commit", "file", "commit"]);
+        assert_eq!(page.path.as_deref(), Some("DESKTOP.md"), "the cursor stays on its file");
     }
 
     #[test]

@@ -481,7 +481,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, the page it draws and the gestures it takes, and what the page last heard |
 | `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, whether it is a page, or a dialog floating over the stage with where it sits, how big, and which is in front; which tab each dock shows of the panels that exist, whether it is open and how big, whether that changed since it was saved, the page and gestures of the docks, and what the page last heard |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
-| `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
+| `dialogs` | the review and history dialogs as the window holds them: which is open or parked, the daemon's answers routed to the one that asked whether open or parked, the layout the next review opens on, and what the page last heard of each |
 | `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once, or of something always on screen, so it hears only what differs |
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
@@ -528,7 +528,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
 | `logging` | where the window's own diagnostics go |
 | `window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
-| `fixtures` | the tree builders the test modules share |
+| `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 
 ## Views
 

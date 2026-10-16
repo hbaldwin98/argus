@@ -1,8 +1,9 @@
 //! The review and history dialogs as the window holds them: which is
-//! open, the daemon's answers routed to the one that asked, the side and
-//! layout the next review opens on, and what the page was last sent of
-//! each. What each dialog holds and draws is `review`'s and `history`'s;
-//! the history gives way to the review of a commit chosen in it.
+//! open or parked, the daemon's answers routed to the one that asked
+//! whether open or parked, the side and layout the next review opens on,
+//! and what the page was last sent of each. What each dialog holds and
+//! draws is `review`'s and `history`'s; the history gives way to the
+//! review of a commit chosen in it.
 
 use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, ServerMsg};
 
@@ -55,27 +56,27 @@ impl Dialogs {
     pub fn receive(&mut self, msg: ServerMsg, say: &mut Vec<Event>) -> Option<ServerMsg> {
         match msg {
             ServerMsg::Review(review) => {
-                let unasked = match self.history.as_mut() {
-                    Some(history) => history.receive_diff(review),
-                    None => Some(review),
-                };
-                if let (Some(review), Some(dialog)) = (unasked, self.review.as_mut()) {
+                let mut unasked = Some(review);
+                for history in self.histories() {
+                    unasked = unasked.and_then(|review| history.receive_diff(review));
+                }
+                if let (Some(review), Some(dialog)) = (unasked, self.review_mut()) {
                     dialog.receive(review);
                 }
             }
             ServerMsg::ReviewFailed { request_id, checkout, message } => {
-                let taken = self.history.as_mut().is_some_and(|h| h.diff_failed(request_id, message.clone()));
-                if let Some(dialog) = self.review.as_mut().filter(|_| !taken) {
+                let taken = self.histories().any(|h| h.diff_failed(request_id, message.clone()));
+                if let Some(dialog) = self.review_mut().filter(|_| !taken) {
                     dialog.failed(checkout, request_id, message);
                 }
             }
             ServerMsg::ReviewContext(context) => {
-                if let Some(dialog) = &mut self.review {
+                if let Some(dialog) = self.review_mut() {
                     dialog.receive_context(context);
                 }
             }
             ServerMsg::ReviewContextFailed { request_id, checkout, message } => {
-                if self.review.as_mut().is_some_and(|d| d.context_failed(checkout, request_id)) {
+                if self.review_mut().is_some_and(|d| d.context_failed(checkout, request_id)) {
                     say.push(Event::Notice { text: message });
                 }
             }
@@ -86,30 +87,53 @@ impl Dialogs {
                 let text = if delivered { format!("comment #{id} sent") } else { format!("comment #{id} saved; the agent was not there to take it") };
                 say.push(Event::Notice { text });
             }
+            // Each history keeps only what it asked for: a list by its id, a
+            // commit's files while it waits on them.
             ServerMsg::Commits { request_id, commits, .. } => {
-                if let Some(dialog) = &mut self.history {
-                    dialog.receive_commits(request_id, commits);
+                for history in self.histories() {
+                    history.receive_commits(request_id, commits.clone());
                 }
             }
             ServerMsg::CommitsFailed { request_id, message, .. } => {
-                if let Some(dialog) = &mut self.history {
-                    dialog.commits_failed(request_id, message);
+                for history in self.histories() {
+                    history.commits_failed(request_id, message.clone());
                 }
             }
             ServerMsg::CommitFiles { checkout, commit, files } => {
-                if let Some(dialog) = &mut self.history {
-                    dialog.receive_files(checkout, &commit, files);
+                for history in self.histories() {
+                    history.receive_files(checkout, &commit, files.clone());
                 }
             }
             ServerMsg::CommitFilesFailed { checkout, commit, message } => {
-                if let Some(dialog) = &mut self.history {
-                    dialog.files_failed(checkout, &commit);
+                for history in self.histories() {
+                    history.files_failed(checkout, &commit);
                 }
                 say.push(Event::Notice { text: message });
             }
             other => return Some(other),
         }
         None
+    }
+
+    /// Every history answers can be for: the open one, then the one parked
+    /// while the Code stage reads, which still waits on what it asked.
+    fn histories(&mut self) -> impl Iterator<Item = &mut HistoryDialog> + '_ {
+        let parked = match &mut self.parked {
+            Some(Parked::History(dialog)) => Some(&mut **dialog),
+            _ => None,
+        };
+        self.history.as_mut().into_iter().chain(parked)
+    }
+
+    /// The review answers go to: the open one, else the parked one. A
+    /// parked review always holds a drawn view, so one open beside it
+    /// costs it only a refresh.
+    fn review_mut(&mut self) -> Option<&mut ReviewDialog> {
+        match (&mut self.review, &mut self.parked) {
+            (Some(dialog), _) => Some(dialog),
+            (None, Some(Parked::Review(dialog))) => Some(&mut **dialog),
+            _ => None,
+        }
     }
 
     /// Opens the review of a checkout's working changes.
@@ -375,7 +399,7 @@ impl Dialogs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::{checkout, project, repository};
+    use crate::fixtures::{checkout, commit, commit_file, diff_of, project, repository};
 
     fn tree() -> Vec<ProjectInfo> {
         vec![project(1, "src", vec![repository(10, "argus", None, vec![checkout(100, "main", true, Vec::new())])])]
@@ -461,10 +485,6 @@ mod tests {
         assert_eq!(dialogs.review().unwrap().page(None).empty.as_deref(), Some("no such checkout"));
     }
 
-    fn commit(oid: &str) -> argus_protocol::CommitInfo {
-        argus_protocol::CommitInfo { oid: oid.into(), short: oid[..4].into(), summary: "s".into(), author: "t".into(), time: 0 }
-    }
-
     /// A history over one commit of one file, with the cursor on that file:
     /// the id its diff was asked under. `id` is shared with any review open
     /// beside it, so the two never ask under one id.
@@ -475,9 +495,9 @@ mod tests {
             panic!("the commits are asked for");
         };
         let say = &mut Vec::new();
-        dialogs.receive(ServerMsg::Commits { request_id, checkout: CheckoutId(100), commits: vec![commit("aaaa1")] }, say);
+        dialogs.receive(ServerMsg::Commits { request_id, checkout: CheckoutId(100), commits: vec![commit("aaaa1", "s")] }, say);
         dialogs.history_action(Action::Unfold, None, &tree(), &mut id, &mut out);
-        let files = vec![argus_protocol::CommitFile { path: "DESKTOP.md".into(), old_path: None, kind: argus_protocol::ChangeKind::Modified, added: 1, removed: 0 }];
+        let files = vec![commit_file("DESKTOP.md")];
         dialogs.receive(ServerMsg::CommitFiles { checkout: CheckoutId(100), commit: "aaaa1".into(), files }, say);
         dialogs.history_action(Action::Next, None, &tree(), &mut id, &mut out);
         let Some(ClientMsg::Review { request_id, .. }) = out.pop() else {
@@ -509,6 +529,86 @@ mod tests {
         assert!(dialogs.receive(msg, &mut Vec::new()).is_none());
         let page = history_page(&mut dialogs);
         assert_eq!((page.diff_empty.as_deref(), page.diff_loading), (Some("bad object"), false));
+    }
+
+    /// The Code stage reads while a history's diff is still out: the
+    /// answer must reach it, or it waits on it once it comes back.
+    #[test]
+    fn a_parked_history_still_hears_the_diff_it_asked_for() {
+        let mut dialogs = Dialogs::new(ReviewLayout::default());
+        let asked = history_on_a_file(&mut dialogs, ids());
+        assert!(dialogs.park_history().is_some());
+
+        assert!(dialogs.receive(ServerMsg::Review(diff_of(asked, "DESKTOP.md")), &mut Vec::new()).is_none());
+        assert!(dialogs.unpark());
+        let page = history_page(&mut dialogs);
+        assert_eq!((page.diff.len(), page.diff_loading), (2, false));
+    }
+
+    /// A history opened from the rail while another is parked: the parked
+    /// one still takes its own answers, and the open one is not handed them.
+    #[test]
+    fn a_history_parked_under_an_open_one_still_hears_its_answers() {
+        let mut id = ids();
+        let mut dialogs = Dialogs::new(ReviewLayout::default());
+        let (mut out, say) = (Vec::new(), &mut Vec::new());
+        dialogs.open_history(CheckoutId(100), &tree(), &mut id, &mut out);
+        let Some(ClientMsg::ListCommits { request_id, .. }) = out.pop() else {
+            panic!("the commits are asked for");
+        };
+        dialogs.receive(ServerMsg::Commits { request_id, checkout: CheckoutId(100), commits: vec![commit("aaaa1", "s"), commit("bbbb2", "s")] }, say);
+        dialogs.history_action(Action::Unfold, None, &tree(), &mut id, &mut out);
+        dialogs.receive(ServerMsg::CommitFiles { checkout: CheckoutId(100), commit: "aaaa1".into(), files: vec![commit_file("a.md")] }, say);
+        dialogs.history_action(Action::Next, Some(2), &tree(), &mut id, &mut out);
+        dialogs.history_action(Action::Unfold, None, &tree(), &mut id, &mut out);
+        dialogs.receive(ServerMsg::CommitFiles { checkout: CheckoutId(100), commit: "bbbb2".into(), files: vec![commit_file("b.md")] }, say);
+        out.clear();
+        dialogs.history_action(Action::Next, Some(1), &tree(), &mut id, &mut out);
+        dialogs.history_action(Action::Next, Some(3), &tree(), &mut id, &mut out);
+        let [ClientMsg::Review { request_id: a, .. }, ClientMsg::Review { request_id: b, .. }] = out.as_slice() else {
+            panic!("both files' diffs are asked for: {out:?}");
+        };
+        let (a, b) = (*a, *b);
+        assert!(dialogs.park_history().is_some());
+        dialogs.open_history(CheckoutId(100), &tree(), &mut id, &mut Vec::new());
+        let open = history_page(&mut dialogs);
+
+        assert!(dialogs.receive(ServerMsg::Review(diff_of(a, "a.md")), say).is_none());
+        let failed = ServerMsg::ReviewFailed { request_id: b, checkout: CheckoutId(100), message: "bad object".into() };
+        assert!(dialogs.receive(failed, say).is_none());
+        assert_eq!(history_page(&mut dialogs), open, "the open history was handed nothing");
+
+        assert!(dialogs.unpark());
+        assert_eq!(history_page(&mut dialogs).diff_empty.as_deref(), Some("bad object"), "the cursor is on the refused one");
+        let mut asked = Vec::new();
+        dialogs.history_action(Action::Next, Some(1), &tree(), &mut id, &mut asked);
+        assert!(asked.is_empty(), "the diff came while parked");
+        let page = history_page(&mut dialogs);
+        assert_eq!((page.path.as_deref(), page.diff.len(), page.diff_loading), (Some("a.md"), 2, false));
+    }
+
+    /// A history opened from the rail asks for a commit's files that the
+    /// parked one already holds unfolded: its refusal folds only its own.
+    #[test]
+    fn a_refusal_of_files_another_history_asked_for_leaves_the_parked_one_unfolded() {
+        let mut id = ids();
+        let mut dialogs = Dialogs::new(ReviewLayout::default());
+        history_on_a_file(&mut dialogs, &mut id);
+        assert!(dialogs.park_history().is_some());
+        let mut out = Vec::new();
+        dialogs.open_history(CheckoutId(100), &tree(), &mut id, &mut out);
+        let Some(ClientMsg::ListCommits { request_id, .. }) = out.pop() else {
+            panic!("the commits are asked for");
+        };
+        let say = &mut Vec::new();
+        dialogs.receive(ServerMsg::Commits { request_id, checkout: CheckoutId(100), commits: vec![commit("aaaa1", "s")] }, say);
+        dialogs.history_action(Action::Unfold, None, &tree(), &mut id, &mut out);
+        assert!(matches!(out.pop(), Some(ClientMsg::ListCommitFiles { .. })));
+
+        let failed = ServerMsg::CommitFilesFailed { checkout: CheckoutId(100), commit: "aaaa1".into(), message: "bad object".into() };
+        assert!(dialogs.receive(failed, say).is_none());
+        assert!(dialogs.unpark());
+        assert_eq!(history_page(&mut dialogs).path.as_deref(), Some("DESKTOP.md"), "still unfolded, the cursor on its file");
     }
 
     #[test]

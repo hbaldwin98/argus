@@ -1,8 +1,10 @@
-//! The tree builders the test modules share.
+//! The tree builders the test modules share, and the commits and diffs
+//! the daemon answers about it.
 
 use argus_protocol::{
-    AgentTelemetry, CheckoutId, CheckoutInfo, GitStatus, PaneId, PaneInfo, PaneKind, PaneStatus,
-    ProjectId, ProjectInfo, RepositoryId, RepositoryInfo,
+    AgentTelemetry, ChangeKind, CheckoutId, CheckoutInfo, CommitFile, CommitInfo, DiffLine,
+    FileDiff, GitStatus, Hunk, LineKind, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
+    ProjectInfo, RepositoryId, RepositoryInfo, Review, ReviewBase,
 };
 
 pub fn project(id: u64, name: &str, repositories: Vec<RepositoryInfo>) -> ProjectInfo {
@@ -218,5 +220,38 @@ pub fn diagrams(feature: &str) -> argus_protocol::DiagramList {
         project_name: "src".into(),
         feature: Some(feature.into()),
         diagrams: vec![diagram(11, "Asking for the brief", FLOW), diagram(12, "Capping", "sequenceDiagram\n    a->>b: cap")],
+    }
+}
+
+/// A commit as a history lists it.
+pub fn commit(oid: &str, summary: &str) -> CommitInfo {
+    CommitInfo { oid: oid.into(), short: oid[..4].into(), summary: summary.into(), author: "t".into(), time: 0 }
+}
+
+/// A file a commit changed by one added line.
+pub fn commit_file(path: &str) -> CommitFile {
+    CommitFile { path: path.into(), old_path: None, kind: ChangeKind::Modified, added: 1, removed: 0 }
+}
+
+/// A commit's diff on checkout 100, answering `request_id`, that added a
+/// line to `path`.
+pub fn diff_of(request_id: u64, path: &str) -> Review {
+    Review {
+        request_id,
+        checkout: CheckoutId(100),
+        base: ReviewBase::Commit,
+        files: vec![FileDiff {
+            path: path.into(),
+            old_path: None,
+            kind: ChangeKind::Modified,
+            hunks: vec![Hunk {
+                header: "@@ -1 +1,2 @@".into(),
+                lines: vec![DiffLine { kind: LineKind::Added, old_lineno: None, new_lineno: Some(2), text: "more".into(), spans: Vec::new() }],
+            }],
+            note: None,
+            new_blob: None,
+            new_lines: None,
+        }],
+        commit: None,
     }
 }
