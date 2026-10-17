@@ -373,6 +373,15 @@ pub fn slugify(title: &str) -> String {
 
 pub const MAX_SLUG_BYTES: usize = 48;
 
+/// `slug` with the counter that tells it apart from a feature already
+/// holding it, cut short so the two together are still a slug: a suffix
+/// pushed past [`MAX_SLUG_BYTES`] names a feature the helper refuses.
+pub fn numbered_slug(slug: &str, n: u32) -> String {
+    let suffix = format!("-{n}");
+    let keep = slug.len().min(MAX_SLUG_BYTES.saturating_sub(suffix.len()));
+    format!("{}{suffix}", slug[..keep].trim_end_matches('-'))
+}
+
 /// Whether `text` could be a slug [`slugify`] made: what the helper checks
 /// before a feature name it was given travels.
 pub fn is_slug(text: &str) -> bool {
@@ -404,6 +413,45 @@ mod tests {
     #[test]
     fn a_slug_is_bounded_however_long_the_title_is() {
         assert!(slugify(&"word ".repeat(100)).len() <= MAX_SLUG_BYTES);
+    }
+
+    #[test]
+    fn the_second_feature_with_a_long_title_still_has_a_slug_the_helper_takes() {
+        let base = slugify(&"word ".repeat(100));
+        assert_eq!(base.len(), MAX_SLUG_BYTES);
+        let second = numbered_slug(&base, 2);
+        assert!(is_slug(&second), "{second} is {} bytes", second.len());
+        assert!(second.ends_with("-2"));
+    }
+
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn every_title_becomes_a_slug(title in any::<String>()) {
+                prop_assert!(is_slug(&slugify(&title)));
+            }
+
+            #[test]
+            fn a_slug_slugifies_to_itself(title in any::<String>()) {
+                let slug = slugify(&title);
+                prop_assert_eq!(slugify(&slug), slug);
+            }
+
+            #[test]
+            fn a_numbered_slug_is_a_slug_and_keeps_its_number(
+                title in any::<String>(),
+                n in 2u32..,
+            ) {
+                let numbered = numbered_slug(&slugify(&title), n);
+                prop_assert!(is_slug(&numbered), "{} is {} bytes", numbered, numbered.len());
+                let suffix = format!("-{n}");
+                prop_assert!(numbered.ends_with(&suffix));
+                prop_assert!(!numbered[..numbered.len() - suffix.len()].ends_with('-'));
+            }
+        }
     }
 
     #[test]

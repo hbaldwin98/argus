@@ -1461,7 +1461,7 @@ pub(super) fn insert_feature(
         if !taken {
             break;
         }
-        slug = format!("{base}-{n}");
+        slug = numbered_slug(&base, n);
     }
     // The counter, not the highest number in use: see `SCHEMA_V19`. The
     // rows are consulted too, so a board whose counter was lost still

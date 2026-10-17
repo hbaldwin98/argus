@@ -64,7 +64,7 @@ pub use board::diagrams::{
     MAX_DIAGRAM_TITLE_BYTES,
 };
 pub use board::features::{
-    is_slug, slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
+    is_slug, numbered_slug, slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
 pub use extensions::console::{ConsoleEnd, ExtConsole, MAX_CONSOLE_ARGS, MAX_CONSOLE_ARG_BYTES, MAX_CONSOLE_ENV};

@@ -908,6 +908,16 @@ fn two_features_that_read_alike_do_not_share_a_board() {
 }
 
 #[test]
+fn the_second_of_two_long_alike_features_gets_a_slug_the_helper_can_name() {
+    let s = store();
+    let title = "word ".repeat(100);
+    let first = s.add_feature("argus", &feature(&title), None, None, 1, None).unwrap();
+    let second = s.add_feature("argus", &feature(&title), None, None, 2, None).unwrap();
+    assert_ne!(first.slug, second.slug);
+    assert!(argus_protocol::is_slug(&second.slug), "{} is {} bytes", second.slug, second.slug.len());
+}
+
+#[test]
 fn a_decision_is_read_back_under_the_feature_it_was_filed_under() {
     let s = store();
     s.add_feature("argus", &feature("notes storage"), None, None, 1, None)

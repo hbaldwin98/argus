@@ -18,7 +18,7 @@ use std::sync::Mutex as StdMutex;
 
 use anyhow::{Context, Result};
 use argus_protocol::{
-    checked_task_body, checked_task_line, slugify, Capture, CapturedDecision, CapturedTask,
+    checked_task_body, checked_task_line, numbered_slug, slugify, Capture, CapturedDecision, CapturedTask,
     Consequence, Criterion, Decision, DecisionState, DecisionText, DecisionWrite, Feature,
     FeatureEvent, FeatureMove, FeatureState, FeatureWrite, PaneId, PaneKind, PaneStatus,
     ReviewAnchor, ReviewComment, Task, TaskCounts, TaskNote, TaskPlace, TaskState, TaskWrite,
@@ -404,7 +404,7 @@ impl Store {
             if !taken {
                 break;
             }
-            slug = format!("{old_slug}-{suffix}");
+            slug = numbered_slug(old_slug, suffix);
         }
         tx.execute(
             "UPDATE feature SET project = ?1, slug = ?2 WHERE project = ?3 AND slug = ?4",
