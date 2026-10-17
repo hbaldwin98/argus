@@ -2,7 +2,6 @@
 //! hook receiver, then accept clients until the process is asked to stop.
 
 mod code;
-mod code_search;
 mod config;
 mod conn;
 mod git;
@@ -12,7 +11,6 @@ mod pty;
 mod review;
 mod state;
 mod store;
-mod symbols;
 mod syntax;
 mod system;
 

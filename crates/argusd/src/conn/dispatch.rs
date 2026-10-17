@@ -499,7 +499,7 @@ pub(super) fn dispatch(
             query,
             options,
         } => reply_with(daemon, &reply, checkout, move |repo| {
-            let (matches, truncated) = crate::code_search::search(&repo, &query, &options)?;
+            let (matches, truncated) = crate::code::search::search(&repo, &query, &options)?;
             Ok(ServerMsg::CodeMatches(argus_protocol::CodeMatches {
                 request_id,
                 checkout,

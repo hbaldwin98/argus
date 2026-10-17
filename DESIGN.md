@@ -446,7 +446,7 @@ to the type or its locking.
 | `git/gitignore` | the repository-local excludes for generated Argus files |
 | `syntax`, `syntax/grammar` | which tree-sitter grammar reads a file, chosen by its extension, so highlighting and outlines agree on its language |
 | `syntax/highlight` | what each token of a diff's or a file's lines is, for highlighting |
-| `code`, `code_search`, `symbols` | what the Code stage reads: a version's files and how much each changed, one file's lines with the ones it changed, where text occurs in the working tree, and what a file defines |
+| `code`, `code/search`, `code/symbols` | what the Code stage reads: a version's files and how much each changed, one file's lines with the ones it changed, where text occurs in the working tree, and what a file defines |
 | `config` | `projects.toml`, which is read and never written |
 | `system`, `system/daemon_lock`, `system/logging`, `system/command`, `system/paths`, `system/editor` | what the daemon asks of the machine it runs on: the one daemon allowed to own an instance, where its diagnostics go, a command run without a console window, whether two spellings name one place, and the person's editor |
 | `system/pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |

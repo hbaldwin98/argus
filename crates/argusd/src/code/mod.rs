@@ -3,7 +3,11 @@
 //! the ones that version changed, what was removed between them, and what
 //! the file defines. Read-only, and nothing here writes to the object
 //! database: the working tree is read off disk, the rest out of trees Git
-//! already holds.
+//! already holds. Where text occurs across the working tree is `search`'s,
+//! and what a file defines `symbols`'s.
+
+pub mod search;
+pub mod symbols;
 
 use std::path::Path;
 
@@ -228,7 +232,7 @@ pub fn read(root: &Path, file: &str, version: &CodeVersion) -> anyhow::Result<Re
             }
         }
     }
-    Ok(ReadFile { symbols: crate::symbols::of(file, &text), lines, removed, note: None })
+    Ok(ReadFile { symbols: crate::code::symbols::of(file, &text), lines, removed, note: None })
 }
 
 /// `bytes` with each CRLF a bare LF.
