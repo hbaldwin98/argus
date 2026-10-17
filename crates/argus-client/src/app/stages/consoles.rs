@@ -7,7 +7,7 @@
 //! latest `ServerMsg::Consoles`, so a console asked for is on the rail once
 //! the daemon says it is running, and one closed is gone once it says so.
 
-use super::*;
+use crate::app::*;
 
 impl App {
     /// The console on the stage: the one picked on the rail, while the
@@ -34,7 +34,7 @@ impl App {
 
     /// Puts the rail's cursor on the console at `index`, which the stage
     /// then shows.
-    pub(super) fn pick_console(&mut self, index: usize) {
+    pub(in crate::app) fn pick_console(&mut self, index: usize) {
         if let Some(console) = self.consoles.get(index) {
             self.console = Some(console.id);
             self.focus = Focus::Panes;
@@ -45,13 +45,13 @@ impl App {
     /// The selection has moved to a row of the tree. Forgotten rather than
     /// left behind, so a later return to the pane rows lands on the tree's
     /// pane and not on a console picked long before.
-    pub(super) fn forget_console(&mut self) {
+    pub(in crate::app) fn forget_console(&mut self) {
         self.console = None;
     }
 
     /// `c`, or `s` on a console's row: asks the daemon for a console and
     /// takes the keys to it once its list holds it.
-    pub(super) fn spawn_console(&mut self) {
+    pub(in crate::app) fn spawn_console(&mut self) {
         if !self.consoles_offered {
             let (argusd, fix) = self.daemon_and_its_fix();
             self.alert(format!("{argusd} predates consoles; {fix}"));
@@ -62,7 +62,7 @@ impl App {
     }
 
     /// Whether the daemon's list holds the pane `id`.
-    pub(super) fn is_console(&self, id: PaneId) -> bool {
+    pub(in crate::app) fn is_console(&self, id: PaneId) -> bool {
         self.consoles.iter().any(|console| console.id == id)
     }
 
@@ -70,7 +70,7 @@ impl App {
     /// has gone gives its row to its neighbour, as a pane does, but takes
     /// the keys back to the rail: typing must never go on into a shell
     /// nobody chose. With no console left, the cursor goes back to the tree.
-    pub(super) fn receive_consoles(&mut self, consoles: Vec<PaneInfo>) {
+    pub(in crate::app) fn receive_consoles(&mut self, consoles: Vec<PaneInfo>) {
         let shown = self.current_console().is_some();
         let at = self
             .console
@@ -102,7 +102,7 @@ impl App {
 
     /// Whether the daemon now on the other end keeps consoles. One that
     /// does not has none to list, whatever an earlier daemon had.
-    pub(super) fn offer_consoles(&mut self, offered: bool) {
+    pub(in crate::app) fn offer_consoles(&mut self, offered: bool) {
         self.consoles_offered = offered;
         if !offered {
             self.consoles.clear();

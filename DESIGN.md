@@ -498,12 +498,13 @@ result of a request; `ui` is a pure function of it.
 | `app/daemon/server` | what arrives back, and what it does to the selection |
 | `app/daemon/awaited` | what the terminal client does with what the daemon made for it — focus the pane, select the row, start what was asked for in the new checkout — once `awaited` says the tree, or the consoles beside it, holds it |
 | `app/daemon/showing` | what the daemon is told this client shows |
-| `app/consoles` | the shells that belong to no checkout: the daemon's list of them, which one the stage shows, and asking for another |
-| `app/agent_views` | the views agents showed as this client holds them, newest first: which is open, how far it is scrolled, and the close and refresh requests that change nothing until the daemon answers |
-| `app/saved_views` | the saved views as the daemon sends them, which one the stage shows, the links offered from it and the trail of links followed to it, and the embeds drawn in place |
-| `app/views` | which surface the content area holds, and the fetches opening one makes |
-| `app/feature` | where the Feature stage is — the index, a feature on a lens, the row under the cursor — and how the keys move between them |
-| `app/board_writes` | what the Feature stage asks the daemon to change: the line or note being typed, and the message each key sends |
+| `app/stages` | what each stage holds as this client sees it |
+| `app/stages/views` | which surface the content area holds, and the fetches opening one makes |
+| `app/stages/feature` | where the Feature stage is — the index, a feature on a lens, the row under the cursor — and how the keys move between them |
+| `app/stages/board_writes` | what the Feature stage asks the daemon to change: the line or note being typed, and the message each key sends |
+| `app/stages/agent_views` | the views agents showed as this client holds them, newest first: which is open, how far it is scrolled, and the close and refresh requests that change nothing until the daemon answers |
+| `app/stages/saved_views` | the saved views as the daemon sends them, which one the stage shows, the links offered from it and the trail of links followed to it, and the embeds drawn in place |
+| `app/stages/consoles` | the shells that belong to no checkout: the daemon's list of them, which one the stage shows, and asking for another |
 | `ui` | the frame, and where the cursor goes on it |
 | `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
 | `ui/command_center` | the HTML-specified shell: where the rail and stage go, the tab strip above them, the stage heading, the first-run state, and the status vocabulary they share |

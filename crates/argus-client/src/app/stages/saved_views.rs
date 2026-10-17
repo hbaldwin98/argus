@@ -8,7 +8,7 @@
 
 use argus_protocol::{linked_views, Block, ClientMsg, SavedView, MAX_EMBED_DEPTH};
 
-use super::*;
+use crate::app::*;
 
 #[derive(Default)]
 pub struct SavedViews {

@@ -10,7 +10,7 @@ use argus_protocol::{
     FeatureState, LinkWrite, TaskAction, TaskPlace, TaskState, TaskWrite,
 };
 
-use super::*;
+use crate::app::*;
 use crate::system::browser::Opened;
 use argus_protocol::board::outline::WorkRef;
 
@@ -112,13 +112,13 @@ impl App {
         self.line = Some(LineInput { text, what });
     }
 
-    pub(super) fn type_into_line(&mut self, c: char) {
+    pub(in crate::app) fn type_into_line(&mut self, c: char) {
         if let Some(input) = self.line.as_mut() {
             input.text.push(c);
         }
     }
 
-    pub(super) fn backspace_line(&mut self) {
+    pub(in crate::app) fn backspace_line(&mut self) {
         if let Some(input) = self.line.as_mut() {
             input.text.pop();
         }
@@ -126,7 +126,7 @@ impl App {
 
     /// Sends what was typed. An empty line cancels rather than writing a
     /// row with no text, which the daemon would refuse anyway.
-    pub(super) fn commit_line(&mut self) {
+    pub(in crate::app) fn commit_line(&mut self) {
         let Some(input) = self.line.take() else {
             return;
         };
@@ -221,7 +221,7 @@ impl App {
 
     // ---- features -------------------------------------------------------
 
-    pub(super) fn begin_feature_rename(&mut self) {
+    pub(in crate::app) fn begin_feature_rename(&mut self) {
         if let Some(feature) = self.selected_feature() {
             let (slug, title) = (feature.slug.clone(), feature.title.clone());
             self.begin_line(LineEdit::Feature(slug), title);
@@ -230,7 +230,7 @@ impl App {
 
     /// Starts a feature as one note. It needs no checkout and no agent:
     /// this is a person writing down work that has not begun.
-    pub(super) fn begin_capture(&mut self) {
+    pub(in crate::app) fn begin_capture(&mut self) {
         let Some(project) = self.board_follower.board().and_then(|b| b.project) else {
             return;
         };
@@ -239,7 +239,7 @@ impl App {
 
     /// Writes more of the open feature as one note: tasks and decisions
     /// from one buffer.
-    pub(super) fn begin_capture_into(&mut self) {
+    pub(in crate::app) fn begin_capture_into(&mut self) {
         let Some((project, _, slug)) = self.board_target() else {
             return;
         };
@@ -270,7 +270,7 @@ impl App {
     }
 
     /// Sends the note, or says why it is not ready and keeps it open.
-    pub(super) fn commit_capture(&mut self) {
+    pub(in crate::app) fn commit_capture(&mut self) {
         let (Some(note), Some(checkout)) = (
             self.capture.as_ref(),
             self.current_checkout().map(|checkout| checkout.id),
@@ -296,7 +296,7 @@ impl App {
 
     /// Removes the selected feature. Its decisions survive as unfiled; the
     /// daemon is where that rule lives, and the push is what redraws it.
-    pub(super) fn drop_selected_feature(&mut self) {
+    pub(in crate::app) fn drop_selected_feature(&mut self) {
         let Some((project, checkout, slug)) = self.board_target() else {
             return;
         };
@@ -313,7 +313,7 @@ impl App {
     /// Acceptance, and the human's alone: an agent cannot accept its own
     /// work. Everything else the index says about a feature is read off
     /// the panes running on it and the state of its tasks.
-    pub(super) fn toggle_selected_feature_archived(&mut self) {
+    pub(in crate::app) fn toggle_selected_feature_archived(&mut self) {
         let (Some((project, checkout, slug)), Some(feature)) =
             (self.board_target(), self.selected_feature())
         else {
@@ -334,7 +334,7 @@ impl App {
 
     /// Opens the selected feature's ticket, or offers its tickets when it is
     /// linked to more than one.
-    pub(super) fn open_selected_ticket(&mut self) {
+    pub(in crate::app) fn open_selected_ticket(&mut self) {
         let Some(feature) = self.selected_feature() else {
             return self.report("no feature selected");
         };
@@ -353,7 +353,7 @@ impl App {
         }
     }
 
-    pub(super) fn open_ticket(&mut self, url: &str) {
+    pub(in crate::app) fn open_ticket(&mut self, url: &str) {
         match (self.open_url)(url) {
             Opened::Browser => self.report(format!("opened {url}")),
             Opened::Copied => self.report(format!("no browser here; copied {url}")),
@@ -362,7 +362,7 @@ impl App {
     }
 
     /// Asks for the URL of a ticket to link the selected feature to.
-    pub(super) fn begin_link(&mut self) {
+    pub(in crate::app) fn begin_link(&mut self) {
         let Some(slug) = self.feature_slug() else {
             return self.report("no feature selected");
         };
@@ -374,7 +374,7 @@ impl App {
     /// A waiting draft comes first: it is the one thing about the map that
     /// needs the person, and it is never saved by leaving the editor, only
     /// approved or turned down in so many words.
-    pub(super) fn open_tracker_map(&mut self) {
+    pub(in crate::app) fn open_tracker_map(&mut self) {
         let Some(board) = self.board_follower.board() else {
             return;
         };
@@ -402,7 +402,7 @@ impl App {
     }
 
     /// Makes the draft open in the editor the map, as it reads there now.
-    pub(super) fn approve_tracker_map(&mut self) {
+    pub(in crate::app) fn approve_tracker_map(&mut self) {
         let Some(body) = self.open_map_draft().map(BriefView::body) else {
             return;
         };
@@ -410,7 +410,7 @@ impl App {
     }
 
     /// Turns down the draft open in the editor; the map stays as it was.
-    pub(super) fn discard_tracker_map(&mut self) {
+    pub(in crate::app) fn discard_tracker_map(&mut self) {
         if self.open_map_draft().is_some() {
             self.send_map_change(argus_protocol::MapChange::Discard, "draft turned down");
         }
@@ -439,7 +439,7 @@ impl App {
     }
 
     /// Lifts the selected feature's hold, or asks why it should be held.
-    pub(super) fn toggle_selected_feature_hold(&mut self) {
+    pub(in crate::app) fn toggle_selected_feature_hold(&mut self) {
         let (Some((project, checkout, slug)), Some(feature)) =
             (self.board_target(), self.selected_feature())
         else {
@@ -459,7 +459,7 @@ impl App {
 
     /// Opens the selected feature's brief in the editor, the same one a
     /// task's brief gets: both are prose a human reads and corrects.
-    pub(super) fn open_feature_brief(&mut self) {
+    pub(in crate::app) fn open_feature_brief(&mut self) {
         let (Some(project), Some(feature)) = (
             self.board_follower.board().and_then(|b| b.project),
             self.selected_feature(),
@@ -488,7 +488,7 @@ impl App {
     // ---- tasks ----------------------------------------------------------
 
     /// Starts a new root task, typed into the line at the foot of the stage.
-    pub(super) fn begin_task(&mut self) {
+    pub(in crate::app) fn begin_task(&mut self) {
         if self.feature_slug().is_some() {
             self.begin_line(LineEdit::NewTask, String::new());
         }
@@ -496,7 +496,7 @@ impl App {
 
     /// Starts work under the selected task. A separate binding keeps `a`
     /// useful for a new root task even when the cursor is on a deep row.
-    pub(super) fn begin_subtask(&mut self) {
+    pub(in crate::app) fn begin_subtask(&mut self) {
         if let Some(parent) = self.selected_task().map(|task| task.id) {
             self.begin_line(LineEdit::NewSubtask(parent), String::new());
         }
@@ -504,7 +504,7 @@ impl App {
 
     /// `s`: something under what the cursor is on — a subtask under a
     /// task, a sub-decision under a decision.
-    pub(super) fn begin_under(&mut self) {
+    pub(in crate::app) fn begin_under(&mut self) {
         match self.selected_work() {
             Some(WorkRef::Task(_)) => self.begin_subtask(),
             Some(WorkRef::Decision(_)) => self.begin_sub_decision(),
@@ -512,14 +512,14 @@ impl App {
         }
     }
 
-    pub(super) fn begin_criterion(&mut self) {
+    pub(in crate::app) fn begin_criterion(&mut self) {
         match self.selected_task().map(|task| task.id) {
             Some(id) => self.begin_line(LineEdit::Criterion(id), String::new()),
             None => self.report("a criterion belongs to a task"),
         }
     }
 
-    pub(super) fn begin_note(&mut self) {
+    pub(in crate::app) fn begin_note(&mut self) {
         match self.selected_task().map(|task| task.id) {
             Some(id) => self.begin_line(LineEdit::Note(id), String::new()),
             None => self.report("a note belongs to a task"),
@@ -528,7 +528,7 @@ impl App {
 
     /// `e`: rewrites what the cursor is on. A task's title is a line; a
     /// decision is a record, and opens whole.
-    pub(super) fn edit_in_feature(&mut self) {
+    pub(in crate::app) fn edit_in_feature(&mut self) {
         if !self.feature_open {
             return self.open_feature_brief();
         }
@@ -545,7 +545,7 @@ impl App {
         }
     }
 
-    pub(super) fn open_task_brief(&mut self) {
+    pub(in crate::app) fn open_task_brief(&mut self) {
         let (Some((project, _, feature)), Some(task)) = (self.board_target(), self.selected_task())
         else {
             return self.report("no task selected");
@@ -564,7 +564,7 @@ impl App {
 
     /// `space`: checks off the criterion under the detail cursor, or marks
     /// the task under the outline's done and back.
-    pub(super) fn toggle_done(&mut self) {
+    pub(in crate::app) fn toggle_done(&mut self) {
         let Some(task) = self.selected_task() else {
             return;
         };
@@ -588,7 +588,7 @@ impl App {
     }
 
     /// Moves the selected task along todo → doing → done, or back.
-    pub(super) fn move_selected_task(&mut self, delta: i32) {
+    pub(in crate::app) fn move_selected_task(&mut self, delta: i32) {
         let Some((id, current)) = self.selected_task().map(|t| (t.id, t.state)) else {
             return;
         };
@@ -608,7 +608,7 @@ impl App {
 
     /// Moves the selected task up or down among its siblings, which is
     /// what says to do it first.
-    pub(super) fn reorder_selected_task(&mut self, delta: i64) {
+    pub(in crate::app) fn reorder_selected_task(&mut self, delta: i64) {
         let Some(selected) = self.selected_task() else {
             return;
         };
@@ -630,7 +630,7 @@ impl App {
 
     /// Makes the selected task a subtask of the one above it among its
     /// siblings (`deeper`), or lifts it out to sit after its parent.
-    pub(super) fn indent_selected_task(&mut self, deeper: bool) {
+    pub(in crate::app) fn indent_selected_task(&mut self, deeper: bool) {
         let Some(selected) = self.selected_task() else {
             return;
         };
@@ -661,7 +661,7 @@ impl App {
     }
 
     /// Sends the selected task, with its subtasks, to `place`.
-    pub(super) fn place_selected_task(&mut self, place: TaskPlace) {
+    pub(in crate::app) fn place_selected_task(&mut self, place: TaskPlace) {
         if let Some(id) = self.selected_task().map(|task| task.id) {
             self.send_task(TaskAction::Place { id, place });
         }
@@ -671,7 +671,7 @@ impl App {
 
     /// `d`: a decision. In the outline it is raised under the task the
     /// cursor is on; in the record it is one more at the root.
-    pub(super) fn begin_decision(&mut self) {
+    pub(in crate::app) fn begin_decision(&mut self) {
         if self.feature_slug().is_none() {
             return;
         }
@@ -695,7 +695,7 @@ impl App {
         );
     }
 
-    pub(super) fn begin_sub_decision(&mut self) {
+    pub(in crate::app) fn begin_sub_decision(&mut self) {
         match self.selected_decision().map(|decision| decision.id) {
             Some(id) => self.begin_line(
                 LineEdit::Decision {
@@ -709,7 +709,7 @@ impl App {
         }
     }
 
-    pub(super) fn begin_supersede(&mut self) {
+    pub(in crate::app) fn begin_supersede(&mut self) {
         match self.selected_decision().map(|decision| decision.id) {
             Some(id) => self.begin_line(
                 LineEdit::Decision {
@@ -725,7 +725,7 @@ impl App {
 
     /// Answers an open decision in words, for one with no options listed
     /// or none that fits.
-    pub(super) fn begin_resolution(&mut self) {
+    pub(in crate::app) fn begin_resolution(&mut self) {
         match self.selected_decision().filter(|d| d.open()).map(|d| d.id) {
             Some(id) => self.begin_line(LineEdit::Resolve(id), String::new()),
             None => self.report("only an open decision is waiting on an answer"),
@@ -734,7 +734,7 @@ impl App {
 
     /// `Enter` or `space` in the detail column: takes the option under the
     /// cursor as the answer, or checks the criterion off.
-    pub(super) fn act_in_detail(&mut self) {
+    pub(in crate::app) fn act_in_detail(&mut self) {
         let Some(decision) = self.selected_decision() else {
             return self.toggle_done();
         };
@@ -751,7 +751,7 @@ impl App {
     }
 
     /// Opens the selected decision as the record it is, to be corrected.
-    pub(super) fn open_decision_record(&mut self) {
+    pub(in crate::app) fn open_decision_record(&mut self) {
         let (Some((project, _, feature)), Some(decision)) =
             (self.board_target(), self.selected_decision())
         else {
@@ -771,7 +771,7 @@ impl App {
     }
 
     /// Copies the selected decision out as a record somebody can paste.
-    pub(super) fn copy_decision_record(&mut self) {
+    pub(in crate::app) fn copy_decision_record(&mut self) {
         let Some(id) = self.selected_decision().map(|decision| decision.id) else {
             return self.report("no decision selected");
         };
@@ -793,7 +793,7 @@ impl App {
 
     const DEFAULT_DIAGRAM_SOURCE: &'static str = "sequenceDiagram\n    participant Client\n    participant Daemon\n    Client->>Daemon: request\n    Daemon-->>Client: response";
 
-    pub(super) fn add_diagram(&mut self) {
+    pub(in crate::app) fn add_diagram(&mut self) {
         let Some((project, checkout, feature)) = self.board_target() else {
             return;
         };
@@ -886,7 +886,7 @@ impl App {
 
     /// `a`: a new feature on the index, a new flow on the flows lens, and a
     /// new root task anywhere else in a feature.
-    pub(super) fn add_in_feature(&mut self) {
+    pub(in crate::app) fn add_in_feature(&mut self) {
         if !self.feature_open {
             return self.begin_capture();
         }
@@ -899,7 +899,7 @@ impl App {
     /// `x`: removes what the cursor is on. A decision is never removed — it
     /// is withdrawn, which keeps it on the record, and `x` again restores
     /// it.
-    pub(super) fn drop_in_feature(&mut self) {
+    pub(in crate::app) fn drop_in_feature(&mut self) {
         if !self.feature_open {
             return self.drop_selected_feature();
         }

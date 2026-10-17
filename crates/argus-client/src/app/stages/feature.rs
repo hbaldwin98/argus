@@ -14,7 +14,7 @@ use argus_protocol::{
     Decision, DecisionTreeRow, Feature, Folding, PaneInfo, SequenceDiagram, Task, TaskTreeRow,
 };
 
-use super::*;
+use crate::app::*;
 use argus_protocol::board::diagrams::flow::FlowRow;
 use argus_protocol::board::outline::{Outline, WorkRef};
 
@@ -122,7 +122,7 @@ impl App {
 
     /// Puts the index's cursor on the feature the follower settled on
     /// after its list changed, held by slug rather than by place.
-    pub(super) fn land_on_feature(&mut self) {
+    pub(in crate::app) fn land_on_feature(&mut self) {
         let landed = self.board_follower.feature().map(str::to_string);
         if let Some(at) = landed.and_then(|slug| self.feature_rows().iter().position(|row| row.slug == slug)) {
             self.feature_sel = at;
@@ -131,7 +131,7 @@ impl App {
     }
 
     /// Selects the feature a click landed on.
-    pub(super) fn select_feature_row(&mut self, row: usize) {
+    pub(in crate::app) fn select_feature_row(&mut self, row: usize) {
         if row < self.feature_rows().len() && row != self.feature_sel {
             self.feature_sel = row;
             self.reset_feature_cursors();
@@ -139,7 +139,7 @@ impl App {
         }
     }
 
-    pub(super) fn move_feature_selection(&mut self, delta: i32) {
+    pub(in crate::app) fn move_feature_selection(&mut self, delta: i32) {
         let rows = self.feature_rows().len();
         if rows == 0 {
             return;
@@ -162,7 +162,7 @@ impl App {
 
     /// Shows or folds away the held and archived features, staying on the
     /// feature under the cursor when it is still listed.
-    pub(super) fn toggle_folded_features(&mut self) {
+    pub(in crate::app) fn toggle_folded_features(&mut self) {
         self.show_folded_features = !self.show_folded_features;
         let mut out = Vec::new();
         self.board_follower.settle(&self.tree, &Folding { show_folded: self.show_folded_features }, &mut out);
@@ -173,7 +173,7 @@ impl App {
     // ---- levels -------------------------------------------------------
 
     /// Opens the feature under the cursor on the lens it was last read on.
-    pub(super) fn open_selected_feature(&mut self) {
+    pub(in crate::app) fn open_selected_feature(&mut self) {
         if self.selected_feature().is_some() {
             self.feature_open = true;
             self.in_detail = false;
@@ -182,7 +182,7 @@ impl App {
 
     /// Up one level: out of the detail column, out of the feature, and from
     /// the index back to the workspace.
-    pub(super) fn leave_feature_level(&mut self) {
+    pub(in crate::app) fn leave_feature_level(&mut self) {
         if self.in_detail {
             self.in_detail = false;
         } else if self.feature_open {
@@ -192,7 +192,7 @@ impl App {
         }
     }
 
-    pub(super) fn set_lens(&mut self, lens: Lens) {
+    pub(in crate::app) fn set_lens(&mut self, lens: Lens) {
         if self.feature_open {
             self.lens = lens;
             self.in_detail = false;
@@ -202,7 +202,7 @@ impl App {
 
     /// Crosses between the list and the detail beside it. There is nothing
     /// to cross to when the selected row has nothing in it to act on.
-    pub(super) fn toggle_detail(&mut self) {
+    pub(in crate::app) fn toggle_detail(&mut self) {
         if self.in_detail {
             self.in_detail = false;
         } else if self.detail_len() > 0 {
@@ -223,14 +223,14 @@ impl App {
     }
 
     /// Re-asks for everything the stage draws.
-    pub(super) fn refresh_feature(&mut self) {
+    pub(in crate::app) fn refresh_feature(&mut self) {
         let mut out = Vec::new();
         self.board_follower.refresh(&mut out);
         self.send_board_requests(out);
     }
 
     /// Moves the cursor in whatever has the keys.
-    pub(super) fn move_in_feature(&mut self, delta: i32) {
+    pub(in crate::app) fn move_in_feature(&mut self, delta: i32) {
         let step = |at: usize, len: usize| {
             (at as i32)
                 .saturating_add(delta)
@@ -252,7 +252,7 @@ impl App {
     }
 
     /// Holds every cursor inside what it indexes after the lists change.
-    pub(super) fn clamp_feature_cursors(&mut self) {
+    pub(in crate::app) fn clamp_feature_cursors(&mut self) {
         let last = |len: usize| len.saturating_sub(1);
         self.work_sel = self.work_sel.min(last(self.outline().rows.len()));
         self.decision_sel = self.decision_sel.min(last(self.board_rows().len()));
@@ -328,7 +328,7 @@ impl App {
 
     /// Puts the cursor back on the row it was on after the lists under it
     /// were replaced: a row you have to go looking for reads as lost.
-    pub(super) fn keep_selection(&mut self, was: Option<WorkRef>) {
+    pub(in crate::app) fn keep_selection(&mut self, was: Option<WorkRef>) {
         if let Some(at) = was.and_then(|was| self.outline().rows.iter().position(|row| row.at == was)) {
             if self.lens == Lens::Work {
                 self.work_sel = at;
@@ -343,7 +343,7 @@ impl App {
     }
 
     /// Selects an outline or record row by what it is.
-    pub(super) fn select_work(&mut self, at: WorkRef) {
+    pub(in crate::app) fn select_work(&mut self, at: WorkRef) {
         self.keep_selection(Some(at));
         self.in_detail = false;
         self.detail_sel = 0;
@@ -351,7 +351,7 @@ impl App {
 
     /// Folds the task under the cursor, or unfolds it. Folding a row with
     /// nothing under it climbs to its parent, the way a tree's `h` does.
-    pub(super) fn fold_in_outline(&mut self, fold: bool) {
+    pub(in crate::app) fn fold_in_outline(&mut self, fold: bool) {
         if !self.feature_open || self.lens != Lens::Work {
             return;
         }
@@ -414,7 +414,7 @@ impl App {
             .collect()
     }
 
-    pub(super) fn move_flow_selection(&mut self, delta: i32) {
+    pub(in crate::app) fn move_flow_selection(&mut self, delta: i32) {
         let count = self.feature_diagrams().len();
         if !self.feature_open || self.lens != Lens::Flows || count == 0 {
             return;
@@ -426,14 +426,14 @@ impl App {
         );
     }
 
-    pub(super) fn select_diagram(&mut self, row: usize) {
+    pub(in crate::app) fn select_diagram(&mut self, row: usize) {
         if row < self.feature_diagrams().len() && row != self.diagram_sel {
             self.diagram_sel = row;
             self.step_sel = 0;
         }
     }
 
-    pub(super) fn open_selected_diagram(&mut self) {
+    pub(in crate::app) fn open_selected_diagram(&mut self) {
         let Some(diagram) = self.selected_diagram().cloned() else {
             return;
         };
@@ -445,7 +445,7 @@ impl App {
     // ---- what the keys act on ------------------------------------------
 
     /// `Enter`: opens whatever is under the cursor one level further.
-    pub(super) fn open_in_feature(&mut self) {
+    pub(in crate::app) fn open_in_feature(&mut self) {
         if !self.feature_open {
             return self.open_selected_feature();
         }
@@ -473,7 +473,7 @@ impl App {
     }
 
     /// Goes to the pane working the selected task, or the feature.
-    pub(super) fn go_to_feature_pane(&mut self) {
+    pub(in crate::app) fn go_to_feature_pane(&mut self) {
         let pane = self
             .selected_task()
             .and_then(|task| task.claimed_pane)

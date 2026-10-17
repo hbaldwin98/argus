@@ -8,7 +8,7 @@
 
 use argus_protocol::{ClientMsg, PaneId, ShownView};
 
-use super::*;
+use crate::app::*;
 
 #[derive(Default)]
 pub struct AgentViews {

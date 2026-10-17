@@ -6,12 +6,12 @@
 //! comes back saying it moved — so a refused action leaves the panel
 //! showing what is actually true.
 //!
-//! The `impl` is split by what the operator is doing: `tree` for the
-//! selection and moving it, `gestures` for keys, the pointer and scrolling,
-//! `daemon` for what is asked of the daemon and what arrives back,
-//! `layers` for the modal layers, `agent_views` for the views agents
-//! showed, `saved_views` for the ones kept and the links followed between
-//! them, and `consoles` for the shells that belong to no checkout.
+//! The `impl` is split by what the operator is doing, a folder each:
+//! `tree` for the selection and moving it, `gestures` for keys, the pointer
+//! and scrolling, `daemon` for what is asked of the daemon and what arrives
+//! back, `layers` for the modal layers, and `stages` for what each stage
+//! holds — the Feature stage, the views agents showed and kept, and the
+//! consoles that belong to no checkout.
 
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, HeldTree, PaneId, PaneInfo, PaneState,
@@ -41,23 +41,18 @@ pub use layers::modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget,
 pub use gestures::mode::{Mode, OverlayMode};
 pub use tree::rail::RailRow;
 pub use tree::rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
-pub use board_writes::LineInput;
-pub use feature::{FeatureHit, FeatureRow, Lens, Standing, GROUPS};
-pub use agent_views::AgentViews;
-pub use saved_views::{Links, SavedViews};
-pub use views::View;
+pub use stages::board_writes::LineInput;
+pub use stages::feature::{FeatureHit, FeatureRow, Lens, Standing, GROUPS};
+pub use stages::agent_views::AgentViews;
+pub use stages::saved_views::{Links, SavedViews};
+pub use stages::views::View;
 
-mod agent_views;
-mod board_writes;
-mod consoles;
 mod daemon;
-mod feature;
 mod gestures;
 pub mod layers;
+mod stages;
 use daemon::awaited::Then;
-mod saved_views;
 mod tree;
-mod views;
 
 fn state_word(status: PaneStatus) -> &'static str {
     match status {
@@ -165,7 +160,8 @@ pub struct App {
     pub host_request: Option<HostRequest>,
     pub tree: Vec<ProjectInfo>,
     /// The shells that belong to no checkout, as the daemon last listed
-    /// them. Beside the tree because they are not in it: see [`consoles`].
+    /// them. Beside the tree because they are not in it: see
+    /// [`stages::consoles`].
     pub consoles: Vec<PaneInfo>,
     /// Whether the daemon keeps consoles (`CONSOLES`). False until it
     /// greets, and for a daemon from before them: the rail draws no section
@@ -184,11 +180,13 @@ pub struct App {
     pub open_workspace: String,
     pub focus: Focus,
     /// Which top-level surface is open. Client-only state: see
-    /// [`views`].
+    /// [`stages::views`].
     pub view: View,
-    /// The views agents showed, shown by the Views stage. See `agent_views`.
+    /// The views agents showed, shown by the Views stage. See
+    /// `stages::agent_views`.
     pub agent_views: AgentViews,
-    /// The saved views the daemon holds, shown by the same stage. See `saved_views`.
+    /// The saved views the daemon holds, shown by the same stage. See
+    /// `stages::saved_views`.
     pub saved_views: SavedViews,
     /// Where focus was in the workspace when another view took the stage,
     /// so coming back lands where you left rather than at the root.

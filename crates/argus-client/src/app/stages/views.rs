@@ -12,7 +12,7 @@
 //! the daemon — two people attached to one daemon are not necessarily
 //! reading the same thing.
 
-use super::*;
+use crate::app::*;
 
 /// Which top-level surface the content area is showing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -128,7 +128,7 @@ impl App {
     /// Called on every tree, key and click, because any of them can move
     /// the rail, and cheap when nothing has moved: the follower asks once
     /// per repository per connection, and pushes keep it current between.
-    pub(super) fn follow_board(&mut self) {
+    pub(in crate::app) fn follow_board(&mut self) {
         if self.view != View::Feature {
             return;
         }
@@ -158,7 +158,7 @@ impl App {
         })
     }
 
-    pub(super) fn send_board_requests(&self, out: Vec<ClientMsg>) {
+    pub(in crate::app) fn send_board_requests(&self, out: Vec<ClientMsg>) {
         for msg in out {
             let _ = self.out.send(msg);
         }
