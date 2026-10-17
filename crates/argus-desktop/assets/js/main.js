@@ -1,7 +1,7 @@
 // The desktop window's page: it draws what Rust sends and reports what the
 // person does. It decides nothing about the daemon — the model is the
 // window's `session` — so each event replaces what the page held.
-import { chime, listen as listenForSound } from './chime.js';
+import { chime, listen as listenForSound } from './system/chime.js';
 import { closeStart, drawChrome, listenToRailEdge, notice, railPicked, reconnect, unpickRail, } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
 import { drawCode } from './code_stage.js';
@@ -18,7 +18,7 @@ import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { dialogTakesKeys, listen as listenToKeys, runOver } from './keymap.js';
 import { listen as listenToMenus } from './kit/menu.js';
-import { listen as listenToFrame } from './frame.js';
+import { listen as listenToFrame } from './system/frame.js';
 import { drawPalette, openPalette } from './palette.js';
 import { drawAddProject, drawHeading } from './projects.js';
 import { drawFrame, screen } from './screen.js';

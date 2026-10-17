@@ -56,7 +56,7 @@ use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keymap::{self, Action};
-use crate::notifications::{self, Alert, Looking};
+use crate::system::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, Code, CodeGesture, Then as CodeThen};

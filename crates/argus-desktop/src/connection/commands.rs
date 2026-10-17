@@ -15,11 +15,11 @@ use tauri::ipc::Channel;
 use tauri::{State, WebviewWindow};
 
 use crate::backdrop;
-use crate::clipboard;
-use crate::opener;
+use crate::system::clipboard;
+use crate::system::opener;
 use crate::connection::page::{Call, Event, SettingChange};
 use crate::connection::shared::Shared;
-use crate::window_frame;
+use crate::system::window_frame;
 
 type Answer = Result<(), String>;
 

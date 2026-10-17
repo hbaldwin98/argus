@@ -3,7 +3,7 @@
 // window's `session` — so each event replaces what the page held.
 
 import type { Event } from './bindings/Event';
-import { chime, listen as listenForSound } from './chime.js';
+import { chime, listen as listenForSound } from './system/chime.js';
 import {
   closeStart,
   drawChrome,
@@ -28,7 +28,7 @@ import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { dialogTakesKeys, listen as listenToKeys, runOver } from './keymap.js';
 import { listen as listenToMenus } from './kit/menu.js';
-import { listen as listenToFrame } from './frame.js';
+import { listen as listenToFrame } from './system/frame.js';
 import { drawPalette, openPalette } from './palette.js';
 import { drawAddProject, drawHeading } from './projects.js';
 import { drawFrame, screen } from './screen.js';

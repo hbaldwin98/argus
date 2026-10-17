@@ -184,8 +184,8 @@ the dock it left shows the tab before it, or closes once empty. A `desktop.json`
 docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `drag`, `panels` (what Rust says each panel that exists is and can do), `screen`, `input`, `keymap`, `focus` (which layer has a key),
-`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys`, `kit/dom`, `state`, `edge` (a side column's edge, dragged),
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `system/frame`, `compose`, `console`, `docks`, `floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `drag`, `panels` (what Rust says each panel that exists is and can do), `screen`, `input`, `keymap`, `focus` (which layer has a key),
+`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `projects`, `system/chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `system/copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys`, `kit/dom`, `state`, `edge` (a side column's edge, dragged),
 `kit/clock` and `connection/tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `connection/page.rs`'s types and the page and gesture types each surface's module keeps beside it
@@ -545,7 +545,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
 | `status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
 | `preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
-| `notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
 | `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
 | `fonts` | which font families this machine has installed, by every name the webview might know each by, and which are monospaced, for the Settings dialog to offer |
 | `shown` | the panes the window shows — the Workspace's grid, one per side of the console, and one per extension console view on screen — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
@@ -586,7 +585,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, the commands the palette runs, and the order of the layers that hold the keys outside a pane |
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
-| `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `agent_views` | which views agents showed, as the window holds them, which one their panel shows, which name a feature, and which wait on a refresh |
 | `saved_views` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
 | `view_changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
@@ -595,15 +593,18 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, and the question an action waits on; what a gesture in one sends; and the page of them all, drawn where the window says each one is, with the commands `extension_keys` lists beside them, and what the page last heard |
 | `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension, as the page draws them |
 | `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |
-| `opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
-| `logging` | where the window's own diagnostics go |
-| `window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
 | `connection` | how the window trades with the daemon and the page |
 | `connection/commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `connection::page::Call` — and which part of the window answers each call |
 | `connection/daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
 | `connection/page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call`; a surface that keeps what it last sent defines its own page and gestures, which these name |
 | `connection/sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once, or of something always on screen, so it hears only what differs |
 | `connection/shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
+| `system` | what the window asks of the machine it runs on |
+| `system/clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
+| `system/logging` | where the window's own diagnostics go |
+| `system/notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
+| `system/opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
+| `system/window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 
 ## Views
@@ -2460,7 +2461,7 @@ until the board says the lines are being carried out, and a new proposal starts 
 
 A diagram block is read in Rust, as the Flows lens reads a flow (`flow::rows` and
 `flow::participants`), and drawn by the page as an SVG sequence diagram, its source a disclosure
-away. Every string is drawn as text, Markdown included; a link opens through `opener` in the
+away. Every string is drawn as text, Markdown included; a link opens through `system/opener` in the
 system's browser and only when it is `http` or `https`.
 
 `m` transfers the selected feature's active checkout association to another checkout in the same

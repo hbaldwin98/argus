@@ -14,8 +14,8 @@ use tauri::ipc::Channel;
 use tauri::AppHandle;
 use tokio::sync::{mpsc, watch, Notify};
 
-use crate::clipboard;
-use crate::notifications;
+use crate::system::clipboard;
+use crate::system::notifications;
 use crate::connection::page::Event;
 use crate::session::Session;
 use crate::settings::{self, Settings};
@@ -57,7 +57,7 @@ impl Shared {
         // Written here rather than by the page, which may write only
         // inside the gesture's own handler, and a key reaches Rust first.
         if let Some(url) = session.take_opening() {
-            if let Err(said) = crate::opener::open(&url) {
+            if let Err(said) = crate::system::opener::open(&url) {
                 let msgs = session.note(said);
                 self.send(msgs);
             }

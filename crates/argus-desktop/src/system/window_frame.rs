@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn the_border_takes_the_line_colour_the_stylesheet_names() {
-        let css = include_str!("../assets/style.css");
+        let css = include_str!("../../assets/style.css");
         for theme in [Theme::Mocha, Theme::Macchiato, Theme::Frappe, Theme::Latte] {
             assert!(css.contains(&format!("--surface0: #{:06x};", border(theme))), "{theme:?}");
         }

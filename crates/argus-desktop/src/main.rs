@@ -16,7 +16,6 @@ mod agent_views;
 mod agents;
 mod backdrop;
 mod capture_note;
-mod clipboard;
 mod checkouts;
 mod checkouts_stage;
 mod code_stage;
@@ -43,9 +42,6 @@ mod keymap;
 mod history;
 mod keys;
 mod link_dialog;
-mod logging;
-mod notifications;
-mod opener;
 mod stage;
 mod palette;
 mod preferences;
@@ -63,11 +59,11 @@ mod settings;
 mod shown;
 mod status;
 mod switcher;
+mod system;
 mod tracker_dialogs;
 mod transcript_reader;
 mod view_changes;
 mod view_refs;
-mod window_frame;
 mod work_lens;
 
 use std::sync::Arc;
@@ -77,6 +73,7 @@ use tauri::webview::PageLoadEvent;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use crate::connection::{commands, daemon, shared::Shared};
+use crate::system::{logging, window_frame};
 
 /// How often the shown pane's changed rows are sent: about a frame.
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);

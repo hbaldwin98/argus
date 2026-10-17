@@ -1,7 +1,7 @@
 // A code block with its language and a Copy button in a header. Plain
 // text: no highlighter here.
 
-import { copyButton } from './copy.js';
+import { copyButton } from './system/copy.js';
 import { el } from './kit/dom.js';
 
 export function code(lang: string | null, text: string): HTMLElement {
