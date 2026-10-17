@@ -3747,10 +3747,12 @@ body.console-fullscreen #bar {
   padding: var(--sp-24);
 }
 /* One column as wide as the longest line, so every row's colour runs on
-   past the pane's edge when it is scrolled sideways. */
+   past the pane's edge when it is scrolled sideways; `auto` stretches it
+   to the pane when every line is shorter. A 100% minimum would not: it
+   leaves no free space for the column to grow into. */
 .review-diff > .dbody:not(.paired) {
   display: grid;
-  grid-template-columns: minmax(100%, max-content);
+  grid-template-columns: minmax(max-content, auto);
   align-content: start;
   container-type: inline-size;
 }
