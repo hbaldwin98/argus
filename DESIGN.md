@@ -480,6 +480,23 @@ to the type or its locking.
 | `system/pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
 | `system/dll_search` | where the daemon loads libraries from on Windows: its own directory and System32, never the directory it was started in |
 | `system/ctrl_c` | whether a pane's child can be interrupted on Windows: the daemon clears the ignore-Ctrl-C flag it was started with, so no child inherits it |
+| `bin/argus-hook/main` | `argus-hook` startup: which command the arguments name, and naming the feature a board command is about |
+| `bin/argus-hook/transport` | how a request reaches the daemon: the loopback post, the typed call each endpoint answers, which URL a pane's reports go to, and the credentials the environment carries |
+| `bin/argus-hook/installed` | the form Argus writes into a harness's own hook config: the event the harness pipes in, and only the JSON its runner needs back |
+| `bin/argus-hook/telemetry` | what model an agent runs, how full its context is, what it has spent and which tool it is in, for harnesses that report through hook commands |
+| `bin/argus-hook/context` | what an agent reads before it starts: the pane's review comments and the feature the checkout is on, sized to sit in its context |
+| `bin/argus-hook/comments` | `argus-hook comments`: the review comments addressed to the pane, one a line |
+| `bin/argus-hook/board` | the commands that read and write a feature's board, one to a module |
+| `bin/argus-hook/board/features` | `argus-hook feature`: the feature a checkout is on, read, listed or exported, and every write that opens, moves or links one |
+| `bin/argus-hook/board/tasks` | `argus-hook task`: the feature's task tree, its writes parsed from arguments and the tree drawn for the model |
+| `bin/argus-hook/board/diagrams` | `argus-hook diagram`: the feature's sequence diagrams, read and written as Mermaid source |
+| `bin/argus-hook/board/decisions` | `argus-hook decisions` and `decide`: the decision board drawn as its tree, and the writes that add, answer, withdraw or rewrite a decision |
+| `bin/argus-hook/board/tracker_map` | `argus-hook tracker-map`: how the repository maps to its trackers, and an agent's draft of one |
+| `bin/argus-hook/board/reconcile` | `argus-hook reconcile`: reading the reconcile asked for, proposing its lines, and reporting what was carried out |
+| `bin/argus-hook/view` | `argus-hook view`: showing the person a view of what the agent read, taking it down, and keeping one in the store |
+| `bin/argus-hook/launch` | `argus-hook agent`: an agent starting another in a pane of its own, here, in a new worktree or in another repository's checkout |
+| `bin/argus-hook/inbox` | relaying the pane's inbox, one item a line, for a plugin that cannot hold the stream open itself |
+| `bin/argus-hook/transcript` | appending a turn to a transcript in the neutral format, for a harness that keeps none of its own |
 
 `argus` is a replaceable renderer over one model. `app` holds the state and never predicts the
 result of a request; `ui` is a pure function of it.

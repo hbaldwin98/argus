@@ -38,15 +38,16 @@ fn listed_modules() -> Vec<BTreeSet<String>> {
 }
 
 /// Every module under `src`, named the way the table names it: a path
-/// without `.rs`, `mod.rs` standing for its directory. Test modules, crate
-/// roots and extra binaries are not responsibilities of their own.
+/// without `.rs`, `mod.rs` standing for its directory, so an extra binary's
+/// modules are `bin/<name>/…` and its root `bin/<name>/main`. Test modules
+/// and a library's root are not responsibilities of their own.
 fn source_modules(src: &Path) -> BTreeSet<String> {
     fn walk(dir: &Path, src: &Path, out: &mut BTreeSet<String>) {
         for entry in std::fs::read_dir(dir).unwrap().flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
             if path.is_dir() {
-                if name != "tests" && name != "bin" {
+                if name != "tests" {
                     walk(&path, src, out);
                 }
                 continue;
