@@ -140,7 +140,7 @@ impl Daemon {
             self.guard_part::<P>(target, id)?;
         }
         if !action.is_read() {
-            let at = super::decisions::now();
+            let at = crate::state::clock::epoch_secs();
             // A client watching the feature a row moved into is owed the
             // push as much as one watching the feature it left.
             let landed = action.also_changes().map(|feature| BoardTarget {

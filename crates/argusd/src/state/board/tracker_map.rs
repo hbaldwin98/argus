@@ -68,7 +68,7 @@ impl Daemon {
             }
             (Asker::Agent { pane, .. }, MapChange::Write(body)) => {
                 let by = pane_label(pane);
-                self.store.draft_tracker_map(key, &checked(&body)?, &by, super::decisions::now())?
+                self.store.draft_tracker_map(key, &checked(&body)?, &by, crate::state::clock::epoch_secs())?
             }
             (Asker::Person, MapChange::Approve(body)) => {
                 self.store.approve_tracker_map(key, &checked(&body)?)?

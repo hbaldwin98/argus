@@ -92,7 +92,7 @@ impl Daemon {
                     asked,
                     pane,
                     by: pane_label(pane),
-                    at: super::decisions::now(),
+                    at: crate::state::clock::epoch_secs(),
                     proposed: true,
                     lines: proposal.lines,
                     noticed: proposal.noticed,
@@ -128,12 +128,12 @@ impl Daemon {
                 // said; the lines that went through are done with.
                 left.carrying.clear();
                 left.lines = lines;
-                left.at = super::decisions::now();
+                left.at = crate::state::clock::epoch_secs();
                 let left = (!left.lines.is_empty()).then_some(left);
                 let decisions = self.store.decisions(key)?;
                 let filed: Vec<_> = decisions.iter().filter(|d| d.feature.as_deref() == Some(slug)).collect();
                 let reconciled = Reconciled {
-                    at: super::decisions::now(),
+                    at: crate::state::clock::epoch_secs(),
                     by: pane_label(pane),
                     seen: seen(&self.store.tasks(key, slug)?, &filed),
                 };
@@ -157,7 +157,7 @@ impl Daemon {
                     asked: ask,
                     pane,
                     by: pane_label(pane),
-                    at: super::decisions::now(),
+                    at: crate::state::clock::epoch_secs(),
                     proposed: false,
                     lines: Vec::new(),
                     noticed: Vec::new(),

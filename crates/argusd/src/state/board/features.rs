@@ -184,7 +184,7 @@ impl Daemon {
         action: FeatureAction,
     ) -> anyhow::Result<Option<String>> {
         let key = address.key.as_str();
-        let at = super::decisions::now();
+        let at = crate::state::clock::epoch_secs();
         let mut about = None;
         match action {
             FeatureAction::Open(write) => {

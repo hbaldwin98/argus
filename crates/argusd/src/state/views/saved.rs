@@ -340,7 +340,7 @@ impl Daemon {
             attached,
             recipe: write.recipe.filter(|r| !r.trim().is_empty()),
             sources: write.sources,
-            built_at: crate::state::board::decisions::now(),
+            built_at: crate::state::clock::epoch_secs(),
             built_commit: crate::git::head_oid(&checkout),
             checkout: Some(checkout.to_string_lossy().into_owned()),
             stale: false,

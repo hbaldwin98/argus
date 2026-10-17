@@ -159,7 +159,7 @@ impl Daemon {
         }
         match change {
             DecisionChange::Withdraw { id } => {
-                self.store.set_decision_withdrawn(key, id, Some(now()))?
+                self.store.set_decision_withdrawn(key, id, Some(crate::state::clock::epoch_secs()))?
             }
             DecisionChange::Restore { id } => self.store.set_decision_withdrawn(key, id, None)?,
             DecisionChange::Resolve {
@@ -252,7 +252,7 @@ impl Daemon {
             key,
             &write,
             Some(feature),
-            now(),
+            crate::state::clock::epoch_secs(),
             by.session(),
             checkout.as_deref(),
         )?;
@@ -297,11 +297,4 @@ impl Daemon {
             tracker_map: self.store.tracker_map(&address.key).unwrap_or_default(),
         })));
     }
-}
-
-pub(in crate::state) fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or_default()
 }
