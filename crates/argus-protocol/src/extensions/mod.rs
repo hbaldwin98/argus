@@ -8,6 +8,10 @@
 //! draws are one set. Everything is declarative: Argus draws a table, a
 //! command or a dialog from data and never runs an extension's markup.
 
+pub mod console;
+pub mod guide;
+pub mod keys;
+
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -97,7 +101,7 @@ pub struct ExtView {
     /// view-wide actions, a Restart say, but no columns, rows or row
     /// actions.
     #[serde(default)]
-    pub console: Option<crate::ext_console::ExtConsole>,
+    pub console: Option<crate::extensions::console::ExtConsole>,
     #[serde(default)]
     pub actions: Vec<ExtAction>,
     /// The id of the row action a double-click or Enter on a row takes, as

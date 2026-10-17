@@ -328,9 +328,9 @@ live in this crate and a contract written twice drifts in silence.
 | `hook/inbox` | what the daemon tells a harness's plugin over its inbox |
 | `hook/call` | what each pane-API endpoint is posted and answers with: the one declaration `argus-hook` calls through and the daemon answers through |
 | `extensions` | what an extension publishes for Argus to draw — its views, commands and dialogs — and what the person does with them on the way back: what taking an action on a view carries, a row or none, or the words it is refused in |
-| `ext_console` | what an extension's console view runs and where — its command, working directory and environment as the extension asks, and the pane and ending the daemon reports |
-| `extension_keys` | which keys an extension may bind, and the words a refused one is refused in: the keys Argus keeps where an extension's would be heard |
-| `extension_guide` | how to build an extension from nothing, as `argus extension guide` prints it: a walkthrough, then the reference, its examples read through the types and its limits filled from the constants |
+| `extensions/console` | what an extension's console view runs and where — its command, working directory and environment as the extension asks, and the pane and ending the daemon reports |
+| `extensions/keys` | which keys an extension may bind, and the words a refused one is refused in: the keys Argus keeps where an extension's would be heard |
+| `extensions/guide` | how to build an extension from nothing, as `argus extension guide` prints it: a walkthrough, then the reference, its examples read through the types and its limits filled from the constants |
 | `framing`, `transport` | a frame, and the endpoint it travels over |
 | `panes` | a pane's terminal as a client holds and drives it |
 | `panes/cell` | a screen cell on the wire, and the per-cell span an older client is sent its damage in |
@@ -2623,7 +2623,7 @@ client alone; so they read the daemon there under `--host`, as the window does.
 An extension's key never shadows a key Argus binds, the leader, or the digits that open the stages,
 so the shortcuts sheet stays the one account of what a key does. The daemon decides when the key is
 registered and knows no client's keymap, so the keys the window keeps where a command would be
-heard are listed in `argus_protocol::extension_keys`, and the desktop's tests fail when it binds a
+heard are listed in `argus_protocol::extensions::keys`, and the desktop's tests fail when it binds a
 key that list does not hold. A conflicting key — Argus's, another extension's, or one of the
 extension's own view's actions' — is refused: the command or action is kept without it, the answer
 to the put names each refusal and why, and every client's status bar says so. An action's key is

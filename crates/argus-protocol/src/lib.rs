@@ -19,9 +19,6 @@ pub mod checkout_path;
 pub mod code;
 pub mod decisions;
 pub mod diagrams;
-pub mod ext_console;
-pub mod extension_guide;
-pub mod extension_keys;
 pub mod extensions;
 pub mod features;
 pub mod flow;
@@ -93,7 +90,7 @@ pub use features::{
     is_slug, slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
-pub use ext_console::{ConsoleEnd, ExtConsole, MAX_CONSOLE_ARGS, MAX_CONSOLE_ARG_BYTES, MAX_CONSOLE_ENV};
+pub use extensions::console::{ConsoleEnd, ExtConsole, MAX_CONSOLE_ARGS, MAX_CONSOLE_ARG_BYTES, MAX_CONSOLE_ENV};
 pub use extensions::{
     CommandScope, ExtAbout, ExtAction, ExtAnswer, ExtPlace, ExtCommand, ExtDescription, ExtDialog, ExtDialogKind,
     ExtDialogRaised, ExtEvent, ExtField, ExtItem, ExtKey, ExtPane, ExtPaneOpened, ExtRow, ExtScope, ExtTaken, ExtView,

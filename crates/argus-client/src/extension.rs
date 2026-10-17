@@ -42,7 +42,7 @@ pub fn parse(args: &[String]) -> Option<Ask> {
 pub async fn run(ask: Ask, host: Option<String>) -> anyhow::Result<()> {
     let name = match ask {
         Ask::Guide => {
-            print!("{}", argus_protocol::extension_guide::guide());
+            print!("{}", argus_protocol::extensions::guide::guide());
             return Ok(());
         }
         Ask::List => None,

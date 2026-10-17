@@ -11,15 +11,15 @@
 
 use crate::views::agent_view::Tone;
 use crate::views::check::{MAX_TABLE_ROWS, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES};
-use crate::ext_console::{MAX_CONSOLE_ARGS, MAX_CONSOLE_ARG_BYTES, MAX_CONSOLE_ENV};
-use crate::extension_keys::{KEPT, STAGE_KEYS};
+use crate::extensions::console::{MAX_CONSOLE_ARGS, MAX_CONSOLE_ARG_BYTES, MAX_CONSOLE_ENV};
+use crate::extensions::keys::{KEPT, STAGE_KEYS};
 use crate::extensions::{
     ExtKey, EXT_ICONS, MAX_ABOUT_GUIDE_BYTES, MAX_ACTIONS, MAX_COMMANDS, MAX_EXTENSION_BODY, MAX_EXTENSION_NAME,
     MAX_HELP_BYTES, MAX_ICON_NAME, MAX_ITEMS, MAX_NOTICE_CHARS, MAX_SUMMARY_BYTES, MAX_VIEWS,
 };
 
 /// The guide as written, its `{{NAME}}` placeholders unfilled.
-const SOURCE: &str = include_str!("extension_guide.md");
+const SOURCE: &str = include_str!("guide.md");
 
 /// Every tone, in the order the guide lists them. The match is what makes
 /// a new tone a compile error here until the guide names it.

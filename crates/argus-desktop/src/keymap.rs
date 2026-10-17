@@ -1267,14 +1267,14 @@ mod tests {
         }
     }
 
-    /// The daemon refuses an extension's key from `extension_keys` without
+    /// The daemon refuses an extension's key from `extensions::keys` without
     /// knowing this table, so every key the window binds where an
     /// extension's command is heard — outside a text field, after the
     /// leader included — must be on that list, and the keys an extension's
     /// view keeps for itself are ones no action may take.
     #[test]
     fn every_key_the_window_keeps_is_one_the_daemon_refuses_an_extension() {
-        use argus_protocol::extension_keys::{action_key_refusal, command_key_refusal};
+        use argus_protocol::extensions::keys::{action_key_refusal, command_key_refusal};
         let heard = |place: Place| !matches!(place, Writing | Jump | Place::Filter | Place::Palette | Place::Extension);
         let mut missing = Vec::new();
         for binding in BINDINGS.iter().filter(|b| heard(b.place)) {
@@ -1295,7 +1295,7 @@ mod tests {
                 }
             }
         }
-        assert!(missing.is_empty(), "not in extension_keys::KEPT: {missing:?}");
+        assert!(missing.is_empty(), "not in extensions::keys::KEPT: {missing:?}");
         for binding in BINDINGS.iter().filter(|b| b.place == Place::Extension) {
             for chord in binding.chords.iter().filter(|c| c.key.chars().count() == 1) {
                 assert!(action_key_refusal(chord.key).is_some(), "an action could take {}", chord.key);

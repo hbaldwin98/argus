@@ -3,7 +3,7 @@
 //! heading of the shortcuts sheet per extension, beside the keymap's own.
 //!
 //! The daemon already refused any key the window keeps
-//! (`argus_protocol::extension_keys`), so a key here never shadows one of
+//! (`argus_protocol::extensions::keys`), so a key here never shadows one of
 //! `keymap`'s; the window only decides where each is heard.
 
 use argus_protocol::{CommandScope, ExtCommand, ExtKey, ExtView};

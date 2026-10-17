@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
-use argus_protocol::extension_keys::{action_key_refusal, command_key_refusal};
+use argus_protocol::extensions::keys::{action_key_refusal, command_key_refusal};
 use argus_protocol::extensions::{MAX_COMMANDS, MAX_ITEMS, MAX_NOTICE_CHARS, MAX_VIEWS};
 use argus_protocol::{
     CommandScope, ConsoleEnd, ExtAbout, ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtDialogKind, ExtEvent, ExtPane, ExtView,
