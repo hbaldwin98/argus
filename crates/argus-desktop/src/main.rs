@@ -14,7 +14,6 @@
 mod add_project;
 mod agent_views;
 mod agents;
-mod backdrop;
 mod capture_note;
 mod checkouts;
 mod checkouts_stage;
@@ -35,7 +34,6 @@ mod feature_view;
 mod features;
 mod file_jump;
 mod flows_lens;
-mod fonts;
 #[cfg(test)]
 mod fixtures;
 mod keymap;
@@ -44,7 +42,6 @@ mod keys;
 mod link_dialog;
 mod stage;
 mod palette;
-mod preferences;
 mod reconcile_dialog;
 mod record_lens;
 mod rail;
@@ -73,6 +70,7 @@ use tauri::webview::PageLoadEvent;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use crate::connection::{commands, daemon, shared::Shared};
+use crate::settings::{fonts, remembered};
 use crate::system::{logging, window_frame};
 
 /// How often the shown pane's changed rows are sent: about a frame.
@@ -89,7 +87,7 @@ fn main() {
     };
     tauri::async_runtime::set(runtime.handle().clone());
 
-    let mut saved = settings::load();
+    let mut saved = remembered::load();
     // Only where none was chosen: the person's own choice outlasts the
     // environment's.
     if saved.host.is_none() {
@@ -153,7 +151,7 @@ fn open_window(app: &mut tauri::App, shared: &Arc<Shared>) -> tauri::Result<()> 
         .disable_drag_drop_handler()
         // Always, since it can only be set as the window is made: the
         // background opacity is then the page's alpha alone, and moving
-        // its slider never rebuilds the window (`backdrop`).
+        // its slider never rebuilds the window (`settings::backdrop`).
         .transparent(true)
         .build()?;
     commands::dress(&window, shared);

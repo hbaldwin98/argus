@@ -20,7 +20,7 @@ use crate::extension_keys::{ExtCommandPage, ExtGroup, ExtensionKeys};
 use crate::keymap::Action;
 use crate::connection::page::{Event, Side};
 use crate::connection::sent::Sent;
-use crate::settings::ExtensionsLayout;
+use crate::settings::remembered::ExtensionsLayout;
 
 /// Where the person is, which decides the views a scoped one is listed in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

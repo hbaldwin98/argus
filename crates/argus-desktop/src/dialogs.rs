@@ -13,7 +13,7 @@ use crate::keymap::Action;
 use crate::connection::page::{Event, HistoryPage, ReviewClick, ReviewJumpGesture, ReviewPage};
 use crate::review::ReviewDialog;
 use crate::connection::sent::Sent;
-use crate::settings::ReviewLayout;
+use crate::settings::remembered::ReviewLayout;
 
 /// A file at a line, to open in the person's editor.
 pub type EditorAt = (CheckoutId, String, Option<u32>);

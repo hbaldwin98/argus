@@ -7,9 +7,9 @@
 //! takes effect as it is made; the page still draws the choices from what
 //! this sends back, not from the control it moved.
 
-use crate::backdrop;
+use crate::settings::backdrop;
 use crate::connection::page::{FontFamily, SettingChange, SettingsPage};
-use crate::settings::{Backdrop, EditorMode, Preferences, MIN_OPACITY};
+use crate::settings::remembered::{Backdrop, EditorMode, Preferences, MIN_OPACITY};
 
 /// The zoom keys' steps, in percent: a browser's, so a step feels as it
 /// does there, and text at either end is still readable.
@@ -154,7 +154,7 @@ fn family_name(typed: &str) -> String {
 mod tests {
     use super::*;
     use crate::features::Layout;
-    use crate::settings::Theme;
+    use crate::settings::remembered::Theme;
 
     #[test]
     fn a_change_is_heard_and_saved_once() {

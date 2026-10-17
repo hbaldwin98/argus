@@ -18,7 +18,7 @@ use crate::system::clipboard;
 use crate::system::notifications;
 use crate::connection::page::Event;
 use crate::session::Session;
-use crate::settings::{self, Settings};
+use crate::settings::remembered::{self, Settings};
 
 pub struct Shared {
     session: Mutex<Session>,
@@ -73,7 +73,7 @@ impl Shared {
         let events = session.events(now());
         self.publish(events);
         if let Some(settings) = session.take_settings() {
-            settings::save(&settings);
+            remembered::save(&settings);
         }
         let alerts = session.take_alerts();
         if let Some(app) = self.app.get() {

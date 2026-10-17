@@ -15,7 +15,7 @@ use argus_protocol::{
 use crate::comment_box::CommentBox;
 use crate::file_jump::{FileJump, Jumped};
 use crate::connection::page::{DiffRow, DiffSide, ReviewFile, ReviewJump, ReviewJumpGesture, ReviewPage};
-use crate::settings::ReviewLayout;
+use crate::settings::remembered::ReviewLayout;
 
 pub struct ReviewDialog {
     session: ReviewSession,

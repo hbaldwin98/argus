@@ -221,11 +221,11 @@
 
 :root {
   --font-ui-system: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
-  /* The Settings dialog's interface font goes in front (settings.ts). */
+  /* The Settings dialog's interface font goes in front (settings/preferences.ts). */
   --font-ui: var(--font-ui-system);
   --font-mono-bundled:
     'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas, monospace;
-  /* The Settings dialog's font goes in front of the bundled ones (settings.ts). */
+  /* The Settings dialog's font goes in front of the bundled ones (settings/preferences.ts). */
   --font-mono: var(--font-mono-bundled);
   --fs-2xs: 10px;
   --fs-xs: 11px;
@@ -1539,11 +1539,11 @@ body {
   background-color: var(--accent);
 }
 /* The background opacity setting. The window is always transparent, and
- * `--see` (0 to 1, from `settings.ts`) is the alpha of its large fills and
- * of nothing else, so text, borders and controls stay solid while the
- * desktop, or Mica or Acrylic, shows through. The body paints nothing and
- * each region paints its own fill once, so two see-through fills stack
- * only where the board's well sits on its stage. */
+ * `--see` (0 to 1, from `settings/preferences.ts`) is the alpha of its
+ * large fills and of nothing else, so text, borders and controls stay
+ * solid while the desktop, or Mica or Acrylic, shows through. The body
+ * paints nothing and each region paints its own fill once, so two
+ * see-through fills stack only where the board's well sits on its stage. */
 :root {
   --see: 1;
   --see-chrome: color-mix(in srgb, var(--bg-chrome) calc(var(--see) * 100%), transparent);

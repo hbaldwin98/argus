@@ -32,7 +32,7 @@ import { escapeFrom, type Handlers, takesFromPane, up } from './focus.js';
 import { closeLayer } from './kit/menu.js';
 import { closePalette, openPalette } from './palette.js';
 import { addProjectOpen, answerRemoveNo } from './projects.js';
-import { closeSettings, openSettings, settingsOpen } from './settings.js';
+import { closeSettings, openSettings, settingsOpen } from './settings/preferences.js';
 import { closeSheet, openSheet, sheetOpen, toggleSheet } from './shortcuts.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{State, WebviewWindow};
 
-use crate::backdrop;
+use crate::settings::backdrop;
 use crate::system::clipboard;
 use crate::system::opener;
 use crate::connection::page::{Call, Event, SettingChange};

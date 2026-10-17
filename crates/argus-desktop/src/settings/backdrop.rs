@@ -12,7 +12,7 @@
 use tauri::WebviewWindow;
 
 use crate::connection::page::BackdropOffer;
-use crate::settings::Backdrop;
+use crate::settings::remembered::Backdrop;
 
 /// The backdrops to offer, each greyed out with the reason where this
 /// machine cannot draw it.

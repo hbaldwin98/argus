@@ -2,16 +2,16 @@
 // on the document, the background's opacity as `--see` and the fonts in
 // front of `--font-mono`'s bundled faces and `--font-ui`'s system ones.
 //
-// Rust holds the choices (`src/preferences.rs`) and saves each as it is
-// made; the dialog draws what Rust sends back, and is updated in place
+// Rust holds the choices (`src/settings/preferences.rs`) and saves each as
+// it is made; the dialog draws what Rust sends back, and is updated in place
 // rather than rebuilt, so a slider being dragged or a command being typed
 // keeps its hold while the choices come back.
-import { $, el, icon } from './kit/dom.js';
+import { $, el, icon } from '../kit/dom.js';
 import { fontPicker } from './font_picker.js';
-import { actionFor } from './keymap.js';
-import { screens } from './screen.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { actionFor } from '../keymap.js';
+import { screens } from '../screen.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 /** Each flavour's own colours for its card: base, mantle, accent, text. */
 const FLAVOURS = [
     { theme: 'mocha', name: 'Mocha', colours: ['#1e1e2e', '#181825', '#cba6f7', '#a6adc8'] },

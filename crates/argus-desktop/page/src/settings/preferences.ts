@@ -2,23 +2,23 @@
 // on the document, the background's opacity as `--see` and the fonts in
 // front of `--font-mono`'s bundled faces and `--font-ui`'s system ones.
 //
-// Rust holds the choices (`src/preferences.rs`) and saves each as it is
-// made; the dialog draws what Rust sends back, and is updated in place
+// Rust holds the choices (`src/settings/preferences.rs`) and saves each as
+// it is made; the dialog draws what Rust sends back, and is updated in place
 // rather than rebuilt, so a slider being dragged or a command being typed
 // keeps its hold while the choices come back.
 
-import type { Backdrop } from './bindings/Backdrop';
-import type { EditorMode } from './bindings/EditorMode';
-import type { Layout } from './bindings/Layout';
-import type { SavedLinks } from './bindings/SavedLinks';
-import type { SettingChange } from './bindings/SettingChange';
-import type { Theme } from './bindings/Theme';
-import { $, el, icon, type Child } from './kit/dom.js';
+import type { Backdrop } from '../bindings/Backdrop';
+import type { EditorMode } from '../bindings/EditorMode';
+import type { Layout } from '../bindings/Layout';
+import type { SavedLinks } from '../bindings/SavedLinks';
+import type { SettingChange } from '../bindings/SettingChange';
+import type { Theme } from '../bindings/Theme';
+import { $, el, icon, type Child } from '../kit/dom.js';
 import { fontPicker, type FontPicker } from './font_picker.js';
-import { actionFor } from './keymap.js';
-import { screens } from './screen.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { actionFor } from '../keymap.js';
+import { screens } from '../screen.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 
 type Flavour = Exclude<Theme, 'system'>;
 

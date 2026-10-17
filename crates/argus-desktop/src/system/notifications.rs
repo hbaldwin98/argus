@@ -10,7 +10,7 @@ use argus_protocol::{HeldTree, PaneId, PaneStatus, ProjectInfo, Transition};
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
-use crate::settings::Preferences;
+use crate::settings::remembered::Preferences;
 
 /// One notification: the pane's name, and what came of it where.
 #[derive(Debug, Clone, PartialEq, Eq)]

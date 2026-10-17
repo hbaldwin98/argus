@@ -15,13 +15,13 @@
 //! feature is written as (`capture_note`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
 //! the project switcher (`switcher`) and the dialog adding a project
-//! (`add_project`), the Settings dialog's choices (`preferences`), the
-//! console (`console`), the views agents showed (`agent_views`), the
-//! extensions' views (`extension_views`), what fills the stage and where
-//! leaving it goes (`stage`), and what the daemon is making
-//! (`argus_protocol::connection::awaited`). The session says which of them a
-//! message or gesture is for, and what one of them changing means for the
-//! rest.
+//! (`add_project`), the Settings dialog's choices
+//! (`settings::preferences`), the console (`console`), the views agents
+//! showed (`agent_views`), the extensions' views (`extension_views`), what
+//! fills the stage and where leaving it goes (`stage`), and what the daemon
+//! is making (`argus_protocol::connection::awaited`). The session says
+//! which of them a message or gesture is for, and what one of them changing
+//! means for the rest.
 //!
 //! The client never predicts: the rail changes when the daemon's tree does,
 //! and a shell asked for is shown only once the daemon has said it made it
@@ -67,7 +67,7 @@ use crate::connection::page::{
     Stage,
 };
 use crate::palette;
-use crate::preferences::Chosen;
+use crate::settings::preferences::Chosen;
 use crate::reconcile_dialog::ReconcileGesture;
 use crate::rail::{self, Choices};
 use crate::saved_views::{Closed, SavedColumn, SavedViews, Whereabouts};
@@ -75,7 +75,7 @@ use crate::dragged_width::{self, DraggedWidth};
 use crate::connection::sent::Sent;
 use crate::sessions::Sessions;
 use crate::sessions_dialog::{Recent, SessionsDialog, Then as SessionsThen};
-use crate::settings::{Backdrop, SavedLinks, Settings, Theme};
+use crate::settings::remembered::{Backdrop, SavedLinks, Settings, Theme};
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
 use crate::switcher::Switcher;
@@ -3747,7 +3747,7 @@ mod tests {
     #[test]
     fn the_editor_opens_as_the_settings_say() {
         let mut s = session(without_focus());
-        s.set(SettingChange::Editor { mode: crate::settings::EditorMode::Separately });
+        s.set(SettingChange::Editor { mode: crate::settings::remembered::EditorMode::Separately });
         s.set(SettingChange::EditorCommand { command: "code -w".into() });
         let sent = s.open_review(CheckoutId(100));
         let [ClientMsg::Review { request_id, .. }, ..] = sent.as_slice() else {
@@ -4178,7 +4178,7 @@ mod tests {
     #[test]
     fn an_editor_with_a_window_of_its_own_is_not_opened_on_a_remote_host() {
         let mut s = session(without_focus());
-        s.set(SettingChange::Editor { mode: crate::settings::EditorMode::Separately });
+        s.set(SettingChange::Editor { mode: crate::settings::remembered::EditorMode::Separately });
         s.switch_host(Some("devbox".into()));
         s.open_in_editor(CheckoutId(100), "src/lib.rs".into(), None);
         let sent = std::mem::take(&mut s.out);

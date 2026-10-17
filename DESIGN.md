@@ -104,25 +104,26 @@ leader and `,`), also in the palette and behind the gear at the sidebar's foot: 
 Macchiato, Frappé or Latte, or following the system as Mocha in the dark and Latte in the light),
 the background's opacity and what shows through it, the two fonts, where a file opens and the editor
 command, the system notification an agent coming to need you raises, and the layout a repository's
-Feature index opens as before it remembers its own. Each choice is a call that `preferences` holds
-and saves as it is made, and the page draws the look from what comes back. Each font is the family of
-one installed on the machine, typed or picked from a list under the field that draws each family in
-its own face: the families `fonts` reads at start, those the webview can find under that name, with
-a note when nothing is called what the field holds. A half-typed name is not chosen until it is
-picked, entered or left. The code font, offered from the monospaced families, goes in front of the
-bundled JetBrains Mono and Symbols Nerd Font Mono, so the panes draw a prompt's or an editor's Nerd
-Font icons whichever text face is chosen; a pane re-measures its cells when it changes. The
-interface font, offered from every family, goes in front of the system's own and draws the rest. The window is always built transparent,
-since that can only be set as it is made, so the opacity is only the page's alpha on its large fills
-— the sidebar, the strip, the stages and the terminal's background — and never on text or borders,
-and moving it never rebuilds the window. What shows through is Clear, or on Windows Mica (Windows 11
-only, greyed out with the reason elsewhere) or Acrylic, which `backdrop` puts on and takes off the
-live window through `window-vibrancy`; elsewhere only Clear is offered. A notification names the
-pane, what came of it and where, for an agent turning waiting, needs-review or failed, never for the
-pane watched in a focused window, and by default only while the window is in the background: the
-window's version of the terminal client's bell, beside its chime. The leader and `f` fill the window with the pane,
-putting the sidebar away until the same keys again. The console (`console`) is a fourth place in
-the nav, keyed 4 (in a pane, the leader and 4): the daemon's consoles (`ServerMsg::Consoles`) as
+Feature index opens as before it remembers its own. Each choice is a call that
+`settings/preferences` holds and saves as it is made, and the page draws the look from what comes
+back. Each font is the family of one installed on the machine, typed or picked from a list under the
+field that draws each family in its own face: the families `settings/fonts` reads at start, those
+the webview can find under that name, with a note when nothing is called what the field holds. A
+half-typed name is not chosen until it is picked, entered or left. The code font, offered from the
+monospaced families, goes in front of the bundled JetBrains Mono and Symbols Nerd Font Mono, so the
+panes draw a prompt's or an editor's Nerd Font icons whichever text face is chosen; a pane
+re-measures its cells when it changes. The interface font, offered from every family, goes in front
+of the system's own and draws the rest. The window is always built transparent, since that can only
+be set as it is made, so the opacity is only the page's alpha on its large fills — the sidebar, the
+strip, the stages and the terminal's background — and never on text or borders, and moving it never
+rebuilds the window. What shows through is Clear, or on Windows Mica (Windows 11 only, greyed out
+with the reason elsewhere) or Acrylic, which `settings/backdrop` puts on and takes off the live
+window through `window-vibrancy`; elsewhere only Clear is offered. A notification names the pane,
+what came of it and where, for an agent turning waiting, needs-review or failed, never for the pane
+watched in a focused window, and by default only while the window is in the background: the window's
+version of the terminal client's bell, beside its chime. The leader and `f` fill the window with the
+pane, putting the sidebar away until the same keys again. The console (`console`) is a fourth place
+in the nav, keyed 4 (in a pane, the leader and 4): the daemon's consoles (`ServerMsg::Consoles`) as
 tabs, `+` asking for one (`SpawnConsole`) that appears once the daemon's consoles hold it, and a
 tab's close ending it. It is docked beside the Workspace, Feature and Checkouts stages — at the
 bottom until it is moved, by its head's dock menu or the palette's Dock the console on the left, on
@@ -185,7 +186,7 @@ docks keeps its console docked at the bottom as tall as it was, its views panel'
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `system/frame`, `compose`, `console`, `docks`, `floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `drag`, `panels` (what Rust says each panel that exists is and can do), `screen`, `input`, `keymap`, `focus` (which layer has a key),
-`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `projects`, `system/chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `system/copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys`, `kit/dom`, `state`, `edge` (a side column's edge, dragged),
+`palette`, `shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `projects`, `system/chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `system/copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys`, `kit/dom`, `state`, `edge` (a side column's edge, dragged),
 `kit/clock` and `connection/tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `connection/page.rs`'s types and the page and gesture types each surface's module keeps beside it
@@ -544,9 +545,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `switcher` | what the project switcher offers beyond the tree's projects — the daemon's workspaces — and the project waiting on a yes to be removed |
 | `add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
 | `status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
-| `preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
-| `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
-| `fonts` | which font families this machine has installed, by every name the webview might know each by, and which are monospaced, for the Settings dialog to offer |
 | `shown` | the panes the window shows — the Workspace's grid, one per side of the console, and one per extension console view on screen — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
 | `shown/workspace_grid` | the Workspace's grid: which panes it holds — the Workspace's own first, then those split beside it — where each sits and how big, which pane may join it and the refusal for one that may not, and the page the rail carries of it, its sizes in thousandths |
 | `shown/workspace_grid/split_grid` | where the Workspace's panes sit in relation to each other — rows, column fractions, row heights — and what adding, closing, swapping and moving a pane does to them, as arithmetic |
@@ -581,7 +579,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it — a drag on a flow as its source rewritten — checked against the protocol's bounds; a new row saved blank sends nothing |
 
 | `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, whether the board holds the feature it was sent as yet, and the page and gestures it trades with the page, last sent while open |
-| `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
 | `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, the commands the palette runs, and the order of the layers that hold the keys outside a pane |
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
@@ -605,6 +602,11 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `system/notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
 | `system/opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
 | `system/window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
+| `settings` | what the person chose for this window, what it remembers between runs, and what this machine offers to choose from |
+| `settings/backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
+| `settings/fonts` | which font families this machine has installed, by every name the webview might know each by, and which are monospaced, for the Settings dialog to offer |
+| `settings/preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
+| `settings/remembered` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 
 ## Views

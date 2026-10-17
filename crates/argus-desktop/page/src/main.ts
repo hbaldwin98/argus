@@ -23,7 +23,7 @@ import { drawLink } from './link.js';
 import { drawReconcile } from './reconcile.js';
 import { drawReview } from './review.js';
 import { drawSessions } from './sessions.js';
-import { drawSettings } from './settings.js';
+import { drawSettings } from './settings/preferences.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { dialogTakesKeys, listen as listenToKeys, runOver } from './keymap.js';

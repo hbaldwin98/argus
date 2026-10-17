@@ -3,8 +3,8 @@
 // chosen when it is picked, on Enter or when the field is left, so a
 // half-typed one never redraws the window in the fallback.
 
-import { el, icon } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { el, icon } from '../kit/dom.js';
+import { actionFor } from '../keymap.js';
 
 export type FontPicker = {
   node: HTMLElement;
