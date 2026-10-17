@@ -552,3 +552,18 @@ fn v0_16_0_work_follows_its_feature_through_every_rename() {
     }
 }
 
+#[test]
+fn v0_16_0_a_worktree_still_points_at_the_feature_it_was_working_on() {
+    let (_dir, s, repo, worktree) = opened_v0_16_0();
+    let board = board_of(&repo);
+    let decisions = s.decisions(&board).unwrap();
+    let working_on = |tag: &str| {
+        decisions
+            .iter()
+            .find(|d| d.chose == format!("Fixture root decision {tag}"))
+            .and_then(|d| d.feature.clone())
+            .unwrap()
+    };
+    assert_eq!(s.artifact_feature_scope(&repo, &board).unwrap(), Some(working_on("main")));
+    assert_eq!(s.artifact_feature_scope(&worktree, &board).unwrap(), Some(working_on("wt")));
+}

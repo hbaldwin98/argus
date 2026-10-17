@@ -423,10 +423,21 @@ impl Store {
                 rusqlite::params![new_key, slug, old_key, old_slug],
             )?;
         }
+        // Moved to `new_key` with the feature rather than renamed where it
+        // stands: left at `old_key` under its new slug, the pointer is
+        // matched again when the next feature moved off that board was
+        // renamed to the slug this one just took. A checkout already pointing
+        // at a feature on `new_key` keeps that pointer.
         tx.execute(
-            "UPDATE artifact_feature_scope SET slug = ?1
-             WHERE artifact_scope = ?2 AND slug = ?3",
-            rusqlite::params![slug, old_key, old_slug],
+            "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
+             SELECT ?1, checkout_path, ?2 FROM artifact_feature_scope
+             WHERE artifact_scope = ?3 AND slug = ?4
+             ON CONFLICT(artifact_scope, checkout_path) DO NOTHING",
+            rusqlite::params![new_key, slug, old_key, old_slug],
+        )?;
+        tx.execute(
+            "DELETE FROM artifact_feature_scope WHERE artifact_scope = ?1 AND slug = ?2",
+            rusqlite::params![old_key, old_slug],
         )?;
         tx.execute(
             "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
