@@ -421,4 +421,67 @@ every widget to tidy the theme roles.
         assert!(capture.tasks.is_empty());
         assert_eq!(capture.body.as_deref(), Some("-not a task"));
     }
+
+    mod properties {
+        use super::*;
+        use proptest::collection::vec;
+        use proptest::prelude::*;
+
+        /// A note's lines as a person writes them: some indent, perhaps a
+        /// mark, perhaps words. Each line's words carry its number, so a
+        /// line found kept is that line and not another that read alike.
+        fn note() -> impl Strategy<Value = String> {
+            let indent = prop_oneof![Just(""), Just("  "), Just("    "), Just("\t")];
+            let mark = prop_oneof![Just(""), Just("- "), Just("? "), Just("! "), Just("-"), Just("# ")];
+            let words = prop_oneof![Just(""), Just("alpha"), Just("beta gamma"), Just("-delta"), Just("why?")];
+            vec((indent, mark, words), 0..12).prop_map(|lines| {
+                lines
+                    .into_iter()
+                    .enumerate()
+                    .map(|(n, (i, m, w))| match w {
+                        "" => format!("{i}{m}"),
+                        w => format!("{i}{m}{w}_{n}_"),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+        }
+
+        /// Every piece of text the reading kept.
+        fn kept(capture: &Capture) -> String {
+            fn task(t: &CapturedTask, out: &mut Vec<String>) {
+                out.push(t.title.clone());
+                t.subtasks.iter().for_each(|s| task(s, out));
+            }
+            let mut out = vec![capture.title.clone(), capture.body.clone().unwrap_or_default()];
+            capture.tasks.iter().for_each(|t| task(t, &mut out));
+            for d in capture.all_decisions() {
+                out.push(d.chose.clone());
+                out.extend(d.options.iter().cloned());
+                out.extend(d.because.iter().cloned());
+            }
+            out.join("\n")
+        }
+
+        proptest! {
+            /// The module's promise: what could not be placed is in
+            /// `unread` rather than dropped.
+            #[test]
+            fn every_line_with_words_is_kept_or_named_unread(note in note(), titled in any::<bool>()) {
+                let capture = Capture::read(&note, titled);
+                let kept = kept(&capture);
+                for (at, line) in note.lines().enumerate() {
+                    let (_, text) = marked(line.trim());
+                    let text = text.trim_start_matches('#').trim();
+                    if text.is_empty() {
+                        continue;
+                    }
+                    prop_assert!(
+                        kept.contains(text) || capture.unread.contains(&(at + 1)),
+                        "line {} {:?} was dropped from {:#?}", at + 1, line, capture
+                    );
+                }
+            }
+        }
+    }
 }
