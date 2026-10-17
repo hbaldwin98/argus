@@ -130,3 +130,62 @@ async fn an_ask_goes_only_to_a_live_agent_and_a_turned_down_proposal_is_gone() {
     assert!(desk.person(ReconcileAction::Discard).is_err(), "nothing left to turn down");
     let _ = desk.d.close_pane(desk.agent);
 }
+
+impl Desk {
+    /// Proposes, ticks both lines, and reports `failed`.
+    fn carry_out(&self, failed: Vec<Failed>) -> Feature {
+        self.propose().unwrap();
+        let tick = |line| Ticked { line, text: format!("line {line}") };
+        self.person(ReconcileAction::CarryOut { ticked: vec![tick(0), tick(1)] }).unwrap();
+        self.agent(ReconcileChange::Report { failed }).unwrap()
+    }
+}
+
+#[tokio::test]
+async fn what_a_tracker_said_is_cut_to_its_cap_on_a_character_boundary() {
+    let dir = tempfile::tempdir().unwrap();
+    let desk = desk(dir.path());
+    // Every `é` starts on an odd byte, so the cap falls inside one.
+    let said = format!("x{}", "é".repeat(argus_protocol::board::reconcile::MAX_FAILURE_BYTES));
+    let after = desk.carry_out(vec![Failed { line: 1, error: said.clone() }]);
+    let kept = after.reconcile.unwrap().lines[0].failed.clone().unwrap();
+    assert!(kept.len() <= argus_protocol::board::reconcile::MAX_FAILURE_BYTES, "{} bytes", kept.len());
+    assert!(said.starts_with(&kept) && kept.len() > 900, "cut, not emptied: {} bytes", kept.len());
+    let _ = desk.d.close_pane(desk.agent);
+}
+
+#[tokio::test]
+async fn a_reconcile_marks_seen_only_the_decisions_of_its_own_feature() {
+    let dir = tempfile::tempdir().unwrap();
+    let desk = desk(dir.path());
+    let decide = |chose: &str| {
+        desk.d
+            .record_agent_decision(
+                desk.agent,
+                None,
+                argus_protocol::DecisionWrite { chose: chose.into(), ..Default::default() },
+                ArtifactScope::default(),
+            )
+            .unwrap()
+            .id
+    };
+    let mine = decide("ours");
+    open_feature(&desk.d, desk.agent, "Someone else's");
+    let theirs = decide("theirs");
+    let select = argus_protocol::FeatureAction::Select { slug: desk.slug.clone() };
+    desk.d.feature_action_for_agent(desk.agent, None, select, ArtifactScope::default()).unwrap();
+
+    let seen: Vec<i64> = desk
+        .carry_out(Vec::new())
+        .reconciled
+        .unwrap()
+        .seen
+        .iter()
+        .filter_map(|seen| match seen {
+            argus_protocol::Seen::Decision { id, .. } => Some(*id),
+            argus_protocol::Seen::Task { .. } => None,
+        })
+        .collect();
+    assert_eq!(seen, [mine], "not {theirs}, which is another feature's");
+    let _ = desk.d.close_pane(desk.agent);
+}

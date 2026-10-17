@@ -34,6 +34,8 @@ Add regression tests with each behavior change, colocated with the affected modu
 
 A rule that should hold for any input is a proptest property, in a `mod properties` inside the module's tests; `PROPTEST_CASES=20000` runs them harder than CI does. A failing case is saved under the crate's `proptest-regressions/`: commit it with the fix, and never delete one, or weaken the property, to make a run pass. `fuzz/` holds cargo-fuzz targets for input from outside the process, run nightly on Linux by `.github/workflows/fuzz.yml` (libFuzzer does not link on Windows MSVC); a crashing input it uploads becomes an ordinary regression test beside the code it broke.
 
+A change to the daemon's store or board rules is mutation-tested before it is handed over: `git diff > change.diff && cargo mutants -p argusd --in-diff change.diff --copy-target=false -j 4 -- --bin argusd`. A mutant that survives gets a test that kills it, or a line in the commit body saying why it changes nothing a reader can see; never a weaker assertion. On Windows run it with `SHELL` unset: a Git Bash pane leaves its shell behind (HUN-243), and a run kills enough test processes to use up the 128 consoles Git Bash has.
+
 CI builds and lints the tests on Windows; a Linux machine without mingw-w64 cannot. A test that runs a Unix program is `#[cfg(unix)]`, and so are the imports and helpers only it uses.
 
 To look at a TUI screen, run its ignored dump test: find it with `grep -rn 'fn dump_' crates/argus-client/src/ui/tests` and run one by name, `cargo test -p argus dump_frame -- --ignored --nocapture`. Add one for a new surface. This text dump stands in for a screenshot.

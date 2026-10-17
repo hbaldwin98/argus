@@ -292,6 +292,13 @@ async fn repository_features_cross_branches_and_can_transfer_assignment() {
         .unwrap();
     assert_eq!(destination_board.features.len(), 1);
     assert_eq!(destination_board.current, None);
+    let source_branch = d.snapshot()[0].repositories[0]
+        .checkouts
+        .iter()
+        .find(|checkout| checkout.id == source_checkout)
+        .and_then(|checkout| checkout.git.as_ref()?.branch.clone());
+    assert!(source_branch.is_some());
+    assert_eq!(destination_board.features[0].origin_branch, source_branch, "a feature keeps the branch it was opened on");
 
     let transfer = FeatureAction::Transfer {
         slug: slug.clone(),
@@ -388,6 +395,26 @@ async fn a_workspace_write_leaves_every_repositorys_board_on_screen_alone() {
 }
 
 #[tokio::test]
+async fn a_feature_is_not_transferred_to_another_repositorys_checkout() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    real_repo(a.path());
+    real_repo(b.path());
+    let d = daemon_with_repositories(&[a.path().to_str().unwrap(), b.path().to_str().unwrap()]);
+    let tree = d.snapshot();
+    let project = &tree[0];
+    let (in_a, in_b) = (project.repositories[0].checkouts[0].id, project.repositories[1].checkouts[0].id);
+    d.feature_action_for_client(project.id, in_a, open("only in a")).unwrap();
+    let slug = d.decision_board(project.id, in_a).unwrap().features[0].slug.clone();
+
+    let refused = d
+        .feature_action_for_client(project.id, in_a, FeatureAction::Transfer { slug, to: in_b })
+        .unwrap_err();
+    assert!(refused.to_string().contains("not in the source repository"), "{refused}");
+    close_all(&d);
+}
+
+#[tokio::test]
 async fn a_read_of_a_features_tasks_or_diagrams_names_its_repository() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
@@ -461,5 +488,128 @@ async fn a_decision_filed_under_a_feature_keeps_an_agent_from_dropping_it() {
         .feature_action_for_agent(agent, None, FeatureAction::Drop { slug }, ArtifactScope::default())
         .unwrap_err();
     assert!(refused.to_string().contains("1 decision(s)"), "{refused}");
+    close_all(&d);
+}
+
+fn diagram() -> argus_protocol::DiagramAction {
+    argus_protocol::DiagramAction::Add(argus_protocol::DiagramWrite {
+        title: "flow".into(),
+        body: "sequenceDiagram\n    A->>B: go".into(),
+    })
+}
+
+#[tokio::test]
+async fn a_diagram_alone_keeps_an_agent_from_dropping_its_feature() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, _, _, agent) = person_and_agent(dir.path());
+    let slug = open_feature(&d, agent, "drawn");
+    d.part_action_for_agent(agent, None, diagram(), ArtifactScope::default()).unwrap();
+    let refused = d
+        .feature_action_for_agent(agent, None, FeatureAction::Drop { slug }, ArtifactScope::default())
+        .unwrap_err();
+    assert!(refused.to_string().contains("1 diagram(s)"), "{refused}");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn an_agent_reads_only_its_features_decisions_and_none_taken_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, _, _, agent) = person_and_agent(dir.path());
+    let decide = |chose: &str| {
+        d.record_agent_decision(
+            agent,
+            None,
+            DecisionWrite { chose: chose.into(), ..Default::default() },
+            ArtifactScope::default(),
+        )
+        .unwrap()
+    };
+    let mine = open_feature(&d, agent, "mine");
+    decide("kept");
+    let taken_back = decide("taken back");
+    d.change_decision_for_agent(
+        agent,
+        argus_protocol::DecisionChange::Withdraw { id: taken_back.id },
+        ArtifactScope::default(),
+    )
+    .unwrap();
+    open_feature(&d, agent, "another");
+    decide("elsewhere");
+
+    let board = d
+        .feature_action_for_agent(agent, None, FeatureAction::Select { slug: mine }, ArtifactScope::default())
+        .unwrap();
+    let read: Vec<&str> = board.decisions.iter().map(|d| d.chose.as_str()).collect();
+    assert_eq!(read, ["kept"]);
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn an_agent_on_no_feature_reads_empty_parts_and_is_told_how_to_add_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, _, _, agent) = person_and_agent(dir.path());
+    let tasks = d
+        .part_action_for_agent(agent, None, TaskAction::List, ArtifactScope::default())
+        .unwrap();
+    assert!(tasks.feature.is_none() && tasks.tasks.is_empty());
+    let diagrams = d
+        .part_action_for_agent(agent, None, argus_protocol::DiagramAction::List, ArtifactScope::default())
+        .unwrap();
+    assert!(diagrams.feature.is_none() && diagrams.diagrams.is_empty());
+
+    let adding = d.part_action_for_agent(agent, None, diagram(), ArtifactScope::default()).unwrap_err();
+    assert!(adding.to_string().contains("before adding diagrams"), "{adding}");
+    let removing = d
+        .part_action_for_agent(agent, None, argus_protocol::DiagramAction::Remove { id: 1 }, ArtifactScope::default())
+        .unwrap_err();
+    assert_eq!(removing.to_string(), "this checkout is not on a feature yet", "only an add is told to open one");
+    let ticking = d
+        .part_action_for_agent(
+            agent,
+            None,
+            TaskAction::Add(TaskWrite { title: "t".into(), external: None, parent: None }),
+            ArtifactScope::default(),
+        )
+        .unwrap_err();
+    assert!(ticking.to_string().contains("before adding tasks"), "{ticking}");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn a_diagram_change_is_pushed_and_a_read_is_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, _, _, agent) = person_and_agent(dir.path());
+    open_feature(&d, agent, "drawn");
+    let mut boards = d.pushes.subscribe_boards();
+    let pushed_diagrams = |boards: &mut tokio::sync::broadcast::Receiver<BoardNews>| {
+        let mut count = 0;
+        while let Ok(news) = boards.try_recv() {
+            if let BoardNews::Diagrams(list) = news {
+                count += list.diagrams.len().max(1);
+            }
+        }
+        count
+    };
+
+    d.part_action_for_agent(agent, None, diagram(), ArtifactScope::default()).unwrap();
+    assert_eq!(pushed_diagrams(&mut boards), 1, "a client watching the feature sees the new diagram");
+    d.part_action_for_agent(agent, None, argus_protocol::DiagramAction::List, ArtifactScope::default())
+        .unwrap();
+    d.part_action_for_agent(agent, None, TaskAction::List, ArtifactScope::default()).unwrap();
+    assert_eq!(pushed_diagrams(&mut boards), 0, "a read changes nothing to push");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn an_agents_draft_and_a_persons_approval_reach_the_one_tracker_map() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, project, checkout, agent) = person_and_agent(dir.path());
+    let map = d.tracker_map_for_agent(agent, "Linear: issues", ArtifactScope::default()).unwrap();
+    assert_eq!(map.draft.map(|draft| draft.body).as_deref(), Some("Linear: issues"));
+
+    d.change_tracker_map_for_client(project, checkout, argus_protocol::MapChange::Approve("Linear: issues".into()))
+        .unwrap();
+    let map = d.tracker_map_for_agent(agent, "", ArtifactScope::default()).unwrap();
+    assert_eq!((map.body.as_str(), map.draft.is_none()), ("Linear: issues", true));
     close_all(&d);
 }
