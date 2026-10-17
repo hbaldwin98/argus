@@ -182,7 +182,7 @@ fn feature<'a>(board: &'a DecisionBoard, slug: &str) -> Option<&'a Feature> {
 mod tests {
     use super::*;
     use crate::fixtures::{self, board, feature_tree};
-    use crate::keymap::Action;
+    use crate::keys::keymap::Action;
     use argus_protocol::{CheckoutId, ProjectId, Reconcile, RepositoryId};
 
     fn scope() -> Scope {

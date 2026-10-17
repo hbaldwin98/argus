@@ -10,7 +10,7 @@ import type { AddProjectPage } from '../bindings/AddProjectPage';
 import type { ProjectChoice } from '../bindings/ProjectChoice';
 import type { Removing } from '../bindings/Removing';
 import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
-import { actionFor } from '../keymap.js';
+import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 

@@ -7,7 +7,7 @@
 // on its own is drawn without a scrim and waits for a click, so a pane being
 // typed in keeps every key.
 import { $, el } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { call } from './connection/tauri.js';
 /** The dialog drawn, so a page that only changed the count behind it
  *  keeps what is typed. */

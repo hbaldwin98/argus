@@ -20,7 +20,7 @@ import { closeExpanded } from './sequence.js';
 import { $, el, ghosts, icon, type Child } from './kit/dom.js';
 import { closeLayer, placeMenu } from './kit/menu.js';
 import { ticketLinks } from './tickets.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';
 import { drawWork } from './work.js';

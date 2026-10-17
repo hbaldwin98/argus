@@ -6,7 +6,7 @@
 
 import type { CapturePage } from './bindings/CapturePage';
 import { $, el, type Child } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';
 

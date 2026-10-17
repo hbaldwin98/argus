@@ -17,7 +17,7 @@ use argus_protocol::agents::transcript::Conversation;
 use argus_protocol::{CheckoutId, HeldTree, PaneId, ProjectInfo, RepositoryId};
 use serde::Serialize;
 
-use crate::keymap::Action;
+use crate::keys::keymap::Action;
 use crate::connection::page::{Event, ReaderPage, Resumed, TranscriptLine};
 use crate::connection::sent::Sent;
 use crate::sessions::{self, Sessions};

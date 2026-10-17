@@ -5,7 +5,7 @@
 // `src/chrome/add_project.rs`); nothing here changes until the daemon
 // says so.
 import { $, el, ghosts, icon } from '../kit/dom.js';
-import { actionFor } from '../keymap.js';
+import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 // ---- The switcher ------------------------------------------------------------

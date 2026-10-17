@@ -5,7 +5,7 @@
 // written, where they were.
 import { commentBox, settleDraft } from './comment_box.js';
 import { $, el, ghosts, icon } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';
 function keycap(key) {

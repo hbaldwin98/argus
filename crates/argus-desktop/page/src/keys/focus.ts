@@ -1,12 +1,12 @@
 // Which layer of the window has a key outside a pane, asked in the order
-// Rust sends with the keymap (`LAYERS` in `src/keymap.rs`). The page keeps
-// no order of its own, only what each layer does; it reads no key itself,
-// so it imports nothing but types and is tested under node.
+// Rust sends with the keymap (`LAYERS` in `src/keys/keymap.rs`). The page
+// keeps no order of its own, only what each layer does; it reads no key
+// itself, so it imports nothing but types and is tested under node.
 
-import type { Action } from './bindings/Action';
-import type { KeyLayer } from './bindings/KeyLayer';
-import type { Layer } from './bindings/Layer';
-import type { Place } from './bindings/Place';
+import type { Action } from '../bindings/Action';
+import type { KeyLayer } from '../bindings/KeyLayer';
+import type { Layer } from '../bindings/Layer';
+import type { Place } from '../bindings/Place';
 
 /** What one layer does while it has the keys. A layer with no places
  *  answers its own keys and needs none of the rest. */

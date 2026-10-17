@@ -14,7 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::keys::PageKey;
+use crate::keys::page_key::PageKey;
 
 /// One key, as the page reports it. `key` is `KeyboardEvent.key`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -418,7 +418,7 @@ impl Chord {
     }
 
     /// Whether `page` is this key, the leader aside. The page's `matches`
-    /// in `page/src/keymap.ts` is this rule again, since the page must
+    /// in `page/src/keys/keymap.ts` is this rule again, since the page must
     /// decide before Rust hears the key whether the webview may have it.
     pub fn matches(&self, page: &PageKey) -> bool {
         let character = self.key.chars().count() == 1;
@@ -806,8 +806,9 @@ const fn layer(layer: Layer, places: Option<&'static [Place]>, takes_from_pane: 
 
 /// Who has a key pressed outside a pane: the first layer up in this order,
 /// which crosses to the page with the keymap. The page's own dispatch
-/// (`page/src/focus.ts`) has a handler for each layer and no order of its
-/// own, so a dialog added here cannot be heard under the one it opens over.
+/// (`page/src/keys/focus.ts`) has a handler for each layer and no order
+/// of its own, so a dialog added here cannot be heard under the one it
+/// opens over.
 ///
 /// An extension's view clicked passes on a key it has no use for, to the
 /// next layer up; every other layer holds what it hears.
@@ -1188,8 +1189,9 @@ mod tests {
     }
 
     /// A key the page compared by hand would run without being on the
-    /// sheet, so no page module but `keymap` reads a key's name; `input`
-    /// hands a pane's keys to Rust whole, which runs them from this table.
+    /// sheet, so no page module but `keys/keymap` reads a key's name;
+    /// `panes/input` hands a pane's keys to Rust whole, which runs them
+    /// from this table.
     #[test]
     fn the_page_reads_keys_only_through_the_keymap() {
         use std::path::{Path, PathBuf};
@@ -1213,7 +1215,7 @@ mod tests {
         walk(Path::new(dir), Path::new(dir), &mut modules);
         let mut read = 0;
         for (name, path) in modules {
-            if name == "keymap.ts" || name == "panes/input.ts" {
+            if name == "keys/keymap.ts" || name == "panes/input.ts" {
                 continue;
             }
             read += 1;

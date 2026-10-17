@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::code_tree::{self, folders_of};
 use crate::comment_box::{CommentBox, CommentPage};
 use crate::file_jump::{FileJump, Jumped};
-use crate::keymap::Action;
+use crate::keys::keymap::Action;
 use crate::connection::page::{Event, ReviewJumpGesture};
 use crate::review::parts;
 use crate::connection::sent::Sent;

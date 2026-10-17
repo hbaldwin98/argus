@@ -4,7 +4,7 @@
 // (Back, Reload, Inspect) never shows over the window; a text field keeps
 // it for cut and paste, and selected text gets a menu to copy it.
 import { $, el } from './dom.js';
-import { actionFor } from '../keymap.js';
+import { actionFor } from '../keys/keymap.js';
 export function closeLayer() {
     $('layer').replaceChildren();
 }

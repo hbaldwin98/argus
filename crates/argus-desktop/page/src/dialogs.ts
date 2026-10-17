@@ -11,7 +11,7 @@ import type { ExtAnswer } from './bindings/ExtAnswer';
 import type { ExtDialogPage } from './bindings/ExtDialogPage';
 import type { ExtItem } from './bindings/ExtItem';
 import { $, el, type Child } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { call } from './connection/tauri.js';
 
 /** The dialog drawn, so a page that only changed the count behind it

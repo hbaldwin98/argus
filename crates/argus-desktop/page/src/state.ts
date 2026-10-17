@@ -51,7 +51,7 @@ export const state: {
   chosen: { id: number; option: number } | null;
   /** The flow's diagram expanded over the window, while it is. */
   expanded: Expanded | null;
-  /** Every binding, as `src/keymap.rs` groups them. */
+  /** Every binding, as `src/keys/keymap.rs` groups them. */
   keymap: Group[];
   /** What the palette offers to run, from the same table. */
   commands: Command[];

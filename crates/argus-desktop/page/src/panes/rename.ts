@@ -3,7 +3,7 @@
 // new one, so a refused rename leaves it showing what is true.
 
 import { $, el } from '../kit/dom.js';
-import { actionFor } from '../keymap.js';
+import { actionFor } from '../keys/keymap.js';
 import { closeLayer } from '../kit/menu.js';
 import { call } from '../connection/tauri.js';
 

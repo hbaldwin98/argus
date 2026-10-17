@@ -7,7 +7,7 @@
 // screen that has them, and reports what was pressed.
 import { DOCK_ICON, dockMenuButton, dockOf, dockWords, drawDocks } from '../layout/docks.js';
 import { $, el, icon } from '../kit/dom.js';
-import { chordsFor, presses } from '../keys.js';
+import { chordsFor, presses } from '../keys/chords.js';
 import { contextMenu } from '../kit/menu.js';
 import { closesOnMiddle } from '../kit/middle.js';
 import { renameDialog } from './rename.js';

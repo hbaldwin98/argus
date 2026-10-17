@@ -9,7 +9,7 @@ use argus_protocol::review::session::Answered;
 use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, RequestRefusal, ServerMsg};
 
 use crate::history::{HistoryDialog, Then};
-use crate::keymap::Action;
+use crate::keys::keymap::Action;
 use crate::connection::page::{Event, HistoryPage, ReviewClick, ReviewJumpGesture, ReviewPage};
 use crate::review::ReviewDialog;
 use crate::connection::sent::Sent;

@@ -5,7 +5,7 @@
 
 import { keyedScreen } from './console.js';
 import { $ } from '../kit/dom.js';
-import { actionFor } from '../keymap.js';
+import { actionFor } from '../keys/keymap.js';
 import { type Screen, screen, screens, watchScreens } from './screen.js';
 import { call } from '../connection/tauri.js';
 

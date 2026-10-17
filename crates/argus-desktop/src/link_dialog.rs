@@ -13,7 +13,7 @@ use argus_protocol::{ClientMsg, Feature, FeatureAction, LinkWrite, MapChange, Re
 use serde::{Deserialize, Serialize};
 
 use crate::feature_stage::Scope;
-use crate::keymap::Action;
+use crate::keys::keymap::Action;
 use crate::connection::page::Link;
 
 /// What was done in the link dialog.

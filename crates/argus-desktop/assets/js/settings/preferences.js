@@ -8,7 +8,7 @@
 // keeps its hold while the choices come back.
 import { $, el, icon } from '../kit/dom.js';
 import { fontPicker } from './font_picker.js';
-import { actionFor } from '../keymap.js';
+import { actionFor } from '../keys/keymap.js';
 import { screens } from '../panes/screen.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';

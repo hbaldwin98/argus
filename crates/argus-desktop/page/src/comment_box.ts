@@ -5,7 +5,7 @@
 
 import type { CommentPage } from './bindings/CommentPage';
 import { el } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 
 export type CommentBoxId = 'review-comment' | 'code-comment';
 

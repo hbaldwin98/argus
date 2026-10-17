@@ -4,7 +4,7 @@
 // view is the person's.
 import { keyedScreen } from './console.js';
 import { $ } from '../kit/dom.js';
-import { actionFor } from '../keymap.js';
+import { actionFor } from '../keys/keymap.js';
 import { screen, screens, watchScreens } from './screen.js';
 import { call } from '../connection/tauri.js';
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);

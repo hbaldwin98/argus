@@ -17,7 +17,7 @@ use argus_protocol::{
 use serde::{Deserialize, Serialize};
 
 use crate::feature_stage::Scope;
-use crate::keymap::Action;
+use crate::keys::keymap::Action;
 use crate::connection::page::Line;
 
 /// What was done in the reconcile dialog. A line is its place among the

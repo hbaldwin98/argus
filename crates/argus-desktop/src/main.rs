@@ -33,12 +33,10 @@ mod file_jump;
 mod flows_lens;
 #[cfg(test)]
 mod fixtures;
-mod keymap;
 mod history;
 mod keys;
 mod layout;
 mod link_dialog;
-mod palette;
 mod panes;
 mod reconcile_dialog;
 mod record_lens;

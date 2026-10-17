@@ -3,16 +3,16 @@
 // result with its key or its status beside it. `>` narrows the search to
 // commands and `#` to features.
 //
-// What it lists comes from Rust while it is open (`src/palette.rs`), and
-// choosing one is a call: the palette runs nothing itself.
+// What it lists comes from Rust while it is open (`src/keys/palette.rs`),
+// and choosing one is a call: the palette runs nothing itself.
 
-import type { Command } from './bindings/Command';
-import { $, el } from './kit/dom.js';
-import { extensionResults } from './extension_views.js';
+import type { Command } from '../bindings/Command';
+import { $, el } from '../kit/dom.js';
+import { extensionResults } from '../extension_views.js';
 import { actionFor } from './keymap.js';
-import { keycaps } from './keys.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { keycaps } from './chords.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 
 interface Result {
   group: 'Commands' | 'Panes' | 'Features' | 'Checkouts';

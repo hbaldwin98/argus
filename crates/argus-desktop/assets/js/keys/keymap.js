@@ -1,30 +1,30 @@
 // The keys pressed outside a pane, looked up in the keymap Rust sends
-// (`src/keymap.rs`) and run here by the layer `focus` finds has them. A
-// pane's keys go to Rust whole, and its leader is dispatched there.
-import { captureOpen, discardCapture } from './capture.js';
-import { answerNo, checkoutsAction } from './checkouts.js';
-import { codeAction } from './code_stage.js';
-import { focusHistoryFilter, historyOpen } from './history.js';
-import { linkAction, linkOpen } from './link.js';
-import { reconcileAction, reconcileOpen } from './reconcile.js';
-import { reviewOpen } from './review.js';
-import { focusSessionsSearch, readerOpen, sessionsOpen } from './sessions.js';
-import { focusTranscriptFind } from './transcript.js';
-import { railAction, railPicked, startAction, startOpen } from './chrome.js';
-import { extensionDialogFocused } from './dialogs.js';
-import { $ } from './kit/dom.js';
-import { answerExtensionNo, extensionGesture, focusedExtension, pagedExtension, runExtensionCommand, } from './extension_views.js';
-import { expandedOpen } from './sequence.js';
-import { featureAction } from './features.js';
+// (`src/keys/keymap.rs`) and run here by the layer `focus` finds has them.
+// A pane's keys go to Rust whole, and its leader is dispatched there.
+import { captureOpen, discardCapture } from '../capture.js';
+import { answerNo, checkoutsAction } from '../checkouts.js';
+import { codeAction } from '../code_stage.js';
+import { focusHistoryFilter, historyOpen } from '../history.js';
+import { linkAction, linkOpen } from '../link.js';
+import { reconcileAction, reconcileOpen } from '../reconcile.js';
+import { reviewOpen } from '../review.js';
+import { focusSessionsSearch, readerOpen, sessionsOpen } from '../sessions.js';
+import { focusTranscriptFind } from '../transcript.js';
+import { railAction, railPicked, startAction, startOpen } from '../chrome.js';
+import { extensionDialogFocused } from '../dialogs.js';
+import { $ } from '../kit/dom.js';
+import { answerExtensionNo, extensionGesture, focusedExtension, pagedExtension, runExtensionCommand, } from '../extension_views.js';
+import { expandedOpen } from '../sequence.js';
+import { featureAction } from '../features.js';
 import { escapeFrom, takesFromPane, up } from './focus.js';
-import { closeLayer } from './kit/menu.js';
+import { closeLayer } from '../kit/menu.js';
 import { closePalette, openPalette } from './palette.js';
-import { addProjectOpen, answerRemoveNo } from './chrome/projects.js';
-import { closeSettings, openSettings, settingsOpen } from './settings/preferences.js';
+import { addProjectOpen, answerRemoveNo } from '../chrome/projects.js';
+import { closeSettings, openSettings, settingsOpen } from '../settings/preferences.js';
 import { closeSheet, openSheet, sheetOpen, toggleSheet } from './shortcuts.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
-import { leaveWork, workAction, workOpen } from './work.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
+import { leaveWork, workAction, workOpen } from '../work.js';
 /** `Chord::matches` again: the page decides before Rust hears the key. */
 function matches(chord, e) {
     return (e.key === chord.key &&
@@ -231,7 +231,7 @@ function stageKeys(e, places) {
 function capturing() {
     return state.rail.stage === 'feature' && captureOpen();
 }
-/** What each layer does while it has the keys; `src/keymap.rs` orders
+/** What each layer does while it has the keys; `src/keys/keymap.rs` orders
  *  them and says what places each hears. */
 const handlers = {
     // The pane's text area sends its keys to Rust.

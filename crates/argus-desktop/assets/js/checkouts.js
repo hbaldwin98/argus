@@ -5,7 +5,7 @@
 import { startMenu, toggleStart } from './chrome.js';
 import { $, el, ghosts, icon } from './kit/dom.js';
 import { closeLayer } from './kit/menu.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';
 function keycap(key) {

@@ -3,7 +3,7 @@
 // cursor. Rust holds the list and the diffs (`src/history.rs`); the page
 // draws them and says what was pressed.
 import { $, el, ghosts, icon } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { diffRow } from './review.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';

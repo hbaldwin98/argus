@@ -12,7 +12,7 @@ import { $, el, ghosts, icon, type Child } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extension_views.js';
 import { drawSavedNav } from './saved_views.js';
 import { drawFeatures } from './features.js';
-import { chordsFor, keycaps, presses } from './keys.js';
+import { chordsFor, keycaps, presses } from './keys/chords.js';
 import { contextMenu, type MenuItem } from './kit/menu.js';
 import { closesOnMiddle } from './kit/middle.js';
 import { drawHeading, drawRemoving } from './chrome/projects.js';

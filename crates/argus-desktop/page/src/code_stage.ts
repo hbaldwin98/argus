@@ -15,7 +15,7 @@ import type { CodeSearch } from './bindings/CodeSearch';
 import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
 import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
 import { $, el, ghosts, icon } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';
 

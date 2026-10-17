@@ -10,7 +10,7 @@ import type { ConsoleGesture } from '../bindings/ConsoleGesture';
 import type { ConsoleTab } from '../bindings/ConsoleTab';
 import { DOCK_ICON, dockMenuButton, dockOf, dockWords, drawDocks } from '../layout/docks.js';
 import { $, el, icon } from '../kit/dom.js';
-import { chordsFor, presses } from '../keys.js';
+import { chordsFor, presses } from '../keys/chords.js';
 import { contextMenu, type MenuItem } from '../kit/menu.js';
 import { closesOnMiddle } from '../kit/middle.js';
 import { renameDialog } from './rename.js';

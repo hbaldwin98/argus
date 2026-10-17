@@ -3,7 +3,7 @@
 // kept here across redraws. Rust says whether it is open and which agent
 // is lit (`src/comment_box.rs`); the page says what was typed, chosen or sent.
 import { el } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 const drafts = { 'review-comment': '', 'code-comment': '' };
 /** Lets the words typed go once the box is shut, so the next starts empty. */
 export function settleDraft(id, open) {

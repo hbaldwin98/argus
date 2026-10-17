@@ -56,9 +56,9 @@ use crate::layout::docks::{Dock, DockGesture, Docks, Panel, Place};
 use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
-use crate::keymap::{self, Action};
+use crate::keys::keymap::{self, Action};
 use crate::system::notifications::{self, Alert, Looking};
-use crate::keys::{self, PageKey};
+use crate::keys::page_key::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, Code, CodeGesture, Then as CodeThen};
 use crate::panes::shown::workspace_grid::{self, Dir, Zone};
@@ -67,7 +67,7 @@ use crate::connection::page::{
     self, Call, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
     Stage,
 };
-use crate::palette;
+use crate::keys::palette;
 use crate::settings::preferences::Chosen;
 use crate::reconcile_dialog::ReconcileGesture;
 use crate::chrome::rail::{self, Choices};
@@ -1063,7 +1063,7 @@ impl Session {
             None if keymap::is_leader(key) => self.shown.await_leader(),
             None => {
                 let mode = self.shown.keyboard();
-                let bytes = keys::to_key(key).map(|k| argus_protocol::panes::keys::encode_with(&k, mode)).unwrap_or_default();
+                let bytes = page_key::to_key(key).map(|k| argus_protocol::panes::keys::encode_with(&k, mode)).unwrap_or_default();
                 self.input(bytes);
             }
         }

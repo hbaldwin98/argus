@@ -4,7 +4,7 @@
 // half-typed one never redraws the window in the fallback.
 
 import { el, icon } from '../kit/dom.js';
-import { actionFor } from '../keymap.js';
+import { actionFor } from '../keys/keymap.js';
 
 export type FontPicker = {
   node: HTMLElement;

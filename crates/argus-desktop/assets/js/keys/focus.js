@@ -1,7 +1,7 @@
 // Which layer of the window has a key outside a pane, asked in the order
-// Rust sends with the keymap (`LAYERS` in `src/keymap.rs`). The page keeps
-// no order of its own, only what each layer does; it reads no key itself,
-// so it imports nothing but types and is tested under node.
+// Rust sends with the keymap (`LAYERS` in `src/keys/keymap.rs`). The page
+// keeps no order of its own, only what each layer does; it reads no key
+// itself, so it imports nothing but types and is tested under node.
 /** The layers up, the one with the keys first. Lazy, since most keys stop
  *  at the first. */
 export function* up(order, handlers, target) {

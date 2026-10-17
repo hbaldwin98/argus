@@ -8,7 +8,7 @@ import type { Action } from './bindings/Action';
 import type { LinkGesture } from './bindings/LinkGesture';
 import type { LinkPage } from './bindings/LinkPage';
 import { $, el, icon, type Child } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { call } from './connection/tauri.js';
 
 let page: LinkPage | null = null;

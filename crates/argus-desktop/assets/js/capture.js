@@ -4,7 +4,7 @@
 // preview is what Create stores. The note stays up after Create until the
 // pushed board holds the feature, which then opens.
 import { $, el } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';
 /** The grammar, as the foot of the note says it. */

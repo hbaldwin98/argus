@@ -11,7 +11,7 @@ import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
 import type { ReviewPage } from './bindings/ReviewPage';
 import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
 import { $, el, ghosts, icon, type Child } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';
 

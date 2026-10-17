@@ -10,7 +10,7 @@ import type { ReconcileGesture } from './bindings/ReconcileGesture';
 import type { ReconcilePage } from './bindings/ReconcilePage';
 import type { SelectedLine } from './bindings/SelectedLine';
 import { $, el, icon, type Child } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { call } from './connection/tauri.js';
 
 let page: ReconcilePage | null = null;

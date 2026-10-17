@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { escapeFrom, takesFromPane, up } from '../src/focus.ts';
+import { escapeFrom, takesFromPane, up } from '../../src/keys/focus.ts';
 
 const order = [
   { layer: 'field', places: null, takesFromPane: false },

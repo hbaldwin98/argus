@@ -12,7 +12,7 @@ import { $, el } from './kit/dom.js';
 import { dragEdge } from './layout/edge.js';
 import { flowsAction, flowsLens } from './flows.js';
 import { featureViewLink, savedFeatureLinks, ticketLink } from './tickets.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { recordAction, recordLens } from './record.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';

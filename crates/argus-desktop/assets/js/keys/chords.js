@@ -1,7 +1,7 @@
 // How a key is written: the shortcuts sheet, the palette and the status
 // bar's hint say each chord of the keymap Rust sends the same way.
-import { el } from './kit/dom.js';
-import { state } from './state.js';
+import { el } from '../kit/dom.js';
+import { state } from '../state.js';
 const MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);
 const NAMES = {
     ' ': 'Space',

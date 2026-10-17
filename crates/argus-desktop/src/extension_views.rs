@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::layout::docks::{Dock, Panel, Place};
 use crate::extension_keys::{ExtCommandPage, ExtGroup, ExtensionKeys};
-use crate::keymap::Action;
+use crate::keys::keymap::Action;
 use crate::connection::page::{Event, Side};
 use crate::connection::sent::Sent;
 use crate::settings::remembered::ExtensionsLayout;

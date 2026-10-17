@@ -4,12 +4,12 @@
 //!
 //! The daemon already refused any key the window keeps
 //! (`argus_protocol::extensions::keys`), so a key here never shadows one of
-//! `keymap`'s; the window only decides where each is heard.
+//! `keys::keymap`'s; the window only decides where each is heard.
 
 use argus_protocol::{CommandScope, ExtCommand, ExtKey, ExtView};
 use serde::Serialize;
 
-use crate::keys::PageKey;
+use crate::keys::page_key::PageKey;
 
 /// A command an extension added: what the palette calls it, its key, and
 /// where that key is heard.
@@ -69,8 +69,8 @@ fn chord(press: &ExtKey, leader: bool) -> ExtChord {
     ExtChord { key: press.key.clone(), ctrl: press.ctrl, alt: press.alt, shift: press.shift, meta: false, leader }
 }
 
-/// Whether `page` is the key `press`, as `keymap::Chord::matches` decides:
-/// a character carries its own shift.
+/// Whether `page` is the key `press`, as `keys::keymap::Chord::matches`
+/// decides: a character carries its own shift.
 pub fn matches(press: &ExtKey, page: &PageKey) -> bool {
     page.key == press.key
         && page.ctrl == press.ctrl

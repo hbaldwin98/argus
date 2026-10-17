@@ -3,7 +3,7 @@
 // chosen when it is picked, on Enter or when the field is left, so a
 // half-typed one never redraws the window in the fallback.
 import { el, icon } from '../kit/dom.js';
-import { actionFor } from '../keymap.js';
+import { actionFor } from '../keys/keymap.js';
 /** `fallback` is the CSS stack drawn when the field is empty, and is named
  *  by `fallbackName` in the list's first row. */
 export function fontPicker(label, fallback, fallbackName, choose) {

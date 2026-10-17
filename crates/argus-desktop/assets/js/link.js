@@ -4,7 +4,7 @@
 // (`src/link_dialog.rs`) and reads the URL as the daemon will; the page
 // draws it and says what was typed and pressed.
 import { $, el, icon } from './kit/dom.js';
-import { actionFor } from './keymap.js';
+import { actionFor } from './keys/keymap.js';
 import { call } from './connection/tauri.js';
 let page = null;
 function send(gesture) {

@@ -18,7 +18,7 @@ import { dockMenuButton } from './layout/docks.js';
 import { $, el, icon, type IconName } from './kit/dom.js';
 import { draggable } from './layout/drag.js';
 import { closeLayer } from './kit/menu.js';
-import { keycaps } from './keys.js';
+import { keycaps } from './keys/chords.js';
 import { bindView, keyView, type Screen, screen, viewScreen } from './panes/screen.js';
 import { state } from './state.js';
 import { table, type TableBlock } from './table.js';
