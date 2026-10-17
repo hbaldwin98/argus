@@ -32,6 +32,8 @@ Comment the *why*, never the *what*. A doc comment that restates the signature i
 
 Add regression tests with each behavior change, colocated with the affected module. Name tests after the observable rule, for example `restores_session_after_reconnect`. Exercise protocol changes in both producer and consumer crates.
 
+A rule that should hold for any input is a proptest property, in a `mod properties` inside the module's tests; `PROPTEST_CASES=20000` runs them harder than CI does. A failing case is saved under the crate's `proptest-regressions/`: commit it with the fix, and never delete one, or weaken the property, to make a run pass.
+
 CI builds and lints the tests on Windows; a Linux machine without mingw-w64 cannot. A test that runs a Unix program is `#[cfg(unix)]`, and so are the imports and helpers only it uses.
 
 To look at a TUI screen, run its ignored dump test: find it with `grep -rn 'fn dump_' crates/argus-client/src/ui/tests` and run one by name, `cargo test -p argus dump_frame -- --ignored --nocapture`. Add one for a new surface. This text dump stands in for a screenshot.

@@ -483,4 +483,75 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, FramingError::Decode(_)), "got {err:?}");
     }
+
+    mod properties {
+        use super::*;
+        use proptest::collection::vec;
+        use proptest::prelude::*;
+
+        fn block_on<F: std::future::Future>(future: F) -> F::Output {
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(future)
+        }
+
+        /// A peer's stream as it arrives: frames whose bodies may be
+        /// anything, then perhaps a torn tail.
+        fn stream() -> impl Strategy<Value = Vec<u8>> {
+            (vec(vec(any::<u8>(), 0..64), 0..4), vec(any::<u8>(), 0..8)).prop_map(|(bodies, tail)| {
+                let mut buf = Vec::new();
+                for body in bodies {
+                    buf.extend_from_slice(&(body.len() as u32).to_be_bytes());
+                    buf.extend_from_slice(&body);
+                }
+                buf.extend_from_slice(&tail);
+                buf
+            })
+        }
+
+        proptest! {
+            #[test]
+            fn no_stream_a_peer_sends_can_panic_either_side(bytes in stream()) {
+                block_on(async {
+                    let mut r = bytes.as_slice();
+                    while read_known_msg::<_, ClientMsg>(&mut r).await.is_ok() {}
+                    let mut r = bytes.as_slice();
+                    while read_known_msg::<_, ServerMsg>(&mut r).await.is_ok() {}
+                });
+            }
+
+            #[test]
+            fn input_and_paste_arrive_as_sent(
+                pane in any::<u64>(),
+                bytes in vec(any::<u8>(), 0..256),
+                text in any::<String>(),
+            ) {
+                let sent = vec![
+                    ClientMsg::Input { pane: PaneId(pane), bytes: bytes.clone() },
+                    ClientMsg::Paste { pane: PaneId(pane), text: text.clone() },
+                ];
+                let read = block_on(async {
+                    let mut buf = Vec::new();
+                    for msg in &sent {
+                        write_frame(&mut buf, msg).await.unwrap();
+                    }
+                    let mut r = buf.as_slice();
+                    let mut read = Vec::new();
+                    for _ in &sent {
+                        read.push(read_msg::<_, ClientMsg>(&mut r).await.unwrap());
+                    }
+                    read
+                });
+                let [ClientMsg::Input { pane: p1, bytes: b }, ClientMsg::Paste { pane: p2, text: t }] =
+                    read.as_slice()
+                else {
+                    return Err(TestCaseError::fail(format!("variants changed: {read:?}")));
+                };
+                prop_assert_eq!((p1.0, p2.0), (pane, pane));
+                prop_assert_eq!(b, &bytes);
+                prop_assert_eq!(t, &text);
+            }
+        }
+    }
 }

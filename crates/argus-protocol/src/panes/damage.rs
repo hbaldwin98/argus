@@ -693,4 +693,128 @@ mod tests {
         let bytes = rmp_serde::to_vec_named(&runs).unwrap().len();
         assert!(bytes < text + 16 * cur.len(), "{bytes} bytes for {text} of text");
     }
+
+    /// The rules above, for any screen rather than the few drawn by hand.
+    mod properties {
+        use super::*;
+        use proptest::collection::vec;
+        use proptest::prelude::*;
+
+        fn color() -> impl Strategy<Value = Color> {
+            prop_oneof![
+                4 => Just(Color::Default),
+                1 => any::<u8>().prop_map(Color::Idx),
+                1 => any::<(u8, u8, u8)>().prop_map(|(r, g, b)| Color::Rgb(r, g, b)),
+            ]
+        }
+
+        /// A cell as the daemon makes one: never an empty grapheme, since a
+        /// wide character's spacer is a blank. Mostly blanks and a two-letter
+        /// alphabet, so rows repeat the way a real screen's do and a scroll
+        /// has something to find.
+        fn cell() -> impl Strategy<Value = Cell> {
+            let ch = prop_oneof![
+                4 => Just(" ".to_string()),
+                4 => "[ab]",
+                1 => Just("世".to_string()),
+                1 => Just("e\u{301}".to_string()),
+                1 => any::<char>().prop_map(String::from),
+            ];
+            let flag = || prop::bool::weighted(0.1);
+            (ch, color(), color(), flag(), flag(), flag(), flag()).prop_map(
+                |(ch, fg, bg, bold, italic, underline, reverse)| Cell {
+                    ch: ch.into(),
+                    fg,
+                    bg,
+                    bold,
+                    italic,
+                    underline,
+                    reverse,
+                },
+            )
+        }
+
+        /// The frame a client holds and the next one, made the way a
+        /// terminal makes it: part of the screen scrolled, then a few cells
+        /// written.
+        fn frames() -> impl Strategy<Value = (Vec<Vec<Cell>>, Vec<Vec<Cell>>)> {
+            (1..10usize, 1..12usize)
+                .prop_flat_map(|(rows, cols)| {
+                    (
+                        vec(vec(cell(), cols), rows),
+                        0..=rows,
+                        0..=rows,
+                        0..rows,
+                        vec((0..rows, 0..cols, cell()), 0..6),
+                    )
+                })
+                .prop_map(|(prev, a, b, up, writes)| {
+                    let mut cur = prev.clone();
+                    let scroll = Scroll {
+                        top: a.min(b) as u16,
+                        bottom: a.max(b) as u16,
+                        up: up as u16,
+                    };
+                    scroll.apply(&mut cur);
+                    for (r, c, cell) in writes {
+                        cur[r][c] = cell;
+                    }
+                    (prev, cur)
+                })
+        }
+
+        fn wire<T: Serialize + serde::de::DeserializeOwned>(value: &T) -> T {
+            rmp_serde::from_slice(&rmp_serde::to_vec_named(value).unwrap()).unwrap()
+        }
+
+        proptest! {
+            #[test]
+            fn a_whole_grid_reads_back_from_its_runs((grid, _) in frames()) {
+                let runs = wire(&grid_runs(&grid));
+                let read = grid_from_runs(grid.len() as u16, grid[0].len() as u16, &runs);
+                prop_assert_eq!(read, grid);
+            }
+
+            #[test]
+            fn damage_takes_a_client_from_its_frame_to_the_next((prev, cur) in frames()) {
+                let mut daemon = prev.clone();
+                let (scroll, runs) = wire(&damage(Some(&mut daemon), &cur));
+                let mut client = prev.clone();
+                if let Some(scroll) = scroll {
+                    scroll.apply(&mut client);
+                }
+                for run in &runs {
+                    run.apply(&mut client);
+                }
+                prop_assert_eq!(client, cur);
+            }
+
+            #[test]
+            fn a_style_reads_back_as_itself(fg in color(), bg in color(), flags in any::<u8>()) {
+                let style = Style { fg, bg, flags };
+                prop_assert_eq!(wire(&style), style);
+            }
+
+            #[test]
+            fn nothing_a_peer_sends_can_panic_a_client_or_reshape_its_grid(
+                (mut grid, _) in frames(),
+                run in (
+                    0u16..12,
+                    0u16..16,
+                    ".{0,8}",
+                    vec(any::<u16>(), 0..6),
+                    vec((0u16..6, any::<(u32, u32, u8)>().prop_map(Style::from)), 0..4),
+                    0u16..24,
+                ),
+                scroll in any::<(u8, u8, u8)>(),
+            ) {
+                let (row, col, text, lens, styles, blank) = run;
+                let shape: Vec<usize> = grid.iter().map(Vec::len).collect();
+                CellRun { row, col, text, lens, styles, blank }.apply(&mut grid);
+                let (top, bottom, up) = scroll;
+                Scroll { top: top.into(), bottom: bottom.into(), up: up.into() }.apply(&mut grid);
+                prop_assert_eq!(grid.iter().map(Vec::len).collect::<Vec<_>>(), shape);
+            }
+        }
+    }
 }
