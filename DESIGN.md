@@ -488,13 +488,16 @@ result of a request; `ui` is a pure function of it.
 | `app/gestures/layout` | where the last frame put things, and which of them has focus |
 | `app/gestures/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/gestures/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
-| `app/modal` | the layers that float over the last frame |
+| `app/layers` | the layers that float over the stages |
+| `app/layers/modal` | which layer is up — the picker, the floating window, the settings rows, the prompt — and what each holds |
+| `app/layers/pickers` | the modal layers that ask the daemon, each opened with the rows it offers resolved |
+| `app/layers/brief`, `app/layers/dirpicker` | the view state behind each overlay |
+| `app/layers/diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
 | `app/daemon` | the model's exchange with its daemon |
 | `app/daemon/actions` | what is asked of the daemon |
 | `app/daemon/server` | what arrives back, and what it does to the selection |
 | `app/daemon/awaited` | what the terminal client does with what the daemon made for it — focus the pane, select the row, start what was asked for in the new checkout — once `awaited` says the tree, or the consoles beside it, holds it |
 | `app/daemon/showing` | what the daemon is told this client shows |
-| `app/pickers` | the modal layers that ask the daemon, each opened with the rows it offers resolved |
 | `app/consoles` | the shells that belong to no checkout: the daemon's list of them, which one the stage shows, and asking for another |
 | `app/agent_views` | the views agents showed as this client holds them, newest first: which is open, how far it is scrolled, and the close and refresh requests that change nothing until the daemon answers |
 | `app/saved_views` | the saved views as the daemon sends them, which one the stage shows, the links offered from it and the trail of links followed to it, and the embeds drawn in place |
@@ -520,8 +523,6 @@ result of a request; `ui` is a pure function of it.
 | `ui/layers` | what the renderer floats over the command center |
 | `ui/layers/help` | the keymap window |
 | `ui/layers/overlay`, `ui/layers/modals`, `ui/layers/review`, `ui/layers/history` | one drawn surface each: the floating window, the modal input layers, the diff viewer, and the commit list |
-| `brief`, `dirpicker` | the view state behind each overlay |
-| `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
 | `input` | what crosses between the person's terminal and a pane beyond a key the app acts on |
 | `input/paste` | a burst of typed characters told back into a paste |
 | `input/selection` | a pane's selected text |

@@ -30,8 +30,8 @@ use crate::app::{
     App, CheckoutRow, Focus, Mode, Overlay, OverlayMode, PaneLocation, Panel, PickerKind, Prompt,
     RailRow, Setting, View,
 };
-use crate::brief::BriefMode;
-use crate::dirpicker::DirRow;
+use crate::app::layers::brief::BriefMode;
+use crate::app::layers::dirpicker::DirRow;
 use argus_protocol::panes::view::PaneView;
 use argus_protocol::review::history_view::{HistoryRow, HistoryView};
 use argus_protocol::review::view::{fold_of, ReviewView, Row, FOLD_STEP};

@@ -5,7 +5,7 @@
 //! there is one input path per kind — so no gesture is ever ambiguous
 //! about which layer it was aimed at.
 
-use super::*;
+use crate::app::*;
 
 /// What confirming a picker selection does. The picker is one widget with
 /// one set of keys; this is the only thing that differs between uses.
@@ -88,7 +88,7 @@ impl PickerKind {
     }
 
     /// Paths score differently from plain words.
-    pub(super) fn matcher(&self) -> Fuzzy {
+    pub(in crate::app) fn matcher(&self) -> Fuzzy {
         match self {
             PickerKind::File { .. } | PickerKind::Change => Fuzzy::paths(),
             _ => Fuzzy::new(),
@@ -149,14 +149,14 @@ impl Picker {
         self.refilter();
     }
 
-    pub(super) fn on_create_row(&self) -> bool {
+    pub(in crate::app) fn on_create_row(&self) -> bool {
         self.create.is_some() && self.sel == self.shown.len()
     }
 
     /// Re-filters after a keystroke, keeping the cursor in range. The
     /// cursor goes back to the top: after a new query the old position
     /// refers to a row that is no longer there.
-    pub(super) fn refilter(&mut self) {
+    pub(in crate::app) fn refilter(&mut self) {
         let mut matcher = self.kind.matcher();
         // Workspace rows carry rollup counts, so they are matched on their
         // names — otherwise typing a digit would "find" a workspace by how
@@ -232,7 +232,7 @@ pub enum Overlay {
 }
 
 impl Overlay {
-    pub(super) fn pane(&self) -> Option<PaneId> {
+    pub(in crate::app) fn pane(&self) -> Option<PaneId> {
         match self {
             Overlay::Pane { pane, .. } => Some(*pane),
             Overlay::Settings { .. }
@@ -296,7 +296,7 @@ pub enum RemoveTarget {
 impl RemoveTarget {
     /// The question for what `tree::column::verbs` decided a removal
     /// sends; the popup words it, and a yes sends that message back.
-    pub(super) fn of(msg: ClientMsg) -> Option<Self> {
+    pub(in crate::app) fn of(msg: ClientMsg) -> Option<Self> {
         match msg {
             ClientMsg::RemoveCheckout { checkout } => Some(RemoveTarget::Checkout(checkout)),
             ClientMsg::DeleteBranch {
@@ -312,7 +312,7 @@ impl RemoveTarget {
         }
     }
 
-    pub(super) fn message(&self) -> ClientMsg {
+    pub(in crate::app) fn message(&self) -> ClientMsg {
         match self {
             RemoveTarget::Checkout(checkout) => ClientMsg::RemoveCheckout {
                 checkout: *checkout,

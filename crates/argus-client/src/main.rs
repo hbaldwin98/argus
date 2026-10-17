@@ -7,11 +7,8 @@
 //! socket, and `terminal::redraw` decides which wake-up is worth a frame.
 
 mod app;
-mod brief;
-mod diagram;
 mod commands;
 mod connection;
-mod dirpicker;
 mod input;
 mod settings;
 mod system;

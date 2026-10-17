@@ -9,9 +9,9 @@
 //! The `impl` is split by what the operator is doing: `tree` for the
 //! selection and moving it, `gestures` for keys, the pointer and scrolling,
 //! `daemon` for what is asked of the daemon and what arrives back,
-//! `pickers` for the modal layers, `agent_views` for the views agents showed, `saved_views` for the ones
-//! kept and the links followed between them, and
-//! `consoles` for the shells that belong to no checkout.
+//! `layers` for the modal layers, `agent_views` for the views agents
+//! showed, `saved_views` for the ones kept and the links followed between
+//! them, and `consoles` for the shells that belong to no checkout.
 
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, HeldTree, PaneId, PaneInfo, PaneState,
@@ -22,8 +22,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::brief::{BriefMode, BriefTarget, BriefView};
-use crate::dirpicker::{DirAction, DirPicker, DirTarget};
+use layers::brief::{BriefMode, BriefTarget, BriefView};
+use layers::dirpicker::{DirAction, DirPicker, DirTarget};
 use argus_protocol::fuzzy::Fuzzy;
 use argus_protocol::panes::view::PaneView;
 use argus_protocol::review::history_view::{Drill, HistoryView};
@@ -37,7 +37,7 @@ use crate::ui::theme::Theme;
 use argus_protocol::ReviewBase;
 use gestures::layout::in_rect;
 pub use gestures::layout::{Focus, Layout, Panel};
-pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
+pub use layers::modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
 pub use gestures::mode::{Mode, OverlayMode};
 pub use tree::rail::RailRow;
 pub use tree::rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
@@ -53,9 +53,8 @@ mod consoles;
 mod daemon;
 mod feature;
 mod gestures;
+pub mod layers;
 use daemon::awaited::Then;
-mod modal;
-mod pickers;
 mod saved_views;
 mod tree;
 mod views;
@@ -319,10 +318,10 @@ pub struct App {
     pub capture: Option<BriefView>,
     /// The selected flow as last drawn, kept so a frame does not render
     /// Mermaid again to draw what has not changed.
-    pub flow_drawn: Option<(i64, crate::diagram::DiagramView)>,
+    pub flow_drawn: Option<(i64, layers::diagram::DiagramView)>,
     pub diagram_sel: usize,
     /// The sequence diagram open in the overlay, if any.
-    pub diagram: Option<crate::diagram::DiagramView>,
+    pub diagram: Option<layers::diagram::DiagramView>,
     /// The line being typed in the feature view, when one is. `Some` is
     /// what makes the view swallow keys — a view whose `x` deletes a row
     /// while you are typing a title with an x in it is not usable.

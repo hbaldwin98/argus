@@ -4,6 +4,7 @@
 //! and the note a feature is written as.
 
 use super::*;
+use crate::app::layers::brief::BriefTarget;
 use crate::app::{FeatureHit, FeatureRow, Lens, Standing};
 use argus_protocol::board::outline::{Outline, WorkRef};
 use argus_protocol::{Decision, DecisionState, DecisionTreeRow, Task, TaskTreeRow};
@@ -380,7 +381,7 @@ pub(super) fn render_feature_stage(f: &mut Frame, app: &mut App, area: Rect, th:
 fn crumbs(app: &App, repo: &str) -> Vec<String> {
     let mut crumbs = vec![repo.to_string()];
     if let Some(note) = &app.capture {
-        if matches!(note.target, crate::brief::BriefTarget::Capture { into: None, .. }) {
+        if matches!(note.target, BriefTarget::Capture { into: None, .. }) {
             crumbs.extend(["features".to_string(), "new".to_string()]);
             return crumbs;
         }

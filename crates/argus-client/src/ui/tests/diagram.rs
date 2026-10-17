@@ -27,7 +27,7 @@ fn alt_diagram() -> argus_protocol::SequenceDiagram {
 #[test]
 fn a_narrow_sequence_overlay_has_no_branch_fill_noise() {
     let mut app = app_with_tree();
-    app.diagram = Some(crate::diagram::DiagramView::open(&alt_diagram(), 40));
+    app.diagram = Some(crate::app::layers::diagram::DiagramView::open(&alt_diagram(), 40));
     app.overlay = Some(Overlay::SequenceDiagram);
 
     let rendered = lines(&draw_at(&mut app, 50, 24)).join("\n");
@@ -42,7 +42,7 @@ fn a_narrow_sequence_overlay_has_no_branch_fill_noise() {
 #[test]
 fn l_pans_a_sequence_overlay_without_resizing_the_terminal() {
     let mut app = app_with_tree();
-    app.diagram = Some(crate::diagram::DiagramView::open(&alt_diagram(), 40));
+    app.diagram = Some(crate::app::layers::diagram::DiagramView::open(&alt_diagram(), 40));
     app.overlay = Some(Overlay::SequenceDiagram);
 
     let before = lines(&draw_at(&mut app, 50, 24)).join("\n");

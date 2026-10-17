@@ -362,7 +362,7 @@ impl App {
                     let path = if name.is_empty() {
                         parent.clone()
                     } else {
-                        crate::dirpicker::join(parent, name)
+                        crate::app::layers::dirpicker::join(parent, name)
                     };
                     self.prompt = None;
                     let request_id = self.awaited.ask(Then::SelectRepository);

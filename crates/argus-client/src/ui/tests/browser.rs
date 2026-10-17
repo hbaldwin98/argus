@@ -1,6 +1,7 @@
 //! The directory browser.
 
 use super::*;
+use crate::app::layers::dirpicker;
 
 #[test]
 fn the_browser_shows_where_you_are_and_what_is_under_it() {
@@ -21,7 +22,7 @@ fn browsing_for_somewhere_to_put_a_repository_says_so() {
     // directory itself.
     let mut app = app_browsing();
     app.dir_picker.as_mut().unwrap().target =
-        crate::dirpicker::DirTarget::NewRepository(ProjectId(1));
+        dirpicker::DirTarget::NewRepository(ProjectId(1));
     let rendered = lines(&draw(&mut app)).join("\n");
     assert!(rendered.contains("new repository"), "{rendered}");
     assert!(rendered.contains("make it in this directory"), "{rendered}");
@@ -88,7 +89,7 @@ fn typing_narrows_the_browser_to_what_matches() {
 #[test]
 fn an_unreadable_directory_says_so_instead_of_looking_empty() {
     let mut app = app_with_tree();
-    let mut picker = crate::dirpicker::DirPicker::new(crate::dirpicker::DirTarget::Project, 1);
+    let mut picker = dirpicker::DirPicker::new(dirpicker::DirTarget::Project, 1);
     picker.show(argus_protocol::DirListing {
         request_id: 1,
         path: "/root".to_string(),

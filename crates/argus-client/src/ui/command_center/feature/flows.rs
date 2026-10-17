@@ -3,6 +3,7 @@
 
 use super::*;
 use argus_protocol::board::diagrams::flow::{self, FlowRow, Step};
+use crate::app::layers::diagram::DiagramView;
 
 /// The widest the column naming who a step runs between is drawn; a flow
 /// whose routes are all shorter draws it as wide as its longest.
@@ -226,7 +227,7 @@ pub(super) fn render(f: &mut Frame, app: &mut App, body: Rect, th: Theme) {
         .as_ref()
         .is_some_and(|(id, drawn)| *id == diagram.id && drawn.shows(&diagram));
     if !current {
-        app.flow_drawn = Some((diagram.id, crate::diagram::DiagramView::open(&diagram, width)));
+        app.flow_drawn = Some((diagram.id, DiagramView::open(&diagram, width)));
     }
     let Some((_, drawn)) = app.flow_drawn.as_mut() else {
         return;

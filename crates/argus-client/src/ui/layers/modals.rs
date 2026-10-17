@@ -282,7 +282,7 @@ pub(in crate::ui) fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: The
             let dest = if name.is_empty() {
                 parent.clone()
             } else {
-                crate::dirpicker::join(parent, name)
+                crate::app::layers::dirpicker::join(parent, name)
             };
             let mut lines = vec![Line::from(Span::styled(
                 elide_head(&dest, inner_width as usize),

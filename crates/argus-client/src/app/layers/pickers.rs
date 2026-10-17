@@ -6,7 +6,7 @@
 //! picker, and a list that reshuffles between the keypress that moved the
 //! cursor and the one that confirms is how you act on the wrong row.
 
-use super::*;
+use crate::app::*;
 use argus_protocol::tree::column::verbs::Verb;
 
 impl App {
@@ -24,7 +24,7 @@ impl App {
         });
     }
 
-    pub(super) fn move_picker(&mut self, delta: isize) {
+    pub(in crate::app) fn move_picker(&mut self, delta: isize) {
         let Some(p) = &mut self.picker else { return };
         let last = p.len().saturating_sub(1);
         p.sel = (p.sel as isize + delta).clamp(0, last as isize) as usize;
@@ -61,7 +61,7 @@ impl App {
         }
     }
 
-    pub(super) fn move_setting(&mut self, delta: isize) {
+    pub(in crate::app) fn move_setting(&mut self, delta: isize) {
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
             let last = Setting::ALL.len() as isize - 1;
             *sel = (*sel as isize + delta).clamp(0, last) as usize;
@@ -70,7 +70,7 @@ impl App {
 
     /// Changing a setting applies it at once and writes it out — there is
     /// no separate save, so there is nothing to forget to press.
-    pub(super) fn cycle_setting(&mut self, sel: usize, delta: isize) {
+    pub(in crate::app) fn cycle_setting(&mut self, sel: usize, delta: isize) {
         match Setting::ALL.get(sel) {
             Some(Setting::EditorCmd) => {
                 self.prompt = Some(Prompt::EditorCommand {
@@ -121,7 +121,7 @@ impl App {
 
     /// Moves the keymap window's view, for the wheel. The renderer holds
     /// it inside the content, so this only has to not go below zero.
-    pub(super) fn scroll_help(&mut self, delta: isize) {
+    pub(in crate::app) fn scroll_help(&mut self, delta: isize) {
         if let Some(help) = &mut self.help {
             help.scroll = help.scroll.saturating_add_signed(delta * 3);
         }
@@ -155,7 +155,7 @@ impl App {
         self.sync_subscription();
     }
 
-    pub(super) fn open_theme_picker(&mut self) {
+    pub(in crate::app) fn open_theme_picker(&mut self) {
         let here = self.theme.name();
         self.picker = Some(Picker::new(
             PickerKind::Theme,
@@ -175,7 +175,7 @@ impl App {
     /// the checkouts column. No-op elsewhere — there's no "current
     /// checkout" to branch from once you're inside the panes/content
     /// columns.
-    pub(super) fn new_prompt(&mut self) {
+    pub(in crate::app) fn new_prompt(&mut self) {
         match self.acting_focus() {
             Focus::Projects => self.browse_for(DirTarget::Project),
             Focus::Repositories => {
@@ -207,7 +207,7 @@ impl App {
     /// Contextual like `n`, and for the same reason — it belongs to the
     /// repositories column, whose project is the one the new repository
     /// joins.
-    pub(super) fn new_repository_prompt(&mut self) {
+    pub(in crate::app) fn new_repository_prompt(&mut self) {
         if self.acting_focus() != Focus::Repositories {
             return;
         }
@@ -224,7 +224,7 @@ impl App {
     /// A checkouts row's refusals — the primary checkout, the main branch,
     /// a remote-only branch — are said here rather than after a round-trip
     /// (the daemon refuses the primary too, as defense in depth).
-    pub(super) fn remove_prompt(&mut self) {
+    pub(in crate::app) fn remove_prompt(&mut self) {
         let (target, label) = match self.acting_focus() {
             Focus::Projects => {
                 let Some(p) = self.current_project() else {
@@ -268,7 +268,7 @@ impl App {
         });
     }
 
-    pub(super) fn open_picker(&mut self) {
+    pub(in crate::app) fn open_picker(&mut self) {
         if self.templates.is_empty() {
             return;
         }
@@ -296,7 +296,7 @@ impl App {
     /// how a second one comes to exist: the alternative was hand-editing
     /// `projects.toml`, which meant the zero-config install stayed at one
     /// workspace forever.
-    pub(super) fn open_workspace_picker(&mut self) {
+    pub(in crate::app) fn open_workspace_picker(&mut self) {
         if self.workspaces.is_empty() {
             // Only before the daemon's first message; there is always at
             // least `default`.
@@ -331,7 +331,7 @@ impl App {
     /// level above workspaces. This machine first, then the hosts attached,
     /// then the ones remembered and the ones the ssh config names. Typing a
     /// name that is not listed connects to it.
-    pub(super) fn open_host_picker(&mut self) {
+    pub(in crate::app) fn open_host_picker(&mut self) {
         let mut hosts: Vec<Option<String>> = vec![None];
         let known = self
             .attached_hosts
@@ -406,7 +406,7 @@ impl App {
 
     /// `b` asks the daemon for this checkout's branches; the picker opens
     /// when they arrive, so it never shows a stale list.
-    pub(super) fn open_branch_picker(&mut self) {
+    pub(in crate::app) fn open_branch_picker(&mut self) {
         let Some(id) = self.current_checkout().map(|c| c.id) else {
             self.report("no checkout selected");
             return;
@@ -415,7 +415,7 @@ impl App {
         let _ = self.out.send(ClientMsg::ListBranches { checkout: id });
     }
 
-    pub(super) fn open_file_picker(&mut self) {
+    pub(in crate::app) fn open_file_picker(&mut self) {
         let Some(id) = self.current_checkout().map(|c| c.id) else {
             self.report("no checkout selected");
             return;
@@ -426,7 +426,7 @@ impl App {
 
     /// Offers only sibling checkouts: repository ownership is durable, and
     /// this gesture changes where its work is active rather than moving data.
-    pub(super) fn open_feature_checkout_picker(&mut self) {
+    pub(in crate::app) fn open_feature_checkout_picker(&mut self) {
         let (Some(project), Some(source), Some(slug)) = (
             self.board_follower.board().and_then(|board| board.project),
             self.current_checkout().map(|checkout| checkout.id),
@@ -471,7 +471,7 @@ impl App {
     /// Offers the features the selected one could come after: every other
     /// open feature on the board, and any it already waits on, done or not,
     /// so a wait can be taken back from the same list.
-    pub(super) fn open_feature_wait_picker(&mut self) {
+    pub(in crate::app) fn open_feature_wait_picker(&mut self) {
         let (Some(project), Some(checkout), Some(feature), Some(board)) = (
             self.board_follower.board().and_then(|board| board.project),
             self.current_checkout().map(|checkout| checkout.id),
@@ -520,7 +520,7 @@ impl App {
 
     /// Offers the other open features on the board as somewhere to move
     /// the selected task.
-    pub(super) fn open_task_feature_picker(&mut self) {
+    pub(in crate::app) fn open_task_feature_picker(&mut self) {
         let (Some(_), Some(here), Some(board)) = (
             self.selected_task(),
             self.feature_slug(),
@@ -549,7 +549,7 @@ impl App {
 
     /// The changed files of the review that is already open — no round
     /// trip, since the diff is in hand.
-    pub(super) fn open_change_picker(&mut self) {
+    pub(in crate::app) fn open_change_picker(&mut self) {
         let Some(view) = self.review_view() else { return };
         let items: Vec<String> = view
             .review
@@ -563,7 +563,7 @@ impl App {
         self.picker = Some(Picker::new(PickerKind::Change, "jump to change", items, 0));
     }
 
-    pub(super) fn confirm_picker(&mut self) {
+    pub(in crate::app) fn confirm_picker(&mut self) {
         let Some(picker) = self.picker.take() else {
             return;
         };

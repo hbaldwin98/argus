@@ -18,6 +18,7 @@ mod saved_views;
 mod status;
 
 use super::*;
+use crate::app::layers::dirpicker;
 use crate::fixtures::*;
 use argus_protocol::{
     CheckoutId, CheckoutInfo, GitStatus, PaneId, PaneKind, ProjectId, ProjectInfo,
@@ -401,8 +402,8 @@ pub(super) fn app_scrolled_back(offset: u32, depth: u32, mark: char) -> App {
 
 pub(super) fn app_with_a_brief(body: &str) -> App {
     let mut app = app_with_tree();
-    app.brief = Some(crate::brief::BriefView::new(
-        crate::brief::BriefTarget::Feature {
+    app.brief = Some(crate::app::layers::brief::BriefView::new(
+        crate::app::layers::brief::BriefTarget::Feature {
             project: ProjectId(1),
             slug: "pty".to_string(),
         },
@@ -417,7 +418,7 @@ pub(super) fn app_with_a_brief(body: &str) -> App {
 
 pub(super) fn app_browsing() -> App {
     let mut app = app_with_tree();
-    let mut picker = crate::dirpicker::DirPicker::new(crate::dirpicker::DirTarget::Project, 1);
+    let mut picker = dirpicker::DirPicker::new(dirpicker::DirTarget::Project, 1);
     picker.show(argus_protocol::DirListing {
         request_id: 1,
         path: "/home/u/Source/github.com".to_string(),

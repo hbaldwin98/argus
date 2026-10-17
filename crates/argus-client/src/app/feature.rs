@@ -438,7 +438,7 @@ impl App {
             return;
         };
         let width = self.layout.terminal.inner.width.max(40) as usize;
-        self.diagram = Some(crate::diagram::DiagramView::open(&diagram, width));
+        self.diagram = Some(crate::app::layers::diagram::DiagramView::open(&diagram, width));
         self.overlay = Some(Overlay::SequenceDiagram);
     }
 
