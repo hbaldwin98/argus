@@ -2,9 +2,9 @@
 //! request reaches, behind its token.
 //!
 //! Not part of the daemon's state because it is a protocol surface, the
-//! same reason `harness`, `git::watch` and `conn` are their own modules:
-//! what it calls on the `Daemon` is the `pub(crate)` surface the pane API
-//! needs.
+//! same reason `harness`, `git::watch` and `connection` are their own
+//! modules: what it calls on the `Daemon` is the `pub(crate)` surface the
+//! pane API needs.
 //! The one dependency the other way is `gen_token` and `valid_session_id`,
 //! which state calls because what a token and a session header are is
 //! answered here. Its grammar lives further out still, in

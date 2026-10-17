@@ -418,9 +418,9 @@ to the type or its locking.
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and which lists its change pushes |
 | `state/board_address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
 | `state/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
-| `conn` | one client connection: which task each message runs on, and the topics it has joined |
-| `conn/topics` | what a connection is pushed: each topic's first send, what each change sends, and how a client that fell behind is brought level |
-| `conn/dispatch` | what each client message does, and the one way its answer or refusal reaches the client that asked |
+| `connection` | one client connection: which task each message runs on, and the topics it has joined |
+| `connection/topics` | what a connection is pushed: each topic's first send, what each change sends, and how a client that fell behind is brought level |
+| `connection/dispatch` | what each client message does, and the one way its answer or refusal reaches the client that asked |
 | `hook_server` | the loopback pane API: which daemon call each agent's or extension's request reaches, behind its token |
 | `hook_server/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
 | `review`, `review/queue` | a review's diff, and when it is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |

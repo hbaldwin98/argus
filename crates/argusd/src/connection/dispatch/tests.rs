@@ -2,7 +2,7 @@
 //! on, through a connection with no socket.
 
 use super::*;
-use crate::conn::tests::{review_comment, Harness};
+use crate::connection::tests::{review_comment, Harness};
 use crate::review::queue::ReviewAsk;
 use argus_protocol::agents::transcript::Conversation;
 use argus_protocol::{CheckoutId, PaneId, RepositoryId, ReviewBase};

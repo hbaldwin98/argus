@@ -3,7 +3,7 @@
 //! channel's depth before the forwarder starts, so the lag is certain.
 
 use super::*;
-use crate::conn::tests::{daemon_with_a_pane, daemon_with_an_agent, view_change, Harness};
+use crate::connection::tests::{daemon_with_a_pane, daemon_with_an_agent, view_change, Harness};
 use crate::state::{BOARDS_DEPTH, EXTENSIONS_DEPTH, TREE_DEPTH, VIEWS_DEPTH};
 use argus_protocol::{AgentTelemetry, DecisionBoard, Hello, ProjectId, RepositoryId, TaskList};
 use std::time::Duration;

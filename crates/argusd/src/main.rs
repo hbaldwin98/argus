@@ -3,7 +3,7 @@
 
 mod code;
 mod config;
-mod conn;
+mod connection;
 mod git;
 mod harness;
 mod hook_server;
@@ -105,7 +105,7 @@ const ACCEPT_BACKOFF_MAX: std::time::Duration = std::time::Duration::from_secs(2
 async fn serve(
     listener: &mut argus_protocol::connection::transport::Listener,
     daemon: &std::sync::Arc<state::Daemon>,
-    shutdown: tokio::sync::broadcast::Sender<conn::ShutdownReason>,
+    shutdown: tokio::sync::broadcast::Sender<connection::ShutdownReason>,
 ) {
     let mut shutdown_rx = shutdown.subscribe();
     let mut connections = tokio::task::JoinSet::new();
@@ -132,7 +132,7 @@ async fn serve(
                 let daemon = daemon.clone();
                 let shutdown = shutdown.clone();
                 connections.spawn(async move {
-                    conn::handle(stream, daemon, shutdown, connection_shutdown).await;
+                    connection::handle(stream, daemon, shutdown, connection_shutdown).await;
                 });
             }
             Err(e) => {
