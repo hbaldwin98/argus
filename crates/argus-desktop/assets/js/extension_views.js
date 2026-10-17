@@ -13,7 +13,7 @@ import { closeLayer } from './kit/menu.js';
 import { keycaps } from './keys/chords.js';
 import { bindView, keyView, screen, viewScreen } from './panes/screen.js';
 import { state } from './state.js';
-import { table } from './table.js';
+import { table } from './views/blocks/table.js';
 import { call } from './connection/tauri.js';
 /** A gesture in the view `panel` names. */
 export function extensionGesture(panel, gesture) {

@@ -15,7 +15,7 @@ import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
 import { extensionElement, extensionOnStage } from '../extension_views.js';
 import { drawFloats } from './floats.js';
-import { savedElement } from '../saved_views.js';
+import { savedElement } from '../views/saved.js';
 import { contextMenu, type MenuItem, openMenu } from '../kit/menu.js';
 import { closesOnMiddle } from '../kit/middle.js';
 import { panelOf } from './panels.js';

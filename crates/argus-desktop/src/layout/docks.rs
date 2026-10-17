@@ -77,7 +77,7 @@ pub enum Panel {
     Views,
     Extension(String),
     /// A saved view's panel, named by the view it opened with; the columns
-    /// that follow it are `saved_views`'.
+    /// that follow it are `views::saved`'.
     Saved(String),
 }
 

@@ -87,7 +87,7 @@ pub struct FeatureStage {
     /// The layout of a repository that remembers none of its own, as the
     /// Settings dialog sets it.
     opens_as: Layout,
-    /// The views agents showed in the repository, as `agent_views` last
+    /// The views agents showed in the repository, as `views::agent` last
     /// said, each with the feature number it names. Held here only so the
     /// index is drawn again when they change.
     views: Vec<(i64, FeatureViewLink)>,

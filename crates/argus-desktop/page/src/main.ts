@@ -34,10 +34,10 @@ import { drawAddProject, drawHeading } from './chrome/projects.js';
 import { drawFrame, screen } from './panes/screen.js';
 import { state } from './state.js';
 import { call, connect } from './connection/tauri.js';
-import { drawViews, openNewestView } from './views.js';
+import { drawViews, openNewestView } from './views/agent.js';
 import { drawExtensionDialog } from './dialogs.js';
 import { drawExtensionConfirm, drawExtensionPanels } from './extension_views.js';
-import { drawSavedNav, drawSavedPanels } from './saved_views.js';
+import { drawSavedNav, drawSavedPanels } from './views/saved.js';
 
 /** Whether the pane had the keys when a dialog opened over it. */
 let paneHadKeys = false;

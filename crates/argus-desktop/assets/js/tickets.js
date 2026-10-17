@@ -3,10 +3,10 @@
 // more than the tracker's page at a glance, and the tracker is a click away
 // from there. Without one it opens the ticket in the browser.
 import { el } from './kit/dom.js';
-import { forFeature } from './saved_logic.js';
+import { forFeature } from './views/saved/logic.js';
 import { state } from './state.js';
 import { call } from './connection/tauri.js';
-import { viewOf } from './views.js';
+import { viewOf } from './views/agent.js';
 export function ticketLink(link) {
     const view = viewOf(link);
     return el('button', {

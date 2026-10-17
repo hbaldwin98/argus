@@ -187,7 +187,7 @@ docks keeps its console docked at the bottom as tall as it was, its views panel'
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `system/frame`, `compose`, `panes/console`, `layout/docks`, `layout/floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `layout/drag`, `layout/panels` (what Rust says each panel that exists is and can do), `panes/screen`, `panes/input`, `keys/keymap`, `keys/focus` (which layer has a key),
-`keys/palette`, `keys/shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `panes/rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `chrome/projects`, `system/chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `system/copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys/chords`, `kit/dom`, `state`, `layout/edge` (a side column's edge, dragged),
+`keys/palette`, `keys/shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `panes/rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `chrome/projects`, `system/chime`, `views/agent` (the agents' views panel: `views/blocks` draws a view's blocks and hands each to the module of its kind under `views/blocks/`, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `views/values` draws one value, with `views/refs` for those that point into Argus, `views/chip` and `views/link`; `views/actions` draws the buttons an agent put in a view; a table's parts are `views/blocks/table/bar`, `views/blocks/table/details`, `views/blocks/table/sort` and `views/blocks/table/memory`; and `views/blocks/table/cell_text`, `system/copy` and `views/ctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys/chords`, `kit/dom`, `state`, `layout/edge` (a side column's edge, dragged),
 `kit/clock` and `connection/tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `connection/page.rs`'s types and the page and gesture types each surface's module keeps beside it
@@ -569,10 +569,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it — a drag on a flow as its source rewritten — checked against the protocol's bounds; a new row saved blank sends nothing |
 
 | `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, whether the board holds the feature it was sent as yet, and the page and gestures it trades with the page, last sent while open |
-| `agent_views` | which views agents showed, as the window holds them, which one their panel shows, which name a feature, and which wait on a refresh |
-| `saved_views` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
-| `view_changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
-| `view_refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
 | `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, and the question an action waits on; what a gesture in one sends; and the page of them all, drawn where the window says each one is, with the commands `extension_keys` lists beside them, and what the page last heard |
 | `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension, as the page draws them |
 | `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |
@@ -612,6 +608,11 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `keys/keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, the commands the palette runs, and the order of the layers that hold the keys outside a pane |
 | `keys/page_key` | a key the page reports, as the protocol's key |
 | `keys/palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
+| `views` | the views agents show and save |
+| `views/agent` | which views agents showed, as the window holds them, which one their panel shows, which name a feature, and which wait on a refresh |
+| `views/changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
+| `views/refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
+| `views/saved` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 
 ## Views
@@ -2382,7 +2383,7 @@ trail over. Nothing is predicted: a refresh or a stale mark is a request, and th
 the daemon sends it saved again. The terminal does not draw tree, graph, timeline or board blocks,
 so a link in one of them is reached by the link list alone.
 
-The desktop window holds the saved views (`saved_views`) and gives each one a panel, `saved:<id>`
+The desktop window holds the saved views (`views/saved`) and gives each one a panel, `saved:<id>`
 in `desktop.json`, docked on the right the first time it opens and moved like any other; it has no
 page on the stage, since its columns want a dock. A panel is a trail of columns side by side,
 sharing its width and scrolling sideways once they no longer fit, each one saved view under its own header: the title, the scope, a stale chip,
@@ -2437,7 +2438,7 @@ until one is chosen and the next newest when the one chosen closes, says who rea
 ago, and offers Refresh, which waits for the agent to show it again, and Close, which takes it down
 for every client. Ctrl-. (in a pane, the leader and `v`) puts the panel away or brings
 the newest view out. A pane's row on the rail counts the views its agent has up. When a view is shown
-again the window names the blocks whose content changed (`agent_views`): they flash once when the
+again the window names the blocks whose content changed (`views/agent`): they flash once when the
 person is looking at that view, and otherwise stay marked, with a dot on its tab, until it is opened.
 What the page alone remembers about a view — a chosen tab, an open details or tree node, a table's
 selection, opened rows and filter, a form's draft — is kept by block path across those redraws. Pop
@@ -2445,7 +2446,7 @@ out opens a view as a stage page over whatever stage was up, and Dock, the views
 or the agent closing it goes back there; a view closed says so by the title its agent last gave it.
 While a view is the page it is the one in front of the person: shown again it flashes there, and the
 panel does not come out by itself beside it. A reference value opens in the window and never a
-browser (`view_refs`): a path in the person's editor, a commit in History, a feature in the Feature
+browser (`views/refs`): a path in the person's editor, a commit in History, a feature in the Feature
 stage, a pane focused; each is read against the pane that showed the view, or the checkout on screen
 for an extension's table, and a path that is absolute or climbs out of the checkout stays plain
 text. Copy, on a code block or a table as TSV, goes through Rust's clipboard. A feature's ticket
@@ -2700,11 +2701,11 @@ built-in stages': it is reached from the sidebar, its Tab and Enter included, fr
 to, and the shortcuts sheet says so under its extension's heading. Docked beside the agents' views
 it is another tab of their dock, and an agent's view arriving never takes the dock from it; in a
 dock of its own both are on screen, and a page beside views docked elsewhere too, each keeping its
-own selected row. Either way it is drawn by the agent table's renderer (`table.ts`, `values.ts`), a
-row's status leading it as a chip, with the selected row marked and its actions on a wrapping line
-under it, view-wide actions in its header, and a column marked optional dropped when the table is
-narrow. A double-click on a row, or Enter on the selected one, sends the view's `default` action
-for it. A page has the keys while it is up; docked, a click in it gives
+own selected row. Either way it is drawn by the agent table's renderer (`views/blocks/table.ts`,
+`views/values.ts`), a row's status leading it as a chip, with the selected row marked and its
+actions on a wrapping line under it, view-wide actions in its header, and a column marked optional
+dropped when the table is narrow. A double-click on a row, or Enter on the selected one, sends the
+view's `default` action for it. A page has the keys while it is up; docked, a click in it gives
 it them: `j`/`k` move the row, and each action's key runs it; each call the page makes about a
 view names it, since several may be on screen at once. An action that asks first asks in the
 dialog the Checkouts stage asks before a removal in, and an action is sent as it stands — the table

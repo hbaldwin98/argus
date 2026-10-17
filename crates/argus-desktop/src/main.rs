@@ -11,7 +11,6 @@
 //! output is still seen.
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
-mod agent_views;
 mod agents;
 mod capture_note;
 mod checkouts;
@@ -41,7 +40,6 @@ mod panes;
 mod reconcile_dialog;
 mod record_lens;
 mod review;
-mod saved_views;
 mod sequence;
 mod session;
 mod sessions;
@@ -50,8 +48,7 @@ mod settings;
 mod system;
 mod tracker_dialogs;
 mod transcript_reader;
-mod view_changes;
-mod view_refs;
+mod views;
 mod work_lens;
 
 use std::sync::Arc;

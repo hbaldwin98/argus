@@ -29,7 +29,7 @@ use crate::keys::page_key::PageKey;
 use crate::link_dialog::{LinkGesture, LinkPage};
 use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
 use crate::sessions_dialog::{SessionPreview, SessionsPage};
-use crate::saved_views::{SavedColumn, SavedViewsPage};
+use crate::views::saved::{SavedColumn, SavedViewsPage};
 use crate::panes::shown::workspace_grid::{Dir, GridPage, Zone};
 use crate::settings::remembered::{Backdrop, EditorMode, Preferences, SavedLinks, Theme};
 
@@ -738,7 +738,7 @@ pub struct Pane {
 }
 
 /// A value in an agent's view that points into Argus, as the page names it
-/// when pressed. What it points at is `view_refs`'s to find.
+/// when pressed. What it points at is `views::refs`'s to find.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]

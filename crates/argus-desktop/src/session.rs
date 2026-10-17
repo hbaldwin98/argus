@@ -17,7 +17,7 @@
 //! the project switcher (`chrome::switcher`) and the dialog adding a
 //! project (`chrome::add_project`), the Settings dialog's choices
 //! (`settings::preferences`), the console (`panes::console`), the views
-//! agents showed (`agent_views`), the extensions' views
+//! agents showed (`views::agent`), the extensions' views
 //! (`extension_views`), what fills the stage and where leaving it goes
 //! (`layout::stage`), and what the daemon is making
 //! (`argus_protocol::connection::awaited`). The session says which of them
@@ -44,7 +44,7 @@ use argus_protocol::{
 };
 
 use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
-use crate::agent_views::AgentViews;
+use crate::views::agent::AgentViews;
 use crate::extension_dialog::ExtensionDialogs;
 use crate::extension_keys::ExtensionKeys;
 use crate::extension_views::{first_place, ExtensionGesture, ExtensionViews, Here, Placed};
@@ -71,7 +71,7 @@ use crate::keys::palette;
 use crate::settings::preferences::Chosen;
 use crate::reconcile_dialog::ReconcileGesture;
 use crate::chrome::rail::{self, Choices};
-use crate::saved_views::{Closed, SavedColumn, SavedViews, Whereabouts};
+use crate::views::saved::{Closed, SavedColumn, SavedViews, Whereabouts};
 use crate::layout::dragged_width::{self, DraggedWidth};
 use crate::connection::sent::Sent;
 use crate::sessions::Sessions;
@@ -80,7 +80,8 @@ use crate::settings::remembered::{Backdrop, SavedLinks, Settings, Theme};
 use crate::panes::shown::ShownPane;
 use crate::chrome::status::StatusBar;
 use crate::chrome::switcher::Switcher;
-use crate::view_refs::{self, Found, PendingFeature, Target};
+use crate::views;
+use crate::views::refs::{Found, PendingFeature, Target};
 use crate::tracker_dialogs::{self, TrackerDialogs};
 
 /// What to do with a thing the daemon made for this window, once the tree
@@ -1501,7 +1502,7 @@ impl Session {
     /// pane did. A reference that cannot be found is said so, and nothing
     /// else happens.
     fn open_ref(&mut self, from: Option<PaneId>, reference: Reference) -> Vec<ClientMsg> {
-        match view_refs::resolve(&reference, from, self.here().checkout, &self.tree) {
+        match views::refs::resolve(&reference, from, self.here().checkout, &self.tree) {
             Err(text) => return self.note(text),
             Ok(Target::Pane(pane)) => return self.go_to_pane(pane),
             Ok(Target::Editor { checkout, path, line }) => self.open_in_editor(checkout, path, line),
@@ -6872,7 +6873,7 @@ mod tests {
         s
     }
 
-    fn saved_page(s: &mut Session) -> Option<crate::saved_views::SavedViewsPage> {
+    fn saved_page(s: &mut Session) -> Option<crate::views::saved::SavedViewsPage> {
         // Asked again for what it holds, not only for a change.
         s.saved.forget();
         s.events(0).into_iter().find_map(|e| match e {

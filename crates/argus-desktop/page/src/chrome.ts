@@ -10,7 +10,7 @@ import { drawComposer } from './compose.js';
 import { drawConsole } from './panes/console.js';
 import { $, el, ghosts, icon, type Child } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extension_views.js';
-import { drawSavedNav } from './saved_views.js';
+import { drawSavedNav } from './views/saved.js';
 import { drawFeatures } from './features.js';
 import { chordsFor, keycaps, presses } from './keys/chords.js';
 import { contextMenu, type MenuItem } from './kit/menu.js';

@@ -2,6 +2,6 @@
 
 /**
  * A value in an agent's view that points into Argus, as the page names it
- * when pressed. What it points at is `view_refs`'s to find.
+ * when pressed. What it points at is `views::refs`'s to find.
  */
 export type Reference = { "kind": "path", path: string, line: number | null, } | { "kind": "commit", sha: string, } | { "kind": "feature", number: number, } | { "kind": "pane", pane: number, };
