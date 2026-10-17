@@ -3,6 +3,11 @@
 //! diff rather than a raw patch, so the client doesn't re-parse what the
 //! daemon already knows.
 
+pub mod agent_comment;
+pub mod history_view;
+pub mod session;
+pub mod view;
+
 use serde::{Deserialize, Serialize};
 
 use crate::tree::ids::CheckoutId;

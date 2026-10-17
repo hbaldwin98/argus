@@ -525,7 +525,7 @@ fn showing_file(
     lines: Vec<argus_protocol::DiffLine>,
     new_lines: Option<u32>,
 ) -> App {
-    use argus_protocol::review_session::ReviewSession;
+    use argus_protocol::review::session::ReviewSession;
     let mut app = app_with_tree();
     app.review_split = split;
     let (mut session, base) = match &commit {
@@ -565,7 +565,7 @@ fn showing_file(
 /// As the overlay first opens: headers, and no commit summarized yet.
 pub(super) fn app_with_history() -> App {
     let mut app = app_with_tree();
-    app.history = Some(argus_protocol::history_view::HistoryView::new(
+    app.history = Some(argus_protocol::review::history_view::HistoryView::new(
         CheckoutId(1),
         vec![argus_protocol::CommitInfo {
             oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),

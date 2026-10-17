@@ -5,7 +5,7 @@
 //! dialog holds and draws is `review`'s and `history`'s; the history
 //! gives way to the review of a commit chosen in it.
 
-use argus_protocol::review_session::Answered;
+use argus_protocol::review::session::Answered;
 use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, RequestRefusal, ServerMsg};
 
 use crate::history::{HistoryDialog, Then};

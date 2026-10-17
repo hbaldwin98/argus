@@ -1,9 +1,9 @@
 //! The comment box the review and the Code stage share: whether it is open,
 //! the agent it is lit on, the comment it sent and waits on the daemon to
 //! save or refuse, by its id, and what the page draws of it. Whether a
-//! comment may go, and to whom, is `argus_protocol::agent_comment`'s.
+//! comment may go, and to whom, is `argus_protocol::review::agent_comment`'s.
 
-use argus_protocol::agent_comment::{self, Comment};
+use argus_protocol::review::agent_comment::{self, Comment};
 use argus_protocol::{CheckoutInfo, ClientMsg, PaneId, RequestRefusal, ReviewAnchor};
 use serde::Serialize;
 

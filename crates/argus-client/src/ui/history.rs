@@ -75,7 +75,7 @@ pub(super) fn history_line<'a>(
     line
 }
 
-pub(super) fn fold_marker(commit: &argus_protocol::history_view::HistoryEntry) -> &'static str {
+pub(super) fn fold_marker(commit: &argus_protocol::review::history_view::HistoryEntry) -> &'static str {
     match (commit.expanded, commit.pending) {
         (_, true) => "…",
         (true, _) => "▾",

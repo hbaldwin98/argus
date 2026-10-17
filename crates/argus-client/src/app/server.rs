@@ -6,7 +6,7 @@
 //! before anyone can observe the new tree.
 
 use super::*;
-use argus_protocol::review_session::Answered;
+use argus_protocol::review::session::Answered;
 use argus_protocol::{Folding, Hello, Received};
 
 impl App {
@@ -693,7 +693,7 @@ impl App {
         }
         let n = commits.len();
         self.review = None;
-        self.history = Some(argus_protocol::history_view::HistoryView::new(checkout, commits));
+        self.history = Some(argus_protocol::review::history_view::HistoryView::new(checkout, commits));
         self.overlay = Some(Overlay::History);
         self.pane_fullscreen = false;
         self.focus = Focus::Review;

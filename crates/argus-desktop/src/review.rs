@@ -1,12 +1,12 @@
 //! What the review dialog holds beyond the review itself — the checkout's
 //! name, the side and layout the person chose, its comment box, and its
 //! go-to-file field — and the page it draws. Which sides were asked for
-//! and which one shows are `review_session`'s, and whether a comment may go
-//! and to whom is `agent_comment`'s, so the dialog behaves as the terminal
-//! client's review does.
+//! and which one shows are `review::session`'s, and whether a comment may
+//! go and to whom is `review::agent_comment`'s, so the dialog behaves as
+//! the terminal client's review does.
 
-use argus_protocol::review_session::{Answered, ReviewSession};
-use argus_protocol::review_view::{fold_of, marker, ReviewView, Row, FOLD_STEP};
+use argus_protocol::review::session::{Answered, ReviewSession};
+use argus_protocol::review::view::{fold_of, marker, ReviewView, Row, FOLD_STEP};
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ChangeKind, ClientMsg, DiffLine, HighlightKind, HighlightSpan, LineKind, PaneId, Review,
     CodeVersion, RequestRefusal, ReviewBase, ReviewContext,

@@ -1,15 +1,15 @@
 //! What the history dialog holds — a checkout's newest commits, the ones
 //! unfolded to their files, the filter over them, and the diff of the file
 //! under the cursor — and what its gestures ask of the daemon. The rows
-//! and what unfolding asks for are `argus_protocol::history_view`'s, as in
-//! the terminal client; a commit's diff is asked for once and kept while
-//! the dialog is open; a diff that could not be read says why, and is
+//! and what unfolding asks for are `argus_protocol::review::history_view`'s,
+//! as in the terminal client; a commit's diff is asked for once and kept
+//! while the dialog is open; a diff that could not be read says why, and is
 //! asked for again when the cursor comes back to it.
 
 use std::collections::HashMap;
 
-use argus_protocol::history_view::{Drill, HistoryRow, HistoryView};
-use argus_protocol::review_view::ReviewView;
+use argus_protocol::review::history_view::{Drill, HistoryRow, HistoryView};
+use argus_protocol::review::view::ReviewView;
 use argus_protocol::{CheckoutId, CheckoutInfo, ClientMsg, CommitFile, CommitInfo, Review, ReviewBase};
 
 use crate::page::{HistoryPage, HistoryRowView};
@@ -189,7 +189,7 @@ impl HistoryDialog {
             return Vec::new();
         };
         let words: Vec<String> = self.filter.split_whitespace().map(str::to_lowercase).collect();
-        let matches = |entry: &argus_protocol::history_view::HistoryEntry| {
+        let matches = |entry: &argus_protocol::review::history_view::HistoryEntry| {
             let info = &entry.info;
             let text = format!("{} {} {}", info.oid, info.summary, info.author).to_lowercase();
             words.iter().all(|w| text.contains(w.as_str()))

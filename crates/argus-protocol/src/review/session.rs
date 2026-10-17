@@ -9,7 +9,7 @@
 //! other holds, whether there is anything at all — and switching sides
 //! afterwards is a look at what is already in hand rather than another wait.
 
-use crate::review_view::ReviewView;
+use crate::review::view::ReviewView;
 use crate::{CheckoutId, ClientMsg, Review, ReviewAnchor, ReviewBase, ReviewContext};
 
 /// What an answer from the daemon came to.

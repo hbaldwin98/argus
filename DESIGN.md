@@ -346,11 +346,11 @@ live in this crate and a contract written twice drifts in silence.
 | `panes/view` | a pane's view as a client holds it: the live grid, the view parked in its history, how the daemon's pane messages change them, and what a scroll gesture over the pane sends — the child's bytes, a request for history, or nothing |
 | `ago` | how long ago something happened, as every client says it |
 | `review` | the shapes review data travel in: a checkout's uncommitted changes and a commit against its first parent, as rendered diffs |
-| `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
+| `review/view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
+| `review/session` | one review's exchange with the daemon, as both clients hold it: which sides were asked for and answered, the side on screen and when an empty one gives way, and the picked lines a comment from it is anchored to |
+| `review/agent_comment` | a comment on picked lines to an agent, from a review, a commit's review or the Code stage in either client: whether one may be written, which agent hears it as agents come and go, the words each refusal is said in, and the message that sends it |
+| `review/history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
 | `code` | a checkout's code as the Code stage reads it: which version, a file's lines and the ones that version changed, what the file defines, and where text occurs across the checkout |
-| `review_session` | one review's exchange with the daemon, as both clients hold it: which sides were asked for and answered, the side on screen and when an empty one gives way, and the picked lines a comment from it is anchored to |
-| `agent_comment` | a comment on picked lines to an agent, from a review, a commit's review or the Code stage in either client: whether one may be written, which agent hears it as agents come and go, the words each refusal is said in, and the message that sends it |
-| `history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
 | `paths` | where Argus keeps its files and which instance it is, shared so `ARGUS_CONFIG_DIR` points the daemon and every client at one place |
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `board` | a repository's feature board |
@@ -529,7 +529,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
 | `dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
-| `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, its comment box, its go-to-file field — and the page it draws |
+| `review` | what the review dialog holds beyond its `review::session` — the side and layout chosen, its comment box, its go-to-file field — and the page it draws |
 | `comment_box` | the comment box the review and the Code stage share: whether it is open, the agent it is lit on, the comment it sent and waits on the daemon to save or refuse, by its id, and what the page draws of it |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff or why it could not be read — and what its gestures ask of the daemon |
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, or why the daemon refused one, among them what each pane it resumed a session in was resumed from |
@@ -1670,7 +1670,7 @@ anyone: the toggle lives inside the overlay, so a side that comes back empty giv
 once it has said, and only when both are empty does the review say so and open nothing. Giving way
 is not choosing: the setting stays the side asked for. `b` onto a side known to be empty keeps the
 diff already on screen and its side. A refresh keeps the file the cursor was in, found by its path.
-Both clients hold this exchange as one `review_session`, so the terminal and the desktop window
+Both clients hold this exchange as one `review::session`, so the terminal and the desktop window
 open, give way and refuse alike. Closing a review or history returns the keys to where it was opened from, the rail or the
 Checkouts stage.
 
@@ -1748,7 +1748,7 @@ way, under its id.
 
 The client supports line and file navigation, single-file range marking, a changed-file fuzzy
 picker, refresh, and opening the selected line in an editor. A comment records the review side,
-paths, separate old and new ranges, quoted diff text, and body. Who hears it is `agent_comment`'s,
+paths, separate old and new ranges, quoted diff text, and body. Who hears it is `review::agent_comment`'s,
 the same for a review, a commit's review and the Code stage in either client: a live (never exited)
 agent in the checkout. The terminal asks between several each time; the window's box lights the
 first when it opens and keeps the one chosen. One that has exited since it was chosen is refused as

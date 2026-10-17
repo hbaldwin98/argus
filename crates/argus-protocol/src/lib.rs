@@ -7,7 +7,6 @@
 //! travel in. Written twice they drift in silence; written once they
 //! cannot.
 
-pub mod agent_comment;
 pub mod agents;
 pub mod ago;
 pub mod board;
@@ -16,13 +15,10 @@ pub mod code;
 pub mod connection;
 pub mod extensions;
 pub mod fuzzy;
-pub mod history_view;
 pub mod hook;
 pub mod panes;
 pub mod paths;
 pub mod review;
-pub mod review_session;
-pub mod review_view;
 pub mod tree;
 pub mod views;
 

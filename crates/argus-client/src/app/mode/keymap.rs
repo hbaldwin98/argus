@@ -1022,7 +1022,7 @@ fn on_fold(app: &App) -> bool {
     app.review_view().is_some_and(|v| v.fold().is_some())
 }
 
-fn in_review(app: &mut App, act: impl FnOnce(&mut argus_protocol::review_view::ReviewView)) {
+fn in_review(app: &mut App, act: impl FnOnce(&mut argus_protocol::review::view::ReviewView)) {
     if let Some(view) = app.review_view_mut() {
         act(view);
     }
@@ -1152,7 +1152,7 @@ fn has_history(app: &App) -> bool {
     app.history.is_some()
 }
 
-fn in_history(app: &mut App, act: impl FnOnce(&mut argus_protocol::history_view::HistoryView)) {
+fn in_history(app: &mut App, act: impl FnOnce(&mut argus_protocol::review::history_view::HistoryView)) {
     if let Some(view) = &mut app.history {
         act(view);
     }
