@@ -3,8 +3,8 @@
 
 use argus_protocol::Value;
 
-use super::agent_tone::{chip_span, tone_color};
-use super::text::{one_line, wrap_words};
+use super::tone::{chip_span, tone_color};
+use crate::ui::text::{one_line, wrap_words};
 use super::*;
 
 /// A number as a person writes it: whole when it is whole.

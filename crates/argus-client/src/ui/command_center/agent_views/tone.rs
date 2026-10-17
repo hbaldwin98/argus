@@ -6,7 +6,7 @@
 
 use argus_protocol::{Chip, Tone};
 
-use super::text::one_line;
+use crate::ui::text::one_line;
 use super::*;
 
 /// The theme role a tone stands for. `Info` is the quiet one: it says

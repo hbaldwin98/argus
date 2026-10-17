@@ -500,9 +500,9 @@ result of a request; `ui` is a pure function of it.
 | `ui/command_center/rail` | drawing the rail — its heading, the rows `app/rail` lists, the divider between the active repositories and the quiet ones, and the consoles at its foot — and which row a click lands on |
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/checkouts`, `ui/command_center/agent_views` | one stage each, with the hit-test that shares its layout |
 | `ui/command_center/feature/index`, `ui/command_center/feature/work`, `ui/command_center/feature/record`, `ui/command_center/feature/flows`, `ui/command_center/feature/capture` | what fills the Feature stage's frame: the index of features, each of the three lenses, and the note a feature is written as |
-| `ui/agent_blocks` | an agent view's blocks as styled lines of a width, and which kinds are left to the desktop |
-| `ui/agent_tone` | how an agent view's tones read as theme roles, and the chip drawn through them |
-| `ui/agent_values` | what each kind of agent view value reads as in a terminal: styled text on a line, or wrapped lines for a long text |
+| `ui/command_center/agent_views/blocks` | an agent view's blocks as styled lines of a width, and which kinds are left to the desktop |
+| `ui/command_center/agent_views/tone` | how an agent view's tones read as theme roles, and the chip drawn through them |
+| `ui/command_center/agent_views/values` | what each kind of agent view value reads as in a terminal: styled text on a line, or wrapped lines for a long text |
 | `ui/text` | fitting text to a width: ellipsis, wrapping a field or prose, one-lining |
 | `ui/theme` | the palette: every colour the UI draws, by the role it plays |
 | `ui/motion` | animation arithmetic: how far along a transition is at a given instant |

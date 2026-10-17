@@ -38,9 +38,6 @@ use argus_protocol::review::view::{fold_of, ReviewView, Row, FOLD_STEP};
 use theme::Theme;
 use argus_protocol::CursorShape;
 
-mod agent_blocks;
-mod agent_tone;
-mod agent_values;
 mod card;
 mod command_center;
 mod help;
@@ -56,9 +53,6 @@ mod text;
 pub mod theme;
 mod views;
 
-use agent_blocks::block_lines;
-use agent_tone::chip_span;
-use agent_values::duration_text;
 use card::*;
 use command_center::*;
 use help::*;

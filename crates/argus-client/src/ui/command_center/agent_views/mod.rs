@@ -5,10 +5,17 @@
 //! the view's full width, which a table needs more than a title does. The
 //! live views come first, as the daemon sent them, and the saved ones after.
 
+mod blocks;
+mod tone;
+mod values;
+
 use argus_protocol::{SavedView, ViewScope};
 
 use super::*;
 use crate::app::Links;
+use blocks::block_lines;
+use tone::chip_span;
+use values::duration_text;
 
 /// Views listed at once; more scroll, following the open one.
 const LISTED: usize = 5;

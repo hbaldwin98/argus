@@ -13,8 +13,8 @@ use argus_protocol::{
     MAX_BLOCK_DEPTH,
 };
 
-use super::agent_tone::*;
-use super::agent_values::*;
+use super::tone::*;
+use super::values::*;
 use super::*;
 
 /// Deeper than the contract allows is not drawn: a view the daemon let
