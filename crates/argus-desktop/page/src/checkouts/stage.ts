@@ -93,7 +93,8 @@ function head(c: Checkouts): HTMLElement {
 function running(row: CheckoutsRow): Child {
   if (!row.running.length) return el('span', { class: 'fg-faint' }, '—');
   return [
-    row.shared !== null && el('span', { class: 'shared' }, `⚠ shared by ${row.shared} `),
+    row.shared !== null &&
+      el('span', { class: 'shared' }, icon('people'), ` shared by ${row.shared} `),
     ...row.running.flatMap((pane, i) => [
       i > 0 && el('span', { class: 'fg-faint' }, ' · '),
       el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'),

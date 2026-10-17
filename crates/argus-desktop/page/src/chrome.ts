@@ -246,7 +246,12 @@ function checkoutRow(repository: string, co: RailCheckout): HTMLElement {
     icon('branch'),
     el('span', { class: 'name ttl' }, co.name),
     co.shared !== null &&
-      el('span', { class: 'shared', title: `shared by ${co.shared} agents` }, `⚠${co.shared}`),
+      el(
+        'span',
+        { class: 'shared', title: `shared by ${co.shared} agents` },
+        icon('people'),
+        `${co.shared}`,
+      ),
     co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git),
     !co.open &&
       el(

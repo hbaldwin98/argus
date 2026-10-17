@@ -964,6 +964,10 @@
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
+.shared svg {
+  margin-right: 2px;
+  vertical-align: -1px;
+}
 .nest {
   margin: 0 var(--sp-8) var(--sp-4) 38px;
   padding-left: var(--sp-4);
