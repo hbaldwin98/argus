@@ -56,7 +56,7 @@ recent sessions need.
   translation. Update both DESIGN tables (`keys` row in protocol; `input/pty/keys` row reworded).
   Protocol is a lib crate: no new dependencies.
 - **`argus bridge` exits when the daemon hangs up** (HUN-179, done). `tokio::io::stdin()` is a
-  blocking read that keeps the runtime alive (see Findings), so `bridge.rs` ends the process the
+  blocking read that keeps the runtime alive (see Findings), so `commands/bridge.rs` ends the process the
   moment `pipe` returns instead of returning to `main`.
 - **`argus desktop`** (HUN-180, done) — `crates/argus-client/src/commands/desktop.rs` starts
   `argus-desktop` from beside `argus`, else from PATH, detached, and says where to get it when it
@@ -79,7 +79,7 @@ recent sessions need.
 
 All Rust under `src/` (the design_table test walks `crates/<name>/src`). Non-Rust files:
 `build.rs` (`tauri_build::build()`), `tauri.conf.json`, `icons/icon.png` (256×256 **RGBA**) and
-`icons/icon.ico` (converted from the removed phone client's `icon-512.png` at `20dbb14`, which is RGB), `assets/{index.html,app.js,style.css}`,
+`icons/icon.ico` (converted from the removed phone client's `icon-512.png` at `20dbb14`, which is RGB), `assets/{index.html,style.css}`, the page's TypeScript in `page/src` built into `assets/js`,
 and a `.gitignore` entry for `crates/argus-desktop/gen/` (tauri-build writes schemas there).
 Capabilities: the page uses only app commands and one `Channel`, which need no capability; add a
 `capabilities/` file only if the build or runtime demonstrably needs one (verify, and say).
@@ -100,20 +100,22 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
 
 ### Modules (each answers one question — rows go in a fourth DESIGN table)
 
+The slice's modules, named by where they live now; DESIGN.md's fourth table lists every module since.
+
 | module | answers |
 | --- | --- |
 | `main` | startup: the runtime, the window, and running until it closes |
-| `daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
+| `connection/daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
 | `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
-| `screen` | a pane's screen as the page draws it: the grid the daemon's damage lands on, and the rows changed since the last frame |
-| `rail` | what the rail lists from the tree, and what a row says |
-| `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
-| `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
-| `keys` | a key the page reports, as the protocol's key |
+| `panes/screen` | a pane's screen as the page draws it: the grid the daemon's damage lands on, and the rows changed since the last frame |
+| `chrome/rail` | what the rail lists from the tree, and what a row says |
+| `connection/page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
+| `connection/commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
+| `keys/page_key` | a key the page reports, as the protocol's key |
 
 (Rename/merge only with a reason; the module rule is the repo's.)
 
-### `daemon`
+### `connection/daemon`
 
 - Find `argus[.exe]` beside `std::env::current_exe()`, else bare `argus` (PATH): `daemon::locate`
   takes the candidate directories and an existence check, so the bundle wins and PATH is the last
@@ -121,13 +123,13 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
 - Spawn `argus bridge` with `tokio::process::Command`: stdin/stdout/stderr piped, `kill_on_drop`,
   environment inherited (so `ARGUS_INSTANCE` / `ARGUS_CONFIG_DIR` pass through), on Windows
   `creation_flags(0x0800_0000)` (CREATE_NO_WINDOW — argus.exe is a console binary and a GUI parent
-  would otherwise flash a console window; see argusd's `command.rs` `quiet()` for the precedent).
+  would otherwise flash a console window; see argusd's `system/command.rs` `quiet()` for the precedent).
   Drain stderr into a bounded buffer (16 KiB, last bytes kept) — it carries the only error text.
 - Reader task: `read_known_msg` loop into a bounded mpsc (not cancellation-safe, so its own task);
   writer task: `write_msg` from an unbounded receiver. Make the transport generic over
   `AsyncRead + AsyncWrite` so tests drive it with `tokio::io::duplex` and a played daemon.
 - Greet: send `ClientMsg::Hello(Hello::this_build())` first, then `Greeting::read(&mut rx,
-  GREETING_WAIT)`; map outcomes as `launch.rs::greet` does:
+  GREETING_WAIT)`; map outcomes as `connection/launch.rs::greet` does:
   `Up` → connected (keep `opening` messages, apply them first); `Refused(Protocol{..})` → connected
   but status carries the alarm (another protocol number: say both versions and `argus server
   restart`); `Refused(Predates)` → start a fresh bridge and do NOT greet on it; `Closed` → the
@@ -193,7 +195,7 @@ tested under node), sending sizes once when a gutter is let go. Not yet: the siz
 across restarts, and the move and focus keys are chords after the leader (`ArrowKeys`, with Shift to
 move), not yet remappable.
 
-### `screen`
+### `panes/screen`
 
 - State: rows, cols, `Vec<Vec<Cell>>`, cursor, mouse tracking, alternate screen, dirty rows, a
   `full` flag, and whether the cursor changed.
@@ -212,7 +214,7 @@ move), not yet remappable.
 - The frame carries `pane, rows, cols, full, cursor{row,col,visible,shape}, alternateScreen,
   lines: [[row, segments]]`.
 
-### `page` (serde types; field names are a contract with app.js — test their JSON)
+### `connection/page` (serde types; field names are a contract with the page — test their JSON)
 
 One `Channel` from Rust to the page carries a tagged enum (`{"type": "status" | "rail" | "frame" |
 "clipboard", ...}`, camelCase fields). Calls from the page: `connect(events: Channel)` (replaces any
@@ -221,7 +223,7 @@ every other call as one `Call` enum tagged by `call` — `{"call": "select", "pa
 `{"call": "key", "key": PageKey}` and so on — through the single `call` command, the page typed by
 its generated binding.
 
-### `commands` / `main`
+### `connection/commands` / `main`
 
 - Own multi-thread tokio runtime; `tauri::async_runtime::set(handle)` first in `main`; Tauri on the
   main thread; `.build(ctx)` then `run_return`, shut the runtime down, `process::exit(code)`.
@@ -239,8 +241,8 @@ its generated binding.
 - `#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]` with a `//!` paragraph
   saying why (argus-hook's main.rs has the precedent and wording).
 - Diagnostics: tracing to a file `argus-desktop.log` in `config_dir()` (keep the previous run as
-  `.1`, like argusd's `logging.rs`), level from `RUST_LOG`, default `info`; failing to open it is
-  never a reason not to start. If this needs its own module, add it to the table (`logging`).
+  `.1`, like argusd's `system/logging.rs`), level from `RUST_LOG`, default `info`; failing to open it is
+  never a reason not to start. If this needs its own module, add it to the table (`system/logging`).
 - Panics abort in release (`panic = "abort"`): no `unwrap` on anything the daemon or page controls.
 
 ### The page (`assets/`)
@@ -265,7 +267,8 @@ documents the tokens.
   monospace stack (`ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace`).
   Status words get colours (`waiting`/`needs-review`/`failed` loud, `working` accent, `idle`/`done`
   quiet, `exited` dim).
-- `app.js`: `const { invoke, Channel } = window.__TAURI__.core`. Wrap `onmessage` in try/catch, so
+- The script (`page/src`, entered at `main.ts`; first written as one `app.js`):
+  `const { invoke, Channel } = window.__TAURI__.core`. Wrap `onmessage` in try/catch, so
   one bad message is logged rather than ending the stream (2.12.1 stopped delivering after a
   handler threw; 2.12.3 fixes it, the try/catch stays). Renderer: measure
   the cell from the font (`measureText('M'.repeat(100))`, `fontBoundingBoxAscent/Descent`), device
@@ -295,7 +298,7 @@ documents the tokens.
 
 ### Tests (Rust, colocated; names state the rule)
 
-- `screen`: a snapshot then damage produces the expected rows; scroll is applied before runs and
+- `panes/screen`: a snapshot then damage produces the expected rows; scroll is applied before runs and
   marks its region; a wide char gets the WIDE flag and its spacer vanishes; trailing blanks are
   trimmed; a cursor-only damage yields a frame with no lines; no change yields `None`; a fresh
   `PaneRows` replaces dimensions; the old `PaneSnapshot`/`Damage` forms work.
@@ -304,13 +307,13 @@ documents the tokens.
   selected only once `Created` arrived and the tree holds it; `View` is sent only to a daemon that
   can take `focus`, and `active` follows window focus; `Stopping` stops reconnecting; a tree without
   the selected pane drops it; keys with no pane send nothing.
-- `daemon`: against a played daemon over `tokio::io::duplex`: greets and keeps the opening;
+- `connection/daemon`: against a played daemon over `tokio::io::duplex`: greets and keeps the opening;
   a daemon that predates the greeting is reached again without greeting; closing before a word
   reports the bridge's stderr. (Spawning a real `argus bridge` is not needed in unit tests.)
-- `keys`: DOM key names map to the protocol keys (`ArrowUp` → Up, `Enter`, `Backspace`, `F5`,
+- `keys/page_key`: DOM key names map to the protocol keys (`ArrowUp` → Up, `Enter`, `Backspace`, `F5`,
   printable chars with shift, Ctrl+letter, Alt+letter, `Dead`/`Unidentified`/modifier-only → none).
-- `page`: the JSON of each event and call matches what `app.js` reads (a test per shape).
-- `rail`: the rows built from a fixture tree (order, git summary, needs-you counts, editors left out).
+- `connection/page`: the JSON of each event and call matches what the page reads (a test per shape).
+- `chrome/rail`: the rows built from a fixture tree (order, git summary, needs-you counts, editors left out).
 - An ignored `dump_rail` test that prints the rail for a busy fixture tree as text (the repo's
   dump-test convention, adapted: there is no TestBackend for a webview).
 
@@ -319,7 +322,7 @@ documents the tokens.
 - DESIGN.md: a process-model paragraph for the desktop client (what it is, how it reaches the
   daemon through `argus bridge` and why, that it shows one pane at a time and the daemon sizes a
   pane to its smallest viewer, View reporting and window focus, `Stopping`, the webview data
-  directory per instance, the page as plain JS with no build step); the binary list at the top; the
+  directory per instance, the page's script and its build); the binary list at the top; the
   fourth responsibility table (prose paragraph then table, as the others), and `design_table.rs`
   `CRATES` gains `"argus-desktop"` in the same position as its table.
 - README.md: what the desktop app is, `argus desktop`, building it (Linux needs
