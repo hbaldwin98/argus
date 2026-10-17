@@ -38,9 +38,11 @@ jobs:
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
           restore-keys: fuzz-corpus-${{ matrix.target }}-
 
+      # No one input may allocate more than twice the largest frame a peer
+      # may send: a length read off the wire is not a size to trust.
       - name: Fuzz
         working-directory: fuzz
-        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ inputs.seconds || '300' }}
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ inputs.seconds || '300' }} -malloc_limit_mb=128
 
       # A crash is the input that made it: committed as an ordinary
       # regression test beside the code it broke, it stays fixed.
