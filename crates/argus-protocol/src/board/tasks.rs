@@ -349,15 +349,15 @@ pub struct TaskTreeRow<'a> {
 
 impl TaskTreeRow<'_> {
     pub fn label(&self) -> String {
-        crate::decisions::outline_number(&self.number)
+        crate::board::decisions::outline_number(&self.number)
     }
 }
 
 impl TaskList {
     /// Whether this is a list from the board of `repository` in the
-    /// project named `project_name`; see [`crate::decisions::is_for`].
+    /// project named `project_name`; see [`crate::board::decisions::is_for`].
     pub fn is_for(&self, project_name: &str, repository: RepositoryId) -> bool {
-        crate::decisions::is_for(&self.project_name, &self.repositories, project_name, repository)
+        crate::board::decisions::is_for(&self.project_name, &self.repositories, project_name, repository)
     }
 
     /// The tasks flattened depth-first, with sibling order taken from their

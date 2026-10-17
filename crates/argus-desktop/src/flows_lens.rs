@@ -2,13 +2,14 @@
 //! the cursor read as steps, the step under the cursor with what binds it
 //! and what carries it out, and the diagram drawn beside them.
 //!
-//! A step is bound in its flow's source (`argus_protocol::flow`) and what
-//! carries a decision out is the outline's to say, as the terminal
-//! client's Flows lens reads them; this only turns them into what the page
-//! draws, `sequence` drawing the diagram.
+//! A step is bound in its flow's source
+//! (`argus_protocol::board::diagrams::flow`) and what carries a decision
+//! out is the outline's to say, as the terminal client's Flows lens reads
+//! them; this only turns them into what the page draws, `sequence` drawing
+//! the diagram.
 
-use argus_protocol::flow::{self, FlowRow, Step};
-use argus_protocol::outline::Outline;
+use argus_protocol::board::diagrams::flow::{self, FlowRow, Step};
+use argus_protocol::board::outline::Outline;
 use argus_protocol::{DiagramList, SequenceDiagram};
 
 use crate::page::{FlowDetail, FlowItem, FlowsLens, Line, StepDetail, StepRow};

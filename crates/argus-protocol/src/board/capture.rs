@@ -12,9 +12,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::decisions::MAX_DECISION_BYTES;
-use crate::features::{FeatureAction, FeatureWrite, MAX_FEATURE_BODY_BYTES};
-use crate::tasks::MAX_TASK_TITLE_BYTES;
+use crate::board::decisions::MAX_DECISION_BYTES;
+use crate::board::features::{FeatureAction, FeatureWrite, MAX_FEATURE_BODY_BYTES};
+use crate::board::tasks::MAX_TASK_TITLE_BYTES;
 
 /// The tasks and decisions one note may hold. A note longer than this is a
 /// plan somebody should read before it becomes a board.
@@ -274,7 +274,7 @@ impl Capture {
         let fits = |d: &&CapturedDecision| {
             d.chose.len() <= MAX_DECISION_BYTES
                 && d.because.as_ref().is_none_or(|b| b.len() <= MAX_DECISION_BYTES)
-                && d.options.len() <= crate::decisions::MAX_DECISION_OPTIONS
+                && d.options.len() <= crate::board::decisions::MAX_DECISION_OPTIONS
                 && d.options.iter().all(|o| o.len() <= MAX_DECISION_BYTES)
         };
         if !decisions.iter().all(fits) {

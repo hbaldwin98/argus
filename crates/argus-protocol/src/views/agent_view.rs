@@ -14,7 +14,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::tree::ids::PaneId;
-use crate::tracker_links::TrackerLink;
+use crate::board::tracker_links::TrackerLink;
 use crate::views::press::ViewAction;
 
 /// One view, as the agent writes it.
@@ -644,7 +644,7 @@ impl AgentView {
     /// URL as a linked ticket's are.
     pub fn subject_link(&self) -> Option<TrackerLink> {
         let url = self.subject.clone()?;
-        crate::tracker_links::LinkWrite { url, ..Default::default() }.checked().ok()
+        crate::board::tracker_links::LinkWrite { url, ..Default::default() }.checked().ok()
     }
 }
 

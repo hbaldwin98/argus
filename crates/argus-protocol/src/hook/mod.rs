@@ -15,7 +15,7 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
-use crate::artifacts::ArtifactScope;
+use crate::board::artifacts::ArtifactScope;
 use crate::tree::ids::PaneId;
 use crate::tree::PaneStatus;
 
@@ -246,7 +246,7 @@ impl Endpoint {
             // Room for a map at its bound, as UTF-8 that the server refuses
             // past it in words rather than as a body cut off.
             Endpoint::TrackerMap => crate::MAX_TRACKER_MAP_BYTES + 1024,
-            Endpoint::Reconcile => crate::reconcile::MAX_PROPOSAL_BYTES,
+            Endpoint::Reconcile => crate::board::reconcile::MAX_PROPOSAL_BYTES,
             // The view's own bound, so the 413 is the refusal of a dump.
             Endpoint::View => crate::MAX_VIEW_BYTES,
             // The view's bound, and room for what it was built from.

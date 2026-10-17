@@ -352,16 +352,17 @@ live in this crate and a contract written twice drifts in silence.
 | `request_refusal` | how a request the daemon turned down is told: by its id, why and whether it only read, to a client that listed `request-refusals`; the old shape each other client is sent; and an older daemon's shapes read back as the new one |
 | `paths` | where Argus keeps its files and which instance it is, shared so `ARGUS_CONFIG_DIR` points the daemon and every client at one place |
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
-| `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
-| `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
-| `reconcile` | reconciling a feature with its tickets: what an agent proposes to carry between Argus and each tracker, which lines the person ticks and in what words, and what changed on Argus's side since the last one was carried out |
-| `capture` | how one note reads as a feature — its title, brief, tasks and decisions — and what writing it down asks of the daemon |
-| `adr` | how a decision reads as a record somebody can paste or correct |
-| `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
-| `flow` | the steps a sequence diagram's source says, in the order it says them, the lifelines they run between, and the source rewritten to bind a step, retell it, move it, or move a lifeline |
-| `board_follower` | how a client follows one repository's board: when it asks for the board and the feature's lists, which pushes it keeps, and where the cursor lands on a feature, task or diagram when one is replaced — on a feature only among those the client's index lists, which the client says (`FeatureListing`) |
-| `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
-| `artifacts` | how shared work is bounded when read or written |
+| `board` | a repository's feature board |
+| `board/features`, `board/tasks`, `board/decisions`, `board/diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
+| `board/tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
+| `board/reconcile` | reconciling a feature with its tickets: what an agent proposes to carry between Argus and each tracker, which lines the person ticks and in what words, and what changed on Argus's side since the last one was carried out |
+| `board/capture` | how one note reads as a feature — its title, brief, tasks and decisions — and what writing it down asks of the daemon |
+| `board/decisions/adr` | how a decision reads as a record somebody can paste or correct |
+| `board/outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
+| `board/diagrams/flow` | the steps a sequence diagram's source says, in the order it says them, the lifelines they run between, and the source rewritten to bind a step, retell it, move it, or move a lifeline |
+| `board/follower` | how a client follows one repository's board: when it asks for the board and the feature's lists, which pushes it keeps, and where the cursor lands on a feature, task or diagram when one is replaced — on a feature only among those the client's index lists, which the client says (`FeatureListing`) |
+| `board/standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
+| `board/artifacts` | how shared work is bounded when read or written |
 | `agents` | what Argus holds for the agents in its panes |
 | `agents/launch` | what an agent asks for when it starts another agent in a pane of its own — the template, the first message, and the checkout, new worktree or other repository's checkout it works in — and what it is told it started |
 | `agents/memory` | the working memory an agent receives for one request |
@@ -1990,7 +1991,7 @@ about — a client names its feature, an agent's is the one it names or its chec
 apply, so a refusal or a push cannot differ by which side asked.
 
 A person starting a feature has a paragraph, not a title, so the view sends a whole note —
-`FeatureAction::Capture`, read by `argus_protocol::capture` — and `store/capture` writes it in
+`FeatureAction::Capture`, read by `argus_protocol::board::capture` — and `store/capture` writes it in
 one transaction: the feature, opened exactly as a person's `FeatureAction::Open` opens one, its tasks
 nested in order, and its decisions, a `?` line open with its options and a `!` line accepted with
 its reason, each under the task it was indented beneath. A refusal at the last row leaves nothing
@@ -2004,7 +2005,7 @@ pushed with `ServerMsg::Decisions` whenever that scope changes, since a tree is 
 watched being built and the daemon deliberately does not track which view a client has open; every
 board, task list and diagram list names the repositories in the tree it belongs to — the daemon's
 read says so as its push does — and a client reading another drops it. Both clients follow a board
-through `argus_protocol::board_follower`: the board is asked for once per repository per
+through `argus_protocol::board::follower`: the board is asked for once per repository per
 connection, so another checkout of the same repository asks nothing, another repository drops the
 board at once rather than drawing the wrong one while its own is fetched, and a reconnect asks again
 while keeping what it holds; between those the pushes keep it current. Across a push the cursor
@@ -2062,9 +2063,9 @@ description, what done means (`Task::criteria`, checked off with `space` from th
 what binds it, and the notes left on it. For a decision it is a record in the shape of an ADR:
 context, the decision, why, what it costs and buys, what was turned down — the `over` text and any
 child decision in state `rejected` — and what carries it out. `e` opens that record in the brief
-editor as the document `y` copies out (`argus-protocol::adr`), so the sections a reader sees are
-the ones a writer fills in, and saving sends `DecisionChange::Rewrite`. An open decision lists its
-options instead; `Tab` crosses into them and `Enter` takes one, which sends
+editor as the document `y` copies out (`argus_protocol::board::decisions::adr`), so the sections a
+reader sees are the ones a writer fills in, and saving sends `DecisionChange::Rewrite`. An open
+decision lists its options instead; `Tab` crosses into them and `Enter` takes one, which sends
 `DecisionChange::Resolve`, and `o` answers in words when none fits.
 
 `a`, `s`, `d`, `e` and `x` act on what the cursor is on: a root task, a subtask or sub-decision
@@ -2074,7 +2075,7 @@ being written and what is already there are readable at once; a decision typed t
 it starts with `?`, rejected with `~`, and made otherwise, which is the note grammar's marks.
 
 A new feature is written as **one note** rather than a title and then a task at a time
-(`argus-protocol::capture`). The note is typed on the left and what it reads as is drawn on the
+(`argus_protocol::board::capture`). The note is typed on the left and what it reads as is drawn on the
 right — the title, the brief, the numbered tasks, the decisions — so what `Ctrl-S` creates is on
 screen before it is sent, and a line the grammar cannot place is named instead of dropped.
 `FeatureAction::Capture` writes all of it in one transaction. `i` inside a feature writes more

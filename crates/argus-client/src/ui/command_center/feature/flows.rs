@@ -2,7 +2,7 @@
 //! steps as rows, and the diagram itself drawn beside them.
 
 use super::*;
-use argus_protocol::flow::{FlowRow, Step};
+use argus_protocol::board::diagrams::flow::{self, FlowRow, Step};
 
 /// The widest the column naming who a step runs between is drawn; a flow
 /// whose routes are all shorter draws it as wide as its longest.
@@ -124,7 +124,7 @@ pub(super) fn render(f: &mut Frame, app: &mut App, body: Rect, th: Theme) {
                 true => strong(diagram.title.clone(), th),
                 false => span(diagram.title.clone(), th.muted),
             };
-            let summary = argus_protocol::flow::summary(&argus_protocol::flow::rows(&diagram.body));
+            let summary = flow::summary(&flow::rows(&diagram.body));
             row(
                 spread(vec![title], vec![span(format!("{summary} "), th.dim)], list.width.saturating_sub(3)),
                 selected,

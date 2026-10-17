@@ -15,8 +15,8 @@ use argus_protocol::{
 };
 
 use super::*;
-use argus_protocol::flow::FlowRow;
-use argus_protocol::outline::{Outline, WorkRef};
+use argus_protocol::board::diagrams::flow::FlowRow;
+use argus_protocol::board::outline::{Outline, WorkRef};
 
 /// One way of reading the open feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -50,7 +50,7 @@ impl Lens {
     }
 }
 
-pub use argus_protocol::standing::{FeatureRow, Standing, GROUPS};
+pub use argus_protocol::board::standing::{FeatureRow, Standing, GROUPS};
 
 /// What a click on the stage landed on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +75,7 @@ impl App {
 
     /// The live agent panes on the checkouts this feature is worked in.
     pub fn panes_on(&self, feature: &Feature) -> Vec<&PaneInfo> {
-        argus_protocol::standing::panes_on(feature, &self.tree)
+        argus_protocol::board::standing::panes_on(feature, &self.tree)
     }
 
     pub fn current_feature_row(&self) -> Option<FeatureRow> {
@@ -399,12 +399,12 @@ impl App {
     /// The selected flow, read as rows.
     pub fn flow_rows(&self) -> Vec<FlowRow> {
         self.selected_diagram()
-            .map(|diagram| argus_protocol::flow::rows(&diagram.body))
+            .map(|diagram| argus_protocol::board::diagrams::flow::rows(&diagram.body))
             .unwrap_or_default()
     }
 
     /// The selected flow's steps, which is what the cursor moves over.
-    pub fn flow_steps(&self) -> Vec<argus_protocol::flow::Step> {
+    pub fn flow_steps(&self) -> Vec<argus_protocol::board::diagrams::flow::Step> {
         self.flow_rows()
             .into_iter()
             .filter_map(|row| match row {
@@ -492,7 +492,7 @@ impl App {
     /// The task that comes next under a feature: the one being done, else
     /// the first not done.
     pub fn next_task(&self) -> Option<TaskTreeRow<'_>> {
-        argus_protocol::standing::next_task(&self.feature_task_rows())
+        argus_protocol::board::standing::next_task(&self.feature_task_rows())
     }
 
     /// The task ids the outline has folded, for a renderer that marks them.

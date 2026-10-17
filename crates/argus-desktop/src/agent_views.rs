@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 
 use argus_protocol::{ClientMsg, PaneId, ProjectInfo, RepositoryId, ShownView, ViewPress};
 
-use argus_protocol::flow::{self, FlowRow};
+use argus_protocol::board::diagrams::flow::{self, FlowRow};
 use argus_protocol::Block;
 
 use crate::page::{FeatureViewLink, FlowLine, Link, PageDiagram, PageParticipant, PageView, ViewRef, ViewsPage};

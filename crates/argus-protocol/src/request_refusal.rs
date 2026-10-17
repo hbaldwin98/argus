@@ -162,7 +162,7 @@ impl OlderDaemon {
 mod tests {
     use super::*;
     use crate::code::{CodeVersion, SearchOptions};
-    use crate::features::FeatureAction;
+    use crate::board::features::FeatureAction;
     use crate::tree::ids::{PaneId, ProjectId, RepositoryId};
     use crate::review::{ReviewAnchor, ReviewBase};
 

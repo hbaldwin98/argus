@@ -1,6 +1,8 @@
 //! Sequence diagrams filed under a feature: Mermaid source stored durably,
 //! rendered in the client.
 
+pub mod flow;
+
 use serde::{Deserialize, Serialize};
 
 use crate::tree::ids::RepositoryId;
@@ -72,8 +74,8 @@ pub struct DiagramList {
 
 impl DiagramList {
     /// Whether this is a list from the board of `repository` in the
-    /// project named `project_name`; see [`crate::decisions::is_for`].
+    /// project named `project_name`; see [`crate::board::decisions::is_for`].
     pub fn is_for(&self, project_name: &str, repository: RepositoryId) -> bool {
-        crate::decisions::is_for(&self.project_name, &self.repositories, project_name, repository)
+        crate::board::decisions::is_for(&self.project_name, &self.repositories, project_name, repository)
     }
 }

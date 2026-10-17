@@ -7,7 +7,7 @@
 //! page's, over what this lists.
 
 use argus_protocol::{DecisionBoard, PaneKind, ProjectInfo};
-use argus_protocol::standing;
+use argus_protocol::board::standing;
 
 use crate::page::{Palette, PaletteCheckout, PaletteFeature, PalettePane};
 use crate::{features, rail};

@@ -9,8 +9,8 @@
 
 use std::collections::HashSet;
 
-use argus_protocol::outline::{Outline, WorkRef};
-use argus_protocol::standing::{self, FeatureRow};
+use argus_protocol::board::outline::{Outline, WorkRef};
+use argus_protocol::board::standing::{self, FeatureRow};
 use argus_protocol::{Changes, Decision, DecisionBoard, DiagramList, Feature, ProjectInfo, TaskList};
 
 use crate::features::{loudest_agent, word};
@@ -207,7 +207,7 @@ mod tests {
         let mut board = fixtures::open_board();
         let mut tasks = fixtures::open_tasks();
         let filed: Vec<&Decision> = board.decisions.iter().filter(|d| d.feature.as_deref() == Some("trim")).collect();
-        let seen = argus_protocol::reconcile::seen(&tasks.tasks, &filed);
+        let seen = argus_protocol::board::reconcile::seen(&tasks.tasks, &filed);
         let trim = board.features.iter_mut().find(|f| f.slug == "trim").unwrap();
         trim.reconciled = Some(argus_protocol::Reconciled { at: 0, by: "pane #32".into(), seen });
         tasks.tasks[1].title = "renamed since".into();

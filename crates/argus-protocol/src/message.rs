@@ -9,20 +9,20 @@ use crate::views::agent_view::ShownView;
 use crate::panes::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::code::{CodeFile, CodeMatches, CodeTree, CodeVersion, SearchOptions};
 use crate::panes::damage::{CellRun, Scroll};
-use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
+use crate::board::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
 use crate::extensions::{ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtView};
-use crate::features::FeatureAction;
+use crate::board::features::FeatureAction;
 use crate::tree::focus::{Focus, View};
 use crate::hello::Hello;
 use crate::panes::keys::KeyboardMode;
 use crate::tree::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext};
-use crate::diagrams::{DiagramAction, DiagramList};
+use crate::board::diagrams::{DiagramAction, DiagramList};
 use crate::agents::sessions::{Resume, Session};
 use crate::agents::transcript::Conversation;
-use crate::tasks::{TaskAction, TaskList};
-use crate::reconcile::ReconcileAction;
-use crate::tracker_links::MapChange;
+use crate::board::tasks::{TaskAction, TaskList};
+use crate::board::reconcile::ReconcileAction;
+use crate::board::tracker_links::MapChange;
 use crate::tree::{AgentTelemetry, PaneInfo, ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -9,7 +9,7 @@
 
 use std::io::{Read, Write};
 
-use argus_protocol::reconcile::Stage;
+use argus_protocol::board::reconcile::Stage;
 use argus_protocol::{Failed, Feature, ProposalWrite, ReconcileChange};
 
 use super::*;

@@ -7,40 +7,28 @@
 //! travel in. Written twice they drift in silence; written once they
 //! cannot.
 
-pub mod adr;
 pub mod agent_comment;
 pub mod agents;
 pub mod ago;
-pub mod artifacts;
 pub mod awaited;
-pub mod board_follower;
-pub mod capture;
+pub mod board;
 pub mod checkout_path;
 pub mod code;
-pub mod decisions;
-pub mod diagrams;
 pub mod extensions;
-pub mod features;
-pub mod flow;
 pub mod framing;
 pub mod fuzzy;
 pub mod hello;
 pub mod history_view;
 pub mod hook;
 pub mod message;
-pub mod outline;
 pub mod panes;
 pub mod paths;
-pub mod reconcile;
 pub mod request_refusal;
 pub mod review;
 pub mod review_session;
 pub mod review_view;
 pub mod ssh_bridge;
 pub mod ssh_hosts;
-pub mod standing;
-pub mod tasks;
-pub mod tracker_links;
 pub mod transport;
 pub mod tree;
 pub mod views;
@@ -68,25 +56,25 @@ pub use views::saved::{
 pub use panes::keys::KeyboardMode;
 pub use views::tree::Slot;
 pub use views::links::linked_views;
-pub use artifacts::ArtifactScope;
-pub use board_follower::{BoardFollower, BoardScope, FeatureListing, Folding, Received};
+pub use board::artifacts::ArtifactScope;
+pub use board::follower::{BoardFollower, BoardScope, FeatureListing, Folding, Received};
 pub use panes::cell::{
     Cell, CellSpan, Color, Cursor, CursorShape, MouseEncoding, MouseMode, MouseTracking,
     BLANK,
 };
 pub use compact_str::{CompactString, ToCompactString};
 pub use panes::damage::{damage, grid_from_runs, grid_runs, CellRun, Scroll, Style};
-pub use capture::{Capture, CapturedDecision, CapturedTask, MAX_CAPTURE_ROWS};
-pub use decisions::{
+pub use board::capture::{Capture, CapturedDecision, CapturedTask, MAX_CAPTURE_ROWS};
+pub use board::decisions::{
     outline_number, Consequence, Decision, DecisionBoard, DecisionChange, DecisionState,
     DecisionText, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES, MAX_DECISION_CONSEQUENCES,
     MAX_DECISION_OPTIONS,
 };
-pub use diagrams::{
+pub use board::diagrams::{
     DiagramAction, DiagramList, DiagramWrite, SequenceDiagram, MAX_DIAGRAM_BODY_BYTES,
     MAX_DIAGRAM_TITLE_BYTES,
 };
-pub use features::{
+pub use board::features::{
     is_slug, slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
@@ -131,18 +119,18 @@ pub use review::{
     LineKind, Review, ReviewAnchor, ReviewBase, ReviewComment, ReviewContext, MAX_HISTORY_COMMITS,
     MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
 };
-pub use tasks::{
+pub use board::tasks::{
     checked_task_body, checked_task_line, Criterion, Task, TaskAction, TaskCounts, TaskList,
     TaskNote, TaskPlace, TaskState, TaskTreeRow, TaskWrite, MAX_CRITERION_BYTES,
     MAX_TASK_BODY_BYTES, MAX_TASK_CRITERIA, MAX_TASK_NOTES, MAX_TASK_NOTE_BYTES,
     MAX_TASK_TITLE_BYTES,
 };
-pub use tracker_links::{
+pub use board::tracker_links::{
     checked_map, LinkWrite, MapChange, MapDraft, TrackerLink, TrackerMap, MAX_FEATURE_LINKS,
     MAX_LINK_KEY_BYTES, MAX_LINK_ROLE_BYTES, MAX_LINK_TRACKER_BYTES, MAX_LINK_URL_BYTES,
     MAX_TRACKER_MAP_BYTES,
 };
-pub use reconcile::{
+pub use board::reconcile::{
     Changes, Failed, Noticed, ProposalWrite, ProposedLine, Reconcile, ReconcileAction, ReconcileChange,
     Reconciled, Seen, Ticked,
 };

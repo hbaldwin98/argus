@@ -2,15 +2,15 @@
 //! features it lists and in what order, each row, the places a person may move
 //! each, and the peek at the one under the cursor.
 //!
-//! How a feature stands is `argus_protocol::standing`'s to say, so this
+//! How a feature stands is `argus_protocol::board::standing`'s to say, so this
 //! window files a feature under the heading the terminal client does; this
 //! only turns those rows into what the page draws. A feature opened from
 //! the index is `feature_view`'s.
 
-use argus_protocol::standing::{self, FeatureRow, Standing};
+use argus_protocol::board::standing::{self, FeatureRow, Standing};
 use argus_protocol::{DecisionBoard, DiagramList, Feature, FeatureListing, FeatureState, PaneInfo, ProjectInfo, TaskList, TaskState};
 
-use argus_protocol::outline::WorkRef;
+use argus_protocol::board::outline::WorkRef;
 
 use crate::feature_view::{self, Opened};
 use crate::flows_lens::FlowCursor;

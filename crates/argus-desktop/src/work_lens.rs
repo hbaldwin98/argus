@@ -3,11 +3,11 @@
 //! full.
 //!
 //! Where a decision sits among the tasks, what binds a task and what an
-//! open question holds up are `argus_protocol::outline`'s to say, as they
-//! are for the terminal client's Work lens; this only turns them into what
-//! the page draws.
+//! open question holds up are `argus_protocol::board::outline`'s to say, as
+//! they are for the terminal client's Work lens; this only turns them into
+//! what the page draws.
 
-use argus_protocol::outline::{Outline, WorkRef};
+use argus_protocol::board::outline::{Outline, WorkRef};
 use argus_protocol::{Changes, TaskTreeRow};
 
 use crate::page::{Criterion, DecisionDetail, Line, TaskDetail, WorkAt, WorkRow};

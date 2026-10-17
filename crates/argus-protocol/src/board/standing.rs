@@ -7,11 +7,11 @@
 //! than in a client because two clients filing one feature under two
 //! headings would be two products.
 
-use crate::decisions::DecisionBoard;
-use crate::features::{Feature, FeatureState};
+use crate::board::decisions::DecisionBoard;
+use crate::board::features::{Feature, FeatureState};
 use crate::tree::held::HeldTree;
 use crate::tree::ids::PaneId;
-use crate::tasks::{TaskCounts, TaskState, TaskTreeRow};
+use crate::board::tasks::{TaskCounts, TaskState, TaskTreeRow};
 use crate::tree::{PaneInfo, PaneKind, PaneStatus, ProjectInfo};
 
 /// How a feature stands.

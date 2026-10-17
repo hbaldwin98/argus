@@ -14,12 +14,12 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::capture::Capture;
-use crate::decisions::Decision;
+use crate::board::capture::Capture;
+use crate::board::decisions::Decision;
 use crate::tree::ids::{CheckoutId, ProjectId};
-use crate::reconcile::{Reconcile, Reconciled};
-use crate::tasks::TaskCounts;
-use crate::tracker_links::{LinkWrite, TrackerLink};
+use crate::board::reconcile::{Reconcile, Reconciled};
+use crate::board::tasks::TaskCounts;
+use crate::board::tracker_links::{LinkWrite, TrackerLink};
 
 /// Past this a feature document has stopped being a brief and started
 /// being a design document, which belongs in the checkout it describes.

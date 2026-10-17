@@ -14,9 +14,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::decisions::Decision;
+use crate::board::decisions::Decision;
 use crate::tree::ids::PaneId;
-use crate::tasks::Task;
+use crate::board::tasks::Task;
 
 /// Room for a reconcile that touches every task of a large feature, and no
 /// more: past it the proposal is a migration, not a reconcile.
@@ -374,8 +374,8 @@ fn one_line(text: &str, max: usize) -> Result<String, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decisions::DecisionState;
-    use crate::tasks::TaskState;
+    use crate::board::decisions::DecisionState;
+    use crate::board::tasks::TaskState;
 
     fn line(to: &str, key: &str, does: &str) -> ProposedLine {
         ProposedLine { to: to.into(), key: key.into(), does: does.into(), ..ProposedLine::default() }

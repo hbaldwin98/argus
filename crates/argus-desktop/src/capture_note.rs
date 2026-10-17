@@ -1,5 +1,5 @@
 //! A new feature being written as one note: what the note reads as, by
-//! `argus_protocol::capture`'s grammar, whether the board holds the
+//! `argus_protocol::board::capture`'s grammar, whether the board holds the
 //! feature it was sent as yet, and what the page last heard of it.
 //!
 //! The reading is the daemon's own parser run here, never a second grammar

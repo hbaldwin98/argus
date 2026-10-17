@@ -9,7 +9,7 @@
 //! A new row saved blank is a form put away: it sends nothing and says
 //! nothing.
 
-use argus_protocol::flow;
+use argus_protocol::board::diagrams::flow;
 use argus_protocol::{
     checked_task_body, checked_task_line, ClientMsg, DecisionBoard, DecisionChange, DecisionState,
     DecisionText, DecisionWrite, DiagramAction, DiagramList, DiagramWrite, FeatureAction, SequenceDiagram,

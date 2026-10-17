@@ -7,7 +7,7 @@
 //! reports, keeps how the feature's tasks and decisions stood so the next
 //! look can say what changed since.
 
-use argus_protocol::reconcile::{checked_ask, checked_text, seen, Stage, MAX_FAILURE_BYTES};
+use argus_protocol::board::reconcile::{checked_ask, checked_text, seen, Stage, MAX_FAILURE_BYTES};
 use argus_protocol::{Feature, Reconcile, ReconcileAction, ReconcileChange, Reconciled};
 
 use super::asker::{pane_label, Asker};

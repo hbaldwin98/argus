@@ -18,8 +18,8 @@
 //! Between those the pushes keep it current, so nothing is asked twice.
 
 use crate::tree::ids::{CheckoutId, ProjectId, RepositoryId};
-use crate::outline::WorkRef;
-use crate::standing::{self, FeatureRow};
+use crate::board::outline::WorkRef;
+use crate::board::standing::{self, FeatureRow};
 use crate::{ClientMsg, DecisionBoard, DiagramAction, DiagramList, ProjectInfo, TaskAction, TaskList};
 
 /// The repository whose board is followed, and how a request names it.

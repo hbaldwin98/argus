@@ -2,11 +2,12 @@
 //! made, as the tree it was made in, and a decision read as its record —
 //! here, and wherever the Work lens's cursor is on one.
 //!
-//! The record's sections are the ones `argus_protocol::adr` writes and
-//! reads back, so what a reader sees is what an editor fills in and what
-//! Copy as ADR puts on the clipboard.
+//! The record's sections are the ones
+//! `argus_protocol::board::decisions::adr` writes and reads back, so what a
+//! reader sees is what an editor fills in and what Copy as ADR puts on the
+//! clipboard.
 
-use argus_protocol::outline::Outline;
+use argus_protocol::board::outline::Outline;
 use argus_protocol::{Decision, DecisionState, DecisionText, DecisionTreeRow};
 
 use crate::page::{DecisionDetail, Line, RecordLens, RecordRow};

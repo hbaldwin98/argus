@@ -20,9 +20,9 @@ use argus_protocol::{
     ProjectId, ProjectInfo, Received, RepositoryId, TaskList,
 };
 
-use argus_protocol::{flow, standing};
+use argus_protocol::{board::diagrams::flow, board::standing};
 
-use argus_protocol::outline::WorkRef;
+use argus_protocol::board::outline::WorkRef;
 
 use crate::feature_edits::{self, Target};
 use crate::feature_view;

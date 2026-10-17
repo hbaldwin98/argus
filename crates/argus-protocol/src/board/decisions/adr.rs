@@ -5,7 +5,7 @@
 //! fills in. Written here so an agent's helper can print and read the same
 //! document a person does.
 
-use crate::decisions::{Consequence, Decision, DecisionState, DecisionText};
+use crate::board::decisions::{Consequence, Decision, DecisionState, DecisionText};
 
 const CONTEXT: &str = "Context";
 const DECISION: &str = "Decision";

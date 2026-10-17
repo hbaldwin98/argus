@@ -5,12 +5,13 @@
 //! The terminal client hands the source to a renderer that returns text;
 //! the page draws its own so a step can be lit, clicked and dragged. Which
 //! lines are steps, and in what order the lifelines stand, is
-//! `argus_protocol::flow`'s to say, so a step here is the step of the same
-//! number in the list beside it, and a drag rewrites the lines it read.
+//! `argus_protocol::board::diagrams::flow`'s to say, so a step here is the
+//! step of the same number in the list beside it, and a drag rewrites the
+//! lines it read.
 
 use std::collections::HashMap;
 
-use argus_protocol::flow::{self, FlowRow};
+use argus_protocol::board::diagrams::flow::{self, FlowRow};
 
 use crate::page::{Lifeline, Sequence, SequenceItem};
 

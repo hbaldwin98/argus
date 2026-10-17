@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use argus_protocol::reconcile::Stage;
+use argus_protocol::board::reconcile::Stage;
 use argus_protocol::{
     ClientMsg, Feature, PaneId, PaneKind, PaneStatus, ProjectInfo, Reconcile, ReconcileAction, RepositoryId, Ticked,
 };
@@ -240,7 +240,7 @@ impl ReconcileDialog {
         let Some(pane) = self.chosen(feature, tree, scope.repository) else {
             return Then::Say("no agent runs in this repository to ask; start one first".into());
         };
-        if let Err(why) = argus_protocol::reconcile::checked_ask(&ask) {
+        if let Err(why) = argus_protocol::board::reconcile::checked_ask(&ask) {
             return Then::Say(why.into());
         }
         out.push(self.send(scope, ReconcileAction::Ask { pane, ask }));

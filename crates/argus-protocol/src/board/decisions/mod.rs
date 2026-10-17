@@ -16,11 +16,13 @@
 //! work is waiting on, with the answers being weighed; one `Rejected` is an
 //! answer that was turned down, kept because it is the road not taken.
 
+pub mod adr;
+
 use serde::{Deserialize, Serialize};
 
-use crate::features::Feature;
+use crate::board::features::Feature;
 use crate::tree::ids::{ProjectId, RepositoryId};
-use crate::tracker_links::TrackerMap;
+use crate::board::tracker_links::TrackerMap;
 
 /// Past this a field has stopped being a decision and started being a
 /// design document, which belongs in the checkout it describes.
