@@ -10,7 +10,7 @@
 //! stored: it is the selection (`sel_*`) read at the depth `focus` names,
 //! so a new tree cannot leave the two disagreeing.
 
-use super::*;
+use crate::app::*;
 
 /// One row of the rail, in the order it is drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -133,7 +133,7 @@ impl App {
     /// `j`/`k` and the wheel: one row along what is drawn. A cursor on a
     /// row the rail does not show — a checkout with nothing running, picked
     /// in the Checkouts stage — starts from its repository.
-    pub(super) fn step_rail(&mut self, delta: i32) {
+    pub(in crate::app) fn step_rail(&mut self, delta: i32) {
         let rows = self.rail_rows();
         if rows.is_empty() {
             return;
@@ -190,7 +190,7 @@ impl App {
     /// `l`/Enter: into the row the cursor is on. A repository opens and the
     /// cursor goes to what it holds; a checkout unfolds and goes to its
     /// first pane; a pane takes the keys.
-    pub(super) fn enter_rail_row(&mut self) {
+    pub(in crate::app) fn enter_rail_row(&mut self) {
         let Some(cursor) = self.rail_cursor() else {
             // A branch with no directory, picked in the Checkouts stage,
             // has no row here; what it offers instead is somewhere to be.
@@ -236,7 +236,7 @@ impl App {
     /// `h`/Esc: up to the row this one hangs under. On an open repository
     /// it folds that first, since nothing else closes one from the keys.
     /// A console hangs under nothing, so on one this stays put.
-    pub(super) fn leave_rail_row(&mut self) {
+    pub(in crate::app) fn leave_rail_row(&mut self) {
         if self.focus == Focus::Repositories && self.fold_selected_repository() {
             return;
         }
@@ -254,7 +254,7 @@ impl App {
     /// Puts the cursor on `row` without opening anything: stepping past a
     /// repository does not expand it, or walking the list would unfold
     /// every row it crossed.
-    pub(super) fn put_rail_cursor(&mut self, row: RailRow) {
+    pub(in crate::app) fn put_rail_cursor(&mut self, row: RailRow) {
         if let RailRow::Console(console) = row {
             self.pick_console(console);
             return;
@@ -304,7 +304,7 @@ impl App {
     /// is its checkout, and the cursor goes up to it, since the pane's row
     /// is about to leave the rail. A checkout folds apart from `h`, which
     /// would otherwise put one away on every climb out of it.
-    pub(super) fn toggle_rail_fold(&mut self) {
+    pub(in crate::app) fn toggle_rail_fold(&mut self) {
         match self.rail_cursor() {
             Some(RailRow::Repository(_)) => {
                 if !self.fold_selected_repository() {
@@ -343,7 +343,7 @@ impl App {
 
     /// After switching projects: the selection starts on the first
     /// repository the rail lists, open, since that is the row on top.
-    pub(super) fn start_on_first_rail_repository(&mut self) {
+    pub(in crate::app) fn start_on_first_rail_repository(&mut self) {
         let Some(first) = self.rail_repositories().first().copied() else {
             return;
         };

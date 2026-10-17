@@ -4,7 +4,7 @@
 //! selection, so a tree arriving from the daemon has to be able to find
 //! the same row again by identity rather than by position.
 
-use super::*;
+use crate::app::*;
 
 /// One row of the checkouts column; its order is the protocol's, so the
 /// desktop window lists the same rows.

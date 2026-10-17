@@ -479,9 +479,12 @@ result of a request; `ui` is a pure function of it.
 | `terminal/redraw` | which of the event loop's wake-ups is worth a frame |
 | `terminal/profile` | an opt-in measurement of where a keystroke's time goes: painting the frame, or the round trip to the pty |
 | `app` | the model: the tree, the selection, and which modal is up |
-| `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
-| `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
-| `app/rail` | what the rail lists, in what order, which repositories are open and which checkouts folded, and what choosing a row does |
+| `app/tree` | where the person is in the tree |
+| `app/tree/nav` | where you are in the tree, and what moving does |
+| `app/tree/rows` | naming a row independently of its index |
+| `app/tree/rail` | what the rail lists, in what order, which repositories are open and which checkouts folded, and what choosing a row does |
+| `app/layout`, `app/modal` | where the last frame put things, and the layers that float over it |
+| `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
 | `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
@@ -498,7 +501,7 @@ result of a request; `ui` is a pure function of it.
 | `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
 | `ui/command_center` | the HTML-specified shell: where the rail and stage go, the tab strip above them, the stage heading, the first-run state, and the status vocabulary they share |
 | `ui/command_center/views` | the tab strip naming the four stages, and which tab a click lands on |
-| `ui/command_center/rail` | drawing the rail — its heading, the rows `app/rail` lists, the divider between the active repositories and the quiet ones, and the consoles at its foot — and which row a click lands on |
+| `ui/command_center/rail` | drawing the rail — its heading, the rows `app/tree/rail` lists, the divider between the active repositories and the quiet ones, and the consoles at its foot — and which row a click lands on |
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/checkouts`, `ui/command_center/agent_views` | one stage each, with the hit-test that shares its layout |
 | `ui/command_center/feature/index`, `ui/command_center/feature/work`, `ui/command_center/feature/record`, `ui/command_center/feature/flows`, `ui/command_center/feature/capture` | what fills the Feature stage's frame: the index of features, each of the three lenses, and the note a feature is written as |
 | `ui/command_center/agent_views/blocks` | an agent view's blocks as styled lines of a width, and which kinds are left to the desktop |

@@ -6,8 +6,8 @@
 //! comes back saying it moved — so a refused action leaves the panel
 //! showing what is actually true.
 //!
-//! The `impl` is split by what the operator is doing: `nav` for moving
-//! between columns, `input` for keys, `mouse` for the pointer, `scroll`
+//! The `impl` is split by what the operator is doing: `tree` for the
+//! selection and moving it, `input` for keys, `mouse` for the pointer, `scroll`
 //! for a pane parked in its history, `actions` for what is asked of the
 //! daemon, `pickers` for the modal layers, `server` for what arrives
 //! back, `showing` for what the daemon is told this client shows,
@@ -41,8 +41,8 @@ use layout::in_rect;
 pub use layout::{Focus, Layout, Panel};
 pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
 pub use mode::{Mode, OverlayMode};
-pub use rail::RailRow;
-pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
+pub use tree::rail::RailRow;
+pub use tree::rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 pub use board_writes::LineInput;
 pub use feature::{FeatureHit, FeatureRow, Lens, Standing, GROUPS};
 pub use agent_views::AgentViews;
@@ -61,14 +61,12 @@ mod layout;
 mod modal;
 mod mode;
 mod mouse;
-mod nav;
 mod pickers;
-mod rail;
-mod rows;
 mod saved_views;
 mod scroll;
 mod server;
 mod showing;
+mod tree;
 mod views;
 
 fn state_word(status: PaneStatus) -> &'static str {

@@ -6,7 +6,7 @@
 //! row an index currently names, or moving an index and clamping the ones
 //! below it back into range.
 
-use super::*;
+use crate::app::*;
 
 impl App {
     pub fn current_project(&self) -> Option<&ProjectInfo> {
@@ -120,7 +120,7 @@ impl App {
     }
 
     /// Keeps the cursor on a row the current filter still shows.
-    pub(super) fn sync_checkout_filter_selection(&mut self) {
+    pub(in crate::app) fn sync_checkout_filter_selection(&mut self) {
         let visible = self.active_checkout_row_indices();
         if visible.is_empty() {
             return;
@@ -191,7 +191,7 @@ impl App {
 
     /// The inverse: where the selected row sits in `checkouts`, for the
     /// places that compare a cursor against one.
-    pub(super) fn selected_checkout_index(&self) -> Option<usize> {
+    pub(in crate::app) fn selected_checkout_index(&self) -> Option<usize> {
         match self.selected_checkout_row()? {
             CheckoutRow::Checkout(i) => Some(i),
             CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
@@ -203,7 +203,7 @@ impl App {
     /// main branch leads the column even when nothing sits on it, and a
     /// cursor parked on that offer turns `a` or `s` into a new worktree of
     /// main when the user meant the checkout they already have.
-    pub(super) fn home_checkout_row(&self) -> usize {
+    pub(in crate::app) fn home_checkout_row(&self) -> usize {
         self.checkout_rows()
             .iter()
             .position(|row| matches!(row, CheckoutRow::Checkout(_)))
@@ -212,7 +212,7 @@ impl App {
 
     /// The selected checkout row as an identity, paired with the repository
     /// it belongs to. Taken before a new tree replaces the old one.
-    pub(super) fn checkout_anchor(&self) -> Option<(RepositoryId, CheckoutAnchor)> {
+    pub(in crate::app) fn checkout_anchor(&self) -> Option<(RepositoryId, CheckoutAnchor)> {
         let r = self.current_repository()?;
         let row = self.selected_checkout_row()?;
         let anchor = match row {
@@ -229,7 +229,7 @@ impl App {
     /// branch row above every checkout and slides a bare index up by one.
     /// Repeat that and the selection walks to the top row, which is exactly
     /// where the main branch is pinned.
-    pub(super) fn restore_checkout_anchor(
+    pub(in crate::app) fn restore_checkout_anchor(
         &mut self,
         repository: RepositoryId,
         anchor: &CheckoutAnchor,
@@ -367,7 +367,7 @@ impl App {
         true
     }
 
-    pub(super) fn clamp(&mut self) {
+    pub(in crate::app) fn clamp(&mut self) {
         let nproj = self.tree.len();
         if nproj == 0 {
             self.sel_project = 0;
@@ -403,7 +403,7 @@ impl App {
     /// state implies, independent of `focus` — the rightmost column always
     /// shows this pane's content alongside the project/checkout columns,
     /// it never takes over the whole screen.
-    pub(super) fn visible_pane_count(&self) -> usize {
+    pub(in crate::app) fn visible_pane_count(&self) -> usize {
         self.tree_checkout()
             .map(|c| c.listed_panes().count())
             .unwrap_or(0)
@@ -419,7 +419,7 @@ impl App {
         self.overlay.as_ref().and_then(Overlay::pane)
     }
 
-    pub(super) fn jump_to_next_attention(&mut self) {
+    pub(in crate::app) fn jump_to_next_attention(&mut self) {
         // Compared against candidates walked out of `checkouts`, so the
         // cursor has to be read back as one of those positions rather than
         // as the row it is drawn on.
@@ -484,7 +484,7 @@ impl App {
 
     /// `j`/`k` in the Checkouts stage: one row along the table, which may
     /// be filtered or hide the branches nothing is on.
-    pub(super) fn step_checkout_table(&mut self, delta: i32) {
+    pub(in crate::app) fn step_checkout_table(&mut self, delta: i32) {
         let visible = self.active_checkout_row_indices();
         if visible.is_empty() {
             return;
@@ -502,7 +502,7 @@ impl App {
     /// Enter on a Checkouts-stage row: a checkout opens in the workspace, and
     /// a branch with no directory is switched to, since somewhere to be is
     /// what it offers.
-    pub(super) fn enter_checkout_row(&mut self) {
+    pub(in crate::app) fn enter_checkout_row(&mut self) {
         if self.current_branch_row().is_some() {
             self.switch_primary_to_selected_branch();
             return;
@@ -514,7 +514,7 @@ impl App {
     /// The depth `n`, `i` and `D` act at: the rail cursor's, or a checkout
     /// row while the Checkouts stage has the keys — its table is where
     /// every checkout and branch row is drawn.
-    pub(super) fn acting_focus(&self) -> Focus {
+    pub(in crate::app) fn acting_focus(&self) -> Focus {
         match (self.focus, self.view) {
             (Focus::View, View::Checkouts) => Focus::Checkouts,
             (focus, _) => focus,
@@ -523,7 +523,7 @@ impl App {
 
     /// Out of whatever has the keys: typing into a pane gives them back to
     /// its row on the rail, and the rail climbs a row.
-    pub(super) fn ascend(&mut self) {
+    pub(in crate::app) fn ascend(&mut self) {
         match self.focus {
             Focus::PaneContent => {
                 // Deliberately does not unsubscribe: the workspace keeps
@@ -545,7 +545,7 @@ impl App {
     /// Back to the top of the tree. Anything that swaps the whole project
     /// list out from under the rail needs it: the old indices refer to rows
     /// that are no longer there.
-    pub(super) fn reset_navigation(&mut self) {
+    pub(in crate::app) fn reset_navigation(&mut self) {
         self.forget_console();
         self.sel_project = 0;
         self.sel_repository = 0;
