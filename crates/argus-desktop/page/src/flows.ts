@@ -8,7 +8,7 @@ import type { Action } from './bindings/Action';
 import type { FeatureView } from './bindings/FeatureView';
 import type { FlowDetail } from './bindings/FlowDetail';
 import type { StepRow } from './bindings/StepRow';
-import { closeLayer, placeMenu } from './menu.js';
+import { closeLayer, placeMenu } from './kit/menu.js';
 import {
   clickable,
   drawSequence,
@@ -17,7 +17,7 @@ import {
   openExpanded,
   sourceForm,
 } from './sequence.js';
-import { el, icon, type Child } from './dom.js';
+import { el, icon, type Child } from './kit/dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { begin, edit, field, formButtons, keycap, lineList, titled } from './work.js';

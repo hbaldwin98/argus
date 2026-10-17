@@ -9,14 +9,14 @@
 import type { Dock } from './bindings/Dock';
 import type { DockPage } from './bindings/DockPage';
 import type { Panel } from './bindings/Panel';
-import { $, el, icon, type IconName } from './dom.js';
+import { $, el, icon, type IconName } from './kit/dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
 import { extensionElement, extensionOnStage } from './extension_views.js';
 import { drawFloats } from './floats.js';
 import { savedElement } from './saved_views.js';
-import { contextMenu, type MenuItem, openMenu } from './menu.js';
-import { closesOnMiddle } from './middle.js';
+import { contextMenu, type MenuItem, openMenu } from './kit/menu.js';
+import { closesOnMiddle } from './kit/middle.js';
 import { panelOf } from './panels.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

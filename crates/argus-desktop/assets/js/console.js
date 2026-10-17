@@ -6,10 +6,10 @@
 // this draws that, puts the keys' text area in the screen that has them,
 // and reports what was pressed.
 import { DOCK_ICON, dockMenuButton, dockOf, dockWords, drawDocks } from './docks.js';
-import { $, el, icon } from './dom.js';
+import { $, el, icon } from './kit/dom.js';
 import { chordsFor, presses } from './keys.js';
-import { contextMenu } from './menu.js';
-import { closesOnMiddle } from './middle.js';
+import { contextMenu } from './kit/menu.js';
+import { closesOnMiddle } from './kit/middle.js';
 import { renameDialog } from './rename.js';
 import { beside, besideScreen, consoleScreen, keyedViewScreen, screen, screens, } from './screen.js';
 import { keyedSplit } from './split_math.js';

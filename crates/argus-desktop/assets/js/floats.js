@@ -3,7 +3,7 @@
 // front. Rust keeps where each sits, how big, and in what order
 // (`src/docks.rs`); this draws them there, follows the pointer while one
 // is held, and reports where it was let go.
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { call } from './tauri.js';
 /** Each dialog's frame, kept across redraws so its panel keeps its state. */
 const frames = new Map();

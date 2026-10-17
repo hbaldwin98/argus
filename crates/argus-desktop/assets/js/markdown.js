@@ -2,7 +2,7 @@
 // elements. The text is an agent's, read from somewhere we do not control:
 // every string goes in as a text node, raw HTML shows as the text it is,
 // images are links, and only an http(s) URL becomes a link at all.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { viewLink } from './viewlink.js';
 // Nesting is capped so no input can ask for a deep recursion; every scan
 // for a closer is either capped or remembered, so a long run of unclosed

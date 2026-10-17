@@ -3,7 +3,7 @@
 // diff looks the same wherever it is and `review.ts` stays the one place
 // that knows how a line is laid out.
 import { code } from './code.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { diffRow } from './review.js';
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 function side(kind, marker, text, old, now) {

@@ -4,7 +4,7 @@
 // read from a ticket, so it is kept as data and shown nowhere but the
 // tooltip.
 
-import { el, type Child } from './dom.js';
+import { el, type Child } from './kit/dom.js';
 import { call } from './tauri.js';
 
 export function viewLink(url: string, ...label: Child[]): HTMLElement {

@@ -9,7 +9,7 @@ import type { Action } from './bindings/Action';
 import type { ReconcileGesture } from './bindings/ReconcileGesture';
 import type { ReconcilePage } from './bindings/ReconcilePage';
 import type { SelectedLine } from './bindings/SelectedLine';
-import { $, el, icon, type Child } from './dom.js';
+import { $, el, icon, type Child } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { call } from './tauri.js';
 

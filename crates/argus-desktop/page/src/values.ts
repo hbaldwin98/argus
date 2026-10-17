@@ -4,7 +4,7 @@
 import type { Tone } from './bindings/Tone';
 import type { Value } from './bindings/Value';
 import { chip, toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { progressValue } from './progress.js';
 import { refValue } from './refs.js';
 import { savedLink } from './savedlink.js';

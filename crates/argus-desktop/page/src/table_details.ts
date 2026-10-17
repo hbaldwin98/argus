@@ -3,7 +3,7 @@
 // is `table_memory`'s, so a redraw of the view leaves them open.
 
 import { blocks } from './blocks.js';
-import { el, icon } from './dom.js';
+import { el, icon } from './kit/dom.js';
 import type { TableBlock } from './table.js';
 import { at, type ViewCtx } from './viewctx.js';
 

@@ -6,7 +6,7 @@
 // One that answers a command the person just ran takes the keys. One raised
 // on its own is drawn without a scrim and waits for a click, so a pane being
 // typed in keeps every key.
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { call } from './tauri.js';
 /** The dialog drawn, so a page that only changed the count behind it

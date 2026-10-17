@@ -1,7 +1,7 @@
 // A list view block: comments, events, commits. An item with no `who` is an
 // event, drawn as one muted line under a dot so it never reads as a comment.
 import { chip } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { markdown } from './markdown.js';
 import { opensMark } from './savedlink.js';
 import { ago, person } from './values.js';

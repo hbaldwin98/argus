@@ -10,7 +10,7 @@ import type { ReviewClick } from './bindings/ReviewClick';
 import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
 import type { ReviewPage } from './bindings/ReviewPage';
 import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
-import { $, el, ghosts, icon, type Child } from './dom.js';
+import { $, el, ghosts, icon, type Child } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

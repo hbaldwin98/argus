@@ -2,7 +2,7 @@
 // made, as the tree it was made in, beside the one under the cursor read as
 // its record. What a decision says, and the forms that change it, are
 // `work.ts`'s, since the Work lens reads a decision the same way.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { begin, DECISION_LINE, decisionAction, decisionDetail, editDecision, field, formButtons, stateMark, } from './work.js';

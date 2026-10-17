@@ -11,7 +11,7 @@
 
 import type { Dock } from './bindings/Dock';
 import type { Panel } from './bindings/Panel';
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { panelOf } from './panels.js';
 import { call } from './tauri.js';
 

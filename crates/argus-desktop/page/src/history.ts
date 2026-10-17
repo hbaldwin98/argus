@@ -5,7 +5,7 @@
 
 import type { HistoryPage } from './bindings/HistoryPage';
 import type { HistoryRowView } from './bindings/HistoryRowView';
-import { $, el, ghosts, icon, type Child } from './dom.js';
+import { $, el, ghosts, icon, type Child } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { diffRow } from './review.js';
 import { state } from './state.js';

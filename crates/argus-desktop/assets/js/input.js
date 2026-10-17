@@ -3,7 +3,7 @@
 // each screen; and the window's focus, which says whether this window's
 // view is the person's.
 import { keyedScreen } from './console.js';
-import { $ } from './dom.js';
+import { $ } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { screen, screens, watchScreens } from './screen.js';
 import { call } from './tauri.js';

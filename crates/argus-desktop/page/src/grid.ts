@@ -3,7 +3,7 @@
 
 import type { Block } from './bindings/Block';
 import { blocks } from './blocks.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { at, type ViewCtx } from './viewctx.js';
 
 /** The agent names a width and the page owns the pixels (`.vgrid.sm`). */

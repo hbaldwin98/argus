@@ -6,7 +6,7 @@
 // made; the dialog draws what Rust sends back, and is updated in place
 // rather than rebuilt, so a slider being dragged or a command being typed
 // keeps its hold while the choices come back.
-import { $, el, icon } from './dom.js';
+import { $, el, icon } from './kit/dom.js';
 import { fontPicker } from './font_picker.js';
 import { actionFor } from './keymap.js';
 import { screens } from './screen.js';

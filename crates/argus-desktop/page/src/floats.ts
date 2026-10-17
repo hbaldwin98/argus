@@ -7,7 +7,7 @@
 import type { FloatBounds } from './bindings/FloatBounds';
 import type { FloatPage } from './bindings/FloatPage';
 import type { Panel } from './bindings/Panel';
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { call } from './tauri.js';
 
 /** Each dialog's frame, kept across redraws so its panel keeps its state. */

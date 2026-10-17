@@ -2,7 +2,7 @@
 // repository is the one chosen on the rail, so picking another chooses it
 // there; the checkout, the agent and the message are a draft the page
 // keeps until a pane it started is made.
-import { $, el, icon } from './dom.js';
+import { $, el, icon } from './kit/dom.js';
 import { chordsFor, keycaps } from './keys.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';

@@ -2,7 +2,7 @@
 
 import { actionButton } from './actions.js';
 import type { Block } from './bindings/Block';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { value } from './values.js';
 import { at, type ViewCtx } from './viewctx.js';
 

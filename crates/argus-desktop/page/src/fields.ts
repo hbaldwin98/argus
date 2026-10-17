@@ -1,7 +1,7 @@
 // A label column beside a value column: the shape of a ticket's details.
 
 import type { Field } from './bindings/Field';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { value } from './values.js';
 import type { ViewCtx } from './viewctx.js';
 

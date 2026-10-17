@@ -2,16 +2,16 @@
 // words, the sidebar's foot, the empty stage, and notices that pass.
 import { drawCheckouts } from './checkouts.js';
 import { drawCode } from './code_stage.js';
-import { clock } from './clock.js';
+import { clock } from './kit/clock.js';
 import { drawComposer } from './compose.js';
 import { drawConsole } from './console.js';
-import { $, el, ghosts, icon } from './dom.js';
+import { $, el, ghosts, icon } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extension_views.js';
 import { drawSavedNav } from './saved_views.js';
 import { drawFeatures } from './features.js';
 import { chordsFor, keycaps, presses } from './keys.js';
-import { contextMenu } from './menu.js';
-import { closesOnMiddle } from './middle.js';
+import { contextMenu } from './kit/menu.js';
+import { closesOnMiddle } from './kit/middle.js';
 import { drawHeading, drawRemoving } from './projects.js';
 import { renameDialog } from './rename.js';
 import { screen } from './screen.js';

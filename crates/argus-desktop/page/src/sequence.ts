@@ -11,7 +11,7 @@ import type { Action } from './bindings/Action';
 import type { FeatureView } from './bindings/FeatureView';
 import type { FlowDetail } from './bindings/FlowDetail';
 import type { Sequence } from './bindings/Sequence';
-import { el, type Child } from './dom.js';
+import { el, type Child } from './kit/dom.js';
 import { bindMenu, flowSteps, selectStep } from './flows.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

@@ -8,7 +8,7 @@
 // Mouse events rather than the browser's drag and drop, so the preview
 // follows the pointer over the panes' canvases as well as the page, and a
 // press that never travels stays the click it was.
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { panelOf } from './panels.js';
 import { call } from './tauri.js';
 /** How far the pointer goes before a press is a drag. */

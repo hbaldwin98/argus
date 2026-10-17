@@ -3,7 +3,7 @@
 import type { Block } from './bindings/Block';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { opensMark } from './savedlink.js';
 import type { ViewCtx } from './viewctx.js';
 

@@ -4,7 +4,7 @@
 import type { Stat } from './bindings/Stat';
 import { toneClass } from './chip.js';
 import { spark } from './chart.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { opensMark } from './savedlink.js';
 import type { ViewCtx } from './viewctx.js';
 

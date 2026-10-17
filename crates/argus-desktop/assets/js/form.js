@@ -1,7 +1,7 @@
 // A form view block: fields the person fills in, sent back to the agent
 // with the form's submit action.
 import { actionButton } from './actions.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 /** What the person has typed in a form not yet submitted, by the form's
  *  path and the field's name. A view is redrawn whole when anything in it
  *  changes, which would otherwise put the defaults back under their

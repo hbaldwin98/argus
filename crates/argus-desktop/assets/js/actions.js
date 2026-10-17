@@ -1,7 +1,7 @@
 // The buttons an agent put in a view, and what a press of one sends: the
 // agent is told through the daemon, as a refresh is asked of it, and the
 // view changes only when the agent shows it again.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { call } from './tauri.js';
 /** The confirmations that are open, by button. A view is redrawn whole when
  *  anything in it changes, and a question the person is answering must not

@@ -1,6 +1,6 @@
 // A checklist view block: what is done and what is not.
 
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { opensMark } from './savedlink.js';
 import type { ViewCtx } from './viewctx.js';
 import type { Block } from './bindings/Block';

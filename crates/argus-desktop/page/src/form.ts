@@ -2,7 +2,7 @@
 // with the form's submit action.
 
 import { actionButton } from './actions.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import type { Answer } from './bindings/Answer';
 import type { Block } from './bindings/Block';
 import type { FormField } from './bindings/FormField';

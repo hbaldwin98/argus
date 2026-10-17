@@ -14,7 +14,7 @@ import type { CodeRow } from './bindings/CodeRow';
 import type { CodeSearch } from './bindings/CodeSearch';
 import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
 import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
-import { $, el, ghosts, icon } from './dom.js';
+import { $, el, ghosts, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

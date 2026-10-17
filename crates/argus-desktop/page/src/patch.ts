@@ -7,7 +7,7 @@ import type { DiffRow } from './bindings/DiffRow';
 import type { DiffSide } from './bindings/DiffSide';
 import type { Block } from './bindings/Block';
 import { code } from './code.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { diffRow } from './review.js';
 
 export interface Patch {

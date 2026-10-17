@@ -1,7 +1,7 @@
 // A tinted note in the view's tone. The icons are built as nodes, not
 // markup, because the shared icon table has no warning or info glyphs.
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 const SVG = 'http://www.w3.org/2000/svg';
 const GLYPH = {
     warn: ['M8 2.5L14 13H2z', 'M8 7v3M8 11.8v.1'],

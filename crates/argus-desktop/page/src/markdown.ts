@@ -3,7 +3,7 @@
 // every string goes in as a text node, raw HTML shows as the text it is,
 // images are links, and only an http(s) URL becomes a link at all.
 
-import { el, type Child } from './dom.js';
+import { el, type Child } from './kit/dom.js';
 import { viewLink } from './viewlink.js';
 
 // Nesting is capped so no input can ask for a deep recursion; every scan

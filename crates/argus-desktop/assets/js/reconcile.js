@@ -4,7 +4,7 @@
 // and the call the agent will make — and what it noticed and never acts
 // on. With nothing under way it asks an agent. Rust holds the ticks and
 // the words (`src/reconcile_dialog.rs`); the page draws them.
-import { $, el, icon } from './dom.js';
+import { $, el, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { call } from './tauri.js';
 let page = null;

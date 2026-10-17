@@ -1,7 +1,7 @@
 // Draws a sequence diagram as inline SVG from the lifelines and rows Rust
 // already parsed. Text is only ever set as text nodes and every colour comes
 // from CSS classes, since the strings were written by an agent.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 const SVG = 'http://www.w3.org/2000/svg';
 const MAX_LABEL = 80;
 const CHAR_W = 7;

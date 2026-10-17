@@ -3,7 +3,7 @@
 // and the repository's tracker map with its editor. Rust holds the dialog
 // (`src/link_dialog.rs`) and reads the URL as the daemon will; the page
 // draws it and says what was typed and pressed.
-import { $, el, icon } from './dom.js';
+import { $, el, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { call } from './tauri.js';
 let page = null;

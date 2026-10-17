@@ -4,7 +4,7 @@ import type { Block } from './bindings/Block';
 import type { Tone } from './bindings/Tone';
 import type { Value } from './bindings/Value';
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 
 /** How far along, 0 to 1; an agent's overshoot or a zero max is not a broken bar. */
 function fraction(value: number, max: number): number {

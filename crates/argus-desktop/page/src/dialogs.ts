@@ -10,7 +10,7 @@
 import type { ExtAnswer } from './bindings/ExtAnswer';
 import type { ExtDialogPage } from './bindings/ExtDialogPage';
 import type { ExtItem } from './bindings/ExtItem';
-import { $, el, type Child } from './dom.js';
+import { $, el, type Child } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { call } from './tauri.js';
 

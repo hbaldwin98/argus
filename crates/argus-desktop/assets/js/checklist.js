@@ -1,5 +1,5 @@
 // A checklist view block: what is done and what is not.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { opensMark } from './savedlink.js';
 const CHECK = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5l3 3 5-6"></path></svg>';
 /** Read-only: the agent keeps the list, the person only reads it. */

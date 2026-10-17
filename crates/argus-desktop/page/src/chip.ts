@@ -3,7 +3,7 @@
 
 import type { Chip } from './bindings/Chip';
 import type { Tone } from './bindings/Tone';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 
 /** The class that colours something by its tone: `t-good`. */
 export function toneClass(tone: Tone): string {

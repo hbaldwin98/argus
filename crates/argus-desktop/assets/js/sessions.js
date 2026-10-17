@@ -4,7 +4,7 @@
 // place of the list. Rust holds the list, the filters and what each
 // session offers (`src/sessions_dialog.rs`); the page draws them and says
 // what was pressed.
-import { $, el, ghosts, icon } from './dom.js';
+import { $, el, ghosts, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

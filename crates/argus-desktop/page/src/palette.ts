@@ -7,7 +7,7 @@
 // choosing one is a call: the palette runs nothing itself.
 
 import type { Command } from './bindings/Command';
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { extensionResults } from './extension_views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './keys.js';

@@ -3,7 +3,7 @@
 // opener, which opens only an `http` or `https` one. The URL is an agent's,
 // read from a ticket, so it is kept as data and shown nowhere but the
 // tooltip.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { call } from './tauri.js';
 export function viewLink(url, ...label) {
     const open = (event) => {

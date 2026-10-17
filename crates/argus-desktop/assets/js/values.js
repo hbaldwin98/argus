@@ -1,7 +1,7 @@
 // One Value as a field, a table cell or a list item shows it. Every string
 // is an agent's, read from a ticket, so it goes in as text and nothing else.
 import { chip, toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { progressValue } from './progress.js';
 import { refValue } from './refs.js';
 import { savedLink } from './savedlink.js';

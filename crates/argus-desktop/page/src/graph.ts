@@ -5,7 +5,7 @@
 
 import type { Block } from './bindings/Block';
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { clip, layout } from './graph_layout.js';
 import { openSaved, opensMark } from './savedlink.js';
 import type { ViewCtx } from './viewctx.js';

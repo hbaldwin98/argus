@@ -5,7 +5,7 @@
 // each extension console view on screen, so an agent and a docked console
 // are drawn at once.
 // The rows are mirrored only so a theme or scale change can repaint them.
-import { $, el, ghosts } from './dom.js';
+import { $, el, ghosts } from './kit/dom.js';
 import { dragging } from './edge.js';
 import { call } from './tauri.js';
 // The terminal's type, as the design system's --type-mono gives it.

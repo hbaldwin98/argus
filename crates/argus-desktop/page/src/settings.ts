@@ -13,7 +13,7 @@ import type { Layout } from './bindings/Layout';
 import type { SavedLinks } from './bindings/SavedLinks';
 import type { SettingChange } from './bindings/SettingChange';
 import type { Theme } from './bindings/Theme';
-import { $, el, icon, type Child } from './dom.js';
+import { $, el, icon, type Child } from './kit/dom.js';
 import { fontPicker, type FontPicker } from './font_picker.js';
 import { actionFor } from './keymap.js';
 import { screens } from './screen.js';

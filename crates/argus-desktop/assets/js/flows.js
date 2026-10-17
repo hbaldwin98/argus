@@ -3,9 +3,9 @@
 // the sequence diagram drawn on the right (`sequence.ts`), which expands
 // over the window. A binding, a step's text and a flow's source are each
 // sent as the flow rewritten, and show when the daemon's pushed flows do.
-import { closeLayer, placeMenu } from './menu.js';
+import { closeLayer, placeMenu } from './kit/menu.js';
 import { clickable, drawSequence, editSource, editStep, openExpanded, sourceForm, } from './sequence.js';
-import { el, icon } from './dom.js';
+import { el, icon } from './kit/dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { begin, edit, field, formButtons, keycap, lineList, titled } from './work.js';

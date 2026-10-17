@@ -1,7 +1,7 @@
 // A tree view block: nested nodes that fold.
 
 import { chip } from './chip.js';
-import { el, icon } from './dom.js';
+import { el, icon } from './kit/dom.js';
 import { opensMark } from './savedlink.js';
 import { value } from './values.js';
 import type { Block } from './bindings/Block';

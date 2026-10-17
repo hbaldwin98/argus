@@ -5,7 +5,7 @@
 // pushed board holds the feature, which then opens.
 
 import type { CapturePage } from './bindings/CapturePage';
-import { $, el, type Child } from './dom.js';
+import { $, el, type Child } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

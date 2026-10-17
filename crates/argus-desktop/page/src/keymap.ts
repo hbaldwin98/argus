@@ -18,7 +18,7 @@ import { focusSessionsSearch, readerOpen, sessionsOpen } from './sessions.js';
 import { focusTranscriptFind } from './transcript.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { extensionDialogFocused } from './dialogs.js';
-import { $ } from './dom.js';
+import { $ } from './kit/dom.js';
 import {
   answerExtensionNo,
   extensionGesture,
@@ -29,7 +29,7 @@ import {
 import { expandedOpen } from './sequence.js';
 import { featureAction } from './features.js';
 import { escapeFrom, type Handlers, takesFromPane, up } from './focus.js';
-import { closeLayer } from './menu.js';
+import { closeLayer } from './kit/menu.js';
 import { closePalette, openPalette } from './palette.js';
 import { addProjectOpen, answerRemoveNo } from './projects.js';
 import { closeSettings, openSettings, settingsOpen } from './settings.js';

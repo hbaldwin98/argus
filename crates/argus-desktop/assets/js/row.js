@@ -1,6 +1,6 @@
 // A row view block: values and buttons on one line, wrapping when narrow.
 import { actionButton } from './actions.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { value } from './values.js';
 import { at } from './viewctx.js';
 export function row(block, ctx) {

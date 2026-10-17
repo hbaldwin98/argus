@@ -3,7 +3,7 @@
 // back on every change; the page never parses the note itself, so the
 // preview is what Create stores. The note stays up after Create until the
 // pushed board holds the feature, which then opens.
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

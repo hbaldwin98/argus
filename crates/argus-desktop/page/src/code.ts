@@ -2,7 +2,7 @@
 // text: no highlighter here.
 
 import { copyButton } from './copy.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 
 export function code(lang: string | null, text: string): HTMLElement {
   return el(

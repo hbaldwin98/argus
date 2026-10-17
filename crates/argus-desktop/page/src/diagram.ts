@@ -3,7 +3,7 @@
 // from CSS classes, since the strings were written by an agent.
 
 import type { PageDiagram } from './bindings/PageDiagram';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const MAX_LABEL = 80;

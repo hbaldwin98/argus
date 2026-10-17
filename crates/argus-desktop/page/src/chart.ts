@@ -6,7 +6,7 @@ import type { Block } from './bindings/Block';
 import type { Series } from './bindings/Series';
 import type { Tone } from './bindings/Tone';
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const W = 480;

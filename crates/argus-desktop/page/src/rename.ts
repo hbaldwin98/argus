@@ -2,9 +2,9 @@
 // on Enter. The row keeps its old name until the daemon's tree says the
 // new one, so a refused rename leaves it showing what is true.
 
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { actionFor } from './keymap.js';
-import { closeLayer } from './menu.js';
+import { closeLayer } from './kit/menu.js';
 import { call } from './tauri.js';
 
 export function renameDialog(pane: number, title: string): void {

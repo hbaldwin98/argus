@@ -3,7 +3,7 @@
 // buttons minimize, maximize and close it. macOS draws its own buttons
 // over the strip, so there the page's are hidden and room is left.
 
-import { $ } from './dom.js';
+import { $ } from './kit/dom.js';
 import { call } from './tauri.js';
 
 /** How long the pointer rests on maximize before Windows 11's snap

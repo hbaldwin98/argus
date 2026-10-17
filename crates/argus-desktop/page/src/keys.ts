@@ -4,7 +4,7 @@
 import type { Action } from './bindings/Action';
 import type { Chord } from './bindings/Chord';
 import type { Place } from './bindings/Place';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { state } from './state.js';
 
 const MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);

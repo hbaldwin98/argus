@@ -7,9 +7,9 @@
 // docked view's element in its dock; a row changes only when its
 // extension publishes it again.
 import { dockMenuButton } from './docks.js';
-import { $, el, icon } from './dom.js';
+import { $, el, icon } from './kit/dom.js';
 import { draggable } from './drag.js';
-import { closeLayer } from './menu.js';
+import { closeLayer } from './kit/menu.js';
 import { keycaps } from './keys.js';
 import { bindView, keyView, screen, viewScreen } from './screen.js';
 import { state } from './state.js';

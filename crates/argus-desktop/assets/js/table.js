@@ -5,7 +5,7 @@
 // a selected one instead (`RowPicks`) and none of those. The bar over an
 // agent's table is `table_bar`'s, a row opening to blocks `table_details`'s,
 // and the sorting `table_sort`'s; this builds the table they work on.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { rowText, tableBar } from './table_bar.js';
 import { chevron, openable, rowIds } from './table_details.js';
 import { openRows, selection } from './table_memory.js';

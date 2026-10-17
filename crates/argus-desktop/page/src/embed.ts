@@ -7,7 +7,7 @@
 
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { savedCtx } from './saved_ctx.js';
 import { EMBED_WORDS, embedVerdict } from './saved_logic.js';
 import { openSaved, savedView } from './savedlink.js';

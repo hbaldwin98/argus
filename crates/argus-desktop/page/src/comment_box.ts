@@ -4,7 +4,7 @@
 // is lit (`src/comment_box.rs`); the page says what was typed, chosen or sent.
 
 import type { CommentPage } from './bindings/CommentPage';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 
 export type CommentBoxId = 'review-comment' | 'code-comment';

@@ -11,7 +11,7 @@ import type { FrameCursor } from './bindings/FrameCursor';
 import type { Parked } from './bindings/Parked';
 import type { Segment } from './bindings/Segment';
 import type { Side } from './bindings/Side';
-import { $, el, ghosts } from './dom.js';
+import { $, el, ghosts } from './kit/dom.js';
 import { dragging } from './edge.js';
 import { call } from './tauri.js';
 

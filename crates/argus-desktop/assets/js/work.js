@@ -8,7 +8,7 @@
 // refused edit leaves it as it was.
 import { notice } from './chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { dragEdge } from './edge.js';
 import { flowsAction, flowsLens } from './flows.js';
 import { featureViewLink, savedFeatureLinks, ticketLink } from './tickets.js';

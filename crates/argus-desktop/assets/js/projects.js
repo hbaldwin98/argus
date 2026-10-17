@@ -3,7 +3,7 @@
 // project is removed, and the add-a-project dialog. Rust holds the
 // workspaces, the question and the dialog (`src/switcher.rs`,
 // `src/add_project.rs`); nothing here changes until the daemon says so.
-import { $, el, ghosts, icon } from './dom.js';
+import { $, el, ghosts, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

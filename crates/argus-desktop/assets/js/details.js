@@ -1,7 +1,7 @@
 // A details view block: a summary line that opens to its blocks.
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { opensMark } from './savedlink.js';
 /** Which details are open, by the block's path. The agent's `open` is only
  *  how one starts: a view is redrawn whole on every refresh, and the one

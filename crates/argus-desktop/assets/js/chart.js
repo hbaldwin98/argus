@@ -2,7 +2,7 @@
 // axes, the scale and the thinning of labels are the page's; an agent sends
 // the data and a tone per series, never a colour.
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 const SVG = 'http://www.w3.org/2000/svg';
 const W = 480;
 const H = 160;

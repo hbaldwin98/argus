@@ -2,7 +2,7 @@
 // and the row of blocks drawn under it while it is open. Which rows are open
 // is `table_memory`'s, so a redraw of the view leaves them open.
 import { blocks } from './blocks.js';
-import { el, icon } from './dom.js';
+import { el, icon } from './kit/dom.js';
 import { at } from './viewctx.js';
 /** The key a row's open state is remembered by: the agent's, else its place. */
 export function rowIds(block) {

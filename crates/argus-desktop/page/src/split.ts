@@ -12,7 +12,7 @@
 
 import type { Shown } from './bindings/Shown';
 import type { Zone } from './bindings/Zone';
-import { $, el, icon } from './dom.js';
+import { $, el, icon } from './kit/dom.js';
 import { splitScreen, screen } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

@@ -7,7 +7,7 @@
 
 import type { Reference } from './bindings/Reference';
 import type { Value } from './bindings/Value';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { call } from './tauri.js';
 
 export type RefValue = Extract<

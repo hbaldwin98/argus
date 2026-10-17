@@ -6,7 +6,7 @@
 // still pressed, since the view may be saved later.
 
 import type { PageSaved } from './bindings/PageSaved';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import type { ViewCtx } from './viewctx.js';

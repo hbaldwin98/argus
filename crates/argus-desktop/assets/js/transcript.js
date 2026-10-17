@@ -4,8 +4,8 @@
 // session id and Resume. Rust holds where the reader is and what it found
 // (`src/transcript_reader.rs`); the page draws it and says what was
 // pressed.
-import { clock, hhmm, span } from './clock.js';
-import { el, ghosts } from './dom.js';
+import { clock, hhmm, span } from './kit/clock.js';
+import { el, ghosts } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { call } from './tauri.js';
 function keycap(key) {

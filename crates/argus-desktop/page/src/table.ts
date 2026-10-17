@@ -8,7 +8,7 @@
 
 import type { Block } from './bindings/Block';
 import type { Value } from './bindings/Value';
-import { el, type Child } from './dom.js';
+import { el, type Child } from './kit/dom.js';
 import { rowText, tableBar } from './table_bar.js';
 import { chevron, openable, rowIds } from './table_details.js';
 import { openRows, selection } from './table_memory.js';

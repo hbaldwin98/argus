@@ -1,6 +1,6 @@
 // A log view block: a tail of lines, each with its level.
 
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { ago } from './values.js';
 import type { Block } from './bindings/Block';
 import type { ViewCtx } from './viewctx.js';

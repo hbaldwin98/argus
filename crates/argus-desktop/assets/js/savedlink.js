@@ -4,7 +4,7 @@
 // panel of its own. The page never decides where; it says which column the
 // press was in. A target the window does not hold is drawn as missing, and
 // still pressed, since the view may be saved later.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 /** The saved view this window holds under `id`. */

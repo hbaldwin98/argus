@@ -1,6 +1,6 @@
 // A matrix view block: a grid of tinted cells.
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 export function matrix(block) {
     return el('div', { class: 'vmatrix-wrap' }, el('table', { class: 'vmatrix' }, el('thead', null, el('tr', null, el('td', null), block.columns.map((column) => el('th', { scope: 'col' }, column)))), el('tbody', null, block.rows.map((row, r) => el('tr', null, el('th', { scope: 'row' }, row), block.columns.map((column, c) => {
         const cell = block.cells[r]?.[c];

@@ -4,7 +4,7 @@
 // target in this window, never in a browser; Rust finds the target from the
 // pane that showed the view, so the page names the reference and nothing
 // more.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { call } from './tauri.js';
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;

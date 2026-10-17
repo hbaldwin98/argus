@@ -1,6 +1,6 @@
 // A progress view block, and the meter a progress value draws in a cell.
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 /** How far along, 0 to 1; an agent's overshoot or a zero max is not a broken bar. */
 function fraction(value, max) {
     if (!(max > 0) || !Number.isFinite(value))

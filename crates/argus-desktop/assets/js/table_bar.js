@@ -4,7 +4,7 @@
 import { actionButton } from './actions.js';
 import { cellText } from './cell_text.js';
 import { copyButton } from './copy.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { filterOf, setFilter } from './table_memory.js';
 /** Past this many rows a table offers a filter. */
 const FILTERABLE = 8;

@@ -5,7 +5,7 @@
 import type { ViewAction } from './bindings/ViewAction';
 import type { Answer } from './bindings/Answer';
 import type { ViewPress } from './bindings/ViewPress';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { call } from './tauri.js';
 import type { ViewCtx } from './viewctx.js';
 

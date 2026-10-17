@@ -1,7 +1,7 @@
 // A timeline view block: events in order, in lanes when they name one.
 
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { markdown } from './markdown.js';
 import { opensMark } from './savedlink.js';
 import type { ViewCtx } from './viewctx.js';

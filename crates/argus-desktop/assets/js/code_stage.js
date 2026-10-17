@@ -4,7 +4,7 @@
 // (`src/code_stage.rs`); the page draws them and says what was clicked or
 // typed.
 import { commentBox, settleDraft } from './comment_box.js';
-import { $, el, ghosts, icon } from './dom.js';
+import { $, el, ghosts, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

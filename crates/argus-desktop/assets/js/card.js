@@ -3,7 +3,7 @@
 import { actionButton } from './actions.js';
 import { blocks } from './blocks.js';
 import { chip, toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { opensMark } from './savedlink.js';
 /** A non-neutral tone only tints the border: the card stays readable in
  *  every theme, and the tone still says what the card is about. */

@@ -6,7 +6,7 @@
 import type { Action } from './bindings/Action';
 import type { FeatureView } from './bindings/FeatureView';
 import type { RecordRow } from './bindings/RecordRow';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import {

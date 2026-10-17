@@ -1,7 +1,7 @@
 // A board view block: columns of cards.
 
 import { chip } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { markdown } from './markdown.js';
 import { opensMark } from './savedlink.js';
 import { value } from './values.js';

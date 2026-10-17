@@ -1,7 +1,7 @@
 // A matrix view block: a grid of tinted cells.
 
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import type { Block } from './bindings/Block';
 
 export function matrix(block: Extract<Block, { kind: 'matrix' }>): HTMLElement {

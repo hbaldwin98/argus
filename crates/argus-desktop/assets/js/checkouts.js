@@ -3,8 +3,8 @@
 // selected checkout said in full along the foot. Rust builds every row
 // (`src/checkouts.rs`); the page draws them and reports what is chosen.
 import { startMenu, toggleStart } from './chrome.js';
-import { $, el, ghosts, icon } from './dom.js';
-import { closeLayer } from './menu.js';
+import { $, el, ghosts, icon } from './kit/dom.js';
+import { closeLayer } from './kit/menu.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

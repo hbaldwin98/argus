@@ -9,8 +9,8 @@ import type { Action } from './bindings/Action';
 import type { ReaderPage } from './bindings/ReaderPage';
 import type { SessionPreview } from './bindings/SessionPreview';
 import type { TranscriptLine } from './bindings/TranscriptLine';
-import { clock, hhmm, span } from './clock.js';
-import { el, ghosts, type Child } from './dom.js';
+import { clock, hhmm, span } from './kit/clock.js';
+import { el, ghosts, type Child } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { call } from './tauri.js';
 

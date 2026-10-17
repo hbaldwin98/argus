@@ -6,7 +6,7 @@
 // steps beside it, and a step's arrow dragged up or down, or a lifeline
 // dragged sideways, is sent as the flow's source rewritten — the diagram
 // moves when the daemon's pushed flows say it did.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { bindMenu, flowSteps, selectStep } from './flows.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

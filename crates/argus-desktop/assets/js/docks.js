@@ -5,14 +5,14 @@
 // dock, the stage, a dialog (`floats`), or parked out of sight — draws a dock's tabs while it
 // holds more than one, and the dock menu every panel's head opens, and
 // reports a tab picked, closed, a panel moved or a sash let go.
-import { $, el, icon } from './dom.js';
+import { $, el, icon } from './kit/dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
 import { extensionElement, extensionOnStage } from './extension_views.js';
 import { drawFloats } from './floats.js';
 import { savedElement } from './saved_views.js';
-import { contextMenu, openMenu } from './menu.js';
-import { closesOnMiddle } from './middle.js';
+import { contextMenu, openMenu } from './kit/menu.js';
+import { closesOnMiddle } from './kit/middle.js';
 import { panelOf } from './panels.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

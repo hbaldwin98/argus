@@ -3,7 +3,7 @@
 // text nodes and every colour is a class, since the strings were written
 // by an agent.
 import { toneClass } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { clip, layout } from './graph_layout.js';
 import { openSaved, opensMark } from './savedlink.js';
 const SVG = 'http://www.w3.org/2000/svg';

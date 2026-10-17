@@ -3,7 +3,7 @@
 
 import type { Item } from './bindings/Item';
 import { chip } from './chip.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { markdown } from './markdown.js';
 import { opensMark } from './savedlink.js';
 import { ago, person } from './values.js';

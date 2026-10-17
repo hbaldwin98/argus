@@ -10,7 +10,7 @@ import { checklist } from './checklist.js';
 import { code } from './code.js';
 import { details } from './details.js';
 import { diagram } from './diagram.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { embed } from './embed.js';
 import { fields } from './fields.js';
 import { form } from './form.js';

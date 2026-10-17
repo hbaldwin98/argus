@@ -10,8 +10,8 @@
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { closeExpanded } from './sequence.js';
-import { $, el, ghosts, icon } from './dom.js';
-import { closeLayer, placeMenu } from './menu.js';
+import { $, el, ghosts, icon } from './kit/dom.js';
+import { closeLayer, placeMenu } from './kit/menu.js';
 import { ticketLinks } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';

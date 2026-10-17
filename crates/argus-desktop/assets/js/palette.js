@@ -5,7 +5,7 @@
 //
 // What it lists comes from Rust while it is open (`src/palette.rs`), and
 // choosing one is a call: the palette runs nothing itself.
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { extensionResults } from './extension_views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './keys.js';

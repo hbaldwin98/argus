@@ -6,7 +6,7 @@
 import type { FeatureViewLink } from './bindings/FeatureViewLink';
 import type { Link } from './bindings/Link';
 import type { PageSaved } from './bindings/PageSaved';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { forFeature } from './saved_logic.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

@@ -6,7 +6,7 @@ import type { Value } from './bindings/Value';
 import { actionButton } from './actions.js';
 import { cellText } from './cell_text.js';
 import { copyButton } from './copy.js';
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import type { TableBlock } from './table.js';
 import { filterOf, setFilter } from './table_memory.js';
 import type { ViewCtx } from './viewctx.js';

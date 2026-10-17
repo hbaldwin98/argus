@@ -2,7 +2,7 @@
 // an agent showed, when one waits: the link then opens the view, which says
 // more than the tracker's page at a glance, and the tracker is a click away
 // from there. Without one it opens the ticket in the browser.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { forFeature } from './saved_logic.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

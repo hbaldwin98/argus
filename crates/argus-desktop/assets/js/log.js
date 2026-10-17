@@ -1,5 +1,5 @@
 // A log view block: a tail of lines, each with its level.
-import { el } from './dom.js';
+import { el } from './kit/dom.js';
 import { ago } from './values.js';
 // Where the person left each log, by block path. A log is a tail, so one
 // they have not scrolled up in follows the newest line; one they have keeps

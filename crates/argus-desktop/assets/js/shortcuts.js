@@ -1,6 +1,6 @@
 // The shortcuts sheet: every binding of the keymap Rust sends, under the
 // heading of where it works, so it lists exactly the keys dispatch runs.
-import { $, el } from './dom.js';
+import { $, el } from './kit/dom.js';
 import { extensionSheetGroups } from './extension_views.js';
 import { keycaps, leader } from './keys.js';
 import { state } from './state.js';
