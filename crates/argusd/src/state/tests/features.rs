@@ -572,6 +572,15 @@ async fn an_agent_on_no_feature_reads_empty_parts_and_is_told_how_to_add_one() {
         )
         .unwrap_err();
     assert!(ticking.to_string().contains("before adding tasks"), "{ticking}");
+    let moving = d
+        .part_action_for_agent(
+            agent,
+            None,
+            TaskAction::Move { id: 1, state: argus_protocol::TaskState::Done },
+            ArtifactScope::default(),
+        )
+        .unwrap_err();
+    assert_eq!(moving.to_string(), "this checkout is not on a feature yet");
     close_all(&d);
 }
 
