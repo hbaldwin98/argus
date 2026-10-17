@@ -7,15 +7,14 @@ mod config;
 mod conn;
 mod diff;
 mod git;
-mod grammar;
 mod harness;
-mod highlight;
 mod hook_server;
 mod pty;
 mod review_queue;
 mod state;
 mod store;
 mod symbols;
+mod syntax;
 mod system;
 
 #[tokio::main]

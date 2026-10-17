@@ -9,7 +9,7 @@ use std::sync::{Mutex, OnceLock};
 
 use argus_protocol::{HighlightKind, HighlightSpan};
 
-use crate::grammar::Grammar;
+use crate::syntax::grammar::Grammar;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 /// Anything larger is shipped unhighlighted. Parsing is linear in the source,

@@ -69,7 +69,7 @@ pub fn context(repo_path: &Path, blob: &str, path: &str, start: u32, end: u32) -
         anyhow::bail!("{path} is not shown as text");
     }
     let text = String::from_utf8_lossy(blob.content());
-    let spans = crate::highlight::line_spans(path, &text);
+    let spans = crate::syntax::highlight::line_spans(path, &text);
     let first = start.max(1);
     let last = end.min(first.saturating_add(MAX_LINES_PER_FILE as u32 - 1));
     Ok(text
@@ -528,7 +528,7 @@ fn blob_spans(
         return None;
     }
     let text = std::str::from_utf8(blob.content()).ok()?;
-    crate::highlight::line_spans(syntax_path, text)
+    crate::syntax::highlight::line_spans(syntax_path, text)
 }
 
 fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {

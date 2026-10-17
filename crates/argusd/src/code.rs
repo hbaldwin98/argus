@@ -170,7 +170,7 @@ pub fn read(root: &Path, file: &str, version: &CodeVersion) -> anyhow::Result<Re
         return Ok(unreadable(BINARY_NOTE));
     }
     let text = String::from_utf8_lossy(&bytes);
-    let spans = crate::highlight::line_spans(file, &text);
+    let spans = crate::syntax::highlight::line_spans(file, &text);
     let mut lines: Vec<CodeLine> = text
         .lines()
         .enumerate()

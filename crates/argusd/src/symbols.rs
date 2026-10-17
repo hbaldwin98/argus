@@ -11,7 +11,7 @@ use std::sync::{Mutex, OnceLock};
 use argus_protocol::CodeSymbol;
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::grammar::Grammar;
+use crate::syntax::grammar::Grammar;
 
 /// The same bound highlighting keeps, for the same reason: a generated file
 /// is megabytes, and the person is waiting on the read.
