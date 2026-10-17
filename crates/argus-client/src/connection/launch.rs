@@ -63,11 +63,11 @@ pub(crate) enum Greeted {
 /// A daemon from before the handshake hangs up on the greeting, and is
 /// answered by connecting again without one.
 pub async fn connect() -> anyhow::Result<Connected> {
-    let channels = crate::wire::connection_channels(ensure_daemon_and_connect().await?);
+    let channels = crate::connection::wire::connection_channels(ensure_daemon_and_connect().await?);
     match greet(channels, GREETING_WAIT).await {
         Greeted::Up(connected) => Ok(connected),
         Greeted::Refused => Ok(Connected {
-            channels: crate::wire::connection_channels(ensure_daemon_and_connect().await?),
+            channels: crate::connection::wire::connection_channels(ensure_daemon_and_connect().await?),
             daemon: None,
             opening: Vec::new(),
         }),
@@ -307,7 +307,7 @@ mod tests {
             then(daemon).await;
         });
         greet(
-            crate::wire::connection_channels(client),
+            crate::connection::wire::connection_channels(client),
             Duration::from_millis(200),
         )
         .await
@@ -343,7 +343,7 @@ mod tests {
             write_msg(&mut daemon, &ServerMsg::Hello(Hello::this_build())).await.unwrap();
             std::future::pending::<()>().await;
         });
-        greet(crate::wire::connection_channels(client), Duration::from_millis(200)).await;
+        greet(crate::connection::wire::connection_channels(client), Duration::from_millis(200)).await;
         let ClientMsg::Hello(hello) = heard.await.unwrap() else {
             panic!("the client greets first");
         };
@@ -384,7 +384,7 @@ mod tests {
         let (client, daemon) = tokio::io::duplex(1024);
         drop(daemon);
         let greeting = greet(
-            crate::wire::connection_channels(client),
+            crate::connection::wire::connection_channels(client),
             Duration::from_millis(200),
         )
         .await;

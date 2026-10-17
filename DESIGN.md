@@ -458,15 +458,18 @@ result of a request; `ui` is a pure function of it.
 
 | module | answers |
 | --- | --- |
-| `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, the screen and socket it runs over, and the daemon lifecycle command |
+| `main`, `redraw`, `terminal` | the event loop, the screen it runs over, and which command the command line asks for |
 | `sibling` | starting another of Argus's executables, found beside this one, so it outlives this process |
-| `commands` | the `argus` commands that are not the terminal UI (the daemon lifecycle commands are `launch`'s) |
+| `commands` | the `argus` commands that are not the terminal UI (the daemon lifecycle commands are `connection/launch`'s) |
 | `commands/bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
 | `commands/desktop` | the `argus desktop` command: opening the desktop window beside this terminal client |
 | `commands/focus` | the `argus focus` command: where the person is working, as JSON, once or on every change |
 | `commands/extension` | the `argus extension` command: the guide to building one, and the running extensions listed or one shown whole, as the daemon here or under `--host` describes them |
-| `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
-| `remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
+| `connection` | how this client reaches its daemons and talks to them |
+| `connection/launch` | reaching this machine's daemon, starting one if nothing is listening, and the daemon lifecycle command |
+| `connection/wire` | the socket a connection runs over: the two tasks between the app and the daemon, and a frame's subscription churn collapsed between them |
+| `connection/remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
+| `connection/hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |

@@ -13,7 +13,7 @@ use argus_protocol::{PaneId, ServerMsg};
 use tokio::sync::mpsc;
 
 use crate::app::{App, AttachedHost};
-use crate::launch::Connected;
+use crate::connection::launch::Connected;
 
 /// One daemon, and everything this client holds for it.
 pub struct Host {

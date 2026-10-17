@@ -16,7 +16,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 /// waits on a read of stdin that may never end, and the bridge outlives
 /// its daemon until the far side happens to type or hang up.
 pub async fn run() -> anyhow::Result<()> {
-    let daemon = crate::launch::ensure_daemon_and_connect().await?;
+    let daemon = crate::connection::launch::ensure_daemon_and_connect().await?;
     let carried = pipe(daemon, tokio::io::stdin(), tokio::io::stdout()).await;
     if let Err(err) = carried {
         // The same line `main` would print for an error it returned.

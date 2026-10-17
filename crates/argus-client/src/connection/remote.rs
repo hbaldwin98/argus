@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use argus_protocol::connection::ssh_bridge::{ssh_args, ssh_failure};
 use argus_protocol::GREETING_WAIT;
 
-use crate::launch::{greet, Connected, Greeted};
+use crate::connection::launch::{greet, Connected, Greeted};
 
 /// How much of what ssh prints is kept for explaining a failure. Enough
 /// for its last lines, which are the ones that say what went wrong.
@@ -78,7 +78,7 @@ impl Session {
             anyhow::bail!("ssh started without its pipes");
         };
 
-        let channels = crate::wire::connection_channels(tokio::io::join(stdout, stdin));
+        let channels = crate::connection::wire::connection_channels(tokio::io::join(stdout, stdin));
         let exit = tokio::spawn(async move {
             let mut said = Vec::new();
             let mut chunk = [0u8; 4096];

@@ -3,8 +3,8 @@
 //! One `select!` over four sources — terminal events, the daemon's
 //! messages, the paste burst's deadline, and the frame tick — feeding one
 //! `App` and one renderer. Everything the loop needs but does not decide
-//! lives beside it: `terminal` owns the screen, `wire` owns the socket,
-//! and `redraw` decides which wake-up is worth a frame.
+//! lives beside it: `terminal` owns the screen, `connection::wire` the
+//! socket, and `redraw` decides which wake-up is worth a frame.
 
 mod app;
 mod backend;
@@ -13,30 +13,28 @@ mod browser;
 mod diagram;
 mod clipboard;
 mod commands;
+mod connection;
 mod dirpicker;
 mod dropped;
 mod herdr;
-mod hosts;
-mod launch;
 mod motion;
 mod paste;
 mod profile;
 mod pty_input;
 mod redraw;
-mod remote;
 mod selection;
 mod settings;
 mod sibling;
 mod terminal;
 mod theme;
 mod ui;
-mod wire;
 
 #[cfg(test)]
 mod fixtures;
 
 use argus_protocol::{ClientMsg, Hello, PaneId, ServerMsg};
 use commands::{bridge, desktop, extension, focus};
+use connection::{hosts, launch, remote};
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures::StreamExt;
 use paste::{Flush, PasteBurst, Step};

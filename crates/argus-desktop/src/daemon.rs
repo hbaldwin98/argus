@@ -4,9 +4,10 @@
 //! The window never opens the daemon's socket and never starts `argusd`
 //! itself. It runs `argus bridge` and speaks the protocol over the child's
 //! stdin and stdout, as `argus --host` does over ssh, so connect-or-start
-//! stays in one place: the terminal client's `launch`. A remote host is the
-//! same child with ssh in front, and ssh's own words are turned into what
-//! to do about them by the protocol's `ssh_bridge`, as the terminal client's.
+//! stays in one place: the terminal client's `connection/launch`. A remote
+//! host is the same child with ssh in front, and ssh's own words are turned
+//! into what to do about them by the protocol's `ssh_bridge`, as the
+//! terminal client's.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;

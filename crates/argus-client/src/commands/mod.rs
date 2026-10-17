@@ -1,6 +1,6 @@
 //! The `argus` commands that are not the terminal UI; `server restart`,
-//! `server stop` and `init` are `launch`'s, beside the connect-or-start
-//! they share.
+//! `server stop` and `init` are `connection::launch`'s, beside the
+//! connect-or-start they share.
 
 pub mod bridge;
 pub mod desktop;

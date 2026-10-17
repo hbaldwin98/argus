@@ -16,7 +16,7 @@ use argus_protocol::{
     GREETING_WAIT,
 };
 
-use crate::launch::{greet, Connected, Greeted};
+use crate::connection::launch::{greet, Connected, Greeted};
 
 /// How long the daemon has to answer. It answers from memory, so this only
 /// runs out on a connection that has gone quiet, an ssh one most likely.
@@ -62,7 +62,7 @@ pub async fn run(ask: Ask, host: Option<String>) -> anyhow::Result<()> {
 /// Every running extension, from the daemon here or on `host`.
 async fn describe(host: Option<&str>) -> anyhow::Result<Vec<ExtDescription>> {
     let Connected { channels: (out, mut incoming), daemon, .. } = match host {
-        Some(host) => crate::remote::connect(host).await?,
+        Some(host) => crate::connection::remote::connect(host).await?,
         None => connect_local().await?,
     };
     if !daemon.is_some_and(|d| d.can(DESCRIBE_EXTENSIONS)) {
@@ -80,7 +80,7 @@ async fn connect_local() -> anyhow::Result<Connected> {
         anyhow::bail!("argusd is not running, so no extension is");
     }
     let stream = transport::connect().await.context("could not connect to argusd")?;
-    match greet(crate::wire::connection_channels(stream), GREETING_WAIT).await {
+    match greet(crate::connection::wire::connection_channels(stream), GREETING_WAIT).await {
         Greeted::Up(connected) => Ok(connected),
         _ => anyhow::bail!("argusd closed the connection before saying anything"),
     }

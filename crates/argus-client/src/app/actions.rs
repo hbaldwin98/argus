@@ -292,7 +292,7 @@ impl App {
         };
         let checkout = self.tree.checkout(session.checkout());
         // Named nothing until its reviews and its makes share one count
-        // (`launch::greet`): an id from either could name the other.
+        // (`connection::launch::greet`): an id from either could name the other.
         match agent_comment::comment(session.anchor(), checkout, to, &body, 0) {
             Ok(Comment::Send(msg)) => {
                 let _ = self.out.send(*msg);

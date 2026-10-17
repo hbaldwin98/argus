@@ -12,7 +12,7 @@ use std::time::Duration;
 use anyhow::Context;
 use argus_protocol::{connection::transport, ClientMsg, Focus, ServerMsg, FOCUS, GREETING_WAIT};
 
-use crate::launch::{greet, Connected, Greeted};
+use crate::connection::launch::{greet, Connected, Greeted};
 
 /// How long a watch waits between looks for a daemon that has gone.
 const RETRY: Duration = Duration::from_secs(2);
@@ -47,7 +47,7 @@ async fn watch_focus() -> anyhow::Result<crate::Connection> {
     let stream = transport::connect()
         .await
         .context("could not connect to argusd")?;
-    let channels = crate::wire::connection_channels(stream);
+    let channels = crate::connection::wire::connection_channels(stream);
     let Greeted::Up(Connected {
         channels: (out, incoming),
         daemon,

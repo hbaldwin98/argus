@@ -23,8 +23,8 @@ recent sessions need.
 1. **One way to start a daemon.** The desktop binary never connects to the socket itself and never
    spawns argusd. It runs `argus bridge` — the `argus` executable beside its own, falling back to
    `argus` on PATH — and speaks the protocol over the child's stdin/stdout, exactly as
-   `argus --host` does over ssh (`crates/argus-client/src/remote.rs`). Connect-or-start stays only
-   in `argus`'s `launch.rs`. A remote host is the same child behind
+   `argus --host` does over ssh (`crates/argus-client/src/connection/remote.rs`). Connect-or-start
+   stays only in `argus`'s `connection/launch.rs`. A remote host is the same child behind
    `ssh -T -o BatchMode=yes -- <host> argus bridge` (the project switcher's Connect to a host…, or
    `ARGUS_DESKTOP_HOST` when no host is saved), so the daemon, not the window, decides everything else.
 2. **The client never predicts.** The rail changes when the daemon's tree says so. A spawned shell
