@@ -9,15 +9,12 @@
 mod app;
 mod backend;
 mod brief;
-mod bridge;
 mod browser;
 mod diagram;
 mod clipboard;
-mod desktop;
+mod commands;
 mod dirpicker;
 mod dropped;
-mod extension;
-mod focus;
 mod herdr;
 mod hosts;
 mod launch;
@@ -39,6 +36,7 @@ mod wire;
 mod fixtures;
 
 use argus_protocol::{ClientMsg, Hello, PaneId, ServerMsg};
+use commands::{bridge, desktop, extension, focus};
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures::StreamExt;
 use paste::{Flush, PasteBurst, Step};
