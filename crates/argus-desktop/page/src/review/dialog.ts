@@ -1,19 +1,19 @@
 // The review dialog: a checkout's changed files beside the diff of one,
 // lines picked and commented on in place. Rust holds the diff, the cursor
-// and the range (`src/review.rs`); the page draws them and says what was
-// pressed or clicked. A redraw keeps the scroll, and the comment being
-// written, where they were.
+// and the range (`src/review/dialog.rs`); the page draws them and says
+// what was pressed or clicked. A redraw keeps the scroll, and the comment
+// being written, where they were.
 
-import type { DiffRow } from './bindings/DiffRow';
-import type { DiffSide } from './bindings/DiffSide';
-import type { ReviewClick } from './bindings/ReviewClick';
-import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
-import type { ReviewPage } from './bindings/ReviewPage';
+import type { DiffRow } from '../bindings/DiffRow';
+import type { DiffSide } from '../bindings/DiffSide';
+import type { ReviewClick } from '../bindings/ReviewClick';
+import type { ReviewJumpGesture } from '../bindings/ReviewJumpGesture';
+import type { ReviewPage } from '../bindings/ReviewPage';
 import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
-import { $, el, ghosts, icon, type Child } from './kit/dom.js';
-import { actionFor } from './keys/keymap.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { actionFor } from '../keys/keymap.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);

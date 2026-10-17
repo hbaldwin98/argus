@@ -1,15 +1,15 @@
 // The history dialog: a checkout's newest commits, each unfolding in
 // place to the files it touched, beside the diff of the file under the
-// cursor. Rust holds the list and the diffs (`src/history.rs`); the page
-// draws them and says what was pressed.
+// cursor. Rust holds the list and the diffs (`src/review/history.rs`); the
+// page draws them and says what was pressed.
 
-import type { HistoryPage } from './bindings/HistoryPage';
-import type { HistoryRowView } from './bindings/HistoryRowView';
-import { $, el, ghosts, icon, type Child } from './kit/dom.js';
-import { actionFor } from './keys/keymap.js';
-import { diffRow } from './review.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import type { HistoryPage } from '../bindings/HistoryPage';
+import type { HistoryRowView } from '../bindings/HistoryRowView';
+import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { actionFor } from '../keys/keymap.js';
+import { diffRow } from './dialog.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);

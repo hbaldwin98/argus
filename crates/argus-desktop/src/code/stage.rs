@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::code;
 use crate::code::tree::folders_of;
-use crate::comment_box::{CommentBox, CommentPage};
-use crate::file_jump::{FileJump, Jumped};
+use crate::review::comment_box::{CommentBox, CommentPage};
+use crate::review::file_jump::{FileJump, Jumped};
 use crate::keys::keymap::Action;
 use crate::connection::page::{Event, ReviewJumpGesture};
-use crate::review::parts;
+use crate::review::dialog::parts;
 use crate::connection::sent::Sent;
 
 /// What `B` goes back to: the dialog the stage was opened from, as the

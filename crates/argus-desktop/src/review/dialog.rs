@@ -1,9 +1,10 @@
 //! What the review dialog holds beyond the review itself — the checkout's
 //! name, the side and layout the person chose, its comment box, and its
 //! go-to-file field — and the page it draws. Which sides were asked for
-//! and which one shows are `review::session`'s, and whether a comment may
-//! go and to whom is `review::agent_comment`'s, so the dialog behaves as
-//! the terminal client's review does.
+//! and which one shows are `argus_protocol::review::session`'s, and
+//! whether a comment may go and to whom is
+//! `argus_protocol::review::agent_comment`'s, so the dialog behaves as the
+//! terminal client's review does.
 
 use argus_protocol::review::session::{Answered, ReviewSession};
 use argus_protocol::review::view::{fold_of, marker, ReviewView, Row, FOLD_STEP};
@@ -12,8 +13,8 @@ use argus_protocol::{
     CodeVersion, RequestRefusal, ReviewBase, ReviewContext,
 };
 
-use crate::comment_box::CommentBox;
-use crate::file_jump::{FileJump, Jumped};
+use crate::review::comment_box::CommentBox;
+use crate::review::file_jump::{FileJump, Jumped};
 use crate::connection::page::{DiffRow, DiffSide, ReviewFile, ReviewJump, ReviewJumpGesture, ReviewPage};
 use crate::settings::remembered::ReviewLayout;
 

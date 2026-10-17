@@ -4,10 +4,10 @@
 import { captureOpen, discardCapture } from '../capture.js';
 import { answerNo, checkoutsAction } from '../checkouts/stage.js';
 import { codeAction } from '../code/stage.js';
-import { focusHistoryFilter, historyOpen } from '../history.js';
+import { focusHistoryFilter, historyOpen } from '../review/history.js';
 import { linkAction, linkOpen } from '../link.js';
 import { reconcileAction, reconcileOpen } from '../reconcile.js';
-import { reviewOpen } from '../review.js';
+import { reviewOpen } from '../review/dialog.js';
 import { focusSessionsSearch, readerOpen, sessionsOpen } from '../agents/sessions_dialog.js';
 import { focusTranscriptFind } from '../agents/transcript.js';
 import { railAction, railPicked, startAction, startOpen } from '../chrome.js';

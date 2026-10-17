@@ -10,7 +10,7 @@
 //! Each subject keeps its own state and what the page last heard of it —
 //! the status bar (`chrome::status`), the panes on screen (`panes::shown`),
 //! the agents offered (`agents::templates`), the review and history
-//! (`dialogs`), the link and reconcile dialogs (`tracker_dialogs`), the
+//! (`review`), the link and reconcile dialogs (`tracker_dialogs`), the
 //! three stages (`feature_stage`, `checkouts::stage`, `code::stage`) and
 //! the note a new feature is written as (`capture_note`), a repository's
 //! past agent sessions (`agents::sessions`) and the dialog listing them
@@ -53,7 +53,7 @@ use crate::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts::stage::{CheckoutsStage, Opened};
 use crate::panes::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
 use crate::layout::docks::{Dock, DockGesture, Docks, Panel, Place};
-use crate::dialogs::Dialogs;
+use crate::review::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keys::keymap::{self, Action};

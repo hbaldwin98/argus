@@ -2,16 +2,21 @@
 //! open or parked, the daemon's answers and refusals routed to the one
 //! that asked whether open or parked, the side and layout the next
 //! review opens on, and what the page was last sent of each. What each
-//! dialog holds and draws is `review`'s and `history`'s; the history
+//! dialog holds and draws is `dialog`'s and `history`'s; the history
 //! gives way to the review of a commit chosen in it.
+
+pub mod comment_box;
+pub mod dialog;
+pub mod file_jump;
+pub mod history;
 
 use argus_protocol::review::session::Answered;
 use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, RequestRefusal, ServerMsg};
 
-use crate::history::{HistoryDialog, Then};
+use crate::review::history::{HistoryDialog, Then};
 use crate::keys::keymap::Action;
 use crate::connection::page::{Event, HistoryPage, ReviewClick, ReviewJumpGesture, ReviewPage};
-use crate::review::ReviewDialog;
+use crate::review::dialog::ReviewDialog;
 use crate::connection::sent::Sent;
 use crate::settings::remembered::ReviewLayout;
 

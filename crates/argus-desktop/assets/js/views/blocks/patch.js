@@ -1,10 +1,10 @@
 // A diff view block: a unified diff drawn as the review viewer draws one.
 // The agent's text is read here, into the review viewer's own rows, so a
-// diff looks the same wherever it is and `review.ts` stays the one place
-// that knows how a line is laid out.
+// diff looks the same wherever it is and `review/dialog.ts` stays the one
+// place that knows how a line is laid out.
 import { code } from './code.js';
 import { el } from '../../kit/dom.js';
-import { diffRow } from '../../review.js';
+import { diffRow } from '../../review/dialog.js';
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 function side(kind, marker, text, old, now) {
     return { old, new: now, marker, kind, parts: [[text, '']] };

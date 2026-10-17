@@ -3,7 +3,7 @@
 // file defines. Rust holds the files, the cursor, the fields and the search
 // (`src/code/stage.rs`); the page draws them and says what was clicked or
 // typed.
-import { commentBox, settleDraft } from '../comment_box.js';
+import { commentBox, settleDraft } from '../review/comment_box.js';
 import { $, el, ghosts, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';

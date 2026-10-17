@@ -1,11 +1,12 @@
 // The comment box under picked lines, the review's and the Code stage's
 // alike: what the lines are, the agent it goes to, and the words typed,
 // kept here across redraws. Rust says whether it is open and which agent
-// is lit (`src/comment_box.rs`); the page says what was typed, chosen or sent.
+// is lit (`src/review/comment_box.rs`); the page says what was typed,
+// chosen or sent.
 
-import type { CommentPage } from './bindings/CommentPage';
-import { el } from './kit/dom.js';
-import { actionFor } from './keys/keymap.js';
+import type { CommentPage } from '../bindings/CommentPage';
+import { el } from '../kit/dom.js';
+import { actionFor } from '../keys/keymap.js';
 
 export type CommentBoxId = 'review-comment' | 'code-comment';
 

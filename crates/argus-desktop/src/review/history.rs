@@ -13,7 +13,7 @@ use argus_protocol::review::view::ReviewView;
 use argus_protocol::{CheckoutId, CheckoutInfo, ClientMsg, CommitFile, CommitInfo, Review, ReviewBase};
 
 use crate::connection::page::{HistoryPage, HistoryRowView};
-use crate::review::{file_rows, files_of};
+use crate::review::dialog::{file_rows, files_of};
 
 pub struct HistoryDialog {
     checkout: CheckoutId,
