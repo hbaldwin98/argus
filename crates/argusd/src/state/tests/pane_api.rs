@@ -2,7 +2,7 @@
 //! agent may and may not change, and how a pane is sized and restarted.
 
 use super::*;
-use argus_protocol::hook;
+use argus_protocol::hook::call;
 // --- the pane API ------------------------------------------------------
 
 #[test]
@@ -1154,8 +1154,8 @@ async fn a_body_past_its_endpoints_bound_is_refused_with_the_bound() {
 
 /// Posts `body` as `C` writes it, and reads a 200's answer as `C`'s reply.
 /// Never a 400: the arm reads the body the declaration says it is.
-async fn answered<C: hook::call::Call>(d: &Arc<Daemon>, pane: PaneId, body: C::Body) -> u16 {
-    use hook::call::Form;
+async fn answered<C: call::Call>(d: &Arc<Daemon>, pane: PaneId, body: C::Body) -> u16 {
+    use call::Form;
 
     let body = C::BodyForm::write(&body).unwrap();
     let response = post_agent_hook(d, pane, C::ENDPOINT, std::str::from_utf8(&body).unwrap()).await;
@@ -1187,21 +1187,21 @@ async fn every_declared_call_is_answered_at_its_endpoint() {
 
     let decide = DecisionWrite { chose: "one channel".into(), ..Default::default() };
     let statuses = [
-        answered::<hook::call::Checkout>(&d, pane, "/no/such/directory".into()).await,
-        answered::<hook::call::Comments>(&d, pane, ()).await,
-        answered::<hook::call::Decisions>(&d, pane, ()).await,
-        answered::<hook::call::Decide>(&d, pane, decide).await,
-        answered::<hook::call::ChangeDecision>(&d, pane, DecisionChange::Withdraw { id: 1 }).await,
-        answered::<hook::call::Features>(&d, pane, ()).await,
-        answered::<hook::call::ChangeFeature>(&d, pane, FeatureAction::Select { slug }).await,
-        answered::<hook::call::Tasks>(&d, pane, TaskAction::List).await,
-        answered::<hook::call::Diagrams>(&d, pane, DiagramAction::List).await,
-        answered::<hook::call::TrackerMap>(&d, pane, String::new()).await,
-        answered::<hook::call::Reconcile>(&d, pane, ReconcileChange::Read).await,
-        answered::<hook::call::Telemetry>(&d, pane, AgentTelemetry::default()).await,
-        answered::<hook::call::ChangeView>(&d, pane, ViewChange::Close { id: "none".into() }).await,
-        answered::<hook::call::SavedView>(&d, pane, SavedViewChange::List).await,
-        answered::<hook::call::Launch>(
+        answered::<call::Checkout>(&d, pane, "/no/such/directory".into()).await,
+        answered::<call::Comments>(&d, pane, ()).await,
+        answered::<call::Decisions>(&d, pane, ()).await,
+        answered::<call::Decide>(&d, pane, decide).await,
+        answered::<call::ChangeDecision>(&d, pane, DecisionChange::Withdraw { id: 1 }).await,
+        answered::<call::Features>(&d, pane, ()).await,
+        answered::<call::ChangeFeature>(&d, pane, FeatureAction::Select { slug }).await,
+        answered::<call::Tasks>(&d, pane, TaskAction::List).await,
+        answered::<call::Diagrams>(&d, pane, DiagramAction::List).await,
+        answered::<call::TrackerMap>(&d, pane, String::new()).await,
+        answered::<call::Reconcile>(&d, pane, ReconcileChange::Read).await,
+        answered::<call::Telemetry>(&d, pane, AgentTelemetry::default()).await,
+        answered::<call::ChangeView>(&d, pane, ViewChange::Close { id: "none".into() }).await,
+        answered::<call::SavedView>(&d, pane, SavedViewChange::List).await,
+        answered::<call::Launch>(
             &d,
             pane,
             AgentLaunch { template: Some("no-such-template".into()), ..Default::default() },

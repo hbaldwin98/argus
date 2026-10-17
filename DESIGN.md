@@ -421,8 +421,8 @@ to the type or its locking.
 | `connection` | one client connection: which task each message runs on, and the topics it has joined |
 | `connection/topics` | what a connection is pushed: each topic's first send, what each change sends, and how a client that fell behind is brought level |
 | `connection/dispatch` | what each client message does, and the one way its answer or refusal reaches the client that asked |
-| `hook_server` | the loopback pane API: which daemon call each agent's or extension's request reaches, behind its token |
-| `hook_server/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
+| `hook` | the loopback pane API: which daemon call each agent's or extension's request reaches, behind its token |
+| `hook/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
 | `review`, `review/queue` | a review's diff, and when it is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
 | `review/diff` | a review's stable snapshot and its diff, and a commit's |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |

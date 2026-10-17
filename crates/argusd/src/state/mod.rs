@@ -74,7 +74,7 @@ pub use views::ViewNews;
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;
-use crate::hook_server::{gen_token, valid_session_id};
+use crate::hook::{gen_token, valid_session_id};
 use session::{agent_args, first_message, nothing_to_resume, Recorded, Resumed};
 use tree::*;
 
@@ -562,7 +562,7 @@ impl Daemon {
     /// before the daemon's client socket starts accepting — no window where
     /// a client could spawn an agent whose hooks point nowhere.
     pub fn start_hook_server(self: &Arc<Self>) -> anyhow::Result<()> {
-        let port = crate::hook_server::start(self.clone())?;
+        let port = crate::hook::start(self.clone())?;
         self.hook_port.store(port, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }

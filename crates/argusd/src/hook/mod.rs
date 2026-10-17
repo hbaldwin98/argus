@@ -17,7 +17,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::hook::{self, call::{Call, Form, Json}};
+use argus_protocol::hook::call::{self, Call, Form, Json};
 use argus_protocol::{parse_request_target, Endpoint, PaneId, MAX_HOOK_BODY};
 
 use crate::state::{Daemon, Filing};
@@ -173,7 +173,7 @@ async fn handle_hook_request(
                 );
                 Response::empty(200, "OK")
             }
-            Some((pane, Endpoint::Checkout)) => match read::<hook::call::Checkout>(&body) {
+            Some((pane, Endpoint::Checkout)) => match read::<call::Checkout>(&body) {
                 Ok(directory) => {
                     let destination = PathBuf::from(directory.trim());
                     let daemon = daemon.clone();
@@ -183,7 +183,7 @@ async fn handle_hook_request(
                     })
                     .await
                     .unwrap_or_else(|error| Err(error.into()));
-                    reply::<hook::call::Checkout>(moved)
+                    reply::<call::Checkout>(moved)
                 }
                 Err(refusal) => refusal,
             },
@@ -192,47 +192,47 @@ async fn handle_hook_request(
                 Response::empty(200, "OK")
             }
             Some((pane, Endpoint::Comments)) => {
-                reply::<hook::call::Comments>(daemon.review_comments_for_agent(pane))
+                reply::<call::Comments>(daemon.review_comments_for_agent(pane))
             }
             Some((pane, Endpoint::Decisions)) => {
-                reply::<hook::call::Decisions>(daemon.decisions_for_agent(pane, filing))
+                reply::<call::Decisions>(daemon.decisions_for_agent(pane, filing))
             }
-            Some((pane, Endpoint::Decide)) => answer::<hook::call::Decide>(&body, |write| {
+            Some((pane, Endpoint::Decide)) => answer::<call::Decide>(&body, |write| {
                 daemon.record_agent_decision(pane, reporter.as_deref(), write, filing)
             }),
-            Some((pane, Endpoint::DecisionChange)) => answer::<hook::call::ChangeDecision>(&body, |change| {
+            Some((pane, Endpoint::DecisionChange)) => answer::<call::ChangeDecision>(&body, |change| {
                 daemon.change_decision_for_agent(pane, change, filing)
             }),
             Some((pane, Endpoint::Features)) => {
-                reply::<hook::call::Features>(daemon.feature_board_for_agent(pane, filing))
+                reply::<call::Features>(daemon.feature_board_for_agent(pane, filing))
             }
-            Some((pane, Endpoint::Feature)) => answer::<hook::call::ChangeFeature>(&body, |action| {
+            Some((pane, Endpoint::Feature)) => answer::<call::ChangeFeature>(&body, |action| {
                 daemon.feature_action_for_agent(pane, reporter.as_deref(), action, filing)
             }),
-            Some((pane, Endpoint::Telemetry)) => answer::<hook::call::Telemetry>(&body, |report| {
+            Some((pane, Endpoint::Telemetry)) => answer::<call::Telemetry>(&body, |report| {
                 daemon.report_pane_telemetry(pane, reporter.as_deref(), report);
                 Ok(())
             }),
-            Some((pane, Endpoint::Tasks)) => answer::<hook::call::Tasks>(&body, |action| {
+            Some((pane, Endpoint::Tasks)) => answer::<call::Tasks>(&body, |action| {
                 daemon.part_action_for_agent(pane, reporter.as_deref(), action, filing)
             }),
-            Some((pane, Endpoint::Diagrams)) => answer::<hook::call::Diagrams>(&body, |action| {
+            Some((pane, Endpoint::Diagrams)) => answer::<call::Diagrams>(&body, |action| {
                 daemon.part_action_for_agent(pane, reporter.as_deref(), action, filing)
             }),
-            Some((pane, Endpoint::Reconcile)) => answer::<hook::call::Reconcile>(&body, |change| {
+            Some((pane, Endpoint::Reconcile)) => answer::<call::Reconcile>(&body, |change| {
                 daemon.reconcile_for_agent(pane, change, filing)
             }),
-            Some((pane, Endpoint::TrackerMap)) => answer::<hook::call::TrackerMap>(&body, |draft| {
+            Some((pane, Endpoint::TrackerMap)) => answer::<call::TrackerMap>(&body, |draft| {
                 daemon.tracker_map_for_agent(pane, &draft, filing.scope)
             }),
             Some((pane, Endpoint::View)) => {
-                answer::<hook::call::ChangeView>(&body, |change| daemon.change_view_for_agent(pane, change))
+                answer::<call::ChangeView>(&body, |change| daemon.change_view_for_agent(pane, change))
             }
             Some((pane, Endpoint::SavedView)) => {
-                answer::<hook::call::SavedView>(&body, |change| daemon.saved_view_for_agent(pane, change))
+                answer::<call::SavedView>(&body, |change| daemon.saved_view_for_agent(pane, change))
             }
-            Some((pane, Endpoint::Agent)) => match read::<hook::call::Launch>(&body) {
-                Ok(launch) => reply::<hook::call::Launch>(daemon.launch_agent_for_agent(pane, launch).await),
+            Some((pane, Endpoint::Agent)) => match read::<call::Launch>(&body) {
+                Ok(launch) => reply::<call::Launch>(daemon.launch_agent_for_agent(pane, launch).await),
                 Err(refusal) => refusal,
             },
             _ => Response::empty(200, "OK"),

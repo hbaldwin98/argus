@@ -6,7 +6,7 @@ mod config;
 mod connection;
 mod git;
 mod harness;
-mod hook_server;
+mod hook;
 mod pty;
 mod review;
 mod state;
