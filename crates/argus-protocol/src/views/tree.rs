@@ -7,8 +7,8 @@
 //! compile until it says here what it holds, and is then reached by every
 //! one of them.
 
-use crate::agent_view::{Block, FormField, RowItem, TreeNode, Value};
-use crate::view_press::ViewAction;
+use crate::views::agent_view::{Block, FormField, RowItem, TreeNode, Value};
+use crate::views::press::ViewAction;
 
 /// Which list of blocks inside a container, named as the container holds it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -374,7 +374,7 @@ mod tests {
         assert!(grid.without_children().children().is_empty());
         assert_eq!(Block::Divider.without_children(), Block::Divider);
     }
-    use crate::agent_view::Tab;
+    use crate::views::agent_view::Tab;
 
     fn md(text: &str) -> Block {
         Block::Markdown { text: text.into() }

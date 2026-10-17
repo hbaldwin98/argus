@@ -9,8 +9,8 @@
 //! at all but filled in from the constants as it is printed, so they cannot
 //! drift from what the daemon enforces.
 
-use crate::agent_view::Tone;
-use crate::view_check::{MAX_TABLE_ROWS, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES};
+use crate::views::agent_view::Tone;
+use crate::views::check::{MAX_TABLE_ROWS, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES};
 use crate::ext_console::{MAX_CONSOLE_ARGS, MAX_CONSOLE_ARG_BYTES, MAX_CONSOLE_ENV};
 use crate::extension_keys::{KEPT, STAGE_KEYS};
 use crate::extensions::{

@@ -7,15 +7,15 @@
 //! colour, size or font, and no markup crosses: every string is drawn as
 //! text, Markdown included. A view is held in the daemon's memory only,
 //! never in the store, so nothing read from a ticket outlives the agent's
-//! next look at it. The limits a view keeps are in `view_check`, what a
-//! press of its buttons carries in `view_press`, and what the agent is typed
-//! of a press or refresh in `view_requests`.
+//! next look at it. The limits a view keeps are in `views::check`, what a
+//! press of its buttons carries in `views::press`, and what the agent is
+//! typed of a press or refresh in `views::requests`.
 
 use serde::{Deserialize, Serialize};
 
 use crate::tree::ids::PaneId;
 use crate::tracker_links::TrackerLink;
-use crate::view_press::ViewAction;
+use crate::views::press::ViewAction;
 
 /// One view, as the agent writes it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -37,7 +37,7 @@ pub struct AgentView {
     #[serde(default)]
     pub feature: Option<i64>,
     /// Ask the agent to read the view again this often, in seconds, while
-    /// it is held; at least [`MIN_REFRESH_SECS`](crate::view_check::MIN_REFRESH_SECS).
+    /// it is held; at least [`MIN_REFRESH_SECS`](crate::views::check::MIN_REFRESH_SECS).
     #[serde(default)]
     pub refresh_every: Option<u32>,
     /// Buttons in the view's header, for what the whole view offers.
@@ -218,7 +218,7 @@ pub enum Block {
     /// Another saved view's blocks, drawn in place. A leaf: the embedded
     /// body is not copied into this view's JSON, so a client resolves `view`
     /// from the saved views it holds, guards a cycle, caps the depth it
-    /// follows at [`MAX_EMBED_DEPTH`](crate::saved_view::MAX_EMBED_DEPTH), and
+    /// follows at [`MAX_EMBED_DEPTH`](crate::views::saved::MAX_EMBED_DEPTH), and
     /// draws a line saying so where the view is missing or too deep. The
     /// saved view may not exist yet; it is drawn as missing until it does.
     Embed { view: String },

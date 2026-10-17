@@ -9,7 +9,6 @@
 
 pub mod adr;
 pub mod agent_comment;
-pub mod agent_view;
 pub mod agents;
 pub mod ago;
 pub mod artifacts;
@@ -40,7 +39,6 @@ pub mod request_refusal;
 pub mod review;
 pub mod review_session;
 pub mod review_view;
-pub mod saved_view;
 pub mod ssh_bridge;
 pub mod ssh_hosts;
 pub mod standing;
@@ -48,36 +46,31 @@ pub mod tasks;
 pub mod tracker_links;
 pub mod transport;
 pub mod tree;
-pub mod view_check;
-pub mod view_links;
-pub mod view_patch;
-pub mod view_press;
-pub mod view_requests;
-pub mod view_tree;
+pub mod views;
 
 pub use ago::ago;
 pub use agents::launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
-pub use agent_view::{
+pub use views::agent_view::{
     AgentView, Block, BoardCard, BoardColumn, ChartShape, CheckItem, Chip, Column, Field, FormField, FormInput,
     GraphDirection, GraphEdge, GraphNode, GridMin, Item, LogLevel, LogLine, MatrixCell, RowAlign, RowItem,
     RowSelect, Series, ShownView, Stat, Tab, TimelineEvent, Tone, TreeNode, Value, ViewChange,
 };
 pub use checkout_path::is_checkout_relative;
-pub use view_check::{
+pub use views::check::{
     is_web_url, MAX_BLOCK_DEPTH, MAX_CHART_POINTS, MAX_CHART_SERIES, MAX_FORM_FIELDS, MAX_GRAPH_EDGES,
     MAX_GRAPH_NODES, MAX_LOG_LINES, MAX_TABLE_ROWS, MAX_TREE_DEPTH, MAX_TREE_NODES, MAX_TREND_POINTS,
     MAX_VIEWS_PER_PANE, MAX_VIEW_ACTIONS, MAX_VIEW_BYTES, MAX_VIEW_ID_BYTES, MAX_VIEW_NUMBER,
     MAX_VIEW_TITLE_BYTES, MIN_REFRESH_SECS,
 };
-pub use view_press::{Answer, AnswerValue, NotOffered, ViewAction, ViewPress, MAX_ANSWER_BYTES};
-pub use saved_view::{
+pub use views::press::{Answer, AnswerValue, NotOffered, ViewAction, ViewPress, MAX_ANSWER_BYTES};
+pub use views::saved::{
     FeatureRef, SavedView, SavedViewChange, SavedViewEntry, SavedViewRecord, SavedViewWrite, ViewScope,
     ViewSource, WriteScope, MAX_ATTACHED_FEATURES, MAX_EMBED_DEPTH, MAX_RECIPE_BYTES, MAX_SAVED_VIEWS,
     MAX_SAVED_VIEW_WRITE_BYTES, MAX_SOURCE_BYTES, MAX_VIEW_SOURCES,
 };
 pub use panes::keys::KeyboardMode;
-pub use view_tree::Slot;
-pub use view_links::linked_views;
+pub use views::tree::Slot;
+pub use views::links::linked_views;
 pub use artifacts::ArtifactScope;
 pub use board_follower::{BoardFollower, BoardScope, FeatureListing, Folding, Received};
 pub use panes::cell::{

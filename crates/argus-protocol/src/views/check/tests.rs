@@ -1,5 +1,5 @@
 use super::*;
-use crate::agent_view::{
+use crate::views::agent_view::{
     Column, Field, FormField, GraphEdge, GraphNode, MatrixCell, Series, Stat, Tab, Tone,
 };
 

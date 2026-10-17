@@ -14,10 +14,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent_view::AgentView;
+use crate::views::agent_view::AgentView;
 use crate::checkout_path::is_checkout_relative;
 use crate::tree::ids::RepositoryId;
-use crate::view_check::{is_web_url, MAX_VIEW_ID_BYTES};
+use crate::views::check::{is_web_url, MAX_VIEW_ID_BYTES};
 
 /// How a recipe is kept: the steps to build the view again, not a document.
 pub const MAX_RECIPE_BYTES: usize = 4096;
@@ -36,7 +36,7 @@ pub const MAX_SOURCE_BYTES: usize = 2048;
 /// The longest body a save may arrive in: a view at its bound, and room for
 /// a recipe and every source at theirs, with JSON's quoting on top, and the
 /// keys, kinds, scope and features around them.
-pub const MAX_SAVED_VIEW_WRITE_BYTES: usize = crate::view_check::MAX_VIEW_BYTES
+pub const MAX_SAVED_VIEW_WRITE_BYTES: usize = crate::views::check::MAX_VIEW_BYTES
     + 2 * (MAX_RECIPE_BYTES + MAX_VIEW_SOURCES * MAX_SOURCE_BYTES)
     + 4096;
 

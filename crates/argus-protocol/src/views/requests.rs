@@ -3,9 +3,9 @@
 //! control character in it, since it may be typed into a terminal where a
 //! newline sends it early and an escape does worse.
 
-use crate::agent_view::AgentView;
-use crate::saved_view::ViewSource;
-use crate::view_press::{AnswerValue, ViewAction, ViewPress};
+use crate::views::agent_view::AgentView;
+use crate::views::saved::ViewSource;
+use crate::views::press::{AnswerValue, ViewAction, ViewPress};
 
 /// Control characters made spaces.
 fn plain(text: &str) -> String {
@@ -110,7 +110,7 @@ pub fn refresh_saved(view: &AgentView, recipe: Option<&str>, sources: &[ViewSour
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view_press::Answer;
+    use crate::views::press::Answer;
 
     fn view(id: &str) -> AgentView {
         AgentView { id: id.into(), title: format!("title of {id}"), ..Default::default() }

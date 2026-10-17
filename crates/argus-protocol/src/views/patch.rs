@@ -2,8 +2,8 @@
 //! path an agent names the block by, in the grammar a refusal names blocks
 //! by, and the view with that block swapped.
 
-use crate::agent_view::{AgentView, Block};
-use crate::view_tree::Slot;
+use crate::views::agent_view::{AgentView, Block};
+use crate::views::tree::Slot;
 
 impl AgentView {
     /// The view with the block at `path` replaced by `block`, or what is
@@ -153,7 +153,7 @@ fn parse(path: &str) -> Result<(usize, Vec<(Slot, usize)>), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_view::Tab;
+    use crate::views::agent_view::Tab;
 
     fn md(text: &str) -> Block {
         Block::Markdown { text: text.into() }

@@ -367,15 +367,16 @@ live in this crate and a contract written twice drifts in silence.
 | `agents/memory` | the working memory an agent receives for one request |
 | `agents/sessions` | a repository's agent sessions as listed: the harness and id that resume each, its checkout or the removed worktree it ran in, title, times and turns, and the pane running it |
 | `agents/transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
-| `agent_view` | what a view an agent shows is made of — its blocks and values and the change an agent sends to show, patch or close one — as the desktop and the terminal client both draw it |
-| `view_check` | whether a view keeps its limits (sizes, its serialised size among them, depth, counts, bounded numbers, unique and printable ids, web links, checkout-relative paths, kinds this Argus knows), and where it does not, the path that names the fault |
-| `saved_view` | what a saved view is: its body, its scope, and the metadata an agent refreshes it from (recipe, sources, the commit it was built at, stale); what an agent writes to save one, the largest body that save may arrive in, and what it reads back |
-| `view_tree` | what each kind of block holds: the lists of blocks inside a container and the links, values and actions it holds itself, each by the step a refusal names it with, and each list as the desktop page names it |
-| `view_links` | which saved views a view links to, in the order it names them, reached through values, `opens` and embeds at any depth: the terminal's links list and the desktop's nesting of a linked view under the view that names it |
-| `view_press` | what a press of a view's action carries back, which of it the view offered, and whether it is relayed to the agent or refused in the person's words |
-| `view_requests` | what an agent is typed when the person acts on one of its views — a press, a refresh of a shown view, a refresh of a saved one — each on one line with no control character in it |
+| `views` | the views agents show and keep |
+| `views/agent_view` | what a view an agent shows is made of — its blocks and values and the change an agent sends to show, patch or close one — as the desktop and the terminal client both draw it |
+| `views/check` | whether a view keeps its limits (sizes, its serialised size among them, depth, counts, bounded numbers, unique and printable ids, web links, checkout-relative paths, kinds this Argus knows), and where it does not, the path that names the fault |
+| `views/saved` | what a saved view is: its body, its scope, and the metadata an agent refreshes it from (recipe, sources, the commit it was built at, stale); what an agent writes to save one, the largest body that save may arrive in, and what it reads back |
+| `views/tree` | what each kind of block holds: the lists of blocks inside a container and the links, values and actions it holds itself, each by the step a refusal names it with, and each list as the desktop page names it |
+| `views/links` | which saved views a view links to, in the order it names them, reached through values, `opens` and embeds at any depth: the terminal's links list and the desktop's nesting of a linked view under the view that names it |
+| `views/press` | what a press of a view's action carries back, which of it the view offered, and whether it is relayed to the agent or refused in the person's words |
+| `views/requests` | what an agent is typed when the person acts on one of its views — a press, a refresh of a shown view, a refresh of a saved one — each on one line with no control character in it |
+| `views/patch` | how a patch replaces one block of a held view: the block path an agent names it by, and the view with that block swapped |
 | `checkout_path` | whether a path an agent wrote stays inside the checkout it is read against |
-| `view_patch` | how a patch replaces one block of a held view: the block path an agent names it by, and the view with that block swapped |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
 behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
@@ -2353,7 +2354,7 @@ draws the held view's blocks in a frame with its title and an Open link, a cycle
 missing view being a line saying so, as the terminal draws them. A press inside a saved view goes
 as `PressSavedView`, and a reference in one is read against the checkout on screen. The sidebar
 lists them under Views, grouped by scope, filtered to those about the chosen repository and open
-feature or all, a stale one marked. A view another of its scope links to (`view_links`) is listed
+feature or all, a stale one marked. A view another of its scope links to (`views::links`) is listed
 under the first that does, folded, so the views saved to be reached from one do not crowd its group;
 views that only reach each other are cut at the first. The window says which (`PageSaved::under`)
 and the page draws the folds. A saved panel's `✕`, its dock tab's `✕` and a middle click on either
@@ -2373,9 +2374,9 @@ form's submit. Argus runs nothing for one: `ClientMsg::PressView` (under `VIEW_A
 to the agent as one line, as a refresh is, naming the action, the selected row keys and a form's
 answers as JSON. The daemon relays it only when the held view offers that action id, and keeps only
 the row keys of a table that carries it and the answers of the form it submits, so the agent hears
-nothing its own view could not have produced. Row keys and answers count once, an answer must be of the kind its field takes and inside its options and range, and text is cut at 4 KiB (`view_press::relay`). A press that cannot be relayed — the view is gone, it no longer offers the action, or its agent is not running — is answered to the client that pressed with `ServerMsg::ViewPressFailed`, so the button does not wait on an agent that was never asked. The pressed button waits until the agent shows the
+nothing its own view could not have produced. Row keys and answers count once, an answer must be of the kind its field takes and inside its options and range, and text is cut at 4 KiB (`views::press::relay`). A press that cannot be relayed — the view is gone, it no longer offers the action, or its agent is not running — is answered to the client that pressed with `ServerMsg::ViewPressFailed`, so the button does not wait on an agent that was never asked. The pressed button waits until the agent shows the
 view again. `ViewChange::Patch` (`argus-hook view patch <id> <path> --stdin`) replaces one block
-by the path refusals name blocks by (`view_patch`), and the daemon shows the whole view anew, so a
+by the path refusals name blocks by (`views::patch`), and the daemon shows the whole view anew, so a
 progress bar or a log tail moves without the view being sent again. A view's `refresh_every` (at
 least a minute) has the daemon ask its agent for a refresh that often while the view is held; showing
 it again keeps the timer while the interval is unchanged and restarts it when it changed, a patch never touches it, and closing the view or losing its pane stops it. A view's `feature` offers

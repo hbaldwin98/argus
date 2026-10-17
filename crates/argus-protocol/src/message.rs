@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent_view::ShownView;
+use crate::views::agent_view::ShownView;
 use crate::panes::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::code::{CodeFile, CodeMatches, CodeTree, CodeVersion, SearchOptions};
 use crate::panes::damage::{CellRun, Scroll};
@@ -508,7 +508,7 @@ pub enum ClientMsg {
     /// The person pressed one of a view's actions. The agent is told, as a
     /// refresh is asked of it, and the view stays as it is until it shows
     /// it again.
-    PressView { pane: PaneId, press: crate::view_press::ViewPress },
+    PressView { pane: PaneId, press: crate::views::press::ViewPress },
     /// Start being sent the saved views: every one now, as one
     /// [`ServerMsg::SavedViews`], and each change after. Only to a daemon
     /// that listed `SAVED_VIEWS`.
@@ -525,7 +525,7 @@ pub enum ClientMsg {
     /// A press of an action in a saved view (`id`, or one embedded in it),
     /// relayed to the agent that last saved it as [`ClientMsg::PressView`]
     /// is, against what the view offers.
-    PressSavedView { id: String, press: crate::view_press::ViewPress },
+    PressSavedView { id: String, press: crate::views::press::ViewPress },
     /// An action taken in an extension's view, on `row` unless the action
     /// is view-wide. Forwarded to the extension as it stands; the view
     /// changes only when the extension publishes it again. Only to a daemon
@@ -857,10 +857,10 @@ pub enum ServerMsg {
     ViewPressFailed { pane: PaneId, view: String, action: String, reason: String },
     /// Every saved view, whole, to a client that sent
     /// [`ClientMsg::WatchSavedViews`]. Replaces what it held.
-    SavedViews(Vec<crate::saved_view::SavedView>),
+    SavedViews(Vec<crate::views::saved::SavedView>),
     /// A saved view that was saved, changed or marked stale; replaces the
     /// one with its id.
-    SavedViewChanged(Box<crate::saved_view::SavedView>),
+    SavedViewChanged(Box<crate::views::saved::SavedView>),
     /// A saved view that was deleted.
     SavedViewRemoved { id: String },
     /// A request about a saved view that was refused: it is gone, or its

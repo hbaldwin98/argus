@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent_view::{Chip, Column, Value};
-use crate::view_check::{self, MAX_TABLE_ROWS, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES};
+use crate::views::agent_view::{Chip, Column, Value};
+use crate::views::check::{value_ok, MAX_TABLE_ROWS, MAX_VIEW_BYTES, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES};
 use crate::tree::focus::Focus;
 use crate::tree::ids::{CheckoutId, PaneId, RepositoryId};
 
@@ -25,7 +25,7 @@ pub const MAX_EXTENSION_NAME: usize = 32;
 /// hold. A bound rather than trust: the daemon forwards every one to every
 /// client, and a runaway loop in an extension should cost it its view rather
 /// than every client its memory. A view's rows are bounded as an agent
-/// view's table is (`view_check::MAX_TABLE_ROWS`), for the same reason.
+/// view's table is (`views::check::MAX_TABLE_ROWS`), for the same reason.
 pub const MAX_VIEWS: usize = 16;
 pub const MAX_COMMANDS: usize = 64;
 pub const MAX_ACTIONS: usize = 32;
@@ -34,7 +34,7 @@ pub const MAX_ITEMS: usize = 500;
 /// The longest request an extension may send. Room for a few views each as
 /// large as an agent's may be; past it the extension is dumping, not
 /// choosing what to show.
-pub const MAX_EXTENSION_BODY: usize = 4 * view_check::MAX_VIEW_BYTES;
+pub const MAX_EXTENSION_BODY: usize = 4 * MAX_VIEW_BYTES;
 
 /// The longest notice, in characters: the status bar has one line for it,
 /// so a longer one is cut rather than refused.
@@ -155,7 +155,7 @@ impl ExtView {
                 ));
             }
             for (c, cell) in row.cells.iter().enumerate() {
-                view_check::value_ok(cell, &format!("rows[{r}][{c}]"))?;
+                value_ok(cell, &format!("rows[{r}][{c}]"))?;
             }
         }
         if self.actions.len() > MAX_ACTIONS {
@@ -613,7 +613,7 @@ mod tests {
         let view: ExtView = serde_json::from_str(json).unwrap();
         let view = view.checked().unwrap();
         assert_eq!(view.scope, ExtScope::Repository(RepositoryId(4)));
-        assert_eq!(view.rows[0].status.as_ref().unwrap().tone, crate::agent_view::Tone::Good);
+        assert_eq!(view.rows[0].status.as_ref().unwrap().tone, crate::views::agent_view::Tone::Good);
         assert!(view.columns[1].numeric);
         assert!(!view.actions[0].view_wide);
         assert_eq!(view.extension, "", "the daemon names it");

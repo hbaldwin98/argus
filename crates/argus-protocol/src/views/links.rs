@@ -6,8 +6,8 @@
 //! or on an embed. The walk reaches every one of them, including the kinds
 //! the terminal leaves to the desktop, so a link there is still offered there.
 
-use crate::agent_view::{Block, Value};
-use crate::view_tree::{leaves_within, Leaf};
+use crate::views::agent_view::{Block, Value};
+use crate::views::tree::{leaves_within, Leaf};
 
 /// The ids a view links to, each once, in the order the view reads.
 pub fn linked_views(blocks: &[Block]) -> Vec<String> {

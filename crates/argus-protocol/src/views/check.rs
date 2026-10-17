@@ -11,10 +11,10 @@
 
 use std::collections::HashSet;
 
-use crate::agent_view::{AgentView, Block, FormInput, RowItem, RowSelect, TreeNode, Value};
+use crate::views::agent_view::{AgentView, Block, FormInput, RowItem, RowSelect, TreeNode, Value};
 use crate::checkout_path::is_checkout_relative;
-use crate::view_press::ViewAction;
-use crate::view_tree::Leaf;
+use crate::views::press::ViewAction;
+use crate::views::tree::Leaf;
 
 /// A view's JSON, as the agent sends it. Room for a large ticket with its
 /// comments; past it the agent is dumping, not choosing.
@@ -128,7 +128,7 @@ fn block_ok(block: &Block, path: &str, depth: usize, actions: &mut Actions) -> R
 }
 
 /// What a block holds itself, not the blocks inside it: its own shape, then
-/// each link, value and action in it, in the order `view_tree` reads them.
+/// each link, value and action in it, in the order `views::tree` reads them.
 fn own_ok(block: &Block, path: &str, actions: &mut Actions) -> Result<(), String> {
     shape_ok(block, path)?;
     for (at, leaf) in block.leaves() {

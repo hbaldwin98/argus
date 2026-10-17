@@ -9,8 +9,8 @@ use serde::Serialize;
 use serde_json::Value as Json;
 
 use super::*;
-use crate::agent_view::Value;
-use crate::view_check::value_ok;
+use crate::views::agent_view::Value;
+use crate::views::check::value_ok;
 use crate::extension_keys::{action_key_refusal, command_key_refusal};
 use crate::extensions::{
     CommandScope, ExtAbout, ExtAnswer, ExtCommand, ExtDialog, ExtDialogKind, ExtDialogRaised, ExtEvent, ExtPane,

@@ -23,8 +23,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::view_press::relay;
-use argus_protocol::view_requests;
+use argus_protocol::views::press::relay;
+use argus_protocol::views::requests::refresh_saved;
 use argus_protocol::{
     ArtifactScope, FeatureRef, PaneId, RepositoryId, SavedView, SavedViewChange, SavedViewEntry,
     SavedViewRecord, SavedViewWrite, ViewPress, ViewScope, WriteScope,
@@ -386,7 +386,7 @@ impl Daemon {
     /// not be asked is a sentence for the person.
     pub fn refresh_saved_view(&self, id: &str) -> Result<(), String> {
         let (pane, text) = self.relay_target(id, |stored| {
-            view_requests::refresh_saved(&stored.view, stored.recipe.as_deref(), &stored.sources)
+            refresh_saved(&stored.view, stored.recipe.as_deref(), &stored.sources)
         })?;
         if !self.notify(pane, &text) {
             return Err("The agent that saved it is not running, so it could not be asked.".into());

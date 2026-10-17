@@ -4,15 +4,15 @@
 //! A client could send anything in a [`ViewPress`], and what reaches the
 //! agent is typed into its terminal, so [`relay`] reads the press against
 //! the view it claims to come from and keeps only what that view could have
-//! produced, or refuses it. The words typed are `view_requests`'s.
+//! produced, or refuses it. The words typed are `views::requests`'s.
 
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent_view::{AgentView, FormField, FormInput, Tone};
-use crate::view_check::MAX_VIEW_NUMBER;
-use crate::view_tree::{leaves_within, ActionPlace, Leaf};
+use crate::views::agent_view::{AgentView, FormField, FormInput, Tone};
+use crate::views::check::MAX_VIEW_NUMBER;
+use crate::views::tree::{leaves_within, ActionPlace, Leaf};
 
 /// The longest text one form answer carries; past it the answer is cut.
 /// A form field is a line or a note, not a document.
@@ -87,7 +87,7 @@ impl std::fmt::Display for NotOffered {
 /// view said.
 pub fn relay(view: &AgentView, press: ViewPress) -> Result<String, NotOffered> {
     let (action, place) = find(view, &press.action).ok_or(NotOffered)?;
-    Ok(crate::view_requests::press(view, action, &press.kept(place)))
+    Ok(crate::views::requests::press(view, action, &press.kept(place)))
 }
 
 /// The header's actions first, then the first the blocks offer in reading order.
@@ -170,7 +170,7 @@ fn capped(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_view::{Block, Column, RowItem, RowSelect, Value};
+    use crate::views::agent_view::{Block, Column, RowItem, RowSelect, Value};
 
     fn action(id: &str) -> ViewAction {
         ViewAction { id: id.into(), label: format!("label {id}"), tone: Default::default(), confirm: None }

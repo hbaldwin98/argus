@@ -9,8 +9,8 @@
 //! is made, and told to the watchers, under the one lock, so a watcher
 //! sees each change in the order it was made.
 
-use argus_protocol::view_press::relay;
-use argus_protocol::view_requests;
+use argus_protocol::views::press::relay;
+use argus_protocol::views::requests::refresh_shown;
 use argus_protocol::{
     AgentView, PaneId, ShownView, ViewChange, ViewPress, MAX_VIEWS_PER_PANE,
 };
@@ -176,7 +176,7 @@ impl Daemon {
     /// answer leaves the person looking at what was true when it was read.
     /// A view that is not held is ignored, and `false` says so.
     pub fn refresh_view(&self, pane: PaneId, id: &str) -> bool {
-        let line = self.agent_views.lock().unwrap().get(pane, id).map(|s| view_requests::refresh_shown(&s.view));
+        let line = self.agent_views.lock().unwrap().get(pane, id).map(|s| refresh_shown(&s.view));
         let Some(line) = line else { return false };
         self.notify(pane, &line);
         true
