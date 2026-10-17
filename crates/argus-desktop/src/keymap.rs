@@ -1192,12 +1192,28 @@ mod tests {
     /// hands a pane's keys to Rust whole, which runs them from this table.
     #[test]
     fn the_page_reads_keys_only_through_the_keymap() {
+        use std::path::{Path, PathBuf};
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/page/src");
+        // Every folder but `bindings`, whose types are Rust's, each module
+        // named by its path under `src` with `/` on every system.
+        fn walk(dir: &Path, src: &Path, out: &mut Vec<(String, PathBuf)>) {
+            for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if entry.file_name() != "bindings" {
+                        walk(&path, src, out);
+                    }
+                } else if path.extension().is_some_and(|e| e == "ts") {
+                    let name = path.strip_prefix(src).unwrap().to_string_lossy().replace('\\', "/");
+                    out.push((name, path));
+                }
+            }
+        }
+        let mut modules = Vec::new();
+        walk(Path::new(dir), Path::new(dir), &mut modules);
         let mut read = 0;
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-            if !name.ends_with(".ts") || name == "keymap.ts" || name == "input.ts" {
+        for (name, path) in modules {
+            if name == "keymap.ts" || name == "input.ts" {
                 continue;
             }
             read += 1;

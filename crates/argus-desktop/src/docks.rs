@@ -970,16 +970,29 @@ mod tests {
     /// compare one with a fixed name either.
     #[test]
     fn the_page_never_reads_what_a_panel_can_do_from_its_name() {
+        use std::path::{Path, PathBuf};
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/page/src");
         let prefixes = ["'saved:", "\"saved:", "`saved:", "'extension:", "\"extension:", "`extension:"];
         let names = ["=== 'console'", "!== 'console'", "=== 'views'", "!== 'views'"];
-        let mut read = 0;
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-            if !name.ends_with(".ts") {
-                continue;
+        // Every folder but `bindings`, whose types are Rust's, each module
+        // named by its path under `src` with `/` on every system.
+        fn walk(dir: &Path, src: &Path, out: &mut Vec<(String, PathBuf)>) {
+            for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if entry.file_name() != "bindings" {
+                        walk(&path, src, out);
+                    }
+                } else if path.extension().is_some_and(|e| e == "ts") {
+                    let name = path.strip_prefix(src).unwrap().to_string_lossy().replace('\\', "/");
+                    out.push((name, path));
+                }
             }
+        }
+        let mut modules = Vec::new();
+        walk(Path::new(dir), Path::new(dir), &mut modules);
+        let mut read = 0;
+        for (name, path) in modules {
             read += 1;
             let every_panel = ["docks.ts", "drag.ts", "panels.ts"].contains(&name.as_str());
             let source = std::fs::read_to_string(&path).unwrap();
