@@ -409,15 +409,15 @@ to the type or its locking.
 | `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, what one session said, and reopening one by its id |
 | `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
 | `state/tree` | finding your way around the tree |
-| `state/features` | which feature a checkout is on, and the one apply a change to a feature takes, with the board's address and who asked as parameters |
-| `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a feature board's rows: how a task or a diagram is stored, a decision added, changed and read, and the tracker map written or drafted — each change one apply, whoever asks |
-| `state/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, side by side in one apply, and what the agent is told at each turn |
+| `state/board`, `state/board/features` | a feature board and who may change it; which feature a checkout is on, and the one apply a change to a feature takes, with the board's address and who asked as parameters |
+| `state/board/tasks`, `state/board/decisions`, `state/board/diagrams`, `state/board/tracker_map` | a feature board's rows: how a task or a diagram is stored, a decision added, changed and read, and the tracker map written or drafted — each change one apply, whoever asks |
+| `state/board/reconcile` | a feature's reconcile with its tickets: who may ask, propose, tick and report, side by side in one apply, and what the agent is told at each turn |
+| `state/board/parts` | which feature a task or diagram request lands in, which rows it may touch, and which lists its change pushes |
+| `state/board/address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
+| `state/board/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `state/views` | which views agents have shown, per pane, and which go when |
 | `state/view_timers` | which views are being asked to refresh, and the task that asks |
 | `state/saved_views` | the views agents kept: saving, marking stale, deleting, refreshing and pressing them, which of them an agent may reach, what each client is told as the rows or the tree change, and the staleness read off the tree |
-| `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and which lists its change pushes |
-| `state/board_address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
-| `state/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `connection` | one client connection: which task each message runs on, and the topics it has joined |
 | `connection/topics` | what a connection is pushed: each topic's first send, what each change sends, and how a client that fell behind is brought level |
 | `connection/dispatch` | what each client message does, and the one way its answer or refusal reaches the client that asked |
@@ -1976,7 +1976,7 @@ There is no policy flag on these writes: the board exists for agents to write, n
 and attributes every one, so there is nothing for a gate to protect.
 
 A feature changes through one vocabulary, `FeatureAction`: the helper posts it to the pane API and
-the view sends it in `ClientMsg::Feature`, and both reach one apply path in `state/features` that
+the view sends it in `ClientMsg::Feature`, and both reach one apply path in `state/board/features` that
 takes who asked as a parameter. What differs by who asked is in that one match, side by side: an
 agent's `open` records the checkout and branch it was cut on and points that checkout at it, where
 a person's records neither; `select` and `note` are about an agent's checkout and refused to a
@@ -1984,16 +1984,16 @@ person; an agent's `done` and `reopen` are logged as the agent's, with its sessi
 detail, which is the person's to give; an agent's `drop` is refused while anything is filed under
 the feature; and transfers and captured notes are the view's.
 
-Every other change to a board is built the same way. A task or a diagram (`state/board_parts`), a
-decision added or changed (`state/decisions`), the tracker map (`state/tracker_map`) and a turn of a
-reconcile (`state/reconcile`) each have one apply, taking the board's address and, where a rule
-depends on it, who asked (`state/asker`); the rules that differ by who asked are arms of its match.
-Changing a decision has no such rule, so its apply takes no asker. The address is resolved once per
-request, from the agent's pane or the client's checkout (`state/board_address`): the store key, the
-project, the checkout a feature pointer is kept against, and the repositories a push names. The
-`_for_agent` and `_for_client` entry points resolve the address and the feature the request is
-about — a client names its feature, an agent's is the one it names or its checkout's — and call the
-apply, so a refusal or a push cannot differ by which side asked.
+Every other change to a board is built the same way. A task or a diagram (`state/board/parts`), a
+decision added or changed (`state/board/decisions`), the tracker map (`state/board/tracker_map`) and
+a turn of a reconcile (`state/board/reconcile`) each have one apply, taking the board's address and,
+where a rule depends on it, who asked (`state/board/asker`); the rules that differ by who asked are
+arms of its match. Changing a decision has no such rule, so its apply takes no asker. The address is
+resolved once per request, from the agent's pane or the client's checkout (`state/board/address`):
+the store key, the project, the checkout a feature pointer is kept against, and the repositories a
+push names. The `_for_agent` and `_for_client` entry points resolve the address and the feature the
+request is about — a client names its feature, an agent's is the one it names or its checkout's —
+and call the apply, so a refusal or a push cannot differ by which side asked.
 
 A person starting a feature has a paragraph, not a title, so the view sends a whole note —
 `FeatureAction::Capture`, read by `argus_protocol::board::capture` — and `store/capture` writes it in
@@ -2229,7 +2229,7 @@ A link also carries its role (schema v26, `feature_link.role`): a few of the per
 what the ticket is to the feature, `the PM's ticket`, given with `--role` or in the desktop's link
 dialog, and rewritten by linking the key again.
 
-A feature is reconciled with its tickets by an agent, never by Argus (`reconcile`, `state/reconcile`;
+A feature is reconciled with its tickets by an agent, never by Argus (`reconcile`, `state/board/reconcile`;
 schema v26, `feature_reconcile`). The person asks with `ClientMsg::Reconcile` and
 `ReconcileAction::Ask`, naming a live agent in the repository and saying what to bring in and send
 out; the daemon tells the agent through `notify`, on one line, to read the map, the feature and the
@@ -2519,7 +2519,7 @@ Ids are database-wide and an agent numbers its tasks from what it last read, so 
 a task or a diagram is refused when the row is not under the feature the request lands in — the one
 the agent's checkout is on, or the one the client names: a stale id would otherwise let one
 feature's agent tick off another's work by arithmetic. Both sides and both parts take that one path
-(`state/board_parts`), so the guard cannot differ by who asked.
+(`state/board/parts`), so the guard cannot differ by who asked.
 
 From the view, `H`/`L` move a task along todo → doing → done and `J`/`K` move it earlier or later among
 its siblings. The order is usually a human's statement of what to do first, and the skill tells

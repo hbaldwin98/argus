@@ -141,7 +141,7 @@ impl Daemon {
         let (id, every) = (view.id.clone(), view.refresh_every);
         let shown = ShownView {
             pane,
-            at: super::decisions::now(),
+            at: super::board::decisions::now(),
             subject: view.subject_link(),
             view,
         };

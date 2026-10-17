@@ -11,6 +11,7 @@
 //! disk, `panel` for the rows the user adds and removes, `workspaces` for
 //! which scope is open,
 //! `extensions` for what extensions publish and what goes back to them,
+//! `board` for a feature board and who may change it,
 //! `session` for what survives a restart, `sessions`
 //! for the agent sessions a repository's harnesses kept, `inbox` for
 //! the way what Argus says reaches an agent, and `tree` for finding your
@@ -31,22 +32,14 @@ use argus_protocol::{
 
 mod agent_launch;
 mod agents;
-mod asker;
-mod board_address;
-mod board_parts;
+mod board;
 mod build;
 mod clock;
-mod decisions;
 mod extension_consoles;
 mod extension_host;
 mod extensions;
-mod features;
 mod follow;
-mod diagrams;
-mod tasks;
-mod reconcile;
 mod saved_views;
-mod tracker_map;
 mod view_timers;
 mod views;
 mod git_ops;
@@ -63,8 +56,8 @@ mod tree;
 mod viewers;
 mod workspaces;
 
-pub use board_parts::FeaturePart;
-pub(crate) use features::Filing;
+pub use board::parts::FeaturePart;
+pub(crate) use board::features::Filing;
 pub use extensions::ExtensionNews;
 pub use pushes::{BoardNews, Pushes, TreeNews};
 #[cfg(test)]

@@ -8,8 +8,8 @@
 use argus_protocol::{checked_map, ArtifactScope, MapChange, PaneId, ProjectId, TrackerMap};
 
 use super::asker::{pane_label, Asker};
-use super::board_address::BoardAddress;
-use super::*;
+use super::address::BoardAddress;
+use crate::state::*;
 
 impl Daemon {
     /// The map an agent reads, or, with a body, the draft it proposes and

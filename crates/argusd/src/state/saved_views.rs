@@ -294,7 +294,7 @@ impl Daemon {
     fn save_view_for_agent(
         &self,
         pane: PaneId,
-        address: &super::board_address::BoardAddress,
+        address: &super::board::address::BoardAddress,
         write: SavedViewWrite,
     ) -> anyhow::Result<SavedViewEntry> {
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -340,7 +340,7 @@ impl Daemon {
             attached,
             recipe: write.recipe.filter(|r| !r.trim().is_empty()),
             sources: write.sources,
-            built_at: super::decisions::now(),
+            built_at: super::board::decisions::now(),
             built_commit: crate::git::head_oid(&checkout),
             checkout: Some(checkout.to_string_lossy().into_owned()),
             stale: false,

@@ -4,9 +4,9 @@
 //! in `hook_lifecycle` and `pane_api`.
 
 use super::*;
-use crate::state::asker::Asker;
-use crate::state::board_address::BoardAddress;
-use crate::state::board_parts::BoardTarget;
+use crate::state::board::asker::Asker;
+use crate::state::board::address::BoardAddress;
+use crate::state::board::parts::BoardTarget;
 use argus_protocol::{
     ArtifactScope, Decision, DecisionChange, DecisionWrite, FeatureAction, FeatureWrite,
     TaskAction, TaskWrite,
@@ -792,7 +792,7 @@ fn a_person_decides_and_changes_decisions_only_under_the_feature_they_name() {
 
 #[test]
 fn a_reconcile_turn_is_refused_from_the_side_it_is_not_for() {
-    use crate::state::reconcile::Turn;
+    use crate::state::board::reconcile::Turn;
     use argus_protocol::{ProposalWrite, ProposedLine, ReconcileAction, ReconcileChange};
 
     let (d, at) = board();

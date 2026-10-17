@@ -10,15 +10,15 @@
 //! are under, which is where a human accepts the work as a whole.
 //!
 //! So there is one way in, [`TaskAction`], routed like every other part of
-//! a feature (`board_parts`); this says only how a task is stored. Who asked
+//! a feature (`parts`); this says only how a task is stored. Who asked
 //! travels with it, so a task taken up or a note left through a pane says
 //! which pane, and one from a client says neither.
 
 use argus_protocol::{TaskAction, TaskList, TaskPlace};
 
 use super::asker::Asker;
-use super::board_parts::{BoardTarget, FeaturePart};
-use super::*;
+use super::parts::{BoardTarget, FeaturePart};
+use crate::state::*;
 use crate::store::Store;
 
 impl FeaturePart for TaskAction {
@@ -132,7 +132,7 @@ impl FeaturePart for TaskAction {
         // An unreadable list is not pushed as an empty one, which would
         // blank every reader's board for a fault in reading it.
         if let Ok(list) = Self::list(daemon, target) {
-            daemon.pushes.board(super::BoardNews::Tasks(Box::new(list)));
+            daemon.pushes.board(crate::state::BoardNews::Tasks(Box::new(list)));
         }
         daemon.broadcast_decisions(
             target.address,

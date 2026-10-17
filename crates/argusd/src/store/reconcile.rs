@@ -5,7 +5,7 @@ use argus_protocol::{Reconcile, Reconciled};
 
 use super::*;
 
-/// Puts each feature's reconcile on it, as `features` reads them.
+/// Puts each feature's reconcile on it, as `state::board::features` reads them.
 pub(super) fn attach(conn: &Connection, project: &str, features: &mut [Feature]) -> Result<()> {
     let mut stmt = conn.prepare(
         "SELECT slug, reconcile, reconciled FROM feature_reconcile WHERE project = ?1",

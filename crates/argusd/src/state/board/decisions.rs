@@ -1,7 +1,7 @@
 //! The decision board: appending to it, and reading it back.
 //!
 //! Clients speak in ids and the store speaks in artifact keys;
-//! `board_address` translates between them. A decision is scoped to a
+//! `address` translates between them. A decision is scoped to a
 //! *feature*: a tree still has to be read whole, because a node hanging
 //! off three others says nothing without them, but the tree that has to be
 //! read whole is one feature's, not one project's. The repository board is
@@ -21,9 +21,9 @@
 use argus_protocol::{Decision, DecisionBoard, DecisionChange, DecisionWrite};
 
 use super::asker::Asker;
-use super::board_address::BoardAddress;
+use super::address::BoardAddress;
 use super::features::Filing;
-use super::*;
+use crate::state::*;
 
 impl Daemon {
     /// One project's board, by the id a client holds.
@@ -279,12 +279,16 @@ impl Daemon {
     /// meant to be watched: the point of drawing the tree is
     /// seeing it built up while the work happens. It names the repositories
     /// it is the board of, and a client reading another drops it.
-    pub(super) fn broadcast_decisions(&self, address: &BoardAddress, decisions: Vec<Decision>) {
+    pub(in crate::state) fn broadcast_decisions(
+        &self,
+        address: &BoardAddress,
+        decisions: Vec<Decision>,
+    ) {
         if !address.is_pushed() {
             return;
         }
         let features = self.store.features(&address.key).unwrap_or_default();
-        self.pushes.board(super::BoardNews::Decisions(Box::new(DecisionBoard {
+        self.pushes.board(crate::state::BoardNews::Decisions(Box::new(DecisionBoard {
             repositories: address.repositories.clone(),
             project: Some(address.project),
             name: address.project_name.clone(),
@@ -295,7 +299,7 @@ impl Daemon {
     }
 }
 
-pub(super) fn now() -> i64 {
+pub(in crate::state) fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)

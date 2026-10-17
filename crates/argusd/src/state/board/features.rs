@@ -21,8 +21,8 @@ use argus_protocol::{
 };
 
 use super::asker::Asker;
-use super::board_address::BoardAddress;
-use super::*;
+use super::address::BoardAddress;
+use crate::state::*;
 
 /// Where an agent's request is filed: on which board, and on it, a feature
 /// named outright or else the one the agent's checkout is on. A bare
@@ -292,7 +292,7 @@ impl Daemon {
                 // The tasks as well as the board: a client holding the
                 // feature's list open is owed the rows a note just added.
                 if address.is_pushed() {
-                    self.pushes.board(super::BoardNews::Tasks(Box::new(argus_protocol::TaskList {
+                    self.pushes.board(crate::state::BoardNews::Tasks(Box::new(argus_protocol::TaskList {
                         repositories: address.repositories.clone(),
                         project_name: address.project_name.clone(),
                         tasks: self.store.tasks(key, &slug)?,

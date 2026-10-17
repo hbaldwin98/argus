@@ -4,8 +4,8 @@
 use argus_protocol::{DiagramAction, DiagramList};
 
 use super::asker::Asker;
-use super::board_parts::{BoardTarget, FeaturePart};
-use super::*;
+use super::parts::{BoardTarget, FeaturePart};
+use crate::state::*;
 use crate::store::Store;
 
 impl FeaturePart for DiagramAction {
@@ -81,7 +81,7 @@ impl FeaturePart for DiagramAction {
             return;
         }
         if let Ok(list) = Self::list(daemon, target) {
-            daemon.pushes.board(super::BoardNews::Diagrams(Box::new(list)));
+            daemon.pushes.board(crate::state::BoardNews::Diagrams(Box::new(list)));
         }
     }
 }

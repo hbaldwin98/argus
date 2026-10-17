@@ -10,8 +10,8 @@
 use argus_protocol::{PaneId, ProjectId};
 
 use super::asker::Asker;
-use super::board_address::BoardAddress;
-use super::*;
+use super::address::BoardAddress;
+use crate::state::*;
 use crate::store::Store;
 
 /// One kind of row filed under a feature, spoken to through the action

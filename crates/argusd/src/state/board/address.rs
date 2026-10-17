@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use argus_protocol::{ArtifactScope, PaneId, ProjectId, RepositoryId};
 
-use super::*;
+use crate::state::*;
 
 /// One board, resolved. The feature on it is not part of the address: an
 /// agent's comes from the checkout pointer this carries, and a client names
@@ -74,7 +74,7 @@ impl Daemon {
     /// here, so the rule that a caller must be a live agent pane is written
     /// once. A shell pane, an exited one, or an id from another Argus gets
     /// the same refusal whatever it asked for.
-    pub(super) fn address_for_agent(
+    pub(in crate::state) fn address_for_agent(
         &self,
         pane: PaneId,
         scope: ArtifactScope,
@@ -100,7 +100,7 @@ impl Daemon {
 
     /// The checkout a live agent pane works in, named the way the store
     /// files it rather than by an id a restart throws away.
-    pub(super) fn agent_checkout(&self, pane: PaneId) -> anyhow::Result<PathBuf> {
+    pub(in crate::state) fn agent_checkout(&self, pane: PaneId) -> anyhow::Result<PathBuf> {
         Ok(self.agent_place(pane)?.checkout_path)
     }
 
@@ -135,7 +135,7 @@ impl Daemon {
 
     /// The board of the repository a client's checkout is in. A client
     /// cannot address a workspace board.
-    pub(super) fn address_for_client(
+    pub(in crate::state) fn address_for_client(
         &self,
         project_id: ProjectId,
         checkout_id: CheckoutId,
@@ -168,7 +168,7 @@ impl Daemon {
 
     /// The repositories in the tree whose board is the one filed under
     /// `key`. More than one when a repository is listed twice.
-    pub(super) fn repositories_keyed(&self, key: &str) -> Vec<RepositoryId> {
+    pub(in crate::state) fn repositories_keyed(&self, key: &str) -> Vec<RepositoryId> {
         let paths: Vec<(RepositoryId, PathBuf)> = {
             let inner = self.inner.lock().unwrap();
             inner
@@ -192,7 +192,7 @@ impl Daemon {
             .collect()
     }
 
-    pub(super) fn board_key(&self, path: &std::path::Path) -> String {
+    pub(in crate::state) fn board_key(&self, path: &std::path::Path) -> String {
         if let Some(key) = self.board_keys.lock().unwrap().get(path) {
             return key.clone();
         }

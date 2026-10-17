@@ -11,8 +11,8 @@ use argus_protocol::board::reconcile::{checked_ask, checked_text, seen, Stage, M
 use argus_protocol::{Feature, Reconcile, ReconcileAction, ReconcileChange, Reconciled};
 
 use super::asker::{pane_label, Asker};
-use super::board_address::BoardAddress;
-use super::*;
+use super::address::BoardAddress;
+use crate::state::*;
 
 /// One turn of a reconcile, in whichever vocabulary it was asked in: an
 /// agent's read, proposal or report, or the person's ask, ticked lines or
