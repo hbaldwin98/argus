@@ -18,8 +18,6 @@ pub mod board_follower;
 pub mod capture;
 pub mod checkout_path;
 pub mod code;
-pub mod column;
-pub mod column_verbs;
 pub mod decisions;
 pub mod diagrams;
 pub mod ext_console;
@@ -28,15 +26,12 @@ pub mod extension_keys;
 pub mod extensions;
 pub mod features;
 pub mod flow;
-pub mod focus;
 pub mod framing;
 pub mod fuzzy;
-pub mod held_tree;
 pub mod hello;
 pub mod history_view;
 pub mod hook;
 pub mod hook_call;
-pub mod ids;
 pub mod inbox;
 pub mod memory;
 pub mod message;
@@ -116,9 +111,9 @@ pub use extensions::{
     ExtDialogRaised, ExtEvent, ExtField, ExtItem, ExtKey, ExtPane, ExtPaneOpened, ExtRow, ExtScope, ExtTaken, ExtView,
     Refusals, Refused,
 };
-pub use focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, View};
+pub use tree::focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, View};
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
-pub use held_tree::{transitions, HeldTree, Lineage, Transition};
+pub use tree::held::{transitions, HeldTree, Lineage, Transition};
 pub use hello::{
     ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
@@ -135,7 +130,7 @@ pub use hook::{
     BACKGROUND_HEADER, DIRECTORY_HEADER, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, PANE_VAR, SESSION_HEADER,
     SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
-pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
+pub use tree::ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use inbox::InboxItem;
 pub use memory::{
     select_context_packet, Artifact, ArtifactContent, ArtifactKind, ArtifactState, ContextPacket,
@@ -166,8 +161,8 @@ pub use reconcile::{
     Changes, Failed, Noticed, ProposalWrite, ProposedLine, Reconcile, ReconcileAction, ReconcileChange,
     Reconciled, Seen, Ticked,
 };
-pub use column::CheckoutRow;
-pub use column_verbs::Verb;
+pub use tree::column::CheckoutRow;
+pub use tree::column::verbs::Verb;
 pub use tree::{
     AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneState, PaneStatus,
     ProjectInfo, RepositoryInfo, WorkspaceInfo,

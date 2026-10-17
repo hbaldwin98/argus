@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use serde::{Deserialize, Serialize};
 
 use crate::artifacts::ArtifactScope;
-use crate::ids::PaneId;
+use crate::tree::ids::PaneId;
 use crate::tree::PaneStatus;
 
 /// The environment every agent pane is handed. The daemon sets these and

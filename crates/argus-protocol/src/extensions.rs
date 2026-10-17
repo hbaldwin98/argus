@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_view::{Chip, Column, Value};
 use crate::view_check::{self, MAX_TABLE_ROWS, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES};
-use crate::focus::Focus;
-use crate::ids::{CheckoutId, PaneId, RepositoryId};
+use crate::tree::focus::Focus;
+use crate::tree::ids::{CheckoutId, PaneId, RepositoryId};
 
 /// The longest an extension's name may be. It names the extension in a URL
 /// and on a tab, so it is kept to something a person would type.

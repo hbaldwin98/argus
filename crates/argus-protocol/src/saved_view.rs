@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_view::AgentView;
 use crate::checkout_path::is_checkout_relative;
-use crate::ids::RepositoryId;
+use crate::tree::ids::RepositoryId;
 use crate::view_check::{is_web_url, MAX_VIEW_ID_BYTES};
 
 /// How a recipe is kept: the steps to build the view again, not a document.

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::capture::Capture;
 use crate::decisions::Decision;
-use crate::ids::{CheckoutId, ProjectId};
+use crate::tree::ids::{CheckoutId, ProjectId};
 use crate::reconcile::{Reconcile, Reconciled};
 use crate::tasks::TaskCounts;
 use crate::tracker_links::{LinkWrite, TrackerLink};

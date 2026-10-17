@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{PaneId, RepositoryId};
+use crate::tree::ids::{PaneId, RepositoryId};
 
 /// Past this a task title has stopped being a line on a card.
 pub const MAX_TASK_TITLE_BYTES: usize = 300;

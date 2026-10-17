@@ -6,7 +6,7 @@
 //! refused action leaves the panel showing what is actually true.
 
 use super::*;
-use argus_protocol::column_verbs::Verb;
+use argus_protocol::tree::column::verbs::Verb;
 
 impl App {
     /// Shows or hides the branches that have no checkout. The main branch
@@ -40,7 +40,7 @@ impl App {
         }
     }
 
-    /// `verb` on the selected checkouts-column row, as `column_verbs`
+    /// `verb` on the selected checkouts-column row, as `tree::column::verbs`
     /// decides it: sent, or its refusal reported. False when nothing went.
     pub(super) fn send_row_verb(&mut self, verb: Verb) -> bool {
         match self.row_verb(verb) {

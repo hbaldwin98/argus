@@ -7,7 +7,7 @@
 //! cursor and the one that confirms is how you act on the wrong row.
 
 use super::*;
-use argus_protocol::column_verbs::Verb;
+use argus_protocol::tree::column::verbs::Verb;
 
 impl App {
     /// Opens the directory browser at wherever the daemon thinks a browse
@@ -239,7 +239,7 @@ impl App {
                 (RemoveTarget::Repository(r.id), r.name.clone())
             }
             // What `D` on a checkouts row sends, or why it sends nothing,
-            // is `column_verbs`'s; this only asks before sending it.
+            // is `tree::column::verbs`'s; this only asks before sending it.
             Focus::Checkouts => {
                 let Some(row) = self.selected_checkout_row() else {
                     return;

@@ -4,8 +4,8 @@
 //! everything in the window it never predicts: a switched branch or a pull
 //! shows once the tree says so.
 
-use argus_protocol::column::CheckoutRow;
-use argus_protocol::column_verbs::{force_delete, Verb};
+use argus_protocol::tree::column::CheckoutRow;
+use argus_protocol::tree::column::verbs::{force_delete, Verb};
 use argus_protocol::{CheckoutId, ClientMsg, DecisionBoard, PaneId, RepositoryInfo};
 use serde::Serialize;
 
@@ -109,7 +109,7 @@ impl CheckoutsStage {
         })
     }
 
-    /// `verb` on the selected row, as `column_verbs` decides it.
+    /// `verb` on the selected row, as `tree::column::verbs` decides it.
     pub fn act(&self, repo: &RepositoryInfo, verb: Verb) -> Result<ClientMsg, String> {
         repo.act(self.row(repo).ok_or("nothing is selected")?, verb)
     }

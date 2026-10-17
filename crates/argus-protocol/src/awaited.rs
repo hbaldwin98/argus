@@ -11,7 +11,7 @@
 //! here until the tree has it. Each client says what to do with what it
 //! made (`Then`); both clients hold this one module, so they settle alike.
 
-use crate::held_tree::HeldTree;
+use crate::tree::held::HeldTree;
 use crate::message::Created;
 use crate::tree::ProjectInfo;
 
@@ -104,7 +104,7 @@ pub fn holds(tree: &[ProjectInfo], created: Created) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::{CheckoutId, PaneId, ProjectId};
+    use crate::tree::ids::{CheckoutId, PaneId, ProjectId};
     use crate::tree::{AgentTelemetry, CheckoutInfo, PaneInfo, PaneKind, PaneStatus};
 
     /// A project holding one checkout, 100, with the panes `panes`.
@@ -127,7 +127,7 @@ mod tests {
             .collect();
         let checkout = CheckoutInfo { id: CheckoutId(100), name: "main".into(), path: "/src/main".into(), panes, git: None, primary: true };
         let repository = crate::tree::RepositoryInfo {
-            id: crate::ids::RepositoryId(10),
+            id: crate::tree::ids::RepositoryId(10),
             name: "argus".into(),
             checkouts: vec![checkout],
             branches: Vec::new(),

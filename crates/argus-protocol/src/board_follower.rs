@@ -17,7 +17,7 @@
 //! whatever was pushed while the daemon was away was pushed to nobody.
 //! Between those the pushes keep it current, so nothing is asked twice.
 
-use crate::ids::{CheckoutId, ProjectId, RepositoryId};
+use crate::tree::ids::{CheckoutId, ProjectId, RepositoryId};
 use crate::outline::WorkRef;
 use crate::standing::{self, FeatureRow};
 use crate::{ClientMsg, DecisionBoard, DiagramAction, DiagramList, ProjectInfo, TaskAction, TaskList};

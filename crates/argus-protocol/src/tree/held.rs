@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use crate::ids::{CheckoutId, PaneId};
+use crate::tree::ids::{CheckoutId, PaneId};
 use crate::tree::{AgentTelemetry, CheckoutInfo, PaneInfo, PaneState, PaneStatus, ProjectInfo, RepositoryInfo};
 
 /// Where a checkout sits: everything above it, so a caller that found it
@@ -124,7 +124,7 @@ pub fn transitions<'a, T: HeldTree + ?Sized>(previous: &T, next: &'a T) -> Vec<T
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::{CheckoutId, ProjectId, RepositoryId};
+    use crate::tree::ids::{CheckoutId, ProjectId, RepositoryId};
     use crate::tree::{CheckoutInfo, ChildAgentInfo, PaneKind, RepositoryInfo};
 
     fn pane(id: u64, status: PaneStatus) -> PaneInfo {

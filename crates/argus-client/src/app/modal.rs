@@ -294,8 +294,8 @@ pub enum RemoveTarget {
 }
 
 impl RemoveTarget {
-    /// The question for what `column_verbs` decided a removal sends; the
-    /// popup words it, and a yes sends that message back.
+    /// The question for what `tree::column::verbs` decided a removal
+    /// sends; the popup words it, and a yes sends that message back.
     pub(super) fn of(msg: ClientMsg) -> Option<Self> {
         match msg {
             ClientMsg::RemoveCheckout { checkout } => Some(RemoveTarget::Checkout(checkout)),

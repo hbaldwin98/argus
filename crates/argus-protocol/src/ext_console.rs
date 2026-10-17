@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::checkout_path::is_checkout_relative;
-use crate::ids::PaneId;
+use crate::tree::ids::PaneId;
 
 /// Arguments to one console's command, the program included.
 pub const MAX_CONSOLE_ARGS: usize = 64;

@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::CheckoutId;
+use crate::tree::ids::CheckoutId;
 use crate::review::HighlightSpan;
 
 /// Most matches one search returns: past this, a narrower query is what

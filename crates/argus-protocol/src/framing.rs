@@ -89,7 +89,7 @@ where
 mod tests {
     use super::*;
     use crate::panes::cell::{Cell, CellSpan, Cursor};
-    use crate::ids::{CheckoutId, PaneId, RepositoryId};
+    use crate::tree::ids::{CheckoutId, PaneId, RepositoryId};
     use crate::message::{ClientMsg, ServerMsg};
     use crate::review::{ReviewAnchor, ReviewBase};
     use crate::tree::{

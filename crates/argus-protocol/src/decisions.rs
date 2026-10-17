@@ -19,7 +19,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::features::Feature;
-use crate::ids::{ProjectId, RepositoryId};
+use crate::tree::ids::{ProjectId, RepositoryId};
 use crate::tracker_links::TrackerMap;
 
 /// Past this a field has stopped being a decision and started being a

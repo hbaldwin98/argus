@@ -318,10 +318,13 @@ live in this crate and a contract written twice drifts in silence.
 | --- | --- |
 | `message` | what a client asks for, and what the daemon sends back |
 | `hello` | what each side of a connection can take, said before anything else, and how a client's greeting went |
-| `focus` | where the person is working: the view a client reports, and the focus the daemon makes of it and `argus focus` prints |
 | `inbox` | what the daemon tells a harness's plugin over its inbox |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
-| `held_tree` | a client's copy of the tree, and finding things in it: every pane and checkout, where a pane or checkout sits, telemetry applied between trees, and which panes changed state from the copy before |
+| `tree/held` | a client's copy of the tree, and finding things in it: every pane and checkout, where a pane or checkout sits, telemetry applied between trees, and which panes changed state from the copy before |
+| `tree/ids` | the identities the daemon hands out, one type per kind of node so a pane id cannot stand where a checkout id belongs |
+| `tree/focus` | where the person is working: the view a client reports, and the focus the daemon makes of it and `argus focus` prints |
+| `tree/column` | the order a repository's checkouts column lists its rows: the main branch first, then the checkouts, then the branches without one while they are shown |
+| `tree/column/verbs` | what a row of that column allows: the request each verb on it sends — remove, new worktree, switch, fetch, pull — or the words it is refused in, which checkout git runs in, and what a yes to the forced deletion sends |
 | `hook` | the pane API's URLs, environment, headers and flags, and the largest body each endpoint takes — `argus-hook` builds what the daemon parses — an extension's endpoints among them |
 | `hook_call` | what each pane-API endpoint is posted and answers with: the one declaration `argus-hook` calls through and the daemon answers through |
 | `extensions` | what an extension publishes for Argus to draw — its views, commands and dialogs — and what the person does with them on the way back: what taking an action on a view carries, a row or none, or the words it is refused in |
@@ -337,11 +340,9 @@ live in this crate and a contract written twice drifts in silence.
 | `panes/paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
 | `panes/view` | a pane's view as a client holds it: the live grid, the view parked in its history, how the daemon's pane messages change them, and what a scroll gesture over the pane sends — the child's bytes, a request for history, or nothing |
 | `ago` | how long ago something happened, as every client says it |
-| `column` | the order a repository's checkouts column lists its rows: the main branch first, then the checkouts, then the branches without one while they are shown |
-| `column_verbs` | what a row of that column allows: the request each verb on it sends — remove, new worktree, switch, fetch, pull — or the words it is refused in, which checkout git runs in, and what a yes to the forced deletion sends |
 | `ssh_hosts` | the hosts the user's ssh config names, for either client's host picker |
 | `ssh_bridge` | the ssh command that runs `argus bridge` on another machine, and what ssh's failure means |
-| `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
+| `review` | the shapes review data travel in: a checkout's uncommitted changes and a commit against its first parent, as rendered diffs |
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
 | `code` | a checkout's code as the Code stage reads it: which version, a file's lines and the ones that version changed, what the file defines, and where text occurs across the checkout |
 | `review_session` | one review's exchange with the daemon, as both clients hold it: which sides were asked for and answered, the side on screen and when an empty one gives way, and the picked lines a comment from it is anchored to |
@@ -349,6 +350,7 @@ live in this crate and a contract written twice drifts in silence.
 | `history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
 | `awaited` | requests a client waits on the daemon to make something for, matched by the id it answers with, and which of the things made the tree now holds |
 | `request_refusal` | how a request the daemon turned down is told: by its id, why and whether it only read, to a client that listed `request-refusals`; the old shape each other client is sent; and an older daemon's shapes read back as the new one |
+| `paths` | where Argus keeps its files and which instance it is, shared so `ARGUS_CONFIG_DIR` points the daemon and every client at one place |
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
@@ -528,7 +530,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, or why the daemon refused one, among them what each pane it resumed a session in was resumed from |
 | `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its full transcript is open in place of the list — and what each session offers: its pane, a resume by the exact command named, or only its transcript; the page it draws, last sent while open |
 | `transcript_reader` | the full-transcript reader: the person's turns as a jump list and the one it is on, what find looks for and the match it is on, and the page it draws |
-| `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — which of its keys and buttons are the `column_verbs` it sends, and the table the page last heard |
+| `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — which of its keys and buttons are the `tree::column::verbs` it sends, and the table the page last heard |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
 | `code_stage` | the Code stage as the window holds it once opened — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the comment being written, the go-to-file field, the search, and the review it was opened from — the daemon's answers it takes, what its gestures ask of the daemon and leave to the window, and the page and gestures it trades with the page, last sent while it is up |
 | `code_tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
@@ -1071,7 +1073,7 @@ outlive the state it explains.
 Automatic `Idle` events do not erase `Waiting`, `NeedsReview`, `Done`, or `Failed`; the agent reports
 `Working` when it resumes.
 
-Each client compares consecutive tree snapshots by pane ID, through `held_tree`'s one reading of
+Each client compares consecutive tree snapshots by pane ID, through `tree::held`'s one reading of
 what changed. The first snapshot a client holds is a quiet baseline, as is a pane new to a snapshot,
 and the last one is kept across a reconnect, so a pane that started waiting while the daemon was
 away is still news; a later effective-state change into `Waiting`, `NeedsReview`, or `Failed` is announced. Effective

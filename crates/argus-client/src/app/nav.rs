@@ -158,7 +158,7 @@ impl App {
     }
 
     /// The same row as `origin/feature`, which only a test still asks for:
-    /// what a remote-only row allows is `column_verbs`'s to say.
+    /// what a remote-only row allows is `tree::column::verbs`'s to say.
     #[cfg(test)]
     pub fn current_remote_row(&self) -> Option<&str> {
         match self.selected_checkout_row()? {

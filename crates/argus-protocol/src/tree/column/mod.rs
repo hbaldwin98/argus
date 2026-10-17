@@ -3,6 +3,8 @@
 //! row offers it, then the other checkouts, then — only while branches are
 //! shown — the branches no checkout is on and what a fetch turned up.
 
+pub mod verbs;
+
 use crate::{CheckoutInfo, RepositoryInfo};
 
 /// One row of the column, as an index into the repository's own

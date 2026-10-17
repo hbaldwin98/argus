@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::CheckoutId;
+use crate::tree::ids::CheckoutId;
 
 pub const MAX_REVIEW_COMMENT_BYTES: usize = 4096;
 pub const MAX_REVIEW_COMMENTS: usize = 100;

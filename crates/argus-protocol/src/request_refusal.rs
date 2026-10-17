@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::CheckoutId;
+use crate::tree::ids::CheckoutId;
 use crate::message::{ClientMsg, ServerMsg};
 
 /// A request turned down, to the client that named it. Sent only to a
@@ -163,7 +163,7 @@ mod tests {
     use super::*;
     use crate::code::{CodeVersion, SearchOptions};
     use crate::features::FeatureAction;
-    use crate::ids::{PaneId, ProjectId, RepositoryId};
+    use crate::tree::ids::{PaneId, ProjectId, RepositoryId};
     use crate::review::{ReviewAnchor, ReviewBase};
 
     const CO: CheckoutId = CheckoutId(3);

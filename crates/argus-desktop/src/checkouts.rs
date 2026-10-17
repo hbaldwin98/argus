@@ -2,7 +2,7 @@
 //! the protocol's column order, what each says, and the selected
 //! checkout's detail.
 
-use argus_protocol::column::{local_name, CheckoutRow};
+use argus_protocol::tree::column::{local_name, CheckoutRow};
 use argus_protocol::{CheckoutInfo, DecisionBoard, GitStatus, PaneKind, RepositoryInfo};
 use serde::Serialize;
 

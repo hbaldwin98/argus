@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CheckoutId, PaneId};
+use crate::tree::ids::{CheckoutId, PaneId};
 
 /// The most sessions one listing holds. A repository an agent has worked
 /// in for months has thousands; a list is for picking up recent work.

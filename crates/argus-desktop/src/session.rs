@@ -29,7 +29,7 @@
 use std::collections::HashSet;
 
 use argus_protocol::awaited::Awaited;
-use argus_protocol::column_verbs::Verb;
+use argus_protocol::tree::column::verbs::Verb;
 use argus_protocol::panes::keys::{Key, KeyCode, Mods};
 use argus_protocol::panes::mouse::{self, MouseButton, MouseEvent, MouseKind};
 use argus_protocol::panes::view::{Effect, PaneView};

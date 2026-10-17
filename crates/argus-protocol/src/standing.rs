@@ -9,8 +9,8 @@
 
 use crate::decisions::DecisionBoard;
 use crate::features::{Feature, FeatureState};
-use crate::held_tree::HeldTree;
-use crate::ids::PaneId;
+use crate::tree::held::HeldTree;
+use crate::tree::ids::PaneId;
 use crate::tasks::{TaskCounts, TaskState, TaskTreeRow};
 use crate::tree::{PaneInfo, PaneKind, PaneStatus, ProjectInfo};
 

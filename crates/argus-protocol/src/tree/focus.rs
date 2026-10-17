@@ -10,8 +10,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::held_tree::HeldTree;
-use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId};
+use crate::tree::held::HeldTree;
+use crate::tree::ids::{CheckoutId, PaneId, ProjectId, RepositoryId};
 use crate::tree::{CheckoutInfo, PaneInfo, PaneKind, ProjectInfo};
 
 /// What one client is showing, by the daemon's ids. Each is the selection

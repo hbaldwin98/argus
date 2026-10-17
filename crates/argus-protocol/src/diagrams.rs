@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::RepositoryId;
+use crate::tree::ids::RepositoryId;
 
 pub const MAX_DIAGRAM_TITLE_BYTES: usize = 200;
 /// Room for a non-trivial interaction without turning the store into a

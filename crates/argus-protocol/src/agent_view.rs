@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::PaneId;
+use crate::tree::ids::PaneId;
 use crate::tracker_links::TrackerLink;
 use crate::view_press::ViewAction;
 

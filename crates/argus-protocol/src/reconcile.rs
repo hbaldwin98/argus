@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::decisions::Decision;
-use crate::ids::PaneId;
+use crate::tree::ids::PaneId;
 use crate::tasks::Task;
 
 /// Room for a reconcile that touches every task of a large feature, and no

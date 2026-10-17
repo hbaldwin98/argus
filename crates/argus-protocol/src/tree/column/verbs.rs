@@ -4,7 +4,7 @@
 //! deleted, and a row with no directory acts through the primary checkout.
 //! `column` says which rows there are; this says what one of them allows.
 
-use crate::column::{local_name, CheckoutRow};
+use crate::tree::column::{local_name, CheckoutRow};
 use crate::{CheckoutId, CheckoutInfo, ClientMsg, RepositoryInfo};
 
 /// A gesture a client offers on a column row.

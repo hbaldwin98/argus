@@ -5,9 +5,14 @@
 //! small, and a client that can only ever be handed the current truth has
 //! no stale-state bugs to have.
 
+pub mod column;
+pub mod focus;
+pub mod held;
+pub mod ids;
+
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
+use crate::tree::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PaneKind {

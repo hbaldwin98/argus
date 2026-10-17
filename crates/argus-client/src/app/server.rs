@@ -301,7 +301,7 @@ impl App {
                 branch,
                 commits,
             } => {
-                let forced = argus_protocol::column_verbs::force_delete(checkout, branch.clone());
+                let forced = argus_protocol::tree::column::verbs::force_delete(checkout, branch.clone());
                 let Some(target) = RemoveTarget::of(forced) else {
                     return;
                 };
