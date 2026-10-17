@@ -38,14 +38,17 @@ pub fn can_comment(anchor: Option<&ReviewAnchor>, checkout: Option<&CheckoutInfo
 }
 
 /// `body` on `anchor`, to `to` — or with nobody chosen, to the one agent
-/// there is, or a choice between several. `checkout` is as the tree has it
-/// now (None once it is gone): agents come and go while a comment is written,
-/// and one chosen that has gone is refused, never swapped for another.
+/// there is, or a choice between several — named `request_id`, so its save
+/// and its refusal find the box that sent it. `checkout` is as the tree has
+/// it now (None once it is gone): agents come and go while a comment is
+/// written, and one chosen that has gone is refused, never swapped for
+/// another. A choice carries no id: the send made after it names its own.
 pub fn comment(
     anchor: Option<ReviewAnchor>,
     checkout: Option<&CheckoutInfo>,
     to: Option<PaneId>,
     body: &str,
+    request_id: u64,
 ) -> Result<Comment, &'static str> {
     // Trimmed before it is measured, as the daemon measures it.
     let body = body.trim();
@@ -72,6 +75,7 @@ pub fn comment(
         recipient,
         anchor: Box::new(anchor),
         body: body.to_owned(),
+        request_id,
     })))
 }
 
@@ -147,8 +151,8 @@ mod tests {
     fn a_comment_needs_words_and_a_line() {
         let co = checkout(vec![agent(7)]);
         assert_eq!(can_comment(None, Some(&co)), Err("pick a line to comment on"));
-        assert_eq!(comment(None, Some(&co), None, "tidy").err(), Some("pick a line to comment on"));
-        assert_eq!(comment(Some(reviewed()), Some(&co), None, "   ").err(), Some("the comment is empty"));
+        assert_eq!(comment(None, Some(&co), None, "tidy", 1).err(), Some("pick a line to comment on"));
+        assert_eq!(comment(Some(reviewed()), Some(&co), None, "   ", 1).err(), Some("the comment is empty"));
     }
 
     #[test]
@@ -159,35 +163,35 @@ mod tests {
         ]);
         let a = reviewed();
         assert_eq!(can_comment(Some(&a), Some(&shells)), Err("no agent running in this checkout"));
-        assert_eq!(comment(Some(a.clone()), Some(&shells), None, "hi").err(), Some("no agent running in this checkout"));
+        assert_eq!(comment(Some(a.clone()), Some(&shells), None, "hi", 1).err(), Some("no agent running in this checkout"));
         assert_eq!(
-            comment(Some(a.clone()), Some(&shells), Some(PaneId(2)), "hi").err(),
+            comment(Some(a.clone()), Some(&shells), Some(PaneId(2)), "hi", 1).err(),
             Some("no agent running in this checkout")
         );
         assert_eq!(can_comment(Some(&a), None), Err("no agent running in this checkout"), "the checkout is gone");
-        assert_eq!(comment(Some(a), None, None, "hi").err(), Some("no agent running in this checkout"));
+        assert_eq!(comment(Some(a), None, None, "hi", 1).err(), Some("no agent running in this checkout"));
     }
 
     #[test]
     fn a_comment_goes_to_the_one_agent_or_asks_between_several() {
         let one = checkout(vec![pane(1, PaneKind::Shell, PaneStatus::Idle), agent(7)]);
         assert_eq!(can_comment(Some(&reviewed()), Some(&one)), Ok(()));
-        let ClientMsg::ReviewComment { checkout: to, recipient, anchor, body } =
-            sent(comment(Some(reviewed()), Some(&one), None, " tidy "))
+        let ClientMsg::ReviewComment { checkout: to, recipient, anchor, body, request_id } =
+            sent(comment(Some(reviewed()), Some(&one), None, " tidy ", 1))
         else {
             panic!()
         };
-        assert_eq!((to, recipient, body.as_str()), (CO, PaneId(7), "tidy"));
+        assert_eq!((to, recipient, body.as_str(), request_id), (CO, PaneId(7), "tidy", 1));
         assert_eq!(anchor.path, "a.rs");
 
         let several = checkout(vec![agent(7), pane(8, PaneKind::Agent, PaneStatus::Exited { code: None }), agent(9)]);
-        assert!(matches!(comment(Some(reviewed()), Some(&several), None, "hi"), Ok(Comment::Choose(p)) if p == [PaneId(7), PaneId(9)]));
+        assert!(matches!(comment(Some(reviewed()), Some(&several), None, "hi", 1), Ok(Comment::Choose(p)) if p == [PaneId(7), PaneId(9)]));
         assert!(matches!(
-            sent(comment(Some(reviewed()), Some(&several), Some(PaneId(9)), "hi")),
+            sent(comment(Some(reviewed()), Some(&several), Some(PaneId(9)), "hi", 1)),
             ClientMsg::ReviewComment { recipient: PaneId(9), .. }
         ));
         assert_eq!(
-            comment(Some(reviewed()), Some(&several), Some(PaneId(8)), "hi").err(),
+            comment(Some(reviewed()), Some(&several), Some(PaneId(8)), "hi", 1).err(),
             Some("that agent is no longer running")
         );
     }
@@ -196,11 +200,11 @@ mod tests {
     fn a_comment_longer_than_the_daemon_takes_is_refused() {
         let co = checkout(vec![agent(7)]);
         let over = "x".repeat(MAX_REVIEW_COMMENT_BYTES + 1);
-        assert_eq!(comment(Some(reviewed()), Some(&co), None, &over).err(), Some(TOO_LONG));
+        assert_eq!(comment(Some(reviewed()), Some(&co), None, &over, 1).err(), Some(TOO_LONG));
         let full = "x".repeat(MAX_REVIEW_COMMENT_BYTES);
-        sent(comment(Some(reviewed()), Some(&co), None, &full));
+        sent(comment(Some(reviewed()), Some(&co), None, &full, 1));
         let padded = format!("  {full}  ");
-        let ClientMsg::ReviewComment { body, .. } = sent(comment(Some(reviewed()), Some(&co), None, &padded)) else {
+        let ClientMsg::ReviewComment { body, .. } = sent(comment(Some(reviewed()), Some(&co), None, &padded, 1)) else {
             panic!()
         };
         assert_eq!(body.len(), MAX_REVIEW_COMMENT_BYTES, "the bound counts after the trim");
@@ -217,14 +221,14 @@ mod tests {
         let one = checkout(vec![agent(7)]);
         for anchor in [reviewed(), read_in_code()] {
             assert_eq!(can_comment(Some(&anchor), Some(&none)), Err("no agent running in this checkout"));
-            assert_eq!(comment(Some(anchor.clone()), Some(&none), None, "hi").err(), Some("no agent running in this checkout"));
-            assert_eq!(comment(Some(anchor.clone()), Some(&one), None, "  ").err(), Some("the comment is empty"));
+            assert_eq!(comment(Some(anchor.clone()), Some(&none), None, "hi", 1).err(), Some("no agent running in this checkout"));
+            assert_eq!(comment(Some(anchor.clone()), Some(&one), None, "  ", 1).err(), Some("the comment is empty"));
             assert_eq!(
-                comment(Some(anchor.clone()), Some(&one), Some(PaneId(8)), "hi").err(),
+                comment(Some(anchor.clone()), Some(&one), Some(PaneId(8)), "hi", 1).err(),
                 Some("that agent is no longer running")
             );
             let ClientMsg::ReviewComment { recipient, anchor: rode, .. } =
-                sent(comment(Some(anchor.clone()), Some(&one), None, "hi"))
+                sent(comment(Some(anchor.clone()), Some(&one), None, "hi", 1))
             else {
                 panic!()
             };
@@ -236,15 +240,24 @@ mod tests {
     fn the_message_names_the_checkout_its_agent_is_in() {
         let mut co = checkout(vec![agent(7)]);
         co.id = CheckoutId(42);
-        let ClientMsg::ReviewComment { checkout: to, .. } = sent(comment(Some(reviewed()), Some(&co), None, "hi")) else {
+        let ClientMsg::ReviewComment { checkout: to, .. } = sent(comment(Some(reviewed()), Some(&co), None, "hi", 1)) else {
             panic!()
         };
         assert_eq!(to, CheckoutId(42));
     }
 
     #[test]
+    fn the_message_names_the_request_it_was_given() {
+        let co = checkout(vec![agent(7)]);
+        let ClientMsg::ReviewComment { request_id, .. } = sent(comment(Some(reviewed()), Some(&co), None, "hi", 7)) else {
+            panic!()
+        };
+        assert_eq!(request_id, 7);
+    }
+
+    #[test]
     fn a_chosen_agent_that_has_gone_is_refused_even_when_one_other_runs() {
         let co = checkout(vec![agent(9)]);
-        assert_eq!(comment(Some(reviewed()), Some(&co), Some(PaneId(8)), "hi").err(), Some("that agent is no longer running"));
+        assert_eq!(comment(Some(reviewed()), Some(&co), Some(PaneId(8)), "hi", 1).err(), Some("that agent is no longer running"));
     }
 }

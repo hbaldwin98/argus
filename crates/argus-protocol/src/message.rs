@@ -254,11 +254,18 @@ pub enum ClientMsg {
         session_id: String,
     },
     /// Persist a review comment, then notify the selected live agent.
+    /// Answered with [`ServerMsg::ReviewCommentSaved`] under `request_id`,
+    /// or refused by it ([`ServerMsg::Refused`]).
     ReviewComment {
         checkout: CheckoutId,
         recipient: PaneId,
         anchor: Box<ReviewAnchor>,
         body: String,
+        /// Names the comment, so its save and its refusal are told by this
+        /// id. Zero, the default, names nothing: what a client that
+        /// predates it sends.
+        #[serde(default)]
+        request_id: u64,
     },
     /// Read a project's decision board. Whole rather than scoped: a
     /// decision hanging off three others means nothing without them.
@@ -711,6 +718,11 @@ pub enum ServerMsg {
     ReviewCommentSaved {
         id: u64,
         delivered: bool,
+        /// The `request_id` the comment was sent under: the client's, so
+        /// the box that sent it knows its save. Zero from a daemon that
+        /// predates it, and to a client that named none.
+        #[serde(default)]
+        request_id: u64,
     },
     /// One feature's tasks: the answer to a `TaskAction::List`, and what
     /// every client receives whenever that list changes.
@@ -960,14 +972,37 @@ mod tests {
 
     /// `SpawnShell` as a client built before requests were named sent it,
     /// `Scrollback` as one built before lines were numbered, `AddProject`
-    /// as one built before a project could be named, and `Feature` as one
-    /// built before a change to a feature could name itself.
+    /// as one built before a project could be named, and `Feature` and
+    /// `ReviewComment` as one built before a change to a feature or a
+    /// comment could name itself.
     #[derive(Serialize, Deserialize)]
     enum OlderClientMsg {
         SpawnShell { checkout: CheckoutId },
         Scrollback { pane: PaneId, offset: u32 },
         AddProject { path: String, request_id: u64 },
         Feature { project: ProjectId, checkout: CheckoutId, action: FeatureAction },
+        ReviewComment { checkout: CheckoutId, recipient: PaneId, anchor: Box<ReviewAnchor>, body: String },
+    }
+
+    /// `ReviewCommentSaved` as a daemon built before comments were named
+    /// sent it.
+    #[derive(Serialize, Deserialize)]
+    enum OlderServerMsg {
+        ReviewCommentSaved { id: u64, delivered: bool },
+    }
+
+    fn anchor() -> Box<ReviewAnchor> {
+        Box::new(ReviewAnchor {
+            base: ReviewBase::Unstaged,
+            commit: None,
+            path: "a.rs".into(),
+            old_path: None,
+            old_start: None,
+            old_end: None,
+            new_start: Some(2),
+            new_end: Some(2),
+            text: vec!["+new".into()],
+        })
     }
 
     #[test]
@@ -1072,6 +1107,56 @@ mod tests {
             OlderClientMsg::Feature { project: ProjectId(1), checkout: CheckoutId(2), action: FeatureAction::Drop { slug } }
                 if slug == "trim"
         ));
+    }
+
+    #[test]
+    fn a_comment_from_an_older_client_names_no_request() {
+        let older = wire(&OlderClientMsg::ReviewComment {
+            checkout: CheckoutId(2),
+            recipient: PaneId(3),
+            anchor: anchor(),
+            body: "tidy".into(),
+        });
+        let read: ClientMsg = rmp_serde::from_slice(&older).unwrap();
+        assert!(
+            matches!(&read, ClientMsg::ReviewComment { checkout: CheckoutId(2), recipient: PaneId(3), body, request_id: 0, .. }
+                if body == "tidy"),
+            "{read:?}"
+        );
+    }
+
+    #[test]
+    fn an_older_daemon_reads_a_named_comment_and_ignores_the_name() {
+        let newer = wire(&ClientMsg::ReviewComment {
+            checkout: CheckoutId(2),
+            recipient: PaneId(3),
+            anchor: anchor(),
+            body: "tidy".into(),
+            request_id: 6,
+        });
+        let read: OlderClientMsg = rmp_serde::from_slice(&newer).unwrap();
+        assert!(matches!(
+            read,
+            OlderClientMsg::ReviewComment { checkout: CheckoutId(2), recipient: PaneId(3), anchor: a, body }
+                if body == "tidy" && a == anchor()
+        ));
+    }
+
+    #[test]
+    fn a_save_from_an_older_daemon_names_no_request() {
+        let older = wire(&OlderServerMsg::ReviewCommentSaved { id: 12, delivered: true });
+        let read: ServerMsg = rmp_serde::from_slice(&older).unwrap();
+        assert!(
+            matches!(read, ServerMsg::ReviewCommentSaved { id: 12, delivered: true, request_id: 0 }),
+            "{read:?}"
+        );
+    }
+
+    #[test]
+    fn an_older_client_reads_a_save_and_ignores_the_name() {
+        let newer = wire(&ServerMsg::ReviewCommentSaved { id: 12, delivered: true, request_id: 41 });
+        let read: OlderServerMsg = rmp_serde::from_slice(&newer).unwrap();
+        assert!(matches!(read, OlderServerMsg::ReviewCommentSaved { id: 12, delivered: true }));
     }
 
     #[test]

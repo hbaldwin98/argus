@@ -55,7 +55,7 @@ impl CommentBox {
         if !self.open {
             return Err("no comment box is open");
         }
-        match agent_comment::comment(anchor, checkout, self.to, body)? {
+        match agent_comment::comment(anchor, checkout, self.to, body, 0)? {
             Comment::Send(msg) => {
                 self.sending = true;
                 Ok(*msg)

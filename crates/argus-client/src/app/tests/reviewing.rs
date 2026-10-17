@@ -336,6 +336,7 @@ fn a_comment_is_typed_at_the_agent_and_submitted() {
             recipient,
             anchor,
             body,
+            request_id: 0,
         } => {
             assert_eq!(*sent_checkout, checkout);
             assert_eq!(*recipient, PaneId(51), "the agent, not the shell");
@@ -482,12 +483,14 @@ fn a_saved_comment_reports_delivery_from_the_daemon() {
     h.app.on_server_msg(ServerMsg::ReviewCommentSaved {
         id: 7,
         delivered: true,
+        request_id: 3,
     });
     assert_eq!(h.app.status, "comment #7 saved and sent");
 
     h.app.on_server_msg(ServerMsg::ReviewCommentSaved {
         id: 8,
         delivered: false,
+        request_id: 4,
     });
     assert_eq!(h.app.status, "comment #8 saved; agent unavailable");
 }

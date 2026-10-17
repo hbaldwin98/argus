@@ -192,7 +192,7 @@ impl App {
                     self.alert(message);
                 }
             }
-            ServerMsg::ReviewCommentSaved { id, delivered } => {
+            ServerMsg::ReviewCommentSaved { id, delivered, .. } => {
                 if let Some(session) = &mut self.review {
                     session.commented();
                 }

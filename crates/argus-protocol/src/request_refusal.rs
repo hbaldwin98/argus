@@ -74,7 +74,7 @@ impl Asked {
             | M::AddRepository { request_id, .. }
             | M::InitRepository { request_id, .. }
             | M::ResumeSession { request_id, .. } => (*request_id, false, Older::Made),
-            M::Feature { request_id, .. } => (*request_id, false, Older::Error),
+            M::Feature { request_id, .. } | M::ReviewComment { request_id, .. } => (*request_id, false, Older::Error),
             M::Review { request_id, checkout, .. } => (*request_id, true, Older::Review(*checkout)),
             M::ReviewContext { request_id, checkout, .. } => (*request_id, true, Older::ReviewContext(*checkout)),
             M::ListCode { request_id, checkout, .. }
@@ -91,7 +91,7 @@ impl Asked {
             M::Subscribe { .. } | M::Unsubscribe { .. } | M::Input { .. } | M::Paste { .. }
             | M::PasteFile { .. } | M::Scrollback { .. } | M::Resize { .. } | M::Kill { .. }
             | M::RenamePane { .. } | M::RemoveCheckout { .. } | M::OpenWorkspace { .. }
-            | M::CreateWorkspace { .. } | M::ListCommitFiles { .. } | M::ReviewComment { .. }
+            | M::CreateWorkspace { .. } | M::ListCommitFiles { .. }
             | M::GetDecisions { .. } | M::TrackerMap { .. } | M::Reconcile { .. } | M::Task { .. }
             | M::Decide { .. } | M::ChangeDecision { .. } | M::SequenceDiagram { .. }
             | M::ListBranches { .. } | M::ListFiles { .. } | M::SwitchBranch { .. }
@@ -164,7 +164,7 @@ mod tests {
     use crate::code::{CodeVersion, SearchOptions};
     use crate::features::FeatureAction;
     use crate::ids::{PaneId, ProjectId, RepositoryId};
-    use crate::review::ReviewBase;
+    use crate::review::{ReviewAnchor, ReviewBase};
 
     const CO: CheckoutId = CheckoutId(3);
 
@@ -193,6 +193,21 @@ mod tests {
             action: FeatureAction::Drop { slug: "trim".into() },
             request_id,
         }
+    }
+
+    fn review_comment(request_id: u64) -> ClientMsg {
+        let anchor = ReviewAnchor {
+            base: ReviewBase::Unstaged,
+            commit: None,
+            path: "a.rs".into(),
+            old_path: None,
+            old_start: None,
+            old_end: None,
+            new_start: Some(2),
+            new_end: Some(2),
+            text: vec!["+new".into()],
+        };
+        ClientMsg::ReviewComment { checkout: CO, recipient: PaneId(4), anchor: Box::new(anchor), body: "tidy".into(), request_id }
     }
 
     fn review(request_id: u64) -> ClientMsg {
@@ -225,7 +240,7 @@ mod tests {
 
     #[test]
     fn a_client_that_listed_refusals_is_refused_by_the_id_it_gave() {
-        for (msg, id, read) in [(spawn_shell(8), 8, false), (read_code(4), 4, true), (feature(5), 5, false)] {
+        for (msg, id, read) in [(spawn_shell(8), 8, false), (read_code(4), 4, true), (feature(5), 5, false), (review_comment(6), 6, false)] {
             let told = Asked::of(&msg).refusal("no".into(), true);
             assert_eq!(shown(&told), shown(&[refused(id, "no", read)]), "{msg:?}");
         }
@@ -235,7 +250,7 @@ mod tests {
     fn a_request_that_named_nothing_is_refused_as_an_error_whoever_asks() {
         let fetch = ClientMsg::Fetch { checkout: CO };
         let input = ClientMsg::Input { pane: PaneId(1), bytes: b"x".to_vec() };
-        for msg in [spawn_shell(0), add_project(0), feature(0), fetch, input] {
+        for msg in [spawn_shell(0), add_project(0), feature(0), review_comment(0), fetch, input] {
             for tagged in [false, true] {
                 let told = Asked::of(&msg).refusal("no".into(), tagged);
                 assert!(matches!(&told[..], [ServerMsg::Error { message }] if message == "no"), "{msg:?}: {told:?}");
@@ -266,6 +281,7 @@ mod tests {
             (list_commits(7), vec![ServerMsg::CommitsFailed { request_id: 7, checkout: CO, message: message.clone() }]),
             (feature(9), vec![ServerMsg::Error { message: message.clone() }]),
             (list_sessions(10), vec![ServerMsg::Error { message: message.clone() }]),
+            (review_comment(11), vec![ServerMsg::Error { message: message.clone() }]),
         ];
         for (msg, want) in cases {
             assert_eq!(shown(&Asked::of(&msg).refusal(message.clone(), false)), shown(&want), "{msg:?}");
@@ -280,7 +296,7 @@ mod tests {
         };
         assert!(read(review(1)) && read(list_sessions(2)) && read(search_code(3)));
         let spawn_agent = ClientMsg::SpawnAgent { checkout: CO, template: "claude".into(), prompt: None, request_id: 4 };
-        assert!(!read(spawn_agent) && !read(add_project(5)) && !read(feature(6)));
+        assert!(!read(spawn_agent) && !read(add_project(5)) && !read(feature(6)) && !read(review_comment(7)));
     }
 
     #[test]

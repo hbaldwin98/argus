@@ -529,10 +529,11 @@ pub(super) fn dispatch(
             recipient,
             anchor,
             body,
+            request_id,
         } => daemon
             .submit_review_comment(checkout, recipient, *anchor, body)
             .map(|(id, delivered)| {
-                let _ = out_tx.send(ServerMsg::ReviewCommentSaved { id, delivered });
+                let _ = out_tx.send(ServerMsg::ReviewCommentSaved { id, delivered, request_id });
             }),
 
         // What the person did with what an extension published, on its way

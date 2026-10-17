@@ -215,6 +215,7 @@ mod tests {
                     text: vec!["+changed".to_string()],
                 }),
                 body: "check this".to_string(),
+                request_id: 9,
             },
         ];
         for msg in &msgs {

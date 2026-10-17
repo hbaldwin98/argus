@@ -3430,7 +3430,7 @@ mod tests {
         assert!(sent.iter().any(|m| matches!(m, ClientMsg::ReviewComment { .. })), "{:?}", names(&sent));
         assert!(code_page(&mut s).comment.is_some());
 
-        s.receive(ServerMsg::ReviewCommentSaved { id: 7, delivered: true });
+        s.receive(ServerMsg::ReviewCommentSaved { id: 7, delivered: true, request_id: 0 });
         let events = s.events(0);
         let page = events.iter().rev().find_map(|e| match e {
             Event::Code(page) => Some(page),

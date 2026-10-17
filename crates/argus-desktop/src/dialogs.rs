@@ -71,7 +71,7 @@ impl Dialogs {
             }
             // The save names no box, so it goes to every review there is,
             // and each takes it only if the comment was its own.
-            ServerMsg::ReviewCommentSaved { id, delivered } => {
+            ServerMsg::ReviewCommentSaved { id, delivered, .. } => {
                 for dialog in self.reviews() {
                     dialog.commented();
                 }
@@ -518,7 +518,7 @@ mod tests {
         dialogs.review_comment(Some("tidy".into()), &tree, &mut out, &mut say);
         assert!(matches!(out.as_slice(), [ClientMsg::ReviewComment { .. }]), "{say:?}");
         assert!(dialogs.park_review().is_some());
-        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true }, &mut say);
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 0 }, &mut say);
         assert!(dialogs.unpark());
         let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
         assert!(page.comment.is_none() && page.pick.is_none());
@@ -537,7 +537,7 @@ mod tests {
         assert!(dialogs.park_review().is_some());
         compose(&mut dialogs, &tree);
 
-        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true }, &mut say);
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 0 }, &mut say);
         let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
         assert!(page.comment.is_some() && page.pick.is_some(), "the open review keeps its box");
         assert!(dialogs.unpark());
@@ -550,7 +550,7 @@ mod tests {
         let tree = agent_tree();
         let mut dialogs = composing(&tree);
         assert!(dialogs.park_review().is_some());
-        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true }, &mut Vec::new());
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 0 }, &mut Vec::new());
         assert!(dialogs.unpark());
         let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
         assert!(page.comment.is_some() && page.pick.is_some());

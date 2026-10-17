@@ -2,7 +2,7 @@
 //! on, through a connection with no socket.
 
 use super::*;
-use crate::conn::tests::Harness;
+use crate::conn::tests::{review_comment, Harness};
 use crate::review_queue::ReviewAsk;
 use argus_protocol::transcript::Conversation;
 use argus_protocol::{CheckoutId, PaneId, RepositoryId, ReviewBase};
@@ -754,6 +754,36 @@ async fn a_code_read_that_cannot_be_answered_is_refused_by_its_id() {
     });
     let refusal = h.refusal().await;
     assert_eq!((refusal.request_id, refusal.read), (4, true));
+}
+
+#[tokio::test]
+async fn a_refused_comment_is_refused_by_its_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::refused_by_id(dir.path());
+    h.send(review_comment(CheckoutId(9999), PaneId(1), 6));
+    let refusal = h.refusal().await;
+    assert_eq!((refusal.request_id, refusal.read), (6, false));
+    assert!(refusal.reason.contains("no such checkout"), "{}", refusal.reason);
+    assert!(h.replies().is_empty(), "no Error beside it");
+}
+
+#[tokio::test]
+async fn a_comment_that_named_nothing_is_refused_as_an_error_to_any_client() {
+    let dir = tempfile::tempdir().unwrap();
+    for mut h in [Harness::new(dir.path()), Harness::refused_by_id(dir.path())] {
+        h.send(review_comment(CheckoutId(9999), PaneId(1), 0));
+        let error = h.error().await;
+        assert!(error.contains("no such checkout"), "{error}");
+    }
+}
+
+#[tokio::test]
+async fn a_named_comment_is_refused_as_an_error_to_a_client_that_did_not_list_refusals() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    h.send(review_comment(CheckoutId(9999), PaneId(1), 5));
+    let error = h.error().await;
+    assert!(error.contains("no such checkout"), "{error}");
 }
 
 #[tokio::test]

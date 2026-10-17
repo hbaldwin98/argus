@@ -693,6 +693,45 @@ mod tests {
         (daemon, pane)
     }
 
+    /// A comment on one added line to `recipient`, named `request_id`.
+    pub(super) fn review_comment(checkout: CheckoutId, recipient: PaneId, request_id: u64) -> ClientMsg {
+        let anchor = argus_protocol::ReviewAnchor {
+            base: argus_protocol::ReviewBase::Unstaged,
+            commit: None,
+            path: "a.rs".into(),
+            old_path: None,
+            old_start: None,
+            old_end: None,
+            new_start: Some(2),
+            new_end: Some(2),
+            text: vec!["+new".into()],
+        };
+        ClientMsg::ReviewComment { checkout, recipient, anchor: Box::new(anchor), body: "tidy".into(), request_id }
+    }
+
+    #[tokio::test]
+    async fn a_saved_comment_is_answered_under_the_id_it_was_sent_with() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, pane) = daemon_with_an_agent(dir.path());
+        let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
+        let mut client = connect_to(daemon.clone()).await;
+        // Zero is what a client from before comments were named sends.
+        for request_id in [4, 0] {
+            argus_protocol::write_msg(&mut client, &review_comment(checkout, pane, request_id)).await.unwrap();
+            loop {
+                match next(&mut client).await {
+                    ServerMsg::ReviewCommentSaved { request_id: answered, .. } => {
+                        assert_eq!(answered, request_id);
+                        break;
+                    }
+                    ServerMsg::Error { message } => panic!("the comment was refused: {message}"),
+                    _ => {}
+                }
+            }
+        }
+        let _ = daemon.close_pane(pane);
+    }
+
     pub(super) fn view_change(id: &str) -> argus_protocol::ViewChange {
         argus_protocol::ViewChange::Show {
             view: argus_protocol::AgentView {

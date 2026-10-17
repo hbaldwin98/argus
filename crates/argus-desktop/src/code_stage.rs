@@ -1724,7 +1724,7 @@ mod tests {
         let (_, sent) = gesture(&mut code, CodeGesture::Comment { body: Some("why".into()) }, &projects);
         assert!(matches!(sent.as_slice(), [ClientMsg::ReviewComment { .. }]));
 
-        let saved = code.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true });
+        let saved = code.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 0 });
         assert!(matches!(saved, Some(ServerMsg::ReviewCommentSaved { .. })), "the review says it");
         assert!(code.page(&projects).unwrap().comment.is_none(), "the box closed");
         assert!(code.receive(ServerMsg::Tree(Vec::new())).is_some());
