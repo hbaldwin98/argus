@@ -960,8 +960,13 @@ Releases are created from version tags. The tag must exactly match `workspace.pa
 `Cargo.toml`; for version `0.1.0`, use `v0.1.0`.
 
 1. Update `workspace.package.version` and commit the change.
-2. Ensure CI passes on `main`.
-3. Create and push the matching tag:
+2. If the release raises `SCHEMA_VERSION` in `crates/argusd/src/store/mod.rs`, commit a store it
+   wrote: populate one through `Store`'s own methods in a throwaway test, save it as
+   `crates/argusd/tests/fixtures/stores/runtime-vX.Y.Z.db`, and add it to `RELEASES` in
+   `crates/argusd/src/store/tests/releases.rs` with a test of what it holds. Every later build is
+   then tested opening it.
+3. Ensure CI passes on `main`.
+4. Create and push the matching tag:
 
 ```sh
 git tag -a v0.1.0 -m "Argus 0.1.0"

@@ -1,6 +1,8 @@
 //! Round trips through a store built in memory, so no test can reach
 //! the real `runtime.db`.
 
+mod releases;
+
 use argus_protocol::{Actor, DiagramWrite, TaskPlace, TaskState, TaskWrite};
 
 use super::*;
@@ -33,6 +35,14 @@ fn legacy_connection(path: &Path, version: usize) -> Connection {
         schema::SCHEMA_V16,
         schema::SCHEMA_V17,
         schema::SCHEMA_V18,
+        schema::SCHEMA_V19,
+        schema::SCHEMA_V20,
+        schema::SCHEMA_V21,
+        schema::SCHEMA_V22,
+        schema::SCHEMA_V23,
+        schema::SCHEMA_V24,
+        schema::SCHEMA_V25,
+        schema::SCHEMA_V26,
     ];
     for step in steps.into_iter().take(version) {
         conn.execute_batch(step).unwrap();
