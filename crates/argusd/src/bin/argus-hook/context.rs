@@ -9,6 +9,8 @@
 //! questions are the exception, and are listed.
 
 use super::*;
+use crate::board::features::{feature_number, parked_lines, read_feature_board};
+use crate::comments::comments_message;
 
 /// Prints `preface` (the harness's instructions, when a hook passes them)
 /// and then the live context.
@@ -80,7 +82,7 @@ pub(super) fn format_context(
     let open: Vec<&Decision> = board.decisions.iter().filter(|d| d.open()).collect();
     let mut feature = vec![format!(
         "Feature{}: {} ({}), {}, {} decision(s).",
-        super::board::feature_number(current),
+        feature_number(current),
         current.title,
         current.slug,
         match &tasks {
@@ -89,7 +91,7 @@ pub(super) fn format_context(
         },
         board.decisions.len() - open.len()
     )];
-    feature.extend(super::board::parked_lines(current, &board.features));
+    feature.extend(parked_lines(current, &board.features));
     // Named here, where the brief is not, because this is the one thing on
     // the board an agent can get wrong by not having read it: a question
     // left for a person looks, from inside the work, like a choice to make.

@@ -12,16 +12,16 @@ use std::io::{Read, Write};
 use argus_protocol::board::reconcile::Stage;
 use argus_protocol::{Failed, Feature, ProposalWrite, ReconcileChange};
 
-use super::*;
+use crate::*;
 
-pub(super) fn reconcile(rest: &[&str]) {
+pub(crate) fn reconcile(rest: &[&str]) {
     let mut out = std::io::stdout().lock();
     let _ = writeln!(out, "{}", reconcile_message(rest, &env_url(), &env_token(), std::io::stdin()));
 }
 
 /// `reconcile`, `reconcile propose --stdin`, `reconcile report [--failed
 /// <line> <error>]...`.
-pub(super) fn reconcile_message(rest: &[&str], base_url: &str, token: &str, mut stdin: impl Read) -> String {
+fn reconcile_message(rest: &[&str], base_url: &str, token: &str, mut stdin: impl Read) -> String {
     let change = match rest {
         [] => ReconcileChange::Read,
         ["propose", "--stdin"] => {
@@ -67,7 +67,7 @@ fn failures(flags: &[&str]) -> Result<Vec<Failed>, String> {
     Ok(failed)
 }
 
-pub(super) fn format_reconcile(feature: &Feature, change: &ReconcileChange) -> String {
+fn format_reconcile(feature: &Feature, change: &ReconcileChange) -> String {
     let mut out = Vec::new();
     let said = match change {
         ReconcileChange::Read => None,

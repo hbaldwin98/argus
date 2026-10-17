@@ -205,6 +205,20 @@ pub(super) fn call_within<C: Call>(
     C::ReplyForm::read(answer.as_bytes()).map_err(|_| Refusal::Unreadable)
 }
 
+/// One read from the pane API, with every way it can fail phrased for the
+/// agent that ran the command rather than for a log.
+pub(super) fn read<C: Call<Body = ()>>(
+    what: &str,
+    rest: &[&str],
+    base_url: &str,
+    token: &str,
+) -> Result<C::Reply, String> {
+    if !rest.is_empty() {
+        return Err(format!("could not read {what}: {what} takes no arguments"));
+    }
+    call::<C>(base_url, token, &()).map_err(|refusal| refusal.said(&format!("could not read {what}")))
+}
+
 /// Best effort, the reply unread, as a hook's report is: nothing here may
 /// stall a turn.
 pub(super) fn send<C: Call>(base_url: &str, token: &str, body: &C::Body, session: Option<&str>) {
@@ -385,5 +399,33 @@ mod tests {
         let refusal = call::<hook::call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
         server.join().unwrap();
         assert_eq!(refusal, Refusal::Unreadable);
+    }
+
+    #[test]
+    fn a_board_command_names_its_feature_anywhere_in_its_arguments() {
+        let (named, rest) =
+            named_feature("task", &["add", "bound", "it", "--feature", "lean-wire", "--under", "4"])
+                .unwrap();
+        assert_eq!(named, Some("lean-wire"));
+        assert_eq!(rest, ["add", "bound", "it", "--under", "4"]);
+
+        let (named, rest) = named_feature("decisions", &[]).unwrap();
+        assert_eq!((named, rest.len()), (None, 0));
+    }
+
+    #[test]
+    fn a_feature_on_its_own_is_read_by_name() {
+        let (named, rest) = named_feature("feature", &["protocol-handshake"]).unwrap();
+        assert_eq!(named, Some("protocol-handshake"));
+        assert!(rest.is_empty());
+        let (named, rest) = named_feature("feature", &["list"]).unwrap();
+        assert_eq!((named, rest), (None, vec!["list"]), "a subcommand stays one");
+    }
+
+    #[test]
+    fn a_name_that_is_not_a_slug_never_travels() {
+        assert!(named_feature("task", &["--feature"]).is_err());
+        assert!(named_feature("task", &["--feature", "Two Words"]).is_err());
+        assert!(named_feature("task", &["--feature", "../../etc"]).is_err());
     }
 }

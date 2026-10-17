@@ -85,12 +85,14 @@
 //! precisely because this program reads and writes nothing on stdio it was
 //! not handed.
 //!
-//! The commands live in modules by what they talk about: `board` for the
-//! shared work an agent reads and writes, `installed` for the form a
-//! harness's hook config runs, `transport` for how either reaches the
-//! daemon, `view` for what an agent shows the person, `reconcile` for a
-//! feature's reconcile with its tickets, `launch` for the agents an agent
-//! starts, and `transcript` for the one file written without it.
+//! The commands live in modules by what they talk about: `comments` for
+//! the review comments addressed to the pane, `board` for the feature board
+//! an agent reads and writes — features, tasks, diagrams, decisions, the
+//! tracker map and a feature's reconcile with its tickets — `installed`
+//! for the form a harness's hook config runs, `transport` for how either
+//! reaches the daemon, `view` for what an agent shows the person, `launch`
+//! for the agents an agent starts, and `transcript` for the one file
+//! written without it.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -98,7 +100,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use argus_protocol::hook::{self, call::Call};
+use argus_protocol::hook;
 use argus_protocol::{
     is_slug, parse_pane_url, requested_scope, Consequence, Decision, DecisionBoard,
     DecisionChange, DecisionState, DecisionText, DecisionWrite, DiagramAction,
@@ -112,17 +114,16 @@ use argus_protocol::{
 const TIMEOUT: Duration = Duration::from_secs(2);
 
 mod board;
+mod comments;
 mod context;
 mod inbox;
 mod installed;
 mod launch;
-mod reconcile;
 mod telemetry;
 mod transcript;
 mod transport;
 mod view;
 
-use board::*;
 use installed::*;
 use telemetry::*;
 use transport::*;
@@ -169,15 +170,15 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("status", status),
     ("checkout", checkout),
     ("session", session),
-    ("comments", comments),
-    ("feature", feature),
-    ("task", task),
-    ("diagram", diagram),
-    ("tracker-map", tracker_map),
-    ("reconcile", reconcile::reconcile),
+    ("comments", comments::comments),
+    ("feature", board::features::feature),
+    ("task", board::tasks::task),
+    ("diagram", board::diagrams::diagram),
+    ("tracker-map", board::tracker_map::tracker_map),
+    ("reconcile", board::reconcile::reconcile),
     ("view", view),
-    ("decisions", decisions),
-    ("decide", decide),
+    ("decisions", board::decisions::decisions),
+    ("decide", board::decisions::decide),
     ("telemetry", telemetry),
     ("transcript", transcript::transcript),
     ("inbox", inbox::inbox),
@@ -270,6 +271,10 @@ fn reported_checkout(args: &[&str]) -> Option<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::decisions::{decide_message, decisions_message, parse_decide_args};
+    use crate::board::features::{feature_message, format_export};
+    use crate::board::tasks::{format_tasks, task_message};
+    use crate::comments::comments_message;
 
     #[test]
     fn a_report_names_the_conversation_it_came_from() {
