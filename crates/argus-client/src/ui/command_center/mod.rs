@@ -3,8 +3,9 @@
 //! This module owns presentation only. Every selection still points into the
 //! daemon's tree; the shell merely gives that tree a stable rail and focused
 //! operational surfaces. Here: the frame that places the rail and a stage,
-//! the stage heading and first-run surface, and the status and telemetry
-//! vocabulary every stage shares. Each stage is its own submodule.
+//! the tab strip above them (`views`), the stage heading and first-run
+//! surface, and the status and telemetry vocabulary every stage shares.
+//! Each stage is its own submodule.
 
 use super::*;
 use argus_protocol::{GitStatus, PaneKind, PaneStatus, TaskState};
@@ -13,6 +14,7 @@ mod agent_views;
 mod checkouts;
 mod feature;
 mod rail;
+pub(super) mod views;
 mod workspace;
 
 pub(crate) use agent_views::agent_view_at;
@@ -23,6 +25,7 @@ pub(crate) use feature::feature_hit_at;
 use feature::render_feature_stage;
 pub(crate) use rail::{project_header_at, rail_target_at, sidebar_contains};
 use rail::render_sidebar;
+use views::render_view_tabs;
 use workspace::render_workspace;
 
 /// The mark and the WORKSPACE tab: the rail's border continues the FEATURE

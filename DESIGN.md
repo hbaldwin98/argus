@@ -496,7 +496,8 @@ result of a request; `ui` is a pure function of it.
 | `app/board_writes` | what the Feature stage asks the daemon to change: the line or note being typed, and the message each key sends |
 | `ui` | the frame, and where the cursor goes on it |
 | `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
-| `ui/command_center` | the HTML-specified shell: where the rail and stage go, the stage heading, the first-run state, and the status vocabulary they share |
+| `ui/command_center` | the HTML-specified shell: where the rail and stage go, the tab strip above them, the stage heading, the first-run state, and the status vocabulary they share |
+| `ui/command_center/views` | the tab strip naming the four stages, and which tab a click lands on |
 | `ui/command_center/rail` | drawing the rail — its heading, the rows `app/rail` lists, the divider between the active repositories and the quiet ones, and the consoles at its foot — and which row a click lands on |
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/checkouts`, `ui/command_center/agent_views` | one stage each, with the hit-test that shares its layout |
 | `ui/command_center/feature/index`, `ui/command_center/feature/work`, `ui/command_center/feature/record`, `ui/command_center/feature/flows`, `ui/command_center/feature/capture` | what fills the Feature stage's frame: the index of features, each of the three lenses, and the note a feature is written as |
@@ -507,7 +508,6 @@ result of a request; `ui` is a pure function of it.
 | `ui/theme` | the palette: every colour the UI draws, by the role it plays |
 | `ui/motion` | animation arithmetic: how far along a transition is at a given instant |
 | `ui/prose` | markdown styled where it stands |
-| `ui/views` | the tab strip naming the four stages, and which tab a click lands on |
 | `ui/status` | the command band: where you are, what just happened, and the keys that apply here |
 | `ui/term` | a pane's live screen, drawn cell by cell, and where its cursor goes |
 | `ui/layers` | what the renderer floats over the command center |

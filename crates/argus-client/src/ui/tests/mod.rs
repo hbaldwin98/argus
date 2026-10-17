@@ -16,7 +16,6 @@ mod panes;
 mod picker;
 mod saved_views;
 mod status;
-mod views;
 
 use super::*;
 use crate::fixtures::*;

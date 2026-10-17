@@ -3,6 +3,7 @@
 mod checkouts;
 mod feature;
 mod rail;
+mod views;
 
 use super::*;
 

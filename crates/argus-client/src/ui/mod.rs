@@ -47,7 +47,6 @@ mod status;
 mod term;
 mod text;
 pub mod theme;
-mod views;
 
 use card::*;
 use command_center::*;
@@ -60,7 +59,6 @@ use layers::review::*;
 use status::*;
 use term::*;
 use text::*;
-use views::*;
 
 pub(crate) use command_center::{
     agent_view_at as command_center_agent_view_at,
@@ -72,7 +70,7 @@ pub(crate) use command_center::{
     SIDEBAR_MIN_WIDTH as RAIL_MIN_WIDTH,
 };
 pub use term::CursorPlacement;
-pub use views::tab_at;
+pub use command_center::views::tab_at;
 
 /// The text caret, drawn rather than using the terminal cursor: the
 /// cursor belongs to whichever pane is focused.
