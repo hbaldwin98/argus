@@ -686,7 +686,7 @@ pub struct Repository {
     /// Listed panes across its checkouts.
     pub panes: usize,
     /// The loudest status word beneath it, for its dot.
-    #[cfg_attr(test, ts(type = "(\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\") | null"))]
+    #[cfg_attr(test, ts(as = "Option<crate::connection::page::StatusWord>"))]
     pub status: Option<&'static str>,
     /// How long since it was last used, for a quiet one: `2h`, `3d`.
     pub used: Option<String>,
@@ -717,6 +717,7 @@ pub struct Checkout {
     pub open: bool,
     pub count: usize,
     /// The loudest status word of its panes, folded or not.
+    #[cfg_attr(test, ts(as = "Option<crate::connection::page::StatusWord>"))]
     pub status: Option<&'static str>,
     pub panes: Vec<Pane>,
 }
@@ -729,12 +730,29 @@ pub struct Pane {
     pub agent: bool,
     pub title: String,
     /// The loudest status word the row stands for, its children's included.
-    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
+    #[cfg_attr(test, ts(as = "crate::connection::page::StatusWord"))]
     pub status: &'static str,
     pub note: Option<String>,
     pub on: bool,
     /// How many views its agent has shown that are still up.
     pub views: usize,
+}
+
+/// A pane status as the page reads it, `PaneStatus::word`: named once so
+/// every row that carries one, and every table the page keys by one, is
+/// held to the same words. Only a type for the page; Rust sends the word.
+#[cfg(test)]
+#[derive(ts_rs::TS, Serialize)]
+#[ts(export)]
+#[serde(rename_all = "kebab-case")]
+pub enum StatusWord {
+    Idle,
+    Working,
+    Waiting,
+    NeedsReview,
+    Done,
+    Failed,
+    Exited,
 }
 
 /// A value in an agent's view that points into Argus, as the page names it
@@ -784,7 +802,7 @@ pub struct Shown {
     pub branch: String,
     pub agent: bool,
     pub title: String,
-    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
+    #[cfg_attr(test, ts(as = "crate::connection::page::StatusWord"))]
     pub status: &'static str,
     /// The session this window resumed in it, while the pane lasts.
     pub resumed: Option<Resumed>,
@@ -890,7 +908,7 @@ pub struct AfterChoice {
 pub struct Agent {
     pub pane: u64,
     pub title: String,
-    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
+    #[cfg_attr(test, ts(as = "crate::connection::page::StatusWord"))]
     pub status: &'static str,
     pub needs_you: bool,
 }
@@ -1351,7 +1369,7 @@ pub struct PalettePane {
     pub id: u64,
     pub title: String,
     pub agent: bool,
-    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
+    #[cfg_attr(test, ts(as = "crate::connection::page::StatusWord"))]
     pub status: &'static str,
     /// `repository / checkout`.
     pub place: String,
@@ -1664,6 +1682,36 @@ mod tests {
 
     fn as_json(event: Event) -> serde_json::Value {
         serde_json::to_value(event).unwrap()
+    }
+
+    #[test]
+    fn the_page_knows_every_word_a_pane_status_is_sent_as() {
+        use argus_protocol::PaneStatus;
+        // Exhaustive, so a status added to the protocol does not compile
+        // here until the page has a word for it.
+        fn named(status: PaneStatus) -> StatusWord {
+            match status {
+                PaneStatus::Idle => StatusWord::Idle,
+                PaneStatus::Working => StatusWord::Working,
+                PaneStatus::Waiting => StatusWord::Waiting,
+                PaneStatus::NeedsReview => StatusWord::NeedsReview,
+                PaneStatus::Done => StatusWord::Done,
+                PaneStatus::Failed => StatusWord::Failed,
+                PaneStatus::Exited { .. } => StatusWord::Exited,
+            }
+        }
+        let every = [
+            PaneStatus::Idle,
+            PaneStatus::Working,
+            PaneStatus::Waiting,
+            PaneStatus::NeedsReview,
+            PaneStatus::Done,
+            PaneStatus::Failed,
+            PaneStatus::Exited { code: None },
+        ];
+        for status in every {
+            assert_eq!(serde_json::to_value(named(status)).unwrap(), status.word(), "{status:?}");
+        }
     }
 
     #[test]

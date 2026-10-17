@@ -92,7 +92,7 @@ pub struct ConsolePage {
 pub struct ConsoleTab {
     pub pane: u64,
     pub title: String,
-    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
+    #[cfg_attr(test, ts(as = "crate::connection::page::StatusWord"))]
     pub status: &'static str,
     /// The tab chosen for one side: shown when the console has the canvas.
     pub on: bool,

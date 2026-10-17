@@ -66,6 +66,7 @@ pub struct CheckoutsRow {
 #[serde(rename_all = "camelCase")]
 pub struct Running {
     pub agent: bool,
+    #[cfg_attr(test, ts(as = "crate::connection::page::StatusWord"))]
     pub status: &'static str,
 }
 

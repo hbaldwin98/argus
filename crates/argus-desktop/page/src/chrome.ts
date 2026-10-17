@@ -3,6 +3,7 @@
 
 import type { Action } from './bindings/Action';
 import type { Resumed } from './bindings/Resumed';
+import type { StatusWord } from './bindings/StatusWord';
 import { drawCheckouts } from './checkouts/stage.js';
 import { drawCode } from './code/stage.js';
 import { clock } from './kit/clock.js';
@@ -25,7 +26,7 @@ import { state } from './state.js';
 import { featureEdges } from './board/lenses/work.js';
 import { call } from './connection/tauri.js';
 
-const LOUD = new Set(['waiting', 'needs-review', 'failed']);
+const LOUD = new Set<StatusWord>(['waiting', 'needs-review', 'failed']);
 
 export function drawChrome(): void {
   const stopped = state.status.connection === 'stopped';
@@ -98,7 +99,7 @@ function chosenRepository(): string | null {
   return project?.repositories.find((repo) => repo.id === repository)?.name ?? null;
 }
 
-function statusColour(word: string | null): string | null {
+function statusColour(word: StatusWord | null): string | null {
   if (word && LOUD.has(word)) return 'var(--attention)';
   if (word === 'working') return 'var(--accent)';
   return null;
@@ -106,7 +107,7 @@ function statusColour(word: string | null): string | null {
 
 /** The few words a pane row says beside its dot: only what asks for a
  *  look, or that it has ended. Working shows in the dot alone. */
-const PANE_WORD: Record<string, string> = {
+const PANE_WORD: Partial<Record<StatusWord, string>> = {
   waiting: 'needs you',
   'needs-review': 'review',
   failed: 'failed',
