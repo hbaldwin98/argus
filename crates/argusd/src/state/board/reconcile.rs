@@ -222,7 +222,7 @@ fn ask_message(feature: &Feature, ask: &str) -> String {
          lines within the ask with `argus-hook reconcile propose --feature {slug} --stdin` and wait: \
          the person ticks the ones you may carry out.",
         number = feature.number,
-        title = one_line(&feature.title),
+        title = argus_protocol::agents::typed::plain(&feature.title),
         slug = feature.slug,
     )
 }
@@ -238,8 +238,4 @@ fn carry_out_message(feature: &Feature, reconcile: &Reconcile) -> String {
         number = feature.number,
         slug = feature.slug,
     )
-}
-
-fn one_line(text: &str) -> String {
-    text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
 }

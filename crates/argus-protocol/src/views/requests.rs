@@ -1,18 +1,13 @@
 //! What an agent is typed when the person acts on one of its views: a press,
-//! or a refresh of a view it showed or saved. Each is one line with no
-//! control character in it, since it may be typed into a terminal where a
-//! newline sends it early and an escape does worse.
+//! or a refresh of a view it showed or saved. Each may be typed into its
+//! terminal, so all of it is [`plain`].
 
+use crate::agents::typed::plain;
 use crate::views::agent_view::AgentView;
 use crate::views::saved::ViewSource;
 use crate::views::press::{AnswerValue, ViewAction, ViewPress};
 
-/// Control characters made spaces.
-fn plain(text: &str) -> String {
-    text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
-}
-
-/// The same, through every string of `value`, keys included.
+/// [`plain`] through every string of `value`, keys included.
 fn plain_json(value: serde_json::Value) -> serde_json::Value {
     use serde_json::Value;
     match value {

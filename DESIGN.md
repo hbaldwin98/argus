@@ -395,6 +395,7 @@ live in this crate and a contract written twice drifts in silence.
 | `agents/memory` | the working memory an agent receives for one request |
 | `agents/sessions` | a repository's agent sessions as listed: the harness and id that resume each, its checkout or the removed worktree it ran in, title, times and turns, and the pane running it |
 | `agents/transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
+| `agents/typed` | what may be typed into an agent's terminal: one line with no control character in it |
 | `views` | the views agents show and keep |
 | `views/agent_view` | what a view an agent shows is made of — its blocks and values and the change an agent sends to show, patch or close one — as the desktop and the terminal client both draw it |
 | `views/check` | whether a view keeps its limits (sizes, its serialised size among them, depth, counts, bounded numbers, unique and printable ids, web links, checkout-relative paths, kinds this Argus knows), and where it does not, the path that names the fault |

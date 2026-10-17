@@ -4,3 +4,4 @@ pub mod launch;
 pub mod memory;
 pub mod sessions;
 pub mod transcript;
+pub mod typed;
