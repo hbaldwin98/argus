@@ -5,8 +5,8 @@
 //! drifted — a key could reach dispatch and `?` and never the bar. Now a
 //! mode's keys are one table: dispatch looks a key up in it, `?` lists it,
 //! and the bar is read off the hints it carries. Where the keys are typed
-//! text or a leader chord, dispatch stays written out in `app/input` and the
-//! table here is only what `?` says about them.
+//! text or a leader chord, dispatch stays written out in
+//! `app/gestures/input` and the table here is only what `?` says about them.
 
 use super::*;
 use crossterm::event::KeyCode::{
@@ -1240,7 +1240,7 @@ fn in_brief(app: &mut App, act: impl FnOnce(&mut BriefView)) {
 }
 
 /// Reading a brief. Writing one is typing, so insert mode's keys are
-/// handled in `app/input` and only described here.
+/// handled in `app/gestures/input` and only described here.
 const BRIEF: Keymap = Keymap {
     groups: &[&Group {
         title: "a brief",
@@ -1393,8 +1393,9 @@ const DIAGRAM: Keymap = Keymap {
 // --- keys handled by hand -----------------------------------------------------
 //
 // These modes take typed text or a leader chord, which a table of single
-// keys cannot express, so `app/input` dispatches them and `ui/status` writes
-// their bar. What is here is only what `?` says about them.
+// keys cannot express, so `app/gestures/input` dispatches them and
+// `ui/status` writes their bar. What is here is only what `?` says about
+// them.
 
 const PANE: Keymap = Keymap {
     groups: &[&Group {

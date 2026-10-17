@@ -8,7 +8,7 @@
 //! handles does not compile. What the keys *are* in each mode is its child,
 //! [`keymap`].
 
-use super::*;
+use crate::app::*;
 
 mod keymap;
 
@@ -88,7 +88,7 @@ impl App {
 
     /// Whether a printable key would be typed into something rather than
     /// read as a command — which is also whether `?` is a character here.
-    pub(super) fn takes_text(&self) -> bool {
+    pub(in crate::app) fn takes_text(&self) -> bool {
         match self.mode() {
             Mode::Prompt => !matches!(self.prompt, Some(Prompt::ConfirmRemove { .. })),
             Mode::DirPicker | Mode::CheckoutFilter | Mode::Pane => true,

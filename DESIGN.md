@@ -483,10 +483,12 @@ result of a request; `ui` is a pure function of it.
 | `app/tree/nav` | where you are in the tree, and what moving does |
 | `app/tree/rows` | naming a row independently of its index |
 | `app/tree/rail` | what the rail lists, in what order, which repositories are open and which checkouts folded, and what choosing a row does |
-| `app/layout`, `app/modal` | where the last frame put things, and the layers that float over it |
-| `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
-| `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
-| `app/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
+| `app/gestures` | what the operator's gestures mean |
+| `app/gestures/input`, `app/gestures/mouse`, `app/gestures/scroll` | a key, mode by mode; the mouse against the last frame; which pane a scroll moves |
+| `app/gestures/layout` | where the last frame put things, and which of them has focus |
+| `app/gestures/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
+| `app/gestures/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
+| `app/modal` | the layers that float over the last frame |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
 | `app/awaited` | what the terminal client does with what the daemon made for it — focus the pane, select the row, start what was asked for in the new checkout — once `awaited` says the tree, or the consoles beside it, holds it |
 | `app/consoles` | the shells that belong to no checkout: the daemon's list of them, which one the stage shows, and asking for another |
@@ -725,17 +727,18 @@ so the review you asked about is still there when you close it, and any key that
 key closes it — having to hunt for the way out of a window you opened to be told something is the
 problem it exists to solve. `?` is only this where nothing is taking text; on a prompt, in a
 pane, in a filter or a feature line, or in a brief being written it is a character, and the leader
-chord reaches the list from inside a pane. Which mode has the keys is decided once (`app/mode`)
-and key dispatch, the bar and `?` each match on that answer exhaustively, so a mode one of them
-forgets does not compile — the three used to work it out separately, in different orders, and
-disagreed. What each mode's keys *are* is decided once too (`app/mode/keymap`): a mode declares
-its bindings — the keys, what `?` says of them, the bar's hint and how many narrower tiers keep it,
-and the action — and dispatch looks the key up there, `?` lists it, and the bar is read off the
-hints. A binding can be kept to `?`, or out of both, but only on purpose: a test fails when a key
-a mode takes is on neither its bar nor in its `?`. The bars that depend on more than the mode —
-the feature stage's per panel, the leader, a parked or fullscreen pane, a brief being written, and
-the typing surfaces — stay written out in `ui/status`, and typed text and the leader chord are
-still dispatched by hand in `app/input`, with the keymap only saying what `?` lists for them.
+chord reaches the list from inside a pane. Which mode has the keys is decided once
+(`app/gestures/mode`) and key dispatch, the bar and `?` each match on that answer exhaustively, so
+a mode one of them forgets does not compile — the three used to work it out separately, in
+different orders, and disagreed. What each mode's keys *are* is decided once too
+(`app/gestures/mode/keymap`): a mode declares its bindings — the keys, what `?` says of them, the
+bar's hint and how many narrower tiers keep it, and the action — and dispatch looks the key up
+there, `?` lists it, and the bar is read off the hints. A binding can be kept to `?`, or out of
+both, but only on purpose: a test fails when a key a mode takes is on neither its bar nor in its
+`?`. The bars that depend on more than the mode — the feature stage's per panel, the leader, a
+parked or fullscreen pane, a brief being written, and the typing surfaces — stay written out in
+`ui/status`, and typed text and the leader chord are still dispatched by hand in
+`app/gestures/input`, with the keymap only saying what `?` lists for them.
 
 A project takes its repositories from a root directory, from paths named one at a time, or from
 both. Each becomes a repository with its own primary checkout and linked worktrees. Repository

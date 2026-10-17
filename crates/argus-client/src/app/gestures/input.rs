@@ -6,11 +6,11 @@
 //! while one is open. That is what keeps a typed character from also being
 //! a command.
 //!
-//! Most modes' keys are a table in `app/mode/keymap`, which names the
-//! actions below. The handlers written out here are the ones a table of
+//! Most modes' keys are a table in `app/gestures/mode/keymap`, which names
+//! the actions below. The handlers written out here are the ones a table of
 //! single keys cannot express: typed text, and the leader chord.
 
-use super::*;
+use crate::app::*;
 use crate::input::dropped::Dropped;
 use argus_protocol::panes::paste::{normalize, PASTE_FILE_MAX};
 
@@ -484,7 +484,7 @@ impl App {
         }
     }
 
-    pub(super) fn cycle_selected_setting(&mut self, delta: isize) {
+    pub(in crate::app) fn cycle_selected_setting(&mut self, delta: isize) {
         if let Some(Overlay::Settings { sel }) = self.overlay {
             self.cycle_setting(sel, delta);
         }
@@ -611,11 +611,11 @@ impl App {
 
     /// Only the table draws every checkout row, so only there does a
     /// filter have anything on screen to narrow.
-    pub(super) fn checkouts_filterable(&self) -> bool {
+    pub(in crate::app) fn checkouts_filterable(&self) -> bool {
         self.view == View::Checkouts
     }
 
-    pub(super) fn begin_checkout_filter(&mut self) {
+    pub(in crate::app) fn begin_checkout_filter(&mut self) {
         self.checkout_filtering = true;
         self.checkout_filter.clear();
         self.sync_checkout_filter_selection();
@@ -680,14 +680,14 @@ impl App {
         }
     }
 
-    pub(super) fn scroll_diagram(&mut self, delta: i32) {
+    pub(in crate::app) fn scroll_diagram(&mut self, delta: i32) {
         if let Some(view) = &mut self.diagram {
             let visible = self.layout.overlay.inner.height.max(1) as usize;
             view.scroll_by(delta, visible);
         }
     }
 
-    pub(super) fn pan_diagram(&mut self, delta: i32) {
+    pub(in crate::app) fn pan_diagram(&mut self, delta: i32) {
         if let Some(view) = &mut self.diagram {
             let visible = self.layout.overlay.inner.width.max(1) as usize;
             view.scroll_horizontal_by(delta, visible);
@@ -703,11 +703,11 @@ impl App {
     }
 
     /// The same diff again, fresh: the commit it was, or the working tree.
-    pub(super) fn refresh_review(&mut self) {
+    pub(in crate::app) fn refresh_review(&mut self) {
         self.open_review();
     }
 
-    pub(super) fn flip_review_base(&mut self) {
+    pub(in crate::app) fn flip_review_base(&mut self) {
         // The side toggle is meaningless on a commit, and flipping it here
         // would silently change which side the next uncommitted review
         // opens on.
@@ -729,14 +729,14 @@ impl App {
     }
 
     /// Enter on a fold: its next step of lines, or with `all` the rest.
-    pub(super) fn unfold_review(&mut self, all: bool) {
-        let id = super::actions::next_id(&mut self.next_review_request);
+    pub(in crate::app) fn unfold_review(&mut self, all: bool) {
+        let id = crate::app::actions::next_id(&mut self.next_review_request);
         if let Some(msg) = self.review.as_mut().and_then(|s| s.unfold(all, id)) {
             let _ = self.out.send(msg);
         }
     }
 
-    pub(super) fn open_reviewed_line_in_editor(&mut self) {
+    pub(in crate::app) fn open_reviewed_line_in_editor(&mut self) {
         let Some(v) = self.review_view() else {
             return;
         };
@@ -757,7 +757,7 @@ impl App {
         self.close_overlay();
     }
 
-    pub(super) fn comment_on_reviewed_lines(&mut self) {
+    pub(in crate::app) fn comment_on_reviewed_lines(&mut self) {
         let Some(session) = &self.review else {
             return;
         };
@@ -785,7 +785,7 @@ impl App {
 
     /// `h` folds the commit the cursor is in before it closes the overlay,
     /// the way it steps back out of a review.
-    pub(super) fn fold_or_close_history(&mut self) {
+    pub(in crate::app) fn fold_or_close_history(&mut self) {
         let folded = self.history.as_mut().is_some_and(|v| v.collapse());
         if !folded {
             self.close_overlay();

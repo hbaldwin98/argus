@@ -4,7 +4,7 @@
 //! onto the row it landed on without either side redoing the layout
 //! arithmetic.
 
-use super::*;
+use crate::app::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -79,6 +79,6 @@ pub struct Layout {
     pub cursor: Option<crate::ui::CursorPlacement>,
 }
 
-pub(super) fn in_rect(area: Rect, x: u16, y: u16) -> bool {
+pub(in crate::app) fn in_rect(area: Rect, x: u16, y: u16) -> bool {
     x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height
 }

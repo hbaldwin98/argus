@@ -1,10 +1,10 @@
 //! Turning the terminal events this client receives into the bytes a pty
 //! child expects to read.
 //!
-//! Separate from `app::input` and `app::mouse`, which decide *whether* an
-//! event goes to a pane at all. By the time anything reaches here that
-//! decision is made, and the only question left is what a child reading
-//! its pty should see.
+//! Separate from `app::gestures::input` and `app::gestures::mouse`, which
+//! decide *whether* an event goes to a pane at all. By the time anything
+//! reaches here that decision is made, and the only question left is what a
+//! child reading its pty should see.
 
 mod keys;
 mod mouse;

@@ -5,7 +5,7 @@
 //! each stage answer which of their rows a point is on (`ui`); this says
 //! what landing there does.
 
-use super::*;
+use crate::app::*;
 
 impl App {
     /// Whether a mouse event can be ignored outright.

@@ -5,7 +5,8 @@
 //! a pane, the page for one pressed anywhere else — and it crosses to the
 //! page whole, grouped as the shortcuts sheet will list it, so the sheet and
 //! the palette are drawn from the bindings dispatch runs rather than from a
-//! copy that could drift, as the terminal client's `app/mode/keymap` is.
+//! copy that could drift, as the terminal client's
+//! `app/gestures/mode/keymap` is.
 //!
 //! Inside a pane every key is the program's except the leader, Ctrl-Space as
 //! in the terminal client: the key after it is the window's, and a second

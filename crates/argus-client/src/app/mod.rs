@@ -7,8 +7,8 @@
 //! showing what is actually true.
 //!
 //! The `impl` is split by what the operator is doing: `tree` for the
-//! selection and moving it, `input` for keys, `mouse` for the pointer, `scroll`
-//! for a pane parked in its history, `actions` for what is asked of the
+//! selection and moving it, `gestures` for keys, the pointer and scrolling,
+//! `actions` for what is asked of the
 //! daemon, `pickers` for the modal layers, `server` for what arrives
 //! back, `showing` for what the daemon is told this client shows,
 //! `agent_views` for the views agents showed, `saved_views` for the ones
@@ -37,10 +37,10 @@ use crate::input::selection::TerminalSelection;
 use crate::ui::theme::Theme;
 
 use argus_protocol::ReviewBase;
-use layout::in_rect;
-pub use layout::{Focus, Layout, Panel};
+use gestures::layout::in_rect;
+pub use gestures::layout::{Focus, Layout, Panel};
 pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
-pub use mode::{Mode, OverlayMode};
+pub use gestures::mode::{Mode, OverlayMode};
 pub use tree::rail::RailRow;
 pub use tree::rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 pub use board_writes::LineInput;
@@ -55,15 +55,11 @@ mod awaited;
 mod board_writes;
 mod consoles;
 mod feature;
+mod gestures;
 use awaited::Then;
-mod input;
-mod layout;
 mod modal;
-mod mode;
-mod mouse;
 mod pickers;
 mod saved_views;
-mod scroll;
 mod server;
 mod showing;
 mod tree;

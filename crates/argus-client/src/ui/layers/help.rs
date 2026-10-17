@@ -6,7 +6,8 @@
 //! discovered. This is the other half: `?` from anywhere that is not a
 //! typing surface, which lets the bar go back to being a reminder of the
 //! few keys worth having in front of you at all times. What it lists is
-//! each mode's keymap, declared in `app/mode/keymap`; this only draws it.
+//! each mode's keymap, declared in `app/gestures/mode/keymap`; this only
+//! draws it.
 
 use crate::ui::*;
 
