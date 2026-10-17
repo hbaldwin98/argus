@@ -10,7 +10,7 @@ import {
   keyedSplit,
   toThousandths,
   zoneRect,
-} from '../src/split_math.ts';
+} from '../../src/panes/split_math.ts';
 
 test('rectangles tile the grid row by row from the heights and widths', () => {
   const rects = cellRects([250, 750], [[400, 600], [1000]]);

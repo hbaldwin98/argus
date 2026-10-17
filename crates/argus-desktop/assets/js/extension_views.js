@@ -11,7 +11,7 @@ import { $, el, icon } from './kit/dom.js';
 import { draggable } from './layout/drag.js';
 import { closeLayer } from './kit/menu.js';
 import { keycaps } from './keys.js';
-import { bindView, keyView, screen, viewScreen } from './screen.js';
+import { bindView, keyView, screen, viewScreen } from './panes/screen.js';
 import { state } from './state.js';
 import { table } from './table.js';
 import { call } from './connection/tauri.js';

@@ -6,14 +6,14 @@
 // are drawn at once.
 // The rows are mirrored only so a theme or scale change can repaint them.
 
-import type { Frame } from './bindings/Frame';
-import type { FrameCursor } from './bindings/FrameCursor';
-import type { Parked } from './bindings/Parked';
-import type { Segment } from './bindings/Segment';
-import type { Side } from './bindings/Side';
-import { $, el, ghosts } from './kit/dom.js';
-import { dragging } from './layout/edge.js';
-import { call } from './connection/tauri.js';
+import type { Frame } from '../bindings/Frame';
+import type { FrameCursor } from '../bindings/FrameCursor';
+import type { Parked } from '../bindings/Parked';
+import type { Segment } from '../bindings/Segment';
+import type { Side } from '../bindings/Side';
+import { $, el, ghosts } from '../kit/dom.js';
+import { dragging } from '../layout/edge.js';
+import { call } from '../connection/tauri.js';
 
 // The terminal's type, as the design system's --type-mono gives it.
 const FONT_SIZE = 13;

@@ -14,7 +14,7 @@ use argus_protocol::{ago,
 };
 
 use crate::connection::page::{self, Rail};
-use crate::shown::workspace_grid::GridPage;
+use crate::panes::shown::workspace_grid::GridPage;
 
 /// What the rail is drawn from besides the tree.
 pub struct Choices<'a> {

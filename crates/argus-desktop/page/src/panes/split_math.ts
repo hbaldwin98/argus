@@ -4,7 +4,7 @@
 // nothing from the page, so it is tested under node; `split.ts` holds the
 // layout's state and draws it.
 
-import type { Zone } from './bindings/Zone';
+import type { Zone } from '../bindings/Zone';
 
 export interface Rect {
   x: number;

@@ -16,7 +16,7 @@ import type { Theme } from '../bindings/Theme';
 import { $, el, icon, type Child } from '../kit/dom.js';
 import { fontPicker, type FontPicker } from './font_picker.js';
 import { actionFor } from '../keymap.js';
-import { screens } from '../screen.js';
+import { screens } from '../panes/screen.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 

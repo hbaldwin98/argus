@@ -1,10 +1,10 @@
 // Naming a pane or a console: a dialog in the layer, asked of the daemon
 // on Enter. The row keeps its old name until the daemon's tree says the
 // new one, so a refused rename leaves it showing what is true.
-import { $, el } from './kit/dom.js';
-import { actionFor } from './keymap.js';
-import { closeLayer } from './kit/menu.js';
-import { call } from './connection/tauri.js';
+import { $, el } from '../kit/dom.js';
+import { actionFor } from '../keymap.js';
+import { closeLayer } from '../kit/menu.js';
+import { call } from '../connection/tauri.js';
 export function renameDialog(pane, title) {
     const name = el('input', { class: 'field', id: 'rename-name', value: title });
     const rename = () => {

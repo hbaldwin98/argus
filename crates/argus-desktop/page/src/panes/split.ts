@@ -10,12 +10,12 @@
 // pointer is moving: the panes report their room when `resizing` is
 // lifted, each only if its own size changed.
 
-import type { Shown } from './bindings/Shown';
-import type { Zone } from './bindings/Zone';
-import { $, el, icon } from './kit/dom.js';
+import type { Shown } from '../bindings/Shown';
+import type { Zone } from '../bindings/Zone';
+import { $, el, icon } from '../kit/dom.js';
 import { splitScreen, screen } from './screen.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 import {
   cellRects,
   dragGutter,

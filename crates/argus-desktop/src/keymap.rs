@@ -1213,7 +1213,7 @@ mod tests {
         walk(Path::new(dir), Path::new(dir), &mut modules);
         let mut read = 0;
         for (name, path) in modules {
-            if name == "keymap.ts" || name == "input.ts" {
+            if name == "keymap.ts" || name == "panes/input.ts" {
                 continue;
             }
             read += 1;

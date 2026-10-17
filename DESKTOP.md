@@ -188,9 +188,9 @@ the window's own: the daemon learns each pane's rows and columns only, and the s
 visit to another stage because the window's `shown` holds the grid. A pane that would leave
 another under 20 columns by 6 rows is refused with a note, as is a pane past the 256 a grid can
 number.
-The page draws the grid in `split.ts` (state and DOM) over `split_math.ts` (pure, tested under
-node), sending sizes once when a gutter is let go. Not yet: the sizes do not persist across
-restarts, and the move and focus keys are chords after the leader (`ArrowKeys`, with Shift to
+The page draws the grid in `panes/split.ts` (state and DOM) over `panes/split_math.ts` (pure,
+tested under node), sending sizes once when a gutter is let go. Not yet: the sizes do not persist
+across restarts, and the move and focus keys are chords after the leader (`ArrowKeys`, with Shift to
 move), not yet remappable.
 
 ### `screen`

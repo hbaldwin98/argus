@@ -19,7 +19,7 @@ use crate::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::Checkouts;
 use crate::code_stage::{CodeGesture, CodePage};
 use crate::comment_box::CommentPage;
-use crate::console::{ConsoleGesture, ConsolePage};
+use crate::panes::console::{ConsoleGesture, ConsolePage};
 use crate::layout::docks::{DockGesture, DocksPage, Panel};
 use crate::extension_dialog::ExtDialogPage;
 use crate::extension_views::{ExtensionGesture, ExtensionsPage};
@@ -30,7 +30,7 @@ use crate::link_dialog::{LinkGesture, LinkPage};
 use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
 use crate::sessions_dialog::{SessionPreview, SessionsPage};
 use crate::saved_views::{SavedColumn, SavedViewsPage};
-use crate::shown::workspace_grid::{Dir, GridPage, Zone};
+use crate::panes::shown::workspace_grid::{Dir, GridPage, Zone};
 use crate::settings::remembered::{Backdrop, EditorMode, Preferences, SavedLinks, Theme};
 
 /// Something the page asks of the window. It answers nothing: what a call

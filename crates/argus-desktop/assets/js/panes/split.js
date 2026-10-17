@@ -9,10 +9,10 @@
 // new sizes once, when it is let go, so no pane is resized while the
 // pointer is moving: the panes report their room when `resizing` is
 // lifted, each only if its own size changed.
-import { $, el, icon } from './kit/dom.js';
+import { $, el, icon } from '../kit/dom.js';
 import { splitScreen, screen } from './screen.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 import { cellRects, dragGutter, dropZone, toThousandths, zoneRect, } from './split_math.js';
 const cells = [];
 let held = null;

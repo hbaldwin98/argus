@@ -9,7 +9,7 @@
 import { $, el, icon } from '../kit/dom.js';
 import { fontPicker } from './font_picker.js';
 import { actionFor } from '../keymap.js';
-import { screens } from '../screen.js';
+import { screens } from '../panes/screen.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 /** Each flavour's own colours for its card: base, mantle, accent, text. */

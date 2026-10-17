@@ -8,20 +8,21 @@
 //! many things changed in between, the page hears each once.
 //!
 //! Each subject keeps its own state and what the page last heard of it —
-//! the status bar (`chrome::status`), the panes on screen (`shown`), the
-//! agents offered (`agents`), the review and history (`dialogs`), the link
-//! and reconcile dialogs (`tracker_dialogs`), the three stages
+//! the status bar (`chrome::status`), the panes on screen (`panes::shown`),
+//! the agents offered (`agents`), the review and history (`dialogs`), the
+//! link and reconcile dialogs (`tracker_dialogs`), the three stages
 //! (`feature_stage`, `checkouts_stage`, `code_stage`) and the note a new
 //! feature is written as (`capture_note`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
 //! the project switcher (`chrome::switcher`) and the dialog adding a
 //! project (`chrome::add_project`), the Settings dialog's choices
-//! (`settings::preferences`), the console (`console`), the views agents
-//! showed (`agent_views`), the extensions' views (`extension_views`), what
-//! fills the stage and where leaving it goes (`layout::stage`), and what
-//! the daemon is making (`argus_protocol::connection::awaited`). The
-//! session says which of them a message or gesture is for, and what one of
-//! them changing means for the rest.
+//! (`settings::preferences`), the console (`panes::console`), the views
+//! agents showed (`agent_views`), the extensions' views
+//! (`extension_views`), what fills the stage and where leaving it goes
+//! (`layout::stage`), and what the daemon is making
+//! (`argus_protocol::connection::awaited`). The session says which of them
+//! a message or gesture is for, and what one of them changing means for the
+//! rest.
 //!
 //! The client never predicts: the rail changes when the daemon's tree does,
 //! and a shell asked for is shown only once the daemon has said it made it
@@ -50,7 +51,7 @@ use crate::extension_views::{first_place, ExtensionGesture, ExtensionViews, Here
 use crate::agents::Agents;
 use crate::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts_stage::{CheckoutsStage, Opened};
-use crate::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
+use crate::panes::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
 use crate::layout::docks::{Dock, DockGesture, Docks, Panel, Place};
 use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
@@ -60,7 +61,7 @@ use crate::system::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, Code, CodeGesture, Then as CodeThen};
-use crate::shown::workspace_grid::{self, Dir, Zone};
+use crate::panes::shown::workspace_grid::{self, Dir, Zone};
 use crate::layout::stage::{Page, Stages};
 use crate::connection::page::{
     self, Call, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
@@ -76,7 +77,7 @@ use crate::connection::sent::Sent;
 use crate::sessions::Sessions;
 use crate::sessions_dialog::{Recent, SessionsDialog, Then as SessionsThen};
 use crate::settings::remembered::{Backdrop, SavedLinks, Settings, Theme};
-use crate::shown::ShownPane;
+use crate::panes::shown::ShownPane;
 use crate::chrome::status::StatusBar;
 use crate::chrome::switcher::Switcher;
 use crate::view_refs::{self, Found, PendingFeature, Target};
@@ -5739,7 +5740,7 @@ mod tests {
         s
     }
 
-    fn console_page(s: &mut Session) -> crate::console::ConsolePage {
+    fn console_page(s: &mut Session) -> crate::panes::console::ConsolePage {
         s.console.reload();
         s.events(0)
             .into_iter()

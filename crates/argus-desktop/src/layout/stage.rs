@@ -8,7 +8,7 @@
 //! the stage under it, and going to any other stage closes it. The Code stage
 //! goes back to the stage it was opened over. Whether a panel opens as a page
 //! is the person's choice, kept by `docks`; the console's fullscreen is the
-//! console's own state, kept by `console`.
+//! console's own state, kept by `panes::console`.
 
 use argus_protocol::PaneId;
 

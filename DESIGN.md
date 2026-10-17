@@ -122,13 +122,13 @@ window through `window-vibrancy`; elsewhere only Clear is offered. A notificatio
 what came of it and where, for an agent turning waiting, needs-review or failed, never for the pane
 watched in a focused window, and by default only while the window is in the background: the window's
 version of the terminal client's bell, beside its chime. The leader and `f` fill the window with the
-pane, putting the sidebar away until the same keys again. The console (`console`) is a fourth place
-in the nav, keyed 4 (in a pane, the leader and 4): the daemon's consoles (`ServerMsg::Consoles`) as
-tabs, `+` asking for one (`SpawnConsole`) that appears once the daemon's consoles hold it, and a
-tab's close ending it. It is docked beside the Workspace, Feature and Checkouts stages — at the
-bottom until it is moved, by its head's dock menu or the palette's Dock the console on the left, on
-the right or at the bottom — with a sash to resize it, fills the stage as the Console, fills all but
-the sidebar's projects fullscreen (the
+pane, putting the sidebar away until the same keys again. The console (`panes/console`) is a fourth
+place in the nav, keyed 4 (in a pane, the leader and 4): the daemon's consoles
+(`ServerMsg::Consoles`) as tabs, `+` asking for one (`SpawnConsole`) that appears once the daemon's
+consoles hold it, and a tab's close ending it. It is docked beside the Workspace, Feature and
+Checkouts stages — at the bottom until it is moved, by its head's dock menu or the palette's Dock
+the console on the left, on the right or at the bottom — with a sash to resize it, fills the stage
+as the Console, fills all but the sidebar's projects fullscreen (the
 leader and `z`; the nav and the sidebar's foot are put away, the strip stays for the window's
 buttons), or is hidden, a `›_` in the sidebar's foot and `` ` `` (the leader and `` ` ``) showing it
 again. The Workspace's pane and the console each have a screen of their own, so a docked console
@@ -137,7 +137,7 @@ takes them, and the Workspace's pane takes them back when it is pressed, chosen 
 asked for by the Workspace's key, or when the console hides and lets its panes go. The console
 splits in two side by side (its split button, the leader and `\`, or the palette), the second side
 showing the first tab on neither side, or a console asked for when every one is shown. Each side —
-the Workspace's and the console's two — is its own screen (`shown` keeps a subscription, a
+the Workspace's and the console's two — is its own screen (`panes/shown` keeps a subscription, a
 `Screen`, a room and a size request per side, and every frame names its side), one of them has the
 keys, and the view the window reports names that one, so the daemon's sizing and the chime follow
 it. The page's one text area for the keys goes into the screen that has them. A press on a screen
@@ -186,12 +186,12 @@ the dock it left shows the tab before it, or closes once empty. A `desktop.json`
 docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `system/frame`, `compose`, `console`, `layout/docks`, `layout/floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `layout/drag`, `layout/panels` (what Rust says each panel that exists is and can do), `screen`, `input`, `keymap`, `focus` (which layer has a key),
-`palette`, `shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `chrome/projects`, `system/chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `system/copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys`, `kit/dom`, `state`, `layout/edge` (a side column's edge, dragged),
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `system/frame`, `compose`, `panes/console`, `layout/docks`, `layout/floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `layout/drag`, `layout/panels` (what Rust says each panel that exists is and can do), `panes/screen`, `panes/input`, `keymap`, `focus` (which layer has a key),
+`palette`, `shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `panes/rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `chrome/projects`, `system/chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `system/copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys`, `kit/dom`, `state`, `layout/edge` (a side column's edge, dragged),
 `kit/clock` and `connection/tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `connection/page.rs`'s types and the page and gesture types each surface's module keeps beside it
-(`console`, `layout/docks`, `capture_note`, `checkouts`, `code_stage`, `extension_views`, `extension_keys`, `comment_box`, …), written as TypeScript by `cargo test` into
+(`panes/console`, `layout/docks`, `capture_note`, `checkouts`, `code_stage`, `extension_views`, `extension_keys`, `comment_box`, …), written as TypeScript by `cargo test` into
 `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
 instance's config directory, so a dev window never shares it with the installed one, and it logs to
@@ -543,13 +543,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | --- | --- |
 | `main` | startup: the runtime, the window, and running until it closes |
 | `session` | what this window holds of the daemon and routes between its parts — the tree, the project and repository chosen on the rail — and which part each message, refusal and page call is for |
-| `shown` | the panes the window shows — the Workspace's grid, one per side of the console, and one per extension console view on screen — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
-| `shown/workspace_grid` | the Workspace's grid: which panes it holds — the Workspace's own first, then those split beside it — where each sits and how big, which pane may join it and the refusal for one that may not, and the page the rail carries of it, its sizes in thousandths |
-| `shown/workspace_grid/split_grid` | where the Workspace's panes sit in relation to each other — rows, column fractions, row heights — and what adding, closing, swapping and moving a pane does to them, as arithmetic |
-| `console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, the page it draws and the gestures it takes, and what the page last heard |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
 | `dialogs` | the review and history dialogs as the window holds them: which is open or parked, the daemon's answers and refusals routed to the one that asked whether open or parked, the layout the next review opens on, and what the page last heard of each |
-| `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `review` | what the review dialog holds beyond its `review::session` — the side and layout chosen, its comment box, its go-to-file field — and the page it draws |
 | `comment_box` | the comment box the review and the Code stage share: whether it is open, the agent it is lit on, the comment it sent and waits on the daemon to save or refuse, by its id, and what the page draws of it |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff or why it could not be read — and what its gestures ask of the daemon |
@@ -610,6 +605,12 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `layout/docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, whether it is a page, or a dialog floating over the stage with where it sits, how big, and which is in front; which tab each dock shows of the panels that exist, whether it is open and how big, whether that changed since it was saved; what each panel that exists can do — float, take the stage, close for good — and which kind it is, told to the page so it never reads them from a panel's name; the page and gestures of the docks, and what the page last heard |
 | `layout/dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
 | `layout/stage` | what fills the stage — one of the stages, or a page (an agent's view or an extension's) opened over one — where closing, docking, Escape or its view going takes the person back to, the Code stage's way back included, and whether the Workspace's panes are drawn under it |
+| `panes` | the panes on screen and how each is drawn |
+| `panes/console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, the page it draws and the gestures it takes, and what the page last heard |
+| `panes/screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
+| `panes/shown` | the panes the window shows — the Workspace's grid, one per side of the console, and one per extension console view on screen — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
+| `panes/shown/workspace_grid` | the Workspace's grid: which panes it holds — the Workspace's own first, then those split beside it — where each sits and how big, which pane may join it and the refusal for one that may not, and the page the rail carries of it, its sizes in thousandths |
+| `panes/shown/workspace_grid/split_grid` | where the Workspace's panes sit in relation to each other — rows, column fractions, row heights — and what adding, closing, swapping and moving a pane does to them, as arithmetic |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 
 ## Views
@@ -2727,8 +2728,8 @@ decision of its own.
 
 A view that is a console (`ExtView.console`) has a terminal where the table would be, in its dock or
 as a page, drawn by the console's own renderer with the same keys, wheel, selection and paste. The
-window gives each such view on screen a screen of its own (`Side::View(n)` in `shown`, beside the
-Workspace's and the console's two) and subscribes the pane the daemon names in
+window gives each such view on screen a screen of its own (`Side::View(n)` in `panes/shown`, beside
+the Workspace's and the console's two) and subscribes the pane the daemon names in
 `ServerMsg::ExtensionViews` while the view is on screen: docked and shown, or the page that is up. A
 view that goes off screen or away lets its pane go; one published again after it ended names a new
 pane, and the old one is let go as the new is subscribed. The pane is in neither the tree nor the

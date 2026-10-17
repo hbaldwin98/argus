@@ -2,19 +2,19 @@
 // sides — a screen of its own on the first, beside the Workspace's, and the
 // second beside it while it is split, each headed by its console. Rust
 // decides where the console is, which panes its sides draw and which has
-// the keys (`src/console.rs`), and which dock holds it
+// the keys (`src/panes/console.rs`), and which dock holds it
 // (`src/layout/docks.rs`); this draws that, puts the keys' text area in the
 // screen that has them, and reports what was pressed.
-import { DOCK_ICON, dockMenuButton, dockOf, dockWords, drawDocks } from './layout/docks.js';
-import { $, el, icon } from './kit/dom.js';
-import { chordsFor, presses } from './keys.js';
-import { contextMenu } from './kit/menu.js';
-import { closesOnMiddle } from './kit/middle.js';
+import { DOCK_ICON, dockMenuButton, dockOf, dockWords, drawDocks } from '../layout/docks.js';
+import { $, el, icon } from '../kit/dom.js';
+import { chordsFor, presses } from '../keys.js';
+import { contextMenu } from '../kit/menu.js';
+import { closesOnMiddle } from '../kit/middle.js';
 import { renameDialog } from './rename.js';
 import { beside, besideScreen, consoleScreen, keyedViewScreen, screen, screens, } from './screen.js';
 import { keyedSplit } from './split_math.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 function gesture(g) {
     call('console', { gesture: g });
 }
