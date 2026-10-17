@@ -1,0 +1,52 @@
+name: Fuzz
+
+# The fuzz targets in fuzz/ need nightly and libFuzzer, which links on
+# Linux; they run here each night rather than on every push. Each target
+# keeps its corpus in the cache, so a night starts where the last left off.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds each target runs
+        default: "300"
+
+jobs:
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [frame, pane_url, capture, agent_view]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install nightly Rust and cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal --no-self-update
+          cargo install --locked cargo-fuzz
+
+      - name: Restore the corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      - name: Fuzz
+        working-directory: fuzz
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ inputs.seconds || '300' }}
+
+      # A crash is the input that made it: committed as an ordinary
+      # regression test beside the code it broke, it stays fixed.
+      - name: Keep the crashing input
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: fuzz-${{ matrix.target }}-artifacts
+          path: fuzz/artifacts/${{ matrix.target }}

@@ -32,7 +32,7 @@ Comment the *why*, never the *what*. A doc comment that restates the signature i
 
 Add regression tests with each behavior change, colocated with the affected module. Name tests after the observable rule, for example `restores_session_after_reconnect`. Exercise protocol changes in both producer and consumer crates.
 
-A rule that should hold for any input is a proptest property, in a `mod properties` inside the module's tests; `PROPTEST_CASES=20000` runs them harder than CI does. A failing case is saved under the crate's `proptest-regressions/`: commit it with the fix, and never delete one, or weaken the property, to make a run pass.
+A rule that should hold for any input is a proptest property, in a `mod properties` inside the module's tests; `PROPTEST_CASES=20000` runs them harder than CI does. A failing case is saved under the crate's `proptest-regressions/`: commit it with the fix, and never delete one, or weaken the property, to make a run pass. `fuzz/` holds cargo-fuzz targets for input from outside the process, run nightly on Linux by `.github/workflows/fuzz.yml` (libFuzzer does not link on Windows MSVC); a crashing input it uploads becomes an ordinary regression test beside the code it broke.
 
 CI builds and lints the tests on Windows; a Linux machine without mingw-w64 cannot. A test that runs a Unix program is `#[cfg(unix)]`, and so are the imports and helpers only it uses.
 

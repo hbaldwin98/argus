@@ -1,0 +1,47 @@
+[package]
+name = "argus-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+argus-protocol = { path = "../crates/argus-protocol" }
+rmp-serde = "1"
+serde_json = "1"
+
+# Its own workspace: the fuzz targets build only on nightly, under
+# `cargo fuzz`, and never as part of the stable one.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "frame"
+path = "fuzz_targets/frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pane_url"
+path = "fuzz_targets/pane_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "capture"
+path = "fuzz_targets/capture.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "agent_view"
+path = "fuzz_targets/agent_view.rs"
+test = false
+doc = false
+bench = false
