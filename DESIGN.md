@@ -187,11 +187,11 @@ docks keeps its console docked at the bottom as tall as it was, its views panel'
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `system/frame`, `compose`, `panes/console`, `layout/docks`, `layout/floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `layout/drag`, `layout/panels` (what Rust says each panel that exists is and can do), `panes/screen`, `panes/input`, `keys/keymap`, `keys/focus` (which layer has a key),
-`keys/palette`, `keys/shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `panes/rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `chrome/projects`, `system/chime`, `views/agent` (the agents' views panel: `views/blocks` draws a view's blocks and hands each to the module of its kind under `views/blocks/`, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `views/values` draws one value, with `views/refs` for those that point into Argus, `views/chip` and `views/link`; `views/actions` draws the buttons an agent put in a view; a table's parts are `views/blocks/table/bar`, `views/blocks/table/details`, `views/blocks/table/sort` and `views/blocks/table/memory`; and `views/blocks/table/cell_text`, `system/copy` and `views/ctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys/chords`, `kit/dom`, `state`, `layout/edge` (a side column's edge, dragged),
+`keys/palette`, `keys/shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `panes/rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `chrome/projects`, `system/chime`, `views/agent` (the agents' views panel: `views/blocks` draws a view's blocks and hands each to the module of its kind under `views/blocks/`, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `views/values` draws one value, with `views/refs` for those that point into Argus, `views/chip` and `views/link`; `views/actions` draws the buttons an agent put in a view; a table's parts are `views/blocks/table/bar`, `views/blocks/table/details`, `views/blocks/table/sort` and `views/blocks/table/memory`; and `views/blocks/table/cell_text`, `system/copy` and `views/ctx` serve them all), `extensions/views`, `extensions/dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys/chords`, `kit/dom`, `state`, `layout/edge` (a side column's edge, dragged),
 `kit/clock` and `connection/tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `connection/page.rs`'s types and the page and gesture types each surface's module keeps beside it
-(`panes/console`, `layout/docks`, `capture_note`, `checkouts`, `code_stage`, `extension_views`, `extension_keys`, `comment_box`, …), written as TypeScript by `cargo test` into
+(`panes/console`, `layout/docks`, `capture_note`, `checkouts`, `code_stage`, `extensions/views`, `extensions/keys`, `comment_box`, …), written as TypeScript by `cargo test` into
 `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
 instance's config directory, so a dev window never shares it with the installed one, and it logs to
@@ -569,9 +569,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it — a drag on a flow as its source rewritten — checked against the protocol's bounds; a new row saved blank sends nothing |
 
 | `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, whether the board holds the feature it was sent as yet, and the page and gestures it trades with the page, last sent while open |
-| `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, and the question an action waits on; what a gesture in one sends; and the page of them all, drawn where the window says each one is, with the commands `extension_keys` lists beside them, and what the page last heard |
-| `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension, as the page draws them |
-| `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |
 | `connection` | how the window trades with the daemon and the page |
 | `connection/commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `connection::page::Call` — and which part of the window answers each call |
 | `connection/daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
@@ -613,6 +610,10 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `views/changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
 | `views/refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
 | `views/saved` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
+| `extensions` | what the running extensions put in this window |
+| `extensions/dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |
+| `extensions/keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension, as the page draws them |
+| `extensions/views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, and the question an action waits on; what a gesture in one sends; and the page of them all, drawn where the window says each one is, with the commands `extensions/keys` lists beside them, and what the page last heard |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 
 ## Views
@@ -2688,7 +2689,7 @@ cancelled, when that client goes.
 The desktop window lists every extension view whose scope holds — a repository's while the rail
 reads that repository, as the Checkouts stage does, a checkout's while its pane is on screen or it
 is that repository's own — under Extensions, a fold in the sidebar after the built-in stages, each
-with its title and icon (`extension_views`). Nothing listed, the fold is not drawn, as the rail's
+with its title and icon (`extensions/views`). Nothing listed, the fold is not drawn, as the rail's
 fold of quiet repositories is not; whether it is unfolded is kept in `desktop.json`. Each view is
 a panel of its own (see the docks): it opens in its dock, or as a page filling the stage
 (`Stage::Extension`), wherever its extension's `place` (`left`, `right` — or `panel`, the same —
@@ -2713,20 +2714,20 @@ changes when the extension publishes again. A view taken away, or out of scope w
 is, closes: a page of it goes back to the stage it opened over and says so, a docked one is only no
 longer drawn, keeping its dock, and a page left for another stage closes. A page opened over another
 takes its place, and going back goes to what the first opened over. A reconnect closes a page
-without a word: the next daemon publishes its own views. Commands (`extension_keys`) are in the palette with
+without a word: the next daemon publishes its own views. Commands (`extensions/keys`) are in the palette with
 their keys, and on the shortcuts sheet under a heading per extension beside the keymap's: a command
 heard anywhere runs from wherever the page has the keys and, through the leader, from a pane; one
 on a checkout from the Checkouts stage or a checkout picked on the rail; one on a pane from a pane
 picked there or through the leader; one in a view while that view has the keys. Its context is the
-rail's pick, else the Checkouts stage's row, else the pane on screen. A dialog (`extension_dialog`,
-drawn by `dialogs.ts`) opens over the window's top without a scrim. One that answers a command run
-in this window takes the keys; one an extension raised on its own does not — it waits for a click,
-so a pane being typed in keeps every key — the simpler of the two choices weighed, against turning
-it into a notice until the person left the pane, since nothing is typed into it by surprise either
-way. Later ones wait behind the first, Escape or Cancel sends the cancellation, and the daemon
-withdrawing one takes it down. The terminal client does not greet with `extensions`, so it is sent
-none of this: agent views are the desktop's, and which of their blocks a terminal could draw is a
-decision of its own.
+rail's pick, else the Checkouts stage's row, else the pane on screen. A dialog (`extensions/dialog`,
+drawn by `extensions/dialogs.ts`) opens over the window's top without a scrim. One that answers a
+command run in this window takes the keys; one an extension raised on its own does not — it waits
+for a click, so a pane being typed in keeps every key — the simpler of the two choices weighed,
+against turning it into a notice until the person left the pane, since nothing is typed into it by
+surprise either way. Later ones wait behind the first, Escape or Cancel sends the cancellation, and
+the daemon withdrawing one takes it down. The terminal client does not greet with `extensions`, so
+it is sent none of this: agent views are the desktop's, and which of their blocks a terminal could
+draw is a decision of its own.
 
 A view that is a console (`ExtView.console`) has a terminal where the table would be, in its dock or
 as a page, drawn by the console's own renderer with the same keys, wheel, selection and paste. The

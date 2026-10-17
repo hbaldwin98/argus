@@ -3,26 +3,26 @@
 // renderer plus its selected row and actions — in its dock, or as a page
 // of its own — the question an action asks first, their commands in the
 // palette and their keys on the sheet. Rust holds all of it
-// (`src/extension_views.rs`, `src/extension_keys.rs`), and `docks` puts a
-// docked view's element in its dock; a row changes only when its
+// (`src/extensions/views.rs`, `src/extensions/keys.rs`), and `docks` puts
+// a docked view's element in its dock; a row changes only when its
 // extension publishes it again.
 
-import type { ExtConsoleEnd } from './bindings/ExtConsoleEnd';
-import type { ExtensionGesture } from './bindings/ExtensionGesture';
-import type { ExtTable } from './bindings/ExtTable';
-import type { ExtTableAction } from './bindings/ExtTableAction';
-import type { ExtTableConsole } from './bindings/ExtTableConsole';
-import type { Panel } from './bindings/Panel';
-import type { Value } from './bindings/Value';
-import { dockMenuButton } from './layout/docks.js';
-import { $, el, icon, type IconName } from './kit/dom.js';
-import { draggable } from './layout/drag.js';
-import { closeLayer } from './kit/menu.js';
-import { keycaps } from './keys/chords.js';
-import { bindView, keyView, type Screen, screen, viewScreen } from './panes/screen.js';
-import { state } from './state.js';
-import { table, type TableBlock } from './views/blocks/table.js';
-import { call } from './connection/tauri.js';
+import type { ExtConsoleEnd } from '../bindings/ExtConsoleEnd';
+import type { ExtensionGesture } from '../bindings/ExtensionGesture';
+import type { ExtTable } from '../bindings/ExtTable';
+import type { ExtTableAction } from '../bindings/ExtTableAction';
+import type { ExtTableConsole } from '../bindings/ExtTableConsole';
+import type { Panel } from '../bindings/Panel';
+import type { Value } from '../bindings/Value';
+import { dockMenuButton } from '../layout/docks.js';
+import { $, el, icon, type IconName } from '../kit/dom.js';
+import { draggable } from '../layout/drag.js';
+import { closeLayer } from '../kit/menu.js';
+import { keycaps } from '../keys/chords.js';
+import { bindView, keyView, type Screen, screen, viewScreen } from '../panes/screen.js';
+import { state } from '../state.js';
+import { table, type TableBlock } from '../views/blocks/table.js';
+import { call } from '../connection/tauri.js';
 
 /** A gesture in the view `panel` names. */
 export function extensionGesture(panel: Panel, gesture: ExtensionGesture): void {

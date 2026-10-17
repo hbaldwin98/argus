@@ -16,7 +16,7 @@ use argus_protocol::{CheckoutId, ClientMsg, ExtPlace, ExtScope, ExtView, PaneId,
 use serde::{Deserialize, Serialize};
 
 use crate::layout::docks::{Dock, Panel, Place};
-use crate::extension_keys::{ExtCommandPage, ExtGroup, ExtensionKeys};
+use crate::extensions::keys::{ExtCommandPage, ExtGroup, ExtensionKeys};
 use crate::keys::keymap::Action;
 use crate::connection::page::{Event, Side};
 use crate::connection::sent::Sent;

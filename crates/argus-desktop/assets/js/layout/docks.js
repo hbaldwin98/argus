@@ -9,7 +9,7 @@
 import { $, el, icon } from '../kit/dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
-import { extensionElement, extensionOnStage } from '../extension_views.js';
+import { extensionElement, extensionOnStage } from '../extensions/views.js';
 import { drawFloats } from './floats.js';
 import { savedElement } from '../views/saved.js';
 import { contextMenu, openMenu } from '../kit/menu.js';

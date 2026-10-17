@@ -35,8 +35,8 @@ import { drawFrame, screen } from './panes/screen.js';
 import { state } from './state.js';
 import { call, connect } from './connection/tauri.js';
 import { drawViews, openNewestView } from './views/agent.js';
-import { drawExtensionDialog } from './dialogs.js';
-import { drawExtensionConfirm, drawExtensionPanels } from './extension_views.js';
+import { drawExtensionDialog } from './extensions/dialogs.js';
+import { drawExtensionConfirm, drawExtensionPanels } from './extensions/views.js';
 import { drawSavedNav, drawSavedPanels } from './views/saved.js';
 
 /** Whether the pane had the keys when a dialog opened over it. */

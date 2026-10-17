@@ -8,7 +8,7 @@
 
 import type { Command } from '../bindings/Command';
 import { $, el } from '../kit/dom.js';
-import { extensionResults } from '../extension_views.js';
+import { extensionResults } from '../extensions/views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './chords.js';
 import { state } from '../state.js';

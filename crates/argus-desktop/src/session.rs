@@ -18,7 +18,7 @@
 //! project (`chrome::add_project`), the Settings dialog's choices
 //! (`settings::preferences`), the console (`panes::console`), the views
 //! agents showed (`views::agent`), the extensions' views
-//! (`extension_views`), what fills the stage and where leaving it goes
+//! (`extensions::views`), what fills the stage and where leaving it goes
 //! (`layout::stage`), and what the daemon is making
 //! (`argus_protocol::connection::awaited`). The session says which of them
 //! a message or gesture is for, and what one of them changing means for the
@@ -45,9 +45,9 @@ use argus_protocol::{
 
 use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
 use crate::views::agent::AgentViews;
-use crate::extension_dialog::ExtensionDialogs;
-use crate::extension_keys::ExtensionKeys;
-use crate::extension_views::{first_place, ExtensionGesture, ExtensionViews, Here, Placed};
+use crate::extensions::dialog::ExtensionDialogs;
+use crate::extensions::keys::ExtensionKeys;
+use crate::extensions::views::{first_place, ExtensionGesture, ExtensionViews, Here, Placed};
 use crate::agents::Agents;
 use crate::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts_stage::{CheckoutsStage, Opened};
@@ -3162,7 +3162,7 @@ impl Session {
 mod tests {
     use super::*;
     use crate::layout::docks::FloatBounds;
-    use crate::extension_views::ExtensionsPage;
+    use crate::extensions::views::ExtensionsPage;
     use crate::fixtures::{checkout, pane, project, repository};
     use crate::link_dialog::LinkPage;
     use argus_protocol::{PaneKind, PaneStatus};
@@ -6729,7 +6729,7 @@ mod tests {
         ServerMsg::ExtensionViews(serde_json::from_str(&json).unwrap())
     }
 
-    fn dev_console(s: &mut Session) -> crate::extension_views::ExtTableConsole {
+    fn dev_console(s: &mut Session) -> crate::extensions::views::ExtTableConsole {
         drawn(s).tables.into_iter().find(|t| t.view == "dev").and_then(|t| t.console).expect("on screen")
     }
 

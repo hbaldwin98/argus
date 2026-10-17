@@ -2,7 +2,7 @@
 // heading of where it works, so it lists exactly the keys dispatch runs.
 
 import { $, el } from '../kit/dom.js';
-import { extensionSheetGroups } from '../extension_views.js';
+import { extensionSheetGroups } from '../extensions/views.js';
 import { keycaps, leader } from './chords.js';
 import { state } from '../state.js';
 

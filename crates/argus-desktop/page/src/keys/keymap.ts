@@ -17,7 +17,7 @@ import { reviewOpen } from '../review.js';
 import { focusSessionsSearch, readerOpen, sessionsOpen } from '../sessions.js';
 import { focusTranscriptFind } from '../transcript.js';
 import { railAction, railPicked, startAction, startOpen } from '../chrome.js';
-import { extensionDialogFocused } from '../dialogs.js';
+import { extensionDialogFocused } from '../extensions/dialogs.js';
 import { $ } from '../kit/dom.js';
 import {
   answerExtensionNo,
@@ -25,7 +25,7 @@ import {
   focusedExtension,
   pagedExtension,
   runExtensionCommand,
-} from '../extension_views.js';
+} from '../extensions/views.js';
 import { expandedOpen } from '../sequence.js';
 import { featureAction } from '../features.js';
 import { escapeFrom, type Handlers, takesFromPane, up } from './focus.js';

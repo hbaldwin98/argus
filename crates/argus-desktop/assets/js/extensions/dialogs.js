@@ -1,14 +1,14 @@
 // The question an extension puts to this window — a confirm, a one-line
 // prompt, a pick from a list or a small form — and the answer or the
 // cancellation it sends back. Rust holds the questions
-// (`src/extension_dialog.rs`) and which is open; the page draws that one.
+// (`src/extensions/dialog.rs`) and which is open; the page draws that one.
 //
 // One that answers a command the person just ran takes the keys. One raised
 // on its own is drawn without a scrim and waits for a click, so a pane being
 // typed in keeps every key.
-import { $, el } from './kit/dom.js';
-import { actionFor } from './keys/keymap.js';
-import { call } from './connection/tauri.js';
+import { $, el } from '../kit/dom.js';
+import { actionFor } from '../keys/keymap.js';
+import { call } from '../connection/tauri.js';
 /** The dialog drawn, so a page that only changed the count behind it
  *  keeps what is typed. */
 let drawn = null;
