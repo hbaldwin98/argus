@@ -362,6 +362,14 @@ pub(super) fn strip_claude_session(
     }
 }
 
+/// Drops git's repository overrides, which would make every git typed in
+/// the pane ignore the checkout it was opened at.
+pub(super) fn strip_git_repository(command: &mut CommandBuilder) {
+    for key in crate::system::command::GIT_REPOSITORY_VARS {
+        command.env_remove(key);
+    }
+}
+
 /// The variables that make a process an Argus pane: which pane, how to
 /// reach its daemon, and what to tell its agent. A daemon started from
 /// inside another Argus pane, as a dev instance is, inherits that pane's;

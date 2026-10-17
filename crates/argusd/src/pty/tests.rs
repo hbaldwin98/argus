@@ -42,6 +42,24 @@ fn panes_do_not_inherit_the_claude_session_that_started_the_daemon() {
 }
 
 #[test]
+fn panes_do_not_inherit_a_repository_named_by_the_environment() {
+    let mut shell = CommandBuilder::new("dummy");
+    shell.env("GIT_DIR", "/elsewhere/.git/worktrees/w");
+    shell.env("GIT_WORK_TREE", "/elsewhere");
+    shell.env("GIT_EDITOR", "nvim");
+
+    strip_git_repository(&mut shell);
+
+    assert_eq!(shell.get_env("GIT_DIR"), None);
+    assert_eq!(shell.get_env("GIT_WORK_TREE"), None);
+    assert_eq!(
+        shell.get_env("GIT_EDITOR"),
+        Some(std::ffi::OsStr::new("nvim")),
+        "configuration a person set stays"
+    );
+}
+
+#[test]
 fn panes_do_not_inherit_the_hook_identity_of_the_pane_that_started_the_daemon() {
     // A daemon started from inside another Argus pane (a dev instance) has
     // that pane's hook variables; handed on, a shell here would report to

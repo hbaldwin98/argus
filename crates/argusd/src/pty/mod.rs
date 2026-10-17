@@ -304,6 +304,7 @@ impl PaneRuntime {
         // not compete with the client's aggregate lifecycle report for it.
         strip_herdr_context(&mut cmd, std::env::vars_os().map(|(key, _)| key));
         strip_claude_session(&mut cmd, std::env::vars_os().map(|(key, _)| key));
+        strip_git_repository(&mut cmd);
         cmd.cwd(cwd);
 
         #[cfg(windows)]

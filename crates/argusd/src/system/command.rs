@@ -10,15 +10,41 @@
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// The variables that make git act on the repository they name instead of
+/// the one its working directory is in (`git rev-parse --local-env-vars`).
+/// Git sets them for its hooks and `rebase --exec`, so a daemon or test run
+/// started from one would point every git it spawns at that repository:
+/// branches and worktrees land there, and a `git init` with `GIT_DIR` at a
+/// linked worktree writes `core.bare = true` into the main checkout's
+/// config. Argus always names a checkout by working directory.
+pub const GIT_REPOSITORY_VARS: &[&str] = &[
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+];
+
 pub fn git() -> tokio::process::Command {
     quiet("git")
 }
 
 /// Any other command the daemon waits on — a project's worktree setup.
 pub fn quiet(program: &str) -> tokio::process::Command {
-    let cmd = tokio::process::Command::new(program);
-    #[cfg(windows)]
-    let mut cmd = cmd;
+    let mut cmd = tokio::process::Command::new(program);
+    for var in GIT_REPOSITORY_VARS {
+        cmd.env_remove(var);
+    }
     #[cfg(windows)]
     {
         cmd.creation_flags(CREATE_NO_WINDOW);
@@ -49,6 +75,19 @@ mod tests {
     #[test]
     fn the_builder_runs_git() {
         assert_eq!(git().as_std().get_program(), "git");
+    }
+
+    #[test]
+    fn git_never_inherits_a_repository_named_by_the_environment() {
+        let removed: Vec<_> = git()
+            .as_std()
+            .get_envs()
+            .filter(|(_, value)| value.is_none())
+            .map(|(key, _)| key.to_string_lossy().into_owned())
+            .collect();
+        for var in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"] {
+            assert!(removed.iter().any(|key| key == var), "{var} reaches git");
+        }
     }
 
     #[tokio::test]

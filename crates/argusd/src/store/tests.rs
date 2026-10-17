@@ -619,12 +619,9 @@ fn a_pre_repository_scoping_feature_is_relocated_by_its_origin_checkout() {
 
     let repo_dir = dir.path().join("repo");
     std::fs::create_dir_all(&repo_dir).unwrap();
-    assert!(std::process::Command::new("git")
-        .args(["init", "-q"])
-        .current_dir(&repo_dir)
-        .status()
-        .unwrap()
-        .success());
+    // Through libgit2, which ignores GIT_DIR: a `git init` run under a hook
+    // reinitialises the hook's repository instead of this one.
+    git2::Repository::init(&repo_dir).unwrap();
     let git_dir = repo_dir.join(".git").canonicalize().unwrap();
 
     let legacy_key = "my-project";
