@@ -773,6 +773,72 @@ fn a_panes_console_and_child_die_with_the_process_that_owns_them() {
     }
 }
 
+/// HUN-243: Git Bash's `bin\bash.exe` is a launcher for `usr\bin\bash.exe`,
+/// which left the shell's job as it started and outlived the pane, until
+/// MSYS ran out of consoles. Git is on CI's Windows runners.
+#[cfg(windows)]
+#[tokio::test]
+async fn nothing_a_git_bash_pane_started_outlives_it() {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
+        PROCESS_TERMINATE,
+    };
+
+    let launcher = std::path::Path::new(r"C:\Program Files\Git\bin\bash.exe");
+    if !launcher.exists() {
+        eprintln!("no Git Bash at {}; skipping", launcher.display());
+        return;
+    }
+    let spec = Spawn::Program {
+        program: launcher.to_string_lossy().into_owned(),
+        // Interactive, as a shell pane's is. Arguments would need quoting
+        // that `cmd /C` mangles once the program's path is quoted too.
+        args: Vec::new(),
+        env: Vec::new(),
+        resource_policy: ResourcePolicy::Unrestricted,
+    };
+    let pane = PaneRuntime::spawn(PaneId(91), &std::env::temp_dir(), spec, |_| {}).unwrap();
+
+    // The console server, cmd.exe, the launcher and the bash it starts.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while pane.job.active_processes().unwrap() < 4 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the launcher's bash never joined the pane's job: {:?}",
+            pane.job.process_ids()
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let watched: Vec<(u32, OwnedHandle)> = pane
+        .job
+        .process_ids()
+        .unwrap()
+        .into_iter()
+        .filter_map(|pid| {
+            let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, 0, pid) };
+            (!raw.is_null()).then(|| (pid, unsafe { OwnedHandle::from_raw_handle(raw as _) }))
+        })
+        .collect();
+
+    pane.kill().unwrap();
+
+    let survivors: Vec<u32> = watched
+        .iter()
+        .filter(|(_, process)| {
+            let waited = unsafe { WaitForSingleObject(process.as_raw_handle() as _, 10_000) };
+            if waited != WAIT_OBJECT_0 {
+                unsafe { TerminateProcess(process.as_raw_handle() as _, 1) };
+                return true;
+            }
+            false
+        })
+        .map(|(pid, _)| *pid)
+        .collect();
+    assert!(survivors.is_empty(), "{survivors:?} outlived the Git Bash pane");
+}
+
 /// Polls the pane's own grid until `pred` holds or the deadline passes.
 /// Polling the grid rather than sleeping a fixed time keeps the test both
 /// fast and non-flaky: process startup latency varies wildly.

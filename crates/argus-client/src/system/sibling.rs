@@ -43,12 +43,28 @@ pub fn spawn_detached(exe: &Path) -> std::io::Result<()> {
         use std::os::windows::process::CommandExt;
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        std::process::Command::new(exe)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
-            .spawn()?;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        const ERROR_ACCESS_DENIED: i32 = 5;
+        let spawn = |flags: u32| {
+            std::process::Command::new(exe)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | flags)
+                .spawn()
+        };
+        // Out of an Argus shell pane's job, which ends everything left in
+        // it when the pane closes. A job that allows no breakaway (an agent
+        // pane's) refuses the flag outright, and there the process stays in
+        // the job, as it would have anyway.
+        match spawn(CREATE_BREAKAWAY_FROM_JOB) {
+            Err(error) if error.raw_os_error() == Some(ERROR_ACCESS_DENIED) => {
+                spawn(0)?;
+            }
+            result => {
+                result?;
+            }
+        }
     }
 
     Ok(())

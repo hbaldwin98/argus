@@ -41,21 +41,23 @@ impl ProcessJob {
         Self::with(&info)
     }
 
-    /// A shell's job: unbounded, and holding only the console server and
-    /// the shell. What the shell starts leaves the job as it is started,
-    /// because a shell is where a person starts what is meant to outlive
-    /// the pane: `scripts/reload.sh` schedules the restart that replaces
-    /// this daemon from inside one, and the old daemon's exit closing the
-    /// job must not take that restart down with it.
+    /// A shell's job: unbounded, and holding everything the shell starts,
+    /// as the session a Unix pane sweeps does. Only a process started with
+    /// `CREATE_BREAKAWAY_FROM_JOB` leaves it — `argus` starting its daemon
+    /// or window, the counterpart of the `setsid` that escapes the sweep.
+    /// Letting every child leave silently orphaned Git Bash: its
+    /// `bin\bash.exe` is a launcher for `usr\bin\bash.exe`, which then sat
+    /// outside the job, survived its console closing, and with 128 of them
+    /// MSYS had no consoles left to start another (HUN-243).
     pub(crate) fn shell() -> anyhow::Result<Self> {
         use windows_sys::Win32::System::JobObjects::{
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         };
 
         let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         info.BasicLimitInformation.LimitFlags =
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
         Self::with(&info)
     }
 
@@ -202,10 +204,8 @@ pub(super) fn assign_to_job(
     Ok(())
 }
 
-/// Ends a pane's child and its console server, and for an agent every
-/// process it started. A shell's descendants left its job as they started;
-/// ending the console they are attached to is what reaches them, as closing
-/// a shell pane always has.
+/// Ends a pane's child, its console server, and every process it started
+/// that did not ask to leave its job.
 #[cfg(windows)]
 pub(super) fn end_process_tree(job: &ProcessJob) -> anyhow::Result<()> {
     job.terminate()

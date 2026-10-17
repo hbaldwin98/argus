@@ -979,10 +979,13 @@ their broken pipes: 63 of them once held 129k CPU-seconds and stalled other runs
 ConPTY starts the server as a child of whoever opens the pseudoconsole and hands back no handle to
 it, so `pty/console_host` opens one pseudoconsole at a time per process and takes the console-server
 child that appeared meanwhile. An agent's job also has a 32 GiB committed-memory limit and a
-256-process limit, and everything the agent starts stays in it. A shell's job is unbounded and lets
-what the shell starts leave it silently: a shell is where a person starts what should outlive the
-pane, and `scripts/reload.sh` schedules from one the restart that replaces the daemon, which the old
-daemon's exit must not take down. Closing a pane or dropping its runtime terminates the job, the
+256-process limit, and everything the agent starts stays in it. A shell's job is unbounded, and
+what the shell starts stays in it too unless it is started with `CREATE_BREAKAWAY_FROM_JOB`, the
+counterpart of the `setsid` that escapes a Unix pane's session sweep: `argus` starts its daemon and
+window that way, and `scripts/reload.sh` schedules its restart through WMI, whose processes were
+never the pane's. Letting every child leave silently orphaned Git Bash's real shell, since
+`bin\bash.exe` only launches `usr\bin\bash.exe`, and MSYS bash outlives its console closing; with
+128 of them MSYS had no consoles left. Closing a pane or dropping its runtime terminates the job, the
 console server first: `ClosePseudoConsole` waits for the server to exit, and a teardown that left
 the server to finish on its own could wait minutes. For the same reason a pane's output is read to
 the end even after its pump has stopped, so the server's last frame is never left in a full pipe.
