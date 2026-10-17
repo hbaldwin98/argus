@@ -245,6 +245,18 @@ fn worktree_display_name_falls_back_to_the_directory_name() {
     );
 }
 
+#[test]
+fn a_linked_worktree_is_named_for_its_branch_and_a_primary_for_its_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("checked-out-here");
+    std::fs::create_dir(&path).unwrap();
+    init_repo(&path);
+    let branch = head_of(&path);
+
+    assert_eq!(worktree_display_name(&path, false), branch);
+    assert_eq!(worktree_display_name(&path, true), "checked-out-here");
+}
+
 /// The bug this guards: `git switch` in another terminal rewrites HEAD,
 /// and a status read landing in that window used to come back as a
 /// checkout on no branch. That threw the row's name back to the
@@ -1180,6 +1192,26 @@ fn re_adding_a_project_brings_back_the_repositories_it_had_lost() {
             .add_project(&dir.path().to_string_lossy(), None, &[])
             .unwrap();
         assert_eq!(repository_names(&restarted), vec!["notes", "orion"]);
+    });
+}
+
+#[test]
+fn removing_a_project_leaves_the_exclusions_of_the_others_alone() {
+    with_temp_config(|_| {
+        let (_dir, d) = added_project_with(&["orion", "notes"]);
+        let other = tempfile::tempdir().unwrap();
+        let elsewhere = other.path().join("elsewhere");
+        std::fs::create_dir(&elsewhere).unwrap();
+        let _repo = real_repo(&elsewhere);
+        d.add_project(&other.path().to_string_lossy(), None, &[]).unwrap();
+
+        let snapshot = d.snapshot();
+        let notes = snapshot[0].repositories.iter().find(|r| r.name == "notes").unwrap().id;
+        d.remove_repository(notes).unwrap();
+        d.remove_project(snapshot[1].id).unwrap();
+
+        let restarted = persistent(crate::config::load().unwrap());
+        assert_eq!(repository_names(&restarted), vec!["orion"], "notes stays removed");
     });
 }
 

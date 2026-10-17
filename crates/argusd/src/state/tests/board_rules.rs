@@ -828,3 +828,15 @@ fn a_reconcile_turn_is_refused_from_the_side_it_is_not_for() {
         "neither refusal touched the reconcile"
     );
 }
+
+#[test]
+fn a_decision_is_stamped_with_when_it_was_made() {
+    let (d, at) = board();
+    open_feature(&d, &at, "here");
+    let before = argus_protocol::ago::now() as i64;
+    let id = decide(&d, &at, None, None, chose("now")).unwrap().id;
+
+    let board = d.decision_board_at(&at).unwrap();
+    let made = board.decisions.iter().find(|x| x.id == id).unwrap();
+    assert!(made.at >= before, "{} is not since {before}", made.at);
+}

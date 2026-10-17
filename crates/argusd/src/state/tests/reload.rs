@@ -553,6 +553,8 @@ fn a_named_project_skips_the_folders_it_was_given_and_still_does_after_a_restart
             .unwrap();
         assert_eq!(names_of(&d), ["work"]);
         assert_eq!(repository_names(&d), ["web"]);
+        d.reconcile_repositories();
+        assert_eq!(repository_names(&d), ["web"], "and so does the next scan of its root");
 
         let restarted = persistent(crate::config::load().unwrap());
         assert_eq!(names_of(&restarted), ["work"]);
@@ -585,5 +587,39 @@ fn adding_the_same_directory_twice_is_refused_rather_than_duplicated() {
 
         assert!(err.to_string().contains("already a project"), "{err}");
         assert_eq!(d.snapshot().len(), before);
+    });
+}
+
+#[test]
+fn the_focus_names_the_open_workspace() {
+    with_temp_config(|_| {
+        let d = persistent(config_with_workspaces());
+        d.open_workspace(workspace_named(&d, "work")).unwrap();
+        let view = argus_protocol::View { active: true, ..Default::default() };
+        d.report_view(d.new_viewer(), view.clone());
+
+        assert_eq!(d.focus_in(&d.snapshot()).unwrap().workspace, "work");
+        assert_eq!(d.read_view(&view).workspace, "work");
+    });
+}
+
+#[test]
+fn a_projects_repositories_follow_the_file_on_reload() {
+    with_temp_config(|dir| {
+        std::fs::write(
+            dir.join("projects.toml"),
+            "[[project]]\nname = \"one\"\nrepos = [\"/kept\", \"/dropped\"]\n",
+        )
+        .unwrap();
+        let d = Daemon::new(config::load().unwrap());
+
+        std::fs::write(
+            dir.join("projects.toml"),
+            "[[project]]\nname = \"one\"\nrepos = [\"/kept\", \"/added\"]\n",
+        )
+        .unwrap();
+        d.reload_config().unwrap();
+
+        assert_eq!(checkout_paths(&d), ["/kept", "/added"]);
     });
 }

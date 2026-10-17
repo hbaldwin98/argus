@@ -1229,3 +1229,29 @@ async fn a_body_an_endpoint_cannot_read_is_refused_with_what_is_wrong() {
     assert!(response.contains("Juggle"), "serde's words reach the agent: {response}");
     close_all(&d);
 }
+
+#[tokio::test]
+async fn an_agent_restarts_three_times_inside_a_minute_and_is_left_on_the_fourth() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::Always);
+    let checkout = only_checkout(&d);
+    let mut pane = d.spawn_agent(checkout, "claude").unwrap();
+
+    for _ in 0..3 {
+        d.exit(pane, Some(1));
+        let panes = panes_of(&d);
+        assert_ne!(panes[0].id, pane, "started again");
+        pane = panes[0].id;
+    }
+    // A full minute after the first, which is not further apart than one.
+    d.advance(Duration::from_secs(60));
+    d.exit(pane, Some(1));
+    assert_eq!(panes_of(&d)[0].id, pane, "the fourth is left for reading");
+
+    // Started again by hand, it is still the same loop.
+    d.close_pane(pane).unwrap();
+    let by_hand = d.spawn_agent(checkout, "claude").unwrap();
+    d.exit(by_hand, Some(1));
+    assert_eq!(panes_of(&d)[0].id, by_hand, "not restarted behind the operator's back");
+    close_all(&d);
+}

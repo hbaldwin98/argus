@@ -128,3 +128,21 @@ fn a_claude_pane_is_pointed_at_its_mod_after_any_folder_already_named() {
     assert!(mod_dir.join("hooks/register.ts").is_file());
     assert_eq!(d.plugin_dir_env(&crate::harness::Harness::codex(), &[]), None);
 }
+
+#[tokio::test]
+async fn a_claude_pane_gets_one_plugin_folder_list_and_keeps_the_rest_of_its_environment() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = fake_claude_config(dir.path());
+    config.agents[0].env.insert("CLAUDE_CODE_PLUGIN_DIRS".to_string(), "/opt/their-mods".to_string());
+    let d = ScriptedDaemon::new(config);
+    let root = tempfile::tempdir().unwrap();
+    d.set_plugin_root(root.path().to_path_buf());
+
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+
+    let env = d.processes.started(pane).unwrap().env;
+    let named = |key: &str| env.iter().filter(|(k, _)| k == key).count();
+    assert_eq!(named("CLAUDE_CODE_PLUGIN_DIRS"), 1, "the template's list is replaced, not joined: {env:?}");
+    assert_eq!(named(argus_protocol::INSTRUCTIONS_VAR), 1, "and nothing else goes with it");
+    close_all(&d);
+}

@@ -235,7 +235,10 @@ async fn removing_a_worktree_takes_its_directory_and_its_row_with_it() {
 
     d.remove_checkout(worktree).await.unwrap();
 
-    assert_eq!(d.snapshot()[0].repositories[0].checkouts.len(), 1);
+    let snapshot = d.snapshot();
+    let checkouts = &snapshot[0].repositories[0].checkouts;
+    assert_eq!(checkouts.len(), 1);
+    assert!(checkouts[0].primary, "the row that goes is the worktree's");
     assert!(!path.exists(), "the working directory should be gone");
 }
 
