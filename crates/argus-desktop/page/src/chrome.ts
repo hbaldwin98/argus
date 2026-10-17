@@ -3,7 +3,7 @@
 
 import type { Action } from './bindings/Action';
 import type { Resumed } from './bindings/Resumed';
-import { drawCheckouts } from './checkouts.js';
+import { drawCheckouts } from './checkouts/stage.js';
 import { drawCode } from './code_stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';

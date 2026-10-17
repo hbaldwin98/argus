@@ -1,19 +1,20 @@
 // The Checkouts stage: the chosen repository's checkouts as an operational
 // table, the branches without one beneath them while shown, and the
 // selected checkout said in full along the foot. Rust builds every row
-// (`src/checkouts.rs`); the page draws them and reports what is chosen.
+// (`src/checkouts/table.rs`); the page draws them and reports what is
+// chosen.
 
-import type { Action } from './bindings/Action';
-import type { Checkouts } from './bindings/Checkouts';
-import type { Confirm } from './bindings/Confirm';
-import type { CheckoutsRow } from './bindings/CheckoutsRow';
-import type { LastCommit } from './bindings/LastCommit';
-import { startMenu, toggleStart } from './chrome.js';
-import { $, el, ghosts, icon, type Child } from './kit/dom.js';
-import { closeLayer } from './kit/menu.js';
-import { actionFor } from './keys/keymap.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import type { Action } from '../bindings/Action';
+import type { Checkouts } from '../bindings/Checkouts';
+import type { Confirm } from '../bindings/Confirm';
+import type { CheckoutsRow } from '../bindings/CheckoutsRow';
+import type { LastCommit } from '../bindings/LastCommit';
+import { startMenu, toggleStart } from '../chrome.js';
+import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { closeLayer } from '../kit/menu.js';
+import { actionFor } from '../keys/keymap.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);

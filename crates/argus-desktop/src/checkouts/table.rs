@@ -6,7 +6,7 @@ use argus_protocol::tree::column::{local_name, CheckoutRow};
 use argus_protocol::{CheckoutInfo, DecisionBoard, GitStatus, PaneKind, RepositoryInfo};
 use serde::Serialize;
 
-use crate::checkouts_stage::Confirm;
+use crate::checkouts::stage::Confirm;
 
 /// The Checkouts stage: the chosen repository's checkouts, and the
 /// branches no checkout is on while they are shown.

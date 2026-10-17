@@ -9,7 +9,8 @@ use argus_protocol::tree::column::verbs::{force_delete, Verb};
 use argus_protocol::{CheckoutId, ClientMsg, DecisionBoard, PaneId, RepositoryInfo};
 use serde::Serialize;
 
-use crate::checkouts::{self, last_commit, Checkouts, LastCommit, View};
+use crate::checkouts;
+use crate::checkouts::table::{last_commit, Checkouts, LastCommit, View};
 use crate::connection::page::Event;
 use crate::connection::sent::Sent;
 
@@ -67,19 +68,19 @@ impl CheckoutsStage {
 
     /// Moves the selection `by` rows, held at either end.
     pub fn step(&mut self, repo: &RepositoryInfo, by: isize) {
-        let rows = checkouts::rows(repo, self.branches_shown, &self.filter);
+        let rows = checkouts::table::rows(repo, self.branches_shown, &self.filter);
         let Some(current) = self.row(repo) else {
             return;
         };
         let at = rows.iter().position(|row| *row == current).unwrap_or(0);
         let next = at.saturating_add_signed(by).min(rows.len().saturating_sub(1));
-        self.selected = rows.get(next).and_then(|row| checkouts::key(repo, *row));
+        self.selected = rows.get(next).and_then(|row| checkouts::table::key(repo, *row));
     }
 
     /// The selected row as the table lists it now.
     pub fn row(&self, repo: &RepositoryInfo) -> Option<CheckoutRow> {
-        let rows = checkouts::rows(repo, self.branches_shown, &self.filter);
-        checkouts::selected(repo, &rows, self.selected.as_deref())
+        let rows = checkouts::table::rows(repo, self.branches_shown, &self.filter);
+        checkouts::table::selected(repo, &rows, self.selected.as_deref())
     }
 
     /// The selected row's checkout, when it has one.
@@ -171,7 +172,7 @@ impl CheckoutsStage {
                 ..Default::default()
             };
         };
-        let mut table = checkouts::build(repo, &View {
+        let mut table = checkouts::table::build(repo, &View {
             branches_shown: self.branches_shown,
             filter: &self.filter,
             selected: self.selected.as_deref(),

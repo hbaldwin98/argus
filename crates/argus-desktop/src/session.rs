@@ -11,7 +11,7 @@
 //! the status bar (`chrome::status`), the panes on screen (`panes::shown`),
 //! the agents offered (`agents::templates`), the review and history
 //! (`dialogs`), the link and reconcile dialogs (`tracker_dialogs`), the
-//! three stages (`feature_stage`, `checkouts_stage`, `code_stage`) and the
+//! three stages (`feature_stage`, `checkouts::stage`, `code_stage`) and the
 //! note a new feature is written as (`capture_note`), a repository's past
 //! agent sessions (`agents::sessions`) and the dialog listing them
 //! (`agents::sessions_dialog`), the project switcher (`chrome::switcher`)
@@ -50,7 +50,7 @@ use crate::extensions::keys::ExtensionKeys;
 use crate::extensions::views::{first_place, ExtensionGesture, ExtensionViews, Here, Placed};
 use crate::agents::templates::Agents;
 use crate::capture_note::{CaptureGesture, Capturing};
-use crate::checkouts_stage::{CheckoutsStage, Opened};
+use crate::checkouts::stage::{CheckoutsStage, Opened};
 use crate::panes::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
 use crate::layout::docks::{Dock, DockGesture, Docks, Panel, Place};
 use crate::dialogs::Dialogs;
@@ -4973,7 +4973,7 @@ mod tests {
             Event::Checkouts(table) => table.confirm,
             _ => None,
         });
-        assert_eq!(asked, Some(crate::checkouts_stage::Confirm::Force { branch: "spike".into(), commits: Vec::new() }));
+        assert_eq!(asked, Some(crate::checkouts::stage::Confirm::Force { branch: "spike".into(), commits: Vec::new() }));
         let sent = s.answer_checkouts(true);
         assert!(matches!(
             sent.as_slice(),
@@ -4996,7 +4996,7 @@ mod tests {
             Event::Checkouts(table) => table.confirm,
             _ => None,
         });
-        assert!(matches!(asked, Some(crate::checkouts_stage::Confirm::Remove { name, .. }) if name == "spike"));
+        assert!(matches!(asked, Some(crate::checkouts::stage::Confirm::Remove { name, .. }) if name == "spike"));
         assert!(matches!(s.answer_checkouts(true).as_slice(), [ClientMsg::RemoveCheckout { checkout: CheckoutId(101) }]));
 
         s.remove_checkout(CheckoutId(100));

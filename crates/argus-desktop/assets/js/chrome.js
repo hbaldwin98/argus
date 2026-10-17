@@ -1,6 +1,6 @@
 // The window's frame around the stage: the sidebar and its nav, the strip's
 // words, the sidebar's foot, the empty stage, and notices that pass.
-import { drawCheckouts } from './checkouts.js';
+import { drawCheckouts } from './checkouts/stage.js';
 import { drawCode } from './code_stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';

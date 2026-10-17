@@ -13,7 +13,7 @@ import {
   reconnect,
   unpickRail,
 } from './chrome.js';
-import { drawCheckouts } from './checkouts.js';
+import { drawCheckouts } from './checkouts/stage.js';
 import { drawCode } from './code_stage.js';
 import { drawDocks, listen as listenToDocks } from './layout/docks.js';
 import { clearComposer, focusComposer } from './agents/compose.js';

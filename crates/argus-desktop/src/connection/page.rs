@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chrome::add_project::{AddProjectGesture, AddProjectPage};
 use crate::capture_note::{CaptureGesture, CapturePage};
-use crate::checkouts::Checkouts;
+use crate::checkouts::table::Checkouts;
 use crate::code_stage::{CodeGesture, CodePage};
 use crate::comment_box::CommentPage;
 use crate::panes::console::{ConsoleGesture, ConsolePage};

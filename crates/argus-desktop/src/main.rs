@@ -14,7 +14,6 @@
 mod agents;
 mod capture_note;
 mod checkouts;
-mod checkouts_stage;
 mod chrome;
 mod code_stage;
 mod code_tree;
