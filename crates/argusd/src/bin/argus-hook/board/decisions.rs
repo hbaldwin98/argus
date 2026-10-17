@@ -394,6 +394,7 @@ fn id_arg(flag: &str, what: &str, raw: &str) -> Result<i64, String> {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use crate::transport::tests::serve_once;
 
     #[test]
     fn withdrawing_a_decision_wants_its_number() {
@@ -512,5 +513,166 @@ pub(super) mod tests {
              #3 grow without bound  (rejected)\n\
              \x20     because: memory"
         );
+    }
+
+    #[test]
+    fn the_decision_grammar_puts_the_choice_first_and_the_rest_behind_flags() {
+        let write = parse_decide_args(&[
+            "one",
+            "row",
+            "per",
+            "note",
+            "--over",
+            "a table per note",
+            "--because",
+            "the key is durable",
+            "--under",
+            "3",
+        ])
+        .unwrap();
+        assert_eq!(write.chose, "one row per note");
+        assert_eq!(write.over.as_deref(), Some("a table per note"));
+        assert_eq!(write.because.as_deref(), Some("the key is durable"));
+        assert_eq!(write.under, Some(3));
+        assert_eq!(write.supersedes, None);
+    }
+
+    #[test]
+    fn a_decision_that_could_not_be_recorded_says_which_part_was_wrong() {
+        for (bad, expected) in [
+            (vec!["--over", "nothing chosen"], "what was chosen"),
+            (vec!["x", "--under"], "needs something after it"),
+            (vec!["x", "--under", "zero"], "wants a decision number"),
+            (vec!["x", "--why", "no"], "is not one of"),
+            (vec!["x", "--under", "1", "--supersedes", "2"], "not both"),
+        ] {
+            let message = decide_message(&bad, "", "");
+            assert!(
+                message.starts_with("could not record the decision:") && message.contains(expected),
+                "{bad:?} gave {message:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_recorded_decision_reports_the_id_the_next_one_hangs_off() {
+        let recorded = r#"{"id":7,"parent":3,"at":1,"session":null,"checkout":null,
+             "chose":"one row per note","over":null,"because":null,"superseded_by":null}"#;
+        let (address, server) = serve_once(recorded);
+
+        let message = decide_message(
+            &["one", "row", "per", "note", "--under", "3"],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+
+        assert_eq!(message, "recorded decision #7 under #3: one row per note");
+        assert!(server
+            .join()
+            .unwrap()
+            .starts_with("POST /pane/4/decide HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn an_asked_question_is_reported_as_one_and_says_how_it_ends() {
+        let recorded = r#"{"id":9,"parent":null,"at":1,"session":null,"checkout":null,
+             "chose":"which store?","over":null,"because":null,"superseded_by":null,
+             "state":"open","options":["sqlite","a file"]}"#;
+        let (address, server) = serve_once(recorded);
+
+        let message = decide_message(
+            &["which", "store?", "--open", "--option", "sqlite", "--option", "a file"],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+        let _ = server.join();
+
+        assert_eq!(
+            message,
+            "asked open decision #9: which store?\n\
+             It is the person's to answer. When they have, \
+             `argus-hook decisions resolve 9 \"<their answer>\"`."
+        );
+    }
+
+    #[test]
+    fn an_answer_is_posted_as_a_change_to_the_decision_it_resolves() {
+        let (address, server) = serve_once(r#"{"project":null,"name":"argus","decisions":[]}"#);
+
+        let message = decisions_message(
+            &["resolve", "9", "sqlite"],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+
+        assert_eq!(message, "decision 9 resolved: sqlite");
+        assert!(server
+            .join()
+            .unwrap()
+            .starts_with("POST /pane/4/decision HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn one_decision_is_shown_as_the_document_a_rewrite_reads_back() {
+        let board = r#"{"project":null,"name":"argus","decisions":[
+            {"id":9,"parent":null,"at":1,"session":null,"checkout":null,
+             "chose":"sqlite","over":"a file per feature","because":"both need migrations",
+             "superseded_by":null,"detail":"one file in WAL mode",
+             "consequences":[{"gain":false,"text":"a migration ladder"}]}]}"#;
+        let (address, server) = serve_once(board);
+
+        let shown = decisions_message(&["show", "#9"], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+
+        assert_eq!(
+            shown,
+            "sqlite\n\n## Decision\none file in WAL mode\n\n## Why\nboth need migrations\n\n\
+             ## Consequences\n- a migration ladder\n\n## Considered\na file per feature"
+        );
+        let read = DecisionText::from_markdown(&shown);
+        assert_eq!(
+            (read.chose.as_str(), read.over.as_deref(), read.consequences.len()),
+            ("sqlite", Some("a file per feature"), 1)
+        );
+    }
+
+    #[test]
+    fn a_board_is_drawn_as_the_tree_it_is() {
+        let board = r#"{"project":null,"name":"argus","decisions":[
+            {"id":1,"parent":null,"at":1,"session":null,"checkout":null,
+             "chose":"sqlite","over":"a file per feature",
+             "because":"both need migrations","superseded_by":null},
+            {"id":2,"parent":1,"at":2,"session":null,"checkout":null,
+             "chose":"one table per note","over":null,"because":null,
+             "superseded_by":3},
+            {"id":3,"parent":1,"at":3,"session":null,"checkout":null,
+             "chose":"one row per note","over":null,"because":null,
+             "superseded_by":null},
+            {"id":4,"parent":2,"at":4,"session":null,"checkout":null,
+             "chose":"store the body","over":null,"because":null,
+             "superseded_by":null}]}"#;
+        let (address, server) = serve_once(board);
+
+        let message = decisions_message(&[], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+
+        assert_eq!(
+            message,
+            "Decisions on argus, newest last:\n\
+             #1 sqlite\n\
+             │     over: a file per feature\n\
+             │     because: both need migrations\n\
+             ├─ #2 one table per note  (superseded by #3)\n\
+             │  └─ #4 store the body\n\
+             └─ #3 one row per note"
+        );
+    }
+
+    #[test]
+    fn an_empty_board_says_so_rather_than_nothing() {
+        let (address, server) = serve_once(r#"{"project":null,"name":"argus","decisions":[]}"#);
+        let message = decisions_message(&[], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+        assert_eq!(message, "nothing decided under this feature yet");
     }
 }

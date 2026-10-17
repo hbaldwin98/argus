@@ -478,6 +478,7 @@ Save it where the human asked for it, and if they did not say, as a markdown fil
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::tests::serve_once;
     use crate::board::decisions::tests::decision_board;
 
     #[test]
@@ -602,5 +603,128 @@ mod tests {
             "{read}"
         );
         assert!(format_feature_list(&board).contains("  #7 queue — The queue"));
+    }
+
+    #[test]
+    fn a_feature_is_read_as_its_brief_and_then_its_reasoning() {
+        let board = r#"{"project":null,"project_name":"argus","current":"notes-storage",
+            "unfiled":2,
+            "features":[{"slug":"notes-storage","title":"Notes storage","body":"keys outlive ids",
+                         "origin_checkout":null,"origin_branch":"notes","at":1,"session":null}],
+            "decisions":[
+              {"id":1,"parent":null,"at":1,"session":null,"checkout":null,
+               "feature":"notes-storage","chose":"one row per note","over":"a table per note",
+               "because":null,"superseded_by":null}]}"#;
+        let (address, server) = serve_once(board);
+
+        let message = feature_message(&[], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+
+        assert_eq!(
+            message,
+            "Feature: Notes storage (notes-storage)\n\
+             Started on notes.\n\
+             \n\
+             keys outlive ids\n\
+             \n\
+             Decided under it, newest last:\n\
+             #1 one row per note\n\
+             \x20     over: a table per note"
+        );
+    }
+
+    #[test]
+    fn a_checkout_on_no_feature_is_told_what_to_do_about_it() {
+        let board = r#"{"project":null,"project_name":"argus","current":null,"unfiled":3,
+            "features":[{"slug":"the-pty-deadlock","title":"The pty deadlock","body":"",
+                         "origin_checkout":null,"origin_branch":null,"at":1,"session":null}],
+            "decisions":[]}"#;
+        let (address, server) = serve_once(board);
+
+        let message = feature_message(&[], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+
+        assert!(
+            message.starts_with("This checkout is not on a feature yet"),
+            "{message}"
+        );
+        assert!(
+            message.contains("the-pty-deadlock — The pty deadlock"),
+            "{message}"
+        );
+        assert!(message.contains("3 older decision(s)"), "{message}");
+    }
+
+    fn exportable_board() -> FeatureBoard {
+        let feature = argus_protocol::Feature {
+            slug: "streaming-the-pty".into(),
+            title: "streaming the pty".into(),
+            body: "the reader thread owns the handle.".into(),
+            origin_checkout: None,
+            origin_branch: Some("pty-stream".into()),
+            at: 0,
+            session: None,
+            state: Default::default(),
+            checkouts: Vec::new(),
+            tasks: Default::default(),
+            held: None,
+            waits_on: Vec::new(),
+            ..Default::default()
+        };
+        FeatureBoard {
+            project: None,
+            project_name: "argus".into(),
+            features: vec![feature],
+            current: Some("streaming-the-pty".into()),
+            decisions: vec![Decision {
+                id: 4,
+                parent: None,
+                at: 0,
+                session: None,
+                checkout: None,
+                feature: Some("streaming-the-pty".into()),
+                chose: "one reader thread".into(),
+                over: Some("polling the handle".into()),
+                because: Some("a poll cannot see a burst".into()),
+                superseded_by: None,
+                withdrawn_at: None,
+                ..Default::default()
+            }],
+            unfiled: 0,
+        }
+    }
+
+    #[test]
+    fn an_export_hands_over_the_whole_feature_and_asks_for_prose() {
+        let message = format_export(&exportable_board());
+
+        // The commission first: without it this is the board again, and
+        // the point of the command is what the model does with it.
+        assert!(message.starts_with("Write this feature up"), "{message}");
+        assert!(message.contains("the road not taken"));
+        // Then every part of the record a document would need.
+        assert!(message.contains("Feature: streaming the pty (streaming-the-pty)"));
+        assert!(message.contains("the reader thread owns the handle."));
+        assert!(message.contains("#4 one reader thread"));
+        assert!(message.contains("over: polling the handle"));
+        assert!(message.contains("because: a poll cannot see a burst"));
+    }
+
+    #[test]
+    fn a_checkout_on_no_feature_is_told_that_rather_than_asked_to_write() {
+        let mut board = exportable_board();
+        board.current = None;
+        board.decisions.clear();
+
+        let message = format_export(&board);
+
+        assert!(
+            message.starts_with("This checkout is not on a feature"),
+            "{message}"
+        );
+        assert!(
+            message.contains("streaming-the-pty"),
+            "it still offers the ones that exist"
+        );
     }
 }

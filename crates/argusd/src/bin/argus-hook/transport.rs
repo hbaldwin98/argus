@@ -339,7 +339,7 @@ pub(super) fn answering(status: &str, body: &str) -> (String, std::thread::JoinH
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use argus_protocol::{AgentView, ViewChange, MAX_VIEW_BYTES};
 
@@ -427,5 +427,41 @@ mod tests {
         assert!(named_feature("task", &["--feature"]).is_err());
         assert!(named_feature("task", &["--feature", "Two Words"]).is_err());
         assert!(named_feature("task", &["--feature", "../../etc"]).is_err());
+    }
+
+    /// Serves one canned JSON response and hands back the request head, so
+    /// a rendering test can also assert what went over the wire.
+    pub(crate) fn serve_once(body: &str) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
+        serve_response(&format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        ))
+    }
+
+    /// Serves one canned response at a chosen status, for the endpoint that
+    /// has something to say when it refuses.
+    fn serve_response(response: &str) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
+        use std::io::BufRead as _;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let response = response.to_string();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = std::io::BufReader::new(stream);
+            let mut head = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                head.push_str(&line);
+            }
+            reader.get_mut().write_all(response.as_bytes()).unwrap();
+            head
+        });
+        (address, server)
     }
 }

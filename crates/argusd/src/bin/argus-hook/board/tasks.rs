@@ -317,6 +317,7 @@ fn task_body_prefix(row: &argus_protocol::TaskTreeRow<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::tests::serve_once;
 
     #[test]
     fn a_task_moves_to_exactly_one_place() {
@@ -426,6 +427,61 @@ mod tests {
              \x20     note, a person: ship the bound first\n\
              └─ #13  doing under load — pane 5\n\
              \x20     [ ] 1. holds at 10k"
+        );
+    }
+
+    #[test]
+    fn a_task_brief_is_sent_whole_and_printed_beneath_its_task() {
+        let list = r#"{"project_name":"argus","feature":"task-briefs","tasks":[
+            {"id":7,"feature":"task-briefs","title":"render the brief",
+             "body":"Keep the title compact.\nVerify multiline output.","state":"doing",
+             "claimed_by":"sess-1","external":null,"position":0,"at":1,"session":null}]}"#;
+        let (address, server) = serve_once(list);
+
+        let message = task_message(
+            &[
+                "brief",
+                "7",
+                "Keep the title compact.\nVerify multiline output.",
+            ],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+        let _ = server.join();
+        assert_eq!(
+            message,
+            "Tasks under task-briefs:\n\
+             #7   doing render the brief — sess-1\n\
+             \x20     Keep the title compact.\n\
+             \x20     Verify multiline output."
+        );
+    }
+
+    #[test]
+    fn nested_tasks_are_printed_with_their_parent_branches() {
+        let list: TaskList = serde_json::from_str(
+            r#"{"project_name":"argus","feature":"nested","tasks":[
+                {"id":1,"feature":"nested","parent":null,"title":"root",
+                 "body":null,"state":"todo","claimed_by":null,"external":null,"position":0,"at":1,"session":null},
+                {"id":2,"feature":"nested","parent":1,"title":"child",
+                 "body":null,"state":"doing","claimed_by":"sess-1","external":null,"position":0,"at":2,"session":null},
+                {"id":3,"feature":"nested","parent":2,"title":"grandchild",
+                 "body":null,"state":"todo","claimed_by":null,"external":null,"position":0,"at":3,"session":null},
+                {"id":4,"feature":"nested","parent":1,"title":"second child",
+                 "body":null,"state":"todo","claimed_by":null,"external":null,"position":1,"at":4,"session":null},
+                {"id":5,"feature":"nested","parent":null,"title":"other root",
+                 "body":null,"state":"done","claimed_by":null,"external":null,"position":1,"at":5,"session":null}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            format_tasks(&list),
+            "Tasks under nested:\n\
+             #1   todo root\n\
+             ├─ #2   doing child — sess-1\n\
+             │  └─ #3   todo grandchild\n\
+             └─ #4   todo second child\n\
+             #5   done other root"
         );
     }
 }
