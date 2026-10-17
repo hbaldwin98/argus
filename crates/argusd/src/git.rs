@@ -1,7 +1,7 @@
 //! Read-only git status for a checkout: branch, dirty/clean, ahead/behind
 //! upstream, and the repo's current worktree list. See DESIGN.md §4 Level 2
 //! and §9 M2. Mutating operations (`worktree add`/`remove`) live next to the
-//! daemon state they update, in `state.rs`, not here.
+//! daemon state they update, in `state::git_ops`, not here.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

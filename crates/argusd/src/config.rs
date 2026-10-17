@@ -179,7 +179,7 @@ pub enum Restart {
 }
 
 /// How a particular agent CLI can be asked to report its status, in the
-/// user's config rather than in Argus's source. See `harness.rs`.
+/// user's config rather than in Argus's source. See `harness`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct HarnessConfig {
     pub name: String,
