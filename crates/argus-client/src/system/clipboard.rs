@@ -2,10 +2,10 @@
 //!
 //! Windows gives a terminal application no way to tell a paste from fast
 //! typing: the console delivers pasted text as ordinary key records, with
-//! none of the bracketing a Unix terminal supplies (see [`crate::paste`],
-//! which infers it from timing). Reading the clipboard ourselves sidesteps
-//! the guess entirely — an explicit paste key is never wrong about what it
-//! is.
+//! none of the bracketing a Unix terminal supplies (see
+//! [`crate::input::paste`], which infers it from timing). Reading the
+//! clipboard ourselves sidesteps the guess entirely — an explicit paste key
+//! is never wrong about what it is.
 //!
 //! A desktop clipboard only exists where Argus runs on the desk. Over SSH,
 //! or inside a multiplexer on a remote host, the one clipboard the user

@@ -6,7 +6,7 @@ use argus_protocol::PaneId;
 pub(super) struct TermView<'a> {
     grid: Option<&'a PaneView>,
     pane: Option<PaneId>,
-    selection: Option<&'a crate::selection::TerminalSelection>,
+    selection: Option<&'a crate::input::selection::TerminalSelection>,
 }
 
 /// Draws the pane and reports where the hardware cursor would go if this
@@ -28,7 +28,7 @@ pub(super) fn render_term(
     area: Rect,
     focused: bool,
     pane: Option<PaneId>,
-    selection: Option<&crate::selection::TerminalSelection>,
+    selection: Option<&crate::input::selection::TerminalSelection>,
 ) -> Option<CursorPlacement> {
     f.render_widget(
         TermView {

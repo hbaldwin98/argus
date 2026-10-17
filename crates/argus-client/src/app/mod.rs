@@ -29,11 +29,11 @@ use crate::dirpicker::{DirAction, DirPicker, DirTarget};
 use argus_protocol::fuzzy::Fuzzy;
 use argus_protocol::panes::view::PaneView;
 use argus_protocol::review::history_view::{Drill, HistoryView};
-use crate::pty_input::{encode_key, encode_mouse, is_leader};
+use crate::input::pty::{encode_key, encode_mouse, is_leader};
 use argus_protocol::review::agent_comment::{self, Comment};
 use argus_protocol::review::session::ReviewSession;
 use argus_protocol::review::view::ReviewView;
-use crate::selection::TerminalSelection;
+use crate::input::selection::TerminalSelection;
 use crate::theme::Theme;
 
 use argus_protocol::ReviewBase;

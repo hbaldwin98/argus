@@ -11,7 +11,7 @@
 //! single keys cannot express: typed text, and the leader chord.
 
 use super::*;
-use crate::dropped::Dropped;
+use crate::input::dropped::Dropped;
 use argus_protocol::panes::paste::{normalize, PASTE_FILE_MAX};
 
 impl App {
@@ -242,7 +242,7 @@ impl App {
             self.report("nothing here takes pasted text");
             return;
         };
-        match crate::dropped::file(&text) {
+        match crate::input::dropped::file(&text) {
             Some(Dropped::Here(path)) => {
                 if self.paste_dropped(pane, &path) {
                     return;

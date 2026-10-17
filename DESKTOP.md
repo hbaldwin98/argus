@@ -37,7 +37,7 @@ recent sessions need.
    the deleted phone client) draws what it is sent and reports gestures. It holds a mirror of the
    rows only to repaint.
 4. **No contract written twice.** Keys are encoded by ONE encoder, moved from the TUI's
-   `pty_input/keys.rs` into `argus-protocol` (see "Foundation" below). The page sends key *names*
+   `input/pty/keys.rs` into `argus-protocol` (see "Foundation" below). The page sends key *names*
    (`KeyboardEvent.key` + modifiers); Rust maps them to the protocol key and encodes. Screen
    decoding uses `argus-protocol`'s `grid_from_runs` / `Scroll::apply` / `CellRun::apply` (and the
    older `PaneSnapshot`/`Damage` forms via whatever the protocol offers for spans), never a JS copy.
@@ -49,11 +49,11 @@ recent sessions need.
   `BackTab`, `Backspace`, `Esc`, `Left`, `Right`, `Up`, `Down`, `Home`, `End`, `PageUp`,
   `PageDown`, `Delete`, `Insert`, `F(u8)` — whatever the existing encoder covers, no more; `Mods`:
   shift/alt/ctrl) and `encode(&Key) -> Vec<u8>` with **byte-identical** behaviour to today's
-  `pty_input::encode_key`. Move the existing encoder tests across (they must keep passing,
+  `input::pty::encode_key`. Move the existing encoder tests across (they must keep passing,
   unchanged in what they assert), and keep a test in the TUI proving the crossterm→Key mapping
   plus encode gives the same bytes as before for every key the old tests covered. The TUI's
-  `pty_input/keys.rs` keeps only what is the TUI's: `is_leader` and the crossterm → `Key`
-  translation. Update both DESIGN tables (`keys` row in protocol; `pty_input/keys` row reworded).
+  `input/pty/keys.rs` keeps only what is the TUI's: `is_leader` and the crossterm → `Key`
+  translation. Update both DESIGN tables (`keys` row in protocol; `input/pty/keys` row reworded).
   Protocol is a lib crate: no new dependencies.
 - **`argus bridge` exits when the daemon hangs up** (HUN-179, done). `tokio::io::stdin()` is a
   blocking read that keeps the runtime alive (see Findings), so `bridge.rs` ends the process the

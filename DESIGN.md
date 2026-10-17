@@ -509,10 +509,13 @@ result of a request; `ui` is a pure function of it.
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
-| `selection`, `pty_input`, `paste` | a pane's selected text, and the input primitives |
-| `pty_input/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
-| `pty_input/mouse` | a terminal mouse event as the protocol's, relative to the pane's area |
-| `dropped` | a file dropped on the terminal, recognized in what it pasted |
+| `input` | what crosses between the person's terminal and a pane beyond a key the app acts on |
+| `input/paste` | a burst of typed characters told back into a paste |
+| `input/selection` | a pane's selected text |
+| `input/dropped` | a file dropped on the terminal, recognized in what it pasted |
+| `input/pty` | a terminal event as the bytes a pane's child expects to read, once the app has sent it to the pane |
+| `input/pty/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
+| `input/pty/mouse` | a terminal mouse event as the protocol's, relative to the pane's area |
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
 | `settings`, `theme` | preferences and the palette |
 | `fixtures` | the builders every test module shares: the tree, and a pane's view as the daemon's messages leave it |

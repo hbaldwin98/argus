@@ -277,7 +277,7 @@ impl App {
         }
         let local = !self.pane_mouse(pane).enabled() || ev.modifiers.contains(KeyModifiers::SHIFT);
         if local {
-            self.selection = Some(crate::selection::TerminalSelection::start(
+            self.selection = Some(crate::input::selection::TerminalSelection::start(
                 pane, ev.column, ev.row, area,
             ));
         }
