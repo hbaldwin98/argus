@@ -3977,17 +3977,18 @@ mod tests {
         assert_eq!(s.everything(0).len(), 8, "a fresh page hears it all, the keymap first");
     }
 
-    /// Each surface forgets what it sent when the page reloads: one that
-    /// did not would leave its open dialog missing from the fresh page.
-    #[test]
-    fn a_reloaded_page_hears_each_open_dialog_again() {
+    /// A dialog by name, how a session opens it, and how its event says it
+    /// is open.
+    type Surface = (&'static str, Box<dyn Fn(&mut Session)>, fn(&Event) -> bool);
+
+    /// Every dialog the window draws over the stage.
+    fn surfaces() -> Vec<Surface> {
         fn on_feature(s: &mut Session) {
             s.show_features(true);
             s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
             s.call(Call::OpenFeature { slug: Some("trim".into()) });
         }
-        type Case = (&'static str, Box<dyn Fn(&mut Session)>, fn(&Event) -> bool);
-        let cases: Vec<Case> = vec![
+        vec![
             (
                 "capture",
                 Box::new(|s| {
@@ -4052,13 +4053,96 @@ mod tests {
                 }),
                 |e| matches!(e, Event::ExtensionDialog(p) if p.open),
             ),
-        ];
-        for (name, open, drawn) in cases {
+        ]
+    }
+
+    /// Each surface forgets what it sent when the page reloads: one that
+    /// did not would leave its open dialog missing from the fresh page.
+    #[test]
+    fn a_reloaded_page_hears_each_open_dialog_again() {
+        for (name, open, drawn) in surfaces() {
             let mut s = session(Hello::this_build());
             open(&mut s);
             assert!(s.events(0).iter().any(drawn), "the {name} opens");
             assert!(!s.events(0).iter().any(drawn), "the {name} is heard once");
             assert!(s.everything(0).iter().any(drawn), "the {name} is drawn again on a reloaded page");
+        }
+    }
+
+    /// ts-rs writes the page's types, and the shape tests pin a few events
+    /// by hand; nothing else holds what serde sends to those types. A field
+    /// left out when empty, a `ts(type)` union written by hand, a status
+    /// word the union lacks: each compiles on both sides and breaks only in
+    /// the page. So every event a page hears — from a rail with a pane in
+    /// each state, the board and the table up, and each dialog open — is
+    /// written to `page/test/contract/sent.ts` as values `npm run check`
+    /// holds to `Event`, and CI fails when the file is not what this writes.
+    ///
+    /// The Settings event is built here rather than taken from a session:
+    /// a session offers this machine's fonts and backdrops.
+    #[test]
+    fn the_events_a_page_is_sent_are_written_for_its_compiler_to_check() {
+        use crate::connection::page::{BackdropOffer, FontFamily, SettingsPage};
+        use crate::settings::remembered::Preferences;
+        let mut sent: Vec<serde_json::Value> = Vec::new();
+        let mut keep = |events: Vec<Event>| {
+            for event in events {
+                let value = serde_json::to_value(&event).unwrap();
+                if value["type"] != "settings" && !sent.contains(&value) {
+                    sent.push(value);
+                }
+            }
+        };
+
+        let statuses = [
+            PaneStatus::Idle,
+            PaneStatus::Working,
+            PaneStatus::Waiting,
+            PaneStatus::NeedsReview,
+            PaneStatus::Done,
+            PaneStatus::Failed,
+            PaneStatus::Exited { code: Some(1) },
+        ];
+        let panes = statuses.iter().enumerate().map(|(n, status)| {
+            pane(n as u64 + 1, if n == 0 { PaneKind::Shell } else { PaneKind::Agent }, "agent", *status)
+        });
+        let every_state = vec![project(1, "src", vec![repository(10, "argus", Some(0), vec![
+            checkout(100, "main", true, panes.collect()),
+            checkout(101, "topic", false, vec![pane(20, PaneKind::Agent, "claude", PaneStatus::Waiting)]),
+        ])])];
+        let mut s = Session::default();
+        s.connected(Some(Hello::this_build()), None, vec![with_tree(every_state)]);
+        s.show_features(true);
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        keep(s.everything(0));
+        s.show_checkouts(true);
+        keep(s.events(0));
+
+        for (_, open, _) in surfaces() {
+            let mut s = session(Hello::this_build());
+            open(&mut s);
+            keep(s.events(0));
+        }
+
+        let settings = Event::Settings(Box::new(SettingsPage {
+            chosen: Preferences::default(),
+            min_opacity: 30,
+            backdrops: vec![BackdropOffer { backdrop: Backdrop::Mica, unavailable: Some("Mica needs Windows 11".into()) }],
+            fonts: vec![FontFamily { name: "Cascadia Mono".into(), mono: true }],
+        }));
+        sent.push(serde_json::to_value(&settings).unwrap());
+
+        let values: Vec<String> = sent.iter().map(|value| serde_json::to_string_pretty(value).unwrap()).collect();
+        let file = format!(
+            "// Written by `cargo test -p argus-desktop`, from session.rs: every event a\n\
+             // page is sent, for `npm run check` to hold to the bindings. Not edited by hand.\n\n\
+             import type {{ Event }} from '../../src/bindings/Event';\n\n\
+             export const sent = [\n{}\n] satisfies Event[];\n",
+            values.join(",\n"),
+        );
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("page/test/contract/sent.ts");
+        if std::fs::read_to_string(&path).ok().as_deref() != Some(file.as_str()) {
+            std::fs::write(&path, file).unwrap();
         }
     }
 

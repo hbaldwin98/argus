@@ -3,6 +3,7 @@
   "printWidth": 100,
   "singleQuote": true,
   "ignorePatterns": [
-    "**/bindings/**"
+    "**/bindings/**",
+    "**/contract/sent.ts"
   ]
 }

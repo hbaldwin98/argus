@@ -80,10 +80,10 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          changed="$(git status --porcelain -- crates/argus-desktop/page/src/bindings)"
+          changed="$(git status --porcelain -- crates/argus-desktop/page/src/bindings crates/argus-desktop/page/test/contract)"
           if [[ -n "$changed" ]]; then
             echo "$changed"
-            echo "run cargo test -p argus-desktop and commit page/src/bindings" >&2
+            echo "run cargo test -p argus-desktop and commit page/src/bindings and page/test/contract" >&2
             exit 1
           fi
 

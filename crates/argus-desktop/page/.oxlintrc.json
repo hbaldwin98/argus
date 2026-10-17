@@ -12,6 +12,7 @@
   },
   "ignorePatterns": [
     "src/bindings/**",
+    "test/contract/sent.ts",
     "node_modules/**"
   ],
   "rules": {

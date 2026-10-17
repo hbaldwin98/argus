@@ -7,7 +7,7 @@
     "build": "node -e \"require('node:fs').rmSync('../assets/js', { recursive: true, force: true })\" && tsc -p . && node -e \"require('node:fs').rmSync('../assets/js/bindings', { recursive: true, force: true })\"",
     "lint": "oxlint",
     "fmt": "cd .. && oxfmt -c page/.oxfmtrc.json page/src page/test assets/style.css",
-    "check": "npm run build && oxlint --deny-warnings && cd .. && oxfmt -c page/.oxfmtrc.json --check page/src page/test assets/style.css",
+    "check": "npm run build && tsc -p test/contract && oxlint --deny-warnings && cd .. && oxfmt -c page/.oxfmtrc.json --check page/src page/test assets/style.css",
     "test": "node --test \"test/**/*.test.mjs\""
   },
   "devDependencies": {
