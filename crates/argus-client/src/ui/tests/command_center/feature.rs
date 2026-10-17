@@ -956,7 +956,7 @@ fn the_selected_step_is_lit_where_the_diagram_draws_it() {
     let (mut app, _rx) = reading();
     press(&mut app, '3');
     press(&mut app, 'j');
-    let th = crate::theme::Theme::default();
+    let th = crate::ui::theme::Theme::default();
 
     let buf = draw_at(&mut app, SCREEN_WIDTH, SCREEN_HEIGHT);
 

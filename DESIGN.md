@@ -504,6 +504,8 @@ result of a request; `ui` is a pure function of it.
 | `ui/agent_tone` | how an agent view's tones read as theme roles, and the chip drawn through them |
 | `ui/agent_values` | what each kind of agent view value reads as in a terminal: styled text on a line, or wrapped lines for a long text |
 | `ui/text` | fitting text to a width: ellipsis, wrapping a field or prose, one-lining |
+| `ui/theme` | the palette: every colour the UI draws, by the role it plays |
+| `ui/motion` | animation arithmetic: how far along a transition is at a given instant |
 | `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
 | `ui/views` | the tab strip naming the four stages, and which tab a click lands on |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
@@ -516,8 +518,7 @@ result of a request; `ui` is a pure function of it.
 | `input/pty` | a terminal event as the bytes a pane's child expects to read, once the app has sent it to the pane |
 | `input/pty/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
 | `input/pty/mouse` | a terminal mouse event as the protocol's, relative to the pane's area |
-| `motion` | animation arithmetic: how far along a transition is at a given instant |
-| `settings`, `theme` | preferences and the palette |
+| `settings` | preferences, and where they live on disk |
 | `fixtures` | the builders every test module shares: the tree, and a pane's view as the daemon's messages leave it |
 
 `argus-desktop` is the desktop window. It holds what it was sent and draws it; everything it knows

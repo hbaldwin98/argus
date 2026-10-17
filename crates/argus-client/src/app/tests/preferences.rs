@@ -40,7 +40,7 @@ fn changing_the_theme_applies_it_at_once() {
 
     assert_eq!(
         h.app.theme,
-        crate::theme::Theme::by_name(&h.app.settings.theme)
+        crate::ui::theme::Theme::by_name(&h.app.settings.theme)
     );
     assert_ne!(h.app.settings.theme, "mocha");
 }

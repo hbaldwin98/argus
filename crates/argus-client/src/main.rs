@@ -13,11 +13,9 @@ mod commands;
 mod connection;
 mod dirpicker;
 mod input;
-mod motion;
 mod settings;
 mod system;
 mod terminal;
-mod theme;
 mod ui;
 
 #[cfg(test)]

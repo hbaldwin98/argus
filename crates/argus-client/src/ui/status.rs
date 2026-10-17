@@ -349,7 +349,7 @@ fn fleet(app: &App, th: Theme) -> Vec<Span<'static>> {
         // The shell's palette: one color per state, glyph and count alike.
         let color = status_color(status, th);
         let glyph = match status {
-            PaneStatus::Working => crate::motion::spinner(app.frame_now(), app.epoch()),
+            PaneStatus::Working => crate::ui::motion::spinner(app.frame_now(), app.epoch()),
             PaneStatus::Done => "✓",
             _ => "▲",
         };

@@ -519,7 +519,7 @@ impl App {
     pub fn next_motion_deadline(&self) -> Option<std::time::Instant> {
         let spinning = self
             .any_pane_working()
-            .then(|| crate::motion::spinner_deadline(self.frame_now, self.epoch));
+            .then(|| crate::ui::motion::spinner_deadline(self.frame_now, self.epoch));
         let travelling = self
             .focus_from
             .filter(|(_, anim)| anim.progress(self.frame_now).is_some())
@@ -545,7 +545,7 @@ impl App {
         if self.focus != self.focus_shown {
             self.focus_from = Some((
                 self.focus_shown,
-                crate::motion::Animation::starting(now, crate::motion::FOCUS_FADE),
+                crate::ui::motion::Animation::starting(now, crate::ui::motion::FOCUS_FADE),
             ));
             self.focus_shown = self.focus;
         }
@@ -559,20 +559,20 @@ impl App {
     /// tells you where focus ended up but not that it moved — which is the
     /// half that makes several cards read as one place you are moving
     /// through rather than several that take turns lighting up.
-    pub fn focus_lit(&self, panel: Focus) -> crate::motion::Lit {
+    pub fn focus_lit(&self, panel: Focus) -> crate::ui::motion::Lit {
         let moving = self
             .focus_from
             .and_then(|(from, anim)| Some((from, anim.progress(self.frame_now)?)));
         let Some((from, progress)) = moving else {
             return (self.focus == panel).into();
         };
-        let t = crate::motion::ease_out(progress);
+        let t = crate::ui::motion::ease_out(progress);
         if self.focus == panel {
             t.into()
         } else if from == panel {
             (1.0 - t).into()
         } else {
-            crate::motion::Lit::OFF
+            crate::ui::motion::Lit::OFF
         }
     }
 

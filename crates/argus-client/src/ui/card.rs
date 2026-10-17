@@ -18,7 +18,7 @@ pub(super) fn render_overflow(
     first: usize,
     visible: usize,
     len: usize,
-    lit: crate::motion::Lit,
+    lit: crate::ui::motion::Lit,
     th: Theme,
 ) {
     if inner.height == 0 || visible == 0 || len <= visible {
@@ -31,7 +31,7 @@ pub(super) fn render_overflow(
     let thumb = (track * visible / len).clamp(1, track);
     let span = track - thumb;
     let start = span * first / (len - visible);
-    let style = Style::default().fg(crate::motion::blend(th.dim, th.accent, lit.value()));
+    let style = Style::default().fg(crate::ui::motion::blend(th.dim, th.accent, lit.value()));
     for i in 0..thumb {
         let y = inner.y + (start + i) as u16;
         f.render_widget(
@@ -81,7 +81,7 @@ pub(super) fn render_row<'a>(
     area: Rect,
     item: Item<'a>,
     selected: bool,
-    lit: impl Into<crate::motion::Lit>,
+    lit: impl Into<crate::ui::motion::Lit>,
     th: Theme,
 ) {
     let lit = lit.into();
@@ -90,7 +90,7 @@ pub(super) fn render_row<'a>(
     // brightens as focus arrives and dims as it leaves, so the selection
     // and the border are one movement rather than two.
     let bar = match selected {
-        true => Style::default().bg(crate::motion::blend(th.sel_bg_dim, th.sel_bg, lit.value())),
+        true => Style::default().bg(crate::ui::motion::blend(th.sel_bg_dim, th.sel_bg, lit.value())),
         false => Style::default(),
     };
 
@@ -190,22 +190,22 @@ pub(super) fn render_row<'a>(
 /// that are simply focused or not still pass `true` or `false`.
 pub(super) fn panel_block(
     title: &str,
-    lit: impl Into<crate::motion::Lit>,
+    lit: impl Into<crate::ui::motion::Lit>,
     th: Theme,
     width: u16,
 ) -> Block<'_> {
     let lit = lit.into();
     let t = lit.value();
-    let border = Style::default().fg(crate::motion::blend(th.edge, th.accent, t));
+    let border = Style::default().fg(crate::ui::motion::blend(th.edge, th.accent, t));
     // Weight cannot be blended, so it flips at the midpoint. Over 120ms
     // that reads as part of the same movement rather than as a second one.
     let label = match lit.is_lit() {
         true => Style::default()
-            .fg(crate::motion::blend(th.muted, th.accent, t))
+            .fg(crate::ui::motion::blend(th.muted, th.accent, t))
             .add_modifier(Modifier::BOLD),
-        false => Style::default().fg(crate::motion::blend(th.muted, th.accent, t)),
+        false => Style::default().fg(crate::ui::motion::blend(th.muted, th.accent, t)),
     };
-    let fill = crate::motion::blend(th.surface, th.surface_focus, t);
+    let fill = crate::ui::motion::blend(th.surface, th.surface_focus, t);
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)

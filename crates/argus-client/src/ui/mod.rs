@@ -3,7 +3,7 @@
 //! [`command_center`]). A pane's terminal can take the whole content area
 //! while it has focus, and overlays and modals float over everything.
 //!
-//! Every color goes through [`crate::theme::Theme`] rather than being named
+//! Every color goes through [`theme::Theme`] rather than being named
 //! here, and the visual language is deliberately narrow:
 //!
 //! - **Elevation** carries structure: the page sits at `bg`, an unfocused
@@ -35,7 +35,7 @@ use crate::dirpicker::DirRow;
 use argus_protocol::panes::view::PaneView;
 use argus_protocol::review::history_view::{HistoryRow, HistoryView};
 use argus_protocol::review::view::{fold_of, ReviewView, Row, FOLD_STEP};
-use crate::theme::Theme;
+use theme::Theme;
 use argus_protocol::CursorShape;
 
 mod agent_blocks;
@@ -46,12 +46,14 @@ mod command_center;
 mod help;
 mod history;
 mod modals;
+pub mod motion;
 mod overlay;
 pub(super) mod prose;
 mod review;
 mod status;
 mod term;
 mod text;
+pub mod theme;
 mod views;
 
 use agent_blocks::block_lines;

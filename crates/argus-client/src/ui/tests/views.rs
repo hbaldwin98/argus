@@ -229,7 +229,7 @@ fn a_working_pane_turns_and_a_settled_one_does_not() {
     // A pane's own row in the rail, never the workspace heading beside it,
     // which names the same pane and carries no glyph that turns.
     let rail_row = |app: &mut App, frame: u32, name: &str| {
-        app.set_frame_now(epoch + crate::motion::SPINNER_FRAME * frame);
+        app.set_frame_now(epoch + crate::ui::motion::SPINNER_FRAME * frame);
         let buf = draw_at(app, 120, 30);
         let rail = app.layout.rail.outer;
         (rail.y..rail.bottom())
@@ -307,7 +307,7 @@ fn focus_travels_between_columns_rather_than_snapping() {
     assert_eq!(lit_of(&app), (1.0, 0.0));
 
     // The frames after it are the travel.
-    app.set_frame_now(epoch + crate::motion::FOCUS_FADE / 2);
+    app.set_frame_now(epoch + crate::ui::motion::FOCUS_FADE / 2);
     let (leaving, arriving) = lit_of(&app);
     assert!(
         leaving > 0.0 && leaving < 1.0,
@@ -329,7 +329,7 @@ fn focus_travels_between_columns_rather_than_snapping() {
     // A column that is neither end of the move is untouched by it.
     assert_eq!(app.focus_lit(Focus::Panes).value(), 0.0);
 
-    app.set_frame_now(epoch + crate::motion::FOCUS_FADE * 2);
+    app.set_frame_now(epoch + crate::ui::motion::FOCUS_FADE * 2);
     assert_eq!(lit_of(&app), (0.0, 1.0), "and it settles where focus went");
 }
 

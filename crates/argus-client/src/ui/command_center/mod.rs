@@ -248,7 +248,7 @@ fn render_first_run(f: &mut Frame, area: Rect, th: Theme) {
 /// otherwise, so progress reads in the rail without opening the pane.
 fn status_glyph(app: &App, status: PaneStatus, still: &'static str) -> &'static str {
     if status == PaneStatus::Working {
-        crate::motion::spinner(app.frame_now(), app.epoch())
+        crate::ui::motion::spinner(app.frame_now(), app.epoch())
     } else {
         still
     }

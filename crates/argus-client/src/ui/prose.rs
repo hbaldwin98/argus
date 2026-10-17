@@ -16,7 +16,7 @@
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
-use crate::theme::Theme;
+use crate::ui::theme::Theme;
 
 /// One line of prose, marked up. `base` is the line's own style: the
 /// selection bar it sits under, and — where it names one — the colour its

@@ -106,7 +106,7 @@ pub struct Settings {
     /// path. Empty means fall back to `$VISUAL`/`$EDITOR`, then to
     /// whichever terminal editor is installed.
     pub editor_cmd: String,
-    /// A preset name from `theme::THEMES`.
+    /// A preset name from `ui::theme::THEMES`.
     pub theme: String,
     /// Whether review pairs the two sides of a change side by side instead
     /// of stacking them. Unified by default: it is the shape git itself
@@ -131,7 +131,7 @@ impl Default for Settings {
         Settings {
             editor: EditorMode::Overlay,
             editor_cmd: String::new(),
-            theme: crate::theme::THEMES[0].to_string(),
+            theme: crate::ui::theme::THEMES[0].to_string(),
             review_split: false,
             notifications: NotificationMode::Off,
             hosts: Vec::new(),

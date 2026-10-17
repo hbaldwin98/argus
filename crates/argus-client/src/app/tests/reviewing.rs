@@ -698,7 +698,7 @@ fn a_review_restores_the_columns_after_a_fullscreen_pane() {
 #[test]
 fn t_opens_the_theme_picker_on_the_theme_already_in_use() {
     let mut h = Harness::new();
-    h.app.theme = crate::theme::Theme::by_name("frappe");
+    h.app.theme = crate::ui::theme::Theme::by_name("frappe");
     h.key(KeyCode::Char('t'));
 
     let picker = h.app.picker.as_ref().expect("t should open the picker");
@@ -713,7 +713,7 @@ fn choosing_a_theme_swaps_the_palette_without_asking_the_daemon() {
     h.key(KeyCode::Char('j'));
     h.key(KeyCode::Enter);
 
-    assert_eq!(h.app.theme, crate::theme::Theme::by_name("macchiato"));
+    assert_eq!(h.app.theme, crate::ui::theme::Theme::by_name("macchiato"));
     assert!(h.sent().is_empty());
     assert!(h.app.picker.is_none());
 }

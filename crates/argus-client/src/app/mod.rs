@@ -34,7 +34,7 @@ use argus_protocol::review::agent_comment::{self, Comment};
 use argus_protocol::review::session::ReviewSession;
 use argus_protocol::review::view::ReviewView;
 use crate::input::selection::TerminalSelection;
-use crate::theme::Theme;
+use crate::ui::theme::Theme;
 
 use argus_protocol::ReviewBase;
 use layout::in_rect;
@@ -382,7 +382,7 @@ pub struct App {
     /// remembered at 38 call sites is one somebody forgets. Comparing
     /// against what was last drawn cannot be forgotten.
     focus_shown: Focus,
-    focus_from: Option<(Focus, crate::motion::Animation)>,
+    focus_from: Option<(Focus, crate::ui::motion::Animation)>,
     bell_pending: bool,
     out: UnboundedSender<ClientMsg>,
 }

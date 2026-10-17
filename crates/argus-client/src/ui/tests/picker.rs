@@ -67,7 +67,7 @@ fn the_short_pickers_keep_their_plain_list() {
     app.picker = Some(crate::app::Picker::new(
         PickerKind::Theme,
         "theme",
-        crate::theme::THEMES.iter().map(|t| t.to_string()).collect(),
+        crate::ui::theme::THEMES.iter().map(|t| t.to_string()).collect(),
         1,
     ));
     let out = lines(&draw(&mut app)).join("\n");

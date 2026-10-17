@@ -86,7 +86,7 @@ impl App {
                 };
             }
             Some(Setting::Theme) => {
-                let themes = crate::theme::THEMES;
+                let themes = crate::ui::theme::THEMES;
                 let here = themes
                     .iter()
                     .position(|t| *t == self.settings.theme)
@@ -160,8 +160,8 @@ impl App {
         self.picker = Some(Picker::new(
             PickerKind::Theme,
             "theme",
-            crate::theme::THEMES.iter().map(|t| t.to_string()).collect(),
-            crate::theme::THEMES
+            crate::ui::theme::THEMES.iter().map(|t| t.to_string()).collect(),
+            crate::ui::theme::THEMES
                 .iter()
                 .position(|t| *t == here)
                 .unwrap_or(0),
@@ -757,7 +757,7 @@ impl App {
                 let Some(name) = picker.selected() else {
                     return;
                 };
-                self.theme = crate::theme::Theme::by_name(name);
+                self.theme = crate::ui::theme::Theme::by_name(name);
                 self.report(format!("theme: {name}"));
             }
         }
