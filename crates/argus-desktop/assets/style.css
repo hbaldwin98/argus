@@ -3803,7 +3803,7 @@ body.console-fullscreen #bar {
   grid-template-columns: 44px 44px 16px 1fr;
 }
 .dbody.paired .dside {
-  grid-template-columns: 44px 16px 1fr;
+  grid-template-columns: 44px 16px minmax(0, 1fr);
 }
 .dbody.paired .dside + .dside {
   border-left: 1px solid var(--line);
@@ -3819,6 +3819,13 @@ body.console-fullscreen #bar {
 }
 .dcode {
   white-space: pre;
+}
+/* Side by side, each half wraps its own long lines: the two share one
+   sideways scroll, so a line run on past its half would be drawn over the
+   other, and scrolling to it would slide the other out of view. */
+.dbody.paired .dcode {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .dside.added {
   background: color-mix(in srgb, var(--ok) 12%, transparent);
