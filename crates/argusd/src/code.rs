@@ -55,7 +55,7 @@ pub fn list(root: &Path, version: &CodeVersion) -> anyhow::Result<(Vec<String>, 
     let repo = open(root)?;
     let mut files = match version {
         // Untracked files are part of what is on disk, as review counts them.
-        CodeVersion::WorkingTree => crate::browse::files(root),
+        CodeVersion::WorkingTree => crate::git::browse::files(root),
         CodeVersion::Index => {
             let index = repo.index().context("could not read the index")?;
             index.iter().map(|e| String::from_utf8_lossy(&e.path).into_owned()).collect()

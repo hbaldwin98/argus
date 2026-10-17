@@ -17,7 +17,7 @@ impl Harness {
         port: u16,
         token: &str,
     ) -> anyhow::Result<()> {
-        let ignore = crate::gitignore::ensure(checkout, self.managed_paths());
+        let ignore = crate::git::gitignore::ensure(checkout, self.managed_paths());
         let skill = self.install_skill(checkout);
         let settings = self.install_settings(checkout, pane, port, token);
         let plugin = self.install_plugin(checkout);

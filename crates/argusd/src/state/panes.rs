@@ -54,7 +54,7 @@ impl Daemon {
         let daemon = self.clone();
         let runtime = self.processes.start(
             id,
-            &crate::browse::home_dir(),
+            &crate::git::browse::home_dir(),
             pty::Spawn::DefaultShell,
             Box::new(move |code| daemon.mark_pane_exited(id, code)),
         )?;

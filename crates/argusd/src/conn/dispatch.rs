@@ -286,7 +286,7 @@ pub(super) fn dispatch(
         ClientMsg::ListDirectories { request_id, path } => {
             let out_tx = out_tx.clone();
             tokio::task::spawn_blocking(move || {
-                let mut listing = crate::browse::directories(&path);
+                let mut listing = crate::git::browse::directories(&path);
                 listing.request_id = request_id;
                 let _ = out_tx.send(ServerMsg::Directories(listing));
             });
@@ -300,7 +300,7 @@ pub(super) fn dispatch(
         } => {
             let out_tx = out_tx.clone();
             tokio::task::spawn_blocking(move || {
-                let mut preview = crate::browse::project_preview(&path, &skip);
+                let mut preview = crate::git::browse::project_preview(&path, &skip);
                 preview.request_id = request_id;
                 let _ = out_tx.send(ServerMsg::ProjectPreview(preview));
             });
@@ -356,13 +356,13 @@ pub(super) fn dispatch(
         ClientMsg::ListBranches { checkout } => {
             reply_with(daemon, &reply, checkout, move |path| Ok(ServerMsg::Branches {
                 checkout,
-                branches: crate::browse::branches(&path),
+                branches: crate::git::browse::branches(&path),
             }))
         }
         ClientMsg::ListFiles { checkout } => {
             reply_with(daemon, &reply, checkout, move |path| Ok(ServerMsg::Files {
                 checkout,
-                files: crate::browse::files(&path),
+                files: crate::git::browse::files(&path),
             }))
         }
         ClientMsg::ListCommits {

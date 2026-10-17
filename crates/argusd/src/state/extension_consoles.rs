@@ -136,7 +136,7 @@ impl Daemon {
     /// one, which on Windows carries a prefix a program may not take.
     fn console_dir(&self, scope: ExtScope, cwd: Option<&str>, at: &str) -> anyhow::Result<PathBuf> {
         let root = match scope {
-            ExtScope::Global => crate::browse::home_dir(),
+            ExtScope::Global => crate::git::browse::home_dir(),
             ExtScope::Checkout(_) | ExtScope::Repository(_) => {
                 let inner = self.inner.lock().unwrap();
                 let found = match scope {

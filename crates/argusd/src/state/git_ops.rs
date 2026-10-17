@@ -2,7 +2,7 @@
 //! fetch and pull.
 //!
 //! These are the daemon's only writes to Git, and unlike the read-only
-//! observation in `git.rs` they shell out to the `git` executable — a
+//! observation in `git` they shell out to the `git` executable — a
 //! refusal from git is the message the user should see, and reproducing
 //! its rules in `git2` calls would only be a second place to get them
 //! wrong. Each runs off the daemon lock and reports its own failure.

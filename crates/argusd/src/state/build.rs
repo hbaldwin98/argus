@@ -226,7 +226,7 @@ impl Daemon {
             )
             .collect();
         for checkout in self.checkout_paths() {
-            if let Err(error) = crate::gitignore::ensure(&checkout, paths.clone()) {
+            if let Err(error) = crate::git::gitignore::ensure(&checkout, paths.clone()) {
                 tracing::warn!(
                     "failed to update local Argus ignores in {}: {error}",
                     checkout.display()

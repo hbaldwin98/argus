@@ -1,14 +1,12 @@
 //! Daemon startup: build the `Daemon`, start the pollers, watchers and
 //! hook receiver, then accept clients until the process is asked to stop.
 
-mod browse;
 mod code;
 mod code_search;
 mod config;
 mod conn;
 mod diff;
 mod git;
-mod gitignore;
 mod grammar;
 mod harness;
 mod highlight;
@@ -19,7 +17,6 @@ mod state;
 mod store;
 mod symbols;
 mod system;
-mod watch;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
