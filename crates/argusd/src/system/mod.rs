@@ -7,6 +7,7 @@ pub mod daemon_lock;
 #[cfg(windows)]
 pub mod dll_search;
 pub mod editor;
+pub mod file_watch;
 pub mod logging;
 pub mod pastes;
 pub mod paths;

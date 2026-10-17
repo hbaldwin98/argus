@@ -252,7 +252,7 @@ impl Daemon {
         // An event is only a wakeup for a full reload. One pending wakeup
         // carries all the information an event storm could add.
         let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
-        let Some(watch) = crate::git::watch::file(&path, move || {
+        let Some(watch) = crate::system::file_watch::watch(&path, move || {
             let _ = tx.try_send(());
         }) else {
             return;

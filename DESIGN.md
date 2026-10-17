@@ -469,13 +469,14 @@ to the type or its locking.
 | `store/panel`, `store/session` | runtime changes to the panel and when each repository was last used, and the panes to bring back after a restart |
 | `store/seen_sessions` | the sessions Argus saw agents run under a harness that keeps no transcript — title, checkout, first and last seen — so one still lists once its pane is gone |
 | `git`, `git/browse` | the read-only questions asked of a repository: its status and worktrees, and what a checkout contains for the pickers |
-| `git/watch` | when a repository's Git metadata changes, as it happens rather than on the next poll, and the one-file watch the `projects.toml` reload uses |
+| `git/watch` | when a repository's Git metadata changes, as it happens rather than on the next poll |
 | `git/gitignore` | the repository-local excludes for generated Argus files |
 | `syntax`, `syntax/grammar` | which tree-sitter grammar reads a file, chosen by its extension, so highlighting and outlines agree on its language |
 | `syntax/highlight` | what each token of a diff's or a file's lines is, for highlighting |
 | `code`, `code/search`, `code/symbols` | what the Code stage reads: a version's files and how much each changed, one file's lines with the ones it changed, where text occurs in the working tree, and what a file defines |
 | `config` | `projects.toml`, which is read and never written |
 | `system`, `system/daemon_lock`, `system/logging`, `system/command`, `system/paths`, `system/editor` | what the daemon asks of the machine it runs on: the one daemon allowed to own an instance, where its diagnostics go, a command run without a console window, whether two spellings name one place, and the person's editor |
+| `system/file_watch` | watching one file, `projects.toml`, through an editor's rename-over save and without waking on the log and store the daemon writes beside it |
 | `system/pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
 | `system/dll_search` | where the daemon loads libraries from on Windows: its own directory and System32, never the directory it was started in |
 | `system/ctrl_c` | whether a pane's child can be interrupted on Windows: the daemon clears the ignore-Ctrl-C flag it was started with, so no child inherits it |
