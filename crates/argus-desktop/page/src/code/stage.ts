@@ -1,23 +1,23 @@
 // The Code stage: a checkout's files in a tree that marks what changed, one
 // file read whole with its changes washed and ruled beside it, and what the
 // file defines. Rust holds the files, the cursor, the fields and the search
-// (`src/code_stage.rs`); the page draws them and says what was clicked or
+// (`src/code/stage.rs`); the page draws them and says what was clicked or
 // typed.
 
-import type { Action } from './bindings/Action';
-import type { CodeClick } from './bindings/CodeClick';
-import type { CodeGesture } from './bindings/CodeGesture';
-import type { CodeHitFile } from './bindings/CodeHitFile';
-import type { CodeJump } from './bindings/CodeJump';
-import type { CodePage } from './bindings/CodePage';
-import type { CodeRow } from './bindings/CodeRow';
-import type { CodeSearch } from './bindings/CodeSearch';
-import type { ReviewJumpGesture } from './bindings/ReviewJumpGesture';
-import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
-import { $, el, ghosts, icon } from './kit/dom.js';
-import { actionFor } from './keys/keymap.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import type { Action } from '../bindings/Action';
+import type { CodeClick } from '../bindings/CodeClick';
+import type { CodeGesture } from '../bindings/CodeGesture';
+import type { CodeHitFile } from '../bindings/CodeHitFile';
+import type { CodeJump } from '../bindings/CodeJump';
+import type { CodePage } from '../bindings/CodePage';
+import type { CodeRow } from '../bindings/CodeRow';
+import type { CodeSearch } from '../bindings/CodeSearch';
+import type { ReviewJumpGesture } from '../bindings/ReviewJumpGesture';
+import { commentBox, settleDraft, type CommentWays } from '../comment_box.js';
+import { $, el, ghosts, icon } from '../kit/dom.js';
+import { actionFor } from '../keys/keymap.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 
 function gesture(g: CodeGesture): void {
   call('code', { gesture: g });

@@ -17,7 +17,8 @@ use argus_protocol::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::code_tree::{self, folders_of};
+use crate::code;
+use crate::code::tree::folders_of;
 use crate::comment_box::{CommentBox, CommentPage};
 use crate::file_jump::{FileJump, Jumped};
 use crate::keys::keymap::Action;
@@ -1029,7 +1030,7 @@ impl CodeStage {
             },
             changed_only: self.changed_only,
             changed: self.changes.len(),
-            tree: code_tree::rows(&self.files, &self.changes, &self.open, self.changed_only)
+            tree: code::tree::rows(&self.files, &self.changes, &self.open, self.changed_only)
                 .into_iter()
                 .map(|r| CodeTreeRow {
                     on: !r.folder && Some(&r.path) == self.path.as_ref(),

@@ -1,13 +1,13 @@
 // The Code stage: a checkout's files in a tree that marks what changed, one
 // file read whole with its changes washed and ruled beside it, and what the
 // file defines. Rust holds the files, the cursor, the fields and the search
-// (`src/code_stage.rs`); the page draws them and says what was clicked or
+// (`src/code/stage.rs`); the page draws them and says what was clicked or
 // typed.
-import { commentBox, settleDraft } from './comment_box.js';
-import { $, el, ghosts, icon } from './kit/dom.js';
-import { actionFor } from './keys/keymap.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { commentBox, settleDraft } from '../comment_box.js';
+import { $, el, ghosts, icon } from '../kit/dom.js';
+import { actionFor } from '../keys/keymap.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 function gesture(g) {
     call('code', { gesture: g });
 }

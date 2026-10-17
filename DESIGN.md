@@ -191,7 +191,7 @@ right dock's, and each extension view where the person had put it. Rust holds th
 `kit/clock` and `connection/tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `connection/page.rs`'s types and the page and gesture types each surface's module keeps beside it
-(`panes/console`, `layout/docks`, `capture_note`, `checkouts/table`, `code_stage`, `extensions/views`, `extensions/keys`, `comment_box`, …), written as TypeScript by `cargo test` into
+(`panes/console`, `layout/docks`, `capture_note`, `checkouts/table`, `code/stage`, `extensions/views`, `extensions/keys`, `comment_box`, …), written as TypeScript by `cargo test` into
 `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
 instance's config directory, so a dev window never shares it with the installed one, and it logs to
@@ -547,8 +547,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `review` | what the review dialog holds beyond its `review::session` — the side and layout chosen, its comment box, its go-to-file field — and the page it draws |
 | `comment_box` | the comment box the review and the Code stage share: whether it is open, the agent it is lit on, the comment it sent and waits on the daemon to save or refuse, by its id, and what the page draws of it |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff or why it could not be read — and what its gestures ask of the daemon |
-| `code_stage` | the Code stage as the window holds it once opened — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the comment being written, the go-to-file field, the search, and the review it was opened from — the daemon's answers it takes, what its gestures ask of the daemon and leave to the window, and the page and gestures it trades with the page, last sent while it is up |
-| `code_tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
 | `file_jump` | the go-to-file field the review and the Code stage share: what is typed, which match is lit, and the file Enter opens |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout, the filter and the fold — and what its messages and gestures change, and where each cursor steps, never onto a row the page does not draw |
 | `features` | what the Feature stage's index shows from a board: which features it lists and in what order — the filter, the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
@@ -616,6 +614,9 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `checkouts` | a repository's checkouts as the Checkouts stage lists them |
 | `checkouts/stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — which of its keys and buttons are the `tree::column::verbs` it sends, and the table the page last heard |
 | `checkouts/table` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
+| `code` | the Code stage and the files it reads in a checkout |
+| `code/stage` | the Code stage as the window holds it once opened — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the comment being written, the go-to-file field, the search, and the review it was opened from — the daemon's answers it takes, what its gestures ask of the daemon and leave to the window, and the page and gestures it trades with the page, last sent while it is up |
+| `code/tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 
 ## Views

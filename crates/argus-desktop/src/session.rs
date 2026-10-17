@@ -11,9 +11,9 @@
 //! the status bar (`chrome::status`), the panes on screen (`panes::shown`),
 //! the agents offered (`agents::templates`), the review and history
 //! (`dialogs`), the link and reconcile dialogs (`tracker_dialogs`), the
-//! three stages (`feature_stage`, `checkouts::stage`, `code_stage`) and the
-//! note a new feature is written as (`capture_note`), a repository's past
-//! agent sessions (`agents::sessions`) and the dialog listing them
+//! three stages (`feature_stage`, `checkouts::stage`, `code::stage`) and
+//! the note a new feature is written as (`capture_note`), a repository's
+//! past agent sessions (`agents::sessions`) and the dialog listing them
 //! (`agents::sessions_dialog`), the project switcher (`chrome::switcher`)
 //! and the dialog adding a project (`chrome::add_project`), the Settings
 //! dialog's choices (`settings::preferences`), the console
@@ -60,7 +60,7 @@ use crate::keys::keymap::{self, Action};
 use crate::system::notifications::{self, Alert, Looking};
 use crate::keys::page_key::{self, PageKey};
 use crate::link_dialog::LinkGesture;
-use crate::code_stage::{Back, Code, CodeGesture, Then as CodeThen};
+use crate::code::stage::{Back, Code, CodeGesture, Then as CodeThen};
 use crate::panes::shown::workspace_grid::{self, Dir, Zone};
 use crate::layout::stage::{Page, Stages};
 use crate::connection::page::{
@@ -3407,7 +3407,7 @@ mod tests {
     }
 
     /// The Code stage as the page was last sent it.
-    fn code_page(s: &mut Session) -> crate::code_stage::CodePage {
+    fn code_page(s: &mut Session) -> crate::code::stage::CodePage {
         s.events(0)
             .into_iter()
             .rev()

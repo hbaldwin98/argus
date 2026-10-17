@@ -9,7 +9,7 @@ import type { KeyLayer } from '../bindings/KeyLayer';
 import type { Place } from '../bindings/Place';
 import { captureOpen, discardCapture } from '../capture.js';
 import { answerNo, checkoutsAction } from '../checkouts/stage.js';
-import { codeAction } from '../code_stage.js';
+import { codeAction } from '../code/stage.js';
 import { focusHistoryFilter, historyOpen } from '../history.js';
 import { linkAction, linkOpen } from '../link.js';
 import { reconcileAction, reconcileOpen } from '../reconcile.js';

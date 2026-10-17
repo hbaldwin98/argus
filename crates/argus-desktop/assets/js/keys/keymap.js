@@ -3,7 +3,7 @@
 // A pane's keys go to Rust whole, and its leader is dispatched there.
 import { captureOpen, discardCapture } from '../capture.js';
 import { answerNo, checkoutsAction } from '../checkouts/stage.js';
-import { codeAction } from '../code_stage.js';
+import { codeAction } from '../code/stage.js';
 import { focusHistoryFilter, historyOpen } from '../history.js';
 import { linkAction, linkOpen } from '../link.js';
 import { reconcileAction, reconcileOpen } from '../reconcile.js';
