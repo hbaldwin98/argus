@@ -10,6 +10,12 @@
 //! Only an extension the daemon admitted may publish, with the token it was
 //! handed for its own name, so one extension cannot speak as another. While
 //! one is down its tabs, keys and open dialogs are gone.
+//!
+//! Running each configured extension is `running`'s, and the consoles its
+//! views run `consoles`'s.
+
+pub(super) mod consoles;
+pub(super) mod running;
 
 use std::collections::{BTreeMap, HashSet, VecDeque};
 

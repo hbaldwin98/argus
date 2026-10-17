@@ -15,17 +15,17 @@ use std::path::{Path, PathBuf};
 
 use argus_protocol::{ConsoleEnd, ExtConsole, ExtEvent, ExtScope, ExtView};
 
-use super::*;
+use crate::state::*;
 
 /// A pane running an extension's console view.
-pub(super) struct HeldConsole {
+pub(in crate::state) struct HeldConsole {
     extension: String,
     view: String,
     pane: Pane,
 }
 
 impl HeldConsole {
-    pub(super) fn pane(&self) -> &Pane {
+    pub(in crate::state) fn pane(&self) -> &Pane {
         &self.pane
     }
 
@@ -46,7 +46,7 @@ impl Daemon {
     ///
     /// Refused as `views[i].console.cwd` when the directory is not there,
     /// with whatever it had started already taken back.
-    pub(super) fn start_consoles(
+    pub(in crate::state) fn start_consoles(
         self: &Arc<Self>,
         name: &str,
         before: &[ExtView],
@@ -162,12 +162,12 @@ impl Daemon {
     }
 
     /// Ends panes a publish started and then did not use.
-    pub(super) fn abandon_consoles(&self, panes: &[PaneId]) {
+    pub(in crate::state) fn abandon_consoles(&self, panes: &[PaneId]) {
         self.end_consoles(|held| panes.contains(&held.pane.id));
     }
 
     /// Ends every console `name` runs, for an extension that is gone.
-    pub(super) fn end_consoles_of(&self, name: &str) {
+    pub(in crate::state) fn end_consoles_of(&self, name: &str) {
         self.end_consoles(|held| held.extension == name);
     }
 
@@ -188,7 +188,7 @@ impl Daemon {
     /// landed found no view to record it in, so its ending is told to the
     /// extension here, on `events`, unless `old` already says it ended. Returns the panes no view names, to be
     /// retired by a caller that no longer holds the registry.
-    pub(super) fn settle_consoles(
+    pub(in crate::state) fn settle_consoles(
         &self,
         name: &str,
         old: &[ExtView],
@@ -218,7 +218,7 @@ impl Daemon {
     /// process ended: on its view, which clients are told, and to the
     /// extension. The pane stays, its last screen with it, until the view is
     /// published again or goes.
-    pub(super) fn extension_console_exited(&self, pane: PaneId, code: Option<i32>) -> bool {
+    pub(in crate::state) fn extension_console_exited(&self, pane: PaneId, code: Option<i32>) -> bool {
         let (extension, view) = {
             let mut inner = self.inner.lock().unwrap();
             let Some(held) = inner.extension_consoles.iter_mut().find(|h| h.pane.id == pane) else {
@@ -233,7 +233,7 @@ impl Daemon {
     }
 
     /// Whose console `pane` is, and which of the extension's views it is.
-    pub(super) fn extension_console_owner(&self, pane: PaneId) -> Option<(String, String)> {
+    pub(in crate::state) fn extension_console_owner(&self, pane: PaneId) -> Option<(String, String)> {
         let inner = self.inner.lock().unwrap();
         let held = inner.extension_consoles.iter().find(|h| h.pane.id == pane)?;
         Some((held.extension.clone(), held.view.clone()))
@@ -241,7 +241,7 @@ impl Daemon {
 
     /// The panes of `name`'s consoles, for a test.
     #[cfg(test)]
-    pub(super) fn console_panes(&self, name: &str) -> Vec<PaneId> {
+    pub(in crate::state) fn console_panes(&self, name: &str) -> Vec<PaneId> {
         let inner = self.inner.lock().unwrap();
         inner.extension_consoles.iter().filter(|h| h.extension == name).map(|h| h.pane.id).collect()
     }

@@ -35,8 +35,6 @@ mod agents;
 mod board;
 mod build;
 mod clock;
-mod extension_consoles;
-mod extension_host;
 mod extensions;
 mod follow;
 mod saved_views;
@@ -316,7 +314,7 @@ struct Inner {
     consoles: Vec<Pane>,
     /// The panes running extensions' console views. Apart from `consoles`
     /// because they are no tab of the person's and are not brought back.
-    extension_consoles: Vec<extension_consoles::HeldConsole>,
+    extension_consoles: Vec<extensions::consoles::HeldConsole>,
     ids: IdGen,
     /// Exactly one workspace is open at a time, daemon-global. Panes in the
     /// others keep running; they are just not in the tree clients render.

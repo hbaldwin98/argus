@@ -13,7 +13,7 @@ use argus_protocol::{extension_url, EXTENSION_VAR, TOKEN_VAR, URL_VAR};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use super::*;
+use crate::state::*;
 use crate::config::ExtensionConfig;
 
 /// How long the first restart waits, and the longest any waits. One that

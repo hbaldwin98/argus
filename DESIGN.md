@@ -403,8 +403,8 @@ to the type or its locking.
 | `state/panel` | the rows the user adds and removes by hand |
 | `state/workspaces` | which scope is open, daemon-wide |
 | `state/extensions` | what the running extensions publish — views, commands, open dialogs — which client a dialog is put to, and what the person does with them on its way back |
-| `state/extension_consoles` | the consoles extensions' views run: started when a view is published, kept while it asks for the same run, ended with the view or the extension, and their ending recorded on the view |
-| `state/extension_host` | running the configured extensions: each started with its own URL and token, started again when it exits, stopped with the daemon |
+| `state/extensions/consoles` | the consoles extensions' views run: started when a view is published, kept while it asks for the same run, ended with the view or the extension, and their ending recorded on the view |
+| `state/extensions/running` | running the configured extensions: each started with its own URL and token, started again when it exits, stopped with the daemon |
 | `state/session` | what survives a daemon restart |
 | `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, what one session said, and reopening one by its id |
 | `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
@@ -2575,7 +2575,7 @@ extension ──HTTP (pane API)──▶ argusd ──protocol──▶ argus-de
 
 `projects.toml`'s `[[extension]]` blocks name each one and its `command`, run without a shell in
 its `dir` (Argus's config directory by default) with its `env` added. The daemon starts every one
-after its hook server binds (`state/extension_host`), handing it `ARGUS_HOOK_URL`
+after its hook server binds (`state/extensions/running`), handing it `ARGUS_HOOK_URL`
 (`http://127.0.0.1:<port>/extension/<name>`), `ARGUS_HOOK_TOKEN` and `ARGUS_EXTENSION`; its output
 goes to `extension-<name>.log` beside `argusd.log`. One that exits is started again after a wait
 that doubles from a second to a minute, back to a second once one has run a minute, and all are
