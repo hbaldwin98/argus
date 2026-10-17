@@ -506,9 +506,13 @@ result of a request; `ui` is a pure function of it.
 | `ui/text` | fitting text to a width: ellipsis, wrapping a field or prose, one-lining |
 | `ui/theme` | the palette: every colour the UI draws, by the role it plays |
 | `ui/motion` | animation arithmetic: how far along a transition is at a given instant |
-| `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
+| `ui/prose` | markdown styled where it stands |
 | `ui/views` | the tab strip naming the four stages, and which tab a click lands on |
-| `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
+| `ui/status` | the command band: where you are, what just happened, and the keys that apply here |
+| `ui/term` | a pane's live screen, drawn cell by cell, and where its cursor goes |
+| `ui/layers` | what the renderer floats over the command center |
+| `ui/layers/help` | the keymap window |
+| `ui/layers/overlay`, `ui/layers/modals`, `ui/layers/review`, `ui/layers/history` | one drawn surface each: the floating window, the modal input layers, the diff viewer, and the commit list |
 | `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
 | `input` | what crosses between the person's terminal and a pane beyond a key the app acts on |

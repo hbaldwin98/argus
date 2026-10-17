@@ -1,8 +1,8 @@
 //! The commit list, and the files each commit touched.
 
-use super::*;
+use crate::ui::*;
 
-pub(super) fn render_history(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+pub(in crate::ui) fn render_history(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let Some(view) = app.history.as_mut() else {
         return;
     };
@@ -20,7 +20,7 @@ pub(super) fn render_history(f: &mut Frame, app: &mut App, area: Rect, th: Theme
     f.render_widget(Paragraph::new(lines), area);
 }
 
-pub(super) fn history_line<'a>(
+pub(in crate::ui) fn history_line<'a>(
     view: &'a HistoryView,
     row: HistoryRow,
     selected: bool,
@@ -75,7 +75,9 @@ pub(super) fn history_line<'a>(
     line
 }
 
-pub(super) fn fold_marker(commit: &argus_protocol::review::history_view::HistoryEntry) -> &'static str {
+pub(in crate::ui) fn fold_marker(
+    commit: &argus_protocol::review::history_view::HistoryEntry,
+) -> &'static str {
     match (commit.expanded, commit.pending) {
         (_, true) => "…",
         (true, _) => "▾",

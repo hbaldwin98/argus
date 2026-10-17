@@ -8,11 +8,11 @@
 //! few keys worth having in front of you at all times. What it lists is
 //! each mode's keymap, declared in `app/mode/keymap`; this only draws it.
 
-use super::*;
+use crate::ui::*;
 
 /// Draws the window over `area`, which is the columns and not the status
 /// bar: the bar is where it says how to put the window away.
-pub(super) fn render_help(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+pub(in crate::ui) fn render_help(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     // Asked of the mode rather than fixed, because `?` in a diff and `?` in
     // the columns are different questions, and answering both with one
     // wall of text answers neither.

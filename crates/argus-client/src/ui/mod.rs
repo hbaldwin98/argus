@@ -40,13 +40,9 @@ use argus_protocol::CursorShape;
 
 mod card;
 mod command_center;
-mod help;
-mod history;
-mod modals;
+mod layers;
 pub mod motion;
-mod overlay;
 pub(super) mod prose;
-mod review;
 mod status;
 mod term;
 mod text;
@@ -55,12 +51,12 @@ mod views;
 
 use card::*;
 use command_center::*;
-use help::*;
-use history::*;
-use modals::*;
-use overlay::*;
+use layers::help::*;
+use layers::history::*;
+use layers::modals::*;
+use layers::overlay::*;
 
-use review::*;
+use layers::review::*;
 use status::*;
 use term::*;
 use text::*;

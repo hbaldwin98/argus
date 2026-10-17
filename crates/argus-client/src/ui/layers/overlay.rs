@@ -1,18 +1,18 @@
 //! The floating window over the columns, and the two views that only
 //! ever appear in it: a brief, and the settings panel.
 
-use super::*;
+use crate::ui::*;
 
 /// How much of the screen a floating window takes. Big enough that vim is
 /// usable, small enough that the tree still frames it — losing your place
 /// is the thing the whole layout exists to prevent.
-pub(super) const OVERLAY_FRACTION: (u16, u16) = (82, 78);
+pub(in crate::ui) const OVERLAY_FRACTION: (u16, u16) = (82, 78);
 
 /// Returns where the hardware cursor belongs while an overlay is up. An
 /// overlay covers the content column, so `None` here means the cursor is
 /// not drawn at all this frame — the column underneath does not get to
 /// keep it (see [`render`]).
-pub(super) fn render_overlay(
+pub(in crate::ui) fn render_overlay(
     f: &mut Frame,
     app: &mut App,
     area: Rect,
@@ -118,7 +118,7 @@ pub(super) fn render_overlay(
     }
 }
 
-pub(super) fn render_sequence_diagram(
+pub(in crate::ui) fn render_sequence_diagram(
     f: &mut Frame,
     app: &mut App,
     area: Rect,
@@ -149,7 +149,7 @@ pub(super) fn render_sequence_diagram(
 /// Returns where the hardware cursor goes: shown while typing, hidden in
 /// view mode, where a block on a random character would read as a
 /// selection rather than as an insertion point.
-pub(super) fn render_brief(
+pub(in crate::ui) fn render_brief(
     f: &mut Frame,
     app: &mut App,
     area: Rect,
@@ -205,7 +205,7 @@ pub(super) fn render_brief(
 
 /// Each setting gets a name, its current value, and a line saying what
 /// choosing it does — the reason a panel exists rather than another picker.
-pub(super) fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) {
+pub(in crate::ui) fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) {
     let mut lines: Vec<Line> = Vec::new();
     for (i, setting) in Setting::ALL.iter().enumerate() {
         let selected = i == sel;

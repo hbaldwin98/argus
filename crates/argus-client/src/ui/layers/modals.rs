@@ -1,16 +1,16 @@
 //! The modal input layers — the fuzzy picker, the directory browser, and
 //! the typed prompt. Each covers what is under it and owns the caret.
 
-use super::*;
+use crate::ui::*;
 
 /// Commits a forced branch delete names before it asks.
 const LOST_SHOWN: usize = 6;
 
 /// Rows a fuzzy picker will show at once. Past this it scrolls, so a
 /// 5000-file list is still a modal and not a wall.
-pub(super) const PICKER_ROWS: usize = 12;
+pub(in crate::ui) const PICKER_ROWS: usize = 12;
 
-pub(super) fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
+pub(in crate::ui) fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let Some(picker) = &app.picker else { return };
     let fuzzy = picker.is_fuzzy();
 
@@ -89,7 +89,7 @@ pub(super) fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
 
 /// One picker row. The last row of a branch picker can be the offer to
 /// create the branch whose name you just typed.
-pub(super) fn picker_item<'a>(picker: &'a crate::app::Picker, i: usize, th: Theme) -> Item<'a> {
+pub(in crate::ui) fn picker_item<'a>(picker: &'a crate::app::Picker, i: usize, th: Theme) -> Item<'a> {
     if let (Some(name), true) = (&picker.create, i == picker.shown.len()) {
         return Item::new(
             vec![
@@ -115,7 +115,7 @@ pub(super) fn picker_item<'a>(picker: &'a crate::app::Picker, i: usize, th: Them
 /// The directory browser. Wider than a picker and taller than a prompt,
 /// because it has to show three things at once: where you are, what is
 /// under it, and which of those are repositories.
-pub(super) fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
+pub(in crate::ui) fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let Some(picker) = &app.dir_picker else {
         return;
     };
@@ -212,7 +212,7 @@ pub(super) fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme)
     );
 }
 
-pub(super) fn dir_item(row: &DirRow, here: &str, th: Theme) -> Item<'static> {
+pub(in crate::ui) fn dir_item(row: &DirRow, here: &str, th: Theme) -> Item<'static> {
     match row {
         DirRow::Here => Item::new(
             vec![
@@ -243,12 +243,12 @@ pub(super) fn dir_item(row: &DirRow, here: &str, th: Theme) -> Item<'static> {
 /// How wide a prompt box gets. A comment is a sentence and gets the wider
 /// box; everything else here is an identifier — a branch name, a path — and
 /// a wide box would only be a wide box.
-pub(super) const PROMPT_WIDTH: u16 = 54;
-pub(super) const COMMENT_WIDTH: u16 = 76;
+pub(in crate::ui) const PROMPT_WIDTH: u16 = 54;
+pub(in crate::ui) const COMMENT_WIDTH: u16 = 76;
 /// How tall the text being typed may grow before the box stops growing and
 /// starts scrolling instead. A prompt is still a modal: it must not become
 /// the screen.
-pub(super) const PROMPT_MAX_ROWS: usize = 8;
+pub(in crate::ui) const PROMPT_MAX_ROWS: usize = 8;
 
 /// The modal for all five prompts, drawn over everything else. Destructive
 /// confirmations are tinted `err` so a removal never looks like a text
@@ -256,7 +256,7 @@ pub(super) const PROMPT_MAX_ROWS: usize = 8;
 ///
 /// Text wraps rather than running off the edge, and the box grows with it:
 /// a field you cannot read back is a field you cannot check before sending.
-pub(super) fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
+pub(in crate::ui) fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let Some(prompt) = &app.prompt else { return };
 
     let wanted = match prompt {
@@ -381,7 +381,7 @@ pub(super) fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
 
 /// A text field with a visible caret. Empty fields show nothing but the
 /// caret, so there is always something to look at.
-pub(super) fn field(input: &str, th: Theme) -> Line<'static> {
+pub(in crate::ui) fn field(input: &str, th: Theme) -> Line<'static> {
     Line::from(vec![
         Span::styled(input.to_string(), Style::default().fg(th.text)),
         Span::styled(CARET, Style::default().fg(th.accent)),
@@ -392,7 +392,7 @@ pub(super) fn field(input: &str, th: Theme) -> Line<'static> {
 /// rows. The tail is what survives because the caret is there: a prompt
 /// that scrolls away from what you are typing is the bug this exists to
 /// avoid.
-pub(super) fn wrapped_field(input: &str, width: u16, th: Theme) -> Vec<Line<'static>> {
+pub(in crate::ui) fn wrapped_field(input: &str, width: u16, th: Theme) -> Vec<Line<'static>> {
     let mut rows = wrap(input, width);
     // The caret needs a cell of its own, and a row filled to the edge has
     // none left.

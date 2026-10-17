@@ -1,13 +1,13 @@
 //! The diff viewer: one file at a time, stacked or side by side, with
 //! syntax highlighting the daemon computed.
 
-use super::*;
+use crate::ui::*;
 
 /// Drawn in the column the live pane uses, so the nav columns stay put
 /// (DESIGN.md §9 M4).
 /// The diff itself. The window around it is drawn by `render_overlay`,
 /// which owns the border and the title.
-pub(super) fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+pub(in crate::ui) fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let Some(view) = app.review_view_mut() else {
         return;
     };
@@ -27,7 +27,7 @@ pub(super) fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme)
 }
 
 /// Four digits covers nearly every file; the code matters more than the rest.
-pub(super) const LINENO_WIDTH: usize = 4;
+pub(in crate::ui) const LINENO_WIDTH: usize = 4;
 
 /// Splits one diff line into styled runs. Text no span covers is drawn plain,
 /// which is most identifiers and all of any file with no grammar.
@@ -35,7 +35,7 @@ pub(super) const LINENO_WIDTH: usize = 4;
 /// Offsets arrive from another process, so every one of them is checked
 /// against this string before it is used to slice it. A bad span is dropped
 /// rather than trusted: colour is not worth a panic in the renderer.
-pub(super) fn highlighted<'a>(text: &'a str, spans: &[HighlightSpan], th: Theme) -> Vec<Span<'a>> {
+pub(in crate::ui) fn highlighted<'a>(text: &'a str, spans: &[HighlightSpan], th: Theme) -> Vec<Span<'a>> {
     if spans.is_empty() {
         return vec![Span::styled(text, Style::default().fg(th.text))];
     }
@@ -63,7 +63,7 @@ pub(super) fn highlighted<'a>(text: &'a str, spans: &[HighlightSpan], th: Theme)
     out
 }
 
-pub(super) fn syntax_style(kind: HighlightKind, th: Theme) -> Style {
+pub(in crate::ui) fn syntax_style(kind: HighlightKind, th: Theme) -> Style {
     let s = th.syntax;
     match kind {
         HighlightKind::Keyword => Style::default().fg(s.keyword),
@@ -80,7 +80,7 @@ pub(super) fn syntax_style(kind: HighlightKind, th: Theme) -> Style {
     }
 }
 
-pub(super) fn review_line<'a>(
+pub(in crate::ui) fn review_line<'a>(
     view: &'a ReviewView,
     row: Row,
     selected: bool,
@@ -198,7 +198,7 @@ pub(super) fn review_line<'a>(
 
 /// Between the two sides. Air either side of the rule keeps one side's
 /// wash from running into the other's.
-pub(super) const DIVIDER: &str = " │ ";
+pub(in crate::ui) const DIVIDER: &str = " │ ";
 
 /// One half of a split row, padded to exactly `width` so the divider and
 /// the far side land in the same columns on every row. Each side is
@@ -210,7 +210,7 @@ pub(super) const DIVIDER: &str = " │ ";
 /// is longer than the run that replaced it the far side has no line at all;
 /// it is drawn recessed rather than blank, so the gap reads as absence
 /// rather than as an empty line of code.
-pub(super) fn diff_side<'a>(
+pub(in crate::ui) fn diff_side<'a>(
     file: &'a FileDiff,
     hunk: usize,
     line: Option<usize>,
@@ -258,7 +258,7 @@ pub(super) fn diff_side<'a>(
 /// Which side of the diff a line is on, as a background. Selecting a line
 /// brightens its wash rather than replacing it, so a selected range still
 /// shows both sides.
-pub(super) fn wash(kind: LineKind, selected: bool, th: Theme) -> Option<Color> {
+pub(in crate::ui) fn wash(kind: LineKind, selected: bool, th: Theme) -> Option<Color> {
     match (kind, selected) {
         (LineKind::Added, false) => Some(th.add_bg),
         (LineKind::Added, true) => Some(th.add_bg_sel),
