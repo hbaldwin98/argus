@@ -43,6 +43,7 @@ fn legacy_connection(path: &Path, version: usize) -> Connection {
         schema::SCHEMA_V24,
         schema::SCHEMA_V25,
         schema::SCHEMA_V26,
+        schema::SCHEMA_V27,
     ];
     for step in steps.into_iter().take(version) {
         conn.execute_batch(step).unwrap();
@@ -663,6 +664,77 @@ fn a_pre_repository_scoping_feature_is_relocated_by_its_origin_checkout() {
     );
     assert_eq!(s.decisions(&key).unwrap()[0].chose, "chose it");
     assert!(s.features(legacy_key).unwrap().is_empty());
+}
+
+/// A repository in `dir/name`, and the board its features are filed under.
+fn repository_board(dir: &Path, name: &str) -> (String, String) {
+    let repo_dir = dir.join(name);
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    git2::Repository::init(&repo_dir).unwrap();
+    let git_dir = repo_dir.join(".git").canonicalize().unwrap();
+    (path_text(&repo_dir), format!("repository\0{}", git_dir.to_string_lossy()))
+}
+
+fn legacy_decision(conn: &Connection, key: &str, chose: &str, feature: Option<&str>, checkout: Option<&str>) {
+    conn.execute(
+        "INSERT INTO decision (project, at, chose, feature, checkout) VALUES (?1, 1, ?2, ?3, ?4)",
+        rusqlite::params![key, chose, feature, checkout],
+    )
+    .unwrap();
+}
+
+/// What `SCHEMA_V14` left under a project's name in a store that is past
+/// it: a feature from a worktree deleted since, and the unfiled decisions
+/// it never moved.
+#[test]
+fn a_store_past_v14_finds_a_board_for_what_was_left_under_a_projects_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+    let (repo, board) = repository_board(dir.path(), "repo");
+    let legacy_key = "my-project";
+    {
+        let conn = legacy_connection(&path, 27);
+        conn.execute(
+            "INSERT INTO feature (project, slug, title, body, origin_checkout, at, state, number)
+             VALUES (?1, 'done', 'Done', '', '/deleted/worktree', 1, 'open', 1)",
+            [legacy_key],
+        )
+        .unwrap();
+        legacy_decision(&conn, legacy_key, "in the repo", Some("done"), Some(&repo));
+        legacy_decision(&conn, legacy_key, "in the worktree", Some("done"), Some("/deleted/worktree"));
+        legacy_decision(&conn, legacy_key, "unfiled in the repo", None, Some(&repo));
+        legacy_decision(&conn, legacy_key, "unfiled elsewhere", None, Some("/deleted/other"));
+        legacy_decision(&conn, legacy_key, "unfiled nowhere", None, None);
+    }
+
+    let s = Store::open_at(&path).unwrap();
+
+    let slugs: Vec<String> = s.features(&board).unwrap().into_iter().map(|f| f.slug).collect();
+    assert_eq!(slugs, ["done"], "placed by where its decisions were made");
+    assert_eq!(s.decisions(&board).unwrap().len(), 5);
+    assert!(s.decisions(legacy_key).unwrap().is_empty(), "nothing is left where nothing reads");
+}
+
+#[test]
+fn an_unfiled_decision_under_a_name_two_repositories_shared_stays_put() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+    let (one, one_board) = repository_board(dir.path(), "one");
+    let (two, two_board) = repository_board(dir.path(), "two");
+    let legacy_key = "my-project";
+    {
+        let conn = legacy_connection(&path, 27);
+        legacy_decision(&conn, legacy_key, "in one", None, Some(&one));
+        legacy_decision(&conn, legacy_key, "in two", None, Some(&two));
+        legacy_decision(&conn, legacy_key, "in neither", None, None);
+    }
+
+    let s = Store::open_at(&path).unwrap();
+
+    let chosen = |key: &str| -> Vec<String> { s.decisions(key).unwrap().into_iter().map(|d| d.chose).collect() };
+    assert_eq!(chosen(&one_board), ["in one"]);
+    assert_eq!(chosen(&two_board), ["in two"]);
+    assert_eq!(chosen(legacy_key), ["in neither"], "either board would be a guess");
 }
 
 /// The board that was: a v8 store with features spread across the five

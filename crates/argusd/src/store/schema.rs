@@ -554,3 +554,9 @@ CREATE TABLE saved_view_feature (
 ) WITHOUT ROWID;
 CREATE INDEX saved_view_feature_target ON saved_view_feature (board, number);
 "#;
+
+/// No table changes: the step re-runs `migrate_legacy_project_features`,
+/// which now also places a feature whose origin checkout was deleted and the
+/// unfiled decisions under a project's plain name (HUN-242). A store that
+/// passed `SCHEMA_V14` before that left both on a key nothing reads.
+pub(super) const SCHEMA_V28: &str = "";

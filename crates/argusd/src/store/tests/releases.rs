@@ -530,6 +530,14 @@ fn v0_16_0_boards_from_a_repository_its_worktree_and_its_project_name_become_one
 }
 
 #[test]
+fn v0_16_0_an_unfiled_decision_under_the_projects_name_goes_where_its_features_did() {
+    let (_dir, s, repo, _worktree) = opened_v0_16_0();
+    let decisions = s.decisions(&board_of(&repo)).unwrap();
+    assert!(decisions.iter().any(|d| d.chose == "Fixture unfiled decision legacy"), "{decisions:#?}");
+    assert!(s.decisions("fixture-proj").unwrap().is_empty());
+}
+
+#[test]
 fn v0_16_0_work_follows_its_feature_through_every_rename() {
     let (_dir, s, repo, _worktree) = opened_v0_16_0();
     let board = board_of(&repo);

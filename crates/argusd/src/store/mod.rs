@@ -47,7 +47,7 @@ pub use seen_sessions::{SeenSession, Sighting};
 use schema::{
     SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16,
     SCHEMA_V17, SCHEMA_V18, SCHEMA_V19, SCHEMA_V2, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23,
-    SCHEMA_V24, SCHEMA_V25, SCHEMA_V26, SCHEMA_V27,
+    SCHEMA_V24, SCHEMA_V25, SCHEMA_V26, SCHEMA_V27, SCHEMA_V28,
     SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
@@ -120,7 +120,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 pub(crate) static NO_RESTORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 27;
+const SCHEMA_VERSION: i64 = 28;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -283,6 +283,10 @@ impl Store {
         }
         if from < 27 {
             tx.execute_batch(SCHEMA_V27)?;
+        }
+        if from < 28 {
+            tx.execute_batch(SCHEMA_V28)?;
+            Self::migrate_legacy_project_features(&tx)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -458,36 +462,92 @@ impl Store {
     /// name to; each feature has to be relocated on its own, using the
     /// repository its `origin_checkout` was in.
     ///
-    /// A feature whose origin checkout is gone, or no longer a Git
-    /// repository, is left where it is — better an old feature invisible to
-    /// the current view than one silently filed under the wrong repository.
+    /// A worktree is often deleted once its feature is done, so where the
+    /// origin checkout is gone the checkouts the feature's decisions were
+    /// made in place it instead, when they agree on one repository. An
+    /// unfiled decision goes by its own checkout, or failing that to the one
+    /// repository everything else under the name went to. Whatever is still
+    /// ambiguous is left where it is — better invisible to the current view
+    /// than silently filed under the wrong repository.
+    ///
+    /// Run again at `SCHEMA_V28`: before then a feature was placed by its
+    /// origin checkout alone, and an unfiled decision never moved.
     fn migrate_legacy_project_features(tx: &rusqlite::Transaction<'_>) -> Result<()> {
-        let mut stmt = tx.prepare(
-            "SELECT project, slug, origin_checkout FROM feature
-             WHERE project NOT LIKE ?1 AND project NOT LIKE ?2
-             ORDER BY project, at, slug",
-        )?;
-        let rows = stmt
-            .query_map(["repository\0%", "workspace\0%"], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                ))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        drop(stmt);
+        let strings = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Result<Vec<String>> {
+            let mut stmt = tx.prepare(sql)?;
+            let rows = stmt
+                .query_map(params, |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
+        };
+        let board_of = |checkout: &str| {
+            crate::git::repository_common_dir(Path::new(checkout))
+                .map(|common| format!("repository\0{}", common.to_string_lossy()))
+        };
+        let one = |boards: std::collections::BTreeSet<String>| {
+            (boards.len() == 1).then(|| boards.into_iter().next()).flatten()
+        };
 
-        for (old_key, old_slug, origin_checkout) in rows {
-            let Some(origin_checkout) = origin_checkout else {
-                continue;
-            };
-            let Some(common) = crate::git::repository_common_dir(Path::new(&origin_checkout))
-            else {
-                continue;
-            };
-            let new_key = format!("repository\0{}", common.to_string_lossy());
-            Self::move_feature_slug(tx, &old_key, &old_slug, &new_key)?;
+        let old_keys = strings(
+            "SELECT project FROM feature WHERE project NOT LIKE ?1 AND project NOT LIKE ?2
+             UNION SELECT project FROM decision WHERE project NOT LIKE ?1 AND project NOT LIKE ?2",
+            &[&"repository\0%", &"workspace\0%"],
+        )?;
+        for old_key in old_keys {
+            let mut placed = std::collections::BTreeSet::new();
+
+            let mut stmt =
+                tx.prepare("SELECT slug, origin_checkout FROM feature WHERE project = ?1 ORDER BY at, slug")?;
+            let features = stmt
+                .query_map([&old_key], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            drop(stmt);
+            for (old_slug, origin_checkout) in features {
+                let decided_in = || -> Result<_> {
+                    let checkouts = strings(
+                        "SELECT DISTINCT checkout FROM decision
+                         WHERE project = ?1 AND feature = ?2 AND checkout IS NOT NULL",
+                        &[&old_key, &old_slug],
+                    )?;
+                    Ok(one(checkouts.iter().filter_map(|c| board_of(c)).collect()))
+                };
+                let new_key = match origin_checkout.as_deref().and_then(board_of) {
+                    Some(key) => Some(key),
+                    None => decided_in()?,
+                };
+                if let Some(new_key) = new_key {
+                    Self::move_feature_slug(tx, &old_key, &old_slug, &new_key)?;
+                    placed.insert(new_key);
+                }
+            }
+
+            let mut stmt =
+                tx.prepare("SELECT id, checkout FROM decision WHERE project = ?1 AND feature IS NULL")?;
+            let unfiled = stmt
+                .query_map([&old_key], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            drop(stmt);
+            let mut homeless = Vec::new();
+            for (id, checkout) in unfiled {
+                match checkout.as_deref().and_then(board_of) {
+                    Some(new_key) => {
+                        tx.execute(
+                            "UPDATE decision SET project = ?1 WHERE id = ?2",
+                            rusqlite::params![new_key, id],
+                        )?;
+                        placed.insert(new_key);
+                    }
+                    None => homeless.push(id),
+                }
+            }
+            if let Some(new_key) = one(placed) {
+                for id in homeless {
+                    tx.execute(
+                        "UPDATE decision SET project = ?1 WHERE id = ?2",
+                        rusqlite::params![new_key, id],
+                    )?;
+                }
+            }
         }
         Ok(())
     }
