@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use argus_protocol::{CommitInfo, GitStatus};
 
-use crate::paths::same_path;
+use crate::system::paths::same_path;
 
 const STAGED: git2::Status = git2::Status::INDEX_NEW
     .union(git2::Status::INDEX_MODIFIED)
@@ -131,7 +131,7 @@ fn head_of(repo: &git2::Repository) -> Option<(Option<git2::Reference<'_>>, Opti
 /// meant a window flashing open and shut every couple of seconds for as
 /// long as Argus was running. In-process avoids the whole class of problem
 /// (and is faster). Mutating worktree operations still shell out — they are
-/// rare, user-initiated, and go through `crate::command::git`.
+/// rare, user-initiated, and go through `crate::system::command::git`.
 pub fn list_worktrees(path: &Path) -> Vec<PathBuf> {
     let Ok(repo) = git2::Repository::open(path) else {
         return Vec::new();

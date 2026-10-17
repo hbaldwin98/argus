@@ -79,7 +79,7 @@ use session::{agent_args, first_message, nothing_to_resume, Recorded, Resumed};
 use tree::*;
 
 use crate::config::{self, AgentConfig, ConfigFile};
-use crate::paths::same_path;
+use crate::system::paths::same_path;
 use crate::pty;
 
 struct Pane {
@@ -405,8 +405,9 @@ pub struct Daemon {
     /// `harness::plugin_dir`); unset until `main` names it, so a daemon
     /// built in a test writes none.
     plugin_root: std::sync::OnceLock<std::path::PathBuf>,
-    /// Where a file pasted into a pane is kept (see `pastes`); unset until
-    /// `main` names it, so a daemon built in a test takes no files.
+    /// Where a file pasted into a pane is kept (see `system::pastes`);
+    /// unset until `main` names it, so a daemon built in a test takes no
+    /// files.
     paste_root: std::sync::OnceLock<std::path::PathBuf>,
     /// Every read of Git the tree is kept level by. See `git_reads`.
     git: Arc<dyn git_reads::GitReads>,

@@ -18,7 +18,7 @@ use super::*;
 /// Runs git in `dir` and turns a non-zero exit into git's own message.
 /// Anything the user is going to have to act on is already in there.
 async fn run_git(dir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
-    let output = crate::command::git()
+    let output = crate::system::command::git()
         .args(args)
         .current_dir(dir)
         .output()
@@ -105,7 +105,7 @@ impl Daemon {
         }
 
         let flag = if force { "-D" } else { "-d" };
-        let output = crate::command::git()
+        let output = crate::system::command::git()
             .args(["branch", flag, &branch])
             .current_dir(&path)
             .output()
@@ -192,7 +192,7 @@ impl Daemon {
             .then(|| crate::git::remote_branch_for(&context.base, &branch))
             .flatten();
 
-        let mut command = crate::command::git();
+        let mut command = crate::system::command::git();
         command.args(["worktree", "add"]);
         if !exists {
             command.args(["-b", &branch]);
@@ -328,7 +328,7 @@ impl Daemon {
         if stale {
             // Nothing to delete but the registration, and `worktree remove`
             // refuses a directory it cannot find.
-            let _ = crate::command::git()
+            let _ = crate::system::command::git()
                 .args(["worktree", "prune"])
                 .current_dir(&primary_path)
                 .output()
@@ -338,7 +338,7 @@ impl Daemon {
         }
 
         if let Some(branch) = branch {
-            let _ = crate::command::git()
+            let _ = crate::system::command::git()
                 .args(["branch", "-D", &branch])
                 .current_dir(&primary_path)
                 .output()
@@ -376,7 +376,7 @@ impl Daemon {
             if attempt > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
-            let output = crate::command::git()
+            let output = crate::system::command::git()
                 .args(["worktree", "remove", "--force"])
                 .arg(path)
                 .current_dir(primary_path)
@@ -410,7 +410,7 @@ pub enum BranchDeletion {
 /// through. Anything else `-d` refuses (a branch checked out somewhere, a
 /// name that isn't there) would refuse `-D` just the same.
 async fn is_unmerged(path: &std::path::Path, branch: &str) -> bool {
-    let output = crate::command::git()
+    let output = crate::system::command::git()
         .args(["branch", "--no-merged", "HEAD", "--list", branch])
         .current_dir(path)
         .output()
@@ -448,11 +448,11 @@ fn checked_branch_name(raw: &str) -> anyhow::Result<String> {
 /// that exists, not a reason to throw the branch away.
 async fn run_setup(commands: &[String], dir: &std::path::Path) -> anyhow::Result<()> {
     for line in commands {
-        let argv = crate::editor::parse_command(line).unwrap_or_default();
+        let argv = crate::system::editor::parse_command(line).unwrap_or_default();
         let Some((program, args)) = argv.split_first() else {
             continue;
         };
-        let output = crate::command::quiet(program)
+        let output = crate::system::command::quiet(program)
             .args(args)
             .current_dir(dir)
             .output()

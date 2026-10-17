@@ -28,7 +28,7 @@ use argus_protocol::{
 };
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::paths::same_path;
+use crate::system::paths::same_path;
 
 mod boards;
 mod capture;

@@ -425,7 +425,6 @@ to the type or its locking.
 | `hook_server/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
 | `review_queue` | when a review's diff is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
-| `pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
@@ -446,9 +445,11 @@ to the type or its locking.
 | `code`, `code_search`, `symbols` | what the Code stage reads: a version's files and how much each changed, one file's lines with the ones it changed, where text occurs in the working tree, and what a file defines |
 | `gitignore` | the repository-local excludes for generated Argus files |
 | `config` | `projects.toml`, which is read and never written |
-| `daemon_lock`, `editor`, `watch`, `command`, `logging`, `paths` | the one daemon allowed to own an instance, and the small services the rest of the daemon uses |
-| `dll_search` | where the daemon loads libraries from on Windows: its own directory and System32, never the directory it was started in |
-| `ctrl_c` | whether a pane's child can be interrupted on Windows: the daemon clears the ignore-Ctrl-C flag it was started with, so no child inherits it |
+| `watch` | when a repository's Git metadata changes, as it happens rather than on the next poll, and the one-file watch the `projects.toml` reload uses |
+| `system`, `system/daemon_lock`, `system/logging`, `system/command`, `system/paths`, `system/editor` | what the daemon asks of the machine it runs on: the one daemon allowed to own an instance, where its diagnostics go, a command run without a console window, whether two spellings name one place, and the person's editor |
+| `system/pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
+| `system/dll_search` | where the daemon loads libraries from on Windows: its own directory and System32, never the directory it was started in |
+| `system/ctrl_c` | whether a pane's child can be interrupted on Windows: the daemon clears the ignore-Ctrl-C flag it was started with, so no child inherits it |
 
 `argus` is a replaceable renderer over one model. `app` holds the state and never predicts the
 result of a request; `ui` is a pure function of it.
@@ -901,7 +902,8 @@ beside `argusd.exe`, which portable-pty prefers. Argus does not ship them: nothi
 without them, and shipping them means a third-party executable per pane and binaries to keep
 current. portable-pty loads that library by bare name, and Windows' default search would go on to
 the current directory — the daemon inherits the one `argus` was run from, often a repository — so
-the daemon's first act is to confine loads by name to its own directory and System32 (`dll_search`).
+the daemon's first act is to confine loads by name to its own directory and System32
+(`system/dll_search`).
 
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
 a Tokio task, which feeds the pane's terminal emulator (`alacritty_terminal`) and broadcasts what

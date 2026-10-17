@@ -82,25 +82,27 @@ impl Daemon {
         // inside the checkout. The text is judged by the rule the daemon
         // applied to the view the path came from; a link inside the
         // checkout that leads out of it only shows on disk.
-        if !argus_protocol::is_checkout_relative(rel_path) || !crate::paths::stays_inside(&path, rel_path) {
+        if !argus_protocol::is_checkout_relative(rel_path)
+            || !crate::system::paths::stays_inside(&path, rel_path)
+        {
             anyhow::bail!("not a path inside the checkout: {rel_path}");
         }
 
         let editor = match command.map(str::trim).filter(|c| !c.is_empty()) {
             Some(c) => c.to_string(),
-            None => crate::editor::resolve(),
+            None => crate::system::editor::resolve(),
         };
-        let argv = crate::editor::command(&editor, rel_path, line);
+        let argv = crate::system::editor::command(&editor, rel_path, line);
         let (program, args) = argv.split_first().expect("never empty");
 
         // A GUI editor cannot live in a pty whatever the client asked for:
         // it would be a blank pane whose child never speaks, which is
         // indistinguishable from a hung one.
-        if external || crate::editor::is_gui(&editor) {
+        if external || crate::system::editor::is_gui(&editor) {
             // No pty and no pane: this editor brings its own window, and
             // Argus has nothing to draw for it. Detached so closing the
             // daemon doesn't take the user's editor with it.
-            crate::command::detached(program)
+            crate::system::command::detached(program)
                 .args(args)
                 .current_dir(&path)
                 .spawn()
@@ -467,7 +469,7 @@ impl Daemon {
         self.forget_pane_sizes(pane.id);
         self.drop_views_of(pane.id);
         if let Some(root) = self.paste_root.get() {
-            crate::pastes::forget(root, pane.id);
+            crate::system::pastes::forget(root, pane.id);
         }
         // Best-effort: a pane retired because it exited has nothing left
         // to kill, but whatever it started in its session may still run.
@@ -552,7 +554,7 @@ impl Daemon {
     /// cleared then: whatever an earlier daemon's panes were pasted, they
     /// read at the time, and their processes do not survive it.
     pub fn set_paste_root(&self, root: std::path::PathBuf) {
-        crate::pastes::forget_all(&root);
+        crate::system::pastes::forget_all(&root);
         let _ = self.paste_root.set(root);
     }
 
@@ -572,8 +574,8 @@ impl Daemon {
             .paste_root
             .get()
             .ok_or_else(|| anyhow::anyhow!("this daemon keeps no pasted files"))?;
-        let path = crate::pastes::keep(root, pane, name, bytes)?;
-        input.paste(crate::pastes::dropped(&path).as_bytes())?;
+        let path = crate::system::pastes::keep(root, pane, name, bytes)?;
+        input.paste(crate::system::pastes::dropped(&path).as_bytes())?;
         Ok(path)
     }
 

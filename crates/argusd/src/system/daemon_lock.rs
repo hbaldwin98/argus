@@ -7,7 +7,7 @@ use std::fs::OpenOptions;
 use std::io;
 use std::path::Path;
 
-pub(super) struct DaemonLock {
+pub(crate) struct DaemonLock {
     // The handle is the lock. Keeping it alive for the daemon's lifetime is
     // what makes a crashed process release the instance without stale state
     // having to be interpreted.
@@ -15,7 +15,7 @@ pub(super) struct DaemonLock {
 }
 
 impl DaemonLock {
-    pub(super) fn acquire() -> io::Result<Option<Self>> {
+    pub(crate) fn acquire() -> io::Result<Option<Self>> {
         Self::acquire_at(&argus_protocol::connection::transport::lock_path())
     }
 

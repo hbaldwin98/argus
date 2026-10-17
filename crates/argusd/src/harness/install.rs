@@ -451,7 +451,7 @@ pub(super) fn names_helper(entry: &Value) -> bool {
 /// lived somewhere else on disk — an older build, a different target dir —
 /// is still recognized as ours and cleaned up.
 pub(super) fn is_hook_helper(command: &str) -> bool {
-    let stem = crate::editor::program_stem(command);
+    let stem = crate::system::editor::program_stem(command);
     // `orion-hook` is the pre-rename name. A block naming it is still ours,
     // and still fires on every turn until something removes it.
     stem == "argus-hook" || stem == "orion-hook"

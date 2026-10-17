@@ -4,51 +4,42 @@
 mod browse;
 mod code;
 mod code_search;
-mod command;
 mod config;
 mod conn;
-#[cfg(windows)]
-mod ctrl_c;
-mod daemon_lock;
 mod diff;
-#[cfg(windows)]
-mod dll_search;
-mod editor;
 mod git;
 mod gitignore;
 mod grammar;
 mod harness;
 mod highlight;
 mod hook_server;
-mod logging;
-mod pastes;
-mod paths;
 mod pty;
 mod review_queue;
 mod state;
 mod store;
 mod symbols;
+mod system;
 mod watch;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    logging::init();
+    system::logging::init();
     tracing::info!(
         "argusd starting; logging to {}",
-        logging::log_path().display()
+        system::logging::log_path().display()
     );
     // Before any pane can load ConPTY by name.
     #[cfg(windows)]
-    if let Err(e) = dll_search::restrict() {
+    if let Err(e) = system::dll_search::restrict() {
         tracing::error!("could not keep library loads out of the working directory: {e}");
     }
     // Before any pane can inherit the daemon's own deafness to it.
     #[cfg(windows)]
-    if let Err(e) = ctrl_c::restore() {
+    if let Err(e) = system::ctrl_c::restore() {
         tracing::error!("could not restore Ctrl-C for panes: {e}");
     }
 
-    let Some(_daemon_lock) = daemon_lock::DaemonLock::acquire()? else {
+    let Some(_daemon_lock) = system::daemon_lock::DaemonLock::acquire()? else {
         tracing::info!("another argusd already owns this instance; exiting");
         return Ok(());
     };
