@@ -308,6 +308,8 @@ impl Session {
         self.reported = None;
         self.awaited.forget_asked();
         self.features.forget_asked();
+        self.code.forget_sent_comment();
+        self.dialogs.forget_sent_comments();
         self.sessions = Sessions::default();
         self.older = OlderDaemon::default();
         for msg in opening {
@@ -460,9 +462,9 @@ impl Session {
     /// A request this window named was refused. The part that asked takes
     /// it: the add dialog, the review and history and the sessions dialog
     /// say why where they asked (the Code stage took its own in `route`); a
-    /// note or a link waiting on it lets go, and the reason is said under
-    /// it. A refused change nobody waits on is said all the same; a refused
-    /// read nobody wants is dropped, as its answer would have been.
+    /// note, a link or a comment waiting on it lets go, and the reason is
+    /// said under it. A refused change nobody waits on is said all the same;
+    /// a refused read nobody wants is dropped, as its answer would have been.
     fn refused(&mut self, refusal: RequestRefusal) {
         let id = refusal.request_id;
         self.awaited.answer(id, None);
@@ -475,7 +477,9 @@ impl Session {
         // Not short-circuited: an older daemon's bare error lets go of
         // every change waiting on one.
         let waited = self.capture.get_mut().is_some_and(|n| n.refused(&refusal))
-            | self.tracker_dialogs.refused(&refusal);
+            | self.tracker_dialogs.refused(&refusal)
+            | self.code.comment_refused(&refusal)
+            | self.dialogs.comment_refused(&refusal);
         if waited || !refusal.read {
             self.passing.push(Event::Notice { text: refusal.reason });
         }
@@ -3477,6 +3481,65 @@ mod tests {
         let (mut s, _) = commenting_in_code(Hello::this_build().without(REQUEST_REFUSALS));
         s.receive(ServerMsg::ReviewCommentSaved { id: 7, delivered: true, request_id: 0 });
         assert_eq!(code_box_shut(&s.events(0)), Some(true));
+    }
+
+    /// The Code stage's comment sent again, and what went.
+    fn comment_again(s: &mut Session) -> Vec<ClientMsg> {
+        let sent = s.code_gesture(CodeGesture::Comment { body: Some("why".into()) });
+        sent.into_iter().filter(|m| matches!(m, ClientMsg::ReviewComment { .. })).collect()
+    }
+
+    /// The words stay because the box does: the page clears a draft only
+    /// when its box shuts.
+    #[test]
+    fn a_refused_comment_keeps_its_box_is_said_and_can_be_sent_again() {
+        let (mut s, id) = commenting_in_code(Hello::this_build());
+        s.receive(refusal(id, "recipient must be a live agent pane", false));
+        let events = s.events(0);
+        assert_ne!(code_box_shut(&events), Some(true), "the box stays open");
+        let said: Vec<&Event> = events.iter().filter(|e| matches!(e, Event::Notice { .. })).collect();
+        assert!(
+            matches!(said.as_slice(), [Event::Notice { text }] if text == "recipient must be a live agent pane"),
+            "said once: {said:?}"
+        );
+        assert_eq!(comment_again(&mut s).len(), 1);
+    }
+
+    #[test]
+    fn a_refusal_of_another_request_leaves_a_comment_waiting() {
+        let (mut s, id) = commenting_in_code(Hello::this_build());
+        s.receive(refusal(id + 100, "no", false));
+        assert!(comment_again(&mut s).is_empty());
+        assert!(notices(&mut s).iter().any(|text| text == "the last comment is still being saved"));
+    }
+
+    #[test]
+    fn an_older_daemons_refused_comment_lets_the_box_send_again() {
+        let (mut s, _) = commenting_in_code(Hello::this_build().without(REQUEST_REFUSALS));
+        s.receive(ServerMsg::Error { message: "recipient must be a live agent pane".into() });
+        assert_eq!(notices(&mut s), ["recipient must be a live agent pane"]);
+        assert_eq!(comment_again(&mut s).len(), 1);
+    }
+
+    /// A bare error from an older daemon may be anyone's; the comment's own
+    /// save, naming none, still closes the box.
+    #[test]
+    fn an_older_daemons_unrelated_error_leaves_the_comment_to_its_save() {
+        let (mut s, _) = commenting_in_code(Hello::this_build().without(REQUEST_REFUSALS));
+        s.receive(ServerMsg::Error { message: "no such pane".into() });
+        assert_eq!(notices(&mut s), ["no such pane"]);
+        s.receive(ServerMsg::ReviewCommentSaved { id: 7, delivered: true, request_id: 0 });
+        let events = s.events(0);
+        assert_eq!(code_box_shut(&events), Some(true));
+        assert!(says(&events, "comment #7 sent"));
+    }
+
+    #[test]
+    fn a_comment_waiting_when_the_daemon_reconnects_can_be_sent_again() {
+        let (mut s, _) = commenting_in_code(Hello::this_build());
+        assert!(comment_again(&mut s).is_empty(), "still waiting");
+        s.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
+        assert_eq!(comment_again(&mut s).len(), 1);
     }
 
     #[test]

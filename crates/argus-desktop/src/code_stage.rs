@@ -13,7 +13,7 @@ use std::collections::HashSet;
 
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatches, CodeTree, CodeVersion, HeldTree, PaneId,
-    ProjectInfo, ReviewAnchor, ReviewBase, SearchOptions, ServerMsg,
+    ProjectInfo, RequestRefusal, ReviewAnchor, ReviewBase, SearchOptions, ServerMsg,
 };
 use serde::{Deserialize, Serialize};
 
@@ -370,6 +370,19 @@ impl Code {
             msg => return Some(msg),
         }
         None
+    }
+
+    /// A refusal that may be of the stage's comment: its box lets go and
+    /// keeps its words. Said by the caller, as a refused change is.
+    pub fn comment_refused(&mut self, refusal: &RequestRefusal) -> bool {
+        self.stage.as_mut().is_some_and(|s| s.comment_refused(refusal))
+    }
+
+    /// A new connection: the stage's comment is answered on none.
+    pub fn forget_sent_comment(&mut self) {
+        if let Some(stage) = &mut self.stage {
+            stage.forget_sent_comment();
+        }
     }
 
     /// A gesture in the stage, with the tree as it is now: its agents may
@@ -824,6 +837,14 @@ impl CodeStage {
         if self.comment_box.saved(request_id) {
             self.mark = None;
         }
+    }
+
+    fn comment_refused(&mut self, refusal: &RequestRefusal) -> bool {
+        self.comment_box.refused(refusal)
+    }
+
+    fn forget_sent_comment(&mut self) {
+        self.comment_box.forget_sent();
     }
 
     // ---- go to a file ----------------------------------------------------

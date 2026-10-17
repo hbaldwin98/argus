@@ -521,7 +521,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `rail` | what the rail lists from the tree, and what a row says |
 | `dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, its comment box, its go-to-file field — and the page it draws |
-| `comment_box` | the comment box the review and the Code stage share: whether it is open, the agent it is lit on, the comment it sent and waits on the daemon to save, by its id, and what the page draws of it |
+| `comment_box` | the comment box the review and the Code stage share: whether it is open, the agent it is lit on, the comment it sent and waits on the daemon to save or refuse, by its id, and what the page draws of it |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff or why it could not be read — and what its gestures ask of the daemon |
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, or why the daemon refused one, among them what each pane it resumed a session in was resumed from |
 | `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its full transcript is open in place of the list — and what each session offers: its pane, a resume by the exact command named, or only its transcript; the page it draws, last sent while open |
@@ -1747,11 +1747,12 @@ no longer running, never swapped for another, and the box stays open for someone
 chosen. A body longer than the daemon takes is refused before it is sent. A comment names itself
 with a request id and its save names it back, so a save closes the box that sent that comment
 alone — a review's, a parked review's or the Code stage's — and lets its lines go; an older
-daemon's save names none, and a box waiting takes it. The daemon validates that
-recipient, persists the comment under the checkout path, then sends a flattened one-line
-notification to the recipient: through its inbox when one is open, else typed into its PTY. A
-failed delivery does not discard the stored comment. Live agents in the checkout can read the
-newest 100 comments with `argus-hook comments`.
+daemon's save names none, and a box waiting takes it. A box sends one comment at a time. A
+refused one is said, and the box keeps it to send again; so does a box whose connection dropped
+while it waited. The daemon validates that recipient, persists the comment under the checkout
+path, then sends a flattened one-line notification to the recipient: through its inbox when one
+is open, else typed into its PTY. A failed delivery does not discard the stored comment. Live
+agents in the checkout can read the newest 100 comments with `argus-hook comments`.
 
 Added and removed lines are marked by a background wash rather than by foreground colour, which
 syntax now owns; the `+` and `-` markers keep their own colour so the signal survives a terminal

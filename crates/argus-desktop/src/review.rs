@@ -9,7 +9,7 @@ use argus_protocol::review_session::{Answered, ReviewSession};
 use argus_protocol::review_view::{fold_of, marker, ReviewView, Row, FOLD_STEP};
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ChangeKind, ClientMsg, DiffLine, HighlightKind, HighlightSpan, LineKind, PaneId, Review,
-    CodeVersion, ReviewBase, ReviewContext,
+    CodeVersion, RequestRefusal, ReviewBase, ReviewContext,
 };
 
 use crate::comment_box::CommentBox;
@@ -289,6 +289,17 @@ impl ReviewDialog {
         if self.comment_box.saved(request_id) {
             self.session.commented();
         }
+    }
+
+    /// A refusal that may be of this box's comment: the box lets go of it
+    /// and keeps its words.
+    pub fn comment_refused(&mut self, refusal: &RequestRefusal) -> bool {
+        self.comment_box.refused(refusal)
+    }
+
+    /// A new connection: the comment sent on the last is answered on none.
+    pub fn forget_sent_comment(&mut self) {
+        self.comment_box.forget_sent();
     }
 
     /// The dialog as the page draws it, given the checkout as the tree has

@@ -1,11 +1,14 @@
 //! The comment box the review and the Code stage share: whether it is open,
 //! the agent it is lit on, the comment it sent and waits on the daemon to
-//! save, by its id, and what the page draws of it. Whether a comment may
-//! go, and to whom, is `argus_protocol::agent_comment`'s.
+//! save or refuse, by its id, and what the page draws of it. Whether a
+//! comment may go, and to whom, is `argus_protocol::agent_comment`'s.
 
 use argus_protocol::agent_comment::{self, Comment};
-use argus_protocol::{CheckoutInfo, ClientMsg, PaneId, ReviewAnchor};
+use argus_protocol::{CheckoutInfo, ClientMsg, PaneId, RequestRefusal, ReviewAnchor};
 use serde::Serialize;
+
+/// Said when a second comment is sent from a box still waiting on its first.
+const WAITING: &str = "the last comment is still being saved";
 
 #[derive(Debug, Default)]
 pub struct CommentBox {
@@ -14,7 +17,8 @@ pub struct CommentBox {
     /// while it still runs.
     to: Option<PaneId>,
     /// The comment sent from this box the daemon has yet to answer, by the
-    /// id it was sent under.
+    /// id it was sent under; zero once an older daemon's bare error may have
+    /// refused it (see `refused`).
     sending: Option<u64>,
 }
 
@@ -50,7 +54,9 @@ impl CommentBox {
     }
 
     /// The comment as typed, to the agent lit, named `request_id`. Refused
-    /// while shut: the lines under the box may have changed since it closed.
+    /// while shut — the lines under the box may have changed since it
+    /// closed — and while one sent from it waits: what the daemon says of
+    /// that one is how the box learns to let its words go.
     pub fn send(
         &mut self,
         anchor: Option<ReviewAnchor>,
@@ -60,6 +66,9 @@ impl CommentBox {
     ) -> Result<ClientMsg, &'static str> {
         if !self.open {
             return Err("no comment box is open");
+        }
+        if matches!(self.sending, Some(id) if id != 0) {
+            return Err(WAITING);
         }
         match agent_comment::comment(anchor, checkout, self.to, body, request_id)? {
             Comment::Send(msg) => {
@@ -82,6 +91,26 @@ impl CommentBox {
             self.open = false;
         }
         mine
+    }
+
+    /// A request was refused. True when it may have been this box's
+    /// comment: refused by its id, the box stays open with its words, to be
+    /// sent again. An older daemon's bare error names no request: it may
+    /// have been this comment's, so the box may send again, but a save
+    /// naming none still shuts it.
+    pub fn refused(&mut self, refusal: &RequestRefusal) -> bool {
+        if !self.sending.is_some_and(|id| refusal.refuses_change(id)) {
+            return false;
+        }
+        self.sending = (refusal.request_id == 0).then_some(0);
+        true
+    }
+
+    /// A new connection: the daemon on it answers nothing sent on the last,
+    /// so the box may send again. Whether that comment was saved is not
+    /// known, and the words stay.
+    pub fn forget_sent(&mut self) {
+        self.sending = None;
     }
 
     /// The box as the page draws it, while it is open.
@@ -261,6 +290,67 @@ mod tests {
         b.send(Some(lines()), Some(&co), "hi", 1).unwrap();
         b.close();
         assert!(!b.saved(1));
+    }
+
+    fn refusal(request_id: u64) -> RequestRefusal {
+        RequestRefusal { request_id, reason: "no".into(), read: false }
+    }
+
+    /// An open box on one live agent.
+    fn opened() -> (CommentBox, CheckoutInfo) {
+        let co = checkout(100, "main", true, vec![agent(7)]);
+        let mut b = CommentBox::default();
+        b.open(Some(&lines()), Some(&co)).unwrap();
+        (b, co)
+    }
+
+    #[test]
+    fn a_box_sends_one_comment_at_a_time() {
+        let (mut b, co) = opened();
+        b.send(Some(lines()), Some(&co), "one", 1).unwrap();
+        assert_eq!(b.send(Some(lines()), Some(&co), "two", 2).err(), Some(WAITING));
+        assert!(b.saved(1));
+        b.open(Some(&lines()), Some(&co)).unwrap();
+        assert!(b.send(Some(lines()), Some(&co), "three", 3).is_ok());
+    }
+
+    #[test]
+    fn a_refused_comment_keeps_its_box_and_can_be_sent_again() {
+        let (mut b, co) = opened();
+        b.send(Some(lines()), Some(&co), "one", 1).unwrap();
+        assert!(!b.refused(&refusal(9)), "another request's refusal");
+        assert_eq!(b.send(Some(lines()), Some(&co), "one", 2).err(), Some(WAITING));
+        assert!(b.refused(&refusal(1)));
+        assert!(b.is_open());
+        assert!(b.send(Some(lines()), Some(&co), "one", 2).is_ok());
+    }
+
+    #[test]
+    fn an_older_daemons_bare_refusal_lets_go_of_the_comment_waiting() {
+        let (mut b, co) = opened();
+        b.send(Some(lines()), Some(&co), "one", 1).unwrap();
+        assert!(b.refused(&refusal(0)));
+        assert!(b.is_open());
+        assert!(b.send(Some(lines()), Some(&co), "one", 2).is_ok());
+    }
+
+    #[test]
+    fn a_bare_error_from_an_older_daemon_still_lets_the_save_shut_the_box() {
+        let (mut b, co) = opened();
+        b.send(Some(lines()), Some(&co), "one", 1).unwrap();
+        assert!(b.refused(&refusal(0)), "it may have been this comment's");
+        assert!(b.saved(0));
+        assert!(!b.is_open());
+    }
+
+    #[test]
+    fn a_new_connection_lets_a_waiting_box_send_again() {
+        let (mut b, co) = opened();
+        b.send(Some(lines()), Some(&co), "one", 1).unwrap();
+        b.forget_sent();
+        assert!(b.is_open(), "the words stay");
+        assert!(b.send(Some(lines()), Some(&co), "one", 2).is_ok());
+        assert!(!b.saved(1), "the last connection's save is not this one's");
     }
 
     #[test]

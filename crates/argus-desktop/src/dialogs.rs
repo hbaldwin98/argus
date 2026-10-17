@@ -122,6 +122,20 @@ impl Dialogs {
         review.failed(id, reason.clone()) != Answered::Stale
     }
 
+    /// A refusal of a comment a review sent, open or parked: its box lets
+    /// go and keeps its words. Every review hears it, since an older
+    /// daemon's names none. Said by the caller, as a refused change is.
+    pub fn comment_refused(&mut self, refusal: &RequestRefusal) -> bool {
+        self.reviews().fold(false, |taken, dialog| dialog.comment_refused(refusal) | taken)
+    }
+
+    /// A new connection: no review's comment will be answered on it.
+    pub fn forget_sent_comments(&mut self) {
+        for dialog in self.reviews() {
+            dialog.forget_sent_comment();
+        }
+    }
+
     /// Every history answers can be for: the open one, then the one parked
     /// while the Code stage reads, which still waits on what it asked.
     fn histories(&mut self) -> impl Iterator<Item = &mut HistoryDialog> + '_ {
@@ -574,6 +588,30 @@ mod tests {
         assert!(dialogs.unpark());
         let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
         assert!(page.comment.is_none() && page.pick.is_none(), "the parked review took its save");
+    }
+
+    #[test]
+    fn a_refusal_reaches_the_review_whose_comment_it_names_open_or_parked() {
+        let tree = agent_tree();
+        let mut dialogs = composing(&tree);
+        let (mut out, mut say) = (Vec::new(), Vec::new());
+        dialogs.review_comment(Some("parked".into()), &tree, || 50, &mut out, &mut say);
+        assert!(dialogs.park_review().is_some());
+        compose(&mut dialogs, &tree);
+        dialogs.review_comment(Some("open".into()), &tree, || 51, &mut out, &mut say);
+        assert_eq!(out.len(), 2, "{say:?}");
+
+        let refused = |id| RequestRefusal { request_id: id, reason: "no".into(), read: false };
+        assert!(dialogs.comment_refused(&refused(51)));
+        dialogs.review_comment(Some("open".into()), &tree, || 52, &mut out, &mut say);
+        assert_eq!(out.len(), 3, "the open review sends again: {say:?}");
+        assert!(dialogs.unpark());
+        dialogs.review_comment(Some("parked".into()), &tree, || 53, &mut out, &mut say);
+        assert_eq!(out.len(), 3);
+        assert!(matches!(say.as_slice(), [Event::Notice { text }] if text == "the last comment is still being saved"), "{say:?}");
+        assert!(dialogs.comment_refused(&refused(50)));
+        dialogs.review_comment(Some("parked".into()), &tree, || 54, &mut out, &mut say);
+        assert_eq!(out.len(), 4, "the parked review, back, sends again");
     }
 
     #[test]
