@@ -7,11 +7,12 @@
 //! function of the model and the time, which is what lets the render tests
 //! pin an animation mid-flight by naming the instant rather than sleeping.
 //!
-//! The client does not run a frame clock of its own (see [`crate::redraw`]);
-//! it wakes on deadlines. So an animation has to be able to say when it next
-//! needs a frame, and a repeating one — a spinner — has to say that forever
-//! while it spins. [`Animation::deadline`] and [`spinner_deadline`] are those
-//! answers, and the event loop takes the earliest of them.
+//! The client does not run a frame clock of its own (see
+//! [`crate::terminal::redraw`]); it wakes on deadlines. So an animation has
+//! to be able to say when it next needs a frame, and a repeating one — a
+//! spinner — has to say that forever while it spins.
+//! [`Animation::deadline`] and [`spinner_deadline`] are those answers, and
+//! the event loop takes the earliest of them.
 
 use std::time::{Duration, Instant};
 

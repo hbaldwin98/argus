@@ -1,6 +1,10 @@
 //! Owning the terminal for the length of a run: entering and leaving the
 //! alternate screen, and presenting one frame at a time.
 
+pub mod backend;
+pub mod profile;
+pub mod redraw;
+
 use std::io::{self, Write};
 
 use crossterm::event::{
@@ -14,7 +18,7 @@ use crossterm::terminal::{
 use ratatui::Terminal;
 
 use crate::app::App;
-use crate::backend::TermBackend;
+use crate::terminal::backend::TermBackend;
 use crate::ui;
 
 /// One frame is written as hundreds of small writes. `io::Stdout` is a

@@ -458,7 +458,7 @@ result of a request; `ui` is a pure function of it.
 
 | module | answers |
 | --- | --- |
-| `main`, `redraw`, `terminal` | the event loop, the screen it runs over, and which command the command line asks for |
+| `main` | the event loop, and which command the command line asks for |
 | `system` | what this client asks of the machine it runs on and of the programs beside it |
 | `system/sibling` | starting another of Argus's executables, found beside this one, so it outlives this process |
 | `system/browser` | opening a ticket's URL in the person's browser, or copying it where no browser is at hand |
@@ -474,6 +474,10 @@ result of a request; `ui` is a pure function of it.
 | `connection/wire` | the socket a connection runs over: the two tasks between the app and the daemon, and a frame's subscription churn collapsed between them |
 | `connection/remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
 | `connection/hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
+| `terminal` | the screen the event loop runs over: owning the terminal for a run and presenting one frame at a time |
+| `terminal/backend` | the ratatui backend, wrapped so the cursor does not thrash |
+| `terminal/redraw` | which of the event loop's wake-ups is worth a frame |
+| `terminal/profile` | an opt-in measurement of where a keystroke's time goes: painting the frame, or the round trip to the pty |
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
@@ -510,7 +514,7 @@ result of a request; `ui` is a pure function of it.
 | `pty_input/mouse` | a terminal mouse event as the protocol's, relative to the pane's area |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
-| `settings`, `theme`, `backend`, `profile` | preferences, palette, and the ratatui backend |
+| `settings`, `theme` | preferences and the palette |
 | `fixtures` | the builders every test module shares: the tree, and a pane's view as the daemon's messages leave it |
 
 `argus-desktop` is the desktop window. It holds what it was sent and draws it; everything it knows

@@ -4,10 +4,9 @@
 //! messages, the paste burst's deadline, and the frame tick — feeding one
 //! `App` and one renderer. Everything the loop needs but does not decide
 //! lives beside it: `terminal` owns the screen, `connection::wire` the
-//! socket, and `redraw` decides which wake-up is worth a frame.
+//! socket, and `terminal::redraw` decides which wake-up is worth a frame.
 
 mod app;
-mod backend;
 mod brief;
 mod diagram;
 mod commands;
@@ -16,9 +15,7 @@ mod dirpicker;
 mod dropped;
 mod motion;
 mod paste;
-mod profile;
 mod pty_input;
-mod redraw;
 mod selection;
 mod settings;
 mod system;
@@ -37,6 +34,7 @@ use futures::StreamExt;
 use paste::{Flush, PasteBurst, Step};
 use profile::{Profile, Record};
 use system::herdr;
+use terminal::{profile, redraw};
 use tokio::sync::mpsc;
 
 const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
