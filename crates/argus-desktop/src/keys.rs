@@ -2,10 +2,10 @@
 //!
 //! The page sends what the browser saw — `KeyboardEvent.key`, `.code` and
 //! the modifiers — and this decides which protocol key, if any, that is.
-//! The bytes are `argus_protocol::keys`'s, so this window and the terminal
-//! client type the same thing for the same key.
+//! The bytes are `argus_protocol::panes::keys`'s, so this window and the
+//! terminal client type the same thing for the same key.
 
-use argus_protocol::keys::{Key, KeyCode, Mods};
+use argus_protocol::panes::keys::{Key, KeyCode, Mods};
 use serde::Deserialize;
 
 /// A `keydown` as the page reports it.
@@ -109,7 +109,7 @@ mod tests {
     }
 
     fn bytes(page: PageKey) -> Vec<u8> {
-        to_key(&page).map(|k| argus_protocol::keys::encode(&k)).unwrap_or_default()
+        to_key(&page).map(|k| argus_protocol::panes::keys::encode(&k)).unwrap_or_default()
     }
 
     #[test]

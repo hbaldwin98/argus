@@ -2,11 +2,11 @@
 //!
 //! What a gesture does to a pane's view — the wheel's decision between the
 //! child and the history, where the view parks, what it asks the daemon —
-//! is `argus_protocol::pane_view`'s, shared with the desktop window; this
+//! is `argus_protocol::panes::view`'s, shared with the desktop window; this
 //! hands it the gesture and carries out what it answers.
 
 use super::*;
-use argus_protocol::pane_view::Effect;
+use argus_protocol::panes::view::Effect;
 
 impl App {
     /// The wheel over `pane`, `notches` up when negative, at the cell `at`

@@ -1,5 +1,5 @@
 //! That the client hands its scroll gestures and the daemon's history
-//! to a pane's view; how the view behaves is `pane_view`'s, tested there.
+//! to a pane's view; how the view behaves is `panes::view`'s, tested there.
 
 use super::*;
 #[test]

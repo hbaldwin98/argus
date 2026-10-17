@@ -11,7 +11,7 @@ use std::hash::{Hash, Hasher};
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
-use crate::cell::{Cell, CellSpan, Color, BLANK};
+use crate::panes::cell::{Cell, CellSpan, Color, BLANK};
 
 /// Stretches of unchanged cells shorter than this are sent anyway, inside
 /// the run either side of them: a run costs more to start than a few cells

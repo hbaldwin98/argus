@@ -30,10 +30,10 @@ use std::collections::HashSet;
 
 use argus_protocol::awaited::Awaited;
 use argus_protocol::column_verbs::Verb;
-use argus_protocol::keys::{Key, KeyCode, Mods};
-use argus_protocol::mouse::{self, MouseButton, MouseEvent, MouseKind};
-use argus_protocol::pane_view::{Effect, PaneView};
-use argus_protocol::paste;
+use argus_protocol::panes::keys::{Key, KeyCode, Mods};
+use argus_protocol::panes::mouse::{self, MouseButton, MouseEvent, MouseKind};
+use argus_protocol::panes::view::{Effect, PaneView};
+use argus_protocol::panes::paste;
 use argus_protocol::request_refusal::OlderDaemon;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
@@ -1059,7 +1059,7 @@ impl Session {
             None if keymap::is_leader(key) => self.shown.await_leader(),
             None => {
                 let mode = self.shown.keyboard();
-                let bytes = keys::to_key(key).map(|k| argus_protocol::keys::encode_with(&k, mode)).unwrap_or_default();
+                let bytes = keys::to_key(key).map(|k| argus_protocol::panes::keys::encode_with(&k, mode)).unwrap_or_default();
                 self.input(bytes);
             }
         }
@@ -1076,7 +1076,7 @@ impl Session {
         match action {
             Action::Leader => {
                 let ctrl_space = Key::new(KeyCode::Char(' '), Mods::CTRL);
-                self.input(argus_protocol::keys::encode_with(&ctrl_space, self.shown.keyboard()))
+                self.input(argus_protocol::panes::keys::encode_with(&ctrl_space, self.shown.keyboard()))
             }
             // A console has no sidebar of its own to put away: filling the
             // window is its fullscreen.
@@ -4602,7 +4602,7 @@ mod tests {
             .collect()
     }
 
-    // How the wheel and a parked view behave is `pane_view`'s and tested
+    // How the wheel and a parked view behave is `panes::view`'s and tested
     // there; these say the window wires its gestures and messages through.
 
     #[test]

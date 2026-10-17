@@ -12,7 +12,7 @@
 //! console: an agent and a docked console are both on screen, and the keys
 //! are handed between them.
 
-use argus_protocol::pane_view::{Effect, PaneView};
+use argus_protocol::panes::view::{Effect, PaneView};
 use argus_protocol::{ClientMsg, KeyboardMode, MouseTracking, PaneId, ServerMsg};
 
 use crate::page::{Frame, Side};

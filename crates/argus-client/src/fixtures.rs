@@ -2,7 +2,7 @@
 //! the daemon's messages leave it — so a field added to the wire is filled
 //! in here rather than in every test that builds one.
 
-use argus_protocol::pane_view::PaneView;
+use argus_protocol::panes::view::PaneView;
 use argus_protocol::{
     Cell, CheckoutId, CheckoutInfo, Cursor, MouseTracking, PaneId, PaneInfo, PaneKind, PaneStatus,
     ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg,

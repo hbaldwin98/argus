@@ -64,10 +64,10 @@ client the person was last at, so a window and a terminal client on one pane eac
 A drag across the pane selects and letting go copies; the text is read from the window's grid in Rust,
 and the clipboard is written and read there too (Ctrl-V, Ctrl-Shift-V, Alt-V), not by the page. A
 picture on it crosses as a file (`PasteFile`), and text has its line endings made newlines, as the
-terminal client does (`argus_protocol::paste`).
+terminal client does (`argus_protocol::panes::paste`).
 The wheel and Shift-PageUp/PageDown act as the terminal client's do: a child that asked for the
-mouse gets its wheel reports (`argus_protocol::mouse`), the normal screen parks the view in the
-pane's history (the view held in `argus_protocol::pane_view`, asked further by line, typing back to live), and a
+mouse gets its wheel reports (`argus_protocol::panes::mouse`), the normal screen parks the view in the
+pane's history (the view held in `argus_protocol::panes::view`, asked further by line, typing back to live), and a
 full-screen child that asked for nothing gets a cursor key a notch. A press, release, drag or move over a child that
 asked for the mouse goes to it in the mode it asked for, and only Shift-drag selects there; the frame
 says whether it asked, so the page can tell a press for the child from the start of a selection. The stage header leads its size
@@ -328,15 +328,17 @@ live in this crate and a contract written twice drifts in silence.
 | `ext_console` | what an extension's console view runs and where — its command, working directory and environment as the extension asks, and the pane and ending the daemon reports |
 | `extension_keys` | which keys an extension may bind, and the words a refused one is refused in: the keys Argus keeps where an extension's would be heard |
 | `extension_guide` | how to build an extension from nothing, as `argus extension guide` prints it: a walkthrough, then the reference, its examples read through the types and its limits filled from the constants |
-| `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
-| `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
+| `framing`, `transport` | a frame, and the endpoint it travels over |
+| `panes` | a pane's terminal as a client holds and drives it |
+| `panes/cell` | a screen cell on the wire, and the per-cell span an older client is sent its damage in |
+| `panes/damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
+| `panes/keys` | the bytes a key press is to a pane's child, decided once so every client types the same thing |
+| `panes/mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
+| `panes/paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
+| `panes/view` | a pane's view as a client holds it: the live grid, the view parked in its history, how the daemon's pane messages change them, and what a scroll gesture over the pane sends — the child's bytes, a request for history, or nothing |
 | `ago` | how long ago something happened, as every client says it |
 | `column` | the order a repository's checkouts column lists its rows: the main branch first, then the checkouts, then the branches without one while they are shown |
 | `column_verbs` | what a row of that column allows: the request each verb on it sends — remove, new worktree, switch, fetch, pull — or the words it is refused in, which checkout git runs in, and what a yes to the forced deletion sends |
-| `keys` | the bytes a key press is to a pane's child, decided once so every client types the same thing |
-| `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
-| `pane_view` | a pane's view as a client holds it: the live grid, the view parked in its history, how the daemon's pane messages change them, and what a scroll gesture over the pane sends — the child's bytes, a request for history, or nothing |
-| `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
 | `ssh_hosts` | the hosts the user's ssh config names, for either client's host picker |
 | `ssh_bridge` | the ssh command that runs `argus bridge` on another machine, and what ssh's failure means |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |

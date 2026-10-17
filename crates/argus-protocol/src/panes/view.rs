@@ -18,8 +18,8 @@
 //! view's first row — so it moves from the text on screen however far
 //! output has pushed that text back meanwhile.
 
-use crate::keys::{self, Key, KeyCode, KeyboardMode, Mods};
-use crate::mouse::{self, MouseEvent, MouseKind};
+use crate::panes::keys::{self, Key, KeyCode, KeyboardMode, Mods};
+use crate::panes::mouse::{self, MouseEvent, MouseKind};
 use crate::{grid_from_runs, Cell, ClientMsg, Cursor, MouseTracking, PaneId, ServerMsg};
 
 /// Lines one wheel notch moves a parked view, as terminals scroll for one

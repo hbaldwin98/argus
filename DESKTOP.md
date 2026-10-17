@@ -44,7 +44,7 @@ recent sessions need.
 
 ## Foundation (separate commit, before the desktop crate)
 
-- **`argus-protocol/src/keys.rs`** (HUN-178, done) — "the bytes a key press is to a pane's child". A
+- **`argus-protocol/src/panes/keys.rs`** (HUN-178, done) — "the bytes a key press is to a pane's child". A
   crossterm-free `Key { code: KeyCode, mods: Mods }` (`KeyCode`: `Char(char)`, `Enter`, `Tab`,
   `BackTab`, `Backspace`, `Esc`, `Left`, `Right`, `Up`, `Down`, `Home`, `End`, `PageUp`,
   `PageDown`, `Delete`, `Insert`, `F(u8)` — whatever the existing encoder covers, no more; `Mods`:
@@ -153,7 +153,7 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
   Unsubscribe is unnecessary — the daemon already dropped it; check what the TUI does).
 - On reconnect: forget sent sizes and subscriptions, resubscribe the selected pane and resend its
   size after the new opening arrives.
-- `key(PageKey)` → `keys::to_key` → `argus_protocol::keys::encode` → `Input{pane, bytes}` (nothing
+- `key(PageKey)` → `keys::to_key` → `argus_protocol::panes::keys::encode` → `Input{pane, bytes}` (nothing
   when no pane or empty bytes). `text(String)` (IME/composition commit) → `Input` with its UTF-8.
   `paste(String)` → `ClientMsg::Paste` (the daemon brackets it only if the child asked).
 - `spawn_shell(checkout)` → `SpawnShell{checkout, request_id}`; on `Created{request_id, ..}` for a

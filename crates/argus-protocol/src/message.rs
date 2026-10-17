@@ -6,15 +6,15 @@
 use serde::{Deserialize, Serialize};
 
 use crate::agent_view::ShownView;
-use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
+use crate::panes::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::code::{CodeFile, CodeMatches, CodeTree, CodeVersion, SearchOptions};
-use crate::damage::{CellRun, Scroll};
+use crate::panes::damage::{CellRun, Scroll};
 use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
 use crate::extensions::{ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtView};
 use crate::features::FeatureAction;
 use crate::focus::{Focus, View};
 use crate::hello::Hello;
-use crate::keys::KeyboardMode;
+use crate::panes::keys::KeyboardMode;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext};
 use crate::diagrams::{DiagramAction, DiagramList};

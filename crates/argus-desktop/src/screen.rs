@@ -3,10 +3,10 @@
 //!
 //! What the view holds — the live grid, a view parked in the history, how
 //! the daemon's messages and the person's scrolling change them — is
-//! `argus_protocol::pane_view`'s, the same one the terminal client keeps,
+//! `argus_protocol::panes::view`'s, the same one the terminal client keeps,
 //! so this window reads damage and scrolls exactly as that client does.
 
-use argus_protocol::pane_view::{Effect, PaneView, Redraw};
+use argus_protocol::panes::view::{Effect, PaneView, Redraw};
 use argus_protocol::{Cell, Color, Cursor, CursorShape, MouseTracking, PaneId, ServerMsg, BLANK};
 use unicode_width::UnicodeWidthChar;
 

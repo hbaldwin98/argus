@@ -1,7 +1,7 @@
 //! A terminal mouse event as the protocol's, relative to the pane's area:
-//! the sequence itself is `argus_protocol::mouse`'s to decide.
+//! the sequence itself is `argus_protocol::panes::mouse`'s to decide.
 
-use argus_protocol::mouse::{self, MouseButton as Button, MouseKind};
+use argus_protocol::panes::mouse::{self, MouseButton as Button, MouseKind};
 use argus_protocol::MouseTracking;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;

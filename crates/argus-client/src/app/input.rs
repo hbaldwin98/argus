@@ -12,7 +12,7 @@
 
 use super::*;
 use crate::dropped::Dropped;
-use argus_protocol::paste::{normalize, PASTE_FILE_MAX};
+use argus_protocol::panes::paste::{normalize, PASTE_FILE_MAX};
 
 impl App {
     /// Shuts any floating window, from anywhere, whatever has focus.

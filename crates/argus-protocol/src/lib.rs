@@ -11,12 +11,6 @@ pub mod adr;
 pub mod agent_comment;
 pub mod agent_launch;
 pub mod agent_view;
-pub mod view_check;
-pub mod view_links;
-pub mod view_patch;
-pub mod view_press;
-pub mod view_requests;
-pub mod view_tree;
 pub mod ago;
 pub mod artifacts;
 pub mod awaited;
@@ -24,15 +18,13 @@ pub mod board_follower;
 pub mod capture;
 pub mod checkout_path;
 pub mod code;
-pub mod cell;
 pub mod column;
 pub mod column_verbs;
-pub mod damage;
 pub mod decisions;
 pub mod diagrams;
+pub mod ext_console;
 pub mod extension_guide;
 pub mod extension_keys;
-pub mod ext_console;
 pub mod extensions;
 pub mod features;
 pub mod flow;
@@ -40,19 +32,16 @@ pub mod focus;
 pub mod framing;
 pub mod fuzzy;
 pub mod held_tree;
-pub mod history_view;
 pub mod hello;
+pub mod history_view;
 pub mod hook;
 pub mod hook_call;
 pub mod ids;
 pub mod inbox;
-pub mod keys;
 pub mod memory;
 pub mod message;
-pub mod mouse;
 pub mod outline;
-pub mod pane_view;
-pub mod paste;
+pub mod panes;
 pub mod paths;
 pub mod reconcile;
 pub mod request_refusal;
@@ -69,6 +58,12 @@ pub mod tracker_links;
 pub mod transcript;
 pub mod transport;
 pub mod tree;
+pub mod view_check;
+pub mod view_links;
+pub mod view_patch;
+pub mod view_press;
+pub mod view_requests;
+pub mod view_tree;
 
 pub use ago::ago;
 pub use agent_launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
@@ -90,17 +85,17 @@ pub use saved_view::{
     ViewSource, WriteScope, MAX_ATTACHED_FEATURES, MAX_EMBED_DEPTH, MAX_RECIPE_BYTES, MAX_SAVED_VIEWS,
     MAX_SAVED_VIEW_WRITE_BYTES, MAX_SOURCE_BYTES, MAX_VIEW_SOURCES,
 };
-pub use keys::KeyboardMode;
+pub use panes::keys::KeyboardMode;
 pub use view_tree::Slot;
 pub use view_links::linked_views;
 pub use artifacts::ArtifactScope;
 pub use board_follower::{BoardFollower, BoardScope, FeatureListing, Folding, Received};
-pub use cell::{
+pub use panes::cell::{
     Cell, CellSpan, Color, Cursor, CursorShape, MouseEncoding, MouseMode, MouseTracking,
     BLANK,
 };
 pub use compact_str::{CompactString, ToCompactString};
-pub use damage::{damage, grid_from_runs, grid_runs, CellRun, Scroll, Style};
+pub use panes::damage::{damage, grid_from_runs, grid_runs, CellRun, Scroll, Style};
 pub use capture::{Capture, CapturedDecision, CapturedTask, MAX_CAPTURE_ROWS};
 pub use decisions::{
     outline_number, Consequence, Decision, DecisionBoard, DecisionChange, DecisionState,

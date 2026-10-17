@@ -1,10 +1,10 @@
 //! A terminal key event as the key a pane's child is sent, and the leader
 //! chord that is never sent at all.
 //!
-//! The bytes themselves are `argus_protocol::keys`'s to decide, so this
-//! client and the desktop window type the same thing for the same key.
+//! The bytes themselves are `argus_protocol::panes::keys`'s to decide, so
+//! this client and the desktop window type the same thing for the same key.
 
-use argus_protocol::keys::{self, Key, Mods};
+use argus_protocol::panes::keys::{self, Key, Mods};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Leader key: Ctrl-Space by default. Some terminals report this as

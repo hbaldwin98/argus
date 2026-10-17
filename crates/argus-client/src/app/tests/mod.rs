@@ -355,7 +355,7 @@ pub(super) fn wants_mouse_mode(h: &mut Harness, pane: PaneId, mode: argus_protoc
         .app
         .grids
         .entry(pane)
-        .or_insert_with(|| argus_protocol::pane_view::PaneView::new(pane));
+        .or_insert_with(|| argus_protocol::panes::view::PaneView::new(pane));
     crate::fixtures::reshow(view, |shown| {
         shown.mouse = argus_protocol::MouseTracking {
             mode,
@@ -371,7 +371,7 @@ pub(super) fn on_alt_screen(h: &mut Harness, pane: PaneId) {
         .app
         .grids
         .entry(pane)
-        .or_insert_with(|| argus_protocol::pane_view::PaneView::new(pane));
+        .or_insert_with(|| argus_protocol::panes::view::PaneView::new(pane));
     crate::fixtures::reshow(view, |shown| shown.alternate_screen = true);
 }
 
