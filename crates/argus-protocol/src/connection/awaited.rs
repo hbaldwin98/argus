@@ -12,7 +12,7 @@
 //! made (`Then`); both clients hold this one module, so they settle alike.
 
 use crate::tree::held::HeldTree;
-use crate::message::Created;
+use crate::connection::message::Created;
 use crate::tree::ProjectInfo;
 
 /// The most requests held unanswered. A daemon older than the answer never

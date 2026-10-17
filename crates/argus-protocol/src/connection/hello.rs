@@ -13,7 +13,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::message::ServerMsg;
+use crate::connection::message::ServerMsg;
 
 /// The protocol generation this build speaks.
 ///
@@ -249,8 +249,8 @@ impl Greeting {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framing::{read_msg, write_msg};
-    use crate::message::ClientMsg;
+    use crate::connection::framing::{read_msg, write_msg};
+    use crate::connection::message::ClientMsg;
 
     /// A fake daemon on the other end of a greeting: sends its opening
     /// messages, reads the greeting, and then does what `then` says. The
@@ -278,7 +278,7 @@ mod tests {
         let (mut rd, mut wr) = tokio::io::split(client);
         let (tx, mut incoming) = mpsc::channel(16);
         tokio::spawn(async move {
-            while let Ok(msg) = crate::framing::read_known_msg::<_, ServerMsg>(&mut rd).await {
+            while let Ok(msg) = crate::connection::framing::read_known_msg::<_, ServerMsg>(&mut rd).await {
                 if tx.send(msg).await.is_err() {
                     break;
                 }

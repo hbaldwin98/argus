@@ -13,7 +13,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use argus_protocol::ssh_bridge::{ssh_args, ssh_failure};
+use argus_protocol::connection::ssh_bridge::{ssh_args, ssh_failure};
 use argus_protocol::{
     read_known_msg, write_msg, ClientMsg, Greeting, Hello, Refusal, ServerMsg, GREETING_WAIT,
     PROTOCOL,

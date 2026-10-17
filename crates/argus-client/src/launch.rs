@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use argus_protocol::{
-    read_known_msg, transport, write_msg, ClientMsg, FramingError, Greeting, Hello, Refusal,
+    read_known_msg, connection::transport, write_msg, ClientMsg, FramingError, Greeting, Hello, Refusal,
     ServerMsg, GREETING_WAIT,
 };
 use tokio::io::{AsyncRead, AsyncWrite};

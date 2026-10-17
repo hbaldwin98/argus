@@ -10,7 +10,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use argus_protocol::{transport, ClientMsg, Focus, ServerMsg, FOCUS, GREETING_WAIT};
+use argus_protocol::{connection::transport, ClientMsg, Focus, ServerMsg, FOCUS, GREETING_WAIT};
 
 use crate::launch::{greet, Connected, Greeted};
 

@@ -8,11 +8,11 @@ use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
 
 use crate::tree::ids::CheckoutId;
-use crate::message::{ClientMsg, ServerMsg};
+use crate::connection::message::{ClientMsg, ServerMsg};
 
 /// A request turned down, to the client that named it. Sent only to a
-/// client that listed [`crate::hello::REQUEST_REFUSALS`], and only for a
-/// request whose id is not zero.
+/// client that listed [`crate::connection::hello::REQUEST_REFUSALS`], and
+/// only for a request whose id is not zero.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestRefusal {
     /// The id the request named itself with. A daemon never sends zero:
@@ -351,11 +351,11 @@ mod tests {
         }
         let mut buf: Vec<u8> = Vec::new();
         for msg in [ServerMsg::Error { message: "a".into() }, ServerMsg::Refused(refusal), ServerMsg::Error { message: "b".into() }] {
-            crate::framing::write_msg(&mut buf, &msg).await.unwrap();
+            crate::connection::framing::write_msg(&mut buf, &msg).await.unwrap();
         }
         let mut r = buf.as_slice();
         for want in ["a", "b"] {
-            let OlderServerMsg::Error { message } = crate::framing::read_known_msg(&mut r).await.unwrap();
+            let OlderServerMsg::Error { message } = crate::connection::framing::read_known_msg(&mut r).await.unwrap();
             assert_eq!(message, want);
         }
     }

@@ -19,8 +19,9 @@
 //! console (`console`), the views agents showed (`agent_views`), the
 //! extensions' views (`extension_views`), what fills the stage and where
 //! leaving it goes (`stage`), and what the daemon is making
-//! (`argus_protocol::awaited`). The session says which of them a message
-//! or gesture is for, and what one of them changing means for the rest.
+//! (`argus_protocol::connection::awaited`). The session says which of them a
+//! message or gesture is for, and what one of them changing means for the
+//! rest.
 //!
 //! The client never predicts: the rail changes when the daemon's tree does,
 //! and a shell asked for is shown only once the daemon has said it made it
@@ -28,13 +29,13 @@
 
 use std::collections::HashSet;
 
-use argus_protocol::awaited::Awaited;
+use argus_protocol::connection::awaited::Awaited;
 use argus_protocol::tree::column::verbs::Verb;
 use argus_protocol::panes::keys::{Key, KeyCode, Mods};
 use argus_protocol::panes::mouse::{self, MouseButton, MouseEvent, MouseKind};
 use argus_protocol::panes::view::{Effect, PaneView};
 use argus_protocol::panes::paste;
-use argus_protocol::request_refusal::OlderDaemon;
+use argus_protocol::connection::request_refusal::OlderDaemon;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, RequestRefusal, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS,
@@ -548,7 +549,8 @@ impl Session {
     fn settle_made(&mut self) {
         let (tree, console) = (&self.tree, &self.console);
         let seen = |created: Created| {
-            argus_protocol::awaited::holds(tree, created) || matches!(created, Created::Pane(pane) if console.holds(pane))
+            argus_protocol::connection::awaited::holds(tree, created)
+                || matches!(created, Created::Pane(pane) if console.holds(pane))
         };
         for (created, then) in self.awaited.settle_by(seen) {
             let over_stages = then == Made::ShowOverStages;

@@ -56,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
     // Bind before loading or restoring panes. If a daemon from an older
     // version still owns the endpoint, this process must exit before it can
     // launch a duplicate copy of every recorded agent.
-    let mut listener = argus_protocol::transport::Listener::bind().await?;
+    let mut listener = argus_protocol::connection::transport::Listener::bind().await?;
 
     let cfg = config::load()?;
     // A store that will not open costs this run its memory, not its
@@ -119,7 +119,7 @@ const ACCEPT_BACKOFF_MAX: std::time::Duration = std::time::Duration::from_secs(2
 /// ones it has, so the error is logged and backed off instead, and the loop
 /// keeps going.
 async fn serve(
-    listener: &mut argus_protocol::transport::Listener,
+    listener: &mut argus_protocol::connection::transport::Listener,
     daemon: &std::sync::Arc<state::Daemon>,
     shutdown: tokio::sync::broadcast::Sender<conn::ShutdownReason>,
 ) {

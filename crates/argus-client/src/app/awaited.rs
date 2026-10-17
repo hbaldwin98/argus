@@ -1,7 +1,8 @@
 //! What the terminal client does with what the daemon made for it — a
 //! pane, a checkout, a project, a repository — once the tree holds it.
 //! Which requests are waited on, and when what one made is in the tree,
-//! is `argus_protocol::awaited`'s, which the desktop window holds too.
+//! is `argus_protocol::connection::awaited`'s, which the desktop window
+//! holds too.
 
 use argus_protocol::Created;
 
@@ -21,7 +22,7 @@ pub(super) enum Then {
     SelectRepository,
 }
 
-pub(super) type Awaited = argus_protocol::awaited::Awaited<Then>;
+pub(super) type Awaited = argus_protocol::connection::awaited::Awaited<Then>;
 
 impl App {
     /// Acts on everything made that the tree, or the list of consoles beside
@@ -29,7 +30,7 @@ impl App {
     pub(super) fn settle_awaited(&mut self) {
         let (tree, consoles) = (&self.tree, &self.consoles);
         let seen = |created| {
-            argus_protocol::awaited::holds(tree, created)
+            argus_protocol::connection::awaited::holds(tree, created)
                 || matches!(created, Created::Pane(id) if consoles.iter().any(|c| c.id == id))
         };
         for (created, then) in self.awaited.settle_by(seen) {

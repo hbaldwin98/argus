@@ -123,7 +123,7 @@ fn main() {
             });
             let configured = shared.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                let hosts = argus_protocol::ssh_hosts::hosts();
+                let hosts = argus_protocol::connection::ssh_hosts::hosts();
                 configured.act(|session| {
                     session.found_hosts(hosts);
                     Vec::new()

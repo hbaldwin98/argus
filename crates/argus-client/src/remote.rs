@@ -14,7 +14,7 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
 
-use argus_protocol::ssh_bridge::{ssh_args, ssh_failure};
+use argus_protocol::connection::ssh_bridge::{ssh_args, ssh_failure};
 use argus_protocol::GREETING_WAIT;
 
 use crate::launch::{greet, Connected, Greeted};

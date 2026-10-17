@@ -39,7 +39,7 @@ fails. After `Stopping` it does not reconnect until the person presses Reconnect
 starts again a daemon somebody stopped. The window can reach another machine's daemon instead: the
 saved `host` (or `ARGUS_DESKTOP_HOST` when none is saved) makes the same child `ssh -T -o BatchMode=yes
 -- <host> argus bridge`, with the arguments and the reading of ssh's failures shared with `argus --host`
-through the protocol's `ssh_bridge`. Switching host drops the old bridge, empties the tree and the rail
+through the protocol's `connection::ssh_bridge`. Switching host drops the old bridge, empties the tree and the rail
 back to connecting, and names the host in the sidebar's foot and in each notification; a host that
 cannot be reached leaves a Use this machine button on the connecting screen, since no rail is loaded
 to open the switcher from. An editor set to open in a window of its own is not asked for over ssh,
@@ -280,7 +280,7 @@ change to a feature, a review comment — is refused by that id: to a client tha
 read, so a refused read the client no longer wants is dropped like its answer and a refused
 change is always said. Any other client is refused in the shape it has always read, and a request
 that names none — a keystroke, a git write, anything nothing waits on — with a bare `Error`;
-which shape each request gets, both ways, is `request_refusal`'s alone. An unnamed request (id
+which shape each request gets, both ways, is `connection::request_refusal`'s alone. An unnamed request (id
 zero, what a client from before this sends) is never answered, so an older client never receives
 a message it cannot read, and an older daemon ignores the name — a newer client talking to it
 simply does not move to what it made. The desktop reads an older daemon's refusals as the new
@@ -316,8 +316,14 @@ live in this crate and a contract written twice drifts in silence.
 
 | module | answers |
 | --- | --- |
-| `message` | what a client asks for, and what the daemon sends back |
-| `hello` | what each side of a connection can take, said before anything else, and how a client's greeting went |
+| `connection` | how a client and the daemon talk |
+| `connection/message` | what a client asks for, and what the daemon sends back |
+| `connection/hello` | what each side of a connection can take, said before anything else, and how a client's greeting went |
+| `connection/framing`, `connection/transport` | a frame, and the endpoint it travels over |
+| `connection/request_refusal` | how a request the daemon turned down is told: by its id, why and whether it only read, to a client that listed `request-refusals`; the old shape each other client is sent; and an older daemon's shapes read back as the new one |
+| `connection/awaited` | requests a client waits on the daemon to make something for, matched by the id it answers with, and which of the things made the tree now holds |
+| `connection/ssh_hosts` | the hosts the user's ssh config names, for either client's host picker |
+| `connection/ssh_bridge` | the ssh command that runs `argus bridge` on another machine, and what ssh's failure means |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `tree/held` | a client's copy of the tree, and finding things in it: every pane and checkout, where a pane or checkout sits, telemetry applied between trees, and which panes changed state from the copy before |
 | `tree/ids` | the identities the daemon hands out, one type per kind of node so a pane id cannot stand where a checkout id belongs |
@@ -331,7 +337,6 @@ live in this crate and a contract written twice drifts in silence.
 | `extensions/console` | what an extension's console view runs and where — its command, working directory and environment as the extension asks, and the pane and ending the daemon reports |
 | `extensions/keys` | which keys an extension may bind, and the words a refused one is refused in: the keys Argus keeps where an extension's would be heard |
 | `extensions/guide` | how to build an extension from nothing, as `argus extension guide` prints it: a walkthrough, then the reference, its examples read through the types and its limits filled from the constants |
-| `framing`, `transport` | a frame, and the endpoint it travels over |
 | `panes` | a pane's terminal as a client holds and drives it |
 | `panes/cell` | a screen cell on the wire, and the per-cell span an older client is sent its damage in |
 | `panes/damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
@@ -340,16 +345,12 @@ live in this crate and a contract written twice drifts in silence.
 | `panes/paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
 | `panes/view` | a pane's view as a client holds it: the live grid, the view parked in its history, how the daemon's pane messages change them, and what a scroll gesture over the pane sends — the child's bytes, a request for history, or nothing |
 | `ago` | how long ago something happened, as every client says it |
-| `ssh_hosts` | the hosts the user's ssh config names, for either client's host picker |
-| `ssh_bridge` | the ssh command that runs `argus bridge` on another machine, and what ssh's failure means |
 | `review` | the shapes review data travel in: a checkout's uncommitted changes and a commit against its first parent, as rendered diffs |
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
 | `code` | a checkout's code as the Code stage reads it: which version, a file's lines and the ones that version changed, what the file defines, and where text occurs across the checkout |
 | `review_session` | one review's exchange with the daemon, as both clients hold it: which sides were asked for and answered, the side on screen and when an empty one gives way, and the picked lines a comment from it is anchored to |
 | `agent_comment` | a comment on picked lines to an agent, from a review, a commit's review or the Code stage in either client: whether one may be written, which agent hears it as agents come and go, the words each refusal is said in, and the message that sends it |
 | `history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
-| `awaited` | requests a client waits on the daemon to make something for, matched by the id it answers with, and which of the things made the tree now holds |
-| `request_refusal` | how a request the daemon turned down is told: by its id, why and whether it only read, to a client that listed `request-refusals`; the old shape each other client is sent; and an older daemon's shapes read back as the new one |
 | `paths` | where Argus keeps its files and which instance it is, shared so `ARGUS_CONFIG_DIR` points the daemon and every client at one place |
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `board` | a repository's feature board |

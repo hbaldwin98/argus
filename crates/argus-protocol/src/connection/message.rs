@@ -13,7 +13,7 @@ use crate::board::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
 use crate::extensions::{ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtView};
 use crate::board::features::FeatureAction;
 use crate::tree::focus::{Focus, View};
-use crate::hello::Hello;
+use crate::connection::hello::Hello;
 use crate::panes::keys::KeyboardMode;
 use crate::tree::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext};
@@ -412,8 +412,8 @@ pub enum ClientMsg {
     /// Persisted to config so it survives a daemon restart.
     ///
     /// `name`, `skip` and `init` are sent only to a daemon that listed
-    /// [`crate::hello::ADD_PROJECT`]: an older one reads past them and
-    /// would add something other than what was asked.
+    /// [`crate::connection::hello::ADD_PROJECT`]: an older one reads past
+    /// them and would add something other than what was asked.
     AddProject {
         path: String,
         /// Names the request, so the daemon can answer with what it made
@@ -822,7 +822,7 @@ pub enum ServerMsg {
     },
     /// A request that named itself, turned down: to its client alone, and
     /// only to one that listed `REQUEST_REFUSALS` (`request_refusal`).
-    Refused(crate::request_refusal::RequestRefusal),
+    Refused(crate::connection::request_refusal::RequestRefusal),
     /// What a request that named itself made: a pane, a checkout, a
     /// project or a repository. `None` only to a client that did not list
     /// `REQUEST_REFUSALS`, followed by the reason as an

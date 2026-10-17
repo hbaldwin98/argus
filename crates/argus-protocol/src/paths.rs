@@ -5,10 +5,10 @@ use std::path::PathBuf;
 
 /// The named instance this process belongs to, when there is one.
 ///
-/// A name scopes both the wire endpoint (see [`crate::transport`]) and a
-/// slice of the config directory, which is what lets a worktree build run
-/// beside an installed one: neither touches the other's pipe, projects, or
-/// session state.
+/// A name scopes both the wire endpoint (see
+/// [`crate::connection::transport`]) and a slice of the config directory,
+/// which is what lets a worktree build run beside an installed one: neither
+/// touches the other's pipe, projects, or session state.
 pub fn instance_name() -> Option<String> {
     parse_instance(std::env::var("ARGUS_INSTANCE").ok())
 }

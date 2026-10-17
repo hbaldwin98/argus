@@ -16,7 +16,7 @@ pub(super) struct DaemonLock {
 
 impl DaemonLock {
     pub(super) fn acquire() -> io::Result<Option<Self>> {
-        Self::acquire_at(&argus_protocol::transport::lock_path())
+        Self::acquire_at(&argus_protocol::connection::transport::lock_path())
     }
 
     fn acquire_at(path: &Path) -> io::Result<Option<Self>> {

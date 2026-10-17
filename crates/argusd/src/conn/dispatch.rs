@@ -18,7 +18,7 @@
 use super::*;
 use crate::state::FeaturePart;
 use crate::review_queue::ReviewAsk;
-use argus_protocol::request_refusal::Asked;
+use argus_protocol::connection::request_refusal::Asked;
 use argus_protocol::{Created, ReviewBase, REQUEST_REFUSALS};
 
 /// What one review generation comes to: the diff, or why it could not be read.

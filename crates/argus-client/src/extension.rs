@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use argus_protocol::{
-    transport, ClientMsg, CommandScope, ExtDescription, ExtPlace, ExtScope, ServerMsg, DESCRIBE_EXTENSIONS,
+    connection::transport, ClientMsg, CommandScope, ExtDescription, ExtPlace, ExtScope, ServerMsg, DESCRIBE_EXTENSIONS,
     GREETING_WAIT,
 };
 

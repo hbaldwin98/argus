@@ -1,6 +1,7 @@
 //! Client<->daemon transport: a Unix domain socket on Unix, a named pipe on
-//! Windows. Both sides talk length-prefixed msgpack (see [`crate::framing`])
-//! over whatever stream type this module hands back.
+//! Windows. Both sides talk length-prefixed msgpack (see
+//! [`crate::connection::framing`]) over whatever stream type this module
+//! hands back.
 
 use std::path::PathBuf;
 

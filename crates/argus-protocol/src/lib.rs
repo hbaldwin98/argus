@@ -10,26 +10,19 @@
 pub mod agent_comment;
 pub mod agents;
 pub mod ago;
-pub mod awaited;
 pub mod board;
 pub mod checkout_path;
 pub mod code;
+pub mod connection;
 pub mod extensions;
-pub mod framing;
 pub mod fuzzy;
-pub mod hello;
 pub mod history_view;
 pub mod hook;
-pub mod message;
 pub mod panes;
 pub mod paths;
-pub mod request_refusal;
 pub mod review;
 pub mod review_session;
 pub mod review_view;
-pub mod ssh_bridge;
-pub mod ssh_hosts;
-pub mod transport;
 pub mod tree;
 pub mod views;
 
@@ -85,14 +78,14 @@ pub use extensions::{
     Refusals, Refused,
 };
 pub use tree::focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, View};
-pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
+pub use connection::framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use tree::held::{transitions, HeldTree, Lineage, Transition};
-pub use hello::{
+pub use connection::hello::{
     ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
     RENAME_PANE, SAVED_VIEWS, CODE, REQUEST_REFUSALS,
 };
-pub use request_refusal::RequestRefusal;
+pub use connection::request_refusal::RequestRefusal;
 pub use code::{
     CodeChange, CodeFile, CodeLine, CodeMatch, CodeMatches, CodeSymbol, CodeTree, CodeVersion, Removed, SearchOptions,
     MAX_CODE_MATCHES,
@@ -112,7 +105,7 @@ pub use agents::memory::{
     DEFAULT_PACKET_MAX_ITEMS, MAX_ARTIFACT_TEXT_BYTES, MAX_WORK_CONTEXT_BRIEF_BYTES,
     MAX_WORK_CONTEXT_TITLE_BYTES,
 };
-pub use message::{ClientMsg, Created, DirEntry, DirListing, ProjectPreview, ServerMsg};
+pub use connection::message::{ClientMsg, Created, DirEntry, DirListing, ProjectPreview, ServerMsg};
 pub use paths::{config_dir, instance_name};
 pub use review::{
     ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,
