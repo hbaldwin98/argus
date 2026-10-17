@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use super::*;
 
-const RELEASES: &[&str] = &["v0.10.0", "v0.16.0", "v0.22.11", "v0.28.2"];
+const RELEASES: &[&str] = &["v0.10.0", "v0.16.0", "v0.22.11", "v0.28.2", "v0.33.0"];
 
 /// A copy of the release's store, since opening one migrates it in place.
 fn copied(release: &str) -> (tempfile::TempDir, PathBuf) {
@@ -574,4 +574,19 @@ fn v0_16_0_a_worktree_still_points_at_the_feature_it_was_working_on() {
     };
     assert_eq!(s.artifact_feature_scope(&repo, &board).unwrap(), Some(working_on("main")));
     assert_eq!(s.artifact_feature_scope(&worktree, &board).unwrap(), Some(working_on("wt")));
+}
+
+#[test]
+fn v0_33_0_keeps_its_saved_views_and_the_features_they_are_attached_to() {
+    let (_dir, s) = opened("v0.33.0");
+    let views = s.saved_views().unwrap();
+    let [view] = views.as_slice() else { panic!("{views:#?}") };
+    assert_eq!((view.id.as_str(), view.view.title.as_str()), ("fixture-view", "Fixture view"));
+    assert_eq!((view.board.as_deref(), view.feature), (Some(FIXTURE_REPOSITORY), Some(1)));
+    assert_eq!(view.attached, [(FIXTURE_REPOSITORY.to_string(), 1), (FIXTURE_REPOSITORY.to_string(), 2)]);
+    assert_eq!(view.sources, [argus_protocol::ViewSource::File { path: "Cargo.lock".into() }]);
+    assert_eq!(view.built_commit.as_deref(), Some("0123456789abcdef0123456789abcdef01234567"));
+    assert!(view.stale);
+    assert_eq!(view.saved_by, Some(PaneId(7)), "cleared by a starting daemon, not by the store");
+    assert_eq!(s.features(FIXTURE_REPOSITORY).unwrap().len(), 6, "and the board it was saved beside");
 }
