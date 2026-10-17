@@ -10,10 +10,11 @@
 //! Each subject keeps its own state and what the page last heard of it —
 //! the status bar (`chrome::status`), the panes on screen (`panes::shown`),
 //! the agents offered (`agents::templates`), the review and history
-//! (`review`), the link and reconcile dialogs (`tracker_dialogs`), the
-//! three stages (`feature_stage`, `checkouts::stage`, `code::stage`) and
-//! the note a new feature is written as (`capture_note`), a repository's
-//! past agent sessions (`agents::sessions`) and the dialog listing them
+//! (`review`), the link and reconcile dialogs (`board::tracker::dialogs`),
+//! the three stages (`board::feature_stage`, `checkouts::stage`,
+//! `code::stage`) and the note a new feature is written as
+//! (`board::capture_note`), a repository's past agent sessions
+//! (`agents::sessions`) and the dialog listing them
 //! (`agents::sessions_dialog`), the project switcher (`chrome::switcher`)
 //! and the dialog adding a project (`chrome::add_project`), the Settings
 //! dialog's choices (`settings::preferences`), the console
@@ -49,17 +50,17 @@ use crate::extensions::dialog::ExtensionDialogs;
 use crate::extensions::keys::ExtensionKeys;
 use crate::extensions::views::{first_place, ExtensionGesture, ExtensionViews, Here, Placed};
 use crate::agents::templates::Agents;
-use crate::capture_note::{CaptureGesture, Capturing};
+use crate::board::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts::stage::{CheckoutsStage, Opened};
 use crate::panes::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
 use crate::layout::docks::{Dock, DockGesture, Docks, Panel, Place};
 use crate::review::Dialogs;
-use crate::feature_stage::{FeatureStage, Scope};
-use crate::features::Layout;
+use crate::board::feature_stage::{FeatureStage, Scope};
+use crate::board::features::Layout;
 use crate::keys::keymap::{self, Action};
 use crate::system::notifications::{self, Alert, Looking};
 use crate::keys::page_key::{self, PageKey};
-use crate::link_dialog::LinkGesture;
+use crate::board::tracker::link_dialog::LinkGesture;
 use crate::code::stage::{Back, Code, CodeGesture, Then as CodeThen};
 use crate::panes::shown::workspace_grid::{self, Dir, Zone};
 use crate::layout::stage::{Page, Stages};
@@ -69,7 +70,7 @@ use crate::connection::page::{
 };
 use crate::keys::palette;
 use crate::settings::preferences::Chosen;
-use crate::reconcile_dialog::ReconcileGesture;
+use crate::board::tracker::reconcile_dialog::ReconcileGesture;
 use crate::chrome::rail::{self, Choices};
 use crate::views::saved::{Closed, SavedColumn, SavedViews, Whereabouts};
 use crate::layout::dragged_width::{self, DraggedWidth};
@@ -82,7 +83,8 @@ use crate::chrome::status::StatusBar;
 use crate::chrome::switcher::Switcher;
 use crate::views;
 use crate::views::refs::{Found, PendingFeature, Target};
-use crate::tracker_dialogs::{self, TrackerDialogs};
+use crate::board::tracker;
+use crate::board::tracker::dialogs::TrackerDialogs;
 
 /// What to do with a thing the daemon made for this window, once the tree
 /// holds it.
@@ -877,15 +879,15 @@ impl Session {
         self.finish()
     }
 
-    fn tracker_then(&mut self, then: tracker_dialogs::Then) {
+    fn tracker_then(&mut self, then: tracker::dialogs::Then) {
         match then {
-            tracker_dialogs::Then::Nothing => {}
-            tracker_dialogs::Then::Open(url) => self.opening = Some(url),
-            tracker_dialogs::Then::GoTo(pane) => {
+            tracker::dialogs::Then::Nothing => {}
+            tracker::dialogs::Then::Open(url) => self.opening = Some(url),
+            tracker::dialogs::Then::GoTo(pane) => {
                 let sent = self.go_to_pane(pane);
                 self.out.extend(sent);
             }
-            tracker_dialogs::Then::Say(text) => self.passing.push(Event::Notice { text }),
+            tracker::dialogs::Then::Say(text) => self.passing.push(Event::Notice { text }),
         }
     }
 
@@ -3164,7 +3166,7 @@ mod tests {
     use crate::layout::docks::FloatBounds;
     use crate::extensions::views::ExtensionsPage;
     use crate::fixtures::{checkout, pane, project, repository};
-    use crate::link_dialog::LinkPage;
+    use crate::board::tracker::link_dialog::LinkPage;
     use argus_protocol::{PaneKind, PaneStatus};
 
     fn tree() -> Vec<ProjectInfo> {
@@ -4301,7 +4303,7 @@ mod tests {
         assert_eq!((rail.stage, rail.repository), (Stage::Feature, Some(10)));
     }
 
-    fn capture_page(s: &mut Session) -> Option<crate::capture_note::CapturePage> {
+    fn capture_page(s: &mut Session) -> Option<crate::board::capture_note::CapturePage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::Capture(page) => Some(*page),
             _ => None,

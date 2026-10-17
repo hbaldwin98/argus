@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::chrome::add_project::{AddProjectGesture, AddProjectPage};
-use crate::capture_note::{CaptureGesture, CapturePage};
+use crate::board::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::table::Checkouts;
 use crate::code::stage::{CodeGesture, CodePage};
 use crate::review::comment_box::CommentPage;
@@ -23,11 +23,11 @@ use crate::panes::console::{ConsoleGesture, ConsolePage};
 use crate::layout::docks::{DockGesture, DocksPage, Panel};
 use crate::extensions::dialog::ExtDialogPage;
 use crate::extensions::views::{ExtensionGesture, ExtensionsPage};
-use crate::features::Layout;
+use crate::board::features::Layout;
 use crate::keys::keymap::{Action, Command, Group, KeyLayer};
 use crate::keys::page_key::PageKey;
-use crate::link_dialog::{LinkGesture, LinkPage};
-use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
+use crate::board::tracker::link_dialog::{LinkGesture, LinkPage};
+use crate::board::tracker::reconcile_dialog::{ReconcileGesture, ReconcilePage};
 use crate::agents::sessions_dialog::{SessionPreview, SessionsPage};
 use crate::views::saved::{SavedColumn, SavedViewsPage};
 use crate::panes::shown::workspace_grid::{Dir, GridPage, Zone};

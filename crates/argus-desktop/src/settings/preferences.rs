@@ -153,7 +153,7 @@ fn family_name(typed: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::Layout;
+    use crate::board::features::Layout;
     use crate::settings::remembered::Theme;
 
     #[test]

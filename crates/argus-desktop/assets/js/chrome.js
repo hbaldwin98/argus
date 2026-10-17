@@ -8,7 +8,7 @@ import { drawConsole } from './panes/console.js';
 import { $, el, ghosts, icon } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extensions/views.js';
 import { drawSavedNav } from './views/saved.js';
-import { drawFeatures } from './features.js';
+import { drawFeatures } from './board/feature_stage.js';
 import { chordsFor, keycaps, presses } from './keys/chords.js';
 import { contextMenu } from './kit/menu.js';
 import { closesOnMiddle } from './kit/middle.js';
@@ -19,7 +19,7 @@ import { dragFromRail, drawSplit } from './panes/split.js';
 import { openSettings } from './settings/preferences.js';
 import { dragEdge } from './layout/edge.js';
 import { state } from './state.js';
-import { featureEdges } from './work.js';
+import { featureEdges } from './board/lenses/work.js';
 import { call } from './connection/tauri.js';
 const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 export function drawChrome() {

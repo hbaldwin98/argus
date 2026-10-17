@@ -12,33 +12,22 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod agents;
-mod capture_note;
+mod board;
 mod checkouts;
 mod chrome;
 mod code;
 mod connection;
 mod extensions;
-mod feature_edits;
-mod feature_stage;
-mod feature_view;
-mod features;
-mod flows_lens;
 #[cfg(test)]
 mod fixtures;
 mod keys;
 mod layout;
-mod link_dialog;
 mod panes;
-mod reconcile_dialog;
-mod record_lens;
 mod review;
-mod sequence;
 mod session;
 mod settings;
 mod system;
-mod tracker_dialogs;
 mod views;
-mod work_lens;
 
 use std::sync::Arc;
 use std::time::Duration;

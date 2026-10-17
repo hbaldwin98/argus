@@ -7,12 +7,12 @@ import type { Chord } from '../bindings/Chord';
 import type { ExtTable } from '../bindings/ExtTable';
 import type { KeyLayer } from '../bindings/KeyLayer';
 import type { Place } from '../bindings/Place';
-import { captureOpen, discardCapture } from '../capture.js';
+import { captureOpen, discardCapture } from '../board/capture.js';
 import { answerNo, checkoutsAction } from '../checkouts/stage.js';
 import { codeAction } from '../code/stage.js';
 import { focusHistoryFilter, historyOpen } from '../review/history.js';
-import { linkAction, linkOpen } from '../link.js';
-import { reconcileAction, reconcileOpen } from '../reconcile.js';
+import { linkAction, linkOpen } from '../board/tracker/link.js';
+import { reconcileAction, reconcileOpen } from '../board/tracker/reconcile.js';
 import { reviewOpen } from '../review/dialog.js';
 import { focusSessionsSearch, readerOpen, sessionsOpen } from '../agents/sessions_dialog.js';
 import { focusTranscriptFind } from '../agents/transcript.js';
@@ -26,8 +26,8 @@ import {
   pagedExtension,
   runExtensionCommand,
 } from '../extensions/views.js';
-import { expandedOpen } from '../sequence.js';
-import { featureAction } from '../features.js';
+import { expandedOpen } from '../board/lenses/sequence.js';
+import { featureAction } from '../board/feature_stage.js';
 import { escapeFrom, type Handlers, takesFromPane, up } from './focus.js';
 import { closeLayer } from '../kit/menu.js';
 import { closePalette, openPalette } from './palette.js';
@@ -36,7 +36,7 @@ import { closeSettings, openSettings, settingsOpen } from '../settings/preferenc
 import { closeSheet, openSheet, sheetOpen, toggleSheet } from './shortcuts.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
-import { leaveWork, workAction, workOpen } from '../work.js';
+import { leaveWork, workAction, workOpen } from '../board/lenses/work.js';
 
 /** `Chord::matches` again: the page decides before Rust hears the key. */
 function matches(chord: Chord, e: KeyboardEvent): boolean {

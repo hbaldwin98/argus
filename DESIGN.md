@@ -187,11 +187,11 @@ docks keeps its console docked at the bottom as tall as it was, its views panel'
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `system/frame`, `agents/compose`, `panes/console`, `layout/docks`, `layout/floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `layout/drag`, `layout/panels` (what Rust says each panel that exists is and can do), `panes/screen`, `panes/input`, `keys/keymap`, `keys/focus` (which layer has a key),
-`keys/palette`, `keys/shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `panes/rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts/stage`, `review/dialog`, `review/comment_box` (the comment box under picked lines, the review's and the Code stage's), `review/history`, `agents/sessions_dialog`, `agents/transcript`, `chrome/projects`, `system/chime`, `views/agent` (the agents' views panel: `views/blocks` draws a view's blocks and hands each to the module of its kind under `views/blocks/`, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `views/values` draws one value, with `views/refs` for those that point into Argus, `views/chip` and `views/link`; `views/actions` draws the buttons an agent put in a view; a table's parts are `views/blocks/table/bar`, `views/blocks/table/details`, `views/blocks/table/sort` and `views/blocks/table/memory`; and `views/blocks/table/cell_text`, `system/copy` and `views/ctx` serve them all), `extensions/views`, `extensions/dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys/chords`, `kit/dom`, `state`, `layout/edge` (a side column's edge, dragged),
-`kit/clock` and `connection/tauri` beneath them, and `tickets` for a feature's ticket links),
+`keys/palette`, `keys/shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `panes/rename`, `board/feature_stage`, `board/lenses/work`, `board/lenses/record`, `board/lenses/flows`, `board/lenses/sequence`, `board/capture`, `checkouts/stage`, `review/dialog`, `review/comment_box` (the comment box under picked lines, the review's and the Code stage's), `review/history`, `agents/sessions_dialog`, `agents/transcript`, `chrome/projects`, `system/chime`, `views/agent` (the agents' views panel: `views/blocks` draws a view's blocks and hands each to the module of its kind under `views/blocks/`, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `views/values` draws one value, with `views/refs` for those that point into Argus, `views/chip` and `views/link`; `views/actions` draws the buttons an agent put in a view; a table's parts are `views/blocks/table/bar`, `views/blocks/table/details`, `views/blocks/table/sort` and `views/blocks/table/memory`; and `views/blocks/table/cell_text`, `system/copy` and `views/ctx` serve them all), `extensions/views`, `extensions/dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys/chords`, `kit/dom`, `state`, `layout/edge` (a side column's edge, dragged),
+`kit/clock` and `connection/tauri` beneath them, and `board/tracker/tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `connection/page.rs`'s types and the page and gesture types each surface's module keeps beside it
-(`panes/console`, `layout/docks`, `capture_note`, `checkouts/table`, `code/stage`, `extensions/views`, `extensions/keys`, `review/comment_box`, …), written as TypeScript by `cargo test` into
+(`panes/console`, `layout/docks`, `board/capture_note`, `checkouts/table`, `code/stage`, `extensions/views`, `extensions/keys`, `review/comment_box`, …), written as TypeScript by `cargo test` into
 `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
 instance's config directory, so a dev window never shares it with the installed one, and it logs to
@@ -543,19 +543,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | --- | --- |
 | `main` | startup: the runtime, the window, and running until it closes |
 | `session` | what this window holds of the daemon and routes between its parts — the tree, the project and repository chosen on the rail — and which part each message, refusal and page call is for |
-| `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout, the filter and the fold — and what its messages and gestures change, and where each cursor steps, never onto a row the page does not draw |
-| `features` | what the Feature stage's index shows from a board: which features it lists and in what order — the filter, the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
-| `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through, and the rows each lens's cursor steps over |
-| `work_lens` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key and a mark on each row changed since the last reconcile, and the task or decision under the cursor in full |
-| `link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — what its gestures ask of the daemon, and the page and gestures it trades with the page |
-| `reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — what its gestures ask of the daemon, and the page and gestures it trades with the page |
-| `tracker_dialogs` | the link and reconcile dialogs as the window holds them: which of the two is open and on which feature, closing it when the board loses that feature, a refusal of the link the link dialog sent, and what the page last heard of each |
-| `record_lens` | the Record lens: every decision in the order it was made, and a decision read as its record — what replaced it, what was turned down, and the ADR it copies as |
-| `flows_lens` | the Flows lens: a feature's flows, the one under the cursor as steps, and the step under the cursor with what binds it and what carries it out |
-| `sequence` | a flow's source as the sequence diagram the page draws: its lifelines in order, each step as an arrow between two of them, and the frames a branch draws |
-| `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it — a drag on a flow as its source rewritten — checked against the protocol's bounds; a new row saved blank sends nothing |
-
-| `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, whether the board holds the feature it was sent as yet, and the page and gestures it trades with the page, last sent while open |
 | `connection` | how the window trades with the daemon and the page |
 | `connection/commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `connection::page::Call` — and which part of the window answers each call |
 | `connection/daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
@@ -617,6 +604,21 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `review/dialog` | what the review dialog holds beyond its `review::session` — the side and layout chosen, its comment box, its go-to-file field — and the page it draws |
 | `review/file_jump` | the go-to-file field the review and the Code stage share: what is typed, which match is lit, and the file Enter opens |
 | `review/history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff or why it could not be read — and what its gestures ask of the daemon |
+| `board` | the Feature stage and a feature opened from it |
+| `board/capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, whether the board holds the feature it was sent as yet, and the page and gestures it trades with the page, last sent while open |
+| `board/feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it — a drag on a flow as its source rewritten — checked against the protocol's bounds; a new row saved blank sends nothing |
+| `board/feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout, the filter and the fold — and what its messages and gestures change, and where each cursor steps, never onto a row the page does not draw |
+| `board/feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through, and the rows each lens's cursor steps over |
+| `board/features` | what the Feature stage's index shows from a board: which features it lists and in what order — the filter, the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
+| `board/lenses` | the lenses an opened feature is read through |
+| `board/lenses/flows` | the Flows lens: a feature's flows, the one under the cursor as steps, and the step under the cursor with what binds it and what carries it out |
+| `board/lenses/record` | the Record lens: every decision in the order it was made, and a decision read as its record — what replaced it, what was turned down, and the ADR it copies as |
+| `board/lenses/sequence` | a flow's source as the sequence diagram the page draws: its lifelines in order, each step as an arrow between two of them, and the frames a branch draws |
+| `board/lenses/work` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key and a mark on each row changed since the last reconcile, and the task or decision under the cursor in full |
+| `board/tracker` | the dialogs that tie a feature to its tracker's tickets |
+| `board/tracker/dialogs` | the link and reconcile dialogs as the window holds them: which of the two is open and on which feature, closing it when the board loses that feature, a refusal of the link the link dialog sent, and what the page last heard of each |
+| `board/tracker/link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — what its gestures ask of the daemon, and the page and gestures it trades with the page |
+| `board/tracker/reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — what its gestures ask of the daemon, and the page and gestures it trades with the page |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 
 ## Views
@@ -2133,9 +2135,9 @@ The client still predicts nothing. Marking a task done sends the move and draws 
 pushed list says so; the one optimistic write the old view made is gone with it.
 
 The desktop window's Feature stage is the same object read the same way, built in Rust off the
-same `outline`, `standing` and `flow` (`feature_view` and a module per lens). Its index is a list
-grouped Active, Queued, Done — held and archived folded behind a toggle (`z`) that on the board
-folds the Archived column — beside a peek, or a board (`V`, remembered per repository in
+same `outline`, `standing` and `flow` (`board/feature_view` and a module per lens). Its index is a
+list grouped Active, Queued, Done — held and archived folded behind a toggle (`z`) that on the
+board folds the Archived column — beside a peek, or a board (`V`, remembered per repository in
 `desktop.json`) whose columns run Queued, Active, Done, then Archived and Held. A filter by title or
 `#number` narrows either; it is not saved, and going to a feature it hides clears it. Which
 features are listed, in what order, and where `j`/`k` go are Rust's; the page draws the rows it is
