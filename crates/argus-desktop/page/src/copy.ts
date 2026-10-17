@@ -2,7 +2,7 @@
 // the webview's clipboard, as a paste is read in Rust too.
 
 import { el } from './kit/dom.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 /** A button that copies `text()`, read at the press, and says so for a moment. */
 export function copyButton(label: string, text: () => string): HTMLElement {

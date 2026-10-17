@@ -13,7 +13,7 @@ import type { Dock } from './bindings/Dock';
 import type { Panel } from './bindings/Panel';
 import { $, el } from './kit/dom.js';
 import { panelOf } from './panels.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 /** How far the pointer goes before a press is a drag. */
 const THRESHOLD = 5;

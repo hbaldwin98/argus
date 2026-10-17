@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use ttf_parser::name_id::{FAMILY, TYPOGRAPHIC_FAMILY};
 use ttf_parser::Language;
 
-use crate::page::FontFamily;
+use crate::connection::page::FontFamily;
 
 /// Read from every font file on the machine, so slow enough to be done
 /// once, off the window's thread.

@@ -22,7 +22,7 @@ import { closeLayer, placeMenu } from './kit/menu.js';
 import { ticketLinks } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { drawWork } from './work.js';
 
 type Group = FeatureRow['group'];

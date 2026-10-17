@@ -6,7 +6,7 @@
 import { $, el } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 /** The grammar, as the foot of the note says it. */
 const LEGEND = [
     ['first line', '', 'the title'],

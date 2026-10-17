@@ -17,7 +17,7 @@ use argus_protocol::agents::sessions::{is_plain_session_id, Resume, Session};
 use argus_protocol::agents::transcript::{rfc3339, Conversation};
 use argus_protocol::{ClientMsg, PaneId, RepositoryId, ServerMsg, SESSIONS};
 
-use crate::page::Resumed;
+use crate::connection::page::Resumed;
 use crate::status::StatusBar;
 
 #[derive(Debug, Default)]

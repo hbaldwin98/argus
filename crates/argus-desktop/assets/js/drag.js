@@ -10,7 +10,7 @@
 // press that never travels stays the click it was.
 import { $, el } from './kit/dom.js';
 import { panelOf } from './panels.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 /** How far the pointer goes before a press is a drag. */
 const THRESHOLD = 5;
 /** Where a drop at (`x`, `y`) lands: an edge of the work area is its

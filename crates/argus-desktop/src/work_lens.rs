@@ -10,7 +10,7 @@
 use argus_protocol::board::outline::{Outline, WorkRef};
 use argus_protocol::{Changes, TaskTreeRow};
 
-use crate::page::{Criterion, DecisionDetail, Line, TaskDetail, WorkAt, WorkRow};
+use crate::connection::page::{Criterion, DecisionDetail, Line, TaskDetail, WorkAt, WorkRow};
 use crate::record_lens::{decision_detail, decision_state};
 
 pub struct Work {

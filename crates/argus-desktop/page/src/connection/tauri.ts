@@ -1,11 +1,11 @@
 // What the page asks of the window's Rust, and the channel its events come
-// down. Every call is one `Call` of `src/page.rs`, which `src/commands.rs`
-// dispatches, and the events are that file's too: both are typed by the
-// bindings `cargo test` writes.
+// down. Every call is one `Call` of `src/connection/page.rs`, which
+// `src/connection/commands.rs` dispatches, and the events are that file's
+// too: both are typed by the bindings `cargo test` writes.
 
 import type { Channel as TauriChannel, invoke as tauriInvoke } from '@tauri-apps/api/core';
-import type { Call } from './bindings/Call';
-import type { Event } from './bindings/Event';
+import type { Call } from '../bindings/Call';
+import type { Event } from '../bindings/Event';
 
 declare global {
   interface Window {

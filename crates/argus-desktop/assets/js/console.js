@@ -14,7 +14,7 @@ import { renameDialog } from './rename.js';
 import { beside, besideScreen, consoleScreen, keyedViewScreen, screen, screens, } from './screen.js';
 import { keyedSplit } from './split_math.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 function gesture(g) {
     call('console', { gesture: g });
 }

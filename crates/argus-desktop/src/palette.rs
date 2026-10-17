@@ -9,7 +9,7 @@
 use argus_protocol::{DecisionBoard, PaneKind, ProjectInfo};
 use argus_protocol::board::standing;
 
-use crate::page::{Palette, PaletteCheckout, PaletteFeature, PalettePane};
+use crate::connection::page::{Palette, PaletteCheckout, PaletteFeature, PalettePane};
 use crate::{features, rail};
 
 /// `board` is the chosen repository's, once it has arrived.

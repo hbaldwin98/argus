@@ -5,7 +5,7 @@
 import { el } from './kit/dom.js';
 import { forFeature } from './saved_logic.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { viewOf } from './views.js';
 export function ticketLink(link) {
     const view = viewOf(link);

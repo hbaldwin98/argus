@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_views;
 use crate::docks::Panel;
-use crate::page::PageDiagram;
-use crate::sent::Sent;
+use crate::connection::page::PageDiagram;
+use crate::connection::sent::Sent;
 
 /// The column of a saved panel a link was followed in.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

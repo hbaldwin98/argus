@@ -3,8 +3,8 @@
 //!
 //! Startup only: a runtime of our own, handed to Tauri before anything
 //! else, the window, and running until it closes. The model is `session`,
-//! the daemon is reached in `daemon`, and the page in `assets/` draws what
-//! it is sent.
+//! the daemon is reached in `connection::daemon`, and the page in
+//! `assets/` draws what it is sent.
 //!
 //! On Windows the release binary is a GUI program, so starting it opens no
 //! console window beside it; tests keep the console subsystem so their
@@ -22,9 +22,8 @@ mod checkouts_stage;
 mod code_stage;
 mod code_tree;
 mod comment_box;
-mod commands;
+mod connection;
 mod console;
-mod daemon;
 mod dialogs;
 mod docks;
 mod dragged_width;
@@ -47,7 +46,6 @@ mod link_dialog;
 mod logging;
 mod notifications;
 mod opener;
-mod page;
 mod stage;
 mod palette;
 mod preferences;
@@ -57,7 +55,6 @@ mod rail;
 mod review;
 mod saved_views;
 mod screen;
-mod sent;
 mod sequence;
 mod session;
 mod sessions;
@@ -66,7 +63,6 @@ mod settings;
 mod shown;
 mod status;
 mod switcher;
-mod shared;
 mod tracker_dialogs;
 mod transcript_reader;
 mod view_changes;
@@ -80,7 +76,7 @@ use std::time::Duration;
 use tauri::webview::PageLoadEvent;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
-use shared::Shared;
+use crate::connection::{commands, daemon, shared::Shared};
 
 /// How often the shown pane's changed rows are sent: about a frame.
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);

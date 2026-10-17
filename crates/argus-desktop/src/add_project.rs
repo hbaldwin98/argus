@@ -12,8 +12,8 @@
 use argus_protocol::{ClientMsg, DirListing, ProjectPreview, RequestRefusal};
 use serde::{Deserialize, Serialize};
 
-use crate::page::Event;
-use crate::sent::Sent;
+use crate::connection::page::Event;
+use crate::connection::sent::Sent;
 
 /// What was done in the add-a-project dialog.
 #[derive(Debug, Clone, Deserialize)]

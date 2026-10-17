@@ -25,7 +25,7 @@ import {
 } from './screen.js';
 import { keyedSplit } from './split_math.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 function gesture(g: ConsoleGesture): void {
   call('console', { gesture: g });

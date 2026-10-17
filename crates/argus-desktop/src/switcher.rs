@@ -8,7 +8,7 @@
 
 use argus_protocol::{ClientMsg, ProjectId, ProjectInfo, WorkspaceId, WorkspaceInfo};
 
-use crate::page::{HostChoice, Removing, WorkspaceChoice};
+use crate::connection::page::{HostChoice, Removing, WorkspaceChoice};
 
 #[derive(Default)]
 pub struct Switcher {

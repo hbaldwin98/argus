@@ -12,7 +12,7 @@ import type { SessionsPage } from './bindings/SessionsPage';
 import { $, el, ghosts, icon, type Child } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { drawReader, placeReader, said } from './transcript.js';
 
 function keycap(key: string): HTMLElement {

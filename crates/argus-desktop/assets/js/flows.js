@@ -7,7 +7,7 @@ import { closeLayer, placeMenu } from './kit/menu.js';
 import { clickable, drawSequence, editSource, editStep, openExpanded, sourceForm, } from './sequence.js';
 import { el, icon } from './kit/dom.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { begin, edit, field, formButtons, keycap, lineList, titled } from './work.js';
 export function flowsLens(view) {
     const flows = view.flows;

@@ -8,7 +8,7 @@
 import type { PageSaved } from './bindings/PageSaved';
 import { el } from './kit/dom.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import type { ViewCtx } from './viewctx.js';
 
 /** The saved view this window holds under `id`. */

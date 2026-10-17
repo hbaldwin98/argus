@@ -18,8 +18,8 @@ use argus_protocol::{CheckoutId, HeldTree, PaneId, ProjectInfo, RepositoryId};
 use serde::Serialize;
 
 use crate::keymap::Action;
-use crate::page::{Event, ReaderPage, Resumed, TranscriptLine};
-use crate::sent::Sent;
+use crate::connection::page::{Event, ReaderPage, Resumed, TranscriptLine};
+use crate::connection::sent::Sent;
 use crate::sessions::{self, Sessions};
 use crate::transcript_reader::{self, TranscriptReader};
 

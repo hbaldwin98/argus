@@ -17,8 +17,8 @@
 use argus_protocol::{PaneId, PaneInfo};
 use serde::{Deserialize, Serialize};
 
-use crate::page::{Event, Stage};
-use crate::sent::Sent;
+use crate::connection::page::{Event, Stage};
+use crate::connection::sent::Sent;
 
 /// What was done to the console.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

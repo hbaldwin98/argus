@@ -49,7 +49,8 @@ windows-version = "0.1"
 arboard = { version = "3", default-features = false, features = ["image-data", "wayland-data-control"] }
 
 [dev-dependencies]
-# Writes page.rs's types as TypeScript for the page, in test builds only.
+# Writes connection/page.rs's types as TypeScript for the page, in test
+# builds only.
 ts-rs = "12.0.1"
 argus-protocol = { workspace = true, features = ["ts"] }
 

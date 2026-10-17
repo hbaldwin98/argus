@@ -10,8 +10,8 @@ use argus_protocol::{CheckoutId, ClientMsg, DecisionBoard, PaneId, RepositoryInf
 use serde::Serialize;
 
 use crate::checkouts::{self, last_commit, Checkouts, LastCommit, View};
-use crate::page::Event;
-use crate::sent::Sent;
+use crate::connection::page::Event;
+use crate::connection::sent::Sent;
 
 /// What the stage asks before doing something that cannot be taken back.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

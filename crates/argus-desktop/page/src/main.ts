@@ -33,7 +33,7 @@ import { drawPalette, openPalette } from './palette.js';
 import { drawAddProject, drawHeading } from './projects.js';
 import { drawFrame, screen } from './screen.js';
 import { state } from './state.js';
-import { call, connect } from './tauri.js';
+import { call, connect } from './connection/tauri.js';
 import { drawViews, openNewestView } from './views.js';
 import { drawExtensionDialog } from './dialogs.js';
 import { drawExtensionConfirm, drawExtensionPanels } from './extension_views.js';

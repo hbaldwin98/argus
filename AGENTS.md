@@ -13,7 +13,7 @@ Tests live beside the code they cover, in a `#[cfg(test)] mod tests` block for a
 ## Build, Test, and Development Commands
 
 - Package names for `-p` are `argus` (`crates/argus-client`), `argusd`, `argus-desktop` and `argus-protocol`.
-- The desktop page is TypeScript in `crates/argus-desktop/page` (`npm ci` once there). After editing `page/src`, `npm run build` and commit `assets/js` with it; `npm run check` is CI's compile, oxlint and oxfmt check. After changing `src/page.rs`, `cargo test -p argus-desktop` rewrites `page/src/bindings`; commit those too.
+- The desktop page is TypeScript in `crates/argus-desktop/page` (`npm ci` once there). After editing `page/src`, `npm run build` and commit `assets/js` with it; `npm run check` is CI's compile, oxlint and oxfmt check. After changing `src/connection/page.rs`, `cargo test -p argus-desktop` rewrites `page/src/bindings`; commit those too.
 - `argus-desktop` is not a default member: plain `cargo build`/`cargo test` skip it, `--workspace` builds it. On Linux it needs `libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config`. Under a headless X server, start it inside `dbus-run-session` or it stalls before opening its window.
 - `rustup update stable` before a batch of work: CI lints with the newest stable, so an older local clippy passes what CI rejects.
 - `cargo test -p <pkg> --locked 2>&1 | grep -E '^error|^test .* FAILED|panicked at|^test result'` runs one crate's tests and prints only failures and totals; `cargo test --workspace --locked` is the full suite.

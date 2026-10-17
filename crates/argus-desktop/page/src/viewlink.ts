@@ -5,7 +5,7 @@
 // tooltip.
 
 import { el, type Child } from './kit/dom.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 export function viewLink(url: string, ...label: Child[]): HTMLElement {
   const open = (event: Event): void => {

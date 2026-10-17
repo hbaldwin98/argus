@@ -7,7 +7,7 @@ import { commentBox, settleDraft } from './comment_box.js';
 import { $, el, ghosts, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 function gesture(g) {
     call('code', { gesture: g });
 }

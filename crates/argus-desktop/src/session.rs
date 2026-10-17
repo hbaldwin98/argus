@@ -62,7 +62,7 @@ use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, Code, CodeGesture, Then as CodeThen};
 use crate::shown::workspace_grid::{self, Dir, Zone};
 use crate::stage::{Page, Stages};
-use crate::page::{
+use crate::connection::page::{
     self, Call, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
     Stage,
 };
@@ -72,7 +72,7 @@ use crate::reconcile_dialog::ReconcileGesture;
 use crate::rail::{self, Choices};
 use crate::saved_views::{Closed, SavedColumn, SavedViews, Whereabouts};
 use crate::dragged_width::{self, DraggedWidth};
-use crate::sent::Sent;
+use crate::connection::sent::Sent;
 use crate::sessions::Sessions;
 use crate::sessions_dialog::{Recent, SessionsDialog, Then as SessionsThen};
 use crate::settings::{Backdrop, SavedLinks, Settings, Theme};
@@ -598,8 +598,9 @@ impl Session {
     // ---- Gestures ----------------------------------------------------------
 
     /// A call the page made. The clipboard's, the window frame's and a
-    /// reconnect are not the session's: `commands` answers them before a
-    /// call gets here, and the paste key too, which `pastes` names.
+    /// reconnect are not the session's: `connection::commands` answers
+    /// them before a call gets here, and the paste key too, which
+    /// `pastes` names.
     pub fn call(&mut self, call: Call) -> Vec<ClientMsg> {
         match call {
             Call::Select { pane } => self.select(PaneId(pane)),
@@ -1068,8 +1069,8 @@ impl Session {
         self.finish()
     }
 
-    /// Whether `key` is the paste chord, which `commands` answers by
-    /// reading the clipboard rather than typing it.
+    /// Whether `key` is the paste chord, which `connection::commands`
+    /// answers by reading the clipboard rather than typing it.
     pub fn pastes(&self, key: &PageKey) -> bool {
         !self.shown.leader_waiting() && keymap::in_pane(key, false) == Some(Action::Paste)
     }
@@ -1135,8 +1136,9 @@ impl Session {
             Action::PageUp => self.on_view(|view| view.page(-1)),
             Action::PageDown => self.on_view(|view| view.page(1)),
             Action::Palette | Action::Shortcuts | Action::Settings => self.passing.push(Event::Run { action }),
-            // `commands` reads the clipboard before the key gets here; the
-            // rest are the page's, for keys a pane never hears.
+            // `connection::commands` reads the clipboard before the key
+            // gets here; the rest are the page's, for keys a pane never
+            // hears.
             _ => {}
         }
     }
@@ -2719,13 +2721,14 @@ impl Session {
         self.shown.pane().filter(|_| self.side_visible(self.shown.keys()))
     }
 
-    pub fn found_fonts(&mut self, fonts: Vec<crate::page::FontFamily>) -> Vec<ClientMsg> {
+    pub fn found_fonts(&mut self, fonts: Vec<crate::connection::page::FontFamily>) -> Vec<ClientMsg> {
         self.choices.found_fonts(fonts);
         Vec::new()
     }
 
     /// One choice in the Settings dialog. The page draws the look from
-    /// what comes back, and `commands` puts the backdrop on the window.
+    /// what comes back, and `connection::commands` puts the backdrop on
+    /// the window.
     fn set(&mut self, change: SettingChange) -> Vec<ClientMsg> {
         if let Err(reason) = self.choices.change(change) {
             self.passing.push(Event::Notice { text: reason });
@@ -2742,8 +2745,8 @@ impl Session {
         (chosen.theme, chosen.backdrop)
     }
 
-    /// How large the window is drawn, in percent, which `commands` puts
-    /// on the webview.
+    /// How large the window is drawn, in percent, which
+    /// `connection::commands` puts on the webview.
     pub fn zoom(&self) -> u16 {
         self.choices.get().zoom
     }
@@ -4200,7 +4203,7 @@ mod tests {
         });
         let status = status.expect("the page hears the new host");
         assert_eq!(status.host.as_deref(), Some("devbox"));
-        assert_eq!(status.connection, crate::page::Connection::Connecting);
+        assert_eq!(status.connection, crate::connection::page::Connection::Connecting);
         let rail = events.iter().find_map(|e| match e {
             Event::Rail(rail) => Some(rail),
             _ => None,
@@ -4476,7 +4479,7 @@ mod tests {
         s.show_features(true);
         s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
         s.call(Call::OpenFeature { slug: Some("trim".into()) });
-        s.call(Call::SetLens { lens: crate::page::Lens::Flows });
+        s.call(Call::SetLens { lens: crate::connection::page::Lens::Flows });
         s.receive(ServerMsg::SequenceDiagrams(Box::new(crate::fixtures::diagrams("trim"))));
         let first = |events: &[Event]| {
             events.iter().find_map(|e| match e {

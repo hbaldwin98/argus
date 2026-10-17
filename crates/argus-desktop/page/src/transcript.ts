@@ -12,7 +12,7 @@ import type { TranscriptLine } from './bindings/TranscriptLine';
 import { clock, hhmm, span } from './kit/clock.js';
 import { el, ghosts, type Child } from './kit/dom.js';
 import { actionFor } from './keymap.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);

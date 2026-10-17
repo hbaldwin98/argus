@@ -5,7 +5,7 @@
 
 use argus_protocol::Hello;
 
-use crate::page::{Connection, Status};
+use crate::connection::page::{Connection, Status};
 
 pub struct StatusBar {
     connection: Connection,

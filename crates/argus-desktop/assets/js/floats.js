@@ -4,7 +4,7 @@
 // (`src/docks.rs`); this draws them there, follows the pointer while one
 // is held, and reports where it was let go.
 import { $, el } from './kit/dom.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 /** Each dialog's frame, kept across redraws so its panel keeps its state. */
 const frames = new Map();
 /** The dialog being moved or resized, which a redraw leaves where the

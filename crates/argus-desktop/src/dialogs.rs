@@ -10,9 +10,9 @@ use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, Reque
 
 use crate::history::{HistoryDialog, Then};
 use crate::keymap::Action;
-use crate::page::{Event, HistoryPage, ReviewClick, ReviewJumpGesture, ReviewPage};
+use crate::connection::page::{Event, HistoryPage, ReviewClick, ReviewJumpGesture, ReviewPage};
 use crate::review::ReviewDialog;
-use crate::sent::Sent;
+use crate::connection::sent::Sent;
 use crate::settings::ReviewLayout;
 
 /// A file at a line, to open in the person's editor.

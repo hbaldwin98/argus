@@ -13,8 +13,8 @@ use argus_protocol::{Capture, CapturedDecision, CapturedTask, ClientMsg, Decisio
 use serde::{Deserialize, Serialize};
 
 use crate::feature_stage::Scope;
-use crate::page::Event;
-use crate::sent::Sent;
+use crate::connection::page::Event;
+use crate::connection::sent::Sent;
 
 /// What was done in the note a new feature is written as.
 #[derive(Debug, Clone, Deserialize)]

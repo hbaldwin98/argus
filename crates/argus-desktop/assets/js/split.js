@@ -12,7 +12,7 @@
 import { $, el, icon } from './kit/dom.js';
 import { splitScreen, screen } from './screen.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { cellRects, dragGutter, dropZone, toThousandths, zoneRect, } from './split_math.js';
 const cells = [];
 let held = null;

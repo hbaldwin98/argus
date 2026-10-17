@@ -35,7 +35,7 @@ import { addProjectOpen, answerRemoveNo } from './projects.js';
 import { closeSettings, openSettings, settingsOpen } from './settings.js';
 import { closeSheet, openSheet, sheetOpen, toggleSheet } from './shortcuts.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { leaveWork, workAction, workOpen } from './work.js';
 
 /** `Chord::matches` again: the page decides before Rust hears the key. */

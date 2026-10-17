@@ -6,7 +6,7 @@ import type { ViewAction } from './bindings/ViewAction';
 import type { Answer } from './bindings/Answer';
 import type { ViewPress } from './bindings/ViewPress';
 import { el } from './kit/dom.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import type { ViewCtx } from './viewctx.js';
 
 /** What a press carries besides the action: the selected rows' keys, or a

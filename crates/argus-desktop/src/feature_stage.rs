@@ -28,7 +28,7 @@ use crate::feature_edits::{self, Target};
 use crate::feature_view;
 use crate::features::{self, Index, Layout, Listing};
 use crate::flows_lens::{self, FlowCursor};
-use crate::page::{self, FeatureEdit, FeatureViewLink, Lens, WorkAt};
+use crate::connection::page::{self, FeatureEdit, FeatureViewLink, Lens, WorkAt};
 use crate::work_lens;
 
 /// Which repository the stage reads, and how to address its board.

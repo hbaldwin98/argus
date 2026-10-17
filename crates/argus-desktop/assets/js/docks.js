@@ -15,7 +15,7 @@ import { contextMenu, openMenu } from './kit/menu.js';
 import { closesOnMiddle } from './kit/middle.js';
 import { panelOf } from './panels.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 const DOCKS = ['left', 'right', 'bottom'];
 const WHERE = {
     left: 'on the left',

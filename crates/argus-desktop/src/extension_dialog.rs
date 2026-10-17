@@ -9,8 +9,8 @@
 use argus_protocol::{ClientMsg, ExtAnswer, ExtDialog};
 use serde::Serialize;
 
-use crate::page::Event;
-use crate::sent::Sent;
+use crate::connection::page::Event;
+use crate::connection::sent::Sent;
 
 /// The question an extension puts to this window.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]

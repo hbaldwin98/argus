@@ -10,7 +10,7 @@ import { extensionResults } from './extension_views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './keys.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 const GROUPS = ['Commands', 'Panes', 'Features', 'Checkouts'];
 /** Rows a group shows before the search narrows it. */
 const SHOWN = 6;

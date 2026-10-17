@@ -10,7 +10,7 @@
 use argus_protocol::board::outline::Outline;
 use argus_protocol::{Decision, DecisionState, DecisionText, DecisionTreeRow};
 
-use crate::page::{DecisionDetail, Line, RecordLens, RecordRow};
+use crate::connection::page::{DecisionDetail, Line, RecordLens, RecordRow};
 
 /// The decisions with `cursor` on one of them; a cursor on none, or on one
 /// gone, lands on the first.

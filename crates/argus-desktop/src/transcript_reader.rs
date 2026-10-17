@@ -10,7 +10,7 @@
 use argus_protocol::agents::sessions::Session;
 use argus_protocol::agents::transcript::Entry;
 
-use crate::page::{ReaderPage, TranscriptLine, TurnJump};
+use crate::connection::page::{ReaderPage, TranscriptLine, TurnJump};
 use crate::sessions_dialog::SessionPreview;
 
 pub struct TranscriptReader {

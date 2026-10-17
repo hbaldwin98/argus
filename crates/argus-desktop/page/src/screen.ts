@@ -13,13 +13,13 @@ import type { Segment } from './bindings/Segment';
 import type { Side } from './bindings/Side';
 import { $, el, ghosts } from './kit/dom.js';
 import { dragging } from './edge.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 // The terminal's type, as the design system's --type-mono gives it.
 const FONT_SIZE = 13;
 const LINE_HEIGHT = 20;
 
-// A segment's flags, as `src/page.rs` packs them.
+// A segment's flags, as `src/connection/page.rs` packs them.
 const BOLD = 1;
 const ITALIC = 2;
 const UNDERLINE = 4;

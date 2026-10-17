@@ -13,7 +13,7 @@
 use argus_protocol::PaneId;
 
 use crate::docks::Panel;
-use crate::page::Stage;
+use crate::connection::page::Stage;
 
 /// A view open as a page, filling the stage.
 #[derive(Debug, Clone, PartialEq, Eq)]

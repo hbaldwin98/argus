@@ -15,7 +15,7 @@ import { draggable } from './drag.js';
 import { $, el, icon } from './kit/dom.js';
 import { closesOnMiddle } from './kit/middle.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { ago } from './values.js';
 import type { ViewCtx } from './viewctx.js';
 import { viewLink } from './viewlink.js';

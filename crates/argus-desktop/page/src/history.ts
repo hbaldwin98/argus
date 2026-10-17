@@ -9,7 +9,7 @@ import { $, el, ghosts, icon, type Child } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { diffRow } from './review.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);

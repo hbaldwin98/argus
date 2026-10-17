@@ -6,7 +6,7 @@ import { keyedScreen } from './console.js';
 import { $ } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { screen, screens, watchScreens } from './screen.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);
 const MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);
 function drawCursors() {

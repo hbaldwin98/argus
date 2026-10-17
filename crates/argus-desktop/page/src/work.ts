@@ -24,7 +24,7 @@ import { featureViewLink, savedFeatureLinks, ticketLink } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { recordAction, recordLens } from './record.js';
 import { state, type Editing } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 const TASK_MARK: Record<string, [string, string]> = {
   todo: ['○', 'fg-faint'],

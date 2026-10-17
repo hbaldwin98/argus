@@ -22,7 +22,7 @@ import { keycaps } from './keys.js';
 import { bindView, keyView, type Screen, screen, viewScreen } from './screen.js';
 import { state } from './state.js';
 import { table, type TableBlock } from './table.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 /** A gesture in the view `panel` names. */
 export function extensionGesture(panel: Panel, gesture: ExtensionGesture): void {

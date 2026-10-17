@@ -9,7 +9,7 @@
 import { el } from './kit/dom.js';
 import { bindMenu, flowSteps, selectStep } from './flows.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { begin, drawWork, edit, field, formButtons, keycap, lineList, titled } from './work.js';
 const NS = 'http://www.w3.org/2000/svg';
 const MARGIN = 28;

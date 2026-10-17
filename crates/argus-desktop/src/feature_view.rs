@@ -15,7 +15,7 @@ use argus_protocol::{Changes, Decision, DecisionBoard, DiagramList, Feature, Pro
 
 use crate::features::{loudest_agent, word};
 use crate::flows_lens::{self, FlowCursor};
-use crate::page::{FeatureView, FeatureViewLink, Lens, Link};
+use crate::connection::page::{FeatureView, FeatureViewLink, Lens, Link};
 use crate::{record_lens, work_lens};
 
 pub struct Opened<'a> {
@@ -197,7 +197,7 @@ mod tests {
     fn tasks_not_yet_arrived_leave_the_outline_to_its_decisions() {
         let open = view(Lens::Work, None);
         assert!(!open.loaded);
-        assert!(open.rows.iter().all(|r| matches!(r.at, crate::page::WorkAt::Decision { .. })));
+        assert!(open.rows.iter().all(|r| matches!(r.at, crate::connection::page::WorkAt::Decision { .. })));
     }
 
     /// The header says when it was last reconciled and how much moved

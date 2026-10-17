@@ -4,7 +4,7 @@
 import { $, el } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { closeLayer } from './kit/menu.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 export function renameDialog(pane, title) {
     const name = el('input', { class: 'field', id: 'rename-name', value: title });
     const rename = () => {

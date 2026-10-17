@@ -10,7 +10,7 @@ use argus_protocol::panes::view::{Effect, PaneView, Redraw};
 use argus_protocol::{Cell, Color, Cursor, CursorShape, MouseTracking, PaneId, ServerMsg, BLANK};
 use unicode_width::UnicodeWidthChar;
 
-use crate::page::{Frame, FrameCursor, Parked, Segment, Side, BOLD, ITALIC, REVERSE, UNDERLINE, WIDE};
+use crate::connection::page::{Frame, FrameCursor, Parked, Segment, Side, BOLD, ITALIC, REVERSE, UNDERLINE, WIDE};
 
 pub struct Screen {
     view: PaneView,

@@ -8,7 +8,7 @@
 //! this sends back, not from the control it moved.
 
 use crate::backdrop;
-use crate::page::{FontFamily, SettingChange, SettingsPage};
+use crate::connection::page::{FontFamily, SettingChange, SettingsPage};
 use crate::settings::{Backdrop, EditorMode, Preferences, MIN_OPACITY};
 
 /// The zoom keys' steps, in percent: a browser's, so a step feels as it

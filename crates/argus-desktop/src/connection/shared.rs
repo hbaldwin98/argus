@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, watch, Notify};
 
 use crate::clipboard;
 use crate::notifications;
-use crate::page::Event;
+use crate::connection::page::Event;
 use crate::session::Session;
 use crate::settings::{self, Settings};
 

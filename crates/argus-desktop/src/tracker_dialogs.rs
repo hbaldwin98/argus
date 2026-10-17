@@ -11,9 +11,9 @@ use argus_protocol::{ClientMsg, DecisionBoard, Feature, PaneId, ProjectInfo, Req
 
 use crate::feature_stage::Scope;
 use crate::link_dialog::{self, LinkDialog, LinkGesture, LinkPage};
-use crate::page::Event;
+use crate::connection::page::Event;
 use crate::reconcile_dialog::{self, ReconcileDialog, ReconcileGesture, ReconcilePage};
-use crate::sent::Sent;
+use crate::connection::sent::Sent;
 
 enum Open {
     Link(LinkDialog),

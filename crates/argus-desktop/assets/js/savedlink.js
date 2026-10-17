@@ -6,7 +6,7 @@
 // still pressed, since the view may be saved later.
 import { el } from './kit/dom.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 /** The saved view this window holds under `id`. */
 export function savedView(id) {
     return state.saved?.views.find((v) => v.id === id);

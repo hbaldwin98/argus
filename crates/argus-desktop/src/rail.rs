@@ -13,7 +13,7 @@ use argus_protocol::{ago,
     CheckoutId, CheckoutInfo, HeldTree, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo, RepositoryId,
 };
 
-use crate::page::{self, Rail};
+use crate::connection::page::{self, Rail};
 use crate::shown::workspace_grid::GridPage;
 
 /// What the rail is drawn from besides the tree.

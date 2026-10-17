@@ -5,7 +5,7 @@
 // draws it and says what was typed and pressed.
 import { $, el, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 let page = null;
 function send(gesture) {
     call('link', { gesture });

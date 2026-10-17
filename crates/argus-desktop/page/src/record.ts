@@ -8,7 +8,7 @@ import type { FeatureView } from './bindings/FeatureView';
 import type { RecordRow } from './bindings/RecordRow';
 import { el } from './kit/dom.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import {
   begin,
   DECISION_LINE,

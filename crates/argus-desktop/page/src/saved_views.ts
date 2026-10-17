@@ -20,7 +20,7 @@ import { savedCtx } from './saved_ctx.js';
 import { count, grouped, nested, type Nested } from './saved_logic.js';
 import { savedView } from './savedlink.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { ago } from './values.js';
 import { viewLink } from './viewlink.js';
 

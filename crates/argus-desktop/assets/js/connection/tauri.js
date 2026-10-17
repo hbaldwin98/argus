@@ -1,7 +1,7 @@
 // What the page asks of the window's Rust, and the channel its events come
-// down. Every call is one `Call` of `src/page.rs`, which `src/commands.rs`
-// dispatches, and the events are that file's too: both are typed by the
-// bindings `cargo test` writes.
+// down. Every call is one `Call` of `src/connection/page.rs`, which
+// `src/connection/commands.rs` dispatches, and the events are that file's
+// too: both are typed by the bindings `cargo test` writes.
 function invoke(command, args) {
     window.__TAURI__.core.invoke(command, args).catch((err) => {
         console.error(command, args, err);

@@ -15,7 +15,7 @@
 use argus_protocol::panes::view::{Effect, PaneView};
 use argus_protocol::{ClientMsg, KeyboardMode, MouseTracking, PaneId, ServerMsg};
 
-use crate::page::{Frame, Side};
+use crate::connection::page::{Frame, Side};
 use crate::screen::Screen;
 
 pub mod workspace_grid;

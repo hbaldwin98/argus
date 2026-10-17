@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::feature_stage::Scope;
 use crate::keymap::Action;
-use crate::page::Line;
+use crate::connection::page::Line;
 
 /// What was done in the reconcile dialog. A line is its place among the
 /// proposal's lines.

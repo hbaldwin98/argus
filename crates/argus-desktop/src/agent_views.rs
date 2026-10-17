@@ -14,8 +14,8 @@ use argus_protocol::{ClientMsg, PaneId, ProjectInfo, RepositoryId, ShownView, Vi
 use argus_protocol::board::diagrams::flow::{self, FlowRow};
 use argus_protocol::Block;
 
-use crate::page::{FeatureViewLink, FlowLine, Link, PageDiagram, PageParticipant, PageView, ViewRef, ViewsPage};
-use crate::sent::Sent;
+use crate::connection::page::{FeatureViewLink, FlowLine, Link, PageDiagram, PageParticipant, PageView, ViewRef, ViewsPage};
+use crate::connection::sent::Sent;
 use crate::view_changes::ViewChanges;
 use crate::view_refs;
 

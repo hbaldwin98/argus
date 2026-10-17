@@ -4,7 +4,7 @@
 
 use argus_protocol::fuzzy::Fuzzy;
 
-use crate::page::ReviewJumpGesture;
+use crate::connection::page::ReviewJumpGesture;
 
 #[derive(Debug)]
 pub struct FileJump {

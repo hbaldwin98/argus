@@ -12,7 +12,7 @@ use argus_protocol::board::diagrams::flow::{self, FlowRow, Step};
 use argus_protocol::board::outline::Outline;
 use argus_protocol::{DiagramList, SequenceDiagram};
 
-use crate::page::{FlowDetail, FlowItem, FlowsLens, Line, StepDetail, StepRow};
+use crate::connection::page::{FlowDetail, FlowItem, FlowsLens, Line, StepDetail, StepRow};
 use crate::sequence;
 
 /// Where the lens's cursor is: a flow by id, and a step of it by its place
@@ -180,7 +180,7 @@ mod tests {
         assert_eq!(step.bound_by[0].label, "D1");
         let carried: Vec<_> = step.carried_out_by.iter().map(|l| l.label.as_str()).collect();
         assert_eq!(carried, ["1.1", "1.2"], "what is under task 1, where D1 was raised");
-        assert!(flow.diagram.items.iter().any(|item| matches!(item, crate::page::SequenceItem::Message { step: 2, on: true, .. })));
+        assert!(flow.diagram.items.iter().any(|item| matches!(item, crate::connection::page::SequenceItem::Message { step: 2, on: true, .. })));
     }
 
     #[test]

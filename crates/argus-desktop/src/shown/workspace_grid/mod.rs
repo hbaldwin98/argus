@@ -12,7 +12,7 @@ use argus_protocol::{ClientMsg, PaneId};
 use serde::Serialize;
 
 use super::Slot;
-use crate::page::{Shown, Side};
+use crate::connection::page::{Shown, Side};
 use split_grid::{Layout, MIN_COLS, MIN_ROWS};
 
 mod split_grid;

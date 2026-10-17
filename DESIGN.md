@@ -149,13 +149,13 @@ in `desktop.json`; fullscreen, the split and the tabs chosen are the run's, sinc
 daemon's consoles are new shells under new ids. The Feature stage
 has them while it is open, and another pane brings them back for good.
 
-Which stage is up is `stage`'s: one `page::Stage` set through `go`, or a page opened over one,
-which closing, docking or its view going takes back to the stage under it and going anywhere else
-closes. The rail goes to the page whenever it differs from the last one sent, so no move has to say
-it changed it. It says too whether the Workspace's panes are drawn — only while its stage is up and
-no fullscreen console covers it, the composer covering them as every other stage does — and the page
-hides them by the rule that takes their keys. `go`'s callers hand the keys on and put fullscreen
-away themselves, since half the ways out of fullscreen move no stage.
+Which stage is up is `stage`'s: one `connection::page::Stage` set through `go`, or a page opened
+over one, which closing, docking or its view going takes back to the stage under it and going
+anywhere else closes. The rail goes to the page whenever it differs from the last one sent, so no
+move has to say it changed it. It says too whether the Workspace's panes are drawn — only while its
+stage is up and no fullscreen console covers it, the composer covering them as every other stage
+does — and the page hides them by the rule that takes their keys. `go`'s callers hand the keys on
+and put fullscreen away themselves, since half the ways out of fullscreen move no stage.
 
 The docks (`docks`) are the stage's left, right and bottom edges; the sidebar keeps the window's
 own left edge, so the left dock is between it and the stage, and the bottom dock is under the stage
@@ -186,9 +186,9 @@ right dock's, and each extension view where the person had put it. Rust holds th
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `drag`, `panels` (what Rust says each panel that exists is and can do), `screen`, `input`, `keymap`, `focus` (which layer has a key),
 `palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `comment_box` (the comment box under picked lines, the review's and the Code stage's), `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel: `blocks` draws a view's blocks and hands each to the module of its kind, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `values` draws one value, with `refs` for those that point into Argus, `chip` and `viewlink`; `actions` draws the buttons an agent put in a view; a table's parts are `table_bar`, `table_details`, `table_sort` and `table_memory`; and `cell_text`, `copy` and `viewctx` serve them all), `extension_views`, `dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys`, `kit/dom`, `state`, `edge` (a side column's edge, dragged),
-`kit/clock` and `tauri` beneath them, and `tickets` for a feature's ticket links),
+`kit/clock` and `connection/tauri` beneath them, and `tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
-are `page.rs`'s types and the page and gesture types each surface's module keeps beside it
+are `connection/page.rs`'s types and the page and gesture types each surface's module keeps beside it
 (`console`, `docks`, `capture_note`, `checkouts`, `code_stage`, `extension_views`, `extension_keys`, `comment_box`, …), written as TypeScript by `cargo test` into
 `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
@@ -540,7 +540,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | module | answers |
 | --- | --- |
 | `main` | startup: the runtime, the window, and running until it closes |
-| `daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
 | `session` | what this window holds of the daemon and routes between its parts — the tree, the project and repository chosen on the rail — and which part each message, refusal and page call is for |
 | `switcher` | what the project switcher offers beyond the tree's projects — the daemon's workspaces — and the project waiting on a yes to be removed |
 | `add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
@@ -556,7 +555,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, whether it is a page, or a dialog floating over the stage with where it sits, how big, and which is in front; which tab each dock shows of the panels that exist, whether it is open and how big, whether that changed since it was saved; what each panel that exists can do — float, take the stage, close for good — and which kind it is, told to the page so it never reads them from a panel's name; the page and gestures of the docks, and what the page last heard |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
 | `dialogs` | the review and history dialogs as the window holds them: which is open or parked, the daemon's answers and refusals routed to the one that asked whether open or parked, the layout the next review opens on, and what the page last heard of each |
-| `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once, or of something always on screen, so it hears only what differs |
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
 | `dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
@@ -585,9 +583,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 
 | `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, whether the board holds the feature it was sent as yet, and the page and gestures it trades with the page, last sent while open |
 | `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
-| `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call`; a surface that keeps what it last sent defines its own page and gestures, which these name |
-| `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
-| `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
 | `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, the commands the palette runs, and the order of the layers that hold the keys outside a pane |
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
@@ -603,6 +598,12 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
 | `logging` | where the window's own diagnostics go |
 | `window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
+| `connection` | how the window trades with the daemon and the page |
+| `connection/commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `connection::page::Call` — and which part of the window answers each call |
+| `connection/daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
+| `connection/page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call`; a surface that keeps what it last sent defines its own page and gestures, which these name |
+| `connection/sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once, or of something always on screen, so it hears only what differs |
+| `connection/shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 
 ## Views

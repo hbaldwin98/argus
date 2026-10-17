@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use argus_protocol::board::diagrams::flow::{self, FlowRow};
 
-use crate::page::{Lifeline, Sequence, SequenceItem};
+use crate::connection::page::{Lifeline, Sequence, SequenceItem};
 
 /// The frames Mermaid opens with a keyword, and the keywords that start
 /// their next arm.

@@ -5,7 +5,7 @@
 // pane that showed the view, so the page names the reference and nothing
 // more.
 import { el } from './kit/dom.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;

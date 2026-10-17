@@ -4,7 +4,7 @@
 // `work.ts`'s, since the Work lens reads a decision the same way.
 import { el } from './kit/dom.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 import { begin, DECISION_LINE, decisionAction, decisionDetail, editDecision, field, formButtons, stateMark, } from './work.js';
 export function recordLens(view) {
     const record = view.record;

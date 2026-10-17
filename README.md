@@ -946,9 +946,10 @@ npm run fmt       # format the TypeScript and assets/style.css with oxfmt
 npm run check     # compile, oxlint with warnings denied, and oxfmt --check, as CI does
 ```
 
-The types of what Rust sends the page are written from `crates/argus-desktop/src/page.rs` into
-`page/src/bindings` by `cargo test -p argus-desktop`; commit them with the change to `page.rs`. A
-`tsconfig.json` is in `page/`, so any TypeScript language server reads the page as the compiler does.
+The types of what Rust sends the page are written from `crates/argus-desktop/src/connection/page.rs`
+into `page/src/bindings` by `cargo test -p argus-desktop`; commit them with the change to
+`connection/page.rs`. A `tsconfig.json` is in `page/`, so any TypeScript language server reads the
+page as the compiler does.
 
 Some tests launch real PTYs and Git processes. `cargo test` can finish all assertions while a spawned
 test process briefly delays command teardown.

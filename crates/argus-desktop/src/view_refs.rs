@@ -8,7 +8,7 @@
 
 use argus_protocol::{CheckoutId, CheckoutInfo, DecisionBoard, PaneId, ProjectInfo, RepositoryId, RepositoryInfo};
 
-use crate::page::Reference;
+use crate::connection::page::Reference;
 
 /// What a reference comes to.
 #[derive(Debug, Clone, PartialEq, Eq)]

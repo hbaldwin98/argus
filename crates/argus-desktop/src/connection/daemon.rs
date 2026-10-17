@@ -23,7 +23,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
-use crate::shared::Shared;
+use crate::connection::shared::Shared;
 
 /// The gap between failed rounds. Each round already waits on `argus
 /// bridge`, which spends half a minute trying to start a daemon.

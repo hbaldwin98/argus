@@ -14,7 +14,7 @@ use argus_protocol::board::outline::WorkRef;
 
 use crate::feature_view::{self, Opened};
 use crate::flows_lens::FlowCursor;
-use crate::page::{self, AfterChoice, Agent, FeatureViewLink, Features, Lens, Line, Link, Move, Peek};
+use crate::connection::page::{self, AfterChoice, Agent, FeatureViewLink, Features, Lens, Line, Link, Move, Peek};
 
 /// The repository the index is about and how it is shown.
 pub struct Index<'a> {

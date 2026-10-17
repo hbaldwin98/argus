@@ -6,7 +6,7 @@
 // the words (`src/reconcile_dialog.rs`); the page draws them.
 import { $, el, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 let page = null;
 function send(gesture) {
     call('reconcile', { gesture });

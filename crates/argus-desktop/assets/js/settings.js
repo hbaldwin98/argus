@@ -11,7 +11,7 @@ import { fontPicker } from './font_picker.js';
 import { actionFor } from './keymap.js';
 import { screens } from './screen.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 /** Each flavour's own colours for its card: base, mantle, accent, text. */
 const FLAVOURS = [
     { theme: 'mocha', name: 'Mocha', colours: ['#1e1e2e', '#181825', '#cba6f7', '#a6adc8'] },

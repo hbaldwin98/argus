@@ -18,7 +18,7 @@ import { fontPicker, type FontPicker } from './font_picker.js';
 import { actionFor } from './keymap.js';
 import { screens } from './screen.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 type Flavour = Exclude<Theme, 'system'>;
 

@@ -21,8 +21,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::dragged_width::Bounds;
-use crate::page::Event;
-use crate::sent::Sent;
+use crate::connection::page::Event;
+use crate::connection::sent::Sent;
 
 /// What was done to the docks.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

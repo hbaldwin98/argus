@@ -23,7 +23,7 @@ import { openSettings } from './settings.js';
 import { dragEdge } from './edge.js';
 import { state } from './state.js';
 import { featureEdges } from './work.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 
 const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 

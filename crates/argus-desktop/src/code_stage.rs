@@ -21,9 +21,9 @@ use crate::code_tree::{self, folders_of};
 use crate::comment_box::{CommentBox, CommentPage};
 use crate::file_jump::{FileJump, Jumped};
 use crate::keymap::Action;
-use crate::page::{Event, ReviewJumpGesture};
+use crate::connection::page::{Event, ReviewJumpGesture};
 use crate::review::parts;
-use crate::sent::Sent;
+use crate::connection::sent::Sent;
 
 /// What `B` goes back to: the dialog the stage was opened from, as the
 /// button says it — `review · brief.rs:39`, `history`.

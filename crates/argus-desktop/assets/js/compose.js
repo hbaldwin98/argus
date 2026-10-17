@@ -6,7 +6,7 @@ import { $, el, icon } from './kit/dom.js';
 import { chordsFor, keycaps } from './keys.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 /** Built once and only refilled after, so a redraw for a pane's status
  *  never takes the caret out of the message. */
 let parts = null;

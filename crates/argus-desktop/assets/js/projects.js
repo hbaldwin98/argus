@@ -6,7 +6,7 @@
 import { $, el, ghosts, icon } from './kit/dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call } from './connection/tauri.js';
 // ---- The switcher ------------------------------------------------------------
 function closeMenu() {
     state.menuOpen = false;

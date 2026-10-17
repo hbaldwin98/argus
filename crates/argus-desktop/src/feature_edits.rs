@@ -17,7 +17,7 @@ use argus_protocol::{
 };
 
 use crate::feature_stage::Scope;
-use crate::page::FeatureEdit;
+use crate::connection::page::FeatureEdit;
 
 /// The feature an edit is to, and what is known of it.
 pub struct Target<'a> {
