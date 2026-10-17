@@ -1,7 +1,7 @@
 //! The comment box the review and the Code stage share: whether it is open,
-//! the agent it is lit on, whether a comment the daemon saved was its own,
-//! and what the page draws of it. Whether a comment may go, and to whom, is
-//! `argus_protocol::agent_comment`'s.
+//! the agent it is lit on, the comment it sent and waits on the daemon to
+//! save, by its id, and what the page draws of it. Whether a comment may
+//! go, and to whom, is `argus_protocol::agent_comment`'s.
 
 use argus_protocol::agent_comment::{self, Comment};
 use argus_protocol::{CheckoutInfo, ClientMsg, PaneId, ReviewAnchor};
@@ -13,10 +13,9 @@ pub struct CommentBox {
     /// The agent picked, or lit when the box opened; kept for the next box
     /// while it still runs.
     to: Option<PaneId>,
-    /// A comment sent from this box the daemon has yet to say it saved.
-    /// `ReviewCommentSaved` names no request, so this is how a save finds
-    /// its box.
-    sending: bool,
+    /// The comment sent from this box the daemon has yet to answer, by the
+    /// id it was sent under.
+    sending: Option<u64>,
 }
 
 impl CommentBox {
@@ -43,21 +42,28 @@ impl CommentBox {
         self.to = Some(pane);
     }
 
-    /// Escape, Cancel, or the lines under it gone: shut unsent.
+    /// Escape, Cancel, or the lines under it gone: shut unsent. Closing
+    /// forgets that it sent one.
     pub fn close(&mut self) {
         self.open = false;
-        self.sending = false;
+        self.sending = None;
     }
 
-    /// The comment as typed, to the agent lit. Refused while shut: the
-    /// lines under the box may have changed since it closed.
-    pub fn send(&mut self, anchor: Option<ReviewAnchor>, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
+    /// The comment as typed, to the agent lit, named `request_id`. Refused
+    /// while shut: the lines under the box may have changed since it closed.
+    pub fn send(
+        &mut self,
+        anchor: Option<ReviewAnchor>,
+        checkout: Option<&CheckoutInfo>,
+        body: &str,
+        request_id: u64,
+    ) -> Result<ClientMsg, &'static str> {
         if !self.open {
             return Err("no comment box is open");
         }
-        match agent_comment::comment(anchor, checkout, self.to, body, 0)? {
+        match agent_comment::comment(anchor, checkout, self.to, body, request_id)? {
             Comment::Send(msg) => {
-                self.sending = true;
+                self.sending = Some(request_id);
                 Ok(*msg)
             }
             // `open` lights an agent, so an open box always names one.
@@ -65,11 +71,14 @@ impl CommentBox {
         }
     }
 
-    /// The daemon saved a comment. True when this box sent it: it shuts,
-    /// and the caller lets its lines go.
-    pub fn saved(&mut self) -> bool {
-        let mine = std::mem::take(&mut self.sending);
+    /// The daemon saved the comment sent under `request_id`. True when this
+    /// box sent it: it shuts, and the caller lets its lines go. A daemon
+    /// from before comments were named says zero, naming none, and a box
+    /// waiting on a comment takes it, as every box once did.
+    pub fn saved(&mut self, request_id: u64) -> bool {
+        let mine = self.sending.is_some_and(|id| request_id == id || request_id == 0);
         if mine {
+            self.sending = None;
             self.open = false;
         }
         mine
@@ -157,7 +166,7 @@ mod tests {
         b.open(Some(&lines()), Some(&co)).unwrap();
         assert!(b.is_open());
         assert_eq!(b.page(Some(&co), String::new).unwrap().to, Some(7), "the exited agent ahead of it is skipped");
-        assert_eq!(recipient(b.send(Some(lines()), Some(&co), "hi")), PaneId(7));
+        assert_eq!(recipient(b.send(Some(lines()), Some(&co), "hi", 1)), PaneId(7));
     }
 
     #[test]
@@ -166,10 +175,10 @@ mod tests {
         let mut b = CommentBox::default();
         b.open(Some(&lines()), Some(&co)).unwrap();
         b.choose(PaneId(8));
-        assert_eq!(recipient(b.send(Some(lines()), Some(&co), "one")), PaneId(8));
-        assert!(b.saved());
+        assert_eq!(recipient(b.send(Some(lines()), Some(&co), "one", 1)), PaneId(8));
+        assert!(b.saved(1));
         b.open(Some(&lines()), Some(&co)).unwrap();
-        assert_eq!(recipient(b.send(Some(lines()), Some(&co), "two")), PaneId(8));
+        assert_eq!(recipient(b.send(Some(lines()), Some(&co), "two", 2)), PaneId(8));
     }
 
     #[test]
@@ -179,7 +188,7 @@ mod tests {
         b.open(Some(&lines()), Some(&co)).unwrap();
         b.choose(PaneId(8));
         co.panes[1] = gone(8);
-        assert_eq!(b.send(Some(lines()), Some(&co), "hi").err(), Some("that agent is no longer running"));
+        assert_eq!(b.send(Some(lines()), Some(&co), "hi", 1).err(), Some("that agent is no longer running"));
         assert!(b.is_open(), "the box stays for someone else to be chosen");
     }
 
@@ -208,26 +217,40 @@ mod tests {
     }
 
     #[test]
-    fn a_save_shuts_only_the_box_that_sent() {
+    fn a_save_shuts_only_the_box_whose_comment_it_names() {
         let co = checkout(100, "main", true, vec![agent(7)]);
-        let (mut sent, mut other) = (CommentBox::default(), CommentBox::default());
-        sent.open(Some(&lines()), Some(&co)).unwrap();
-        other.open(Some(&lines()), Some(&co)).unwrap();
-        sent.send(Some(lines()), Some(&co), "hi").unwrap();
-        assert!(sent.saved());
-        assert!(!sent.is_open());
-        assert!(!other.saved());
-        assert!(other.is_open(), "a save from another box leaves this one open");
+        let (mut first, mut second, mut idle) = (CommentBox::default(), CommentBox::default(), CommentBox::default());
+        for b in [&mut first, &mut second, &mut idle] {
+            b.open(Some(&lines()), Some(&co)).unwrap();
+        }
+        first.send(Some(lines()), Some(&co), "one", 1).unwrap();
+        second.send(Some(lines()), Some(&co), "two", 2).unwrap();
+        assert!(!first.saved(2) && first.is_open(), "the other comment's save");
+        assert!(second.saved(2) && !second.is_open());
+        assert!(first.saved(1) && !first.is_open());
+        assert!(!idle.saved(1) && !idle.saved(2));
+        assert!(idle.is_open(), "a box that sent nothing is shut by no save");
+    }
+
+    #[test]
+    fn an_older_daemons_save_names_no_comment_and_shuts_a_box_that_waits() {
+        let co = checkout(100, "main", true, vec![agent(7)]);
+        let (mut waiting, mut idle) = (CommentBox::default(), CommentBox::default());
+        waiting.open(Some(&lines()), Some(&co)).unwrap();
+        idle.open(Some(&lines()), Some(&co)).unwrap();
+        waiting.send(Some(lines()), Some(&co), "hi", 3).unwrap();
+        assert!(waiting.saved(0) && !waiting.is_open());
+        assert!(!idle.saved(0) && idle.is_open());
     }
 
     #[test]
     fn a_shut_box_sends_nothing() {
         let co = checkout(100, "main", true, vec![agent(7)]);
         let mut b = CommentBox::default();
-        assert_eq!(b.send(Some(lines()), Some(&co), "hi").err(), Some("no comment box is open"));
+        assert_eq!(b.send(Some(lines()), Some(&co), "hi", 1).err(), Some("no comment box is open"));
         b.open(Some(&lines()), Some(&co)).unwrap();
         b.close();
-        assert_eq!(b.send(Some(lines()), Some(&co), "hi").err(), Some("no comment box is open"));
+        assert_eq!(b.send(Some(lines()), Some(&co), "hi", 2).err(), Some("no comment box is open"));
     }
 
     #[test]
@@ -235,9 +258,9 @@ mod tests {
         let co = checkout(100, "main", true, vec![agent(7)]);
         let mut b = CommentBox::default();
         b.open(Some(&lines()), Some(&co)).unwrap();
-        b.send(Some(lines()), Some(&co), "hi").unwrap();
+        b.send(Some(lines()), Some(&co), "hi", 1).unwrap();
         b.close();
-        assert!(!b.saved());
+        assert!(!b.saved(1));
     }
 
     #[test]

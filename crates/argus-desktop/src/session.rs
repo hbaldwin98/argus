@@ -351,8 +351,9 @@ impl Session {
     }
 
     fn route(&mut self, msg: ServerMsg) {
-        // First, so a saved comment reaches the Code stage's box before the
-        // review takes it: each box knows whether the save was its own.
+        // First, so the Code stage takes its own answers; a saved comment it
+        // gives back for the dialogs to say, and each box takes only the
+        // save of the comment it sent.
         let Some(msg) = self.code.receive(msg) else {
             return;
         };
@@ -2547,7 +2548,7 @@ impl Session {
     }
 
     fn review_comment(&mut self, body: Option<String>) -> Vec<ClientMsg> {
-        self.dialogs.review_comment(body, &self.tree, &mut self.out, &mut self.passing);
+        self.dialogs.review_comment(body, &self.tree, || self.awaited.name(), &mut self.out, &mut self.passing);
         self.finish()
     }
 
@@ -3406,9 +3407,10 @@ mod tests {
             .expect("the stage is up and changed")
     }
 
-    #[test]
-    fn a_saved_comment_closes_the_code_stages_box_and_is_said() {
-        let mut s = session(Hello::this_build());
+    /// The Code stage open on `src/a.rs` with a comment sent from its box:
+    /// the session, and the id the comment was sent under.
+    fn commenting_in_code(daemon: Hello) -> (Session, u64) {
+        let mut s = session(daemon);
         s.open_code_at(CheckoutId(100), CodeVersion::WorkingTree, Some("src/a.rs".into()), None, None);
         let sent = code_asks(s.finish());
         let [_, ClientMsg::ReadCode { request_id, .. }] = sent.as_slice() else {
@@ -3427,17 +3429,54 @@ mod tests {
         })));
         s.code_gesture(CodeGesture::Action { action: Action::Comment });
         let sent = s.code_gesture(CodeGesture::Comment { body: Some("why".into()) });
-        assert!(sent.iter().any(|m| matches!(m, ClientMsg::ReviewComment { .. })), "{:?}", names(&sent));
+        let Some(ClientMsg::ReviewComment { request_id, .. }) = sent.iter().find(|m| matches!(m, ClientMsg::ReviewComment { .. }))
+        else {
+            panic!("{:?}", names(&sent));
+        };
+        let id = *request_id;
         assert!(code_page(&mut s).comment.is_some());
+        (s, id)
+    }
 
-        s.receive(ServerMsg::ReviewCommentSaved { id: 7, delivered: true, request_id: 0 });
-        let events = s.events(0);
-        let page = events.iter().rev().find_map(|e| match e {
-            Event::Code(page) => Some(page),
+    /// Whether the Code stage's box went out shut among `events`; None when
+    /// the stage's page did not change.
+    fn code_box_shut(events: &[Event]) -> Option<bool> {
+        events.iter().rev().find_map(|e| match e {
+            Event::Code(page) => Some(page.comment.is_none()),
             _ => None,
-        });
-        assert!(page.expect("the box closed").comment.is_none());
-        assert!(events.iter().any(|e| matches!(e, Event::Notice { text } if text == "comment #7 sent")));
+        })
+    }
+
+    fn says(events: &[Event], said: &str) -> bool {
+        events.iter().any(|e| matches!(e, Event::Notice { text } if text == said))
+    }
+
+    #[test]
+    fn a_saved_comment_closes_the_code_stages_box_and_is_said() {
+        let (mut s, id) = commenting_in_code(Hello::this_build());
+        assert_ne!(id, 0, "the comment names itself");
+        s.receive(ServerMsg::ReviewCommentSaved { id: 7, delivered: true, request_id: id });
+        let events = s.events(0);
+        assert_eq!(code_box_shut(&events), Some(true), "the box closed");
+        assert!(says(&events, "comment #7 sent"));
+    }
+
+    #[test]
+    fn a_save_of_another_comment_leaves_the_code_stages_box_open_and_is_said() {
+        let (mut s, id) = commenting_in_code(Hello::this_build());
+        s.receive(ServerMsg::ReviewCommentSaved { id: 7, delivered: true, request_id: id + 100 });
+        let events = s.events(0);
+        assert_ne!(code_box_shut(&events), Some(true), "the box stays open");
+        assert!(says(&events, "comment #7 sent"));
+        s.receive(ServerMsg::ReviewCommentSaved { id: 8, delivered: true, request_id: id });
+        assert_eq!(code_box_shut(&s.events(0)), Some(true), "its own save closes it");
+    }
+
+    #[test]
+    fn an_older_daemons_save_closes_the_box_that_waits() {
+        let (mut s, _) = commenting_in_code(Hello::this_build().without(REQUEST_REFUSALS));
+        s.receive(ServerMsg::ReviewCommentSaved { id: 7, delivered: true, request_id: 0 });
+        assert_eq!(code_box_shut(&s.events(0)), Some(true));
     }
 
     #[test]

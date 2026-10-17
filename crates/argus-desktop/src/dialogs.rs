@@ -69,11 +69,11 @@ impl Dialogs {
                     dialog.receive_context(context);
                 }
             }
-            // The save names no box, so it goes to every review there is,
-            // and each takes it only if the comment was its own.
-            ServerMsg::ReviewCommentSaved { id, delivered, .. } => {
+            // Every review hears the save and takes it only when it names
+            // the comment its box sent, open or parked.
+            ServerMsg::ReviewCommentSaved { id, delivered, request_id } => {
                 for dialog in self.reviews() {
-                    dialog.commented();
+                    dialog.commented(request_id);
                 }
                 let text = if delivered { format!("comment #{id} sent") } else { format!("comment #{id} saved; the agent was not there to take it") };
                 say.push(Event::Notice { text });
@@ -263,14 +263,21 @@ impl Dialogs {
         }
     }
 
-    /// Sends the comment, or with no `body` puts the box away.
-    pub fn review_comment(&mut self, body: Option<String>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>, say: &mut Vec<Event>) {
+    /// Sends the comment, named by `id`, or with no `body` puts the box away.
+    pub fn review_comment(
+        &mut self,
+        body: Option<String>,
+        tree: &[ProjectInfo],
+        mut id: impl FnMut() -> u64,
+        out: &mut Vec<ClientMsg>,
+        say: &mut Vec<Event>,
+    ) {
         let Some(dialog) = &mut self.review else {
             return;
         };
         match body {
             None => dialog.cancel_comment(),
-            Some(body) => match dialog.comment(tree.checkout(dialog.checkout()), &body) {
+            Some(body) => match dialog.comment(tree.checkout(dialog.checkout()), &body, id()) {
                 Ok(msg) => out.push(msg),
                 Err(text) => say.push(Event::Notice { text: text.into() }),
             },
@@ -515,11 +522,35 @@ mod tests {
         let tree = agent_tree();
         let mut dialogs = composing(&tree);
         let (mut out, mut say) = (Vec::new(), Vec::new());
-        dialogs.review_comment(Some("tidy".into()), &tree, &mut out, &mut say);
-        assert!(matches!(out.as_slice(), [ClientMsg::ReviewComment { .. }]), "{say:?}");
+        dialogs.review_comment(Some("tidy".into()), &tree, || 50, &mut out, &mut say);
+        assert!(matches!(out.as_slice(), [ClientMsg::ReviewComment { request_id: 50, .. }]), "{say:?}");
         assert!(dialogs.park_review().is_some());
-        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 0 }, &mut say);
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 50 }, &mut say);
         assert!(dialogs.unpark());
+        let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
+        assert!(page.comment.is_none() && page.pick.is_none());
+    }
+
+    /// The case two boxes out at once got wrong while a save named none:
+    /// the first save shut both and dropped both picks.
+    #[test]
+    fn a_save_reaches_only_the_review_whose_comment_it_names() {
+        let tree = agent_tree();
+        let mut dialogs = composing(&tree);
+        let (mut out, mut say) = (Vec::new(), Vec::new());
+        dialogs.review_comment(Some("parked".into()), &tree, || 50, &mut out, &mut say);
+        assert!(dialogs.park_review().is_some());
+        compose(&mut dialogs, &tree);
+        dialogs.review_comment(Some("open".into()), &tree, || 51, &mut out, &mut say);
+        assert_eq!(out.len(), 2, "{say:?}");
+
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 2, delivered: true, request_id: 51 }, &mut say);
+        let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
+        assert!(page.comment.is_none() && page.pick.is_none(), "the open review took its save");
+        assert!(dialogs.unpark());
+        let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
+        assert!(page.comment.is_some() && page.pick.is_some(), "the parked review's comment is still out");
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 3, delivered: true, request_id: 50 }, &mut say);
         let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
         assert!(page.comment.is_none() && page.pick.is_none());
     }
@@ -532,12 +563,12 @@ mod tests {
         let tree = agent_tree();
         let mut dialogs = composing(&tree);
         let (mut out, mut say) = (Vec::new(), Vec::new());
-        dialogs.review_comment(Some("tidy".into()), &tree, &mut out, &mut say);
+        dialogs.review_comment(Some("tidy".into()), &tree, || 50, &mut out, &mut say);
         assert!(matches!(out.as_slice(), [ClientMsg::ReviewComment { .. }]), "{say:?}");
         assert!(dialogs.park_review().is_some());
         compose(&mut dialogs, &tree);
 
-        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 0 }, &mut say);
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 50 }, &mut say);
         let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
         assert!(page.comment.is_some() && page.pick.is_some(), "the open review keeps its box");
         assert!(dialogs.unpark());
@@ -549,8 +580,12 @@ mod tests {
     fn a_code_comment_saved_while_a_review_is_parked_leaves_its_picks() {
         let tree = agent_tree();
         let mut dialogs = composing(&tree);
+        let (mut out, mut say) = (Vec::new(), Vec::new());
+        dialogs.review_comment(Some("tidy".into()), &tree, || 50, &mut out, &mut say);
+        assert!(matches!(out.as_slice(), [ClientMsg::ReviewComment { .. }]), "{say:?}");
         assert!(dialogs.park_review().is_some());
-        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 0 }, &mut Vec::new());
+        // The Code stage's comment, named by its own count.
+        dialogs.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 9 }, &mut Vec::new());
         assert!(dialogs.unpark());
         let page = dialogs.review().unwrap().page(tree.checkout(CheckoutId(100)));
         assert!(page.comment.is_some() && page.pick.is_some());

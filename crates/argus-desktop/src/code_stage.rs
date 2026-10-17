@@ -336,8 +336,9 @@ impl Code {
     /// Takes the daemon's answers to the stage's asks, giving back any
     /// message that is not the stage's. An answer with no stage open is
     /// dropped, as one to an older ask is. A saved comment is given back
-    /// too: the review's box may be the one it saved, and the review says
-    /// it. A refusal is the stage's only when it names one of its asks.
+    /// too, for the dialogs to say: the save names the box it is for, which
+    /// may be a review's. A refusal is the stage's only when it names one of
+    /// its asks.
     pub fn receive(&mut self, msg: ServerMsg) -> Option<ServerMsg> {
         let stage = self.stage.as_mut();
         match msg {
@@ -360,9 +361,9 @@ impl Code {
                 let mine = stage.is_some_and(|s| s.failed(refusal.request_id, refusal.reason.clone()));
                 return (!mine).then_some(ServerMsg::Refused(refusal));
             }
-            ServerMsg::ReviewCommentSaved { .. } => {
+            ServerMsg::ReviewCommentSaved { request_id, .. } => {
                 if let Some(stage) = stage {
-                    stage.commented();
+                    stage.commented(request_id);
                 }
                 return Some(msg);
             }
@@ -377,7 +378,7 @@ impl Code {
         &mut self,
         gesture: CodeGesture,
         tree: &[ProjectInfo],
-        id: impl FnMut() -> u64,
+        mut id: impl FnMut() -> u64,
         out: &mut Vec<ClientMsg>,
     ) -> Then {
         if matches!(gesture, CodeGesture::Click { target: CodeClick::Back }) {
@@ -394,7 +395,7 @@ impl Code {
             CodeGesture::Search { gesture } => out.extend(stage.search(gesture, id)),
             CodeGesture::Glob { glob } => stage.set_glob(glob),
             CodeGesture::Comment { body: None } => stage.cancel_comment(),
-            CodeGesture::Comment { body: Some(body) } => match stage.comment(checkout, &body) {
+            CodeGesture::Comment { body: Some(body) } => match stage.comment(checkout, &body, id()) {
                 Ok(msg) => out.push(msg),
                 Err(text) => return Then::Say(text.into()),
             },
@@ -808,17 +809,19 @@ impl CodeStage {
         self.comment_box.close();
     }
 
-    /// The comment, sent through the review's path: stored under the
-    /// checkout, then told to the agent. The box stays until it is saved.
-    fn comment(&mut self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
+    /// The comment, sent through the review's path under `request_id`:
+    /// stored under the checkout, then told to the agent. The box stays
+    /// until it is saved.
+    fn comment(&mut self, checkout: Option<&CheckoutInfo>, body: &str, request_id: u64) -> Result<ClientMsg, &'static str> {
         let anchor = self.anchor();
-        self.comment_box.send(anchor, checkout, body)
+        self.comment_box.send(anchor, checkout, body, request_id)
     }
 
-    /// The daemon saved a comment. When it was this box's, the box closes
-    /// and the range with it; one saved from the review leaves both.
-    fn commented(&mut self) {
-        if self.comment_box.saved() {
+    /// The daemon saved the comment sent under `request_id`. When it was
+    /// this box's, the box closes and the range with it; another box's save
+    /// leaves both.
+    fn commented(&mut self, request_id: u64) {
+        if self.comment_box.saved(request_id) {
             self.mark = None;
         }
     }
@@ -1551,14 +1554,14 @@ mod tests {
         let co = with_agent();
         assert_eq!(s.page(Some(&co)).pick.as_deref(), Some("lines 2–3"));
         s.compose(Some(&co)).unwrap();
-        let ClientMsg::ReviewComment { recipient, anchor, body, .. } = s.comment(Some(&co), " why two? ").unwrap() else {
+        let ClientMsg::ReviewComment { recipient, anchor, body, .. } = s.comment(Some(&co), " why two? ", 3).unwrap() else {
             panic!()
         };
         assert_eq!((recipient, body.as_str()), (PaneId(7), "why two?"));
         assert_eq!(anchor.base, ReviewBase::Unstaged, "the working tree is unstaged work");
         assert_eq!((anchor.new_start, anchor.new_end), (Some(2), Some(3)));
         assert_eq!(anchor.text, ["+    new()", "+    more()"]);
-        s.commented();
+        s.commented(3);
         let page = s.page(Some(&co));
         assert!(page.comment.is_none() && page.pick.is_none() && page.lines.iter().all(|r| !r.picked));
     }
@@ -1590,7 +1593,7 @@ mod tests {
         read.version = CodeVersion::Commit("abc123".into());
         s.receive_file(read);
         s.compose(Some(&with_agent())).unwrap();
-        let ClientMsg::ReviewComment { anchor, .. } = s.comment(Some(&with_agent()), "x").unwrap() else {
+        let ClientMsg::ReviewComment { anchor, .. } = s.comment(Some(&with_agent()), "x", 1).unwrap() else {
             panic!()
         };
         assert_eq!((anchor.base, anchor.commit.as_deref()), (ReviewBase::Commit, Some("abc123")));
@@ -1606,7 +1609,7 @@ mod tests {
         s.compose(Some(&co)).unwrap();
         s.click(CodeClick::Recipient { pane: 8 }, || 0);
         co.panes[1].status = PaneStatus::Exited { code: Some(0) };
-        assert_eq!(s.comment(Some(&co), "why?").err(), Some("that agent is no longer running"));
+        assert_eq!(s.comment(Some(&co), "why?", 1).err(), Some("that agent is no longer running"));
         assert_eq!(s.page(Some(&co)).comment.expect("the box stays open").to, None);
     }
 
@@ -1615,9 +1618,23 @@ mod tests {
         let mut s = reading("src/a.rs", None);
         s.toggle_pick();
         s.compose(Some(&with_agent())).unwrap();
-        s.commented();
+        s.commented(4);
         let page = s.page(Some(&with_agent()));
         assert!(page.comment.is_some() && page.pick.is_some());
+    }
+
+    #[test]
+    fn a_save_of_another_comment_leaves_the_code_stages_box_open() {
+        let mut s = reading("src/a.rs", None);
+        s.toggle_pick();
+        s.compose(Some(&with_agent())).unwrap();
+        s.comment(Some(&with_agent()), "why?", 3).unwrap();
+        s.commented(4);
+        let page = s.page(Some(&with_agent()));
+        assert!(page.comment.is_some() && page.pick.is_some(), "another box's save");
+        s.commented(3);
+        let page = s.page(Some(&with_agent()));
+        assert!(page.comment.is_none() && page.pick.is_none());
     }
 
     #[test]
@@ -1724,7 +1741,10 @@ mod tests {
         let (_, sent) = gesture(&mut code, CodeGesture::Comment { body: Some("why".into()) }, &projects);
         assert!(matches!(sent.as_slice(), [ClientMsg::ReviewComment { .. }]));
 
-        let saved = code.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 0 });
+        let other = code.receive(ServerMsg::ReviewCommentSaved { id: 1, delivered: true, request_id: 8 });
+        assert!(matches!(other, Some(ServerMsg::ReviewCommentSaved { .. })), "the review's save is given back");
+        assert!(code.page(&projects).unwrap().comment.is_some(), "and leaves this box open");
+        let saved = code.receive(ServerMsg::ReviewCommentSaved { id: 2, delivered: true, request_id: 9 });
         assert!(matches!(saved, Some(ServerMsg::ReviewCommentSaved { .. })), "the review says it");
         assert!(code.page(&projects).unwrap().comment.is_none(), "the box closed");
         assert!(code.receive(ServerMsg::Tree(Vec::new())).is_some());

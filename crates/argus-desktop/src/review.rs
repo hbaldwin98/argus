@@ -275,16 +275,18 @@ impl ReviewDialog {
         self.comment_box.choose(pane);
     }
 
-    /// The comment, anchored to the picked lines and addressed to the
-    /// agent lit. The box stays open until the daemon says it is saved.
-    pub fn comment(&mut self, checkout: Option<&CheckoutInfo>, body: &str) -> Result<ClientMsg, &'static str> {
-        self.comment_box.send(self.session.anchor(), checkout, body)
+    /// The comment, anchored to the picked lines, addressed to the agent
+    /// lit and named `request_id`. The box stays open until the daemon says
+    /// it is saved.
+    pub fn comment(&mut self, checkout: Option<&CheckoutInfo>, body: &str, request_id: u64) -> Result<ClientMsg, &'static str> {
+        self.comment_box.send(self.session.anchor(), checkout, body, request_id)
     }
 
-    /// The daemon saved a comment. When it was this box's, the box closes
-    /// and the pick with it; one saved from another box leaves both.
-    pub fn commented(&mut self) {
-        if self.comment_box.saved() {
+    /// The daemon saved the comment sent under `request_id`. When it was
+    /// this box's, the box closes and the pick with it; another box's save
+    /// leaves both.
+    pub fn commented(&mut self, request_id: u64) {
+        if self.comment_box.saved(request_id) {
             self.session.commented();
         }
     }
@@ -673,7 +675,7 @@ mod tests {
         d.move_by(1);
         assert_eq!(d.page(None).pick.as_deref(), Some("new line 2"), "with an addition, the new side");
         d.compose(Some(&co)).unwrap();
-        let ClientMsg::ReviewComment { recipient, anchor, body, .. } = d.comment(Some(&co), " tidy ").unwrap() else {
+        let ClientMsg::ReviewComment { recipient, anchor, body, .. } = d.comment(Some(&co), " tidy ", 1).unwrap() else {
             panic!()
         };
         assert_eq!((recipient, body.as_str()), (PaneId(7), "tidy"));
@@ -701,7 +703,7 @@ mod tests {
         let comment = d.page(Some(&co)).comment.unwrap();
         assert_eq!(comment.recipients.iter().map(|r| r.pane).collect::<Vec<_>>(), [7]);
         assert_eq!(comment.to, None);
-        assert_eq!(d.comment(Some(&co), "hi").err(), Some("that agent is no longer running"));
+        assert_eq!(d.comment(Some(&co), "hi", 1).err(), Some("that agent is no longer running"));
     }
 
     fn with_agents(ids: &[u64]) -> CheckoutInfo {
@@ -717,11 +719,11 @@ mod tests {
         d.compose(Some(&co)).unwrap();
         d.choose_recipient(PaneId(8));
         co.panes[1].status = PaneStatus::Exited { code: Some(0) };
-        assert_eq!(d.comment(Some(&co), "tidy").err(), Some("that agent is no longer running"));
+        assert_eq!(d.comment(Some(&co), "tidy", 1).err(), Some("that agent is no longer running"));
         let comment = d.page(Some(&co)).comment.expect("the box stays open");
         assert_eq!(comment.to, None);
         d.choose_recipient(PaneId(7));
-        assert!(matches!(d.comment(Some(&co), "tidy"), Ok(ClientMsg::ReviewComment { recipient: PaneId(7), .. })));
+        assert!(matches!(d.comment(Some(&co), "tidy", 1), Ok(ClientMsg::ReviewComment { recipient: PaneId(7), .. })));
     }
 
     #[test]
@@ -733,19 +735,23 @@ mod tests {
         d.compose(Some(&co)).unwrap();
         d.switch_side().unwrap();
         assert!(d.page(Some(&co)).comment.is_none());
-        assert_eq!(d.comment(Some(&co), "tidy").err(), Some("no comment box is open"));
+        assert_eq!(d.comment(Some(&co), "tidy", 1).err(), Some("no comment box is open"));
     }
 
     #[test]
-    fn a_comment_saved_from_another_box_leaves_the_picked_lines() {
+    fn only_the_save_of_its_own_comment_lets_the_picked_lines_go() {
         let co = agent_checkout();
         let (mut d, _) = dialog();
         d.receive(diff(1, ReviewBase::Unstaged));
         d.toggle_pick();
         d.compose(Some(&co)).unwrap();
-        d.commented();
+        d.comment(Some(&co), "tidy", 4).unwrap();
+        d.commented(5);
         let page = d.page(Some(&co));
-        assert!(page.pick.is_some() && page.comment.is_some());
+        assert!(page.pick.is_some() && page.comment.is_some(), "another box's save");
+        d.commented(4);
+        let page = d.page(Some(&co));
+        assert!(page.pick.is_none() && page.comment.is_none());
     }
 
     #[test]
