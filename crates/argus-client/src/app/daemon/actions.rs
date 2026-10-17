@@ -5,13 +5,13 @@
 //! The row does not move until the tree comes back saying it did, so a
 //! refused action leaves the panel showing what is actually true.
 
-use super::*;
+use crate::app::*;
 use argus_protocol::tree::column::verbs::Verb;
 
 impl App {
     /// Shows or hides the branches that have no checkout. The main branch
     /// keeps its row either way, so the toggle is about the rest of them.
-    pub(super) fn toggle_branches(&mut self) {
+    pub(in crate::app) fn toggle_branches(&mut self) {
         self.show_branches = !self.show_branches;
         self.sync_checkout_filter_selection();
         self.clamp();
@@ -25,7 +25,7 @@ impl App {
     /// `F` brings the remotes up to date. Nothing about the working tree
     /// changes, so it is safe to press from any row; what changes is which
     /// branches the column can show you.
-    pub(super) fn fetch(&mut self) {
+    pub(in crate::app) fn fetch(&mut self) {
         if self.send_row_verb(Verb::Fetch) {
             self.report("fetching…");
         }
@@ -34,7 +34,7 @@ impl App {
     /// `P` moves the selected checkout up to its upstream, fast-forward
     /// only. On a branch row that is the primary checkout, which is the
     /// same checkout every other repository-wide action uses.
-    pub(super) fn pull(&mut self) {
+    pub(in crate::app) fn pull(&mut self) {
         if self.send_row_verb(Verb::Pull) {
             self.report("pulling…");
         }
@@ -42,7 +42,7 @@ impl App {
 
     /// `verb` on the selected checkouts-column row, as `tree::column::verbs`
     /// decides it: sent, or its refusal reported. False when nothing went.
-    pub(super) fn send_row_verb(&mut self, verb: Verb) -> bool {
+    pub(in crate::app) fn send_row_verb(&mut self, verb: Verb) -> bool {
         match self.row_verb(verb) {
             Some(Ok(msg)) => {
                 let _ = self.out.send(msg);
@@ -68,7 +68,7 @@ impl App {
 
     /// What `verb` on the selected row comes to; `None` with no row, or
     /// with a console's.
-    pub(super) fn row_verb(&self, verb: Verb) -> Option<Result<ClientMsg, String>> {
+    pub(in crate::app) fn row_verb(&self, verb: Verb) -> Option<Result<ClientMsg, String>> {
         if self.current_console().is_some() {
             return None;
         }
@@ -77,7 +77,7 @@ impl App {
     }
 
     /// Sends the edited brief if it has changed since the last write.
-    pub(super) fn save_brief(&mut self) {
+    pub(in crate::app) fn save_brief(&mut self) {
         let checkout = self.current_checkout().map(|checkout| checkout.id);
         let Some(view) = &mut self.brief else {
             return;
@@ -147,7 +147,7 @@ impl App {
     /// Works from any column that still implies a checkout. `R` with a
     /// review up reads it again — the commit it is of, or the working
     /// changes of its checkout — and otherwise opens the selected one's.
-    pub(super) fn open_review(&mut self) {
+    pub(in crate::app) fn open_review(&mut self) {
         self.note_review_return();
         let current = self.current_checkout().map(|c| c.id);
         let next = &mut self.next_review_request;
@@ -169,7 +169,7 @@ impl App {
 
     /// Asks for both sides of `checkout`'s working changes, opening on the
     /// side last chosen.
-    pub(super) fn start_review(&mut self, checkout: CheckoutId) {
+    pub(in crate::app) fn start_review(&mut self, checkout: CheckoutId) {
         let next = &mut self.next_review_request;
         let (session, msgs) =
             ReviewSession::working(checkout, self.review_base, self.review_split, || next_id(next));
@@ -199,7 +199,7 @@ impl App {
     }
 
     /// `H` from the tree, or from a review that is already up.
-    pub(super) fn open_history(&mut self) {
+    pub(in crate::app) fn open_history(&mut self) {
         self.note_review_return();
         let Some(id) = self
             .current_checkout()
@@ -222,7 +222,7 @@ impl App {
     /// `l`/Enter in the history overlay. A folded commit unfolds to the
     /// files it touched — fetched then, not when the list was built — and
     /// anything already unfolded opens as a review.
-    pub(super) fn drill_into_history(&mut self) {
+    pub(in crate::app) fn drill_into_history(&mut self) {
         let Some(view) = &mut self.history else {
             return;
         };
@@ -239,7 +239,7 @@ impl App {
         }
     }
 
-    pub(super) fn open_selected_commit(&mut self) {
+    pub(in crate::app) fn open_selected_commit(&mut self) {
         let Some(view) = &self.history else {
             return;
         };
@@ -250,7 +250,7 @@ impl App {
         self.open_commit_review(oid, file);
     }
 
-    pub(super) fn open_commit_review(&mut self, oid: String, file: Option<String>) {
+    pub(in crate::app) fn open_commit_review(&mut self, oid: String, file: Option<String>) {
         let Some(checkout) = self
             .history
             .as_ref()
@@ -267,7 +267,7 @@ impl App {
 
     /// `h`/Left: back to history when a commit review was opened from it.
     /// Escape/`q` use [`Self::close_overlay`] and drop both.
-    pub(super) fn close_review(&mut self) {
+    pub(in crate::app) fn close_review(&mut self) {
         let from_history = self.review.as_ref().is_some_and(|s| s.commit().is_some())
             && self.history.is_some();
         self.review = None;
@@ -285,7 +285,7 @@ impl App {
 
     /// The comment typed at the open review, to `to` or — with nobody
     /// chosen — to the one live agent, or a choice between several.
-    pub(super) fn send_comment(&mut self, body: String, to: Option<PaneId>) {
+    pub(in crate::app) fn send_comment(&mut self, body: String, to: Option<PaneId>) {
         let Some(session) = &self.review else {
             self.report("review is no longer open");
             return;
@@ -322,7 +322,7 @@ impl App {
     /// one the daemon launches on its own machine, so for a host elsewhere
     /// it would open where nobody is looking; there it comes up in a
     /// floating pane instead, running on that machine and drawn here.
-    pub(super) fn editor_mode(&self) -> crate::settings::EditorMode {
+    pub(in crate::app) fn editor_mode(&self) -> crate::settings::EditorMode {
         use crate::settings::EditorMode;
         match (self.settings.editor, &self.host) {
             (EditorMode::External, Some(_)) => EditorMode::Overlay,
@@ -333,7 +333,7 @@ impl App {
     /// The configured editor command, or `None` to leave it to the daemon —
     /// always on another machine, where this one's editor may not exist and
     /// the daemon there knows its own.
-    pub(super) fn editor_command(&self) -> Option<String> {
+    pub(in crate::app) fn editor_command(&self) -> Option<String> {
         if self.host.is_some() {
             return None;
         }
@@ -344,7 +344,7 @@ impl App {
     /// Names an editor request, and says where the editor it spawns should
     /// land. Zero — no answer wanted — for an external one: it has no pane
     /// to take the keys to.
-    pub(super) fn editor_request(&mut self) -> u64 {
+    pub(in crate::app) fn editor_request(&mut self) -> u64 {
         match self.editor_mode() {
             crate::settings::EditorMode::External => 0,
             crate::settings::EditorMode::Column => {
@@ -359,7 +359,7 @@ impl App {
     /// Moves the repository's primary checkout onto the selected branch row.
     /// The daemon refuses this when that checkout is dirty and says so; the
     /// answer there is `n`, which gives the branch a worktree instead.
-    pub(super) fn switch_primary_to_selected_branch(&mut self) {
+    pub(in crate::app) fn switch_primary_to_selected_branch(&mut self) {
         if self.current_branch_row().is_some() {
             self.send_row_verb(Verb::Switch);
         }
@@ -371,7 +371,7 @@ impl App {
     /// as `a` does for an agent.
     /// A shell where the cursor is: in its checkout, or, on a console's
     /// row, another console.
-    pub(super) fn spawn_shell(&mut self) {
+    pub(in crate::app) fn spawn_shell(&mut self) {
         if self.current_console().is_some() {
             self.spawn_console();
             return;
@@ -389,7 +389,7 @@ impl App {
 
     /// Gives the selected branch row a worktree, and does `then` in it once
     /// the daemon says which checkout it made.
-    pub(super) fn branch_worktree_then(&mut self, then: Then) {
+    pub(in crate::app) fn branch_worktree_then(&mut self, then: Then) {
         if self.current_branch_row().is_none() {
             return;
         }
@@ -405,7 +405,7 @@ impl App {
         }
     }
 
-    pub(super) fn kill_selected(&mut self) {
+    pub(in crate::app) fn kill_selected(&mut self) {
         if self.focus == Focus::Panes {
             self.close_current();
         }
@@ -415,7 +415,7 @@ impl App {
     /// both from the open-agents list (`x`) and, via the leader chord, from
     /// inside the pane itself (`<leader>x`), since a bare `x` there is just
     /// a character typed at the child.
-    pub(super) fn close_current(&mut self) {
+    pub(in crate::app) fn close_current(&mut self) {
         if let Some(pane) = self.current_pane() {
             let _ = self.out.send(ClientMsg::Kill { pane: pane.id });
             // Land back in the open-agents list rather than staying "in"
@@ -429,7 +429,7 @@ impl App {
 }
 
 /// Hands out `next` and moves it on, never to zero.
-pub(super) fn next_id(next: &mut u64) -> u64 {
+pub(in crate::app) fn next_id(next: &mut u64) -> u64 {
     let id = *next;
     *next = id.wrapping_add(1).max(1);
     id

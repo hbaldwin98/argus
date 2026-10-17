@@ -489,13 +489,15 @@ result of a request; `ui` is a pure function of it.
 | `app/gestures/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/gestures/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
 | `app/modal` | the layers that float over the last frame |
-| `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
-| `app/awaited` | what the terminal client does with what the daemon made for it — focus the pane, select the row, start what was asked for in the new checkout — once `awaited` says the tree, or the consoles beside it, holds it |
+| `app/daemon` | the model's exchange with its daemon |
+| `app/daemon/actions` | what is asked of the daemon |
+| `app/daemon/server` | what arrives back, and what it does to the selection |
+| `app/daemon/awaited` | what the terminal client does with what the daemon made for it — focus the pane, select the row, start what was asked for in the new checkout — once `awaited` says the tree, or the consoles beside it, holds it |
+| `app/daemon/showing` | what the daemon is told this client shows |
+| `app/pickers` | the modal layers that ask the daemon, each opened with the rows it offers resolved |
 | `app/consoles` | the shells that belong to no checkout: the daemon's list of them, which one the stage shows, and asking for another |
-| `app/server` | what arrives back, and what it does to the selection |
 | `app/agent_views` | the views agents showed as this client holds them, newest first: which is open, how far it is scrolled, and the close and refresh requests that change nothing until the daemon answers |
 | `app/saved_views` | the saved views as the daemon sends them, which one the stage shows, the links offered from it and the trail of links followed to it, and the embeds drawn in place |
-| `app/showing` | what the daemon is told this client shows |
 | `app/views` | which surface the content area holds, and the fetches opening one makes |
 | `app/feature` | where the Feature stage is — the index, a feature on a lens, the row under the cursor — and how the keys move between them |
 | `app/board_writes` | what the Feature stage asks the daemon to change: the line or note being typed, and the message each key sends |

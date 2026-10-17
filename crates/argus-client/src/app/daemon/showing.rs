@@ -8,7 +8,7 @@
 
 use argus_protocol::View;
 
-use super::*;
+use crate::app::*;
 
 impl App {
     /// The view the selection names now. Off screen it names nothing: the

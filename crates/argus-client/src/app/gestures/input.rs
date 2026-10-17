@@ -730,7 +730,7 @@ impl App {
 
     /// Enter on a fold: its next step of lines, or with `all` the rest.
     pub(in crate::app) fn unfold_review(&mut self, all: bool) {
-        let id = crate::app::actions::next_id(&mut self.next_review_request);
+        let id = crate::app::daemon::actions::next_id(&mut self.next_review_request);
         if let Some(msg) = self.review.as_mut().and_then(|s| s.unfold(all, id)) {
             let _ = self.out.send(msg);
         }

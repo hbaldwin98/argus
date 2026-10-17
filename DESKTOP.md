@@ -28,7 +28,7 @@ recent sessions need.
    `ssh -T -o BatchMode=yes -- <host> argus bridge` (the project switcher's Connect to a host…, or
    `ARGUS_DESKTOP_HOST` when no host is saved), so the daemon, not the window, decides everything else.
 2. **The client never predicts.** The rail changes when the daemon's tree says so. A spawned shell
-   is selected only once `Created` names it AND the tree holds it (see the TUI's `app/awaited.rs`).
+   is selected only once `Created` names it AND the tree holds it (see the TUI's `app/daemon/awaited.rs`).
    Choosing which pane to *show* is local view state, like the TUI's selection.
 3. **Rust holds the model, the page renders it.** All state — the tree, the selection, the screen
    grid, connection status — lives in a plain Rust struct (`session`) that takes `ServerMsg`s and
@@ -137,7 +137,7 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
   stopped. Otherwise (`Restarting`, a crash, the bridge dying) reconnect with a 2 s gap between
   failed rounds, forever, keeping the old tree on screen meanwhile.
 - A daemon from another build (`Hello.version` differs) is a note on the status bar naming both
-  versions and `argus server restart`, as the TUI does (`app/server.rs::greeted`).
+  versions and `argus server restart`, as the TUI does (`app/daemon/server.rs::greeted`).
 
 ### `session` (pure; unit-tested without Tauri)
 

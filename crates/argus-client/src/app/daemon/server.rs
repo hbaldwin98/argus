@@ -5,13 +5,13 @@
 //! mid-keystroke can never half-apply — and the selection fixups here run
 //! before anyone can observe the new tree.
 
-use super::*;
+use crate::app::*;
 use argus_protocol::review::session::Answered;
 use argus_protocol::{Folding, Hello, Received};
 
 impl App {
     /// Subscribes to everything currently on screen and drops the rest.
-    pub(super) fn sync_subscription(&mut self) {
+    pub(in crate::app) fn sync_subscription(&mut self) {
         let want: Vec<PaneId> = if self.on_screen {
             [self.column_pane(), self.overlay_pane()]
                 .into_iter()
@@ -106,7 +106,7 @@ impl App {
     /// What to call the daemon, and what to do about one that is behind:
     /// here, `server restart` starts the daemon installed beside this
     /// client; on another machine, argus there has to be updated.
-    pub(super) fn daemon_and_its_fix(&self) -> (String, String) {
+    pub(in crate::app) fn daemon_and_its_fix(&self) -> (String, String) {
         match &self.host {
             None => ("argusd".to_string(), "`argus server restart`".to_string()),
             Some(host) => (format!("argusd on {host}"), format!("update argus on {host}")),
@@ -722,7 +722,7 @@ impl App {
         self.status_alert = true;
     }
 
-    pub(super) fn clear_status(&mut self) {
+    pub(in crate::app) fn clear_status(&mut self) {
         self.status.clear();
         self.status_alert = false;
     }

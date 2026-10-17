@@ -6,11 +6,11 @@
 
 use argus_protocol::Created;
 
-use super::*;
+use crate::app::*;
 
 /// What to do with a thing once it is in the tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Then {
+pub(in crate::app) enum Then {
     /// Take the keys to the new pane, or float it as a window.
     FocusPane { floating: bool },
     SelectCheckout,
@@ -22,12 +22,12 @@ pub(super) enum Then {
     SelectRepository,
 }
 
-pub(super) type Awaited = argus_protocol::connection::awaited::Awaited<Then>;
+pub(in crate::app) type Awaited = argus_protocol::connection::awaited::Awaited<Then>;
 
 impl App {
     /// Acts on everything made that the tree, or the list of consoles beside
     /// it, now holds; the rest waits for a later one.
-    pub(super) fn settle_awaited(&mut self) {
+    pub(in crate::app) fn settle_awaited(&mut self) {
         let (tree, consoles) = (&self.tree, &self.consoles);
         let seen = |created| {
             argus_protocol::connection::awaited::holds(tree, created)

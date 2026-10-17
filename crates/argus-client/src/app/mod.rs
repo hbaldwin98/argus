@@ -8,10 +8,8 @@
 //!
 //! The `impl` is split by what the operator is doing: `tree` for the
 //! selection and moving it, `gestures` for keys, the pointer and scrolling,
-//! `actions` for what is asked of the
-//! daemon, `pickers` for the modal layers, `server` for what arrives
-//! back, `showing` for what the daemon is told this client shows,
-//! `agent_views` for the views agents showed, `saved_views` for the ones
+//! `daemon` for what is asked of the daemon and what arrives back,
+//! `pickers` for the modal layers, `agent_views` for the views agents showed, `saved_views` for the ones
 //! kept and the links followed between them, and
 //! `consoles` for the shells that belong to no checkout.
 
@@ -49,19 +47,16 @@ pub use agent_views::AgentViews;
 pub use saved_views::{Links, SavedViews};
 pub use views::View;
 
-mod actions;
 mod agent_views;
-mod awaited;
 mod board_writes;
 mod consoles;
+mod daemon;
 mod feature;
 mod gestures;
-use awaited::Then;
+use daemon::awaited::Then;
 mod modal;
 mod pickers;
 mod saved_views;
-mod server;
-mod showing;
 mod tree;
 mod views;
 
@@ -228,7 +223,7 @@ pub struct App {
     /// which is told about rather than sent a message it cannot read.
     pub pastes_files: bool,
     /// Whether the daemon takes this client's view (`FOCUS`), and the
-    /// view it was last sent. See `showing`.
+    /// view it was last sent. See `daemon::showing`.
     reports_view: bool,
     view_sent: Option<argus_protocol::View>,
     /// Whether the terminal holds the person's focus. True until it says
@@ -357,7 +352,7 @@ pub struct App {
     pub theme: Theme,
     /// Requests waiting on something the daemon is making, matched by the
     /// id it answers with.
-    awaited: awaited::Awaited,
+    awaited: daemon::awaited::Awaited,
     /// The instant the frame being drawn is for, and the epoch every
     /// repeating animation is phased off.
     ///
@@ -507,7 +502,7 @@ impl App {
             review_split,
             prompt: None,
             theme,
-            awaited: awaited::Awaited::default(),
+            awaited: daemon::awaited::Awaited::default(),
             frame_now: started,
             epoch: started,
             focus_shown: focus,
