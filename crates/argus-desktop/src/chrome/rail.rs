@@ -61,6 +61,8 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         width: None,
         outline_width: None,
         brief_height: None,
+        code_tree_width: None,
+        code_outline_width: None,
         row: GridPage::default(),
     }
 }

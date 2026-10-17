@@ -77,6 +77,10 @@ width: number | null,
  */
 outlineWidth: number | null, briefHeight: number | null, 
 /**
+ * The Code stage's file tree and outline widths, likewise.
+ */
+codeTreeWidth: number | null, codeOutlineWidth: number | null, 
+/**
  * The Workspace's grid of panes.
  */
 row: GridPage, };

@@ -633,6 +633,7 @@
   font-weight: 600;
   padding: 0 var(--sp-12);
   height: var(--control-h-sm);
+  white-space: nowrap;
   cursor: pointer;
 }
 .segb.on {
@@ -3132,7 +3133,8 @@ body.console-fullscreen #bar {
   container-type: inline-size;
 }
 /* The Code stage: the files, one read whole with its changes ruled, and
-   what it defines. The side columns give way before the file does. */
+   what it defines. The side columns give way before the file does, unless
+   the person dragged them: `--code-tree-w` and `--code-outline-w`. */
 .kstage {
   container-type: inline-size;
 }
@@ -3152,7 +3154,8 @@ body.console-fullscreen #bar {
   display: flex;
 }
 .code-tree {
-  width: 264px;
+  width: var(--code-tree-w, 288px);
+  max-width: 45%;
   flex: none;
   box-sizing: border-box;
   border-right: 1px solid var(--line);
@@ -3162,10 +3165,18 @@ body.console-fullscreen #bar {
   gap: var(--sp-6);
   min-height: 0;
 }
+/* Search drops under the segments when the column is too narrow for both. */
 .code-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-6);
+}
+.code-tools .segb {
+  padding: 0 var(--sp-8);
+}
+.code-search {
+  margin-left: auto;
 }
 .code-list {
   flex: 1;
@@ -3460,7 +3471,8 @@ body.console-fullscreen #bar {
 
 /* the outline: closable, and gone when the stage is narrow */
 .code-outline {
-  width: 232px;
+  width: var(--code-outline-w, 232px);
+  max-width: 40%;
   flex: none;
   box-sizing: border-box;
   border-left: 1px solid var(--line);
@@ -3509,21 +3521,22 @@ body.console-fullscreen #bar {
 }
 @container (max-width: 1100px) {
   .code-tree {
-    width: 220px;
+    width: var(--code-tree-w, 240px);
   }
   .code-outline {
-    width: 200px;
+    width: var(--code-outline-w, 200px);
   }
 }
 @container (max-width: 900px) {
   .code-outline,
+  .code-sash-outline,
   .outline-show {
     display: none;
   }
 }
 @container (max-width: 640px) {
   .code-tree {
-    width: 180px;
+    width: var(--code-tree-w, 180px);
   }
 }
 @container (max-width: 980px) {

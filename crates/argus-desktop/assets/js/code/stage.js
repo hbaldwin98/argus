@@ -8,6 +8,7 @@ import { $, el, ghosts, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
+import { dragEdge } from '../layout/edge.js';
 function gesture(g) {
     call('code', { gesture: g });
 }
@@ -175,13 +176,51 @@ function side(c) {
                 onfocus: () => c.jump || codeAction('filter'),
             }),
             !c.jump &&
-                el('div', { class: 'code-tools' }, el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Which files' }, segment('All', !c.changedOnly, () => click({ on: 'changedOnly', only: false })), segment(`Changed ${c.changed}`, c.changedOnly, () => click({ on: 'changedOnly', only: true }))), el('span', { class: 'grow' }), 
+                el('div', { class: 'code-tools' }, el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Which files' }, segment('All', !c.changedOnly, () => click({ on: 'changedOnly', only: false })), segment(`Changed ${c.changed}`, c.changedOnly, () => click({ on: 'changedOnly', only: true }))), 
                 // Search is a key, Ctrl F, and a key nobody can see is a feature
                 // nobody finds.
-                el('button', { class: 'btn sm', onclick: () => codeAction('search') }, 'Search', kbd('Ctrl F'))),
+                el('button', { class: 'btn sm code-search', onclick: () => codeAction('search') }, 'Search', kbd('Ctrl F'))),
             c.jump ? jumpList(c.jump) : tree(c),
         ];
     return el('aside', { class: 'code-tree', 'aria-label': 'Files in the checkout' }, body);
+}
+/** The widths the person dragged the tree and the outline to, or the
+ *  stylesheet's own. */
+export function codeEdges(files, defined) {
+    const root = document.documentElement.style;
+    if (files === null)
+        root.removeProperty('--code-tree-w');
+    else
+        root.setProperty('--code-tree-w', `${files}px`);
+    if (defined === null)
+        root.removeProperty('--code-outline-w');
+    else
+        root.setProperty('--code-outline-w', `${defined}px`);
+}
+/** The edge between the file and the tree or the outline; a double-click
+ *  gives back the usual width. The column is found again as the pointer
+ *  moves, since a redraw mid-drag builds it anew. */
+function sash(column, which) {
+    const left = which === 'tree';
+    const bar = el('div', {
+        class: `split-sash code-sash-${which}`,
+        role: 'separator',
+        'aria-orientation': 'vertical',
+        'aria-label': left ? 'Resize the files' : 'Resize the outline',
+        title: 'Drag to resize; double-click for the usual width',
+    });
+    const live = () => document.querySelector(`#kstage .code-${which}`) ?? column;
+    dragEdge(bar, column, {
+        sizeAt: (x) => {
+            const box = live().getBoundingClientRect();
+            return left ? x - box.left : box.right - x;
+        },
+        draw: (width) => left
+            ? codeEdges(width, state.rail.codeOutlineWidth)
+            : codeEdges(state.rail.codeTreeWidth, width),
+        report: (width) => call(left ? 'code_tree_width' : 'code_outline_width', { width }),
+    });
+    return bar;
 }
 function line(r) {
     const row = el('div', {
@@ -367,7 +406,9 @@ export function drawCode() {
     const cursor = `${c.path ?? ''}:${c.at}`;
     settleDraft('code-comment', c.comment !== null);
     const typing = document.activeElement?.id;
-    stage.replaceChildren(head(c), el('div', { class: 'code-split' }, side(c), file(c), c.outline && outline(c)));
+    const files = side(c);
+    const defined = c.outline && outline(c);
+    stage.replaceChildren(head(c), el('div', { class: 'code-split' }, files, sash(files, 'tree'), file(c), defined && sash(defined, 'outline'), defined));
     const body = document.getElementById('code-body');
     if (body) {
         body.scrollTop = scrolledTo.file.get(c.path ?? '') ?? 0;

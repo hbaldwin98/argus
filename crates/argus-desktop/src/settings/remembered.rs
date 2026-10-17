@@ -75,6 +75,11 @@ pub struct Settings {
     /// An open feature's brief's height, likewise; past it the brief scrolls.
     #[serde(default)]
     pub brief_height: Option<u32>,
+    /// The Code stage's file tree's and outline's widths, likewise.
+    #[serde(default)]
+    pub code_tree_width: Option<u32>,
+    #[serde(default)]
+    pub code_outline_width: Option<u32>,
     /// Whether the sidebar's Extensions are unfolded, and where the person
     /// chose each extension's view opens.
     #[serde(default)]
@@ -307,6 +312,8 @@ impl Default for Settings {
             views_width: None,
             outline_width: None,
             brief_height: None,
+            code_tree_width: None,
+            code_outline_width: None,
             extensions: ExtensionsLayout::default(),
             preferences: Preferences::default(),
         }

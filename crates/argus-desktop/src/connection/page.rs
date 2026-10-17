@@ -244,6 +244,10 @@ pub enum Call {
     OutlineWidth { width: Option<u32> },
     /// The same, for the edge under an open feature's brief.
     BriefHeight { height: Option<u32> },
+    /// The same, for the edge right of the Code stage's file tree.
+    CodeTreeWidth { width: Option<u32> },
+    /// The same, for the edge left of the Code stage's outline.
+    CodeOutlineWidth { width: Option<u32> },
     /// Asks the agent that showed a view to read it again.
     RefreshView { pane: u64, id: String },
     /// A press of an action an agent put in its view.
@@ -612,6 +616,9 @@ pub struct Rail {
     /// An open feature's outline width and brief height, likewise.
     pub outline_width: Option<u32>,
     pub brief_height: Option<u32>,
+    /// The Code stage's file tree and outline widths, likewise.
+    pub code_tree_width: Option<u32>,
+    pub code_outline_width: Option<u32>,
     /// The Workspace's grid of panes.
     pub row: GridPage,
 }
@@ -1854,6 +1861,8 @@ mod tests {
             width: Some(320),
             outline_width: None,
             brief_height: None,
+            code_tree_width: None,
+            code_outline_width: None,
             row: GridPage::default(),
         };
         let value = as_json(Event::Rail(Box::new(rail)));

@@ -1,5 +1,6 @@
 //! A size the person dragged one of the window's edges to — the rail's
-//! width, an open feature's outline width and its brief's height — held to what leaves it usable and the rest room, and whether it
+//! width, an open feature's outline width and its brief's height, the Code
+//! stage's file tree and outline — held to what leaves it usable and the rest room, and whether it
 //! changed since it was saved.
 //!
 //! Undragged it is `None`, and the page's own width stands, which may
@@ -9,6 +10,8 @@
 pub const RAIL: Bounds = Bounds { min: 200, max: 560 };
 pub const OUTLINE: Bounds = Bounds { min: 220, max: 1200 };
 pub const BRIEF: Bounds = Bounds { min: 40, max: 900 };
+pub const CODE_TREE: Bounds = Bounds { min: 180, max: 800 };
+pub const CODE_OUTLINE: Bounds = Bounds { min: 160, max: 800 };
 
 #[derive(Debug, Clone, Copy)]
 pub struct Bounds {

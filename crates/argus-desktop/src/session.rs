@@ -151,6 +151,8 @@ pub struct Session {
     rail_width: DraggedWidth,
     outline_width: DraggedWidth,
     brief_height: DraggedWidth,
+    code_tree_width: DraggedWidth,
+    code_outline_width: DraggedWidth,
     dialogs: Dialogs,
     sessions: Sessions,
     /// The recent-sessions dialog.
@@ -226,6 +228,8 @@ impl Session {
             rail_width: DraggedWidth::new(dragged_width::RAIL, settings.rail_width),
             outline_width: DraggedWidth::new(dragged_width::OUTLINE, settings.outline_width),
             brief_height: DraggedWidth::new(dragged_width::BRIEF, settings.brief_height),
+            code_tree_width: DraggedWidth::new(dragged_width::CODE_TREE, settings.code_tree_width),
+            code_outline_width: DraggedWidth::new(dragged_width::CODE_OUTLINE, settings.code_outline_width),
             dialogs: Dialogs::new(settings.review),
             sessions: Sessions::default(),
             recent: Recent::default(),
@@ -792,6 +796,14 @@ impl Session {
             }
             Call::BriefHeight { height } => {
                 self.brief_height.set(height);
+                self.finish()
+            }
+            Call::CodeTreeWidth { width } => {
+                self.code_tree_width.set(width);
+                self.finish()
+            }
+            Call::CodeOutlineWidth { width } => {
+                self.code_outline_width.set(width);
                 self.finish()
             }
             Call::RefreshView { pane, id } => {
@@ -2884,6 +2896,8 @@ impl Session {
         let rail = self.rail_width.take_unsaved()
             | self.outline_width.take_unsaved()
             | self.brief_height.take_unsaved()
+            | self.code_tree_width.take_unsaved()
+            | self.code_outline_width.take_unsaved()
             | self.extension_views.take_unsaved();
         let chosen = self.choices.take_unsaved();
         let host = std::mem::take(&mut self.host_unsaved);
@@ -2900,6 +2914,8 @@ impl Session {
             views_width: None,
             outline_width: self.outline_width.get(),
             brief_height: self.brief_height.get(),
+            code_tree_width: self.code_tree_width.get(),
+            code_outline_width: self.code_outline_width.get(),
             extensions: self.extension_views.layout(),
             preferences: self.choices.get().clone(),
         })
@@ -3147,6 +3163,8 @@ impl Session {
         rail.width = self.rail_width.get();
         rail.outline_width = self.outline_width.get();
         rail.brief_height = self.brief_height.get();
+        rail.code_tree_width = self.code_tree_width.get();
+        rail.code_outline_width = self.code_outline_width.get();
         if let Some(shown) = &mut rail.shown {
             shown.resumed = self.sessions.resumed_from(PaneId(shown.pane)).cloned();
         }
@@ -5125,7 +5143,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 140] = [
+    const CALLS: [&str; 142] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5247,6 +5265,8 @@ mod tests {
         r#"{"call":"rail_width","width":320}"#,
         r#"{"call":"outline_width","width":480}"#,
         r#"{"call":"brief_height","height":160}"#,
+        r#"{"call":"code_tree_width","width":320}"#,
+        r#"{"call":"code_outline_width","width":280}"#,
         r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
         r#"{"call":"press_view","pane":1,"press":{"view":"ci","action":"rerun","rows":[],"form":null,"answers":[]}}"#,
         r#"{"call":"close_view","pane":1,"id":"ci"}"#,
@@ -6088,6 +6108,8 @@ mod tests {
         s.call(Call::RailWidth { width: Some(360) });
         s.call(Call::OutlineWidth { width: Some(480) });
         s.call(Call::BriefHeight { height: Some(1) });
+        s.call(Call::CodeTreeWidth { width: Some(320) });
+        s.call(Call::CodeOutlineWidth { width: Some(5000) });
         let rail = s.events(0).into_iter().find_map(|e| match e {
             Event::Rail(rail) => Some(rail),
             _ => None,
@@ -6097,6 +6119,8 @@ mod tests {
         assert_eq!(saved.rail_width, Some(360));
         assert_eq!(saved.outline_width, Some(480));
         assert_eq!(saved.brief_height, Some(dragged_width::BRIEF.min), "a brief keeps a line or two");
+        assert_eq!(saved.code_tree_width, Some(320));
+        assert_eq!(saved.code_outline_width, Some(dragged_width::CODE_OUTLINE.max));
 
         let mut again = Session::new(saved);
         again.connected(Some(without_focus()), None, vec![with_tree(tree())]);

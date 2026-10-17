@@ -610,7 +610,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `chrome/switcher` | what the project switcher offers beyond the tree's projects — the daemon's workspaces — and the project waiting on a yes to be removed |
 | `layout` | where each surface sits in the window |
 | `layout/docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, whether it is a page, or a dialog floating over the stage with where it sits, how big, and which is in front; which tab each dock shows of the panels that exist, whether it is open and how big, whether that changed since it was saved; what each panel that exists can do — float, take the stage, close for good — and which kind it is, told to the page so it never reads them from a panel's name; the page and gestures of the docks, and what the page last heard |
-| `layout/dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
+| `layout/dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline, the Code stage's tree and outline — held to its bounds, and whether that changed since it was saved |
 | `layout/stage` | what fills the stage — one of the stages, or a page (an agent's view or an extension's) opened over one — where closing, docking, Escape or its view going takes the person back to, the Code stage's way back included, and whether the Workspace's panes are drawn under it |
 | `panes` | the panes on screen and how each is drawn |
 | `panes/console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, the page it draws and the gestures it takes, and what the page last heard |
@@ -1911,7 +1911,8 @@ file, and the open file's search matches are marked there too. The ruler is the 
 its band is the part on screen, dragged to scroll, and marks and band are measured off the same
 rendered rows, so a removal marker or a comment box between lines moves them together.
 The outline is put away and brought back with `O`, and a narrow window gives it up before the
-file loses its width. Search runs on Enter rather than on every letter — a search reads the whole
+file loses its width. The tree's and the outline's edges are dragged to widen them, and a
+double-click gives back the usual width; Rust keeps the widths as it does the rail's. Search runs on Enter rather than on every letter — a search reads the whole
 working tree — while flipping an option on a search made searches again at once. Its matches are
 grouped by file, each file foldable, and reading a match switches the stage to the working tree,
 where it was found.

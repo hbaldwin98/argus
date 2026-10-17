@@ -20,12 +20,14 @@ import { openSettings } from './settings/preferences.js';
 import { dragEdge } from './layout/edge.js';
 import { state } from './state.js';
 import { featureEdges } from './board/lenses/work.js';
+import { codeEdges } from './code/stage.js';
 import { call } from './connection/tauri.js';
 const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 export function drawChrome() {
     const stopped = state.status.connection === 'stopped';
     railWidth(state.rail.width);
     featureEdges(state.rail.outlineWidth, state.rail.briefHeight);
+    codeEdges(state.rail.codeTreeWidth, state.rail.codeOutlineWidth);
     const stage = state.rail.stage;
     $('fstage').hidden = stage !== 'feature';
     $('cstage').hidden = stage !== 'checkouts';

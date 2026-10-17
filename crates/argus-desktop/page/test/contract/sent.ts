@@ -5022,6 +5022,8 @@ export const sent = [
 },
 {
   "briefHeight": null,
+  "codeOutlineWidth": null,
+  "codeTreeWidth": null,
   "filled": false,
   "hosts": [],
   "loaded": true,
@@ -5552,6 +5554,8 @@ export const sent = [
 },
 {
   "briefHeight": null,
+  "codeOutlineWidth": null,
+  "codeTreeWidth": null,
   "filled": false,
   "hosts": [],
   "loaded": true,
@@ -5716,6 +5720,8 @@ export const sent = [
 },
 {
   "briefHeight": null,
+  "codeOutlineWidth": null,
+  "codeTreeWidth": null,
   "filled": false,
   "hosts": [],
   "loaded": true,
@@ -6230,6 +6236,8 @@ export const sent = [
 },
 {
   "briefHeight": null,
+  "codeOutlineWidth": null,
+  "codeTreeWidth": null,
   "filled": false,
   "hosts": [],
   "loaded": true,

@@ -109,6 +109,8 @@ export const state: {
     width: null,
     outlineWidth: null,
     briefHeight: null,
+    codeTreeWidth: null,
+    codeOutlineWidth: null,
     row: {
       beside: [],
       grid: [[0]],
