@@ -17,12 +17,12 @@
 
 use super::*;
 use crate::state::FeaturePart;
-use crate::review_queue::ReviewAsk;
+use crate::review::queue::ReviewAsk;
 use argus_protocol::connection::request_refusal::Asked;
 use argus_protocol::{Created, ReviewBase, REQUEST_REFUSALS};
 
 /// What one review generation comes to: the diff, or why it could not be read.
-pub(super) type Generated = Result<crate::diff::GeneratedReview, String>;
+pub(super) type Generated = Result<crate::review::diff::GeneratedReview, String>;
 
 /// What the loop does once a message is handled.
 #[derive(Debug, PartialEq, Eq)]
@@ -372,7 +372,7 @@ pub(super) fn dispatch(
             Ok(ServerMsg::Commits {
                 request_id,
                 checkout,
-                commits: crate::diff::list_commits(&path)?,
+                commits: crate::review::diff::list_commits(&path)?,
             })
         }),
         // Keyed by the commit rather than an id, which `Asked` cannot
@@ -383,7 +383,7 @@ pub(super) fn dispatch(
                 Ok(())
             }
             Ok(_) => reply_with(daemon, &reply, checkout, move |path| {
-                Ok(match crate::diff::commit_summary(&path, &commit) {
+                Ok(match crate::review::diff::commit_summary(&path, &commit) {
                     Ok(files) => ServerMsg::CommitFiles {
                         checkout,
                         commit,
@@ -517,7 +517,7 @@ pub(super) fn dispatch(
             start,
             end,
         } => reply_with(daemon, &reply, checkout, move |repo| {
-            let lines = crate::diff::context(&repo, &blob, &path, start, end)?;
+            let lines = crate::review::diff::context(&repo, &blob, &path, start, end)?;
             Ok(ServerMsg::ReviewContext(argus_protocol::ReviewContext {
                 request_id,
                 checkout,
@@ -689,8 +689,8 @@ fn review(
     let reply = reply.clone();
     let ask = ReviewAsk::new(checkout, base, commit.clone());
     let generate = move || match commit.as_deref() {
-        Some(rev) => crate::diff::generate_commit(&path, rev),
-        None => crate::diff::generate(&path, base),
+        Some(rev) => crate::review::diff::generate_commit(&path, rev),
+        None => crate::review::diff::generate(&path, base),
     }
     .map_err(|error| error.to_string());
     reviews.submit(ask, generate, move |generated| {

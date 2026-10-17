@@ -412,7 +412,7 @@ pub struct Daemon {
     /// Every read of Git the tree is kept level by. See `git_reads`.
     git: Arc<dyn git_reads::GitReads>,
     /// The one turn at generating a review that every client waits on.
-    reviews: crate::review_queue::ReviewQueue,
+    reviews: crate::review::queue::ReviewQueue,
     /// What every pane's process is started through: a pty, unless a test
     /// is scripting when each one exits.
     processes: Arc<dyn processes::Processes>,
@@ -548,7 +548,7 @@ impl Daemon {
     }
 
     /// A client's place in the review queue, for as long as it holds it.
-    pub fn review_lane<R>(&self) -> crate::review_queue::ReviewLane<R> {
+    pub fn review_lane<R>(&self) -> crate::review::queue::ReviewLane<R> {
         self.reviews.lane()
     }
 

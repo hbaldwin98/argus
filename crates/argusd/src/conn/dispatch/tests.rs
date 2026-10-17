@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::conn::tests::{review_comment, Harness};
-use crate::review_queue::ReviewAsk;
+use crate::review::queue::ReviewAsk;
 use argus_protocol::agents::transcript::Conversation;
 use argus_protocol::{CheckoutId, PaneId, RepositoryId, ReviewBase};
 
@@ -522,7 +522,7 @@ async fn a_fold_is_read_from_the_blob_the_review_named() {
 async fn hold_the_review_turn(
     h: &Harness,
     checkout: CheckoutId,
-) -> (crate::review_queue::ReviewLane<()>, std::sync::mpsc::Sender<()>) {
+) -> (crate::review::queue::ReviewLane<()>, std::sync::mpsc::Sender<()>) {
     let mut other = h.daemon.review_lane();
     let (release, held) = std::sync::mpsc::channel::<()>();
     let (started, mut generating) = tokio::sync::mpsc::unbounded_channel::<()>();

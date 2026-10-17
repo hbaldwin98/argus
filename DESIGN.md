@@ -423,7 +423,8 @@ to the type or its locking.
 | `conn/dispatch` | what each client message does, and the one way its answer or refusal reaches the client that asked |
 | `hook_server` | the loopback pane API: which daemon call each agent's or extension's request reaches, behind its token |
 | `hook_server/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
-| `review_queue` | when a review's diff is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
+| `review`, `review/queue` | a review's diff, and when it is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
+| `review/diff` | a review's stable snapshot and its diff, and a commit's |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
@@ -440,12 +441,13 @@ to the type or its locking.
 | `store/capture` | a whole note written down as a feature, in one transaction |
 | `store/panel`, `store/session` | runtime changes to the panel and when each repository was last used, and the panes to bring back after a restart |
 | `store/seen_sessions` | the sessions Argus saw agents run under a harness that keeps no transcript — title, checkout, first and last seen — so one still lists once its pane is gone |
-| `git`, `git/browse`, `diff`, `syntax/highlight` | the read-only questions asked of a repository |
-| `syntax`, `syntax/grammar` | which tree-sitter grammar reads a file, chosen by its extension, so highlighting and outlines agree on its language |
-| `code`, `code_search`, `symbols` | what the Code stage reads: a version's files and how much each changed, one file's lines with the ones it changed, where text occurs in the working tree, and what a file defines |
-| `git/gitignore` | the repository-local excludes for generated Argus files |
-| `config` | `projects.toml`, which is read and never written |
+| `git`, `git/browse` | the read-only questions asked of a repository: its status and worktrees, and what a checkout contains for the pickers |
 | `git/watch` | when a repository's Git metadata changes, as it happens rather than on the next poll, and the one-file watch the `projects.toml` reload uses |
+| `git/gitignore` | the repository-local excludes for generated Argus files |
+| `syntax`, `syntax/grammar` | which tree-sitter grammar reads a file, chosen by its extension, so highlighting and outlines agree on its language |
+| `syntax/highlight` | what each token of a diff's or a file's lines is, for highlighting |
+| `code`, `code_search`, `symbols` | what the Code stage reads: a version's files and how much each changed, one file's lines with the ones it changed, where text occurs in the working tree, and what a file defines |
+| `config` | `projects.toml`, which is read and never written |
 | `system`, `system/daemon_lock`, `system/logging`, `system/command`, `system/paths`, `system/editor` | what the daemon asks of the machine it runs on: the one daemon allowed to own an instance, where its diagnostics go, a command run without a console window, whether two spellings name one place, and the person's editor |
 | `system/pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
 | `system/dll_search` | where the daemon loads libraries from on Windows: its own directory and System32, never the directory it was started in |

@@ -15,7 +15,7 @@ use argus_protocol::{
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
 
-use crate::review_queue::ReviewLane;
+use crate::review::queue::ReviewLane;
 use crate::state::{BranchDeletion, Daemon, ViewerId};
 
 mod dispatch;
