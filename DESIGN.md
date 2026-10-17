@@ -186,16 +186,40 @@ the dock it left shows the tab before it, or closes once empty. A `desktop.json`
 docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `system/frame`, `agents/compose`, `panes/console`, `layout/docks`, `layout/floats` (the dialogs a saved view floats in, moved by the header and resized by the corner), `layout/drag`, `layout/panels` (what Rust says each panel that exists is and can do), `panes/screen`, `panes/input`, `keys/keymap`, `keys/focus` (which layer has a key),
-`keys/palette`, `keys/shortcuts`, `settings/preferences`, `settings/font_picker` (a font field and the installed families under it), `kit/menu` (menus over the stage, and what a right-click opens), `panes/rename`, `board/feature_stage`, `board/lenses/work`, `board/lenses/record`, `board/lenses/flows`, `board/lenses/sequence`, `board/capture`, `checkouts/stage`, `review/dialog`, `review/comment_box` (the comment box under picked lines, the review's and the Code stage's), `review/history`, `agents/sessions_dialog`, `agents/transcript`, `chrome/projects`, `system/chime`, `views/agent` (the agents' views panel: `views/blocks` draws a view's blocks and hands each to the module of its kind under `views/blocks/`, `markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`, `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board` and `form`; beneath them `views/values` draws one value, with `views/refs` for those that point into Argus, `views/chip` and `views/link`; `views/actions` draws the buttons an agent put in a view; a table's parts are `views/blocks/table/bar`, `views/blocks/table/details`, `views/blocks/table/sort` and `views/blocks/table/memory`; and `views/blocks/table/cell_text`, `system/copy` and `views/ctx` serve them all), `extensions/views`, `extensions/dialogs` (an extension's question), `kit/middle` (a middle click closing the tab or row it lands on), with `keys/chords`, `kit/dom`, `state`, `layout/edge` (a side column's edge, dragged),
-`kit/clock` and `connection/tauri` beneath them, and `board/tracker/tickets` for a feature's ticket links),
-compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
-are `connection/page.rs`'s types and the page and gesture types each surface's module keeps beside it
-(`panes/console`, `layout/docks`, `board/capture_note`, `checkouts/table`, `code/stage`, `extensions/views`, `extensions/keys`, `review/comment_box`, …), written as TypeScript by `cargo test` into
-`page/src/bindings`; CI fails when
-either committed output differs from what its source makes. Its webview keeps its storage under the
-instance's config directory, so a dev window never shares it with the installed one, and it logs to
-`argus-desktop.log` beside the config, keeping the previous run's.
+`crates/argus-desktop/page/src`, one module per subject, in folders named as the window's Rust ones
+are, so a surface's page module sits under the same folder as its Rust module. At the root are
+`main`, `state` (what the page holds) and `chrome` (the sidebar, strip and foot, which draw every
+stage). `kit/` is what surfaces are built from: `dom`, `menu` (menus over the stage, and what a
+right-click opens), `middle` (a middle click closing the tab or row it lands on) and `clock`.
+`connection/` holds `tauri`, the page's channel to Rust. `system/` is what the page asks of the
+machine: `frame`, `copy` and `chime`. `settings/` holds `preferences` and `font_picker` (a font
+field and the installed families under it). `chrome/` holds `projects`, the project heading and its
+switcher. `layout/` is where each surface sits: `docks`, `floats` (the dialogs a saved view floats
+in, moved by the header and resized by the corner), `drag`, `panels` (what Rust says each panel
+that exists is and can do) and `edge` (a side column's edge, dragged). `panes/` holds `screen`,
+`input`, `split` and `split_math`, `console` and `rename`. `keys/` holds `keymap`, `focus` (which
+layer has a key), `chords` (how a key is written), `palette` and `shortcuts`. `views/` is the views
+agents show and save: `agent` is the agents' views panel and `saved` the saved views', its parts in
+`saved/` (`ctx`, `logic` and `link`); `blocks` draws a view's blocks and hands each to the module
+of its kind in `blocks/` (`markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`,
+`diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and
+`graph_layout`, `patch` (a diff block), `embed`, `matrix`, `checklist`, `log`, `board` and `form`),
+a table's parts in `blocks/table/` (`bar`, `details`, `sort`, `memory` and `cell_text`); beneath
+them `values` draws one value, with `refs` for those that point into Argus, `chip` and `views/link`;
+`actions` draws the buttons an agent put in a view; and `views/ctx` and `system/copy` serve them
+all. `extensions/` holds `views` and `dialogs` (an extension's question). `agents/` holds `compose`,
+`sessions_dialog` and `transcript`. `checkouts/stage` and `code/stage` draw the Checkouts and Code
+stages. `review/` holds `dialog`, `history` and `comment_box` (the comment box under picked lines,
+the review's and the Code stage's). `board/` holds `feature_stage` and `capture`, the lenses in
+`lenses/` (`work`, `record`, `flows` and `sequence`), and in `tracker/` `link`, `reconcile` and
+`tickets` (a feature's ticket links). It is compiled into `assets/js` and committed, so building
+the crate needs no Node. The events it reads are `connection/page.rs`'s types and the page and
+gesture types each surface's module keeps beside it (`panes/console`, `layout/docks`,
+`board/capture_note`, `checkouts/table`, `code/stage`, `extensions/views`, `extensions/keys`,
+`review/comment_box`, …), written as TypeScript by `cargo test` into `page/src/bindings`; CI fails
+when either committed output differs from what its source makes. Its webview keeps its storage
+under the instance's config directory, so a dev window never shares it with the installed one, and
+it logs to `argus-desktop.log` beside the config, keeping the previous run's.
 
 The daemon is started with its stderr on the null device, since it shares no console with the
 client and anything it printed would either land in the middle of the TUI or open a console window
