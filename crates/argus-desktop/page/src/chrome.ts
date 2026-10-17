@@ -15,7 +15,7 @@ import { drawFeatures } from './features.js';
 import { chordsFor, keycaps, presses } from './keys.js';
 import { contextMenu, type MenuItem } from './kit/menu.js';
 import { closesOnMiddle } from './kit/middle.js';
-import { drawHeading, drawRemoving } from './projects.js';
+import { drawHeading, drawRemoving } from './chrome/projects.js';
 import { renameDialog } from './rename.js';
 import { screen } from './screen.js';
 import { dragFromRail, drawSplit } from './split.js';

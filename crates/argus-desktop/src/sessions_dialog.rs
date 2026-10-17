@@ -613,7 +613,7 @@ fn shell_words(argv: &[String]) -> String {
 mod tests {
     use super::*;
     use crate::fixtures::{checkout, project, repository};
-    use crate::status::StatusBar;
+    use crate::chrome::status::StatusBar;
     use argus_protocol::agents::sessions::Resume;
     use argus_protocol::agents::transcript::{Entry, Transcript};
     use argus_protocol::{ClientMsg, Hello, ServerMsg, SESSIONS};

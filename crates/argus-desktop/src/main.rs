@@ -11,12 +11,12 @@
 //! output is still seen.
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
-mod add_project;
 mod agent_views;
 mod agents;
 mod capture_note;
 mod checkouts;
 mod checkouts_stage;
+mod chrome;
 mod code_stage;
 mod code_tree;
 mod comment_box;
@@ -44,7 +44,6 @@ mod stage;
 mod palette;
 mod reconcile_dialog;
 mod record_lens;
-mod rail;
 mod review;
 mod saved_views;
 mod screen;
@@ -54,8 +53,6 @@ mod sessions;
 mod sessions_dialog;
 mod settings;
 mod shown;
-mod status;
-mod switcher;
 mod system;
 mod tracker_dialogs;
 mod transcript_reader;

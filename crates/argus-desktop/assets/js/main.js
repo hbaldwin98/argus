@@ -20,7 +20,7 @@ import { dialogTakesKeys, listen as listenToKeys, runOver } from './keymap.js';
 import { listen as listenToMenus } from './kit/menu.js';
 import { listen as listenToFrame } from './system/frame.js';
 import { drawPalette, openPalette } from './palette.js';
-import { drawAddProject, drawHeading } from './projects.js';
+import { drawAddProject, drawHeading } from './chrome/projects.js';
 import { drawFrame, screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './connection/tauri.js';

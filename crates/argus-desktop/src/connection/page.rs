@@ -14,7 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::add_project::{AddProjectGesture, AddProjectPage};
+use crate::chrome::add_project::{AddProjectGesture, AddProjectPage};
 use crate::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::Checkouts;
 use crate::code_stage::{CodeGesture, CodePage};
@@ -1659,7 +1659,7 @@ pub const WIDE: u8 = 16;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::add_project::{AddKind, FolderEntry};
+    use crate::chrome::add_project::{AddKind, FolderEntry};
     use serde_json::json;
 
     fn as_json(event: Event) -> serde_json::Value {

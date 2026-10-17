@@ -10,7 +10,7 @@ use argus_protocol::{DecisionBoard, PaneKind, ProjectInfo};
 use argus_protocol::board::standing;
 
 use crate::connection::page::{Palette, PaletteCheckout, PaletteFeature, PalettePane};
-use crate::{features, rail};
+use crate::{chrome::rail, features};
 
 /// `board` is the chosen repository's, once it has arrived.
 pub fn build(project: Option<&ProjectInfo>, board: Option<&DecisionBoard>, tree: &[ProjectInfo]) -> Palette {

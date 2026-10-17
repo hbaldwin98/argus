@@ -18,7 +18,7 @@ use argus_protocol::agents::transcript::{rfc3339, Conversation};
 use argus_protocol::{ClientMsg, PaneId, RepositoryId, ServerMsg, SESSIONS};
 
 use crate::connection::page::Resumed;
-use crate::status::StatusBar;
+use crate::chrome::status::StatusBar;
 
 #[derive(Debug, Default)]
 pub struct Sessions {

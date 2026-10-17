@@ -1,12 +1,13 @@
 // The sidebar's project heading and what it opens: the switcher's menu of
 // projects, workspaces and what can be done to them, the question before a
 // project is removed, and the add-a-project dialog. Rust holds the
-// workspaces, the question and the dialog (`src/switcher.rs`,
-// `src/add_project.rs`); nothing here changes until the daemon says so.
-import { $, el, ghosts, icon } from './kit/dom.js';
-import { actionFor } from './keymap.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+// workspaces, the question and the dialog (`src/chrome/switcher.rs`,
+// `src/chrome/add_project.rs`); nothing here changes until the daemon
+// says so.
+import { $, el, ghosts, icon } from '../kit/dom.js';
+import { actionFor } from '../keymap.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 // ---- The switcher ------------------------------------------------------------
 function closeMenu() {
     state.menuOpen = false;

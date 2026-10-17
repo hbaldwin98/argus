@@ -8,14 +8,14 @@
 //! many things changed in between, the page hears each once.
 //!
 //! Each subject keeps its own state and what the page last heard of it —
-//! the status bar (`status`), the panes on screen (`shown`), the agents
-//! offered (`agents`), the review and history (`dialogs`), the link and
-//! reconcile dialogs (`tracker_dialogs`), the three stages
+//! the status bar (`chrome::status`), the panes on screen (`shown`), the
+//! agents offered (`agents`), the review and history (`dialogs`), the link
+//! and reconcile dialogs (`tracker_dialogs`), the three stages
 //! (`feature_stage`, `checkouts_stage`, `code_stage`) and the note a new
 //! feature is written as (`capture_note`), a repository's past agent
 //! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
-//! the project switcher (`switcher`) and the dialog adding a project
-//! (`add_project`), the Settings dialog's choices
+//! the project switcher (`chrome::switcher`) and the dialog adding a
+//! project (`chrome::add_project`), the Settings dialog's choices
 //! (`settings::preferences`), the console (`console`), the views agents
 //! showed (`agent_views`), the extensions' views (`extension_views`), what
 //! fills the stage and where leaving it goes (`stage`), and what the daemon
@@ -42,7 +42,7 @@ use argus_protocol::{
     PASTE_FILE, RENAME_PANE, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion,
 };
 
-use crate::add_project::{AddProject, AddProjectGesture, Adding};
+use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
 use crate::agent_views::AgentViews;
 use crate::extension_dialog::ExtensionDialogs;
 use crate::extension_keys::ExtensionKeys;
@@ -69,7 +69,7 @@ use crate::connection::page::{
 use crate::palette;
 use crate::settings::preferences::Chosen;
 use crate::reconcile_dialog::ReconcileGesture;
-use crate::rail::{self, Choices};
+use crate::chrome::rail::{self, Choices};
 use crate::saved_views::{Closed, SavedColumn, SavedViews, Whereabouts};
 use crate::dragged_width::{self, DraggedWidth};
 use crate::connection::sent::Sent;
@@ -77,8 +77,8 @@ use crate::sessions::Sessions;
 use crate::sessions_dialog::{Recent, SessionsDialog, Then as SessionsThen};
 use crate::settings::remembered::{Backdrop, SavedLinks, Settings, Theme};
 use crate::shown::ShownPane;
-use crate::status::StatusBar;
-use crate::switcher::Switcher;
+use crate::chrome::status::StatusBar;
+use crate::chrome::switcher::Switcher;
 use crate::view_refs::{self, Found, PendingFeature, Target};
 use crate::tracker_dialogs::{self, TrackerDialogs};
 
@@ -5575,7 +5575,7 @@ mod tests {
 
     // ---- Projects: switch, add and remove ----------------------------------
 
-    fn add_page(s: &mut Session) -> Option<crate::add_project::AddProjectPage> {
+    fn add_page(s: &mut Session) -> Option<crate::chrome::add_project::AddProjectPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::AddProject(page) => Some(*page),
             _ => None,
