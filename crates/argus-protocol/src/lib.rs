@@ -9,8 +9,8 @@
 
 pub mod adr;
 pub mod agent_comment;
-pub mod agent_launch;
 pub mod agent_view;
+pub mod agents;
 pub mod ago;
 pub mod artifacts;
 pub mod awaited;
@@ -31,7 +31,6 @@ pub mod fuzzy;
 pub mod hello;
 pub mod history_view;
 pub mod hook;
-pub mod memory;
 pub mod message;
 pub mod outline;
 pub mod panes;
@@ -42,13 +41,11 @@ pub mod review;
 pub mod review_session;
 pub mod review_view;
 pub mod saved_view;
-pub mod sessions;
 pub mod ssh_bridge;
 pub mod ssh_hosts;
 pub mod standing;
 pub mod tasks;
 pub mod tracker_links;
-pub mod transcript;
 pub mod transport;
 pub mod tree;
 pub mod view_check;
@@ -59,7 +56,7 @@ pub mod view_requests;
 pub mod view_tree;
 
 pub use ago::ago;
-pub use agent_launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
+pub use agents::launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
 pub use agent_view::{
     AgentView, Block, BoardCard, BoardColumn, ChartShape, CheckItem, Chip, Column, Field, FormField, FormInput,
     GraphDirection, GraphEdge, GraphNode, GridMin, Item, LogLevel, LogLine, MatrixCell, RowAlign, RowItem,
@@ -130,7 +127,7 @@ pub use hook::{
 };
 pub use tree::ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use hook::inbox::InboxItem;
-pub use memory::{
+pub use agents::memory::{
     select_context_packet, Artifact, ArtifactContent, ArtifactKind, ArtifactState, ContextPacket,
     ContextQuery, ForwardedMaterial, InclusionReason, MemorySnapshot, MemorySource, PacketEntry,
     PacketItem, PacketLimits, Provenance, WorkContext, DEFAULT_PACKET_MAX_BYTES,

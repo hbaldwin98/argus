@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Take};
 use std::path::{Path, PathBuf};
 
-use argus_protocol::transcript::Meta;
+use argus_protocol::agents::transcript::Meta;
 
 use super::{Format, Reading};
 

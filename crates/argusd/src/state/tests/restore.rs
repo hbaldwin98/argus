@@ -515,7 +515,7 @@ async fn a_picked_session_resumes_by_its_id_and_is_no_restore_to_fall_back_from(
     let d = daemon_with_fake_claude(dir.path());
     assert_eq!(
         d.resumes(),
-        [argus_protocol::sessions::Resume {
+        [argus_protocol::agents::sessions::Resume {
             harness: "claude".to_string(),
             argv: vec!["echo".to_string(), "hi".to_string(), "--resume".to_string(), "{session_id}".to_string()],
         }],

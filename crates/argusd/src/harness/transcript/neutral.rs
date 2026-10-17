@@ -3,7 +3,7 @@
 //! DESIGN.md, "Transcripts"; each is the protocol's [`Entry`] as JSON, so
 //! what is read here is what a client is sent.
 
-use argus_protocol::transcript::{Entry, TITLE_KIND};
+use argus_protocol::agents::transcript::{Entry, TITLE_KIND};
 use serde_json::Value;
 
 use super::{text, Reading};

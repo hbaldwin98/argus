@@ -12,8 +12,8 @@
 //! has nothing to open. The sessions, what they said and the resume
 //! commands are the daemon's, held by `sessions`.
 
-use argus_protocol::sessions::Session;
-use argus_protocol::transcript::Conversation;
+use argus_protocol::agents::sessions::Session;
+use argus_protocol::agents::transcript::Conversation;
 use argus_protocol::{CheckoutId, HeldTree, PaneId, ProjectInfo, RepositoryId};
 use serde::Serialize;
 
@@ -614,8 +614,8 @@ mod tests {
     use super::*;
     use crate::fixtures::{checkout, project, repository};
     use crate::status::StatusBar;
-    use argus_protocol::sessions::Resume;
-    use argus_protocol::transcript::{Entry, Transcript};
+    use argus_protocol::agents::sessions::Resume;
+    use argus_protocol::agents::transcript::{Entry, Transcript};
     use argus_protocol::{ClientMsg, Hello, ServerMsg, SESSIONS};
 
     fn tree() -> Vec<ProjectInfo> {

@@ -7,8 +7,8 @@
 //! is. The recent-sessions dialog opens it on the session under its cursor
 //! and has the keys back when it closes.
 
-use argus_protocol::sessions::Session;
-use argus_protocol::transcript::Entry;
+use argus_protocol::agents::sessions::Session;
+use argus_protocol::agents::transcript::Entry;
 
 use crate::page::{ReaderPage, TranscriptLine, TurnJump};
 use crate::sessions_dialog::SessionPreview;

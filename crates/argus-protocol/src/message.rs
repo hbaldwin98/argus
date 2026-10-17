@@ -18,8 +18,8 @@ use crate::panes::keys::KeyboardMode;
 use crate::tree::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext};
 use crate::diagrams::{DiagramAction, DiagramList};
-use crate::sessions::{Resume, Session};
-use crate::transcript::Conversation;
+use crate::agents::sessions::{Resume, Session};
+use crate::agents::transcript::Conversation;
 use crate::tasks::{TaskAction, TaskList};
 use crate::reconcile::ReconcileAction;
 use crate::tracker_links::MapChange;
@@ -779,7 +779,7 @@ pub enum ServerMsg {
         message: String,
     },
     /// The answer to `ClientMsg::ListSessions`: at most
-    /// [`crate::sessions::MAX_SESSIONS`], newest first.
+    /// [`crate::agents::sessions::MAX_SESSIONS`], newest first.
     Sessions {
         request_id: u64,
         repository: RepositoryId,

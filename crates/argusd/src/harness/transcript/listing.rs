@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use argus_protocol::sessions::{Session, MAX_SESSIONS};
+use argus_protocol::agents::sessions::{Session, MAX_SESSIONS};
 use argus_protocol::CheckoutId;
 
 use super::glance::Head;
@@ -309,7 +309,7 @@ mod tests {
         // `ReadSession` names the primary checkout it was listed under, not
         // the worktree it ran in: the id alone finds its file.
         let read = super::super::conversation(Some(&harness.1), &listed[0].session_id, &app);
-        let argus_protocol::transcript::Conversation::Read(transcript) = read else {
+        let argus_protocol::agents::transcript::Conversation::Read(transcript) = read else {
             panic!("read, not {read:?}");
         };
         assert_eq!(transcript.meta.title.as_deref(), Some("Gone"));

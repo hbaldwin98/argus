@@ -5327,8 +5327,8 @@ mod tests {
         assert_eq!(s.checkouts.selected_key(), Some("c101"));
     }
 
-    fn listed_session(id: &str, pane: Option<u64>) -> argus_protocol::sessions::Session {
-        argus_protocol::sessions::Session {
+    fn listed_session(id: &str, pane: Option<u64>) -> argus_protocol::agents::sessions::Session {
+        argus_protocol::agents::sessions::Session {
             harness: "claude".into(),
             session_id: id.into(),
             checkout: CheckoutId(100),
@@ -5359,7 +5359,7 @@ mod tests {
         };
         let (list, resumes) = (*list, *resumes);
         let argv = vec!["claude".to_string(), "--resume".into(), "{session_id}".into()];
-        s.receive(ServerMsg::Resumes { request_id: resumes, resumes: vec![argus_protocol::sessions::Resume { harness: "claude".into(), argv }] });
+        s.receive(ServerMsg::Resumes { request_id: resumes, resumes: vec![argus_protocol::agents::sessions::Resume { harness: "claude".into(), argv }] });
         let read = s.receive(ServerMsg::Sessions {
             request_id: list,
             repository: RepositoryId(10),
@@ -5455,14 +5455,14 @@ mod tests {
             panic!("{sent:?}");
         };
         let entries = vec![
-            argus_protocol::transcript::Entry::User { text: "Fix the build".into(), at: None },
-            argus_protocol::transcript::Entry::Agent { text: "Fixed.".into(), at: None },
+            argus_protocol::agents::transcript::Entry::User { text: "Fix the build".into(), at: None },
+            argus_protocol::agents::transcript::Entry::Agent { text: "Fixed.".into(), at: None },
         ];
-        let transcript = argus_protocol::transcript::Transcript { entries, ..Default::default() };
+        let transcript = argus_protocol::agents::transcript::Transcript { entries, ..Default::default() };
         s.receive(ServerMsg::SessionTranscript {
             request_id: *request_id,
             session_id: "ended".into(),
-            conversation: Box::new(argus_protocol::transcript::Conversation::Read(transcript)),
+            conversation: Box::new(argus_protocol::agents::transcript::Conversation::Read(transcript)),
         });
         s.call(Call::SessionsAction { action: Action::Transcript, row: None });
         let reader = sessions_page(&mut s).and_then(|p| p.reader).expect("the reader is open");

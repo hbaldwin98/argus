@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use argus_protocol::transcript::{Conversation, Entry, Transcript, MAX_ENTRIES, MAX_TEXT_BYTES};
+use argus_protocol::agents::transcript::{Conversation, Entry, Transcript, MAX_ENTRIES, MAX_TEXT_BYTES};
 
 use super::{conversation, read, Format, Reading, Source};
 

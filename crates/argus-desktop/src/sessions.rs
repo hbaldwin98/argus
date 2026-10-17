@@ -13,8 +13,8 @@
 
 use std::collections::HashMap;
 
-use argus_protocol::sessions::{is_plain_session_id, Resume, Session};
-use argus_protocol::transcript::{rfc3339, Conversation};
+use argus_protocol::agents::sessions::{is_plain_session_id, Resume, Session};
+use argus_protocol::agents::transcript::{rfc3339, Conversation};
 use argus_protocol::{ClientMsg, PaneId, RepositoryId, ServerMsg, SESSIONS};
 
 use crate::page::Resumed;
@@ -175,7 +175,7 @@ pub fn resumed_from(session: &Session) -> Resumed {
 
 #[cfg(test)]
 mod tests {
-    use argus_protocol::transcript::{Entry, Transcript};
+    use argus_protocol::agents::transcript::{Entry, Transcript};
     use argus_protocol::{read_msg, write_msg, CheckoutId, Hello};
 
     use super::*;

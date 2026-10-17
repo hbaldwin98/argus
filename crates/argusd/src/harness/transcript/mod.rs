@@ -10,7 +10,7 @@
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use argus_protocol::transcript::{
+use argus_protocol::agents::transcript::{
     clip, one_line, Conversation, Entry, Transcript, MAX_ENTRIES, MAX_TEXT_BYTES,
 };
 use serde_json::Value;

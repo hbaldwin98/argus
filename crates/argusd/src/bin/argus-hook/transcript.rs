@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use argus_protocol::transcript::{rfc3339, Entry, TITLE_KIND};
+use argus_protocol::agents::transcript::{rfc3339, Entry, TITLE_KIND};
 use serde_json::json;
 
 use super::*;

@@ -361,8 +361,12 @@ live in this crate and a contract written twice drifts in silence.
 | `flow` | the steps a sequence diagram's source says, in the order it says them, the lifelines they run between, and the source rewritten to bind a step, retell it, move it, or move a lifeline |
 | `board_follower` | how a client follows one repository's board: when it asks for the board and the feature's lists, which pushes it keeps, and where the cursor lands on a feature, task or diagram when one is replaced — on a feature only among those the client's index lists, which the client says (`FeatureListing`) |
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
-| `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
-| `agent_launch` | what an agent asks for when it starts another agent in a pane of its own — the template, the first message, and the checkout, new worktree or other repository's checkout it works in — and what it is told it started |
+| `artifacts` | how shared work is bounded when read or written |
+| `agents` | what Argus holds for the agents in its panes |
+| `agents/launch` | what an agent asks for when it starts another agent in a pane of its own — the template, the first message, and the checkout, new worktree or other repository's checkout it works in — and what it is told it started |
+| `agents/memory` | the working memory an agent receives for one request |
+| `agents/sessions` | a repository's agent sessions as listed: the harness and id that resume each, its checkout or the removed worktree it ran in, title, times and turns, and the pane running it |
+| `agents/transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
 | `agent_view` | what a view an agent shows is made of — its blocks and values and the change an agent sends to show, patch or close one — as the desktop and the terminal client both draw it |
 | `view_check` | whether a view keeps its limits (sizes, its serialised size among them, depth, counts, bounded numbers, unique and printable ids, web links, checkout-relative paths, kinds this Argus knows), and where it does not, the path that names the fault |
 | `saved_view` | what a saved view is: its body, its scope, and the metadata an agent refreshes it from (recipe, sources, the commit it was built at, stale); what an agent writes to save one, the largest body that save may arrive in, and what it reads back |
@@ -372,8 +376,6 @@ live in this crate and a contract written twice drifts in silence.
 | `view_requests` | what an agent is typed when the person acts on one of its views — a press, a refresh of a shown view, a refresh of a saved one — each on one line with no control character in it |
 | `checkout_path` | whether a path an agent wrote stays inside the checkout it is read against |
 | `view_patch` | how a patch replaces one block of a held view: the block path an agent names it by, and the view with that block swapped |
-| `transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
-| `sessions` | a repository's agent sessions as listed: the harness and id that resume each, its checkout or the removed worktree it ran in, title, times and turns, and the pane running it |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
 behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
@@ -1208,7 +1210,7 @@ When the person wants a task kept in a pane they can go back to, an agent starts
 through the daemon rather than as a subagent of its own turn. It is an ability, not how worktree
 work is done: an agent still works in a worktree itself, or delegates to a subagent, unless asked.
 `argus-hook agent [--template T] [--worktree B [--from C] | --in C] (--stdin | <prompt>)` posts an
-`AgentLaunch` to `/pane/<id>/agent` (`agent_launch`, `state/agent_launch`). The new agent gets a pane
+`AgentLaunch` to `/pane/<id>/agent` (`agents/launch`, `state/agent_launch`). The new agent gets a pane
 of its own, as one the person started would, so it outlives the asking turn and the person can watch
 and steer it. It is the asker's template unless one is named; it works in the asker's checkout, a new
 worktree (made as the window makes one, in the asker's repository or the one `--from` names, with
@@ -1387,7 +1389,7 @@ truth and the table follows it: a pane that closed has no row to update.
 The daemon lists a repository's past sessions and reads one's transcript from the files their
 harnesses keep, for the desktop window's recent-sessions dialog. Argus never stores a transcript and never
 follows one as it grows: `harness/transcript` reads the harness's own file whole, when asked,
-into `argus_protocol::transcript::Transcript` — the person's turns, the agent's replies and the tools
+into `argus_protocol::agents::transcript::Transcript` — the person's turns, the agent's replies and the tools
 it ran, each with the time the harness wrote, plus the session's title (the one the harness gave it,
 else the first prompt that is not a slash or shell command), its first and last times, its turn
 count and the directory it ran in. Thinking, tool output and the harness's own bookkeeping are left

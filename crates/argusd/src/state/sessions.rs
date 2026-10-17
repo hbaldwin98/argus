@@ -6,8 +6,8 @@
 //! read after it is let go: a listing opens a hundred transcripts, and
 //! every keystroke waits on that lock.
 
-use argus_protocol::sessions::{is_plain_session_id, Resume, Session, MAX_SESSIONS};
-use argus_protocol::transcript::{rfc3339, Conversation};
+use argus_protocol::agents::sessions::{is_plain_session_id, Resume, Session, MAX_SESSIONS};
+use argus_protocol::agents::transcript::{rfc3339, Conversation};
 
 use super::*;
 use crate::harness::transcript::{self, Places, Source};

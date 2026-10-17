@@ -4,7 +4,7 @@
 use super::*;
 use crate::conn::tests::{review_comment, Harness};
 use crate::review_queue::ReviewAsk;
-use argus_protocol::transcript::Conversation;
+use argus_protocol::agents::transcript::Conversation;
 use argus_protocol::{CheckoutId, PaneId, RepositoryId, ReviewBase};
 
 #[test]
