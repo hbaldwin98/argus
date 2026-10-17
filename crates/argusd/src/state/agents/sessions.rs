@@ -9,7 +9,7 @@
 use argus_protocol::agents::sessions::{is_plain_session_id, Resume, Session, MAX_SESSIONS};
 use argus_protocol::agents::transcript::{rfc3339, Conversation};
 
-use super::*;
+use crate::state::*;
 use crate::harness::transcript::{self, Places, Source};
 use crate::store::{SeenSession, Sighting};
 
@@ -84,7 +84,7 @@ impl Daemon {
     /// transcript, so each still lists — with its title, times and
     /// checkout — once its pane is gone. One a transcript records is the
     /// transcript's to list.
-    pub(super) fn saw_sessions(&self, panes: &[crate::store::SessionPane]) {
+    pub(in crate::state) fn saw_sessions(&self, panes: &[crate::store::SessionPane]) {
         let sightings: Vec<Sighting> = panes
             .iter()
             .filter(|pane| pane.kind == PaneKind::Agent)

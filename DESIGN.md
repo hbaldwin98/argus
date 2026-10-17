@@ -394,8 +394,8 @@ to the type or its locking.
 | `state/processes` | starting a pane's process and driving it once it runs: the port every pane is started through, a pty in a running daemon and a scripted process in tests |
 | `state/clock` | what time it is for the durations the daemon decides on — a resume's grace, a restart loop's window, a quiet child's age |
 | `state/agents` | what an agent reports about itself, and what it is told |
-| `state/agent_launch` | an agent starting another: which checkout it lands in, which template it gets, and who may ask |
-| `state/follow` | which checkout a pane belongs to: the one its agent works in, moved to when the agent says so or a status report says its turn ended in another worktree, and the primary checkout once its worktree is removed outside Argus |
+| `state/agents/launch` | an agent starting another: which checkout it lands in, which template it gets, and who may ask |
+| `state/agents/follow` | which checkout a pane belongs to: the one its agent works in, moved to when the agent says so or a status report says its turn ended in another worktree, and the primary checkout once its worktree is removed outside Argus |
 | `state/viewers` | what each client is showing: the one pty size reconciled out of what they all ask for, and the view of the client the person was last at |
 | `state/git_ops` | the writes to Git |
 | `state/git_reads` | the port the tree's reads of Git go through — status, HEAD, worktrees, a root's repositories — so a test can script what Git answers |
@@ -406,8 +406,8 @@ to the type or its locking.
 | `state/extensions/consoles` | the consoles extensions' views run: started when a view is published, kept while it asks for the same run, ended with the view or the extension, and their ending recorded on the view |
 | `state/extensions/running` | running the configured extensions: each started with its own URL and token, started again when it exits, stopped with the daemon |
 | `state/session` | what survives a daemon restart |
-| `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, what one session said, and reopening one by its id |
-| `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
+| `state/agents/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, what one session said, and reopening one by its id |
+| `state/agents/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
 | `state/tree` | finding your way around the tree |
 | `state/board`, `state/board/features` | a feature board and who may change it; which feature a checkout is on, and the one apply a change to a feature takes, with the board's address and who asked as parameters |
 | `state/board/tasks`, `state/board/decisions`, `state/board/diagrams`, `state/board/tracker_map` | a feature board's rows: how a task or a diagram is stored, a decision added, changed and read, and the tracker map written or drafted — each change one apply, whoever asks |
@@ -1176,7 +1176,7 @@ the agent, with a heartbeat every fifteen seconds so either side notices the oth
 pane's own session may open it, the newest connection replaces an older one, and it closes the
 moment the plugin's end of the socket does, so nothing is handed to a plugin that has gone. An
 adapter opens an inbox only once it can act on what it is told, so an open inbox decides the route
-alone, in `state/inbox`; `PaneInfo::live` says one is open. opencode's plugin turns a message into
+alone, in `state/agents/inbox`; `PaneInfo::live` says one is open. opencode's plugin turns a message into
 `session.promptAsync`, and pi's extension into `sendUserMessage`, as a follow-up while a turn runs.
 
 Claude Code's adapter is a mod: a plugin of function hooks that runs inside the session (2.1.287
@@ -1217,7 +1217,7 @@ When the person wants a task kept in a pane they can go back to, an agent starts
 through the daemon rather than as a subagent of its own turn. It is an ability, not how worktree
 work is done: an agent still works in a worktree itself, or delegates to a subagent, unless asked.
 `argus-hook agent [--template T] [--worktree B [--from C] | --in C] (--stdin | <prompt>)` posts an
-`AgentLaunch` to `/pane/<id>/agent` (`agents/launch`, `state/agent_launch`). The new agent gets a pane
+`AgentLaunch` to `/pane/<id>/agent` (`agents/launch`, `state/agents/launch`). The new agent gets a pane
 of its own, as one the person started would, so it outlives the asking turn and the person can watch
 and steer it. It is the asker's template unless one is named; it works in the asker's checkout, a new
 worktree (made as the window makes one, in the asker's repository or the one `--from` names, with
@@ -1232,7 +1232,7 @@ The row also follows without being told, since an agent that has to remember to 
 mostly does not. The installed hook form carries the event's `cwd` on every report as
 `X-Argus-Directory`. When a turn ends — an `idle` report from the pane's own session — in a
 directory other than the one the last turn ended in, the daemon moves the row into the innermost
-checkout of the agent's repository holding it (`state/follow`), discovering a new worktree the same
+checkout of the agent's repository holding it (`state/agents/follow`), discovering a new worktree the same
 way. A tool call's directory is not followed, because an agent that steps into another worktree to
 read it has not moved there. Neither is another repository's, nor a directory already followed,
 so a row moved by hand is not pulled back by an agent that stayed where it was. Claude Code's `Stop`
@@ -1540,7 +1540,7 @@ The first of those ticks is immediate, overlapping session restore, so dirty cou
 time the tree has been on screen a moment.
 
 A worktree that stops being listed leaves the tree, but a pane in it whose process is still running
-does not die with it: it moves to the repository's primary checkout (`state/follow`), and an
+does not die with it: it moves to the repository's primary checkout (`state/agents/follow`), and an
 agent's managed hooks are written there so its reports keep arriving. Removing a worktree is the
 usual last step of finishing a branch, and the agent that finished it is usually standing in it,
 often having run `git worktree remove` itself; killing its pane ended the session mid-command, with

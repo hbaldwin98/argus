@@ -431,7 +431,7 @@ impl Daemon {
     /// `remove_checkout`. Runs on the same blocking-pool tick as the git
     /// status poll (§4 Level 2, §11 worktree auto-discovery). A removed
     /// worktree's live panes are kept, under the primary checkout; see
-    /// `follow::adopt_orphans`.
+    /// `agents::follow::adopt_orphans`.
     pub(super) fn reconcile_worktrees(&self) {
         let mut orphaned_panes: Vec<Pane> = Vec::new();
         let mut adopted = Vec::new();
@@ -480,7 +480,8 @@ impl Daemon {
                                 .any(|path| same_path(path, &repository.checkouts[i].path));
                         if gone {
                             let checkout = repository.checkouts.remove(i);
-                            let (exited, moved) = follow::adopt_orphans(repository, checkout);
+                            let (exited, moved) =
+                                agents::follow::adopt_orphans(repository, checkout);
                             orphaned_panes.extend(exited);
                             adopted.extend(moved);
                         } else {

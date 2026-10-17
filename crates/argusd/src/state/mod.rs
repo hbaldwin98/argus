@@ -3,8 +3,10 @@
 //! One `Daemon` type behind a small set of mutexes. Everything done *to*
 //! the tree lives in a sibling module named after it — `build` for
 //! constructing one, `panes` for a pane's lifecycle, `agents` for what an
-//! agent reports about itself, `viewers` for what each client shows (the
-//! size it asks a pty for, and the view that says where the person is),
+//! agent reports about itself, the agent sessions a repository's harnesses
+//! kept and the way what Argus says reaches an agent, `viewers` for what
+//! each client shows (the size it asks a pty for, and the view that says
+//! where the person is),
 //! `git_ops` for the writes to Git, `git_reads` for the port its reads
 //! go through, `pushes` for what is published for connections to push,
 //! `sync` for the polls and watchers that keep the tree level with the
@@ -12,11 +14,8 @@
 //! which scope is open,
 //! `extensions` for what extensions publish and what goes back to them,
 //! `board` for a feature board and who may change it, `views` for the
-//! views agents show and keep,
-//! `session` for what survives a restart, `sessions`
-//! for the agent sessions a repository's harnesses kept, `inbox` for
-//! the way what Argus says reaches an agent, and `tree` for finding your
-//! way around.
+//! views agents show and keep, `session` for what survives a restart, and
+//! `tree` for finding your way around.
 //!
 //! The type and its locking are one thing; only which file a concern is
 //! read in is split.
@@ -31,23 +30,19 @@ use argus_protocol::{
     WorkspaceId, WorkspaceInfo,
 };
 
-mod agent_launch;
 mod agents;
 mod board;
 mod build;
 mod clock;
 mod extensions;
-mod follow;
 mod views;
 mod git_ops;
 mod git_reads;
-mod inbox;
 mod panel;
 mod panes;
 mod processes;
 mod pushes;
 mod session;
-mod sessions;
 mod sync;
 mod tree;
 mod viewers;
@@ -100,7 +95,8 @@ struct Pane {
     /// it. Said by the report that ended the turn, and by each one since.
     background: bool,
     /// Where the agent's last turn ended, as its harness reported it. Live
-    /// only; the row follows the agent when this changes. See `follow`.
+    /// only; the row follows the agent when this changes. See
+    /// `agents::follow`.
     directory: Option<PathBuf>,
     /// Live only: model, context, spend and tool, as the harness last
     /// reported them. Not persisted; a restored agent reports afresh.
@@ -109,8 +105,9 @@ struct Pane {
     /// has been where it is.
     status_since: std::time::SystemTime,
     /// The inbox what is said to its agent goes through instead of its
-    /// terminal, while its harness's adapter holds one open. See `inbox`.
-    inbox: inbox::Inbox,
+    /// terminal, while its harness's adapter holds one open. See
+    /// `agents::inbox`.
+    inbox: agents::inbox::Inbox,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,

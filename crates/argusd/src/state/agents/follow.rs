@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use argus_protocol::Report;
 
-use super::*;
+use crate::state::*;
 
 impl Daemon {
     /// Moves the pane to the checkout `directory` is inside, in any
@@ -101,7 +101,7 @@ impl Daemon {
     /// in. The PTY stays intact; this changes Argus's affiliation, not the
     /// child process's working directory. The reporting command runs in the
     /// destination directory, which is the evidence that the agent moved.
-    pub(super) fn move_agent_to_checkout(
+    pub(in crate::state) fn move_agent_to_checkout(
         &self,
         pane: PaneId,
         destination: &std::path::Path,
@@ -230,7 +230,7 @@ impl Daemon {
 
     /// Gives the agents [`adopt_orphans`] moved the hooks of their new
     /// checkout. Nothing is taken out of the old one: it is gone.
-    pub(super) fn settle_adopted(&self, adopted: Vec<Adopted>) {
+    pub(in crate::state) fn settle_adopted(&self, adopted: Vec<Adopted>) {
         for agent in adopted {
             self.install_hooks_for(agent.pane, agent.template.as_deref(), &agent.home);
         }
@@ -238,7 +238,7 @@ impl Daemon {
 }
 
 /// An agent pane [`adopt_orphans`] moved, and where to.
-pub(super) struct Adopted {
+pub(in crate::state) struct Adopted {
     pane: PaneId,
     template: Option<String>,
     home: PathBuf,
@@ -256,7 +256,10 @@ pub(super) struct Adopted {
 /// nearest row that still is a checkout: the person can see it, read what
 /// it said, and close it when they choose. Shells move as well, for the
 /// same reason.
-pub(super) fn adopt_orphans(repository: &mut Repository, gone: Checkout) -> (Vec<Pane>, Vec<Adopted>) {
+pub(in crate::state) fn adopt_orphans(
+    repository: &mut Repository,
+    gone: Checkout,
+) -> (Vec<Pane>, Vec<Adopted>) {
     let Some(home) = repository.checkouts.iter_mut().find(|c| c.primary) else {
         return (gone.panes, Vec::new());
     };

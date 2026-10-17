@@ -4,6 +4,15 @@
 //! inside a pane inherits that pane's hook URL and token and cannot be
 //! stopped from calling home. The agent Argus started stays the authority
 //! on what the row says; everything else is listed underneath it.
+//!
+//! Starting another agent is `launch`'s, which checkout an agent is in
+//! `follow`'s, how a message reaches it `inbox`'s, and the sessions its
+//! harnesses kept `sessions`'s.
+
+pub(super) mod follow;
+pub(super) mod inbox;
+pub(super) mod launch;
+pub(super) mod sessions;
 
 use argus_protocol::{ReviewAnchor, ReviewComment, MAX_REVIEW_COMMENT_BYTES};
 

@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 use argus_protocol::GitStatus;
 
-/// The reads `sync`, `follow` and startup make. Writes are not here: what a
-/// write does to a repository is the thing under test, so those tests use a
-/// real one.
+/// The reads `sync`, `agents::follow` and startup make. Writes are not
+/// here: what a write does to a repository is the thing under test, so
+/// those tests use a real one.
 pub(super) trait GitReads: Send + Sync {
     /// A checkout's full status: branch, dirty counts, ahead and behind.
     fn status(&self, path: &Path) -> Option<GitStatus>;

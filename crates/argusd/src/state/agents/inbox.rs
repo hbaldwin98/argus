@@ -13,11 +13,11 @@
 use argus_protocol::InboxItem;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use super::*;
+use crate::state::*;
 
 /// The inbox a pane's harness adapter holds open, by the generation of the
 /// connection that opened it.
-pub(super) type Inbox = Option<(u64, UnboundedSender<InboxItem>)>;
+pub(in crate::state) type Inbox = Option<(u64, UnboundedSender<InboxItem>)>;
 
 impl Daemon {
     /// Tells an agent something now, without waiting for its prompt: what
@@ -25,7 +25,7 @@ impl Daemon {
     /// for it. Through its inbox when one is open, where the harness queues
     /// it as it would a person's message, else typed in. Says whether it
     /// went.
-    pub(super) fn notify(&self, pane: PaneId, text: &str) -> bool {
+    pub(in crate::state) fn notify(&self, pane: PaneId, text: &str) -> bool {
         let message = InboxItem::Message { text: text.to_string() };
         let taken = {
             let inner = self.inner.lock().unwrap();
