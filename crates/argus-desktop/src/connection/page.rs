@@ -20,7 +20,7 @@ use crate::checkouts::Checkouts;
 use crate::code_stage::{CodeGesture, CodePage};
 use crate::comment_box::CommentPage;
 use crate::console::{ConsoleGesture, ConsolePage};
-use crate::docks::{DockGesture, DocksPage, Panel};
+use crate::layout::docks::{DockGesture, DocksPage, Panel};
 use crate::extension_dialog::ExtDialogPage;
 use crate::extension_views::{ExtensionGesture, ExtensionsPage};
 use crate::features::Layout;

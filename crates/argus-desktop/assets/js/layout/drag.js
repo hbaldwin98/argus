@@ -3,14 +3,14 @@
 // under the pointer — the left, right or bottom dock, or the stage for a
 // panel Rust says takes it (`panels`) — and the move reported when it is
 // let go, the same move the dock menus send. Rust decides what comes of it
-// (`src/docks.rs`); nothing here moves a panel itself.
+// (`src/layout/docks.rs`); nothing here moves a panel itself.
 //
 // Mouse events rather than the browser's drag and drop, so the preview
 // follows the pointer over the panes' canvases as well as the page, and a
 // press that never travels stays the click it was.
-import { $, el } from './kit/dom.js';
+import { $, el } from '../kit/dom.js';
 import { panelOf } from './panels.js';
-import { call } from './connection/tauri.js';
+import { call } from '../connection/tauri.js';
 /** How far the pointer goes before a press is a drag. */
 const THRESHOLD = 5;
 /** Where a drop at (`x`, `y`) lands: an edge of the work area is its

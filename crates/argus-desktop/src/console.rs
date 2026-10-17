@@ -6,13 +6,12 @@
 //! The consoles are the daemon's `ServerMsg::Consoles`, never predicted: a
 //! tab appears once the daemon says the console exists and goes once it
 //! says it ended. Which dock it is in, whether that dock shows it, and how
-//! big it is are `docks`'s, remembered in `desktop.json`; fullscreen, the
-//! split and the tabs chosen last as long as the run: a daemon restarted
-//! brings its consoles back as new shells under new ids, so a split kept
-//! for the next run would not find its two. Which panes are
-//! on screen, and which has the keys, is `shown`'s, and the session
-//! decides when they move here; this module only says what the console
-//! would show.
+//! big it is are `layout::docks`'s, remembered in `desktop.json`;
+//! fullscreen, the split and the tabs chosen last as long as the run: a
+//! daemon restarted brings its consoles back as new shells under new ids,
+//! so a split kept for the next run would not find its two. Which panes are
+//! on screen, and which has the keys, is `shown`'s, and the session decides
+//! when they move here; this module only says what the console would show.
 
 use argus_protocol::{PaneId, PaneInfo};
 use serde::{Deserialize, Serialize};

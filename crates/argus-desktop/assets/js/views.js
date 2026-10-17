@@ -6,8 +6,8 @@
 import { actionButton } from './actions.js';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
-import { dockMenuButton } from './docks.js';
-import { draggable } from './drag.js';
+import { dockMenuButton } from './layout/docks.js';
+import { draggable } from './layout/drag.js';
 import { $, el, icon } from './kit/dom.js';
 import { closesOnMiddle } from './kit/middle.js';
 import { state } from './state.js';

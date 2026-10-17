@@ -12,7 +12,7 @@ import type { Parked } from './bindings/Parked';
 import type { Segment } from './bindings/Segment';
 import type { Side } from './bindings/Side';
 import { $, el, ghosts } from './kit/dom.js';
-import { dragging } from './edge.js';
+import { dragging } from './layout/edge.js';
 import { call } from './connection/tauri.js';
 
 // The terminal's type, as the design system's --type-mono gives it.

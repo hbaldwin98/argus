@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::docks::{Dock, DocksLayout, Panel};
+use crate::layout::docks::{Dock, DocksLayout, Panel};
 use crate::features::Layout;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

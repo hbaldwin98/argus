@@ -18,7 +18,7 @@ import type { WorkRow } from './bindings/WorkRow';
 import { notice } from './chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
 import { $, el, type Child } from './kit/dom.js';
-import { dragEdge } from './edge.js';
+import { dragEdge } from './layout/edge.js';
 import { flowsAction, flowsLens } from './flows.js';
 import { featureViewLink, savedFeatureLinks, ticketLink } from './tickets.js';
 import { actionFor } from './keymap.js';

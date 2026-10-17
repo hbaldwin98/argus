@@ -1,21 +1,22 @@
 // The docks: the left, right and bottom edges of the stage a panel sits
 // against, each showing one of its tabs, sized by its sash. Rust decides
 // which dock holds each panel, which it shows and how big it is
-// (`src/docks.rs`); this puts each panel's element where that says — its
-// dock, the stage, a dialog (`floats`), or parked out of sight — draws a dock's tabs while it
-// holds more than one, and the dock menu every panel's head opens, and
-// reports a tab picked, closed, a panel moved or a sash let go.
-import { $, el, icon } from './kit/dom.js';
+// (`src/layout/docks.rs`); this puts each panel's element where that
+// says — its dock, the stage, a dialog (`floats`), or parked out of
+// sight — draws a dock's tabs while it holds more than one, and the dock
+// menu every panel's head opens, and reports a tab picked, closed, a
+// panel moved or a sash let go.
+import { $, el, icon } from '../kit/dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
-import { extensionElement, extensionOnStage } from './extension_views.js';
+import { extensionElement, extensionOnStage } from '../extension_views.js';
 import { drawFloats } from './floats.js';
-import { savedElement } from './saved_views.js';
-import { contextMenu, openMenu } from './kit/menu.js';
-import { closesOnMiddle } from './kit/middle.js';
+import { savedElement } from '../saved_views.js';
+import { contextMenu, openMenu } from '../kit/menu.js';
+import { closesOnMiddle } from '../kit/middle.js';
 import { panelOf } from './panels.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 const DOCKS = ['left', 'right', 'bottom'];
 const WHERE = {
     left: 'on the left',

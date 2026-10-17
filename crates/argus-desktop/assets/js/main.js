@@ -5,7 +5,7 @@ import { chime, listen as listenForSound } from './system/chime.js';
 import { closeStart, drawChrome, listenToRailEdge, notice, railPicked, reconnect, unpickRail, } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
 import { drawCode } from './code_stage.js';
-import { drawDocks, listen as listenToDocks } from './docks.js';
+import { drawDocks, listen as listenToDocks } from './layout/docks.js';
 import { clearComposer, focusComposer } from './compose.js';
 import { $ } from './kit/dom.js';
 import { drawHistory } from './history.js';

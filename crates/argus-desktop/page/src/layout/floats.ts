@@ -1,14 +1,14 @@
 // The dialogs: saved views floating over the stage, each in a frame that
-// its header moves and its corner resizes, the one pressed coming in
-// front. Rust keeps where each sits, how big, and in what order
-// (`src/docks.rs`); this draws them there, follows the pointer while one
-// is held, and reports where it was let go.
+// its header moves and its corner resizes, the one pressed coming in front.
+// Rust keeps where each sits, how big, and in what order
+// (`src/layout/docks.rs`); this draws them there, follows the pointer while
+// one is held, and reports where it was let go.
 
-import type { FloatBounds } from './bindings/FloatBounds';
-import type { FloatPage } from './bindings/FloatPage';
-import type { Panel } from './bindings/Panel';
-import { $, el } from './kit/dom.js';
-import { call } from './connection/tauri.js';
+import type { FloatBounds } from '../bindings/FloatBounds';
+import type { FloatPage } from '../bindings/FloatPage';
+import type { Panel } from '../bindings/Panel';
+import { $, el } from '../kit/dom.js';
+import { call } from '../connection/tauri.js';
 
 /** Each dialog's frame, kept across redraws so its panel keeps its state. */
 const frames = new Map<Panel, HTMLElement>();

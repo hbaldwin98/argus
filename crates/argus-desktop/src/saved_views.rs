@@ -6,7 +6,8 @@
 //! it changed. What is the window's own is the trail: a panel is named by
 //! the view it opened with and holds a row of view ids, one column each,
 //! and following a link from a column keeps the columns up to it and
-//! replaces the rest with the target. Where the panel sits is `docks`'s.
+//! replaces the rest with the target. Where the panel sits is
+//! `layout::docks`'s.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -16,7 +17,7 @@ use argus_protocol::{
 use serde::{Deserialize, Serialize};
 
 use crate::agent_views;
-use crate::docks::Panel;
+use crate::layout::docks::Panel;
 use crate::connection::page::PageDiagram;
 use crate::connection::sent::Sent;
 

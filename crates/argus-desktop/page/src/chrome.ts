@@ -20,7 +20,7 @@ import { renameDialog } from './rename.js';
 import { screen } from './screen.js';
 import { dragFromRail, drawSplit } from './split.js';
 import { openSettings } from './settings/preferences.js';
-import { dragEdge } from './edge.js';
+import { dragEdge } from './layout/edge.js';
 import { state } from './state.js';
 import { featureEdges } from './work.js';
 import { call } from './connection/tauri.js';

@@ -18,10 +18,10 @@
 //! project (`chrome::add_project`), the Settings dialog's choices
 //! (`settings::preferences`), the console (`console`), the views agents
 //! showed (`agent_views`), the extensions' views (`extension_views`), what
-//! fills the stage and where leaving it goes (`stage`), and what the daemon
-//! is making (`argus_protocol::connection::awaited`). The session says
-//! which of them a message or gesture is for, and what one of them changing
-//! means for the rest.
+//! fills the stage and where leaving it goes (`layout::stage`), and what
+//! the daemon is making (`argus_protocol::connection::awaited`). The
+//! session says which of them a message or gesture is for, and what one of
+//! them changing means for the rest.
 //!
 //! The client never predicts: the rail changes when the daemon's tree does,
 //! and a shell asked for is shown only once the daemon has said it made it
@@ -51,7 +51,7 @@ use crate::agents::Agents;
 use crate::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts_stage::{CheckoutsStage, Opened};
 use crate::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
-use crate::docks::{Dock, DockGesture, Docks, Panel, Place};
+use crate::layout::docks::{Dock, DockGesture, Docks, Panel, Place};
 use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
@@ -61,7 +61,7 @@ use crate::keys::{self, PageKey};
 use crate::link_dialog::LinkGesture;
 use crate::code_stage::{Back, Code, CodeGesture, Then as CodeThen};
 use crate::shown::workspace_grid::{self, Dir, Zone};
-use crate::stage::{Page, Stages};
+use crate::layout::stage::{Page, Stages};
 use crate::connection::page::{
     self, Call, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
     Stage,
@@ -71,7 +71,7 @@ use crate::settings::preferences::Chosen;
 use crate::reconcile_dialog::ReconcileGesture;
 use crate::chrome::rail::{self, Choices};
 use crate::saved_views::{Closed, SavedColumn, SavedViews, Whereabouts};
-use crate::dragged_width::{self, DraggedWidth};
+use crate::layout::dragged_width::{self, DraggedWidth};
 use crate::connection::sent::Sent;
 use crate::sessions::Sessions;
 use crate::sessions_dialog::{Recent, SessionsDialog, Then as SessionsThen};
@@ -1682,7 +1682,7 @@ impl Session {
     /// The page goes back to the stage under it, saying so, once what it
     /// shows does: an agent's view closed, or an extension's taken away or
     /// out of scope where the person now is. A docked view gone or out of
-    /// scope is only not drawn, by `docks`.
+    /// scope is only not drawn, by `layout::docks`.
     fn settle_page(&mut self) {
         let here = self.here();
         let (views, extension_views) = (&self.views, &self.extension_views);
@@ -3159,7 +3159,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::docks::FloatBounds;
+    use crate::layout::docks::FloatBounds;
     use crate::extension_views::ExtensionsPage;
     use crate::fixtures::{checkout, pane, project, repository};
     use crate::link_dialog::LinkPage;
@@ -5935,7 +5935,7 @@ mod tests {
         names(&s.call(Call::Docks { gesture }))
     }
 
-    fn docks_page(s: &mut Session) -> Option<crate::docks::DocksPage> {
+    fn docks_page(s: &mut Session) -> Option<crate::layout::docks::DocksPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::Docks(page) => Some(*page),
             _ => None,

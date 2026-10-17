@@ -4,8 +4,8 @@
 //! The daemon owns the views: a person closing one or asking for a refresh
 //! sends the request and changes nothing here until the daemon says it
 //! changed. Only which one is chosen, and that a refresh is pending, are
-//! the window's own; whether the panel is on screen is `docks`'s, and
-//! whether a view is open as a page is `stage`'s.
+//! the window's own; whether the panel is on screen is `layout::docks`'s,
+//! and whether a view is open as a page is `layout::stage`'s.
 
 use std::collections::{HashMap, HashSet};
 
@@ -186,7 +186,7 @@ impl AgentViews {
     /// front of the person, out in its dock or its view open as the page:
     /// the view it shows is seen then, and what changed in it
     /// while it was not is flashed once instead of waiting to be opened.
-    /// `popped` is the view `stage` has open as a page.
+    /// `popped` is the view `layout::stage` has open as a page.
     pub fn take(
         &mut self,
         out: bool,
@@ -237,7 +237,7 @@ impl AgentViews {
             open: self
                 .displayed()
                 .map(|(pane, id)| ViewRef { pane: pane.0, id }),
-            // Which is a page is `stage`'s, which `take` is told.
+            // Which is a page is `layout::stage`'s, which `take` is told.
             popped: None,
             can_press: false,
         }

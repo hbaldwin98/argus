@@ -6,16 +6,16 @@
 //! The daemon owns the views. Like an agent's view, one changes only when
 //! its extension publishes it again: an action is sent as it stands, and
 //! nothing here moves until the extension answers with a new view. Where a
-//! view is — which dock, or a page — is `docks`'s, and the page up is
-//! `stage`'s; both come in as `Placed`. The extension's `place` is only
-//! where it goes the first time it opens.
+//! view is — which dock, or a page — is `layout::docks`'s, and the page up
+//! is `layout::stage`'s; both come in as `Placed`. The extension's `place`
+//! is only where it goes the first time it opens.
 
 use std::collections::BTreeMap;
 
 use argus_protocol::{CheckoutId, ClientMsg, ExtPlace, ExtScope, ExtView, PaneId, RepositoryId};
 use serde::{Deserialize, Serialize};
 
-use crate::docks::{Dock, Panel, Place};
+use crate::layout::docks::{Dock, Panel, Place};
 use crate::extension_keys::{ExtCommandPage, ExtGroup, ExtensionKeys};
 use crate::keymap::Action;
 use crate::connection::page::{Event, Side};
