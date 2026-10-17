@@ -11,7 +11,7 @@ use argus_protocol::{
 };
 
 use super::*;
-use crate::browser::Opened;
+use crate::system::browser::Opened;
 use argus_protocol::board::outline::WorkRef;
 
 /// A line being typed at the foot of the stage.

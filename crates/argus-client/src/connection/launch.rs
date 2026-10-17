@@ -280,7 +280,7 @@ async fn wait_for_daemon_to_stop(operation: &str) -> anyhow::Result<()> {
 }
 
 fn spawn_daemon() -> anyhow::Result<()> {
-    crate::sibling::spawn_detached(&crate::sibling::path("argusd"))?;
+    crate::system::sibling::spawn_detached(&crate::system::sibling::path("argusd"))?;
     Ok(())
 }
 

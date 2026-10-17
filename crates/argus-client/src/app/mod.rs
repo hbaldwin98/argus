@@ -228,7 +228,7 @@ pub struct App {
     pub clipboard_write: fn(&str) -> bool,
     /// How a ticket's URL is opened, injectable so a test never starts the
     /// desk's browser.
-    pub open_url: fn(&str) -> crate::browser::Opened,
+    pub open_url: fn(&str) -> crate::system::browser::Opened,
     /// Whether the daemon takes a file off this machine (`PASTE_FILE`).
     /// False until it greets, and for a daemon from before the capability,
     /// which is told about rather than sent a message it cannot read.
@@ -457,10 +457,10 @@ impl App {
             grids: std::collections::HashMap::new(),
             leader_pending: false,
             pane_fullscreen: false,
-            clipboard: crate::clipboard::read,
-            clipboard_image: crate::clipboard::read_image,
-            clipboard_write: crate::clipboard::write,
-            open_url: crate::browser::open,
+            clipboard: crate::system::clipboard::read,
+            clipboard_image: crate::system::clipboard::read_image,
+            clipboard_write: crate::system::clipboard::write,
+            open_url: crate::system::browser::open,
             pastes_files: false,
             reports_view: false,
             view_sent: None,

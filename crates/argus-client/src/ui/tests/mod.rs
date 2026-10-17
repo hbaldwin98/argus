@@ -200,7 +200,7 @@ pub(super) fn feature_stage() -> (
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut app = App::new(tx);
     // Never the desk's browser: `t` here only says what it would open.
-    app.open_url = |_| crate::browser::Opened::Copied;
+    app.open_url = |_| crate::system::browser::Opened::Copied;
     app.on_server_msg(argus_protocol::ServerMsg::Tree(tree()));
     let project = app.current_project().unwrap().id;
     app.open_view(View::Feature);

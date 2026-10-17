@@ -5,7 +5,7 @@ use std::path::Path;
 
 use anyhow::Context;
 
-use crate::sibling;
+use crate::system::sibling;
 
 /// Starts `argus-desktop` detached, so closing this terminal leaves the
 /// window open, and returns at once. The window reaches the daemon itself.

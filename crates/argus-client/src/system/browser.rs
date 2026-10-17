@@ -4,7 +4,8 @@
 //! handler — so the browser is whichever one the person chose. Over SSH the
 //! machine Argus runs on is not the one at the desk, and a browser started
 //! there would open where nobody is looking, so the URL goes on the
-//! clipboard instead, which OSC 52 carries home (see [`crate::clipboard`]).
+//! clipboard instead, which OSC 52 carries home (see
+//! [`crate::system::clipboard`]).
 
 use std::process::{Command, Stdio};
 
@@ -27,7 +28,7 @@ pub fn open(url: &str) -> Opened {
     if std::env::var_os("SSH_CONNECTION").is_none() && start(url).is_ok() {
         return Opened::Browser;
     }
-    if crate::clipboard::write(url) {
+    if crate::system::clipboard::write(url) {
         Opened::Copied
     } else {
         Opened::Refused("no browser to open it in, and the clipboard is out of reach")

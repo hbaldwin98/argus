@@ -60,8 +60,8 @@ recent sessions need.
   moment `pipe` returns instead of returning to `main`.
 - **`argus desktop`** (HUN-180, done) — `crates/argus-client/src/commands/desktop.rs` starts
   `argus-desktop` from beside `argus`, else from PATH, detached, and says where to get it when it
-  is missing. The daemon and the window are started by one module, `sibling`, rather than two
-  copies of the detach.
+  is missing. The daemon and the window are started by one module, `system/sibling`, rather than
+  two copies of the detach.
 - **CI and release packaging** (HUN-180, landed with the crate) land in the same commit as the crate, not before: a release cut
   while `argus-desktop` does not exist would fail to copy it, and nothing needs WebKitGTK until the
   crate links it. In `.github/workflows/ci.yml` and `release.yml`, a step before building that runs

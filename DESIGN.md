@@ -459,7 +459,11 @@ result of a request; `ui` is a pure function of it.
 | module | answers |
 | --- | --- |
 | `main`, `redraw`, `terminal` | the event loop, the screen it runs over, and which command the command line asks for |
-| `sibling` | starting another of Argus's executables, found beside this one, so it outlives this process |
+| `system` | what this client asks of the machine it runs on and of the programs beside it |
+| `system/sibling` | starting another of Argus's executables, found beside this one, so it outlives this process |
+| `system/browser` | opening a ticket's URL in the person's browser, or copying it where no browser is at hand |
+| `system/clipboard` | text crossing between Argus and the clipboard |
+| `system/herdr` | what is reported outward to herdr: how many agents are working, and the most urgent |
 | `commands` | the `argus` commands that are not the terminal UI (the daemon lifecycle commands are `connection/launch`'s) |
 | `commands/bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
 | `commands/desktop` | the `argus desktop` command: opening the desktop window beside this terminal client |
@@ -501,13 +505,12 @@ result of a request; `ui` is a pure function of it.
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
-| `selection`, `pty_input`, `paste`, `clipboard` | a pane's selected text, and the input primitives |
+| `selection`, `pty_input`, `paste` | a pane's selected text, and the input primitives |
 | `pty_input/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
 | `pty_input/mouse` | a terminal mouse event as the protocol's, relative to the pane's area |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
-| `browser` | opening a ticket's URL in the person's browser, or copying it where no browser is at hand |
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
-| `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
+| `settings`, `theme`, `backend`, `profile` | preferences, palette, and the ratatui backend |
 | `fixtures` | the builders every test module shares: the tree, and a pane's view as the daemon's messages leave it |
 
 `argus-desktop` is the desktop window. It holds what it was sent and draws it; everything it knows
