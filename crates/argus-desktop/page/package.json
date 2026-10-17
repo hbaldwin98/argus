@@ -4,7 +4,7 @@
   "description": "The desktop window's page: TypeScript compiled into ../assets/js, which is committed so building the crate needs no Node.",
   "type": "module",
   "scripts": {
-    "build": "tsc -p . && node -e \"require('node:fs').rmSync('../assets/js/bindings', { recursive: true, force: true })\"",
+    "build": "node -e \"require('node:fs').rmSync('../assets/js', { recursive: true, force: true })\" && tsc -p . && node -e \"require('node:fs').rmSync('../assets/js/bindings', { recursive: true, force: true })\"",
     "lint": "oxlint",
     "fmt": "cd .. && oxfmt -c page/.oxfmtrc.json page/src page/test assets/style.css",
     "check": "npm run build && oxlint --deny-warnings && cd .. && oxfmt -c page/.oxfmtrc.json --check page/src page/test assets/style.css",
