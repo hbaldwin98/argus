@@ -42,7 +42,7 @@ pub(super) fn reconcile_message(rest: &[&str], base_url: &str, token: &str, mut 
         },
         _ => return "reconcile: use `reconcile`, `reconcile propose --stdin` or `reconcile report`".into(),
     };
-    match call::<hook_call::Reconcile>(base_url, token, &change) {
+    match call::<hook::call::Reconcile>(base_url, token, &change) {
         Ok(feature) => format_reconcile(&feature, &change),
         Err(Refusal::Unreadable) => "done".into(),
         Err(refusal) => refusal.said("could not reach the reconcile"),

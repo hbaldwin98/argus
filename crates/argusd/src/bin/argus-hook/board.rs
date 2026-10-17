@@ -13,7 +13,7 @@ pub(super) fn comments(rest: &[&str]) {
 }
 
 pub(super) fn comments_message(rest: &[&str], base_url: &str, token: &str) -> String {
-    let comments: Vec<ReviewComment> = match read::<hook_call::Comments>("comments", rest, base_url, token) {
+    let comments: Vec<ReviewComment> = match read::<hook::call::Comments>("comments", rest, base_url, token) {
         Ok(comments) => comments,
         Err(message) => return message,
     };
@@ -473,7 +473,7 @@ fn parse_task_add_args(args: &[&str]) -> Result<TaskWrite, String> {
 }
 
 pub(super) fn write_task(action: TaskAction, base_url: &str, token: &str) -> String {
-    match call::<hook_call::Tasks>(base_url, token, &action) {
+    match call::<hook::call::Tasks>(base_url, token, &action) {
         Ok(list) => format_tasks(&list),
         Err(Refusal::Unreadable) => "the task list changed".to_string(),
         Err(refusal) => refusal.said("could not change task"),
@@ -655,7 +655,7 @@ fn parse_diagram_add_args(args: &[&str]) -> Result<DiagramWrite, String> {
 }
 
 pub(super) fn write_diagram(action: DiagramAction, base_url: &str, token: &str) -> String {
-    match call::<hook_call::Diagrams>(base_url, token, &action) {
+    match call::<hook::call::Diagrams>(base_url, token, &action) {
         Ok(list) => format_diagrams(&list),
         Err(Refusal::Unreadable) => "the diagram list changed".to_string(),
         Err(refusal) => refusal.said("could not change diagram"),
@@ -713,7 +713,7 @@ pub(super) fn tracker_map_message(
         [other, ..] => return format!("tracker-map: `{other}` is not draft"),
     };
 
-    match call::<hook_call::TrackerMap>(base_url, token, &draft) {
+    match call::<hook::call::TrackerMap>(base_url, token, &draft) {
         Ok(map) => format_tracker_map(&map, !draft.is_empty()),
         Err(Refusal::Unreadable) => "the tracker map changed".to_string(),
         Err(refusal) => refusal.said("could not read the tracker map"),
@@ -754,11 +754,11 @@ pub(super) fn read_feature_board(
     base_url: &str,
     token: &str,
 ) -> Result<FeatureBoard, String> {
-    read::<hook_call::Features>("the feature", rest, base_url, token)
+    read::<hook::call::Features>("the feature", rest, base_url, token)
 }
 
 pub(super) fn write_feature(action: FeatureAction, base_url: &str, token: &str) -> String {
-    match call::<hook_call::ChangeFeature>(base_url, token, &action) {
+    match call::<hook::call::ChangeFeature>(base_url, token, &action) {
         Ok(board) => format_feature(&board),
         Err(Refusal::Unreadable) => "the feature changed".to_string(),
         Err(refusal) => refusal.said("could not change feature"),
@@ -1011,7 +1011,7 @@ pub(super) fn decisions_message(rest: &[&str], base_url: &str, token: &str) -> S
         Some("rewrite") => return rewrite_decision(args, base_url, token),
         _ => {}
     }
-    let board: DecisionBoard = match read::<hook_call::Decisions>("decisions", rest, base_url, token) {
+    let board: DecisionBoard = match read::<hook::call::Decisions>("decisions", rest, base_url, token) {
         Ok(board) => board,
         Err(message) => return message,
     };
@@ -1103,7 +1103,7 @@ fn show_decision(args: &[&str], base_url: &str, token: &str) -> String {
     let Some(id) = decision_id(Some(id)) else {
         return "could not read decisions: show wants the number `decisions` prints".to_string();
     };
-    let board: DecisionBoard = match read::<hook_call::Decisions>("decisions", &[], base_url, token) {
+    let board: DecisionBoard = match read::<hook::call::Decisions>("decisions", &[], base_url, token) {
         Ok(board) => board,
         Err(message) => return message,
     };
@@ -1145,7 +1145,7 @@ fn rewrite_decision(args: &[&str], base_url: &str, token: &str) -> String {
 /// The board the daemon answers with is not read: the change is what was
 /// asked, and it landed.
 fn post_decision_change(change: &DecisionChange, base_url: &str, token: &str) -> Result<(), String> {
-    match call::<hook_call::ChangeDecision>(base_url, token, change) {
+    match call::<hook::call::ChangeDecision>(base_url, token, change) {
         Ok(_) | Err(Refusal::Unreadable) => Ok(()),
         Err(refusal) => Err(refusal.said("could not change decision")),
     }
@@ -1269,7 +1269,7 @@ pub(super) fn decide_message(rest: &[&str], base_url: &str, token: &str) -> Stri
         Ok(write) => write,
         Err(message) => return format!("could not record the decision: {message}"),
     };
-    match call::<hook_call::Decide>(base_url, token, &write) {
+    match call::<hook::call::Decide>(base_url, token, &write) {
         Ok(decision) => {
             let place = match (decision.parent, write.supersedes) {
                 (_, Some(old)) => format!(" replacing #{old}"),

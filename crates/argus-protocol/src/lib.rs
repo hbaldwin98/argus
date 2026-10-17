@@ -31,8 +31,6 @@ pub mod fuzzy;
 pub mod hello;
 pub mod history_view;
 pub mod hook;
-pub mod hook_call;
-pub mod inbox;
 pub mod memory;
 pub mod message;
 pub mod outline;
@@ -131,7 +129,7 @@ pub use hook::{
     SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 pub use tree::ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
-pub use inbox::InboxItem;
+pub use hook::inbox::InboxItem;
 pub use memory::{
     select_context_packet, Artifact, ArtifactContent, ArtifactKind, ArtifactState, ContextPacket,
     ContextQuery, ForwardedMaterial, InclusionReason, MemorySnapshot, MemorySource, PacketEntry,

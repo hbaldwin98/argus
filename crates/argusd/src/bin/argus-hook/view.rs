@@ -72,7 +72,7 @@ pub(super) fn view_message(
         ["close", ..] => return "could not close the view: close wants the view's id".into(),
         _ => return USAGE.into(),
     };
-    match call::<hook_call::ChangeView>(base_url, token, &change) {
+    match call::<hook::call::ChangeView>(base_url, token, &change) {
         Ok(()) => done,
         Err(refusal) => refusal.said("could not change the view"),
     }
@@ -106,7 +106,7 @@ fn saved_view_message(rest: &[&str], base_url: &str, token: &str, mut stdin: imp
     };
     // The answer's shape is the change's, so it is read once as JSON and
     // taken apart below; one that is not JSON still means the change landed.
-    let reply = match call::<hook_call::SavedView>(base_url, token, &change) {
+    let reply = match call::<hook::call::SavedView>(base_url, token, &change) {
         Ok(reply) => Some(reply),
         Err(Refusal::Unreadable) => None,
         Err(refusal) => return refusal.said("could not change the saved view"),

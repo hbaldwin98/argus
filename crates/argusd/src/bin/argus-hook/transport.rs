@@ -2,7 +2,7 @@
 //! each endpoint answers, which URL a pane's reports go to, and the
 //! credentials the environment carries.
 
-use argus_protocol::hook_call::{Call, Form};
+use argus_protocol::hook::call::{Call, Form};
 
 use super::*;
 
@@ -335,7 +335,7 @@ mod tests {
     fn a_call_is_posted_to_its_endpoint_and_answered_with_its_reply() {
         let list = r#"{"project_name":"argus","feature":"pushes","tasks":[]}"#;
         let (base, server) = answering("200 OK", list);
-        let answered = call::<hook_call::Tasks>(&base, "t", &TaskAction::List).unwrap();
+        let answered = call::<hook::call::Tasks>(&base, "t", &TaskAction::List).unwrap();
         assert_eq!(answered.feature.as_deref(), Some("pushes"));
         let request = server.join().unwrap();
         assert!(request.starts_with("POST /pane/1/tasks"), "{request}");
@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn a_refusal_is_the_daemons_words_after_what_was_being_done() {
         let (base, server) = answering("409 Conflict", "no such task\n");
-        let refusal = call::<hook_call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
+        let refusal = call::<hook::call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
         server.join().unwrap();
         assert_eq!(refusal, Refusal::Refused("no such task".into()));
         assert_eq!(refusal.said("could not change task"), "could not change task: no such task");
@@ -354,14 +354,14 @@ mod tests {
     #[test]
     fn a_refusal_without_words_says_the_daemon_refused() {
         let (base, server) = answering("409 Conflict", "");
-        let refusal = call::<hook_call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
+        let refusal = call::<hook::call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
         server.join().unwrap();
         assert_eq!(refusal.said("could not change task"), "could not change task: daemon refused the request");
     }
 
     #[test]
     fn a_daemon_that_is_not_there_is_unavailable() {
-        let refusal = call::<hook_call::Tasks>(NOBODY, "t", &TaskAction::List).unwrap_err();
+        let refusal = call::<hook::call::Tasks>(NOBODY, "t", &TaskAction::List).unwrap_err();
         assert_eq!(refusal, Refusal::Unavailable);
         assert_eq!(refusal.said("could not change task"), "could not change task: daemon unavailable");
     }
@@ -371,7 +371,7 @@ mod tests {
         // Nothing listens on NOBODY: a body that travelled would come back
         // unavailable, not too large.
         let view = AgentView { id: "big".into(), title: "x".repeat(MAX_VIEW_BYTES), ..Default::default() };
-        let refusal = call::<hook_call::ChangeView>(NOBODY, "t", &ViewChange::Show { view }).unwrap_err();
+        let refusal = call::<hook::call::ChangeView>(NOBODY, "t", &ViewChange::Show { view }).unwrap_err();
         let Refusal::TooLarge { size, most } = refusal else {
             panic!("expected the size refused: {refusal:?}");
         };
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn an_answer_that_is_not_the_reply_is_unreadable() {
         let (base, server) = answering("200 OK", "not json");
-        let refusal = call::<hook_call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
+        let refusal = call::<hook::call::Tasks>(&base, "t", &TaskAction::List).unwrap_err();
         server.join().unwrap();
         assert_eq!(refusal, Refusal::Unreadable);
     }

@@ -45,7 +45,7 @@ pub(super) fn context_message(base_url: &str, token: &str) -> String {
 }
 
 fn read_tasks(base_url: &str, token: &str) -> Result<TaskList, String> {
-    call::<hook_call::Tasks>(base_url, token, &TaskAction::List).map_err(|refusal| refusal.said("could not read tasks"))
+    call::<hook::call::Tasks>(base_url, token, &TaskAction::List).map_err(|refusal| refusal.said("could not read tasks"))
 }
 
 pub(super) fn format_context(

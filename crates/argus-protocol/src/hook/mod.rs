@@ -8,6 +8,9 @@
 //! silently: a new endpoint on one side compiles perfectly and fails at
 //! runtime against the other. Written once they cannot.
 
+pub mod call;
+pub mod inbox;
+
 use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};

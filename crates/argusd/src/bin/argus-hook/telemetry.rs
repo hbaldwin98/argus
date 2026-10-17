@@ -65,7 +65,7 @@ pub(super) fn post_telemetry(
     session: Option<&str>,
 ) {
     if let Some(base) = pane_base(url) {
-        send::<hook_call::Telemetry>(&base, token, report, session);
+        send::<hook::call::Telemetry>(&base, token, report, session);
     }
 }
 

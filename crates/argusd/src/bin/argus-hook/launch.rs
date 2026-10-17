@@ -28,7 +28,7 @@ fn agent_message(rest: &[&str], stdin: Option<String>, base_url: &str, token: &s
         Ok(launch) => launch,
         Err(message) => return format!("Not started: {message}"),
     };
-    match call_within::<hook_call::Launch>(base_url, token, &launch, LAUNCH_WAIT) {
+    match call_within::<hook::call::Launch>(base_url, token, &launch, LAUNCH_WAIT) {
         Ok(started) => format!(
             "Started {} as pane {} in {}.",
             started.template,

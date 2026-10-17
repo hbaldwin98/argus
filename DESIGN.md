@@ -318,7 +318,6 @@ live in this crate and a contract written twice drifts in silence.
 | --- | --- |
 | `message` | what a client asks for, and what the daemon sends back |
 | `hello` | what each side of a connection can take, said before anything else, and how a client's greeting went |
-| `inbox` | what the daemon tells a harness's plugin over its inbox |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `tree/held` | a client's copy of the tree, and finding things in it: every pane and checkout, where a pane or checkout sits, telemetry applied between trees, and which panes changed state from the copy before |
 | `tree/ids` | the identities the daemon hands out, one type per kind of node so a pane id cannot stand where a checkout id belongs |
@@ -326,7 +325,8 @@ live in this crate and a contract written twice drifts in silence.
 | `tree/column` | the order a repository's checkouts column lists its rows: the main branch first, then the checkouts, then the branches without one while they are shown |
 | `tree/column/verbs` | what a row of that column allows: the request each verb on it sends — remove, new worktree, switch, fetch, pull — or the words it is refused in, which checkout git runs in, and what a yes to the forced deletion sends |
 | `hook` | the pane API's URLs, environment, headers and flags, and the largest body each endpoint takes — `argus-hook` builds what the daemon parses — an extension's endpoints among them |
-| `hook_call` | what each pane-API endpoint is posted and answers with: the one declaration `argus-hook` calls through and the daemon answers through |
+| `hook/inbox` | what the daemon tells a harness's plugin over its inbox |
+| `hook/call` | what each pane-API endpoint is posted and answers with: the one declaration `argus-hook` calls through and the daemon answers through |
 | `extensions` | what an extension publishes for Argus to draw — its views, commands and dialogs — and what the person does with them on the way back: what taking an action on a view carries, a row or none, or the words it is refused in |
 | `ext_console` | what an extension's console view runs and where — its command, working directory and environment as the extension asks, and the pane and ending the daemon reports |
 | `extension_keys` | which keys an extension may bind, and the words a refused one is refused in: the keys Argus keeps where an extension's would be heard |
@@ -1198,7 +1198,7 @@ already moved to, the innermost checkout holding that directory takes the row, a
 since the last poll is looked for before the move is refused. The refusal is the answer's body,
 and the helper prints it, because a move that failed in silence left agents believing the row had
 followed them.
-What each endpoint is posted and answers with is declared once, in `argus_protocol::hook_call`:
+What each endpoint is posted and answers with is declared once, in `argus_protocol::hook::call`:
 `argus-hook` makes its call through the declaration and the daemon answers through it. A body the
 endpoint cannot read is refused with a `400` in serde's words, a refusal is a `409` carrying the
 reason, and a body past the endpoint's bound (`Endpoint::max_body`) is refused by the helper before

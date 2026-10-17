@@ -98,7 +98,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use argus_protocol::hook_call::{self, Call};
+use argus_protocol::hook::{self, call::Call};
 use argus_protocol::{
     is_slug, parse_pane_url, requested_scope, Consequence, Decision, DecisionBoard,
     DecisionChange, DecisionState, DecisionText, DecisionWrite, DiagramAction,
@@ -242,7 +242,7 @@ fn checkout(rest: &[&str]) {
     // Said aloud either way: a move that silently failed left agents
     // believing their row had followed them.
     let Some(path) = reported_checkout(rest) else { return };
-    match call::<hook_call::Checkout>(&env_url(), &env_token(), &path.to_string_lossy().into_owned()) {
+    match call::<hook::call::Checkout>(&env_url(), &env_token(), &path.to_string_lossy().into_owned()) {
         Ok(()) => println!("This pane now belongs to {}.", path.display()),
         Err(refusal) => println!("{}", refusal.said("Not moved")),
     }
