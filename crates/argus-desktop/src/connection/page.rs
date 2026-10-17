@@ -28,7 +28,7 @@ use crate::keys::keymap::{Action, Command, Group, KeyLayer};
 use crate::keys::page_key::PageKey;
 use crate::link_dialog::{LinkGesture, LinkPage};
 use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
-use crate::sessions_dialog::{SessionPreview, SessionsPage};
+use crate::agents::sessions_dialog::{SessionPreview, SessionsPage};
 use crate::views::saved::{SavedColumn, SavedViewsPage};
 use crate::panes::shown::workspace_grid::{Dir, GridPage, Zone};
 use crate::settings::remembered::{Backdrop, EditorMode, Preferences, SavedLinks, Theme};

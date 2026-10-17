@@ -2,11 +2,11 @@
 // repository is the one chosen on the rail, so picking another chooses it
 // there; the checkout, the agent and the message are a draft the page
 // keeps until a pane it started is made.
-import { $, el, icon } from './kit/dom.js';
-import { chordsFor, keycaps } from './keys/chords.js';
-import { actionFor } from './keys/keymap.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { $, el, icon } from '../kit/dom.js';
+import { chordsFor, keycaps } from '../keys/chords.js';
+import { actionFor } from '../keys/keymap.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 /** Built once and only refilled after, so a redraw for a pane's status
  *  never takes the caret out of the message. */
 let parts = null;

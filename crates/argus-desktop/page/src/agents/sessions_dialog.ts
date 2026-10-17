@@ -2,17 +2,17 @@
 // first, beside what the one under the cursor said, with the way to go to
 // it, resume it, or read it whole in the reader `transcript` draws in
 // place of the list. Rust holds the list, the filters and what each
-// session offers (`src/sessions_dialog.rs`); the page draws them and says
-// what was pressed.
+// session offers (`src/agents/sessions_dialog.rs`); the page draws them
+// and says what was pressed.
 
-import type { Action } from './bindings/Action';
-import type { SessionPreview } from './bindings/SessionPreview';
-import type { SessionRowView } from './bindings/SessionRowView';
-import type { SessionsPage } from './bindings/SessionsPage';
-import { $, el, ghosts, icon, type Child } from './kit/dom.js';
-import { actionFor } from './keys/keymap.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import type { Action } from '../bindings/Action';
+import type { SessionPreview } from '../bindings/SessionPreview';
+import type { SessionRowView } from '../bindings/SessionRowView';
+import type { SessionsPage } from '../bindings/SessionsPage';
+import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { actionFor } from '../keys/keymap.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 import { drawReader, placeReader, said } from './transcript.js';
 
 function keycap(key: string): HTMLElement {

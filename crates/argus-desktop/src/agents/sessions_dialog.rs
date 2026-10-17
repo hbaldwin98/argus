@@ -20,8 +20,8 @@ use serde::Serialize;
 use crate::keys::keymap::Action;
 use crate::connection::page::{Event, ReaderPage, Resumed, TranscriptLine};
 use crate::connection::sent::Sent;
-use crate::sessions::{self, Sessions};
-use crate::transcript_reader::{self, TranscriptReader};
+use crate::agents::sessions::{self, Sessions};
+use crate::agents::transcript_reader::{self, TranscriptReader};
 
 /// The recent-sessions dialog: one repository's agent sessions, live ones
 /// first, and what the one under the cursor said.

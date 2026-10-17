@@ -2,12 +2,12 @@
 // preview shows it, and the full-transcript reader that opens in place of
 // that dialog's list — the person's turns as a jump list, a find, Copy
 // session id and Resume. Rust holds where the reader is and what it found
-// (`src/transcript_reader.rs`); the page draws it and says what was
-// pressed.
-import { clock, hhmm, span } from './kit/clock.js';
-import { el, ghosts } from './kit/dom.js';
-import { actionFor } from './keys/keymap.js';
-import { call } from './connection/tauri.js';
+// (`src/agents/transcript_reader.rs`); the page draws it and says what
+// was pressed.
+import { clock, hhmm, span } from '../kit/clock.js';
+import { el, ghosts } from '../kit/dom.js';
+import { actionFor } from '../keys/keymap.js';
+import { call } from '../connection/tauri.js';
 function keycap(key) {
     return el('span', { class: 'kbd' }, key);
 }

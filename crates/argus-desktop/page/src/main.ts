@@ -16,13 +16,13 @@ import {
 import { drawCheckouts } from './checkouts.js';
 import { drawCode } from './code_stage.js';
 import { drawDocks, listen as listenToDocks } from './layout/docks.js';
-import { clearComposer, focusComposer } from './compose.js';
+import { clearComposer, focusComposer } from './agents/compose.js';
 import { $ } from './kit/dom.js';
 import { drawHistory } from './history.js';
 import { drawLink } from './link.js';
 import { drawReconcile } from './reconcile.js';
 import { drawReview } from './review.js';
-import { drawSessions } from './sessions.js';
+import { drawSessions } from './agents/sessions_dialog.js';
 import { drawSettings } from './settings/preferences.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './panes/input.js';

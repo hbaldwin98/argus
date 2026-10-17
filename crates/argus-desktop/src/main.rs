@@ -40,12 +40,9 @@ mod record_lens;
 mod review;
 mod sequence;
 mod session;
-mod sessions;
-mod sessions_dialog;
 mod settings;
 mod system;
 mod tracker_dialogs;
-mod transcript_reader;
 mod views;
 mod work_lens;
 

@@ -9,17 +9,17 @@
 //!
 //! Each subject keeps its own state and what the page last heard of it —
 //! the status bar (`chrome::status`), the panes on screen (`panes::shown`),
-//! the agents offered (`agents`), the review and history (`dialogs`), the
-//! link and reconcile dialogs (`tracker_dialogs`), the three stages
-//! (`feature_stage`, `checkouts_stage`, `code_stage`) and the note a new
-//! feature is written as (`capture_note`), a repository's past agent
-//! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
-//! the project switcher (`chrome::switcher`) and the dialog adding a
-//! project (`chrome::add_project`), the Settings dialog's choices
-//! (`settings::preferences`), the console (`panes::console`), the views
-//! agents showed (`views::agent`), the extensions' views
-//! (`extensions::views`), what fills the stage and where leaving it goes
-//! (`layout::stage`), and what the daemon is making
+//! the agents offered (`agents::templates`), the review and history
+//! (`dialogs`), the link and reconcile dialogs (`tracker_dialogs`), the
+//! three stages (`feature_stage`, `checkouts_stage`, `code_stage`) and the
+//! note a new feature is written as (`capture_note`), a repository's past
+//! agent sessions (`agents::sessions`) and the dialog listing them
+//! (`agents::sessions_dialog`), the project switcher (`chrome::switcher`)
+//! and the dialog adding a project (`chrome::add_project`), the Settings
+//! dialog's choices (`settings::preferences`), the console
+//! (`panes::console`), the views agents showed (`views::agent`), the
+//! extensions' views (`extensions::views`), what fills the stage and where
+//! leaving it goes (`layout::stage`), and what the daemon is making
 //! (`argus_protocol::connection::awaited`). The session says which of them
 //! a message or gesture is for, and what one of them changing means for the
 //! rest.
@@ -48,7 +48,7 @@ use crate::views::agent::AgentViews;
 use crate::extensions::dialog::ExtensionDialogs;
 use crate::extensions::keys::ExtensionKeys;
 use crate::extensions::views::{first_place, ExtensionGesture, ExtensionViews, Here, Placed};
-use crate::agents::Agents;
+use crate::agents::templates::Agents;
 use crate::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts_stage::{CheckoutsStage, Opened};
 use crate::panes::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
@@ -74,8 +74,8 @@ use crate::chrome::rail::{self, Choices};
 use crate::views::saved::{Closed, SavedColumn, SavedViews, Whereabouts};
 use crate::layout::dragged_width::{self, DraggedWidth};
 use crate::connection::sent::Sent;
-use crate::sessions::Sessions;
-use crate::sessions_dialog::{Recent, SessionsDialog, Then as SessionsThen};
+use crate::agents::sessions::Sessions;
+use crate::agents::sessions_dialog::{Recent, SessionsDialog, Then as SessionsThen};
 use crate::settings::remembered::{Backdrop, SavedLinks, Settings, Theme};
 use crate::panes::shown::ShownPane;
 use crate::chrome::status::StatusBar;
@@ -5379,7 +5379,7 @@ mod tests {
         s
     }
 
-    fn sessions_page(s: &mut Session) -> Option<crate::sessions_dialog::SessionsPage> {
+    fn sessions_page(s: &mut Session) -> Option<crate::agents::sessions_dialog::SessionsPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::Sessions(page) => Some(*page),
             _ => None,

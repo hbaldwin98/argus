@@ -3,11 +3,11 @@
 // there; the checkout, the agent and the message are a draft the page
 // keeps until a pane it started is made.
 
-import { $, el, icon } from './kit/dom.js';
-import { chordsFor, keycaps } from './keys/chords.js';
-import { actionFor } from './keys/keymap.js';
-import { state } from './state.js';
-import { call } from './connection/tauri.js';
+import { $, el, icon } from '../kit/dom.js';
+import { chordsFor, keycaps } from '../keys/chords.js';
+import { actionFor } from '../keys/keymap.js';
+import { state } from '../state.js';
+import { call } from '../connection/tauri.js';
 
 type Repository = NonNullable<typeof state.rail.project>['repositories'][number];
 

@@ -6,7 +6,7 @@ import type { Resumed } from './bindings/Resumed';
 import { drawCheckouts } from './checkouts.js';
 import { drawCode } from './code_stage.js';
 import { clock } from './kit/clock.js';
-import { drawComposer } from './compose.js';
+import { drawComposer } from './agents/compose.js';
 import { drawConsole } from './panes/console.js';
 import { $, el, ghosts, icon, type Child } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extensions/views.js';
