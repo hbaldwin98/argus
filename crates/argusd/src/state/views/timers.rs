@@ -13,7 +13,7 @@ use std::time::Duration;
 use argus_protocol::PaneId;
 use tokio::task::AbortHandle;
 
-use super::*;
+use crate::state::*;
 
 struct Timer {
     every: u32,
@@ -24,7 +24,7 @@ struct Timer {
 }
 
 #[derive(Default)]
-pub(super) struct Timers {
+pub(in crate::state) struct Timers {
     held: HashMap<(PaneId, String), Timer>,
     #[cfg(test)]
     started: u64,
@@ -35,7 +35,7 @@ impl Timers {
     /// `None`. A timer already running at that interval is left as it is;
     /// otherwise the old one is stopped and `start` makes the new, which
     /// may decline (no runtime to spawn on).
-    pub(super) fn keep(
+    pub(in crate::state) fn keep(
         &mut self,
         pane: PaneId,
         id: &str,
@@ -67,7 +67,7 @@ impl Timers {
         }
     }
 
-    pub(super) fn stop(&mut self, pane: PaneId, id: &str) {
+    pub(in crate::state) fn stop(&mut self, pane: PaneId, id: &str) {
         if let Some(old) = self.held.remove(&(pane, id.to_string())) {
             old.task.abort();
         }
@@ -76,13 +76,13 @@ impl Timers {
     /// Whether the view is being asked to refresh, for the tests of what
     /// stops a timer.
     #[cfg(test)]
-    pub(super) fn is_refreshing(&self, pane: PaneId, id: &str) -> bool {
+    pub(in crate::state) fn is_refreshing(&self, pane: PaneId, id: &str) -> bool {
         self.held.contains_key(&(pane, id.to_string()))
     }
 
     /// Which timer the view has, for the tests of what keeps one.
     #[cfg(test)]
-    pub(super) fn generation(&self, pane: PaneId, id: &str) -> Option<u64> {
+    pub(in crate::state) fn generation(&self, pane: PaneId, id: &str) -> Option<u64> {
         self.held.get(&(pane, id.to_string())).map(|t| t.generation)
     }
 }
@@ -93,7 +93,7 @@ impl Timers {
 /// task when the view goes, and the loop also ends on its own should the
 /// view be gone first. A delayed tick is not made up, so an agent that was
 /// busy is asked once, not once per tick it missed.
-pub(super) async fn keep_refreshing(daemon: Weak<Daemon>, pane: PaneId, id: String, every: Duration) {
+pub(in crate::state) async fn keep_refreshing(daemon: Weak<Daemon>, pane: PaneId, id: String, every: Duration) {
     let mut ticks = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -106,7 +106,7 @@ pub(super) async fn keep_refreshing(daemon: Weak<Daemon>, pane: PaneId, id: Stri
 }
 
 /// Starts the timer task for a view, on the runtime the daemon is on.
-pub(super) fn spawn_timer(daemon: &Arc<Daemon>, pane: PaneId, id: &str, every: Duration) -> Option<AbortHandle> {
+pub(in crate::state) fn spawn_timer(daemon: &Arc<Daemon>, pane: PaneId, id: &str, every: Duration) -> Option<AbortHandle> {
     let task = keep_refreshing(Arc::downgrade(daemon), pane, id.to_string(), every);
     tokio::runtime::Handle::try_current().ok().map(|rt| rt.spawn(task).abort_handle())
 }

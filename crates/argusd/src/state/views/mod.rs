@@ -8,6 +8,12 @@
 //! Every change to what is held — a show, a patch, a close, a pane going —
 //! is made, and told to the watchers, under the one lock, so a watcher
 //! sees each change in the order it was made.
+//!
+//! Asking a view to refresh is `timers`'s, and the views agents kept are
+//! `saved`'s.
+
+pub(super) mod saved;
+pub(super) mod timers;
 
 use argus_protocol::views::press::relay;
 use argus_protocol::views::requests::refresh_shown;
@@ -18,7 +24,7 @@ use std::sync::Arc;
 
 use tokio::sync::broadcast;
 
-use super::view_timers::{spawn_timer, Timers};
+use timers::{spawn_timer, Timers};
 use super::*;
 
 /// The views, oldest shown first across every pane, which is the order a

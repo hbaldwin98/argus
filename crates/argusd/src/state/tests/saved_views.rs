@@ -193,7 +193,7 @@ async fn the_store_refuses_the_view_past_the_limit_with_a_reason() {
         };
         d.store.save_view(&stored).unwrap();
     }
-    *d.saved_views.lock().unwrap() = super::super::saved_views::Held::load(d.store.saved_views().unwrap());
+    *d.saved_views.lock().unwrap() = crate::state::views::saved::Held::load(d.store.saved_views().unwrap());
 
     let response = text(&post(&d, pane, &save("one-more", serde_json::json!({}))).await);
     assert!(response.starts_with("HTTP/1.1 409") && response.contains("delete one"), "{response}");
@@ -223,7 +223,7 @@ async fn an_agent_lists_and_reads_the_views_it_reaches() {
     elsewhere.feature = None;
     elsewhere.attached.clear();
     d.store.save_view(&elsewhere).unwrap();
-    *d.saved_views.lock().unwrap() = super::super::saved_views::Held::load(d.store.saved_views().unwrap());
+    *d.saved_views.lock().unwrap() = crate::state::views::saved::Held::load(d.store.saved_views().unwrap());
 
     let listed: Vec<SavedViewEntry> = serde_json::from_str(&body(&post(&d, pane, r#"{"action":"list"}"#).await)).unwrap();
     let ids: Vec<&str> = listed.iter().map(|e| e.id.as_str()).collect();
@@ -270,7 +270,7 @@ async fn a_feature_that_goes_leaves_its_views_in_the_repository() {
     assert_eq!(replay[0].features.len(), 1);
 
     d.store.remove_feature(&board, "dark-mode").unwrap();
-    *d.saved_views.lock().unwrap() = super::super::saved_views::Held::load(d.store.saved_views().unwrap());
+    *d.saved_views.lock().unwrap() = crate::state::views::saved::Held::load(d.store.saved_views().unwrap());
     d.push_saved_views();
 
     let saved = changed(rx.recv().await.unwrap());
@@ -390,7 +390,7 @@ async fn a_refresh_is_refused_with_a_reason_when_no_agent_can_be_asked() {
     let mut forgotten = d.store.saved_views().unwrap().remove(0);
     forgotten.saved_by = None;
     d.store.save_view(&forgotten).unwrap();
-    *d.saved_views.lock().unwrap() = super::super::saved_views::Held::load(d.store.saved_views().unwrap());
+    *d.saved_views.lock().unwrap() = crate::state::views::saved::Held::load(d.store.saved_views().unwrap());
     assert!(d.refresh_saved_view("deps").unwrap_err().contains("since Argus started"));
     let _ = d.close_pane(pane);
 }
@@ -441,7 +441,7 @@ async fn a_saved_view_whose_repository_is_not_in_the_tree_is_kept_and_not_sent()
         view: argus_protocol::AgentView { id: "orphan".into(), title: "t".into(), ..Default::default() },
     };
     d.store.save_view(&stored).unwrap();
-    *d.saved_views.lock().unwrap() = super::super::saved_views::Held::load(d.store.saved_views().unwrap());
+    *d.saved_views.lock().unwrap() = crate::state::views::saved::Held::load(d.store.saved_views().unwrap());
 
     assert!(d.watch_saved_views().0.is_empty());
     assert_eq!(d.store.saved_views().unwrap().len(), 1);

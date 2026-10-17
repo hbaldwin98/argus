@@ -11,7 +11,8 @@
 //! disk, `panel` for the rows the user adds and removes, `workspaces` for
 //! which scope is open,
 //! `extensions` for what extensions publish and what goes back to them,
-//! `board` for a feature board and who may change it,
+//! `board` for a feature board and who may change it, `views` for the
+//! views agents show and keep,
 //! `session` for what survives a restart, `sessions`
 //! for the agent sessions a repository's harnesses kept, `inbox` for
 //! the way what Argus says reaches an agent, and `tree` for finding your
@@ -37,8 +38,6 @@ mod build;
 mod clock;
 mod extensions;
 mod follow;
-mod saved_views;
-mod view_timers;
 mod views;
 mod git_ops;
 mod git_reads;
@@ -60,7 +59,7 @@ pub use extensions::ExtensionNews;
 pub use pushes::{BoardNews, Pushes, TreeNews};
 #[cfg(test)]
 pub(crate) use pushes::{BOARDS_DEPTH, EXTENSIONS_DEPTH, TREE_DEPTH, VIEWS_DEPTH};
-pub use saved_views::SavedViewNews;
+pub use views::saved::SavedViewNews;
 pub use views::ViewNews;
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
@@ -342,7 +341,7 @@ pub struct Daemon {
     agent_views: StdMutex<views::Views>,
     /// The views agents kept, and what clients were last told of them.
     /// Changes are sent while this is locked, as the agents' are.
-    saved_views: StdMutex<saved_views::Held>,
+    saved_views: StdMutex<views::saved::Held>,
     /// Agent templates, replaceable: `reload_config` swaps them, and every
     /// start looks its template up by name at the time it runs.
     templates: StdMutex<Vec<AgentConfig>>,

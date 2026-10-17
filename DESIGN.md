@@ -416,8 +416,8 @@ to the type or its locking.
 | `state/board/address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
 | `state/board/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `state/views` | which views agents have shown, per pane, and which go when |
-| `state/view_timers` | which views are being asked to refresh, and the task that asks |
-| `state/saved_views` | the views agents kept: saving, marking stale, deleting, refreshing and pressing them, which of them an agent may reach, what each client is told as the rows or the tree change, and the staleness read off the tree |
+| `state/views/timers` | which views are being asked to refresh, and the task that asks |
+| `state/views/saved` | the views agents kept: saving, marking stale, deleting, refreshing and pressing them, which of them an agent may reach, what each client is told as the rows or the tree change, and the staleness read off the tree |
 | `connection` | one client connection: which task each message runs on, and the topics it has joined |
 | `connection/topics` | what a connection is pushed: each topic's first send, what each change sends, and how a client that fell behind is brought level |
 | `connection/dispatch` | what each client message does, and the one way its answer or refusal reaches the client that asked |

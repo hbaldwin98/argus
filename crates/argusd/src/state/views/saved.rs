@@ -33,18 +33,18 @@ use tokio::sync::broadcast;
 
 use crate::store::StoredView;
 
-use super::*;
+use crate::state::*;
 
 /// The rows, and what the clients were last told of them.
 #[derive(Default)]
-pub(super) struct Held {
-    pub(super) rows: Vec<Row>,
+pub(in crate::state) struct Held {
+    pub(in crate::state) rows: Vec<Row>,
     told: HashMap<String, Told>,
     next_rev: u64,
 }
 
-pub(super) struct Row {
-    pub(super) stored: StoredView,
+pub(in crate::state) struct Row {
+    pub(in crate::state) stored: StoredView,
     /// Changes whenever the row does, so a row is sent again exactly when
     /// it changed.
     rev: u64,
@@ -60,7 +60,7 @@ struct Told {
 }
 
 impl Held {
-    pub(super) fn load(rows: Vec<StoredView>) -> Held {
+    pub(in crate::state) fn load(rows: Vec<StoredView>) -> Held {
         let mut held = Held::default();
         for stored in rows {
             held.put(stored);
@@ -68,7 +68,7 @@ impl Held {
         held
     }
 
-    pub(super) fn put(&mut self, stored: StoredView) {
+    pub(in crate::state) fn put(&mut self, stored: StoredView) {
         self.next_rev += 1;
         let row = Row { stored, rev: self.next_rev };
         match self.rows.iter().position(|r| r.stored.id == row.stored.id) {
@@ -162,7 +162,7 @@ impl Daemon {
     /// Tells the watchers what changed since they were last told: a row
     /// saved, marked or deleted, or a tree that moved a view's repository
     /// or the checkout it was built in.
-    pub(super) fn push_saved_views(&self) {
+    pub(in crate::state) fn push_saved_views(&self) {
         let boards: Vec<String> = {
             let held = self.saved_views.lock().unwrap();
             if held.rows.is_empty() && held.told.is_empty() {
@@ -294,7 +294,7 @@ impl Daemon {
     fn save_view_for_agent(
         &self,
         pane: PaneId,
-        address: &super::board::address::BoardAddress,
+        address: &crate::state::board::address::BoardAddress,
         write: SavedViewWrite,
     ) -> anyhow::Result<SavedViewEntry> {
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -340,7 +340,7 @@ impl Daemon {
             attached,
             recipe: write.recipe.filter(|r| !r.trim().is_empty()),
             sources: write.sources,
-            built_at: super::board::decisions::now(),
+            built_at: crate::state::board::decisions::now(),
             built_commit: crate::git::head_oid(&checkout),
             checkout: Some(checkout.to_string_lossy().into_owned()),
             stale: false,

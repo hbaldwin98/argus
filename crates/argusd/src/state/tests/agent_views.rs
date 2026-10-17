@@ -485,7 +485,7 @@ async fn the_refresh_timer_asks_the_agent_each_interval_until_the_view_goes() {
 
     // The shortest interval the protocol allows is a minute, so the loop
     // itself is run at a pace a test can wait for.
-    let timer = tokio::spawn(super::view_timers::keep_refreshing(
+    let timer = tokio::spawn(crate::state::views::timers::keep_refreshing(
         Arc::downgrade(&d),
         pane,
         "a".into(),

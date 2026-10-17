@@ -15,7 +15,7 @@ use argus_protocol::{
 };
 use tokio::sync::broadcast;
 
-use super::saved_views::{self, SavedViewNews};
+use super::views::saved::{self, SavedViewNews};
 use super::views::{self, ViewNews};
 use super::ExtensionNews;
 
@@ -167,7 +167,7 @@ impl Pushes {
     }
 
     /// Sent under the saved-views lock, for the same reason.
-    pub(super) fn saved_view(&self, _held: &saved_views::Held, news: SavedViewNews) {
+    pub(super) fn saved_view(&self, _held: &saved::Held, news: SavedViewNews) {
         let _ = self.saved_views.send(news);
     }
 

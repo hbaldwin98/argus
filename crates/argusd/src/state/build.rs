@@ -138,7 +138,7 @@ impl Daemon {
             .and_then(|name| workspaces.iter().find(|w| w.name == name).map(|w| w.id))
             .unwrap_or(default_ws);
 
-        let saved_views = saved_views::Held::load(store.saved_views().unwrap_or_else(|e| {
+        let saved_views = views::saved::Held::load(store.saved_views().unwrap_or_else(|e| {
             tracing::warn!("could not read the saved views: {e}");
             Vec::new()
         }));
