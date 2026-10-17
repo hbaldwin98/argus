@@ -452,6 +452,9 @@ export function railAction(action: Action): boolean {
     case 'openReview':
       call('open_review', { checkout: pick.checkout });
       return true;
+    case 'openHistory':
+      call('open_history', { checkout: pick.checkout });
+      return true;
     case 'fold':
       foldCheckout(pick.checkout);
       return true;

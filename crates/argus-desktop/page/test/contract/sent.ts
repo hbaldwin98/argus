@@ -1560,6 +1560,28 @@ export const sent = [
           "label": "review its checkout's changes"
         },
         {
+          "action": "openHistory",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "h",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            },
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "H",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "read its checkout's history"
+        },
+        {
           "action": "fold",
           "chords": [
             {
