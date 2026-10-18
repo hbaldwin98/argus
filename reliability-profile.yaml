@@ -27,7 +27,7 @@ roles:
   T1: { tool: cargo-nextest, version: "0.9.148", verified: 2026-10-17, notes: "3306 tests in ~30s warm; JUnit via .config/nextest.toml profiles ci and props" }
   T2: { tool: proptest, verified: 2026-10-17, notes: "properties live in `mod properties` (10 today, all in argus-protocol); failing cases are saved under proptest-regressions/" }
   T3: { tool: insta, notes: "not adopted yet (S2): request/response transcripts over the IPC socket" }
-  T4: { tool: cargo-mutants, version: "27.1.0", verified: 2026-10-17, notes: "--in-diff runs; a diff without Rust changes is a clean no-op. Full baseline not run yet" }
+  T4: { tool: cargo-mutants, version: "27.1.0", verified: 2026-10-17, notes: "--in-diff runs; a diff without Rust changes is a clean no-op. Baseline 2026-10-17, argusd store: 91.5% (333/364 viable; 31 missed, 9 timeouts, 25 unviable) in 44m at -j 4" }
   T5: { tool: in-process argusd on a temp socket, notes: "not built yet (S2)" }
   T6: { tool: argus-protocol client }
   T7: { tool: proptest over arbitrary ClientMsg, notes: "no OpenAPI spec exists; not built yet" }
