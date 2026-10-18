@@ -11,3 +11,9 @@ fail-fast = false
 
 [profile.props.junit]
 path = "junit.xml"
+
+[profile.snapshots]
+fail-fast = false
+
+[profile.snapshots.junit]
+path = "junit.xml"

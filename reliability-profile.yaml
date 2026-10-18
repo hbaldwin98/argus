@@ -26,9 +26,9 @@ freshness_exclude: ["*.md"]
 roles:
   T1: { tool: cargo-nextest, version: "0.9.148", verified: 2026-10-17, notes: "3306 tests in ~30s warm; JUnit via .config/nextest.toml profiles ci and props" }
   T2: { tool: proptest, verified: 2026-10-17, notes: "properties live in `mod properties` (10 today, all in argus-protocol); failing cases are saved under proptest-regressions/" }
-  T3: { tool: insta, notes: "not adopted yet (S2): request/response transcripts over the IPC socket" }
+  T3: { tool: insta, version: "1.49.0", verified: 2026-10-18, notes: "request/response transcripts over the IPC socket, five conversations in crates/argusd/src/test_host/tests; scrubbed and rendered by test_host::{scrub,render}, so a capture is plain text apart from insta" }
   T4: { tool: cargo-mutants, version: "27.1.0", verified: 2026-10-17, notes: "--in-diff runs; a diff without Rust changes is a clean no-op; reliab-adapter-cargo-mutants turns missed mutants into findings. Baseline 2026-10-17, argusd store: 91.5% (333/364 viable; 31 missed, 9 timeouts, 25 unviable) in 44m at -j 4" }
-  T5: { tool: in-process argusd on a temp socket, notes: "not built yet (S2)" }
+  T5: { tool: in-process argusd on a temp socket, verified: 2026-10-18, notes: "test_host::Host: the real accept loop, connection and dispatch on a private endpoint (Unix socket or named pipe) in a temp dir, a file store there, scripted pane processes and clock, and a fixed two-commit repository" }
   T6: { tool: argus-protocol client }
   T7: { tool: proptest over arbitrary ClientMsg, notes: "no OpenAPI spec exists; not built yet" }
   T8: { applicable: false, reason: "local IPC only; no network between argus and its store" }
@@ -55,6 +55,12 @@ commands:
   # reliab-adapter-cargo-mutants ships beside reliab and turns missed mutants
   # into findings. The old output goes first: cargo-mutants leaves it in place
   # when the diff has nothing to mutate.
+  # Characterization (S2): what the daemon answers its clients' most-used
+  # conversations. Never writes a snapshot; a diff is a finding for a human.
+  snapshots:
+    run: INSTA_UPDATE=no cargo nextest run --locked --profile snapshots --no-fail-fast -p argusd -E 'test(/^test_host::tests::/)'
+    format: junit
+    output: target/nextest/snapshots/junit.xml
   mutation_changed:
     run: >-
       rm -rf .reliab/out/mutants.out;
