@@ -2855,3 +2855,14 @@ tree's Git status is what the first read of HEAD gave until a request changes it
 
 A transcript is text before it is a snapshot: `Transcript::finish` returns it, so a capture taken
 before a refactor can be compared with one taken after without committing either.
+
+### Request fuzz
+
+`test_host::requests` has a strategy for every `ClientMsg` variant, made against a fixture every
+host is prepared with — a shell, a feature with a task and an open question — so most requests
+name something that exists and some name what does not. `test_host::tests::fuzz` sends arbitrary
+sequences of them over the socket, a fresh host per case, and holds the daemon to §"Process model":
+it never hangs up, hangs or panics, every request named by an id is answered by that id or refused
+by it, and an unnamed one is never answered. An editor request always names an editor no machine
+has and every path is under the host's directory, so a case never starts a program or writes a file
+outside it.
