@@ -6,6 +6,7 @@
 //! requests and injected faults after them.
 
 pub mod render;
+pub mod requests;
 pub mod scrub;
 pub mod transcript;
 

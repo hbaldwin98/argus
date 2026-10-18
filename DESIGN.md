@@ -454,6 +454,14 @@ to the type or its locking.
 | `test_host/transcript` | one client's conversation with a test host, written down step by step: a request, then everything said until the daemon goes quiet |
 | `test_host/scrub` | what in a transcript differs between runs and machines while behavior does not — the host's directory, the build's version, the wall clock — in words that stay put |
 | `test_host/render` | how a message is written in a transcript: runs folded, highlight spans on a line, and a kind seen before written as what changed |
+| `test_host/requests` | every message a client can send, generated against what a host's fixture holds — the fixture's ids, which variant a message is, and the one strategy per variant that the compiler holds every variant to |
+| `test_host/requests/values` | what requests are made of: ids mostly the fixture's and sometimes nobody's, short text, and paths kept under the host's directory and filled in when sent |
+| `test_host/requests/panes` | generated pane requests: starting, watching, typing into, sizing, naming and ending one, and an editor pane that never starts a real editor |
+| `test_host/requests/git` | generated requests about a checkout's Git and code: worktrees, branches, review, history, files, search and recorded sessions |
+| `test_host/requests/board` | generated feature-board requests: features, tasks, decisions, diagrams, the tracker map and reconcile |
+| `test_host/requests/panel` | generated requests about the panel's rows: workspaces, projects, repositories and the directory browser, every path under the host's directory |
+| `test_host/requests/views` | generated requests about what agents and extensions show: views, saved views, presses, extension actions, commands and dialogs |
+| `test_host/requests/session` | generated greetings: this build's, one missing capabilities, one on another protocol |
 | `hook` | the loopback pane API: which daemon call each agent's or extension's request reaches, behind its token |
 | `hook/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
 | `review`, `review/queue` | a review's diff, and when it is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
