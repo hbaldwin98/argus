@@ -1767,8 +1767,26 @@ body.mac .rail .brand {
 .strip .head {
   flex: 1;
   min-width: 0;
-  padding: 0 var(--sp-8) 0 var(--sp-16);
+  gap: var(--sp-12);
+  padding: 0 var(--sp-16) 0 var(--sp-20);
   border-bottom: 0;
+}
+.head-line {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-12);
+  white-space: nowrap;
+}
+.head-line .crumbs {
+  gap: var(--sp-6);
+}
+.head-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-6);
+  min-width: 0;
 }
 .winbtns {
   flex: none;
@@ -1938,7 +1956,8 @@ body.moving-pane * {
   overflow: hidden;
 }
 .head .glyph {
-  font-size: var(--fs-lg);
+  width: auto;
+  font-size: var(--fs-md);
 }
 .head .meta.mono {
   font-family: var(--font-mono);

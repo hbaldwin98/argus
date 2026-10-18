@@ -595,14 +595,16 @@ function drawHead(): void {
   if (stage !== 'workspace') {
     const repository = stage === 'console' || stage === 'extension' ? null : chosenRepository();
     head.replaceChildren(
-      el(
-        'span',
-        { class: 'type-heading' },
-        stage === 'extension' ? extensionPageTitle() : STAGE_NAME[stage],
+      headLine(
+        el(
+          'span',
+          { class: 'type-heading' },
+          stage === 'extension' ? extensionPageTitle() : STAGE_NAME[stage],
+        ),
+        repository
+          ? el('span', { class: 'crumbs' }, el('span', { class: 'fg-faint' }, '·'), repository)
+          : '',
       ),
-      repository
-        ? el('span', { class: 'crumbs' }, el('span', { class: 'fg-faint' }, '·'), repository)
-        : '',
     );
     return;
   }
@@ -611,29 +613,41 @@ function drawHead(): void {
     return;
   }
   head.replaceChildren(
-    el(
-      'span',
-      { class: 'crumbs' },
-      el('span', null, shown.repository),
-      el('span', { class: 'fg-faint' }, '/'),
-      el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout),
-      el('span', { class: 'fg-faint' }, '/'),
+    headLine(
+      el(
+        'span',
+        { class: 'crumbs' },
+        el('span', null, shown.repository),
+        el('span', { class: 'fg-faint' }, '/'),
+        el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout),
+        el('span', { class: 'fg-faint' }, '/'),
+      ),
+      el(
+        'span',
+        { class: 'head-name' },
+        el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'),
+        el(
+          'span',
+          {
+            class: 'type-heading head-title',
+            oncontextmenu: contextMenu(shown.title, () => paneMenu(shown.pane, shown.title)),
+          },
+          shown.title,
+        ),
+      ),
+      el('span', { class: `pill ${shown.status}` }, shown.status),
+      shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '',
+      el('span', { class: 'grow' }),
+      el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()),
     ),
-    el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'),
-    el(
-      'span',
-      {
-        class: 'type-heading head-title',
-        oncontextmenu: contextMenu(shown.title, () => paneMenu(shown.pane, shown.title)),
-      },
-      shown.title,
-    ),
-    el('span', { class: `pill ${shown.status}` }, shown.status),
-    shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '',
-    el('span', { class: 'grow' }),
-    el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()),
     closeButton(shown.pane, shown.title),
   );
+}
+
+/** The strip's words on one baseline: centring each on its own box sets
+ *  the small crumbs and the heading at different heights. */
+function headLine(...parts: Child[]): HTMLElement {
+  return el('span', { class: 'head-line' }, ...parts);
 }
 
 /** What a pane this window resumed a session in was resumed from. */
