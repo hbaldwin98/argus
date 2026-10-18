@@ -151,6 +151,30 @@ impl ProcessJob {
         Ok(inside != 0)
     }
 
+    /// The job's `JOB_OBJECT_LIMIT_*` flags.
+    #[cfg(test)]
+    pub(super) fn limit_flags(&self) -> anyhow::Result<u32> {
+        use windows_sys::Win32::System::JobObjects::{
+            JobObjectExtendedLimitInformation, QueryInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        };
+
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        let queried = unsafe {
+            QueryInformationJobObject(
+                self.handle.as_raw_handle() as _,
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_mut(&mut info).cast(),
+                std::mem::size_of_val(&info) as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        if queried == 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(info.BasicLimitInformation.LimitFlags)
+    }
+
     /// The PIDs of every process in the job.
     #[cfg(test)]
     pub(super) fn process_ids(&self) -> anyhow::Result<Vec<u32>> {

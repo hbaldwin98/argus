@@ -795,6 +795,25 @@ fn what_a_test_process_starts_is_held_in_its_job() {
     assert!(inside.unwrap(), "a process the test started, outside any pane");
 }
 
+/// The rest of `hold_test_process`'s promise, which no test can watch
+/// happen from inside the process it is about: its job ends everything in
+/// it when the test binary ends, and lets a process that asks to leave it
+/// go. DESIGN.md states the first under "Testing"; the second is a shell
+/// job's rule there, which `argus` relies on to start its daemon from a
+/// pane, so code under test sees the job it would under the daemon.
+#[cfg(windows)]
+#[test]
+fn the_test_process_job_ends_what_it_holds_and_lets_breakaway_go() {
+    use windows_sys::Win32::System::JobObjects::{
+        JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    let held = job::hold_test_process().expect("the test process is held in a job");
+    let flags = held.limit_flags().unwrap();
+    assert_ne!(flags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, 0, "ends what it holds: {flags:#x}");
+    assert_ne!(flags & JOB_OBJECT_LIMIT_BREAKAWAY_OK, 0, "lets breakaway go: {flags:#x}");
+}
+
 /// HUN-243: Git Bash's `bin\bash.exe` is a launcher for `usr\bin\bash.exe`,
 /// which left the shell's job as it started and outlived the pane, until
 /// MSYS ran out of consoles. Git is on CI's Windows runners.
