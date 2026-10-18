@@ -61,11 +61,24 @@ commands:
     run: INSTA_UPDATE=no cargo nextest run --locked --profile snapshots --no-fail-fast -p argusd -E 'test(/^test_host::tests::/)'
     format: junit
     output: target/nextest/snapshots/junit.xml
+  #
+  # On Windows both mutation commands skip cfg(unix)-only functions, which a
+  # Windows build never compiles, so their mutants could only survive there.
+  # That code is NOT mutation-tested on Windows; it needs a Linux mutation run.
+  # Skipped: transport.rs's `unix` module, pty/job.rs's kill_session and
+  # review/diff.rs's file_bytes. Not skipped, because a cfg(windows) twin has
+  # the same mutant names: pty/job.rs's unix end_process_tree and
+  # program_command, which therefore still survive on Windows.
   mutation_changed:
     run: >-
       rm -rf .reliab/out/mutants.out;
+      set --;
+      case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) set --
+      --exclude-re 'connection/transport\.rs:[0-9]+:[0-9]+: .*\bunix::'
+      --exclude-re 'pty/job\.rs:[0-9]+:[0-9]+: .*\bkill_session\b'
+      --exclude-re 'review/diff\.rs:[0-9]+:[0-9]+: .*\bfile_bytes\b';; esac;
       git diff "$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main)" > .reliab/out/change.diff &&
-      cargo mutants --in-diff .reliab/out/change.diff --copy-target=false -j 4 -o .reliab/out;
+      cargo mutants "$@" --in-diff .reliab/out/change.diff --copy-target=false -j 4 -o .reliab/out;
       reliab-adapter-cargo-mutants -exit $? .reliab/out/mutants.out .reliab/out/mutation.json
     format: findings
     output: .reliab/out/mutation.json
@@ -76,6 +89,10 @@ commands:
     run: >-
       rm -rf .reliab/out/mutants.out;
       set --;
+      case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) set --
+      --exclude-re 'connection/transport\.rs:[0-9]+:[0-9]+: .*\bunix::'
+      --exclude-re 'pty/job\.rs:[0-9]+:[0-9]+: .*\bkill_session\b'
+      --exclude-re 'review/diff\.rs:[0-9]+:[0-9]+: .*\bfile_bytes\b';; esac;
       for p in $RELIAB_SCOPE; do if [ -d "$p" ]; then p="${p%/}/**"; fi; set -- "$@" -f "$p"; done;
       cargo mutants "$@" --copy-target=false -j 4 -o .reliab/out;
       reliab-adapter-cargo-mutants -exit $? .reliab/out/mutants.out .reliab/out/mutation.json

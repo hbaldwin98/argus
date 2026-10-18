@@ -44,9 +44,9 @@ impl Address {
     /// This instance's endpoint, as `ARGUS_INSTANCE` names it.
     pub fn of_instance() -> Address {
         #[cfg(unix)]
-        return Address(imp::socket_path());
+        return Address(unix::socket_path());
         #[cfg(windows)]
-        return Address(imp::pipe_name());
+        return Address(windows::pipe_name());
     }
 
     /// An endpoint named after `dir`, which the caller owns: on Unix a
@@ -66,7 +66,7 @@ impl Address {
 }
 
 #[cfg(unix)]
-mod imp {
+mod unix {
     use super::*;
     use std::io;
     use tokio::net::{UnixListener, UnixStream};
@@ -135,7 +135,7 @@ mod imp {
 }
 
 #[cfg(windows)]
-mod imp {
+mod windows {
     use super::Address;
     use std::io;
     use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOptions};
@@ -223,10 +223,10 @@ mod imp {
 }
 
 #[cfg(unix)]
-pub use imp::{connect, connect_to, is_daemon_listening, socket_path, Listener};
+pub use unix::{connect, connect_to, is_daemon_listening, socket_path, Listener};
 
 #[cfg(windows)]
-pub use imp::{connect, connect_to, is_daemon_listening, pipe_name, Listener};
+pub use windows::{connect, connect_to, is_daemon_listening, pipe_name, Listener};
 
 #[cfg(test)]
 mod tests {
