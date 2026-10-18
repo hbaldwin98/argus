@@ -19,10 +19,9 @@ mod reconcile_tickets;
 mod reload;
 mod restore;
 mod saved_views;
-mod scripted;
 
 use super::*;
-use scripted::ScriptedDaemon;
+use super::scripted::ScriptedDaemon;
 use crate::config::ProjectConfig;
 use argus_protocol::{parse_pane_path, Endpoint, ReviewAnchor, ReviewBase};
 use tokio::sync::broadcast;

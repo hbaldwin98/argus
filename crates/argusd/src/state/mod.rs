@@ -42,6 +42,8 @@ mod panel;
 mod panes;
 mod processes;
 mod pushes;
+#[cfg(test)]
+pub(crate) mod scripted;
 mod session;
 mod sync;
 mod tree;

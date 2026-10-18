@@ -5,32 +5,43 @@
 //! a race against the test. Its Git reads can be scripted too, and go to
 //! the disk until they are.
 
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
-use std::time::Instant;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use super::*;
-use argus_protocol::ServerMsg;
-use crate::state::clock::Clock;
-use crate::state::processes::{Keyboard, OnExit, Process, Processes};
+use argus_protocol::{PaneId, ServerMsg};
+use tokio::sync::broadcast;
+
+use super::clock::Clock;
+use super::git_reads::ScriptedGit;
+use super::processes::{Keyboard, OnExit, Process, Processes};
+use super::Daemon;
+use crate::config::ConfigFile;
+use crate::pty::{self, PaneSubscription};
 
 /// A daemon over [`ScriptedProcesses`], [`ScriptedGit`] and a
 /// [`ManualClock`]. Derefs to the daemon, so a test reads the same as one
 /// over real processes.
-pub(in crate::state) struct ScriptedDaemon {
+pub(crate) struct ScriptedDaemon {
     daemon: Arc<Daemon>,
     pub processes: Arc<ScriptedProcesses>,
-    pub git: Arc<ScriptedGit>,
+    pub(in crate::state) git: Arc<ScriptedGit>,
     pub clock: Arc<ManualClock>,
 }
 
 impl ScriptedDaemon {
     pub fn new(config: ConfigFile) -> Self {
+        let store = crate::store::Store::in_memory()
+            .expect("an in-memory runtime store needs nothing that can fail");
+        Self::with_store(config, store)
+    }
+
+    pub fn with_store(config: ConfigFile, store: crate::store::Store) -> Self {
         let processes = Arc::new(ScriptedProcesses::default());
         let git = Arc::new(ScriptedGit::default());
         let clock = Arc::new(ManualClock::new());
-        let store = crate::store::Store::in_memory()
-            .expect("an in-memory runtime store needs nothing that can fail");
         let daemon = Daemon::with_ports(
             config,
             store,
@@ -65,7 +76,7 @@ impl std::ops::Deref for ScriptedDaemon {
 }
 
 /// What a scripted pane was started as.
-pub(in crate::state) struct Started {
+pub(crate) struct Started {
     pub cwd: PathBuf,
     /// `None` for the user's shell.
     pub program: Option<String>,
@@ -82,7 +93,7 @@ struct Script {
 }
 
 #[derive(Default)]
-pub(in crate::state) struct ScriptedProcesses {
+pub(crate) struct ScriptedProcesses {
     panes: Mutex<HashMap<PaneId, Script>>,
 }
 
@@ -239,7 +250,7 @@ impl Keyboard for ScriptedKeyboard {
 }
 
 /// Starts at the moment it is made and moves only by [`Self::advance`].
-pub(in crate::state) struct ManualClock {
+pub(crate) struct ManualClock {
     start: Instant,
     offset: Mutex<Duration>,
 }

@@ -419,6 +419,7 @@ to the type or its locking.
 | `state/pushes` | what the daemon publishes for connections to push: one channel per topic, how deep each is, and the latest board of each key for a connection that fell behind |
 | `state/panes` | a pane's lifecycle: spawned, restarted, written to, and retired — the one way out of the tree every removal takes |
 | `state/processes` | starting a pane's process and driving it once it runs: the port every pane is started through, a pty in a running daemon and a scripted process in tests |
+| `state/scripted` | a daemon over pane processes and a clock the test drives, for tests about exits and durations and for the test host |
 | `state/clock` | what time it is for the durations the daemon decides on — a resume's grace, a restart loop's window, a quiet child's age |
 | `state/agents` | what an agent reports about itself, and what it is told |
 | `state/agents/launch` | an agent starting another: which checkout it lands in, which template it gets, and who may ask |
