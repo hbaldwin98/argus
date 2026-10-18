@@ -72,8 +72,10 @@ Code written by a subagent is read by the parent, at least its schema and store 
 - legacy-defect-or-quirk -> stop; a human decides.
 - characterization-diff -> stop and ask a human.
 - equivalent-mutant -> stop; a human confirms it.
+- requirement-silent -> stop; a human says whether the behavior is intended.
 
 ### Mutation testing
-- Write tests that kill surviving mutants on changed lines.
-- If no test can kill a mutant because it cannot change behavior, classify it `equivalent-mutant` with a one-line reason. If the requirement is silent, ask.
+- Kill a surviving mutant only when its behavior is intended: the test cites where (a ticket, a doc, a rule, a caller that depends on it). The implementation is not a source.
+- If nothing states the behavior, do not pin it: classify it `requirement-silent` with the question.
+- If no test can kill it because it cannot change behavior, classify it `equivalent-mutant` with a one-line reason.
 <!-- reliab:end -->
