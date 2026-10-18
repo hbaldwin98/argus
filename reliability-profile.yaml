@@ -47,7 +47,9 @@ commands:
     format: junit
     output: target/nextest/ci/junit.xml
   properties:
-    run: PROPTEST_CASES={cases} cargo nextest run --locked --profile props --no-fail-fast {impacted} -E 'test(/::properties::/)'
+    # A crate with no properties yet selects none, which nextest fails by
+    # default; that says nothing about the change.
+    run: PROPTEST_CASES={cases} cargo nextest run --locked --profile props --no-fail-fast --no-tests=warn {impacted} -E 'test(/::properties::/)'
     format: junit
     output: target/nextest/props/junit.xml
   # reliab-adapter-cargo-mutants ships beside reliab and turns missed mutants
@@ -58,6 +60,18 @@ commands:
       rm -rf .reliab/out/mutants.out;
       git diff "$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main)" > .reliab/out/change.diff &&
       cargo mutants --in-diff .reliab/out/change.diff --copy-target=false -j 4 -o .reliab/out;
+      reliab-adapter-cargo-mutants -exit $? .reliab/out/mutants.out .reliab/out/mutation.json
+    format: findings
+    output: .reliab/out/mutation.json
+  # Every mutant under RELIAB_SCOPE (reliab verify --only mutation_full --scope
+  # <path>...): a directory becomes dir/**. With no scope it mutates the whole
+  # workspace, which takes hours.
+  mutation_full:
+    run: >-
+      rm -rf .reliab/out/mutants.out;
+      set --;
+      for p in $RELIAB_SCOPE; do if [ -d "$p" ]; then p="${p%/}/**"; fi; set -- "$@" -f "$p"; done;
+      cargo mutants "$@" --copy-target=false -j 4 -o .reliab/out;
       reliab-adapter-cargo-mutants -exit $? .reliab/out/mutants.out .reliab/out/mutation.json
     format: findings
     output: .reliab/out/mutation.json
