@@ -26,6 +26,45 @@ pub fn lock_path() -> PathBuf {
     runtime_dir().join(file)
 }
 
+/// Where a daemon listens and its clients connect: a socket's path on Unix,
+/// a pipe's name on Windows.
+///
+/// A daemon and its clients find each other through
+/// [`Address::of_instance`], which every binary reads from the same
+/// environment. A test that runs a daemon of its own uses
+/// [`Address::in_dir`] instead, so that it never reads a variable another
+/// test can change under it, and two such daemons never share a name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Address(
+    #[cfg(unix)] PathBuf,
+    #[cfg(windows)] String,
+);
+
+impl Address {
+    /// This instance's endpoint, as `ARGUS_INSTANCE` names it.
+    pub fn of_instance() -> Address {
+        #[cfg(unix)]
+        return Address(imp::socket_path());
+        #[cfg(windows)]
+        return Address(imp::pipe_name());
+    }
+
+    /// An endpoint named after `dir`, which the caller owns: on Unix a
+    /// socket inside it, on Windows a pipe named by a hash of its path,
+    /// since a pipe cannot live in a directory.
+    pub fn in_dir(dir: &std::path::Path) -> Address {
+        #[cfg(unix)]
+        return Address(dir.join("argus.sock"));
+        #[cfg(windows)]
+        return Address({
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            dir.hash(&mut hasher);
+            format!(r"\\.\pipe\argus-at-{:016x}", hasher.finish())
+        });
+    }
+}
+
 #[cfg(unix)]
 mod imp {
     use super::*;
@@ -46,11 +85,15 @@ mod imp {
 
     impl Listener {
         pub async fn bind() -> io::Result<Self> {
-            let path = socket_path();
+            Self::bind_at(&Address::of_instance()).await
+        }
+
+        pub async fn bind_at(address: &Address) -> io::Result<Self> {
+            let path = &address.0;
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            match UnixListener::bind(&path) {
+            match UnixListener::bind(path) {
                 Ok(listener) => Ok(Listener(listener)),
                 Err(bind_error) if bind_error.kind() == io::ErrorKind::AddrInUse => {
                     // A crashed daemon can leave its pathname behind, but a
@@ -58,11 +101,11 @@ mod imp {
                     // serializes this cleanup between current binaries; the
                     // connect check distinguishes a stale pathname from a
                     // running peer without ever unlinking the latter.
-                    if is_daemon_listening() {
+                    if is_listening_at(address) {
                         return Err(bind_error);
                     }
-                    std::fs::remove_file(&path)?;
-                    Ok(Listener(UnixListener::bind(&path)?))
+                    std::fs::remove_file(path)?;
+                    Ok(Listener(UnixListener::bind(path)?))
                 }
                 Err(error) => Err(error),
             }
@@ -75,16 +118,25 @@ mod imp {
     }
 
     pub async fn connect() -> io::Result<UnixStream> {
-        UnixStream::connect(socket_path()).await
+        connect_to(&Address::of_instance()).await
+    }
+
+    pub async fn connect_to(address: &Address) -> io::Result<UnixStream> {
+        UnixStream::connect(&address.0).await
     }
 
     pub fn is_daemon_listening() -> bool {
-        std::os::unix::net::UnixStream::connect(socket_path()).is_ok()
+        is_listening_at(&Address::of_instance())
+    }
+
+    fn is_listening_at(address: &Address) -> bool {
+        std::os::unix::net::UnixStream::connect(&address.0).is_ok()
     }
 }
 
 #[cfg(windows)]
 mod imp {
+    use super::Address;
     use std::io;
     use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOptions};
     use tokio::time::{sleep, Duration};
@@ -114,7 +166,11 @@ mod imp {
 
     impl Listener {
         pub async fn bind() -> io::Result<Self> {
-            let name = pipe_name();
+            Self::bind_at(&Address::of_instance()).await
+        }
+
+        pub async fn bind_at(address: &Address) -> io::Result<Self> {
+            let name = address.0.clone();
             let current = ServerOptions::new()
                 .first_pipe_instance(true)
                 .create(&name)?;
@@ -140,10 +196,15 @@ mod imp {
     }
 
     pub async fn connect() -> io::Result<tokio::net::windows::named_pipe::NamedPipeClient> {
-        let name = pipe_name();
+        connect_to(&Address::of_instance()).await
+    }
+
+    pub async fn connect_to(
+        address: &Address,
+    ) -> io::Result<tokio::net::windows::named_pipe::NamedPipeClient> {
         let mut last_err = None;
         for attempt in 0..20u64 {
-            match ClientOptions::new().open(&name) {
+            match ClientOptions::new().open(&address.0) {
                 Ok(client) => return Ok(client),
                 Err(e) => {
                     last_err = Some(e);
@@ -162,10 +223,10 @@ mod imp {
 }
 
 #[cfg(unix)]
-pub use imp::{connect, is_daemon_listening, socket_path, Listener};
+pub use imp::{connect, connect_to, is_daemon_listening, socket_path, Listener};
 
 #[cfg(windows)]
-pub use imp::{connect, is_daemon_listening, pipe_name, Listener};
+pub use imp::{connect, connect_to, is_daemon_listening, pipe_name, Listener};
 
 #[cfg(test)]
 mod tests {
@@ -215,6 +276,26 @@ mod tests {
 
         #[cfg(unix)]
         let _ = std::fs::remove_file(socket_path());
+    }
+
+    /// Two daemons a test starts must not meet each other's clients, and
+    /// neither may read `ARGUS_INSTANCE`, which other tests change.
+    #[tokio::test]
+    async fn a_private_address_is_met_at_that_address_and_no_other() {
+        let (one, two) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (here, there) = (Address::in_dir(one.path()), Address::in_dir(two.path()));
+        assert_ne!(here, there);
+        assert_ne!(here, Address::of_instance());
+
+        let mut listener = Listener::bind_at(&here).await.expect("the address should bind");
+        let server = tokio::spawn(async move {
+            let mut stream = listener.accept().await.expect("a client should arrive");
+            let request: ClientMsg = read_msg(&mut stream).await.expect("a framed request");
+            assert!(matches!(request, ClientMsg::Stop), "{request:?}");
+        });
+        let mut client = connect_to(&here).await.expect("the address should accept");
+        write_msg(&mut client, &ClientMsg::Stop).await.unwrap();
+        server.await.unwrap();
     }
 
     #[cfg(unix)]
