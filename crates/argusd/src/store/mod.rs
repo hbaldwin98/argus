@@ -113,11 +113,30 @@ pub struct Overlays {
 /// restore is the problem — a template that now fails on launch, say.
 pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 
-/// Held by every test that sets or clears [`NO_RESTORE`]: the environment
-/// is the process's, and one test clearing it mid-way through another's
-/// restore let that restore spawn panes it was told not to.
+/// For a test of [`NO_RESTORE`]: whether this process started with it set.
+/// If not, runs the test named `test` again in a process that did, and
+/// fails unless that run passed. The environment is the whole process's,
+/// and `cargo test` runs a crate's tests on threads of one: set in a test,
+/// it emptied every pane read beside it, and a lock only the tests that set
+/// it took could not stop that.
 #[cfg(test)]
-pub(crate) static NO_RESTORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub(crate) fn rerun_with_no_restore(test: &str) -> bool {
+    if std::env::var_os(NO_RESTORE).is_some() {
+        return true;
+    }
+    let run = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([test, "--exact", "--test-threads=1"])
+        .env(NO_RESTORE, "1")
+        .output()
+        .expect("the test binary should run again");
+    let out = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        run.status.success() && out.contains("1 passed"),
+        "{test} with {NO_RESTORE} set:\n{out}\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    false
+}
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
 const SCHEMA_VERSION: i64 = 28;

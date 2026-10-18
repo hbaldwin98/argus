@@ -170,19 +170,16 @@ fn an_editor_is_never_restored() {
 #[test]
 fn the_escape_hatch_starts_clean() {
     // For the case where the restore is itself the problem.
+    if !crate::store::rerun_with_no_restore("state::tests::restore::the_escape_hatch_starts_clean") {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     with_temp_config(|_| {
         record(&[(PaneKind::Shell, "shell")], dir.path());
         record_consoles(1);
 
-        let env = crate::store::NO_RESTORE_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        std::env::set_var(crate::store::NO_RESTORE, "1");
         let d = daemon_for_restore(dir.path());
         d.restore_session();
-        std::env::remove_var(crate::store::NO_RESTORE);
-        drop(env);
 
         assert!(d.snapshot()[0].repositories[0].checkouts[0]
             .panes

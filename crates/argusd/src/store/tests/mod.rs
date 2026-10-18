@@ -169,15 +169,15 @@ fn an_exit_code_survives_the_round_trip() {
 
 #[test]
 fn the_escape_hatch_reads_nothing_back() {
+    if !rerun_with_no_restore("store::tests::the_escape_hatch_reads_nothing_back") {
+        return;
+    }
     let s = store();
     s.save_panes(&[pane("/repo", PaneKind::Shell, "shell")])
         .unwrap();
     s.save_consoles(2).unwrap();
-    let _env = NO_RESTORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    std::env::set_var(NO_RESTORE, "1");
     let out = s.panes();
     let consoles = s.consoles();
-    std::env::remove_var(NO_RESTORE);
     assert!(out.unwrap().is_empty());
     assert_eq!(consoles.unwrap(), 0);
 }
