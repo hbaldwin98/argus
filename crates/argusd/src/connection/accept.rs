@@ -60,7 +60,7 @@ pub async fn serve(
                     _ = shutdown_rx.recv() => break,
                     _ = tokio::time::sleep(backoff) => {}
                 }
-                backoff = (backoff * 2).min(ACCEPT_BACKOFF_MAX);
+                backoff = next_backoff(backoff);
             }
         }
     }
@@ -69,5 +69,27 @@ pub async fn serve(
         if let Err(error) = result {
             tracing::warn!("client connection task failed during shutdown: {error}");
         }
+    }
+}
+
+/// The wait after one more failed accept: twice the last, up to the most.
+fn next_backoff(backoff: std::time::Duration) -> std::time::Duration {
+    (backoff * 2).min(ACCEPT_BACKOFF_MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bounds are the ones `ACCEPT_BACKOFF_MIN` and `ACCEPT_BACKOFF_MAX`
+    /// document: the shortest and longest a failed accept waits.
+    #[test]
+    fn a_run_of_failed_accepts_waits_within_the_bounds_and_reaches_the_longest() {
+        let mut backoff = ACCEPT_BACKOFF_MIN;
+        for _ in 0..16 {
+            backoff = next_backoff(backoff);
+            assert!((ACCEPT_BACKOFF_MIN..=ACCEPT_BACKOFF_MAX).contains(&backoff), "{backoff:?}");
+        }
+        assert_eq!(backoff, ACCEPT_BACKOFF_MAX);
     }
 }
