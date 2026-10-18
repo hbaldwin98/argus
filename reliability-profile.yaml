@@ -1,0 +1,69 @@
+# reliab stack profile for argus. See https://github.com/hbaldwin98/reliab
+# Every filling is a claim until stage S0 verifies it on this codebase.
+schemaVersion: 0.1.0
+name: rust-workspace
+starting_condition: maintained
+verified_on: 2026-10-17
+
+runtime:
+  current: rust-stable
+
+# A file matching none of these counts as product.
+paths:
+  product: ["crates/**", "Cargo.toml", "Cargo.lock"]
+  tests: ["**/tests/**", "**/tests.rs", "fuzz/**", ".config/nextest.toml"]
+  ignore: ["*.md", "LICENSE-*", "crates/argus-desktop/page/src/bindings/**", "crates/argus-desktop/assets/js/**"]
+
+# Oracles that change only with human approval (R2).
+protected_paths:
+  - "**/proptest-regressions/**"
+  - "crates/argusd/tests/fixtures/stores/**"
+  - "**/snapshots/**"
+  - "mutants.toml"
+
+freshness_exclude: ["*.md"]
+
+roles:
+  T1: { tool: cargo-nextest, version: "0.9.148", verified: 2026-10-17, notes: "3306 tests in ~30s warm; JUnit via .config/nextest.toml profiles ci and props" }
+  T2: { tool: proptest, verified: 2026-10-17, notes: "properties live in `mod properties` (10 today, all in argus-protocol); failing cases are saved under proptest-regressions/" }
+  T3: { tool: insta, notes: "not adopted yet (S2): request/response transcripts over the IPC socket" }
+  T4: { tool: cargo-mutants, version: "27.1.0", verified: 2026-10-17, notes: "--in-diff runs; a diff without Rust changes is a clean no-op. Full baseline not run yet" }
+  T5: { tool: in-process argusd on a temp socket, notes: "not built yet (S2)" }
+  T6: { tool: argus-protocol client }
+  T7: { tool: proptest over arbitrary ClientMsg, notes: "no OpenAPI spec exists; not built yet" }
+  T8: { applicable: false, reason: "local IPC only; no network between argus and its store" }
+  T9: { applicable: false, reason: "no external HTTP dependencies" }
+  T10: { tool: fault-injecting SQLite connection wrapper, notes: "not built yet (S4)" }
+  T11: { applicable: false, reason: "no logic lives in SQLite triggers or procedures" }
+  T12: { tool: cargo-llvm-cov }
+  T13: { applicable: false, reason: "no read paths slated for rewrite" }
+  T14: { tool: clippy, verified: 2026-10-17 }
+
+commands:
+  build: cargo build --workspace --locked
+  analyzers: cargo clippy --workspace --all-targets --locked -- -D warnings
+  unit:
+    run: cargo nextest run --locked --profile ci --no-fail-fast {impacted}
+    format: junit
+    output: target/nextest/ci/junit.xml
+  properties:
+    run: PROPTEST_CASES={cases} cargo nextest run --locked --profile props --no-fail-fast {impacted} -E 'test(/::properties::/)'
+    format: junit
+    output: target/nextest/props/junit.xml
+  mutation_changed: >-
+    git diff "$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main)" > .reliab/out/change.diff &&
+    cargo mutants --in-diff .reliab/out/change.diff --copy-target=false -j 4 -o .reliab/out
+
+impacted:
+  all: --workspace
+  map:
+    - { glob: "crates/argus-protocol/**", args: -p argus-protocol }
+    - { glob: "crates/argusd/**", args: -p argusd }
+    - { glob: "crates/argus-client/**", args: -p argus }
+    - { glob: "crates/argus-desktop/**", args: -p argus-desktop }
+
+tiers:
+  inner: { budget_seconds: 300 }
+  prepr: { budget_seconds: 900 }
+
+corrections: []

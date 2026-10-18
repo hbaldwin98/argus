@@ -1,0 +1,32 @@
+{
+  "enabledPlugins": {
+    "reliab@reliab": true
+  },
+  "extraKnownMarketplaces": {
+    "reliab": {
+      "source": {
+        "repo": "hbaldwin98/reliab",
+        "source": "github"
+      }
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(reliab *)"
+    ],
+    "deny": [
+      "Edit(/.reliab/**)",
+      "Edit(**/proptest-regressions/**)",
+      "Edit(/crates/argusd/tests/fixtures/stores/**)",
+      "Edit(**/snapshots/**)",
+      "Edit(/mutants.toml)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "denyWrite": [
+        "./crates/argusd/tests/fixtures/stores"
+      ]
+    }
+  }
+}

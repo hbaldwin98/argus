@@ -1,0 +1,13 @@
+# nextest profiles used by reliab (reliability-profile.yaml). Each writes
+# JUnit XML that reliab reads for per-test findings.
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+
+[profile.props]
+fail-fast = false
+
+[profile.props.junit]
+path = "junit.xml"

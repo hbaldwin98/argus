@@ -14,3 +14,6 @@ crates/argus-desktop/gen/
 
 # Sidecars the desktop bundle copies in, staged by the bundle step (tauri.bundle.conf.json).
 /crates/argus-desktop/binaries/
+
+# reliab reports and tool output (written only by reliab)
+.reliab/
