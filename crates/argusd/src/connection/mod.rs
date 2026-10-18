@@ -6,6 +6,8 @@
 //! slow answer for one client must never delay a keystroke going to some
 //! other pane.
 
+pub mod accept;
+
 use std::sync::Arc;
 
 use argus_protocol::{
