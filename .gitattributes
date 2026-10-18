@@ -1,0 +1,4 @@
+# Every checkout is LF, whatever core.autocrlf says: the page's compiler,
+# oxfmt and the binding generator all write LF, and a CRLF working copy
+# shows each file they rewrite as changed when nothing in it is.
+* text=auto eol=lf
