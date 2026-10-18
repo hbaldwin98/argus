@@ -17,3 +17,9 @@ fail-fast = false
 
 [profile.snapshots.junit]
 path = "junit.xml"
+
+[profile.api-fuzz]
+fail-fast = false
+
+[profile.api-fuzz.junit]
+path = "junit.xml"

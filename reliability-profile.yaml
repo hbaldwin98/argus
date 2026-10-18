@@ -37,7 +37,7 @@ roles:
   T4: { tool: cargo-mutants, version: "27.1.0", verified: 2026-10-17, notes: "--in-diff runs; a diff without Rust changes is a clean no-op; reliab-adapter-cargo-mutants turns missed mutants into findings. Baseline 2026-10-17, argusd store: 91.5% (333/364 viable; 31 missed, 9 timeouts, 25 unviable) in 44m at -j 4" }
   T5: { tool: in-process argusd on a temp socket, verified: 2026-10-18, notes: "test_host::Host: the real accept loop, connection and dispatch on a private endpoint (Unix socket or named pipe) in a temp dir, a file store there, scripted pane processes and clock, and a fixed two-commit repository" }
   T6: { tool: argus-protocol client }
-  T7: { tool: proptest over arbitrary ClientMsg, notes: "no OpenAPI spec exists; not built yet" }
+  T7: { tool: proptest over arbitrary ClientMsg, verified: 2026-10-18, notes: "no OpenAPI spec exists. test_host::requests generates every ClientMsg variant against the host fixture (coverage held by exhaustive matches); test_host::tests::fuzz sends arbitrary sequences over the socket to a fresh host per case" }
   T8: { applicable: false, reason: "local IPC only; no network between argus and its store" }
   T9: { applicable: false, reason: "no external HTTP dependencies" }
   T10: { tool: fault-injecting SQLite connection wrapper, notes: "not built yet (S4)" }
@@ -67,9 +67,17 @@ commands:
   # Characterization (S2): what the daemon answers its clients' most-used
   # conversations. Never writes a snapshot; a diff is a finding for a human.
   snapshots:
-    run: INSTA_UPDATE=no cargo nextest run --locked --profile snapshots --no-fail-fast -p argusd -E 'test(/^test_host::tests::/)'
+    run: INSTA_UPDATE=no cargo nextest run --locked --profile snapshots --no-fail-fast -p argusd -E 'test(/^test_host::tests::/) and not test(/^test_host::tests::fuzz::/)'
     format: junit
     output: target/nextest/snapshots/junit.xml
+  # Arbitrary request sequences over the socket, a fresh host per case
+  # (S3). About 75ms a case, so each tier's own count fits: 100 in inner,
+  # 1000 in prepr, 10000 at night. A failing case is saved under
+  # proptest-regressions/ and replayed first on every run after.
+  api_fuzz:
+    run: PROPTEST_CASES={cases} cargo nextest run --locked --profile api-fuzz --no-fail-fast -p argusd -E 'test(/^test_host::tests::fuzz::/)'
+    format: junit
+    output: target/nextest/api-fuzz/junit.xml
   #
   # On Windows both mutation commands skip cfg(unix)-only functions, which a
   # Windows build never compiles, so their mutants could only survive there.
@@ -117,8 +125,10 @@ impacted:
     - { glob: "crates/argus-desktop/**", args: -p argus-desktop }
 
 tiers:
-  # The snapshots take about 11s and catch side effects before an agent stops.
-  inner: { budget_seconds: 300, run: [build, analyzers, corpus, unit, snapshots, properties, spec_checks] }
+  # The snapshots take about 11s and catch side effects before an agent stops;
+  # the fuzz, about 10s at inner's 100 cases, catches a request that crashes,
+  # hangs or goes unanswered.
+  inner: { budget_seconds: 300, run: [build, analyzers, corpus, unit, snapshots, properties, api_fuzz, spec_checks] }
   prepr: { budget_seconds: 900 }
 
 corrections: []
