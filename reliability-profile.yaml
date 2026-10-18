@@ -91,7 +91,8 @@ impacted:
     - { glob: "crates/argus-desktop/**", args: -p argus-desktop }
 
 tiers:
-  inner: { budget_seconds: 300 }
+  # The snapshots take about 11s and catch side effects before an agent stops.
+  inner: { budget_seconds: 300, run: [build, analyzers, corpus, unit, snapshots, properties, spec_checks] }
   prepr: { budget_seconds: 900 }
 
 corrections: []
