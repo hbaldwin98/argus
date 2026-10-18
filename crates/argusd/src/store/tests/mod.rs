@@ -666,6 +666,38 @@ fn a_pre_repository_scoping_feature_is_relocated_by_its_origin_checkout() {
     assert!(s.features(legacy_key).unwrap().is_empty());
 }
 
+/// A feature relocated from its project's name lands on a board before
+/// that board's features are numbered, so it is counted with them: a
+/// number is per board and never handed out twice (`SCHEMA_V19`), and
+/// existing features are numbered in the order the board lists them.
+#[test]
+fn a_relocated_pre_scoping_feature_is_numbered_with_its_new_board() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+    let (repo, board) = repository_board(dir.path(), "repo");
+    {
+        let conn = legacy_connection(&path, 13);
+        conn.execute(
+            "INSERT INTO feature (project, slug, title, body, origin_checkout, at, state)
+             VALUES ('my-project', 'legacy', 'Legacy', '', ?1, 1, 'open')",
+            [&repo],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO feature (project, slug, title, body, at, state)
+             VALUES (?1, 'native', 'Native', '', 2, 'open')",
+            [&board],
+        )
+        .unwrap();
+    }
+
+    let s = Store::open_at(&path).unwrap();
+    let numbers: Vec<_> = s.features(&board).unwrap().into_iter().map(|f| (f.slug, f.number)).collect();
+    assert_eq!(numbers, [("legacy".to_string(), 1), ("native".to_string(), 2)]);
+    let next = s.add_feature(&board, &feature("Next"), None, None, 3, None).unwrap();
+    assert_eq!(next.number, 3, "a number already on the board is not handed out again");
+}
+
 /// A repository in `dir/name`, and the board its features are filed under.
 fn repository_board(dir: &Path, name: &str) -> (String, String) {
     let repo_dir = dir.join(name);
