@@ -34,6 +34,22 @@ async fn closing_a_pane_leaves_nothing_of_it_behind() {
     assert_nothing_left_of(&d, pane);
 }
 
+/// One tree per change, the owner's call of 2026-10-18: the exit a kill
+/// brings about lands on a tree the pane already left, so it changes
+/// nothing a client is shown and is not pushed as a second, identical tree.
+#[tokio::test]
+async fn a_closed_panes_exit_pushes_no_second_tree() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = running_claude(dir.path(), Default::default());
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    d.close_pane(pane).unwrap();
+    let mut trees = d.subscribe_tree();
+
+    d.exit(pane, None);
+
+    assert!(trees.try_recv().is_err(), "the exit of a pane no tree holds pushes nothing");
+}
+
 #[tokio::test]
 async fn closing_a_pane_marks_its_repository_as_used_then() {
     let dir = tempfile::tempdir().unwrap();

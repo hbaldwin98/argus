@@ -49,10 +49,11 @@ async fn a_pane_from_start_to_end() {
 
     t.ask(ClientMsg::Kill { pane }, |m| matches!(m, ServerMsg::Tree(_))).await;
     t.note(&format!("the pane's process was killed: {}", host.daemon.processes.killed(pane)));
-    // The kill ends the process, and its end is announced too.
+    // The kill ends the process; its end lands on a tree the pane already
+    // left, so no client is sent anything for it.
     t.note("the pane's process exits");
     host.daemon.exit(pane, None);
-    t.until(|m| matches!(m, ServerMsg::Tree(_))).await;
+    t.quiet().await;
 
     insta::assert_snapshot!(t.finish());
     host.stop().await;

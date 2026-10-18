@@ -108,5 +108,4 @@ expression: t.finish()
    [0].repositories[0].last_used = "[now]"
 == the pane's process was killed: true
 == the pane's process exits
-<- Consoles (the same as the last)
-<- Tree (the same as the last)
+<- (nothing)

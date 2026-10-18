@@ -355,13 +355,17 @@ impl Daemon {
                 }
                 // A console is a shell: it ends as its row says, with nothing
                 // to resume or restart.
-                None => {
-                    if let Some(p) = inner.consoles.iter_mut().find(|p| p.id == pane) {
+                None => match inner.consoles.iter_mut().find(|p| p.id == pane) {
+                    Some(p) => {
                         p.status = PaneStatus::Exited { code };
                         p.status_since = std::time::SystemTime::now();
+                        (None, None)
                     }
-                    (None, None)
-                }
+                    // Already out of the tree, as a closed pane is by the
+                    // time the exit its kill caused arrives: nothing a
+                    // client is shown changed, so nothing is pushed.
+                    None => return,
+                },
             }
         };
 
