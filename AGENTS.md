@@ -73,6 +73,7 @@ Code written by a subagent is read by the parent, at least its schema and store 
 - characterization-diff -> stop and ask a human.
 - equivalent-mutant -> stop; a human confirms it.
 - requirement-silent -> stop; a human says whether the behavior is intended.
+- environment -> only after re-running the failing command once, with the machine's error quoted in the reason (resources, network, a missing service; never a test you cannot explain); stop, a human fixes the machine.
 
 ### Mutation testing
 - Kill a surviving mutant only when its behavior is intended: the test cites where (a ticket, a doc, a rule, a caller that depends on it). The implementation is not a source.
