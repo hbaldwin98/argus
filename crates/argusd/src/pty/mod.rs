@@ -285,6 +285,10 @@ impl PaneRuntime {
         spec: Spawn,
         on_exit: impl FnOnce(Option<i32>) + Send + 'static,
     ) -> anyhow::Result<Self> {
+        // Before the console server starts: everything a test pane starts
+        // ends with the test binary, whatever this code does.
+        #[cfg(all(test, windows))]
+        job::hold_test_process();
         let pty_system = native_pty_system();
         let size = PtySize {
             rows: DEFAULT_ROWS,

@@ -2838,6 +2838,11 @@ machines, UI rendering, Git status and diffs, worktree reconciliation, hooks, wo
 session restore, and real short-lived PTY processes. Tests live in `#[cfg(test)]` modules because
 the binary crates currently have no library targets.
 
+On Windows an argusd test process holds itself, before its first real pane starts, in a job that
+ends everything in it when the process does (`pty::job::hold_test_process`). A pane's own job is
+what ends its shell, and that is the code a mutation run breaks: without the hold, a broken run left
+Git Bash shells behind with their console gone, and enough of them used up MSYS's 128 consoles.
+
 ### Characterization transcripts
 
 `test_host` runs the daemon inside the test process, behind its real accept loop, connection

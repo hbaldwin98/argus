@@ -138,6 +138,19 @@ impl ProcessJob {
         Ok(info.ActiveProcesses)
     }
 
+    /// Whether `process` is in this job.
+    #[cfg(test)]
+    pub(super) fn holds(&self, process: RawHandle) -> anyhow::Result<bool> {
+        use windows_sys::Win32::System::JobObjects::IsProcessInJob;
+
+        let mut inside = 0;
+        let asked = unsafe { IsProcessInJob(process as _, self.handle.as_raw_handle() as _, &mut inside) };
+        if asked == 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(inside != 0)
+    }
+
     /// The PIDs of every process in the job.
     #[cfg(test)]
     pub(super) fn process_ids(&self) -> anyhow::Result<Vec<u32>> {
@@ -175,6 +188,42 @@ impl ProcessJob {
             .map(|&id| id as u32)
             .collect())
     }
+}
+
+/// Holds the test process in a job that ends everything in it when the
+/// process does, and returns that job.
+///
+/// A test that starts a real pane trusts the code under test to end what
+/// it started, and mutation testing breaks exactly that code. A Git Bash
+/// whose pane job was ended around it, with its console server gone but
+/// the shell outside that job, outlived the test binary for good: 125 of
+/// them on 2026-10-18 filled MSYS's 128 consoles, and every Git Bash pane
+/// on the machine then failed to start. Everything a test process starts
+/// is born in this job, so whatever the pane code does, nothing outlives
+/// the test binary. Breakaway stays allowed, as in a shell's job, so a
+/// process that asks to leave behaves as it would under the daemon.
+#[cfg(all(test, windows))]
+pub(super) fn hold_test_process() -> Option<&'static ProcessJob> {
+    use windows_sys::Win32::System::JobObjects::{
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    static HELD: std::sync::OnceLock<Option<ProcessJob>> = std::sync::OnceLock::new();
+    HELD.get_or_init(|| {
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        info.BasicLimitInformation.LimitFlags =
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        let held = ProcessJob::with(&info).and_then(|job| {
+            job.assign(unsafe { GetCurrentProcess() } as RawHandle)?;
+            Ok(job)
+        });
+        // Best effort: a test still runs without it, only without the
+        // guarantee, and says so where a person running it will see.
+        held.map_err(|e| eprintln!("could not hold the test process in a job: {e}")).ok()
+    })
+    .as_ref()
 }
 
 #[cfg(windows)]

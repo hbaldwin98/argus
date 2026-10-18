@@ -773,6 +773,28 @@ fn a_panes_console_and_child_die_with_the_process_that_owns_them() {
     }
 }
 
+/// `hold_test_process`'s promise: the test process and what it starts
+/// outside any pane are in its job, so nothing a test starts outlives the
+/// test binary even when the pane code under test is broken.
+#[cfg(windows)]
+#[test]
+fn what_a_test_process_starts_is_held_in_its_job() {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    let held = job::hold_test_process().expect("the test process is held in a job");
+    assert!(held.holds(unsafe { GetCurrentProcess() } as _).unwrap(), "the test process itself");
+
+    let mut child = std::process::Command::new("cmd")
+        .args(["/C", "ping -n 30 127.0.0.1 > NUL"])
+        .spawn()
+        .unwrap();
+    let inside = held.holds(AsRawHandle::as_raw_handle(&child) as _);
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(inside.unwrap(), "a process the test started, outside any pane");
+}
+
 /// HUN-243: Git Bash's `bin\bash.exe` is a launcher for `usr\bin\bash.exe`,
 /// which left the shell's job as it started and outlived the pane, until
 /// MSYS ran out of consoles. Git is on CI's Windows runners.
