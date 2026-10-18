@@ -450,6 +450,10 @@ to the type or its locking.
 | `connection/topics` | what a connection is pushed: each topic's first send, what each change sends, and how a client that fell behind is brought level |
 | `connection/dispatch` | what each client message does, and the one way its answer or refusal reaches the client that asked |
 | `connection/accept` | taking clients off the listener, each onto a connection task of its own, until the daemon is asked to stop |
+| `test_host` | a whole daemon inside a test process, on a private endpoint with its own store, scripted pane processes and clock, and a fixed repository: what tests that speak to it as a client stand on |
+| `test_host/transcript` | one client's conversation with a test host, written down step by step: a request, then everything said until the daemon goes quiet |
+| `test_host/scrub` | what in a transcript differs between runs and machines while behavior does not — the host's directory, the build's version, the wall clock — in words that stay put |
+| `test_host/render` | how a message is written in a transcript: runs folded, highlight spans on a line, and a kind seen before written as what changed |
 | `hook` | the loopback pane API: which daemon call each agent's or extension's request reaches, behind its token |
 | `hook/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
 | `review`, `review/queue` | a review's diff, and when it is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
@@ -2825,3 +2829,21 @@ editor mode and command in `desktop.json` and sends them with each file it opens
 machines, UI rendering, Git status and diffs, worktree reconciliation, hooks, workspace scoping,
 session restore, and real short-lived PTY processes. Tests live in `#[cfg(test)]` modules because
 the binary crates currently have no library targets.
+
+### Characterization transcripts
+
+`test_host` runs the daemon inside the test process, behind its real accept loop, connection
+and dispatch, on an endpoint of its own, and a test talks to it through the transport and framing
+every client uses. The transcripts under `test_host/tests` pin what it answers today in the
+conversations clients have most, chosen so that a side effect leaking into an unrelated answer
+shows up: the opening and greeting every connection makes; a pane's life (spawn, watch, type,
+paste, resize, rename, kill and exit), the terminal client's commonest requests; a feature worked
+through on its board, the desktop's commonest; a change reviewed with its history and a file;
+and a worktree made, worked in and removed with a shell open while a second client watches. Each
+kind of answer is written whole in one transcript and as what changed everywhere else, so a field
+added to the tree is a diff in one place. A snapshot changes only with a person's approval; a diff
+is a finding, not something to accept. The host has no Git poll, watcher or hook server, so a
+tree's Git status is what the first read of HEAD gave until a request changes it.
+
+A transcript is text before it is a snapshot: `Transcript::finish` returns it, so a capture taken
+before a refactor can be compared with one taken after without committing either.

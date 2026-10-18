@@ -1,0 +1,112 @@
+---
+source: crates/argusd/src/test_host/tests/panes.rs
+expression: t.finish()
+---
+(connected and greeted, as in connecting_and_greeting)
+-> SpawnShell {
+  "checkout": 3,
+  "request_id": 1
+}
+<- Consoles (the same as the last)
+<- Created {
+  "created": {
+    "Pane": 5
+  },
+  "request_id": 1
+}
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[0].panes[0] = {
+  "background": false,
+  "children": [],
+  "id": 5,
+  "kind": "Shell",
+  "live": false,
+  "note": null,
+  "since": "[now]",
+  "status": "Idle",
+  "telemetry": {
+    "context_tokens": null,
+    "context_window": null,
+    "cost_usd": null,
+    "input_tokens": null,
+    "model": null,
+    "output_tokens": null,
+    "tool": null,
+    "tool_calls": null
+  },
+  "template": null,
+  "title": "shell"
+}
+== started the default shell in the checkout
+-> Subscribe {
+  "pane": 5
+}
+<- PaneRows {
+  "alternate_screen": false,
+  "cols": 80,
+  "cursor": {
+    "col": 0,
+    "row": 0,
+    "shape": "Default",
+    "visible": true
+  },
+  "keyboard": 0,
+  "mouse": {
+    "encoding": "Default",
+    "mode": "None"
+  },
+  "pane": 5,
+  "rows": 24,
+  "runs": []
+}
+-> Input {
+  "bytes": [
+    108,
+    115,
+    13
+  ],
+  "pane": 5
+}
+<- (nothing)
+-> Paste {
+  "pane": 5,
+  "text": "two\nlines"
+}
+<- (nothing)
+== the pane's process read "ls\rtwo\nlines"
+-> Resize {
+  "cols": 4,
+  "pane": 5,
+  "rows": 5
+}
+<- (nothing)
+-> Subscribe {
+  "pane": 5
+}
+<- PaneRows (the last, changed)
+   .cols = 4
+   .rows = 5
+-> RenamePane {
+  "pane": 5,
+  "title": "build"
+}
+<- Consoles (the same as the last)
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[0].panes[0].title = "build"
+-> Subscribe {
+  "pane": 999
+}
+<- Error {
+  "message": "no such pane"
+}
+-> Kill {
+  "pane": 5
+}
+<- Consoles (the same as the last)
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[0].panes[0] (gone)
+   [0].repositories[0].last_used = "[now]"
+== the pane's process was killed: true
+== the pane's process exits
+<- Consoles (the same as the last)
+<- Tree (the same as the last)

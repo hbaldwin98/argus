@@ -1,0 +1,147 @@
+---
+source: crates/argusd/src/test_host/tests/git.rs
+expression: text
+---
+(connected and greeted, as in connecting_and_greeting)
+-> CreateWorktree {
+  "branch": "side",
+  "checkout": 3,
+  "request_id": 1
+}
+<- Consoles (the same as the last)
+<- Created {
+  "created": {
+    "Checkout": 5
+  },
+  "request_id": 1
+}
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[1] = {
+  "git": {
+    "ahead": 0,
+    "behind": 0,
+    "branch": "side",
+    "changed_files": 0,
+    "dirty": false,
+    "last_commit": {
+      "author": "Fixture",
+      "oid": "3fd528433e5aba5eb30936cc62a85d8dfdcd4877",
+      "short": "3fd5284",
+      "summary": "Add the answer",
+      "time": 1700000000
+    },
+    "staged": 0,
+    "unstaged": 0,
+    "upstream": null
+  },
+  "id": 5,
+  "name": "side",
+  "panes": [],
+  "path": "[root]/repo/.argus/worktrees/side",
+  "primary": false
+}
+   [0].repositories[0].default_branch = "main"
+-> SpawnShell {
+  "checkout": 5,
+  "request_id": 2
+}
+<- Consoles (the same as the last)
+<- Created (the last, changed)
+   .created.Checkout (gone)
+   .created.Pane = 6
+   .request_id = 2
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[1].panes[0] = {
+  "background": false,
+  "children": [],
+  "id": 6,
+  "kind": "Shell",
+  "live": false,
+  "note": null,
+  "since": "[now]",
+  "status": "Idle",
+  "telemetry": {
+    "context_tokens": null,
+    "context_window": null,
+    "cost_usd": null,
+    "input_tokens": null,
+    "model": null,
+    "output_tokens": null,
+    "tool": null,
+    "tool_calls": null
+  },
+  "template": null,
+  "title": "shell"
+}
+-> RemoveCheckout {
+  "checkout": 5
+}
+<- Consoles (the same as the last)
+<- Consoles (the same as the last)
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[1].panes[0] (gone)
+   [0].repositories[0].last_used = "[now]"
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[1] (gone)
+== the shell's process was killed: true
+== the worktree's directory is still there: false
+== what the other client was sent meanwhile:
+(connected and greeted, as in connecting_and_greeting)
+<- Consoles (the same as the last)
+<- Consoles (the same as the last)
+<- Consoles (the same as the last)
+<- Consoles (the same as the last)
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[1] = {
+  "git": {
+    "ahead": 0,
+    "behind": 0,
+    "branch": "side",
+    "changed_files": 0,
+    "dirty": false,
+    "last_commit": {
+      "author": "Fixture",
+      "oid": "3fd528433e5aba5eb30936cc62a85d8dfdcd4877",
+      "short": "3fd5284",
+      "summary": "Add the answer",
+      "time": 1700000000
+    },
+    "staged": 0,
+    "unstaged": 0,
+    "upstream": null
+  },
+  "id": 5,
+  "name": "side",
+  "panes": [],
+  "path": "[root]/repo/.argus/worktrees/side",
+  "primary": false
+}
+   [0].repositories[0].default_branch = "main"
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[1].panes[0] = {
+  "background": false,
+  "children": [],
+  "id": 6,
+  "kind": "Shell",
+  "live": false,
+  "note": null,
+  "since": "[now]",
+  "status": "Idle",
+  "telemetry": {
+    "context_tokens": null,
+    "context_window": null,
+    "cost_usd": null,
+    "input_tokens": null,
+    "model": null,
+    "output_tokens": null,
+    "tool": null,
+    "tool_calls": null
+  },
+  "template": null,
+  "title": "shell"
+}
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[1].panes[0] (gone)
+   [0].repositories[0].last_used = "[now]"
+<- Tree (the last, changed)
+   [0].repositories[0].checkouts[1] (gone)

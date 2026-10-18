@@ -1,0 +1,107 @@
+---
+source: crates/argusd/src/test_host/tests/session.rs
+expression: t.finish()
+---
+(connected)
+<- Templates [
+  "claude",
+  "codex",
+  "opencode",
+  "pi",
+  "agy",
+  "agent"
+]
+<- Tree [
+  {
+    "id": 4,
+    "name": "proj",
+    "repositories": [
+      {
+        "branches": [],
+        "checkouts": [
+          {
+            "git": {
+              "ahead": 0,
+              "behind": 0,
+              "branch": "main",
+              "changed_files": 0,
+              "dirty": false,
+              "last_commit": null,
+              "staged": 0,
+              "unstaged": 0,
+              "upstream": null
+            },
+            "id": 3,
+            "name": "main",
+            "panes": [],
+            "path": "[root]/repo",
+            "primary": true
+          }
+        ],
+        "default_branch": null,
+        "id": 2,
+        "last_used": null,
+        "name": "repo",
+        "remote_branches": [],
+        "unmerged": {}
+      }
+    ],
+    "root": null
+  }
+]
+<- Workspaces [
+  {
+    "id": 1,
+    "name": "default",
+    "open": true,
+    "panes": 0,
+    "projects": 1
+  }
+]
+-> Hello {
+  "capabilities": [
+    "pane-telemetry",
+    "cell-runs",
+    "paste-file",
+    "focus",
+    "sessions",
+    "add-project",
+    "consoles",
+    "extensions",
+    "extension-dialogs",
+    "agent-views",
+    "view-actions",
+    "describe-extensions",
+    "rename-pane",
+    "saved-views",
+    "code",
+    "request-refusals"
+  ],
+  "protocol": 1,
+  "version": "[version]"
+}
+<- Consoles []
+<- ExtensionCommands []
+<- ExtensionViews []
+<- Hello {
+  "capabilities": [
+    "pane-telemetry",
+    "cell-runs",
+    "paste-file",
+    "focus",
+    "sessions",
+    "add-project",
+    "consoles",
+    "extensions",
+    "extension-dialogs",
+    "agent-views",
+    "view-actions",
+    "describe-extensions",
+    "rename-pane",
+    "saved-views",
+    "code",
+    "request-refusals"
+  ],
+  "protocol": 1,
+  "version": "[version]"
+}

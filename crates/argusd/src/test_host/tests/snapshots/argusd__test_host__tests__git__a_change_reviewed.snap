@@ -1,0 +1,153 @@
+---
+source: crates/argusd/src/test_host/tests/git.rs
+expression: t.finish()
+---
+(connected and greeted, as in connecting_and_greeting)
+-> Review {
+  "base": "Unstaged",
+  "checkout": 3,
+  "commit": null,
+  "request_id": 1
+}
+<- Review {
+  "base": "Unstaged",
+  "checkout": 3,
+  "commit": null,
+  "files": [
+    {
+      "hunks": [
+        {
+          "header": "@@ -0,0 +1 @@",
+          "lines": [
+            {
+              "kind": "Added",
+              "new_lineno": 1,
+              "old_lineno": null,
+              "text": "untracked"
+            }
+          ]
+        }
+      ],
+      "kind": "Untracked",
+      "new_blob": "5a72eb2edc5d0da32ff615d210d6fa90c31ed940",
+      "new_lines": 1,
+      "note": null,
+      "old_path": null,
+      "path": "notes.txt"
+    },
+    {
+      "hunks": [
+        {
+          "header": "@@ -1,3 +1,3 @@",
+          "lines": [
+            {
+              "kind": "Context",
+              "new_lineno": 1,
+              "old_lineno": 1,
+              "spans": "Keyword 0..3, Keyword 4..6, Function 7..13, Punctuation 13..14, Punctuation 14..15, Type 19..22, Punctuation 23..24",
+              "text": "pub fn answer() -> u32 {"
+            },
+            {
+              "kind": "Removed",
+              "new_lineno": null,
+              "old_lineno": 2,
+              "spans": "Constant 4..6",
+              "text": "    42"
+            },
+            {
+              "kind": "Added",
+              "new_lineno": 2,
+              "old_lineno": null,
+              "spans": "Constant 4..6",
+              "text": "    43"
+            },
+            {
+              "kind": "Context",
+              "new_lineno": 3,
+              "old_lineno": 3,
+              "spans": "Punctuation 0..1",
+              "text": "}"
+            }
+          ]
+        }
+      ],
+      "kind": "Modified",
+      "new_blob": "c8a2ee54ce3d65ac5a97ebe50b1b7e214c2c8a1d",
+      "new_lines": 3,
+      "note": null,
+      "old_path": null,
+      "path": "src/lib.rs"
+    }
+  ],
+  "request_id": 1
+}
+-> ListCommits {
+  "checkout": 3,
+  "request_id": 2
+}
+<- Commits {
+  "checkout": 3,
+  "commits": [
+    {
+      "author": "Fixture",
+      "oid": "3fd528433e5aba5eb30936cc62a85d8dfdcd4877",
+      "short": "3fd5284",
+      "summary": "Add the answer",
+      "time": 1700000000
+    },
+    {
+      "author": "Fixture",
+      "oid": "073f824e16d1243d47fa97a3f77b6bf1a8267caf",
+      "short": "073f824",
+      "summary": "Start the fixture",
+      "time": 1700000000
+    }
+  ],
+  "request_id": 2
+}
+-> ReadCode {
+  "checkout": 3,
+  "path": "src/lib.rs",
+  "request_id": 3,
+  "version": "Head"
+}
+<- Code {
+  "checkout": 3,
+  "lines": [
+    {
+      "spans": "Keyword 0..3, Keyword 4..6, Function 7..13, Punctuation 13..14, Punctuation 14..15, Type 19..22, Punctuation 23..24",
+      "text": "pub fn answer() -> u32 {"
+    },
+    {
+      "spans": "Constant 4..6",
+      "text": "    42"
+    },
+    {
+      "spans": "Punctuation 0..1",
+      "text": "}"
+    }
+  ],
+  "note": null,
+  "path": "src/lib.rs",
+  "removed": [],
+  "request_id": 3,
+  "symbols": [
+    {
+      "kind": "function",
+      "line": 1,
+      "name": "answer"
+    }
+  ],
+  "version": "Head"
+}
+-> ReadCode {
+  "checkout": 3,
+  "path": "../outside.txt",
+  "request_id": 3,
+  "version": "Head"
+}
+<- Refused {
+  "read": true,
+  "reason": "../outside.txt is not a path inside the checkout",
+  "request_id": 3
+}

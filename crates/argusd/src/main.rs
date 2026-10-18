@@ -13,6 +13,8 @@ mod state;
 mod store;
 mod syntax;
 mod system;
+#[cfg(test)]
+mod test_host;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

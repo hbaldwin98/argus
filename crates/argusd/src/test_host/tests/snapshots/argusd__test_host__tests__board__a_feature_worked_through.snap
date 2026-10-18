@@ -1,0 +1,258 @@
+---
+source: crates/argusd/src/test_host/tests/board.rs
+expression: t.finish()
+---
+(connected and greeted, as in connecting_and_greeting)
+-> Feature {
+  "action": {
+    "Open": {
+      "body": "Refuse when full.",
+      "title": "Bound the queue"
+    }
+  },
+  "checkout": 3,
+  "project": 4,
+  "request_id": 1
+}
+<- Decisions {
+  "decisions": [],
+  "features": [
+    {
+      "at": "[now]",
+      "body": "Refuse when full.",
+      "checkouts": [],
+      "held": null,
+      "links": [],
+      "number": 1,
+      "origin_branch": null,
+      "origin_checkout": null,
+      "reconcile": null,
+      "reconciled": null,
+      "session": null,
+      "slug": "bound-the-queue",
+      "state": "open",
+      "tasks": {
+        "doing": 0,
+        "done": 0,
+        "todo": 0
+      },
+      "title": "Bound the queue",
+      "waits_on": []
+    }
+  ],
+  "name": "proj",
+  "project": 4,
+  "repositories": [
+    2
+  ],
+  "tracker_map": {
+    "body": "",
+    "draft": null
+  }
+}
+-> Feature {
+  "action": {
+    "Open": {
+      "body": null,
+      "title": "Bound the queue"
+    }
+  },
+  "checkout": 3,
+  "project": 4,
+  "request_id": 1
+}
+<- Decisions (the last, changed)
+   .features[1] = {
+  "at": "[now]",
+  "body": "",
+  "checkouts": [],
+  "held": null,
+  "links": [],
+  "number": 2,
+  "origin_branch": null,
+  "origin_checkout": null,
+  "reconcile": null,
+  "reconciled": null,
+  "session": null,
+  "slug": "bound-the-queue-2",
+  "state": "open",
+  "tasks": {
+    "doing": 0,
+    "done": 0,
+    "todo": 0
+  },
+  "title": "Bound the queue",
+  "waits_on": []
+}
+-> Task {
+  "action": {
+    "Add": {
+      "external": null,
+      "parent": null,
+      "title": "Measure the backlog"
+    }
+  },
+  "checkout": 3,
+  "feature": "bound-the-queue",
+  "project": 4
+}
+<- Decisions (the last, changed)
+   .features[0].tasks.todo = 1
+<- Tasks {
+  "feature": "bound-the-queue",
+  "project_name": "proj",
+  "repositories": [
+    2
+  ],
+  "tasks": [
+    {
+      "at": "[now]",
+      "claimed_by": null,
+      "claimed_pane": null,
+      "criteria": [],
+      "external": null,
+      "feature": "bound-the-queue",
+      "id": 1,
+      "notes": [],
+      "parent": null,
+      "position": 0,
+      "session": null,
+      "state": "todo",
+      "title": "Measure the backlog"
+    }
+  ]
+}
+-> Task {
+  "action": {
+    "Move": {
+      "id": 1,
+      "state": "doing"
+    }
+  },
+  "checkout": 3,
+  "feature": "bound-the-queue",
+  "project": 4
+}
+<- Decisions (the last, changed)
+   .features[0].tasks.doing = 1
+   .features[0].tasks.todo = 0
+<- Tasks (the last, changed)
+   .tasks[0].state = "doing"
+-> Task {
+  "action": "List",
+  "checkout": 3,
+  "feature": "bound-the-queue",
+  "project": 4
+}
+<- Tasks (the same as the last)
+-> Decide {
+  "checkout": 3,
+  "feature": "bound-the-queue",
+  "project": 4,
+  "write": {
+    "because": "a dropped write is silent",
+    "chose": "refuse rather than drop",
+    "consequences": [],
+    "context": null,
+    "detail": null,
+    "options": [],
+    "over": null,
+    "state": "accepted",
+    "supersedes": null,
+    "task": 1,
+    "under": null
+  }
+}
+<- Decisions (the last, changed)
+   .decisions[0] = {
+  "at": "[now]",
+  "because": "a dropped write is silent",
+  "checkout": null,
+  "chose": "refuse rather than drop",
+  "consequences": [],
+  "context": null,
+  "detail": null,
+  "feature": "bound-the-queue",
+  "id": 1,
+  "options": [],
+  "over": null,
+  "parent": null,
+  "session": null,
+  "state": "accepted",
+  "superseded_by": null,
+  "task": 1,
+  "withdrawn_at": null
+}
+-> Decide {
+  "checkout": 3,
+  "feature": "bound-the-queue",
+  "project": 4,
+  "write": {
+    "because": null,
+    "chose": "which bound",
+    "consequences": [],
+    "context": null,
+    "detail": null,
+    "options": [],
+    "over": null,
+    "state": "open",
+    "supersedes": null,
+    "task": null,
+    "under": null
+  }
+}
+<- Decisions (the last, changed)
+   .decisions[1] = {
+  "at": "[now]",
+  "because": null,
+  "checkout": null,
+  "chose": "which bound",
+  "consequences": [],
+  "context": null,
+  "detail": null,
+  "feature": "bound-the-queue",
+  "id": 2,
+  "options": [],
+  "over": null,
+  "parent": null,
+  "session": null,
+  "state": "open",
+  "superseded_by": null,
+  "task": null,
+  "withdrawn_at": null
+}
+-> ChangeDecision {
+  "change": {
+    "Resolve": {
+      "answer": "a count",
+      "because": null,
+      "id": 2
+    }
+  },
+  "checkout": 3,
+  "feature": "bound-the-queue",
+  "project": 4
+}
+<- Decisions (the last, changed)
+   .decisions[1].detail = "a count"
+   .decisions[1].state = "accepted"
+-> ChangeDecision {
+  "change": {
+    "Resolve": {
+      "answer": "a byte size",
+      "because": null,
+      "id": 2
+    }
+  },
+  "checkout": 3,
+  "feature": "bound-the-queue",
+  "project": 4
+}
+<- Error {
+  "message": "decision 2 is not an open question; supersede a decision that was made"
+}
+-> GetDecisions {
+  "checkout": 3,
+  "project": 4
+}
+<- Decisions (the same as the last)

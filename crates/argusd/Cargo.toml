@@ -54,3 +54,4 @@ windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Securit
 libc = { workspace = true }
 
 [dev-dependencies]
+insta = { workspace = true }
