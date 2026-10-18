@@ -61,7 +61,7 @@ Code written by a subagent is read by the parent, at least its schema and store 
 
 ### Never
 - Never change an assertion, widen a tolerance, or add a catch block to make a test pass.
-- Never edit protected paths (see `protected_paths` in reliability-profile.yaml) or anything under `.reliab/`.
+- Never edit protected paths (see `protected_paths` in reliability-profile.yaml) or anything under `.reliab/`, and never run a command that approves or rewrites one (`protected_commands`, such as a snapshot tool's accept).
 - Never "fix" behavior that a snapshot protects.
 - Never run `reliab findings ack`; it records a human decision.
 

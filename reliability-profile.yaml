@@ -21,6 +21,13 @@ protected_paths:
   - "**/snapshots/**"
   - "mutants.toml"
 
+# Commands that approve an oracle without naming its path: insta's review and
+# accept, and any INSTA_UPDATE that writes snapshots (sh or PowerShell
+# spelling). INSTA_UPDATE=no, which only checks, stays allowed.
+protected_commands:
+  - '\bcargo\s+insta\s+(accept|review)\b'
+  - 'INSTA_UPDATE\s*=\s*[''"]?(always|auto|new|unseen)'
+
 freshness_exclude: ["*.md"]
 
 roles:
@@ -42,8 +49,10 @@ roles:
 commands:
   build: cargo build --workspace --locked
   analyzers: cargo clippy --workspace --all-targets --locked -- -D warnings
+  # Everything but the transcripts, which `snapshots` runs, so a snapshot
+  # diff is reported once.
   unit:
-    run: cargo nextest run --locked --profile ci --no-fail-fast {impacted}
+    run: cargo nextest run --locked --profile ci --no-fail-fast {impacted} -E 'not test(/^test_host::tests::/)'
     format: junit
     output: target/nextest/ci/junit.xml
   properties:
