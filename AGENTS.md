@@ -71,8 +71,9 @@ Code written by a subagent is read by the parent, at least its schema and store 
 - wrong-property -> delete it, write down why.
 - legacy-defect-or-quirk -> stop; a human decides.
 - characterization-diff -> stop and ask a human.
+- equivalent-mutant -> stop; a human confirms it.
 
 ### Mutation testing
 - Write tests that kill surviving mutants on changed lines.
-- If a mutant is equivalent, say so in one line. If the requirement is silent, ask.
+- If no test can kill a mutant because it cannot change behavior, classify it `equivalent-mutant` with a one-line reason. If the requirement is silent, ask.
 <!-- reliab:end -->
