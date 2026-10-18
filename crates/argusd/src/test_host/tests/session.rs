@@ -9,6 +9,6 @@ async fn connecting_and_greeting() {
     let host = Host::start().await;
     let mut t = Transcript::open(&host).await;
     t.hello().await;
-    insta::assert_snapshot!(t.finish());
+    pin!(t.finish());
     host.stop().await;
 }

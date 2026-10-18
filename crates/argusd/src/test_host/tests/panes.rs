@@ -55,6 +55,6 @@ async fn a_pane_from_start_to_end() {
     host.daemon.exit(pane, None);
     t.quiet().await;
 
-    insta::assert_snapshot!(t.finish());
+    pin!(t.finish());
     host.stop().await;
 }

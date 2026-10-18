@@ -161,3 +161,30 @@ impl Transcript {
         step
     }
 }
+
+/// Where `RELIAB_CAPTURE_DIR` asks transcripts to be written instead of
+/// asserted, if it names anywhere. A relative path is the workspace's:
+/// a test's working directory is its crate's.
+pub fn capture_dir() -> Option<std::path::PathBuf> {
+    let dir = std::env::var_os("RELIAB_CAPTURE_DIR").filter(|dir| !dir.is_empty())?;
+    let dir = std::path::PathBuf::from(dir);
+    Some(if dir.is_absolute() {
+        dir
+    } else {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(dir)
+    })
+}
+
+/// Writes `text` to `dir` under the snapshot name insta gives the test
+/// whose local item `here` is: its module path and function, `::` as `__`.
+pub fn capture(dir: &std::path::Path, here: &str, text: &str) {
+    let name = here
+        .strip_suffix("::here")
+        .expect("a test's local item")
+        .split("::")
+        .filter(|part| *part != "{{closure}}")
+        .collect::<Vec<_>>()
+        .join("__");
+    std::fs::create_dir_all(dir).expect("the capture directory can be made");
+    std::fs::write(dir.join(format!("{name}.txt")), text).expect("a capture can be written");
+}

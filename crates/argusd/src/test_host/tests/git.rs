@@ -27,7 +27,7 @@ async fn a_change_reviewed() {
     // A path that leaves the checkout is refused.
     t.ask(read("../outside.txt"), |m| matches!(m, ServerMsg::Refused(_))).await;
 
-    insta::assert_snapshot!(t.finish());
+    pin!(t.finish());
     host.stop().await;
 }
 
@@ -78,6 +78,6 @@ async fn a_worktree_worked_in_and_removed() {
     let mut text = t.finish();
     other.quiet().await;
     text.push_str(&other.finish());
-    insta::assert_snapshot!(text);
+    pin!(text);
     host.stop().await;
 }

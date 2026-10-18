@@ -65,11 +65,25 @@ commands:
   # into findings. The old output goes first: cargo-mutants leaves it in place
   # when the diff has nothing to mutate.
   # Characterization (S2): what the daemon answers its clients' most-used
-  # conversations. Never writes a snapshot; a diff is a finding for a human.
+  # conversations; a diff is a finding for a human. INSTA_UPDATE=new writes
+  # each mismatch as a pending .snap.new and never touches an accepted
+  # snapshot; INSTA_PENDING_DIR keeps those files under .reliab/out, out of
+  # the protected snapshot directories. reliab-adapter-insta labels each one
+  # additive-only or values-changed. Old output goes first, so a failed build
+  # cannot leave a stale JUnit file. The fuzz shares test_host::tests and is
+  # api_fuzz's.
   snapshots:
-    run: INSTA_UPDATE=no cargo nextest run --locked --profile snapshots --no-fail-fast -p argusd -E 'test(/^test_host::tests::/) and not test(/^test_host::tests::fuzz::/)'
-    format: junit
-    output: target/nextest/snapshots/junit.xml
+    run: >-
+      rm -rf .reliab/out/insta target/nextest/snapshots/junit.xml;
+      INSTA_UPDATE=new INSTA_PENDING_DIR="$(pwd -W 2>/dev/null || pwd)/.reliab/out/insta"
+      cargo nextest run --locked --profile snapshots --no-fail-fast -p argusd -E 'test(/^test_host::tests::/) and not test(/^test_host::tests::fuzz::/)';
+      reliab-adapter-insta -exit $? -junit target/nextest/snapshots/junit.xml .reliab/out/insta .reliab/out/snapshots.json
+    format: findings
+    output: .reliab/out/snapshots.json
+  # On-demand characterization (reliab characterize): the same conversations,
+  # written to RELIAB_CAPTURE_DIR instead of asserted. It ignores the scope;
+  # all of them take about 11s.
+  characterize: cargo nextest run --locked --profile snapshots --no-fail-fast -p argusd -E 'test(/^test_host::tests::/) and not test(/^test_host::tests::fuzz::/)'
   # Arbitrary request sequences over the socket, a fresh host per case
   # (S3). About 75ms a case, so each tier's own count fits: 100 in inner,
   # 1000 in prepr, 10000 at night. A failing case is saved under

@@ -58,6 +58,6 @@ async fn a_feature_worked_through() {
     t.ask(resolve("a byte size"), |m| matches!(m, ServerMsg::Error { .. })).await;
 
     t.ask(ClientMsg::GetDecisions { project, checkout }, decisions).await;
-    insta::assert_snapshot!(t.finish());
+    pin!(t.finish());
     host.stop().await;
 }

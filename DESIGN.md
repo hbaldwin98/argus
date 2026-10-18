@@ -2858,8 +2858,10 @@ added to the tree is a diff in one place. A snapshot changes only with a person'
 is a finding, not something to accept. The host has no Git poll, watcher or hook server, so a
 tree's Git status is what the first read of HEAD gave until a request changes it.
 
-A transcript is text before it is a snapshot: `Transcript::finish` returns it, so a capture taken
-before a refactor can be compared with one taken after without committing either.
+A transcript is text before it is a snapshot. Each test pins it with `pin!`, which asserts the
+snapshot, or, while `RELIAB_CAPTURE_DIR` names a directory, writes it there under the snapshot's
+name instead, so `reliab characterize` can compare a capture taken before a refactor with one taken
+after without committing either.
 
 ### Request fuzz
 

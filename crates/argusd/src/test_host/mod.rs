@@ -10,6 +10,24 @@ pub mod requests;
 pub mod scrub;
 pub mod transcript;
 
+/// Pins a transcript's text: asserted against its snapshot, or, while
+/// `RELIAB_CAPTURE_DIR` names a directory, written there as
+/// `<snapshot name>.txt` and passed, so `reliab characterize` can compare
+/// a capture from before a change with one from after without committing
+/// either. Each transcript test pins once, by its own name.
+macro_rules! pin {
+    ($text:expr) => {{
+        let text: String = $text;
+        match $crate::test_host::transcript::capture_dir() {
+            Some(dir) => {
+                fn here() {}
+                $crate::test_host::transcript::capture(&dir, std::any::type_name_of_val(&here), &text);
+            }
+            None => insta::assert_snapshot!(text),
+        }
+    }};
+}
+
 #[cfg(test)]
 mod tests;
 
