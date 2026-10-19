@@ -199,16 +199,8 @@ impl Daemon {
                     }
                     Asker::Agent { session, .. } => {
                         let path = address.checkout()?;
-                        let checkout = path.to_string_lossy();
-                        let feature = self.store.add_feature(
-                            key,
-                            &write,
-                            Some(&checkout),
-                            self.branch_of(path).as_deref(),
-                            at,
-                            session,
-                        )?;
-                        self.store.set_artifact_feature_scope(path, key, &feature.slug)?;
+                        self.store
+                            .open_feature_in(key, &write, path, self.branch_of(path).as_deref(), at, session)?;
                     }
                 }
             }

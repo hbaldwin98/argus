@@ -2900,9 +2900,9 @@ whole, which the rule allows; each write is still stopped before its first step 
 
 Migrations run in one transaction with the `user_version` they reach, and the legacy file import
 inserts with `OR IGNORE` and retires a file only once it is in, so a stopped import finishes when
-it runs again; neither is in `WRITES`. One daemon action spans two writes: an agent opening a feature
-adds it and then points its checkout at it, so a fault between the two leaves a feature its checkout
-is not on.
+it runs again; neither is in `WRITES`. An agent opening a feature adds it and points its checkout at
+it in one transaction (`open_feature_in`), as decided on 2026-10-18: as two, a fault between them
+left a feature its own checkout was not on.
 
 A known gap, deferred: a write whose commit landed can still return an error, when a read it makes
 after the commit fails, such as the board it reads back for its answer. The test allows that, since

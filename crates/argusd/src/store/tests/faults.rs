@@ -135,6 +135,10 @@ type Run = fn(&Store, &Fx) -> Result<()>;
 const WRITES: &[(&str, Run)] = &[
     // The board: features.
     ("add_feature", |s, _| s.add_feature(BOARD, &feature("The pty"), Some(REPO), None, 9, None).map(drop)),
+    ("open_feature_in", |s, _| {
+        s.open_feature_in(BOARD, &feature("From the worktree"), Path::new(WORKTREE), Some("wt"), 9, Some("s2"))
+            .map(drop)
+    }),
     ("capture_feature", |s, _| {
         let capture = Capture {
             title: "Bound the queue".into(),
@@ -392,6 +396,47 @@ fn every_write_is_whole_or_absent_when_failed_at_any_step_or_its_commit() {
     }
     eprintln!("{cases} cases over {} writes; {stopped} stopped a write", WRITES.len());
     assert!(failures.is_empty(), "{} of {cases} cases:\n{}", failures.len(), failures.join("\n\n"));
+}
+
+/// An agent's feature is opened in the checkout the agent works in, and
+/// that checkout points at it: stopped at any step or at its commit, the
+/// open leaves no feature, or the feature with its checkout on it, never a
+/// feature its own checkout is not on. The owner's decision of 2026-10-18,
+/// recorded in DESIGN.md's "Store writes under faults".
+#[test]
+fn an_agents_feature_is_never_left_without_its_checkout() {
+    let open = |s: &Store| {
+        s.open_feature_in(BOARD, &feature("From the worktree"), Path::new(WORKTREE), Some("wt"), 9, Some("s2"))
+    };
+    let steps = {
+        let s = store();
+        fixture(&s);
+        let (opened, steps) = s.steps_taken(open);
+        opened.unwrap();
+        steps
+    };
+    let mut stopped = 0;
+    for fault in (0..=steps + 1).map(Fault::AfterSteps).chain([Fault::Commit]) {
+        let s = store();
+        fixture(&s);
+        let armed = s.inject(fault);
+        let _ = open(&s);
+        drop(armed);
+        let opened: Vec<String> = s
+            .features(BOARD)
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.title == "From the worktree")
+            .map(|f| f.slug)
+            .collect();
+        let pointed = s.artifact_feature_scope(Path::new(WORKTREE), BOARD).unwrap();
+        match opened.as_slice() {
+            [] => stopped += 1,
+            [slug] => assert_eq!(pointed.as_ref(), Some(slug), "under {fault:?} the checkout is not on its feature"),
+            more => panic!("under {fault:?} it opened {more:?}"),
+        }
+    }
+    assert!(stopped > 0, "no fault stopped the open, so the test never saw one");
 }
 
 mod properties {

@@ -173,6 +173,32 @@ impl Store {
         Ok(feature)
     }
 
+    /// Opens a feature for an agent working in `checkout` and points that
+    /// checkout at it, in one transaction: opened as two, a failure between
+    /// them left a feature its own checkout was not on.
+    pub fn open_feature_in(
+        &self,
+        project: &str,
+        write: &FeatureWrite,
+        checkout: &Path,
+        origin_branch: Option<&str>,
+        at: i64,
+        session: Option<&str>,
+    ) -> Result<Feature> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let filed = Filed {
+            project,
+            at,
+            session,
+        };
+        let origin = checkout.to_string_lossy();
+        let feature = insert_feature(&tx, &filed, write, Some(&origin), origin_branch)?;
+        point_at(&tx, checkout, project, &feature.slug)?;
+        tx.commit()?;
+        Ok(feature)
+    }
+
     /// One artifact scope's features, oldest first.
     pub fn features(&self, project: &str) -> Result<Vec<Feature>> {
         let conn = self.conn();
@@ -682,12 +708,7 @@ impl Store {
         if !exists {
             anyhow::bail!("there is no feature {slug} in this artifact scope");
         }
-        tx.execute(
-            "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(artifact_scope, checkout_path) DO UPDATE SET slug = excluded.slug",
-            rusqlite::params![artifact_scope, path_text(checkout), slug],
-        )?;
+        point_at(&tx, checkout, artifact_scope, slug)?;
         tx.commit()?;
         Ok(())
     }
@@ -1440,6 +1461,18 @@ pub(super) struct Filed<'a> {
     pub project: &'a str,
     pub at: i64,
     pub session: Option<&'a str>,
+}
+
+/// Points `checkout` at feature `slug` of one artifact scope, replacing
+/// what it pointed at there.
+fn point_at(tx: &rusqlite::Transaction<'_>, checkout: &Path, artifact_scope: &str, slug: &str) -> Result<()> {
+    tx.execute(
+        "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(artifact_scope, checkout_path) DO UPDATE SET slug = excluded.slug",
+        rusqlite::params![artifact_scope, path_text(checkout), slug],
+    )?;
+    Ok(())
 }
 
 /// The slug is derived from the title and made unique by suffix inside the
