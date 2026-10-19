@@ -2903,3 +2903,10 @@ inserts with `OR IGNORE` and retires a file only once it is in, so a stopped imp
 it runs again; neither is in `WRITES`. One daemon action spans two writes: an agent opening a feature
 adds it and then points its checkout at it, so a fault between the two leaves a feature its checkout
 is not on.
+
+A known gap, deferred: a write whose commit landed can still return an error, when a read it makes
+after the commit fails, such as the board it reads back for its answer. The test allows that, since
+nothing is left half done, but the daemon then refuses a request whose write was saved, and a client
+that tries again writes it twice: a second task, a second decision. The intended fix is that a write
+answers from what it committed and logs the failed read rather than returning it, so an error from a
+store write always means nothing was written.

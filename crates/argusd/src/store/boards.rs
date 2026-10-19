@@ -1048,13 +1048,17 @@ impl Store {
     ///
     /// Pane ids are handed out fresh on every start, so one read back after
     /// a restart would name whichever pane happened to get the number. The
-    /// session beside it still says who.
+    /// session beside it still says who. One transaction, so a pane is
+    /// forgotten everywhere or nowhere.
     pub(super) fn forget_panes(&self) -> Result<()> {
-        self.conn().execute_batch(
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute_batch(
             "UPDATE task SET claimed_pane = NULL WHERE claimed_pane IS NOT NULL;
              UPDATE task_note SET pane = NULL WHERE pane IS NOT NULL;
              UPDATE saved_view SET saved_by_pane = NULL WHERE saved_by_pane IS NOT NULL;",
         )?;
+        tx.commit()?;
         Ok(())
     }
 
