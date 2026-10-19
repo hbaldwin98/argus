@@ -996,9 +996,9 @@ Before this an owner's death orphaned its `conhost.exe` or `OpenConsole.exe` ser
 their broken pipes: 63 of them once held 129k CPU-seconds and stalled other runs' ConPTY tests.
 ConPTY starts the server as a child of whoever opens the pseudoconsole and hands back no handle to
 it, so `pty/console_host` opens one pseudoconsole at a time per process and takes the console-server
-child that appeared meanwhile. An agent's job also has a 32 GiB committed-memory limit and a
-256-process limit, and everything the agent starts stays in it. A shell's job is unbounded, and
-what the shell starts stays in it too unless it is started with `CREATE_BREAKAWAY_FROM_JOB`, the
+child that appeared meanwhile. Neither kind of job caps memory or processes: the agent's cap of
+32 GiB and 256 processes ended agents mid-task. Everything an agent starts stays in its job, and
+what a shell starts stays in the shell's unless it is started with `CREATE_BREAKAWAY_FROM_JOB`, the
 counterpart of the `setsid` that escapes a Unix pane's session sweep: `argus` starts its daemon and
 window that way, and `scripts/reload.sh` schedules its restart through WMI, whose processes were
 never the pane's. Letting every child leave silently orphaned Git Bash's real shell, since

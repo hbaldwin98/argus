@@ -518,101 +518,16 @@ fn echo(text: &str) -> Spawn {
     }
 }
 
-/// What the helper exits with when the job refuses it memory. An exit code
-/// of its own, because the default answer to a failed allocation is an abort,
-/// and on Windows an abort hands the process to crash reporting: the limit
-/// held and the process still outlived the test's patience.
-#[cfg(windows)]
-const JOB_MEMORY_REFUSED: i32 = 86;
-
+/// DESIGN.md, "Neither kind of job caps memory or processes": a cap ended
+/// agents mid-task. What the agent's job still does is end everything it
+/// holds, and keep it, since an agent's job does not let breakaway go.
 #[cfg(windows)]
 #[test]
-fn job_memory_limit_helper() {
-    use std::io::Read;
+fn an_agents_job_caps_nothing_and_ends_what_it_holds() {
+    use windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
 
-    if std::env::var_os("ARGUS_JOB_MEMORY_TEST").is_none() {
-        return;
-    }
-
-    // The parent closes this pipe only once the process is in the job, so
-    // nothing is committed before the limit applies.
-    let mut gate = Vec::new();
-    std::io::stdin().read_to_end(&mut gate).unwrap();
-
-    // The total stays host-safe if containment is broken; finishing then
-    // exits zero, which the parent test reads as an escape.
-    const BLOCK: usize = 32 * 1024 * 1024;
-    let mut blocks: Vec<Vec<u8>> = Vec::with_capacity(8);
-    for _ in 0..8 {
-        let mut block: Vec<u8> = Vec::new();
-        if block.try_reserve_exact(BLOCK).is_err() {
-            std::process::exit(JOB_MEMORY_REFUSED);
-        }
-        block.resize(BLOCK, 0xa5);
-        blocks.push(block);
-    }
-    std::hint::black_box(blocks);
-}
-
-#[cfg(windows)]
-#[test]
-fn a_job_stops_a_process_that_exceeds_its_memory_limit() {
-    use std::io::Read;
-    use std::os::windows::io::AsRawHandle;
-    use std::process::{Command, Stdio};
-
-    let mut child = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "pty::tests::job_memory_limit_helper",
-            "--nocapture",
-        ])
-        .env("ARGUS_JOB_MEMORY_TEST", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let job = ProcessJob::new(JobLimits {
-        memory_bytes: 128 * 1024 * 1024,
-        active_processes: 4,
-    })
-    .unwrap();
-    job.assign(AsRawHandle::as_raw_handle(&child)).unwrap();
-    drop(child.stdin.take());
-
-    // What the helper said on its way out is the only record of a failure
-    // that happens on a CI runner and nowhere else.
-    let said = |child: &mut std::process::Child| {
-        let mut text = String::new();
-        if let Some(mut stderr) = child.stderr.take() {
-            let _ = stderr.read_to_string(&mut text);
-        }
-        text
-    };
-
-    let deadline = std::time::Instant::now() + Duration::from_secs(60);
-    let status = loop {
-        if let Some(status) = child.try_wait().unwrap() {
-            break status;
-        }
-        if std::time::Instant::now() >= deadline {
-            job.terminate().unwrap();
-            let _ = child.wait();
-            panic!(
-                "memory-limited process did not exit; it said: {}",
-                said(&mut child)
-            );
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
-
-    assert_eq!(
-        status.code(),
-        Some(JOB_MEMORY_REFUSED),
-        "a process asking for 256 MiB under a 128 MiB job limit was not refused; it said: {}",
-        said(&mut child)
-    );
+    let flags = ProcessJob::agent().unwrap().limit_flags().unwrap();
+    assert_eq!(flags, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, "{flags:#x}");
 }
 
 #[cfg(windows)]

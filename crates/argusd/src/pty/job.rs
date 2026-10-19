@@ -4,19 +4,11 @@
 //! parent unless something reaches them. On Windows a job object is that
 //! owner: every pane's console server and child are assigned to one at
 //! spawn, so closing the pane, or the death of the process that holds the
-//! job, takes them with it, and an agent's runaway cannot take the machine
-//! down on its way. On Unix the child is its own session leader, and the
-//! session is what gets swept.
+//! job, takes them with it. On Unix the child is its own session leader,
+//! and the session is what gets swept.
 
 use super::*;
 
-
-#[cfg(windows)]
-#[derive(Clone, Copy)]
-pub(super) struct JobLimits {
-    pub(super) memory_bytes: usize,
-    pub(super) active_processes: u32,
-}
 
 #[cfg(windows)]
 pub(crate) struct ProcessJob {
@@ -25,19 +17,16 @@ pub(crate) struct ProcessJob {
 
 #[cfg(windows)]
 impl ProcessJob {
-    /// An agent's job: bounded, and nothing the agent starts leaves it.
-    pub(super) fn new(limits: JobLimits) -> anyhow::Result<Self> {
+    /// An agent's job: nothing the agent starts leaves it. Unbounded: a
+    /// memory or process cap ended agents mid-task when a build or test run
+    /// crossed it, which cost more than the runaway it guarded against.
+    pub(super) fn agent() -> anyhow::Result<Self> {
         use windows_sys::Win32::System::JobObjects::{
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-            JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         };
 
         let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_JOB_MEMORY
-            | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
-            | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        info.BasicLimitInformation.ActiveProcessLimit = limits.active_processes;
-        info.JobMemoryLimit = limits.memory_bytes;
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         Self::with(&info)
     }
 
@@ -254,10 +243,7 @@ pub(super) fn hold_test_process() -> Option<&'static ProcessJob> {
 pub(super) fn job_for(resource_policy: ResourcePolicy) -> anyhow::Result<ProcessJob> {
     match resource_policy {
         ResourcePolicy::Unrestricted => ProcessJob::shell(),
-        ResourcePolicy::Agent => ProcessJob::new(JobLimits {
-            memory_bytes: AGENT_JOB_MEMORY_BYTES,
-            active_processes: AGENT_JOB_PROCESS_LIMIT,
-        }),
+        ResourcePolicy::Agent => ProcessJob::agent(),
     }
 }
 
