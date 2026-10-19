@@ -19,7 +19,8 @@
       "Edit(**/proptest-regressions/**)",
       "Edit(/crates/argusd/tests/fixtures/stores/**)",
       "Edit(**/snapshots/**)",
-      "Edit(/mutants.toml)"
+      "Edit(/mutants.toml)",
+      "Edit(/reliability-profile.yaml)"
     ]
   },
   "sandbox": {

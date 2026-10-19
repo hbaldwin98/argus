@@ -14,8 +14,10 @@ paths:
   tests: ["**/tests/**", "**/tests.rs", "fuzz/**", ".config/nextest.toml"]
   ignore: ["*.md", "LICENSE-*", "crates/argus-desktop/page/src/bindings/**", "crates/argus-desktop/assets/js/**"]
 
-# Oracles that change only with human approval (R2).
+# Oracles that change only with human approval (R2). The profile is one: it
+# holds the mutation threshold and what each layer is relevant to.
 protected_paths:
+  - "reliability-profile.yaml"
   - "**/proptest-regressions/**"
   - "crates/argusd/tests/fixtures/stores/**"
   - "**/snapshots/**"
@@ -72,7 +74,13 @@ commands:
   # additive-only or values-changed. Old output goes first, so a failed build
   # cannot leave a stale JUnit file. The fuzz shares test_host::tests and is
   # api_fuzz's.
+  # This, api_fuzz and faults_db run only argusd's tests, and argusd builds
+  # on no workspace crate but argus-protocol, so inner and prepr skip all
+  # three for a change to neither: about half of main's last 300 commits
+  # (152 of 298), the client, the desktop window and the docs. That saves
+  # about 35s of inner and 110s of prepr; nightly still runs them.
   snapshots:
+    relevant_when: &daemon ["crates/argusd/**", "crates/argus-protocol/**", "Cargo.toml", "Cargo.lock", ".config/nextest.toml", "reliability-profile.yaml"]
     run: >-
       rm -rf .reliab/out/insta target/nextest/snapshots/junit.xml;
       INSTA_UPDATE=new INSTA_PENDING_DIR="$(pwd -W 2>/dev/null || pwd)/.reliab/out/insta"
@@ -94,6 +102,7 @@ commands:
   # is expected at 300, and 9 of 10 were caught when measured. That costs
   # about 20s more. Only this command: inner's properties keep 100.
   api_fuzz:
+    relevant_when: *daemon
     run: >-
       case "$RELIAB_TIER" in inner) cases=300;; *) cases={cases};; esac;
       PROPTEST_CASES=$cases cargo nextest run --locked --profile api-fuzz --no-fail-fast -p argusd -E 'test(/^test_host::tests::fuzz::/)'
@@ -106,6 +115,7 @@ commands:
   # writer's lock too, runs the tier's count. Kept out of unit and
   # properties so a finding is reported once.
   faults_db:
+    relevant_when: *daemon
     run: PROPTEST_CASES={cases} cargo nextest run --locked --profile faults-db --no-fail-fast -p argusd -E 'test(/^store::tests::faults::/)'
     format: junit
     output: target/nextest/faults-db/junit.xml
@@ -117,7 +127,15 @@ commands:
   # review/diff.rs's file_bytes. Not skipped, because a cfg(windows) twin has
   # the same mutant names: pty/job.rs's unix end_process_tree and
   # program_command, which therefore still survive on Windows.
+  # Changed code must score 80%. Measured 2026-10-19: main's Rust changes
+  # since adoption (8cdb034..a0ff90d) scored 90.9%, 10 killed of 11 counted,
+  # the one survivor equivalent (`|` for `^` on two disjoint job flags); the
+  # store baseline is 91.5%. A change of a few mutants moves in big steps,
+  # so one survivor in five falls short: that is a question for a person,
+  # never a reason for a test written for the score. No mutation_baseline:
+  # the cargo-mutants adapter writes no per-file counts to score a scope by.
   mutation_changed:
+    threshold: 80
     run: >-
       rm -rf .reliab/out/mutants.out;
       set --;
