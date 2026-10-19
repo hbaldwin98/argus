@@ -163,4 +163,6 @@ tiers:
   inner: { budget_seconds: 300, run: [build, analyzers, corpus, unit, snapshots, properties, api_fuzz, faults_db, spec_checks] }
   prepr: { budget_seconds: 900 }
 
+require_reviewer_verdict: true
+
 corrections: []
