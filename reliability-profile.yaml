@@ -85,11 +85,18 @@ commands:
   # all of them take about 11s.
   characterize: cargo nextest run --locked --profile snapshots --no-fail-fast -p argusd -E 'test(/^test_host::tests::/) and not test(/^test_host::tests::fuzz::/)'
   # Arbitrary request sequences over the socket, a fresh host per case
-  # (S3). About 75ms a case, so each tier's own count fits: 100 in inner,
-  # 1000 in prepr, 10000 at night. A failing case is saved under
+  # (S3). About 100ms a case: 300 in inner, and each other tier's own count,
+  # 1000 in prepr and 10000 at night. A failing case is saved under
   # proptest-regressions/ and replayed first on every run after.
+  # Inner runs 300, not its 100, because the fuzz is its only check for a
+  # crash one request in hundreds triggers: S3's acceptance plant (a
+  # zero-row Resize) was caught in 10 of 14 runs at 100 cases, about 97%
+  # is expected at 300, and 9 of 10 were caught when measured. That costs
+  # about 20s more. Only this command: inner's properties keep 100.
   api_fuzz:
-    run: PROPTEST_CASES={cases} cargo nextest run --locked --profile api-fuzz --no-fail-fast -p argusd -E 'test(/^test_host::tests::fuzz::/)'
+    run: >-
+      case "$RELIAB_TIER" in inner) cases=300;; *) cases={cases};; esac;
+      PROPTEST_CASES=$cases cargo nextest run --locked --profile api-fuzz --no-fail-fast -p argusd -E 'test(/^test_host::tests::fuzz::/)'
     format: junit
     output: target/nextest/api-fuzz/junit.xml
   #
@@ -140,7 +147,7 @@ impacted:
 
 tiers:
   # The snapshots take about 11s and catch side effects before an agent stops;
-  # the fuzz, about 10s at inner's 100 cases, catches a request that crashes,
+  # the fuzz, about 30s at inner's 300 cases, catches a request that crashes,
   # hangs or goes unanswered.
   inner: { budget_seconds: 300, run: [build, analyzers, corpus, unit, snapshots, properties, api_fuzz, spec_checks] }
   prepr: { budget_seconds: 900 }
