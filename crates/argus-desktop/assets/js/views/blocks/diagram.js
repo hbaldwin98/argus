@@ -2,6 +2,7 @@
 // already parsed. Text is only ever set as text nodes and every colour comes
 // from CSS classes, since the strings were written by an agent.
 import { el } from '../../kit/dom.js';
+import { expandable } from './figure.js';
 const SVG = 'http://www.w3.org/2000/svg';
 const MAX_LABEL = 80;
 const CHAR_W = 7;
@@ -206,5 +207,10 @@ export function diagram(d) {
     if (d.participants.length === 0 || d.rows.length === 0) {
         return el('div', { class: 'vdiagram' }, el('div', { class: 'vd-empty' }, 'Nothing to draw'), source);
     }
-    return el('div', { class: 'vdiagram' }, el('div', { class: 'vd-scroll' }, drawing(d)), source);
+    const steps = d.rows.filter((r) => r.kind === 'step').length;
+    return el('div', { class: 'vdiagram' }, expandable(el('div', { class: 'vd-scroll' }, drawing(d)), {
+        draw: () => drawing(d),
+        title: `Sequence diagram · ${steps} step${steps === 1 ? '' : 's'}`,
+        source: d.source,
+    }), source);
 }

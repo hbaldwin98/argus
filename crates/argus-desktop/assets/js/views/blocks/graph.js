@@ -4,6 +4,7 @@
 // by an agent.
 import { toneClass } from '../chip.js';
 import { el } from '../../kit/dom.js';
+import { expandable } from './figure.js';
 import { clip, layout } from './graph_layout.js';
 import { openSaved, opensMark } from '../saved/link.js';
 const SVG = 'http://www.w3.org/2000/svg';
@@ -42,6 +43,15 @@ export function graph(block, ctx) {
         return el('div', { class: 'vg' }, el('div', { class: 'vg-empty' }, 'Nothing to draw'));
     }
     const laid = layout(block.nodes, block.edges, block.direction === 'right');
+    const links = block.nodes.filter((n) => n.opens != null);
+    const nodes = block.nodes.length;
+    return el('div', { class: 'vg-wrap' }, expandable(el('div', { class: 'vg' }, drawing(block, laid, ctx)), {
+        draw: () => drawing(block, laid, ctx),
+        title: `Graph · ${nodes} node${nodes === 1 ? '' : 's'}`,
+    }), links.length > 0 &&
+        el('div', { class: 'vg-links' }, links.map((n) => el('span', null, n.label, opensMark(n.opens, ctx)))));
+}
+function drawing(block, laid, ctx) {
     const marker = `vg-head-${instances++}`;
     const svg = svgEl('svg', {
         viewBox: `0 0 ${laid.width} ${laid.height}`,
@@ -89,7 +99,5 @@ export function graph(block, ctx) {
         g.appendChild(text(p.x + p.w / 2, p.y + p.h / 2, n.label, 'vg-name'));
         svg.appendChild(g);
     });
-    const links = block.nodes.filter((n) => n.opens != null);
-    return el('div', { class: 'vg' }, svg, links.length > 0 &&
-        el('div', { class: 'vg-links' }, links.map((n) => el('span', null, n.label, opensMark(n.opens, ctx)))));
+    return svg;
 }

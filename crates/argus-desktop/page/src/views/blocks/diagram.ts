@@ -4,6 +4,7 @@
 
 import type { PageDiagram } from '../../bindings/PageDiagram';
 import { el } from '../../kit/dom.js';
+import { expandable } from './figure.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const MAX_LABEL = 80;
@@ -252,5 +253,15 @@ export function diagram(d: PageDiagram): HTMLElement {
       source,
     );
   }
-  return el('div', { class: 'vdiagram' }, el('div', { class: 'vd-scroll' }, drawing(d)), source);
+  const steps = d.rows.filter((r) => r.kind === 'step').length;
+  return el(
+    'div',
+    { class: 'vdiagram' },
+    expandable(el('div', { class: 'vd-scroll' }, drawing(d)), {
+      draw: () => drawing(d),
+      title: `Sequence diagram · ${steps} step${steps === 1 ? '' : 's'}`,
+      source: d.source,
+    }),
+    source,
+  );
 }

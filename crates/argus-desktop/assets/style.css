@@ -6456,6 +6456,111 @@ button.vtree-chev:focus-visible {
   stroke-linejoin: round;
 }
 
+/* A graph or sequence diagram, opened larger by a click or its corner
+   button, and the view it opens in over the window. */
+.vfig {
+  position: relative;
+  min-width: 0;
+}
+.vfig-inline {
+  cursor: zoom-in;
+}
+.vfig-open {
+  position: absolute;
+  top: var(--sp-6);
+  right: var(--sp-6);
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  opacity: 0;
+}
+.vfig:hover .vfig-open,
+.vfig-open:focus-visible {
+  opacity: 1;
+}
+.vg-wrap {
+  min-width: 0;
+}
+.vfig-over {
+  position: fixed;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  padding: var(--sp-24);
+  background: var(--scrim);
+}
+.vfig-frame {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  outline: none;
+}
+.vfig-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  padding: var(--sp-8) var(--sp-12) var(--sp-8) var(--sp-16);
+  border-bottom: 1px solid var(--line);
+}
+.vfig-bar .ttl {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vfig-pct {
+  min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+.vfig-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.vfig-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-sunken);
+  cursor: grab;
+  touch-action: none;
+}
+.vfig-stage.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+.vfig-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+.vfig-canvas svg {
+  display: block;
+  max-width: none;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.vfig-source {
+  width: min(40%, 520px);
+  margin: 0;
+  padding: var(--sp-12);
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  white-space: pre;
+}
+.vfig-source[hidden] {
+  display: none;
+}
+
 /* Agent views: references into Argus. */
 .vref {
   border: 0;

@@ -203,7 +203,8 @@ agents show and save: `agent` is the agents' views panel and `saved` the saved v
 `saved/` (`ctx`, `logic` and `link`); `blocks` draws a view's blocks and hands each to the module
 of its kind in `blocks/` (`markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`,
 `diagram`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and
-`graph_layout`, `patch` (a diff block), `embed`, `matrix`, `checklist`, `log`, `board` and `form`),
+`graph_layout`, `figure` (a graph or sequence diagram opened larger over the window, zoomed and
+dragged) and `zoom` (where it sits there), `patch` (a diff block), `embed`, `matrix`, `checklist`, `log`, `board` and `form`),
 a table's parts in `blocks/table/` (`bar`, `details`, `sort`, `memory` and `cell_text`); beneath
 them `values` draws one value, with `refs` for those that point into Argus, `chip` and `views/link`;
 `actions` draws the buttons an agent put in a view; and `views/ctx` and `system/copy` serve them
