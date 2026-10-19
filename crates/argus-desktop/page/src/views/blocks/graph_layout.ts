@@ -243,7 +243,9 @@ export function layout(
     relax(rows.slice(1), true);
     relax(rows.slice(0, -1).toReversed(), false);
   }
-  const lowest = Math.min(...items.map((it) => it.at), 0);
+  // The relaxing drifts everything one way, so the drawing is moved back to
+  // its edge whichever way it went; clamping at 0 left a wide empty margin.
+  const lowest = items.length ? Math.min(...items.map((it) => it.at)) : 0;
   for (const it of items) it.at -= lowest;
   const span = Math.max(...items.map((it) => it.at + it.cross), 0);
 
