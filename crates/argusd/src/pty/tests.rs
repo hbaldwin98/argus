@@ -1708,6 +1708,97 @@ fn paste_is_delimited_only_when_the_child_requested_it() {
     );
 }
 
+/// The user's request (strip the paste markers out of pasted text before
+/// wrapping it, as xterm and kitty do) and DESIGN.md's paste rule.
+#[test]
+fn a_pasted_end_marker_cannot_end_the_paste_early() {
+    assert_eq!(
+        paste_bytes(b"ls\x1b[201~rm -rf ~\n", true),
+        b"\x1b[200~lsrm -rf ~\n\x1b[201~"
+    );
+    assert_eq!(
+        paste_bytes(b"a\x1b[200~b\x1b[20\x1b[201~1~c", true),
+        b"\x1b[200~abc\x1b[201~"
+    );
+}
+
+/// DESIGN.md: the daemon wraps a paste, and so strips its markers, only
+/// when the child has requested bracketed paste.
+#[test]
+fn an_unbracketed_paste_is_passed_through_untouched() {
+    assert_eq!(paste_bytes(b"a\x1b[201~b", false), b"a\x1b[201~b");
+}
+
+mod properties {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Text built from pieces of the markers, so the generator reaches
+    /// whole markers, split ones and ones that form only after another is
+    /// removed, which uniform bytes almost never do.
+    fn pasted_text() -> impl Strategy<Value = Vec<u8>> {
+        let piece = prop_oneof![
+            Just(b"\x1b[200~".to_vec()),
+            Just(b"\x1b[201~".to_vec()),
+            Just(b"\x1b[20".to_vec()),
+            Just(b"0~".to_vec()),
+            Just(b"1~".to_vec()),
+            Just(b"\x1b".to_vec()),
+            Just(b"[".to_vec()),
+            proptest::collection::vec(any::<u8>(), 0..4),
+        ];
+        proptest::collection::vec(piece, 0..12).prop_map(|pieces| pieces.concat())
+    }
+
+    /// Text that comes close to a marker without holding one: escapes and
+    /// marker fragments that never complete, so the property below is not
+    /// spent discarding cases.
+    fn near_miss_text() -> impl Strategy<Value = Vec<u8>> {
+        let piece = prop_oneof![
+            Just(b"\x1b[202~".to_vec()),
+            Just(b"\x1b[200".to_vec()),
+            Just(b"\x1b[2".to_vec()),
+            Just(b"\x1b[".to_vec()),
+            Just(b"0~".to_vec()),
+            Just(b"1~".to_vec()),
+            proptest::collection::vec(any::<u8>().prop_filter("no escape", |b| *b != 0x1b), 0..4),
+        ];
+        proptest::collection::vec(piece, 0..12)
+            .prop_map(|pieces| pieces.concat())
+            .prop_filter("holds a marker", |text| {
+                !contains(text, PASTE_START) && !contains(text, PASTE_END)
+            })
+    }
+
+    fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|window| window == needle)
+    }
+
+    proptest! {
+        /// The user's request (strip the paste markers out of pasted text
+        /// before wrapping it, as xterm and kitty do) and DESIGN.md's rule
+        /// that a paste reaches the child whole: between the delimiters the
+        /// daemon adds, no marker of either kind survives.
+        #[test]
+        fn a_bracketed_paste_holds_no_marker_but_its_own(text in pasted_text()) {
+            let pasted = paste_bytes(&text, true);
+            prop_assert!(pasted.starts_with(PASTE_START));
+            prop_assert!(pasted.ends_with(PASTE_END));
+            let body = &pasted[PASTE_START.len()..pasted.len() - PASTE_END.len()];
+            prop_assert!(!contains(body, PASTE_START));
+            prop_assert!(!contains(body, PASTE_END));
+        }
+
+        /// The same request: only the markers are stripped, so text that
+        /// holds none crosses byte for byte.
+        #[test]
+        fn text_without_markers_is_pasted_unchanged(text in near_miss_text()) {
+            let pasted = paste_bytes(&text, true);
+            prop_assert_eq!(&pasted[PASTE_START.len()..pasted.len() - PASTE_END.len()], &text[..]);
+        }
+    }
+}
+
 /// Shows what ConPTY itself sends around a resize to a child that sits on
 /// the alternate screen, and that the pane stays there through it. ConPTY
 /// forwards `?1049h` but swallows the mouse modes (`?1000`-`?1007`), so the

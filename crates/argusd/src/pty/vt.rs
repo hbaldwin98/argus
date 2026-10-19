@@ -433,7 +433,20 @@ pub(super) fn paste_bytes(bytes: &[u8], bracketed: bool) -> Vec<u8> {
     }
     let mut pasted = Vec::with_capacity(PASTE_START.len() + bytes.len() + PASTE_END.len());
     pasted.extend_from_slice(PASTE_START);
-    pasted.extend_from_slice(bytes);
+    // A marker inside the text would end the paste early and hand the rest
+    // to the child as typed input, so both are dropped, as xterm and kitty
+    // do. Each is checked as it completes at the end of what is kept, which
+    // also catches one that only forms once another between its halves is
+    // gone (`ESC [20` `ESC[201~` `1~`). A match never reaches back into the
+    // opening marker: its only escape is its first byte.
+    for &byte in bytes {
+        pasted.push(byte);
+        for marker in [PASTE_START, PASTE_END] {
+            if pasted.ends_with(marker) {
+                pasted.truncate(pasted.len() - marker.len());
+            }
+        }
+    }
     pasted.extend_from_slice(PASTE_END);
     pasted
 }

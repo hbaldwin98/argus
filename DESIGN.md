@@ -1136,7 +1136,8 @@ and a burst longer than a person types is delivered whole as one paste. A paste 
 land is said on the bar, never replayed as keystrokes: a dropped path typed into the tree is a
 run of commands. The daemon
 consults the pane parser and wraps the text in bracketed-paste delimiters only when the child has
-requested that mode. A wheel over a pane whose child is on the alternate screen and has not asked
+requested that mode, and then strips both delimiters out of the text first, as xterm and kitty do,
+so a pasted end marker cannot turn the rest of the paste into typed commands. A wheel over a pane whose child is on the alternate screen and has not asked
 for mouse reporting is sent as a cursor key (xterm alternate-scroll); a child that has asked for
 mouse reporting still gets the mouse sequence. Keyboard, paste, mouse, and daemon updates all share
 the client's 16 ms redraw tick, so input bursts cannot trigger an unbounded number of full UI renders.
