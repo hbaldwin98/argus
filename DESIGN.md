@@ -394,6 +394,7 @@ live in this crate and a contract written twice drifts in silence.
 | `agents` | what Argus holds for the agents in its panes |
 | `agents/launch` | what an agent asks for when it starts another agent in a pane of its own — the template, the first message, and the checkout, new worktree or other repository's checkout it works in — and what it is told it started |
 | `agents/memory` | the working memory an agent receives for one request |
+| `agents/roster` | which agents Argus is running and where each is, as an agent asks for them: the pane id a view links another by, its own project first |
 | `agents/sessions` | a repository's agent sessions as listed: the harness and id that resume each, its checkout or the removed worktree it ran in, title, times and turns, and the pane running it |
 | `agents/transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
 | `agents/typed` | what may be typed into an agent's terminal: one line with no control character in it |
@@ -510,6 +511,7 @@ to the type or its locking.
 | `bin/argus-hook/board/tracker_map` | `argus-hook tracker-map`: how the repository maps to its trackers, and an agent's draft of one |
 | `bin/argus-hook/board/reconcile` | `argus-hook reconcile`: reading the reconcile asked for, proposing its lines, and reporting what was carried out |
 | `bin/argus-hook/view` | `argus-hook view`: showing the person a view of what the agent read, taking it down, and keeping one in the store |
+| `bin/argus-hook/agents` | `argus-hook agents`: the other agents in every project of the open workspace, one a line with the pane id a view links them by |
 | `bin/argus-hook/launch` | `argus-hook agent`: an agent starting another in a pane of its own, here, in a new worktree or in another repository's checkout |
 | `bin/argus-hook/inbox` | relaying the pane's inbox, one item a line, for a plugin that cannot hold the stream open itself |
 | `bin/argus-hook/transcript` | appending a turn to a transcript in the neutral format, for a harness that keeps none of its own |
@@ -1319,6 +1321,11 @@ What each endpoint is posted and answers with is declared once, in `argus_protoc
 endpoint cannot read is refused with a `400` in serde's words, a refusal is a `409` carrying the
 reason, and a body past the endpoint's bound (`Endpoint::max_body`) is refused by the helper before
 it travels and by the daemon with a `413` naming the bound if it arrives.
+
+An agent links another from a view with a `pane` value, and learns its id from `argus-hook agents`,
+which posts to `/pane/<id>/agents` (`agents/roster`) and lists the other agent panes of every project
+in the open workspace, the asker's own project first. The window resolves a pane across every project
+already, so this is all a link into another project needed.
 
 When the person wants a task kept in a pane they can go back to, an agent starts another agent
 through the daemon rather than as a subagent of its own turn. It is an ability, not how worktree

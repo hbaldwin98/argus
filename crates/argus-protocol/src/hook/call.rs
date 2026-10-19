@@ -237,5 +237,15 @@ impl Call for Launch {
     type ReplyForm = Json;
 }
 
+pub enum Agents {}
+impl Call for Agents {
+    const ENDPOINT: Endpoint = Endpoint::Agents;
+    const BODY: &'static str = "read";
+    type Body = ();
+    type BodyForm = Empty;
+    type Reply = Vec<crate::AgentListing>;
+    type ReplyForm = Json;
+}
+
 #[cfg(test)]
 mod tests;

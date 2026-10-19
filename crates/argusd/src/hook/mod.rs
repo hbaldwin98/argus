@@ -231,6 +231,7 @@ async fn handle_hook_request(
             Some((pane, Endpoint::SavedView)) => {
                 answer::<call::SavedView>(&body, |change| daemon.saved_view_for_agent(pane, change))
             }
+            Some((pane, Endpoint::Agents)) => reply::<call::Agents>(daemon.agents_for_agent(pane)),
             Some((pane, Endpoint::Agent)) => match read::<call::Launch>(&body) {
                 Ok(launch) => reply::<call::Launch>(daemon.launch_agent_for_agent(pane, launch).await),
                 Err(refusal) => refusal,

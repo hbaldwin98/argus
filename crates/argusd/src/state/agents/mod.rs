@@ -316,6 +316,13 @@ impl Daemon {
         self.store.review_comments(&self.agent_checkout(pane_id)?)
     }
 
+    /// The other agents, in every project of the open workspace: the
+    /// ones a view can link to, since a window shows that workspace.
+    pub fn agents_for_agent(&self, pane_id: PaneId) -> anyhow::Result<Vec<argus_protocol::AgentListing>> {
+        self.agent_checkout(pane_id)?;
+        Ok(argus_protocol::roster(&self.snapshot(), pane_id))
+    }
+
     /// The one way to edit an agent's row, live in the tree or still in
     /// the pre-spawn mailbox. Both locks are taken in insertion's order and
     /// held across finding the pane, deciding and writing, so nothing — an

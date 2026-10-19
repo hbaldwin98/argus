@@ -49,6 +49,7 @@
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook instructions                        # inherited instructions, then context
 //! argus-hook inbox <session-id>                  # the pane's inbox, one item a line
+//! argus-hook agents                             # the other agents, in every project, by pane
 //! argus-hook agent "review the parser"           # another agent, in a pane of its own here
 //! argus-hook agent --worktree fix-resize --stdin # in a new worktree, its brief on stdin
 //! argus-hook agent --in ~/src/other "port this"  # in a checkout of another repository
@@ -86,7 +87,8 @@
 //! not handed.
 //!
 //! The commands live in modules by what they talk about: `comments` for
-//! the review comments addressed to the pane, `board` for the feature board
+//! the review comments addressed to the pane, `agents` for the other
+//! agents running, `board` for the feature board
 //! an agent reads and writes — features, tasks, diagrams, decisions, the
 //! tracker map and a feature's reconcile with its tickets — `installed`
 //! for the form a harness's hook config runs, `transport` for how either
@@ -113,6 +115,7 @@ use argus_protocol::{
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 
+mod agents;
 mod board;
 mod comments;
 mod context;
@@ -183,6 +186,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("transcript", transcript::transcript),
     ("inbox", inbox::inbox),
     ("agent", launch::agent),
+    ("agents", agents::agents),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {

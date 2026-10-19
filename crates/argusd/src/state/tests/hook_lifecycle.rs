@@ -550,3 +550,39 @@ async fn a_decision_full_to_its_bounds_fits_through_the_pane_api() {
     assert!(recorded.starts_with("HTTP/1.1 200 OK"), "{}", &recorded[..recorded.len().min(200)]);
     close_all(&d);
 }
+
+// A view in one project named an agent at work in another and could not
+// link it, since nothing told the writer that agent's pane.
+#[tokio::test]
+async fn the_agents_hook_lists_the_other_agents_of_every_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let other = tempfile::tempdir().unwrap();
+    let elsewhere = other.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    let _repo = real_repo(&elsewhere);
+    with_temp_config(|_| d.add_project(&other.path().to_string_lossy(), None, &[]).unwrap());
+    d.start_hook_server().unwrap();
+    let tree = d.snapshot();
+    assert_eq!(tree.len(), 2);
+    let asker = d.spawn_agent(tree[0].repositories[0].checkouts[0].id, "claude").unwrap();
+    let away = d.spawn_agent(tree[1].repositories[0].checkouts[0].id, "claude").unwrap();
+    let shell = d.spawn_shell(tree[0].repositories[0].checkouts[0].id).unwrap();
+
+    let response = post_agent_hook(&d, asker, Endpoint::Agents, "").await;
+
+    assert!(response.starts_with(b"HTTP/1.1 200 OK"));
+    let body = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| &response[index + 4..])
+        .unwrap();
+    let agents: Vec<argus_protocol::AgentListing> = serde_json::from_slice(body).unwrap();
+    assert_eq!(agents.iter().map(|a| a.pane).collect::<Vec<_>>(), vec![away], "not itself, not a shell");
+    assert_eq!(agents[0].repository, "elsewhere");
+    assert!(!agents[0].here);
+    assert!(d.agents_for_agent(shell).is_err(), "a shell is not an agent to answer");
+    for pane in [asker, away, shell] {
+        let _ = d.close_pane(pane);
+    }
+}

@@ -69,6 +69,20 @@ fn every_json_call_reads_back_what_it_wrote() {
         AgentLaunch::default(),
         AgentLaunched { pane: PaneId(3), template: "claude".into(), checkout: "/work".into() },
     );
+    reads_back::<Agents>(
+        (),
+        vec![crate::AgentListing {
+            pane: PaneId(7),
+            title: "argus-s2-ba".into(),
+            template: Some("claude".into()),
+            status: crate::PaneStatus::Working,
+            note: None,
+            project: "argus".into(),
+            repository: "orion".into(),
+            checkout: "s2-ba".into(),
+            here: false,
+        }],
+    );
 }
 
 #[test]
@@ -103,6 +117,7 @@ fn no_two_calls_name_one_endpoint() {
         ChangeView::ENDPOINT,
         SavedView::ENDPOINT,
         Launch::ENDPOINT,
+        Agents::ENDPOINT,
     ];
     for (i, endpoint) in all.iter().enumerate() {
         assert!(!all[i + 1..].contains(endpoint), "{endpoint:?} is declared twice");

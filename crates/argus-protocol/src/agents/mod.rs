@@ -2,6 +2,7 @@
 
 pub mod launch;
 pub mod memory;
+pub mod roster;
 pub mod sessions;
 pub mod transcript;
 pub mod typed;

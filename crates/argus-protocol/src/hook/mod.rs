@@ -191,6 +191,9 @@ pub enum Endpoint {
     /// A [`crate::AgentLaunch`]: another agent started in a pane of its
     /// own, answered with the [`crate::AgentLaunched`] it became.
     Agent,
+    /// Every agent pane in every project, as [`crate::AgentListing`]s:
+    /// what an agent links another by.
+    Agents,
 }
 
 impl Endpoint {
@@ -221,6 +224,7 @@ impl Endpoint {
             Endpoint::View => Cow::Borrowed("view"),
             Endpoint::SavedView => Cow::Borrowed("saved-view"),
             Endpoint::Agent => Cow::Borrowed("agent"),
+            Endpoint::Agents => Cow::Borrowed("agents"),
         }
     }
 
@@ -239,7 +243,8 @@ impl Endpoint {
             | Endpoint::Feature
             | Endpoint::Tasks
             | Endpoint::Telemetry
-            | Endpoint::Inbox => MAX_HOOK_BODY,
+            | Endpoint::Inbox
+            | Endpoint::Agents => MAX_HOOK_BODY,
             Endpoint::Decide | Endpoint::DecisionChange => MAX_DECISION_BODY,
             // Mermaid source in JSON, with room for the encoding.
             Endpoint::Diagrams => crate::MAX_DIAGRAM_BODY_BYTES + 4096,
@@ -307,6 +312,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "view" => Endpoint::View,
         "saved-view" => Endpoint::SavedView,
         "agent" => Endpoint::Agent,
+        "agents" => Endpoint::Agents,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -527,6 +533,7 @@ mod tests {
             Endpoint::View,
             Endpoint::SavedView,
             Endpoint::Agent,
+            Endpoint::Agents,
             Endpoint::TrackerMap,
             Endpoint::Reconcile,
         ];

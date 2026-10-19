@@ -135,7 +135,8 @@ A field, a table cell: `{ "kind": ..., ... }`.
 These open things in Argus rather than a browser, read against your pane:
 `path` `{ "path", "line" }` (relative to the checkout's root, with no `..`;
 opens in the person's editor), `commit` `{ "sha", "title" }` (opens History),
-`feature` `{ "number" }`, `pane` `{ "pane", "label" }` (focuses it), and
+`feature` `{ "number" }`, `pane` `{ "pane", "label" }` (focuses it, in any project; `argus-hook agents` lists the
+other agents with their pane ids), and
 `view` `{ "id", "label" }`, which opens the saved view `id` beside this one (see
 "Saved views, links and embeds" below).
 

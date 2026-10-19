@@ -24,6 +24,7 @@ pub mod views;
 
 pub use ago::ago;
 pub use agents::launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
+pub use agents::roster::{roster, AgentListing};
 pub use views::agent_view::{
     AgentView, Block, BoardCard, BoardColumn, ChartShape, CheckItem, Chip, Column, Field, FormField, FormInput,
     GraphDirection, GraphEdge, GraphNode, GridMin, Item, LogLevel, LogLine, MatrixCell, RowAlign, RowItem,
