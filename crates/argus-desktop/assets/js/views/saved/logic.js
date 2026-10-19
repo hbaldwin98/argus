@@ -41,6 +41,17 @@ export function grouped(views, hereOnly) {
     }
     return groups;
 }
+/** A title as the sidebar lists it under its group's label: an agent often
+ *  names a view after its repository too ("reliab: the change flow"), and
+ *  under "reliab" that is said twice. A title that is nothing but the label
+ *  is kept whole. */
+export function underGroup(title, group) {
+    const lead = title.slice(0, group.length);
+    if (!group || lead.toLowerCase() !== group.toLowerCase())
+        return title;
+    const rest = /^\s*[:\-–—·|/]\s*(.+)$/u.exec(title.slice(group.length));
+    return rest?.[1] ?? title;
+}
 /** A group's views as the sidebar lists them: each under the view Rust
  *  named in `under`, in order. One whose `under` the group does not show,
  *  filtered out or of another scope, stands at the top instead. */

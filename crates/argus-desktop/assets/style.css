@@ -6722,6 +6722,8 @@ button.vtree-chev:focus-visible {
 .nav-saved-list {
   max-height: 40vh;
   overflow-y: auto;
+  /* Its rows have no icon, so they start where the fold's label does. */
+  padding-left: calc(22px + var(--sp-12));
 }
 /* A saved view's row, with the fold of the views it links to beside it. */
 .nav-saved {
@@ -6752,13 +6754,21 @@ button.vtree-chev:focus-visible {
   background: var(--fill);
 }
 .nav-filter {
-  display: flex;
-  gap: var(--sp-4);
-  padding: var(--sp-2) var(--sp-8);
+  align-self: flex-start;
+  margin: var(--sp-2) var(--sp-8) var(--sp-4);
+}
+.nav-filter .segb {
+  height: 20px;
+  padding: 0 var(--sp-8);
+  font-size: var(--fs-xs);
 }
 .nav-group {
-  padding: var(--sp-6) var(--sp-8) var(--sp-2);
+  padding: var(--sp-8) var(--sp-8) var(--sp-2);
+  color: var(--fg-faint);
   font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .nav-empty {
   padding: var(--sp-4) var(--sp-8);

@@ -12,7 +12,7 @@ import { closesOnMiddle } from '../kit/middle.js';
 import { draggable } from '../layout/drag.js';
 import { $, el, icon } from '../kit/dom.js';
 import { savedCtx } from './saved/ctx.js';
-import { count, grouped, nested } from './saved/logic.js';
+import { count, grouped, nested, underGroup } from './saved/logic.js';
 import { savedView } from './saved/link.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -239,14 +239,14 @@ export function drawSavedNav() {
         role: 'group',
         'aria-label': 'Saved views',
         hidden: !listed,
-    }, el('div', { class: 'nav-filter', role: 'group', 'aria-label': 'Which saved views' }, filterButton('Here', true), filterButton('All', false)), groups.length === 0 && el('div', { class: 'meta nav-empty' }, 'None about here'), groups.map((group) => [
+    }, el('div', { class: 'seg nav-filter', role: 'group', 'aria-label': 'Which saved views' }, filterButton('Here', true), filterButton('All', false)), groups.length === 0 && el('div', { class: 'meta nav-empty' }, 'None about here'), groups.map((group) => [
         el('div', { class: 'nav-group meta' }, group.label),
-        nested(group.views).map((node) => navRow(node, open)),
+        nested(group.views).map((node) => navRow(node, group.label, open)),
     ])));
 }
 /** A view's row in the sidebar, and the views listed under it behind a
  *  fold, so the ones saved to be reached from it do not crowd the group. */
-function navRow(node, open) {
+function navRow(node, group, open) {
     const v = node.view;
     const inner = count(node);
     const folded = !navOpen.has(v.id);
@@ -255,7 +255,7 @@ function navRow(node, open) {
         type: 'button',
         title: `${v.view.title} · ${v.scope.label}${v.stale ? ' · stale' : ''}`,
         onclick: () => call('open_saved_view', { id: v.id, from: null }),
-    }, el('span', { class: 'grow ttl' }, v.view.title), v.stale &&
+    }, el('span', { class: 'grow ttl' }, underGroup(v.view.title, group)), v.stale &&
         el('span', {
             class: 'vstale-dot',
             title: 'stale',
@@ -279,12 +279,12 @@ function navRow(node, open) {
         return [line];
     return [
         line,
-        el('div', { class: 'nav-nest', role: 'group', 'aria-label': `Linked from ${v.view.title}` }, node.inner.map((n) => navRow(n, open))),
+        el('div', { class: 'nav-nest', role: 'group', 'aria-label': `Linked from ${v.view.title}` }, node.inner.map((n) => navRow(n, group, open))),
     ];
 }
 function filterButton(label, here) {
     return el('button', {
-        class: `chip${hereOnly === here ? ' on' : ''}`,
+        class: `segb${hereOnly === here ? ' on' : ''}`,
         type: 'button',
         'aria-pressed': String(hereOnly === here),
         onclick: () => {

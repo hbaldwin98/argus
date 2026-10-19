@@ -55,6 +55,17 @@ export function grouped(views: readonly PageSaved[], hereOnly: boolean): Group[]
   return groups;
 }
 
+/** A title as the sidebar lists it under its group's label: an agent often
+ *  names a view after its repository too ("reliab: the change flow"), and
+ *  under "reliab" that is said twice. A title that is nothing but the label
+ *  is kept whole. */
+export function underGroup(title: string, group: string): string {
+  const lead = title.slice(0, group.length);
+  if (!group || lead.toLowerCase() !== group.toLowerCase()) return title;
+  const rest = /^\s*[:\-–—·|/]\s*(.+)$/u.exec(title.slice(group.length));
+  return rest?.[1] ?? title;
+}
+
 export interface Nested {
   view: PageSaved;
   /** The views listed under it, each with its own. */

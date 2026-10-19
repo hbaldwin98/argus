@@ -10,6 +10,7 @@ import {
   grouped,
   MAX_EMBED_DEPTH,
   nested,
+  underGroup,
 } from '../../../src/views/saved/logic.ts';
 
 const held = (ids) => (id) => ids.includes(id);
@@ -87,4 +88,14 @@ test('the sidebar lists a view under the one Rust names, at any depth, in order'
 
 test('a view whose parent is filtered out stands at the top', () => {
   assert.deepEqual(shape(nested([under('b', 'a'), under('c', 'b')])), [['b', [['c', []]]]]);
+});
+
+test('the sidebar drops a title that opens with its group label, but never to nothing', () => {
+  assert.equal(underGroup('reliab: the change flow', 'reliab'), 'the change flow');
+  assert.equal(underGroup('Reliab — the change flow', 'reliab'), 'the change flow');
+  assert.equal(underGroup('reliab', 'reliab'), 'reliab');
+  assert.equal(underGroup('reliab:', 'reliab'), 'reliab:');
+  assert.equal(underGroup('reliability report', 'reliab'), 'reliability report');
+  assert.equal(underGroup('the change flow', 'reliab'), 'the change flow');
+  assert.equal(underGroup('a: b', ''), 'a: b');
 });
