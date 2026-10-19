@@ -872,42 +872,24 @@ mod tests {
 
     #[test]
     fn listing_never_spawns_a_process() {
-        // The regression this whole module exists for: on Windows the
-        // daemon runs detached with no console, so a console child gets its
-        // own window — a flash on screen every poll tick. The listing has to
-        // stay in-process. Asserted by watching for `git` children while
-        // hammering the call.
+        // DESIGN.md, "Git and checkouts": read-only Git work uses `git2`.
+        // On Windows the daemon runs detached with no console, so a console
+        // child gets its own window, a flash on screen every poll tick.
+        // Every git the daemon starts, like every other command but a pane
+        // or an extension, is made by `system::command`, so the listing
+        // makes none there.
         let dir = tempfile::tempdir().unwrap();
         let repo = repo_with_a_commit(dir.path());
-        repo.worktree("w", &dir.path().join("wt"), None).unwrap();
+        let wt = dir.path().join("wt");
+        repo.worktree("w", &wt, None).unwrap();
 
-        let before = std::time::Instant::now();
-        for _ in 0..200 {
-            let _ = list_worktrees(dir.path());
-        }
-        let listing = before.elapsed() / 200;
+        let made = crate::system::command::made_on_this_thread();
+        let listed = list_worktrees(dir.path());
+        assert_eq!(crate::system::command::made_on_this_thread(), made, "listing started a process");
 
-        // Measured against spawning git on the same machine under the same
-        // load, not a fixed time: a CI runner busy with the rest of the
-        // suite ran 200 listings past a two-second bound with no child in
-        // sight. A listing that spawned would cost at least one spawn.
-        let before = std::time::Instant::now();
-        let spawned = (0..5).all(|_| {
-            std::process::Command::new("git")
-                .arg("--version")
-                .stdout(std::process::Stdio::null())
-                .status()
-                .is_ok()
-        });
-        let spawn = before.elapsed() / 5;
-        if spawned {
-            assert!(
-                listing * 4 < spawn,
-                "a listing took {listing:?} and spawning git {spawn:?}: that smells like process spawning"
-            );
-        } else {
-            assert!(listing < std::time::Duration::from_millis(25), "a listing took {listing:?}");
-        }
+        // A listing that found nothing would start nothing either.
+        assert_eq!(listed.len(), 2, "the primary checkout and the worktree: {listed:?}");
+        assert!(listed[1].ends_with("wt"), "{listed:?}");
     }
 
     #[test]

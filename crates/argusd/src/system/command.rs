@@ -35,12 +35,31 @@ pub const GIT_REPOSITORY_VARS: &[&str] = &[
     "GIT_COMMON_DIR",
 ];
 
+#[cfg(test)]
+thread_local! {
+    static MADE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many commands this thread has made here: a test asserts that some
+/// work starts no process by this staying put across it. Per thread, so
+/// the tests running beside it on others cannot move it.
+#[cfg(test)]
+pub(crate) fn made_on_this_thread() -> usize {
+    MADE.with(std::cell::Cell::get)
+}
+
+fn made() {
+    #[cfg(test)]
+    MADE.with(|made| made.set(made.get() + 1));
+}
+
 pub fn git() -> tokio::process::Command {
     quiet("git")
 }
 
 /// Any other command the daemon waits on — a project's worktree setup.
 pub fn quiet(program: &str) -> tokio::process::Command {
+    made();
     let mut cmd = tokio::process::Command::new(program);
     for var in GIT_REPOSITORY_VARS {
         cmd.env_remove(var);
@@ -55,6 +74,7 @@ pub fn quiet(program: &str) -> tokio::process::Command {
 /// A process that outlives the daemon and owns whatever window it makes:
 /// a GUI editor the user asked for.
 pub fn detached(program: &str) -> std::process::Command {
+    made();
     let mut cmd = std::process::Command::new(program);
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -75,6 +95,16 @@ mod tests {
     #[test]
     fn the_builder_runs_git() {
         assert_eq!(git().as_std().get_program(), "git");
+    }
+
+    /// What a test that asserts "starts no process" stands on.
+    #[test]
+    fn every_command_made_here_is_counted_on_its_thread() {
+        let before = made_on_this_thread();
+        let _ = git();
+        let _ = quiet("x");
+        let _ = detached("x");
+        assert_eq!(made_on_this_thread(), before + 3);
     }
 
     #[test]
