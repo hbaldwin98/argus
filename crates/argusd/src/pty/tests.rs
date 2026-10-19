@@ -1,6 +1,10 @@
 //! Panes driven against real child processes, and the emulator's
 //! translation driven against an emulator fed directly.
 
+// These tests start processes of their own to watch what a pane's job
+// does to them, which is the test's doing, not a command the daemon starts.
+#![allow(clippy::disallowed_methods)]
+
 use super::*;
 
 #[test]

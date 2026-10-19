@@ -1,0 +1,6 @@
+# argusd only: the client and the desktop window start their own programs,
+# and the rule below is the daemon's.
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "the daemon starts a command through system::command (see its header): one made anywhere else opens a console window beside a daemon that has none, and git inherits a repository named by the environment" },
+    { path = "tokio::process::Command::new", reason = "the daemon starts a command through system::command (see its header): one made anywhere else opens a console window beside a daemon that has none, and git inherits a repository named by the environment" },
+]

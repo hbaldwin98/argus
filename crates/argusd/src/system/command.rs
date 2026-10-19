@@ -60,6 +60,8 @@ pub fn git() -> tokio::process::Command {
 /// Any other command the daemon waits on — a project's worktree setup.
 pub fn quiet(program: &str) -> tokio::process::Command {
     made();
+    // The seam clippy.toml's rule sends every other caller to.
+    #[allow(clippy::disallowed_methods)]
     let mut cmd = tokio::process::Command::new(program);
     for var in GIT_REPOSITORY_VARS {
         cmd.env_remove(var);
@@ -75,6 +77,8 @@ pub fn quiet(program: &str) -> tokio::process::Command {
 /// a GUI editor the user asked for.
 pub fn detached(program: &str) -> std::process::Command {
     made();
+    // The seam clippy.toml's rule sends every other caller to.
+    #[allow(clippy::disallowed_methods)]
     let mut cmd = std::process::Command::new(program);
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

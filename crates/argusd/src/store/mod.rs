@@ -124,6 +124,8 @@ pub(crate) fn rerun_with_no_restore(test: &str) -> bool {
     if std::env::var_os(NO_RESTORE).is_some() {
         return true;
     }
+    // A test binary re-running itself, not a command the daemon starts.
+    #[allow(clippy::disallowed_methods)]
     let run = std::process::Command::new(std::env::current_exe().unwrap())
         .args([test, "--exact", "--test-threads=1"])
         .env(NO_RESTORE, "1")

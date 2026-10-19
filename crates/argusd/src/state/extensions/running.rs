@@ -133,6 +133,11 @@ impl Daemon {
     ) -> tokio::process::Command {
         let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
         let dir = config.dir.as_deref().map(config::expand_home).unwrap_or_else(argus_protocol::config_dir);
+        // Not system::command's: an extension is a program the person
+        // configured and runs in the environment they gave it, which
+        // `quiet` would strip of Git's variables. It keeps its console
+        // hidden itself, below.
+        #[allow(clippy::disallowed_methods)]
         let mut command = tokio::process::Command::new(&config.command[0]);
         command
             .args(&config.command[1..])

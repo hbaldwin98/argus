@@ -1,6 +1,10 @@
 //! Round-trip tests for the managed hook blocks: what gets written
 //! into a checkout, and that taking it out leaves the file as it was.
 
+// These tests run the hooks they write in a real `sh` and `node`, which
+// is the test's own doing, not a command the daemon starts.
+#![allow(clippy::disallowed_methods)]
+
 use super::*;
 use argus_protocol::{
     PaneStatus, INSTRUCTIONS_VAR, OWNS_SESSION_FLAG, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR,
