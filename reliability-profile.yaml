@@ -40,8 +40,8 @@ roles:
   T7: { tool: proptest over arbitrary ClientMsg, verified: 2026-10-18, notes: "no OpenAPI spec exists. test_host::requests generates every ClientMsg variant against the host fixture (coverage held by exhaustive matches); test_host::tests::fuzz sends arbitrary sequences over the socket to a fresh host per case" }
   T8: { applicable: false, reason: "local IPC only; no network between argus and its store" }
   T9: { applicable: false, reason: "no external HTTP dependencies" }
-  T10: { tool: fault-injecting SQLite connection wrapper, notes: "not built yet (S4)" }
-  T11: { applicable: false, reason: "no logic lives in SQLite triggers or procedures" }
+  T10: { tool: SQLite hooks on the store's connection, verified: 2026-10-18, notes: "store::faults: a write stopped at any step (a writing statement prepared or a row written) or at its commit, a full disk (max_page_count), another writer's lock; store::tests::faults holds every store write to all-or-nothing, and the daemon to refusing a stopped write" }
+  T11: { applicable: false, reason: "no logic lives in SQLite: no triggers, procedures, constraints or cascades in the schema (re-checked 2026-10-18); every store rule is Rust, tested by unit" }
   T12: { tool: cargo-llvm-cov }
   T13: { applicable: false, reason: "no read paths slated for rewrite" }
   T14: { tool: clippy, verified: 2026-10-17 }
@@ -52,13 +52,13 @@ commands:
   # Everything but the transcripts, which `snapshots` runs, so a snapshot
   # diff is reported once.
   unit:
-    run: cargo nextest run --locked --profile ci --no-fail-fast {impacted} -E 'not test(/^test_host::tests::/)'
+    run: cargo nextest run --locked --profile ci --no-fail-fast {impacted} -E 'not test(/^test_host::tests::/) and not test(/^store::tests::faults::/)'
     format: junit
     output: target/nextest/ci/junit.xml
   properties:
     # A crate with no properties yet selects none, which nextest fails by
     # default; that says nothing about the change.
-    run: PROPTEST_CASES={cases} cargo nextest run --locked --profile props --no-fail-fast --no-tests=warn {impacted} -E 'test(/::properties::/)'
+    run: PROPTEST_CASES={cases} cargo nextest run --locked --profile props --no-fail-fast --no-tests=warn {impacted} -E 'test(/::properties::/) and not test(/^store::tests::faults::/)'
     format: junit
     output: target/nextest/props/junit.xml
   # reliab-adapter-cargo-mutants ships beside reliab and turns missed mutants
@@ -99,6 +99,16 @@ commands:
       PROPTEST_CASES=$cases cargo nextest run --locked --profile api-fuzz --no-fail-fast -p argusd -E 'test(/^test_host::tests::fuzz::/)'
     format: junit
     output: target/nextest/api-fuzz/junit.xml
+  # Store writes under faults (S4): every write the store makes, stopped at
+  # each step and at its commit, must leave all of itself or none, and the
+  # daemon must refuse it rather than hang up. The exhaustive pass takes
+  # about 3s; the property, a store in a file with a full disk and another
+  # writer's lock too, runs the tier's count. Kept out of unit and
+  # properties so a finding is reported once.
+  faults_db:
+    run: PROPTEST_CASES={cases} cargo nextest run --locked --profile faults-db --no-fail-fast -p argusd -E 'test(/^store::tests::faults::/)'
+    format: junit
+    output: target/nextest/faults-db/junit.xml
   #
   # On Windows both mutation commands skip cfg(unix)-only functions, which a
   # Windows build never compiles, so their mutants could only survive there.
@@ -148,8 +158,9 @@ impacted:
 tiers:
   # The snapshots take about 11s and catch side effects before an agent stops;
   # the fuzz, about 30s at inner's 300 cases, catches a request that crashes,
-  # hangs or goes unanswered.
-  inner: { budget_seconds: 300, run: [build, analyzers, corpus, unit, snapshots, properties, api_fuzz, spec_checks] }
+  # hangs or goes unanswered; the store's faults, about 3s, a write left
+  # half done.
+  inner: { budget_seconds: 300, run: [build, analyzers, corpus, unit, snapshots, properties, api_fuzz, faults_db, spec_checks] }
   prepr: { budget_seconds: 900 }
 
 corrections: []

@@ -23,3 +23,9 @@ fail-fast = false
 
 [profile.api-fuzz.junit]
 path = "junit.xml"
+
+[profile.faults-db]
+fail-fast = false
+
+[profile.faults-db.junit]
+path = "junit.xml"

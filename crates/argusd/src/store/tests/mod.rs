@@ -1,6 +1,7 @@
 //! Round trips through a store built in memory, so no test can reach
 //! the real `runtime.db`.
 
+mod faults;
 mod releases;
 
 use argus_protocol::{Actor, DiagramWrite, TaskPlace, TaskState, TaskWrite};

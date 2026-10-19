@@ -482,6 +482,7 @@ to the type or its locking.
 | `store/capture` | a whole note written down as a feature, in one transaction |
 | `store/panel`, `store/session` | runtime changes to the panel and when each repository was last used, and the panes to bring back after a restart |
 | `store/seen_sessions` | the sessions Argus saw agents run under a harness that keeps no transcript — title, checkout, first and last seen — so one still lists once its pane is gone |
+| `store/faults` | a fault put in the store's connection by a test: a write stopped at any step or at its commit, a full disk, another writer's lock |
 | `git`, `git/browse` | the read-only questions asked of a repository: its status and worktrees, and what a checkout contains for the pickers |
 | `git/watch` | when a repository's Git metadata changes, as it happens rather than on the next poll |
 | `git/gitignore` | the repository-local excludes for generated Argus files |
@@ -2873,3 +2874,32 @@ it never hangs up, hangs or panics, every request named by an id is answered by 
 by it, and an unnamed one is never answered. An editor request always names an editor no machine
 has and every path is under the host's directory, so a case never starts a program or writes a file
 outside it.
+
+### Store writes under faults
+
+The store's rule is its header's: a write is a transaction, not a rewrite of everything, so a write
+that fails leaves the store as it was. §"Session restore" says the pane table is replaced in one
+transaction; §"Features and the decision board" says a feature's slug is made unique inside the
+transaction that opens it and a capture is written in one; saved views say removing a feature drops
+it from them in the same transaction; and a transfer writes its destination in one store transaction.
+`store::tests::faults` holds every write the store makes to that rule, listed in its `WRITES`: the
+board (features, captures, tasks and their criteria and notes, decisions, diagrams, the tracker map,
+reconciles, pane claims), saved views, review comments, the panel, and the session. Each runs
+against a fixture with something of everything and is failed at each of its steps, a step being a
+writing statement prepared or a row written, and at its commit. Every row of every table, ids
+included, must afterwards be what it was before or what the write leaves when nothing fails, an
+error must come back where a panic could, and a write that was stopped must succeed when tried again.
+A property runs the same on a store in a file with a full disk and another writer's lock as well,
+and through the daemon a stopped write is refused and the connection lives on.
+
+`store/faults` puts each fault in through SQLite's own hooks on the one connection, an authorizer and
+progress handler counting steps, a commit hook, `max_page_count`, and a second connection holding the
+write lock, so the code under test runs unchanged. SQLite checks the progress handler only every few
+steps, so a fault meant for after a write's last row can land past its commit and leave the write
+whole, which the rule allows; each write is still stopped before its first step and at its commit.
+
+Migrations run in one transaction with the `user_version` they reach, and the legacy file import
+inserts with `OR IGNORE` and retires a file only once it is in, so a stopped import finishes when
+it runs again; neither is in `WRITES`. One daemon action spans two writes: an agent opening a feature
+adds it and then points its checkout at it, so a fault between the two leaves a feature its checkout
+is not on.

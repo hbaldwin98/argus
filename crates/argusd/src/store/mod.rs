@@ -32,6 +32,8 @@ use crate::system::paths::same_path;
 
 mod boards;
 mod capture;
+#[cfg(test)]
+pub(crate) mod faults;
 mod legacy;
 mod panel;
 mod reconcile;
@@ -108,6 +110,9 @@ pub struct Overlays {
     pub excluded: Vec<PathBuf>,
     pub open_workspace: Option<String>,
 }
+
+/// How long a write waits on another connection's lock before failing.
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Set to anything to start clean. An escape hatch for the case where a
 /// restore is the problem — a template that now fails on launch, say.
@@ -200,7 +205,7 @@ impl Store {
         // of that is one stale pane row.
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
         let store = Self {
             conn: StdMutex::new(conn),
         };

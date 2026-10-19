@@ -482,6 +482,12 @@ fn pane_info(pane: &Pane) -> PaneInfo {
 use crate::pty::PaneSubscription;
 
 impl Daemon {
+    /// For a test that injects a fault into what the daemon writes.
+    #[cfg(test)]
+    pub(crate) fn store(&self) -> &crate::store::Store {
+        &self.store
+    }
+
     pub fn template_names(&self) -> Vec<String> {
         self.templates
             .lock()

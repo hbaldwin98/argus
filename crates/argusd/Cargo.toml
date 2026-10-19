@@ -57,3 +57,7 @@ libc = { workspace = true }
 insta = { workspace = true }
 proptest = { workspace = true }
 rmp-serde = { workspace = true }
+# SQLite's update, progress and commit hooks, which store::faults injects
+# faults through. A test build's only: resolver 2 keeps a dev-dependency's
+# features out of the daemon itself.
+rusqlite = { workspace = true, features = ["hooks"] }
