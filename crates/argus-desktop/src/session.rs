@@ -225,7 +225,7 @@ impl Session {
             opening_feature: PendingFeature::default(),
             extension_keys: ExtensionKeys::default(),
             extension_dialogs: ExtensionDialogs::default(),
-            rail_width: DraggedWidth::new(dragged_width::RAIL, settings.rail_width),
+            rail_width: DraggedWidth::folding(dragged_width::RAIL, Some(dragged_width::RAIL_FOLDED), settings.rail_width),
             outline_width: DraggedWidth::new(dragged_width::OUTLINE, settings.outline_width),
             brief_height: DraggedWidth::new(dragged_width::BRIEF, settings.brief_height),
             code_tree_width: DraggedWidth::new(dragged_width::CODE_TREE, settings.code_tree_width),
@@ -792,6 +792,9 @@ impl Session {
             }
             Call::RailWidth { width } => {
                 self.rail_width.set(width);
+                // The page drew the width it was let go at; when the held
+                // one is the same as before, nothing else would send it back.
+                self.rail_sent.forget();
                 self.finish()
             }
             Call::OutlineWidth { width } => {
@@ -6122,6 +6125,25 @@ mod tests {
         s.call(Call::Command { action: Action::DockLeft });
         assert_eq!(s.docks.dock_of(&Panel::Console), Some(Dock::Left));
         assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
+    }
+
+    #[test]
+    fn a_rail_let_go_below_its_minimum_is_sent_back_even_when_it_held_still() {
+        let mut s = session(without_focus());
+        s.events(0);
+        let rail_width = |s: &mut Session| {
+            s.events(0).into_iter().find_map(|e| match e {
+                Event::Rail(rail) => Some(rail.width),
+                _ => None,
+            })
+        };
+        s.call(Call::RailWidth { width: Some(dragged_width::RAIL.min) });
+        assert_eq!(rail_width(&mut s), Some(Some(dragged_width::RAIL.min)));
+        // The page drew 150 while dragging; the held width did not move.
+        s.call(Call::RailWidth { width: Some(150) });
+        assert_eq!(rail_width(&mut s), Some(Some(dragged_width::RAIL.min)), "the page is told to undo its 150");
+        s.call(Call::RailWidth { width: Some(90) });
+        assert_eq!(rail_width(&mut s), Some(Some(dragged_width::RAIL_FOLDED)));
     }
 
     #[test]

@@ -8,6 +8,10 @@
 //! theirs.
 
 pub const RAIL: Bounds = Bounds { min: 200, max: 560 };
+/// The rail folded to its icons, the page's `--rail-folded`: a drag let go
+/// nearer this than `RAIL.min` folds it there rather than leaving a rail
+/// too narrow for its words and too wide for its icons.
+pub const RAIL_FOLDED: u32 = 56;
 pub const OUTLINE: Bounds = Bounds { min: 220, max: 1200 };
 pub const BRIEF: Bounds = Bounds { min: 40, max: 900 };
 pub const CODE_TREE: Bounds = Bounds { min: 180, max: 800 };
@@ -22,18 +26,33 @@ pub struct Bounds {
 #[derive(Debug)]
 pub struct DraggedWidth {
     bounds: Bounds,
+    /// A width below `bounds.min` it snaps to instead, the rail's folded one.
+    folded: Option<u32>,
     width: Option<u32>,
     unsaved: bool,
 }
 
 impl DraggedWidth {
     pub fn new(bounds: Bounds, saved: Option<u32>) -> DraggedWidth {
-        DraggedWidth { bounds, width: saved.map(|w| w.clamp(bounds.min, bounds.max)), unsaved: false }
+        DraggedWidth::folding(bounds, None, saved)
+    }
+
+    pub fn folding(bounds: Bounds, folded: Option<u32>, saved: Option<u32>) -> DraggedWidth {
+        let mut width = DraggedWidth { bounds, folded, width: None, unsaved: false };
+        width.width = saved.map(|w| width.held(w));
+        width
+    }
+
+    fn held(&self, width: u32) -> u32 {
+        match self.folded {
+            Some(folded) if width < (folded + self.bounds.min) / 2 => folded,
+            _ => width.clamp(self.bounds.min, self.bounds.max),
+        }
     }
 
     /// The width a drag let go at, or `None` to go back to the page's own.
     pub fn set(&mut self, width: Option<u32>) {
-        let width = width.map(|w| w.clamp(self.bounds.min, self.bounds.max));
+        let width = width.map(|w| self.held(w));
         if self.width != width {
             self.width = width;
             self.unsaved = true;
@@ -67,6 +86,16 @@ mod tests {
         assert_eq!(rail.get(), Some(RAIL.max));
         rail.set(None);
         assert_eq!(rail.get(), None, "back to the page's own");
+    }
+
+    #[test]
+    fn a_rail_dragged_nearer_folded_than_its_minimum_folds() {
+        let mut rail = DraggedWidth::folding(RAIL, Some(RAIL_FOLDED), None);
+        rail.set(Some(100));
+        assert_eq!(rail.get(), Some(RAIL_FOLDED));
+        rail.set(Some(150));
+        assert_eq!(rail.get(), Some(RAIL.min), "nearer the minimum, it opens to it");
+        assert_eq!(DraggedWidth::folding(RAIL, Some(RAIL_FOLDED), Some(RAIL_FOLDED)).get(), Some(RAIL_FOLDED));
     }
 
     #[test]

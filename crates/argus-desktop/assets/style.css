@@ -317,6 +317,7 @@
   /* What the person dragged the rail to, else 288; the folded rail below
      ignores it, so a drag made wide does not survive a narrow window. */
   --rail-w: var(--rail-set, 288px);
+  /* dragged_width::RAIL_FOLDED: a rail dragged this narrow folds. */
   --rail-folded: 56px;
   /* The folded rail's tile: an agent's initials, or a stage's icon. */
   --rail-tile: 40px;
@@ -8609,15 +8610,15 @@ button.vtree-chev:focus-visible {
   }
 }
 
-/* Under 1200px the sidebar folds to an icon rail: stages by their icon,
-   agents by their initials with the status dot at the corner, and every
-   name in a tooltip. What a wider rail says in words is still one hover
-   away; nothing is simply cut. */
-@media (max-width: 1200px) {
-  :root {
-    --rail-w: var(--rail-folded);
-  }
-  .rail-sash,
+/* A rail narrower than its words folds to an icon rail: stages by their
+   icon, agents by their initials with the status dot at the corner, and
+   every name in a tooltip. It folds in a small window, which sets its width
+   below, and when it is dragged down to its folded width (`dragged_width`'s
+   RAIL_FOLDED, `--rail-folded`). Nothing is simply cut. */
+.rail {
+  container: rail / inline-size;
+}
+@container rail (max-width: 120px) {
   .projmenu,
   .nav-extensions,
   .co,
@@ -8784,6 +8785,17 @@ button.vtree-chev:focus-visible {
     font-size: var(--fs-xs);
     line-height: var(--sp-16);
     text-align: center;
+  }
+}
+
+/* Under 1200px the rail folds whatever width it was dragged to, and the
+   sash goes with its words. */
+@media (max-width: 1200px) {
+  :root {
+    --rail-w: var(--rail-folded);
+  }
+  .rail-sash {
+    display: none;
   }
 
   /* An agent's views open over the pane instead of squeezing it: the
