@@ -992,45 +992,40 @@ function drawStage(): void {
   empty.replaceChildren(el('div', { class: `empty-body ${measure}` }, body));
 }
 
-const RUNNING_ORDER: Partial<Record<StatusWord, number>> = {
-  waiting: 0,
-  failed: 1,
-  'needs-review': 2,
-  working: 3,
-};
-
-/** The panes that outlived the screen they were on, those that need a person
- *  first: the way back into work the stage does not show. */
+/** Every pane in the project, the most recently changed first, however the
+ *  rail is folded: the way back into work the stage does not show. Rust
+ *  sends them sorted (`chrome/rail.rs`). */
 function stillRunning(project: NonNullable<typeof state.rail.project>): Child {
-  const cards = project.repositories
-    .flatMap((repo) =>
-      repo.checkouts.flatMap((co) =>
-        co.panes.map((pane) => ({ where: co.branch || co.name, pane })),
-      ),
-    )
-    .filter(({ pane }) => pane.status !== 'exited' && pane.status !== 'done')
-    .toSorted((a, b) => (RUNNING_ORDER[a.pane.status] ?? 9) - (RUNNING_ORDER[b.pane.status] ?? 9))
-    .slice(0, 3);
-  if (cards.length === 0) return null;
+  if (project.running.length === 0) return null;
   return el(
     'section',
-    { class: 'running', 'aria-label': 'Still running' },
-    el('div', { class: 'running-head' }, 'Still running'),
+    { class: 'running', 'aria-label': `Panes in ${project.name}` },
+    el('div', { class: 'running-head' }, `Panes in ${project.name}`),
     el(
       'div',
       { class: 'running-cards' },
-      cards.map(({ where, pane }) =>
+      project.running.map((pane) =>
         el(
           'button',
           { class: 'rcard', onclick: () => call('select', { pane: pane.id }) },
           el(
             'span',
             { class: 'rcard-top' },
-            el('span', { class: 'mono ellipsis' }, where),
+            el(
+              'span',
+              { class: 'ellipsis' },
+              `${pane.repository} · `,
+              el('span', { class: 'mono' }, pane.checkout),
+            ),
             el('span', { class: `spill ${pane.status}` }, statusWord(pane.status)),
           ),
           el('span', { class: 'rcard-title ellipsis' }, pane.title),
-          pane.note && el('span', { class: 'rcard-note mono ellipsis' }, pane.note),
+          el(
+            'span',
+            { class: 'rcard-note ellipsis' },
+            pane.note ?? (pane.agent ? 'agent' : 'shell'),
+            pane.used && ` · ${pane.used} ago`,
+          ),
         ),
       ),
     ),

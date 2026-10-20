@@ -2443,17 +2443,6 @@ body.maximized .winbtn .restore {
   position: relative;
   background: var(--bg-sunken);
 }
-/* The Workspace insets its terminal in a card so its edges agree with the
-   attention strip above it. */
-.stage-body:has(> .split:not([hidden])) {
-  padding: 0 var(--sp-16) var(--sp-16);
-}
-.stage-body > .split:not([hidden]) {
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--bg-surface);
-  overflow: hidden;
-}
 .stage-body.held {
   opacity: 0.55;
 }
@@ -2483,11 +2472,12 @@ body.maximized .winbtn .restore {
 /* The workspace's panes sit on the stage as cards, not edge to edge: the
    gutter around them is the stage showing through. */
 /* Cells abut at their seam, so each keeps half the 8px gap as a transparent
-   border: the outside margin is 16 less that half, and two cards sit 8 apart
-   on the same scale as the gutter around them. The hairline is an inset
-   shadow because a border would be the transparent one. */
+   border: the outside margin is 8 less that half, so a card sits 8 from the
+   window's edge and two sit 8 apart. One frame only: the terminal's columns
+   are worth more than a wider margin. The hairline is an inset shadow
+   because a border would be the transparent one. */
 #split {
-  margin: calc(var(--sp-16) - var(--sp-4));
+  margin: calc(var(--sp-8) - var(--sp-4));
 }
 #split > .gcell {
   background: var(--bg-surface);
@@ -2625,6 +2615,8 @@ body.moving-pane * {
 .empty.no-pane {
   align-items: flex-start;
   padding-top: var(--sp-44);
+  /* Every pane in the project is offered, so a long list scrolls. */
+  overflow-y: auto;
 }
 .empty-body {
   display: flex;

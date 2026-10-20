@@ -5168,6 +5168,88 @@ export const sent = [
         "status": "waiting",
         "used": null
       }
+    ],
+    "running": [
+      {
+        "agent": false,
+        "checkout": "main",
+        "id": 1,
+        "note": null,
+        "repository": "argus",
+        "status": "idle",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 2,
+        "note": null,
+        "repository": "argus",
+        "status": "working",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 3,
+        "note": null,
+        "repository": "argus",
+        "status": "waiting",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 4,
+        "note": null,
+        "repository": "argus",
+        "status": "needs-review",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 5,
+        "note": null,
+        "repository": "argus",
+        "status": "done",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 6,
+        "note": null,
+        "repository": "argus",
+        "status": "failed",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 7,
+        "note": null,
+        "repository": "argus",
+        "status": "exited",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "topic",
+        "id": 20,
+        "note": null,
+        "repository": "argus",
+        "status": "waiting",
+        "title": "claude",
+        "used": null
+      }
     ]
   },
   "projects": [
@@ -5700,6 +5782,88 @@ export const sent = [
         "status": "waiting",
         "used": null
       }
+    ],
+    "running": [
+      {
+        "agent": false,
+        "checkout": "main",
+        "id": 1,
+        "note": null,
+        "repository": "argus",
+        "status": "idle",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 2,
+        "note": null,
+        "repository": "argus",
+        "status": "working",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 3,
+        "note": null,
+        "repository": "argus",
+        "status": "waiting",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 4,
+        "note": null,
+        "repository": "argus",
+        "status": "needs-review",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 5,
+        "note": null,
+        "repository": "argus",
+        "status": "done",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 6,
+        "note": null,
+        "repository": "argus",
+        "status": "failed",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 7,
+        "note": null,
+        "repository": "argus",
+        "status": "exited",
+        "title": "agent",
+        "used": null
+      },
+      {
+        "agent": true,
+        "checkout": "topic",
+        "id": 20,
+        "note": null,
+        "repository": "argus",
+        "status": "waiting",
+        "title": "claude",
+        "used": null
+      }
     ]
   },
   "projects": [
@@ -5796,6 +5960,28 @@ export const sent = [
         "panes": 2,
         "quiet": false,
         "status": "working",
+        "used": null
+      }
+    ],
+    "running": [
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 1,
+        "note": null,
+        "repository": "argus",
+        "status": "working",
+        "title": "claude",
+        "used": null
+      },
+      {
+        "agent": false,
+        "checkout": "main",
+        "id": 2,
+        "note": null,
+        "repository": "argus",
+        "status": "idle",
+        "title": "zsh",
         "used": null
       }
     ]
@@ -6312,6 +6498,28 @@ export const sent = [
         "panes": 2,
         "quiet": false,
         "status": "working",
+        "used": null
+      }
+    ],
+    "running": [
+      {
+        "agent": true,
+        "checkout": "main",
+        "id": 1,
+        "note": null,
+        "repository": "argus",
+        "status": "working",
+        "title": "claude",
+        "used": null
+      },
+      {
+        "agent": false,
+        "checkout": "main",
+        "id": 2,
+        "note": null,
+        "repository": "argus",
+        "status": "idle",
+        "title": "zsh",
         "used": null
       }
     ]

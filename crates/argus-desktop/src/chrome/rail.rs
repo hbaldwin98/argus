@@ -109,7 +109,35 @@ fn build_project(project: &ProjectInfo, choices: &Choices) -> page::Project {
         name: project.name.clone(),
         needs_you: statuses(project).filter(|s| s.needs_you()).count(),
         repositories,
+        running: running(project, choices.now),
     }
+}
+
+fn running(project: &ProjectInfo, now: u64) -> Vec<page::RunningPane> {
+    let mut panes: Vec<(&str, &CheckoutInfo, &PaneInfo)> = project
+        .repositories
+        .iter()
+        .flat_map(|repo| repo.checkouts.iter().map(move |c| (repo.name.as_str(), c)))
+        .flat_map(|(repo, c)| c.listed_panes().map(move |p| (repo, c, p)))
+        .collect();
+    // Stable, so panes a daemon gives no time keep the tree's order, last.
+    panes.sort_by_key(|(_, _, pane)| std::cmp::Reverse(pane.since));
+    panes
+        .into_iter()
+        .map(|(repo, c, pane)| {
+            let branch = branch(c);
+            page::RunningPane {
+                id: pane.id.0,
+                agent: pane.kind == PaneKind::Agent,
+                title: pane.title.clone(),
+                status: status(pane),
+                note: pane.loudest_state().note.map(str::to_owned),
+                repository: repo.to_owned(),
+                checkout: if branch.is_empty() { c.name.clone() } else { branch },
+                used: pane.since.map(|since| ago(Some(since), now)),
+            }
+        })
+        .collect()
 }
 
 /// A checkout row: one with panes running in it, or the repository's
@@ -243,6 +271,28 @@ mod tests {
         assert!(!repos[0].open && repos[0].checkouts.is_empty(), "argus was closed");
         assert!(repos[1].open, "dotfiles was opened");
         assert!(!repos[2].open);
+    }
+
+    #[test]
+    fn every_pane_is_offered_as_running_however_the_rail_is_folded_most_recent_first() {
+        let mut tree = busy();
+        let argus = &mut tree[0].repositories[1];
+        argus.checkouts[0].panes[0].since = Some(9_000);
+        argus.checkouts[0].panes[1].since = Some(9_990);
+        argus.checkouts[2].panes[0].since = Some(9_500);
+        // argus closed and tracker-links folded: the rail lists none of them.
+        let toggled = HashSet::from([RepositoryId(11)]);
+        let folded = HashSet::from([CheckoutId(112)]);
+        let rail = build(&tree, &Choices { folded: &folded, ..choices(&toggled) }, true);
+        let project = rail.project.unwrap();
+        assert!(project.repositories[0].checkouts.is_empty());
+        let running: Vec<_> = project.running.iter().map(|p| (p.title.as_str(), p.used.as_deref())).collect();
+        assert_eq!(
+            running,
+            [("zsh", Some("1m")), ("Tracker", Some("8m")), ("Trim context", Some("16m"))],
+            "an editor is not offered"
+        );
+        assert_eq!(project.running[1].checkout, "tracker-links");
     }
 
     #[test]

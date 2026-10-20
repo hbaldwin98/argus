@@ -679,6 +679,28 @@ pub struct Project {
     pub name: String,
     pub needs_you: usize,
     pub repositories: Vec<Repository>,
+    /// Every pane in the project, closed repositories and folded checkouts
+    /// included, the most recently changed first: an empty Workspace offers
+    /// all of them, not only what the rail happens to have open.
+    pub running: Vec<RunningPane>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct RunningPane {
+    pub id: u64,
+    pub agent: bool,
+    pub title: String,
+    #[cfg_attr(test, ts(as = "crate::connection::page::StatusWord"))]
+    pub status: &'static str,
+    pub note: Option<String>,
+    pub repository: String,
+    /// The checkout's branch, or its name outside git.
+    pub checkout: String,
+    /// How long since its status last changed, `3m`, `2d`; `None` from a
+    /// daemon that does not say.
+    pub used: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1841,6 +1863,7 @@ mod tests {
                         }],
                     }],
                 }],
+                running: vec![],
             }),
             needs_you: 2,
             working: 1,
