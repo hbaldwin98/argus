@@ -188,7 +188,11 @@ function header(v: PageView, popped: boolean): HTMLElement {
             'aria-haspopup': 'menu',
             onclick: (e: MouseEvent) => {
               const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              openMenu(v.view.title, items(), { x: box.right - 200, y: box.bottom + 4 });
+              openMenu(v.view.title, items(), {
+                x: box.right,
+                y: box.bottom + 4,
+                align: 'end',
+              });
             },
           },
           icon('more'),

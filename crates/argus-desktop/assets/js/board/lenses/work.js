@@ -8,7 +8,7 @@
 // refused edit leaves it as it was.
 import { notice } from '../../chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el } from '../../kit/dom.js';
+import { $, el, icon } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
 import { flowsAction, flowsLens } from './flows.js';
 import { featureViewLink, savedFeatureLinks, ticketLink } from '../tracker/tickets.js';
@@ -238,8 +238,15 @@ function head(view) {
             text && briefSash(text),
         ];
     }
-    const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
-    return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, lensName), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('Esc'), ' back to features')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), el('span', { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` }, view.standing), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)], view.branch && view.agent && ' · ', view.agent && [
+    return el('div', { class: 'fhead' }, el('div', { class: 'actions head-row' }, 
+    // The strip names the feature; this is the way back from it.
+    el('button', {
+        class: 'icon',
+        type: 'button',
+        title: 'Back to features (Esc)',
+        'aria-label': 'Back to features',
+        onclick: closeFeature,
+    }, icon('back')), el('span', { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` }, view.standing), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)], view.branch && view.agent && ' · ', view.agent && [
         el('span', { class: 'glyph' }, '◆'),
         ` ${view.agent.title} `,
         el('span', { class: `st ${view.agent.status}` }, view.agent.status),

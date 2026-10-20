@@ -17,7 +17,7 @@ import type { TaskDetail } from '../../bindings/TaskDetail';
 import type { WorkRow } from '../../bindings/WorkRow';
 import { notice } from '../../chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el, type Child } from '../../kit/dom.js';
+import { $, el, icon, type Child } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
 import { flowsAction, flowsLens } from './flows.js';
 import { featureViewLink, savedFeatureLinks, ticketLink } from '../tracker/tickets.js';
@@ -284,30 +284,23 @@ function head(view: FeatureView): HTMLElement {
       text && briefSash(text),
     ];
   }
-  const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
   return el(
     'div',
     { class: 'fhead' },
     el(
       'div',
-      { class: 'crumbs' },
-      el('button', { class: 'crumb', onclick: closeFeature }, 'Features'),
-      el('span', { class: 'fg-faint' }, '›'),
-      el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`),
-      el('span', { class: 'fg-faint' }, '›'),
-      el('span', { class: 'fg' }, lensName),
-      el('span', { class: 'grow' }),
-      el('span', { class: 'meta' }, keycap('Esc'), ' back to features'),
-    ),
-    el(
-      'div',
       { class: 'actions head-row' },
+      // The strip names the feature; this is the way back from it.
       el(
-        'span',
-        { class: 'type-title' },
-        el('span', { class: 'mono fg-accent' }, `#${view.number}`),
-        ' ',
-        view.title,
+        'button',
+        {
+          class: 'icon',
+          type: 'button',
+          title: 'Back to features (Esc)',
+          'aria-label': 'Back to features',
+          onclick: closeFeature,
+        },
+        icon('back'),
       ),
       el(
         'span',

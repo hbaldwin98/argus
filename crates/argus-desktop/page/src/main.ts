@@ -151,6 +151,8 @@ function receive(event: Event): void {
     case 'features':
       state.features = event;
       drawFeatures();
+      // An open feature names the strip.
+      drawHead();
       break;
     case 'capture':
       state.capture = event;

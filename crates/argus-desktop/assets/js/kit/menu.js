@@ -13,7 +13,9 @@ export function closeLayer() {
 export function placeMenu(menu, at) {
     $('layer').replaceChildren(menu);
     const box = menu.getBoundingClientRect();
-    menu.style.left = `${Math.max(8, Math.min(at.x, window.innerWidth - box.width - 8))}px`;
+    // `end` hangs the menu from its right edge, under a button at the strip's end.
+    const x = at.align === 'end' ? at.x - box.width : at.x;
+    menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - box.width - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(at.y, window.innerHeight - box.height - 8))}px`;
     menu.querySelector('.mi:not([disabled])')?.focus();
 }

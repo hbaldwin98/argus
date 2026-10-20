@@ -119,7 +119,11 @@ function header(v, popped) {
         'aria-haspopup': 'menu',
         onclick: (e) => {
             const box = e.currentTarget.getBoundingClientRect();
-            openMenu(v.view.title, items(), { x: box.right - 200, y: box.bottom + 4 });
+            openMenu(v.view.title, items(), {
+                x: box.right,
+                y: box.bottom + 4,
+                align: 'end',
+            });
         },
     }, icon('more')))));
 }

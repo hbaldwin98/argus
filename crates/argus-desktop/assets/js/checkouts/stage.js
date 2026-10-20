@@ -34,7 +34,7 @@ function head(c) {
     });
     filter.value = c.filter;
     const branches = `${c.branches} other branch${c.branches === 1 ? '' : 'es'}`;
-    return el('div', { class: 'fhead index-head' }, el('div', { class: 'actions index-tools' }, el('span', { class: 'meta', title: 'Enter open · D delete' }, `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`, c.main && [' · main ', el('span', { class: 'mono fg-ref' }, c.main)]), el('span', { class: 'grow' }), filter, el('button', {
+    return el('div', { class: 'fhead index-head' }, el('div', { class: 'actions index-tools' }, el('span', { class: 'meta', title: 'Enter open · D delete' }, `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`, c.main && [' · primary ', el('span', { class: 'mono fg-ref' }, c.main)]), el('span', { class: 'grow' }), filter, el('button', {
         class: 'btn',
         'aria-pressed': String(c.branchesShown),
         onclick: () => call('checkouts_action', { action: 'branches' }),

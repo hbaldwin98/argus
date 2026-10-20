@@ -6,7 +6,7 @@
 // (`src/extensions/views.rs`, `src/extensions/keys.rs`), and `docks` puts
 // a docked view's element in its dock; a row changes only when its
 // extension publishes it again.
-import { dockMenuButton } from '../layout/docks.js';
+import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
 import { $, el, icon } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
 import { closeLayer } from '../kit/menu.js';
@@ -93,7 +93,9 @@ function header(view) {
     const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
     const head = el('div', { class: 'vpanel-head' }, 
     // As a page the strip already names the view; docked it names itself.
+    // A dock's tab strip names a docked view too, and holds its dock menu.
     !view.page &&
+        !dockShowsTabs(view.panel) &&
         el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), dockMenuButton(view.panel, view.title, true), el('button', {
             class: 'icon',
             type: 'button',

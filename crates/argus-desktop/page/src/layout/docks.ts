@@ -45,6 +45,12 @@ export function dockOf(panel: Panel): Dock | null {
   return DOCKS.find((dock) => dockPage(dock)?.tabs.some((t) => t.panel === panel)) ?? null;
 }
 
+/** Whether the dock `panel` is in shows a tab strip, which then names it. */
+export function dockShowsTabs(panel: Panel): boolean {
+  const dock = dockOf(panel);
+  return dock !== null && (dockPage(dock)?.tabs.length ?? 0) > 1;
+}
+
 /** "Dock on the right", for a button or a menu. */
 export function dockWords(dock: Dock): string {
   return `Dock ${WHERE[dock]}`;
@@ -164,6 +170,7 @@ function drawTabs(dock: Dock, page: DockPage | null, shown: Panel | null): void 
     strip.replaceChildren();
     return;
   }
+  const own = tabs.find((tab) => tab.panel === shown);
   strip.replaceChildren(
     ...tabs.map((tab) => {
       const close = closeOf(tab.panel);
@@ -190,7 +197,13 @@ function drawTabs(dock: Dock, page: DockPage | null, shown: Panel | null): void 
           oncontextmenu: contextMenu(tab.title, () => [
             { heading: tab.title },
             ...moveItems(tab.panel, true),
-            ...(close ? (['sep', { label: 'Close', run: close }] as MenuItem[]) : []),
+            'sep',
+            close
+              ? { label: 'Close', run: close }
+              : {
+                  label: 'Hide',
+                  run: () => call('docks', { gesture: { on: 'hide', panel: tab.panel } }),
+                },
           ]),
         },
         pick,
@@ -209,6 +222,9 @@ function drawTabs(dock: Dock, page: DockPage | null, shown: Panel | null): void 
       );
       return close ? closesOnMiddle(node, close) : node;
     }),
+    // The shown panel's dock menu rides the strip's end, not a row of its own.
+    el('span', { class: 'grow' }),
+    own && shown ? dockMenuButton(shown, own.title, true) : '',
   );
 }
 

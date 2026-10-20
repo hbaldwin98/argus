@@ -81,11 +81,11 @@ export function codeStrip(): { crumb: HTMLElement[]; tools: HTMLElement[] } | nu
       'button',
       {
         class: 'icon',
-        title: 'Keys for this view  ?',
+        title: 'Keys for this view (?)',
         'aria-label': 'Keys for this view',
         onclick: () => call('command', { action: 'shortcuts' }),
       },
-      kbd('?'),
+      icon('help'),
     ),
   );
   return { crumb, tools };

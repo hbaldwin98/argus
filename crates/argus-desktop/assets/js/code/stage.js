@@ -47,10 +47,10 @@ export function codeStrip() {
     }
     tools.push(el('button', {
         class: 'icon',
-        title: 'Keys for this view  ?',
+        title: 'Keys for this view (?)',
         'aria-label': 'Keys for this view',
         onclick: () => call('command', { action: 'shortcuts' }),
-    }, kbd('?')));
+    }, icon('help')));
     return { crumb, tools };
 }
 /** A field whose letters and keys go to Rust as gestures. It keeps the

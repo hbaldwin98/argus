@@ -53,7 +53,7 @@ function head(c: Checkouts): HTMLElement {
         'span',
         { class: 'meta', title: 'Enter open · D delete' },
         `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`,
-        c.main && [' · main ', el('span', { class: 'mono fg-ref' }, c.main)],
+        c.main && [' · primary ', el('span', { class: 'mono fg-ref' }, c.main)],
       ),
       el('span', { class: 'grow' }),
       filter,

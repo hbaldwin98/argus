@@ -597,6 +597,11 @@ export function drawHead(): void {
   if (stage !== 'workspace') {
     const repository = stage === 'console' || stage === 'extension' ? null : chosenRepository();
     const code = stage === 'code' ? codeStrip() : null;
+    // An open feature is the stage's title; the way back is its crumb and Esc.
+    const feature = stage === 'feature' ? (state.features?.open ?? null) : null;
+    const trail = feature
+      ? [STAGE_NAME.feature, el('span', { class: 'mono fg-accent' }, `#${feature.number}`)]
+      : (code?.crumb ?? []);
     more.replaceChildren(...(code?.tools ?? []));
     head.replaceChildren(
       headStack(
@@ -605,18 +610,22 @@ export function drawHead(): void {
               'span',
               null,
               repository,
-              ...(code?.crumb.flatMap((part) => [el('span', { class: 'fg-faint' }, '/'), part]) ??
-                []),
+              ...trail.flatMap((part) => [el('span', { class: 'fg-faint' }, '/'), part]),
             )
-          : null,
+          : // Every stage has a crumb, so every title sits on one baseline.
+            stage === 'extension'
+            ? STAGE_NAME.extension
+            : null,
         el(
           'span',
           { class: 'type-heading head-title' },
-          stage === 'extension'
-            ? extensionPageTitle()
-            : stage === 'view'
-              ? (poppedViewTitle() ?? STAGE_NAME.view)
-              : STAGE_NAME[stage],
+          feature
+            ? feature.title
+            : stage === 'extension'
+              ? extensionPageTitle()
+              : stage === 'view'
+                ? (poppedViewTitle() ?? STAGE_NAME.view)
+                : STAGE_NAME[stage],
         ),
       ),
     );
@@ -648,7 +657,7 @@ export function drawHead(): void {
           },
           shown.title,
         ),
-        el('span', { class: `pill ${shown.status}` }, shown.status),
+        el('span', { class: `spill ${shown.status}` }, shown.status),
         shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '',
       ),
     ),
@@ -671,7 +680,8 @@ export function drawHead(): void {
         onclick: (e: MouseEvent) => {
           const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
           openMenu(shown.title, paneMenu(shown.pane, shown.title), {
-            x: box.right - 180,
+            x: box.right,
+            align: 'end',
             y: box.bottom + 4,
           });
         },
@@ -687,7 +697,7 @@ function headStack(crumb: Child, ...rest: Child[]): HTMLElement {
   return el(
     'span',
     { class: 'head-stack' },
-    crumb ? el('span', { class: 'crumbs' }, crumb) : '',
+    el('span', { class: 'crumbs' }, crumb),
     el('span', { class: 'head-line' }, ...rest),
   );
 }

@@ -14,7 +14,7 @@ import type { ExtTableAction } from '../bindings/ExtTableAction';
 import type { ExtTableConsole } from '../bindings/ExtTableConsole';
 import type { Panel } from '../bindings/Panel';
 import type { Value } from '../bindings/Value';
-import { dockMenuButton } from '../layout/docks.js';
+import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
 import { $, el, icon, type IconName } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
 import { closeLayer } from '../kit/menu.js';
@@ -145,7 +145,9 @@ function header(view: ExtTable): HTMLElement {
     'div',
     { class: 'vpanel-head' },
     // As a page the strip already names the view; docked it names itself.
+    // A dock's tab strip names a docked view too, and holds its dock menu.
     !view.page &&
+      !dockShowsTabs(view.panel) &&
       el(
         'div',
         { class: 'vpanel-title' },

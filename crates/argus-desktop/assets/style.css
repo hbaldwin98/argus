@@ -307,6 +307,8 @@
   --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.45);
   --rail-w: 288px;
   --header-h: 56px;
+  --strip-h: 40px;
+  --pane-head-h: 32px;
   --control-h: 30px;
   --control-h-sm: 24px;
   --icon-btn: 28px;
@@ -752,6 +754,14 @@
 }
 .segb.on {
   background: var(--fill);
+  color: var(--fg);
+}
+.segb:not(.on):not(:disabled):hover {
+  background: var(--fill);
+  color: var(--fg);
+}
+.segb:not(:disabled):active {
+  background: var(--bg-selected);
   color: var(--fg);
 }
 .check {
@@ -1899,7 +1909,8 @@ body.mac .rail .brand {
 .head-stack .crumbs {
   gap: var(--sp-4);
   font-size: var(--fs-xs);
-  line-height: 14px;
+  line-height: var(--sp-16);
+  min-height: var(--sp-16);
   color: var(--fg-faint);
   white-space: nowrap;
   overflow: hidden;
@@ -1926,19 +1937,26 @@ body.mac .rail .brand {
   gap: var(--sp-8);
   min-width: 0;
 }
-/* The status pill: a dot and a word, tinted by the status it names. */
-.head .pill {
+/* The one status pill: a dot and a word, tinted by the status it names.
+   The strip, the rail, the board and the checkouts all use it. */
+.spill {
   --tone: var(--fg-faint);
   display: inline-flex;
   align-items: center;
   gap: var(--sp-6);
   flex: none;
-  padding: 1px var(--sp-8);
+  min-height: var(--sp-20);
+  box-sizing: border-box;
+  padding: 0 var(--sp-8);
   border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--tone) 12%, transparent);
   color: var(--tone);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
 }
-.head .pill::before {
+.spill::before {
   content: '';
   width: 6px;
   height: 6px;
@@ -1946,21 +1964,21 @@ body.mac .rail .brand {
   border-radius: 50%;
   background: var(--tone);
 }
-.head .pill.working {
+.spill.working {
   --tone: var(--accent);
 }
-.head .pill.waiting,
-.head .pill.needs-review {
+.spill.waiting,
+.spill.needs-review {
   --tone: var(--attention);
 }
-.head .pill.failed {
+.spill.failed {
   --tone: var(--danger);
 }
-.head .pill.done {
+.spill.done {
   --tone: var(--ok);
 }
-.head .pill.idle::before,
-.head .pill.exited::before {
+.spill.idle::before,
+.spill.exited::before {
   background: transparent;
   border: 1px solid var(--tone);
 }
@@ -1988,7 +2006,7 @@ body.mac .rail .brand {
   content: '';
   order: 3;
   width: 1px;
-  height: 20px;
+  height: var(--sp-20);
   background: var(--line);
   margin-left: var(--sp-4);
 }
@@ -2077,7 +2095,7 @@ body.maximized .winbtn .restore {
   user-select: none;
 }
 .thead.gripper .x-room {
-  width: 20px;
+  width: var(--control-h-sm);
   flex: none;
 }
 .thead.gripper .ttl {
@@ -2090,7 +2108,6 @@ body.maximized .winbtn .restore {
   font-weight: 500;
   color: var(--fg-muted);
 }
-
 .gutter {
   position: absolute;
   z-index: 2;
@@ -2164,13 +2181,6 @@ body.moving-pane * {
   padding: 0;
   resize: none;
   overflow: hidden;
-}
-.head .glyph {
-  width: auto;
-  font-size: var(--fs-md);
-}
-.head .meta.mono {
-  font-family: var(--font-mono);
 }
 .head-title {
   min-width: 0;
@@ -2898,7 +2908,7 @@ body.float-moving * {
   display: flex;
   align-items: center;
   gap: var(--sp-4);
-  height: 40px;
+  height: var(--strip-h);
   box-sizing: border-box;
   padding: 0 var(--sp-8);
   border-bottom: 1px solid var(--line);
@@ -2917,7 +2927,7 @@ body.float-moving * {
   align-items: center;
   min-width: 0;
   max-width: 220px;
-  height: 28px;
+  height: var(--icon-btn);
   box-sizing: border-box;
   border: 1px solid transparent;
   border-radius: var(--r-sm);
@@ -2937,6 +2947,13 @@ body.float-moving * {
 .lt.on {
   background: var(--bg-selected);
   border-color: var(--line-strong);
+}
+/* The selected tab still answers the pointer: its edge lights. */
+.dock-tab.on:hover,
+.ctab.on:hover,
+.vpanel-tab.on:hover,
+.lt.on:hover {
+  border-color: var(--ring);
 }
 .dock-tab-pick,
 .ctab-pick,
@@ -2988,8 +3005,8 @@ body.float-moving * {
 .vpanel-tab .x,
 .thead .x {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
   margin-right: var(--sp-4);
   color: var(--fg-faint);
 }
@@ -2999,7 +3016,6 @@ body.float-moving * {
 .thead .x:hover {
   color: var(--fg);
 }
-
 .dock-body {
   flex: 1;
   min-width: 0;
@@ -3089,17 +3105,13 @@ body.panel-dragging * {
 .dock-right .dock-sash {
   left: -3px;
 }
-.dock-sash:hover,
-.dock-sash.held {
-  box-shadow: inset 3px 0 0 -1px var(--accent);
-}
 
 /* A resize edge shows a grip under the pointer: the hairline alone is hard
-   to find, and hovering it says it can be taken. */
+   to find, and hovering it says it can be taken. It is the only hover
+   treatment an edge has. */
 .dock-sash::after,
 .sash::after,
-.split-sash::after,
-.gutter::after {
+.split-sash::after {
   content: '';
   position: absolute;
   border-radius: var(--r-pill);
@@ -3109,16 +3121,14 @@ body.panel-dragging * {
   pointer-events: none;
 }
 .dock-sash::after,
-.split-sash::after,
-.gutter.vertical::after {
+.split-sash::after {
   top: 50%;
   left: 50%;
   width: 4px;
   height: 32px;
   transform: translate(-50%, -50%);
 }
-.sash::after,
-.gutter.horizontal::after {
+.sash::after {
   top: 50%;
   left: 50%;
   width: 32px;
@@ -3130,13 +3140,20 @@ body.panel-dragging * {
 .sash:hover::after,
 .sash.held::after,
 .split-sash:hover::after,
-.split-sash.held::after,
-.gutter:hover::after,
-.gutter.held::after {
+.split-sash.held::after {
   opacity: 1;
 }
-.split-sash {
-  position: relative;
+/* The grab zone reaches further than the hairline looks, unseen. */
+.dock-sash::before,
+.split-sash::before {
+  content: '';
+  position: absolute;
+  inset: 0 calc(-1 * var(--sp-8));
+}
+.sash::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--sp-8)) 0;
 }
 
 /* ---- The console ------------------------------------------------------- */
@@ -3173,18 +3190,6 @@ body.console-fullscreen #bar {
   position: relative;
   z-index: 2;
 }
-.sash span {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 2px;
-  height: 1px;
-}
-.sash:hover span {
-  background: var(--accent);
-  height: 2px;
-  top: 1px;
-}
 .chead {
   padding-left: var(--sp-12);
 }
@@ -3195,7 +3200,6 @@ body.console-fullscreen #bar {
   margin-left: var(--sp-4);
   overflow: hidden;
 }
-
 .cbody {
   flex: 1;
   min-height: 0;
@@ -3204,7 +3208,7 @@ body.console-fullscreen #bar {
 }
 .csep {
   width: 1px;
-  height: 16px;
+  height: var(--sp-16);
   margin: 0 var(--sp-4);
   background: var(--line);
 }
@@ -3226,7 +3230,7 @@ body.console-fullscreen #bar {
   display: flex;
   align-items: center;
   box-sizing: border-box;
-  height: 32px;
+  height: var(--pane-head-h);
   background: var(--bg-chrome);
   border-bottom: 1px solid var(--line);
 }
@@ -3247,6 +3251,12 @@ body.console-fullscreen #bar {
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
+}
+.thead:not(.on):hover {
+  background: var(--fill);
+}
+.thead:hover .thead-pick {
+  color: var(--fg);
 }
 .thead.on {
   background: var(--bg-selected);
@@ -3401,16 +3411,6 @@ body.console-fullscreen #bar {
    the person dragged them: `--code-tree-w` and `--code-outline-w`. */
 .kstage {
   container-type: inline-size;
-}
-.code-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-8);
-  padding: 0 var(--sp-16);
-  border-bottom: 1px solid var(--line);
-  height: 40px;
-  box-sizing: border-box;
-  flex: none;
 }
 .code-split {
   flex: 1;
@@ -4761,14 +4761,14 @@ body.console-fullscreen #bar {
   display: none;
 }
 .vlauncher .count {
-  min-width: 18px;
+  min-width: var(--sp-20);
   box-sizing: border-box;
   padding: 0 var(--sp-6);
   border-radius: var(--r-pill);
   background: var(--fill);
   color: var(--fg-muted);
   font-size: var(--fs-xs);
-  line-height: 18px;
+  line-height: var(--sp-20);
   text-align: center;
 }
 .vdot {
@@ -5424,6 +5424,7 @@ body.resizing:has(.brief-sash.held) {
 /* An open feature's edges: between the outline and the detail, and under
    the brief, whose sizes Rust keeps as it does the rail's. */
 .split-sash {
+  position: relative;
   flex: none;
   width: 6px;
   margin: 0 -3px;
@@ -5434,10 +5435,6 @@ body.resizing:has(.brief-sash.held) {
   height: 6px;
   margin: calc(-1 * var(--sp-8)) 0 -4px;
   cursor: row-resize;
-}
-.split-sash:hover,
-.split-sash.held {
-  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .brief-sash:hover,
 .brief-sash.held {
