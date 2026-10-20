@@ -22,6 +22,9 @@ const ICON = {
     dockLeft: '<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"></rect><rect x="2" y="3" width="4.5" height="10" rx="1.5" fill="currentColor"></rect></svg>',
     dockRight: '<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"></rect><rect x="9.5" y="3" width="4.5" height="10" rx="1.5" fill="currentColor"></rect></svg>',
     dockBottom: '<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"></rect><rect x="2" y="9" width="12" height="4" rx="1.5" fill="currentColor"></rect></svg>',
+    check: '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5"></path></svg>',
+    trash: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.6 9h6.8L12 4M6.8 6.5v4M9.2 6.5v4"></path></svg>',
+    warn: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l6.5 11.5h-13z"></path><path d="M8 6.5v3M8 11.5h.01"></path></svg>',
     close: '<svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7"></path></svg>',
     info: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 7.5V11M8 5.2h.01"></path></svg>',
     bell: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5h8l-1-1.5V6.5a3 3 0 0 0-6 0V9z"></path><path d="M6.8 12.5a1.3 1.3 0 0 0 2.4 0"></path></svg>',
@@ -86,6 +89,10 @@ export function ghosts(bars) {
             bar.style.marginLeft = `${indent}px`;
         return bar;
     }));
+}
+/** A label in the interface's one case: the keymap writes them lowercase. */
+export function sentence(label) {
+    return label.charAt(0).toUpperCase() + label.slice(1);
 }
 export function icon(name) {
     const holder = document.createElement('span');

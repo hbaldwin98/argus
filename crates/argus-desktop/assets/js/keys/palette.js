@@ -5,7 +5,7 @@
 //
 // What it lists comes from Rust while it is open (`src/keys/palette.rs`),
 // and choosing one is a call: the palette runs nothing itself.
-import { $, el, icon } from '../kit/dom.js';
+import { $, el, icon, sentence } from '../kit/dom.js';
 import { extensionResults } from '../extensions/views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './chords.js';
@@ -125,10 +125,6 @@ const COMMAND_ICON = {
     startShell: 'terminal',
     startAgent: 'plus',
 };
-/** A label in the interface's one case: the keymap writes them lowercase. */
-export function sentence(label) {
-    return label.charAt(0).toUpperCase() + label.slice(1);
-}
 function commandResult(command) {
     const place = command.place && command.place !== 'anywhere'
         ? state.keymap.find((g) => g.place === command.place)?.title

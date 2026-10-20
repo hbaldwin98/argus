@@ -351,14 +351,18 @@ function confirmDialog(question: Confirm): HTMLElement {
     : ['Remove ', el('span', { class: 'mono' }, question.name), '?'];
   const body = force
     ? [
-        el('div', { class: 'fg-muted' }, 'It has commits no other branch has.'),
+        el(
+          'div',
+          { class: 'warn-callout' },
+          icon('warn'),
+          el('span', null, 'It has commits no other branch has, and nothing is pushed.'),
+        ),
         question.commits.length > 0 &&
           el(
             'div',
             { class: 'commits' },
             question.commits.map((commit) => el('div', null, commitLine(commit))),
           ),
-        el('div', { class: 'meta' }, 'Local only: nothing is pushed.'),
       ]
     : [el('div', { class: 'fg-muted' }, 'Its panes end; its directory and branch are deleted.')];
   return el(
@@ -381,6 +385,7 @@ function confirmDialog(question: Confirm): HTMLElement {
       el(
         'div',
         { class: 'dhead' },
+        el('span', { class: 'danger-tile' }, icon('trash')),
         el('div', { class: 'type-title grow', id: 'confirm-title' }, title),
         closeButton(answerNo),
       ),

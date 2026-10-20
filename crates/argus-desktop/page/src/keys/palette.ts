@@ -7,7 +7,7 @@
 // and choosing one is a call: the palette runs nothing itself.
 
 import type { Command } from '../bindings/Command';
-import { $, el, icon, type IconName } from '../kit/dom.js';
+import { $, el, icon, sentence, type IconName } from '../kit/dom.js';
 import { extensionResults } from '../extensions/views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './chords.js';
@@ -174,11 +174,6 @@ const COMMAND_ICON: Partial<Record<Command['action'], IconName>> = {
   startShell: 'terminal',
   startAgent: 'plus',
 };
-
-/** A label in the interface's one case: the keymap writes them lowercase. */
-export function sentence(label: string): string {
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
 
 function commandResult(command: Command): Result {
   const place =

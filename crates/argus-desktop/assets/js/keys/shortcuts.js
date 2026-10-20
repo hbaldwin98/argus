@@ -1,8 +1,7 @@
 // The shortcuts sheet: every binding of the keymap Rust sends, under the
 // heading of where it works, so it lists exactly the keys dispatch runs.
-import { $, el, escKey, focusQuietly, icon } from '../kit/dom.js';
+import { $, el, focusQuietly, icon, sentence } from '../kit/dom.js';
 import { extensionSheetGroups } from '../extensions/views.js';
-import { sentence } from './palette.js';
 import { keycaps, leader } from './chords.js';
 import { state } from '../state.js';
 /** What had the keys before the sheet, to give them back to. */
@@ -28,10 +27,18 @@ function columns(groups) {
     }
     return cols.map((c) => c.node);
 }
+/** The first chord alone when a binding has many: a row of three alternatives
+ *  squeezes its label; the whole list is in the tooltip. */
+function keys(chords) {
+    const caps = keycaps(chords.length > 2 ? chords.slice(0, 1) : chords);
+    if (chords.length > 2)
+        caps.title = keycaps(chords).textContent ?? '';
+    return caps;
+}
 export function openSheet() {
     before = document.activeElement;
     const lead = leader();
-    const groups = state.keymap.map((group) => el('section', { class: 'sheet-group' }, el('div', { class: 'mlabel' }, group.title), group.bindings.map((binding) => el('div', { class: 'sheet-row' }, el('span', { class: 'grow' }, sentence(binding.label)), keycaps(binding.chords)))));
+    const groups = state.keymap.map((group) => el('section', { class: 'sheet-group' }, el('div', { class: 'mlabel' }, group.title), group.bindings.map((binding) => el('div', { class: 'sheet-row' }, el('span', { class: 'grow' }, sentence(binding.label)), keys(binding.chords)))));
     const close = el('button', { class: 'icon', 'aria-label': 'Close shortcuts', onclick: closeSheet }, icon('close'));
     $('over').replaceChildren(el('div', {
         class: 'scrim',
@@ -44,7 +51,7 @@ export function openSheet() {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'sheet-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'sheet-title' }, 'Keyboard shortcuts'), close), el('div', { class: 'sheet-body' }, columns([...groups, ...extensionSheetGroups()])), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, 'Keys inside a pane go to the pane, except the Everywhere group and ', el('span', { class: 'kbd' }, lead), ' then a key'), el('button', { class: 'btn', type: 'button', onclick: closeSheet }, 'Close ', escKey())))));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'sheet-title' }, 'Keyboard shortcuts'), close), el('div', { class: 'sheet-body' }, columns([...groups, ...extensionSheetGroups()])), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, 'Keys inside a pane go to the pane, except the Everywhere group and ', el('span', { class: 'kbd' }, lead), ' then a key')))));
     // The sheet holds the keys while open; Escape or ? puts it away.
     $('input').blur();
     focusQuietly(close);

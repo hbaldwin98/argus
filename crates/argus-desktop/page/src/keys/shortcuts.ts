@@ -1,9 +1,8 @@
 // The shortcuts sheet: every binding of the keymap Rust sends, under the
 // heading of where it works, so it lists exactly the keys dispatch runs.
 
-import { $, el, escKey, focusQuietly, icon } from '../kit/dom.js';
+import { $, el, focusQuietly, icon, sentence } from '../kit/dom.js';
 import { extensionSheetGroups } from '../extensions/views.js';
-import { sentence } from './palette.js';
 import { keycaps, leader } from './chords.js';
 import { state } from '../state.js';
 
@@ -32,6 +31,14 @@ function columns(groups: HTMLElement[]): HTMLElement[] {
   return cols.map((c) => c.node);
 }
 
+/** The first chord alone when a binding has many: a row of three alternatives
+ *  squeezes its label; the whole list is in the tooltip. */
+function keys(chords: Parameters<typeof keycaps>[0]): HTMLElement {
+  const caps = keycaps(chords.length > 2 ? chords.slice(0, 1) : chords);
+  if (chords.length > 2) caps.title = keycaps(chords).textContent ?? '';
+  return caps;
+}
+
 export function openSheet(): void {
   before = document.activeElement;
   const lead = leader();
@@ -45,7 +52,7 @@ export function openSheet(): void {
           'div',
           { class: 'sheet-row' },
           el('span', { class: 'grow' }, sentence(binding.label)),
-          keycaps(binding.chords),
+          keys(binding.chords),
         ),
       ),
     ),
@@ -89,7 +96,6 @@ export function openSheet(): void {
             el('span', { class: 'kbd' }, lead),
             ' then a key',
           ),
-          el('button', { class: 'btn', type: 'button', onclick: closeSheet }, 'Close ', escKey()),
         ),
       ),
     ),

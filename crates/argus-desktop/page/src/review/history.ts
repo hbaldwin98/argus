@@ -63,8 +63,8 @@ function diff(h: HistoryPage): HTMLElement {
         'div',
         { class: 'fhdr' },
         el('span', { class: 'mono fg-faint' }, h.commit ?? ''),
-        el('span', { class: 'mono' }, h.path),
-        el('span', { class: 'meta' }, 'against its first parent'),
+        el('span', { class: 'mono path' }, h.path),
+        el('span', { class: 'meta nowrap' }, 'against its first parent'),
         el('span', { class: 'grow' }),
         el(
           'button',

@@ -298,6 +298,9 @@
   --sp-24: 24px;
   --sp-32: 32px;
   --sp-44: 44px;
+  /* What the pane's own input line takes at the stage's foot, which the
+     terminal draws and the page cannot measure: a toast clears it. */
+  --stage-foot: calc(var(--sp-44) + var(--sp-32) + var(--sp-12));
   --r-xs: 4px;
   --r-sm: 6px;
   --r-md: 10px;
@@ -2276,7 +2279,7 @@ body.moving-pane * {
 .notice {
   position: absolute;
   left: calc(50% + var(--rail-w) / 2);
-  bottom: calc(var(--sp-44) * 2 + var(--sp-32) + var(--sp-8));
+  bottom: calc(var(--stage-foot) + var(--sp-24));
   transform: translateX(-50%);
   z-index: 9;
   display: flex;
@@ -2297,10 +2300,6 @@ body.moving-pane * {
 .notice > svg {
   flex: none;
   color: var(--attention);
-}
-.notice .icon:hover {
-  background: color-mix(in srgb, var(--fill) 70%, var(--fg) 12%);
-  color: var(--fg);
 }
 .notice-text {
   min-width: 0;
@@ -3991,21 +3990,69 @@ body.console-fullscreen #bar {
 .sheet-row {
   display: flex;
   align-items: flex-start;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: var(--sp-2) var(--sp-12);
   padding: var(--sp-2) 0;
   font: var(--type-small);
 }
-/* The keys keep their width and stay on the label's line; a long label wraps
-   beside them rather than dropping them to a line of their own. */
+/* Wide keys drop under their label, right-aligned, rather than squeezing it
+   to a word a line. */
 .sheet-row > .keys {
   flex: none;
   white-space: nowrap;
   margin-left: auto;
 }
 .sheet-row > .grow {
-  flex: 1 1 0;
+  flex: 1 1 55%;
   min-width: 0;
+}
+
+/* A pickable diff line lights under the pointer. */
+.review-diff > .dbody:not(.prose) > div:hover {
+  background: var(--fill);
+}
+/* The mark a destructive confirm leads with, so it cannot pass for a
+   harmless one. */
+.danger-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--sp-32);
+  height: var(--sp-32);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+.warn-callout {
+  display: flex;
+  gap: var(--sp-8);
+  align-items: flex-start;
+  border-radius: var(--r-md);
+  padding: var(--sp-8) var(--sp-12);
+  background: color-mix(in srgb, var(--attention) 12%, transparent);
+  color: var(--fg);
+}
+.warn-callout > svg {
+  flex: none;
+  margin-top: var(--sp-2);
+  color: var(--attention);
+}
+.themecard .name > svg,
+.saved > svg {
+  color: var(--ok);
+}
+.themecard .name > svg {
+  display: none;
+  margin-left: var(--sp-6);
+  vertical-align: -1px;
+}
+.themecard.on .name > svg {
+  display: inline;
+}
+.saved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
 }
 
 /* ---- The review dialog ------------------------------------------------- */
@@ -4096,6 +4143,12 @@ body.console-fullscreen #bar {
   padding: var(--sp-8) var(--sp-12);
   border-bottom: 1px solid var(--line);
   background: var(--bg-chrome);
+}
+.fhdr > .path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dbody {
   flex: 1;
@@ -4495,7 +4548,7 @@ body.console-fullscreen #bar {
 }
 .ap-folders {
   flex: none;
-  height: 180px;
+  max-height: 180px;
   min-width: 0;
   overflow: auto;
   border: 1px solid var(--line);
@@ -4638,11 +4691,6 @@ body.console-fullscreen #bar {
 }
 .settings .setrow {
   border-top: 0;
-  padding-top: var(--sp-12);
-}
-.settings .setgroup > .setrow + .setrow,
-.settings .setgroup > * + .setrow {
-  border-top: 1px solid var(--line);
 }
 .setversion {
   padding: var(--sp-8);

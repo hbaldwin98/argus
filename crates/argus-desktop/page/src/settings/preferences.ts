@@ -24,11 +24,11 @@ type Flavour = Exclude<Theme, 'system'>;
 
 /** Each flavour's own colours for its card: base, mantle, accent, text. */
 const FLAVOURS: { theme: Flavour; name: string; colours: [string, string, string, string] }[] = [
+  { theme: 'night', name: 'Argus Night', colours: ['#0d1020', '#0a0c16', '#98c0ef', '#9aa7bd'] },
   { theme: 'mocha', name: 'Mocha', colours: ['#1e1e2e', '#181825', '#cba6f7', '#a6adc8'] },
   { theme: 'macchiato', name: 'Macchiato', colours: ['#24273a', '#1e2030', '#c6a0f6', '#a5adcb'] },
   { theme: 'frappe', name: 'Frappé', colours: ['#303446', '#292c3c', '#ca9ee6', '#a5adce'] },
   { theme: 'latte', name: 'Latte', colours: ['#eff1f5', '#e6e9ef', '#7a33d6', '#5c5f77'] },
-  { theme: 'night', name: 'Argus Night', colours: ['#0d1020', '#0a0c16', '#98c0ef', '#9aa7bd'] },
 ];
 
 const BACKDROPS: Record<Backdrop, string> = {
@@ -245,7 +245,7 @@ export function openSettings(): void {
         onclick: () => set({ set: 'theme', theme: flavour.theme }),
       },
       preview,
-      el('span', { class: 'strong' }, flavour.name),
+      el('span', { class: 'strong name' }, flavour.name, icon('check')),
     );
     cards.set(flavour.theme, card);
   }
@@ -471,7 +471,7 @@ export function openSettings(): void {
       'div',
       { class: 'dhead' },
       el('div', { class: 'type-title grow', id: 'settings-title' }, 'Settings'),
-      el('span', { class: 'meta' }, 'Saved as you change them'),
+      el('span', { class: 'meta saved' }, icon('check'), 'Saved as you change them'),
       close,
     ),
     el('div', { class: 'split' }, nav, body),

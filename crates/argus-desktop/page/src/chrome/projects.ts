@@ -247,6 +247,7 @@ function removeDialog(r: Removing): HTMLElement {
       el(
         'div',
         { class: 'dhead' },
+        el('span', { class: 'danger-tile' }, icon('trash')),
         el(
           'div',
           { class: 'type-title grow', id: 'remove-title' },
@@ -267,8 +268,13 @@ function removeDialog(r: Removing): HTMLElement {
         r.panes > 0 &&
           el(
             'div',
-            { class: 'meta' },
-            `${r.panes} pane${r.panes === 1 ? ' is' : 's are'} running in it; argusd removes it only once they are closed.`,
+            { class: 'warn-callout' },
+            icon('warn'),
+            el(
+              'span',
+              null,
+              `${r.panes} pane${r.panes === 1 ? ' is' : 's are'} running in it; argusd removes it only once they are closed.`,
+            ),
           ),
       ),
       el(
@@ -576,8 +582,8 @@ function addDialog(a: AddProjectPage): HTMLElement {
           'span',
           { class: 'dwhy grow' },
           a.kind === 'new'
-            ? 'Adds to the daemon’s config; only the new repository is made.'
-            : 'Adds to the daemon’s config; nothing in the folders is changed.',
+            ? 'Only Argus’s config changes, and the new repository'
+            : 'Only Argus’s config changes',
         ),
         el('button', { class: 'btn', onclick: closeAdd }, 'Cancel ', escKey()),
         el(

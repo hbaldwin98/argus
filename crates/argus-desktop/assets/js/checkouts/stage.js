@@ -171,10 +171,9 @@ function confirmDialog(question) {
         : ['Remove ', el('span', { class: 'mono' }, question.name), '?'];
     const body = force
         ? [
-            el('div', { class: 'fg-muted' }, 'It has commits no other branch has.'),
+            el('div', { class: 'warn-callout' }, icon('warn'), el('span', null, 'It has commits no other branch has, and nothing is pushed.')),
             question.commits.length > 0 &&
                 el('div', { class: 'commits' }, question.commits.map((commit) => el('div', null, commitLine(commit)))),
-            el('div', { class: 'meta' }, 'Local only: nothing is pushed.'),
         ]
         : [el('div', { class: 'fg-muted' }, 'Its panes end; its directory and branch are deleted.')];
     return el('div', {
@@ -189,7 +188,7 @@ function confirmDialog(question) {
         role: 'alertdialog',
         'aria-modal': 'true',
         'aria-labelledby': 'confirm-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'confirm-title' }, title), closeButton(answerNo)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', id: 'confirm-keep', onclick: answerNo }, force ? 'Keep the branch ' : 'Keep it ', escKey()), el('button', {
+    }, el('div', { class: 'dhead' }, el('span', { class: 'danger-tile' }, icon('trash')), el('div', { class: 'type-title grow', id: 'confirm-title' }, title), closeButton(answerNo)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', id: 'confirm-keep', onclick: answerNo }, force ? 'Keep the branch ' : 'Keep it ', escKey()), el('button', {
         class: 'btn danger',
         onclick: () => {
             call('answer_checkouts', { yes: true });

@@ -40,7 +40,7 @@ function diff(h) {
     else
         body = h.diff.map((d) => diffRow(d));
     return el('section', { class: 'review-diff' }, h.path &&
-        el('div', { class: 'fhdr' }, el('span', { class: 'mono fg-faint' }, h.commit ?? ''), el('span', { class: 'mono' }, h.path), el('span', { class: 'meta' }, 'against its first parent'), el('span', { class: 'grow' }), el('button', {
+        el('div', { class: 'fhdr' }, el('span', { class: 'mono fg-faint' }, h.commit ?? ''), el('span', { class: 'mono path' }, h.path), el('span', { class: 'meta nowrap' }, 'against its first parent'), el('span', { class: 'grow' }), el('button', {
             class: 'btn sm',
             onclick: () => call('history_action', { action: 'asReview', row: null }),
         }, 'Open as a review ', keycap('O'))), el('div', { class: 'dbody', id: 'history-body' }, body));
