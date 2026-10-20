@@ -891,6 +891,12 @@
   color: var(--fg-faint);
   font-weight: 400;
 }
+/* A rail row's title is text to read; faint fails 4.5:1 on Latte's chrome. */
+.pane.idle,
+.pane.done,
+.pane.exited {
+  color: var(--fg-muted);
+}
 
 /* rail */
 .rail {
@@ -933,10 +939,18 @@
   cursor: pointer;
   text-align: left;
 }
-.projbtn:hover,
-.projbtn[aria-expanded='true'] {
+.projbtn:hover {
   background: var(--fill);
   color: var(--fg);
+}
+/* Open is its own state, so pointing at the button while its menu is up
+   still shows a hover. */
+.projbtn[aria-expanded='true'] {
+  background: var(--bg-selected);
+  color: var(--fg);
+}
+.projbtn[aria-expanded='true']:hover {
+  background: color-mix(in srgb, var(--bg-selected), var(--fill));
 }
 .projbtn:active {
   background: color-mix(in srgb, var(--fill), var(--fg) 8%);
@@ -949,7 +963,8 @@
   text-transform: none;
   padding: 1px var(--sp-8);
   border-radius: var(--r-pill);
-  background: var(--fill);
+  background: color-mix(in srgb, var(--attention) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
   color: var(--attention);
 }
 /* The rail as the sidebar's tree: a quiet heading per repository, a
@@ -1816,10 +1831,6 @@ a:focus-visible,
 .st.pillw.done {
   color: var(--ok);
 }
-.badge {
-  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
-  background: color-mix(in srgb, var(--attention) 12%, transparent);
-}
 /* The close button sits over the status word, shown while the row is
    pointed at or holds the keyboard, so the rail stays a list of panes. */
 .pane-row {
@@ -2054,6 +2065,17 @@ body.maximized .winbtn .restore {
   position: relative;
   background: var(--bg-sunken);
 }
+/* The Workspace insets its terminal in a card so its edges agree with the
+   attention strip above it. */
+.stage-body:has(> .split:not([hidden])) {
+  padding: 0 var(--sp-16) var(--sp-16);
+}
+.stage-body > .split:not([hidden]) {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
 .stage-body.held {
   opacity: 0.55;
 }
@@ -2247,6 +2269,11 @@ body.moving-pane * {
 .empty-icon.tile svg {
   width: 24px;
   height: 24px;
+  /* The glyph's own empty-icon class would otherwise grey it. */
+  color: inherit;
+}
+.empty-where {
+  font: var(--type-small);
 }
 .empty-actions {
   display: flex;
@@ -2401,6 +2428,9 @@ body.moving-pane * {
   border-radius: var(--r-lg);
   background: var(--bg-raised);
   padding: var(--sp-12);
+}
+.composer:hover:not(:focus-within) {
+  border-color: color-mix(in srgb, var(--ring) 50%, var(--line-strong));
 }
 .composer:focus-within {
   border-color: var(--ring);
@@ -5528,13 +5558,6 @@ body.console-fullscreen #bar {
 .tickets {
   gap: var(--sp-6);
 }
-.pane-views {
-  flex: none;
-  color: var(--accent);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
 
 /* The views panel holds what the panel shows, beside its edge. */
 .vpanel-inner {
@@ -7258,7 +7281,7 @@ button.vtree-chev:focus-visible {
   display: flex;
   align-items: center;
   gap: var(--sp-12);
-  margin: var(--sp-8) var(--sp-12) 0;
+  margin: var(--sp-8) var(--sp-16) 0;
   padding: var(--sp-8) var(--sp-12);
   border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
   border-radius: var(--r-md);

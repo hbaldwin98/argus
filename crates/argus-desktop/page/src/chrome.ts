@@ -154,15 +154,15 @@ function drawRail(): void {
     }
   }
   rail.replaceChildren(...rows);
-  // A long tree puts the pane on screen below the fold; scroll to it once
-  // per pane, not on every redraw, so reading the rail is not fought.
+  // A long tree puts the pane on screen below the fold.
   const on = rail.querySelector('.pane.on');
   const shownPane = state.rail.shown?.pane ?? null;
   if (on && shownPane !== scrolledTo) on.scrollIntoView({ block: 'nearest' });
   scrolledTo = shownPane;
 }
 
-/** Per pane, not per redraw, so a person reading the rail is not fought. */
+/** The pane last scrolled to: once per pane, not per redraw, so a person
+ *  reading the rail is not fought. */
 let scrolledTo: number | null = null;
 
 function repoRow(repo: RailRepository): HTMLElement {
@@ -373,15 +373,6 @@ function paneRow(checkout: number, pane: RailPane): HTMLElement {
       el(
         'span',
         { class: 'pane-end' },
-        pane.views > 0 &&
-          el(
-            'span',
-            {
-              class: 'pane-views',
-              title: `${pane.views} ${pane.views === 1 ? 'view' : 'views'} from this agent`,
-            },
-            `${pane.views}`,
-          ),
         word
           ? el('span', { class: `st pillw ${pane.status}` }, word)
           : el(
@@ -843,8 +834,11 @@ function drawEnded(): void {
     found
       ? el(
           'button',
-          { class: 'btn sm', onclick: () => restart(found.checkout.id, found.pane) },
-          'Restart',
+          {
+            class: 'btn sm',
+            onclick: () => startHere(found.checkout.id, endedTemplate(found.pane)),
+          },
+          endedTemplate(found.pane) ? `Start ${endedTemplate(found.pane)} here` : 'New shell here',
         )
       : '',
     el(
@@ -855,16 +849,17 @@ function drawEnded(): void {
   );
 }
 
-/** Starts the ended pane's kind again where it ran and lets go of the old
- *  one; both are the daemon's to answer, the rail follows its tree. */
-function restart(checkout: number, pane: RailPane): void {
-  const agent = pane.agent ? state.rail.templates[0] : null;
-  if (pane.agent && !agent) {
-    notice('argusd offers no agent to start');
-    return;
-  }
-  start(checkout, agent ?? null);
-  call('close', { pane: pane.id });
+/** Starts a new pane where the ended one ran. The page cannot know what the
+ *  ended pane ran (a pane carries only whether it was an agent), so it offers
+ *  what it can start, by name, and leaves the old pane to 'Close pane'. */
+function startHere(checkout: number, agent: string | null): void {
+  start(checkout, agent);
+}
+
+/** The template an ended agent pane's button starts: the window's first, or
+ *  none (a shell) when the pane was not an agent or argusd offers no template. */
+function endedTemplate(pane: RailPane): string | null {
+  return pane.agent ? (state.rail.templates[0] ?? null) : null;
 }
 
 function drawStage(): void {
@@ -886,8 +881,12 @@ function drawStage(): void {
     measure = 'connecting';
     body = [
       el('div', { class: 'empty-icon spin' }, icon('spinner')),
-      el('div', { class: 'empty-title' }, `Connecting to argusd on ${host ?? 'this machine'}`),
-      el('div', { class: 'fg-muted' }, 'The sidebar fills in as soon as the daemon answers.'),
+      el('div', { class: 'empty-title' }, 'Connecting to argusd'),
+      el(
+        'div',
+        { class: 'fg-muted' },
+        `${host ? `on ${host}` : 'on this machine'} · the sidebar fills in when it answers`,
+      ),
       detail && el('div', { class: 'err' }, detail),
       // Nothing is loaded to open the switcher from, so there is always one
       // way out: back to this machine, or to the settings.
@@ -942,9 +941,18 @@ function drawStage(): void {
             'button',
             { class: 'btn', onclick: () => call('spawn_shell', { checkout: co.id }) },
             icon('console'),
-            'Open a shell',
+            co.branch ? `Open a shell on ${co.branch}` : 'Open a shell',
           ),
       ),
+      co &&
+        repo &&
+        el(
+          'div',
+          { class: 'empty-where fg-muted' },
+          'on ',
+          el('span', { class: 'mono' }, co.branch || co.name),
+          ` in ${repo.name}`,
+        ),
       stillRunning(project),
     ];
   }
