@@ -2,7 +2,7 @@
 // person does. It decides nothing about the daemon — the model is the
 // window's `session` — so each event replaces what the page held.
 import { chime, listen as listenForSound } from './system/chime.js';
-import { closeStart, drawChrome, listenToRailEdge, notice, railPicked, reconnect, unpickRail, } from './chrome.js';
+import { closeStart, drawChrome, drawHead, listenToRailEdge, notice, railPicked, reconnect, unpickRail, } from './chrome.js';
 import { drawCheckouts } from './checkouts/stage.js';
 import { drawCode } from './code/stage.js';
 import { drawDocks, listen as listenToDocks } from './layout/docks.js';
@@ -160,6 +160,8 @@ function receive(event) {
             break;
         case 'views':
             drawViews(event);
+            // A view open as a page names the strip.
+            drawHead();
             // A ticket link says when a view of it waits.
             drawFeatures();
             break;

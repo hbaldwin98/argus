@@ -9,6 +9,7 @@ import { chip } from './chip.js';
 import { dockMenuButton } from '../layout/docks.js';
 import { draggable } from '../layout/drag.js';
 import { $, el, icon } from '../kit/dom.js';
+import { openMenu } from '../kit/menu.js';
 import { closesOnMiddle } from '../kit/middle.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -30,7 +31,8 @@ export function drawViews(page = shown) {
     const open = page.open && page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
     const waiting = page.views.length;
     launcher.hidden = viewsOut() || waiting === 0;
-    launcher.replaceChildren(el('span', { class: 'vdot', 'aria-hidden': 'true' }), `${waiting} ${waiting === 1 ? 'view' : 'views'}`);
+    launcher.replaceChildren('Views', el('span', { class: 'count' }, String(waiting)));
+    launcher.title = `${waiting} ${waiting === 1 ? 'view' : 'views'} agents showed`;
     drawPopped(page);
     if (!open) {
         panel.replaceChildren();
@@ -93,25 +95,33 @@ function tabs(views, open) {
 function header(v, popped) {
     const at = new Date(Number(v.at) * 1000).toISOString();
     const subject = v.subject;
-    return el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading' }, v.view.title), v.view.status && chip(v.view.status)), el('div', { class: 'vpanel-meta' }, subject &&
-        viewLink(subject.url, el('span', { class: 'track' }, subject.tracker, ' ', el('b', null, subject.key))), el('span', { class: 'meta', title: new Date(at).toLocaleString() }, v.from ? `read by ${v.from} · ${ago(at)}` : ago(at), v.refreshing ? ' · asked to read it again' : ''), el('span', { class: 'vpanel-acts' }, v.view.actions.map((a) => actionButton(a, ctxOf(v))), el('button', {
-        class: 'btn sm',
-        type: 'button',
-        disabled: v.refreshing,
-        title: 'Ask the agent to read it again',
-        onclick: () => call('refresh_view', { pane: v.pane, id: v.view.id }),
-    }, 'Refresh'), el('button', {
-        class: 'btn sm',
-        type: 'button',
-        title: popped ? 'Put the view back in its dock' : 'Open the view as a page',
+    const act = {
+        refresh: () => call('refresh_view', { pane: v.pane, id: v.view.id }),
+        place: () => call(popped ? 'open_view' : 'pop_out_view', { pane: v.pane, id: v.view.id }),
+        close: () => call('close_view', { pane: v.pane, id: v.view.id }),
+    };
+    const items = () => [
+        { label: 'Refresh', disabled: v.refreshing && 'Already asked', run: act.refresh },
         // Opening it in the dock is what ends the page.
-        onclick: () => call(popped ? 'open_view' : 'pop_out_view', { pane: v.pane, id: v.view.id }),
-    }, popped ? 'Dock' : 'Pop out'), el('button', {
-        class: 'btn sm',
+        { label: popped ? 'Put back in its dock' : 'Pop out as a page', run: act.place },
+        'sep',
+        { label: 'Close this view for every window', danger: true, run: act.close },
+    ];
+    return el('div', { class: 'vpanel-head' }, 
+    // As a page the strip already carries the view's name.
+    !popped &&
+        el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading' }, v.view.title), v.view.status && chip(v.view.status)), el('div', { class: 'vpanel-meta' }, popped && v.view.status && chip(v.view.status), subject &&
+        viewLink(subject.url, el('span', { class: 'track' }, subject.tracker, ' ', el('b', null, subject.key))), el('span', { class: 'meta', title: new Date(at).toLocaleString() }, v.from ? `read by ${v.from} · ${ago(at)}` : ago(at), v.refreshing ? ' · asked to read it again' : ''), el('span', { class: 'vpanel-acts' }, v.view.actions.map((a) => actionButton(a, ctxOf(v))), el('button', {
+        class: 'icon',
         type: 'button',
-        title: 'Close this view for every window',
-        onclick: () => call('close_view', { pane: v.pane, id: v.view.id }),
-    }, 'Close'))));
+        title: 'More: refresh, pop out, close',
+        'aria-label': `More about ${v.view.title}`,
+        'aria-haspopup': 'menu',
+        onclick: (e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            openMenu(v.view.title, items(), { x: box.right - 200, y: box.bottom + 4 });
+        },
+    }, icon('more')))));
 }
 /** What the view's blocks, and the buttons in its header, are drawn with. */
 function ctxOf(v) {
@@ -134,6 +144,13 @@ export function viewOf(link) {
     return shown.views.find((v) => v.subject !== null &&
         (v.subject.url === link.url ||
             (v.subject.tracker === link.tracker && v.subject.key === link.key)));
+}
+/** The title of the view open as a page, for the strip. */
+export function poppedViewTitle() {
+    const at = shown.popped;
+    return at
+        ? (shown.views.find((v) => v.pane === at.pane && v.view.id === at.id)?.view.title ?? null)
+        : null;
 }
 /** Brings the newest view out, from the title strip's button. */
 export function openNewestView() {

@@ -48,18 +48,10 @@ function head(c: Checkouts): HTMLElement {
     { class: 'fhead index-head' },
     el(
       'div',
-      { class: 'crumbs' },
-      el('span', { class: 'fg' }, 'Checkouts'),
-      el('span', { class: 'grow' }),
-      el('span', { class: 'meta' }, keycap('Enter'), ' open · ', keycap('D'), ' delete'),
-    ),
-    el(
-      'div',
       { class: 'actions index-tools' },
-      el('span', { class: 'type-title' }, `Checkouts in ${c.repository}`),
       el(
         'span',
-        { class: 'meta' },
+        { class: 'meta', title: 'Enter open · D delete' },
         `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`,
         c.main && [' · main ', el('span', { class: 'mono fg-ref' }, c.main)],
       ),

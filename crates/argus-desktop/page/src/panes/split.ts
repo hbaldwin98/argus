@@ -117,7 +117,6 @@ function head(i: number, pane: Shown): HTMLElement {
       title: 'Drag onto another pane to move this one',
       onmousedown: (e: MouseEvent) => startMove(e, i, pane.pane),
     },
-    el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'),
     el('span', { class: 'ttl' }, pane.title),
     el('span', { class: `sdot ${pane.status}`, 'aria-hidden': 'true' }),
     // The Workspace's own pane cannot be taken out, but keeps the button's

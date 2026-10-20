@@ -1,16 +1,17 @@
 // The window's frame around the stage: the sidebar and its nav, the strip's
 // words, the sidebar's foot, the empty stage, and notices that pass.
 import { drawCheckouts } from './checkouts/stage.js';
-import { drawCode } from './code/stage.js';
+import { codeStrip, drawCode } from './code/stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';
 import { drawConsole } from './panes/console.js';
 import { $, el, ghosts, icon } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extensions/views.js';
 import { drawSavedNav } from './views/saved.js';
+import { poppedViewTitle } from './views/agent.js';
 import { drawFeatures } from './board/feature_stage.js';
 import { chordsFor, keycaps, presses } from './keys/chords.js';
-import { contextMenu } from './kit/menu.js';
+import { contextMenu, openMenu } from './kit/menu.js';
 import { closesOnMiddle } from './kit/middle.js';
 import { drawHeading, drawRemoving } from './chrome/projects.js';
 import { renameDialog } from './panes/rename.js';
@@ -483,32 +484,58 @@ export function startAction(action) {
 }
 /** The strip's words: the pane on screen, or the stage and the
  *  repository it reads. */
-function drawHead() {
+export function drawHead() {
     const { shown } = state.rail;
     // Fullscreen, the console is what the strip names, whichever stage is
     // under it.
     const stage = state.console?.place === 'fullscreen' ? 'console' : state.rail.stage;
     const head = $('head');
+    const more = $('head-more');
     if (stage !== 'workspace') {
         const repository = stage === 'console' || stage === 'extension' ? null : chosenRepository();
-        head.replaceChildren(headLine(el('span', { class: 'type-heading' }, stage === 'extension' ? extensionPageTitle() : STAGE_NAME[stage]), repository
-            ? el('span', { class: 'crumbs' }, el('span', { class: 'fg-faint' }, '·'), repository)
-            : ''));
+        const code = stage === 'code' ? codeStrip() : null;
+        more.replaceChildren(...(code?.tools ?? []));
+        head.replaceChildren(headStack(repository
+            ? el('span', null, repository, ...(code?.crumb.flatMap((part) => [el('span', { class: 'fg-faint' }, '/'), part]) ??
+                []))
+            : null, el('span', { class: 'type-heading head-title' }, stage === 'extension'
+            ? extensionPageTitle()
+            : stage === 'view'
+                ? (poppedViewTitle() ?? STAGE_NAME.view)
+                : STAGE_NAME[stage])));
         return;
     }
     if (!shown) {
         head.replaceChildren();
+        more.replaceChildren();
         return;
     }
-    head.replaceChildren(headLine(el('span', { class: 'crumbs' }, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout), el('span', { class: 'fg-faint' }, '/')), el('span', { class: 'head-name' }, el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'), el('span', {
+    const size = screen.sizeLabel();
+    head.replaceChildren(headStack(el('span', null, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout)), el('span', { class: 'head-name' }, el('span', {
         class: 'type-heading head-title',
         oncontextmenu: contextMenu(shown.title, () => paneMenu(shown.pane, shown.title)),
-    }, shown.title)), el('span', { class: `pill ${shown.status}` }, shown.status), shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '', el('span', { class: 'grow' }), el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel())), closeButton(shown.pane, shown.title));
+    }, shown.title), el('span', { class: `pill ${shown.status}` }, shown.status), shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '')), 
+    // The grid is debugging detail: faint, and its words are in the tooltip.
+    el('span', { class: 'meta mono head-size', id: 'size', title: 'Size in columns and rows' }, size));
+    more.replaceChildren(el('button', {
+        class: 'icon',
+        type: 'button',
+        title: 'More: rename or close this pane',
+        'aria-label': `More about ${shown.title}`,
+        'aria-haspopup': 'menu',
+        onclick: (e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            openMenu(shown.title, paneMenu(shown.pane, shown.title), {
+                x: box.right - 180,
+                y: box.bottom + 4,
+            });
+        },
+    }, icon('more')));
 }
-/** The strip's words on one baseline: centring each on its own box sets
- *  the small crumbs and the heading at different heights. */
-function headLine(...parts) {
-    return el('span', { class: 'head-line' }, ...parts);
+/** The strip's words, stacked: the small crumb over the title, so a stage
+ *  is named once. */
+function headStack(crumb, ...rest) {
+    return el('span', { class: 'head-stack' }, crumb ? el('span', { class: 'crumbs' }, crumb) : '', el('span', { class: 'head-line' }, ...rest));
 }
 /** What a pane this window resumed a session in was resumed from. */
 function resumedFrom(from) {

@@ -306,7 +306,7 @@
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.35);
   --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.45);
   --rail-w: 288px;
-  --header-h: 47px;
+  --header-h: 56px;
   --control-h: 30px;
   --control-h-sm: 24px;
   --icon-btn: 28px;
@@ -1284,24 +1284,17 @@
 }
 .lens {
   display: flex;
-  gap: var(--sp-20);
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-8);
 }
 .lt {
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-weight: 600;
-  padding: var(--sp-8) 0;
-  cursor: pointer;
-  display: inline-flex;
   gap: var(--sp-6);
-  align-items: center;
+  background: transparent;
 }
 .lt.on {
-  color: var(--fg);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  background: var(--bg-selected);
 }
+
 .orow,
 .srow,
 .prow {
@@ -1894,22 +1887,110 @@ body.mac .rail .brand {
   padding: 0 var(--sp-16) 0 var(--sp-20);
   border-bottom: 0;
 }
-.head-line {
+/* The breadcrumb over the title: a stage is named once, here. */
+.head-stack {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-12);
-  white-space: nowrap;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-2);
 }
-.head-line .crumbs {
-  gap: var(--sp-6);
+.head-stack .crumbs {
+  gap: var(--sp-4);
+  font-size: var(--fs-xs);
+  line-height: 14px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.head-stack .crumbs > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.head-stack .crumbs .mono {
+  font-size: var(--fs-xs);
+}
+.head-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  white-space: nowrap;
 }
 .head-name {
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-6);
+  align-items: center;
+  gap: var(--sp-8);
   min-width: 0;
+}
+/* The status pill: a dot and a word, tinted by the status it names. */
+.head .pill {
+  --tone: var(--fg-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  flex: none;
+  padding: 1px var(--sp-8);
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  color: var(--tone);
+}
+.head .pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.head .pill.working {
+  --tone: var(--accent);
+}
+.head .pill.waiting,
+.head .pill.needs-review {
+  --tone: var(--attention);
+}
+.head .pill.failed {
+  --tone: var(--danger);
+}
+.head .pill.done {
+  --tone: var(--ok);
+}
+.head .pill.idle::before,
+.head .pill.exited::before {
+  background: transparent;
+  border: 1px solid var(--tone);
+}
+/* Debugging detail, so faint, and gone when the strip is short of room. */
+.head-size {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+}
+@media (max-width: 1100px) {
+  .head-size {
+    display: none;
+  }
+}
+/* The strip's actions: the views launcher, the overflow, and a hairline
+   before the window's own buttons. */
+.strip-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding-right: var(--sp-8);
+}
+.strip-tools::after {
+  content: '';
+  order: 3;
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin-left: var(--sp-4);
 }
 .winbtns {
   flex: none;
@@ -1980,17 +2061,19 @@ body.maximized .winbtn .restore {
   min-height: 0;
 }
 .gcell.keyed > .thead {
+  background: var(--bg-selected);
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+.gcell.keyed > .thead .ttl {
+  color: var(--fg);
 }
 /* One height for every pane's header, close button or not: the terminal
    under it gets what is left, so a header an icon taller sizes its pane a
    row shorter than its neighbour's. */
 .thead.gripper {
-  height: var(--control-h-sm);
-  box-sizing: border-box;
   cursor: grab;
   gap: var(--sp-6);
-  padding-left: var(--sp-8);
+  padding-left: var(--sp-12);
   user-select: none;
 }
 .thead.gripper .x-room {
@@ -2003,7 +2086,11 @@ body.maximized .winbtn .restore {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--fg-muted);
 }
+
 .gutter {
   position: absolute;
   z-index: 2;
@@ -2801,14 +2888,17 @@ body.float-moving * {
 .dock-right {
   border-left: 1px solid var(--line);
 }
-/* A dock's tabs, only while it holds more than one panel; each panel
-   heads itself. */
-.dock-tabs {
+/* ONE tab strip for the dock's panels, the console's tabs and an agent's
+   views: the same height, the same tab, the same selected state. A tab
+   switches what is shown; a segment (.seg) switches a mode. */
+.dock-tabs,
+.chead,
+.vpanel-tabs {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  height: 32px;
+  gap: var(--sp-4);
+  height: 40px;
   box-sizing: border-box;
   padding: 0 var(--sp-8);
   border-bottom: 1px solid var(--line);
@@ -2818,43 +2908,75 @@ body.float-moving * {
 .dock-tabs[hidden] {
   display: none;
 }
-.dock-tab {
+.dock-tab,
+.ctab,
+.vpanel-tab,
+.lt {
   flex: none;
   display: inline-flex;
   align-items: center;
-  max-width: 200px;
+  min-width: 0;
+  max-width: 220px;
+  height: 28px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
+  transition:
+    background-color 120ms,
+    border-color 120ms;
 }
-.dock-tab:hover {
+.dock-tab:hover,
+.ctab:hover,
+.vpanel-tab:hover,
+.lt:hover {
   background: var(--fill);
 }
-.dock-tab.on {
-  background: var(--bg-surface);
-  box-shadow: inset 0 -2px 0 var(--accent);
+.dock-tab.on,
+.ctab.on,
+.vpanel-tab.on,
+.lt.on {
+  background: var(--bg-selected);
+  border-color: var(--line-strong);
 }
-.dock-tab-pick {
+.dock-tab-pick,
+.ctab-pick,
+.vpanel-tab-pick,
+.lt {
   display: inline-flex;
   align-items: center;
+  gap: var(--sp-6);
   min-width: 0;
-  height: var(--control-h-sm);
-  padding: 0 var(--sp-8);
-  border: 0;
-  background: transparent;
+  padding: 0 var(--sp-4) 0 var(--sp-12);
   color: var(--fg-muted);
   font: inherit;
   font-size: var(--fs-sm);
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
 }
-.dock-tab:has(.x) .dock-tab-pick {
-  padding-right: var(--sp-2);
+.dock-tab-pick,
+.ctab-pick,
+.vpanel-tab-pick {
+  height: 100%;
+  border: 0;
+  background: transparent;
 }
-.dock-tab.on .dock-tab-pick {
+.dock-tab:not(:has(.x)) .dock-tab-pick,
+.ctab:not(:has(.x)) .ctab-pick,
+.vpanel-tab:not(:has(.x)) .vpanel-tab-pick,
+.lt {
+  padding-right: var(--sp-12);
+}
+.dock-tab.on .dock-tab-pick,
+.ctab.on .ctab-pick,
+.vpanel-tab.on .vpanel-tab-pick,
+.lt.on {
   color: var(--fg);
 }
 /* A long title is cut short in its tab; the whole of it is the tab's
    tooltip. */
 .dock-tab .ttl,
+.ctab .ttl,
 .vpanel-tab .ttl {
   min-width: 0;
   overflow: hidden;
@@ -2862,13 +2984,22 @@ body.float-moving * {
   white-space: nowrap;
 }
 .dock-tab .x,
-.vpanel-tab .x {
+.ctab .x,
+.vpanel-tab .x,
+.thead .x {
   flex: none;
   width: 20px;
   height: 20px;
-  margin-right: var(--sp-2);
+  margin-right: var(--sp-4);
   color: var(--fg-faint);
 }
+.dock-tab .x:hover,
+.ctab .x:hover,
+.vpanel-tab .x:hover,
+.thead .x:hover {
+  color: var(--fg);
+}
+
 .dock-body {
   flex: 1;
   min-width: 0;
@@ -2963,6 +3094,51 @@ body.panel-dragging * {
   box-shadow: inset 3px 0 0 -1px var(--accent);
 }
 
+/* A resize edge shows a grip under the pointer: the hairline alone is hard
+   to find, and hovering it says it can be taken. */
+.dock-sash::after,
+.sash::after,
+.split-sash::after,
+.gutter::after {
+  content: '';
+  position: absolute;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms;
+  pointer-events: none;
+}
+.dock-sash::after,
+.split-sash::after,
+.gutter.vertical::after {
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 32px;
+  transform: translate(-50%, -50%);
+}
+.sash::after,
+.gutter.horizontal::after {
+  top: 50%;
+  left: 50%;
+  width: 32px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+}
+.dock-sash:hover::after,
+.dock-sash.held::after,
+.sash:hover::after,
+.sash.held::after,
+.split-sash:hover::after,
+.split-sash.held::after,
+.gutter:hover::after,
+.gutter.held::after {
+  opacity: 1;
+}
+.split-sash {
+  position: relative;
+}
+
 /* ---- The console ------------------------------------------------------- */
 
 /* In its dock, filling it; the Console stage and fullscreen give it the
@@ -3010,59 +3186,16 @@ body.console-fullscreen #bar {
   top: 1px;
 }
 .chead {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: 36px;
-  box-sizing: border-box;
-  padding: 0 var(--sp-8) 0 var(--sp-16);
-  background: var(--bg-chrome);
-  border-bottom: 1px solid var(--line);
+  padding-left: var(--sp-12);
 }
 .ctabs {
   display: flex;
-  gap: var(--sp-2);
+  gap: var(--sp-4);
   min-width: 0;
-  margin-left: var(--sp-8);
+  margin-left: var(--sp-4);
   overflow: hidden;
 }
-.ctab {
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--r-sm);
-  min-width: 0;
-}
-.ctab:hover {
-  background: var(--fill);
-}
-.ctab.on {
-  background: var(--bg-surface);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-.ctab-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-6);
-  min-width: 0;
-  height: var(--icon-btn);
-  padding: 0 var(--sp-4) 0 var(--sp-12);
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: var(--fs-sm);
-  white-space: nowrap;
-  cursor: pointer;
-}
-.ctab.on .ctab-pick {
-  color: var(--fg);
-}
-.ctab .x {
-  width: 20px;
-  height: 20px;
-  color: var(--fg-faint);
-}
+
 .cbody {
   flex: 1;
   min-height: 0;
@@ -3092,11 +3225,10 @@ body.console-fullscreen #bar {
   flex: none;
   display: flex;
   align-items: center;
-  padding-right: var(--sp-4);
+  box-sizing: border-box;
+  height: 32px;
+  background: var(--bg-chrome);
   border-bottom: 1px solid var(--line);
-}
-.thead.on {
-  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .thead-pick {
   flex: 1;
@@ -3104,25 +3236,29 @@ body.console-fullscreen #bar {
   display: flex;
   align-items: center;
   gap: var(--sp-6);
-  height: 24px;
+  height: 100%;
   padding: 0 var(--sp-12);
   border: 0;
   background: transparent;
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   font: inherit;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
+  font-weight: 500;
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
+}
+.thead.on {
+  background: var(--bg-selected);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .thead.on .thead-pick {
   color: var(--fg);
 }
 .thead .x {
-  width: 20px;
-  height: 20px;
-  color: var(--fg-faint);
+  margin-right: var(--sp-4);
 }
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -4544,47 +4680,7 @@ body.console-fullscreen #bar {
   min-width: 0;
   min-height: 0;
 }
-.vpanel-tabs {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  height: var(--header-h);
-  box-sizing: border-box;
-  padding: 0 var(--sp-8);
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-chrome);
-  overflow-x: auto;
-}
-.vpanel-tab {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  max-width: 200px;
-  border-radius: var(--r-sm);
-}
-.vpanel-tab.on {
-  background: var(--fill);
-}
-.vpanel-tab-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-6);
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  padding: 0 var(--sp-2) 0 var(--sp-8);
-  height: var(--control-h-sm);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.vpanel-tab.on .vpanel-tab-pick {
-  color: var(--fg);
-}
+
 .vspin {
   width: 10px;
   height: 10px;
@@ -4659,30 +4755,21 @@ body.console-fullscreen #bar {
 .vtabs-bar {
   border-bottom: 1px solid var(--line);
 }
-/* In the title strip, before the window's buttons, where it covers nothing. */
-.vlauncher {
-  flex: none;
-  align-self: center;
-  margin-right: var(--sp-8);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-6);
-  height: 24px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  background: var(--bg-chrome);
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  padding: 0 var(--sp-8);
-  cursor: pointer;
-}
-.vlauncher:hover {
-  background: var(--fill);
-}
+/* In the title strip, before the overflow: a pill button like any other,
+   its count a quiet badge. */
 .vlauncher[hidden] {
   display: none;
+}
+.vlauncher .count {
+  min-width: 18px;
+  box-sizing: border-box;
+  padding: 0 var(--sp-6);
+  border-radius: var(--r-pill);
+  background: var(--fill);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  text-align: center;
 }
 .vdot {
   width: 6px;
@@ -5654,6 +5741,12 @@ body.resizing:has(.brief-sash.held) {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .row-actions-bar {
+  /* As wide as the table's window, pinned to its left edge, so a table
+     scrolled sideways never carries the buttons off the right of it. */
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: calc(100cqi - var(--sp-16));
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;

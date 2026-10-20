@@ -91,8 +91,10 @@ function modeButton(view, page) {
 function header(view) {
     // An ended console's actions are in the strip beside how it ended.
     const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
-    const head = el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), dockMenuButton(view.panel, view.title, !view.page), !view.page &&
-        el('button', {
+    const head = el('div', { class: 'vpanel-head' }, 
+    // As a page the strip already names the view; docked it names itself.
+    !view.page &&
+        el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), dockMenuButton(view.panel, view.title, true), el('button', {
             class: 'icon',
             type: 'button',
             title: 'Hide',

@@ -144,12 +144,13 @@ function header(view: ExtTable): HTMLElement {
   const head = el(
     'div',
     { class: 'vpanel-head' },
-    el(
-      'div',
-      { class: 'vpanel-title' },
-      el('span', { class: 'type-heading grow' }, view.title),
-      dockMenuButton(view.panel, view.title, !view.page),
-      !view.page &&
+    // As a page the strip already names the view; docked it names itself.
+    !view.page &&
+      el(
+        'div',
+        { class: 'vpanel-title' },
+        el('span', { class: 'type-heading grow' }, view.title),
+        dockMenuButton(view.panel, view.title, true),
         el(
           'button',
           {
@@ -161,7 +162,7 @@ function header(view: ExtTable): HTMLElement {
           },
           icon('close'),
         ),
-    ),
+      ),
     el(
       'div',
       { class: 'vpanel-meta' },

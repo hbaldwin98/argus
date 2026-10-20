@@ -183,7 +183,13 @@ function indexHead(f) {
         'aria-checked': String(f.layout === layout),
         onclick: () => call('set_layout', { layout }),
     }, layout === 'list' ? 'List' : 'Board')));
-    return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Features'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('N'), ' new · ', keycap('Enter'), ' open · ', keycap('V'), ' list or board · ', keycap('M'), ' move to… · ', keycap('G'), ' go to its pane')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Features in ${f.repository}`), el('span', { class: 'meta' }, counts), el('span', { class: 'grow' }), filter, f.layout === 'list' &&
+    return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'actions index-tools' }, 
+    // The strip names the stage and the repository; the keys are in the
+    // counts' tooltip rather than a row of their own.
+    el('span', {
+        class: 'meta',
+        title: 'N new · Enter open · V list or board · M move to… · G go to its pane',
+    }, counts), el('span', { class: 'grow' }), filter, f.layout === 'list' &&
         f.folded > 0 &&
         el('button', { class: 'btn', onclick: () => call('feature_action', { action: 'folded' }) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(f.folded))), seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
 }

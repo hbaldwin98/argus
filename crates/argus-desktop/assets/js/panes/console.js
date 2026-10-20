@@ -71,7 +71,7 @@ function drawHead() {
     const dock = dockOf('console') ?? 'bottom';
     const split = page.beside !== null;
     const onScreen = (pane) => pane === page.showing || pane === page.beside;
-    $('console-head').replaceChildren(el('span', { class: 'label' }, 'Console'), el('div', { class: 'ctabs', role: 'tablist' }, page.tabs.map((tab) => closesOnMiddle(el('div', {
+    $('console-head').replaceChildren(el('div', { class: 'ctabs', role: 'tablist' }, page.tabs.map((tab) => closesOnMiddle(el('div', {
         class: `ctab${tab.on ? ' on' : ''}${onScreen(tab.pane) ? ' live' : ''}`,
         oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, false)),
     }, el('button', {
@@ -80,7 +80,7 @@ function drawHead() {
         'aria-selected': String(tab.on),
         title: `shell, ${tab.status}`,
         onclick: () => gesture({ on: 'select', pane: tab.pane }),
-    }, el('span', { class: 'glyph sh' }, '›'), el('span', { class: 'ttl' }, tab.title), el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' })), el('button', {
+    }, el('span', { class: 'ttl' }, tab.title), el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' })), el('button', {
         class: 'icon x',
         title: 'Close',
         'aria-label': `Close ${tab.title}`,
@@ -140,7 +140,7 @@ function drawSideHead(id, pane) {
         title: page.typing === tab.pane ? tab.title : `Type in ${tab.title}`,
         onclick: () => gesture({ on: 'select', pane: tab.pane }),
         oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, true)),
-    }, el('span', { class: 'glyph sh' }, '›'), el('span', { class: 'ttl' }, tab.title), el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' })), el('button', {
+    }, el('span', { class: 'ttl' }, tab.title), el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' })), el('button', {
         class: 'icon x',
         title: 'Take out of the split',
         'aria-label': `Take ${tab.title} out of the split`,

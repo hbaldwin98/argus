@@ -240,29 +240,17 @@ function indexHead(f: Features): HTMLElement {
     { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` },
     el(
       'div',
-      { class: 'crumbs' },
-      el('span', { class: 'fg' }, 'Features'),
-      el('span', { class: 'grow' }),
+      { class: 'actions index-tools' },
+      // The strip names the stage and the repository; the keys are in the
+      // counts' tooltip rather than a row of their own.
       el(
         'span',
-        { class: 'meta' },
-        keycap('N'),
-        ' new · ',
-        keycap('Enter'),
-        ' open · ',
-        keycap('V'),
-        ' list or board · ',
-        keycap('M'),
-        ' move to… · ',
-        keycap('G'),
-        ' go to its pane',
+        {
+          class: 'meta',
+          title: 'N new · Enter open · V list or board · M move to… · G go to its pane',
+        },
+        counts,
       ),
-    ),
-    el(
-      'div',
-      { class: 'actions index-tools' },
-      el('span', { class: 'type-title' }, `Features in ${f.repository}`),
-      el('span', { class: 'meta' }, counts),
       el('span', { class: 'grow' }),
       filter,
       f.layout === 'list' &&
