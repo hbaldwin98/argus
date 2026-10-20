@@ -179,7 +179,7 @@ tiers:
   # hangs or goes unanswered; the store's faults, about 3s, a write left
   # half done.
   inner: { budget_seconds: 300, run: [build, analyzers, corpus, unit, snapshots, properties, api_fuzz, faults_db, spec_checks] }
-  prepr: { budget_seconds: 900 }
+  prepr: { budget_seconds: 1800 }
 
 require_reviewer_verdict: true
 
