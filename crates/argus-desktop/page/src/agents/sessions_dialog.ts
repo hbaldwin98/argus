@@ -9,6 +9,7 @@ import type { Action } from '../bindings/Action';
 import type { SessionPreview } from '../bindings/SessionPreview';
 import type { SessionRowView } from '../bindings/SessionRowView';
 import type { SessionsPage } from '../bindings/SessionsPage';
+import { ago } from '../kit/clock.js';
 import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
@@ -37,6 +38,7 @@ function listRow(r: SessionRowView): HTMLElement {
     el('span', { class: 'grow ellipsis' }, r.title),
     el('span', { class: 'meta' }, r.harness),
     el('span', { class: 'meta mono ellipsis scheckout' }, r.checkout),
+    r.removed && el('span', { class: 'meta' }, 'removed'),
     turns && el('span', { class: 'meta' }, turns),
     el('span', { class: 'meta' }, r.live ? 'live' : r.ago),
   );
@@ -49,9 +51,9 @@ function list(s: SessionsPage): Child {
   const live = s.rows.filter((r) => r.live);
   const ended = s.rows.filter((r) => !r.live);
   return [
-    live.length > 0 && el('div', { class: 'shead meta' }, 'Live'),
+    live.length > 0 && el('div', { class: 'mlabel' }, 'Live'),
     live.map(listRow),
-    ended.length > 0 && el('div', { class: 'shead meta' }, 'Ended'),
+    ended.length > 0 && el('div', { class: 'mlabel' }, 'Ended'),
     ended.map(listRow),
   ];
 }
@@ -82,9 +84,10 @@ function preview(s: SessionsPage): HTMLElement {
         el('span', { class: 'ellipsis' }, p.title),
         el('span', { class: 'meta' }, p.harness),
         el('span', { class: 'meta mono' }, p.checkout),
-        p.started && el('span', { class: 'meta' }, p.started),
+        p.started &&
+          el('span', { class: 'meta nowrap', title: p.started }, ago(p.started) ?? p.started),
         el('span', { class: 'grow' }),
-        el('span', { class: 'meta mono ellipsis' }, p.sessionId),
+        el('span', { class: 'meta mono nowrap', title: p.sessionId }, p.sessionId.slice(0, 8)),
       ),
     el(
       'div',
@@ -233,7 +236,7 @@ export function drawSessions(): void {
       el(
         'section',
         {
-          class: 'dialog review-dialog',
+          class: 'dialog sheet-dialog review-dialog',
           role: 'dialog',
           'aria-modal': 'true',
           'aria-labelledby': 'sessions-title',

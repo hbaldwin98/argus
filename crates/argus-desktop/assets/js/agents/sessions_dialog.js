@@ -4,6 +4,7 @@
 // place of the list. Rust holds the list, the filters and what each
 // session offers (`src/agents/sessions_dialog.rs`); the page draws them
 // and says what was pressed.
+import { ago } from '../kit/clock.js';
 import { $, el, ghosts, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
@@ -22,7 +23,7 @@ function listRow(r) {
         title: r.removed ? `ran in ${r.checkout}, a worktree since removed` : null,
         onclick: () => call('sessions_action', { action: 'next', row: r.row }),
         ondblclick: () => act('choose'),
-    }, el('span', { class: `sdot${r.live ? ' live' : ''}`, 'aria-hidden': 'true' }), el('span', { class: 'grow ellipsis' }, r.title), el('span', { class: 'meta' }, r.harness), el('span', { class: 'meta mono ellipsis scheckout' }, r.checkout), turns && el('span', { class: 'meta' }, turns), el('span', { class: 'meta' }, r.live ? 'live' : r.ago));
+    }, el('span', { class: `sdot${r.live ? ' live' : ''}`, 'aria-hidden': 'true' }), el('span', { class: 'grow ellipsis' }, r.title), el('span', { class: 'meta' }, r.harness), el('span', { class: 'meta mono ellipsis scheckout' }, r.checkout), r.removed && el('span', { class: 'meta' }, 'removed'), turns && el('span', { class: 'meta' }, turns), el('span', { class: 'meta' }, r.live ? 'live' : r.ago));
 }
 /** The rows under a heading for the live ones and one for the rest. */
 function list(s) {
@@ -33,9 +34,9 @@ function list(s) {
     const live = s.rows.filter((r) => r.live);
     const ended = s.rows.filter((r) => !r.live);
     return [
-        live.length > 0 && el('div', { class: 'shead meta' }, 'Live'),
+        live.length > 0 && el('div', { class: 'mlabel' }, 'Live'),
         live.map(listRow),
-        ended.length > 0 && el('div', { class: 'shead meta' }, 'Ended'),
+        ended.length > 0 && el('div', { class: 'mlabel' }, 'Ended'),
         ended.map(listRow),
     ];
 }
@@ -53,7 +54,8 @@ function transcript(p) {
 function preview(s) {
     const p = s.preview;
     return el('section', { class: 'review-diff' }, p &&
-        el('div', { class: 'fhdr' }, el('span', { class: 'ellipsis' }, p.title), el('span', { class: 'meta' }, p.harness), el('span', { class: 'meta mono' }, p.checkout), p.started && el('span', { class: 'meta' }, p.started), el('span', { class: 'grow' }), el('span', { class: 'meta mono ellipsis' }, p.sessionId)), el('div', { class: 'dbody transcript', id: 'sessions-body' }, p ? transcript(p) : el('div', { class: 'review-empty fg-muted' }, 'Pick a session.')));
+        el('div', { class: 'fhdr' }, el('span', { class: 'ellipsis' }, p.title), el('span', { class: 'meta' }, p.harness), el('span', { class: 'meta mono' }, p.checkout), p.started &&
+            el('span', { class: 'meta nowrap', title: p.started }, ago(p.started) ?? p.started), el('span', { class: 'grow' }), el('span', { class: 'meta mono nowrap', title: p.sessionId }, p.sessionId.slice(0, 8))), el('div', { class: 'dbody transcript', id: 'sessions-body' }, p ? transcript(p) : el('div', { class: 'review-empty fg-muted' }, 'Pick a session.')));
 }
 /** The reader, for a session whose harness keeps a transcript to open. */
 function readButton(p) {
@@ -153,7 +155,7 @@ export function drawSessions() {
     }
     placeReader(null, 0);
     host.replaceChildren(el('div', { class: 'scrim' }, el('section', {
-        class: 'dialog review-dialog',
+        class: 'dialog sheet-dialog review-dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'sessions-title',

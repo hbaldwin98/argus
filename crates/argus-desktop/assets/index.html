@@ -13,7 +13,7 @@
       <div class="rail-sash" id="rail-sash" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" title="Drag to resize; double-click for the usual width"></div>
       <div class="brand drag">
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="fg-accent"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"></circle><circle cx="8" cy="8" r="2.2" fill="currentColor"></circle></svg>
-        <span class="wordmark">Argus</span>
+        <div class="projmenu" id="heading"></div>
       </div>
       <div class="navs">
         <button class="search" id="nav-search">
@@ -54,7 +54,6 @@
         <div class="nav-extensions" id="nav-extensions"></div>
         <div class="nav-extensions" id="nav-saved"></div>
       </div>
-      <div class="projmenu" id="heading"></div>
       <div class="rail-list" id="rail"></div>
       <footer class="bar" id="bar"></footer>
     </nav>
@@ -136,11 +135,12 @@
   <div class="ext-dialogs" id="ext-dialog"></div>
   <div class="layer over" id="over"></div>
   <div class="overlay" id="stopped" hidden>
-    <section class="card" aria-labelledby="stopped-title">
+    <section class="card stopped-card" role="alertdialog" aria-modal="true" aria-labelledby="stopped-title">
+      <svg class="stopped-icon" width="28" height="28" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="4.5" rx="1.2"></rect><rect x="2.5" y="9" width="11" height="4.5" rx="1.2"></rect><path d="M5 4.75h.01M5 11.25h.01"></path></svg>
       <div class="type-title" id="stopped-title">argusd was stopped</div>
-      <div class="fg-muted">Someone ran <span class="fg mono">argus server stop</span>, so this window will not start it again on its own. Its panes ended with it; what you see is the last tree it sent.</div>
-      <button class="btn primary start tall" id="reconnect">Reconnect</button>
-      <div class="meta">Reconnecting starts argusd through <span class="mono">argus bridge</span>, the same way the terminal client does.</div>
+      <div class="fg-muted">Someone ran <span class="fg mono">argus server stop</span>. Its panes ended with it; this is the last tree it sent.</div>
+      <button class="btn primary" id="reconnect">Reconnect</button>
+      <div class="meta">via <span class="mono">argus bridge</span></div>
     </section>
   </div>
 </div>

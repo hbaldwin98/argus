@@ -95,7 +95,7 @@ export function drawReader(r) {
     const p = r.session;
     const turns = r.turns === null ? null : `${r.turns} turn${r.turns === 1 ? '' : 's'}`;
     return el('section', {
-        class: 'dialog review-dialog',
+        class: 'dialog sheet-dialog review-dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'reader-title',

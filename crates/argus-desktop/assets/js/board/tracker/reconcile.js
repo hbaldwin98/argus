@@ -5,7 +5,7 @@
 // on. With nothing under way it asks an agent. Rust holds the ticks and
 // the words (`src/board/tracker/reconcile_dialog.rs`); the page draws
 // them.
-import { $, el, icon } from '../../kit/dom.js';
+import { $, el, escKey, icon } from '../../kit/dom.js';
 import { actionFor } from '../../keys/keymap.js';
 import { call } from '../../connection/tauri.js';
 let page = null;
@@ -41,8 +41,11 @@ function lines(p) {
     return el('section', { class: 'rc-lines', 'aria-label': 'Proposed lines' }, p.groups.map((group) => el('div', { class: 'stack-6' }, el('div', { class: 'label' }, el('span', { class: group.intoArgus ? 'fg-ref' : 'fg-attention' }, group.heading), el('span', { class: 'grow' }), el('span', null, String(group.lines.length))), group.lines.map((row) => el('div', {
         class: `hrow rc-line${row.on ? ' on' : ''}`,
         onclick: () => send({ on: 'select', line: row.line }),
-    }, el('input', {
+    }, 
+    // The input is itself 24px (its box is drawn smaller), so the tick is easy to hit.
+    el('input', {
         type: 'checkbox',
+        class: 'rc-tick',
         'aria-label': `Tick ${row.key} ${row.does}`,
         checked: row.ticked,
         disabled: !proposing,
@@ -56,7 +59,7 @@ function lines(p) {
 function selected(p, line) {
     const editable = p.stage === 'proposed';
     const area = el('textarea', {
-        class: 'field area tall mono',
+        class: 'field area rc-text mono',
         id: 'reconcile-text',
         'aria-label': 'The text, word for word',
         readonly: !editable,
@@ -133,18 +136,21 @@ export function drawReconcile(next) {
     host.hidden = false;
     const carrying = p.stage === 'carrying';
     host.replaceChildren(el('div', { class: 'scrim' }, el('section', {
-        class: 'dialog tracker-dialog wide',
+        class: 'dialog sheet-dialog tracker-dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'reconcile-title',
     }, el('div', { class: 'dhead' }, el('div', { class: 'stack-6 grow' }, el('div', { class: 'type-title', id: 'reconcile-title' }, p.tickets ? `Reconcile #${p.number} with ${p.tickets}` : `Reconcile #${p.number}`), p.asked &&
-        el('div', null, el('span', { class: 'label' }, 'You asked '), `“${p.asked}”`), el('div', { class: 'meta' }, p.by &&
+        el('div', { class: 'rc-asked' }, el('span', { class: 'label' }, 'You asked '), `“${p.asked}”`), el('div', { class: 'meta' }, p.by &&
         `${p.stage === 'asked' ? 'asked of' : 'proposed by'} ${p.by} · ${p.ago} ago · `, p.reconciled ?? 'never reconciled before'), p.stage === 'proposed' &&
         el('div', { class: 'meta' }, 'The agent has only read. Every line starts unticked: it writes nothing, in Argus or in a tracker, that you have not ticked.'), carrying &&
-        el('div', { class: 'meta fg-attention' }, `${p.by} is carrying out the ${p.ticked} you ticked; nothing more is ticked until it reports.`)), el('button', { class: 'icon', 'aria-label': 'Close', onclick: () => send({ on: 'close' }) }, icon('close'))), el('div', { class: 'tracker-body' }, body(p)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' move · ', keycap('Space'), ' tick · ', keycap('E'), ' edit · ', keycap('G'), ' the agent · ', keycap('Esc'), ' later', el('span', { class: 'grow' }), p.stage !== 'none' &&
-        el('button', { class: 'btn sm', onclick: () => send({ on: 'discard' }) }, p.stage === 'asked' ? 'Take the ask back ' : 'Discard proposal ', keycap('D')), p.stage === 'proposed' && el('span', null, `${p.ticked} of ${p.total} ticked`), el('button', { class: 'btn sm', onclick: () => send({ on: 'close' }) }, 'Later'), p.stage === 'proposed' &&
+        el('div', { class: 'meta fg-attention' }, `${p.by} is carrying out the ${p.ticked} you ticked; nothing more is ticked until it reports.`)), el('button', { class: 'icon', 'aria-label': 'Close', onclick: () => send({ on: 'close' }) }, icon('close'))), el('div', { class: 'tracker-body' }, body(p)), el('div', { class: 'dfoot' }, el('span', {
+        class: 'dwhy grow',
+        title: 'J and K move, Space ticks, E edits the text, G goes to the agent.',
+    }, p.stage === 'proposed' ? `${p.ticked} of ${p.total} ticked` : null), p.stage !== 'none' &&
+        el('button', { class: 'btn', onclick: () => send({ on: 'discard' }) }, p.stage === 'asked' ? 'Take the ask back ' : 'Discard proposal ', keycap('D')), el('button', { class: 'btn', onclick: () => send({ on: 'close' }) }, 'Later ', escKey()), p.stage === 'proposed' &&
         el('button', {
-            class: 'btn sm primary',
+            class: 'btn primary',
             disabled: p.ticked === 0,
             onclick: () => send({ on: 'carryOut' }),
         }, `Carry out the ${p.ticked} ticked `, el('span', { class: 'kbd on-accent' }, 'Enter'))))));

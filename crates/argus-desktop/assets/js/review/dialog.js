@@ -18,10 +18,20 @@ function count(n) {
     return el('span', { class: 'fg-faint' }, n === null ? '…' : String(n));
 }
 function head(r) {
-    return el('div', { class: 'dhead review-head' }, el('div', { class: 'type-title', id: 'review-title' }, 'Review · ', r.name, ' ', el('span', { class: 'mono fg-ref' }, r.branch)), r.base === 'commit'
+    return el('div', { class: 'dhead review-head' }, el('div', { class: 'type-title', id: 'review-title' }, 'Review'), 
+    // The branch once, as a chip: the checkout's name is its tooltip.
+    el('span', { class: 'chip-branch', title: r.name }, icon('branch'), el('span', { class: 'mono' }, r.branch)), r.base === 'commit'
         ? el('span', { class: 'meta mono' }, r.commit ?? '')
-        : el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Side' }, segment('Unstaged ', r.base === 'unstaged', () => click({ on: 'side', staged: false }), count(r.unstaged)), segment('Staged ', r.base === 'staged', () => click({ on: 'side', staged: true }), count(r.staged))), el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' }, segment('Unified', !r.split, () => !r.split || call('review_action', { action: 'split' })), segment('Split', r.split, () => r.split || call('review_action', { action: 'split' }))), r.files.length > 0 &&
-        el('span', { class: 'meta' }, `${r.files.length} file${r.files.length === 1 ? '' : 's'} · `, el('span', { class: 'fg-ok' }, `+${r.added}`), ' ', el('span', { class: 'fg-danger' }, `−${r.removed}`)), el('span', { class: 'grow' }), el('button', { class: 'btn sm', onclick: () => call('review_refresh', {}) }, 'Refresh'), el('button', {
+        : [
+            el('span', { class: 'seg-label' }, 'Changes'),
+            el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Side' }, segment('Unstaged ', r.base === 'unstaged', () => click({ on: 'side', staged: false }), count(r.unstaged)), segment('Staged ', r.base === 'staged', () => click({ on: 'side', staged: true }), count(r.staged))),
+        ], el('span', { class: 'seg-label' }, 'View'), el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' }, segment('Unified', !r.split, () => !r.split || call('review_action', { action: 'split' })), segment('Split', r.split, () => r.split || call('review_action', { action: 'split' }))), r.files.length > 0 &&
+        el('span', { class: 'meta' }, `${r.files.length} file${r.files.length === 1 ? '' : 's'} · `, el('span', { class: 'fg-ok' }, `+${r.added}`), ' ', el('span', { class: 'fg-danger' }, `−${r.removed}`)), el('span', { class: 'grow' }), el('button', {
+        class: 'icon',
+        'aria-label': 'Refresh',
+        title: 'Refresh',
+        onclick: () => call('review_refresh', {}),
+    }, icon('refresh')), el('button', {
         class: 'icon',
         'aria-label': 'Close the review',
         onclick: () => call('review_action', { action: 'closeLayer' }),
@@ -86,7 +96,9 @@ function files(r) {
                 class: `rfile${i === lit ? ' on' : ''}`,
                 title: f.path,
                 onclick: () => click({ on: 'file', file: i }),
-            }, el('span', { class: 'rname' }, el('span', { class: 'fg-faint' }, f.dir), f.name), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)));
+            }, 
+            // The filename first, on its own line: a path cut short loses it.
+            el('span', { class: 'rname' }, el('span', { class: 'rbase' }, f.name), el('span', { class: 'rdir' }, f.dir || 'repository root')), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)));
     }), r.jump &&
         r.jump.matches.length === 0 &&
         el('div', { class: 'meta' }, `No file matches “${r.jump.query}”.`)));
@@ -175,7 +187,7 @@ export function drawReview() {
     const fileList = files(r);
     fileList.id = 'review-files';
     host.replaceChildren(el('div', { class: 'scrim' }, el('section', {
-        class: 'dialog review-dialog',
+        class: 'dialog sheet-dialog review-dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'review-title',

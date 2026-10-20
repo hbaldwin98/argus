@@ -10,7 +10,7 @@ import type { Action } from '../../bindings/Action';
 import type { ReconcileGesture } from '../../bindings/ReconcileGesture';
 import type { ReconcilePage } from '../../bindings/ReconcilePage';
 import type { SelectedLine } from '../../bindings/SelectedLine';
-import { $, el, icon, type Child } from '../../kit/dom.js';
+import { $, el, escKey, icon, type Child } from '../../kit/dom.js';
 import { actionFor } from '../../keys/keymap.js';
 import { call } from '../../connection/tauri.js';
 
@@ -69,8 +69,10 @@ function lines(p: ReconcilePage): HTMLElement {
               class: `hrow rc-line${row.on ? ' on' : ''}`,
               onclick: () => send({ on: 'select', line: row.line }),
             },
+            // The input is itself 24px (its box is drawn smaller), so the tick is easy to hit.
             el('input', {
               type: 'checkbox',
+              class: 'rc-tick',
               'aria-label': `Tick ${row.key} ${row.does}`,
               checked: row.ticked,
               disabled: !proposing,
@@ -119,7 +121,7 @@ function lines(p: ReconcilePage): HTMLElement {
 function selected(p: ReconcilePage, line: SelectedLine): HTMLElement {
   const editable = p.stage === 'proposed';
   const area = el('textarea', {
-    class: 'field area tall mono',
+    class: 'field area rc-text mono',
     id: 'reconcile-text',
     'aria-label': 'The text, word for word',
     readonly: !editable,
@@ -299,7 +301,7 @@ export function drawReconcile(next: ReconcilePage): void {
       el(
         'section',
         {
-          class: 'dialog tracker-dialog wide',
+          class: 'dialog sheet-dialog tracker-dialog',
           role: 'dialog',
           'aria-modal': 'true',
           'aria-labelledby': 'reconcile-title',
@@ -316,7 +318,12 @@ export function drawReconcile(next: ReconcilePage): void {
               p.tickets ? `Reconcile #${p.number} with ${p.tickets}` : `Reconcile #${p.number}`,
             ),
             p.asked &&
-              el('div', null, el('span', { class: 'label' }, 'You asked '), `“${p.asked}”`),
+              el(
+                'div',
+                { class: 'rc-asked' },
+                el('span', { class: 'label' }, 'You asked '),
+                `“${p.asked}”`,
+              ),
             el(
               'div',
               { class: 'meta' },
@@ -346,33 +353,28 @@ export function drawReconcile(next: ReconcilePage): void {
         el('div', { class: 'tracker-body' }, body(p)),
         el(
           'div',
-          { class: 'dfoot meta' },
-          keycap('J'),
-          keycap('K'),
-          ' move · ',
-          keycap('Space'),
-          ' tick · ',
-          keycap('E'),
-          ' edit · ',
-          keycap('G'),
-          ' the agent · ',
-          keycap('Esc'),
-          ' later',
-          el('span', { class: 'grow' }),
+          { class: 'dfoot' },
+          el(
+            'span',
+            {
+              class: 'dwhy grow',
+              title: 'J and K move, Space ticks, E edits the text, G goes to the agent.',
+            },
+            p.stage === 'proposed' ? `${p.ticked} of ${p.total} ticked` : null,
+          ),
           p.stage !== 'none' &&
             el(
               'button',
-              { class: 'btn sm', onclick: () => send({ on: 'discard' }) },
+              { class: 'btn', onclick: () => send({ on: 'discard' }) },
               p.stage === 'asked' ? 'Take the ask back ' : 'Discard proposal ',
               keycap('D'),
             ),
-          p.stage === 'proposed' && el('span', null, `${p.ticked} of ${p.total} ticked`),
-          el('button', { class: 'btn sm', onclick: () => send({ on: 'close' }) }, 'Later'),
+          el('button', { class: 'btn', onclick: () => send({ on: 'close' }) }, 'Later ', escKey()),
           p.stage === 'proposed' &&
             el(
               'button',
               {
-                class: 'btn sm primary',
+                class: 'btn primary',
                 disabled: p.ticked === 0,
                 onclick: () => send({ on: 'carryOut' }),
               },

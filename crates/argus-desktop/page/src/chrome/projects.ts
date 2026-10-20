@@ -9,7 +9,7 @@ import type { AddKind } from '../bindings/AddKind';
 import type { AddProjectPage } from '../bindings/AddProjectPage';
 import type { ProjectChoice } from '../bindings/ProjectChoice';
 import type { Removing } from '../bindings/Removing';
-import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, closeButton, el, escKey, focusQuietly, ghosts, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -239,7 +239,7 @@ function removeDialog(r: Removing): HTMLElement {
     el(
       'section',
       {
-        class: 'dialog hold-dialog confirm-dialog',
+        class: 'dialog confirm-dialog',
         role: 'alertdialog',
         'aria-modal': 'true',
         'aria-labelledby': 'remove-title',
@@ -247,17 +247,19 @@ function removeDialog(r: Removing): HTMLElement {
       el(
         'div',
         { class: 'dhead' },
+        el('span', { class: 'danger-tile' }, icon('trash')),
         el(
           'div',
-          { class: 'type-title', id: 'remove-title' },
+          { class: 'type-title grow', id: 'remove-title' },
           'Remove ',
           el('span', null, r.name),
           '?',
         ),
+        closeButton(answerRemoveNo),
       ),
       el(
         'div',
-        { class: 'dbody' },
+        { class: 'dbody prose' },
         el(
           'div',
           { class: 'fg-muted' },
@@ -266,15 +268,25 @@ function removeDialog(r: Removing): HTMLElement {
         r.panes > 0 &&
           el(
             'div',
-            { class: 'meta' },
-            `${r.panes} pane${r.panes === 1 ? ' is' : 's are'} running in it; argusd removes it only once they are closed.`,
+            { class: 'warn-callout' },
+            icon('warn'),
+            el(
+              'span',
+              null,
+              `${r.panes} pane${r.panes === 1 ? ' is' : 's are'} running in it; argusd removes it only once they are closed.`,
+            ),
           ),
       ),
       el(
         'div',
         { class: 'dfoot' },
         el('span', { class: 'grow' }),
-        el('button', { class: 'btn', id: 'remove-keep', onclick: answerRemoveNo }, 'Keep it'),
+        el(
+          'button',
+          { class: 'btn', id: 'remove-keep', onclick: answerRemoveNo },
+          'Keep it ',
+          escKey(),
+        ),
         el(
           'button',
           { class: 'btn danger', onclick: () => call('answer_remove_project', { yes: true }) },
@@ -295,7 +307,7 @@ export function drawRemoving(): void {
   }
   if (shown) return;
   $('layer').replaceChildren(removeDialog(r));
-  document.getElementById('remove-keep')?.focus();
+  focusQuietly(document.getElementById('remove-keep'));
 }
 
 // ---- Adding one --------------------------------------------------------------
@@ -540,17 +552,22 @@ function addDialog(a: AddProjectPage): HTMLElement {
           el('div', { class: 'ap-outcome' }, outcome(a)),
         ),
         setRow(
-          el('label', { for: 'ap-name' }, 'Project name'),
+          el('label', { class: 'label', for: 'ap-name' }, 'Project name'),
           null,
-          field('ap-name', a.name, { placeholder: a.defaultName, oninput: fieldsChanged }),
+          field('ap-name', a.name, {
+            'aria-label': 'Project name',
+            placeholder: a.defaultName,
+            oninput: fieldsChanged,
+          }),
         ),
         a.kind === 'folder' &&
           setRow(
-            el('label', { for: 'ap-skip' }, 'Also skip'),
+            el('label', { class: 'label', for: 'ap-skip' }, 'Also skip'),
             a.alwaysSkipped.length > 0 &&
               el('span', { class: 'meta' }, `${a.alwaysSkipped.join(', ')} are always skipped`),
             field('ap-skip', a.skip, {
               class: 'field mono',
+              'aria-label': 'Also skip',
               placeholder: 'vendor, infra/legacy',
               spellcheck: 'false',
               oninput: fieldsChanged,
@@ -563,13 +580,12 @@ function addDialog(a: AddProjectPage): HTMLElement {
         { class: 'dfoot' },
         el(
           'span',
-          { class: 'meta' },
+          { class: 'dwhy grow' },
           a.kind === 'new'
-            ? 'Adds to the daemon’s config; only the new repository is made.'
-            : 'Adds to the daemon’s config; nothing in the folders is changed.',
+            ? 'Only Argus’s config changes, and the new repository'
+            : 'Only Argus’s config changes',
         ),
-        el('span', { class: 'grow' }),
-        el('button', { class: 'btn', onclick: closeAdd }, 'Cancel'),
+        el('button', { class: 'btn', onclick: closeAdd }, 'Cancel ', escKey()),
         el(
           'button',
           {

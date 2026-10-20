@@ -63,8 +63,8 @@ function diff(h: HistoryPage): HTMLElement {
         'div',
         { class: 'fhdr' },
         el('span', { class: 'mono fg-faint' }, h.commit ?? ''),
-        el('span', { class: 'mono' }, h.path),
-        el('span', { class: 'meta' }, 'against its first parent'),
+        el('span', { class: 'mono path' }, h.path),
+        el('span', { class: 'meta nowrap' }, 'against its first parent'),
         el('span', { class: 'grow' }),
         el(
           'button',
@@ -135,7 +135,7 @@ export function drawHistory(): void {
       el(
         'section',
         {
-          class: 'dialog review-dialog',
+          class: 'dialog sheet-dialog review-dialog',
           role: 'dialog',
           'aria-modal': 'true',
           'aria-labelledby': 'history-title',
@@ -143,13 +143,12 @@ export function drawHistory(): void {
         el(
           'div',
           { class: 'dhead review-head' },
+          el('div', { class: 'type-title', id: 'history-title' }, 'History'),
           el(
-            'div',
-            { class: 'type-title', id: 'history-title' },
-            'History · ',
-            h.name,
-            ' ',
-            el('span', { class: 'mono fg-ref' }, h.branch),
+            'span',
+            { class: 'chip-branch', title: h.name },
+            icon('branch'),
+            el('span', { class: 'mono' }, h.branch),
           ),
           el('span', { class: 'meta' }, 'newest 100 on HEAD'),
           el('span', { class: 'grow' }),

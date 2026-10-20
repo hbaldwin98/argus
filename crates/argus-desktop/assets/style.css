@@ -298,6 +298,9 @@
   --sp-24: 24px;
   --sp-32: 32px;
   --sp-44: 44px;
+  /* What the pane's own input line takes at the stage's foot, which the
+     terminal draws and the page cannot measure: a toast clears it. */
+  --stage-foot: calc(var(--sp-44) + var(--sp-32) + var(--sp-12));
   --r-xs: 4px;
   --r-sm: 6px;
   --r-md: 10px;
@@ -552,6 +555,14 @@
   align-items: center;
   gap: var(--sp-8);
 }
+/* One field-label style across the form dialogs: sentence case, stacked
+   above its input. The uppercase tracked label stays for page chrome. */
+.dialog .label {
+  font: 500 var(--fs-md) / 1.4 var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fg);
+}
 .label-aside {
   text-transform: none;
   letter-spacing: 0;
@@ -614,6 +625,11 @@
 .btn.danger:hover {
   filter: brightness(1.08);
 }
+.btn[disabled] .kbd {
+  color: var(--fg-faint);
+  border-color: var(--line);
+  background: transparent;
+}
 .btn[disabled],
 .btn[disabled]:hover {
   background: transparent;
@@ -665,6 +681,9 @@
   font: inherit;
   padding: 0 var(--sp-8);
   height: var(--control-h);
+}
+.field:hover:not(:focus) {
+  border-color: var(--fg-faint);
 }
 .kbd {
   font-family: var(--font-mono);
@@ -750,9 +769,31 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.segb.on {
+.segb:hover:not(.on) {
   background: var(--fill);
   color: var(--fg);
+}
+/* Raised with an edge, not a tint: a --fill on the track's own fill vanishes
+   in a light theme. */
+.segb.on {
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--fg);
+}
+.seg-label {
+  color: var(--fg-faint);
+  font: var(--type-small);
+}
+.chip-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: var(--icon-btn);
+  padding: 0 var(--sp-8);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  color: var(--ref);
+  font-size: var(--fs-sm);
 }
 .check {
   display: flex;
@@ -843,13 +884,14 @@
 .mi:focus-visible,
 .mi:not([disabled]):hover {
   background: var(--fill);
-  outline: none;
+}
+.mi:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 .mlabel {
-  font: var(--type-label);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
+  font: 600 var(--fs-sm) / 1.4 var(--font-ui);
+  color: var(--fg-muted);
   padding: var(--sp-6) var(--sp-8) var(--sp-2);
 }
 .msep {
@@ -899,10 +941,6 @@
   padding: 0 var(--sp-16);
   border-bottom: 1px solid var(--line);
 }
-.wordmark {
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
 .projbtn {
   display: flex;
   align-items: center;
@@ -911,13 +949,21 @@
   box-sizing: border-box;
   border: 0;
   background: transparent;
-  color: var(--fg-muted);
-  font: var(--type-label);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: var(--sp-12) var(--sp-16) var(--sp-6);
+  color: var(--fg);
+  font: 600 var(--fs-md) / 1.3 var(--font-ui);
+  height: var(--control-h);
+  padding: 0 var(--sp-6);
+  border-radius: var(--r-sm);
   cursor: pointer;
   text-align: left;
+}
+.projbtn:hover,
+.projbtn[aria-expanded='true'] {
+  background: var(--fill);
+}
+.projbtn svg {
+  flex: none;
+  color: var(--fg-faint);
 }
 .badge {
   margin-left: auto;
@@ -1346,7 +1392,6 @@
   cursor: pointer;
 }
 .orow.on,
-.srow.on,
 .prow.on,
 .frow.on,
 .irow.on,
@@ -1500,12 +1545,18 @@
   right: 0;
   bottom: 0;
   background: var(--scrim);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
 }
+/* The one shell every dialog is cut from, centred on the window over one
+   scrim. It has three widths: `.confirm-dialog` (440, one question), the
+   default form (560) and `.sheet-dialog` (a screen's worth). */
 .dialog {
   box-sizing: border-box;
+  width: min(560px, 94vw);
+  max-height: 90vh;
   background: var(--bg-surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
@@ -1514,20 +1565,83 @@
   flex-direction: column;
   overflow: hidden;
 }
+.dialog.confirm-dialog {
+  width: min(440px, 94vw);
+}
+.dialog.sheet-dialog {
+  width: min(1120px, 94vw);
+  height: min(760px, 90vh);
+}
 .dhead {
   display: flex;
   align-items: flex-start;
   gap: var(--sp-12);
-  padding: var(--sp-16) var(--sp-20) var(--sp-12);
-  border-bottom: 1px solid var(--line);
+  padding: var(--sp-24) var(--sp-24) var(--sp-16);
 }
 .dfoot {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  padding: var(--sp-12) var(--sp-20);
+  padding: var(--sp-16) var(--sp-24);
   border-top: 1px solid var(--line);
-  background: var(--bg-chrome);
+}
+/* Why the primary is off, or what a click will not do: the footer's left. */
+.dfoot > .dwhy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  min-width: 0;
+  color: var(--fg-muted);
+  font: var(--type-small);
+}
+/* The dialog's body in the interface font and on its surface; the diff's
+   `.dbody` below is the code, and sets its own. */
+.dialog .dbody.prose {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--sp-24) var(--sp-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-12);
+  background: transparent;
+  font: var(--type-body);
+  color: var(--fg-muted);
+}
+/* A scrolling body shows it has more: a shade at the edge that still has
+   content beyond it, drawn behind the text from the surface colour. */
+.dialog .dbody.prose,
+.ap-body,
+.tracker-body,
+.sheet-body {
+  background:
+    linear-gradient(var(--bg-surface) 30%, transparent) top / 100% 24px no-repeat local,
+    linear-gradient(transparent, var(--bg-surface) 70%) bottom / 100% 24px no-repeat local,
+    radial-gradient(
+        farthest-side at 50% 0,
+        color-mix(in srgb, var(--fg) 14%, transparent),
+        transparent
+      )
+      top / 100% 8px no-repeat scroll,
+    radial-gradient(
+        farthest-side at 50% 100%,
+        color-mix(in srgb, var(--fg) 14%, transparent),
+        transparent
+      )
+      bottom / 100% 8px no-repeat scroll;
+}
+/* The ✕ centres on the title's first line, not on a head that grows. */
+.dhead > .icon {
+  flex: none;
+  margin-top: calc(var(--sp-2) * -1);
+}
+/* A sheet's head is a toolbar, one row tall like a stage's. */
+.sheet-dialog > .dhead {
+  align-items: center;
+  min-height: calc(var(--sp-44) + var(--sp-12));
+  box-sizing: border-box;
+  padding: var(--sp-8) var(--sp-24);
+  border-bottom: 1px solid var(--line);
 }
 .code {
   font-family: var(--font-mono);
@@ -1756,14 +1870,17 @@ a:focus-visible,
   color: var(--fg-faint);
 }
 
-/* The project switcher opens under the heading. */
+/* The project switcher is the project's name in the brand row, and its menu
+   drops from the rail's top edge (the rail is the positioned ancestor) over
+   the nav, never over the tree it changes. */
 .projmenu {
-  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 .projmenu .menu {
   left: var(--sp-8);
   right: auto;
-  top: 0;
+  top: var(--header-h);
 }
 .projbtn .label-aside {
   text-transform: none;
@@ -2125,31 +2242,68 @@ body.moving-pane * {
   }
 }
 
-/* "argusd was stopped" sits over the whole window. */
+/* "argusd was stopped" blocks the whole window, so it has a scrim and the
+   empty moment's atmosphere like every other thing that stops work. */
 .overlay {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--atmosphere), var(--scrim);
+  backdrop-filter: blur(2px);
 }
-.overlay .card {
-  pointer-events: auto;
+.overlay[hidden] {
+  display: none;
+}
+.overlay .stopped-card {
+  position: static;
+  inset: auto;
+  margin: 0;
+  width: min(440px, 94vw);
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-12);
+  padding: var(--sp-32) var(--sp-24) var(--sp-24);
+}
+.stopped-icon {
+  color: var(--attention);
+}
+.stopped-card .btn {
+  margin-top: var(--sp-8);
 }
 
-/* A notice passes along the bottom of the stage, on whichever is showing. */
+/* A toast sits bottom-centre of the stage, above the pane's input line, with
+   an icon and a dismiss. */
 .notice {
   position: absolute;
   left: calc(50% + var(--rail-w) / 2);
-  bottom: var(--sp-24);
+  bottom: calc(var(--stage-foot) + var(--sp-24));
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
   max-width: 70%;
   box-sizing: border-box;
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-pop);
-  padding: var(--sp-8) var(--sp-12);
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-12);
   color: var(--fg);
+}
+.notice[hidden] {
+  display: none;
+}
+.notice > svg {
+  flex: none;
+  color: var(--attention);
+}
+.notice-text {
+  min-width: 0;
+  padding: var(--sp-4) 0;
 }
 
 @media (max-width: 900px) {
@@ -2227,19 +2381,27 @@ body.moving-pane * {
   gap: var(--sp-6);
   flex-wrap: wrap;
 }
+.nowrap {
+  white-space: nowrap;
+  flex: none;
+}
 .pick {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-6);
   height: var(--control-h);
   box-sizing: border-box;
-  padding: 0 var(--sp-4) 0 var(--sp-8);
+  padding: 0 var(--sp-8);
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-pill);
-  color: var(--fg-muted);
+  border-radius: var(--r-sm);
+  background: var(--bg-chrome);
+  color: var(--fg);
+}
+.pick:hover:not(:focus-within) {
+  border-color: var(--fg-faint);
 }
 .pick:focus-within {
-  border-color: var(--accent);
+  border-color: var(--ring);
+  box-shadow: var(--ring-shadow);
 }
 .pick-glyph {
   display: inline-flex;
@@ -2253,7 +2415,6 @@ body.moving-pane * {
   color: var(--fg);
   font: inherit;
   font-size: var(--fs-sm);
-  font-weight: 600;
   cursor: pointer;
 }
 /* A select's list drawn as a .menu rather than by the system: WebView2's
@@ -2263,8 +2424,15 @@ select,
 ::picker(select) {
   appearance: base-select;
 }
+/* A chevron, the one Settings' fields draw, not the system's ▼. */
 select::picker-icon {
-  color: var(--fg-faint);
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin: 4px 2px 0 var(--sp-8);
+  border-right: 1.5px solid var(--fg-faint);
+  border-bottom: 1.5px solid var(--fg-faint);
+  transform: rotate(45deg);
   transition: rotate 0.15s;
 }
 select:open::picker-icon {
@@ -2300,7 +2468,7 @@ select option:checked {
 select option::checkmark {
   color: var(--accent);
 }
-.kbd.on-accent {
+.btn:not([disabled]) .kbd.on-accent {
   color: var(--fg-on-accent);
   border-color: var(--fg-on-accent);
 }
@@ -2642,15 +2810,6 @@ select option::checkmark {
 }
 .scrim {
   z-index: 4;
-}
-.hold-dialog {
-  width: 460px;
-}
-.hold-dialog .dbody {
-  padding: var(--sp-16) var(--sp-20);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-8);
 }
 
 .small-mono {
@@ -3685,9 +3844,6 @@ body.console-fullscreen #bar {
     display: none;
   }
 }
-.confirm-dialog {
-  width: 560px;
-}
 
 /* ---- The palette and the shortcuts sheet --------------------------------- */
 
@@ -3703,16 +3859,64 @@ body.console-fullscreen #bar {
   width: min(620px, 92vw);
   max-height: 70vh;
 }
-.palette-field {
-  height: var(--sp-44);
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  /* The dialog's inner corners, so the focus ring follows its curve
-     instead of being clipped square by it. */
-  border-radius: calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0 0;
-  background: var(--bg-surface);
-  font-size: var(--fs-lg);
+.palette-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
   padding: 0 var(--sp-16);
+  height: var(--sp-44);
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg-muted);
+}
+/* Bare: the head is the field, and its halo would be a second box. */
+.palette-field {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-lg);
+}
+.palette-foot {
+  padding: var(--sp-12) var(--sp-16);
+  gap: var(--sp-16);
+}
+.palette-foot .dwhy {
+  gap: var(--sp-6);
+}
+.open-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  color: var(--fg-muted);
+  font: var(--type-small);
+}
+/* One selection for a list row inside a dialog: a fill and a lit 1px border. */
+.palette-row.on,
+.rfile.on,
+.hrow.on {
+  background: var(--bg-selected);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.palette-row .pic {
+  flex: none;
+  display: inline-flex;
+  color: var(--fg-muted);
+}
+.palette-row .pic svg {
+  width: 14px;
+  height: 14px;
+}
+.palette-row .kbd {
+  min-width: var(--sp-20);
+  box-sizing: border-box;
+  text-align: center;
+  color: var(--fg-muted);
+  font-weight: 500;
 }
 .palette-results {
   overflow-y: auto;
@@ -3761,20 +3965,20 @@ body.console-fullscreen #bar {
 .hint:hover {
   color: var(--fg);
 }
-.sheet {
-  width: min(980px, 94vw);
-  max-height: 84vh;
-}
-.sheet-rule {
-  padding: var(--sp-12) var(--sp-20);
-  border-bottom: 1px solid var(--line);
-  color: var(--fg-muted);
-}
 .sheet-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-8) var(--sp-20) var(--sp-20);
-  columns: 280px 3;
+  padding: var(--sp-16) var(--sp-24) var(--sp-24);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-items: start;
   column-gap: var(--sp-32);
+}
+.sheet-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .sheet-group {
   break-inside: avoid;
@@ -3785,10 +3989,70 @@ body.console-fullscreen #bar {
 }
 .sheet-row {
   display: flex;
-  align-items: center;
-  gap: var(--sp-12);
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-12);
   padding: var(--sp-2) 0;
   font: var(--type-small);
+}
+/* Wide keys drop under their label, right-aligned, rather than squeezing it
+   to a word a line. */
+.sheet-row > .keys {
+  flex: none;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.sheet-row > .grow {
+  flex: 1 1 55%;
+  min-width: 0;
+}
+
+/* A pickable diff line lights under the pointer. */
+.review-diff > .dbody:not(.prose) > div:hover {
+  background: var(--fill);
+}
+/* The mark a destructive confirm leads with, so it cannot pass for a
+   harmless one. */
+.danger-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--sp-32);
+  height: var(--sp-32);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+.warn-callout {
+  display: flex;
+  gap: var(--sp-8);
+  align-items: flex-start;
+  border-radius: var(--r-md);
+  padding: var(--sp-8) var(--sp-12);
+  background: color-mix(in srgb, var(--attention) 12%, transparent);
+  color: var(--fg);
+}
+.warn-callout > svg {
+  flex: none;
+  margin-top: var(--sp-2);
+  color: var(--attention);
+}
+.themecard .name > svg,
+.saved > svg {
+  color: var(--ok);
+}
+.themecard .name > svg {
+  display: none;
+  margin-left: var(--sp-6);
+  vertical-align: -1px;
+}
+.themecard.on .name > svg {
+  display: inline;
+}
+.saved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
 }
 
 /* ---- The review dialog ------------------------------------------------- */
@@ -3798,8 +4062,6 @@ body.console-fullscreen #bar {
 }
 /* A diff wants every column it can get, a split one most of all. */
 .review-dialog {
-  width: calc(100% - 2 * var(--sp-24));
-  height: calc(100% - 2 * var(--sp-24));
   display: flex;
   flex-direction: column;
 }
@@ -3831,7 +4093,7 @@ body.console-fullscreen #bar {
 }
 .rfile {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--sp-6);
   border: 0;
   border-radius: var(--r-sm);
@@ -3843,16 +4105,30 @@ body.console-fullscreen #bar {
   padding: var(--sp-4) var(--sp-8);
   cursor: pointer;
 }
-.rfile.on {
-  background: var(--bg-selected);
+.rfile:hover:not(.on) {
+  background: var(--fill);
 }
 .rfile .rname {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.rfile .rbase {
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The directory is the part that may be cut; the filename above it never is. */
+.rfile .rdir {
+  color: var(--fg-faint);
   font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .review-diff {
   flex: 1;
@@ -3867,6 +4143,12 @@ body.console-fullscreen #bar {
   padding: var(--sp-8) var(--sp-12);
   border-bottom: 1px solid var(--line);
   background: var(--bg-chrome);
+}
+.fhdr > .path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dbody {
   flex: 1;
@@ -4071,8 +4353,8 @@ body.console-fullscreen #bar {
   cursor: pointer;
   min-width: 0;
 }
-.hrow.on {
-  background: var(--bg-selected);
+.hrow:hover:not(.on) {
+  background: var(--fill);
 }
 .hrow.open .ellipsis {
   font-weight: 600;
@@ -4095,13 +4377,14 @@ body.console-fullscreen #bar {
 
 /* ---- The recent-sessions dialog ---------------------------------------- */
 
-.shead {
-  padding: var(--sp-8) var(--sp-8) var(--sp-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 .srow.removed {
-  opacity: 0.5;
+  color: var(--fg-muted);
+}
+.srow.removed .meta {
+  color: var(--fg-muted);
+}
+.srow.removed .scheckout {
+  text-decoration: line-through;
 }
 .sdot {
   width: 7px;
@@ -4129,6 +4412,12 @@ body.console-fullscreen #bar {
   display: flex;
   flex-direction: column;
   gap: var(--sp-8);
+}
+/* Prose wraps at the pane; the diff's max-content column is for code. */
+.review-diff > .dbody.transcript {
+  display: flex;
+  flex-direction: column;
+  container-type: normal;
 }
 .tearlier {
   text-align: center;
@@ -4216,7 +4505,6 @@ body.console-fullscreen #bar {
 /* ---- Projects: the switcher and the add dialog ---------------------------- */
 
 .projmenu .projects-menu {
-  top: 100%;
   width: min(272px, calc(var(--rail-w) - 16px));
 }
 .projbtn .ellipsis {
@@ -4229,8 +4517,7 @@ body.console-fullscreen #bar {
   color: var(--danger);
 }
 .add-dialog {
-  width: min(820px, calc(100vw - 32px));
-  max-height: min(720px, 94vh);
+  max-height: min(720px, 90vh);
 }
 .ap-head {
   align-items: center;
@@ -4239,7 +4526,7 @@ body.console-fullscreen #bar {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--sp-16) var(--sp-20);
+  padding: 0 var(--sp-24) var(--sp-24);
 }
 .ap-body .seg {
   align-self: flex-start;
@@ -4255,12 +4542,13 @@ body.console-fullscreen #bar {
 }
 .ap-split {
   display: flex;
-  gap: var(--sp-16);
-  height: 300px;
+  flex-direction: column;
+  gap: var(--sp-12);
   flex: none;
 }
 .ap-folders {
-  flex: 1;
+  flex: none;
+  max-height: 180px;
   min-width: 0;
   overflow: auto;
   border: 1px solid var(--line);
@@ -4291,7 +4579,6 @@ body.console-fullscreen #bar {
   padding: var(--sp-8);
 }
 .ap-outcome {
-  width: 300px;
   flex: none;
   min-width: 0;
   display: flex;
@@ -4317,17 +4604,20 @@ body.console-fullscreen #bar {
   width: 300px;
   max-width: 50%;
 }
-@media (max-width: 640px) {
-  .ap-split {
-    flex-direction: column;
-    height: auto;
-  }
-  .ap-folders {
-    max-height: 220px;
-  }
-  .ap-outcome {
-    width: auto;
-  }
+/* A form stacks its labels above its fields, here as in the link dialog. */
+.add-dialog .setrow .label {
+  min-height: var(--sp-24);
+}
+.add-dialog .setrow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-6);
+  border-top: 0;
+  padding-top: 0;
+}
+.add-dialog .setrow .field {
+  width: auto;
+  max-width: none;
 }
 
 /* The see-through fills, after every rule that paints these regions. */
@@ -4348,12 +4638,15 @@ body.console-fullscreen #bar {
 
 /* ---- The Settings dialog ----------------------------------------------- */
 
-.settings {
-  width: min(960px, 94vw);
-  height: min(700px, 88vh);
-}
 .settings .split {
   min-height: 0;
+}
+.settings-nav .frow:hover {
+  background: var(--fill);
+}
+.settings-nav .frow.on {
+  background: var(--bg-selected);
+  box-shadow: none;
 }
 .settings-nav {
   width: 200px;
@@ -4373,10 +4666,42 @@ body.console-fullscreen #bar {
   flex-direction: column;
   gap: var(--sp-24);
 }
+.setsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+.sethead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.settitle {
+  font: 600 var(--fs-lg) / 1.3 var(--font-ui);
+}
+.setgroup {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.setgroup > * {
+  padding: var(--sp-12) var(--sp-16);
+}
+.setgroup > * + * {
+  border-top: 1px solid var(--line);
+}
 .settings .setrow {
   border-top: 0;
-  border-bottom: 1px solid var(--line);
-  padding: var(--sp-12) 0;
+}
+.setversion {
+  padding: var(--sp-8);
+}
+.settings-nav .frow {
+  gap: var(--sp-8);
+  justify-content: flex-start;
+}
+.settings-nav .frow svg {
+  flex: none;
+  color: var(--fg-faint);
 }
 .settings .setrow .field {
   width: 260px;
@@ -4448,6 +4773,10 @@ body.console-fullscreen #bar {
   text-align: left;
   cursor: pointer;
 }
+.themecard:hover:not(:disabled) {
+  border-color: var(--fg-faint);
+  background: var(--fill);
+}
 .themecard.on {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
@@ -4483,8 +4812,8 @@ body.console-fullscreen #bar {
   width: 60%;
 }
 .toggle {
-  width: 34px;
-  height: 20px;
+  width: 40px;
+  height: var(--sp-24);
   flex: none;
   border: 0;
   border-radius: var(--r-pill);
@@ -4495,18 +4824,21 @@ body.console-fullscreen #bar {
 }
 .toggle span {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 4px;
+  left: 4px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   background: var(--fg-muted);
 }
+.toggle:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
 .toggle.on {
   background: var(--accent);
 }
 .toggle.on span {
-  left: 16px;
+  left: 20px;
   background: var(--fg-on-accent);
 }
 .toggle:disabled {
@@ -4524,9 +4856,12 @@ body.console-fullscreen #bar {
 }
 .opacity input {
   width: 200px;
+  height: var(--sp-24);
   accent-color: var(--accent);
 }
 .opacity .n {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   width: 4ch;
   text-align: right;
 }
@@ -5660,35 +5995,29 @@ body.resizing:has(.brief-sash.held) {
   gap: var(--sp-6);
 }
 
-/* An extension's question: over the window's top and never a scrim, so one
-   raised on its own leaves the pane under it to be typed in. */
+/* An extension's question blocks, so it has the scrim and the window's centre
+   like any dialog, whether the person asked for it or not: anything that
+   blocks has a scrim. */
 .ext-dialogs {
   position: absolute;
-  top: 48px;
-  left: 0;
-  right: 0;
+  inset: 0;
   display: flex;
+  align-items: center;
   justify-content: center;
   pointer-events: none;
   z-index: 5;
 }
+.ext-dialogs:has(.ext-dialog) {
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
+}
 .ext-dialog {
   pointer-events: auto;
-  width: min(480px, calc(100vw - 32px));
+  width: min(440px, 94vw);
 }
-/* `.dbody` is the diff's: monospace, unpadded and sunken, which a
-   question laid over a live pane must not be. */
-.ext-dialog .dbody {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-8);
-  padding: var(--sp-12) var(--sp-16);
-  font-family: var(--font-ui);
-  line-height: 1.5;
-  background: var(--bg-surface);
-}
-.ext-dialog.unasked:not(:focus-within) {
-  opacity: 0.92;
+.ext-dialog:has(.label) {
+  width: min(560px, 94vw);
 }
 .ext-pick {
   position: static;
@@ -5751,19 +6080,18 @@ body.resizing:has(.brief-sash.held) {
 
 /* ---- The tracker dialogs ----------------------------------------------- */
 
-.tracker-dialog {
-  width: min(760px, 94vw);
-  max-height: min(820px, 92vh);
+.sheet-dialog.tracker-dialog > .dhead {
+  align-items: flex-start;
+  padding: var(--sp-24) var(--sp-24) var(--sp-16);
 }
-.tracker-dialog.wide {
-  width: min(1180px, 94vw);
-  height: min(780px, 92vh);
+.sheet-dialog.tracker-dialog > .tracker-body {
+  padding-top: var(--sp-16);
 }
 .tracker-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-16) var(--sp-20);
+  padding: 0 var(--sp-24) var(--sp-24);
 }
 .tracker-body.stack-12 {
   display: flex;
@@ -5785,6 +6113,49 @@ body.resizing:has(.brief-sash.held) {
   gap: var(--sp-20);
   height: 100%;
   min-height: 0;
+}
+.rc-tick {
+  flex: none;
+  appearance: none;
+  margin: 0;
+  width: var(--sp-24);
+  height: var(--sp-24);
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+}
+.rc-tick::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--fg-faint);
+  border-radius: var(--r-xs);
+  background: var(--bg-chrome);
+  color: var(--fg-on-accent);
+  font-size: var(--fs-xs);
+  line-height: 13px;
+  text-align: center;
+}
+.rc-tick:hover::before {
+  border-color: var(--fg);
+}
+.rc-tick:checked::before {
+  content: '✓';
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.rc-tick:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.field.area.rc-text {
+  field-sizing: content;
+  min-height: calc(var(--sp-24) * 4);
+  max-height: 40%;
+}
+.rc-asked {
+  margin-top: var(--sp-12);
 }
 .rc-lines {
   flex: 1.3;
