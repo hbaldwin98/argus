@@ -4,7 +4,7 @@
 // (`src/checkouts/table.rs`); the page draws them and reports what is
 // chosen.
 import { startMenu, toggleStart } from '../chrome.js';
-import { $, closeButton, el, escKey, focusQuietly, ghosts, icon, statusPill } from '../kit/dom.js';
+import { $, closeButton, el, escKey, focusQuietly, ghosts, icon, statusPill, } from '../kit/dom.js';
 import { closeLayer, openMenu } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';

@@ -47,36 +47,14 @@ function segment(label: string, on: boolean, pick: () => void): HTMLElement {
 }
 
 /** What the strip carries on the Code stage: the checkout and its branch
- *  under the stage's name, and the buttons that act on the whole stage. A
- *  row of its own held a lone branch name and these. */
+ *  under the stage's name, and the keys of the view. Back, Open in editor
+ *  and the version belong to the file, so its header carries them. */
 export function codeStrip(): { crumb: HTMLElement[]; tools: HTMLElement[] } | null {
   const c = state.code;
   if (!c?.open) return null;
-  const crumb = [el('span', { class: 'mono fg-ref' }, c.name)];
+  const crumb = [el('span', { class: 'mono' }, c.name)];
   if (c.branch && c.branch !== c.name) crumb.push(el('span', { class: 'mono' }, c.branch));
-  if (c.version) crumb.push(el('span', { class: 'mono' }, c.version));
-  const tools: HTMLElement[] = [];
-  if (c.back) {
-    tools.push(
-      el(
-        'button',
-        { class: 'btn', onclick: () => click({ on: 'back' }) },
-        `Back to ${c.back}`,
-        kbd('B'),
-      ),
-    );
-  }
-  if (c.path) {
-    tools.push(
-      el(
-        'button',
-        { class: 'btn', onclick: () => codeAction('openEditor') },
-        'Open in editor',
-        kbd('E'),
-      ),
-    );
-  }
-  tools.push(
+  const tools = [
     el(
       'button',
       {
@@ -87,7 +65,7 @@ export function codeStrip(): { crumb: HTMLElement[]; tools: HTMLElement[] } | nu
       },
       icon('help'),
     ),
-  );
+  ];
   return { crumb, tools };
 }
 

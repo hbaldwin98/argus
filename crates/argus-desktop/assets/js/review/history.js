@@ -45,7 +45,11 @@ function diff(h) {
     else
         body = h.diff.map((d) => diffRow(d));
     return el('section', { class: 'review-diff' }, h.path &&
-        el('div', { class: 'fhdr' }, el('span', { class: 'mono fg-faint' }, h.commit ?? ''), el('span', { class: 'mono cut' }, h.path), el('span', { class: 'meta' }, 'against its first parent'), el('span', { class: 'grow' }), el('button', {
+        el('div', { class: 'fhdr' }, el('span', { class: 'mono fg-faint', title: 'Diffed against its first parent' }, h.commit ?? ''), 
+        // The name leads and the folder after it is what gives way, as in
+        // the file list: a path cut at its end loses the name.
+        el('span', { class: 'mono cut', title: h.path }, el('span', { class: 'strong' }, h.path.slice(h.path.lastIndexOf('/') + 1)), h.path.includes('/') &&
+            el('span', { class: 'fg-faint' }, `  ${h.path.slice(0, h.path.lastIndexOf('/'))}`)), el('span', { class: 'grow' }), el('button', {
             class: 'btn sm',
             onclick: () => call('history_action', { action: 'asReview', row: null }),
         }, 'Open as a review ', keycap('O'))), el('div', { class: 'dbody', id: 'history-body' }, body));

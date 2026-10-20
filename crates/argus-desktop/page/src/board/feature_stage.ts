@@ -18,7 +18,17 @@ import type { Peek } from '../bindings/Peek';
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from '../chrome.js';
 import { closeExpanded } from './lenses/sequence.js';
-import { $, closeButton, el, escKey, ghosts, icon, standingPill, statusPill, type Child } from '../kit/dom.js';
+import {
+  $,
+  closeButton,
+  el,
+  escKey,
+  ghosts,
+  icon,
+  standingPill,
+  statusPill,
+  type Child,
+} from '../kit/dom.js';
 import { closeLayer, placeMenu } from '../kit/menu.js';
 import { ticketLinks } from './tracker/tickets.js';
 import { actionFor } from '../keys/keymap.js';
