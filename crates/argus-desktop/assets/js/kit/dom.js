@@ -110,3 +110,9 @@ export function statusWord(status) {
 export function statusPill(status, say = statusWord(status)) {
     return el('span', { class: `spill ${status}` }, say);
 }
+/** A feature's standing in the status pill's vocabulary, so a feature reads
+ *  like an agent wherever it is named: working on it, held, done, or idle. */
+export function standingPill(standing) {
+    const status = { active: 'working', done: 'done', held: 'waiting' };
+    return statusPill(status[standing] ?? 'idle', standing);
+}

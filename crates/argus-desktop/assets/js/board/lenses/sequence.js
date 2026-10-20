@@ -29,7 +29,14 @@ export function drawSequence(sequence) {
     const count = Math.max(sequence.lifelines.length, 1);
     // A call to itself on the last lifeline writes its text out to the right.
     const loops = sequence.items.some((item) => item.kind === 'message' && item.from === item.to && item.from === count - 1);
-    const width = MARGIN * 2 + count * COLUMN + (loops ? 120 : 0);
+    // A self-call's text starts 48 right of its lifeline; the frame must reach
+    // past its end, measured at 12px mono (7.2 a character) plus a margin.
+    const reach = sequence.items.reduce((most, item) => {
+        if (item.kind !== 'message' || item.from !== item.to)
+            return most;
+        return Math.max(most, MARGIN + COLUMN / 2 + item.from * COLUMN + 48 + item.text.length * 7.2);
+    }, 0);
+    const width = Math.max(MARGIN * 2 + count * COLUMN + (loops ? 120 : 0), Math.ceil(reach) + MARGIN + 8);
     const x = (at) => MARGIN + COLUMN / 2 + at * COLUMN;
     const frames = svg('g', { class: 'frames' });
     const messages = svg('g', { class: 'messages' });
@@ -130,13 +137,16 @@ function badge(group, x, y, step) {
 }
 /** Clicks on a drawn diagram's arrows put the cursor on their step. */
 export function clickable(drawn, flow) {
+    drawn.node.setAttribute('aria-label', `Sequence diagram: ${flow.title}`);
     drawn.node.addEventListener('click', (e) => {
         const step = stepOf(e.target);
         if (step !== null && !drag.moved)
             selectStep(flow.id, step - 1);
     });
     drawn.node.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ')
+        // `code`, not the key's name: the keymap owns what a key means, and these
+        // are only the keys that press a focused control, as a button's own do.
+        if (e.code !== 'Enter' && e.code !== 'Space' && e.code !== 'NumpadEnter')
             return;
         const step = stepOf(e.target);
         if (step === null)

@@ -94,13 +94,13 @@ function preview(s: SessionsPage): HTMLElement {
         { class: 'fhdr' },
         el('span', { class: 'ellipsis' }, p.title),
         el('span', { class: 'meta' }, p.harness),
-        el('span', { class: 'meta mono' }, p.checkout),
+        el('span', { class: 'meta mono scheckout' }, p.checkout),
         p.started &&
           el('span', { class: 'meta', title: p.started }, `started ${humanTime(p.started)}`),
         el('span', { class: 'grow' }),
         // The whole id is for finding the file; eight characters tell
         // sessions apart, and the rest is a hover away.
-        el('span', { class: 'meta mono', title: p.sessionId }, p.sessionId.slice(0, 8)),
+        el('span', { class: 'meta mono sid', title: p.sessionId }, p.sessionId.slice(0, 8)),
       ),
     el(
       'div',

@@ -487,7 +487,15 @@ function drawHead() {
     if (stage !== 'workspace') {
         const repository = stage === 'console' || stage === 'extension' ? null : chosenRepository();
         head.replaceChildren(headLine(el('span', { class: 'type-heading' }, stage === 'extension' ? extensionPageTitle() : STAGE_NAME[stage]), repository
-            ? el('span', { class: 'crumbs' }, el('span', { class: 'fg-faint' }, '·'), repository)
+            ? el('span', { class: 'crumbs' }, el('span', { class: 'fg-faint' }, '·'), repository, 
+            // The checkout the viewer reads is part of where this is, so the
+            // stage needs no row of its own to say it.
+            stage === 'code' && state.code?.open
+                ? [
+                    el('span', { class: 'fg-faint' }, '/'),
+                    el('span', { class: 'mono fg-ref' }, state.code.branch || state.code.name),
+                ]
+                : '')
             : ''));
         return;
     }

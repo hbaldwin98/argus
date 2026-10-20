@@ -237,9 +237,8 @@ function tableRow(row: CheckoutsRow, selected: boolean): HTMLElement {
       null,
       row.name !== null
         ? [
-            el('b', null, row.name),
-            ' ',
-            el('span', { class: 'meta' }, row.primary ? 'primary' : 'worktree'),
+            el('span', { class: 'cname' }, row.name),
+            el('span', { class: 'ctag' }, row.primary ? 'primary' : 'worktree'),
           ]
         : // A branch with no directory is named where a checkout is, so the
           // first column is never blank.

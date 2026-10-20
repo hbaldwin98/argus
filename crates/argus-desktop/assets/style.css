@@ -602,6 +602,9 @@
 }
 .btn.primary:hover {
   filter: brightness(1.08);
+  box-shadow:
+    var(--glow),
+    0 0 0 3px color-mix(in srgb, var(--ring) 22%, transparent);
 }
 .btn.primary:active {
   filter: brightness(0.94);
@@ -728,6 +731,10 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-4);
+}
+.chipf:hover:not(.on) {
+  background: var(--fill);
+  color: var(--fg);
 }
 .chipf.on {
   background: var(--fill);
@@ -1295,8 +1302,14 @@
   background: transparent;
   color: var(--fg-muted);
   font: inherit;
-  padding: 0;
+  min-height: 24px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
   cursor: pointer;
+}
+.crumb:hover {
+  color: var(--fg);
+  background: var(--fill);
 }
 .term {
   flex: 1;
@@ -2447,7 +2460,17 @@ select,
 ::picker(select) {
   appearance: base-select;
 }
+select.field {
+  border-radius: var(--r-md);
+}
+/* A chevron drawn as an icon is, not the solid triangle the system puts there. */
 select::picker-icon {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E")
+    center / contain no-repeat;
   color: var(--fg-faint);
   transition: rotate 0.15s;
 }
@@ -2484,6 +2507,7 @@ select option:checked {
 select option::checkmark {
   color: var(--accent);
 }
+.btn.primary .kbd,
 .kbd.on-accent {
   color: var(--fg-on-accent);
   border-color: var(--fg-on-accent);
@@ -2594,14 +2618,27 @@ select option::checkmark {
   width: 0;
 }
 .pbar.wide {
-  width: 160px;
+  width: 96px;
+  flex: none;
+}
+.fhead .head-row {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.fhead .head-row .type-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fhead .head-row .meta,
+.fhead .head-row .spill {
+  white-space: nowrap;
+  flex: none;
 }
 .head-row {
   align-items: center;
   gap: var(--sp-12);
-}
-.fhead .head-row:last-child {
-  padding-bottom: var(--sp-12);
 }
 .prose {
   white-space: pre-wrap;
@@ -2631,6 +2668,7 @@ select option::checkmark {
   overflow-y: auto;
 }
 .note-box {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -2662,11 +2700,18 @@ select option::checkmark {
   color: var(--fg);
   font: var(--type-mono);
   padding: var(--sp-8) var(--sp-12) var(--sp-8) 0;
-  white-space: pre;
-  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
-.note-field.scrolls {
-  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+/* The hidden copy the gutter is measured against: the field's own box. */
+.note-mirror {
+  position: absolute;
+  visibility: hidden;
+  font: var(--type-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .opts {
   display: flex;
@@ -2842,20 +2887,31 @@ select option::checkmark {
 .detail-title {
   margin-top: var(--sp-6);
 }
-.brief-row {
+.brief-strip {
   display: flex;
-  align-items: flex-start;
-  gap: var(--sp-12);
+  align-items: center;
+  gap: var(--sp-8);
+  padding-bottom: var(--sp-8);
+  font: var(--type-small);
 }
-.brief-row > :first-child {
-  flex: 1;
+.brief-label {
+  color: var(--fg-faint);
+  font-weight: 600;
 }
-/* The header never scrolls, so a long brief scrolls in itself rather than
-   push the lenses and the work under them off the window. */
-.brief-row > .prose {
-  max-height: var(--brief-h, 40px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+.brief-strip > :not(.brief-text) {
+  flex: none;
+  white-space: nowrap;
+}
+.brief-text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.fhead .brief-edit {
+  padding-bottom: var(--sp-12);
 }
 .brief-edit .field.area {
   max-height: 45vh;
@@ -3464,6 +3520,7 @@ body.console-fullscreen #bar {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding: 0 var(--sp-16);
 }
 .ctable {
   width: 100%;
@@ -3556,13 +3613,25 @@ body.console-fullscreen #bar {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-4);
-  opacity: 0.55;
-  transition: opacity 120ms;
 }
-.ctable tr:hover .ra,
-.ctable tr.on .ra,
-.ctable .ra:focus-within {
-  opacity: 1;
+/* Quiet, not disabled: the buttons of a row at rest keep a readable text and a
+   border, and take the full button once the row is hovered or chosen. */
+.ctable tr:not(.on):not(:hover) .ra .btn:not(:focus-visible) {
+  background: transparent;
+  color: var(--fg-muted);
+  border-color: var(--line);
+}
+.cname {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.ctag {
+  font: var(--type-small);
+  color: var(--fg-muted);
+  background: var(--fill);
+  border-radius: var(--r-pill);
+  padding: 0 var(--sp-8);
+  margin-left: var(--sp-6);
 }
 .bname {
   display: inline-flex;
@@ -3710,7 +3779,7 @@ body.console-fullscreen #bar {
   font: inherit;
   font-size: var(--fs-md);
   text-align: left;
-  height: 26px;
+  height: 28px;
   flex: none;
   padding: 0 var(--sp-8) 0 calc(var(--sp-6) + var(--d, 0) * 14px);
   cursor: pointer;
@@ -3963,6 +4032,14 @@ body.console-fullscreen #bar {
 .cline.picked {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
+/* The rows that take clicks show it: one tint under the pointer, drawn
+   inset so the add and remove tints keep their own. */
+.cline:hover:not(.cursor):not(.picked) {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.drow:hover:not(.cursor):not(.picked) .dside {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--fg) 5%, transparent);
+}
 .cline.cursor {
   box-shadow: inset 3px 0 0 var(--accent);
   background-image: linear-gradient(var(--fill), var(--fill));
@@ -4071,8 +4148,10 @@ body.console-fullscreen #bar {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   text-align: left;
-  padding: 0 var(--sp-8);
-  height: 24px;
+  padding: var(--sp-4) var(--sp-8);
+  height: 28px;
+  min-height: 28px;
+  box-sizing: border-box;
   cursor: pointer;
 }
 .orow .t {
@@ -4597,6 +4676,11 @@ select.field {
 .sdot.live {
   background: var(--ok);
   border-color: var(--ok);
+}
+.scheckout,
+.sid {
+  font-family: var(--font-mono);
+  color: var(--fg-faint);
 }
 .scheckout {
   max-width: 120px;
@@ -5816,9 +5900,6 @@ body.resizing {
   cursor: col-resize;
   user-select: none;
 }
-body.resizing:has(.brief-sash.held) {
-  cursor: row-resize;
-}
 
 /* An open feature's edges: between the outline and the detail, and under
    the brief, whose sizes Rust keeps as it does the rail's. */
@@ -5829,18 +5910,9 @@ body.resizing:has(.brief-sash.held) {
   z-index: 2;
   cursor: col-resize;
 }
-.brief-sash {
-  height: 6px;
-  margin: calc(-1 * var(--sp-8)) 0 -4px;
-  cursor: row-resize;
-}
 .split-sash:hover,
 .split-sash.held {
   box-shadow: inset 0 0 0 1px var(--accent);
-}
-.brief-sash:hover,
-.brief-sash.held {
-  box-shadow: inset 0 -2px 0 0 var(--accent);
 }
 
 /* ---- An open feature's lenses ------------------------------------------ */
@@ -5988,7 +6060,7 @@ body.resizing:has(.brief-sash.held) {
 }
 .seq .smsg .hit {
   stroke: transparent;
-  stroke-width: 16;
+  stroke-width: 24;
   fill: none;
 }
 .seq .smsg:hover:not(.on) .line,
@@ -6004,6 +6076,9 @@ body.resizing:has(.brief-sash.held) {
 .seq .smsg:focus-visible .line {
   stroke: var(--ring);
   stroke-width: 2;
+}
+.seq .smsg:focus-visible .hit {
+  stroke: color-mix(in srgb, var(--ring) 22%, transparent);
 }
 .seq .head-solid {
   fill: var(--fg-muted);
@@ -6346,7 +6421,7 @@ body.resizing:has(.brief-sash.held) {
   height: 6px;
   margin-left: var(--sp-6);
   border-radius: var(--r-pill);
-  background: var(--fg-faint);
+  background: var(--changed);
   flex: none;
   align-self: center;
 }

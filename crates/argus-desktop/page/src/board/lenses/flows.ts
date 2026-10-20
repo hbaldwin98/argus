@@ -207,7 +207,7 @@ function picture(flow: FlowDetail | null): HTMLElement {
   );
 }
 
-/** The diagram scaled down, no further than 60%, so a few lifelines fit
+/** The diagram scaled down, no further than 85%, so a few lifelines fit
  *  the box; when it still overflows, the selected step is brought into view
  *  and both edges fade as far as there is more to scroll to. */
 function fitted(holder: HTMLElement, drawn: Drawn): HTMLElement {
@@ -222,7 +222,7 @@ function fitted(holder: HTMLElement, drawn: Drawn): HTMLElement {
     // Minus the holder's padding and border, which it also scrolls inside.
     const room = holder.clientWidth - 24;
     if (room <= 0) return;
-    const scale = Math.max(0.6, Math.min(1, room / drawn.width));
+    const scale = Math.max(0.85, Math.min(1, room / drawn.width));
     drawn.node.setAttribute('width', String(drawn.width * scale));
     drawn.node.setAttribute('height', String(drawn.height * scale));
     const lit = holder.querySelector('.smsg.on');

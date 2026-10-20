@@ -26,19 +26,6 @@ function kbd(key) {
 function segment(label, on, pick) {
     return el('button', { class: `segb${on ? ' on' : ''}`, role: 'radio', 'aria-checked': String(on), onclick: pick }, label);
 }
-function head(c) {
-    return el('div', { class: 'code-head' }, 
-    // The window's title already says Code; the checkout, and its branch
-    // only where it is named otherwise, is what this adds.
-    el('span', { class: 'mono fg-ref' }, c.name), c.branch && c.branch !== c.name && el('span', { class: 'meta mono' }, c.branch), c.version && el('span', { class: 'pill mono' }, c.version), el('span', { class: 'grow' }), c.back &&
-        el('button', { class: 'btn sm', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, kbd('B')), c.path &&
-        el('button', { class: 'btn sm', onclick: () => codeAction('openEditor') }, 'Open in editor', kbd('E')), el('button', {
-        class: 'icon',
-        title: 'Keys for this view  ?',
-        'aria-label': 'Keys for this view',
-        onclick: () => call('command', { action: 'shortcuts' }),
-    }, kbd('?')));
-}
 /** A field whose letters and keys go to Rust as gestures. It keeps the
  *  caret across redraws, as the review's jump does. */
 function field(id, kind, placeholder, query, extra = {}) {
@@ -176,7 +163,7 @@ function tab(label, on, pick, key) {
 /** Files and Search as one tab strip over the column, in both modes, so
  *  the way back from a search to the tree is always where it was. */
 function sideTabs(c) {
-    return el('div', { class: 'lens code-tabs', role: 'tablist', 'aria-label': 'Files or search' }, tab('Files', !c.search, () => c.search && gesture({ on: 'search', gesture: { on: 'close' } })), tab('Search', !!c.search, () => c.search || codeAction('search'), 'Ctrl F'));
+    return el('div', { class: 'lens code-tabs', role: 'tablist', 'aria-label': 'Files or search' }, tab('Files', !c.search, () => c.search && gesture({ on: 'search', gesture: { on: 'close' } }), 'Ctrl P'), tab('Search', !!c.search, () => c.search || codeAction('search'), 'Ctrl F'));
 }
 function side(c) {
     const body = c.search
@@ -344,23 +331,6 @@ function selectedHit(c) {
     }
     return null;
 }
-/** Results asked to open the file of their selected match, once each: a
- *  search is only run on Enter, and its answer then belongs in the viewer. */
-let opened = '';
-function openSelectedMatch(c) {
-    const found = selectedHit(c);
-    const s = c.search;
-    if (!found || !s) {
-        opened = '';
-        return;
-    }
-    const signature = `${c.checkout}|${s.query}|${s.glob}|${s.total}|${s.files.length}`;
-    if (signature === opened)
-        return;
-    opened = signature;
-    if (c.path !== found.file.path)
-        click({ on: 'match', index: found.hit.index });
-}
 function file(c) {
     let body;
     if (c.failed && c.lines.length === 0)
@@ -406,8 +376,10 @@ function file(c) {
         c.language,
         c.lines.length > 0 && `${c.lines.length} lines`,
     ].filter(Boolean);
-    return el('section', { class: 'code-file' }, c.path &&
-        el('div', { class: 'fhdr' }, el('span', { class: 'mono path' }, c.path), el('span', { class: 'grow' }), el('span', { class: 'meta' }, facts.join(' · '), (c.added > 0 || c.removed > 0) && ' · ', c.added > 0 && el('span', { class: 'fg-ok' }, `+${c.added}`), c.added > 0 && c.removed > 0 && ' ', c.removed > 0 && el('span', { class: 'fg-danger' }, `−${c.removed}`)), !c.outline &&
+    return el('section', { class: 'code-file' }, (c.path || c.back) &&
+        el('div', { class: 'fhdr' }, c.path && el('span', { class: 'mono path' }, c.path), c.version && el('span', { class: 'pill mono' }, c.version), el('span', { class: 'grow' }), el('span', { class: 'meta' }, facts.join(' · '), (c.added > 0 || c.removed > 0) && ' · ', c.added > 0 && el('span', { class: 'fg-ok' }, `+${c.added}`), c.added > 0 && c.removed > 0 && ' ', c.removed > 0 && el('span', { class: 'fg-danger' }, `−${c.removed}`)), c.back &&
+            el('button', { class: 'btn sm', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, kbd('B')), c.path &&
+            el('button', { class: 'btn sm', onclick: () => codeAction('openEditor') }, 'Open in editor', kbd('E')), !c.outline &&
             el('button', { class: 'btn sm outline-show', onclick: () => click({ on: 'outline' }) }, 'Outline', kbd('O'))), el('div', { class: 'code-wrap' }, el('div', { class: 'code-body', id: 'code-body', onscroll: trackView }, body), c.lines.length > 0 && ruler(c)));
 }
 function outline(c) {
@@ -464,7 +436,7 @@ export function drawCode() {
     const files = side(c);
     // An outline of no file is 200px of chrome with nothing in it.
     const defined = c.outline && c.path ? outline(c) : null;
-    stage.replaceChildren(head(c), el('div', { class: 'code-split' }, files, sash(files, 'tree'), file(c), defined && sash(defined, 'outline'), defined));
+    stage.replaceChildren(el('div', { class: 'code-split' }, files, sash(files, 'tree'), file(c), defined && sash(defined, 'outline'), defined));
     const body = document.getElementById('code-body');
     if (body) {
         body.scrollTop = scrolledTo.file.get(c.path ?? '') ?? 0;
@@ -487,7 +459,6 @@ export function drawCode() {
         }
     }
     cropHits(stage);
-    openSelectedMatch(c);
     if (on !== drawn.on)
         stage.querySelector('.code-list .on')?.scrollIntoView({ block: 'nearest' });
     drawn = { list, on, cursor };

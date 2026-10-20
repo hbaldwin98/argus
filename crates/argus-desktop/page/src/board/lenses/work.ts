@@ -17,7 +17,7 @@ import type { TaskDetail } from '../../bindings/TaskDetail';
 import type { WorkRow } from '../../bindings/WorkRow';
 import { notice } from '../../chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el, icon, statusPill, type Child } from '../../kit/dom.js';
+import { $, el, icon, standingPill, statusPill, type Child } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
 import { openMenu, type MenuItem } from '../../kit/menu.js';
 import { flowsAction, flowsLens } from './flows.js';
@@ -269,40 +269,13 @@ function stillThere(view: FeatureView): boolean {
 }
 
 function head(view: FeatureView): HTMLElement {
-  const editing = state.editing;
   const parts = [
-    `${view.tasksDone} of ${view.tasksTotal} tasks`,
+    `${view.tasksDone}/${view.tasksTotal} tasks`,
     view.decided > 0 && el('span', { class: 'fg-ok' }, `${view.decided} decided`),
     view.open > 0 && el('span', { class: 'fg-attention' }, `${view.open} open`),
   ].filter((part): part is string | HTMLElement => part !== false);
   const progress = el('span', null);
   progress.style.width = `${view.tasksTotal ? Math.round((view.tasksDone / view.tasksTotal) * 100) : 0}%`;
-  let brief: Child;
-  if (editing?.what === 'brief') {
-    const area = field(
-      'edit-brief',
-      editing.text,
-      true,
-      (text) => (editing.text = text),
-      'What is being built, and why',
-    );
-    brief = el('div', { class: 'stack-6 brief-edit' }, area, formButtons('Save the brief'));
-  } else {
-    const text = view.brief ? el('div', { class: 'fg-muted prose' }, view.brief) : null;
-    brief = [
-      el(
-        'div',
-        { class: 'brief-row' },
-        text ?? el('div', { class: 'fg-faint' }, 'No brief yet.'),
-        el(
-          'button',
-          { class: 'btn sm', onclick: () => begin({ what: 'brief', text: view.brief }) },
-          'Edit brief',
-        ),
-      ),
-      text && briefSash(text),
-    ];
-  }
   const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
   return el(
     'div',
@@ -315,6 +288,12 @@ function head(view: FeatureView): HTMLElement {
       el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`),
       el('span', { class: 'fg-faint' }, '›'),
       el('span', { class: 'fg' }, lensName),
+      el('span', { class: 'pbar wide' }, progress),
+      el(
+        'span',
+        { class: 'meta' },
+        parts.flatMap((part, i): Child[] => (i ? [' · ', part] : [part])),
+      ),
       el('span', { class: 'grow' }),
       el(
         'span',
@@ -322,6 +301,26 @@ function head(view: FeatureView): HTMLElement {
         view.branch && el('span', { class: 'mono fg-ref' }, view.branch),
         view.branch && view.agent && ' · ',
         view.agent && [`${view.agent.title} `, statusPill(view.agent.status)],
+      ),
+      // Lenses switch what the feature is shown as, so they are segments, not tabs.
+      el(
+        'div',
+        { class: 'seg', role: 'radiogroup', 'aria-label': 'Lens' },
+        LENSES.map(({ lens, name, key }) =>
+          el(
+            'button',
+            {
+              class: `segb${view.lens === lens ? ' on' : ''}`,
+              role: 'radio',
+              'aria-checked': String(view.lens === lens),
+              title: `${name} (${key})`,
+              onclick: () => setLens(lens),
+            },
+            name,
+            lensCount(view, lens) !== null &&
+              el('span', { class: 'fg-faint' }, ` ${lensCount(view, lens)}`),
+          ),
+        ),
       ),
     ),
     el(
@@ -334,62 +333,87 @@ function head(view: FeatureView): HTMLElement {
         ' ',
         view.title,
       ),
-      el('span', { class: `ktag ${view.standing}` }, view.standing),
-      el('span', { class: 'pbar wide' }, progress),
-      el(
-        'span',
-        { class: 'meta' },
-        parts.flatMap((part, i): Child[] => (i ? [' · ', part] : [part])),
-      ),
-    ),
-    brief,
-    el(
-      'div',
-      { class: 'lens', role: 'tablist', 'aria-label': 'Lens' },
-      LENSES.map(({ lens, name, key }) =>
-        el(
-          'button',
-          {
-            class: `lt${view.lens === lens ? ' on' : ''}`,
-            role: 'tab',
-            'aria-selected': String(view.lens === lens),
-            onclick: () => setLens(lens),
-          },
-          name,
-          keycap(key),
-        ),
-      ),
+      standingPill(view.standing),
       el('span', { class: 'grow' }),
       tickets(view),
     ),
+    briefStrip(view),
   );
 }
 
-/** The tickets the feature is linked to, each opening the view an agent
- *  showed of it when one waits (`tracker/tickets.ts`), when it was last
- *  reconciled with them and how much changed here since, and the buttons
- *  of the link and reconcile dialogs. */
-function tickets(view: FeatureView): HTMLElement {
+/** The brief on one line, with when the tickets were last reconciled and
+ *  how much changed since, which the outline's rows no longer say one by one. */
+function briefStrip(view: FeatureView): HTMLElement {
+  const editing = state.editing;
+  if (editing?.what === 'brief') {
+    const area = field(
+      'edit-brief',
+      editing.text,
+      true,
+      (text) => (editing.text = text),
+      'What is being built, and why',
+    );
+    return el('div', { class: 'stack-6 brief-edit' }, area, formButtons('Save the brief'));
+  }
   const waiting: Record<string, string> = {
     asked: 'an agent is reading',
     proposed: 'a proposal waits',
     carrying: 'being carried out',
   };
+  const linked = view.links.length > 0;
+  const changes = view.changes ?? 0;
+  const said = [
+    view.reconciled
+      ? `Reconciled ${view.reconciled.replace(/^reconciled /i, '').replace(/ by .*$/, '')}`
+      : null,
+    changes > 0 ? `${changes} change${changes === 1 ? '' : 's'} since` : null,
+  ].filter((part): part is string => part !== null);
+  return el(
+    'div',
+    { class: 'brief-strip' },
+    el('span', { class: 'brief-label' }, 'Brief'),
+    el(
+      'span',
+      { class: view.brief ? 'brief-text' : 'brief-text fg-faint', title: view.brief },
+      view.brief || 'No brief yet.',
+    ),
+    el(
+      'button',
+      {
+        class: 'btn sm',
+        title: 'Edit the brief (B)',
+        onclick: () => begin({ what: 'brief', text: view.brief }),
+      },
+      'Edit',
+    ),
+    linked && said.length > 0 && el('span', { class: 'meta fg-changed' }, said.join(' · ')),
+    linked &&
+      view.reconcile &&
+      el(
+        'span',
+        { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` },
+        waiting[view.reconcile] ?? '',
+      ),
+  );
+}
+
+/** The count a lens carries as its suffix: what it has to show. */
+function lensCount(view: FeatureView, lens: Lens): number | null {
+  if (lens === 'work') return view.tasksTotal;
+  if (lens === 'record') return view.decided + view.open;
+  return view.flows?.loaded ? view.flows.flows.length : null;
+}
+
+/** The tickets the feature is linked to, each opening the view an agent
+ *  showed of it when one waits (`tracker/tickets.ts`), and the buttons of
+ *  the link and reconcile dialogs. */
+function tickets(view: FeatureView): HTMLElement {
   return el(
     'span',
     { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' },
     view.links.map(ticketLink),
     view.views.map(featureViewLink),
     savedFeatureLinks(view.number),
-    view.links.length > 0 &&
-      !view.reconcile &&
-      view.changes !== null &&
-      view.changes > 0 &&
-      el(
-        'span',
-        { class: 'meta fg-changed', title: view.reconciled ?? 'never reconciled' },
-        `${view.changes} change${view.changes === 1 ? '' : 's'} since`,
-      ),
     el(
       'button',
       {
@@ -408,13 +432,6 @@ function tickets(view: FeatureView): HTMLElement {
           onclick: () => call('open_reconcile', {}),
         },
         'Reconcile…',
-      ),
-    view.links.length > 0 &&
-      view.reconcile &&
-      el(
-        'span',
-        { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` },
-        waiting[view.reconcile] ?? '',
       ),
   );
 }
@@ -485,24 +502,6 @@ function outlineSash(side: HTMLElement): HTMLElement {
   return sash;
 }
 
-/** The edge under the brief, past which it scrolls. */
-function briefSash(text: HTMLElement): HTMLElement {
-  const sash = el('div', {
-    class: 'brief-sash',
-    role: 'separator',
-    'aria-orientation': 'horizontal',
-    'aria-label': 'Resize the brief',
-    title: 'Drag to resize; double-click for the usual height',
-  });
-  dragEdge(sash, text, {
-    vertical: true,
-    sizeAt: (y) => y - text.getBoundingClientRect().top,
-    draw: (height) => featureEdges(state.rail.outlineWidth, height),
-    report: (height) => call('brief_height', { height }),
-  });
-  return sash;
-}
-
 function outline(view: FeatureView): HTMLElement {
   const section = el(
     'section',
@@ -512,7 +511,7 @@ function outline(view: FeatureView): HTMLElement {
       { class: 'label' },
       el('span', null, 'Outline'),
       el('span', { class: 'grow' }),
-      legend(view.rows.some((row) => row.changed)),
+      legend(markChanged(view)),
     ),
   );
   if (!view.loaded) section.append(el('div', { class: 'meta' }, 'Reading its tasks…'));
@@ -525,7 +524,8 @@ function outline(view: FeatureView): HTMLElement {
       ),
     );
   }
-  for (const row of view.rows) section.append(workRow(row));
+  const mixed = markChanged(view);
+  view.rows.forEach((row, i) => section.append(workRow(row, subtasks(view.rows, i), mixed)));
   const editing = state.editing;
   if (editing?.what === 'addTask' || editing?.what === 'addDecision')
     section.append(adding(view, editing));
@@ -583,7 +583,29 @@ export function stateMark(word: string): [string, string] {
   return TASK_MARK[word] ?? ['·', 'fg-faint'];
 }
 
-function workRow(row: WorkRow): HTMLElement {
+/** A dot on every row says nothing: it is drawn only where some rows changed
+ *  and some did not, and the header says how many changed since. */
+function markChanged(view: FeatureView): boolean {
+  const changed = view.rows.filter((row) => row.changed).length;
+  return changed > 0 && changed < view.rows.length;
+}
+
+/** Done and total of the tasks under the row at `at`, none for a leaf. */
+function subtasks(rows: WorkRow[], at: number): [number, number] | null {
+  const row = rows[at];
+  if (!row || row.at.kind !== 'task') return null;
+  let done = 0;
+  let total = 0;
+  for (const next of rows.slice(at + 1)) {
+    if (next.depth <= row.depth) break;
+    if (next.at.kind !== 'task') continue;
+    total += 1;
+    if (next.state === 'done') done += 1;
+  }
+  return total > 0 ? [done, total] : null;
+}
+
+function workRow(row: WorkRow, sub: [number, number] | null, mixed: boolean): HTMLElement {
   const [mark, tone] = stateMark(row.state);
   const decision = row.at.kind === 'decision';
   const quiet =
@@ -596,6 +618,7 @@ function workRow(row: WorkRow): HTMLElement {
   else if (row.waitsOn) {
     aside = el('span', { class: 'meta waits' }, icon('lock'), `waits on ${row.waitsOn}`);
   } else if (row.state === 'withdrawn') aside = el('span', { class: 'meta' }, 'withdrawn');
+  else if (sub) aside = el('span', { class: 'meta' }, `${sub[0]}/${sub[1]}`);
   const node = el(
     'button',
     {
@@ -617,7 +640,8 @@ function workRow(row: WorkRow): HTMLElement {
       { class: 'wtext' },
       el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text),
       row.key && el('span', { class: 'tkey' }, row.key),
-      row.changed &&
+      mixed &&
+        row.changed &&
         el('span', {
           class: 'cdot',
           title: 'changed here since the last reconcile',

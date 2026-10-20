@@ -78,7 +78,7 @@ function picture(flow) {
     clickable(drawn, flow);
     return el('article', { class: 'work-detail flow-picture', 'aria-label': flow.title }, el('div', { class: 'label' }, el('span', null, flow.title), el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: openExpanded, title: 'Expand over the window' }, icon('expand'), ' Expand ', keycap('F'))), fitted(el('div', { class: 'seq-holder' }, drawn.node), drawn));
 }
-/** The diagram scaled down, no further than 60%, so a few lifelines fit
+/** The diagram scaled down, no further than 85%, so a few lifelines fit
  *  the box; when it still overflows, the selected step is brought into view
  *  and both edges fade as far as there is more to scroll to. */
 function fitted(holder, drawn) {
@@ -94,7 +94,7 @@ function fitted(holder, drawn) {
         const room = holder.clientWidth - 24;
         if (room <= 0)
             return;
-        const scale = Math.max(0.6, Math.min(1, room / drawn.width));
+        const scale = Math.max(0.85, Math.min(1, room / drawn.width));
         drawn.node.setAttribute('width', String(drawn.width * scale));
         drawn.node.setAttribute('height', String(drawn.height * scale));
         const lit = holder.querySelector('.smsg.on');

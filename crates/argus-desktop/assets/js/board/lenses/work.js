@@ -8,7 +8,7 @@
 // refused edit leaves it as it was.
 import { notice } from '../../chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el, icon, statusPill } from '../../kit/dom.js';
+import { $, el, icon, standingPill, statusPill } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
 import { openMenu } from '../../kit/menu.js';
 import { flowsAction, flowsLens } from './flows.js';
@@ -232,49 +232,67 @@ function stillThere(view) {
     }
 }
 function head(view) {
-    const editing = state.editing;
     const parts = [
-        `${view.tasksDone} of ${view.tasksTotal} tasks`,
+        `${view.tasksDone}/${view.tasksTotal} tasks`,
         view.decided > 0 && el('span', { class: 'fg-ok' }, `${view.decided} decided`),
         view.open > 0 && el('span', { class: 'fg-attention' }, `${view.open} open`),
     ].filter((part) => part !== false);
     const progress = el('span', null);
     progress.style.width = `${view.tasksTotal ? Math.round((view.tasksDone / view.tasksTotal) * 100) : 0}%`;
-    let brief;
+    const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
+    return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, lensName), el('span', { class: 'pbar wide' }, progress), el('span', { class: 'meta' }, parts.flatMap((part, i) => (i ? [' · ', part] : [part]))), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && el('span', { class: 'mono fg-ref' }, view.branch), view.branch && view.agent && ' · ', view.agent && [`${view.agent.title} `, statusPill(view.agent.status)]), 
+    // Lenses switch what the feature is shown as, so they are segments, not tabs.
+    el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Lens' }, LENSES.map(({ lens, name, key }) => el('button', {
+        class: `segb${view.lens === lens ? ' on' : ''}`,
+        role: 'radio',
+        'aria-checked': String(view.lens === lens),
+        title: `${name} (${key})`,
+        onclick: () => setLens(lens),
+    }, name, lensCount(view, lens) !== null &&
+        el('span', { class: 'fg-faint' }, ` ${lensCount(view, lens)}`))))), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), standingPill(view.standing), el('span', { class: 'grow' }), tickets(view)), briefStrip(view));
+}
+/** The brief on one line, with when the tickets were last reconciled and
+ *  how much changed since, which the outline's rows no longer say one by one. */
+function briefStrip(view) {
+    const editing = state.editing;
     if (editing?.what === 'brief') {
         const area = field('edit-brief', editing.text, true, (text) => (editing.text = text), 'What is being built, and why');
-        brief = el('div', { class: 'stack-6 brief-edit' }, area, formButtons('Save the brief'));
+        return el('div', { class: 'stack-6 brief-edit' }, area, formButtons('Save the brief'));
     }
-    else {
-        const text = view.brief ? el('div', { class: 'fg-muted prose' }, view.brief) : null;
-        brief = [
-            el('div', { class: 'brief-row' }, text ?? el('div', { class: 'fg-faint' }, 'No brief yet.'), el('button', { class: 'btn sm', onclick: () => begin({ what: 'brief', text: view.brief }) }, 'Edit brief')),
-            text && briefSash(text),
-        ];
-    }
-    const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
-    return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, lensName), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && el('span', { class: 'mono fg-ref' }, view.branch), view.branch && view.agent && ' · ', view.agent && [`${view.agent.title} `, statusPill(view.agent.status)])), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), el('span', { class: `ktag ${view.standing}` }, view.standing), el('span', { class: 'pbar wide' }, progress), el('span', { class: 'meta' }, parts.flatMap((part, i) => (i ? [' · ', part] : [part])))), brief, el('div', { class: 'lens', role: 'tablist', 'aria-label': 'Lens' }, LENSES.map(({ lens, name, key }) => el('button', {
-        class: `lt${view.lens === lens ? ' on' : ''}`,
-        role: 'tab',
-        'aria-selected': String(view.lens === lens),
-        onclick: () => setLens(lens),
-    }, name, keycap(key))), el('span', { class: 'grow' }), tickets(view)));
-}
-/** The tickets the feature is linked to, each opening the view an agent
- *  showed of it when one waits (`tracker/tickets.ts`), when it was last
- *  reconciled with them and how much changed here since, and the buttons
- *  of the link and reconcile dialogs. */
-function tickets(view) {
     const waiting = {
         asked: 'an agent is reading',
         proposed: 'a proposal waits',
         carrying: 'being carried out',
     };
-    return el('span', { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' }, view.links.map(ticketLink), view.views.map(featureViewLink), savedFeatureLinks(view.number), view.links.length > 0 &&
-        !view.reconcile &&
-        view.changes !== null &&
-        view.changes > 0 &&
-        el('span', { class: 'meta fg-changed', title: view.reconciled ?? 'never reconciled' }, `${view.changes} change${view.changes === 1 ? '' : 's'} since`), el('button', {
+    const linked = view.links.length > 0;
+    const changes = view.changes ?? 0;
+    const said = [
+        view.reconciled
+            ? `Reconciled ${view.reconciled.replace(/^reconciled /i, '').replace(/ by .*$/, '')}`
+            : null,
+        changes > 0 ? `${changes} change${changes === 1 ? '' : 's'} since` : null,
+    ].filter((part) => part !== null);
+    return el('div', { class: 'brief-strip' }, el('span', { class: 'brief-label' }, 'Brief'), el('span', { class: view.brief ? 'brief-text' : 'brief-text fg-faint', title: view.brief }, view.brief || 'No brief yet.'), el('button', {
+        class: 'btn sm',
+        title: 'Edit the brief (B)',
+        onclick: () => begin({ what: 'brief', text: view.brief }),
+    }, 'Edit'), linked && said.length > 0 && el('span', { class: 'meta fg-changed' }, said.join(' · ')), linked &&
+        view.reconcile &&
+        el('span', { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` }, waiting[view.reconcile] ?? ''));
+}
+/** The count a lens carries as its suffix: what it has to show. */
+function lensCount(view, lens) {
+    if (lens === 'work')
+        return view.tasksTotal;
+    if (lens === 'record')
+        return view.decided + view.open;
+    return view.flows?.loaded ? view.flows.flows.length : null;
+}
+/** The tickets the feature is linked to, each opening the view an agent
+ *  showed of it when one waits (`tracker/tickets.ts`), and the buttons of
+ *  the link and reconcile dialogs. */
+function tickets(view) {
+    return el('span', { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' }, view.links.map(ticketLink), view.views.map(featureViewLink), savedFeatureLinks(view.number), el('button', {
         class: 'btn sm',
         title: 'Link a ticket (T)',
         onclick: () => call('open_link', { map: false }),
@@ -283,9 +301,7 @@ function tickets(view) {
             class: 'btn sm',
             title: `Reconcile with its tickets (R) · ${view.reconciled ?? 'never reconciled'}`,
             onclick: () => call('open_reconcile', {}),
-        }, 'Reconcile…'), view.links.length > 0 &&
-        view.reconcile &&
-        el('span', { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` }, waiting[view.reconcile] ?? ''));
+        }, 'Reconcile…'));
 }
 function keyBar(lens) {
     const keys = lens === 'record'
@@ -346,32 +362,15 @@ function outlineSash(side) {
     });
     return sash;
 }
-/** The edge under the brief, past which it scrolls. */
-function briefSash(text) {
-    const sash = el('div', {
-        class: 'brief-sash',
-        role: 'separator',
-        'aria-orientation': 'horizontal',
-        'aria-label': 'Resize the brief',
-        title: 'Drag to resize; double-click for the usual height',
-    });
-    dragEdge(sash, text, {
-        vertical: true,
-        sizeAt: (y) => y - text.getBoundingClientRect().top,
-        draw: (height) => featureEdges(state.rail.outlineWidth, height),
-        report: (height) => call('brief_height', { height }),
-    });
-    return sash;
-}
 function outline(view) {
-    const section = el('section', { class: 'work-outline', 'aria-label': 'Outline' }, el('div', { class: 'label' }, el('span', null, 'Outline'), el('span', { class: 'grow' }), legend(view.rows.some((row) => row.changed))));
+    const section = el('section', { class: 'work-outline', 'aria-label': 'Outline' }, el('div', { class: 'label' }, el('span', null, 'Outline'), el('span', { class: 'grow' }), legend(markChanged(view))));
     if (!view.loaded)
         section.append(el('div', { class: 'meta' }, 'Reading its tasks…'));
     else if (!view.rows.length) {
         section.append(el('div', { class: 'meta' }, 'Nothing written under it yet: add a task, or raise a decision.'));
     }
-    for (const row of view.rows)
-        section.append(workRow(row));
+    const mixed = markChanged(view);
+    view.rows.forEach((row, i) => section.append(workRow(row, subtasks(view.rows, i), mixed)));
     const editing = state.editing;
     if (editing?.what === 'addTask' || editing?.what === 'addDecision')
         section.append(adding(view, editing));
@@ -400,7 +399,31 @@ function legend(changed) {
 export function stateMark(word) {
     return TASK_MARK[word] ?? ['·', 'fg-faint'];
 }
-function workRow(row) {
+/** A dot on every row says nothing: it is drawn only where some rows changed
+ *  and some did not, and the header says how many changed since. */
+function markChanged(view) {
+    const changed = view.rows.filter((row) => row.changed).length;
+    return changed > 0 && changed < view.rows.length;
+}
+/** Done and total of the tasks under the row at `at`, none for a leaf. */
+function subtasks(rows, at) {
+    const row = rows[at];
+    if (!row || row.at.kind !== 'task')
+        return null;
+    let done = 0;
+    let total = 0;
+    for (const next of rows.slice(at + 1)) {
+        if (next.depth <= row.depth)
+            break;
+        if (next.at.kind !== 'task')
+            continue;
+        total += 1;
+        if (next.state === 'done')
+            done += 1;
+    }
+    return total > 0 ? [done, total] : null;
+}
+function workRow(row, sub, mixed) {
     const [mark, tone] = stateMark(row.state);
     const decision = row.at.kind === 'decision';
     const quiet = row.state === 'done' ||
@@ -415,6 +438,8 @@ function workRow(row) {
     }
     else if (row.state === 'withdrawn')
         aside = el('span', { class: 'meta' }, 'withdrawn');
+    else if (sub)
+        aside = el('span', { class: 'meta' }, `${sub[0]}/${sub[1]}`);
     const node = el('button', {
         class: `wrow${row.on ? ' on' : ''}`,
         'aria-current': row.on ? 'true' : null,
@@ -422,7 +447,8 @@ function workRow(row) {
         ondblclick: () => editRow(),
     }, el('span', { class: tone }, mark), el('span', {
         class: `n${decision && row.state !== 'open' ? ' fg-ref' : ''}${row.state === 'open' ? ' fg-attention' : ''}`,
-    }, row.label), el('span', { class: 'wtext' }, el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text), row.key && el('span', { class: 'tkey' }, row.key), row.changed &&
+    }, row.label), el('span', { class: 'wtext' }, el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text), row.key && el('span', { class: 'tkey' }, row.key), mixed &&
+        row.changed &&
         el('span', {
             class: 'cdot',
             title: 'changed here since the last reconcile',

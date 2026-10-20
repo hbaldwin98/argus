@@ -36,14 +36,25 @@ function note(): HTMLTextAreaElement | null {
   return node instanceof HTMLTextAreaElement ? node : null;
 }
 
-/** The note keeps its lines unwrapped so the gutter's numbers stay beside
- *  them; a line running past the edge fades there instead of being cut. */
-function noteCue(): void {
+/** The note wraps, so a line number is as tall as the wrapped line it
+ *  stands for. A text field cannot say where it broke its lines, so the
+ *  lines are set again in a hidden copy of it at the same width and read. */
+function alignGutter(): void {
   const field = note();
-  if (!field) return;
-  const more = field.scrollWidth - field.clientWidth - field.scrollLeft > 4;
-  field.classList.toggle('scrolls', more);
-  field.title = more ? 'A line runs on: scroll sideways' : '';
+  const numbers = document.getElementById('capture-gutter');
+  if (!field || !numbers) return;
+  const style = getComputedStyle(field);
+  const inner = field.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  if (inner <= 0) return;
+  const mirror = el('div', { class: 'note-mirror', 'aria-hidden': 'true' });
+  mirror.style.width = `${inner}px`;
+  for (const line of field.value.split('\n')) mirror.append(el('div', null, line || ' '));
+  field.parentElement?.append(mirror);
+  [...numbers.children].forEach((number, i) => {
+    const height = mirror.children[i]?.getBoundingClientRect().height;
+    if (number instanceof HTMLElement && height) number.style.height = `${height}px`;
+  });
+  mirror.remove();
 }
 
 function create(): void {
@@ -63,7 +74,7 @@ export function drawCapture(): void {
     $('capture-head').replaceWith(head(page));
     $('capture-gutter').replaceWith(gutter(page, field.value));
     $('capture-reads').replaceWith(readsAs(page));
-    noteCue();
+    alignGutter();
     return;
   }
   const textarea = el('textarea', {
@@ -76,12 +87,12 @@ export function drawCapture(): void {
     oninput: () => {
       call('capture', { gesture: { on: 'note', note: textarea.value } });
       $('capture-gutter').replaceWith(gutter(state.capture ?? page, textarea.value));
-      noteCue();
+      alignGutter();
     },
     onscroll: () => {
       const numbers = document.getElementById('capture-gutter');
       if (numbers) numbers.scrollTop = textarea.scrollTop;
-      noteCue();
+      alignGutter();
     },
     onkeydown: (e: KeyboardEvent) => {
       const action = actionFor(['writing'], e);
@@ -118,7 +129,7 @@ export function drawCapture(): void {
     ),
   );
   textarea.focus();
-  requestAnimationFrame(noteCue);
+  requestAnimationFrame(alignGutter);
 }
 
 function head(page: CapturePage): HTMLElement {
