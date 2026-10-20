@@ -35,6 +35,11 @@ function dockPage(dock) {
 export function dockOf(panel) {
     return DOCKS.find((dock) => dockPage(dock)?.tabs.some((t) => t.panel === panel)) ?? null;
 }
+/** Whether the dock `panel` is in shows a tab strip, which then names it. */
+export function dockShowsTabs(panel) {
+    const dock = dockOf(panel);
+    return dock !== null && (dockPage(dock)?.tabs.length ?? 0) > 1;
+}
 /** "Dock on the right", for a button or a menu. */
 export function dockWords(dock) {
     return `Dock ${WHERE[dock]}`;
@@ -147,6 +152,7 @@ function drawTabs(dock, page, shown) {
         strip.replaceChildren();
         return;
     }
+    const own = tabs.find((tab) => tab.panel === shown);
     strip.replaceChildren(...tabs.map((tab) => {
         const close = closeOf(tab.panel);
         const pick = draggable(el('button', {
@@ -162,7 +168,13 @@ function drawTabs(dock, page, shown) {
             oncontextmenu: contextMenu(tab.title, () => [
                 { heading: tab.title },
                 ...moveItems(tab.panel, true),
-                ...(close ? ['sep', { label: 'Close', run: close }] : []),
+                'sep',
+                close
+                    ? { label: 'Close', run: close }
+                    : {
+                        label: 'Hide',
+                        run: () => call('docks', { gesture: { on: 'hide', panel: tab.panel } }),
+                    },
             ]),
         }, pick, close &&
             el('button', {
@@ -173,7 +185,9 @@ function drawTabs(dock, page, shown) {
                 onclick: close,
             }, icon('close')));
         return close ? closesOnMiddle(node, close) : node;
-    }));
+    }), 
+    // The shown panel's dock menu rides the strip's end, not a row of its own.
+    el('span', { class: 'grow' }), own && shown ? dockMenuButton(shown, own.title, true) : '');
 }
 /** What closing a panel's tab does, or `null` for a panel Rust says has no
  *  close of its own: its dock's hide puts it away. */

@@ -46,41 +46,49 @@ function segment(label: string, on: boolean, pick: () => void): HTMLElement {
   );
 }
 
-function head(c: CodePage): HTMLElement {
-  return el(
-    'div',
-    { class: 'code-head' },
-    // The window's title already says Code; the checkout, and its branch
-    // only where it is named otherwise, is what this adds.
-    el('span', { class: 'mono fg-ref' }, c.name),
-    c.branch && c.branch !== c.name && el('span', { class: 'meta mono' }, c.branch),
-    c.version && el('span', { class: 'pill mono' }, c.version),
-    el('span', { class: 'grow' }),
-    c.back &&
+/** What the strip carries on the Code stage: the checkout and its branch
+ *  under the stage's name, and the buttons that act on the whole stage. A
+ *  row of its own held a lone branch name and these. */
+export function codeStrip(): { crumb: HTMLElement[]; tools: HTMLElement[] } | null {
+  const c = state.code;
+  if (!c?.open) return null;
+  const crumb = [el('span', { class: 'mono fg-ref' }, c.name)];
+  if (c.branch && c.branch !== c.name) crumb.push(el('span', { class: 'mono' }, c.branch));
+  if (c.version) crumb.push(el('span', { class: 'mono' }, c.version));
+  const tools: HTMLElement[] = [];
+  if (c.back) {
+    tools.push(
       el(
         'button',
-        { class: 'btn sm', onclick: () => click({ on: 'back' }) },
+        { class: 'btn', onclick: () => click({ on: 'back' }) },
         `Back to ${c.back}`,
         kbd('B'),
       ),
-    c.path &&
+    );
+  }
+  if (c.path) {
+    tools.push(
       el(
         'button',
-        { class: 'btn sm', onclick: () => codeAction('openEditor') },
+        { class: 'btn', onclick: () => codeAction('openEditor') },
         'Open in editor',
         kbd('E'),
       ),
+    );
+  }
+  tools.push(
     el(
       'button',
       {
         class: 'icon',
-        title: 'Keys for this view  ?',
+        title: 'Keys for this view (?)',
         'aria-label': 'Keys for this view',
         onclick: () => call('command', { action: 'shortcuts' }),
       },
-      kbd('?'),
+      icon('help'),
     ),
   );
+  return { crumb, tools };
 }
 
 /** A field whose letters and keys go to Rust as gestures. It keeps the
@@ -626,7 +634,6 @@ export function drawCode(): void {
   const files = side(c);
   const defined = c.outline && outline(c);
   stage.replaceChildren(
-    head(c),
     el(
       'div',
       { class: 'code-split' },

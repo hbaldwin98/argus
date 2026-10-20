@@ -11,7 +11,7 @@ import type { CheckoutsRow } from '../bindings/CheckoutsRow';
 import type { LastCommit } from '../bindings/LastCommit';
 import { startMenu, toggleStart } from '../chrome.js';
 import { $, closeButton, el, escKey, focusQuietly, ghosts, icon, type Child } from '../kit/dom.js';
-import { closeLayer } from '../kit/menu.js';
+import { closeLayer, openMenu } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -22,6 +22,62 @@ function keycap(key: string): HTMLElement {
 
 function empty(...body: Child[]): HTMLElement {
   return el('div', { class: 'empty' }, el('div', { class: 'empty-body' }, body));
+}
+
+/** What the strip carries on the Checkouts stage: the counts beside the
+ *  title, and the branch and fetch buttons and the primary action. */
+export function checkoutsStrip(): { meta: Child[]; tools: HTMLElement[] } | null {
+  const c = state.checkouts;
+  if (!c?.repository) return null;
+  const branches = `${c.branches} other branch${c.branches === 1 ? '' : 'es'}`;
+  return {
+    meta: [
+      el(
+        'span',
+        { class: 'meta head-meta', title: 'Enter open · D delete' },
+        `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`,
+        c.main && [' · primary ', el('span', { class: 'mono fg-ref' }, c.main)],
+      ),
+    ],
+    // One primary and an overflow: Branches and Fetch all are the overflow's.
+    tools: [
+      el(
+        'button',
+        { class: 'btn primary', onclick: () => checkoutsAction('newWorktree') },
+        'New worktree',
+      ),
+      el(
+        'button',
+        {
+          class: 'icon',
+          type: 'button',
+          title: 'More: branches, fetch all',
+          'aria-label': 'More about checkouts',
+          'aria-haspopup': 'menu',
+          onclick: (e: MouseEvent) => {
+            const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            openMenu(
+              'Checkouts',
+              [
+                {
+                  label: c.branchesShown ? 'Hide other branches' : 'Show other branches',
+                  hint: keycap('B'),
+                  run: () => call('checkouts_action', { action: 'branches' }),
+                },
+                {
+                  label: 'Fetch all',
+                  hint: keycap('F'),
+                  run: () => call('checkouts_action', { action: 'fetch' }),
+                },
+              ],
+              { x: box.right, y: box.bottom + 4, align: 'end' },
+            );
+          },
+        },
+        icon('more'),
+      ),
+    ],
+  };
 }
 
 function head(c: Checkouts): HTMLElement {
@@ -42,51 +98,10 @@ function head(c: Checkouts): HTMLElement {
     },
   });
   filter.value = c.filter;
-  const branches = `${c.branches} other branch${c.branches === 1 ? '' : 'es'}`;
   return el(
     'div',
     { class: 'fhead index-head' },
-    el(
-      'div',
-      { class: 'crumbs' },
-      el('span', { class: 'fg' }, 'Checkouts'),
-      el('span', { class: 'grow' }),
-      el('span', { class: 'meta' }, keycap('Enter'), ' open · ', keycap('D'), ' delete'),
-    ),
-    el(
-      'div',
-      { class: 'actions index-tools' },
-      el('span', { class: 'type-title' }, `Checkouts in ${c.repository}`),
-      el(
-        'span',
-        { class: 'meta' },
-        `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`,
-        c.main && [' · main ', el('span', { class: 'mono fg-ref' }, c.main)],
-      ),
-      el('span', { class: 'grow' }),
-      filter,
-      el(
-        'button',
-        {
-          class: 'btn',
-          'aria-pressed': String(c.branchesShown),
-          onclick: () => call('checkouts_action', { action: 'branches' }),
-        },
-        'Branches ',
-        keycap('B'),
-      ),
-      el(
-        'button',
-        { class: 'btn', onclick: () => call('checkouts_action', { action: 'fetch' }) },
-        'Fetch all ',
-        keycap('F'),
-      ),
-      el(
-        'button',
-        { class: 'btn primary', onclick: () => checkoutsAction('newWorktree') },
-        'New worktree',
-      ),
-    ),
+    el('div', { class: 'actions index-tools' }, filter),
   );
 }
 

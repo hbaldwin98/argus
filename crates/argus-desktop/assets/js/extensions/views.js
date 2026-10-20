@@ -6,7 +6,7 @@
 // (`src/extensions/views.rs`, `src/extensions/keys.rs`), and `docks` puts
 // a docked view's element in its dock; a row changes only when its
 // extension publishes it again.
-import { dockMenuButton } from '../layout/docks.js';
+import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
 import { $, closeButton, el, escKey, focusQuietly, icon } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
 import { closeLayer } from '../kit/menu.js';
@@ -91,15 +91,20 @@ function modeButton(view, page) {
 function header(view) {
     // An ended console's actions are in the strip beside how it ended.
     const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
-    const head = el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), dockMenuButton(view.panel, view.title, !view.page), !view.page &&
-        el('button', {
+    const head = el('div', { class: 'vpanel-head' }, 
+    // As a page the strip already names the view; docked it names itself.
+    // A dock's tab strip names a docked view too, and holds its dock menu.
+    !view.page &&
+        !dockShowsTabs(view.panel) &&
+        el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), dockMenuButton(view.panel, view.title, true), el('button', {
             class: 'icon',
             type: 'button',
             title: 'Hide',
             'aria-label': `Hide ${view.title}`,
             onclick: () => call('docks', { gesture: { on: 'hide', panel: view.panel } }),
         }, icon('close'))), el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'vpanel-acts' }, wide.map((action) => actionButton(view, action, 'btn sm')), modeButton(view, !view.page))));
-    return draggable(head, view.panel, view.title);
+    // As a page the row is only its buttons; its Dock button is the way back.
+    return view.page ? head : draggable(head, view.panel, view.title);
 }
 /** The view as an agent's table block: a row's status, when any has one,
  *  leads it as a chip. */

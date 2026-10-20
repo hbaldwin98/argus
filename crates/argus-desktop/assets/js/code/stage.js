@@ -26,18 +26,32 @@ function kbd(key) {
 function segment(label, on, pick) {
     return el('button', { class: `segb${on ? ' on' : ''}`, role: 'radio', 'aria-checked': String(on), onclick: pick }, label);
 }
-function head(c) {
-    return el('div', { class: 'code-head' }, 
-    // The window's title already says Code; the checkout, and its branch
-    // only where it is named otherwise, is what this adds.
-    el('span', { class: 'mono fg-ref' }, c.name), c.branch && c.branch !== c.name && el('span', { class: 'meta mono' }, c.branch), c.version && el('span', { class: 'pill mono' }, c.version), el('span', { class: 'grow' }), c.back &&
-        el('button', { class: 'btn sm', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, kbd('B')), c.path &&
-        el('button', { class: 'btn sm', onclick: () => codeAction('openEditor') }, 'Open in editor', kbd('E')), el('button', {
+/** What the strip carries on the Code stage: the checkout and its branch
+ *  under the stage's name, and the buttons that act on the whole stage. A
+ *  row of its own held a lone branch name and these. */
+export function codeStrip() {
+    const c = state.code;
+    if (!c?.open)
+        return null;
+    const crumb = [el('span', { class: 'mono fg-ref' }, c.name)];
+    if (c.branch && c.branch !== c.name)
+        crumb.push(el('span', { class: 'mono' }, c.branch));
+    if (c.version)
+        crumb.push(el('span', { class: 'mono' }, c.version));
+    const tools = [];
+    if (c.back) {
+        tools.push(el('button', { class: 'btn', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, kbd('B')));
+    }
+    if (c.path) {
+        tools.push(el('button', { class: 'btn', onclick: () => codeAction('openEditor') }, 'Open in editor', kbd('E')));
+    }
+    tools.push(el('button', {
         class: 'icon',
-        title: 'Keys for this view  ?',
+        title: 'Keys for this view (?)',
         'aria-label': 'Keys for this view',
         onclick: () => call('command', { action: 'shortcuts' }),
-    }, kbd('?')));
+    }, icon('help')));
+    return { crumb, tools };
 }
 /** A field whose letters and keys go to Rust as gestures. It keeps the
  *  caret across redraws, as the review's jump does. */
@@ -408,7 +422,7 @@ export function drawCode() {
     const typing = document.activeElement?.id;
     const files = side(c);
     const defined = c.outline && outline(c);
-    stage.replaceChildren(head(c), el('div', { class: 'code-split' }, files, sash(files, 'tree'), file(c), defined && sash(defined, 'outline'), defined));
+    stage.replaceChildren(el('div', { class: 'code-split' }, files, sash(files, 'tree'), file(c), defined && sash(defined, 'outline'), defined));
     const body = document.getElementById('code-body');
     if (body) {
         body.scrollTop = scrolledTo.file.get(c.path ?? '') ?? 0;

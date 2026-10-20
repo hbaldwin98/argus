@@ -309,7 +309,13 @@
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.35);
   --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.45);
   --rail-w: 288px;
-  --header-h: 47px;
+  --header-h: 56px;
+  --strip-h: 40px;
+  --pane-head-h: 32px;
+  --tab-max: 220px;
+  --grip-w: var(--sp-4);
+  --grip-l: var(--sp-32);
+  --t-fast: 120ms;
   --control-h: 30px;
   --control-h-sm: 24px;
   --icon-btn: 28px;
@@ -594,9 +600,9 @@
   align-items: center;
   gap: var(--sp-6);
   transition:
-    background-color 120ms,
-    border-color 120ms,
-    filter 120ms;
+    background-color var(--t-fast),
+    border-color var(--t-fast),
+    filter var(--t-fast);
 }
 .btn:hover {
   background: color-mix(in srgb, var(--fg) 7%, transparent);
@@ -657,8 +663,8 @@
   cursor: pointer;
   padding: 0;
   transition:
-    background-color 120ms,
-    color 120ms;
+    background-color var(--t-fast),
+    color var(--t-fast);
 }
 .icon:hover {
   background: var(--fill);
@@ -769,15 +775,22 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.segb:hover:not(.on) {
-  background: var(--fill);
-  color: var(--fg);
-}
 /* Raised with an edge, not a tint: a --fill on the track's own fill vanishes
    in a light theme. */
 .segb.on {
   background: var(--bg-raised);
   box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--fg);
+}
+.segb.on:not(:disabled):hover {
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.segb:not(.on):not(:disabled):hover {
+  background: var(--fill);
+  color: var(--fg);
+}
+.segb:not(:disabled):active {
+  background: var(--bg-selected);
   color: var(--fg);
 }
 .seg-label {
@@ -1330,23 +1343,8 @@
 }
 .lens {
   display: flex;
-  gap: var(--sp-20);
-}
-.lt {
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-weight: 600;
-  padding: var(--sp-8) 0;
-  cursor: pointer;
-  display: inline-flex;
-  gap: var(--sp-6);
-  align-items: center;
-}
-.lt.on {
-  color: var(--fg);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-8);
 }
 .orow,
 .srow,
@@ -2011,22 +2009,127 @@ body.mac .rail .brand {
   padding: 0 var(--sp-16) 0 var(--sp-20);
   border-bottom: 0;
 }
-.head-line {
+/* The breadcrumb over the title: a stage is named once, here. */
+.head-stack {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-12);
-  white-space: nowrap;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-2);
 }
-.head-line .crumbs {
-  gap: var(--sp-6);
+.head-stack .crumbs {
+  gap: var(--sp-4);
+  font-size: var(--fs-xs);
+  line-height: var(--sp-16);
+  min-height: var(--sp-16);
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.head-stack .crumbs > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.head-stack .crumbs .mono {
+  font-size: var(--fs-xs);
+}
+.head-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  white-space: nowrap;
 }
 .head-name {
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-6);
+  align-items: center;
+  gap: var(--sp-8);
   min-width: 0;
+}
+/* The one status pill: a dot and a word, tinted by the status it names.
+   The strip, the rail, the board and the checkouts all use it. */
+.spill {
+  --tone: var(--fg-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  flex: none;
+  min-height: var(--sp-20);
+  box-sizing: border-box;
+  padding: 0 var(--sp-8);
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  color: var(--tone);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.spill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.spill.working {
+  --tone: var(--accent);
+}
+.spill.waiting,
+.spill.needs-review {
+  --tone: var(--attention);
+}
+.spill.failed {
+  --tone: var(--danger);
+}
+.spill.done {
+  --tone: var(--ok);
+}
+.spill.info {
+  --tone: var(--info);
+}
+.spill.idle::before,
+.spill.exited::before {
+  background: transparent;
+  border: 1px solid var(--tone);
+}
+/* Debugging detail, so faint, and gone when the strip is short of room. */
+.head-size {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+}
+@media (max-width: 1100px) {
+  .head-size {
+    display: none;
+  }
+}
+/* The strip's actions: the views launcher, the overflow, and a hairline
+   before the window's own buttons. */
+.strip-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding-right: var(--sp-8);
+}
+/* The stage's own tools land in this span; without a flex box they touch. */
+#head-more {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+}
+.strip-tools::after {
+  content: '';
+  order: 3;
+  width: 1px;
+  height: var(--sp-20);
+  background: var(--line);
+  margin-left: var(--sp-4);
 }
 .winbtns {
   flex: none;
@@ -2096,22 +2199,41 @@ body.maximized .winbtn .restore {
 .gcell > .terminal {
   min-height: 0;
 }
+/* The workspace's panes sit on the stage as cards, not edge to edge: the
+   gutter around them is the stage showing through. */
+/* Cells abut at their seam, so each keeps half the 8px gap as a transparent
+   border: the outside margin is 16 less that half, and two cards sit 8 apart
+   on the same scale as the gutter around them. The hairline is an inset
+   shadow because a border would be the transparent one. */
+#split {
+  margin: calc(var(--sp-16) - var(--sp-4));
+}
+#split > .gcell {
+  background: var(--bg-surface);
+  background-clip: padding-box;
+  border: var(--sp-4) solid transparent;
+  border-radius: calc(var(--r-md) + var(--sp-4));
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow: hidden;
+}
 .gcell.keyed > .thead {
+  background: var(--bg-selected);
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+.gcell.keyed > .thead .ttl {
+  color: var(--fg);
 }
 /* One height for every pane's header, close button or not: the terminal
    under it gets what is left, so a header an icon taller sizes its pane a
    row shorter than its neighbour's. */
 .thead.gripper {
-  height: var(--control-h-sm);
-  box-sizing: border-box;
   cursor: grab;
   gap: var(--sp-6);
-  padding-left: var(--sp-8);
+  padding-left: var(--sp-12);
   user-select: none;
 }
 .thead.gripper .x-room {
-  width: 20px;
+  width: var(--control-h-sm);
   flex: none;
 }
 .thead.gripper .ttl {
@@ -2120,38 +2242,45 @@ body.maximized .winbtn .restore {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--fg-muted);
 }
 .gutter {
   position: absolute;
   z-index: 2;
-  background: var(--line);
 }
+/* The gutter is the 8px gap between two cards; its grip is a line centred
+   in it that lights on hover. */
 .gutter.vertical {
-  width: 1px;
-  margin-left: -0.5px;
+  width: var(--sp-8);
+  margin-left: calc(var(--sp-4) * -1);
   cursor: col-resize;
 }
 .gutter.horizontal {
   left: 0;
   right: 0;
-  height: 1px;
-  margin-top: -0.5px;
+  height: var(--sp-8);
+  margin-top: calc(var(--sp-4) * -1);
   cursor: row-resize;
 }
-/* A wider target than the line, so the seam is easy to take. */
-.gutter::before {
+.gutter::after {
   content: '';
   position: absolute;
-}
-.gutter.vertical::before {
-  inset: 0 -4px;
-}
-.gutter.horizontal::before {
-  inset: -4px 0;
-}
-.gutter:hover,
-.gutter.held {
+  border-radius: var(--r-pill);
   background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+.gutter.vertical::after {
+  inset: var(--sp-8) calc(50% - 1px);
+}
+.gutter.horizontal::after {
+  inset: calc(50% - 1px) var(--sp-8);
+}
+.gutter:hover::after,
+.gutter.held::after {
+  opacity: 1;
 }
 .drop-zone {
   position: absolute;
@@ -2194,13 +2323,6 @@ body.moving-pane * {
   padding: 0;
   resize: none;
   overflow: hidden;
-}
-.head .glyph {
-  width: auto;
-  font-size: var(--fs-md);
-}
-.head .meta.mono {
-  font-family: var(--font-mono);
 }
 .head-title {
   min-width: 0;
@@ -2816,8 +2938,17 @@ select option::checkmark {
   font-size: var(--fs-sm);
 }
 .index-head {
-  padding-bottom: var(--sp-12);
+  padding: var(--sp-12) var(--sp-20);
+  border-bottom: 0;
 }
+.head-meta {
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Only the filter, and what narrows the list, stays in the stage; the
+   counts and the actions are in the strip. */
 .index-tools {
   align-items: center;
   gap: var(--sp-12);
@@ -2960,14 +3091,17 @@ body.float-moving * {
 .dock-right {
   border-left: 1px solid var(--line);
 }
-/* A dock's tabs, only while it holds more than one panel; each panel
-   heads itself. */
-.dock-tabs {
+/* ONE tab strip for the dock's panels, the console's tabs and an agent's
+   views: the same height, the same tab, the same selected state. A tab
+   switches what is shown; a segment (.seg) switches a mode. */
+.dock-tabs,
+.chead,
+.vpanel-tabs {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  height: 32px;
+  gap: var(--sp-4);
+  height: var(--strip-h);
   box-sizing: border-box;
   padding: 0 var(--sp-8);
   border-bottom: 1px solid var(--line);
@@ -2977,43 +3111,103 @@ body.float-moving * {
 .dock-tabs[hidden] {
   display: none;
 }
-.dock-tab {
+.dock-tab,
+.ctab,
+.vpanel-tab,
+.lt {
   flex: none;
   display: inline-flex;
   align-items: center;
-  max-width: 200px;
+  min-width: 0;
+  max-width: var(--tab-max);
+  height: var(--icon-btn);
+  box-sizing: border-box;
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
+  /* .lt is a <button>: without this the UA's ButtonFace shows as a grey block. */
+  background: transparent;
+  transition:
+    background-color var(--t-fast),
+    border-color var(--t-fast);
 }
-.dock-tab:hover {
+.dock-tab:hover,
+.ctab:hover,
+.vpanel-tab:hover,
+.lt:hover {
   background: var(--fill);
 }
-.dock-tab.on {
-  background: var(--bg-surface);
-  box-shadow: inset 0 -2px 0 var(--accent);
+.dock-tab.on,
+.ctab.on,
+.vpanel-tab.on,
+.lt.on {
+  background: var(--bg-selected);
+  border-color: var(--line-strong);
 }
-.dock-tab-pick {
+/* The views panel's tabs shrink and scroll in their own box, so the dock
+   and hide buttons after them are never pushed off the edge; the fade is
+   the cue that more lies beyond. */
+.tabs-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-24)), transparent);
+}
+.tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+.vpanel-tabs > :not(.tabs-scroll) {
+  flex: none;
+}
+/* The selected tab still answers the pointer: its edge lights. */
+.dock-tab.on:hover,
+.ctab.on:hover,
+.vpanel-tab.on:hover,
+.lt.on:hover {
+  border-color: var(--ring);
+}
+.dock-tab-pick,
+.ctab-pick,
+.vpanel-tab-pick,
+.lt {
   display: inline-flex;
   align-items: center;
+  gap: var(--sp-6);
   min-width: 0;
-  height: var(--control-h-sm);
-  padding: 0 var(--sp-8);
-  border: 0;
-  background: transparent;
+  padding: 0 var(--sp-4) 0 var(--sp-12);
   color: var(--fg-muted);
   font: inherit;
   font-size: var(--fs-sm);
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
 }
-.dock-tab:has(.x) .dock-tab-pick {
-  padding-right: var(--sp-2);
+.dock-tab-pick,
+.ctab-pick,
+.vpanel-tab-pick {
+  height: 100%;
+  border: 0;
+  background: transparent;
 }
-.dock-tab.on .dock-tab-pick {
+.dock-tab:not(:has(.x)) .dock-tab-pick,
+.ctab:not(:has(.x)) .ctab-pick,
+.vpanel-tab:not(:has(.x)) .vpanel-tab-pick,
+.lt {
+  padding-right: var(--sp-12);
+}
+.dock-tab.on .dock-tab-pick,
+.ctab.on .ctab-pick,
+.vpanel-tab.on .vpanel-tab-pick,
+.lt.on {
   color: var(--fg);
 }
 /* A long title is cut short in its tab; the whole of it is the tab's
    tooltip. */
 .dock-tab .ttl,
+.ctab .ttl,
 .vpanel-tab .ttl {
   min-width: 0;
   overflow: hidden;
@@ -3021,12 +3215,20 @@ body.float-moving * {
   white-space: nowrap;
 }
 .dock-tab .x,
-.vpanel-tab .x {
+.ctab .x,
+.vpanel-tab .x,
+.thead .x {
   flex: none;
-  width: 20px;
-  height: 20px;
-  margin-right: var(--sp-2);
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  margin-right: var(--sp-4);
   color: var(--fg-faint);
+}
+.dock-tab .x:hover,
+.ctab .x:hover,
+.vpanel-tab .x:hover,
+.thead .x:hover {
+  color: var(--fg);
 }
 .dock-body {
   flex: 1;
@@ -3117,9 +3319,55 @@ body.panel-dragging * {
 .dock-right .dock-sash {
   left: -3px;
 }
-.dock-sash:hover,
-.dock-sash.held {
-  box-shadow: inset 3px 0 0 -1px var(--accent);
+
+/* A resize edge shows a grip under the pointer: the hairline alone is hard
+   to find, and hovering it says it can be taken. It is the only hover
+   treatment an edge has. */
+.dock-sash::after,
+.sash::after,
+.split-sash::after {
+  content: '';
+  position: absolute;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--t-fast);
+  pointer-events: none;
+}
+.dock-sash::after,
+.split-sash::after {
+  top: 50%;
+  left: 50%;
+  width: var(--grip-w);
+  height: var(--grip-l);
+  transform: translate(-50%, -50%);
+}
+.sash::after {
+  top: 50%;
+  left: 50%;
+  width: var(--grip-l);
+  height: var(--grip-w);
+  transform: translate(-50%, -50%);
+}
+.dock-sash:hover::after,
+.dock-sash.held::after,
+.sash:hover::after,
+.sash.held::after,
+.split-sash:hover::after,
+.split-sash.held::after {
+  opacity: 1;
+}
+/* The grab zone reaches further than the hairline looks, unseen. */
+.dock-sash::before,
+.split-sash::before {
+  content: '';
+  position: absolute;
+  inset: 0 calc(-1 * var(--sp-8));
+}
+.sash::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--sp-8)) 0;
 }
 
 /* ---- The console ------------------------------------------------------- */
@@ -3156,71 +3404,15 @@ body.console-fullscreen #bar {
   position: relative;
   z-index: 2;
 }
-.sash span {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 2px;
-  height: 1px;
-}
-.sash:hover span {
-  background: var(--accent);
-  height: 2px;
-  top: 1px;
-}
 .chead {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: 36px;
-  box-sizing: border-box;
-  padding: 0 var(--sp-8) 0 var(--sp-16);
-  background: var(--bg-chrome);
-  border-bottom: 1px solid var(--line);
+  padding-left: var(--sp-12);
 }
 .ctabs {
   display: flex;
-  gap: var(--sp-2);
+  gap: var(--sp-4);
   min-width: 0;
-  margin-left: var(--sp-8);
+  margin-left: var(--sp-4);
   overflow: hidden;
-}
-.ctab {
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--r-sm);
-  min-width: 0;
-}
-.ctab:hover {
-  background: var(--fill);
-}
-.ctab.on {
-  background: var(--bg-surface);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-.ctab-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-6);
-  min-width: 0;
-  height: var(--icon-btn);
-  padding: 0 var(--sp-4) 0 var(--sp-12);
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: var(--fs-sm);
-  white-space: nowrap;
-  cursor: pointer;
-}
-.ctab.on .ctab-pick {
-  color: var(--fg);
-}
-.ctab .x {
-  width: 20px;
-  height: 20px;
-  color: var(--fg-faint);
 }
 .cbody {
   flex: 1;
@@ -3230,7 +3422,7 @@ body.console-fullscreen #bar {
 }
 .csep {
   width: 1px;
-  height: 16px;
+  height: var(--sp-16);
   margin: 0 var(--sp-4);
   background: var(--line);
 }
@@ -3251,11 +3443,10 @@ body.console-fullscreen #bar {
   flex: none;
   display: flex;
   align-items: center;
-  padding-right: var(--sp-4);
+  box-sizing: border-box;
+  height: var(--pane-head-h);
+  background: var(--bg-chrome);
   border-bottom: 1px solid var(--line);
-}
-.thead.on {
-  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .thead-pick {
   flex: 1;
@@ -3263,25 +3454,38 @@ body.console-fullscreen #bar {
   display: flex;
   align-items: center;
   gap: var(--sp-6);
-  height: 24px;
+  height: 100%;
   padding: 0 var(--sp-12);
   border: 0;
   background: transparent;
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   font: inherit;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
+  font-weight: 500;
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
+}
+.thead:not(.on):hover {
+  background: var(--fill);
+}
+.thead:hover .thead-pick {
+  color: var(--fg);
+}
+.thead.on {
+  background: var(--bg-selected);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.thead.on:hover {
+  background: color-mix(in srgb, var(--bg-selected) 85%, var(--fill));
 }
 .thead.on .thead-pick {
   color: var(--fg);
 }
 .thead .x {
-  width: 20px;
-  height: 20px;
-  color: var(--fg-faint);
+  margin-right: var(--sp-4);
 }
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -3424,16 +3628,6 @@ body.console-fullscreen #bar {
    the person dragged them: `--code-tree-w` and `--code-outline-w`. */
 .kstage {
   container-type: inline-size;
-}
-.code-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-8);
-  padding: 0 var(--sp-16);
-  border-bottom: 1px solid var(--line);
-  height: 40px;
-  box-sizing: border-box;
-  flex: none;
 }
 .code-split {
   flex: 1;
@@ -4879,47 +5073,6 @@ body.console-fullscreen #bar {
   min-width: 0;
   min-height: 0;
 }
-.vpanel-tabs {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  height: var(--header-h);
-  box-sizing: border-box;
-  padding: 0 var(--sp-8);
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-chrome);
-  overflow-x: auto;
-}
-.vpanel-tab {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  max-width: 200px;
-  border-radius: var(--r-sm);
-}
-.vpanel-tab.on {
-  background: var(--fill);
-}
-.vpanel-tab-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-6);
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  padding: 0 var(--sp-2) 0 var(--sp-8);
-  height: var(--control-h-sm);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.vpanel-tab.on .vpanel-tab-pick {
-  color: var(--fg);
-}
 .vspin {
   width: 10px;
   height: 10px;
@@ -4942,7 +5095,12 @@ body.console-fullscreen #bar {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  flex-wrap: wrap;
+}
+.vpanel-title .vpanel-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .vpanel-meta {
   display: flex;
@@ -4950,14 +5108,17 @@ body.console-fullscreen #bar {
   gap: var(--sp-8);
   flex-wrap: wrap;
 }
-/* The buttons wrap as one right-aligned group, so on a narrow panel they
-   stack under the meta rather than scatter across two lines. */
+/* The actions stay on the title row, one group at its end. */
 .vpanel-acts {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex: none;
+  align-items: center;
   gap: var(--sp-8);
   margin-left: auto;
+}
+.vpanel-meta .meta {
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
 }
 .vpanel-meta .vlink .track {
   cursor: pointer;
@@ -4994,30 +5155,21 @@ body.console-fullscreen #bar {
 .vtabs-bar {
   border-bottom: 1px solid var(--line);
 }
-/* In the title strip, before the window's buttons, where it covers nothing. */
-.vlauncher {
-  flex: none;
-  align-self: center;
-  margin-right: var(--sp-8);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-6);
-  height: 24px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  background: var(--bg-chrome);
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  padding: 0 var(--sp-8);
-  cursor: pointer;
-}
-.vlauncher:hover {
-  background: var(--fill);
-}
+/* In the title strip, before the overflow: a pill button like any other,
+   its count a quiet badge. */
 .vlauncher[hidden] {
   display: none;
+}
+.vlauncher .count {
+  min-width: var(--sp-20);
+  box-sizing: border-box;
+  padding: 0 var(--sp-6);
+  border-radius: var(--r-pill);
+  background: var(--fill);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--sp-20);
+  text-align: center;
 }
 .vdot {
   width: 6px;
@@ -5255,6 +5407,17 @@ body.console-fullscreen #bar {
   overflow-x: auto;
   max-width: 100%;
   container-type: inline-size;
+  /* Scroll cue: an edge shadow shows on a side only while more lies past
+     it. The local covers hide the scroll-attached shadows at the ends. */
+  background:
+    linear-gradient(to right, var(--bg-surface), transparent) left / var(--sp-24) 100% local
+      no-repeat,
+    linear-gradient(to left, var(--bg-surface), transparent) right / var(--sp-24) 100% local
+      no-repeat,
+    linear-gradient(to right, var(--line-strong), transparent) left / var(--sp-8) 100% scroll
+      no-repeat,
+    linear-gradient(to left, var(--line-strong), transparent) right / var(--sp-8) 100% scroll
+      no-repeat;
 }
 /* A column its author marked optional gives way before the table scrolls. */
 @container (max-width: 560px) {
@@ -5672,6 +5835,7 @@ body.resizing:has(.brief-sash.held) {
 /* An open feature's edges: between the outline and the detail, and under
    the brief, whose sizes Rust keeps as it does the rail's. */
 .split-sash {
+  position: relative;
   flex: none;
   width: 6px;
   margin: 0 -3px;
@@ -5682,10 +5846,6 @@ body.resizing:has(.brief-sash.held) {
   height: 6px;
   margin: calc(-1 * var(--sp-8)) 0 -4px;
   cursor: row-resize;
-}
-.split-sash:hover,
-.split-sash.held {
-  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .brief-sash:hover,
 .brief-sash.held {
@@ -5700,9 +5860,6 @@ body.resizing:has(.brief-sash.held) {
   flex-wrap: wrap;
   gap: var(--sp-6);
   margin-left: auto;
-}
-.lens-keys {
-  align-self: center;
 }
 .wtext {
   display: flex;
@@ -5967,8 +6124,12 @@ body.resizing:has(.brief-sash.held) {
 .ext-body:focus {
   outline: none;
 }
+/* A region-sized focusable is not a control: it gets a hairline, not the
+   full ring the buttons and fields do. */
 .ext-body:focus-visible {
-  box-shadow: inset 0 0 0 1px var(--accent);
+  outline: 0;
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 .ext-body .vtable-table tbody tr {
   cursor: pointer;
@@ -5989,6 +6150,12 @@ body.resizing:has(.brief-sash.held) {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .row-actions-bar {
+  /* As wide as the table's window, pinned to its left edge, so a table
+     scrolled sideways never carries the buttons off the right of it. */
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: calc(100cqi - var(--sp-16));
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -6298,15 +6465,19 @@ body.resizing:has(.brief-sash.held) {
   gap: var(--sp-8);
 }
 
+/* The viewBox is the chart's pixel size, so labels keep their size when
+   the panel grows: the chart stops at its own width instead of scaling. */
 .vchart-svg {
   width: 100%;
+  max-width: min(100%, 720px);
+  max-height: 360px;
   height: auto;
   display: block;
 }
 
 .vchart-axes text {
-  fill: var(--fg-muted);
-  font: 10px var(--font-mono);
+  fill: var(--fg-faint);
+  font: var(--fs-xs) var(--font-ui);
 }
 
 .vchart-grid {
@@ -6331,6 +6502,10 @@ body.resizing:has(.brief-sash.held) {
 .vchart-bar,
 .vchart-dot {
   fill: var(--t);
+}
+
+.vchart-bar {
+  rx: var(--r-sm);
 }
 
 .vchart-key {
@@ -7109,8 +7284,8 @@ button.vtree-chev:focus-visible {
 
 /* A view changed since the person last had it in front of them. */
 .vpanel-tab .vnew {
-  width: 6px;
-  height: 6px;
+  width: var(--sp-6);
+  height: var(--sp-6);
   border-radius: var(--r-pill);
   background: var(--changed);
   flex: none;

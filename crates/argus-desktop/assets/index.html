@@ -60,7 +60,7 @@
     <main class="stage">
       <div class="strip drag" id="strip">
         <div class="head" id="head"></div>
-        <button class="vlauncher" id="views-tab" type="button" title="Views agents showed" hidden></button>
+        <div class="strip-tools"><button class="btn vlauncher" id="views-tab" type="button" title="Views agents showed" hidden></button><span id="head-more"></span></div>
         <div class="winbtns" id="winbtns">
           <button class="winbtn" id="win-min" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor"></path></svg></button>
           <button class="winbtn" id="win-max" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" fill="none" stroke="currentColor"><rect class="max" x="0.5" y="0.5" width="9" height="9"></rect><path class="restore" d="M2.5 2.5V0.5h7v7h-2M0.5 2.5h7v7h-7z"></path></svg></button>
@@ -90,7 +90,7 @@
             </div>
             <div class="empty" id="empty"></div>
           </div>
-          <div class="sash" id="dock-bottom-sash" role="separator" aria-orientation="horizontal" aria-label="Resize the bottom dock" hidden><span></span></div>
+          <div class="sash" id="dock-bottom-sash" role="separator" aria-orientation="horizontal" aria-label="Resize the bottom dock" hidden></div>
           <div class="dock dock-bottom" id="dock-bottom" hidden>
             <div class="dock-tabs" id="dock-bottom-tabs" role="tablist" aria-label="Bottom dock" hidden></div>
             <div class="dock-body" id="dock-bottom-body"></div>

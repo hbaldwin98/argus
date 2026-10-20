@@ -8,7 +8,7 @@
 // refused edit leaves it as it was.
 import { notice } from '../../chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el } from '../../kit/dom.js';
+import { $, el, icon } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
 import { flowsAction, flowsLens } from './flows.js';
 import { featureViewLink, savedFeatureLinks, ticketLink } from '../tracker/tickets.js';
@@ -238,17 +238,30 @@ function head(view) {
             text && briefSash(text),
         ];
     }
-    const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
-    return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, lensName), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('Esc'), ' back to features')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), el('span', { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` }, view.standing), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)], view.branch && view.agent && ' · ', view.agent && [
+    return el('div', { class: 'fhead' }, el('div', { class: 'actions head-row' }, 
+    // The strip names the feature; this is the way back from it.
+    el('button', {
+        class: 'icon',
+        type: 'button',
+        title: 'Back to features (Esc)',
+        'aria-label': 'Back to features',
+        onclick: closeFeature,
+    }, icon('back')), el('span', { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` }, view.standing), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)], view.branch && view.agent && ' · ', view.agent && [
         el('span', { class: 'glyph' }, '◆'),
         ` ${view.agent.title} `,
         el('span', { class: `st ${view.agent.status}` }, view.agent.status),
-    ])), brief, el('div', { class: 'actions head-row' }, el('span', { class: 'pbar wide' }, progress), el('span', { class: 'meta' }, parts.flatMap((part, i) => (i ? [' · ', part] : [part]))), tickets(view)), el('div', { class: 'lens', role: 'tablist', 'aria-label': 'Lens' }, LENSES.map(({ lens, name, key }) => el('button', {
+    ])), brief, el('div', { class: 'actions head-row' }, el('span', { class: 'pbar wide' }, progress), el('span', { class: 'meta' }, parts.flatMap((part, i) => (i ? [' · ', part] : [part]))), tickets(view)), el('div', {
+        class: 'lens',
+        role: 'tablist',
+        'aria-label': 'Lens',
+        // The keys of the lens are a tooltip, not a row of prose in the chrome.
+        title: lensKeyText(view.lens),
+    }, LENSES.map(({ lens, name, key }) => el('button', {
         class: `lt${view.lens === lens ? ' on' : ''}`,
         role: 'tab',
         'aria-selected': String(view.lens === lens),
         onclick: () => setLens(lens),
-    }, name, keycap(key))), el('span', { class: 'grow' }), el('span', { class: 'meta lens-keys' }, lensKeys(view.lens))));
+    }, name, keycap(key)))));
 }
 /** The tickets the feature is linked to, each opening the view an agent
  *  showed of it when one waits (`tracker/tickets.ts`), when it was last
@@ -267,14 +280,19 @@ function tickets(view) {
         class: 'btn sm',
         title: 'Link a ticket (T)',
         onclick: () => call('open_link', { map: false }),
-    }, view.links.length > 0 ? 'Link…' : 'Link a ticket…'), view.links.length > 0 &&
+    }, view.links.length > 0 ? 'Link…' : 'Link a ticket…'), 
+    // The state is its own pill beside the button, so the button keeps one
+    // label on `--fg-on-accent`.
+    view.links.length > 0 &&
+        view.reconcile &&
+        el('span', { class: 'spill waiting' }, waiting[view.reconcile] ?? ''), view.links.length > 0 &&
         el('button', {
             class: `btn sm${view.reconcile === 'proposed' ? ' primary' : ''}`,
             title: 'Reconcile with its tickets (R)',
             onclick: () => call('open_reconcile', {}),
-        }, 'Reconcile…', view.reconcile && el('span', { class: 'meta' }, ` ${waiting[view.reconcile] ?? ''}`)));
+        }, 'Reconcile…'));
 }
-function lensKeys(lens) {
+function lensKeyText(lens) {
     const keys = lens === 'record'
         ? [
             ['E', 'edit'],
@@ -298,7 +316,7 @@ function lensKeys(lens) {
                 ['T', 'link'],
                 ['R', 'reconcile'],
             ];
-    return keys.flatMap(([key, what], i) => [i ? ' · ' : null, keycap(key), ` ${what}`]);
+    return keys.map(([key, what]) => `${key} ${what}`).join(' · ');
 }
 export function keycap(key) {
     return el('span', { class: 'kbd' }, key);

@@ -7,6 +7,7 @@ import { chime, listen as listenForSound } from './system/chime.js';
 import {
   closeStart,
   drawChrome,
+  drawHead,
   listenToRailEdge,
   notice,
   railPicked,
@@ -142,6 +143,8 @@ function receive(event: Event): void {
     case 'checkouts':
       state.checkouts = event;
       drawCheckouts();
+      // The counts and buttons live in the strip.
+      drawHead();
       break;
     case 'code':
       state.code = event;
@@ -150,6 +153,8 @@ function receive(event: Event): void {
     case 'features':
       state.features = event;
       drawFeatures();
+      // An open feature names the strip.
+      drawHead();
       break;
     case 'capture':
       state.capture = event;
@@ -166,6 +171,8 @@ function receive(event: Event): void {
       break;
     case 'views':
       drawViews(event);
+      // A view open as a page names the strip.
+      drawHead();
       // A ticket link says when a view of it waits.
       drawFeatures();
       break;
