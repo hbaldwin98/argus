@@ -367,7 +367,7 @@ function metadata(view: PageSaved): HTMLElement {
 
 /** Whether the section is unfolded, and whether it lists only the views
  *  about where the person is. The page's own. */
-let listed = true;
+let listed = false;
 let hereOnly = true;
 /** The views whose linked views are unfolded under them, by id. */
 const navOpen = new Set<string>();

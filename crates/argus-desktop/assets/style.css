@@ -282,6 +282,7 @@
   --fs-xl: 17px;
   --fs-2xl: 20px;
   --type-display: 650 20px/1.3 var(--font-ui);
+  --type-hero: 700 28px/1.2 var(--font-ui);
   --type-title: 650 17px/1.3 var(--font-ui);
   --type-heading: 600 15px/1.35 var(--font-ui);
   --type-body: 400 13px/1.45 var(--font-ui);
@@ -780,9 +781,15 @@
 .dot {
   width: 8px;
   height: 8px;
+  flex: none;
+  box-sizing: border-box;
   border-radius: 50%;
   background: var(--ok);
   display: inline-block;
+}
+.dot.hollow {
+  background: transparent;
+  border: 1.5px solid var(--fg-faint);
 }
 .chg {
   width: 6px;
@@ -867,9 +874,11 @@
   color: var(--accent);
 }
 .waiting,
-.needs-review,
-.failed {
+.needs-review {
   color: var(--attention);
+}
+.failed {
+  color: var(--danger);
 }
 .idle,
 .done,
@@ -964,6 +973,7 @@
 }
 .repobtn:hover {
   color: var(--fg);
+  background: var(--fill);
 }
 .repo.sel .repobtn {
   color: var(--fg);
@@ -1008,6 +1018,7 @@
 }
 .co:hover {
   color: var(--fg-muted);
+  background: var(--fill);
 }
 .co .name {
   font-family: var(--font-mono);
@@ -1111,9 +1122,16 @@
 .pane.sh {
   color: var(--fg-muted);
 }
-.pane.on {
+.pane:active {
+  background: color-mix(in srgb, var(--fill) 70%, var(--fg) 12%);
+}
+/* Selected is a lit edge on the selection fill, hover only a tint, so the
+   two never read as one with the pointer elsewhere. */
+.pane.on,
+.pane.on:hover {
   background: var(--bg-selected);
   color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 .sdot {
   width: 9px;
@@ -1129,10 +1147,13 @@
   animation: spin 1s linear infinite;
 }
 .sdot.waiting,
-.sdot.needs-review,
-.sdot.failed {
+.sdot.needs-review {
   border-color: var(--attention);
   background: var(--attention);
+}
+.sdot.failed {
+  border-color: var(--danger);
+  background: var(--danger);
 }
 .sdot.exited,
 .sdot.done {
@@ -1744,9 +1765,14 @@ a:focus-visible,
   color: var(--fg);
   background: var(--fill);
 }
-.bar .icon {
-  width: 20px;
-  height: 20px;
+.bar .icon.wide {
+  width: auto;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-8);
+}
+.icount {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 .skeleton {
   padding-top: var(--sp-8);
@@ -2097,6 +2123,7 @@ body.moving-pane * {
   display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--atmosphere);
 }
 .empty-body {
   display: flex;
@@ -2110,11 +2137,100 @@ body.moving-pane * {
 .empty-body.no-projects {
   max-width: 460px;
 }
+.empty-body {
+  gap: var(--sp-16);
+}
+.empty-body .type-title {
+  font: var(--type-hero);
+}
 .empty-body.no-pane {
-  max-width: 440px;
+  max-width: 760px;
 }
 .empty-icon {
   color: var(--fg-disabled);
+}
+.empty-icon.tile {
+  width: 56px;
+  height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  color: var(--accent);
+  box-shadow: var(--glow);
+}
+.empty-icon.tile svg {
+  width: 24px;
+  height: 24px;
+}
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-12);
+}
+.running {
+  align-self: stretch;
+  margin-top: var(--sp-32);
+  text-align: left;
+}
+.running-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  margin-bottom: var(--sp-12);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.running-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.running-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-12);
+}
+.rcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  min-width: 0;
+  padding: var(--sp-12);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rcard:hover {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--bg-raised) 88%, var(--fg) 6%);
+}
+.rcard:active {
+  background: color-mix(in srgb, var(--bg-raised) 80%, var(--fg) 10%);
+}
+.rcard-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-8);
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+.rcard-title {
+  font-weight: 600;
+}
+.rcard-note {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
 }
 .spinner {
   animation: spin 1s linear infinite;
@@ -2191,7 +2307,7 @@ body.moving-pane * {
   margin-top: -60px;
 }
 .compose-title {
-  font: var(--type-display);
+  font: var(--type-hero);
   text-align: center;
 }
 .composer {
@@ -2200,11 +2316,12 @@ body.moving-pane * {
   gap: var(--sp-12);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
-  background: var(--bg-chrome);
+  background: var(--bg-raised);
   padding: var(--sp-12);
 }
 .composer:focus-within {
-  border-color: var(--accent);
+  border-color: var(--ring);
+  box-shadow: var(--glow);
 }
 .composer textarea {
   resize: none;
@@ -2238,8 +2355,12 @@ body.moving-pane * {
   border-radius: var(--r-pill);
   color: var(--fg-muted);
 }
+.pick:hover {
+  background: var(--fill);
+  color: var(--fg);
+}
 .pick:focus-within {
-  border-color: var(--accent);
+  border-color: var(--ring);
 }
 .pick-glyph {
   display: inline-flex;
@@ -2264,7 +2385,13 @@ select,
   appearance: base-select;
 }
 select::picker-icon {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background: currentColor;
   color: var(--fg-faint);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 5.5L7 9l3.5-3.5'/%3E%3C/svg%3E")
+    center / contain no-repeat;
   transition: rotate 0.15s;
 }
 select:open::picker-icon {
@@ -2304,15 +2431,34 @@ select option::checkmark {
   color: var(--fg-on-accent);
   border-color: var(--fg-on-accent);
 }
-.compose-note {
-  padding: 0 var(--sp-4);
-}
-.compose-where {
+.compose-foot {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-8) var(--sp-16);
+  padding: 0 var(--sp-4);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.compose-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+/* What it starts in, as the line above the question, ruled either side. */
+.compose-where {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap: var(--sp-16);
-  text-align: center;
+  gap: var(--sp-12);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.compose-rule {
+  width: 48px;
+  height: 1px;
+  background: var(--line-strong);
 }
 .compose-keys {
   display: inline-flex;
@@ -4335,9 +4481,12 @@ body.console-fullscreen #bar {
   background: var(--see-chrome);
 }
 .strip,
-.fstage,
-.nstage {
+.fstage {
   background: var(--see-surface);
+}
+.nstage {
+  background: var(--atmosphere);
+  background-color: var(--see-surface);
 }
 .stage-body,
 .dock,
@@ -6999,4 +7148,61 @@ button.vtree-chev:focus-visible {
   height: 7px;
   border-radius: 50%;
   background: var(--attention);
+}
+
+/* ---- The rail's status vocabulary and footer ----------------------------- */
+
+/* One status pill, as the header and the board draw it: the word tinted
+   from its colour, on the row's right. */
+.st.pillw {
+  padding: 1px var(--sp-8);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.4;
+}
+/* Faint on faint fails 4.5:1 at 11px, so the ended word is the muted one. */
+.st.pillw.exited,
+.st.pillw.idle {
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+.st.pillw.done {
+  color: var(--ok);
+}
+.badge {
+  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
+  background: color-mix(in srgb, var(--attention) 12%, transparent);
+}
+.pane .sdot {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+}
+.pane .sdot.working {
+  border-color: var(--accent);
+  border-right-color: transparent;
+}
+.pane .sdot.exited,
+.pane .sdot.done {
+  border: 0;
+  height: 1.5px;
+}
+.pane .sdot.done {
+  background: var(--ok);
+}
+.empty-actions .btn svg,
+.empty-body .btn svg,
+.bar .icon.wide svg {
+  width: 14px;
+  height: 14px;
+}
+.empty-icon.tile .empty-icon {
+  color: inherit;
+}
+.btn.primary .kbd {
+  color: var(--fg-on-accent);
+  border-color: color-mix(in srgb, var(--fg-on-accent) 45%, transparent);
 }

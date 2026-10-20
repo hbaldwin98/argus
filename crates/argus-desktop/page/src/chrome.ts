@@ -114,6 +114,7 @@ const PANE_WORD: Partial<Record<StatusWord, string>> = {
   'needs-review': 'review',
   failed: 'failed',
   exited: 'exited',
+  done: 'done',
 };
 
 type RailRepository = NonNullable<typeof state.rail.project>['repositories'][number];
@@ -157,7 +158,16 @@ function drawRail(): void {
     }
   }
   rail.replaceChildren(...rows);
+  // A long tree puts the pane on screen below the fold; scroll to it once
+  // per pane, not on every redraw, so reading the rail is not fought.
+  const on = rail.querySelector('.pane.on');
+  const shownPane = state.rail.shown?.pane ?? null;
+  if (on && shownPane !== scrolledTo) on.scrollIntoView({ block: 'nearest' });
+  scrolledTo = shownPane;
 }
+
+/** The pane the rail last scrolled to. */
+let scrolledTo: number | null = null;
 
 function repoRow(repo: RailRepository): HTMLElement {
   const colour = statusColour(repo.status);
@@ -373,7 +383,7 @@ function paneRow(checkout: number, pane: RailPane): HTMLElement {
         ),
       el(
         'span',
-        { class: `st ${pane.status}` },
+        { class: `st ${pane.status}${word ? ' pillw' : ''}` },
         word ?? el('span', { class: 'sr-only' }, pane.status),
       ),
     ),
@@ -683,41 +693,37 @@ function dot(colour?: string): HTMLElement {
 function drawBar(): void {
   const { connection, alarm, host } = state.status;
   const { needsYou, working } = state.rail;
-  // A remote daemon is named, so what the rail lists is never taken for this machine's.
-  const where = host ? ` to ${host}` : '';
   const tallies: HTMLElement[] = [];
-  const line: HTMLElement[] = [];
   if (connection === 'connected') {
     if (needsYou > 0) {
       tallies.push(el('span', { class: 'fg-attention strong' }, `▲ ${needsYou} need you`));
     }
     if (working > 0) tallies.push(el('span', { class: 'fg-accent' }, `⋮ ${working} working`));
-    line.push(
-      dot(),
-      el('span', { class: 'grow ellipsis', title: host ?? '' }, `Connected${where}`),
-      consoleChip(),
-      chimeSwitch(),
-      settingsButton(),
-    );
-  } else if (connection === 'connecting') {
-    line.push(
-      dot('var(--attention)'),
-      el('span', { class: 'grow ellipsis', title: host ?? '' }, `Connecting${where}`),
-      settingsButton(),
-    );
-  } else {
-    line.push(
-      dot('var(--fg-faint)'),
-      el('span', { class: 'grow' }, 'Stopped'),
-      el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'),
-      settingsButton(),
-    );
   }
+  // One shape in every state: only the dot and the words change, so the
+  // footer does not rearrange while the daemon comes and goes. A remote
+  // daemon is named, so what the rail lists is never taken for this machine's.
+  const [colour, words] =
+    connection === 'connected'
+      ? [undefined, `argusd · ${host ?? 'local'}`]
+      : connection === 'connecting'
+        ? ['var(--attention)', 'argusd · connecting']
+        : [undefined, 'argusd · stopped'];
+  const status = dot(colour);
+  if (connection === 'stopped') status.classList.add('hollow');
   const shown = connection === 'connected' && alarm;
   $('bar').replaceChildren(
     tallies.length > 0 ? el('div', { class: 'bar-row' }, tallies) : '',
     shown ? el('div', { class: 'bar-alarm fg-attention' }, alarm) : '',
-    el('div', { class: 'bar-row' }, line),
+    el(
+      'div',
+      { class: 'bar-row' },
+      status,
+      el('span', { class: 'grow ellipsis', title: host ?? '' }, words),
+      consoleChip(),
+      chimeSwitch(),
+      settingsButton(),
+    ),
   );
 }
 
@@ -733,13 +739,14 @@ function consoleChip(): HTMLElement {
   return el(
     'button',
     {
-      class: `chip${shown ? ' on' : ''}`,
+      class: `icon wide${shown ? ' hot' : ''}`,
       title: keys ? `${words} (${keys})` : words,
+      'aria-label': words,
       'aria-pressed': String(shown),
       onclick: () => call('console', { gesture: { on: 'toggle' } }),
     },
-    el('span', { class: 'mono' }, '›_'),
-    count > 0 ? String(count) : '',
+    icon('console'),
+    count > 0 ? el('span', { class: 'icount' }, String(count)) : '',
   );
 }
 
@@ -791,12 +798,13 @@ function drawStage(): void {
   if (!loaded) {
     measure = 'connecting';
     body = [
-      ghosts([[0.6], [0.9], [0.75], [0.85], [0.4]]),
+      el('div', { class: 'empty-icon spin' }, icon('spinner')),
       el(
         'div',
-        { class: 'meta' },
-        host ? `Connecting to argusd on ${host}…` : 'Connecting to argusd…',
+        { class: 'type-title' },
+        host ? `Connecting to argusd on ${host}` : 'Connecting to argusd',
       ),
+      el('div', { class: 'fg-muted' }, 'The sidebar fills in as soon as the daemon answers.'),
       detail && el('div', { class: 'err' }, detail),
       // Nothing is loaded to open the switcher from, so a host that cannot be
       // reached needs its own way back.
@@ -810,25 +818,98 @@ function drawStage(): void {
   } else if (!project) {
     measure = 'no-projects';
     body = [
-      icon('folder'),
+      el('div', { class: 'empty-icon tile' }, icon('folder')),
       el('div', { class: 'type-title' }, 'No projects'),
+      el('div', { class: 'fg-muted' }, 'Add a folder of repositories, or run argus init in one.'),
       el(
         'button',
         { class: 'btn primary', onclick: () => call('open_add_project', {}) },
+        icon('plus'),
         'Add a project…',
       ),
-      el('div', { class: 'fg-muted' }, 'or run this in a folder of repositories:'),
-      el('div', { class: 'cmd' }, 'argus init'),
     ];
   } else {
     measure = 'no-pane';
+    const repo =
+      project.repositories.find((r) => r.id === state.rail.repository) ?? project.repositories[0];
+    const co = repo?.checkouts[0];
+    const keys = chordsFor('compose', 'anywhere');
     body = [
-      icon('terminal'),
-      el('div', { class: 'type-title' }, 'Pick a pane'),
-      el('div', { class: 'fg-muted' }, 'or start one with + on a checkout.'),
+      el('div', { class: 'empty-icon tile' }, icon('terminal')),
+      el('div', { class: 'type-title' }, 'No pane on screen'),
+      el(
+        'div',
+        { class: 'fg-muted' },
+        'Start an agent on a checkout, open a shell, or pick up a pane that is still running.',
+      ),
+      el(
+        'div',
+        { class: 'empty-actions' },
+        el(
+          'button',
+          { class: 'btn primary', onclick: () => call('show_composer', { open: true }) },
+          icon('plus'),
+          'Start an agent',
+          keys.length > 0 ? keycaps(keys.slice(0, 1)) : '',
+        ),
+        co &&
+          el(
+            'button',
+            { class: 'btn', onclick: () => call('spawn_shell', { checkout: co.id }) },
+            icon('console'),
+            'Open a shell',
+          ),
+      ),
+      stillRunning(project),
     ];
   }
   empty.replaceChildren(el('div', { class: `empty-body ${measure}` }, body));
+}
+
+const RUNNING_ORDER: Partial<Record<StatusWord, number>> = {
+  waiting: 0,
+  failed: 1,
+  'needs-review': 2,
+  working: 3,
+};
+
+/** The panes that outlived the screen they were on, those that need a person
+ *  first: the way back into work the stage does not show. */
+function stillRunning(project: NonNullable<typeof state.rail.project>): Child {
+  const cards = project.repositories
+    .flatMap((repo) =>
+      repo.checkouts.flatMap((co) =>
+        co.panes.map((pane) => ({ where: co.branch || co.name, pane })),
+      ),
+    )
+    .filter(({ pane }) => pane.status !== 'exited')
+    .toSorted((a, b) => (RUNNING_ORDER[a.pane.status] ?? 9) - (RUNNING_ORDER[b.pane.status] ?? 9))
+    .slice(0, 3);
+  if (cards.length === 0) return null;
+  return el(
+    'section',
+    { class: 'running', 'aria-label': 'Still running' },
+    el('div', { class: 'running-head' }, 'Still running'),
+    el(
+      'div',
+      { class: 'running-cards' },
+      cards.map(({ where, pane }) =>
+        el(
+          'button',
+          { class: 'rcard', onclick: () => call('select', { pane: pane.id }) },
+          el(
+            'span',
+            { class: 'rcard-top' },
+            el('span', { class: 'mono ellipsis' }, where),
+            PANE_WORD[pane.status] &&
+              el('span', { class: `st pillw ${pane.status}` }, PANE_WORD[pane.status]),
+          ),
+          el('span', { class: 'rcard-title ellipsis' }, pane.title),
+          pane.note && el('span', { class: 'rcard-note mono ellipsis' }, pane.note),
+        ),
+      ),
+    ),
+  );
 }
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;

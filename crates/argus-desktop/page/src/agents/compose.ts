@@ -22,6 +22,7 @@ let parts: {
   shell: HTMLButtonElement;
   start: HTMLButtonElement;
   where: HTMLElement;
+  keys: HTMLElement;
 } | null = null;
 
 function repository(): Repository | null {
@@ -112,11 +113,13 @@ function build(): NonNullable<typeof parts> {
     el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'),
   );
   const title = el('div', { class: 'compose-title' });
-  const where = el('div', { class: 'meta compose-where' });
+  const where = el('div', { class: 'compose-where' });
+  const keys = el('span', { class: 'compose-keys' });
   $('nstage').replaceChildren(
     el(
       'div',
       { class: 'compose' },
+      where,
       title,
       el(
         'section',
@@ -136,10 +139,15 @@ function build(): NonNullable<typeof parts> {
       ),
       el(
         'div',
-        { class: 'meta compose-note' },
-        'The message is the agent’s first prompt. Shell starts a shell there and leaves the message.',
+        { class: 'compose-foot' },
+        el(
+          'span',
+          { class: 'compose-note' },
+          icon('info'),
+          'The message becomes the agent’s first prompt. Shell starts a shell there and leaves it.',
+        ),
+        keys,
       ),
-      where,
     ),
   );
   return {
@@ -151,6 +159,7 @@ function build(): NonNullable<typeof parts> {
     shell,
     start: startButton,
     where,
+    keys,
   };
 }
 
@@ -204,28 +213,22 @@ export function drawComposer(): void {
   parts.start.disabled = !co || !name;
   const keys = chordsFor('compose', 'anywhere');
   parts.where.replaceChildren(
+    el('span', { class: 'compose-rule' }),
     !repo
       ? 'Add a repository to the project to start here.'
       : !co
         ? `${repo.name} is folded on the rail; open it to pick a checkout.`
-        : co.kind === 'main'
-          ? el(
-              'span',
-              null,
-              'Starting in ',
-              el('b', { class: 'fg' }, repo.name),
-              `’s own checkout${co.branch ? `, on ${co.branch}` : ''}.`,
-            )
-          : el(
-              'span',
-              null,
-              'Starting in the worktree ',
-              el('b', { class: 'fg' }, co.name),
-              co.branch ? `, on ${co.branch}.` : '.',
-            ),
-    keys.length > 0
-      ? el('span', { class: 'compose-keys' }, keycaps(keys), ' opens this from anywhere')
-      : '',
+        : el(
+            'span',
+            null,
+            co.kind === 'main' ? 'Starting in ' : 'Starting in the worktree ',
+            el('b', { class: 'fg' }, co.kind === 'main' ? repo.name : co.name),
+            co.branch ? [' on ', el('span', { class: 'mono fg' }, co.branch)] : '',
+          ),
+    el('span', { class: 'compose-rule' }),
+  );
+  parts.keys.replaceChildren(
+    ...(keys.length > 0 ? [keycaps(keys), ' opens this from anywhere'] : []),
   );
 }
 

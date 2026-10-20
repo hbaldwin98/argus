@@ -80,8 +80,9 @@ function build() {
     const shell = el('button', { class: 'btn', onclick: () => start(false) }, 'Shell');
     const startButton = el('button', { class: 'btn primary', onclick: () => start(true) }, 'Start agent', el('span', { class: 'kbd on-accent' }, 'Ctrl Enter'));
     const title = el('div', { class: 'compose-title' });
-    const where = el('div', { class: 'meta compose-where' });
-    $('nstage').replaceChildren(el('div', { class: 'compose' }, title, el('section', { class: 'composer', 'aria-label': 'Start an agent' }, el('label', { for: 'compose-text', class: 'sr-only' }, 'First message'), text, el('div', { class: 'compose-row' }, pick('Repository', icon('folder-sm'), repositorySelect), pick('Checkout', icon('branch'), checkoutSelect), pick('Agent', '◆', agentSelect), el('span', { class: 'grow' }), shell, startButton)), el('div', { class: 'meta compose-note' }, 'The message is the agent’s first prompt. Shell starts a shell there and leaves the message.'), where));
+    const where = el('div', { class: 'compose-where' });
+    const keys = el('span', { class: 'compose-keys' });
+    $('nstage').replaceChildren(el('div', { class: 'compose' }, where, title, el('section', { class: 'composer', 'aria-label': 'Start an agent' }, el('label', { for: 'compose-text', class: 'sr-only' }, 'First message'), text, el('div', { class: 'compose-row' }, pick('Repository', icon('folder-sm'), repositorySelect), pick('Checkout', icon('branch'), checkoutSelect), pick('Agent', '◆', agentSelect), el('span', { class: 'grow' }), shell, startButton)), el('div', { class: 'compose-foot' }, el('span', { class: 'compose-note' }, icon('info'), 'The message becomes the agent’s first prompt. Shell starts a shell there and leaves it.'), keys)));
     return {
         title,
         text,
@@ -91,6 +92,7 @@ function build() {
         shell,
         start: startButton,
         where,
+        keys,
     };
 }
 /** Puts `values` in a select as its options, `chosen` selected, leaving it
@@ -128,15 +130,12 @@ export function drawComposer() {
     parts.shell.disabled = !co;
     parts.start.disabled = !co || !name;
     const keys = chordsFor('compose', 'anywhere');
-    parts.where.replaceChildren(!repo
+    parts.where.replaceChildren(el('span', { class: 'compose-rule' }), !repo
         ? 'Add a repository to the project to start here.'
         : !co
             ? `${repo.name} is folded on the rail; open it to pick a checkout.`
-            : co.kind === 'main'
-                ? el('span', null, 'Starting in ', el('b', { class: 'fg' }, repo.name), `’s own checkout${co.branch ? `, on ${co.branch}` : ''}.`)
-                : el('span', null, 'Starting in the worktree ', el('b', { class: 'fg' }, co.name), co.branch ? `, on ${co.branch}.` : '.'), keys.length > 0
-        ? el('span', { class: 'compose-keys' }, keycaps(keys), ' opens this from anywhere')
-        : '');
+            : el('span', null, co.kind === 'main' ? 'Starting in ' : 'Starting in the worktree ', el('b', { class: 'fg' }, co.kind === 'main' ? repo.name : co.name), co.branch ? [' on ', el('span', { class: 'mono fg' }, co.branch)] : ''), el('span', { class: 'compose-rule' }));
+    parts.keys.replaceChildren(...(keys.length > 0 ? [keycaps(keys), ' opens this from anywhere'] : []));
 }
 /** The message takes the keys when the composer comes up. */
 export function focusComposer() {
