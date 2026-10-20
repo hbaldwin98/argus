@@ -282,6 +282,25 @@ impl Dialogs {
         }
     }
 
+    /// A new tree: every review, open or parked, hears whether its
+    /// checkout's working changes moved, and the one answers go to reads
+    /// them again if they did.
+    pub fn follow(&mut self, tree: &[ProjectInfo], id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) {
+        for dialog in self.reviews() {
+            dialog.follow(tree.checkout(dialog.checkout()));
+        }
+        self.catch_up(id, out);
+    }
+
+    /// The review answers go to reads its sides again if its checkout's
+    /// working changes moved while it could not: a read was out, or its
+    /// comment box was open.
+    pub fn catch_up(&mut self, id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) {
+        if let Some(dialog) = self.review_mut() {
+            out.extend(dialog.catch_up(id));
+        }
+    }
+
     /// Sends the comment, named by `id`, or with no `body` puts the box away.
     pub fn review_comment(
         &mut self,
@@ -295,7 +314,10 @@ impl Dialogs {
             return;
         };
         match body {
-            None => dialog.cancel_comment(),
+            None => {
+                dialog.cancel_comment();
+                self.catch_up(id, out);
+            }
             Some(body) => match dialog.comment(tree.checkout(dialog.checkout()), &body, id()) {
                 Ok(msg) => out.push(msg),
                 Err(text) => say.push(Event::Notice { text: text.into() }),
@@ -775,6 +797,55 @@ mod tests {
         assert!(dialogs.receive(failed, say).is_none());
         assert!(dialogs.unpark());
         assert_eq!(history_page(&mut dialogs).path.as_deref(), Some("DESKTOP.md"), "still unfolded, the cursor on its file");
+    }
+
+    /// The tree with one live agent in checkout 100, whose working changes
+    /// the daemon fingerprints as `changes`.
+    fn changes_at(changes: u64) -> Vec<ProjectInfo> {
+        let mut tree = agent_tree();
+        tree[0].repositories[0].checkouts[0].git.as_mut().unwrap().changes = changes;
+        tree
+    }
+
+    /// A review of checkout 100 opened at `changes_at(0)`, both its sides
+    /// read, with a line of the unstaged side picked.
+    fn read_review(id: &mut impl FnMut() -> u64) -> Dialogs {
+        let mut dialogs = Dialogs::new(ReviewLayout::default());
+        let mut out = Vec::new();
+        dialogs.open_review(CheckoutId(100), &changes_at(0), &mut *id, &mut out);
+        for (msg, base) in out.iter().zip([ReviewBase::Unstaged, ReviewBase::Staged]) {
+            let ClientMsg::Review { request_id, .. } = msg else { panic!("{msg:?}") };
+            let mut read = diff_of(*request_id, "src/a.rs");
+            read.base = base;
+            assert!(dialogs.receive(ServerMsg::Review(read), &mut Vec::new()).is_none());
+        }
+        dialogs.review_action(Action::Pick, &changes_at(0), &mut Vec::new());
+        dialogs
+    }
+
+    #[test]
+    fn a_review_reads_again_when_the_tree_says_its_checkout_changed() {
+        let mut id = ids();
+        let mut dialogs = read_review(&mut id);
+        let mut out = Vec::new();
+        dialogs.follow(&changes_at(0), &mut id, &mut out);
+        assert!(out.is_empty(), "a tree with nothing moved asks nothing");
+        dialogs.follow(&changes_at(9), &mut id, &mut out);
+        assert!(matches!(out.as_slice(), [ClientMsg::Review { .. }, ClientMsg::Review { .. }]), "{out:?}");
+        assert!(dialogs.review().unwrap().page(None).pick.is_some(), "the pick stays while the new read is out");
+    }
+
+    #[test]
+    fn an_open_comment_box_holds_the_review_until_it_closes() {
+        let mut id = ids();
+        let mut dialogs = read_review(&mut id);
+        let (mut out, mut say) = (Vec::new(), Vec::new());
+        dialogs.review_action(Action::Comment, &changes_at(0), &mut say);
+        assert!(say.is_empty(), "{say:?}");
+        dialogs.follow(&changes_at(9), &mut id, &mut out);
+        assert!(out.is_empty(), "the lines the comment quotes stay put: {out:?}");
+        dialogs.review_comment(None, &changes_at(9), &mut id, &mut out, &mut say);
+        assert_eq!(out.len(), 2, "put away, the box lets the review catch up: {out:?}");
     }
 
     #[test]

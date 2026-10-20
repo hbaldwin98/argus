@@ -1,6 +1,7 @@
 //! What in a transcript differs between runs and machines while the
 //! daemon's behavior does not, written in words that stay put: the host's
-//! directory, the build's version and the wall clock. Order is the
+//! directory, the build's version, the wall clock and a checkout's change
+//! fingerprint, which hashes the times of the files it covers. Order is the
 //! transcript's to settle, since only it knows where a request ends.
 
 use std::path::Path;
@@ -52,7 +53,13 @@ impl Scrub {
             },
             Value::Array(items) => Value::Array(items.into_iter().map(|v| self.value(v)).collect()),
             Value::Object(fields) => Value::Object(
-                fields.into_iter().map(|(k, v)| (k, self.value(v))).collect(),
+                fields
+                    .into_iter()
+                    .map(|(k, v)| match (k.as_str(), v) {
+                        ("changes", Value::Number(_)) => (k, Value::String("[changes]".to_owned())),
+                        (_, v) => (k, self.value(v)),
+                    })
+                    .collect(),
             ),
             other => other,
         }
@@ -105,6 +112,13 @@ mod tests {
         let forward = native.replace('\\', "/");
         let scrubbed = scrub.value(json!([native, forward, "unrelated/path"]));
         assert_eq!(scrubbed, json!(["[root]/repo", "[root]/repo", "unrelated/path"]));
+    }
+
+    #[test]
+    fn a_change_fingerprint_is_scrubbed_and_other_numbers_are_not() {
+        let scrub = Scrub::new(Path::new("/nowhere"));
+        let scrubbed = scrub.value(json!({ "git": { "changes": 8977647766859618482u64, "staged": 2 } }));
+        assert_eq!(scrubbed, json!({ "git": { "changes": "[changes]", "staged": 2 } }));
     }
 
     #[test]

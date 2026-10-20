@@ -40,6 +40,7 @@ pub fn checkout(id: u64, name: &str, primary: bool, panes: Vec<PaneInfo>) -> Che
             behind: 0,
             upstream: None,
             last_commit: None,
+            changes: 0,
         }),
         primary,
     }

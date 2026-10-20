@@ -373,6 +373,9 @@ impl Session {
             return;
         }
         let Some(msg) = self.dialogs.receive(msg, &mut self.passing) else {
+            // An answer in, or a comment saved, may be what a review that
+            // fell behind its checkout was waiting on.
+            self.dialogs.catch_up(|| self.awaited.name(), &mut self.out);
             return;
         };
         let Some(msg) = self.sessions.receive(msg) else {
@@ -513,6 +516,7 @@ impl Session {
         self.tree = tree;
         self.loaded = true;
         self.features.tree_changed();
+        self.dialogs.follow(&self.tree, || self.awaited.name(), &mut self.out);
         if !self.tree.iter().any(|p| Some(p.id) == self.project) {
             self.project = self.tree.first().map(|p| p.id);
         }
@@ -3597,6 +3601,25 @@ mod tests {
         assert!(sent.is_empty(), "the review comes back as it was, not read again");
         assert!(s.dialogs.review().is_some());
         assert!(s.stages.now() == Stage::Checkouts, "over the stage it was opened over");
+    }
+
+    /// Following the checkout is wired to the window's trees and to the
+    /// answers a review waits on, not only to its dialog.
+    #[test]
+    fn an_open_review_reads_again_once_its_answers_are_in_when_a_tree_says_its_checkout_changed() {
+        use argus_protocol::ReviewBase::{Staged, Unstaged};
+        let asks = |sent: Vec<ClientMsg>| sent.iter().filter(|m| matches!(m, ClientMsg::Review { .. })).count();
+        let mut s = session(Hello::this_build());
+        let sent = s.open_review(CheckoutId(100));
+        let [ClientMsg::Review { request_id: unstaged, .. }, ClientMsg::Review { request_id: staged, .. }] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        let (unstaged, staged) = (*unstaged, *staged);
+        let mut moved = tree();
+        moved[0].repositories[0].checkouts[0].git.as_mut().unwrap().changes = 1;
+        assert_eq!(asks(s.receive(with_tree(moved))), 0, "both reads are still out");
+        assert_eq!(asks(s.receive(reviewed(Unstaged, unstaged))), 0);
+        assert_eq!(asks(s.receive(reviewed(Staged, staged))), 2, "the last answer in, the review catches up");
     }
 
     #[test]

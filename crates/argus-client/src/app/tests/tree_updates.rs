@@ -183,6 +183,7 @@ fn git_status_rides_along_on_checkout_rows() {
         behind: 0,
         upstream: None,
         last_commit: None,
+        changes: 0,
     });
     h.app.on_server_msg(ServerMsg::Tree(t));
     let g = h.app.current_checkout().unwrap().git.as_ref().unwrap();

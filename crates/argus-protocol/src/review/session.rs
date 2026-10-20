@@ -8,6 +8,10 @@
 //! everything the review can show — the side to open on, how many files the
 //! other holds, whether there is anything at all — and switching sides
 //! afterwards is a look at what is already in hand rather than another wait.
+//!
+//! A review of working changes follows them: the tree says when they moved
+//! (`GitStatus::changes`), and the review reads them again without being
+//! asked, keeping the person's place in what it held.
 
 use crate::review::view::ReviewView;
 use crate::{CheckoutId, ClientMsg, Review, ReviewAnchor, ReviewBase, ReviewContext};
@@ -54,6 +58,10 @@ pub struct ReviewSession {
     /// The fold whose lines are on their way. One at a time: opening
     /// another before they land means the first is no longer wanted.
     unfolding: Option<Unfolding>,
+    /// The checkout's working changes as the tree last said them.
+    changes: Option<u64>,
+    /// They moved since the sides were last asked for.
+    behind: bool,
 }
 
 /// What a fold's lines were asked for against, to know on arrival that they
@@ -107,6 +115,8 @@ impl ReviewSession {
             of_commit: Side::default(),
             jump_to: None,
             unfolding: None,
+            changes: None,
+            behind: false,
         }
     }
 
@@ -128,7 +138,34 @@ impl ReviewSession {
     /// Reads every side again: the agent kept working. What was on screen
     /// stays until its fresh copy arrives.
     pub fn refresh(&mut self, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
+        self.behind = false;
         self.bases().into_iter().map(|b| self.ask(b, id())).collect()
+    }
+
+    /// What the tree says of the checkout's working changes now, first as
+    /// the review opens, when it is what the reads asked for will show. A
+    /// commit never changes, and a checkout outside git says nothing.
+    pub fn follow(&mut self, changes: Option<u64>) {
+        if self.commit.is_some() || changes.is_none() {
+            return;
+        }
+        if self.changes.is_some() && changes != self.changes {
+            self.behind = true;
+        }
+        self.changes = changes;
+    }
+
+    /// Every side asked for again when the working changes moved since
+    /// they were. Not while a read is out: asking over it would drop an
+    /// answer on its way, and edits coming faster than a diff is read
+    /// would keep the review from ever landing one. It catches up once
+    /// the answer is in.
+    pub fn catch_up(&mut self, id: impl FnMut() -> u64) -> Vec<ClientMsg> {
+        let out = self.bases().into_iter().any(|b| self.side(b).asked.is_some());
+        if !self.behind || out {
+            return Vec::new();
+        }
+        self.refresh(id)
     }
 
     /// The side `request_id` answers, if it was asked for here and is the
@@ -147,22 +184,21 @@ impl ReviewSession {
         let Some(base) = self.asked_for(review.request_id) else {
             return Answered::Stale;
         };
-        let mut view = ReviewView::new(review, self.split);
-        // A refresh keeps the file the cursor was in, by path: a file added
-        // ahead of it shifts every index after it.
-        let path = match self.jump_to.take() {
-            Some(path) => Some(path),
-            None => self.side(base).view.as_ref().and_then(|old| {
-                let file = old.rows.get(old.sel)?.file();
-                Some(old.review.files.get(file)?.path.clone())
-            }),
-        };
-        if let Some(at) = path.and_then(|p| view.review.files.iter().position(|f| f.path == p)) {
-            view.jump_to_file(at);
-        }
+        let (split, jump_to) = (self.split, self.jump_to.take());
         let side = self.side_mut(base);
         side.asked = None;
-        side.view = Some(view);
+        match &mut side.view {
+            Some(view) => {
+                view.reread(review);
+            }
+            None => {
+                let mut view = ReviewView::new(review, split);
+                if let Some(at) = jump_to.and_then(|p| view.review.files.iter().position(|f| f.path == p)) {
+                    view.jump_to_file(at);
+                }
+                side.view = Some(view);
+            }
+        }
         self.settle(base)
     }
 
@@ -518,6 +554,91 @@ mod tests {
         s.receive(answer(3, Unstaged, &["a.rs", "b.rs", "c.rs"]));
         let v = s.view().unwrap();
         assert_eq!(v.review.files[v.rows[v.sel].file()].path, "c.rs");
+    }
+
+    // --- following the working changes -------------------------------------
+
+    /// A working review read under ids 1 and 2 while the tree said `0`.
+    fn followed() -> ReviewSession {
+        let (mut s, _) = working();
+        s.follow(Some(0));
+        s.receive(answer(1, Unstaged, &["a.rs"]));
+        s.receive(answer(2, Staged, &[]));
+        s
+    }
+
+    #[test]
+    fn a_working_review_reads_again_when_its_changes_move_and_only_then() {
+        let mut s = followed();
+        s.follow(Some(0));
+        assert!(s.catch_up(|| 3).is_empty(), "nothing moved");
+        s.follow(Some(7));
+        let sent = s.catch_up(|| 3);
+        assert!(matches!(sent.as_slice(), [ClientMsg::Review { base: Unstaged, .. }, ClientMsg::Review { base: Staged, .. }]));
+        assert!(s.catch_up(|| 5).is_empty(), "asked once");
+    }
+
+    #[test]
+    fn a_move_while_a_read_is_out_waits_for_its_answer() {
+        let (mut s, _) = working();
+        s.follow(Some(0));
+        s.follow(Some(1));
+        assert!(s.catch_up(|| 3).is_empty(), "both sides are still out");
+        s.receive(answer(1, Unstaged, &["a.rs"]));
+        assert!(s.catch_up(|| 3).is_empty(), "the staged side is still out");
+        s.receive(answer(2, Staged, &[]));
+        assert_eq!(s.catch_up(|| 3).len(), 2);
+    }
+
+    #[test]
+    fn a_refresh_asked_for_settles_a_move_already_seen() {
+        let mut s = followed();
+        s.follow(Some(1));
+        s.refresh(|| 3);
+        s.receive(answer(3, Unstaged, &["a.rs"]));
+        s.receive(answer(3, Staged, &[]));
+        assert!(s.catch_up(|| 5).is_empty());
+    }
+
+    #[test]
+    fn a_commit_and_a_checkout_outside_git_never_read_again() {
+        let (mut s, _) = ReviewSession::of_commit(CO, "aaaa".into(), None, false, 4);
+        s.receive(answer(4, Commit, &["a.rs"]));
+        s.follow(Some(0));
+        s.follow(Some(1));
+        assert!(s.catch_up(|| 5).is_empty());
+
+        let mut s = followed();
+        s.follow(None);
+        assert!(s.catch_up(|| 5).is_empty(), "no word is not a move");
+    }
+
+    /// A file of three added lines, the first reading `first`.
+    fn three_lines(request_id: u64, first: &str) -> Review {
+        let mut review = answer(request_id, Unstaged, &["a.rs"]);
+        review.files[0].hunks[0].lines = (1..=3).map(|n| numbered(LineKind::Added, None, Some(n))).collect();
+        review.files[0].hunks[0].lines[0].text = first.into();
+        review
+    }
+
+    fn cursor_line(s: &ReviewSession) -> Option<u32> {
+        let v = s.view()?;
+        let (f, h, l) = v.rows[v.sel].lines().next()?;
+        v.review.files[f].hunks[h].lines[l].new_lineno
+    }
+
+    #[test]
+    fn a_read_again_keeps_the_cursor_on_its_line_not_the_top_of_its_file() {
+        let (mut s, _) = working();
+        s.follow(Some(0));
+        s.receive(three_lines(1, "one"));
+        s.receive(answer(2, Staged, &[]));
+        s.view_mut().unwrap().move_by(2);
+        assert_eq!(cursor_line(&s), Some(3));
+        s.follow(Some(1));
+        s.catch_up(|| 3);
+        s.receive(three_lines(3, "one, edited"));
+        assert_eq!(cursor_line(&s), Some(3));
     }
 
     #[test]

@@ -686,6 +686,7 @@ pub(super) fn git(
         behind,
         upstream: None,
         last_commit: None,
+        changes: 0,
     }
 }
 

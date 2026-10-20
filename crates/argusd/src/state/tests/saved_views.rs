@@ -299,6 +299,7 @@ fn head_is(d: &Daemon, oid: &str) {
                 author: String::new(),
                 time: 0,
             }),
+            changes: 0,
         });
     }
 }

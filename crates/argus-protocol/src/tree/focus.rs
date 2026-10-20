@@ -197,6 +197,7 @@ mod tests {
                 behind: 0,
                 upstream: None,
                 last_commit: None,
+                changes: 0,
             }),
             primary: branch == "main",
         }

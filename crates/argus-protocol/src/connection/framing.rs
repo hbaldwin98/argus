@@ -258,6 +258,7 @@ mod tests {
                         behind: 2,
                         upstream: None,
                         last_commit: None,
+                        changes: 0,
                     }),
                     panes: vec![PaneInfo {
                         id: PaneId(4),

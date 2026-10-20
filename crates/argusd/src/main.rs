@@ -63,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
     daemon.set_paste_root(argus_protocol::config_dir().join("pastes"));
     daemon.start_git_poll();
     daemon.start_git_watch();
+    daemon.start_edit_watch();
     daemon.start_config_watch();
     daemon.start_project_scan();
     // After the hook server, so a restored agent gets working hooks.

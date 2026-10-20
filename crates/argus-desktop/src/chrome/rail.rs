@@ -307,6 +307,7 @@ mod tests {
             behind: 1,
             upstream: None,
             last_commit: None,
+            changes: 0,
         });
         let row = super::checkout(&co, &choices(&HashSet::new()));
         assert_eq!((row.branch.as_str(), row.git.as_deref(), row.clean), ("detached", Some("↓1 !1"), false));

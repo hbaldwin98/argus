@@ -1,17 +1,20 @@
 //! What Git says of a repository, read without changing it: a checkout's
 //! branch, dirty state and upstream, its worktrees, and the repositories
 //! under a root. See DESIGN.md §4 Level 2 and §9 M2. `watch` says when that
-//! changes (and when one file does, for the `projects.toml` reload), `browse`
+//! changes (and when one file does, for the `projects.toml` reload),
+//! `edit_watch` when a checkout's working files do, `browse`
 //! what a picker lists — a repository's branches, a checkout's files, and for
 //! the directory browser any directory — and `gitignore` the one file Argus
 //! writes, to keep its own files out of status; the writes to Git are
 //! `state::git_ops`'s.
 
 pub mod browse;
+pub mod edit_watch;
 pub mod gitignore;
 pub mod watch;
 
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use argus_protocol::{CommitInfo, GitStatus};
@@ -49,15 +52,21 @@ pub fn status(path: &Path) -> Option<GitStatus> {
     // what it last knew.
     let (head, branch) = head_of(&repo)?;
 
+    // Untracked directories are walked into, as the review's unstaged side
+    // walks them: one counted as a single path would hide an edit inside it
+    // from `changes`, and the count would not be the review's.
     let mut opts = git2::StatusOptions::new();
-    opts.include_untracked(true).renames_head_to_index(true);
+    opts.include_untracked(true).recurse_untracked_dirs(true).renames_head_to_index(true);
     let (mut changed_files, mut staged, mut unstaged) = (0, 0, 0);
+    let mut changes = std::hash::DefaultHasher::new();
+    head.as_ref().and_then(|h| h.target()).hash(&mut changes);
     if let Ok(statuses) = repo.statuses(Some(&mut opts)) {
         for entry in statuses.iter() {
             let flags = entry.status();
             changed_files += 1;
             staged += usize::from(flags.intersects(STAGED));
             unstaged += usize::from(flags.intersects(UNSTAGED));
+            fingerprint(repo.workdir().unwrap_or(path), &entry, &mut changes);
         }
     }
 
@@ -75,7 +84,22 @@ pub fn status(path: &Path) -> Option<GitStatus> {
         behind,
         upstream,
         last_commit,
+        changes: changes.finish(),
     })
+}
+
+/// What of one changed path a review would read differently: its state,
+/// the blob staged for it, and the file's size and time on disk. The time
+/// stands in for the content, which status does not hash for a file that
+/// is already modified; an edit that keeps both is not seen.
+fn fingerprint(workdir: &Path, entry: &git2::StatusEntry<'_>, into: &mut impl Hasher) {
+    entry.path_bytes().hash(into);
+    entry.status().bits().hash(into);
+    entry.head_to_index().map(|d| d.new_file().id()).hash(into);
+    let on_disk = std::str::from_utf8(entry.path_bytes())
+        .ok()
+        .and_then(|p| std::fs::symlink_metadata(workdir.join(p)).ok());
+    on_disk.map(|m| (m.len(), m.modified().ok())).hash(into);
 }
 
 /// The branch occupying `path`, without walking the workdir.
@@ -98,6 +122,7 @@ pub fn head(path: &Path) -> Option<GitStatus> {
         behind: 0,
         upstream: None,
         last_commit: None,
+        changes: 0,
     })
 }
 
@@ -969,6 +994,41 @@ mod tests {
         assert_eq!(s.changed_files, 3);
         assert_eq!(s.staged, 2, "a.txt and b.txt are in the index");
         assert_eq!(s.unstaged, 2, "a.txt edited again, c.txt untracked");
+    }
+
+    /// The review follows `changes` (DESIGN.md §"Review"): each of these is
+    /// an edit it would read differently while every count stays put. The
+    /// writes change a file's length, since two in one tick can share a time.
+    #[test]
+    fn changes_moves_on_every_edit_a_review_would_read_and_only_then() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        std::fs::write(dir.path().join("a.txt"), "edited").unwrap();
+        std::fs::create_dir_all(dir.path().join("new")).unwrap();
+        std::fs::write(dir.path().join("new/b.txt"), "b").unwrap();
+        let first = status(dir.path()).unwrap();
+        assert_eq!(status(dir.path()).unwrap().changes, first.changes, "nothing changed between reads");
+        assert_eq!(first.changed_files, 2, "the untracked directory's file is counted, as the review lists it");
+
+        std::fs::write(dir.path().join("a.txt"), "edited again").unwrap();
+        let edited = status(dir.path()).unwrap();
+        assert_eq!(edited.changed_files, first.changed_files);
+        assert_ne!(edited.changes, first.changes, "a file already modified, modified again");
+
+        std::fs::write(dir.path().join("new/b.txt"), "bb").unwrap();
+        let inside = status(dir.path()).unwrap();
+        assert_ne!(inside.changes, edited.changes, "a file inside an untracked directory");
+
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        let staged = status(dir.path()).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "edited a third").unwrap();
+        index.add_path(Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        let restaged = status(dir.path()).unwrap();
+        assert_eq!((restaged.staged, restaged.unstaged), (staged.staged, staged.unstaged));
+        assert_ne!(restaged.changes, staged.changes, "a file staged again");
     }
 
     #[test]

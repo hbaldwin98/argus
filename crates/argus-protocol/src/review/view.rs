@@ -163,6 +163,9 @@ enum Spot {
 
 pub struct ReviewView {
     pub review: Review,
+    /// The files as the daemon read them, before any fold was opened: what
+    /// a read of the same side again is compared against.
+    read: Vec<FileDiff>,
     pub rows: Vec<Row>,
     pub sel: usize,
     pub top: usize,
@@ -178,6 +181,7 @@ impl ReviewView {
         let rows = flatten(&review.files, split);
         let sel = rows.iter().position(|r| r.is_selectable()).unwrap_or(0);
         ReviewView {
+            read: review.files.clone(),
             review,
             rows,
             sel,
@@ -225,6 +229,76 @@ impl ReviewView {
             }),
             _ => false,
         })
+    }
+
+    /// The same side read again, keeping what the person had of it: every
+    /// file the read left as it was keeps the folds opened in it, and the
+    /// cursor and a picked range stay on the lines they were on, found by
+    /// path and numbers. The cursor on a line that is gone goes to the next
+    /// one left in its file; a range that lost an end is let go. False,
+    /// changing nothing, when the read is the one already held.
+    pub fn reread(&mut self, review: Review) -> bool {
+        if review.files == self.read && review.commit == self.review.commit {
+            return false;
+        }
+        let sel = self.place(self.sel);
+        let mark = self.mark.and_then(|m| self.place(m));
+        let read = review.files.clone();
+        let mut review = review;
+        for file in &mut review.files {
+            if let Some(held) = self.read.iter().position(|old| old == file) {
+                *file = self.review.files[held].clone();
+            }
+        }
+        self.read = read;
+        self.review = review;
+        self.rows = flatten(&self.review.files, self.split);
+        self.sel = sel
+            .as_ref()
+            .and_then(|p| self.found(p).or_else(|| self.after(p)))
+            .or_else(|| self.rows.iter().position(|r| r.is_selectable()))
+            .unwrap_or(0);
+        self.mark = mark.and_then(|p| self.found(&p));
+        true
+    }
+
+    /// Where a row is, by its file's path rather than its index: a file
+    /// added ahead of it shifts every index after.
+    fn place(&self, row: usize) -> Option<(String, Spot)> {
+        let spot = self.spot(row)?;
+        let file = match spot {
+            Spot::Line(f, ..) | Spot::Fold(f, _) => f,
+        };
+        Some((self.review.files[file].path.clone(), spot))
+    }
+
+    fn found(&self, (path, spot): &(String, Spot)) -> Option<usize> {
+        let file = self.review.files.iter().position(|f| &f.path == path)?;
+        self.find(match *spot {
+            Spot::Line(_, old, new) => Spot::Line(file, old, new),
+            Spot::Fold(_, gap) => Spot::Fold(file, gap),
+        })
+    }
+
+    /// The first stop in the file of `place` from the line it named on, or
+    /// the file's first when it named none.
+    fn after(&self, (path, spot): &(String, Spot)) -> Option<usize> {
+        let file = self.review.files.iter().position(|f| &f.path == path)?;
+        let from = match *spot {
+            Spot::Line(_, old, new) => new.or(old).unwrap_or(0),
+            Spot::Fold(..) => 0,
+        };
+        let in_file = |r: &Row| r.is_stop() && r.file() == file;
+        let at_or_after = |r: &Row| {
+            r.lines().any(|(f, h, l)| {
+                let line = &self.review.files[f].hunks[h].lines[l];
+                line.new_lineno.or(line.old_lineno).is_some_and(|n| n >= from)
+            })
+        };
+        let rows = &self.rows;
+        rows.iter()
+            .position(|r| in_file(r) && at_or_after(r))
+            .or_else(|| rows.iter().rposition(in_file))
     }
 
     /// The fold under the cursor, and which file it is in.
@@ -1364,5 +1438,58 @@ mod tests {
                 right: Some(0)
             }
         );
+    }
+
+    // --- reading the same side again ----------------------------------------
+
+    fn reread_of(v: &ReviewView, files: Vec<FileDiff>) -> Review {
+        Review { files, ..v.review.clone() }
+    }
+
+    #[test]
+    fn a_read_of_what_is_held_changes_nothing() {
+        let mut v = two_files();
+        v.move_by(1);
+        v.toggle_mark();
+        let files = v.read.clone();
+        assert!(!v.reread(reread_of(&v, files)));
+        assert_eq!(v.mark, Some(v.sel), "the pick is kept");
+    }
+
+    #[test]
+    fn a_file_the_read_left_alone_keeps_the_folds_opened_in_it() {
+        let mut v = folded();
+        on_fold(&mut v, 0);
+        assert!(v.reveal(0, read(1, 9)));
+        let opened = v.review.files[0].clone();
+        let mut files = v.read.clone();
+        files.push(file("b.rs", vec![line(LineKind::Added, 1, "new")]));
+        assert!(v.reread(reread_of(&v, files)));
+        assert_eq!(v.review.files[0], opened, "a.rs is as it was opened");
+        assert_eq!(v.review.files[1].path, "b.rs");
+
+        let mut edited = v.read.clone();
+        edited[0].hunks[0].lines[3].text = "newer".into();
+        assert!(v.reread(reread_of(&v, edited.clone())));
+        assert_eq!(v.review.files[0], edited[0], "an edited file is read anew, folds and all");
+    }
+
+    #[test]
+    fn a_pick_whose_line_is_gone_is_let_go_and_the_cursor_goes_to_the_next_line() {
+        let mut v = view(vec![file(
+            "a.rs",
+            vec![line(LineKind::Added, 1, "a"), line(LineKind::Added, 2, "b"), line(LineKind::Added, 3, "c")],
+        )]);
+        v.toggle_mark();
+        v.move_by(1);
+        let files = vec![file("a.rs", vec![line(LineKind::Added, 1, "a"), line(LineKind::Added, 3, "c")])];
+        assert!(v.reread(reread_of(&v, files)));
+        let (f, h, l) = v.rows[v.sel].lines().next().unwrap();
+        assert_eq!(v.review.files[f].hunks[h].lines[l].new_lineno, Some(3), "line 2 is gone; 3 is next");
+        assert_eq!(v.mark.map(|m| v.rows[m]), Some(Row::Line { file: 0, hunk: 0, line: 0 }), "line 1, the pick's other end, is still there");
+
+        let files = vec![file("a.rs", vec![line(LineKind::Added, 3, "c")])];
+        assert!(v.reread(reread_of(&v, files)));
+        assert_eq!(v.mark, None, "the pick lost an end");
     }
 }

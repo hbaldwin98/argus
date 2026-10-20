@@ -5,9 +5,10 @@
 //! gets removed by hand, `projects.toml` gets saved — and the rows have to
 //! follow without anyone pressing a key.
 //!
-//! Two beats and two watchers do it: a two-second git status sweep, a
+//! Two beats and three watchers do it: a two-second git status sweep, a
 //! ten-second root rescan, a `notify` watch on each repository's metadata,
-//! and a watch on the config file. All of the git work runs on the blocking
+//! one on the working files of each checkout being worked in, and a watch
+//! on the config file. All of the git work runs on the blocking
 //! pool and never under the daemon lock, because a keystroke needs that same
 //! lock to find the pty it belongs to.
 
@@ -83,20 +84,20 @@ impl Daemon {
     /// sweep in front of the next key. Results are matched back by id: the
     /// tree can be rearranged while the lock is down.
     pub fn refresh_git_status(&self, only_active: bool) {
-        self.refresh_git_status_by(only_active, |path| self.git.status(path));
+        self.refresh_git_status_by(|c| !only_active || !c.panes.is_empty(), |path| self.git.status(path));
     }
 
-    /// The sweep itself, by whichever read is enough: startup names rows
-    /// from HEAD alone.
+    /// The sweep itself, over the checkouts `which` picks and by whichever
+    /// read is enough: startup names rows from HEAD alone.
     pub(super) fn refresh_git_status_by(
         &self,
-        only_active: bool,
+        which: impl Fn(&Checkout) -> bool,
         read: impl Fn(&std::path::Path) -> Option<GitStatus>,
     ) {
         let checkouts: Vec<(CheckoutId, PathBuf)> = {
             let inner = self.inner.lock().unwrap();
             checkouts(&inner.projects)
-                .filter(|c| !only_active || !c.panes.is_empty())
+                .filter(|c| which(c))
                 .map(|c| (c.id, c.path.clone()))
                 .collect()
         };
@@ -326,6 +327,64 @@ impl Daemon {
                 }
             }
         });
+    }
+
+    /// Watches the working files of every checkout with a pane open and
+    /// reads the status of the ones an edit lands in, so a review open on
+    /// one follows the agent within a fraction of a second rather than on
+    /// the next sweep, which stays for whatever the watch misses.
+    ///
+    /// A checkout with no pane is left to the sweep: nothing is working in
+    /// it, and on Linux a recursive watch costs one inotify watch for each
+    /// of its directories, ignored ones included.
+    pub fn start_edit_watch(self: &Arc<Self>) {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
+        let Some(mut watch) = crate::git::edit_watch::EditWatch::new(move || {
+            let _ = tx.try_send(());
+        }) else {
+            return;
+        };
+
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            let mut resync = tokio::time::interval(Duration::from_secs(2));
+            loop {
+                tokio::select! {
+                    // The same beat the sweep runs on, which is also the
+                    // longest a newly opened pane's checkout goes unwatched.
+                    _ = resync.tick() => watch.sync(&daemon.worked_in().into_iter().map(|(_, p)| p).collect::<Vec<_>>()),
+                    event = rx.recv() => {
+                        if event.is_none() {
+                            break;
+                        }
+                        // An editor's save, or an agent's edit, is a burst
+                        // of writes; read once it has landed.
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        while rx.try_recv().is_ok() {}
+                        let gathered = watch.take();
+
+                        let daemon = daemon.clone();
+                        let _ = tokio::task::spawn_blocking(move || {
+                            let edited = crate::git::edit_watch::edited(&daemon.worked_in(), &gathered);
+                            if !edited.is_empty() {
+                                daemon.refresh_git_status_by(|c| edited.contains(&c.id), |path| daemon.git.status(path));
+                                daemon.pushes.tree(|| daemon.snapshot());
+                            }
+                        })
+                        .await;
+                    }
+                }
+            }
+        });
+    }
+
+    /// The checkouts with a pane open, which the edit watch follows.
+    fn worked_in(&self) -> Vec<(CheckoutId, PathBuf)> {
+        let inner = self.inner.lock().unwrap();
+        checkouts(&inner.projects)
+            .filter(|c| !c.panes.is_empty())
+            .map(|c| (c.id, c.path.clone()))
+            .collect()
     }
 
     /// Every repository's Git directory, for the watch to follow. Uses the

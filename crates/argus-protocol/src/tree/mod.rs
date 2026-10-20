@@ -331,6 +331,12 @@ pub struct GitStatus {
     /// repository with no commits yet, and from a daemon that does not say.
     #[serde(default)]
     pub last_commit: Option<crate::CommitInfo>,
+    /// A fingerprint of the working changes, which differs whenever a
+    /// review of them could read differently: an edit to a file already
+    /// counted changes no count, so a review cannot follow the counts.
+    /// Only ever compared; 0 from a daemon that does not say.
+    #[serde(default)]
+    pub changes: u64,
 }
 
 impl GitStatus {
@@ -678,6 +684,7 @@ mod tests {
             behind,
             upstream: None,
             last_commit: None,
+            changes: 0,
         }
     }
 

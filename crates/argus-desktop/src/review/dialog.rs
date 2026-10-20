@@ -35,7 +35,8 @@ impl ReviewDialog {
     /// layout last chosen.
     pub fn working(checkout: &CheckoutInfo, layout: ReviewLayout, id: impl FnMut() -> u64) -> (ReviewDialog, Vec<ClientMsg>) {
         let base = if layout.staged { ReviewBase::Staged } else { ReviewBase::Unstaged };
-        let (session, msgs) = ReviewSession::working(checkout.id, base, layout.split, id);
+        let (mut session, msgs) = ReviewSession::working(checkout.id, base, layout.split, id);
+        session.follow(checkout.git.as_ref().map(|g| g.changes));
         (ReviewDialog::new(checkout, session, layout), msgs)
     }
 
@@ -74,6 +75,23 @@ impl ReviewDialog {
     /// Reads the sides again: the agent kept working.
     pub fn refresh(&mut self, id: impl FnMut() -> u64) -> Vec<ClientMsg> {
         self.session.refresh(id)
+    }
+
+    /// The checkout as the tree has it now, whose working changes the
+    /// review follows.
+    pub fn follow(&mut self, checkout: Option<&CheckoutInfo>) {
+        self.session.follow(checkout.and_then(|c| c.git.as_ref()).map(|g| g.changes));
+    }
+
+    /// The sides asked for again when the working changes moved, but not
+    /// under an open comment box: what it quotes is the lines picked, and
+    /// a read that moved them would change what the comment is about while
+    /// it is being written. It catches up once the box closes.
+    pub fn catch_up(&mut self, id: impl FnMut() -> u64) -> Vec<ClientMsg> {
+        if self.comment_box.is_open() {
+            return Vec::new();
+        }
+        self.session.catch_up(id)
     }
 
     /// A diff the daemon read, kept only if this dialog asked for it.

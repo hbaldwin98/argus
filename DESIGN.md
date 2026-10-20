@@ -487,6 +487,7 @@ to the type or its locking.
 | `store/faults` | a fault put in the store's connection by a test: a write stopped at any step or at its commit, a full disk, another writer's lock |
 | `git`, `git/browse` | the read-only questions asked of a repository: its status and worktrees, and what a checkout contains for the pickers |
 | `git/watch` | when a repository's Git metadata changes, as it happens rather than on the next poll |
+| `git/edit_watch` | when a file is edited in a checkout being worked in, and which checkouts an edit could show up in the status of |
 | `git/gitignore` | the repository-local excludes for generated Argus files |
 | `syntax`, `syntax/grammar` | which tree-sitter grammar reads a file, chosen by its extension, so highlighting and outlines agree on its language |
 | `syntax/highlight` | what each token of a diff's or a file's lines is, for highlighting |
@@ -1681,6 +1682,15 @@ repositories come and go. The poll is not replaced: editing a file touches nothi
 dirty state and changed-file counts still come from the sweep, and a platform where the watch cannot
 start logs and leaves the poll on its own.
 
+Edits have a watch of their own, so a review follows an agent within a fraction of a second. Each
+checkout with a pane open is watched recursively; the watcher only gathers paths, dropping Git's own
+under `.git`, and a burst is read 100 ms after it starts. Of what it gathered, a path counts for the
+deepest checkout it is inside and only when not ignored there, each directory's answer kept for the
+burst, so a build writing thousands of files under `target` costs one question. The checkouts that
+are left have their status read and the tree sent. Past 4096 paths a burst counts for every watched
+checkout rather than be held. A checkout with no pane is left to the sweep: nothing works in it, and
+on Linux a recursive watch is one inotify watch for each of its directories, ignored ones included.
+
 Status is cached on the checkout rather than read when a tree is snapshotted. A snapshot is taken
 under the daemon's one lock, and a keystroke needs that same lock to find the pty it belongs to, so
 reading git there put several milliseconds of blocking I/O per checkout in front of the next key —
@@ -1788,7 +1798,18 @@ what the review can show and `b` is a look at what is already in hand. An empty 
 anyone: the toggle lives inside the overlay, so a side that comes back empty gives way to the other
 once it has said, and only when both are empty does the review say so and open nothing. Giving way
 is not choosing: the setting stays the side asked for. `b` onto a side known to be empty keeps the
-diff already on screen and its side. A refresh keeps the file the cursor was in, found by its path.
+diff already on screen and its side.
+
+A review of working changes follows them without being asked. Each checkout's status carries
+`changes`, a fingerprint of every changed path's state, staged blob, and size and time on disk, since
+an edit to a file already modified moves no count; when a tree says it moved, the review reads both
+sides again. Not over a read still out, which would drop its answer and, under edits faster than a
+diff is read, never land one: it catches up when the answer is in. Not under an open comment box
+either, whose quoted lines must stay what the comment is about. A read again keeps the person's
+place: a side that came back as it was changes nothing, a file it left alone keeps the folds opened
+in it, and the cursor and a picked range stay on their lines, found by path and line numbers — the
+cursor on a line that is gone goes to the next one in its file, and a range that lost an end is let
+go. The Refresh button stays, for a daemon that does not fingerprint.
 Both clients hold this exchange as one `review::session`, so the terminal and the desktop window
 open, give way and refuse alike. Closing a review or history returns the keys to where it was opened from, the rail or the
 Checkouts stage.
