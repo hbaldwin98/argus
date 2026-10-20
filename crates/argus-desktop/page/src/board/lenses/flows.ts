@@ -12,6 +12,7 @@ import { closeLayer, placeMenu } from '../../kit/menu.js';
 import {
   clickable,
   drawSequence,
+  type Drawn,
   editSource,
   editStep,
   openExpanded,
@@ -20,7 +21,7 @@ import {
 import { el, icon, type Child } from '../../kit/dom.js';
 import { state } from '../../state.js';
 import { call } from '../../connection/tauri.js';
-import { begin, edit, field, formButtons, keycap, lineList, titled } from './work.js';
+import { begin, edit, field, formButtons, keycap, lineList, overflow, titled } from './work.js';
 
 export function flowsLens(view: FeatureView): HTMLElement {
   const flows = view.flows;
@@ -163,14 +164,15 @@ function stepBelow(flow: FlowDetail): Child {
       titled('Carried out by', lineList(step.carriedOutBy, '·', 'fg-faint')),
     el(
       'div',
-      { class: 'actions' },
+      { class: 'actions detail-foot' },
+      el('span', { class: 'grow' }),
+      el('button', { class: 'btn sm', onclick: () => editStep(flow) }, 'Edit step'),
       el(
         'button',
         { class: 'btn sm', onclick: (e: MouseEvent) => bindMenu(flow, e) },
         'Bind a decision…',
       ),
-      el('button', { class: 'btn sm', onclick: () => editStep(flow) }, 'Edit step'),
-      el('button', { class: 'btn sm', onclick: () => editSource(flow) }, 'Edit source'),
+      overflow('More: edit source', [{ label: 'Edit source', run: () => editSource(flow) }]),
     ),
   );
 }
@@ -201,20 +203,37 @@ function picture(flow: FlowDetail | null): HTMLElement {
         keycap('F'),
       ),
     ),
-    scrollCue(el('div', { class: 'seq-holder' }, drawn.node)),
+    fitted(el('div', { class: 'seq-holder' }, drawn.node), drawn),
   );
 }
 
-/** A diagram wider than its box fades out at the edge it scrolls toward, so
- *  a lifeline cut off there reads as more to come, not as the end. */
-function scrollCue(holder: HTMLElement): HTMLElement {
+/** The diagram scaled down, no further than 60%, so a few lifelines fit
+ *  the box; when it still overflows, the selected step is brought into view
+ *  and both edges fade as far as there is more to scroll to. */
+function fitted(holder: HTMLElement, drawn: Drawn): HTMLElement {
   const update = (): void => {
     const more = holder.scrollWidth - holder.clientWidth - holder.scrollLeft > 4;
     holder.classList.toggle('scrolls', more);
-    holder.title = more ? 'Scroll sideways for the rest' : '';
+    holder.classList.toggle('scrolled', holder.scrollLeft > 0);
+    holder.title = more || holder.scrollLeft > 0 ? 'Scroll sideways for the rest' : '';
   };
   holder.addEventListener('scroll', update, { passive: true });
-  requestAnimationFrame(update);
+  requestAnimationFrame(() => {
+    // Minus the holder's padding and border, which it also scrolls inside.
+    const room = holder.clientWidth - 24;
+    if (room <= 0) return;
+    const scale = Math.max(0.6, Math.min(1, room / drawn.width));
+    drawn.node.setAttribute('width', String(drawn.width * scale));
+    drawn.node.setAttribute('height', String(drawn.height * scale));
+    const lit = holder.querySelector('.smsg.on');
+    if (lit && holder.scrollWidth > holder.clientWidth) {
+      const at = lit.getBoundingClientRect();
+      const box = holder.getBoundingClientRect();
+      const centre = at.left - box.left + holder.scrollLeft + at.width / 2;
+      holder.scrollLeft = Math.max(0, centre - holder.clientWidth / 2);
+    }
+    update();
+  });
   return holder;
 }
 

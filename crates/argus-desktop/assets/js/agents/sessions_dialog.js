@@ -33,9 +33,9 @@ function list(s) {
     const live = s.rows.filter((r) => r.live);
     const ended = s.rows.filter((r) => !r.live);
     return [
-        live.length > 0 && el('div', { class: 'shead meta' }, 'Live'),
+        live.length > 0 && el('div', { class: 'shead label' }, 'Live'),
         live.map(listRow),
-        ended.length > 0 && el('div', { class: 'shead meta' }, 'Ended'),
+        ended.length > 0 && el('div', { class: 'shead label' }, 'Ended'),
         ended.map(listRow),
     ];
 }
@@ -126,14 +126,16 @@ function searchField(search) {
     field.value = live instanceof HTMLInputElement ? live.value : search;
     return field;
 }
-/** A menu over what the listing holds; its first option is all of them. */
+/** A select over what the listing holds, in the one field style; its
+ *  first option is all of them. */
 function menu(label, all, options, chosen, pick) {
     const select = el('select', {
+        class: 'field',
         'aria-label': label,
         onchange: () => pick(select.value === '' ? null : select.value),
     }, el('option', { value: '' }, all), options.map((o) => el('option', { value: o }, o)));
     select.value = chosen ?? '';
-    return el('label', { class: 'pick' }, select);
+    return select;
 }
 function filters(harness, checkout) {
     call('filter_sessions', { harness, checkout });

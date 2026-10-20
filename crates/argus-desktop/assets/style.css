@@ -696,6 +696,10 @@
   cursor: pointer;
   font-family: inherit;
 }
+.track:hover {
+  background: var(--fill);
+  color: var(--fg);
+}
 .track b {
   color: var(--ref);
   font-weight: 600;
@@ -750,8 +754,15 @@
   white-space: nowrap;
   cursor: pointer;
 }
+.segb:hover:not(.on) {
+  background: color-mix(in srgb, var(--fill) 60%, transparent);
+  color: var(--fg);
+}
 .segb.on {
   background: var(--fill);
+  color: var(--fg);
+}
+.lt:hover:not(.on) {
   color: var(--fg);
 }
 .check {
@@ -762,6 +773,22 @@
 .check input {
   margin: 3px 0 0;
   accent-color: var(--accent);
+}
+/* The box is 13px; the label around it is what is pressed, and is 24px. */
+.crit .check {
+  align-items: center;
+  min-height: 28px;
+  cursor: pointer;
+}
+.crit .check input {
+  margin: 0;
+}
+.crit .icon {
+  opacity: 0;
+}
+.crit:hover .icon,
+.crit .icon:focus-visible {
+  opacity: 1;
 }
 .pbar {
   width: 56px;
@@ -1840,6 +1867,9 @@ a:focus-visible,
   box-shadow: var(--ring-shadow);
   outline: none;
 }
+.field:hover:not(:focus) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+}
 [hidden] {
   display: none !important;
 }
@@ -2635,6 +2665,14 @@ select option::checkmark {
   white-space: pre;
   overflow: auto;
 }
+.note-field.scrolls {
+  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+}
+.opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
 .note-field::placeholder {
   color: var(--fg-faint);
 }
@@ -2693,6 +2731,12 @@ select option::checkmark {
 .wrow.on {
   background: var(--bg-selected);
   box-shadow: inset 3px 0 0 var(--accent);
+}
+.wrow:hover:not(.on),
+.rrow:hover:not(.on),
+.steprow:hover:not(.on):not(.branch),
+.frow:hover:not(.on) {
+  background: var(--fill);
 }
 .legend-row {
   display: inline-flex;
@@ -2768,6 +2812,33 @@ select option::checkmark {
   gap: var(--sp-16);
   overflow-y: auto;
 }
+.agent-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-width: 0;
+}
+.agent-line .spill {
+  flex: none;
+}
+.idrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-height: 20px;
+}
+.waits {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  white-space: nowrap;
+}
+/* One footer for every lens's detail: the actions at the right, the
+   overflow last. */
+.detail-foot {
+  align-items: center;
+  gap: var(--sp-8);
+}
 .detail-title {
   margin-top: var(--sp-6);
 }
@@ -2809,8 +2880,8 @@ select option::checkmark {
   flex: 1;
 }
 .icon.sm {
-  width: 20px;
-  height: 20px;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
 }
 .option {
   display: flex;
@@ -3463,7 +3534,13 @@ body.console-fullscreen #bar {
   background: var(--fill);
 }
 .ctable tr.on td {
-  border-bottom-color: transparent;
+  border-bottom: 0;
+}
+.ctable tr.on + .detail-row td {
+  border-bottom: 1px solid var(--line);
+}
+.cfacts .mlabel {
+  padding: 0;
 }
 .ctable tr.on td:first-child {
   box-shadow: inset 3px 0 0 var(--ring);
@@ -3475,8 +3552,25 @@ body.console-fullscreen #bar {
 .ctable .row-actions {
   text-align: right;
 }
-.ctable .row-actions > * + * {
-  margin-left: var(--sp-6);
+.ctable .ra {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  opacity: 0.55;
+  transition: opacity 120ms;
+}
+.ctable tr:hover .ra,
+.ctable tr.on .ra,
+.ctable .ra:focus-within {
+  opacity: 1;
+}
+.bname {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+.ctable .col-actions {
+  text-align: right;
 }
 .start-at {
   position: relative;
@@ -3525,7 +3619,7 @@ body.console-fullscreen #bar {
 }
 .ctable th:last-child,
 .ctable .row-actions {
-  width: 112px;
+  width: 148px;
 }
 .ctable .pane-status + .pane-status {
   margin-left: var(--sp-4);
@@ -3580,11 +3674,17 @@ body.console-fullscreen #bar {
   align-items: center;
   gap: var(--sp-6);
 }
+.code-tabs {
+  gap: var(--sp-16);
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.code-tabs .lt .kbd {
+  margin-left: var(--sp-2);
+}
 .code-tools .segb {
   padding: 0 var(--sp-8);
-}
-.code-search {
-  margin-left: auto;
 }
 .code-list {
   flex: 1;
@@ -3690,18 +3790,20 @@ body.console-fullscreen #bar {
   position: relative;
 }
 .sbox .field {
-  padding-right: 84px;
+  padding-right: 100px;
 }
 .sopts {
   position: absolute;
   right: 4px;
-  top: 3px;
+  top: 0;
+  height: 100%;
+  align-items: center;
   display: flex;
   gap: 2px;
 }
 .sopt {
-  width: 24px;
-  height: 22px;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
   border: 1px solid transparent;
   border-radius: var(--r-xs);
   background: transparent;
@@ -3710,6 +3812,10 @@ body.console-fullscreen #bar {
   font-size: var(--fs-xs);
   cursor: pointer;
   padding: 0;
+}
+.sopt:hover {
+  background: var(--fill);
+  color: var(--fg);
 }
 .sopt.on {
   background: var(--bg-selected);
@@ -3772,9 +3878,26 @@ body.console-fullscreen #bar {
   text-align: right;
 }
 .hline .tx {
-  /* A match is wrapped, not cut: the hit is what the row is for. */
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  /* One line a match, so the rows keep their rhythm; the line is scrolled
+     to its hit and fades where it was cut. */
+  position: relative;
+  white-space: pre;
+  overflow: hidden;
+}
+.hline .tx.cut-left {
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+.hline .tx.cut-right {
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+.hline .tx.cut-left.cut-right {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 24px,
+    #000 calc(100% - 24px),
+    transparent
+  );
 }
 .hline mark {
   background: color-mix(in srgb, var(--attention) 32%, transparent);
@@ -4183,7 +4306,8 @@ body.console-fullscreen #bar {
   background: var(--bg-selected);
   box-shadow: inset 3px 0 0 var(--ring);
 }
-.rfile .rname {
+.rfile .rname,
+.hrow.file .rname {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -4446,11 +4570,22 @@ body.console-fullscreen #bar {
 
 .shead {
   padding: var(--sp-8) var(--sp-8) var(--sp-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
-.srow.removed {
-  opacity: 0.5;
+/* A session whose worktree is gone is told by its struck checkout, not by
+   fading the whole row below the contrast a title needs. */
+.srow.removed .grow {
+  color: var(--fg-muted);
+}
+.srow.removed .scheckout {
+  text-decoration: line-through;
+}
+select.field {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  max-width: 220px;
+  cursor: pointer;
+  font-size: var(--fs-sm);
 }
 .sdot {
   width: 7px;
@@ -5800,6 +5935,18 @@ body.resizing:has(.brief-sash.held) {
 .flow-picture .seq-holder.scrolls {
   mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
 }
+.flow-picture .seq-holder.scrolled {
+  mask-image: linear-gradient(to right, transparent, #000 56px);
+}
+.flow-picture .seq-holder.scrolls.scrolled {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 56px,
+    #000 calc(100% - 56px),
+    transparent
+  );
+}
 .flow-picture .seq-holder {
   flex: 1;
   min-height: 0;
@@ -5844,10 +5991,24 @@ body.resizing:has(.brief-sash.held) {
   stroke-width: 16;
   fill: none;
 }
-.seq .lhead-solid {
+.seq .smsg:hover:not(.on) .line,
+.seq .smsg:hover:not(.on) .head-open {
+  stroke: var(--fg);
+}
+.seq .smsg:hover:not(.on) .head-solid {
+  fill: var(--fg);
+}
+.seq .smsg:focus-visible {
+  outline: none;
+}
+.seq .smsg:focus-visible .line {
+  stroke: var(--ring);
+  stroke-width: 2;
+}
+.seq .head-solid {
   fill: var(--fg-muted);
 }
-.seq .lhead-open {
+.seq .head-open {
   stroke: var(--fg-muted);
   stroke-width: 1.4;
   fill: none;
@@ -6185,7 +6346,7 @@ body.resizing:has(.brief-sash.held) {
   height: 6px;
   margin-left: var(--sp-6);
   border-radius: var(--r-pill);
-  background: var(--changed);
+  background: var(--fg-faint);
   flex: none;
   align-self: center;
 }

@@ -17,7 +17,7 @@ import type { TaskDetail } from '../../bindings/TaskDetail';
 import type { WorkRow } from '../../bindings/WorkRow';
 import { notice } from '../../chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el, statusPill, type Child } from '../../kit/dom.js';
+import { $, el, icon, statusPill, type Child } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
 import { openMenu, type MenuItem } from '../../kit/menu.js';
 import { flowsAction, flowsLens } from './flows.js';
@@ -46,7 +46,7 @@ export const LENSES: { lens: Lens; name: string; key: string }[] = [
 
 /** The overflow of a row of actions: what is rarer than the buttons beside
  *  it, behind one icon so the row never wraps a lone button under itself. */
-function overflow(label: string, items: (MenuItem | false)[]): HTMLElement {
+export function overflow(label: string, items: (MenuItem | false)[]): HTMLElement {
   return el(
     'button',
     {
@@ -512,7 +512,7 @@ function outline(view: FeatureView): HTMLElement {
       { class: 'label' },
       el('span', null, 'Outline'),
       el('span', { class: 'grow' }),
-      legend(),
+      legend(view.rows.some((row) => row.changed)),
     ),
   );
   if (!view.loaded) section.append(el('div', { class: 'meta' }, 'Reading its tasks…'));
@@ -553,7 +553,7 @@ function outline(view: FeatureView): HTMLElement {
 }
 
 /** What each glyph of the outline means, as the outline's own header. */
-function legend(): HTMLElement {
+function legend(changed: boolean): HTMLElement {
   const words: [string, string][] = [
     ['todo', 'to do'],
     ['doing', 'in progress'],
@@ -569,6 +569,13 @@ function legend(): HTMLElement {
       const [mark, tone] = stateMark(word);
       return el('span', { class: 'legend-item' }, el('span', { class: tone }, mark), say);
     }),
+    changed &&
+      el(
+        'span',
+        { class: 'legend-item' },
+        el('span', { class: 'cdot', 'aria-hidden': 'true' }),
+        'changed since reconcile',
+      ),
   );
 }
 
@@ -585,9 +592,10 @@ function workRow(row: WorkRow): HTMLElement {
     row.state === 'superseded' ||
     row.state === 'rejected';
   let aside: Child = null;
-  if (row.state === 'open') aside = el('span', { class: 'pill fg-attention' }, 'needs you');
-  else if (row.waitsOn) aside = el('span', { class: 'meta fg-danger' }, `waits on ${row.waitsOn}`);
-  else if (row.state === 'withdrawn') aside = el('span', { class: 'meta' }, 'withdrawn');
+  if (row.state === 'open') aside = statusPill('waiting');
+  else if (row.waitsOn) {
+    aside = el('span', { class: 'meta waits' }, icon('lock'), `waits on ${row.waitsOn}`);
+  } else if (row.state === 'withdrawn') aside = el('span', { class: 'meta' }, 'withdrawn');
   const node = el(
     'button',
     {
@@ -688,31 +696,24 @@ export function lineList(lines: Line[], mark: string, tone: string): HTMLElement
 
 function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
   const editing = state.editing;
-  const stateWord: Record<string, string> = {
-    todo: '○ not started',
-    doing: '◐ in progress',
-    done: '✓ done',
+  const stateTag: Record<string, HTMLElement> = {
+    todo: statusPill('idle', 'to do'),
+    doing: statusPill('working', 'in progress'),
+    done: statusPill('done'),
   };
   const top = el(
     'div',
     null,
     el(
       'div',
-      { class: 'label' },
-      el('span', { class: 'fg-accent' }, `Task ${task.label}`),
-      task.parent && el('span', { class: 'label-aside' }, `under ${task.parent}`),
+      { class: 'idrow' },
+      el('span', { class: 'mono fg-accent' }, `#${task.label}`),
+      stateTag[task.state] ?? statusPill('idle', task.state),
+      task.waitsOn && el('span', { class: 'meta waits' }, icon('lock'), `waits on ${task.waitsOn}`),
+      el('span', { class: 'grow' }),
+      task.parent && el('span', { class: 'meta' }, `under ${task.parent}`),
     ),
     el('div', { class: 'type-title detail-title' }, task.title),
-    el(
-      'div',
-      { class: 'meta' },
-      el(
-        'span',
-        { class: task.state === 'doing' ? 'fg-attention' : task.state === 'done' ? 'fg-ok' : '' },
-        stateWord[task.state],
-      ),
-      task.waitsOn && el('span', { class: 'fg-danger' }, ` · waits on ${task.waitsOn}`),
-    ),
   );
   if (editing?.what === 'task' && editing.id === task.id) {
     const title = field(
@@ -756,7 +757,7 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
       el(
         'button',
         {
-          class: 'icon sm',
+          class: 'icon',
           'aria-label': `Remove “${criterion.text}”`,
           title: 'Remove',
           onclick: () => edit({ on: 'removeCriterion', id: task.id, index }),
@@ -817,11 +818,11 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
     el('div', { class: 'grow' }),
     el(
       'div',
-      { class: 'actions' },
+      { class: 'actions detail-foot' },
+      el('span', { class: 'grow' }),
+      el('button', { class: 'btn', onclick: () => editRow() }, 'Edit'),
       view.agent &&
         el('button', { class: 'btn primary', onclick: () => goToPane(view) }, 'Go to pane'),
-      el('button', { class: 'btn', onclick: () => editRow() }, 'Edit'),
-      el('span', { class: 'grow' }),
       overflow('More: subtask, decision', [
         {
           label: 'Add subtask',
@@ -842,19 +843,23 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
 export function decisionDetail(decision: DecisionDetail): HTMLElement {
   const editing = state.editing;
   const open = decision.state === 'open';
-  const tone = open ? 'fg-attention' : decision.state === 'accepted' ? 'fg-ok' : 'fg-faint';
+  const stateTag = open
+    ? statusPill('waiting')
+    : decision.state === 'accepted'
+      ? statusPill('done', 'decided')
+      : statusPill('exited', decision.state);
   const top = el(
     'div',
     null,
     el(
       'div',
-      { class: 'label' },
-      el('span', { class: `mono ${tone}` }, decision.label),
-      el('span', { class: tone }, decision.state),
+      { class: 'idrow' },
+      el('span', { class: `mono ${open ? 'fg-attention' : 'fg-ref'}` }, `#${decision.label}`),
+      stateTag,
       el('span', { class: 'grow' }),
       el(
         'span',
-        { class: 'label-aside' },
+        { class: 'meta' },
         decision.raisedUnder ? `raised under ${decision.raisedUnder} · ` : '',
         decision.by,
       ),
@@ -989,8 +994,18 @@ export function decisionDetail(decision: DecisionDetail): HTMLElement {
     el('div', { class: 'grow' }),
     el(
       'div',
-      { class: 'actions' },
+      { class: 'actions detail-foot' },
+      el('span', { class: 'grow' }),
+      el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'),
       open && [
+        el(
+          'button',
+          {
+            class: 'btn',
+            onclick: () => begin({ what: 'answer', id: decision.id, text: '', because: '' }),
+          },
+          'Answer in words…',
+        ),
         el(
           'button',
           {
@@ -1002,26 +1017,12 @@ export function decisionDetail(decision: DecisionDetail): HTMLElement {
           },
           chosen === null ? 'Take an option' : `Take option ${chosen + 1}`,
         ),
-        el(
-          'button',
-          {
-            class: 'btn',
-            onclick: () => begin({ what: 'answer', id: decision.id, text: '', because: '' }),
-          },
-          'Answer in words…',
-        ),
       ],
-      el('span', { class: 'grow' }),
-      el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'),
-      el(
-        'button',
+      overflow('More: sub-decision, supersede, copy, withdraw', [
         {
-          class: 'btn',
-          onclick: () => begin({ what: 'addDecision', under: decision.id, task: null, text: '' }),
+          label: 'Sub-decision',
+          run: () => begin({ what: 'addDecision', under: decision.id, task: null, text: '' }),
         },
-        'Sub-decision',
-      ),
-      overflow('More: supersede, copy, withdraw', [
         !decision.supersededBy && {
           label: 'Supersede…',
           run: () => begin({ what: 'supersede', id: decision.id, text: '' }),

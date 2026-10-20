@@ -352,6 +352,8 @@ const IN_FLIGHT: Tone = { mark: 'fg-attention', head: '', label: 'fg-faint', tex
 const NEXT_UP: Tone = { mark: 'fg-faint', head: '', label: 'fg-faint', text: '' };
 const LAST_DECIDED: Tone = { mark: 'fg-ok', head: '', label: 'fg-ref', text: 'fg-muted' };
 
+const AGENT_MARK = '◆';
+
 function lines(label: string, items: Line[], mark: string, tone: Tone): HTMLElement | null {
   if (!items.length) return null;
   return el(
@@ -359,15 +361,26 @@ function lines(label: string, items: Line[], mark: string, tone: Tone): HTMLElem
     { class: 'stack-4' },
     el('div', { class: `label ${tone.head}` }, label),
     items.map((line) => [
-      el(
-        'div',
-        null,
-        el('span', { class: tone.mark }, `${mark} `),
-        el('span', { class: `mono ${tone.label}` }, line.label),
-        ' ',
-        tone.text ? el('span', { class: tone.text }, line.text) : line.text,
-      ),
-      line.aside && el('div', { class: 'meta indented' }, line.aside),
+      // A pane that needs you comes as "◆" with its status as the aside
+      // (`board/features.rs`): one row of icon, title and the shared pill,
+      // without the "?" that belongs to an open decision.
+      line.label === AGENT_MARK
+        ? el(
+            'div',
+            { class: 'agent-line' },
+            el('span', { class: tone.mark }, icon('console')),
+            el('span', { class: 'cut' }, line.text),
+            line.aside && statusPill(line.aside),
+          )
+        : el(
+            'div',
+            null,
+            el('span', { class: tone.mark }, `${mark} `),
+            el('span', { class: `mono ${tone.label}` }, line.label),
+            ' ',
+            tone.text ? el('span', { class: tone.text }, line.text) : line.text,
+          ),
+      line.label !== AGENT_MARK && line.aside && el('div', { class: 'meta indented' }, line.aside),
     ]),
   );
 }

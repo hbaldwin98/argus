@@ -14,10 +14,14 @@ function listRow(r) {
     const pick = () => call('history_action', { action: 'next', row: r.row });
     if (r.kind === 'file') {
         return el('button', {
-            class: `hrow file${r.on ? ' on' : ''}`,
+            class: `hrow file rfile${r.on ? ' on' : ''}`,
+            title: r.text,
             onclick: pick,
             ondblclick: () => call('history_action', { action: 'choose', row: null }),
-        }, el('span', { class: 'mono grow ellipsis' }, r.text), el('span', { class: 'fg-ok' }, `+${r.added}`), el('span', { class: 'fg-danger' }, `−${r.removed}`));
+        }, 
+        // The review's markup for a changed file: the name leads, the
+        // folder trails it and is what gives way.
+        el('span', { class: 'rname' }, el('b', { class: 'rbase' }, r.text.slice(r.text.lastIndexOf('/') + 1)), el('span', { class: 'rdir' }, r.text.slice(0, Math.max(0, r.text.lastIndexOf('/'))) || 'repository root')), el('span', { class: 'fg-ok' }, `+${r.added}`), el('span', { class: 'fg-danger' }, `−${r.removed}`));
     }
     return el('button', {
         class: `hrow${r.on ? ' on' : ''}${r.expanded ? ' open' : ''}`,

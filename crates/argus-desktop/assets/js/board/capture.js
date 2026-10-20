@@ -3,7 +3,7 @@
 // back on every change; the page never parses the note itself, so the
 // preview is what Create stores. The note stays up after Create until the
 // pushed board holds the feature, which then opens.
-import { $, el } from '../kit/dom.js';
+import { $, el, statusPill } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -28,6 +28,16 @@ function note() {
     const node = document.getElementById('capture-note');
     return node instanceof HTMLTextAreaElement ? node : null;
 }
+/** The note keeps its lines unwrapped so the gutter's numbers stay beside
+ *  them; a line running past the edge fades there instead of being cut. */
+function noteCue() {
+    const field = note();
+    if (!field)
+        return;
+    const more = field.scrollWidth - field.clientWidth - field.scrollLeft > 4;
+    field.classList.toggle('scrolls', more);
+    field.title = more ? 'A line runs on: scroll sideways' : '';
+}
 function create() {
     const text = note()?.value ?? state.capture?.note ?? '';
     call('capture', { gesture: { on: 'create', note: text } });
@@ -45,6 +55,7 @@ export function drawCapture() {
         $('capture-head').replaceWith(head(page));
         $('capture-gutter').replaceWith(gutter(page, field.value));
         $('capture-reads').replaceWith(readsAs(page));
+        noteCue();
         return;
     }
     const textarea = el('textarea', {
@@ -56,11 +67,13 @@ export function drawCapture() {
         oninput: () => {
             call('capture', { gesture: { on: 'note', note: textarea.value } });
             $('capture-gutter').replaceWith(gutter(state.capture ?? page, textarea.value));
+            noteCue();
         },
         onscroll: () => {
             const numbers = document.getElementById('capture-gutter');
             if (numbers)
                 numbers.scrollTop = textarea.scrollTop;
+            noteCue();
         },
         onkeydown: (e) => {
             const action = actionFor(['writing'], e);
@@ -80,6 +93,7 @@ export function drawCapture() {
         el('span', null, means),
     ]))), readsAs(page)));
     textarea.focus();
+    requestAnimationFrame(noteCue);
 }
 function head(page) {
     return el('div', { class: 'fhead capture-head', id: 'capture-head' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: discardCapture }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, 'New')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, `New feature in ${page.repository}`), el('span', { class: 'grow' }), el('button', {
@@ -129,9 +143,9 @@ function readsAs(page) {
         el('div', { class: 'stack-2' }, el('div', { class: 'label' }, el('span', null, 'Decisions'), el('span', { class: 'grow' }), open > 0
             ? el('span', { class: 'label-aside fg-attention' }, `${open} open`)
             : el('span', { class: 'label-aside fg-ok' }, `${decided} decided`)), page.decisions.map((decision) => [
-            el('div', { class: 'nrow' }, el('span', { class: decision.open ? 'fg-attention' : 'fg-ok' }, decision.open ? '?' : '✓'), el('span', { class: `n ${decision.open ? 'fg-attention' : 'fg-ref'}` }, decision.label), el('span', null, decision.text), el('span', { class: `pill ${decision.open ? 'fg-attention' : 'fg-ok'}` }, decision.open ? 'open' : 'made')),
+            el('div', { class: 'nrow' }, el('span', { class: decision.open ? 'fg-attention' : 'fg-ok' }, decision.open ? '?' : '✓'), el('span', { class: `n ${decision.open ? 'fg-attention' : 'fg-ref'}` }, decision.label), el('span', null, decision.text), decision.open ? statusPill('waiting', 'open') : statusPill('done', 'made')),
             decision.options.length > 0 &&
-                el('div', { class: 'meta indent' }, decision.options.map((option, i) => el('div', null, `${i + 1} · ${option}`))),
+                el('div', { class: 'opts indent' }, decision.options.map((option) => el('span', { class: 'ktag' }, option))),
             decision.because && el('div', { class: 'meta indent' }, `because ${decision.because}`),
         ]))));
 }

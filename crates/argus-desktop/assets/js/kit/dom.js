@@ -14,6 +14,7 @@ const ICON = {
     people: '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.25"></circle><path d="M1.75 13.5c0-2.4 1.9-4 4.25-4s4.25 1.6 4.25 4"></path><path d="M10.5 2.9a2.25 2.25 0 0 1 0 4.3M12 9.8c1.4.5 2.25 1.9 2.25 3.7"></path></svg>',
     'folder-sm': '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"></path></svg>',
     clock: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"></circle><path d="M8 5v3l2 1.5"></path></svg>',
+    lock: '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path></svg>',
     plus: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>',
     expand: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"></path></svg>',
     split: '<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"></rect><path d="M8 3v10"></path></svg>',
@@ -99,9 +100,13 @@ const STATUS_WORD = {
     waiting: 'needs you',
     'needs-review': 'review',
 };
+/** How a status is said, everywhere a status is said (the rail, the pill). */
+export function statusWord(status) {
+    return STATUS_WORD[status] ?? status;
+}
 /** The one status pill: a dot and a word, tinted by how loud the status is
  *  (`.spill` in the stylesheet). The word is the daemon's, said as the rail
- *  says it. */
-export function statusPill(status) {
-    return el('span', { class: `spill ${status}` }, STATUS_WORD[status] ?? status);
+ *  says it, unless the caller has a better word for the same tone. */
+export function statusPill(status, say = statusWord(status)) {
+    return el('span', { class: `spill ${status}` }, say);
 }

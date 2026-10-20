@@ -5,7 +5,7 @@
 // chosen.
 import { startMenu, toggleStart } from '../chrome.js';
 import { $, el, ghosts, icon, statusPill } from '../kit/dom.js';
-import { closeLayer } from '../kit/menu.js';
+import { closeLayer, openMenu } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -34,7 +34,7 @@ function head(c) {
     });
     filter.value = c.filter;
     const branches = `${c.branches} other branch${c.branches === 1 ? '' : 'es'}`;
-    return el('div', { class: 'fhead index-head' }, el('div', { class: 'actions index-tools' }, el('span', { class: 'meta' }, `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`, c.main && [' · main ', el('span', { class: 'mono fg-ref' }, c.main)]), el('span', { class: 'grow' }), filter, el('button', {
+    return el('div', { class: 'fhead index-head' }, el('div', { class: 'actions index-tools' }, el('span', { class: 'meta' }, `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`, c.main && [' · on ', el('span', { class: 'mono fg-ref' }, c.main)]), el('span', { class: 'grow' }), filter, el('button', {
         class: 'btn',
         'aria-pressed': String(c.branchesShown),
         onclick: () => call('checkouts_action', { action: 'branches' }),
@@ -61,28 +61,80 @@ function running(row) {
         row.running.map((pane) => el('span', { class: 'pane-status', title: pane.agent ? 'an agent' : 'a shell' }, statusPill(pane.status))),
     ];
 }
-/** What is done to the selected row, in the trailing column: the one thing
- *  most wanted, and the start menu. The rest sit in the detail strip under
- *  the row, so nothing is drawn over a cell. */
+/** Puts the cursor on a row before an action that works on the cursor's
+ *  row; a click on the row's own button must not wait for a second one. */
+function onRow(row, run) {
+    return (e) => {
+        e.stopPropagation();
+        if (state.checkouts?.selected !== row.key)
+            call('select_checkout_row', { key: row.key });
+        run();
+    };
+}
+/** What is done to a row, in the trailing column, on every row: the one
+ *  thing most wanted, the start menu, and the rest behind the overflow.
+ *  Quiet until the row is hovered or selected, and never over a cell. */
 function actions(row) {
-    const open = el('button', { class: 'btn sm', onclick: () => call('checkouts_action', { action: 'choose' }) }, 'Open');
-    if (row.checkout === null)
-        return open;
     const checkout = row.checkout;
-    const hot = state.start?.checkout === checkout && state.start.from === 'table';
-    return [
-        open,
+    const name = row.name ?? row.branch;
+    const hot = checkout !== null && state.start?.checkout === checkout && state.start.from === 'table';
+    const primary = checkout === null
+        ? el('button', {
+            class: 'btn sm',
+            onclick: onRow(row, () => checkoutsAction('newWorktree')),
+        }, 'Check out')
+        : el('button', {
+            class: 'btn sm',
+            onclick: onRow(row, () => call('checkouts_action', { action: 'choose' })),
+        }, 'Open');
+    return el('div', { class: 'ra' }, primary, checkout !== null &&
         el('span', { class: 'start-at' }, el('button', {
             class: `icon${hot ? ' hot' : ''}`,
             title: 'Start a shell or an agent',
-            'aria-label': `Start a shell or an agent on ${row.name ?? row.branch}`,
+            'aria-label': `Start a shell or an agent on ${name}`,
             'aria-expanded': String(hot),
             onclick: (e) => {
                 e.stopPropagation();
                 toggleStart(checkout, 'table');
             },
-        }, icon('plus')), hot && startMenu(row.name ?? row.branch, checkout)),
-    ];
+        }, icon('plus')), hot && startMenu(name, checkout)), el('button', {
+        class: 'icon',
+        title: 'More actions',
+        'aria-label': `More actions for ${name}`,
+        onclick: (e) => {
+            e.stopPropagation();
+            const at = e.currentTarget.getBoundingClientRect();
+            const choose = (run) => () => {
+                if (state.checkouts?.selected !== row.key)
+                    call('select_checkout_row', { key: row.key });
+                run();
+            };
+            openMenu(`More actions for ${name}`, [
+                checkout !== null && {
+                    label: 'Review',
+                    run: () => call('open_review', { checkout }),
+                },
+                checkout !== null && {
+                    label: 'History',
+                    run: () => call('open_history', { checkout }),
+                },
+                checkout !== null && {
+                    label: 'Pull',
+                    run: choose(() => call('checkouts_action', { action: 'pull' })),
+                },
+                checkout === null && {
+                    label: 'New worktree',
+                    run: choose(() => checkoutsAction('newWorktree')),
+                },
+                !row.primary && 'sep',
+                !row.primary && {
+                    label: checkout === null ? 'Delete' : 'Remove',
+                    danger: true,
+                    run: choose(() => call('checkouts_action', { action: 'delete' })),
+                },
+            ], { x: at.right - 180, y: at.bottom + 4 });
+        },
+    }, '⋯'));
 }
 function tableRow(row, selected) {
     return el('tr', {
@@ -90,11 +142,15 @@ function tableRow(row, selected) {
         'aria-selected': String(selected),
         onclick: () => call('select_checkout_row', { key: row.key }),
         ondblclick: () => call('checkouts_action', { action: 'choose' }),
-    }, el('td', null, row.name !== null && [
-        el('b', null, row.name),
-        ' ',
-        el('span', { class: 'meta' }, row.primary ? 'primary' : 'worktree'),
-    ]), el('td', { class: 'mono fg-ref' }, row.branch), el('td', null, row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git), row.note && el('span', { class: 'meta' }, row.note)), el('td', { class: 'col-running' }, running(row)), el('td', { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` }, row.feature !== null && `#${row.feature}`), el('td', { class: 'col-last' }, row.last && commitLine(row.last)), el('td', { class: 'row-actions' }, selected && actions(row)));
+    }, el('td', null, row.name !== null
+        ? [
+            el('b', null, row.name),
+            ' ',
+            el('span', { class: 'meta' }, row.primary ? 'primary' : 'worktree'),
+        ]
+        : // A branch with no directory is named where a checkout is, so the
+            // first column is never blank.
+            el('span', { class: 'mono fg-ref bname' }, icon('branch'), row.branch)), el('td', { class: 'mono fg-ref' }, row.name !== null && row.branch), el('td', null, row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git), row.note && el('span', { class: 'meta' }, row.note)), el('td', { class: 'col-running' }, running(row)), el('td', { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` }, row.feature !== null && `#${row.feature}`), el('td', { class: 'col-last' }, row.last && commitLine(row.last)), el('td', { class: 'row-actions' }, actions(row)));
 }
 function commitLine(commit) {
     return [
@@ -114,7 +170,7 @@ function detailRow(c, row) {
     if (!d)
         return null;
     const checkout = row.checkout;
-    return el('tr', { class: 'detail-row' }, el('td', { colspan: '7' }, el('div', { class: 'cdetail' }, el('div', { class: 'cfacts' }, stack('Path', el('span', { class: 'mono' }, d.path)), d.upstream && stack('Upstream', d.upstream), d.changes && stack('Changes', d.changes)), el('span', { class: 'grow' }), el('div', { class: 'cacts' }, checkout !== null && [
+    return el('tr', { class: 'detail-row' }, el('td', { colspan: '7' }, el('div', { class: 'cdetail' }, el('div', { class: 'cfacts' }, stack('Path', el('span', { class: 'mono', title: d.path }, repoRelative(d.path))), d.upstream && stack('Upstream', d.upstream), d.changes && stack('Changes', d.changes)), el('span', { class: 'grow' }), el('div', { class: 'cacts' }, checkout !== null && [
         act('Review', 'R', () => call('open_review', { checkout })),
         act('History', 'H', () => call('open_history', { checkout })),
         act('Pull', 'P', () => call('checkouts_action', { action: 'pull' })),
@@ -131,7 +187,14 @@ function table(c) {
         const selected = row.key === c.selected;
         return [tableRow(row, selected), selected ? detailRow(c, row) : null];
     });
-    return el('div', { class: 'ctable-wrap' }, el('table', { class: 'ctable', 'aria-label': `Checkouts in ${c.repository}` }, el('thead', null, el('tr', null, ['Checkout', 'Branch', 'Git', 'Running', 'Feature', 'Last commit'].map((name) => el('th', { class: `col-${name.split(' ')[0]?.toLowerCase()}` }, name)), el('th', null, el('span', { class: 'sr-only' }, 'Actions')))), el('tbody', null, checkouts.length > 0 && [group('Checkouts'), rows(checkouts)], branches.length > 0 && [group('Branches without a checkout'), rows(branches)])));
+    return el('div', { class: 'ctable-wrap' }, el('table', { class: 'ctable', 'aria-label': `Checkouts in ${c.repository}` }, el('thead', null, el('tr', null, ['Checkout', 'Branch', 'Git', 'Running', 'Feature', 'Last commit'].map((name) => el('th', { class: `col-${name.split(' ')[0]?.toLowerCase()}` }, name)), el('th', { class: 'col-actions' }, 'Actions'))), el('tbody', null, checkouts.length > 0 && [group('Checkouts'), rows(checkouts)], branches.length > 0 && [group('Branches without a checkout'), rows(branches)])));
+}
+/** A worktree's path from the repository's own `.argus/` folder when it
+ *  lives under one, whole otherwise; the absolute path stays in the tooltip. */
+function repoRelative(path) {
+    const flat = path.replaceAll('\\', '/');
+    const at = flat.indexOf('/.argus/');
+    return at >= 0 ? flat.slice(at + 1) : path;
 }
 function stack(label, value) {
     return el('div', { class: 'stack-2' }, el('span', { class: 'mlabel' }, label), el('span', { class: 'meta' }, value));

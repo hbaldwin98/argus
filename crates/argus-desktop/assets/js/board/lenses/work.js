@@ -8,7 +8,7 @@
 // refused edit leaves it as it was.
 import { notice } from '../../chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el, statusPill } from '../../kit/dom.js';
+import { $, el, icon, statusPill } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
 import { openMenu } from '../../kit/menu.js';
 import { flowsAction, flowsLens } from './flows.js';
@@ -34,7 +34,7 @@ export const LENSES = [
 ];
 /** The overflow of a row of actions: what is rarer than the buttons beside
  *  it, behind one icon so the row never wraps a lone button under itself. */
-function overflow(label, items) {
+export function overflow(label, items) {
     return el('button', {
         class: 'icon',
         'aria-label': label,
@@ -364,7 +364,7 @@ function briefSash(text) {
     return sash;
 }
 function outline(view) {
-    const section = el('section', { class: 'work-outline', 'aria-label': 'Outline' }, el('div', { class: 'label' }, el('span', null, 'Outline'), el('span', { class: 'grow' }), legend()));
+    const section = el('section', { class: 'work-outline', 'aria-label': 'Outline' }, el('div', { class: 'label' }, el('span', null, 'Outline'), el('span', { class: 'grow' }), legend(view.rows.some((row) => row.changed))));
     if (!view.loaded)
         section.append(el('div', { class: 'meta' }, 'Reading its tasks…'));
     else if (!view.rows.length) {
@@ -382,7 +382,7 @@ function outline(view) {
     return section;
 }
 /** What each glyph of the outline means, as the outline's own header. */
-function legend() {
+function legend(changed) {
     const words = [
         ['todo', 'to do'],
         ['doing', 'in progress'],
@@ -394,7 +394,8 @@ function legend() {
     return el('span', { class: 'legend-row' }, words.map(([word, say]) => {
         const [mark, tone] = stateMark(word);
         return el('span', { class: 'legend-item' }, el('span', { class: tone }, mark), say);
-    }));
+    }), changed &&
+        el('span', { class: 'legend-item' }, el('span', { class: 'cdot', 'aria-hidden': 'true' }), 'changed since reconcile'));
 }
 export function stateMark(word) {
     return TASK_MARK[word] ?? ['·', 'fg-faint'];
@@ -408,9 +409,10 @@ function workRow(row) {
         row.state === 'rejected';
     let aside = null;
     if (row.state === 'open')
-        aside = el('span', { class: 'pill fg-attention' }, 'needs you');
-    else if (row.waitsOn)
-        aside = el('span', { class: 'meta fg-danger' }, `waits on ${row.waitsOn}`);
+        aside = statusPill('waiting');
+    else if (row.waitsOn) {
+        aside = el('span', { class: 'meta waits' }, icon('lock'), `waits on ${row.waitsOn}`);
+    }
     else if (row.state === 'withdrawn')
         aside = el('span', { class: 'meta' }, 'withdrawn');
     const node = el('button', {
@@ -466,12 +468,12 @@ export function lineList(lines, mark, tone) {
 }
 function taskDetail(view, task) {
     const editing = state.editing;
-    const stateWord = {
-        todo: '○ not started',
-        doing: '◐ in progress',
-        done: '✓ done',
+    const stateTag = {
+        todo: statusPill('idle', 'to do'),
+        doing: statusPill('working', 'in progress'),
+        done: statusPill('done'),
     };
-    const top = el('div', null, el('div', { class: 'label' }, el('span', { class: 'fg-accent' }, `Task ${task.label}`), task.parent && el('span', { class: 'label-aside' }, `under ${task.parent}`)), el('div', { class: 'type-title detail-title' }, task.title), el('div', { class: 'meta' }, el('span', { class: task.state === 'doing' ? 'fg-attention' : task.state === 'done' ? 'fg-ok' : '' }, stateWord[task.state]), task.waitsOn && el('span', { class: 'fg-danger' }, ` · waits on ${task.waitsOn}`)));
+    const top = el('div', null, el('div', { class: 'idrow' }, el('span', { class: 'mono fg-accent' }, `#${task.label}`), stateTag[task.state] ?? statusPill('idle', task.state), task.waitsOn && el('span', { class: 'meta waits' }, icon('lock'), `waits on ${task.waitsOn}`), el('span', { class: 'grow' }), task.parent && el('span', { class: 'meta' }, `under ${task.parent}`)), el('div', { class: 'type-title detail-title' }, task.title));
     if (editing?.what === 'task' && editing.id === task.id) {
         const title = field('edit-task-title', editing.title, false, (text) => (editing.title = text), 'The task, in a line');
         const body = field('edit-task-body', editing.body, true, (text) => (editing.body = text), 'What it is, and anything the one doing it should know');
@@ -483,7 +485,7 @@ function taskDetail(view, task) {
         checked: criterion.done,
         onchange: () => edit({ on: 'setCriterion', id: task.id, index, done: !criterion.done }),
     }), el('span', { class: criterion.done ? 'fg-muted' : '' }, criterion.text)), el('button', {
-        class: 'icon sm',
+        class: 'icon',
         'aria-label': `Remove “${criterion.text}”`,
         title: 'Remove',
         onclick: () => edit({ on: 'removeCriterion', id: task.id, index }),
@@ -502,8 +504,8 @@ function taskDetail(view, task) {
             class: 'btn sm quiet',
             onclick: () => begin({ what: 'criterion', id: task.id, text: '' }),
         }, '+ Add criterion')), task.boundBy.length > 0 && titled('Bound by', lineList(task.boundBy, '✓', 'fg-ok')), task.notes.length > 0 &&
-        titled('Notes', task.notes.map((note) => el('div', null, el('span', { class: 'meta' }, note.label), el('div', { class: 'fg-muted' }, note.text)))), el('div', { class: 'grow' }), el('div', { class: 'actions' }, view.agent &&
-        el('button', { class: 'btn primary', onclick: () => goToPane(view) }, 'Go to pane'), el('button', { class: 'btn', onclick: () => editRow() }, 'Edit'), el('span', { class: 'grow' }), overflow('More: subtask, decision', [
+        titled('Notes', task.notes.map((note) => el('div', null, el('span', { class: 'meta' }, note.label), el('div', { class: 'fg-muted' }, note.text)))), el('div', { class: 'grow' }), el('div', { class: 'actions detail-foot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => editRow() }, 'Edit'), view.agent &&
+        el('button', { class: 'btn primary', onclick: () => goToPane(view) }, 'Go to pane'), overflow('More: subtask, decision', [
         {
             label: 'Add subtask',
             run: () => begin({ what: 'addTask', parent: task.id, text: '' }),
@@ -520,8 +522,12 @@ function taskDetail(view, task) {
 export function decisionDetail(decision) {
     const editing = state.editing;
     const open = decision.state === 'open';
-    const tone = open ? 'fg-attention' : decision.state === 'accepted' ? 'fg-ok' : 'fg-faint';
-    const top = el('div', null, el('div', { class: 'label' }, el('span', { class: `mono ${tone}` }, decision.label), el('span', { class: tone }, decision.state), el('span', { class: 'grow' }), el('span', { class: 'label-aside' }, decision.raisedUnder ? `raised under ${decision.raisedUnder} · ` : '', decision.by)), el('div', { class: 'type-title detail-title' }, decision.chose), decision.supersededBy &&
+    const stateTag = open
+        ? statusPill('waiting')
+        : decision.state === 'accepted'
+            ? statusPill('done', 'decided')
+            : statusPill('exited', decision.state);
+    const top = el('div', null, el('div', { class: 'idrow' }, el('span', { class: `mono ${open ? 'fg-attention' : 'fg-ref'}` }, `#${decision.label}`), stateTag, el('span', { class: 'grow' }), el('span', { class: 'meta' }, decision.raisedUnder ? `raised under ${decision.raisedUnder} · ` : '', decision.by)), el('div', { class: 'type-title detail-title' }, decision.chose), decision.supersededBy &&
         el('div', { class: 'meta' }, `Superseded by ${decision.supersededBy}: kept on the record.`), decision.withdrawn &&
         el('div', { class: 'meta' }, 'Withdrawn: kept on the record, and no longer shown to agents.'));
     if (editing?.what === 'record' && editing.id === decision.id) {
@@ -564,7 +570,11 @@ export function decisionDetail(decision) {
     if (decision.carriedOutBy.length)
         body.push(titled('Carried out by', lineList(decision.carriedOutBy, '·', 'fg-faint')));
     const chosen = state.chosen?.id === decision.id ? state.chosen.option : null;
-    body.push(el('div', { class: 'grow' }), el('div', { class: 'actions' }, open && [
+    body.push(el('div', { class: 'grow' }), el('div', { class: 'actions detail-foot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'), open && [
+        el('button', {
+            class: 'btn',
+            onclick: () => begin({ what: 'answer', id: decision.id, text: '', because: '' }),
+        }, 'Answer in words…'),
         el('button', {
             class: 'btn primary',
             disabled: chosen === null,
@@ -573,14 +583,11 @@ export function decisionDetail(decision) {
                     edit({ on: 'take', id: decision.id, option: chosen });
             },
         }, chosen === null ? 'Take an option' : `Take option ${chosen + 1}`),
-        el('button', {
-            class: 'btn',
-            onclick: () => begin({ what: 'answer', id: decision.id, text: '', because: '' }),
-        }, 'Answer in words…'),
-    ], el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'), el('button', {
-        class: 'btn',
-        onclick: () => begin({ what: 'addDecision', under: decision.id, task: null, text: '' }),
-    }, 'Sub-decision'), overflow('More: supersede, copy, withdraw', [
+    ], overflow('More: sub-decision, supersede, copy, withdraw', [
+        {
+            label: 'Sub-decision',
+            run: () => begin({ what: 'addDecision', under: decision.id, task: null, text: '' }),
+        },
         !decision.supersededBy && {
             label: 'Supersede…',
             run: () => begin({ what: 'supersede', id: decision.id, text: '' }),

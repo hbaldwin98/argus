@@ -50,7 +50,11 @@ export type Drawn = {
 
 export function drawSequence(sequence: Sequence): Drawn {
   const count = Math.max(sequence.lifelines.length, 1);
-  const width = MARGIN * 2 + count * COLUMN;
+  // A call to itself on the last lifeline writes its text out to the right.
+  const loops = sequence.items.some(
+    (item) => item.kind === 'message' && item.from === item.to && item.from === count - 1,
+  );
+  const width = MARGIN * 2 + count * COLUMN + (loops ? 120 : 0);
   const x = (at: number): number => MARGIN + COLUMN / 2 + at * COLUMN;
   const frames = svg('g', { class: 'frames' });
   const messages = svg('g', { class: 'messages' });
@@ -62,9 +66,13 @@ export function drawSequence(sequence: Sequence): Drawn {
       case 'message': {
         const from = x(item.from);
         const lit = item.on ? ' on' : '';
+        const named = (to: number): string => sequence.lifelines[to]?.label ?? '';
         const group = svg('g', {
           class: `smsg${lit}${item.reply ? ' reply' : ''}`,
           'data-step': item.step,
+          role: 'button',
+          tabindex: 0,
+          'aria-label': `Step ${item.step}: ${named(item.from)} → ${named(item.to)}, ${item.text}`,
         });
         if (item.from === item.to) {
           const loop = `M ${from} ${y} H ${from + 40} V ${y + 22} H ${from + 4}`;
@@ -192,6 +200,13 @@ export function clickable(drawn: Drawn, flow: FlowDetail): void {
   drawn.node.addEventListener('click', (e) => {
     const step = stepOf(e.target);
     if (step !== null && !drag.moved) selectStep(flow.id, step - 1);
+  });
+  drawn.node.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const step = stepOf(e.target);
+    if (step === null) return;
+    e.preventDefault();
+    selectStep(flow.id, step - 1);
   });
 }
 

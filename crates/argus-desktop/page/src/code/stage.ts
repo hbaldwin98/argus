@@ -230,7 +230,7 @@ function hitFile(f: CodeHitFile): HTMLElement[] {
         el('span', { class: 'no' }, String(h.line)),
         el(
           'span',
-          { class: 'tx' },
+          { class: 'tx', title: h.parts.map(([text]) => text).join('') },
           h.parts.map(([text, hit]) => (hit ? el('mark', {}, text) : text)),
         ),
       ),
@@ -289,6 +289,26 @@ function searchPanel(s: CodeSearch): HTMLElement[] {
   ];
 }
 
+function tab(label: string, on: boolean, pick: () => void, key?: string): HTMLElement {
+  return el(
+    'button',
+    { class: `lt${on ? ' on' : ''}`, role: 'tab', 'aria-selected': String(on), onclick: pick },
+    label,
+    key && kbd(key),
+  );
+}
+
+/** Files and Search as one tab strip over the column, in both modes, so
+ *  the way back from a search to the tree is always where it was. */
+function sideTabs(c: CodePage): HTMLElement {
+  return el(
+    'div',
+    { class: 'lens code-tabs', role: 'tablist', 'aria-label': 'Files or search' },
+    tab('Files', !c.search, () => c.search && gesture({ on: 'search', gesture: { on: 'close' } })),
+    tab('Search', !!c.search, () => c.search || codeAction('search'), 'Ctrl F'),
+  );
+}
+
 function side(c: CodePage): HTMLElement {
   const body: (HTMLElement | false)[] = c.search
     ? searchPanel(c.search)
@@ -309,20 +329,13 @@ function side(c: CodePage): HTMLElement {
                 click({ on: 'changedOnly', only: true }),
               ),
             ),
-            // Search is a key, Ctrl F, and a key nobody can see is a feature
-            // nobody finds.
-            el(
-              'button',
-              { class: 'btn sm code-search', onclick: () => codeAction('search') },
-              'Search',
-              kbd('Ctrl F'),
-            ),
           ),
         c.jump ? jumpList(c.jump) : tree(c),
       ];
   return el(
     'aside',
     { class: `code-tree${c.search ? ' searching' : ''}`, 'aria-label': 'Files in the checkout' },
+    sideTabs(c),
     body,
   );
 }
@@ -483,11 +496,40 @@ window.addEventListener('resize', () => {
   trackView();
 });
 
+/** The search's selected match and the file it is in, while the results
+ *  are the ones for what the field holds. */
+function selectedHit(c: CodePage): { file: CodeHitFile; hit: CodeHitFile['hits'][number] } | null {
+  if (!c.search?.current) return null;
+  for (const f of c.search.files) {
+    const hit = f.hits.find((h) => h.on);
+    if (hit) return { file: f, hit };
+  }
+  return null;
+}
+
+/** Results asked to open the file of their selected match, once each: a
+ *  search is only run on Enter, and its answer then belongs in the viewer. */
+let opened = '';
+
+function openSelectedMatch(c: CodePage): void {
+  const found = selectedHit(c);
+  const s = c.search;
+  if (!found || !s) {
+    opened = '';
+    return;
+  }
+  const signature = `${c.checkout}|${s.query}|${s.glob}|${s.total}|${s.files.length}`;
+  if (signature === opened) return;
+  opened = signature;
+  if (c.path !== found.file.path) click({ on: 'match', index: found.hit.index });
+}
+
 function file(c: CodePage): HTMLElement {
   let body: HTMLElement | HTMLElement[];
   if (c.failed && c.lines.length === 0)
     body = el('div', { class: 'review-empty fg-muted' }, c.failed);
-  else if (!c.path)
+  else if (!c.path) {
+    const found = selectedHit(c);
     body = el(
       'div',
       { class: 'empty code-empty' },
@@ -495,17 +537,38 @@ function file(c: CodePage): HTMLElement {
         'div',
         { class: 'empty-body' },
         icon('file'),
-        el('div', { class: 'type-title' }, 'Pick a file'),
-        el('div', { class: 'fg-muted' }, 'Choose one in the tree, or search by name.'),
-        el(
-          'button',
-          { class: 'btn', onclick: () => codeAction('filter') },
-          'Go to a file',
-          kbd('Ctrl P'),
-        ),
+        found
+          ? [
+              el('div', { class: 'type-title' }, 'Open the selected match'),
+              el(
+                'div',
+                { class: 'fg-muted' },
+                el('span', { class: 'mono' }, `${found.file.name}:${found.hit.line}`),
+                ' is the one under the cursor in the results.',
+              ),
+              el(
+                'button',
+                {
+                  class: 'btn primary',
+                  onclick: () => click({ on: 'match', index: found.hit.index }),
+                },
+                'Open it',
+                kbd('Enter'),
+              ),
+            ]
+          : [
+              el('div', { class: 'type-title' }, 'Pick a file'),
+              el('div', { class: 'fg-muted' }, 'Choose one in the tree, or search by name.'),
+              el(
+                'button',
+                { class: 'btn', onclick: () => codeAction('filter') },
+                'Go to a file',
+                kbd('Ctrl P'),
+              ),
+            ],
       ),
     );
-  else if (c.fileLoading && c.lines.length === 0)
+  } else if (c.fileLoading && c.lines.length === 0)
     body = ghosts([[0.5], [0.9], [0.8], [0.7], [0.6]]);
   else if (c.note) body = el('div', { class: 'review-empty fg-muted' }, `${c.path}: ${c.note}`);
   else {
@@ -521,7 +584,10 @@ function file(c: CodePage): HTMLElement {
       ...(c.removedAtEnd > 0 ? [gone(c.removedAtEnd)] : []),
     ];
   }
+  const here = c.search?.files.find((f) => f.path === c.path);
+  const matchAt = here?.hits.findIndex((h) => h.on) ?? -1;
   const facts = [
+    here && matchAt >= 0 && `Match ${matchAt + 1} of ${here.hits.length} in this file`,
     c.lines.length > 0 && `Ln ${c.at}`,
     c.language,
     c.lines.length > 0 && `${c.lines.length} lines`,
@@ -670,8 +736,19 @@ export function drawCode(): void {
     listed.scrollTop = scrolledTo.list.get(list) ?? 0;
     listed.addEventListener('scroll', rememberScroll);
   }
-  if (cursor !== drawn.cursor)
-    stage.querySelector('.cline.cursor')?.scrollIntoView({ block: 'nearest' });
+  if (cursor !== drawn.cursor) {
+    // A line jumped to is brought a third of the way down, with the lines
+    // before it for context, not pinned to the edge it was scrolled to.
+    const at = stage.querySelector<HTMLElement>('.cline.cursor');
+    if (at && body) {
+      const above = at.offsetTop - body.scrollTop;
+      if (above < 0 || above > body.clientHeight - at.offsetHeight * 2) {
+        body.scrollTop = Math.max(0, at.offsetTop - body.clientHeight / 3);
+      }
+    }
+  }
+  cropHits(stage);
+  openSelectedMatch(c);
   if (on !== drawn.on) stage.querySelector('.code-list .on')?.scrollIntoView({ block: 'nearest' });
   drawn = { list, on, cursor };
   rememberScroll();
@@ -684,6 +761,18 @@ export function drawCode(): void {
   if (focus instanceof HTMLInputElement || focus instanceof HTMLTextAreaElement) {
     if (document.activeElement !== focus) focus.focus();
     if (typing !== focus.id) focus.setSelectionRange(focus.value.length, focus.value.length);
+  }
+}
+
+/** Each match line cut at the box keeps its hit in view: the line is
+ *  scrolled to just before the match, and fades at the edge it was cut. */
+function cropHits(stage: HTMLElement): void {
+  for (const tx of stage.querySelectorAll<HTMLElement>('.hline .tx')) {
+    if (tx.scrollWidth <= tx.clientWidth) continue;
+    const mark = tx.querySelector('mark');
+    if (mark) tx.scrollLeft = Math.max(0, mark.offsetLeft - 48);
+    tx.classList.toggle('cut-left', tx.scrollLeft > 0);
+    tx.classList.toggle('cut-right', tx.scrollWidth - tx.clientWidth - tx.scrollLeft > 1);
   }
 }
 

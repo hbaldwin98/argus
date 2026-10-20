@@ -5,7 +5,7 @@ import { drawCode } from './code/stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';
 import { drawConsole } from './panes/console.js';
-import { $, el, ghosts, icon } from './kit/dom.js';
+import { $, el, ghosts, icon, statusWord } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extensions/views.js';
 import { drawSavedNav } from './views/saved.js';
 import { drawFeatures } from './board/feature_stage.js';
@@ -101,14 +101,9 @@ function statusColour(word) {
         return 'var(--accent)';
     return null;
 }
-/** The few words a pane row says beside its dot: only what asks for a
- *  look, or that it has ended. Working shows in the dot alone. */
-const PANE_WORD = {
-    waiting: 'needs you',
-    'needs-review': 'review',
-    failed: 'failed',
-    exited: 'exited',
-};
+/** The few statuses a pane row says in words beside its dot: only what asks
+ *  for a look, or that it has ended. Working shows in the dot alone. */
+const PANE_SAYS = new Set(['waiting', 'needs-review', 'failed', 'exited']);
 function drawRail() {
     const rail = $('rail');
     const { project, loaded } = state.rail;
@@ -257,7 +252,7 @@ export function paneMenu(pane, title, first = []) {
     ];
 }
 function paneRow(checkout, pane) {
-    const word = PANE_WORD[pane.status];
+    const word = PANE_SAYS.has(pane.status) ? statusWord(pane.status) : undefined;
     const picked = state.railPick?.pane === pane.id;
     const row = el('div', {
         class: 'pane-row',

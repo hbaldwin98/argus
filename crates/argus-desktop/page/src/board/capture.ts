@@ -5,7 +5,7 @@
 // pushed board holds the feature, which then opens.
 
 import type { CapturePage } from '../bindings/CapturePage';
-import { $, el, type Child } from '../kit/dom.js';
+import { $, el, statusPill, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -36,6 +36,16 @@ function note(): HTMLTextAreaElement | null {
   return node instanceof HTMLTextAreaElement ? node : null;
 }
 
+/** The note keeps its lines unwrapped so the gutter's numbers stay beside
+ *  them; a line running past the edge fades there instead of being cut. */
+function noteCue(): void {
+  const field = note();
+  if (!field) return;
+  const more = field.scrollWidth - field.clientWidth - field.scrollLeft > 4;
+  field.classList.toggle('scrolls', more);
+  field.title = more ? 'A line runs on: scroll sideways' : '';
+}
+
 function create(): void {
   const text = note()?.value ?? state.capture?.note ?? '';
   call('capture', { gesture: { on: 'create', note: text } });
@@ -53,6 +63,7 @@ export function drawCapture(): void {
     $('capture-head').replaceWith(head(page));
     $('capture-gutter').replaceWith(gutter(page, field.value));
     $('capture-reads').replaceWith(readsAs(page));
+    noteCue();
     return;
   }
   const textarea = el('textarea', {
@@ -65,10 +76,12 @@ export function drawCapture(): void {
     oninput: () => {
       call('capture', { gesture: { on: 'note', note: textarea.value } });
       $('capture-gutter').replaceWith(gutter(state.capture ?? page, textarea.value));
+      noteCue();
     },
     onscroll: () => {
       const numbers = document.getElementById('capture-gutter');
       if (numbers) numbers.scrollTop = textarea.scrollTop;
+      noteCue();
     },
     onkeydown: (e: KeyboardEvent) => {
       const action = actionFor(['writing'], e);
@@ -105,6 +118,7 @@ export function drawCapture(): void {
     ),
   );
   textarea.focus();
+  requestAnimationFrame(noteCue);
 }
 
 function head(page: CapturePage): HTMLElement {
@@ -256,17 +270,13 @@ function readsAs(page: CapturePage): HTMLElement {
                 decision.label,
               ),
               el('span', null, decision.text),
-              el(
-                'span',
-                { class: `pill ${decision.open ? 'fg-attention' : 'fg-ok'}` },
-                decision.open ? 'open' : 'made',
-              ),
+              decision.open ? statusPill('waiting', 'open') : statusPill('done', 'made'),
             ),
             decision.options.length > 0 &&
               el(
                 'div',
-                { class: 'meta indent' },
-                decision.options.map((option, i) => el('div', null, `${i + 1} · ${option}`)),
+                { class: 'opts indent' },
+                decision.options.map((option) => el('span', { class: 'ktag' }, option)),
               ),
             decision.because && el('div', { class: 'meta indent' }, `because ${decision.because}`),
           ]),

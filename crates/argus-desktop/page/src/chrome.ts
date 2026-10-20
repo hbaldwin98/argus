@@ -9,7 +9,7 @@ import { drawCode } from './code/stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';
 import { drawConsole } from './panes/console.js';
-import { $, el, ghosts, icon, type Child } from './kit/dom.js';
+import { $, el, ghosts, icon, statusWord, type Child } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extensions/views.js';
 import { drawSavedNav } from './views/saved.js';
 import { drawFeatures } from './board/feature_stage.js';
@@ -107,14 +107,9 @@ function statusColour(word: StatusWord | null): string | null {
   return null;
 }
 
-/** The few words a pane row says beside its dot: only what asks for a
- *  look, or that it has ended. Working shows in the dot alone. */
-const PANE_WORD: Partial<Record<StatusWord, string>> = {
-  waiting: 'needs you',
-  'needs-review': 'review',
-  failed: 'failed',
-  exited: 'exited',
-};
+/** The few statuses a pane row says in words beside its dot: only what asks
+ *  for a look, or that it has ended. Working shows in the dot alone. */
+const PANE_SAYS = new Set<StatusWord>(['waiting', 'needs-review', 'failed', 'exited']);
 
 type RailRepository = NonNullable<typeof state.rail.project>['repositories'][number];
 type RailCheckout = RailRepository['checkouts'][number];
@@ -323,7 +318,7 @@ export function paneMenu(pane: number, title: string, first: MenuItem[] = []): M
 }
 
 function paneRow(checkout: number, pane: RailPane): HTMLElement {
-  const word = PANE_WORD[pane.status];
+  const word = PANE_SAYS.has(pane.status) ? statusWord(pane.status) : undefined;
   const picked = state.railPick?.pane === pane.id;
   const row = el(
     'div',

@@ -49,9 +49,9 @@ function list(s: SessionsPage): Child {
   const live = s.rows.filter((r) => r.live);
   const ended = s.rows.filter((r) => !r.live);
   return [
-    live.length > 0 && el('div', { class: 'shead meta' }, 'Live'),
+    live.length > 0 && el('div', { class: 'shead label' }, 'Live'),
     live.map(listRow),
-    ended.length > 0 && el('div', { class: 'shead meta' }, 'Ended'),
+    ended.length > 0 && el('div', { class: 'shead label' }, 'Ended'),
     ended.map(listRow),
   ];
 }
@@ -182,7 +182,8 @@ function searchField(search: string): HTMLElement {
   return field;
 }
 
-/** A menu over what the listing holds; its first option is all of them. */
+/** A select over what the listing holds, in the one field style; its
+ *  first option is all of them. */
 function menu(
   label: string,
   all: string,
@@ -193,6 +194,7 @@ function menu(
   const select = el(
     'select',
     {
+      class: 'field',
       'aria-label': label,
       onchange: () => pick(select.value === '' ? null : select.value),
     },
@@ -200,7 +202,7 @@ function menu(
     options.map((o) => el('option', { value: o }, o)),
   );
   select.value = chosen ?? '';
-  return el('label', { class: 'pick' }, select);
+  return select;
 }
 
 function filters(harness: string | null, checkout: string | null): void {
