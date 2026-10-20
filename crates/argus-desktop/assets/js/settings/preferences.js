@@ -46,6 +46,22 @@ const SECTIONS = [
     'Views',
     'Connection',
 ];
+const SECTION_ICON = {
+    Appearance: 'workspace',
+    Editor: 'code',
+    Notifications: 'bell',
+    Features: 'list',
+    Views: 'split',
+    Connection: 'server',
+};
+const SECTION_ABOUT = {
+    Appearance: 'The theme, the background and the fonts',
+    Editor: 'Where a file opens, and with what',
+    Notifications: 'When Argus tells you something needs you',
+    Features: 'How the feature index opens',
+    Views: 'Where the links in a saved view open',
+    Connection: 'The daemon this window reaches',
+};
 const dark = matchMedia('(prefers-color-scheme: dark)');
 function set(change) {
     call('setting', { change });
@@ -115,8 +131,10 @@ function setSegment(buttons, chosen) {
 function row(title, detail, control) {
     return el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, title), detail && el('span', { class: 'meta' }, detail)), control);
 }
+/** A section: its title and one line under it, then its rows in one bordered
+ *  group, divided from each other. */
 function section(name, ...rows) {
-    return el('section', { class: 'stack-2', 'aria-label': name, id: `settings-${name.toLowerCase()}` }, el('div', { class: 'label' }, name), rows);
+    return el('section', { class: 'setsection', 'aria-label': name, id: `settings-${name.toLowerCase()}` }, el('div', { class: 'sethead' }, el('div', { class: 'settitle' }, name), el('div', { class: 'meta' }, SECTION_ABOUT[name])), el('div', { class: 'setgroup' }, rows));
 }
 export function openSettings() {
     const page = state.settings;
@@ -213,7 +231,7 @@ export function openSettings() {
                 block: 'start',
             });
         },
-    }, name)));
+    }, icon(SECTION_ICON[name]), name)), el('div', { class: 'grow' }), page.version && el('div', { class: 'meta setversion' }, `argus ${page.version}`));
     // The section in view is the one lit in the nav, so a long page says where it is.
     const spy = () => {
         const top = body.getBoundingClientRect().top;

@@ -3,6 +3,7 @@
 
 import { $, el, escKey, focusQuietly, icon } from '../kit/dom.js';
 import { extensionSheetGroups } from '../extensions/views.js';
+import { sentence } from './palette.js';
 import { keycaps, leader } from './chords.js';
 import { state } from '../state.js';
 
@@ -43,7 +44,7 @@ export function openSheet(): void {
         el(
           'div',
           { class: 'sheet-row' },
-          el('span', { class: 'grow' }, binding.label),
+          el('span', { class: 'grow' }, sentence(binding.label)),
           keycaps(binding.chords),
         ),
       ),

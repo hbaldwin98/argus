@@ -38,6 +38,7 @@ function listRow(r: SessionRowView): HTMLElement {
     el('span', { class: 'grow ellipsis' }, r.title),
     el('span', { class: 'meta' }, r.harness),
     el('span', { class: 'meta mono ellipsis scheckout' }, r.checkout),
+    r.removed && el('span', { class: 'meta' }, 'removed'),
     turns && el('span', { class: 'meta' }, turns),
     el('span', { class: 'meta' }, r.live ? 'live' : r.ago),
   );
@@ -50,9 +51,9 @@ function list(s: SessionsPage): Child {
   const live = s.rows.filter((r) => r.live);
   const ended = s.rows.filter((r) => !r.live);
   return [
-    live.length > 0 && el('div', { class: 'shead meta' }, 'Live'),
+    live.length > 0 && el('div', { class: 'mlabel' }, 'Live'),
     live.map(listRow),
-    ended.length > 0 && el('div', { class: 'shead meta' }, 'Ended'),
+    ended.length > 0 && el('div', { class: 'mlabel' }, 'Ended'),
     ended.map(listRow),
   ];
 }

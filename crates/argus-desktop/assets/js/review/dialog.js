@@ -98,7 +98,7 @@ function files(r) {
                 onclick: () => click({ on: 'file', file: i }),
             }, 
             // The filename first, on its own line: a path cut short loses it.
-            el('span', { class: 'rname' }, el('span', { class: 'rbase' }, f.name), f.dir && el('span', { class: 'rdir' }, f.dir)), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)));
+            el('span', { class: 'rname' }, el('span', { class: 'rbase' }, f.name), el('span', { class: 'rdir' }, f.dir || 'repository root')), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)));
     }), r.jump &&
         r.jump.matches.length === 0 &&
         el('div', { class: 'meta' }, `No file matches “${r.jump.query}”.`)));

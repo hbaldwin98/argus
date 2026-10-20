@@ -70,20 +70,17 @@ function lines(p: ReconcilePage): HTMLElement {
               onclick: () => send({ on: 'select', line: row.line }),
             },
             // The input is itself 24px (its box is drawn smaller), so the tick is easy to hit.
-            el(
-              'label',
-              { class: 'rc-tick', onclick: (e: MouseEvent) => e.stopPropagation() },
-              el('input', {
-                type: 'checkbox',
-                'aria-label': `Tick ${row.key} ${row.does}`,
-                checked: row.ticked,
-                disabled: !proposing,
-                onclick: (e: MouseEvent) => {
-                  e.stopPropagation();
-                  send({ on: 'tick', line: row.line });
-                },
-              }),
-            ),
+            el('input', {
+              type: 'checkbox',
+              class: 'rc-tick',
+              'aria-label': `Tick ${row.key} ${row.does}`,
+              checked: row.ticked,
+              disabled: !proposing,
+              onclick: (e: MouseEvent) => {
+                e.stopPropagation();
+                send({ on: 'tick', line: row.line });
+              },
+            }),
             el('span', { class: 'mono fg-ref rc-key' }, row.key),
             el('span', { class: row.on ? 'strong' : '' }, row.does),
             el('span', { class: 'meta grow ellipsis' }, row.why),
@@ -124,7 +121,7 @@ function lines(p: ReconcilePage): HTMLElement {
 function selected(p: ReconcilePage, line: SelectedLine): HTMLElement {
   const editable = p.stage === 'proposed';
   const area = el('textarea', {
-    class: 'field area tall mono',
+    class: 'field area rc-text mono',
     id: 'reconcile-text',
     'aria-label': 'The text, word for word',
     readonly: !editable,

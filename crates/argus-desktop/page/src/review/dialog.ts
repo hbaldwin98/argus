@@ -178,7 +178,7 @@ function files(r: ReviewPage): HTMLElement {
               'span',
               { class: 'rname' },
               el('span', { class: 'rbase' }, f.name),
-              f.dir && el('span', { class: 'rdir' }, f.dir),
+              el('span', { class: 'rdir' }, f.dir || 'repository root'),
             ),
             el('span', { class: 'fg-ok' }, `+${f.added}`),
             el('span', { class: 'fg-danger' }, `−${f.removed}`),

@@ -13,7 +13,7 @@ import type { Layout } from '../bindings/Layout';
 import type { SavedLinks } from '../bindings/SavedLinks';
 import type { SettingChange } from '../bindings/SettingChange';
 import type { Theme } from '../bindings/Theme';
-import { $, el, focusQuietly, icon, type Child } from '../kit/dom.js';
+import { $, el, focusQuietly, icon, type Child, type IconName } from '../kit/dom.js';
 import { fontPicker, type FontPicker } from './font_picker.js';
 import { actionFor } from '../keys/keymap.js';
 import { screens } from '../panes/screen.js';
@@ -61,6 +61,26 @@ const SECTIONS = [
   'Views',
   'Connection',
 ] as const;
+
+type Section = (typeof SECTIONS)[number];
+
+const SECTION_ICON: Record<Section, IconName> = {
+  Appearance: 'workspace',
+  Editor: 'code',
+  Notifications: 'bell',
+  Features: 'list',
+  Views: 'split',
+  Connection: 'server',
+};
+
+const SECTION_ABOUT: Record<Section, string> = {
+  Appearance: 'The theme, the background and the fonts',
+  Editor: 'Where a file opens, and with what',
+  Notifications: 'When Argus tells you something needs you',
+  Features: 'How the feature index opens',
+  Views: 'Where the links in a saved view open',
+  Connection: 'The daemon this window reaches',
+};
 
 const dark = matchMedia('(prefers-color-scheme: dark)');
 
@@ -181,12 +201,19 @@ function row(title: string, detail: string | null, control: HTMLElement): HTMLEl
   );
 }
 
-function section(name: string, ...rows: Child[]): HTMLElement {
+/** A section: its title and one line under it, then its rows in one bordered
+ *  group, divided from each other. */
+function section(name: Section, ...rows: Child[]): HTMLElement {
   return el(
     'section',
-    { class: 'stack-2', 'aria-label': name, id: `settings-${name.toLowerCase()}` },
-    el('div', { class: 'label' }, name),
-    rows,
+    { class: 'setsection', 'aria-label': name, id: `settings-${name.toLowerCase()}` },
+    el(
+      'div',
+      { class: 'sethead' },
+      el('div', { class: 'settitle' }, name),
+      el('div', { class: 'meta' }, SECTION_ABOUT[name]),
+    ),
+    el('div', { class: 'setgroup' }, rows),
   );
 }
 
@@ -404,9 +431,12 @@ export function openSettings(): void {
             });
           },
         },
+        icon(SECTION_ICON[name]),
         name,
       ),
     ),
+    el('div', { class: 'grow' }),
+    page.version && el('div', { class: 'meta setversion' }, `argus ${page.version}`),
   );
 
   // The section in view is the one lit in the nav, so a long page says where it is.

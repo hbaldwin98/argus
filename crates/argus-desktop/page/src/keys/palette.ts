@@ -7,7 +7,7 @@
 // and choosing one is a call: the palette runs nothing itself.
 
 import type { Command } from '../bindings/Command';
-import { $, el, icon } from '../kit/dom.js';
+import { $, el, icon, type IconName } from '../kit/dom.js';
 import { extensionResults } from '../extensions/views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './chords.js';
@@ -21,6 +21,8 @@ interface Result {
   /** What the search matches and the row shows. */
   text: string;
   detail?: string;
+  /** The glyph beside the text: what kind of thing this is. */
+  icon?: IconName;
   /** Drawn at the row's end: a key, or a status word. */
   aside: HTMLElement | null;
   choose: () => void;
@@ -154,6 +156,30 @@ function choose(result: Result): void {
   result.choose();
 }
 
+const COMMAND_ICON: Partial<Record<Command['action'], IconName>> = {
+  workspace: 'workspace',
+  feature: 'list',
+  newFeature: 'list',
+  checkouts: 'branch',
+  branches: 'branch',
+  code: 'code',
+  openCode: 'code',
+  console: 'console',
+  toggleConsole: 'console',
+  palette: 'search',
+  search: 'search',
+  shortcuts: 'keyboard',
+  settings: 'gear',
+  compose: 'plus',
+  startShell: 'terminal',
+  startAgent: 'plus',
+};
+
+/** A label in the interface's one case: the keymap writes them lowercase. */
+export function sentence(label: string): string {
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function commandResult(command: Command): Result {
   const place =
     command.place && command.place !== 'anywhere'
@@ -162,7 +188,8 @@ function commandResult(command: Command): Result {
   return {
     group: 'Commands',
     key: `command ${command.action}`,
-    text: command.label,
+    text: sentence(command.label),
+    icon: COMMAND_ICON[command.action] ?? 'right',
     aside: command.chords.length
       ? el(
           'span',
@@ -188,6 +215,7 @@ function everything(): Result[] {
       group: 'Panes',
       key: `pane ${pane.id}`,
       text: pane.title,
+      icon: 'terminal',
       detail: pane.place,
       aside: word(pane.status, `st ${pane.status}`),
       choose: () => {
@@ -199,6 +227,7 @@ function everything(): Result[] {
       group: 'Features',
       key: `feature ${feature.slug}`,
       text: `#${feature.number} ${feature.title}`,
+      icon: 'list',
       aside: word(feature.standing, 'st fg-faint'),
       choose: () => call('go_to_feature', { slug: feature.slug }),
     })),
@@ -206,6 +235,7 @@ function everything(): Result[] {
       group: 'Checkouts',
       key: `checkout ${checkout.id}`,
       text: `${checkout.repository} / ${checkout.name}`,
+      icon: 'branch',
       detail: checkout.branch || undefined,
       aside: checkout.git ? word(checkout.git, `git${checkout.clean ? ' clean' : ''}`) : null,
       choose: () => call('go_to_checkout', { checkout: checkout.id }),
@@ -290,6 +320,7 @@ function drawResults(): void {
             drawResults();
           },
         },
+        el('span', { class: 'pic', 'aria-hidden': 'true' }, icon(r.icon ?? 'puzzle')),
         el('span', { class: 'grow ttl' }, marked(r.text, hits)),
         r.detail && el('span', { class: 'meta mono' }, r.detail),
         r.aside,

@@ -43,8 +43,9 @@ function lines(p) {
         onclick: () => send({ on: 'select', line: row.line }),
     }, 
     // The input is itself 24px (its box is drawn smaller), so the tick is easy to hit.
-    el('label', { class: 'rc-tick', onclick: (e) => e.stopPropagation() }, el('input', {
+    el('input', {
         type: 'checkbox',
+        class: 'rc-tick',
         'aria-label': `Tick ${row.key} ${row.does}`,
         checked: row.ticked,
         disabled: !proposing,
@@ -52,13 +53,13 @@ function lines(p) {
             e.stopPropagation();
             send({ on: 'tick', line: row.line });
         },
-    })), el('span', { class: 'mono fg-ref rc-key' }, row.key), el('span', { class: row.on ? 'strong' : '' }, row.does), el('span', { class: 'meta grow ellipsis' }, row.why), row.failed && el('span', { class: 'pill fg-danger', title: row.failed }, 'failed'))))), p.noticed.length > 0 &&
+    }), el('span', { class: 'mono fg-ref rc-key' }, row.key), el('span', { class: row.on ? 'strong' : '' }, row.does), el('span', { class: 'meta grow ellipsis' }, row.why), row.failed && el('span', { class: 'pill fg-danger', title: row.failed }, 'failed'))))), p.noticed.length > 0 &&
         el('div', { class: 'stack-6 rc-noticed' }, el('div', { class: 'label' }, 'Noticed, not proposed', el('span', { class: 'grow' }), 'outside what you asked'), p.noticed.map((n) => el('div', { class: 'hrow' }, el('span', { class: 'fg-faint' }, '·'), el('span', { class: 'mono fg-ref rc-key' }, n.label), el('span', { class: 'meta' }, n.text))), el('div', { class: 'meta' }, 'Tell the agent to include any of these and it adds a line. It never acts on them by itself.')));
 }
 function selected(p, line) {
     const editable = p.stage === 'proposed';
     const area = el('textarea', {
-        class: 'field area tall mono',
+        class: 'field area rc-text mono',
         id: 'reconcile-text',
         'aria-label': 'The text, word for word',
         readonly: !editable,
