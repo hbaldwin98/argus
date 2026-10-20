@@ -193,6 +193,20 @@ async fn one_client_sizes_a_pane_to_exactly_what_it_asked_for() {
 }
 
 #[tokio::test]
+async fn a_size_past_any_screen_is_held_to_the_largest_a_pane_is_made() {
+    // A Resize of 65535 by 65535 from the request fuzz took the daemon's
+    // memory with it on CI; a client may ask, but the daemon sizes.
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let pane = d.spawn_shell(only_checkout(&d)).unwrap();
+
+    d.resize_pane(d.new_viewer(), pane, crate::pty::MAX_ROWS + 1, crate::pty::MAX_COLS + 1).unwrap();
+
+    assert_eq!(pane_size(&d, pane), (crate::pty::MAX_ROWS, crate::pty::MAX_COLS));
+    let _ = d.close_pane(pane);
+}
+
+#[tokio::test]
 async fn a_client_that_watches_without_asking_for_a_size_leaves_the_pane_alone() {
     // A client that only watches draws the grid at the size another one
     // asked for. Were it to count as a viewer, the smallest-request rule

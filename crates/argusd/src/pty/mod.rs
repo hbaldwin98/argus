@@ -35,6 +35,11 @@ use vt::*;
 
 const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
+/// The largest a pane is made, far past any screen: a size is a client's to
+/// ask, and the grid is allocated whole, so 65535 by 65535 would ask the
+/// daemon for billions of cells and end it.
+pub const MAX_ROWS: u16 = 1_000;
+pub const MAX_COLS: u16 = 2_000;
 const SCROLLBACK_LINES: usize = 4000;
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 const OUTPUT_QUEUE_CHUNKS: usize = 256;

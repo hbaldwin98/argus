@@ -148,7 +148,7 @@ impl Daemon {
             .wanted
             .entry(pane)
             .or_default()
-            .insert(viewer, (rows, cols));
+            .insert(viewer, (rows.min(pty::MAX_ROWS), cols.min(pty::MAX_COLS)));
         self.reconcile_size(pane)
     }
 
