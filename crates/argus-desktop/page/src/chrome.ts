@@ -30,8 +30,6 @@ import { featureEdges } from './board/lenses/work.js';
 import { codeEdges } from './code/stage.js';
 import { call } from './connection/tauri.js';
 
-/** The order the attention strip names panes in; the same set as LOUD. */
-const ASK_ORDER: StatusWord[] = ['waiting', 'failed', 'needs-review'];
 const LOUD = new Set<StatusWord>(['waiting', 'needs-review', 'failed']);
 
 export function drawChrome(): void {
@@ -856,43 +854,6 @@ function allPanes(): { pane: RailPane; checkout: RailCheckout }[] {
   );
 }
 
-/** A strip over the Workspace when a pane other than the one on screen needs
- *  a person, so it is not found only by scanning the rail. */
-function drawAttention(): void {
-  const strip = $('attn');
-  const { shown, workspaceShown, stage } = state.rail;
-  const asking = allPanes()
-    .map(({ pane }) => pane)
-    .filter((pane) => pane.id !== shown?.pane && LOUD.has(pane.status))
-    .toSorted((a, b) => ASK_ORDER.indexOf(a.status) - ASK_ORDER.indexOf(b.status));
-  const first = asking[0];
-  // A stopped daemon cannot be asked to select anything.
-  strip.hidden =
-    !first || !workspaceShown || stage !== 'workspace' || state.status.connection !== 'connected';
-  if (strip.hidden || !first) return;
-  strip.replaceChildren(
-    el('span', { class: 'dot' }),
-    el(
-      'span',
-      { class: 'attn-text' },
-      el('strong', { class: 'ellipsis' }, first.title),
-      first.note && el('span', { class: 'attn-note ellipsis' }, first.note),
-    ),
-    asking.length > 1
-      ? el(
-          'span',
-          { class: 'attn-more' },
-          `${asking.length - 1} more ${asking.length === 2 ? 'needs' : 'need'} you`,
-        )
-      : '',
-    el(
-      'button',
-      { class: 'btn sm', onclick: () => call('select', { pane: first.id }) },
-      'Go to it',
-    ),
-  );
-}
-
 /** What a pane whose program has ended offers; the tree redraws the rest. */
 function drawEnded(): void {
   const bar = $('ended');
@@ -941,7 +902,6 @@ function drawStage(): void {
   const empty = $('empty');
   $('terminal').hidden = !shown;
   $('body').classList.toggle('held', connection === 'stopped');
-  drawAttention();
   drawEnded();
   empty.hidden = !!shown;
   empty.classList.remove('no-pane');

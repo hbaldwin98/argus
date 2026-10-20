@@ -338,8 +338,6 @@
   --vstat-min: 200px;
   /* The glyph in the folded rail's footer buttons. */
   --icon-glyph: 16px;
-  /* The attention strip's height, which a drawer starts below. */
-  --attn-h: 44px;
   --code-tree-narrow: 240px;
   --code-outline-narrow: 184px;
   --header-h: 56px;
@@ -8505,44 +8503,6 @@ button.vtree-chev:focus-visible {
 
 /* ---- Over and under the pane on screen --------------------------------- */
 
-/* Another pane asking for a person: the one thing the Workspace must not
-   hide behind the pane that is shown. */
-.attn {
-  flex: none;
-  box-sizing: border-box;
-  min-height: var(--attn-h);
-  display: flex;
-  align-items: center;
-  gap: var(--sp-12);
-  margin: var(--sp-8) var(--sp-16) 0;
-  padding: var(--sp-8) var(--sp-12);
-  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--attention) 10%, transparent);
-  font-size: var(--fs-sm);
-  min-width: 0;
-}
-.attn[hidden] {
-  display: none;
-}
-.attn > .dot {
-  background: var(--attention);
-}
-.attn-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-8);
-}
-.attn-note {
-  color: var(--fg-muted);
-  min-width: 0;
-}
-.attn-more {
-  flex: none;
-  color: var(--fg-muted);
-}
 /* What a pane that ended offers: the program is gone, the screen is not. */
 .ended {
   position: absolute;
@@ -8840,9 +8800,6 @@ button.vtree-chev:focus-visible {
     max-width: min(var(--drawer-max), calc(100% - var(--sp-44)));
     box-shadow: var(--shadow-pop);
     border-left-color: var(--line-strong);
-  }
-  .work:has(> .center > .attn:not([hidden])) .dock-right {
-    top: calc(var(--attn-h) + var(--sp-16));
   }
   /* The drawer covers the stage's right edge, so its actions sit beside
      the title at the left where they stay reachable, and a table cut by the
