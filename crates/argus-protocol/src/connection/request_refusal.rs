@@ -80,6 +80,7 @@ impl Asked {
             M::ListCode { request_id, checkout, .. }
             | M::ReadCode { request_id, checkout, .. }
             | M::SearchCode { request_id, checkout, .. } => (*request_id, true, Older::Code(*checkout)),
+            M::ListDir { request_id, .. } => (*request_id, true, Older::Error),
             M::ListCommits { request_id, checkout } => (*request_id, true, Older::Commits(*checkout)),
             M::ListSessions { request_id, .. }
             | M::ReadSession { request_id, .. }
@@ -230,6 +231,10 @@ mod tests {
         ClientMsg::SearchCode { request_id, checkout: CO, query: "fn".into(), options: SearchOptions::default() }
     }
 
+    fn list_dir(request_id: u64) -> ClientMsg {
+        ClientMsg::ListDir { request_id, checkout: CO, path: String::new() }
+    }
+
     fn list_commits(request_id: u64) -> ClientMsg {
         ClientMsg::ListCommits { request_id, checkout: CO }
     }
@@ -278,6 +283,7 @@ mod tests {
             (list_code(3), vec![ServerMsg::CodeFailed { request_id: 3, checkout: CO, message: message.clone() }]),
             (read_code(4), vec![ServerMsg::CodeFailed { request_id: 4, checkout: CO, message: message.clone() }]),
             (search_code(5), vec![ServerMsg::CodeFailed { request_id: 5, checkout: CO, message: message.clone() }]),
+            (list_dir(8), vec![ServerMsg::Error { message: message.clone() }]),
             (list_commits(7), vec![ServerMsg::CommitsFailed { request_id: 7, checkout: CO, message: message.clone() }]),
             (feature(9), vec![ServerMsg::Error { message: message.clone() }]),
             (list_sessions(10), vec![ServerMsg::Error { message: message.clone() }]),
@@ -294,7 +300,7 @@ mod tests {
             [ServerMsg::Refused(refusal)] => refusal.read,
             other => panic!("{msg:?}: {other:?}"),
         };
-        assert!(read(review(1)) && read(list_sessions(2)) && read(search_code(3)));
+        assert!(read(review(1)) && read(list_sessions(2)) && read(search_code(3)) && read(list_dir(8)));
         let spawn_agent = ClientMsg::SpawnAgent { checkout: CO, template: "claude".into(), prompt: None, request_id: 4 };
         assert!(!read(spawn_agent) && !read(add_project(5)) && !read(feature(6)) && !read(review_comment(7)));
     }

@@ -173,6 +173,7 @@ impl App {
             ServerMsg::CodeTree(_)
             | ServerMsg::Code(_)
             | ServerMsg::CodeMatches(_)
+            | ServerMsg::CheckoutDir(_)
             | ServerMsg::CodeFailed { .. } => {}
             ServerMsg::ReviewContext(context) => {
                 if let Some(session) = &mut self.review {

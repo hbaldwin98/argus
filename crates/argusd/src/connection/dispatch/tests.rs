@@ -468,6 +468,28 @@ async fn the_code_stage_reads_a_versions_files_one_file_and_a_search() {
 }
 
 #[tokio::test]
+async fn a_folder_of_a_checkout_is_listed_and_one_outside_it_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::create_dir(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("a.rs"), "x").unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+
+    h.send(ClientMsg::ListDir { request_id: 1, checkout, path: String::new() });
+    match answer(&mut h).await {
+        ServerMsg::CheckoutDir(d) => {
+            let names: Vec<_> = d.entries.iter().map(|e| (e.name.as_str(), e.dir)).collect();
+            assert_eq!((d.request_id, names), (1, vec![("src", true), ("a.rs", false)]));
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+
+    h.send(ClientMsg::ListDir { request_id: 2, checkout, path: "..".into() });
+    assert!(matches!(answer(&mut h).await, ServerMsg::Error { .. } | ServerMsg::Refused(_)));
+}
+
+#[tokio::test]
 async fn a_fold_is_read_from_the_blob_the_review_named() {
     let dir = tempfile::tempdir().unwrap();
     git2::Repository::init(dir.path()).unwrap();

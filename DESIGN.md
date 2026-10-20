@@ -379,6 +379,7 @@ live in this crate and a contract written twice drifts in silence.
 | `review/agent_comment` | a comment on picked lines to an agent, from a review, a commit's review or the Code stage in either client: whether one may be written, which agent hears it as agents come and go, the words each refusal is said in, and the message that sends it |
 | `review/history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
 | `code` | a checkout's code as the Code stage reads it: which version, a file's lines and the ones that version changed, what the file defines, and where text occurs across the checkout |
+| `files` | a checkout's folder as it is on disk, one level: each entry's kind, size and age, and what Git makes of it, with the cap on how many one listing carries |
 | `paths` | where Argus keeps its files and which instance it is, shared so `ARGUS_CONFIG_DIR` points the daemon and every client at one place |
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `board` | a repository's feature board |
@@ -493,6 +494,7 @@ to the type or its locking.
 | `syntax`, `syntax/grammar` | which tree-sitter grammar reads a file, chosen by its extension, so highlighting and outlines agree on its language |
 | `syntax/highlight` | what each token of a diff's or a file's lines is, for highlighting |
 | `code`, `code/search`, `code/symbols` | what the Code stage reads: a version's files and how much each changed, one file's lines with the ones it changed, where text occurs in the working tree, and what a file defines |
+| `files` | one folder of a checkout read off disk, never past its root, with each entry marked changed, untracked or ignored |
 | `config` | `projects.toml`, which is read and never written |
 | `system`, `system/daemon_lock`, `system/logging`, `system/command`, `system/paths`, `system/editor` | what the daemon asks of the machine it runs on: the one daemon allowed to own an instance, where its diagnostics go, a command run without a console window, whether two spellings name one place, and the person's editor |
 | `system/file_watch` | watching one file, `projects.toml`, through an editor's rename-over save and without waking on the log and store the daemon writes beside it |

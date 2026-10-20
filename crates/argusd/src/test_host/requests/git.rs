@@ -76,6 +76,12 @@ pub fn list_code(k: &Known) -> BoxedStrategy<ClientMsg> {
         .boxed()
 }
 
+pub fn list_dir(k: &Known) -> BoxedStrategy<ClientMsg> {
+    (request_id(), checkout(k), checkout_path(k))
+        .prop_map(|(request_id, checkout, path)| ClientMsg::ListDir { request_id, checkout, path })
+        .boxed()
+}
+
 pub fn read_code(k: &Known) -> BoxedStrategy<ClientMsg> {
     (request_id(), checkout(k), checkout_path(k), version(k))
         .prop_map(|(request_id, checkout, path, version)| ClientMsg::ReadCode { request_id, checkout, path, version })

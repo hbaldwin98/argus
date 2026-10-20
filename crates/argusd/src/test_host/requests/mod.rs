@@ -99,7 +99,7 @@ macro_rules! kinds {
 kinds! {
     Subscribe, Unsubscribe, Input, Paste, PasteFile, Scrollback, Resize, SpawnShell, SpawnAgent,
     SpawnConsole, Kill, RenamePane, CreateWorktree, RemoveCheckout, OpenWorkspace,
-    CreateWorkspace, Review, ReviewContext, ListCode, ReadCode, SearchCode, ListCommits,
+    CreateWorkspace, Review, ReviewContext, ListCode, ReadCode, SearchCode, ListDir, ListCommits,
     ListCommitFiles, ListSessions, ReadSession, ListResumes, ResumeSession, ReviewComment,
     GetDecisions, Feature, TrackerMap, Reconcile, Task, Decide, ChangeDecision, SequenceDiagram,
     ListBranches, ListFiles, SwitchBranch, CreateBranch, DeleteBranch, Fetch, Pull, OpenInEditor,
@@ -133,6 +133,7 @@ pub fn kind(msg: &ClientMsg) -> Kind {
         M::ListCode { .. } => Kind::ListCode,
         M::ReadCode { .. } => Kind::ReadCode,
         M::SearchCode { .. } => Kind::SearchCode,
+        M::ListDir { .. } => Kind::ListDir,
         M::ListCommits { .. } => Kind::ListCommits,
         M::ListCommitFiles { .. } => Kind::ListCommitFiles,
         M::ListSessions { .. } => Kind::ListSessions,
@@ -208,6 +209,7 @@ pub fn generate(kind: Kind, k: &Known) -> BoxedStrategy<ClientMsg> {
         K::ListCode => git::list_code(k),
         K::ReadCode => git::read_code(k),
         K::SearchCode => git::search_code(k),
+        K::ListDir => git::list_dir(k),
         K::ListCommits => git::list_commits(k),
         K::ListCommitFiles => git::list_commit_files(k),
         K::ListSessions => git::list_sessions(k),
@@ -285,6 +287,7 @@ pub fn request_id_mut(msg: &mut ClientMsg) -> Option<&mut u64> {
         | M::ListCode { request_id, .. }
         | M::ReadCode { request_id, .. }
         | M::SearchCode { request_id, .. }
+        | M::ListDir { request_id, .. }
         | M::ListCommits { request_id, .. }
         | M::ListSessions { request_id, .. }
         | M::ReadSession { request_id, .. }

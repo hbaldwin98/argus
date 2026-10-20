@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::views::agent_view::ShownView;
 use crate::panes::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::code::{CodeFile, CodeMatches, CodeTree, CodeVersion, SearchOptions};
+use crate::files::CheckoutDir;
 use crate::panes::damage::{CellRun, Scroll};
 use crate::board::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
 use crate::extensions::{ExtAnswer, ExtCommand, ExtDescription, ExtDialog, ExtView};
@@ -204,6 +205,14 @@ pub enum ClientMsg {
         query: String,
         #[serde(default)]
         options: SearchOptions,
+    },
+    /// One folder of a checkout as it is on disk, with what Git makes of
+    /// each entry. `path` is relative to the checkout, `/`-separated, empty
+    /// for its root. Only to a daemon that listed `FILES`.
+    ListDir {
+        request_id: u64,
+        checkout: CheckoutId,
+        path: String,
     },
     /// Newest commits on this checkout's HEAD, identities only. What each
     /// one changed is [`ClientMsg::ListCommitFiles`], asked for one commit
@@ -695,6 +704,8 @@ pub enum ServerMsg {
     Code(Box<CodeFile>),
     /// The answer to `ClientMsg::SearchCode`.
     CodeMatches(CodeMatches),
+    /// The answer to `ClientMsg::ListDir`.
+    CheckoutDir(CheckoutDir),
     /// Any of the three that could not be answered, correlated by its id.
     /// To a client that did not list `REQUEST_REFUSALS`; one that did is
     /// sent `Refused`.

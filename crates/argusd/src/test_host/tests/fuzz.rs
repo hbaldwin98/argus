@@ -80,7 +80,7 @@ fn answered(kind: Kind) -> Answered {
     match kind {
         K::SpawnShell | K::SpawnAgent | K::SpawnConsole | K::CreateWorktree | K::OpenInEditor
         | K::AddProject | K::AddRepository | K::InitRepository | K::ResumeSession | K::Review
-        | K::ReviewContext | K::ListCode | K::ReadCode | K::SearchCode | K::ListCommits
+        | K::ReviewContext | K::ListCode | K::ReadCode | K::SearchCode | K::ListDir | K::ListCommits
         | K::ListSessions | K::ReadSession | K::ListResumes | K::PreviewProject
         | K::ListDirectories => Answered::ById,
         K::ReviewComment => Answered::BySavedComment,

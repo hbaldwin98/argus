@@ -509,6 +509,21 @@ pub(super) fn dispatch(
                 truncated,
             }))
         }),
+        // A folder as it is on disk, for the Checkouts stage's files.
+        ClientMsg::ListDir {
+            request_id,
+            checkout,
+            path,
+        } => reply_with(daemon, &reply, checkout, move |root| {
+            let (entries, truncated) = crate::files::list(&root, &path)?;
+            Ok(ServerMsg::CheckoutDir(argus_protocol::CheckoutDir {
+                request_id,
+                checkout,
+                path,
+                entries,
+                truncated,
+            }))
+        }),
         ClientMsg::ReviewContext {
             request_id,
             checkout,

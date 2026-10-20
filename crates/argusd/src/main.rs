@@ -4,6 +4,7 @@
 mod code;
 mod config;
 mod connection;
+mod files;
 mod git;
 mod harness;
 mod hook;

@@ -41,6 +41,7 @@ pub const CAPABILITIES: &[&str] = &[
     RENAME_PANE,
     SAVED_VIEWS,
     CODE,
+    FILES,
     REQUEST_REFUSALS,
 ];
 
@@ -121,6 +122,10 @@ pub const SAVED_VIEWS: &str = "saved-views";
 /// `ServerMsg::Code`, `ServerMsg::CodeMatches` and their refusals from the
 /// daemon.
 pub const CODE: &str = "code";
+
+/// A checkout's folders as they are on disk: `ClientMsg::ListDir` from a
+/// client, `ServerMsg::CheckoutDir` and its refusals from the daemon.
+pub const FILES: &str = "files";
 
 /// `ServerMsg::Refused`: a refusal of a request that named itself, by its
 /// id, in place of `Created` with nothing and an `Error`, or the request's

@@ -14,6 +14,7 @@ pub mod checkout_path;
 pub mod code;
 pub mod connection;
 pub mod extensions;
+pub mod files;
 pub mod fuzzy;
 pub mod hook;
 pub mod panes;
@@ -87,6 +88,7 @@ pub use code::{
     CodeChange, CodeFile, CodeLine, CodeMatch, CodeMatches, CodeSymbol, CodeTree, CodeVersion, Removed, SearchOptions,
     MAX_CODE_MATCHES,
 };
+pub use files::{CheckoutDir, CheckoutEntry, EntryGit, MAX_DIR_ENTRIES};
 pub use hook::{
     endpoint_url, extension_path, extension_prefix, extension_url, parse_extension_path, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,
     parse_request_target, requested_feature, requested_scope, Endpoint, ExtEndpoint, PaneUrl, EXTENSION_VAR, MAX_HOOK_BODY, Report, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND, HELPER_VAR,
