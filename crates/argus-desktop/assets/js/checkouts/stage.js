@@ -4,7 +4,7 @@
 // (`src/checkouts/table.rs`); the page draws them and reports what is
 // chosen.
 import { startMenu, toggleStart } from '../chrome.js';
-import { $, el, ghosts, icon } from '../kit/dom.js';
+import { $, closeButton, el, escKey, ghosts, icon } from '../kit/dom.js';
 import { closeLayer } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
@@ -149,11 +149,11 @@ function nameDialog(from) {
                 closeLayer();
         },
     }, el('section', {
-        class: 'dialog hold-dialog',
+        class: 'dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'worktree-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'worktree-title' }, 'New worktree')), el('div', { class: 'dbody' }, el('label', { class: 'label', for: 'worktree-name' }, 'Branch'), name, el('div', { class: 'meta' }, 'Off ', el('span', { class: 'mono' }, from), '.')), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: closeLayer }, 'Cancel'), el('button', { class: 'btn primary', onclick: make }, 'Create')))));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'worktree-title' }, 'New worktree'), closeButton(closeLayer)), el('div', { class: 'dbody prose' }, el('label', { class: 'label', for: 'worktree-name' }, 'Branch'), name), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, 'Off ', el('span', { class: 'mono' }, from)), el('button', { class: 'btn', onclick: closeLayer }, 'Cancel ', escKey()), el('button', { class: 'btn primary', onclick: make }, 'Create')))));
     name.focus();
 }
 /** Says no to the stage's question, as Escape or a click outside does. */
@@ -189,7 +189,7 @@ function confirmDialog(question) {
         role: 'alertdialog',
         'aria-modal': 'true',
         'aria-labelledby': 'confirm-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'confirm-title' }, title)), el('div', { class: 'dbody' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', id: 'confirm-keep', onclick: answerNo }, force ? 'Keep the branch' : 'Keep it'), el('button', {
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'confirm-title' }, title), closeButton(answerNo)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', id: 'confirm-keep', onclick: answerNo }, force ? 'Keep the branch ' : 'Keep it ', escKey()), el('button', {
         class: 'btn danger',
         onclick: () => {
             call('answer_checkouts', { yes: true });

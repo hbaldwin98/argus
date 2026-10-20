@@ -94,7 +94,7 @@ export function drawHistory() {
     else
         list = h.rows.map(listRow);
     host.replaceChildren(el('div', { class: 'scrim' }, el('section', {
-        class: 'dialog review-dialog',
+        class: 'dialog sheet-dialog review-dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'history-title',

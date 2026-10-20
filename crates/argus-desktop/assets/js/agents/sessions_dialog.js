@@ -153,7 +153,7 @@ export function drawSessions() {
     }
     placeReader(null, 0);
     host.replaceChildren(el('div', { class: 'scrim' }, el('section', {
-        class: 'dialog review-dialog',
+        class: 'dialog sheet-dialog review-dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'sessions-title',

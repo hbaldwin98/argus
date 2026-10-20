@@ -1500,12 +1500,18 @@
   right: 0;
   bottom: 0;
   background: var(--scrim);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
 }
+/* The one shell every dialog is cut from, centred on the window over one
+   scrim. It has three widths: `.confirm-dialog` (440, one question), the
+   default form (560) and `.sheet-dialog` (a screen's worth). */
 .dialog {
   box-sizing: border-box;
+  width: min(560px, 94vw);
+  max-height: 90vh;
   background: var(--bg-surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
@@ -1514,20 +1520,61 @@
   flex-direction: column;
   overflow: hidden;
 }
+.dialog.confirm-dialog {
+  width: min(440px, 94vw);
+}
+.dialog.sheet-dialog {
+  width: min(1200px, 94vw);
+  height: min(780px, 90vh);
+}
 .dhead {
   display: flex;
   align-items: flex-start;
   gap: var(--sp-12);
-  padding: var(--sp-16) var(--sp-20) var(--sp-12);
-  border-bottom: 1px solid var(--line);
+  padding: var(--sp-24) var(--sp-24) var(--sp-16);
 }
 .dfoot {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  padding: var(--sp-12) var(--sp-20);
+  padding: var(--sp-16) var(--sp-24);
   border-top: 1px solid var(--line);
-  background: var(--bg-chrome);
+}
+/* Why the primary is off, or what a click will not do: the footer's left. */
+.dfoot > .dwhy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  min-width: 0;
+  color: var(--fg-muted);
+  font: var(--type-small);
+}
+/* The dialog's body in the interface font and on its surface; the diff's
+   `.dbody` below is the code, and sets its own. */
+.dialog .dbody.prose {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--sp-24) var(--sp-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-12);
+  background: transparent;
+  font: var(--type-body);
+  color: var(--fg-muted);
+}
+/* The ✕ centres on the title's first line, not on a head that grows. */
+.dhead > .icon {
+  flex: none;
+  margin-top: calc(var(--sp-2) * -1);
+}
+/* A sheet's head is a toolbar, one row tall like a stage's. */
+.sheet-dialog > .dhead {
+  align-items: center;
+  min-height: calc(var(--sp-44) + var(--sp-12));
+  box-sizing: border-box;
+  padding: var(--sp-8) var(--sp-24);
+  border-bottom: 1px solid var(--line);
 }
 .code {
   font-family: var(--font-mono);
@@ -2125,31 +2172,68 @@ body.moving-pane * {
   }
 }
 
-/* "argusd was stopped" sits over the whole window. */
+/* "argusd was stopped" blocks the whole window, so it has a scrim and the
+   empty moment's atmosphere like every other thing that stops work. */
 .overlay {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--atmosphere), var(--scrim);
+  backdrop-filter: blur(2px);
 }
-.overlay .card {
-  pointer-events: auto;
+.overlay[hidden] {
+  display: none;
+}
+.overlay .stopped-card {
+  position: static;
+  inset: auto;
+  margin: 0;
+  width: min(440px, 94vw);
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-12);
+  padding: var(--sp-32) var(--sp-24) var(--sp-24);
+}
+.stopped-icon {
+  color: var(--attention);
+}
+.stopped-card .btn {
+  margin-top: var(--sp-8);
 }
 
-/* A notice passes along the bottom of the stage, on whichever is showing. */
+/* A toast sits bottom-centre of the stage, above the pane's input line, with
+   an icon and a dismiss. */
 .notice {
   position: absolute;
   left: calc(50% + var(--rail-w) / 2);
-  bottom: var(--sp-24);
+  bottom: calc(var(--sp-44) * 2 + var(--sp-24));
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
   max-width: 70%;
   box-sizing: border-box;
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-pop);
-  padding: var(--sp-8) var(--sp-12);
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-12);
   color: var(--fg);
+}
+.notice[hidden] {
+  display: none;
+}
+.notice > svg {
+  flex: none;
+  color: var(--attention);
+}
+.notice-text {
+  min-width: 0;
+  padding: var(--sp-4) 0;
 }
 
 @media (max-width: 900px) {
@@ -2642,15 +2726,6 @@ select option::checkmark {
 }
 .scrim {
   z-index: 4;
-}
-.hold-dialog {
-  width: 460px;
-}
-.hold-dialog .dbody {
-  padding: var(--sp-16) var(--sp-20);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-8);
 }
 
 .small-mono {
@@ -3685,9 +3760,6 @@ body.console-fullscreen #bar {
     display: none;
   }
 }
-.confirm-dialog {
-  width: 560px;
-}
 
 /* ---- The palette and the shortcuts sheet --------------------------------- */
 
@@ -3761,18 +3833,15 @@ body.console-fullscreen #bar {
 .hint:hover {
   color: var(--fg);
 }
-.sheet {
-  width: min(980px, 94vw);
-  max-height: 84vh;
-}
 .sheet-rule {
-  padding: var(--sp-12) var(--sp-20);
+  padding: var(--sp-12) var(--sp-24);
   border-bottom: 1px solid var(--line);
   color: var(--fg-muted);
+  font: var(--type-small);
 }
 .sheet-body {
   overflow-y: auto;
-  padding: var(--sp-8) var(--sp-20) var(--sp-20);
+  padding: var(--sp-16) var(--sp-24) var(--sp-24);
   columns: 280px 3;
   column-gap: var(--sp-32);
 }
@@ -3798,8 +3867,6 @@ body.console-fullscreen #bar {
 }
 /* A diff wants every column it can get, a split one most of all. */
 .review-dialog {
-  width: calc(100% - 2 * var(--sp-24));
-  height: calc(100% - 2 * var(--sp-24));
   display: flex;
   flex-direction: column;
 }
@@ -4229,8 +4296,7 @@ body.console-fullscreen #bar {
   color: var(--danger);
 }
 .add-dialog {
-  width: min(820px, calc(100vw - 32px));
-  max-height: min(720px, 94vh);
+  max-height: min(720px, 90vh);
 }
 .ap-head {
   align-items: center;
@@ -4239,7 +4305,7 @@ body.console-fullscreen #bar {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--sp-16) var(--sp-20);
+  padding: 0 var(--sp-24) var(--sp-24);
 }
 .ap-body .seg {
   align-self: flex-start;
@@ -4255,12 +4321,13 @@ body.console-fullscreen #bar {
 }
 .ap-split {
   display: flex;
-  gap: var(--sp-16);
-  height: 300px;
+  flex-direction: column;
+  gap: var(--sp-12);
   flex: none;
 }
 .ap-folders {
-  flex: 1;
+  flex: none;
+  height: 180px;
   min-width: 0;
   overflow: auto;
   border: 1px solid var(--line);
@@ -4291,7 +4358,6 @@ body.console-fullscreen #bar {
   padding: var(--sp-8);
 }
 .ap-outcome {
-  width: 300px;
   flex: none;
   min-width: 0;
   display: flex;
@@ -4317,17 +4383,17 @@ body.console-fullscreen #bar {
   width: 300px;
   max-width: 50%;
 }
-@media (max-width: 640px) {
-  .ap-split {
-    flex-direction: column;
-    height: auto;
-  }
-  .ap-folders {
-    max-height: 220px;
-  }
-  .ap-outcome {
-    width: auto;
-  }
+/* A form stacks its labels above its fields, here as in the link dialog. */
+.add-dialog .setrow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-6);
+  border-top: 0;
+  padding-top: 0;
+}
+.add-dialog .setrow .field {
+  width: auto;
+  max-width: none;
 }
 
 /* The see-through fills, after every rule that paints these regions. */
@@ -4348,12 +4414,15 @@ body.console-fullscreen #bar {
 
 /* ---- The Settings dialog ----------------------------------------------- */
 
-.settings {
-  width: min(960px, 94vw);
-  height: min(700px, 88vh);
-}
 .settings .split {
   min-height: 0;
+}
+.settings-nav .frow:hover {
+  background: var(--fill);
+}
+.settings-nav .frow.on {
+  background: var(--bg-selected);
+  box-shadow: none;
 }
 .settings-nav {
   width: 200px;
@@ -5660,35 +5729,34 @@ body.resizing:has(.brief-sash.held) {
   gap: var(--sp-6);
 }
 
-/* An extension's question: over the window's top and never a scrim, so one
-   raised on its own leaves the pane under it to be typed in. */
+/* An extension's question blocks, so it has the scrim and the window's centre
+   like any dialog. One raised on its own, which the person did not ask for,
+   waits bottom-centre without a scrim and leaves the pane under it to be
+   typed in. */
 .ext-dialogs {
   position: absolute;
-  top: 48px;
-  left: 0;
-  right: 0;
+  inset: 0;
   display: flex;
+  align-items: center;
   justify-content: center;
   pointer-events: none;
   z-index: 5;
 }
+.ext-dialogs:has(.ext-dialog:not(.unasked)) {
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
+}
+.ext-dialogs:has(.ext-dialog.unasked) {
+  align-items: flex-end;
+  padding-bottom: calc(var(--sp-44) * 2 + var(--sp-24));
+}
 .ext-dialog {
   pointer-events: auto;
-  width: min(480px, calc(100vw - 32px));
+  width: min(440px, 94vw);
 }
-/* `.dbody` is the diff's: monospace, unpadded and sunken, which a
-   question laid over a live pane must not be. */
-.ext-dialog .dbody {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-8);
-  padding: var(--sp-12) var(--sp-16);
-  font-family: var(--font-ui);
-  line-height: 1.5;
-  background: var(--bg-surface);
-}
-.ext-dialog.unasked:not(:focus-within) {
-  opacity: 0.92;
+.ext-dialog:has(.label) {
+  width: min(560px, 94vw);
 }
 .ext-pick {
   position: static;
@@ -5751,19 +5819,18 @@ body.resizing:has(.brief-sash.held) {
 
 /* ---- The tracker dialogs ----------------------------------------------- */
 
-.tracker-dialog {
-  width: min(760px, 94vw);
-  max-height: min(820px, 92vh);
+.sheet-dialog.tracker-dialog > .dhead {
+  align-items: flex-start;
+  padding: var(--sp-24) var(--sp-24) var(--sp-16);
 }
-.tracker-dialog.wide {
-  width: min(1180px, 94vw);
-  height: min(780px, 92vh);
+.sheet-dialog.tracker-dialog > .tracker-body {
+  padding-top: var(--sp-16);
 }
 .tracker-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-16) var(--sp-20);
+  padding: 0 var(--sp-24) var(--sp-24);
 }
 .tracker-body.stack-12 {
   display: flex;

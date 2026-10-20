@@ -175,7 +175,7 @@ export function drawReview() {
     const fileList = files(r);
     fileList.id = 'review-files';
     host.replaceChildren(el('div', { class: 'scrim' }, el('section', {
-        class: 'dialog review-dialog',
+        class: 'dialog sheet-dialog review-dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'review-title',

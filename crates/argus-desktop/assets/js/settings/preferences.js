@@ -214,9 +214,24 @@ export function openSettings() {
             });
         },
     }, name)));
+    // The section in view is the one lit in the nav, so a long page says where it is.
+    const spy = () => {
+        const top = body.getBoundingClientRect().top;
+        let current = SECTIONS[0];
+        for (const name of SECTIONS) {
+            const block = document.getElementById(`settings-${name.toLowerCase()}`);
+            if (block && block.getBoundingClientRect().top - top <= 24)
+                current = name;
+        }
+        nav.querySelectorAll('button').forEach((button) => {
+            button.classList.toggle('on', button.textContent === current);
+        });
+    };
+    body.addEventListener('scroll', spy);
+    spy();
     const close = el('button', { class: 'icon', 'aria-label': 'Close settings', onclick: closeSettings }, icon('close'));
     const dialog = el('section', {
-        class: 'dialog settings',
+        class: 'dialog sheet-dialog settings',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'settings-title',

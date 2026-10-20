@@ -836,12 +836,18 @@ let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 /** Shows a line along the bottom of the window for a few seconds. */
 export function notice(text: string): void {
   const node = $('notice');
-  node.textContent = text;
+  const dismiss = (): void => {
+    clearTimeout(noticeTimer);
+    node.hidden = true;
+  };
+  node.replaceChildren(
+    icon('info'),
+    el('span', { class: 'notice-text' }, text),
+    el('button', { class: 'icon', 'aria-label': 'Dismiss', onclick: dismiss }, icon('close')),
+  );
   node.hidden = false;
   clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => {
-    node.hidden = true;
-  }, 6000);
+  noticeTimer = setTimeout(dismiss, 6000);
 }
 
 export function reconnect(): void {

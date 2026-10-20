@@ -6,7 +6,7 @@
 // One that answers a command the person just ran takes the keys. One raised
 // on its own is drawn without a scrim and waits for a click, so a pane being
 // typed in keeps every key.
-import { $, el } from '../kit/dom.js';
+import { $, closeButton, el, escKey } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { call } from '../connection/tauri.js';
 /** The dialog drawn, so a page that only changed the count behind it
@@ -90,7 +90,7 @@ export function drawExtensionDialog(page) {
                 submit();
             }
         },
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'ext-dialog-title' }, dialog.title)), el('div', { class: 'dbody' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'meta' }, `from ${page.extension}`), el('span', { class: 'meta ext-waiting' }, waitingWords(page.waiting)), el('span', { class: 'grow' }), el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel'), el('button', { class: 'btn primary', type: 'button', id: 'ext-dialog-yes', onclick: submit }, yes)));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'ext-dialog-title' }, dialog.title), closeButton(cancel)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, `from ${page.extension}`, el('span', { class: 'ext-waiting' }, waitingWords(page.waiting))), el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()), el('button', { class: 'btn primary', type: 'button', id: 'ext-dialog-yes', onclick: submit }, yes)));
     holder.replaceChildren(card);
     if (page.prompted) {
         (document.getElementById('ext-dialog-first') ?? document.getElementById('ext-dialog-yes'))?.focus();

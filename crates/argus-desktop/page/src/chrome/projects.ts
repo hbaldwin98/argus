@@ -9,7 +9,7 @@ import type { AddKind } from '../bindings/AddKind';
 import type { AddProjectPage } from '../bindings/AddProjectPage';
 import type { ProjectChoice } from '../bindings/ProjectChoice';
 import type { Removing } from '../bindings/Removing';
-import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, closeButton, el, escKey, ghosts, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -239,7 +239,7 @@ function removeDialog(r: Removing): HTMLElement {
     el(
       'section',
       {
-        class: 'dialog hold-dialog confirm-dialog',
+        class: 'dialog confirm-dialog',
         role: 'alertdialog',
         'aria-modal': 'true',
         'aria-labelledby': 'remove-title',
@@ -249,15 +249,16 @@ function removeDialog(r: Removing): HTMLElement {
         { class: 'dhead' },
         el(
           'div',
-          { class: 'type-title', id: 'remove-title' },
+          { class: 'type-title grow', id: 'remove-title' },
           'Remove ',
           el('span', null, r.name),
           '?',
         ),
+        closeButton(answerRemoveNo),
       ),
       el(
         'div',
-        { class: 'dbody' },
+        { class: 'dbody prose' },
         el(
           'div',
           { class: 'fg-muted' },
@@ -274,7 +275,12 @@ function removeDialog(r: Removing): HTMLElement {
         'div',
         { class: 'dfoot' },
         el('span', { class: 'grow' }),
-        el('button', { class: 'btn', id: 'remove-keep', onclick: answerRemoveNo }, 'Keep it'),
+        el(
+          'button',
+          { class: 'btn', id: 'remove-keep', onclick: answerRemoveNo },
+          'Keep it ',
+          escKey(),
+        ),
         el(
           'button',
           { class: 'btn danger', onclick: () => call('answer_remove_project', { yes: true }) },
@@ -563,13 +569,12 @@ function addDialog(a: AddProjectPage): HTMLElement {
         { class: 'dfoot' },
         el(
           'span',
-          { class: 'meta' },
+          { class: 'dwhy grow' },
           a.kind === 'new'
             ? 'Adds to the daemon’s config; only the new repository is made.'
             : 'Adds to the daemon’s config; nothing in the folders is changed.',
         ),
-        el('span', { class: 'grow' }),
-        el('button', { class: 'btn', onclick: closeAdd }, 'Cancel'),
+        el('button', { class: 'btn', onclick: closeAdd }, 'Cancel ', escKey()),
         el(
           'button',
           {

@@ -152,7 +152,7 @@ export function drawReader(r: ReaderPage): HTMLElement {
   return el(
     'section',
     {
-      class: 'dialog review-dialog',
+      class: 'dialog sheet-dialog review-dialog',
       role: 'dialog',
       'aria-modal': 'true',
       'aria-labelledby': 'reader-title',

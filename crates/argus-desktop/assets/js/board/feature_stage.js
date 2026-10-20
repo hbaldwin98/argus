@@ -11,7 +11,7 @@
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from '../chrome.js';
 import { closeExpanded } from './lenses/sequence.js';
-import { $, el, ghosts, icon } from '../kit/dom.js';
+import { $, closeButton, el, escKey, ghosts, icon } from '../kit/dom.js';
 import { closeLayer, placeMenu } from '../kit/menu.js';
 import { ticketLinks } from './tracker/tickets.js';
 import { actionFor } from '../keys/keymap.js';
@@ -513,11 +513,11 @@ function holdDialog(row) {
                 closeLayer();
         },
     }, el('section', {
-        class: 'dialog hold-dialog',
+        class: 'dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'hold-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'hold-title' }, `Hold #${row.number} ${row.title}`)), el('div', { class: 'dbody' }, el('label', { class: 'label', for: 'hold-reason' }, 'Why is it held?'), reason, el('div', { class: 'meta' }, 'Agents read the reason.')), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: closeLayer }, 'Cancel'), el('button', { class: 'btn primary', onclick: hold }, 'Hold'))));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'hold-title' }, `Hold #${row.number} ${row.title}`), closeButton(closeLayer)), el('div', { class: 'dbody prose' }, el('label', { class: 'label', for: 'hold-reason' }, 'Why is it held?'), reason), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, 'Agents read the reason.'), el('button', { class: 'btn', onclick: closeLayer }, 'Cancel ', escKey()), el('button', { class: 'btn primary', onclick: hold }, 'Hold'))));
     $('layer').replaceChildren(dialog);
     reason.focus();
 }

@@ -1,6 +1,6 @@
 // The shortcuts sheet: every binding of the keymap Rust sends, under the
 // heading of where it works, so it lists exactly the keys dispatch runs.
-import { $, el } from '../kit/dom.js';
+import { $, el, icon } from '../kit/dom.js';
 import { extensionSheetGroups } from '../extensions/views.js';
 import { keycaps, leader } from './chords.js';
 import { state } from '../state.js';
@@ -19,15 +19,15 @@ export function openSheet() {
     before = document.activeElement;
     const lead = leader();
     const groups = state.keymap.map((group) => el('section', { class: 'sheet-group' }, el('div', { class: 'mlabel' }, group.title), group.bindings.map((binding) => el('div', { class: 'sheet-row' }, el('span', { class: 'grow' }, binding.label), keycaps(binding.chords)))));
-    const close = el('button', { class: 'btn sm', onclick: closeSheet }, 'Close');
+    const close = el('button', { class: 'icon', 'aria-label': 'Close shortcuts', onclick: closeSheet }, icon('close'));
     $('over').replaceChildren(el('div', {
-        class: 'scrim top',
+        class: 'scrim',
         onmousedown: (e) => {
             if (e.target === e.currentTarget)
                 closeSheet();
         },
     }, el('section', {
-        class: 'dialog sheet',
+        class: 'dialog sheet-dialog sheet',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'sheet-title',

@@ -15,7 +15,7 @@ import type { ExtTableConsole } from '../bindings/ExtTableConsole';
 import type { Panel } from '../bindings/Panel';
 import type { Value } from '../bindings/Value';
 import { dockMenuButton } from '../layout/docks.js';
-import { $, el, icon, type IconName } from '../kit/dom.js';
+import { $, closeButton, el, escKey, icon, type IconName } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
 import { closeLayer } from '../kit/menu.js';
 import { keycaps } from '../keys/chords.js';
@@ -438,18 +438,23 @@ export function drawExtensionConfirm(): void {
         el(
           'div',
           { class: 'dhead' },
-          el('div', { class: 'type-title', id: 'extension-confirm-title' }, `${question.label}?`),
+          el(
+            'div',
+            { class: 'type-title grow', id: 'extension-confirm-title' },
+            `${question.label}?`,
+          ),
+          closeButton(answerExtensionNo),
         ),
-        el('div', { class: 'dbody' }, el('div', { class: 'fg-muted' }, question.question)),
+        el('div', { class: 'dbody prose' }, el('div', { class: 'fg-muted' }, question.question)),
         el(
           'div',
           { class: 'dfoot' },
-          el('span', { class: 'meta' }, `from ${question.extension}`),
-          el('span', { class: 'grow' }),
+          el('span', { class: 'dwhy grow' }, `from ${question.extension}`),
           el(
             'button',
             { class: 'btn', id: 'extension-keep', onclick: answerExtensionNo },
-            'Cancel',
+            'Cancel ',
+            escKey(),
           ),
           el(
             'button',

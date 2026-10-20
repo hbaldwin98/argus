@@ -310,7 +310,7 @@ export function drawReview(): void {
       el(
         'section',
         {
-          class: 'dialog review-dialog',
+          class: 'dialog sheet-dialog review-dialog',
           role: 'dialog',
           'aria-modal': 'true',
           'aria-labelledby': 'review-title',

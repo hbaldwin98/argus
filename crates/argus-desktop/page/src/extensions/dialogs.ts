@@ -10,7 +10,7 @@
 import type { ExtAnswer } from '../bindings/ExtAnswer';
 import type { ExtDialogPage } from '../bindings/ExtDialogPage';
 import type { ExtItem } from '../bindings/ExtItem';
-import { $, el, type Child } from '../kit/dom.js';
+import { $, closeButton, el, escKey, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { call } from '../connection/tauri.js';
 
@@ -99,16 +99,20 @@ export function drawExtensionDialog(page: ExtDialogPage): void {
     el(
       'div',
       { class: 'dhead' },
-      el('div', { class: 'type-title', id: 'ext-dialog-title' }, dialog.title),
+      el('div', { class: 'type-title grow', id: 'ext-dialog-title' }, dialog.title),
+      closeButton(cancel),
     ),
-    el('div', { class: 'dbody' }, body),
+    el('div', { class: 'dbody prose' }, body),
     el(
       'div',
       { class: 'dfoot' },
-      el('span', { class: 'meta' }, `from ${page.extension}`),
-      el('span', { class: 'meta ext-waiting' }, waitingWords(page.waiting)),
-      el('span', { class: 'grow' }),
-      el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel'),
+      el(
+        'span',
+        { class: 'dwhy grow' },
+        `from ${page.extension}`,
+        el('span', { class: 'ext-waiting' }, waitingWords(page.waiting)),
+      ),
+      el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()),
       el(
         'button',
         { class: 'btn primary', type: 'button', id: 'ext-dialog-yes', onclick: submit },
