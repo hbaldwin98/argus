@@ -11,7 +11,7 @@ import { codeStrip, drawCode } from './code/stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';
 import { drawConsole } from './panes/console.js';
-import { $, el, icon, type Child } from './kit/dom.js';
+import { $, el, icon, statusWord, type Child } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extensions/views.js';
 import { drawSavedNav } from './views/saved.js';
 import { poppedViewHead, poppedViewTitle } from './views/agent.js';
@@ -112,15 +112,9 @@ function statusColour(word: StatusWord | null): string | null {
   return null;
 }
 
-/** The few words a pane row says beside its dot: only what asks for a
- *  look, or that it has ended. Working shows in the dot alone. */
-const PANE_WORD: Partial<Record<StatusWord, string>> = {
-  waiting: 'needs you',
-  'needs-review': 'review',
-  failed: 'failed',
-  exited: 'exited',
-  done: 'done',
-};
+/** The few statuses a pane row says in words beside its dot: only what asks
+ *  for a look, or that it has ended. Working shows in the dot alone. */
+const PANE_SAYS = new Set<StatusWord>(['waiting', 'needs-review', 'failed', 'exited', 'done']);
 
 type RailRepository = NonNullable<typeof state.rail.project>['repositories'][number];
 type RailCheckout = RailRepository['checkouts'][number];
@@ -333,7 +327,7 @@ export function paneMenu(pane: number, title: string, first: MenuItem[] = []): M
 }
 
 function paneRow(checkout: number, pane: RailPane): HTMLElement {
-  const word = PANE_WORD[pane.status];
+  const word = PANE_SAYS.has(pane.status) ? statusWord(pane.status) : undefined;
   const picked = state.railPick?.pane === pane.id;
   const row = el(
     'div',
@@ -664,7 +658,7 @@ export function drawHead(): void {
         { class: 'head-name' },
         // Rename lives in the overflow; right-click was an undiscoverable second way.
         el('span', { class: 'type-heading head-title' }, shown.title),
-        el('span', { class: `spill ${shown.status}` }, PANE_WORD[shown.status] ?? shown.status),
+        el('span', { class: `spill ${shown.status}` }, statusWord(shown.status)),
         shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '',
       ),
     ),
@@ -1050,7 +1044,7 @@ function stillRunning(project: NonNullable<typeof state.rail.project>): Child {
             'span',
             { class: 'rcard-top' },
             el('span', { class: 'mono ellipsis' }, where),
-            el('span', { class: `spill ${pane.status}` }, PANE_WORD[pane.status] ?? pane.status),
+            el('span', { class: `spill ${pane.status}` }, statusWord(pane.status)),
           ),
           el('span', { class: 'rcard-title ellipsis' }, pane.title),
           pane.note && el('span', { class: 'rcard-note mono ellipsis' }, pane.note),

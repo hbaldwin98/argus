@@ -25,13 +25,7 @@ export function recordLens(view: FeatureView): HTMLElement {
   const section = el(
     'section',
     { class: 'work-outline', 'aria-label': 'Decisions' },
-    el(
-      'div',
-      { class: 'label' },
-      el('span', null, 'Decisions'),
-      el('span', { class: 'grow' }),
-      el('span', null, 'in the order they were made'),
-    ),
+    el('div', { class: 'label' }, el('span', null, 'Decisions')),
   );
   const rows = record?.rows ?? [];
   if (!rows.length) {
@@ -54,15 +48,6 @@ export function recordLens(view: FeatureView): HTMLElement {
         el('div', { class: 'label' }, what),
         field('edit-add', editing.text, false, (text) => (editing.text = text), DECISION_LINE),
         formButtons('Add'),
-      ),
-    );
-  }
-  if (rows.length) {
-    section.append(
-      el(
-        'div',
-        { class: 'meta record-foot' },
-        'Superseded and rejected decisions stay listed, struck through.',
       ),
     );
   }

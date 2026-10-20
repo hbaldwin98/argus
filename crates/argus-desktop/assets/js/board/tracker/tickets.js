@@ -37,7 +37,7 @@ export function featureViewLink(link) {
             event.stopPropagation();
             call('open_view', { pane: link.pane, id: link.id });
         },
-    }, el('b', null, link.title), el('span', { class: 'vdot', 'aria-hidden': 'true' }));
+    }, el('span', { class: 'vtitle' }, link.title), el('span', { class: 'vdot', 'aria-hidden': 'true' }));
 }
 /** The saved views scoped or attached to feature `number` of the chosen
  *  repository, each opening its panel. */
@@ -55,7 +55,7 @@ function savedFeatureLink(view) {
             event.stopPropagation();
             call('open_saved_view', { id: view.id, from: null });
         },
-    }, el('b', null, view.view.title), el('span', { class: 'vdot', 'aria-hidden': 'true' }));
+    }, el('span', { class: 'vtitle' }, view.view.title), el('span', { class: 'vdot', 'aria-hidden': 'true' }));
 }
 export function ticketLinks(links) {
     return links.length > 0 && el('span', { class: 'actions tickets' }, links.map(ticketLink));

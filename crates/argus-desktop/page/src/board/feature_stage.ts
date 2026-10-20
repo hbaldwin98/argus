@@ -18,7 +18,7 @@ import type { Peek } from '../bindings/Peek';
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from '../chrome.js';
 import { closeExpanded } from './lenses/sequence.js';
-import { $, closeButton, el, escKey, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, closeButton, el, escKey, ghosts, icon, standingPill, statusPill, type Child } from '../kit/dom.js';
 import { closeLayer, placeMenu } from '../kit/menu.js';
 import { ticketLinks } from './tracker/tickets.js';
 import { actionFor } from '../keys/keymap.js';
@@ -39,11 +39,14 @@ const GROUP_CLASS: Partial<Record<FeatureRow['standing'], string>> = {
   active: 'fg-attention',
   done: 'fg-ok',
 };
-const COLUMN_NOTE: Partial<Record<Group, string>> = {
-  queued: 'written down, not started',
-  done: 'every task done',
-  held: 'set by you',
-  archived: 'set by you',
+// What an empty column says: the words are in the column, not in a note
+// under the board, so a column that follows the work says what lands in it.
+const COLUMN_EMPTY: Record<Group, [string, string]> = {
+  queued: ['Nothing queued', 'Written-down features wait here'],
+  active: ['Nothing active', 'A feature moves here when work starts'],
+  done: ['Nothing done yet', 'Lands here when every task is done'],
+  held: ['Nothing held', 'Drag a card here to set it aside'],
+  archived: ['Nothing archived', 'Drag a card here to accept it'],
 };
 
 function isGroup(word: string | undefined): word is Group {
@@ -67,18 +70,14 @@ function tasks(row: FeatureRow, quiet: string): HTMLElement {
   return el('span', { class: 'meta' }, progress(row), ` ${row.tasksDone}/${row.tasksTotal}`);
 }
 
-function questions(row: FeatureRow): HTMLElement {
-  if (row.open > 0) return el('span', { class: 'pill fg-attention start' }, `${row.open} open`);
+function questions(row: FeatureRow): HTMLElement | null {
+  if (row.open > 0) return el('span', { class: 'meta fg-attention' }, `${row.open} open`);
   if (row.decided > 0) return el('span', { class: 'meta fg-ok' }, `${row.decided} decided`);
-  return el('span', { class: 'meta fg-faint' }, '—');
+  return null;
 }
 
 function agentLine(agent: Agent): Child[] {
-  return [
-    el('span', { class: 'glyph' }, '◆'),
-    el('span', { class: 'ttl' }, agent.title),
-    el('span', { class: `st ${agent.status}` }, agent.status),
-  ];
+  return [el('span', { class: 'ttl' }, agent.title), statusPill(agent.status)];
 }
 
 function after(row: FeatureRow): HTMLElement {
@@ -186,7 +185,7 @@ export function drawFeatures(): void {
     typed();
     return;
   }
-  stage.replaceChildren(head, f.layout === 'board' ? board(f) : list(f));
+  stage.replaceChildren(head, f.layout === 'board' ? board(f) : list(f), keyBar(f));
   typed();
   dress();
 }
@@ -275,6 +274,25 @@ function indexHead(f: Features): HTMLElement {
   );
 }
 
+/** The keys the index answers to, quietly under it; the board adds how a
+ *  card is set aside. */
+function keyBar(f: Features): HTMLElement {
+  const keys: [string, string][] = [
+    ['N', 'new'],
+    ['Enter', 'open'],
+    ['V', f.layout === 'board' ? 'list' : 'board'],
+    ['M', 'move'],
+    ['G', 'go to pane'],
+  ];
+  return el(
+    'div',
+    { class: 'kbar' },
+    keys.map(([key, what]) => el('span', { class: 'kbar-key' }, keycap(key), ` ${what}`)),
+    el('span', { class: 'grow' }),
+    f.layout === 'board' && el('span', null, 'Drag a card to Held to set it aside'),
+  );
+}
+
 function list(f: Features): HTMLElement {
   const rows = f.rows;
   const section = el(
@@ -321,12 +339,8 @@ function list(f: Features): HTMLElement {
         el('span', { class: `n${row.peeked ? ' fg-accent' : ''}` }, `#${row.number}`),
         el('span', { class: `ttl${row.peeked ? ' strong' : ''} ${quiet}` }, row.title),
         tasks(row, 'fg-faint'),
-        questions(row),
-        el(
-          'span',
-          { class: `mono ${quiet ? 'fg-faint' : 'fg-ref'} small-mono` },
-          row.branch || '—',
-        ),
+        el('span', null, questions(row)),
+        el('span', { class: `mono ${quiet ? 'fg-faint' : 'fg-ref'} small-mono cut` }, row.branch),
         el('span', { class: 'sub2' }, rowNote(row)),
       ),
     );
@@ -337,13 +351,6 @@ function list(f: Features): HTMLElement {
     else if (f.filter && !f.showFolded) why = `Only held or archived features match “${f.filter}”.`;
     section.append(el('div', { class: 'meta group-label' }, why));
   }
-  section.append(
-    el(
-      'div',
-      { class: 'meta index-foot' },
-      "Held and archived features are folded away. A feature's standing is read off its tasks and the agents on its checkouts; only holding and archiving are set by hand.",
-    ),
-  );
   return el('div', { class: 'split' }, section, peekPanel(f.peek));
 }
 
@@ -362,6 +369,8 @@ const IN_FLIGHT: Tone = { mark: 'fg-attention', head: '', label: 'fg-faint', tex
 const NEXT_UP: Tone = { mark: 'fg-faint', head: '', label: 'fg-faint', text: '' };
 const LAST_DECIDED: Tone = { mark: 'fg-ok', head: '', label: 'fg-ref', text: 'fg-muted' };
 
+const AGENT_MARK = '◆';
+
 function lines(label: string, items: Line[], mark: string, tone: Tone): HTMLElement | null {
   if (!items.length) return null;
   return el(
@@ -369,15 +378,26 @@ function lines(label: string, items: Line[], mark: string, tone: Tone): HTMLElem
     { class: 'stack-4' },
     el('div', { class: `label ${tone.head}` }, label),
     items.map((line) => [
-      el(
-        'div',
-        null,
-        el('span', { class: tone.mark }, `${mark} `),
-        el('span', { class: `mono ${tone.label}` }, line.label),
-        ' ',
-        tone.text ? el('span', { class: tone.text }, line.text) : line.text,
-      ),
-      line.aside && el('div', { class: 'meta indented' }, line.aside),
+      // A pane that needs you comes as "◆" with its status as the aside
+      // (`board/features.rs`): one row of icon, title and the shared pill,
+      // without the "?" that belongs to an open decision.
+      line.label === AGENT_MARK
+        ? el(
+            'div',
+            { class: 'agent-line' },
+            el('span', { class: tone.mark }, icon('console')),
+            el('span', { class: 'cut' }, line.text),
+            line.aside && statusPill(line.aside),
+          )
+        : el(
+            'div',
+            null,
+            el('span', { class: tone.mark }, `${mark} `),
+            el('span', { class: `mono ${tone.label}` }, line.label),
+            ' ',
+            tone.text ? el('span', { class: tone.text }, line.text) : line.text,
+          ),
+      line.label !== AGENT_MARK && line.aside && el('div', { class: 'meta indented' }, line.aside),
     ]),
   );
 }
@@ -401,7 +421,7 @@ function peekPanel(peek: Peek | null): HTMLElement {
         'div',
         { class: 'label' },
         el('span', { class: 'fg-accent' }, `#${peek.number}`),
-        el('span', { class: GROUP_CLASS[peek.standing] ?? '' }, peek.standing),
+        standingPill(peek.standing),
         el('span', { class: 'grow' }),
         peek.branch && el('span', { class: 'label-aside' }, `from ${peek.branch}`),
       ),
@@ -429,16 +449,20 @@ function peekPanel(peek: Peek | null): HTMLElement {
         'Go to its pane',
       ),
       el('span', { class: 'grow' }),
-      row && moveButtons(row),
-      el(
-        'button',
-        {
-          class: 'btn',
-          disabled: !peek.after.length,
-          onclick: (e: MouseEvent) => afterMenu(peek, e.clientX, e.clientY),
-        },
-        'After…',
-      ),
+      row &&
+        el(
+          'button',
+          {
+            class: 'icon',
+            'aria-label': 'More: hold, archive, order',
+            title: 'Hold, archive, or order it after another',
+            onclick: (e: MouseEvent) => {
+              const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              moveMenu(row, at.left, at.bottom, peek);
+            },
+          },
+          '⋯',
+        ),
     ),
   );
 }
@@ -472,58 +496,64 @@ function afterMenu(peek: Peek, x: number, y: number): void {
   placeMenu(menu, { x, y });
 }
 
-function moveButtons(row: FeatureRow): HTMLElement[] {
-  return [
-    row.group === 'held'
-      ? el(
-          'button',
-          { class: 'btn', onclick: () => call('hold', { slug: row.slug, reason: null }) },
-          'Lift the hold',
-        )
-      : el('button', { class: 'btn', onclick: () => holdDialog(row) }, 'Hold…'),
-    row.group === 'archived'
-      ? el(
-          'button',
-          { class: 'btn', onclick: () => call('archive', { slug: row.slug, archived: false }) },
-          'Reopen',
-        )
-      : el(
-          'button',
-          { class: 'btn', onclick: () => call('archive', { slug: row.slug, archived: true }) },
-          'Archive',
-        ),
-  ];
-}
-
 function board(f: Features): HTMLElement {
   const column = (group: Group): HTMLElement => {
     const cards = f.rows.filter((row) => row.group === group);
     // A folded Archived column still counts what it folds.
-    const count = group === 'archived' && !f.showFolded ? f.folded : cards.length;
-    const note = COLUMN_NOTE[group];
-    const section = el(
-      'section',
-      {
-        class: 'kcol',
-        'aria-label': `${GROUP_LABEL[group]}, ${count} features`,
-        'data-group': group,
-      },
+    const folded = group === 'archived' && !f.showFolded;
+    const count = folded ? f.folded : cards.length;
+    const section = el('section', {
+      class: `kcol${folded ? ' folded' : ''}`,
+      'aria-label': `${GROUP_LABEL[group]}, ${count} features`,
+      'data-group': group,
+    });
+    if (folded) {
+      // One row the width of a column, so it still takes a dropped card.
+      section.append(
+        el(
+          'button',
+          {
+            class: 'kfold',
+            'aria-expanded': 'false',
+            onclick: () => call('feature_action', { action: 'folded' }),
+          },
+          icon('archive'),
+          el('span', null, GROUP_LABEL[group]),
+          el('span', { class: 'kcount' }, String(count)),
+          el('span', { class: 'grow' }),
+          icon('right'),
+        ),
+      );
+      return section;
+    }
+    section.append(
       el(
         'div',
         { class: 'khead' },
-        el('span', { class: GROUP_CLASS[group] ?? '' }, GROUP_LABEL[group]),
-        el('span', { class: 'fg-faint' }, String(count)),
-        el('span', { class: 'grow' }),
-        note && el('span', { class: 'regular meta' }, note),
+        el('span', { class: `kdot ${group}`, 'aria-hidden': 'true' }),
+        el('span', null, GROUP_LABEL[group]),
+        el('span', { class: 'kcount' }, String(count)),
       ),
     );
     for (const row of cards) section.append(card(row));
-    if (group === 'archived' && f.folded > 0) {
+    if (!cards.length) {
+      const [title, why] = COLUMN_EMPTY[group];
+      section.append(
+        el(
+          'div',
+          { class: 'kempty' },
+          group === 'done' && icon('settled'),
+          el('div', { class: 'kempty-title' }, title),
+          el('div', { class: 'fg-faint' }, why),
+        ),
+      );
+    }
+    if (group === 'archived') {
       section.append(
         el(
           'button',
           { class: 'kmore', onclick: () => call('feature_action', { action: 'folded' }) },
-          f.showFolded ? 'Fold the archived' : `Show the ${f.folded} archived`,
+          'Fold the archived',
         ),
       );
     }
@@ -535,27 +565,16 @@ function board(f: Features): HTMLElement {
     column('queued'),
     column('active'),
     column('done'),
-    el(
-      'div',
-      { class: 'side' },
-      column('archived'),
-      column('held'),
-      el(
-        'div',
-        { class: 'meta' },
-        'Queued, Active and Done follow the work. Drag a card to Held or Archived.',
-      ),
-    ),
+    el('div', { class: 'side' }, column('held'), column('archived')),
   );
 }
 
 function card(row: FeatureRow): HTMLElement {
-  // A held card's reason stands in for its questions, as the canvas draws it.
   let corner: HTMLElement | null;
-  if (row.group === 'held') corner = null;
-  else if (row.after.length) corner = el('span', { class: 'meta' }, 'after ', after(row));
-  else if (row.standing === 'new') corner = el('span', { class: 'pill fg-faint' }, 'new');
-  else corner = questions(row);
+  if (row.agent) corner = statusPill(row.agent.status);
+  else if (row.after.length) corner = el('span', { class: 'ktag' }, '→ after ', after(row));
+  else if (row.standing === 'new') corner = el('span', { class: 'ktag' }, 'new');
+  else corner = null;
 
   let work: HTMLElement;
   if (row.standing === 'new') work = el('span', { class: 'meta' }, 'nothing written yet');
@@ -565,9 +584,9 @@ function card(row: FeatureRow): HTMLElement {
       'span',
       { class: 'krow' },
       progress(row),
-      el('span', { class: 'meta' }, `${row.tasksDone}/${row.tasksTotal}`),
+      el('span', { class: 'meta kcount-text' }, `${row.tasksDone}/${row.tasksTotal}`),
       el('span', { class: 'grow' }),
-      row.branch && el('span', { class: 'mono fg-ref small-mono' }, row.branch),
+      questions(row),
     );
   }
 
@@ -603,14 +622,20 @@ function card(row: FeatureRow): HTMLElement {
     el(
       'span',
       { class: 'krow' },
-      el('span', { class: `n${row.peeked ? ' fg-accent' : ''}` }, `#${row.number}`),
+      el('span', { class: 'n' }, `#${row.number}`),
+      row.branch && el('span', { class: 'mono small-mono fg-ref cut' }, row.branch),
       el('span', { class: 'grow' }),
       corner,
     ),
     el('span', { class: 'kttl' }, row.title),
     work,
-    row.agent && el('span', { class: 'krow meta' }, agentLine(row.agent)),
-    row.held && el('span', { class: 'meta' }, `held: “${row.held}”`),
+    row.held &&
+      el(
+        'span',
+        { class: 'khold' },
+        el('span', { class: 'pause', 'aria-hidden': 'true' }),
+        row.held,
+      ),
     el('span', { class: 'kfoot' }, row.footer),
   );
   return node;
@@ -747,7 +772,7 @@ function drop(row: FeatureRow, group: Group): void {
 
 // ---- Menus and the hold dialog --------------------------------------------
 
-function moveMenu(row: FeatureRow, x: number, y: number): void {
+function moveMenu(row: FeatureRow, x: number, y: number, peek?: Peek): void {
   const agent = row.agent;
   const menu = el(
     'div',
@@ -788,6 +813,22 @@ function moveMenu(row: FeatureRow, x: number, y: number): void {
         move.disabled ? el('span', { class: 'meta' }, move.disabled) : moveKey(move.to),
       ),
     ),
+    peek &&
+      peek.after.length > 0 && [
+        el('div', { class: 'msep' }),
+        el(
+          'button',
+          {
+            class: 'mi',
+            role: 'menuitem',
+            onclick: () => {
+              closeLayer();
+              afterMenu(peek, x, y);
+            },
+          },
+          'Comes after…',
+        ),
+      ],
   );
   placeMenu(menu, { x, y });
 }

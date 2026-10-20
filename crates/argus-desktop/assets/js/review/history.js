@@ -2,7 +2,7 @@
 // place to the files it touched, beside the diff of the file under the
 // cursor. Rust holds the list and the diffs (`src/review/history.rs`); the
 // page draws them and says what was pressed.
-import { $, el, ghosts, icon } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { diffRow } from './dialog.js';
 import { state } from '../state.js';
@@ -13,11 +13,16 @@ function keycap(key) {
 function listRow(r) {
     const pick = () => call('history_action', { action: 'next', row: r.row });
     if (r.kind === 'file') {
+        const dir = r.text.slice(0, Math.max(0, r.text.lastIndexOf('/')));
         return el('button', {
-            class: `hrow file${r.on ? ' on' : ''}`,
+            class: `hrow file rfile${r.on ? ' on' : ''}`,
+            title: r.text,
             onclick: pick,
             ondblclick: () => call('history_action', { action: 'choose', row: null }),
-        }, el('span', { class: 'mono grow ellipsis' }, r.text), el('span', { class: 'fg-ok' }, `+${r.added}`), el('span', { class: 'fg-danger' }, `−${r.removed}`));
+        }, 
+        // The review's markup for a changed file: the name leads, the
+        // folder trails it and is what gives way.
+        el('span', { class: 'rname' }, el('b', { class: 'rbase' }, r.text.slice(r.text.lastIndexOf('/') + 1)), el('span', { class: dir ? 'rdir' : 'rdir phrase' }, dir || 'repository root')), el('span', { class: 'fg-ok' }, `+${r.added}`), el('span', { class: 'fg-danger' }, `−${r.removed}`));
     }
     return el('button', {
         class: `hrow${r.on ? ' on' : ''}${r.expanded ? ' open' : ''}`,
@@ -40,7 +45,7 @@ function diff(h) {
     else
         body = h.diff.map((d) => diffRow(d));
     return el('section', { class: 'review-diff' }, h.path &&
-        el('div', { class: 'fhdr' }, el('span', { class: 'mono fg-faint' }, h.commit ?? ''), el('span', { class: 'mono path' }, h.path), el('span', { class: 'meta nowrap' }, 'against its first parent'), el('span', { class: 'grow' }), el('button', {
+        el('div', { class: 'fhdr' }, el('span', { class: 'mono fg-faint' }, h.commit ?? ''), el('span', { class: 'mono cut' }, h.path), el('span', { class: 'meta' }, 'against its first parent'), el('span', { class: 'grow' }), el('button', {
             class: 'btn sm',
             onclick: () => call('history_action', { action: 'asReview', row: null }),
         }, 'Open as a review ', keycap('O'))), el('div', { class: 'dbody', id: 'history-body' }, body));
@@ -102,7 +107,7 @@ export function drawHistory() {
         class: 'icon',
         'aria-label': 'Close the history',
         onclick: () => call('history_action', { action: 'closeLayer', row: null }),
-    }, icon('close'))), el('div', { class: 'review-split' }, el('aside', { class: 'history-list', id: 'history-list', 'aria-label': 'Commits' }, list), diff(h)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' move · ', keycap('L'), ' open · ', keycap('H'), ' fold · ', keycap('Enter'), ' file as a review · ', keycap('/'), ' filter · ', keycap('Esc'), ' close'))));
+    }, icon('close'))), el('div', { class: 'review-split' }, el('aside', { class: 'history-list', id: 'history-list', 'aria-label': 'Commits' }, list), diff(h)), el('div', { class: 'dfoot meta' }, hint(['J', 'K'], 'move'), hint('L', 'open'), hint('H', 'fold'), hint('Enter', 'file as a review'), hint('/', 'filter'), hint('Esc', 'close')))));
     ['history-list', 'history-body'].forEach((id, i) => {
         const node = document.getElementById(id);
         if (node)

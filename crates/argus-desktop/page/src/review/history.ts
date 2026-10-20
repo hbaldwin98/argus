@@ -5,7 +5,7 @@
 
 import type { HistoryPage } from '../bindings/HistoryPage';
 import type { HistoryRowView } from '../bindings/HistoryRowView';
-import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { diffRow } from './dialog.js';
 import { state } from '../state.js';
@@ -18,14 +18,23 @@ function keycap(key: string): HTMLElement {
 function listRow(r: HistoryRowView): HTMLElement {
   const pick = (): void => call('history_action', { action: 'next', row: r.row });
   if (r.kind === 'file') {
+    const dir = r.text.slice(0, Math.max(0, r.text.lastIndexOf('/')));
     return el(
       'button',
       {
-        class: `hrow file${r.on ? ' on' : ''}`,
+        class: `hrow file rfile${r.on ? ' on' : ''}`,
+        title: r.text,
         onclick: pick,
         ondblclick: () => call('history_action', { action: 'choose', row: null }),
       },
-      el('span', { class: 'mono grow ellipsis' }, r.text),
+      // The review's markup for a changed file: the name leads, the
+      // folder trails it and is what gives way.
+      el(
+        'span',
+        { class: 'rname' },
+        el('b', { class: 'rbase' }, r.text.slice(r.text.lastIndexOf('/') + 1)),
+        el('span', { class: dir ? 'rdir' : 'rdir phrase' }, dir || 'repository root'),
+      ),
       el('span', { class: 'fg-ok' }, `+${r.added}`),
       el('span', { class: 'fg-danger' }, `−${r.removed}`),
     );
@@ -63,8 +72,8 @@ function diff(h: HistoryPage): HTMLElement {
         'div',
         { class: 'fhdr' },
         el('span', { class: 'mono fg-faint' }, h.commit ?? ''),
-        el('span', { class: 'mono path' }, h.path),
-        el('span', { class: 'meta nowrap' }, 'against its first parent'),
+        el('span', { class: 'mono cut' }, h.path),
+        el('span', { class: 'meta' }, 'against its first parent'),
         el('span', { class: 'grow' }),
         el(
           'button',
@@ -172,19 +181,12 @@ export function drawHistory(): void {
         el(
           'div',
           { class: 'dfoot meta' },
-          keycap('J'),
-          keycap('K'),
-          ' move · ',
-          keycap('L'),
-          ' open · ',
-          keycap('H'),
-          ' fold · ',
-          keycap('Enter'),
-          ' file as a review · ',
-          keycap('/'),
-          ' filter · ',
-          keycap('Esc'),
-          ' close',
+          hint(['J', 'K'], 'move'),
+          hint('L', 'open'),
+          hint('H', 'fold'),
+          hint('Enter', 'file as a review'),
+          hint('/', 'filter'),
+          hint('Esc', 'close'),
         ),
       ),
     ),

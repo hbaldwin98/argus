@@ -25,6 +25,7 @@ const ICON = {
     '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"></path></svg>',
   clock:
     '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"></circle><path d="M8 5v3l2 1.5"></path></svg>',
+  lock: '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path></svg>',
   plus: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>',
   expand:
     '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"></path></svg>',
@@ -77,6 +78,13 @@ const ICON = {
     '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="2"></rect><path d="M5 7l2 1.5L5 10M8.5 10.5H11"></path></svg>',
   puzzle:
     '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 5h2.5a1.5 1.5 0 1 1 3 0H11v2.5a1.5 1.5 0 1 1 0 3V13H3z"></path></svg>',
+  // The empty moments of the stages: a settled column, a folded one, a
+  // search with nothing under it, a file not picked yet.
+  settled:
+    '<svg class="empty-icon" width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="14" fill="none" stroke="currentColor" stroke-width="2"></circle><path d="M13.5 20.5l4.5 4.5 8.5-9.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
+  archive:
+    '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="3" rx="1"></rect><path d="M3 6v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6M6.5 9h3"></path></svg>',
+  file: '<svg class="empty-icon" width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path d="M10 5h13l8 8v21a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path><path d="M23 5v8h8M14 21h12M14 27h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
 } as const;
 
 export type IconName = keyof typeof ICON;
@@ -164,4 +172,39 @@ export function escKey(): HTMLElement {
  *  shows the ring, since it moves focus by keyboard. */
 export function focusQuietly(node: HTMLElement | null | undefined): void {
   node?.focus({ focusVisible: false } as FocusOptions);
+}
+
+const STATUS_WORD: Record<string, string> = {
+  waiting: 'needs you',
+  'needs-review': 'review',
+};
+
+/** How a status is said, everywhere a status is said (the rail, the pill). */
+export function statusWord(status: string): string {
+  return STATUS_WORD[status] ?? status;
+}
+
+/** The one status pill: a dot and a word, tinted by how loud the status is
+ *  (`.spill` in the stylesheet). The word is the daemon's, said as the rail
+ *  says it, unless the caller has a better word for the same tone. */
+export function statusPill(status: string, say = statusWord(status)): HTMLElement {
+  return el('span', { class: `spill ${status}` }, say);
+}
+
+/** A key hint as every footer sets it: the keys, then what they do, with
+ *  the gap between hints doing the separating. */
+export function hint(keys: string | string[], what: string): HTMLElement {
+  return el(
+    'span',
+    { class: 'kbar-key' },
+    [keys].flat().map((key) => el('span', { class: 'kbd' }, key)),
+    what,
+  );
+}
+
+/** A feature's standing in the status pill's vocabulary, so a feature reads
+ *  like an agent wherever it is named: working on it, held, done, or idle. */
+export function standingPill(standing: string): HTMLElement {
+  const status: Record<string, string> = { active: 'working', done: 'done', held: 'waiting' };
+  return statusPill(status[standing] ?? 'idle', standing);
 }

@@ -10,14 +10,10 @@ import type { ReviewClick } from '../bindings/ReviewClick';
 import type { ReviewJumpGesture } from '../bindings/ReviewJumpGesture';
 import type { ReviewPage } from '../bindings/ReviewPage';
 import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
-import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
-
-function keycap(key: string): HTMLElement {
-  return el('span', { class: 'kbd' }, key);
-}
 
 function segment(label: string, on: boolean, pick: () => void, ...rest: Child[]): HTMLElement {
   return el(
@@ -44,9 +40,13 @@ function head(r: ReviewPage): HTMLElement {
       icon('branch'),
       el('span', { class: 'mono' }, r.branch),
     ),
+    // Two controls, each said by what it changes, so they do not read as
+    // one four-way choice.
     r.base === 'commit'
       ? el('span', { class: 'meta mono' }, r.commit ?? '')
-      : [
+      : el(
+          'div',
+          { class: 'seg-group' },
           el('span', { class: 'seg-label' }, 'Changes'),
           el(
             'div',
@@ -64,13 +64,17 @@ function head(r: ReviewPage): HTMLElement {
               count(r.staged),
             ),
           ),
-        ],
-    el('span', { class: 'seg-label' }, 'View'),
+        ),
     el(
       'div',
-      { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' },
-      segment('Unified', !r.split, () => !r.split || call('review_action', { action: 'split' })),
-      segment('Split', r.split, () => r.split || call('review_action', { action: 'split' })),
+      { class: 'seg-group' },
+      el('span', { class: 'seg-label' }, 'View'),
+      el(
+        'div',
+        { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' },
+        segment('Unified', !r.split, () => !r.split || call('review_action', { action: 'split' })),
+        segment('Split', r.split, () => r.split || call('review_action', { action: 'split' })),
+      ),
     ),
     r.files.length > 0 &&
       el(
@@ -173,12 +177,17 @@ function files(r: ReviewPage): HTMLElement {
               title: f.path,
               onclick: () => click({ on: 'file', file: i }),
             },
-            // The filename first, on its own line: a path cut short loses it.
+            // The file's name is what is scanned for, so it leads; its
+            // folder is the line under it and is what is cut short.
             el(
               'span',
               { class: 'rname' },
-              el('span', { class: 'rbase' }, f.name),
-              el('span', { class: 'rdir' }, f.dir || 'repository root'),
+              el('b', { class: 'rbase' }, f.name),
+              el(
+                'span',
+                { class: f.dir.replace(/\/$/, '') ? 'rdir' : 'rdir phrase' },
+                f.dir.replace(/\/$/, '') || 'repository root',
+              ),
             ),
             el('span', { class: 'fg-ok' }, `+${f.added}`),
             el('span', { class: 'fg-danger' }, `−${f.removed}`),
@@ -293,9 +302,12 @@ function diff(r: ReviewPage): HTMLElement {
       el(
         'div',
         { class: 'fhdr' },
-        el('span', { class: 'mono' }, path.path),
+        el('b', null, path.name),
+        el('span', { class: 'meta mono cut' }, path.dir.replace(/\/$/, '')),
+        el('span', { class: 'fg-ok' }, `+${path.added}`),
+        el('span', { class: 'fg-danger' }, `−${path.removed}`),
         el('span', { class: 'grow' }),
-        r.pick && el('span', { class: 'meta' }, `${r.pick} picked`),
+        r.pick && el('span', { class: 'ktag' }, `${r.pick} picked`),
       ),
     // Not `split`: that class is the app's flex-row layout, and would lay
     // every diff row side by side.
@@ -339,25 +351,15 @@ export function drawReview(): void {
         el(
           'div',
           { class: 'dfoot meta' },
-          keycap('J'),
-          keycap('K'),
-          ' line · ',
-          keycap('V'),
-          ' pick · ',
-          keycap('C'),
-          ' comment · ',
-          keycap('B'),
-          ' side · ',
-          keycap('S'),
-          ' split · ',
-          keycap('Ctrl P'),
-          ' jump · ',
-          keycap('E'),
-          ' editor · ',
-          keycap('Enter'),
-          ' unfold · ',
-          keycap('Esc'),
-          ' close',
+          hint(['J', 'K'], 'line'),
+          hint('V', 'pick'),
+          hint('C', 'comment'),
+          hint('B', 'side'),
+          hint('S', 'split'),
+          hint('Ctrl P', 'jump'),
+          hint('E', 'editor'),
+          hint('Enter', 'unfold'),
+          hint('Esc', 'close'),
         ),
       ),
     ),

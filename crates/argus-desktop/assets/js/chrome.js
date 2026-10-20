@@ -7,7 +7,7 @@ import { codeStrip, drawCode } from './code/stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';
 import { drawConsole } from './panes/console.js';
-import { $, el, icon } from './kit/dom.js';
+import { $, el, icon, statusWord } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extensions/views.js';
 import { drawSavedNav } from './views/saved.js';
 import { poppedViewHead, poppedViewTitle } from './views/agent.js';
@@ -106,15 +106,9 @@ function statusColour(word) {
         return 'var(--accent)';
     return null;
 }
-/** The few words a pane row says beside its dot: only what asks for a
- *  look, or that it has ended. Working shows in the dot alone. */
-const PANE_WORD = {
-    waiting: 'needs you',
-    'needs-review': 'review',
-    failed: 'failed',
-    exited: 'exited',
-    done: 'done',
-};
+/** The few statuses a pane row says in words beside its dot: only what asks
+ *  for a look, or that it has ended. Working shows in the dot alone. */
+const PANE_SAYS = new Set(['waiting', 'needs-review', 'failed', 'exited', 'done']);
 function drawRail() {
     const rail = $('rail');
     const { project, loaded } = state.rail;
@@ -269,7 +263,7 @@ export function paneMenu(pane, title, first = []) {
     ];
 }
 function paneRow(checkout, pane) {
-    const word = PANE_WORD[pane.status];
+    const word = PANE_SAYS.has(pane.status) ? statusWord(pane.status) : undefined;
     const picked = state.railPick?.pane === pane.id;
     const row = el('div', {
         class: 'pane-row',
@@ -536,7 +530,7 @@ export function drawHead() {
     const size = screen.sizeLabel();
     head.replaceChildren(headStack(el('span', null, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono' }, shown.branch || shown.checkout)), el('span', { class: 'head-name' }, 
     // Rename lives in the overflow; right-click was an undiscoverable second way.
-    el('span', { class: 'type-heading head-title' }, shown.title), el('span', { class: `spill ${shown.status}` }, PANE_WORD[shown.status] ?? shown.status), shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '')), 
+    el('span', { class: 'type-heading head-title' }, shown.title), el('span', { class: `spill ${shown.status}` }, statusWord(shown.status)), shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '')), 
     // The grid is debugging detail: faint, and its words are in the tooltip.
     el('span', { class: 'meta mono head-size', id: 'size', title: 'Size in columns and rows' }, size));
     more.replaceChildren(el('button', {
@@ -768,7 +762,7 @@ function stillRunning(project) {
         .slice(0, 3);
     if (cards.length === 0)
         return null;
-    return el('section', { class: 'running', 'aria-label': 'Still running' }, el('div', { class: 'running-head' }, 'Still running'), el('div', { class: 'running-cards' }, cards.map(({ where, pane }) => el('button', { class: 'rcard', onclick: () => call('select', { pane: pane.id }) }, el('span', { class: 'rcard-top' }, el('span', { class: 'mono ellipsis' }, where), el('span', { class: `spill ${pane.status}` }, PANE_WORD[pane.status] ?? pane.status)), el('span', { class: 'rcard-title ellipsis' }, pane.title), pane.note && el('span', { class: 'rcard-note mono ellipsis' }, pane.note)))));
+    return el('section', { class: 'running', 'aria-label': 'Still running' }, el('div', { class: 'running-head' }, 'Still running'), el('div', { class: 'running-cards' }, cards.map(({ where, pane }) => el('button', { class: 'rcard', onclick: () => call('select', { pane: pane.id }) }, el('span', { class: 'rcard-top' }, el('span', { class: 'mono ellipsis' }, where), el('span', { class: `spill ${pane.status}` }, statusWord(pane.status))), el('span', { class: 'rcard-title ellipsis' }, pane.title), pane.note && el('span', { class: 'rcard-note mono ellipsis' }, pane.note)))));
 }
 let noticeTimer;
 /** Shows a line along the bottom of the window for a few seconds. */

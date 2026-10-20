@@ -4,13 +4,10 @@
 // what was pressed or clicked. A redraw keeps the scroll, and the comment
 // being written, where they were.
 import { commentBox, settleDraft } from './comment_box.js';
-import { $, el, ghosts, icon } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
-function keycap(key) {
-    return el('span', { class: 'kbd' }, key);
-}
 function segment(label, on, pick, ...rest) {
     return el('button', { class: `segb${on ? ' on' : ''}`, role: 'radio', 'aria-checked': String(on), onclick: pick }, label, ...rest);
 }
@@ -20,12 +17,12 @@ function count(n) {
 function head(r) {
     return el('div', { class: 'dhead review-head' }, el('div', { class: 'type-title', id: 'review-title' }, 'Review'), 
     // The branch once, as a chip: the checkout's name is its tooltip.
-    el('span', { class: 'chip-branch', title: r.name }, icon('branch'), el('span', { class: 'mono' }, r.branch)), r.base === 'commit'
+    el('span', { class: 'chip-branch', title: r.name }, icon('branch'), el('span', { class: 'mono' }, r.branch)), 
+    // Two controls, each said by what it changes, so they do not read as
+    // one four-way choice.
+    r.base === 'commit'
         ? el('span', { class: 'meta mono' }, r.commit ?? '')
-        : [
-            el('span', { class: 'seg-label' }, 'Changes'),
-            el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Side' }, segment('Unstaged ', r.base === 'unstaged', () => click({ on: 'side', staged: false }), count(r.unstaged)), segment('Staged ', r.base === 'staged', () => click({ on: 'side', staged: true }), count(r.staged))),
-        ], el('span', { class: 'seg-label' }, 'View'), el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' }, segment('Unified', !r.split, () => !r.split || call('review_action', { action: 'split' })), segment('Split', r.split, () => r.split || call('review_action', { action: 'split' }))), r.files.length > 0 &&
+        : el('div', { class: 'seg-group' }, el('span', { class: 'seg-label' }, 'Changes'), el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Side' }, segment('Unstaged ', r.base === 'unstaged', () => click({ on: 'side', staged: false }), count(r.unstaged)), segment('Staged ', r.base === 'staged', () => click({ on: 'side', staged: true }), count(r.staged)))), el('div', { class: 'seg-group' }, el('span', { class: 'seg-label' }, 'View'), el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' }, segment('Unified', !r.split, () => !r.split || call('review_action', { action: 'split' })), segment('Split', r.split, () => r.split || call('review_action', { action: 'split' })))), r.files.length > 0 &&
         el('span', { class: 'meta' }, `${r.files.length} file${r.files.length === 1 ? '' : 's'} · `, el('span', { class: 'fg-ok' }, `+${r.added}`), ' ', el('span', { class: 'fg-danger' }, `−${r.removed}`)), el('span', { class: 'grow' }), el('button', {
         class: 'icon',
         'aria-label': 'Refresh',
@@ -97,8 +94,9 @@ function files(r) {
                 title: f.path,
                 onclick: () => click({ on: 'file', file: i }),
             }, 
-            // The filename first, on its own line: a path cut short loses it.
-            el('span', { class: 'rname' }, el('span', { class: 'rbase' }, f.name), el('span', { class: 'rdir' }, f.dir || 'repository root')), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)));
+            // The file's name is what is scanned for, so it leads; its
+            // folder is the line under it and is what is cut short.
+            el('span', { class: 'rname' }, el('b', { class: 'rbase' }, f.name), el('span', { class: f.dir.replace(/\/$/, '') ? 'rdir' : 'rdir phrase' }, f.dir.replace(/\/$/, '') || 'repository root')), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)));
     }), r.jump &&
         r.jump.matches.length === 0 &&
         el('div', { class: 'meta' }, `No file matches “${r.jump.query}”.`)));
@@ -164,7 +162,7 @@ function diff(r) {
         ]);
     }
     return el('section', { class: 'review-diff' }, path &&
-        el('div', { class: 'fhdr' }, el('span', { class: 'mono' }, path.path), el('span', { class: 'grow' }), r.pick && el('span', { class: 'meta' }, `${r.pick} picked`)), 
+        el('div', { class: 'fhdr' }, el('b', null, path.name), el('span', { class: 'meta mono cut' }, path.dir.replace(/\/$/, '')), el('span', { class: 'fg-ok' }, `+${path.added}`), el('span', { class: 'fg-danger' }, `−${path.removed}`), el('span', { class: 'grow' }), r.pick && el('span', { class: 'ktag' }, `${r.pick} picked`)), 
     // Not `split`: that class is the app's flex-row layout, and would lay
     // every diff row side by side.
     el('div', { class: `dbody${r.split ? ' paired' : ''}`, id: 'review-body' }, body));
@@ -191,7 +189,7 @@ export function drawReview() {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'review-title',
-    }, head(r), el('div', { class: 'review-split' }, fileList, diff(r)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' line · ', keycap('V'), ' pick · ', keycap('C'), ' comment · ', keycap('B'), ' side · ', keycap('S'), ' split · ', keycap('Ctrl P'), ' jump · ', keycap('E'), ' editor · ', keycap('Enter'), ' unfold · ', keycap('Esc'), ' close'))));
+    }, head(r), el('div', { class: 'review-split' }, fileList, diff(r)), el('div', { class: 'dfoot meta' }, hint(['J', 'K'], 'line'), hint('V', 'pick'), hint('C', 'comment'), hint('B', 'side'), hint('S', 'split'), hint('Ctrl P', 'jump'), hint('E', 'editor'), hint('Enter', 'unfold'), hint('Esc', 'close')))));
     ['review-body', 'review-files'].forEach((id, i) => {
         const node = document.getElementById(id);
         if (node)

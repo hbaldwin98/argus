@@ -9,8 +9,7 @@ import type { Action } from '../bindings/Action';
 import type { SessionPreview } from '../bindings/SessionPreview';
 import type { SessionRowView } from '../bindings/SessionRowView';
 import type { SessionsPage } from '../bindings/SessionsPage';
-import { ago } from '../kit/clock.js';
-import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -72,6 +71,19 @@ function transcript(p: SessionPreview): Child {
   ];
 }
 
+/** The daemon sends the moment a session began as an ISO instant; a person
+ *  reads it as a day and a time in their own zone. */
+function humanTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return at.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function preview(s: SessionsPage): HTMLElement {
   const p = s.preview;
   return el(
@@ -83,11 +95,13 @@ function preview(s: SessionsPage): HTMLElement {
         { class: 'fhdr' },
         el('span', { class: 'ellipsis' }, p.title),
         el('span', { class: 'meta' }, p.harness),
-        el('span', { class: 'meta mono' }, p.checkout),
+        el('span', { class: 'meta mono scheckout' }, p.checkout),
         p.started &&
-          el('span', { class: 'meta nowrap', title: p.started }, ago(p.started) ?? p.started),
+          el('span', { class: 'meta', title: p.started }, `started ${humanTime(p.started)}`),
         el('span', { class: 'grow' }),
-        el('span', { class: 'meta mono nowrap', title: p.sessionId }, p.sessionId.slice(0, 8)),
+        // The whole id is for finding the file; eight characters tell
+        // sessions apart, and the rest is a hover away.
+        el('span', { class: 'meta mono sid', title: p.sessionId }, p.sessionId.slice(0, 8)),
       ),
     el(
       'div',
@@ -169,7 +183,8 @@ function searchField(search: string): HTMLElement {
   return field;
 }
 
-/** A menu over what the listing holds; its first option is all of them. */
+/** A select over what the listing holds, in the one field style; its
+ *  first option is all of them. */
 function menu(
   label: string,
   all: string,
@@ -180,6 +195,7 @@ function menu(
   const select = el(
     'select',
     {
+      class: 'field',
       'aria-label': label,
       onchange: () => pick(select.value === '' ? null : select.value),
     },
@@ -187,7 +203,7 @@ function menu(
     options.map((o) => el('option', { value: o }, o)),
   );
   select.value = chosen ?? '';
-  return el('label', { class: 'pick' }, select);
+  return select;
 }
 
 function filters(harness: string | null, checkout: string | null): void {
@@ -278,18 +294,11 @@ export function drawSessions(): void {
         el(
           'div',
           { class: 'dfoot meta' },
-          keycap('J'),
-          keycap('K'),
-          ' move · ',
-          keycap('/'),
-          ' search · ',
-          keycap('H'),
-          keycap('C'),
-          ' harness, checkout · ',
-          keycap('O'),
-          ' whole · ',
-          keycap('Esc'),
-          ' close',
+          hint(['J', 'K'], 'move'),
+          hint('/', 'search'),
+          hint(['H', 'C'], 'harness, checkout'),
+          hint('O', 'whole'),
+          hint('Esc', 'close'),
           el('span', { class: 'grow' }),
           offer(s.preview),
         ),
