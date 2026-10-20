@@ -334,7 +334,13 @@ function head(view: FeatureView): HTMLElement {
     ),
     el(
       'div',
-      { class: 'lens', role: 'tablist', 'aria-label': 'Lens' },
+      {
+        class: 'lens',
+        role: 'tablist',
+        'aria-label': 'Lens',
+        // The keys of the lens are a tooltip, not a row of prose in the chrome.
+        title: lensKeyText(view.lens),
+      },
       LENSES.map(({ lens, name, key }) =>
         el(
           'button',
@@ -348,8 +354,6 @@ function head(view: FeatureView): HTMLElement {
           keycap(key),
         ),
       ),
-      el('span', { class: 'grow' }),
-      el('span', { class: 'meta lens-keys' }, lensKeys(view.lens)),
     ),
   );
 }
@@ -392,6 +396,11 @@ function tickets(view: FeatureView): HTMLElement {
       },
       view.links.length > 0 ? 'Link…' : 'Link a ticket…',
     ),
+    // The state is its own pill beside the button, so the button keeps one
+    // label on `--fg-on-accent`.
+    view.links.length > 0 &&
+      view.reconcile &&
+      el('span', { class: 'spill waiting' }, waiting[view.reconcile] ?? ''),
     view.links.length > 0 &&
       el(
         'button',
@@ -401,12 +410,11 @@ function tickets(view: FeatureView): HTMLElement {
           onclick: () => call('open_reconcile', {}),
         },
         'Reconcile…',
-        view.reconcile && el('span', { class: 'meta' }, ` ${waiting[view.reconcile] ?? ''}`),
       ),
   );
 }
 
-function lensKeys(lens: Lens): Child[] {
+function lensKeyText(lens: Lens): string {
   const keys: [string, string][] =
     lens === 'record'
       ? [
@@ -431,7 +439,7 @@ function lensKeys(lens: Lens): Child[] {
             ['T', 'link'],
             ['R', 'reconcile'],
           ];
-  return keys.flatMap(([key, what], i): Child[] => [i ? ' · ' : null, keycap(key), ` ${what}`]);
+  return keys.map(([key, what]) => `${key} ${what}`).join(' · ');
 }
 
 export function keycap(key: string): HTMLElement {

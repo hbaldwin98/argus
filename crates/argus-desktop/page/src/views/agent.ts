@@ -6,6 +6,7 @@
 
 import type { Link } from '../bindings/Link';
 import type { PageView } from '../bindings/PageView';
+import type { Tone } from '../bindings/Tone';
 import type { ViewsPage } from '../bindings/ViewsPage';
 import { actionButton } from './actions.js';
 import { blocks } from './blocks.js';
@@ -136,9 +137,9 @@ function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
   return draggable(strip, 'views', 'Views');
 }
 
-function header(v: PageView, popped: boolean): HTMLElement {
-  const at = new Date(Number(v.at) * 1000).toISOString();
-  const subject = v.subject;
+/** The view's actions and its overflow: in the panel they sit on the
+ *  title row, as a page the stage's strip carries them. */
+function viewActions(v: PageView, popped: boolean): HTMLElement[] {
   const act = {
     refresh: () => call('refresh_view', { pane: v.pane, id: v.view.id }),
     place: () => call(popped ? 'open_view' : 'pop_out_view', { pane: v.pane, id: v.view.id }),
@@ -166,23 +167,25 @@ function header(v: PageView, popped: boolean): HTMLElement {
     },
     icon('more'),
   );
+  return [...v.view.actions.map((a) => actionButton(a, ctxOf(v))), more];
+}
+
+function header(v: PageView, popped: boolean): HTMLElement {
+  const at = new Date(Number(v.at) * 1000).toISOString();
+  const subject = v.subject;
   return el(
     'div',
     { class: 'vpanel-head' },
     // One row: the name and its status at the start, the actions at the end.
-    // As a page the strip already carries the name.
-    el(
-      'div',
-      { class: 'vpanel-title' },
-      !popped && el('span', { class: 'type-heading vpanel-name' }, v.view.title),
-      v.view.status && chip(v.view.status),
+    // As a page the stage's strip carries all three, so only the meta is left.
+    !popped &&
       el(
-        'span',
-        { class: 'vpanel-acts' },
-        v.view.actions.map((a) => actionButton(a, ctxOf(v))),
-        more,
+        'div',
+        { class: 'vpanel-title' },
+        el('span', { class: 'type-heading vpanel-name' }, v.view.title),
+        v.view.status && chip(v.view.status),
+        el('span', { class: 'vpanel-acts' }, viewActions(v, false)),
       ),
-    ),
     el(
       'div',
       { class: 'vpanel-meta' },
@@ -236,6 +239,29 @@ export function poppedViewTitle(): string | null {
     ? (shown.views.find((v) => v.pane === at.pane && v.view.id === at.id)?.view.title ?? null)
     : null;
 }
+
+/** What the stage's strip carries for the view open as a page: its status
+ *  beside the title, and its actions at the right. */
+export function poppedViewHead(): { status: HTMLElement | null; tools: HTMLElement[] } | null {
+  const at = shown.popped;
+  const v = at && shown.views.find((p) => p.pane === at.pane && p.view.id === at.id);
+  if (!v) return null;
+  const status = v.view.status;
+  return {
+    status: status && el('span', { class: `spill ${SPILL[status.tone]}` }, status.label),
+    tools: viewActions(v, true),
+  };
+}
+
+/** The strip's one pill speaks the statuses; a view's tone picks among them. */
+const SPILL: Record<Tone, string> = {
+  neutral: 'idle',
+  good: 'done',
+  warn: 'waiting',
+  bad: 'failed',
+  active: 'working',
+  info: 'info',
+};
 
 /** Brings the newest view out, from the title strip's button. */
 export function openNewestView(): void {

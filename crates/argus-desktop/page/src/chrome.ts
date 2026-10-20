@@ -14,7 +14,7 @@ import { drawConsole } from './panes/console.js';
 import { $, el, ghosts, icon, type Child } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extensions/views.js';
 import { drawSavedNav } from './views/saved.js';
-import { poppedViewTitle } from './views/agent.js';
+import { poppedViewHead, poppedViewTitle } from './views/agent.js';
 import { drawFeatures } from './board/feature_stage.js';
 import { chordsFor, keycaps, presses } from './keys/chords.js';
 import { contextMenu, openMenu, type MenuItem } from './kit/menu.js';
@@ -602,11 +602,12 @@ export function drawHead(): void {
     // An open feature is the stage's title; the way back is its crumb and Esc.
     const feature = stage === 'feature' ? (state.features?.open ?? null) : null;
     const trail = feature
-      ? [STAGE_NAME.feature, el('span', { class: 'mono fg-accent' }, `#${feature.number}`)]
+      ? [STAGE_NAME.feature, el('span', { class: 'mono' }, `#${feature.number}`)]
       : (code?.crumb ?? []);
     const strip =
       stage === 'feature' ? featuresStrip() : stage === 'checkouts' ? checkoutsStrip() : null;
-    more.replaceChildren(...(code?.tools ?? strip?.tools ?? []));
+    const popped = stage === 'view' ? poppedViewHead() : null;
+    more.replaceChildren(...(code?.tools ?? strip?.tools ?? popped?.tools ?? []));
     head.replaceChildren(
       headStack(
         repository
@@ -631,6 +632,7 @@ export function drawHead(): void {
                 ? (poppedViewTitle() ?? STAGE_NAME.view)
                 : STAGE_NAME[stage],
         ),
+        popped?.status ?? null,
         ...(strip?.meta ?? []),
       ),
     );
@@ -649,19 +651,13 @@ export function drawHead(): void {
         null,
         el('span', null, shown.repository),
         el('span', { class: 'fg-faint' }, '/'),
-        el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout),
+        el('span', { class: 'mono' }, shown.branch || shown.checkout),
       ),
       el(
         'span',
         { class: 'head-name' },
-        el(
-          'span',
-          {
-            class: 'type-heading head-title',
-            oncontextmenu: contextMenu(shown.title, () => paneMenu(shown.pane, shown.title)),
-          },
-          shown.title,
-        ),
+        // Rename lives in the overflow; right-click was an undiscoverable second way.
+        el('span', { class: 'type-heading head-title' }, shown.title),
         el('span', { class: `spill ${shown.status}` }, shown.status),
         shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '',
       ),

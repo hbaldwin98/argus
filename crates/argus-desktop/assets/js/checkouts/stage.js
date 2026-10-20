@@ -5,7 +5,7 @@
 // chosen.
 import { startMenu, toggleStart } from '../chrome.js';
 import { $, el, ghosts, icon } from '../kit/dom.js';
-import { closeLayer } from '../kit/menu.js';
+import { closeLayer, openMenu } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -26,14 +26,31 @@ export function checkoutsStrip() {
         meta: [
             el('span', { class: 'meta head-meta', title: 'Enter open · D delete' }, `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`, c.main && [' · primary ', el('span', { class: 'mono fg-ref' }, c.main)]),
         ],
+        // One primary and an overflow: Branches and Fetch all are the overflow's.
         tools: [
-            el('button', {
-                class: 'btn',
-                'aria-pressed': String(c.branchesShown),
-                onclick: () => call('checkouts_action', { action: 'branches' }),
-            }, 'Branches ', keycap('B')),
-            el('button', { class: 'btn', onclick: () => call('checkouts_action', { action: 'fetch' }) }, 'Fetch all ', keycap('F')),
             el('button', { class: 'btn primary', onclick: () => checkoutsAction('newWorktree') }, 'New worktree'),
+            el('button', {
+                class: 'icon',
+                type: 'button',
+                title: 'More: branches, fetch all',
+                'aria-label': 'More about checkouts',
+                'aria-haspopup': 'menu',
+                onclick: (e) => {
+                    const box = e.currentTarget.getBoundingClientRect();
+                    openMenu('Checkouts', [
+                        {
+                            label: c.branchesShown ? 'Hide other branches' : 'Show other branches',
+                            hint: keycap('B'),
+                            run: () => call('checkouts_action', { action: 'branches' }),
+                        },
+                        {
+                            label: 'Fetch all',
+                            hint: keycap('F'),
+                            run: () => call('checkouts_action', { action: 'fetch' }),
+                        },
+                    ], { x: box.right, y: box.bottom + 4, align: 'end' });
+                },
+            }, icon('more')),
         ],
     };
 }

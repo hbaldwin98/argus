@@ -103,7 +103,8 @@ function header(view) {
             'aria-label': `Hide ${view.title}`,
             onclick: () => call('docks', { gesture: { on: 'hide', panel: view.panel } }),
         }, icon('close'))), el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'vpanel-acts' }, wide.map((action) => actionButton(view, action, 'btn sm')), modeButton(view, !view.page))));
-    return draggable(head, view.panel, view.title);
+    // As a page the row is only its buttons; its Dock button is the way back.
+    return view.page ? head : draggable(head, view.panel, view.title);
 }
 /** The view as an agent's table block: a row's status, when any has one,
  *  leads it as a chip. */

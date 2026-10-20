@@ -177,7 +177,8 @@ function header(view: ExtTable): HTMLElement {
       ),
     ),
   );
-  return draggable(head, view.panel, view.title);
+  // As a page the row is only its buttons; its Dock button is the way back.
+  return view.page ? head : draggable(head, view.panel, view.title);
 }
 
 /** The view as an agent's table block: a row's status, when any has one,

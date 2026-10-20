@@ -1976,6 +1976,9 @@ body.mac .rail .brand {
 .spill.done {
   --tone: var(--ok);
 }
+.spill.info {
+  --tone: var(--info);
+}
 .spill.idle::before,
 .spill.exited::before {
   background: transparent;
@@ -2000,6 +2003,12 @@ body.mac .rail .brand {
   align-items: center;
   gap: var(--sp-8);
   padding-right: var(--sp-8);
+}
+/* The stage's own tools land in this span; without a flex box they touch. */
+#head-more {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
 }
 .strip-tools::after {
   content: '';
@@ -2079,13 +2088,19 @@ body.maximized .winbtn .restore {
 }
 /* The workspace's panes sit on the stage as cards, not edge to edge: the
    gutter around them is the stage showing through. */
+/* Cells abut at their seam, so each keeps half the 8px gap as a transparent
+   border: the outside margin is 16 less that half, and two cards sit 8 apart
+   on the same scale as the gutter around them. The hairline is an inset
+   shadow because a border would be the transparent one. */
 #split {
-  margin: var(--sp-16);
+  margin: calc(var(--sp-16) - var(--sp-4));
 }
 #split > .gcell {
   background: var(--bg-surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  background-clip: padding-box;
+  border: var(--sp-4) solid transparent;
+  border-radius: calc(var(--r-md) + var(--sp-4));
+  box-shadow: inset 0 0 0 1px var(--line);
   overflow: hidden;
 }
 .gcell.keyed > .thead {
@@ -2121,34 +2136,38 @@ body.maximized .winbtn .restore {
 .gutter {
   position: absolute;
   z-index: 2;
-  background: var(--line);
 }
+/* The gutter is the 8px gap between two cards; its grip is a line centred
+   in it that lights on hover. */
 .gutter.vertical {
-  width: 1px;
-  margin-left: -0.5px;
+  width: var(--sp-8);
+  margin-left: calc(var(--sp-4) * -1);
   cursor: col-resize;
 }
 .gutter.horizontal {
   left: 0;
   right: 0;
-  height: 1px;
-  margin-top: -0.5px;
+  height: var(--sp-8);
+  margin-top: calc(var(--sp-4) * -1);
   cursor: row-resize;
 }
-/* A wider target than the line, so the seam is easy to take. */
-.gutter::before {
+.gutter::after {
   content: '';
   position: absolute;
-}
-.gutter.vertical::before {
-  inset: 0 -4px;
-}
-.gutter.horizontal::before {
-  inset: -4px 0;
-}
-.gutter:hover,
-.gutter.held {
+  border-radius: var(--r-pill);
   background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+.gutter.vertical::after {
+  inset: var(--sp-8) calc(50% - 1px);
+}
+.gutter.horizontal::after {
+  inset: calc(50% - 1px) var(--sp-8);
+}
+.gutter:hover::after,
+.gutter.held::after {
+  opacity: 1;
 }
 .drop-zone {
   position: absolute;
@@ -2950,6 +2969,8 @@ body.float-moving * {
   box-sizing: border-box;
   border: 1px solid transparent;
   border-radius: var(--r-sm);
+  /* .lt is a <button>: without this the UA's ButtonFace shows as a grey block. */
+  background: transparent;
   transition:
     background-color var(--t-fast),
     border-color var(--t-fast);
@@ -5509,9 +5530,6 @@ body.resizing:has(.brief-sash.held) {
   gap: var(--sp-6);
   margin-left: auto;
 }
-.lens-keys {
-  align-self: center;
-}
 .wtext {
   display: flex;
   align-items: center;
@@ -5779,7 +5797,8 @@ body.resizing:has(.brief-sash.held) {
    full ring the buttons and fields do. */
 .ext-body:focus-visible {
   outline: 0;
-  box-shadow: inset 0 0 0 1px var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 .ext-body .vtable-table tbody tr {
   cursor: pointer;
@@ -6083,8 +6102,8 @@ body.resizing:has(.brief-sash.held) {
    the panel grows: the chart stops at its own width instead of scaling. */
 .vchart-svg {
   width: 100%;
-  max-width: 480px;
-  max-height: 240px;
+  max-width: min(100%, 720px);
+  max-height: 360px;
   height: auto;
   display: block;
 }
