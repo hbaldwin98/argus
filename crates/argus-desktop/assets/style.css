@@ -6664,14 +6664,11 @@ body.console-fullscreen #bar {
   background: var(--attention);
 }
 /* Ticket and view chips are the same height and shape as the buttons
- * beside them; the view's title is words, so only a ticket's key is mono. */
+ * beside them. */
 .chips .track,
 .chips .btn.sm {
   height: var(--control-h);
   border-radius: var(--r-pill);
-}
-.track .vtitle {
-  font-weight: 600;
 }
 .tickets {
   gap: var(--sp-6);
