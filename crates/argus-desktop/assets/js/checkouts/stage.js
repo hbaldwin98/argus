@@ -28,6 +28,17 @@ export function checkoutsStrip() {
         ],
         // One primary and an overflow: Branches and Fetch all are the overflow's.
         tools: [
+            // Under 1200px the filter field folds into this; the field keeps its id.
+            el('button', {
+                class: 'icon filter-toggle',
+                type: 'button',
+                'aria-label': 'Filter branches',
+                title: 'Filter branches',
+                onclick: () => {
+                    if (document.body.classList.toggle('filtering'))
+                        $('checkouts-filter').focus();
+                },
+            }, icon('search')),
             el('button', { class: 'btn primary', onclick: () => checkoutsAction('newWorktree') }, 'New worktree'),
             el('button', {
                 class: 'icon',
@@ -67,12 +78,17 @@ function head(c) {
         onkeydown: (e) => {
             if (actionFor(['filter'], e) === 'leave') {
                 e.preventDefault();
+                document.body.classList.remove('filtering');
                 e.target.blur();
             }
         },
+        onblur: (e) => {
+            if (e.target instanceof HTMLInputElement && !e.target.value)
+                document.body.classList.remove('filtering');
+        },
     });
     filter.value = c.filter;
-    return el('div', { class: 'fhead index-head' }, el('div', { class: 'actions index-tools' }, filter));
+    return el('div', { class: `fhead index-head${c.filter ? ' has-filter' : ''}` }, el('div', { class: 'actions index-tools' }, filter));
 }
 /** The keys the table answers to, quietly under it. */
 function keyBar() {
@@ -359,6 +375,7 @@ export function drawCheckouts() {
 /** Runs a Checkouts key, saying whether it took it. */
 export function checkoutsAction(action) {
     if (action === 'filter') {
+        document.body.classList.add('filtering');
         $('checkouts-filter').focus();
         return true;
     }

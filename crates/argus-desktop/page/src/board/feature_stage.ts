@@ -281,11 +281,24 @@ function indexHead(f: Features): HTMLElement {
     oninput: (e: Event) => {
       if (e.target instanceof HTMLInputElement) call('filter_features', { filter: e.target.value });
     },
+    onkeydown: (e: KeyboardEvent) => {
+      if (actionFor(['filter'], e) === 'leave') {
+        e.preventDefault();
+        document.body.classList.remove('filtering');
+        (e.target as HTMLElement).blur();
+      }
+    },
+    onblur: (e: FocusEvent) => {
+      if (e.target instanceof HTMLInputElement && !e.target.value)
+        document.body.classList.remove('filtering');
+    },
   });
   filter.value = f.filter;
   return el(
     'div',
-    { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` },
+    {
+      class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}${f.filter ? ' has-filter' : ''}`,
+    },
     el(
       'div',
       { class: 'actions index-tools' },
@@ -598,14 +611,14 @@ function board(f: Features): HTMLElement {
   return withScrollCue(lanes);
 }
 
-/** Columns keep a floor width, so a narrow window scrolls the board; this
- *  says so, with a fade at the edge and a chip naming what is off to the
- *  right, so a column is never lost without a sign. */
 /** One observer for the one board on screen: the stage is rebuilt on every
  *  tree update, and an observer per draw would outlive its detached lanes. */
 let boardUpdate: () => void = () => {};
 const boardObserver = new ResizeObserver(() => boardUpdate());
 
+/** Columns keep a floor width, so a narrow window scrolls the board; this
+ *  says so, with a fade at the edge and a chip naming what is off to the
+ *  right, so a column is never lost without a sign. */
 function withScrollCue(lanes: HTMLElement): HTMLElement {
   const chip = el('button', { class: 'board-more', type: 'button', hidden: true });
   const wrap = el('div', { class: 'board-wrap' }, lanes, el('div', { class: 'board-fade' }), chip);

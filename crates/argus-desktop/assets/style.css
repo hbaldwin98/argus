@@ -6359,7 +6359,7 @@ body.console-fullscreen #bar {
 
 .vstats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--vstat-min), 1fr));
   gap: var(--sp-8);
 }
 
@@ -8757,7 +8757,8 @@ button.vtree-chev:focus-visible {
   .index-head .filter {
     display: none;
   }
-  body.filtering .index-head .filter {
+  body.filtering .index-head .filter,
+  .index-head.has-filter .filter {
     display: block;
   }
   body:not(.filtering) .index-head.on-board {

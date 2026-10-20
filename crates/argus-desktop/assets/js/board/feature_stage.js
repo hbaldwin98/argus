@@ -212,9 +212,22 @@ function indexHead(f) {
             if (e.target instanceof HTMLInputElement)
                 call('filter_features', { filter: e.target.value });
         },
+        onkeydown: (e) => {
+            if (actionFor(['filter'], e) === 'leave') {
+                e.preventDefault();
+                document.body.classList.remove('filtering');
+                e.target.blur();
+            }
+        },
+        onblur: (e) => {
+            if (e.target instanceof HTMLInputElement && !e.target.value)
+                document.body.classList.remove('filtering');
+        },
     });
     filter.value = f.filter;
-    return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'actions index-tools' }, filter, f.layout === 'list' &&
+    return el('div', {
+        class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}${f.filter ? ' has-filter' : ''}`,
+    }, el('div', { class: 'actions index-tools' }, filter, f.layout === 'list' &&
         f.folded > 0 &&
         el('button', { class: 'btn', onclick: () => call('feature_action', { action: 'folded' }) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(f.folded)))));
 }
@@ -351,13 +364,13 @@ function board(f) {
     const lanes = el('div', { class: 'board' }, column('queued'), column('active'), column('done'), el('div', { class: 'side' }, column('held'), column('archived')));
     return withScrollCue(lanes);
 }
-/** Columns keep a floor width, so a narrow window scrolls the board; this
- *  says so, with a fade at the edge and a chip naming what is off to the
- *  right, so a column is never lost without a sign. */
 /** One observer for the one board on screen: the stage is rebuilt on every
  *  tree update, and an observer per draw would outlive its detached lanes. */
 let boardUpdate = () => { };
 const boardObserver = new ResizeObserver(() => boardUpdate());
+/** Columns keep a floor width, so a narrow window scrolls the board; this
+ *  says so, with a fade at the edge and a chip naming what is off to the
+ *  right, so a column is never lost without a sign. */
 function withScrollCue(lanes) {
     const chip = el('button', { class: 'board-more', type: 'button', hidden: true });
     const wrap = el('div', { class: 'board-wrap' }, lanes, el('div', { class: 'board-fade' }), chip);
