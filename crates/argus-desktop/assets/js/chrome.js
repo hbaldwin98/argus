@@ -22,8 +22,9 @@ import { state } from './state.js';
 import { featureEdges } from './board/lenses/work.js';
 import { codeEdges } from './code/stage.js';
 import { call } from './connection/tauri.js';
+/** The order the attention strip names panes in; the same set as LOUD. */
+const ASK_ORDER = ['waiting', 'failed', 'needs-review'];
 const LOUD = new Set(['waiting', 'needs-review', 'failed']);
-const ASKING = new Set(['waiting', 'needs-review']);
 export function drawChrome() {
     const stopped = state.status.connection === 'stopped';
     railWidth(state.rail.width);
@@ -618,14 +619,16 @@ function drawAttention() {
     const { shown, workspaceShown, stage } = state.rail;
     const asking = allPanes()
         .map(({ pane }) => pane)
-        .filter((pane) => pane.id !== shown?.pane && ASKING.has(pane.status))
-        .toSorted((a, b) => (a.status === 'waiting' ? 0 : 1) - (b.status === 'waiting' ? 0 : 1));
+        .filter((pane) => pane.id !== shown?.pane && LOUD.has(pane.status))
+        .toSorted((a, b) => ASK_ORDER.indexOf(a.status) - ASK_ORDER.indexOf(b.status));
     const first = asking[0];
-    strip.hidden = !first || !workspaceShown || stage !== 'workspace';
+    // A stopped daemon cannot be asked to select anything.
+    strip.hidden =
+        !first || !workspaceShown || stage !== 'workspace' || state.status.connection !== 'connected';
     if (strip.hidden || !first)
         return;
-    strip.replaceChildren(icon('info'), el('span', { class: 'attn-text' }, el('strong', { class: 'ellipsis' }, first.title), first.note && el('span', { class: 'attn-note ellipsis' }, first.note)), asking.length > 1
-        ? el('span', { class: 'attn-more' }, `${asking.length - 1} more need you`)
+    strip.replaceChildren(el('span', { class: 'dot' }), el('span', { class: 'attn-text' }, el('strong', { class: 'ellipsis' }, first.title), first.note && el('span', { class: 'attn-note ellipsis' }, first.note)), asking.length > 1
+        ? el('span', { class: 'attn-more' }, `${asking.length - 1} more ${asking.length === 2 ? 'needs' : 'need'} you`)
         : '', el('button', { class: 'btn sm', onclick: () => call('select', { pane: first.id }) }, 'Go to it'));
 }
 /** What a pane whose program has ended offers; the tree redraws the rest. */
@@ -636,20 +639,17 @@ function drawEnded() {
     if (bar.hidden || !shown)
         return;
     const found = allPanes().find(({ pane }) => pane.id === shown.pane);
+    const template = found ? endedTemplate(found.pane) : null;
     bar.replaceChildren(icon('info'), el('span', { class: 'ended-text' }, el('strong', null, `${shown.title} exited`), found?.pane.note && el('span', { class: 'fg-muted' }, ` \u00b7 ${found.pane.note}`)), found
         ? el('button', {
             class: 'btn sm',
-            onclick: () => startHere(found.checkout.id, endedTemplate(found.pane)),
-        }, endedTemplate(found.pane) ? `Start ${endedTemplate(found.pane)} here` : 'New shell here')
+            onclick: () => start(found.checkout.id, template),
+        }, template ? `Start ${template} here` : 'New shell here')
         : '', el('button', { class: 'btn sm', onclick: () => call('close', { pane: shown.pane }) }, 'Close pane'));
 }
-/** Starts a new pane where the ended one ran. The page cannot know what the
- *  ended pane ran (a pane carries only whether it was an agent), so it offers
- *  what it can start, by name, and leaves the old pane to 'Close pane'. */
-function startHere(checkout, agent) {
-    start(checkout, agent);
-}
-/** The template an ended agent pane's button starts: the window's first, or
+/** The template an ended agent pane's button starts. The page cannot know what
+ *  the ended pane ran (a pane carries only whether it was an agent), so it offers
+ *  what it can start, by name, and leaves the old pane to 'Close pane'. It is: the window's first, or
  *  none (a shell) when the pane was not an agent or argusd offers no template. */
 function endedTemplate(pane) {
     return pane.agent ? (state.rail.templates[0] ?? null) : null;

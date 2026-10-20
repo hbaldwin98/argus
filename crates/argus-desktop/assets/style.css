@@ -70,7 +70,7 @@
     --green: #2f7d1f;
     --yellow: #a35200;
     --red: #c20f37;
-    --peach: #b84a06;
+    --peach: #a8420a;
     --teal: #11766f;
     --lilac: #dcd4f2;
     --bg-sunken: var(--crust);
@@ -155,7 +155,7 @@
   --green: #2f7d1f;
   --yellow: #a35200;
   --red: #c20f37;
-  --peach: #b84a06;
+  --peach: #a8420a;
   --teal: #11766f;
   --lilac: #dcd4f2;
   --bg-sunken: var(--crust);
@@ -935,7 +935,10 @@
   font: var(--type-label);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: var(--sp-12) var(--sp-16) var(--sp-6);
+  margin: 0 var(--sp-8);
+  width: calc(100% - 2 * var(--sp-8));
+  border-radius: var(--r-sm);
+  padding: var(--sp-12) var(--sp-8) var(--sp-6);
   cursor: pointer;
   text-align: left;
 }
@@ -1828,6 +1831,13 @@ a:focus-visible,
   background: transparent;
   border: 1.5px solid currentColor;
 }
+/* A state that blocks on a person is louder than one that does not. */
+.st.pillw.waiting,
+.st.pillw.needs-review,
+.st.pillw.failed {
+  background: color-mix(in srgb, currentColor 22%, transparent);
+  border-color: color-mix(in srgb, currentColor 60%, transparent);
+}
 .st.pillw.done {
   color: var(--ok);
 }
@@ -2221,6 +2231,7 @@ body.moving-pane * {
   align-items: center;
   justify-content: center;
   background: var(--atmosphere);
+  background-color: var(--see-surface);
 }
 /* Where there is work to go back to, the block sits near the top, as the
    mockup does, not in a dead band. */
@@ -7292,9 +7303,8 @@ button.vtree-chev:focus-visible {
 .attn[hidden] {
   display: none;
 }
-.attn > svg {
-  flex: none;
-  color: var(--attention);
+.attn > .dot {
+  background: var(--attention);
 }
 .attn-text {
   flex: 1;
