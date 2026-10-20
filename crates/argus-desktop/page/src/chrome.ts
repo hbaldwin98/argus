@@ -5,6 +5,8 @@ import type { Action } from './bindings/Action';
 import type { Resumed } from './bindings/Resumed';
 import type { StatusWord } from './bindings/StatusWord';
 import { drawCheckouts } from './checkouts/stage.js';
+import { checkoutsStrip } from './checkouts/stage.js';
+import { featuresStrip } from './board/feature_stage.js';
 import { codeStrip, drawCode } from './code/stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';
@@ -602,7 +604,9 @@ export function drawHead(): void {
     const trail = feature
       ? [STAGE_NAME.feature, el('span', { class: 'mono fg-accent' }, `#${feature.number}`)]
       : (code?.crumb ?? []);
-    more.replaceChildren(...(code?.tools ?? []));
+    const strip =
+      stage === 'feature' ? featuresStrip() : stage === 'checkouts' ? checkoutsStrip() : null;
+    more.replaceChildren(...(code?.tools ?? strip?.tools ?? []));
     head.replaceChildren(
       headStack(
         repository
@@ -627,6 +631,7 @@ export function drawHead(): void {
                 ? (poppedViewTitle() ?? STAGE_NAME.view)
                 : STAGE_NAME[stage],
         ),
+        ...(strip?.meta ?? []),
       ),
     );
     return;

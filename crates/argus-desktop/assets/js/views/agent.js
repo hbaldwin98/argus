@@ -67,7 +67,7 @@ function key(v) {
     return `${v.pane}/${v.view.id}`;
 }
 function tabs(views, open) {
-    const strip = el('div', { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' }, views.map((v) => {
+    const strip = el('div', { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' }, el('div', { class: 'tabs-scroll' }, views.map((v) => {
         const close = () => call('close_view', { pane: v.pane, id: v.view.id });
         return closesOnMiddle(el('div', { class: `vpanel-tab${v === open ? ' on' : ''}` }, el('button', {
             class: 'vpanel-tab-pick',
@@ -83,7 +83,7 @@ function tabs(views, open) {
             'aria-label': `Close ${v.view.title}`,
             onclick: close,
         }, icon('close'))), close);
-    }), el('span', { class: 'grow' }), dockMenuButton('views', 'Dock the views', true), el('button', {
+    })), dockMenuButton('views', 'Dock the views', true), el('button', {
         class: 'icon',
         type: 'button',
         'aria-label': 'Hide the views',
@@ -107,11 +107,7 @@ function header(v, popped) {
         'sep',
         { label: 'Close this view for every window', danger: true, run: act.close },
     ];
-    return el('div', { class: 'vpanel-head' }, 
-    // As a page the strip already carries the view's name.
-    !popped &&
-        el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading' }, v.view.title), v.view.status && chip(v.view.status)), el('div', { class: 'vpanel-meta' }, popped && v.view.status && chip(v.view.status), subject &&
-        viewLink(subject.url, el('span', { class: 'track' }, subject.tracker, ' ', el('b', null, subject.key))), el('span', { class: 'meta', title: new Date(at).toLocaleString() }, v.from ? `read by ${v.from} · ${ago(at)}` : ago(at), v.refreshing ? ' · asked to read it again' : ''), el('span', { class: 'vpanel-acts' }, v.view.actions.map((a) => actionButton(a, ctxOf(v))), el('button', {
+    const more = el('button', {
         class: 'icon',
         type: 'button',
         title: 'More: refresh, pop out, close',
@@ -119,13 +115,14 @@ function header(v, popped) {
         'aria-haspopup': 'menu',
         onclick: (e) => {
             const box = e.currentTarget.getBoundingClientRect();
-            openMenu(v.view.title, items(), {
-                x: box.right,
-                y: box.bottom + 4,
-                align: 'end',
-            });
+            openMenu(v.view.title, items(), { x: box.right, y: box.bottom + 4, align: 'end' });
         },
-    }, icon('more')))));
+    }, icon('more'));
+    return el('div', { class: 'vpanel-head' }, 
+    // One row: the name and its status at the start, the actions at the end.
+    // As a page the strip already carries the name.
+    el('div', { class: 'vpanel-title' }, !popped && el('span', { class: 'type-heading vpanel-name' }, v.view.title), v.view.status && chip(v.view.status), el('span', { class: 'vpanel-acts' }, v.view.actions.map((a) => actionButton(a, ctxOf(v))), more)), el('div', { class: 'vpanel-meta' }, subject &&
+        viewLink(subject.url, el('span', { class: 'track' }, subject.tracker, ' ', el('b', null, subject.key))), el('span', { class: 'meta', title: new Date(at).toLocaleString() }, v.from ? `read by ${v.from} · ${ago(at)}` : ago(at), v.refreshing ? ' · asked to read it again' : '')));
 }
 /** What the view's blocks, and the buttons in its header, are drawn with. */
 function ctxOf(v) {

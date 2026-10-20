@@ -159,13 +159,36 @@ function moveKey(to) {
         return keycap('H');
     return null;
 }
-function indexHead(f) {
+/** What the strip carries on the Features stage: the counts beside the
+ *  title, and the layout switch and the primary action at the right. */
+export function featuresStrip() {
+    const f = state.features;
+    if (!f?.repository || f.open)
+        return null;
     const parts = [
         f.active > 0 && el('span', { class: 'fg-attention' }, `${f.active} active`),
         f.queued > 0 && el('span', null, `${f.queued} queued`),
         f.done > 0 && el('span', { class: 'fg-ok' }, `${f.done} done`),
     ].filter((part) => part !== false);
     const counts = parts.flatMap((part, i) => (i ? [' · ', part] : [part]));
+    const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' }, ['list', 'board'].map((layout) => el('button', {
+        class: `segb${f.layout === layout ? ' on' : ''}`,
+        role: 'radio',
+        'aria-checked': String(f.layout === layout),
+        onclick: () => call('set_layout', { layout }),
+    }, layout === 'list' ? 'List' : 'Board')));
+    return {
+        // The keys are in the counts' tooltip rather than a row of their own.
+        meta: [
+            el('span', {
+                class: 'meta head-meta',
+                title: 'N new · Enter open · V list or board · M move to… · G go to its pane',
+            }, counts),
+        ],
+        tools: [seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')],
+    };
+}
+function indexHead(f) {
     const filter = el('input', {
         class: 'field filter',
         id: 'feature-filter',
@@ -177,21 +200,9 @@ function indexHead(f) {
         },
     });
     filter.value = f.filter;
-    const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' }, ['list', 'board'].map((layout) => el('button', {
-        class: `segb${f.layout === layout ? ' on' : ''}`,
-        role: 'radio',
-        'aria-checked': String(f.layout === layout),
-        onclick: () => call('set_layout', { layout }),
-    }, layout === 'list' ? 'List' : 'Board')));
-    return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'actions index-tools' }, 
-    // The strip names the stage and the repository; the keys are in the
-    // counts' tooltip rather than a row of their own.
-    el('span', {
-        class: 'meta',
-        title: 'N new · Enter open · V list or board · M move to… · G go to its pane',
-    }, counts), el('span', { class: 'grow' }), filter, f.layout === 'list' &&
+    return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'actions index-tools' }, filter, f.layout === 'list' &&
         f.folded > 0 &&
-        el('button', { class: 'btn', onclick: () => call('feature_action', { action: 'folded' }) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(f.folded))), seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')));
+        el('button', { class: 'btn', onclick: () => call('feature_action', { action: 'folded' }) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(f.folded)))));
 }
 function list(f) {
     const rows = f.rows;

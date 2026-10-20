@@ -1,6 +1,8 @@
 // The window's frame around the stage: the sidebar and its nav, the strip's
 // words, the sidebar's foot, the empty stage, and notices that pass.
 import { drawCheckouts } from './checkouts/stage.js';
+import { checkoutsStrip } from './checkouts/stage.js';
+import { featuresStrip } from './board/feature_stage.js';
 import { codeStrip, drawCode } from './code/stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';
@@ -499,7 +501,8 @@ export function drawHead() {
         const trail = feature
             ? [STAGE_NAME.feature, el('span', { class: 'mono fg-accent' }, `#${feature.number}`)]
             : (code?.crumb ?? []);
-        more.replaceChildren(...(code?.tools ?? []));
+        const strip = stage === 'feature' ? featuresStrip() : stage === 'checkouts' ? checkoutsStrip() : null;
+        more.replaceChildren(...(code?.tools ?? strip?.tools ?? []));
         head.replaceChildren(headStack(repository
             ? el('span', null, repository, ...trail.flatMap((part) => [el('span', { class: 'fg-faint' }, '/'), part]))
             : // Every stage has a crumb, so every title sits on one baseline.
@@ -511,7 +514,7 @@ export function drawHead() {
                 ? extensionPageTitle()
                 : stage === 'view'
                     ? (poppedViewTitle() ?? STAGE_NAME.view)
-                    : STAGE_NAME[stage])));
+                    : STAGE_NAME[stage]), ...(strip?.meta ?? [])));
         return;
     }
     if (!shown) {

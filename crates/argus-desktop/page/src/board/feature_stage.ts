@@ -202,23 +202,17 @@ function moveKey(to: string): HTMLElement | null {
   return null;
 }
 
-function indexHead(f: Features): HTMLElement {
+/** What the strip carries on the Features stage: the counts beside the
+ *  title, and the layout switch and the primary action at the right. */
+export function featuresStrip(): { meta: Child[]; tools: HTMLElement[] } | null {
+  const f = state.features;
+  if (!f?.repository || f.open) return null;
   const parts = [
     f.active > 0 && el('span', { class: 'fg-attention' }, `${f.active} active`),
     f.queued > 0 && el('span', null, `${f.queued} queued`),
     f.done > 0 && el('span', { class: 'fg-ok' }, `${f.done} done`),
   ].filter((part): part is HTMLElement => part !== false);
   const counts = parts.flatMap((part, i): Child[] => (i ? [' · ', part] : [part]));
-  const filter = el('input', {
-    class: 'field filter',
-    id: 'feature-filter',
-    placeholder: 'Filter by title or #',
-    'aria-label': 'Filter features',
-    oninput: (e: Event) => {
-      if (e.target instanceof HTMLInputElement) call('filter_features', { filter: e.target.value });
-    },
-  });
-  filter.value = f.filter;
   const seg = el(
     'div',
     { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' },
@@ -235,23 +229,39 @@ function indexHead(f: Features): HTMLElement {
       ),
     ),
   );
+  return {
+    // The keys are in the counts' tooltip rather than a row of their own.
+    meta: [
+      el(
+        'span',
+        {
+          class: 'meta head-meta',
+          title: 'N new · Enter open · V list or board · M move to… · G go to its pane',
+        },
+        counts,
+      ),
+    ],
+    tools: [seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')],
+  };
+}
+
+function indexHead(f: Features): HTMLElement {
+  const filter = el('input', {
+    class: 'field filter',
+    id: 'feature-filter',
+    placeholder: 'Filter by title or #',
+    'aria-label': 'Filter features',
+    oninput: (e: Event) => {
+      if (e.target instanceof HTMLInputElement) call('filter_features', { filter: e.target.value });
+    },
+  });
+  filter.value = f.filter;
   return el(
     'div',
     { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` },
     el(
       'div',
       { class: 'actions index-tools' },
-      // The strip names the stage and the repository; the keys are in the
-      // counts' tooltip rather than a row of their own.
-      el(
-        'span',
-        {
-          class: 'meta',
-          title: 'N new · Enter open · V list or board · M move to… · G go to its pane',
-        },
-        counts,
-      ),
-      el('span', { class: 'grow' }),
       filter,
       f.layout === 'list' &&
         f.folded > 0 &&
@@ -261,8 +271,6 @@ function indexHead(f: Features): HTMLElement {
           f.showFolded ? 'Fold held and archived ' : 'Show held and archived ',
           el('span', { class: 'fg-faint' }, String(f.folded)),
         ),
-      seg,
-      el('button', { class: 'btn primary', onclick: openCapture }, 'New feature'),
     ),
   );
 }

@@ -143,6 +143,8 @@ function receive(event: Event): void {
     case 'checkouts':
       state.checkouts = event;
       drawCheckouts();
+      // The counts and buttons live in the strip.
+      drawHead();
       break;
     case 'code':
       state.code = event;

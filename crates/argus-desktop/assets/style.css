@@ -309,6 +309,10 @@
   --header-h: 56px;
   --strip-h: 40px;
   --pane-head-h: 32px;
+  --tab-max: 220px;
+  --grip-w: var(--sp-4);
+  --grip-l: var(--sp-32);
+  --t-fast: 120ms;
   --control-h: 30px;
   --control-h-sm: 24px;
   --icon-btn: 28px;
@@ -585,9 +589,9 @@
   align-items: center;
   gap: var(--sp-6);
   transition:
-    background-color 120ms,
-    border-color 120ms,
-    filter 120ms;
+    background-color var(--t-fast),
+    border-color var(--t-fast),
+    filter var(--t-fast);
 }
 .btn:hover {
   background: color-mix(in srgb, var(--fg) 7%, transparent);
@@ -643,8 +647,8 @@
   cursor: pointer;
   padding: 0;
   transition:
-    background-color 120ms,
-    color 120ms;
+    background-color var(--t-fast),
+    color var(--t-fast);
 }
 .icon:hover {
   background: var(--fill);
@@ -755,6 +759,9 @@
 .segb.on {
   background: var(--fill);
   color: var(--fg);
+}
+.segb.on:not(:disabled):hover {
+  box-shadow: inset 0 0 0 1px var(--ring);
 }
 .segb:not(.on):not(:disabled):hover {
   background: var(--fill);
@@ -1297,14 +1304,6 @@
   gap: var(--sp-4);
   padding-bottom: var(--sp-8);
 }
-.lt {
-  gap: var(--sp-6);
-  background: transparent;
-}
-.lt.on {
-  background: var(--bg-selected);
-}
-
 .orow,
 .srow,
 .prow {
@@ -2078,6 +2077,17 @@ body.maximized .winbtn .restore {
 .gcell > .terminal {
   min-height: 0;
 }
+/* The workspace's panes sit on the stage as cards, not edge to edge: the
+   gutter around them is the stage showing through. */
+#split {
+  margin: var(--sp-16);
+}
+#split > .gcell {
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
 .gcell.keyed > .thead {
   background: var(--bg-selected);
   box-shadow: inset 0 -2px 0 var(--accent);
@@ -2754,8 +2764,17 @@ select option::checkmark {
   font-size: var(--fs-sm);
 }
 .index-head {
-  padding-bottom: var(--sp-12);
+  padding: var(--sp-12) var(--sp-20);
+  border-bottom: 0;
 }
+.head-meta {
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Only the filter, and what narrows the list, stays in the stage; the
+   counts and the actions are in the strip. */
 .index-tools {
   align-items: center;
   gap: var(--sp-12);
@@ -2926,14 +2945,14 @@ body.float-moving * {
   display: inline-flex;
   align-items: center;
   min-width: 0;
-  max-width: 220px;
+  max-width: var(--tab-max);
   height: var(--icon-btn);
   box-sizing: border-box;
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   transition:
-    background-color 120ms,
-    border-color 120ms;
+    background-color var(--t-fast),
+    border-color var(--t-fast);
 }
 .dock-tab:hover,
 .ctab:hover,
@@ -2947,6 +2966,25 @@ body.float-moving * {
 .lt.on {
   background: var(--bg-selected);
   border-color: var(--line-strong);
+}
+/* The views panel's tabs shrink and scroll in their own box, so the dock
+   and hide buttons after them are never pushed off the edge; the fade is
+   the cue that more lies beyond. */
+.tabs-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-24)), transparent);
+}
+.tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+.vpanel-tabs > :not(.tabs-scroll) {
+  flex: none;
 }
 /* The selected tab still answers the pointer: its edge lights. */
 .dock-tab.on:hover,
@@ -3117,22 +3155,22 @@ body.panel-dragging * {
   border-radius: var(--r-pill);
   background: var(--accent);
   opacity: 0;
-  transition: opacity 120ms;
+  transition: opacity var(--t-fast);
   pointer-events: none;
 }
 .dock-sash::after,
 .split-sash::after {
   top: 50%;
   left: 50%;
-  width: 4px;
-  height: 32px;
+  width: var(--grip-w);
+  height: var(--grip-l);
   transform: translate(-50%, -50%);
 }
 .sash::after {
   top: 50%;
   left: 50%;
-  width: 32px;
-  height: 4px;
+  width: var(--grip-l);
+  height: var(--grip-w);
   transform: translate(-50%, -50%);
 }
 .dock-sash:hover::after,
@@ -3261,6 +3299,9 @@ body.console-fullscreen #bar {
 .thead.on {
   background: var(--bg-selected);
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+.thead.on:hover {
+  background: color-mix(in srgb, var(--bg-selected) 85%, var(--fill));
 }
 .thead.on .thead-pick {
   color: var(--fg);
@@ -4680,7 +4721,6 @@ body.console-fullscreen #bar {
   min-width: 0;
   min-height: 0;
 }
-
 .vspin {
   width: 10px;
   height: 10px;
@@ -4703,7 +4743,12 @@ body.console-fullscreen #bar {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  flex-wrap: wrap;
+}
+.vpanel-title .vpanel-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .vpanel-meta {
   display: flex;
@@ -4711,14 +4756,17 @@ body.console-fullscreen #bar {
   gap: var(--sp-8);
   flex-wrap: wrap;
 }
-/* The buttons wrap as one right-aligned group, so on a narrow panel they
-   stack under the meta rather than scatter across two lines. */
+/* The actions stay on the title row, one group at its end. */
 .vpanel-acts {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex: none;
+  align-items: center;
   gap: var(--sp-8);
   margin-left: auto;
+}
+.vpanel-meta .meta {
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
 }
 .vpanel-meta .vlink .track {
   cursor: pointer;
@@ -5007,6 +5055,17 @@ body.console-fullscreen #bar {
   overflow-x: auto;
   max-width: 100%;
   container-type: inline-size;
+  /* Scroll cue: an edge shadow shows on a side only while more lies past
+     it. The local covers hide the scroll-attached shadows at the ends. */
+  background:
+    linear-gradient(to right, var(--bg-surface), transparent) left / var(--sp-24) 100% local
+      no-repeat,
+    linear-gradient(to left, var(--bg-surface), transparent) right / var(--sp-24) 100% local
+      no-repeat,
+    linear-gradient(to right, var(--line-strong), transparent) left / var(--sp-8) 100% scroll
+      no-repeat,
+    linear-gradient(to left, var(--line-strong), transparent) right / var(--sp-8) 100% scroll
+      no-repeat;
 }
 /* A column its author marked optional gives way before the table scrolls. */
 @container (max-width: 560px) {
@@ -5716,8 +5775,11 @@ body.resizing:has(.brief-sash.held) {
 .ext-body:focus {
   outline: none;
 }
+/* A region-sized focusable is not a control: it gets a hairline, not the
+   full ring the buttons and fields do. */
 .ext-body:focus-visible {
-  box-shadow: inset 0 0 0 1px var(--accent);
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 .ext-body .vtable-table tbody tr {
   cursor: pointer;
@@ -6017,15 +6079,19 @@ body.resizing:has(.brief-sash.held) {
   gap: var(--sp-8);
 }
 
+/* The viewBox is the chart's pixel size, so labels keep their size when
+   the panel grows: the chart stops at its own width instead of scaling. */
 .vchart-svg {
   width: 100%;
+  max-width: 480px;
+  max-height: 240px;
   height: auto;
   display: block;
 }
 
 .vchart-axes text {
-  fill: var(--fg-muted);
-  font: 10px var(--font-mono);
+  fill: var(--fg-faint);
+  font: var(--fs-xs) var(--font-ui);
 }
 
 .vchart-grid {
@@ -6050,6 +6116,10 @@ body.resizing:has(.brief-sash.held) {
 .vchart-bar,
 .vchart-dot {
   fill: var(--t);
+}
+
+.vchart-bar {
+  rx: var(--r-sm);
 }
 
 .vchart-key {
@@ -6828,8 +6898,8 @@ button.vtree-chev:focus-visible {
 
 /* A view changed since the person last had it in front of them. */
 .vpanel-tab .vnew {
-  width: 6px;
-  height: 6px;
+  width: var(--sp-6);
+  height: var(--sp-6);
   border-radius: var(--r-pill);
   background: var(--changed);
   flex: none;

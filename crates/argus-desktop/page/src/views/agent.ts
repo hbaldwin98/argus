@@ -81,42 +81,45 @@ function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
   const strip = el(
     'div',
     { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' },
-    views.map((v) => {
-      const close = (): void => call('close_view', { pane: v.pane, id: v.view.id });
-      return closesOnMiddle(
-        el(
-          'div',
-          { class: `vpanel-tab${v === open ? ' on' : ''}` },
+    el(
+      'div',
+      { class: 'tabs-scroll' },
+      views.map((v) => {
+        const close = (): void => call('close_view', { pane: v.pane, id: v.view.id });
+        return closesOnMiddle(
           el(
-            'button',
-            {
-              class: 'vpanel-tab-pick',
-              role: 'tab',
-              type: 'button',
-              'aria-selected': String(v === open),
-              title: v.from ? `${v.view.title} · from ${v.from}` : v.view.title,
-              onclick: () => call('open_view', { pane: v.pane, id: v.view.id }),
-            },
-            v.refreshing && el('span', { class: 'vspin', 'aria-label': 'refreshing' }),
-            v.unseen && el('span', { class: 'vnew', role: 'img', 'aria-label': 'changed' }),
-            el('span', { class: 'ttl' }, v.view.title),
+            'div',
+            { class: `vpanel-tab${v === open ? ' on' : ''}` },
+            el(
+              'button',
+              {
+                class: 'vpanel-tab-pick',
+                role: 'tab',
+                type: 'button',
+                'aria-selected': String(v === open),
+                title: v.from ? `${v.view.title} · from ${v.from}` : v.view.title,
+                onclick: () => call('open_view', { pane: v.pane, id: v.view.id }),
+              },
+              v.refreshing && el('span', { class: 'vspin', 'aria-label': 'refreshing' }),
+              v.unseen && el('span', { class: 'vnew', role: 'img', 'aria-label': 'changed' }),
+              el('span', { class: 'ttl' }, v.view.title),
+            ),
+            el(
+              'button',
+              {
+                class: 'icon x',
+                type: 'button',
+                title: 'Close this view for every window',
+                'aria-label': `Close ${v.view.title}`,
+                onclick: close,
+              },
+              icon('close'),
+            ),
           ),
-          el(
-            'button',
-            {
-              class: 'icon x',
-              type: 'button',
-              title: 'Close this view for every window',
-              'aria-label': `Close ${v.view.title}`,
-              onclick: close,
-            },
-            icon('close'),
-          ),
-        ),
-        close,
-      );
-    }),
-    el('span', { class: 'grow' }),
+          close,
+        );
+      }),
+    ),
     dockMenuButton('views', 'Dock the views', true),
     el(
       'button',
@@ -148,21 +151,41 @@ function header(v: PageView, popped: boolean): HTMLElement {
     'sep',
     { label: 'Close this view for every window', danger: true, run: act.close },
   ];
+  const more = el(
+    'button',
+    {
+      class: 'icon',
+      type: 'button',
+      title: 'More: refresh, pop out, close',
+      'aria-label': `More about ${v.view.title}`,
+      'aria-haspopup': 'menu',
+      onclick: (e: MouseEvent) => {
+        const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        openMenu(v.view.title, items(), { x: box.right, y: box.bottom + 4, align: 'end' });
+      },
+    },
+    icon('more'),
+  );
   return el(
     'div',
     { class: 'vpanel-head' },
-    // As a page the strip already carries the view's name.
-    !popped &&
+    // One row: the name and its status at the start, the actions at the end.
+    // As a page the strip already carries the name.
+    el(
+      'div',
+      { class: 'vpanel-title' },
+      !popped && el('span', { class: 'type-heading vpanel-name' }, v.view.title),
+      v.view.status && chip(v.view.status),
       el(
-        'div',
-        { class: 'vpanel-title' },
-        el('span', { class: 'type-heading' }, v.view.title),
-        v.view.status && chip(v.view.status),
+        'span',
+        { class: 'vpanel-acts' },
+        v.view.actions.map((a) => actionButton(a, ctxOf(v))),
+        more,
       ),
+    ),
     el(
       'div',
       { class: 'vpanel-meta' },
-      popped && v.view.status && chip(v.view.status),
       subject &&
         viewLink(
           subject.url,
@@ -173,30 +196,6 @@ function header(v: PageView, popped: boolean): HTMLElement {
         { class: 'meta', title: new Date(at).toLocaleString() },
         v.from ? `read by ${v.from} · ${ago(at)}` : ago(at),
         v.refreshing ? ' · asked to read it again' : '',
-      ),
-      el(
-        'span',
-        { class: 'vpanel-acts' },
-        v.view.actions.map((a) => actionButton(a, ctxOf(v))),
-        el(
-          'button',
-          {
-            class: 'icon',
-            type: 'button',
-            title: 'More: refresh, pop out, close',
-            'aria-label': `More about ${v.view.title}`,
-            'aria-haspopup': 'menu',
-            onclick: (e: MouseEvent) => {
-              const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              openMenu(v.view.title, items(), {
-                x: box.right,
-                y: box.bottom + 4,
-                align: 'end',
-              });
-            },
-          },
-          icon('more'),
-        ),
       ),
     ),
   );

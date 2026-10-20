@@ -24,39 +24,22 @@ function empty(...body: Child[]): HTMLElement {
   return el('div', { class: 'empty' }, el('div', { class: 'empty-body' }, body));
 }
 
-function head(c: Checkouts): HTMLElement {
-  const filter = el('input', {
-    class: 'field filter',
-    id: 'checkouts-filter',
-    placeholder: 'Filter branches',
-    'aria-label': 'Filter checkouts and branches',
-    oninput: (e: Event) => {
-      if (e.target instanceof HTMLInputElement)
-        call('filter_checkouts', { filter: e.target.value });
-    },
-    onkeydown: (e: KeyboardEvent) => {
-      if (actionFor(['filter'], e) === 'leave') {
-        e.preventDefault();
-        (e.target as HTMLElement).blur();
-      }
-    },
-  });
-  filter.value = c.filter;
+/** What the strip carries on the Checkouts stage: the counts beside the
+ *  title, and the branch and fetch buttons and the primary action. */
+export function checkoutsStrip(): { meta: Child[]; tools: HTMLElement[] } | null {
+  const c = state.checkouts;
+  if (!c?.repository) return null;
   const branches = `${c.branches} other branch${c.branches === 1 ? '' : 'es'}`;
-  return el(
-    'div',
-    { class: 'fhead index-head' },
-    el(
-      'div',
-      { class: 'actions index-tools' },
+  return {
+    meta: [
       el(
         'span',
-        { class: 'meta', title: 'Enter open · D delete' },
+        { class: 'meta head-meta', title: 'Enter open · D delete' },
         `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`,
         c.main && [' · primary ', el('span', { class: 'mono fg-ref' }, c.main)],
       ),
-      el('span', { class: 'grow' }),
-      filter,
+    ],
+    tools: [
       el(
         'button',
         {
@@ -78,7 +61,32 @@ function head(c: Checkouts): HTMLElement {
         { class: 'btn primary', onclick: () => checkoutsAction('newWorktree') },
         'New worktree',
       ),
-    ),
+    ],
+  };
+}
+
+function head(c: Checkouts): HTMLElement {
+  const filter = el('input', {
+    class: 'field filter',
+    id: 'checkouts-filter',
+    placeholder: 'Filter branches',
+    'aria-label': 'Filter checkouts and branches',
+    oninput: (e: Event) => {
+      if (e.target instanceof HTMLInputElement)
+        call('filter_checkouts', { filter: e.target.value });
+    },
+    onkeydown: (e: KeyboardEvent) => {
+      if (actionFor(['filter'], e) === 'leave') {
+        e.preventDefault();
+        (e.target as HTMLElement).blur();
+      }
+    },
+  });
+  filter.value = c.filter;
+  return el(
+    'div',
+    { class: 'fhead index-head' },
+    el('div', { class: 'actions index-tools' }, filter),
   );
 }
 
