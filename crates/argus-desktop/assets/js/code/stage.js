@@ -400,7 +400,7 @@ function file(c) {
         c.lines.length > 0 && `${c.lines.length} lines`,
     ].filter(Boolean);
     return el('section', { class: 'code-file' }, (c.path || c.back) &&
-        el('div', { class: 'fhdr' }, c.path && el('span', { class: 'mono path' }, c.path), c.version && el('span', { class: 'pill mono' }, c.version), el('span', { class: 'grow' }), el('span', { class: 'meta' }, facts.join(' · '), (c.added > 0 || c.removed > 0) && ' · ', c.added > 0 && el('span', { class: 'fg-ok' }, `+${c.added}`), c.added > 0 && c.removed > 0 && ' ', c.removed > 0 && el('span', { class: 'fg-danger' }, `−${c.removed}`)), c.back &&
+        el('div', { class: 'fhdr' }, c.path && filePath(c.path), c.version && el('span', { class: 'pill mono' }, c.version), el('span', { class: 'grow' }), el('span', { class: 'meta' }, facts.join(' · '), (c.added > 0 || c.removed > 0) && ' · ', c.added > 0 && el('span', { class: 'fg-ok' }, `+${c.added}`), c.added > 0 && c.removed > 0 && ' ', c.removed > 0 && el('span', { class: 'fg-danger' }, `−${c.removed}`)), c.back &&
             el('button', { class: 'btn sm', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, kbd('B')), c.path &&
             el('button', { class: 'btn sm', onclick: () => codeAction('openEditor') }, 'Open in editor', kbd('E')), !c.outline &&
             el('button', { class: 'btn sm outline-show', onclick: () => click({ on: 'outline' }) }, 'Outline', kbd('O'))), el('div', { class: 'code-wrap' }, el('div', { class: 'code-body', id: 'code-body', onscroll: trackView }, body), c.lines.length > 0 && ruler(c)));
@@ -516,4 +516,10 @@ function cropHits(stage) {
 export function codeAction(action) {
     gesture({ on: 'action', action });
     return true;
+}
+/** The file's name first and bold, its folder after in faint: the name is
+ *  what a narrow header must never lose, so only the folder is ellipsised. */
+function filePath(path) {
+    const at = path.lastIndexOf('/');
+    return el('span', { class: 'mono path', title: path }, el('b', { class: 'fname' }, path.slice(at + 1)), at > 0 && el('span', { class: 'fdir' }, path.slice(0, at)));
 }

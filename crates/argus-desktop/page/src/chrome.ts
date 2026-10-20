@@ -172,6 +172,8 @@ function repoRow(repo: RailRepository): HTMLElement {
     'div',
     {
       class: `repo${repo.quiet ? ' quiet' : ''}${chosen ? ' sel' : ''}`,
+      // The folded rail keeps only a divider here; the name is its tooltip.
+      title: repo.name,
       oncontextmenu: contextMenu(repo.name, () => [
         { heading: repo.name },
         {
@@ -326,6 +328,20 @@ export function paneMenu(pane: number, title: string, first: MenuItem[] = []): M
   ];
 }
 
+/** The folded rail's tile: the initials of the task ('tc' for 'claude ·
+ *  trim context'), since the agent's name before the dot is the same on
+ *  most rows and would make the tiles alike. */
+function paneMark(title: string): string {
+  const at = title.indexOf(' · ');
+  const words = (at >= 0 ? title.slice(at + 3) : title)
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .split(' ');
+  const [first = '', second = ''] = words;
+  const mark = second ? first.slice(0, 1) + second.slice(0, 1) : first.slice(0, 2);
+  return mark.toLowerCase();
+}
+
 function paneRow(checkout: number, pane: RailPane): HTMLElement {
   const word = PANE_SAYS.has(pane.status) ? statusWord(pane.status) : undefined;
   const picked = state.railPick?.pane === pane.id;
@@ -355,11 +371,7 @@ function paneRow(checkout: number, pane: RailPane): HTMLElement {
         class: `pane${pane.on ? ' on' : ''}${picked ? ' picked' : ''}${pane.agent ? '' : ' sh'} ${pane.status}`,
         // The folded rail shows only the initials, so the tooltip carries the name.
         title: `${pane.title} · ${pane.note ?? `${pane.agent ? 'agent' : 'shell'}, ${pane.status}`}`,
-        'data-mark': pane.title
-          .replace(/[^\p{L}\p{N}]+/gu, ' ')
-          .trim()
-          .slice(0, 2)
-          .toLowerCase(),
+        'data-mark': paneMark(pane.title),
         'aria-current': pane.on ? 'true' : null,
         // Dragged onto the stage it opens there, beside what is shown.
         onmousedown: (e: MouseEvent) => dragFromRail(e, pane.id),

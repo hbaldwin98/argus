@@ -30,7 +30,11 @@ export function drawViews(page = shown) {
     const launcher = $('views-tab');
     const open = page.open && page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
     const waiting = page.views.length;
-    launcher.hidden = viewsOut() || waiting === 0;
+    // Kept while the panel is out, lit, so it is the way to close a drawer.
+    const out = viewsOut();
+    launcher.hidden = waiting === 0;
+    launcher.classList.toggle('hot', out);
+    launcher.setAttribute('aria-pressed', String(out));
     launcher.replaceChildren('Views', el('span', { class: 'count' }, String(waiting)));
     launcher.title = `${waiting} ${waiting === 1 ? 'view' : 'views'} agents showed`;
     drawPopped(page);
@@ -45,6 +49,8 @@ export function drawViews(page = shown) {
     const fresh = panel.querySelector('.vpanel-body');
     if (fresh)
         fresh.scrollTop = top;
+    // The open tab is never the one the strip scrolled away.
+    panel.querySelector('.vpanel-tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 /** The view open as a page over the stage: the header and body the panel
  *  has, without its tabs. Rust says which one, and when there is none. */
@@ -181,8 +187,13 @@ const SPILL = {
     active: 'working',
     info: 'info',
 };
-/** Brings the newest view out, from the title strip's button. */
+/** Brings the newest view out, from the title strip's button, which hides
+ *  the panel instead while it is out. */
 export function openNewestView() {
+    if (viewsOut()) {
+        call('hide_views', {});
+        return;
+    }
     const newest = shown.views[0];
     if (newest)
         call('open_view', { pane: newest.pane, id: newest.view.id });

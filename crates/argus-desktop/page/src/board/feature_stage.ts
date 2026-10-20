@@ -610,6 +610,19 @@ function withScrollCue(lanes: HTMLElement): HTMLElement {
   return wrap;
 }
 
+/** A card's footer on one line: the account is cut short with an ellipsis and
+ *  the time after the last dot keeps its own span, so 'ago' never wraps alone. */
+function footer(text: string): HTMLElement {
+  const at = text.lastIndexOf(' · ');
+  const when = at >= 0 && text.endsWith('ago') ? text.slice(at + 3) : null;
+  return el(
+    'span',
+    { class: 'kfoot' },
+    el('span', { class: 'kfoot-what' }, when === null ? text : text.slice(0, at)),
+    when !== null && el('span', { class: 'kfoot-when' }, `· ${when}`),
+  );
+}
+
 function card(row: FeatureRow): HTMLElement {
   let corner: HTMLElement | null;
   if (row.agent) corner = statusPill(row.agent.status);
@@ -677,7 +690,7 @@ function card(row: FeatureRow): HTMLElement {
         el('span', { class: 'pause', 'aria-hidden': 'true' }),
         row.held,
       ),
-    el('span', { class: 'kfoot' }, row.footer),
+    footer(row.footer),
   );
   return node;
 }

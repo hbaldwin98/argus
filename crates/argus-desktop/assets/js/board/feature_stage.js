@@ -357,6 +357,13 @@ function withScrollCue(lanes) {
     new ResizeObserver(update).observe(lanes);
     return wrap;
 }
+/** A card's footer on one line: the account is cut short with an ellipsis and
+ *  the time after the last dot keeps its own span, so 'ago' never wraps alone. */
+function footer(text) {
+    const at = text.lastIndexOf(' · ');
+    const when = at >= 0 && text.endsWith('ago') ? text.slice(at + 3) : null;
+    return el('span', { class: 'kfoot' }, el('span', { class: 'kfoot-what' }, when === null ? text : text.slice(0, at)), when !== null && el('span', { class: 'kfoot-when' }, `· ${when}`));
+}
 function card(row) {
     let corner;
     if (row.agent)
@@ -404,7 +411,7 @@ function card(row) {
             }
         },
     }, el('span', { class: 'krow' }, el('span', { class: 'n' }, `#${row.number}`), row.branch && el('span', { class: 'mono small-mono fg-ref cut' }, row.branch), el('span', { class: 'grow' }), corner), el('span', { class: 'kttl' }, row.title), work, row.held &&
-        el('span', { class: 'khold' }, el('span', { class: 'pause', 'aria-hidden': 'true' }), row.held), el('span', { class: 'kfoot' }, row.footer));
+        el('span', { class: 'khold' }, el('span', { class: 'pause', 'aria-hidden': 'true' }), row.held), footer(row.footer));
     return node;
 }
 // ---- Dragging a card -------------------------------------------------------
