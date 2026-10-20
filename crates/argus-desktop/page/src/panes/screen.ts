@@ -20,6 +20,10 @@ import { readable } from './contrast.js';
 const FONT_SIZE = 13;
 const LINE_HEIGHT = 20;
 
+// How long a pane being switched to may take before its skeleton shows: a
+// live pane's first screen comes well inside it, and would only flash it.
+const SKELETON_DELAY_MS = 250;
+
 // A segment's flags, as `src/connection/page.rs` packs them.
 const BOLD = 1;
 const ITALIC = 2;
@@ -222,11 +226,16 @@ function makeScreen(terminal: HTMLElement, first: Side | null) {
     drawCursor();
   }
 
+  let skeletonTimer: ReturnType<typeof setTimeout> | undefined;
   function expect(next: number | null): void {
-    waiting.hidden = next === null || next === pane;
+    clearTimeout(skeletonTimer);
+    waiting.hidden = true;
+    if (next === null || next === pane) return;
+    skeletonTimer = setTimeout(() => (waiting.hidden = false), SKELETON_DELAY_MS);
   }
 
   function frame(f: Frame): void {
+    clearTimeout(skeletonTimer);
     waiting.hidden = true;
     // The page can run before the stylesheet applies, when every token
     // reads empty; a colour the canvas cannot parse leaves the last one
