@@ -79,7 +79,7 @@ recent sessions need.
 
 All Rust under `src/` (the design_table test walks `crates/<name>/src`). Non-Rust files:
 `build.rs` (`tauri_build::build()`), `tauri.conf.json`, `icons/icon.png` (256×256 **RGBA**) and
-`icons/icon.ico` (converted from the removed phone client's `icon-512.png` at `20dbb14`, which is RGB), `assets/{index.html,style.css}`, the page's TypeScript in `page/src` built into `assets/js`,
+`icons/icon.ico` (16 to 256 px; 32 px and below come from `icon-small.svg`, which drops the title bar and thickens the strokes so the eye survives a taskbar), both rendered from `icons/icon.svg`, the source to edit, `assets/{index.html,style.css}`, the page's TypeScript in `page/src` built into `assets/js`,
 and a `.gitignore` entry for `crates/argus-desktop/gen/` (tauri-build writes schemas there).
 Capabilities: the page uses only app commands and one `Channel`, which need no capability; add a
 `capabilities/` file only if the build or runtime demonstrably needs one (verify, and say).
@@ -362,7 +362,7 @@ What a bundled app needs, and what is done. The app ships unbundled today: `bund
   the bundler places it under the same name. The triple-stripping is what `tauri-build` does
   (`copy_binaries`); the bundler is not in the local cargo registry, so the bundle-time placement
   is not checked here.
-- **Icons.** `icons/` holds only `icon.png` and `icon.ico`. A macOS bundle needs an `icon.icns`,
+- **Icons.** `icons/` holds `icon.png` and `icon.ico` and their SVG sources. A macOS bundle needs an `icon.icns`,
   which does not exist yet; `bundle.icon` must list one before the `app` target builds.
 - **Targets.** `bundle.targets` is not set and `bundle.active` stays `false`. Enabling `app`,
   `msi` and `appimage` is the step that turns this on, once the sidecars and icons are in place.
