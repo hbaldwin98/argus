@@ -681,6 +681,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `board/tracker/link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — what its gestures ask of the daemon, and the page and gestures it trades with the page |
 | `board/tracker/reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — what its gestures ask of the daemon, and the page and gestures it trades with the page |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
+| `screens` | the scenes the screenshot harness draws: a session brought to each screen the window shows, and the events a fresh page hears there, with a stand-in daemon answering what each scene asks |
+| `screens/live` | a scene served live to a page in a browser: its calls reach a real session, the stand-in daemon answers them, and what the page hears goes back |
 
 ## Views
 
