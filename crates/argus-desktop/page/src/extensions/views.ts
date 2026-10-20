@@ -17,6 +17,7 @@ import type { Value } from '../bindings/Value';
 import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
 import { $, closeButton, el, escKey, focusQuietly, icon, type IconName } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
+import { echoes } from './status_echo.js';
 import { closeLayer } from '../kit/menu.js';
 import { keycaps } from '../keys/chords.js';
 import { bindView, keyView, type Screen, screen, viewScreen } from '../panes/screen.js';
@@ -179,13 +180,6 @@ function header(view: ExtTable): HTMLElement {
   );
   // As a page the row is only its buttons; its Dock button is the way back.
   return view.page ? head : draggable(head, view.panel, view.title);
-}
-
-function echoes(row: ExtTable['rows'][number], cell: Value | undefined): boolean {
-  const word = row.status?.label.trim().toLowerCase();
-  if (!word || !cell) return false;
-  const text = cell.kind === 'text' ? cell.text : cell.kind === 'chip' ? cell.chip.label : null;
-  return text !== null && text.trim().toLowerCase() === word;
 }
 
 /** The view as an agent's table block: a row's status, when any has one,

@@ -9,6 +9,7 @@
 import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
 import { $, closeButton, el, escKey, focusQuietly, icon } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
+import { echoes } from './status_echo.js';
 import { closeLayer } from '../kit/menu.js';
 import { keycaps } from '../keys/chords.js';
 import { bindView, keyView, screen, viewScreen } from '../panes/screen.js';
@@ -105,13 +106,6 @@ function header(view) {
         }, icon('close'))), el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'vpanel-acts' }, wide.map((action) => actionButton(view, action, 'btn sm')), modeButton(view, !view.page))));
     // As a page the row is only its buttons; its Dock button is the way back.
     return view.page ? head : draggable(head, view.panel, view.title);
-}
-function echoes(row, cell) {
-    const word = row.status?.label.trim().toLowerCase();
-    if (!word || !cell)
-        return false;
-    const text = cell.kind === 'text' ? cell.text : cell.kind === 'chip' ? cell.chip.label : null;
-    return text !== null && text.trim().toLowerCase() === word;
 }
 /** The view as an agent's table block: a row's status, when any has one,
  *  leads it as a chip. */

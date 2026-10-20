@@ -676,7 +676,11 @@ export function drawHead(): void {
         { class: 'head-name' },
         // Rename lives in the overflow; right-click was an undiscoverable second way.
         el('span', { class: 'type-heading head-title' }, shown.title),
-        el('span', { class: `spill ${shown.status}` }, statusWord(shown.status)),
+        // A shell or editor has no work to report: "idle" on a file is noise, so
+        // only an agent, or a program that ended or asks, gets the pill.
+        shown.agent || PANE_SAYS.has(shown.status)
+          ? el('span', { class: `spill ${shown.status}` }, statusWord(shown.status))
+          : null,
         shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '',
       ),
     ),

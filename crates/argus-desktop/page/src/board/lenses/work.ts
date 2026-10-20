@@ -1019,54 +1019,58 @@ export function decisionDetail(decision: DecisionDetail): HTMLElement {
   if (decision.carriedOutBy.length)
     body.push(titled('Carried out by', lineList(decision.carriedOutBy, '·', 'fg-faint')));
   const chosen = state.chosen?.id === decision.id ? state.chosen.option : null;
-  body.push(
-    el('div', { class: 'grow' }),
-    el(
-      'div',
-      { class: 'actions detail-foot' },
-      el('span', { class: 'grow' }),
-      el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'),
-      open && [
-        el(
-          'button',
-          {
-            class: 'btn',
-            onclick: () => begin({ what: 'answer', id: decision.id, text: '', because: '' }),
-          },
-          'Answer in words…',
-        ),
-        el(
-          'button',
-          {
-            class: 'btn primary',
-            disabled: chosen === null,
-            onclick: () => {
-              if (chosen !== null) edit({ on: 'take', id: decision.id, option: chosen });
-            },
-          },
-          chosen === null ? 'Take an option' : `Take option ${chosen + 1}`,
-        ),
-      ],
-      overflow('More: sub-decision, supersede, copy, withdraw', [
+  const foot = el(
+    'div',
+    { class: 'actions detail-foot' },
+    el('span', { class: 'grow' }),
+    el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'),
+    open && [
+      el(
+        'button',
         {
-          label: 'Sub-decision',
-          run: () => begin({ what: 'addDecision', under: decision.id, task: null, text: '' }),
+          class: 'btn',
+          onclick: () => begin({ what: 'answer', id: decision.id, text: '', because: '' }),
         },
-        !decision.supersededBy && {
-          label: 'Supersede…',
-          run: () => begin({ what: 'supersede', id: decision.id, text: '' }),
-        },
-        { label: 'Copy as ADR', run: () => copyRecord(decision) },
-        'sep',
+        'Answer in words…',
+      ),
+      el(
+        'button',
         {
-          label: decision.withdrawn ? 'Restore' : 'Withdraw',
-          danger: !decision.withdrawn,
-          run: () => edit({ on: 'withdraw', id: decision.id, withdrawn: !decision.withdrawn }),
+          class: 'btn primary',
+          disabled: chosen === null,
+          onclick: () => {
+            if (chosen !== null) edit({ on: 'take', id: decision.id, option: chosen });
+          },
         },
-      ]),
-    ),
+        chosen === null ? 'Take an option' : `Take option ${chosen + 1}`,
+      ),
+    ],
+    overflow('More: sub-decision, supersede, copy, withdraw', [
+      {
+        label: 'Sub-decision',
+        run: () => begin({ what: 'addDecision', under: decision.id, task: null, text: '' }),
+      },
+      !decision.supersededBy && {
+        label: 'Supersede…',
+        run: () => begin({ what: 'supersede', id: decision.id, text: '' }),
+      },
+      { label: 'Copy as ADR', run: () => copyRecord(decision) },
+      'sep',
+      {
+        label: decision.withdrawn ? 'Restore' : 'Withdraw',
+        danger: !decision.withdrawn,
+        run: () => edit({ on: 'withdraw', id: decision.id, withdrawn: !decision.withdrawn }),
+      },
+    ]),
   );
-  return el('article', { class: 'work-detail', 'aria-label': `Decision ${decision.label}` }, body);
+  // The body scrolls and the actions stay under it, so a short window cannot
+  // push them beneath the stage's footer.
+  return el(
+    'article',
+    { class: 'work-detail pinned', 'aria-label': `Decision ${decision.label}` },
+    el('div', { class: 'detail-scroll' }, body),
+    foot,
+  );
 }
 
 /** An open decision's options as cards to choose between. */

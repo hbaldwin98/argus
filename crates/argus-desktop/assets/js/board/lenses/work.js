@@ -610,7 +610,7 @@ export function decisionDetail(decision) {
     if (decision.carriedOutBy.length)
         body.push(titled('Carried out by', lineList(decision.carriedOutBy, '·', 'fg-faint')));
     const chosen = state.chosen?.id === decision.id ? state.chosen.option : null;
-    body.push(el('div', { class: 'grow' }), el('div', { class: 'actions detail-foot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'), open && [
+    const foot = el('div', { class: 'actions detail-foot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => editDecision(decision) }, 'Edit record'), open && [
         el('button', {
             class: 'btn',
             onclick: () => begin({ what: 'answer', id: decision.id, text: '', because: '' }),
@@ -639,8 +639,10 @@ export function decisionDetail(decision) {
             danger: !decision.withdrawn,
             run: () => edit({ on: 'withdraw', id: decision.id, withdrawn: !decision.withdrawn }),
         },
-    ])));
-    return el('article', { class: 'work-detail', 'aria-label': `Decision ${decision.label}` }, body);
+    ]));
+    // The body scrolls and the actions stay under it, so a short window cannot
+    // push them beneath the stage's footer.
+    return el('article', { class: 'work-detail pinned', 'aria-label': `Decision ${decision.label}` }, el('div', { class: 'detail-scroll' }, body), foot);
 }
 /** An open decision's options as cards to choose between. */
 function options(decision) {

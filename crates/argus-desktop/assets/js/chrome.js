@@ -547,7 +547,12 @@ export function drawHead() {
     const size = screen.sizeLabel();
     head.replaceChildren(headStack(el('span', null, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono' }, shown.branch || shown.checkout)), el('span', { class: 'head-name' }, 
     // Rename lives in the overflow; right-click was an undiscoverable second way.
-    el('span', { class: 'type-heading head-title' }, shown.title), el('span', { class: `spill ${shown.status}` }, statusWord(shown.status)), shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '')), 
+    el('span', { class: 'type-heading head-title' }, shown.title), 
+    // A shell or editor has no work to report: "idle" on a file is noise, so
+    // only an agent, or a program that ended or asks, gets the pill.
+    shown.agent || PANE_SAYS.has(shown.status)
+        ? el('span', { class: `spill ${shown.status}` }, statusWord(shown.status))
+        : null, shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '')), 
     // The grid is debugging detail: faint, and its words are in the tooltip.
     el('span', { class: 'meta mono head-size', id: 'size', title: 'Size in columns and rows' }, size));
     more.replaceChildren(el('button', {

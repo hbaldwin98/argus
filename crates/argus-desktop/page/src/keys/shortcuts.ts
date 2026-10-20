@@ -100,6 +100,15 @@ export function openSheet(): void {
       ),
     ),
   );
+  const body = $('over').querySelector<HTMLElement>('.sheet-body');
+  if (body) {
+    const fade = (): void => {
+      body.classList.toggle('more', body.scrollTop + body.clientHeight < body.scrollHeight - 1);
+    };
+    body.addEventListener('scroll', fade, { passive: true });
+    new ResizeObserver(fade).observe(body);
+    fade();
+  }
   // The sheet holds the keys while open; Escape or ? puts it away.
   $('input').blur();
   focusQuietly(close);

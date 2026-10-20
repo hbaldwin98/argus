@@ -622,17 +622,24 @@ const boardObserver = new ResizeObserver(() => boardUpdate());
 function withScrollCue(lanes: HTMLElement): HTMLElement {
   const chip = el('button', { class: 'board-more', type: 'button', hidden: true });
   const wrap = el('div', { class: 'board-wrap' }, lanes, el('div', { class: 'board-fade' }), chip);
-  chip.addEventListener('click', () =>
-    lanes.scrollTo({ left: lanes.scrollWidth, behavior: 'smooth' }),
-  );
-  const update = (): void => {
+  // A column counts as off as soon as any of it is cut: one half read under
+  // the fade is the one a person needs to be told about.
+  const cutOff = (): HTMLElement[] => {
     const edge = lanes.getBoundingClientRect().right;
-    // A column counts as off only when under half of it shows: one mostly
-    // there is read, not announced.
-    const hidden = [...lanes.querySelectorAll<HTMLElement>('.kcol')].filter((col) => {
-      const box = col.getBoundingClientRect();
-      return box.right - edge > box.width / 2;
-    });
+    return [...lanes.querySelectorAll<HTMLElement>('.kcol')].filter(
+      (col) => col.getBoundingClientRect().right > edge + 1,
+    );
+  };
+  chip.addEventListener('click', () => {
+    const [next] = cutOff();
+    if (!next) return;
+    const edge = lanes.getBoundingClientRect().right;
+    // The fade covers the last stretch, so the column comes clear of it.
+    const clear = next.getBoundingClientRect().right - edge + lanes.clientWidth * 0.1;
+    lanes.scrollBy({ left: clear, behavior: 'smooth' });
+  });
+  const update = (): void => {
+    const hidden = cutOff();
     const more = lanes.scrollLeft + lanes.clientWidth < lanes.scrollWidth - 4;
     wrap.classList.toggle('more', more);
     chip.hidden = !more || hidden.length === 0;

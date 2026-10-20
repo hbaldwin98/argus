@@ -52,6 +52,15 @@ export function openSheet() {
         'aria-modal': 'true',
         'aria-labelledby': 'sheet-title',
     }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'sheet-title' }, 'Keyboard shortcuts'), close), el('div', { class: 'sheet-body' }, columns([...groups, ...extensionSheetGroups()])), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, 'Keys inside a pane go to the pane, except the Everywhere group and ', el('span', { class: 'kbd' }, lead), ' then a key')))));
+    const body = $('over').querySelector('.sheet-body');
+    if (body) {
+        const fade = () => {
+            body.classList.toggle('more', body.scrollTop + body.clientHeight < body.scrollHeight - 1);
+        };
+        body.addEventListener('scroll', fade, { passive: true });
+        new ResizeObserver(fade).observe(body);
+        fade();
+    }
     // The sheet holds the keys while open; Escape or ? puts it away.
     $('input').blur();
     focusQuietly(close);

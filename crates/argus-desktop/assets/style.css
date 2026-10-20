@@ -2810,9 +2810,14 @@ body.moving-pane * {
   flex: none;
   color: var(--attention);
 }
+/* --fill can sit close to the toast's own --bg-raised, so the hover tints
+   from the text colour, which every theme keeps apart from it. */
 #notice .icon:hover {
-  background: var(--fill);
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
   color: var(--fg);
+}
+#notice .icon:active {
+  background: color-mix(in srgb, var(--fg) 20%, transparent);
 }
 .notice-text {
   min-width: 0;
@@ -3406,6 +3411,21 @@ select option::checkmark {
   flex-direction: column;
   gap: var(--sp-16);
   overflow-y: auto;
+}
+.work-detail.pinned {
+  overflow: hidden;
+  padding-bottom: var(--sp-12);
+}
+.detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-16);
+}
+.work-detail.pinned > .detail-foot {
+  flex: none;
 }
 .agent-line {
   display: flex;
@@ -4984,23 +5004,23 @@ body.console-fullscreen #bar {
   padding-left: 0;
 }
 .sheet-row {
-  display: flex;
-  align-items: flex-start;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: var(--sp-2) var(--sp-12);
   padding: var(--sp-2) 0;
   font: var(--type-small);
 }
-/* Wide keys drop under their label, right-aligned, rather than squeezing it
-   to a word a line. */
+/* The label wraps; the caps never do, so a long chord stays beside its row. */
 .sheet-row > .keys {
-  flex: none;
   white-space: nowrap;
-  margin-left: auto;
 }
 .sheet-row > .grow {
-  flex: 1 1 55%;
   min-width: 0;
+}
+/* The sheet fades out at the foot while there is more below it. */
+.sheet-body.more {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
 }
 
 /* A pickable diff line lights under the pointer. */
@@ -8825,6 +8845,22 @@ button.vtree-chev:focus-visible {
   .work:has(> .center > .attn:not([hidden])) .dock-right {
     top: calc(var(--attn-h) + var(--sp-16));
   }
+  /* The drawer covers the stage's right edge, so its actions sit beside
+     the title at the left where they stay reachable, and a table cut by the
+     drawer fades instead of ending mid-word. */
+  #xstage .vpanel-acts {
+    margin-left: 0;
+  }
+  body:has(#xstage:not([hidden])) .dock-right::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--sp-32) * -1);
+    width: var(--sp-32);
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--bg-sunken));
+  }
 
   /* The Code stage gives the file its room: narrower side columns, and the
      tab strip without the keys, which the tooltips and the palette still say. */
@@ -8892,9 +8928,8 @@ button.vtree-chev:focus-visible {
 /* In the fade, centred and clear of every column's outline. */
 .board-more {
   position: absolute;
-  top: 50%;
+  bottom: var(--sp-16);
   right: var(--sp-12);
-  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   gap: var(--sp-8);
