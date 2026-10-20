@@ -70,20 +70,13 @@ export function flowsLens(view: FeatureView): HTMLElement {
         { class: 'stack-4 work-add' },
         el('div', { class: 'label' }, 'New flow'),
         field('edit-add', editing.text, false, (text) => (editing.text = text), 'What it shows'),
-        el('div', { class: 'meta' }, 'It starts as two lifelines and a request; edit its source.'),
         formButtons('Add'),
       ),
     );
   }
   if (flow) {
     list.append(
-      el(
-        'div',
-        { class: 'label steps-label' },
-        el('span', null, 'Steps'),
-        el('span', { class: 'grow' }),
-        el('span', { class: 'label-aside' }, 'the diagram is drawn from these'),
-      ),
+      el('div', { class: 'label steps-label' }, el('span', null, 'Steps')),
       el('div', { class: 'stack-2 steps-list' }, flowSteps(flow)),
       el('div', { class: 'step-below' }, stepBelow(flow)),
     );
@@ -173,11 +166,11 @@ function stepBelow(flow: FlowDetail): Child {
       { class: 'actions' },
       el(
         'button',
-        { class: 'btn', onclick: (e: MouseEvent) => bindMenu(flow, e) },
+        { class: 'btn sm', onclick: (e: MouseEvent) => bindMenu(flow, e) },
         'Bind a decision…',
       ),
-      el('button', { class: 'btn', onclick: () => editStep(flow) }, 'Edit step'),
-      el('button', { class: 'btn', onclick: () => editSource(flow) }, 'Edit source'),
+      el('button', { class: 'btn sm', onclick: () => editStep(flow) }, 'Edit step'),
+      el('button', { class: 'btn sm', onclick: () => editSource(flow) }, 'Edit source'),
     ),
   );
 }
@@ -208,8 +201,21 @@ function picture(flow: FlowDetail | null): HTMLElement {
         keycap('F'),
       ),
     ),
-    el('div', { class: 'seq-holder' }, drawn.node),
+    scrollCue(el('div', { class: 'seq-holder' }, drawn.node)),
   );
+}
+
+/** A diagram wider than its box fades out at the edge it scrolls toward, so
+ *  a lifeline cut off there reads as more to come, not as the end. */
+function scrollCue(holder: HTMLElement): HTMLElement {
+  const update = (): void => {
+    const more = holder.scrollWidth - holder.clientWidth - holder.scrollLeft > 4;
+    holder.classList.toggle('scrolls', more);
+    holder.title = more ? 'Scroll sideways for the rest' : '';
+  };
+  holder.addEventListener('scroll', update, { passive: true });
+  requestAnimationFrame(update);
+  return holder;
 }
 
 /** Puts the cursor on a flow and, given one, a step of it, counted from

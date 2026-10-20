@@ -36,37 +36,44 @@ function head(r: ReviewPage): HTMLElement {
   return el(
     'div',
     { class: 'dhead review-head' },
-    el(
-      'div',
-      { class: 'type-title', id: 'review-title' },
-      'Review · ',
-      r.name,
-      ' ',
-      el('span', { class: 'mono fg-ref' }, r.branch),
-    ),
+    el('div', { class: 'type-title', id: 'review-title' }, 'Review'),
+    // The branch once; the checkout's name only where it is another word.
+    el('span', { class: 'ktag mono' }, r.name !== r.branch && `${r.name} · `, r.branch),
+    // Two controls, each said by what it changes, so they do not read as
+    // one four-way choice.
     r.base === 'commit'
       ? el('span', { class: 'meta mono' }, r.commit ?? '')
       : el(
           'div',
-          { class: 'seg', role: 'radiogroup', 'aria-label': 'Side' },
-          segment(
-            'Unstaged ',
-            r.base === 'unstaged',
-            () => click({ on: 'side', staged: false }),
-            count(r.unstaged),
-          ),
-          segment(
-            'Staged ',
-            r.base === 'staged',
-            () => click({ on: 'side', staged: true }),
-            count(r.staged),
+          { class: 'seg-group' },
+          el('span', { class: 'meta' }, 'Changes'),
+          el(
+            'div',
+            { class: 'seg', role: 'radiogroup', 'aria-label': 'Side' },
+            segment(
+              'Unstaged ',
+              r.base === 'unstaged',
+              () => click({ on: 'side', staged: false }),
+              count(r.unstaged),
+            ),
+            segment(
+              'Staged ',
+              r.base === 'staged',
+              () => click({ on: 'side', staged: true }),
+              count(r.staged),
+            ),
           ),
         ),
     el(
       'div',
-      { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' },
-      segment('Unified', !r.split, () => !r.split || call('review_action', { action: 'split' })),
-      segment('Split', r.split, () => r.split || call('review_action', { action: 'split' })),
+      { class: 'seg-group' },
+      el('span', { class: 'meta' }, 'View'),
+      el(
+        'div',
+        { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' },
+        segment('Unified', !r.split, () => !r.split || call('review_action', { action: 'split' })),
+        segment('Split', r.split, () => r.split || call('review_action', { action: 'split' })),
+      ),
     ),
     r.files.length > 0 &&
       el(
@@ -160,7 +167,14 @@ function files(r: ReviewPage): HTMLElement {
               title: f.path,
               onclick: () => click({ on: 'file', file: i }),
             },
-            el('span', { class: 'rname' }, el('span', { class: 'fg-faint' }, f.dir), f.name),
+            // The file's name is what is scanned for, so it leads; its
+            // folder is the line under it and is what is cut short.
+            el(
+              'span',
+              { class: 'rname' },
+              el('b', { class: 'rbase' }, f.name),
+              el('span', { class: 'rdir' }, f.dir.replace(/\/$/, '') || 'repository root'),
+            ),
             el('span', { class: 'fg-ok' }, `+${f.added}`),
             el('span', { class: 'fg-danger' }, `−${f.removed}`),
           )
@@ -274,9 +288,12 @@ function diff(r: ReviewPage): HTMLElement {
       el(
         'div',
         { class: 'fhdr' },
-        el('span', { class: 'mono' }, path.path),
+        el('b', null, path.name),
+        el('span', { class: 'meta mono cut' }, path.dir.replace(/\/$/, '')),
+        el('span', { class: 'fg-ok' }, `+${path.added}`),
+        el('span', { class: 'fg-danger' }, `−${path.removed}`),
         el('span', { class: 'grow' }),
-        r.pick && el('span', { class: 'meta' }, `${r.pick} picked`),
+        r.pick && el('span', { class: 'ktag' }, `${r.pick} picked`),
       ),
     // Not `split`: that class is the app's flex-row layout, and would lay
     // every diff row side by side.

@@ -17,8 +17,9 @@ import type { TaskDetail } from '../../bindings/TaskDetail';
 import type { WorkRow } from '../../bindings/WorkRow';
 import { notice } from '../../chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el, type Child } from '../../kit/dom.js';
+import { $, el, statusPill, type Child } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
+import { openMenu, type MenuItem } from '../../kit/menu.js';
 import { flowsAction, flowsLens } from './flows.js';
 import { featureViewLink, savedFeatureLinks, ticketLink } from '../tracker/tickets.js';
 import { actionFor } from '../../keys/keymap.js';
@@ -42,6 +43,24 @@ export const LENSES: { lens: Lens; name: string; key: string }[] = [
   { lens: 'record', name: 'Record', key: '2' },
   { lens: 'flows', name: 'Flows', key: '3' },
 ];
+
+/** The overflow of a row of actions: what is rarer than the buttons beside
+ *  it, behind one icon so the row never wraps a lone button under itself. */
+function overflow(label: string, items: (MenuItem | false)[]): HTMLElement {
+  return el(
+    'button',
+    {
+      class: 'icon',
+      'aria-label': label,
+      title: label,
+      onclick: (e: MouseEvent) => {
+        const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        openMenu(label, items, { x: at.right - 200, y: at.top - 120 });
+      },
+    },
+    '⋯',
+  );
+}
 
 export function edit(change: FeatureEdit): void {
   call('edit_feature', { edit: change });
@@ -182,7 +201,7 @@ export function drawWork(): void {
     body = el('div', { class: 'split' }, side, outlineSash(side), detail(view));
   }
   const scrolled = scrollOffsets(stage);
-  stage.replaceChildren(head(view), body);
+  stage.replaceChildren(head(view), body, keyBar(view.lens));
   restoreScroll(stage, scrolled);
   drawExpanded();
   const again = focused?.id ? document.getElementById(focused.id) : null;
@@ -297,7 +316,13 @@ function head(view: FeatureView): HTMLElement {
       el('span', { class: 'fg-faint' }, '›'),
       el('span', { class: 'fg' }, lensName),
       el('span', { class: 'grow' }),
-      el('span', { class: 'meta' }, keycap('Esc'), ' back to features'),
+      el(
+        'span',
+        { class: 'meta' },
+        view.branch && el('span', { class: 'mono fg-ref' }, view.branch),
+        view.branch && view.agent && ' · ',
+        view.agent && [`${view.agent.title} `, statusPill(view.agent.status)],
+      ),
     ),
     el(
       'div',
@@ -309,36 +334,15 @@ function head(view: FeatureView): HTMLElement {
         ' ',
         view.title,
       ),
-      el(
-        'span',
-        { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` },
-        view.standing,
-      ),
-      el('span', { class: 'grow' }),
-      el(
-        'span',
-        { class: 'meta' },
-        view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)],
-        view.branch && view.agent && ' · ',
-        view.agent && [
-          el('span', { class: 'glyph' }, '◆'),
-          ` ${view.agent.title} `,
-          el('span', { class: `st ${view.agent.status}` }, view.agent.status),
-        ],
-      ),
-    ),
-    brief,
-    el(
-      'div',
-      { class: 'actions head-row' },
+      el('span', { class: `ktag ${view.standing}` }, view.standing),
       el('span', { class: 'pbar wide' }, progress),
       el(
         'span',
         { class: 'meta' },
         parts.flatMap((part, i): Child[] => (i ? [' · ', part] : [part])),
       ),
-      tickets(view),
     ),
+    brief,
     el(
       'div',
       { class: 'lens', role: 'tablist', 'aria-label': 'Lens' },
@@ -356,7 +360,7 @@ function head(view: FeatureView): HTMLElement {
         ),
       ),
       el('span', { class: 'grow' }),
-      el('span', { class: 'meta lens-keys' }, lensKeys(view.lens)),
+      tickets(view),
     ),
   );
 }
@@ -378,17 +382,13 @@ function tickets(view: FeatureView): HTMLElement {
     view.views.map(featureViewLink),
     savedFeatureLinks(view.number),
     view.links.length > 0 &&
+      !view.reconcile &&
+      view.changes !== null &&
+      view.changes > 0 &&
       el(
         'span',
-        { class: 'meta' },
-        view.reconciled ?? 'never reconciled',
-        view.changes !== null &&
-          view.changes > 0 &&
-          el(
-            'span',
-            { class: 'fg-changed' },
-            ` · ${view.changes} change${view.changes === 1 ? '' : 's'} since`,
-          ),
+        { class: 'meta fg-changed', title: view.reconciled ?? 'never reconciled' },
+        `${view.changes} change${view.changes === 1 ? '' : 's'} since`,
       ),
     el(
       'button',
@@ -403,17 +403,23 @@ function tickets(view: FeatureView): HTMLElement {
       el(
         'button',
         {
-          class: `btn sm${view.reconcile === 'proposed' ? ' primary' : ''}`,
-          title: 'Reconcile with its tickets (R)',
+          class: 'btn sm',
+          title: `Reconcile with its tickets (R) · ${view.reconciled ?? 'never reconciled'}`,
           onclick: () => call('open_reconcile', {}),
         },
         'Reconcile…',
-        view.reconcile && el('span', { class: 'meta' }, ` ${waiting[view.reconcile] ?? ''}`),
+      ),
+    view.links.length > 0 &&
+      view.reconcile &&
+      el(
+        'span',
+        { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` },
+        waiting[view.reconcile] ?? '',
       ),
   );
 }
 
-function lensKeys(lens: Lens): Child[] {
+function keyBar(lens: Lens): HTMLElement {
   const keys: [string, string][] =
     lens === 'record'
       ? [
@@ -438,7 +444,13 @@ function lensKeys(lens: Lens): Child[] {
             ['T', 'link'],
             ['R', 'reconcile'],
           ];
-  return keys.flatMap(([key, what], i): Child[] => [i ? ' · ' : null, keycap(key), ` ${what}`]);
+  return el(
+    'div',
+    { class: 'kbar' },
+    keys.map(([key, what]) => el('span', { class: 'kbar-key' }, keycap(key), ` ${what}`)),
+    el('span', { class: 'grow' }),
+    el('span', { class: 'kbar-key' }, keycap('Esc'), ' back to features'),
+  );
 }
 
 export function keycap(key: string): HTMLElement {
@@ -500,7 +512,7 @@ function outline(view: FeatureView): HTMLElement {
       { class: 'label' },
       el('span', null, 'Outline'),
       el('span', { class: 'grow' }),
-      el('span', null, 'tasks and the decisions raised under them'),
+      legend(),
     ),
   );
   if (!view.loaded) section.append(el('div', { class: 'meta' }, 'Reading its tasks…'));
@@ -538,6 +550,26 @@ function outline(view: FeatureView): HTMLElement {
     ),
   );
   return section;
+}
+
+/** What each glyph of the outline means, as the outline's own header. */
+function legend(): HTMLElement {
+  const words: [string, string][] = [
+    ['todo', 'to do'],
+    ['doing', 'in progress'],
+    ['done', 'done'],
+    ['accepted', 'decided'],
+    ['open', 'open'],
+    ['rejected', 'rejected'],
+  ];
+  return el(
+    'span',
+    { class: 'legend-row' },
+    words.map(([word, say]) => {
+      const [mark, tone] = stateMark(word);
+      return el('span', { class: 'legend-item' }, el('span', { class: tone }, mark), say);
+    }),
+  );
 }
 
 export function stateMark(word: string): [string, string] {
@@ -752,14 +784,22 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
       'Description',
       task.body
         ? el('div', { class: 'fg-muted prose' }, task.body)
-        : el('div', { class: 'fg-faint' }, 'No description.'),
+        : el('button', { class: 'vlink fg-faint', onclick: () => editRow() }, 'Add a description'),
     ),
     titled(
       'Done when',
       criteria.length
         ? criteria
         : !addCriterion && el('div', { class: 'fg-faint' }, 'Nothing says when it is done yet.'),
-      addCriterion,
+      addCriterion ??
+        el(
+          'button',
+          {
+            class: 'btn sm quiet',
+            onclick: () => begin({ what: 'criterion', id: task.id, text: '' }),
+          },
+          '+ Add criterion',
+        ),
     ),
     task.boundBy.length > 0 && titled('Bound by', lineList(task.boundBy, '✓', 'fg-ok')),
     task.notes.length > 0 &&
@@ -778,28 +818,20 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
     el(
       'div',
       { class: 'actions' },
-      el('button', { class: 'btn', onclick: () => editRow() }, 'Edit'),
-      el(
-        'button',
-        { class: 'btn', onclick: () => begin({ what: 'criterion', id: task.id, text: '' }) },
-        'Add criterion',
-      ),
-      el(
-        'button',
-        { class: 'btn', onclick: () => begin({ what: 'addTask', parent: task.id, text: '' }) },
-        'Add subtask',
-      ),
-      el(
-        'button',
-        {
-          class: 'btn',
-          onclick: () => begin({ what: 'addDecision', under: null, task: task.id, text: '' }),
-        },
-        'Raise a decision',
-      ),
-      el('span', { class: 'grow' }),
       view.agent &&
         el('button', { class: 'btn primary', onclick: () => goToPane(view) }, 'Go to pane'),
+      el('button', { class: 'btn', onclick: () => editRow() }, 'Edit'),
+      el('span', { class: 'grow' }),
+      overflow('More: subtask, decision', [
+        {
+          label: 'Add subtask',
+          run: () => begin({ what: 'addTask', parent: task.id, text: '' }),
+        },
+        {
+          label: 'Raise a decision',
+          run: () => begin({ what: 'addDecision', under: null, task: task.id, text: '' }),
+        },
+      ]),
     ),
   );
 }
@@ -911,9 +943,22 @@ export function decisionDetail(decision: DecisionDetail): HTMLElement {
       body.push(
         titled(
           'Consequences',
-          decision.consequences.map((line) =>
-            el('div', { class: line.startsWith('+') ? 'fg-ok' : 'fg-attention' }, line),
-          ),
+          decision.consequences.map((line) => {
+            // A gain and a cost differ in shape as well as colour: a round
+            // plus and a square minus, so colour alone is not what tells.
+            const gain = line.startsWith('+');
+            return el(
+              'div',
+              { class: 'conseq' },
+              el(
+                'span',
+                { class: `cmark ${gain ? 'gain' : 'cost'}`, 'aria-hidden': 'true' },
+                gain ? '+' : '−',
+              ),
+              el('span', { class: 'sr-only' }, gain ? 'Gain: ' : 'Cost: '),
+              line.replace(/^[+-]\s*/, ''),
+            );
+          }),
         ),
       );
     }
@@ -976,21 +1021,19 @@ export function decisionDetail(decision: DecisionDetail): HTMLElement {
         },
         'Sub-decision',
       ),
-      !decision.supersededBy &&
-        el(
-          'button',
-          { class: 'btn', onclick: () => begin({ what: 'supersede', id: decision.id, text: '' }) },
-          'Supersede…',
-        ),
-      el('button', { class: 'btn', onclick: () => copyRecord(decision) }, 'Copy as ADR'),
-      el(
-        'button',
-        {
-          class: 'btn',
-          onclick: () => edit({ on: 'withdraw', id: decision.id, withdrawn: !decision.withdrawn }),
+      overflow('More: supersede, copy, withdraw', [
+        !decision.supersededBy && {
+          label: 'Supersede…',
+          run: () => begin({ what: 'supersede', id: decision.id, text: '' }),
         },
-        decision.withdrawn ? 'Restore' : 'Withdraw',
-      ),
+        { label: 'Copy as ADR', run: () => copyRecord(decision) },
+        'sep',
+        {
+          label: decision.withdrawn ? 'Restore' : 'Withdraw',
+          danger: !decision.withdrawn,
+          run: () => edit({ on: 'withdraw', id: decision.id, withdrawn: !decision.withdrawn }),
+        },
+      ]),
     ),
   );
   return el('article', { class: 'work-detail', 'aria-label': `Decision ${decision.label}` }, body);

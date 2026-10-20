@@ -212,7 +212,9 @@ function hitFile(f: CodeHitFile): HTMLElement[] {
     'button',
     { class: 'hfile', title: f.path, onclick: () => click({ on: 'hitFile', path: f.path }) },
     chevron(f.open),
-    el('span', { class: 'ttl' }, el('span', { class: 'fg-faint' }, f.dir), f.name),
+    // The file's own name first, which is what is scanned for; its folder
+    // trails it and is what gives way.
+    el('span', { class: 'ttl' }, el('b', null, f.name), el('span', { class: 'dir' }, f.dir)),
     el('span', { class: 'hcount' }, String(f.count)),
   );
   if (!f.open) return [top];
@@ -318,7 +320,11 @@ function side(c: CodePage): HTMLElement {
           ),
         c.jump ? jumpList(c.jump) : tree(c),
       ];
-  return el('aside', { class: 'code-tree', 'aria-label': 'Files in the checkout' }, body);
+  return el(
+    'aside',
+    { class: `code-tree${c.search ? ' searching' : ''}`, 'aria-label': 'Files in the checkout' },
+    body,
+  );
 }
 
 /** The widths the person dragged the tree and the outline to, or the
@@ -482,7 +488,23 @@ function file(c: CodePage): HTMLElement {
   if (c.failed && c.lines.length === 0)
     body = el('div', { class: 'review-empty fg-muted' }, c.failed);
   else if (!c.path)
-    body = el('div', { class: 'review-empty fg-muted' }, 'Pick a file on the left, or Ctrl P.');
+    body = el(
+      'div',
+      { class: 'empty code-empty' },
+      el(
+        'div',
+        { class: 'empty-body' },
+        icon('file'),
+        el('div', { class: 'type-title' }, 'Pick a file'),
+        el('div', { class: 'fg-muted' }, 'Choose one in the tree, or search by name.'),
+        el(
+          'button',
+          { class: 'btn', onclick: () => codeAction('filter') },
+          'Go to a file',
+          kbd('Ctrl P'),
+        ),
+      ),
+    );
   else if (c.fileLoading && c.lines.length === 0)
     body = ghosts([[0.5], [0.9], [0.8], [0.7], [0.6]]);
   else if (c.note) body = el('div', { class: 'review-empty fg-muted' }, `${c.path}: ${c.note}`);
@@ -568,7 +590,7 @@ function outline(c: CodePage): HTMLElement {
               title: s.name,
               onclick: () => click({ on: 'go', line: s.line }),
             },
-            el('span', { class: 'okind' }, s.kind),
+            el('span', { class: 'okind', title: s.kind }, s.kind.slice(0, 1).toUpperCase()),
             el('span', { class: 't' }, s.name),
             s.changed ? el('span', { class: 'tchg', 'aria-label': 'changed' }) : el('span', null),
           ),
@@ -624,7 +646,8 @@ export function drawCode(): void {
   settleDraft('code-comment', c.comment !== null);
   const typing = document.activeElement?.id;
   const files = side(c);
-  const defined = c.outline && outline(c);
+  // An outline of no file is 200px of chrome with nothing in it.
+  const defined = c.outline && c.path ? outline(c) : null;
   stage.replaceChildren(
     head(c),
     el(

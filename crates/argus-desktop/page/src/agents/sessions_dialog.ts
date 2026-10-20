@@ -70,6 +70,19 @@ function transcript(p: SessionPreview): Child {
   ];
 }
 
+/** The daemon sends the moment a session began as an ISO instant; a person
+ *  reads it as a day and a time in their own zone. */
+function humanTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return at.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function preview(s: SessionsPage): HTMLElement {
   const p = s.preview;
   return el(
@@ -82,9 +95,12 @@ function preview(s: SessionsPage): HTMLElement {
         el('span', { class: 'ellipsis' }, p.title),
         el('span', { class: 'meta' }, p.harness),
         el('span', { class: 'meta mono' }, p.checkout),
-        p.started && el('span', { class: 'meta' }, p.started),
+        p.started &&
+          el('span', { class: 'meta', title: p.started }, `started ${humanTime(p.started)}`),
         el('span', { class: 'grow' }),
-        el('span', { class: 'meta mono ellipsis' }, p.sessionId),
+        // The whole id is for finding the file; eight characters tell
+        // sessions apart, and the rest is a hover away.
+        el('span', { class: 'meta mono', title: p.sessionId }, p.sessionId.slice(0, 8)),
       ),
     el(
       'div',

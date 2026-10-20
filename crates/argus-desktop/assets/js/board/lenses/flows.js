@@ -27,10 +27,10 @@ export function flowsLens(view) {
         }, el('span', { class: item.on ? 'strong' : 'fg-muted' }, item.title), el('span', { class: 'meta' }, item.summary)));
     }
     if (editing?.what === 'addFlow') {
-        list.append(el('div', { class: 'stack-4 work-add' }, el('div', { class: 'label' }, 'New flow'), field('edit-add', editing.text, false, (text) => (editing.text = text), 'What it shows'), el('div', { class: 'meta' }, 'It starts as two lifelines and a request; edit its source.'), formButtons('Add')));
+        list.append(el('div', { class: 'stack-4 work-add' }, el('div', { class: 'label' }, 'New flow'), field('edit-add', editing.text, false, (text) => (editing.text = text), 'What it shows'), formButtons('Add')));
     }
     if (flow) {
-        list.append(el('div', { class: 'label steps-label' }, el('span', null, 'Steps'), el('span', { class: 'grow' }), el('span', { class: 'label-aside' }, 'the diagram is drawn from these')), el('div', { class: 'stack-2 steps-list' }, flowSteps(flow)), el('div', { class: 'step-below' }, stepBelow(flow)));
+        list.append(el('div', { class: 'label steps-label' }, el('span', null, 'Steps')), el('div', { class: 'stack-2 steps-list' }, flowSteps(flow)), el('div', { class: 'step-below' }, stepBelow(flow)));
     }
     list.append(el('div', { class: 'actions work-foot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => begin({ what: 'addFlow', text: '' }) }, '+ Flow')));
     return el('div', { class: 'split' }, list, picture(flow));
@@ -68,7 +68,7 @@ function stepBelow(flow) {
     const nothing = !step.boundBy.length && !step.carriedOutBy.length;
     return el('div', { class: 'stack-8 step-detail' }, nothing && el('div', { class: 'meta' }, `Nothing binds step ${step.number} yet.`), step.boundBy.length > 0 &&
         titled(`Step ${step.number} is bound by`, lineList(step.boundBy, '✓', 'fg-ok')), step.carriedOutBy.length > 0 &&
-        titled('Carried out by', lineList(step.carriedOutBy, '·', 'fg-faint')), el('div', { class: 'actions' }, el('button', { class: 'btn', onclick: (e) => bindMenu(flow, e) }, 'Bind a decision…'), el('button', { class: 'btn', onclick: () => editStep(flow) }, 'Edit step'), el('button', { class: 'btn', onclick: () => editSource(flow) }, 'Edit source')));
+        titled('Carried out by', lineList(step.carriedOutBy, '·', 'fg-faint')), el('div', { class: 'actions' }, el('button', { class: 'btn sm', onclick: (e) => bindMenu(flow, e) }, 'Bind a decision…'), el('button', { class: 'btn sm', onclick: () => editStep(flow) }, 'Edit step'), el('button', { class: 'btn sm', onclick: () => editSource(flow) }, 'Edit source')));
 }
 function picture(flow) {
     if (!flow) {
@@ -76,7 +76,19 @@ function picture(flow) {
     }
     const drawn = drawSequence(flow.diagram);
     clickable(drawn, flow);
-    return el('article', { class: 'work-detail flow-picture', 'aria-label': flow.title }, el('div', { class: 'label' }, el('span', null, flow.title), el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: openExpanded, title: 'Expand over the window' }, icon('expand'), ' Expand ', keycap('F'))), el('div', { class: 'seq-holder' }, drawn.node));
+    return el('article', { class: 'work-detail flow-picture', 'aria-label': flow.title }, el('div', { class: 'label' }, el('span', null, flow.title), el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: openExpanded, title: 'Expand over the window' }, icon('expand'), ' Expand ', keycap('F'))), scrollCue(el('div', { class: 'seq-holder' }, drawn.node)));
+}
+/** A diagram wider than its box fades out at the edge it scrolls toward, so
+ *  a lifeline cut off there reads as more to come, not as the end. */
+function scrollCue(holder) {
+    const update = () => {
+        const more = holder.scrollWidth - holder.clientWidth - holder.scrollLeft > 4;
+        holder.classList.toggle('scrolls', more);
+        holder.title = more ? 'Scroll sideways for the rest' : '';
+    };
+    holder.addEventListener('scroll', update, { passive: true });
+    requestAnimationFrame(update);
+    return holder;
 }
 /** Puts the cursor on a flow and, given one, a step of it, counted from
  *  zero; with none the flow keeps the step it was on. */

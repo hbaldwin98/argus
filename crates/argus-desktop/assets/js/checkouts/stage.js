@@ -4,7 +4,7 @@
 // (`src/checkouts/table.rs`); the page draws them and reports what is
 // chosen.
 import { startMenu, toggleStart } from '../chrome.js';
-import { $, el, ghosts, icon } from '../kit/dom.js';
+import { $, el, ghosts, icon, statusPill } from '../kit/dom.js';
 import { closeLayer } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
@@ -34,41 +34,44 @@ function head(c) {
     });
     filter.value = c.filter;
     const branches = `${c.branches} other branch${c.branches === 1 ? '' : 'es'}`;
-    return el('div', { class: 'fhead index-head' }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Checkouts'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('Enter'), ' open · ', keycap('D'), ' delete')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Checkouts in ${c.repository}`), el('span', { class: 'meta' }, `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`, c.main && [' · main ', el('span', { class: 'mono fg-ref' }, c.main)]), el('span', { class: 'grow' }), filter, el('button', {
+    return el('div', { class: 'fhead index-head' }, el('div', { class: 'actions index-tools' }, el('span', { class: 'meta' }, `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`, c.main && [' · main ', el('span', { class: 'mono fg-ref' }, c.main)]), el('span', { class: 'grow' }), filter, el('button', {
         class: 'btn',
         'aria-pressed': String(c.branchesShown),
         onclick: () => call('checkouts_action', { action: 'branches' }),
     }, 'Branches ', keycap('B')), el('button', { class: 'btn', onclick: () => call('checkouts_action', { action: 'fetch' }) }, 'Fetch all ', keycap('F')), el('button', { class: 'btn primary', onclick: () => checkoutsAction('newWorktree') }, 'New worktree')));
 }
+/** The keys the table answers to, quietly under it. */
+function keyBar() {
+    const keys = [
+        ['Enter', 'open'],
+        ['R', 'review'],
+        ['H', 'history'],
+        ['P', 'pull'],
+        ['N', 'new worktree'],
+        ['D', 'delete'],
+    ];
+    return el('div', { class: 'kbar' }, keys.map(([key, what]) => el('span', { class: 'kbar-key' }, keycap(key), ` ${what}`)));
+}
 function running(row) {
     if (!row.running.length)
-        return el('span', { class: 'fg-faint' }, '—');
+        return null;
     return [
         row.shared !== null &&
             el('span', { class: 'shared' }, icon('people'), ` shared by ${row.shared} `),
-        ...row.running.flatMap((pane, i) => [
-            i > 0 && el('span', { class: 'fg-faint' }, ' · '),
-            el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'),
-            el('span', { class: `st ${pane.status}` }, pane.status),
-        ]),
+        row.running.map((pane) => el('span', { class: 'pane-status', title: pane.agent ? 'an agent' : 'a shell' }, statusPill(pane.status))),
     ];
 }
+/** What is done to the selected row, in the trailing column: the one thing
+ *  most wanted, and the start menu. The rest sit in the detail strip under
+ *  the row, so nothing is drawn over a cell. */
 function actions(row) {
     const open = el('button', { class: 'btn sm', onclick: () => call('checkouts_action', { action: 'choose' }) }, 'Open');
-    if (row.checkout === null) {
-        return [
-            open,
-            el('button', { class: 'btn sm', onclick: () => checkoutsAction('newWorktree') }, 'New worktree ', keycap('N')),
-            el('button', { class: 'btn sm danger', onclick: () => call('checkouts_action', { action: 'delete' }) }, 'Delete ', keycap('D')),
-        ];
-    }
+    if (row.checkout === null)
+        return open;
     const checkout = row.checkout;
     const hot = state.start?.checkout === checkout && state.start.from === 'table';
     return [
         open,
-        el('button', { class: 'btn sm', onclick: () => call('open_review', { checkout }) }, 'Review ', keycap('R')),
-        el('button', { class: 'btn sm', onclick: () => call('open_history', { checkout }) }, 'History ', keycap('H')),
-        el('button', { class: 'btn sm', onclick: () => call('checkouts_action', { action: 'pull' }) }, 'Pull ', keycap('P')),
         el('span', { class: 'start-at' }, el('button', {
             class: `icon${hot ? ' hot' : ''}`,
             title: 'Start a shell or an agent',
@@ -87,13 +90,11 @@ function tableRow(row, selected) {
         'aria-selected': String(selected),
         onclick: () => call('select_checkout_row', { key: row.key }),
         ondblclick: () => call('checkouts_action', { action: 'choose' }),
-    }, el('td', null, row.name === null
-        ? el('span', { class: 'fg-faint' }, '—')
-        : [
-            el('b', null, row.name),
-            ' ',
-            el('span', { class: 'meta' }, row.primary ? 'primary' : 'worktree'),
-        ]), el('td', { class: 'mono fg-ref' }, row.branch), el('td', null, row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git), row.note && el('span', { class: 'meta' }, row.note)), el('td', { class: 'col-running' }, running(row)), el('td', { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` }, row.feature === null ? el('span', { class: 'fg-faint' }, '—') : `#${row.feature}`), el('td', { class: 'col-last' }, row.last && commitLine(row.last)), el('td', { class: 'row-actions' }, selected && actions(row)));
+    }, el('td', null, row.name !== null && [
+        el('b', null, row.name),
+        ' ',
+        el('span', { class: 'meta' }, row.primary ? 'primary' : 'worktree'),
+    ]), el('td', { class: 'mono fg-ref' }, row.branch), el('td', null, row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git), row.note && el('span', { class: 'meta' }, row.note)), el('td', { class: 'col-running' }, running(row)), el('td', { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` }, row.feature !== null && `#${row.feature}`), el('td', { class: 'col-last' }, row.last && commitLine(row.last)), el('td', { class: 'row-actions' }, selected && actions(row)));
 }
 function commitLine(commit) {
     return [
@@ -103,25 +104,37 @@ function commitLine(commit) {
         el('span', { class: 'fg-faint' }, ` · ${commit.ago}`),
     ];
 }
+function act(label, key, run, danger = false) {
+    return el('button', { class: `btn sm${danger ? ' danger-line' : ''}`, onclick: run }, label, ' ', keycap(key));
+}
+/** The selected row's own strip, directly under it: where it is, what it
+ *  tracks, what changed, and what can be done to it. */
+function detailRow(c, row) {
+    const d = c.detail;
+    if (!d)
+        return null;
+    const checkout = row.checkout;
+    return el('tr', { class: 'detail-row' }, el('td', { colspan: '7' }, el('div', { class: 'cdetail' }, el('div', { class: 'cfacts' }, stack('Path', el('span', { class: 'mono' }, d.path)), d.upstream && stack('Upstream', d.upstream), d.changes && stack('Changes', d.changes)), el('span', { class: 'grow' }), el('div', { class: 'cacts' }, checkout !== null && [
+        act('Review', 'R', () => call('open_review', { checkout })),
+        act('History', 'H', () => call('open_history', { checkout })),
+        act('Pull', 'P', () => call('checkouts_action', { action: 'pull' })),
+    ], checkout === null && act('New worktree', 'N', () => checkoutsAction('newWorktree')), !row.primary &&
+        act(checkout === null ? 'Delete' : 'Remove', 'D', () => call('checkouts_action', { action: 'delete' }), true)))));
+}
 function group(label) {
     return el('tr', { class: 'group' }, el('td', { colspan: '7' }, label));
 }
 function table(c) {
     const checkouts = c.rows.filter((row) => row.checkout !== null);
     const branches = c.rows.filter((row) => row.checkout === null);
-    const rows = (list) => list.map((row) => tableRow(row, row.key === c.selected));
+    const rows = (list) => list.flatMap((row) => {
+        const selected = row.key === c.selected;
+        return [tableRow(row, selected), selected ? detailRow(c, row) : null];
+    });
     return el('div', { class: 'ctable-wrap' }, el('table', { class: 'ctable', 'aria-label': `Checkouts in ${c.repository}` }, el('thead', null, el('tr', null, ['Checkout', 'Branch', 'Git', 'Running', 'Feature', 'Last commit'].map((name) => el('th', { class: `col-${name.split(' ')[0]?.toLowerCase()}` }, name)), el('th', null, el('span', { class: 'sr-only' }, 'Actions')))), el('tbody', null, checkouts.length > 0 && [group('Checkouts'), rows(checkouts)], branches.length > 0 && [group('Branches without a checkout'), rows(branches)])));
 }
 function stack(label, value) {
     return el('div', { class: 'stack-2' }, el('span', { class: 'mlabel' }, label), el('span', { class: 'meta' }, value));
-}
-function detail(c) {
-    const d = c.detail;
-    return el('div', { class: 'cdetail' }, d && [
-        stack(d.name, el('span', { class: 'mono' }, d.path)),
-        d.upstream && stack('Upstream', d.upstream),
-        d.changes && stack('Changes', d.changes),
-    ]);
 }
 // ---- New worktree and the questions before deleting ----------------------
 /** A new branch off the selected checkout, in a worktree of its own. */
@@ -228,7 +241,7 @@ export function drawCheckouts() {
     const body = c.rows.length
         ? table(c)
         : empty(el('div', { class: 'fg-muted' }, c.filter ? `Nothing matches “${c.filter}”.` : 'No checkouts.'));
-    stage.replaceChildren(head(c), body, detail(c));
+    stage.replaceChildren(head(c), body, keyBar());
     drawConfirm(c);
     stage.querySelector('tr.on')?.scrollIntoView({ block: 'nearest' });
     // Redrawn as each letter arrives: the filter keeps the keys and the caret.

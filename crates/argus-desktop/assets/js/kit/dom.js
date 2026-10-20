@@ -37,6 +37,12 @@ const ICON = {
     rocket: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M9.5 2.5c2 0 4 0 4 0s0 2-0 4L8.5 11.5l-4-4z"></path><path d="M4.5 7.5L2.5 8l2 1.5M8.5 11.5L8 13.5 6.5 11.5M10.5 5.5h.01"></path></svg>',
     console: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5l3.5 3.5L3 11.5M8 12h5"></path></svg>',
     puzzle: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 5h2.5a1.5 1.5 0 1 1 3 0H11v2.5a1.5 1.5 0 1 1 0 3V13H3z"></path></svg>',
+    // The empty moments of the stages: a settled column, a folded one, a
+    // search with nothing under it, a file not picked yet.
+    check: '<svg class="empty-icon" width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="14" fill="none" stroke="currentColor" stroke-width="2"></circle><path d="M13.5 20.5l4.5 4.5 8.5-9.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
+    archive: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="3" rx="1"></rect><path d="M3 6v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6M6.5 9h3"></path></svg>',
+    search: '<svg class="empty-icon" width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><circle cx="18" cy="18" r="10" fill="none" stroke="currentColor" stroke-width="2"></circle><path d="M26 26l9 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>',
+    file: '<svg class="empty-icon" width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path d="M10 5h13l8 8v21a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path><path d="M23 5v8h8M14 21h12M14 27h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>',
 };
 export function el(tag, props, ...children) {
     const node = document.createElement(tag);
@@ -88,4 +94,14 @@ export function icon(name) {
     if (!svg)
         throw new Error(`the ${name} icon is empty`);
     return svg;
+}
+const STATUS_WORD = {
+    waiting: 'needs you',
+    'needs-review': 'review',
+};
+/** The one status pill: a dot and a word, tinted by how loud the status is
+ *  (`.spill` in the stylesheet). The word is the daemon's, said as the rail
+ *  says it. */
+export function statusPill(status) {
+    return el('span', { class: `spill ${status}` }, STATUS_WORD[status] ?? status);
 }

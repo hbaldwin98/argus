@@ -94,7 +94,7 @@ export function drawCapture(): void {
         el('div', { class: 'note-box' }, gutter(page, page.note), textarea),
         el(
           'div',
-          { class: 'legend meta' },
+          { class: 'legend' },
           LEGEND.map(([mark, tone, means]) => [
             el('span', { class: tone ? `mono ${tone}` : '' }, mark),
             el('span', null, means),
@@ -117,20 +117,21 @@ function head(page: CapturePage): HTMLElement {
       el('button', { class: 'crumb', onclick: discardCapture }, 'Features'),
       el('span', { class: 'fg-faint' }, '›'),
       el('span', { class: 'fg' }, 'New'),
-      el('span', { class: 'grow' }),
-      el('span', { class: 'meta' }, el('span', { class: 'kbd' }, 'Esc'), ' discard'),
     ),
     el(
       'div',
       { class: 'actions head-row' },
       el('span', { class: 'type-title' }, `New feature in ${page.repository}`),
-      el(
-        'span',
-        { class: 'meta' },
-        'Write it as one note. It becomes the feature when you create it.',
-      ),
       el('span', { class: 'grow' }),
-      el('button', { class: 'btn', onclick: discardCapture }, 'Discard'),
+      el(
+        'button',
+        {
+          class: 'btn',
+          title: 'Discard the note (Esc)',
+          onclick: discardCapture,
+        },
+        'Discard',
+      ),
       el(
         'button',
         {
@@ -270,11 +271,6 @@ function readsAs(page: CapturePage): HTMLElement {
             decision.because && el('div', { class: 'meta indent' }, `because ${decision.because}`),
           ]),
         ),
-    ),
-    el(
-      'div',
-      { class: 'meta' },
-      "The daemon reads the note with the same grammar, so what is here is what it stores. A line it can't place is named here instead of dropped.",
     ),
   );
 }

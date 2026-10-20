@@ -75,14 +75,18 @@ export function drawCapture() {
         },
     });
     textarea.value = page.note;
-    stage.replaceChildren(head(page), el('div', { class: 'split capture' }, el('section', { class: 'capture-note stack-8', 'aria-label': 'The note' }, el('div', { class: 'label' }, 'Note'), el('div', { class: 'note-box' }, gutter(page, page.note), textarea), el('div', { class: 'legend meta' }, LEGEND.map(([mark, tone, means]) => [
+    stage.replaceChildren(head(page), el('div', { class: 'split capture' }, el('section', { class: 'capture-note stack-8', 'aria-label': 'The note' }, el('div', { class: 'label' }, 'Note'), el('div', { class: 'note-box' }, gutter(page, page.note), textarea), el('div', { class: 'legend' }, LEGEND.map(([mark, tone, means]) => [
         el('span', { class: tone ? `mono ${tone}` : '' }, mark),
         el('span', null, means),
     ]))), readsAs(page)));
     textarea.focus();
 }
 function head(page) {
-    return el('div', { class: 'fhead capture-head', id: 'capture-head' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: discardCapture }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, 'New'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, el('span', { class: 'kbd' }, 'Esc'), ' discard')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, `New feature in ${page.repository}`), el('span', { class: 'meta' }, 'Write it as one note. It becomes the feature when you create it.'), el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: discardCapture }, 'Discard'), el('button', {
+    return el('div', { class: 'fhead capture-head', id: 'capture-head' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: discardCapture }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, 'New')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, `New feature in ${page.repository}`), el('span', { class: 'grow' }), el('button', {
+        class: 'btn',
+        title: 'Discard the note (Esc)',
+        onclick: discardCapture,
+    }, 'Discard'), el('button', {
         class: 'btn primary',
         disabled: page.blocked !== null || page.creating,
         title: page.blocked ?? null,
@@ -129,5 +133,5 @@ function readsAs(page) {
             decision.options.length > 0 &&
                 el('div', { class: 'meta indent' }, decision.options.map((option, i) => el('div', null, `${i + 1} · ${option}`))),
             decision.because && el('div', { class: 'meta indent' }, `because ${decision.because}`),
-        ]))), el('div', { class: 'meta' }, "The daemon reads the note with the same grammar, so what is here is what it stores. A line it can't place is named here instead of dropped."));
+        ]))));
 }

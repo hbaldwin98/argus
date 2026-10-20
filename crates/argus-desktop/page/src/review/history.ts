@@ -63,7 +63,7 @@ function diff(h: HistoryPage): HTMLElement {
         'div',
         { class: 'fhdr' },
         el('span', { class: 'mono fg-faint' }, h.commit ?? ''),
-        el('span', { class: 'mono' }, h.path),
+        el('span', { class: 'mono cut' }, h.path),
         el('span', { class: 'meta' }, 'against its first parent'),
         el('span', { class: 'grow' }),
         el(
@@ -143,14 +143,9 @@ export function drawHistory(): void {
         el(
           'div',
           { class: 'dhead review-head' },
-          el(
-            'div',
-            { class: 'type-title', id: 'history-title' },
-            'History · ',
-            h.name,
-            ' ',
-            el('span', { class: 'mono fg-ref' }, h.branch),
-          ),
+          el('div', { class: 'type-title', id: 'history-title' }, 'History'),
+          // The branch once, as the review prints it.
+          el('span', { class: 'ktag mono' }, h.name !== h.branch && `${h.name} · `, h.branch),
           el('span', { class: 'meta' }, 'newest 100 on HEAD'),
           el('span', { class: 'grow' }),
           filterField(h.filter),
