@@ -3668,7 +3668,7 @@ body.filled .rail {
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   background: var(--bg-surface);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+  box-shadow: var(--shadow-pop);
   overflow: hidden;
   pointer-events: auto;
 }
@@ -5799,15 +5799,16 @@ body.console-fullscreen #bar {
   color: var(--fg-faint);
 }
 .themecards {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--sp-12);
 }
 .themecard {
   display: flex;
   flex-direction: column;
   gap: var(--sp-6);
-  width: 150px;
+  width: auto;
+  min-width: 0;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   padding: var(--sp-8);
@@ -5828,6 +5829,12 @@ body.console-fullscreen #bar {
 .themecard:disabled {
   cursor: default;
   opacity: 0.55;
+}
+.themecard .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* A flavour's own colours, whatever the window is drawn in. */
 .themecard .pv {
