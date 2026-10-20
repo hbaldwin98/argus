@@ -261,6 +261,7 @@ function tableRow(row: CheckoutsRow, selected: boolean): HTMLElement {
     'tr',
     {
       class: selected ? 'on' : null,
+      title: row.last ? row.last.summary : null,
       'aria-selected': String(selected),
       onclick: () => call('select_checkout_row', { key: row.key }),
       ondblclick: () => call('checkouts_action', { action: 'choose' }),
@@ -335,6 +336,8 @@ function detailRow(c: Checkouts, row: CheckoutsRow): HTMLElement | null {
           stack('Path', el('span', { class: 'mono', title: d.path }, repoRelative(d.path))),
           d.upstream && stack('Upstream', d.upstream),
           d.changes && stack('Changes', d.changes),
+          // The table's column when it is too narrow to show.
+          row.last && lastFact(row.last),
         ),
         el('span', { class: 'grow' }),
         el(
@@ -405,6 +408,12 @@ function repoRelative(path: string): string {
   const flat = path.replaceAll('\\', '/');
   const at = flat.indexOf('/.argus/');
   return at >= 0 ? flat.slice(at + 1) : path;
+}
+
+function lastFact(commit: LastCommit): HTMLElement {
+  const fact = stack('Last commit', commitLine(commit));
+  fact.classList.add('fact-last');
+  return fact;
 }
 
 function stack(label: string, value: Child): HTMLElement {

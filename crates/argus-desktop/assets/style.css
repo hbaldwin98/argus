@@ -325,6 +325,19 @@
   /* The most an agent's views drawer, and the Code stage's folded side
      columns, take of a narrow window. */
   --drawer-max: 560px;
+  /* A views tab is cut short with an ellipsis here; three fit a 420px dock. */
+  --vtab-max: 200px;
+  /* What a side dock leaves of the window at least, so the pane is never
+     squeezed to nothing... */
+  --dock-floor: 240px;
+  /* ...and above 1200px, the window width past which a views dock may grow
+     beyond --dock-min-pane, which is about a hundred terminal columns. */
+  --dock-min-pane: 440px;
+  --dock-room: 800px;
+  /* The narrowest a stat card in the views panel gets before they stack. */
+  --vstat-min: 200px;
+  /* The glyph in the folded rail's footer buttons. */
+  --icon-glyph: 16px;
   /* The attention strip's height, which a drawer starts below. */
   --attn-h: 44px;
   --code-tree-narrow: 240px;
@@ -2683,7 +2696,7 @@ body.moving-pane * {
 }
 .running-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--vstat-min), 1fr));
   gap: var(--sp-12);
 }
 .rcard {
@@ -3658,7 +3671,7 @@ body.float-moving * {
 }
 .dock-left,
 .dock-right {
-  max-width: calc(100% - 240px);
+  max-width: calc(100% - var(--dock-floor));
 }
 .dock-bottom {
   max-height: calc(100% - 120px);
@@ -4766,6 +4779,22 @@ body.console-fullscreen #bar {
   .ctable .col-last {
     display: none;
   }
+}
+/* The column's content moves into the open row's details when it goes. */
+@container (min-width: 981px) {
+  .cfacts .fact-last {
+    display: none;
+  }
+}
+.cfacts .fact-last {
+  min-width: 0;
+  flex: 1 1 0;
+}
+.cfacts .fact-last .meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 @container (max-width: 820px) {
   .ctable .col-feature {
@@ -8460,7 +8489,10 @@ button.vtree-chev:focus-visible {
 /* A tab is cut short with an ellipsis, never under the dock and hide
    buttons; its close shows on the selected tab and under the pointer. */
 .vpanel-tab {
-  max-width: 200px;
+  /* Tabs shrink before the strip scrolls, so the first is never a sliver. */
+  flex: 0 1 auto;
+  min-width: calc(var(--sp-32) * 3);
+  max-width: var(--vtab-max);
   overflow: hidden;
 }
 .vpanel-tab-pick {
@@ -8478,6 +8510,12 @@ button.vtree-chev:focus-visible {
   background: var(--bg-selected);
   border-color: var(--line-strong);
 }
+.vlauncher[aria-pressed='true']:hover {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 6%);
+}
+.vlauncher[aria-pressed='true']:active {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 10%);
+}
 
 /* ---- Narrow windows ------------------------------------------------------ */
 
@@ -8489,7 +8527,10 @@ button.vtree-chev:focus-visible {
    window has the room besides. */
 @media (min-width: 1201px) {
   .dock-right {
-    max-width: min(calc(100% - 240px), max(440px, calc(100% - 800px)));
+    max-width: min(
+      calc(100% - var(--dock-floor)),
+      max(var(--dock-min-pane), calc(100% - var(--dock-room)))
+    );
   }
 }
 
@@ -8650,8 +8691,8 @@ button.vtree-chev:focus-visible {
   }
   .bar .icon svg,
   .bar .icon.wide svg {
-    width: 16px;
-    height: 16px;
+    width: var(--icon-glyph);
+    height: var(--icon-glyph);
   }
   .bar .icount {
     position: absolute;
@@ -8704,6 +8745,26 @@ button.vtree-chev:focus-visible {
   }
 }
 
+/* The filter folds into a search button in the header under 1200px; the
+   button opens the field (body.filtering) and keeps its id and keys. */
+.filter-toggle {
+  display: none;
+}
+@media (max-width: 1200px) {
+  .filter-toggle {
+    display: inline-flex;
+  }
+  .index-head .filter {
+    display: none;
+  }
+  body.filtering .index-head .filter {
+    display: block;
+  }
+  body:not(.filtering) .index-head.on-board {
+    display: none;
+  }
+}
+
 /* Board columns keep their floor and the board scrolls; the fade and the
    chip say there is more to the right. */
 .board-wrap {
@@ -8730,11 +8791,12 @@ button.vtree-chev:focus-visible {
 .board-wrap.more > .board-fade {
   opacity: 1;
 }
-/* At the foot, clear of every column's header and over the cards' ends. */
+/* In the fade, centred and clear of every column's outline. */
 .board-more {
   position: absolute;
-  right: var(--sp-16);
-  bottom: var(--sp-24);
+  top: 50%;
+  right: var(--sp-12);
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   gap: var(--sp-8);
@@ -8757,6 +8819,9 @@ button.vtree-chev:focus-visible {
 }
 .board-more:hover {
   background: var(--bg-selected);
+}
+.board-more:active {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 10%);
 }
 .board .kcol,
 .board .side {

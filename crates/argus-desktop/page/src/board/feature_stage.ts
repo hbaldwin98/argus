@@ -250,7 +250,25 @@ export function featuresStrip(): { meta: Child[]; tools: HTMLElement[] } | null 
         counts,
       ),
     ],
-    tools: [seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')],
+    tools: [
+      seg,
+      // Under 1200px the filter field folds into this; the field keeps its id.
+      el(
+        'button',
+        {
+          class: 'icon filter-toggle',
+          type: 'button',
+          'aria-label': 'Filter features',
+          title: 'Filter features',
+          onclick: () => {
+            const on = document.body.classList.toggle('filtering');
+            if (on) document.getElementById('feature-filter')?.focus();
+          },
+        },
+        icon('search'),
+      ),
+      el('button', { class: 'btn primary', onclick: openCapture }, 'New feature'),
+    ],
   };
 }
 
@@ -583,6 +601,11 @@ function board(f: Features): HTMLElement {
 /** Columns keep a floor width, so a narrow window scrolls the board; this
  *  says so, with a fade at the edge and a chip naming what is off to the
  *  right, so a column is never lost without a sign. */
+/** One observer for the one board on screen: the stage is rebuilt on every
+ *  tree update, and an observer per draw would outlive its detached lanes. */
+let boardUpdate: () => void = () => {};
+const boardObserver = new ResizeObserver(() => boardUpdate());
+
 function withScrollCue(lanes: HTMLElement): HTMLElement {
   const chip = el('button', { class: 'board-more', type: 'button', hidden: true });
   const wrap = el('div', { class: 'board-wrap' }, lanes, el('div', { class: 'board-fade' }), chip);
@@ -606,7 +629,9 @@ function withScrollCue(lanes: HTMLElement): HTMLElement {
   lanes.addEventListener('scroll', update, { passive: true });
   // Measured once it is in the page: before that every column is nowhere.
   // A column cut by the edge counts as more, not only one wholly off.
-  new ResizeObserver(update).observe(lanes);
+  boardObserver.disconnect();
+  boardObserver.observe(lanes);
+  boardUpdate = update;
   return wrap;
 }
 
@@ -973,6 +998,7 @@ export function featureAction(action: Action): boolean {
       call('feature_action', { action });
       return true;
     case 'filter':
+      document.body.classList.add('filtering');
       document.getElementById('feature-filter')?.focus();
       return true;
     case 'newFeature':

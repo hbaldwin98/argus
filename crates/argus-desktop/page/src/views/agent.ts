@@ -43,7 +43,6 @@ export function drawViews(page: ViewsPage = shown): void {
   // Kept while the panel is out, lit, so it is the way to close a drawer.
   const out = viewsOut();
   launcher.hidden = waiting === 0;
-  launcher.classList.toggle('hot', out);
   launcher.setAttribute('aria-pressed', String(out));
   launcher.replaceChildren('Views', el('span', { class: 'count' }, String(waiting)));
   launcher.title = `${waiting} ${waiting === 1 ? 'view' : 'views'} agents showed`;
