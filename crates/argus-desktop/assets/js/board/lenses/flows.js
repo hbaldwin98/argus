@@ -67,7 +67,7 @@ function stepBelow(flow) {
     }
     const nothing = !step.boundBy.length && !step.carriedOutBy.length;
     return el('div', { class: 'stack-8 step-detail' }, nothing && el('div', { class: 'meta' }, `Nothing binds step ${step.number} yet.`), step.boundBy.length > 0 &&
-        titled(`Step ${step.number} is bound by`, lineList(step.boundBy, '✓', 'fg-ok')), step.carriedOutBy.length > 0 &&
+        titled(`Step ${step.number} is bound by`, lineList(step.boundBy, '◆', 'fg-ref')), step.carriedOutBy.length > 0 &&
         titled('Carried out by', lineList(step.carriedOutBy, '·', 'fg-faint')), el('div', { class: 'actions detail-foot' }, el('span', { class: 'grow' }), el('button', { class: 'btn sm', onclick: () => editStep(flow) }, 'Edit step'), el('button', { class: 'btn sm', onclick: (e) => bindMenu(flow, e) }, 'Bind a decision…'), overflow('More: edit source', [{ label: 'Edit source', run: () => editSource(flow) }])));
 }
 function picture(flow) {
@@ -80,7 +80,7 @@ function picture(flow) {
 }
 /** The diagram scaled down, no further than 85%, so a few lifelines fit
  *  the box; when it still overflows, the selected step is brought into view
- *  and both edges fade as far as there is more to scroll to. */
+ *  only if it is outside it, and both edges fade as far as there is more to scroll to. */
 function fitted(holder, drawn) {
     const update = () => {
         const more = holder.scrollWidth - holder.clientWidth - holder.scrollLeft > 4;
@@ -94,15 +94,20 @@ function fitted(holder, drawn) {
         const room = holder.clientWidth - 24;
         if (room <= 0)
             return;
-        const scale = Math.max(0.85, Math.min(1, room / drawn.width));
+        // Down to 70% when that is what makes the whole width fit at once.
+        const scale = Math.max(0.7, Math.min(1, room / drawn.width));
         drawn.node.setAttribute('width', String(drawn.width * scale));
         drawn.node.setAttribute('height', String(drawn.height * scale));
         const lit = holder.querySelector('.smsg.on');
         if (lit && holder.scrollWidth > holder.clientWidth) {
+            // Only the overflow, so the lifelines on the left stay in view unless
+            // the selected step is itself out of the box.
             const at = lit.getBoundingClientRect();
             const box = holder.getBoundingClientRect();
-            const centre = at.left - box.left + holder.scrollLeft + at.width / 2;
-            holder.scrollLeft = Math.max(0, centre - holder.clientWidth / 2);
+            if (at.right > box.right)
+                holder.scrollLeft += at.right - box.right + 24;
+            else if (at.left < box.left)
+                holder.scrollLeft -= box.left - at.left + 24;
         }
         update();
     });

@@ -471,7 +471,7 @@ function panel(view: FeatureView, flow: FlowDetail): HTMLElement {
       titled(
         'Bound by',
         step.boundBy.length
-          ? lineList(step.boundBy, '✓', 'fg-ok')
+          ? lineList(step.boundBy, '◆', 'fg-ref')
           : el('div', { class: 'fg-faint' }, 'No decision binds it yet.'),
       ),
       step.carriedOutBy.length > 0 &&

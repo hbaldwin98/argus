@@ -51,7 +51,7 @@ export function featureViewLink(link: FeatureViewLink): HTMLElement {
         call('open_view', { pane: link.pane, id: link.id });
       },
     },
-    el('b', null, link.title),
+    el('span', { class: 'vtitle' }, link.title),
     el('span', { class: 'vdot', 'aria-hidden': 'true' }),
   );
 }
@@ -76,7 +76,7 @@ function savedFeatureLink(view: PageSaved): HTMLElement {
         call('open_saved_view', { id: view.id, from: null });
       },
     },
-    el('b', null, view.view.title),
+    el('span', { class: 'vtitle' }, view.view.title),
     el('span', { class: 'vdot', 'aria-hidden': 'true' }),
   );
 }

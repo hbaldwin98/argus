@@ -177,7 +177,10 @@ function side(c) {
                 el('div', { class: 'code-tools' }, el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Which files' }, segment('All', !c.changedOnly, () => click({ on: 'changedOnly', only: false })), segment(`Changed ${c.changed}`, c.changedOnly, () => click({ on: 'changedOnly', only: true })))),
             c.jump ? jumpList(c.jump) : tree(c),
         ];
-    return el('aside', { class: `code-tree${c.search ? ' searching' : ''}`, 'aria-label': 'Files in the checkout' }, sideTabs(c), body);
+    return el('aside', {
+        class: `code-tree${c.search ? ` searching${c.path ? '' : ' alone'}` : ''}`,
+        'aria-label': 'Files in the checkout',
+    }, sideTabs(c), body);
 }
 /** The widths the person dragged the tree and the outline to, or the
  *  stylesheet's own. */

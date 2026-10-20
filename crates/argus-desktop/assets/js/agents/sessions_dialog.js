@@ -4,7 +4,7 @@
 // place of the list. Rust holds the list, the filters and what each
 // session offers (`src/agents/sessions_dialog.rs`); the page draws them
 // and says what was pressed.
-import { $, el, ghosts, icon } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -180,7 +180,7 @@ export function drawSessions() {
         class: 'icon',
         'aria-label': 'Close the recent sessions',
         onclick: () => act('closeLayer'),
-    }, icon('close'))), el('div', { class: 'review-split' }, el('aside', { class: 'history-list', id: 'sessions-list', 'aria-label': 'Sessions' }, list(s)), preview(s)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' move · ', keycap('/'), ' search · ', keycap('H'), keycap('C'), ' harness, checkout · ', keycap('O'), ' whole · ', keycap('Esc'), ' close', el('span', { class: 'grow' }), offer(s.preview)))));
+    }, icon('close'))), el('div', { class: 'review-split' }, el('aside', { class: 'history-list', id: 'sessions-list', 'aria-label': 'Sessions' }, list(s)), preview(s)), el('div', { class: 'dfoot meta' }, hint(['J', 'K'], 'move'), hint('/', 'search'), hint(['H', 'C'], 'harness, checkout'), hint('O', 'whole'), hint('Esc', 'close'), el('span', { class: 'grow' }), offer(s.preview)))));
     ['sessions-list', 'sessions-body'].forEach((id, i) => {
         const node = document.getElementById(id);
         if (node)

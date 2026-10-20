@@ -303,7 +303,7 @@ function panel(view, flow) {
                 onclick: () => move(at + 1),
             }, '›'));
         })), titled('Bound by', step.boundBy.length
-            ? lineList(step.boundBy, '✓', 'fg-ok')
+            ? lineList(step.boundBy, '◆', 'fg-ref')
             : el('div', { class: 'fg-faint' }, 'No decision binds it yet.')), step.carriedOutBy.length > 0 &&
             titled('Carried out by', lineList(step.carriedOutBy, '·', 'fg-faint')), el('div', { class: 'actions' }, el('button', { class: 'btn', onclick: () => editStep(flow) }, 'Edit step'), el('button', { class: 'btn', onclick: (e) => bindMenu(flow, e) }, 'Bind a decision…'), el('button', { class: 'btn', onclick: () => editSource(flow) }, 'Edit source')));
     }

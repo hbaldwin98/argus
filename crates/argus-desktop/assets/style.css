@@ -927,6 +927,8 @@
   color: var(--tone);
   font-size: var(--fs-xs);
   font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
   white-space: nowrap;
 }
 .spill::before {
@@ -1718,7 +1720,7 @@
 .dfoot {
   display: flex;
   align-items: center;
-  gap: var(--sp-8);
+  gap: var(--sp-16);
   padding: var(--sp-12) var(--sp-20);
   border-top: 1px solid var(--line);
   background: var(--bg-chrome);
@@ -2622,8 +2624,25 @@ select option::checkmark {
   flex: none;
 }
 .fhead .head-row {
+  /* The title gives way with an ellipsis before the lenses drop a line. */
   flex-wrap: nowrap;
   min-width: 0;
+}
+.fhead .chips {
+  flex: none;
+  flex-wrap: nowrap;
+  margin-left: 0;
+}
+.fhead .seg {
+  flex: none;
+}
+.fhead .head-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+}
+.fhead .head-progress .pbar.wide {
+  width: 56px;
 }
 .fhead .head-row .type-title {
   min-width: 0;
@@ -3827,6 +3846,13 @@ body.console-fullscreen #bar {
   width: var(--code-tree-w, 400px);
   max-width: 55%;
 }
+/* With no file open the results are all there is to read: they take the room
+   up to a long line's worth and the empty state keeps the rest. */
+.code-tree.searching.alone {
+  width: auto;
+  flex: 1 1 auto;
+  max-width: 720px;
+}
 .code-empty {
   height: 100%;
   box-sizing: border-box;
@@ -4401,6 +4427,9 @@ body.console-fullscreen #bar {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--fg-faint);
+}
+.rfile .rdir.phrase {
+  font-family: inherit;
 }
 .rfile .rbase,
 .rfile .rdir {
@@ -5852,8 +5881,20 @@ select.field {
 
 /* A ticket link a view waits on: it opens the view. */
 .track.viewed {
-  border-color: var(--accent);
   color: var(--fg);
+}
+.track .vdot {
+  background: var(--attention);
+}
+/* Ticket and view chips are the same height and shape as the buttons
+ * beside them; the view's title is words, so only a ticket's key is mono. */
+.chips .track,
+.chips .btn.sm {
+  height: var(--control-h);
+  border-radius: var(--r-pill);
+}
+.track .vtitle {
+  font-weight: 600;
 }
 .tickets {
   gap: var(--sp-6);
@@ -5973,8 +6014,12 @@ body.resizing {
   min-height: var(--control-h);
   cursor: pointer;
 }
+/* A section break like the others in the stage, so the steps do not read as
+ * the last row of the flows above them. */
 .steps-label {
-  padding: var(--sp-12) var(--sp-8) var(--sp-4);
+  margin-top: var(--sp-16);
+  border-top: 1px solid var(--line);
+  padding: var(--sp-16) var(--sp-8) var(--sp-4);
 }
 .steprow {
   display: grid;

@@ -112,6 +112,11 @@ export function statusPill(status, say = statusWord(status)) {
 }
 /** A feature's standing in the status pill's vocabulary, so a feature reads
  *  like an agent wherever it is named: working on it, held, done, or idle. */
+/** A key hint as every footer sets it: the keys, then what they do, with
+ *  the gap between hints doing the separating. */
+export function hint(keys, what) {
+    return el('span', { class: 'kbar-key' }, [keys].flat().map((key) => el('span', { class: 'kbd' }, key)), what);
+}
 export function standingPill(standing) {
     const status = { active: 'working', done: 'done', held: 'waiting' };
     return statusPill(status[standing] ?? 'idle', standing);

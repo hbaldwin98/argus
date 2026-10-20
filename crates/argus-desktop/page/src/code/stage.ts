@@ -302,7 +302,10 @@ function side(c: CodePage): HTMLElement {
       ];
   return el(
     'aside',
-    { class: `code-tree${c.search ? ' searching' : ''}`, 'aria-label': 'Files in the checkout' },
+    {
+      class: `code-tree${c.search ? ` searching${c.path ? '' : ' alone'}` : ''}`,
+      'aria-label': 'Files in the checkout',
+    },
     sideTabs(c),
     body,
   );

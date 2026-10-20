@@ -5,7 +5,7 @@
 
 import type { HistoryPage } from '../bindings/HistoryPage';
 import type { HistoryRowView } from '../bindings/HistoryRowView';
-import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { diffRow } from './dialog.js';
 import { state } from '../state.js';
@@ -18,6 +18,7 @@ function keycap(key: string): HTMLElement {
 function listRow(r: HistoryRowView): HTMLElement {
   const pick = (): void => call('history_action', { action: 'next', row: r.row });
   if (r.kind === 'file') {
+    const dir = r.text.slice(0, Math.max(0, r.text.lastIndexOf('/')));
     return el(
       'button',
       {
@@ -32,11 +33,7 @@ function listRow(r: HistoryRowView): HTMLElement {
         'span',
         { class: 'rname' },
         el('b', { class: 'rbase' }, r.text.slice(r.text.lastIndexOf('/') + 1)),
-        el(
-          'span',
-          { class: 'rdir' },
-          r.text.slice(0, Math.max(0, r.text.lastIndexOf('/'))) || 'repository root',
-        ),
+        el('span', { class: dir ? 'rdir' : 'rdir phrase' }, dir || 'repository root'),
       ),
       el('span', { class: 'fg-ok' }, `+${r.added}`),
       el('span', { class: 'fg-danger' }, `−${r.removed}`),
@@ -180,19 +177,12 @@ export function drawHistory(): void {
         el(
           'div',
           { class: 'dfoot meta' },
-          keycap('J'),
-          keycap('K'),
-          ' move · ',
-          keycap('L'),
-          ' open · ',
-          keycap('H'),
-          ' fold · ',
-          keycap('Enter'),
-          ' file as a review · ',
-          keycap('/'),
-          ' filter · ',
-          keycap('Esc'),
-          ' close',
+          hint(['J', 'K'], 'move'),
+          hint('L', 'open'),
+          hint('H', 'fold'),
+          hint('Enter', 'file as a review'),
+          hint('/', 'filter'),
+          hint('Esc', 'close'),
         ),
       ),
     ),

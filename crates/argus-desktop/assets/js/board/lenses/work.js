@@ -165,7 +165,7 @@ export function drawWork() {
         body = el('div', { class: 'split' }, side, outlineSash(side), detail(view));
     }
     const scrolled = scrollOffsets(stage);
-    stage.replaceChildren(head(view), body, keyBar(view.lens));
+    stage.replaceChildren(head(view), body, keyBar(view));
     restoreScroll(stage, scrolled);
     drawExpanded();
     const again = focused?.id ? document.getElementById(focused.id) : null;
@@ -232,15 +232,22 @@ function stillThere(view) {
     }
 }
 function head(view) {
-    const parts = [
+    const tally = [
         `${view.tasksDone}/${view.tasksTotal} tasks`,
-        view.decided > 0 && el('span', { class: 'fg-ok' }, `${view.decided} decided`),
-        view.open > 0 && el('span', { class: 'fg-attention' }, `${view.open} open`),
+        view.decided > 0 && `${view.decided} decided`,
+        view.open > 0 && `${view.open} open`,
     ].filter((part) => part !== false);
     const progress = el('span', null);
     progress.style.width = `${view.tasksTotal ? Math.round((view.tasksDone / view.tasksTotal) * 100) : 0}%`;
-    const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
-    return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, lensName), el('span', { class: 'pbar wide' }, progress), el('span', { class: 'meta' }, parts.flatMap((part, i) => (i ? [' · ', part] : [part]))), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && el('span', { class: 'mono fg-ref' }, view.branch), view.branch && view.agent && ' · ', view.agent && [`${view.agent.title} `, statusPill(view.agent.status)]), 
+    // The window's header names the stage, so this row opens on the feature
+    // itself; the back arrow is the way out the breadcrumb used to be.
+    return el('div', { class: 'fhead' }, el('div', { class: 'actions head-row' }, el('button', {
+        class: 'crumb',
+        type: 'button',
+        'aria-label': 'Back to the features',
+        title: 'Back to the features (Esc)',
+        onclick: closeFeature,
+    }, '‹'), el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), standingPill(view.standing), el('span', { class: 'meta head-progress', title: tally.join(' · ') }, el('span', { class: 'pbar wide' }, progress), `${view.tasksDone}/${view.tasksTotal}`), el('span', { class: 'grow' }), 
     // Lenses switch what the feature is shown as, so they are segments, not tabs.
     el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Lens' }, LENSES.map(({ lens, name, key }) => el('button', {
         class: `segb${view.lens === lens ? ' on' : ''}`,
@@ -249,7 +256,7 @@ function head(view) {
         title: `${name} (${key})`,
         onclick: () => setLens(lens),
     }, name, lensCount(view, lens) !== null &&
-        el('span', { class: 'fg-faint' }, ` ${lensCount(view, lens)}`))))), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), standingPill(view.standing), el('span', { class: 'grow' }), tickets(view)), briefStrip(view));
+        el('span', { class: 'fg-faint' }, ` ${lensCount(view, lens)}`))))), briefStrip(view));
 }
 /** The brief on one line, with when the tickets were last reconciled and
  *  how much changed since, which the outline's rows no longer say one by one. */
@@ -278,7 +285,7 @@ function briefStrip(view) {
         onclick: () => begin({ what: 'brief', text: view.brief }),
     }, 'Edit'), linked && said.length > 0 && el('span', { class: 'meta fg-changed' }, said.join(' · ')), linked &&
         view.reconcile &&
-        el('span', { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` }, waiting[view.reconcile] ?? ''));
+        el('span', { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` }, waiting[view.reconcile] ?? ''), tickets(view));
 }
 /** The count a lens carries as its suffix: what it has to show. */
 function lensCount(view, lens) {
@@ -303,7 +310,8 @@ function tickets(view) {
             onclick: () => call('open_reconcile', {}),
         }, 'Reconcile…'));
 }
-function keyBar(lens) {
+function keyBar(view) {
+    const lens = view.lens;
     const keys = lens === 'record'
         ? [
             ['E', 'edit'],
@@ -327,7 +335,8 @@ function keyBar(lens) {
                 ['T', 'link'],
                 ['R', 'reconcile'],
             ];
-    return el('div', { class: 'kbar' }, keys.map(([key, what]) => el('span', { class: 'kbar-key' }, keycap(key), ` ${what}`)), el('span', { class: 'grow' }), el('span', { class: 'kbar-key' }, keycap('Esc'), ' back to features'));
+    return el('div', { class: 'kbar' }, keys.map(([key, what]) => el('span', { class: 'kbar-key' }, keycap(key), ` ${what}`)), el('span', { class: 'grow' }), (view.branch || view.agent) &&
+        el('span', { class: 'kbar-key' }, view.branch && el('span', { class: 'mono fg-ref' }, view.branch), view.agent && [`${view.agent.title} `, statusPill(view.agent.status)]), el('span', { class: 'kbar-key' }, keycap('Esc'), ' back to features'));
 }
 export function keycap(key) {
     return el('span', { class: 'kbd' }, key);
@@ -430,14 +439,17 @@ function workRow(row, sub, mixed) {
         row.state === 'withdrawn' ||
         row.state === 'superseded' ||
         row.state === 'rejected';
+    // The Record lens strikes these through; one state is drawn one way.
+    const struck = row.state === 'rejected';
     let aside = null;
     if (row.state === 'open')
         aside = statusPill('waiting');
     else if (row.waitsOn) {
         aside = el('span', { class: 'meta waits' }, icon('lock'), `waits on ${row.waitsOn}`);
     }
-    else if (row.state === 'withdrawn')
-        aside = el('span', { class: 'meta' }, 'withdrawn');
+    else if (row.state === 'withdrawn' || row.state === 'rejected') {
+        aside = el('span', { class: 'meta' }, row.state);
+    }
     else if (sub)
         aside = el('span', { class: 'meta' }, `${sub[0]}/${sub[1]}`);
     const node = el('button', {
@@ -446,8 +458,10 @@ function workRow(row, sub, mixed) {
         onclick: () => call('select_work', { at: row.at }),
         ondblclick: () => editRow(),
     }, el('span', { class: tone }, mark), el('span', {
-        class: `n${decision && row.state !== 'open' ? ' fg-ref' : ''}${row.state === 'open' ? ' fg-attention' : ''}`,
-    }, row.label), el('span', { class: 'wtext' }, el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text), row.key && el('span', { class: 'tkey' }, row.key), mixed &&
+        class: `n${decision && row.state !== 'open' ? (struck ? ' fg-faint' : ' fg-ref') : ''}${row.state === 'open' ? ' fg-attention' : ''}`,
+    }, row.label), el('span', { class: 'wtext' }, el('span', {
+        class: `${row.on && !struck ? 'strong' : ''} ${struck ? 'fg-faint struck' : quiet ? 'fg-muted' : ''}`,
+    }, row.text), row.key && el('span', { class: 'tkey' }, row.key), mixed &&
         row.changed &&
         el('span', {
             class: 'cdot',
@@ -529,7 +543,7 @@ function taskDetail(view, task) {
         el('button', {
             class: 'btn sm quiet',
             onclick: () => begin({ what: 'criterion', id: task.id, text: '' }),
-        }, '+ Add criterion')), task.boundBy.length > 0 && titled('Bound by', lineList(task.boundBy, '✓', 'fg-ok')), task.notes.length > 0 &&
+        }, '+ Add criterion')), task.boundBy.length > 0 && titled('Bound by', lineList(task.boundBy, '◆', 'fg-ref')), task.notes.length > 0 &&
         titled('Notes', task.notes.map((note) => el('div', null, el('span', { class: 'meta' }, note.label), el('div', { class: 'fg-muted' }, note.text)))), el('div', { class: 'grow' }), el('div', { class: 'actions detail-foot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: () => editRow() }, 'Edit'), view.agent &&
         el('button', { class: 'btn primary', onclick: () => goToPane(view) }, 'Go to pane'), overflow('More: subtask, decision', [
         {

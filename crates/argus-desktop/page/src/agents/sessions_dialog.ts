@@ -9,7 +9,7 @@ import type { Action } from '../bindings/Action';
 import type { SessionPreview } from '../bindings/SessionPreview';
 import type { SessionRowView } from '../bindings/SessionRowView';
 import type { SessionsPage } from '../bindings/SessionsPage';
-import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -293,18 +293,11 @@ export function drawSessions(): void {
         el(
           'div',
           { class: 'dfoot meta' },
-          keycap('J'),
-          keycap('K'),
-          ' move · ',
-          keycap('/'),
-          ' search · ',
-          keycap('H'),
-          keycap('C'),
-          ' harness, checkout · ',
-          keycap('O'),
-          ' whole · ',
-          keycap('Esc'),
-          ' close',
+          hint(['J', 'K'], 'move'),
+          hint('/', 'search'),
+          hint(['H', 'C'], 'harness, checkout'),
+          hint('O', 'whole'),
+          hint('Esc', 'close'),
           el('span', { class: 'grow' }),
           offer(s.preview),
         ),

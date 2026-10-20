@@ -201,7 +201,7 @@ export function drawWork(): void {
     body = el('div', { class: 'split' }, side, outlineSash(side), detail(view));
   }
   const scrolled = scrollOffsets(stage);
-  stage.replaceChildren(head(view), body, keyBar(view.lens));
+  stage.replaceChildren(head(view), body, keyBar(view));
   restoreScroll(stage, scrolled);
   drawExpanded();
   const again = focused?.id ? document.getElementById(focused.id) : null;
@@ -269,39 +269,47 @@ function stillThere(view: FeatureView): boolean {
 }
 
 function head(view: FeatureView): HTMLElement {
-  const parts = [
+  const tally = [
     `${view.tasksDone}/${view.tasksTotal} tasks`,
-    view.decided > 0 && el('span', { class: 'fg-ok' }, `${view.decided} decided`),
-    view.open > 0 && el('span', { class: 'fg-attention' }, `${view.open} open`),
-  ].filter((part): part is string | HTMLElement => part !== false);
+    view.decided > 0 && `${view.decided} decided`,
+    view.open > 0 && `${view.open} open`,
+  ].filter((part) => part !== false);
   const progress = el('span', null);
   progress.style.width = `${view.tasksTotal ? Math.round((view.tasksDone / view.tasksTotal) * 100) : 0}%`;
-  const lensName = LENSES.find((l) => l.lens === view.lens)?.name ?? 'Work';
+  // The window's header names the stage, so this row opens on the feature
+  // itself; the back arrow is the way out the breadcrumb used to be.
   return el(
     'div',
     { class: 'fhead' },
     el(
       'div',
-      { class: 'crumbs' },
-      el('button', { class: 'crumb', onclick: closeFeature }, 'Features'),
-      el('span', { class: 'fg-faint' }, '›'),
-      el('button', { class: 'crumb', onclick: () => setLens('work') }, `#${view.number}`),
-      el('span', { class: 'fg-faint' }, '›'),
-      el('span', { class: 'fg' }, lensName),
-      el('span', { class: 'pbar wide' }, progress),
+      { class: 'actions head-row' },
+      el(
+        'button',
+        {
+          class: 'crumb',
+          type: 'button',
+          'aria-label': 'Back to the features',
+          title: 'Back to the features (Esc)',
+          onclick: closeFeature,
+        },
+        '‹',
+      ),
       el(
         'span',
-        { class: 'meta' },
-        parts.flatMap((part, i): Child[] => (i ? [' · ', part] : [part])),
+        { class: 'type-title' },
+        el('span', { class: 'mono fg-accent' }, `#${view.number}`),
+        ' ',
+        view.title,
+      ),
+      standingPill(view.standing),
+      el(
+        'span',
+        { class: 'meta head-progress', title: tally.join(' · ') },
+        el('span', { class: 'pbar wide' }, progress),
+        `${view.tasksDone}/${view.tasksTotal}`,
       ),
       el('span', { class: 'grow' }),
-      el(
-        'span',
-        { class: 'meta' },
-        view.branch && el('span', { class: 'mono fg-ref' }, view.branch),
-        view.branch && view.agent && ' · ',
-        view.agent && [`${view.agent.title} `, statusPill(view.agent.status)],
-      ),
       // Lenses switch what the feature is shown as, so they are segments, not tabs.
       el(
         'div',
@@ -322,20 +330,6 @@ function head(view: FeatureView): HTMLElement {
           ),
         ),
       ),
-    ),
-    el(
-      'div',
-      { class: 'actions head-row' },
-      el(
-        'span',
-        { class: 'type-title' },
-        el('span', { class: 'mono fg-accent' }, `#${view.number}`),
-        ' ',
-        view.title,
-      ),
-      standingPill(view.standing),
-      el('span', { class: 'grow' }),
-      tickets(view),
     ),
     briefStrip(view),
   );
@@ -394,6 +388,7 @@ function briefStrip(view: FeatureView): HTMLElement {
         { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` },
         waiting[view.reconcile] ?? '',
       ),
+    tickets(view),
   );
 }
 
@@ -436,7 +431,8 @@ function tickets(view: FeatureView): HTMLElement {
   );
 }
 
-function keyBar(lens: Lens): HTMLElement {
+function keyBar(view: FeatureView): HTMLElement {
+  const lens = view.lens;
   const keys: [string, string][] =
     lens === 'record'
       ? [
@@ -466,6 +462,13 @@ function keyBar(lens: Lens): HTMLElement {
     { class: 'kbar' },
     keys.map(([key, what]) => el('span', { class: 'kbar-key' }, keycap(key), ` ${what}`)),
     el('span', { class: 'grow' }),
+    (view.branch || view.agent) &&
+      el(
+        'span',
+        { class: 'kbar-key' },
+        view.branch && el('span', { class: 'mono fg-ref' }, view.branch),
+        view.agent && [`${view.agent.title} `, statusPill(view.agent.status)],
+      ),
     el('span', { class: 'kbar-key' }, keycap('Esc'), ' back to features'),
   );
 }
@@ -613,12 +616,15 @@ function workRow(row: WorkRow, sub: [number, number] | null, mixed: boolean): HT
     row.state === 'withdrawn' ||
     row.state === 'superseded' ||
     row.state === 'rejected';
+  // The Record lens strikes these through; one state is drawn one way.
+  const struck = row.state === 'rejected';
   let aside: Child = null;
   if (row.state === 'open') aside = statusPill('waiting');
   else if (row.waitsOn) {
     aside = el('span', { class: 'meta waits' }, icon('lock'), `waits on ${row.waitsOn}`);
-  } else if (row.state === 'withdrawn') aside = el('span', { class: 'meta' }, 'withdrawn');
-  else if (sub) aside = el('span', { class: 'meta' }, `${sub[0]}/${sub[1]}`);
+  } else if (row.state === 'withdrawn' || row.state === 'rejected') {
+    aside = el('span', { class: 'meta' }, row.state);
+  } else if (sub) aside = el('span', { class: 'meta' }, `${sub[0]}/${sub[1]}`);
   const node = el(
     'button',
     {
@@ -631,14 +637,20 @@ function workRow(row: WorkRow, sub: [number, number] | null, mixed: boolean): HT
     el(
       'span',
       {
-        class: `n${decision && row.state !== 'open' ? ' fg-ref' : ''}${row.state === 'open' ? ' fg-attention' : ''}`,
+        class: `n${decision && row.state !== 'open' ? (struck ? ' fg-faint' : ' fg-ref') : ''}${row.state === 'open' ? ' fg-attention' : ''}`,
       },
       row.label,
     ),
     el(
       'span',
       { class: 'wtext' },
-      el('span', { class: `${row.on ? 'strong' : ''} ${quiet ? 'fg-muted' : ''}` }, row.text),
+      el(
+        'span',
+        {
+          class: `${row.on && !struck ? 'strong' : ''} ${struck ? 'fg-faint struck' : quiet ? 'fg-muted' : ''}`,
+        },
+        row.text,
+      ),
       row.key && el('span', { class: 'tkey' }, row.key),
       mixed &&
         row.changed &&
@@ -826,7 +838,7 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
           '+ Add criterion',
         ),
     ),
-    task.boundBy.length > 0 && titled('Bound by', lineList(task.boundBy, '✓', 'fg-ok')),
+    task.boundBy.length > 0 && titled('Bound by', lineList(task.boundBy, '◆', 'fg-ref')),
     task.notes.length > 0 &&
       titled(
         'Notes',

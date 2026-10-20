@@ -4,13 +4,10 @@
 // what was pressed or clicked. A redraw keeps the scroll, and the comment
 // being written, where they were.
 import { commentBox, settleDraft } from './comment_box.js';
-import { $, el, ghosts, icon } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
-function keycap(key) {
-    return el('span', { class: 'kbd' }, key);
-}
 function segment(label, on, pick, ...rest) {
     return el('button', { class: `segb${on ? ' on' : ''}`, role: 'radio', 'aria-checked': String(on), onclick: pick }, label, ...rest);
 }
@@ -94,7 +91,7 @@ function files(r) {
             }, 
             // The file's name is what is scanned for, so it leads; its
             // folder is the line under it and is what is cut short.
-            el('span', { class: 'rname' }, el('b', { class: 'rbase' }, f.name), el('span', { class: 'rdir' }, f.dir.replace(/\/$/, '') || 'repository root')), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)));
+            el('span', { class: 'rname' }, el('b', { class: 'rbase' }, f.name), el('span', { class: f.dir.replace(/\/$/, '') ? 'rdir' : 'rdir phrase' }, f.dir.replace(/\/$/, '') || 'repository root')), el('span', { class: 'fg-ok' }, `+${f.added}`), el('span', { class: 'fg-danger' }, `−${f.removed}`)));
     }), r.jump &&
         r.jump.matches.length === 0 &&
         el('div', { class: 'meta' }, `No file matches “${r.jump.query}”.`)));
@@ -187,7 +184,7 @@ export function drawReview() {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'review-title',
-    }, head(r), el('div', { class: 'review-split' }, fileList, diff(r)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' line · ', keycap('V'), ' pick · ', keycap('C'), ' comment · ', keycap('B'), ' side · ', keycap('S'), ' split · ', keycap('Ctrl P'), ' jump · ', keycap('E'), ' editor · ', keycap('Enter'), ' unfold · ', keycap('Esc'), ' close'))));
+    }, head(r), el('div', { class: 'review-split' }, fileList, diff(r)), el('div', { class: 'dfoot meta' }, hint(['J', 'K'], 'line'), hint('V', 'pick'), hint('C', 'comment'), hint('B', 'side'), hint('S', 'split'), hint('Ctrl P', 'jump'), hint('E', 'editor'), hint('Enter', 'unfold'), hint('Esc', 'close')))));
     ['review-body', 'review-files'].forEach((id, i) => {
         const node = document.getElementById(id);
         if (node)

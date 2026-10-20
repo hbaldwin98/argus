@@ -10,14 +10,10 @@ import type { ReviewClick } from '../bindings/ReviewClick';
 import type { ReviewJumpGesture } from '../bindings/ReviewJumpGesture';
 import type { ReviewPage } from '../bindings/ReviewPage';
 import { commentBox, settleDraft, type CommentWays } from './comment_box.js';
-import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
-
-function keycap(key: string): HTMLElement {
-  return el('span', { class: 'kbd' }, key);
-}
 
 function segment(label: string, on: boolean, pick: () => void, ...rest: Child[]): HTMLElement {
   return el(
@@ -173,7 +169,11 @@ function files(r: ReviewPage): HTMLElement {
               'span',
               { class: 'rname' },
               el('b', { class: 'rbase' }, f.name),
-              el('span', { class: 'rdir' }, f.dir.replace(/\/$/, '') || 'repository root'),
+              el(
+                'span',
+                { class: f.dir.replace(/\/$/, '') ? 'rdir' : 'rdir phrase' },
+                f.dir.replace(/\/$/, '') || 'repository root',
+              ),
             ),
             el('span', { class: 'fg-ok' }, `+${f.added}`),
             el('span', { class: 'fg-danger' }, `−${f.removed}`),
@@ -337,25 +337,15 @@ export function drawReview(): void {
         el(
           'div',
           { class: 'dfoot meta' },
-          keycap('J'),
-          keycap('K'),
-          ' line · ',
-          keycap('V'),
-          ' pick · ',
-          keycap('C'),
-          ' comment · ',
-          keycap('B'),
-          ' side · ',
-          keycap('S'),
-          ' split · ',
-          keycap('Ctrl P'),
-          ' jump · ',
-          keycap('E'),
-          ' editor · ',
-          keycap('Enter'),
-          ' unfold · ',
-          keycap('Esc'),
-          ' close',
+          hint(['J', 'K'], 'line'),
+          hint('V', 'pick'),
+          hint('C', 'comment'),
+          hint('B', 'side'),
+          hint('S', 'split'),
+          hint('Ctrl P', 'jump'),
+          hint('E', 'editor'),
+          hint('Enter', 'unfold'),
+          hint('Esc', 'close'),
         ),
       ),
     ),
