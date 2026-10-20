@@ -282,7 +282,13 @@ function paneRow(checkout, pane) {
         ])),
     }, el('button', {
         class: `pane${pane.on ? ' on' : ''}${picked ? ' picked' : ''}${pane.agent ? '' : ' sh'} ${pane.status}`,
-        title: pane.note ?? `${pane.agent ? 'agent' : 'shell'}, ${pane.status}`,
+        // The folded rail shows only the initials, so the tooltip carries the name.
+        title: `${pane.title} · ${pane.note ?? `${pane.agent ? 'agent' : 'shell'}, ${pane.status}`}`,
+        'data-mark': pane.title
+            .replace(/[^\p{L}\p{N}]+/gu, ' ')
+            .trim()
+            .slice(0, 2)
+            .toLowerCase(),
         'aria-current': pane.on ? 'true' : null,
         // Dragged onto the stage it opens there, beside what is shown.
         onmousedown: (e) => dragFromRail(e, pane.id),
@@ -599,6 +605,7 @@ function drawBar() {
     const status = dot(colour);
     if (connection === 'stopped')
         status.classList.add('hollow');
+    status.title = words;
     const shown = connection === 'connected' && alarm;
     $('bar').replaceChildren(tallies.length > 0 ? el('div', { class: 'bar-row' }, tallies) : '', shown ? el('div', { class: 'bar-alarm fg-attention' }, alarm) : '', el('div', { class: 'bar-row' }, status, el('span', { class: 'grow ellipsis', title: host ?? '' }, words), consoleChip(), chimeSwitch(), settingsButton()));
 }
@@ -786,9 +793,9 @@ export function reconnect() {
 function railWidth(width) {
     const root = document.documentElement.style;
     if (width === null)
-        root.removeProperty('--rail-w');
+        root.removeProperty('--rail-set');
     else
-        root.setProperty('--rail-w', `${width}px`);
+        root.setProperty('--rail-set', `${width}px`);
 }
 /** The rail's right edge, for Rust to hold to its bounds, keep and send
  *  back; a double-click gives back the usual width. */

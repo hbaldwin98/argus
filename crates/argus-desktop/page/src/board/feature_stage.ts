@@ -569,7 +569,7 @@ function board(f: Features): HTMLElement {
     }
     return section;
   };
-  return el(
+  const lanes = el(
     'div',
     { class: 'board' },
     column('queued'),
@@ -577,6 +577,37 @@ function board(f: Features): HTMLElement {
     column('done'),
     el('div', { class: 'side' }, column('held'), column('archived')),
   );
+  return withScrollCue(lanes);
+}
+
+/** Columns keep a floor width, so a narrow window scrolls the board; this
+ *  says so, with a fade at the edge and a chip naming what is off to the
+ *  right, so a column is never lost without a sign. */
+function withScrollCue(lanes: HTMLElement): HTMLElement {
+  const chip = el('button', { class: 'board-more', type: 'button', hidden: true });
+  const wrap = el('div', { class: 'board-wrap' }, lanes, el('div', { class: 'board-fade' }), chip);
+  chip.addEventListener('click', () =>
+    lanes.scrollTo({ left: lanes.scrollWidth, behavior: 'smooth' }),
+  );
+  const update = (): void => {
+    const edge = lanes.getBoundingClientRect().right;
+    const hidden = [...lanes.querySelectorAll<HTMLElement>('.kcol')].filter(
+      (col) => col.getBoundingClientRect().right > edge + 1,
+    );
+    const more = lanes.scrollLeft + lanes.clientWidth < lanes.scrollWidth - 4;
+    wrap.classList.toggle('more', more);
+    chip.hidden = !more || hidden.length === 0;
+    chip.replaceChildren(
+      el('b', null, `${hidden.length} more`),
+      el('span', null, hidden.map((col) => GROUP_LABEL[col.dataset.group as Group]).join(' · ')),
+      icon('right'),
+    );
+  };
+  lanes.addEventListener('scroll', update, { passive: true });
+  // Measured once it is in the page: before that every column is nowhere.
+  // A column cut by the edge counts as more, not only one wholly off.
+  new ResizeObserver(update).observe(lanes);
+  return wrap;
 }
 
 function card(row: FeatureRow): HTMLElement {

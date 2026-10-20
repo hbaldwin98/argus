@@ -314,7 +314,10 @@
   --r-pill: 999px;
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.35);
   --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.45);
-  --rail-w: 288px;
+  /* What the person dragged the rail to, else 288; the folded rail below
+     ignores it, so a drag made wide does not survive a narrow window. */
+  --rail-w: var(--rail-set, 288px);
+  --rail-folded: 56px;
   --header-h: 56px;
   --strip-h: 40px;
   --pane-head-h: 32px;
@@ -2765,12 +2768,6 @@ body.moving-pane * {
 .notice-text {
   min-width: 0;
   padding: var(--sp-4) 0;
-}
-
-@media (max-width: 900px) {
-  :root {
-    --rail-w: 220px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -8385,4 +8382,232 @@ button.vtree-chev:focus-visible {
 .ended-text {
   flex: 1;
   min-width: 0;
+}
+
+/* ---- Narrow windows ------------------------------------------------------ */
+
+/* Under 1200px the sidebar folds to an icon rail: stages by their icon,
+   agents by their initials with the status dot at the corner, and every
+   name in a tooltip. What a wider rail says in words is still one hover
+   away; nothing is simply cut. */
+@media (max-width: 1200px) {
+  :root {
+    --rail-w: var(--rail-folded);
+  }
+  .rail-sash,
+  .projmenu,
+  .nav-extensions,
+  .repo,
+  .co,
+  .rail-wait,
+  .empty-rail,
+  .pane .ttl,
+  .pane-end,
+  .pane .sdot,
+  .pane-row .close,
+  .bar-alarm,
+  .bar-row > .grow,
+  .bar-row > .strong,
+  .bar-row > .fg-accent,
+  .search > :not(svg),
+  .nav > :not(.ic) {
+    display: none;
+  }
+  body.mac .rail .brand,
+  .rail .brand {
+    justify-content: center;
+    padding: 0;
+  }
+  .navs {
+    align-items: center;
+    padding: 0 var(--sp-8) var(--sp-8);
+  }
+  .search,
+  .nav {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+    margin-bottom: 0;
+  }
+  .search {
+    border-color: transparent;
+  }
+  .search:hover {
+    background: var(--fill);
+    color: var(--fg);
+  }
+  .nav .ic {
+    width: 24px;
+    height: 24px;
+  }
+  .nest {
+    margin: 0;
+    padding: 0;
+    border-left: 0;
+  }
+  .rail-list {
+    padding-top: var(--sp-8);
+  }
+  .pane-row {
+    display: flex;
+    justify-content: center;
+    margin-bottom: var(--sp-4);
+  }
+  .pane {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+    border-radius: var(--r-md);
+    border: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+  }
+  .pane::before {
+    content: attr(data-mark);
+  }
+  /* The status the row's dot and pill say in words, as a dot on the tile's
+     corner, ringed in the rail's colour so it reads over the border. */
+  .pane::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 10px;
+    height: 10px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid var(--bg-chrome);
+    background: var(--fg-faint);
+  }
+  .pane.working::after {
+    background: var(--accent);
+  }
+  .pane.waiting::after,
+  .pane.needs-review::after {
+    background: var(--attention);
+  }
+  .pane.failed::after {
+    background: var(--danger);
+  }
+  .pane.done::after {
+    background: var(--ok);
+  }
+  .pane.idle::after,
+  .pane.exited::after {
+    background: transparent;
+    border-color: var(--fg-faint);
+  }
+  .rail-list.offstage .pane.on,
+  .rail-list.offstage .pane.on:hover {
+    box-shadow: none;
+    border-radius: var(--r-md);
+  }
+  .bar {
+    align-items: center;
+    padding: var(--sp-8) 0;
+  }
+  .bar-row {
+    flex-direction: column;
+    gap: var(--sp-4);
+    min-height: 0;
+  }
+  .bar .icon.wide {
+    width: var(--icon-btn);
+    padding: 0;
+    flex-direction: column;
+  }
+
+  /* An agent's views open over the pane instead of squeezing it: the
+     terminal keeps its columns, and the drawer is as wide as it was
+     dragged, up to what leaves the pane a sliver to click back to. */
+  .dock-right {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    max-width: min(560px, calc(100% - var(--sp-44)));
+    box-shadow: var(--shadow-pop);
+    border-left-color: var(--line-strong);
+  }
+}
+
+/* Board columns keep their floor and the board scrolls; the fade and the
+   chip say there is more to the right. */
+.board-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.board-wrap > .board {
+  flex: 1;
+  min-width: 0;
+}
+.board-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: calc(var(--sp-32) * 2);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--t-fast);
+  background: linear-gradient(to right, transparent, var(--bg-sunken));
+}
+.board-wrap.more > .board-fade {
+  opacity: 1;
+}
+.board-more {
+  position: absolute;
+  right: var(--sp-16);
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+  height: var(--control-h);
+  padding: 0 var(--sp-12);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+}
+.board-more[hidden] {
+  display: none;
+}
+.board-more span {
+  color: var(--fg-muted);
+}
+.board-more:hover {
+  background: var(--bg-selected);
+}
+.board .kcol {
+  min-width: 260px;
+}
+.board .side {
+  min-width: 260px;
+}
+
+/* The Code stage gives the file its room: narrower side columns, and the
+   tab strip without the keys, which the tooltips and the palette still say. */
+@media (max-width: 1200px) {
+  .code-tree {
+    width: min(var(--code-tree-w, 288px), 240px);
+  }
+  .code-outline {
+    width: min(var(--code-outline-w, 232px), 184px);
+  }
+  .code-tabs {
+    gap: var(--sp-8);
+  }
+  .code-tabs .kbd {
+    display: none;
+  }
 }
