@@ -214,6 +214,8 @@ export function drawHeading(): void {
       el('span', { class: 'badge' }, `${project.needsYou} need you`),
   );
   heading.replaceChildren(button, state.menuOpen ? projectMenu() : '');
+  // The menu is fixed beside the rail, so it starts level with its button.
+  heading.style.setProperty('--pop-top', `${Math.round(button.getBoundingClientRect().top)}px`);
 }
 
 // ---- Removing one ------------------------------------------------------------

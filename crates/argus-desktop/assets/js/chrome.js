@@ -5,7 +5,7 @@ import { drawCode } from './code/stage.js';
 import { clock } from './kit/clock.js';
 import { drawComposer } from './agents/compose.js';
 import { drawConsole } from './panes/console.js';
-import { $, el, ghosts, icon } from './kit/dom.js';
+import { $, el, icon } from './kit/dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extensions/views.js';
 import { drawSavedNav } from './views/saved.js';
 import { drawFeatures } from './board/feature_stage.js';
@@ -23,6 +23,7 @@ import { featureEdges } from './board/lenses/work.js';
 import { codeEdges } from './code/stage.js';
 import { call } from './connection/tauri.js';
 const LOUD = new Set(['waiting', 'needs-review', 'failed']);
+const ASKING = new Set(['waiting', 'needs-review']);
 export function drawChrome() {
     const stopped = state.status.connection === 'stopped';
     railWidth(state.rail.width);
@@ -113,15 +114,12 @@ const PANE_WORD = {
 function drawRail() {
     const rail = $('rail');
     const { project, loaded } = state.rail;
+    // Off the Workspace the stage's own nav item is the selection, so the
+    // pane on screen is marked more quietly.
+    rail.classList.toggle('offstage', state.rail.stage !== 'workspace');
     if (!loaded) {
-        // A repository, its checkout, two panes, another checkout.
-        rail.replaceChildren(ghosts([
-            [110, 16],
-            [160, 24],
-            [190, 32],
-            [140, 32],
-            [120, 24],
-        ]));
+        // The stage is the one loading surface; the rail only says what it waits on.
+        rail.replaceChildren(el('div', { class: 'rail-wait' }, 'Waiting for argusd'));
         return;
     }
     if (!project) {
@@ -147,7 +145,7 @@ function drawRail() {
         on.scrollIntoView({ block: 'nearest' });
     scrolledTo = shownPane;
 }
-/** The pane the rail last scrolled to. */
+/** Per pane, not per redraw, so a person reading the rail is not fought. */
 let scrolledTo = null;
 function repoRow(repo) {
     const colour = statusColour(repo.status);
@@ -296,11 +294,16 @@ function paneRow(checkout, pane) {
             pickRail(checkout, pane.id);
             call('select', { pane: pane.id });
         },
-    }, el('span', { class: `sdot ${pane.status}`, 'aria-hidden': 'true' }), el('span', { class: 'ttl' }, pane.title), pane.views > 0 &&
+    }, 
+    // One status encoding per row: the pill's own dot when it has a word,
+    // else the dot alone.
+    !word && el('span', { class: `sdot ${pane.status}`, 'aria-hidden': 'true' }), el('span', { class: 'ttl' }, pane.title), el('span', { class: 'pane-end' }, pane.views > 0 &&
         el('span', {
             class: 'pane-views',
             title: `${pane.views} ${pane.views === 1 ? 'view' : 'views'} from this agent`,
-        }, `${pane.views}`), el('span', { class: `st ${pane.status}${word ? ' pillw' : ''}` }, word ?? el('span', { class: 'sr-only' }, pane.status))), closeButton(pane.id, pane.title));
+        }, `${pane.views}`), word
+        ? el('span', { class: `st pillw ${pane.status}` }, word)
+        : el('span', { class: `st ${pane.status}` }, el('span', { class: 'sr-only' }, pane.status)))), closeButton(pane.id, pane.title));
     return closesOnMiddle(row, () => call('close', { pane: pane.id }));
 }
 // ---- The rail's picked row -------------------------------------------------
@@ -513,7 +516,7 @@ function drawHead() {
     head.replaceChildren(headLine(el('span', { class: 'crumbs' }, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout), el('span', { class: 'fg-faint' }, '/')), el('span', { class: 'head-name' }, el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'), el('span', {
         class: 'type-heading head-title',
         oncontextmenu: contextMenu(shown.title, () => paneMenu(shown.pane, shown.title)),
-    }, shown.title)), el('span', { class: `pill ${shown.status}` }, shown.status), shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '', el('span', { class: 'grow' }), el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel())), closeButton(shown.pane, shown.title));
+    }, shown.title)), el('span', { class: `st pillw ${shown.status}` }, PANE_WORD[shown.status] ?? shown.status), shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '', el('span', { class: 'grow' }), el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel())), closeButton(shown.pane, shown.title));
 }
 /** The strip's words on one baseline: centring each on its own box sets
  *  the small crumbs and the heading at different heights. */
@@ -608,13 +611,60 @@ function settingsButton() {
         onclick: openSettings,
     }, icon('gear'));
 }
+/** The panes in the tree, with the checkout each lives in. */
+function allPanes() {
+    return (state.rail.project?.repositories ?? []).flatMap((repo) => repo.checkouts.flatMap((checkout) => checkout.panes.map((pane) => ({ pane, checkout }))));
+}
+/** A strip over the Workspace when a pane other than the one on screen needs
+ *  a person, so it is not found only by scanning the rail. */
+function drawAttention() {
+    const strip = $('attn');
+    const { shown, workspaceShown, stage } = state.rail;
+    const asking = allPanes()
+        .map(({ pane }) => pane)
+        .filter((pane) => pane.id !== shown?.pane && ASKING.has(pane.status))
+        .toSorted((a, b) => (a.status === 'waiting' ? 0 : 1) - (b.status === 'waiting' ? 0 : 1));
+    const first = asking[0];
+    strip.hidden = !first || !workspaceShown || stage !== 'workspace';
+    if (strip.hidden || !first)
+        return;
+    strip.replaceChildren(icon('info'), el('span', { class: 'attn-text' }, el('strong', { class: 'ellipsis' }, first.title), first.note && el('span', { class: 'attn-note ellipsis' }, first.note)), asking.length > 1
+        ? el('span', { class: 'attn-more' }, `${asking.length - 1} more need you`)
+        : '', el('button', { class: 'btn sm', onclick: () => call('select', { pane: first.id }) }, 'Go to it'));
+}
+/** What a pane whose program has ended offers; the tree redraws the rest. */
+function drawEnded() {
+    const bar = $('ended');
+    const { shown } = state.rail;
+    bar.hidden = shown?.status !== 'exited';
+    if (bar.hidden || !shown)
+        return;
+    const found = allPanes().find(({ pane }) => pane.id === shown.pane);
+    bar.replaceChildren(icon('info'), el('span', { class: 'ended-text' }, el('strong', null, `${shown.title} exited`), found?.pane.note && el('span', { class: 'fg-muted' }, ` \u00b7 ${found.pane.note}`)), found
+        ? el('button', { class: 'btn sm', onclick: () => restart(found.checkout.id, found.pane) }, 'Restart')
+        : '', el('button', { class: 'btn sm', onclick: () => call('close', { pane: shown.pane }) }, 'Close pane'));
+}
+/** Starts the ended pane's kind again where it ran and lets go of the old
+ *  one; both are the daemon's to answer, the rail follows its tree. */
+function restart(checkout, pane) {
+    const agent = pane.agent ? state.rail.templates[0] : null;
+    if (pane.agent && !agent) {
+        notice('argusd offers no agent to start');
+        return;
+    }
+    start(checkout, agent ?? null);
+    call('close', { pane: pane.id });
+}
 function drawStage() {
     const { connection, detail, host } = state.status;
     const { loaded, project, shown } = state.rail;
     const empty = $('empty');
     $('terminal').hidden = !shown;
     $('body').classList.toggle('held', connection === 'stopped');
+    drawAttention();
+    drawEnded();
     empty.hidden = !!shown;
+    empty.classList.remove('no-pane');
     if (shown)
         return;
     let body;
@@ -624,32 +674,34 @@ function drawStage() {
         measure = 'connecting';
         body = [
             el('div', { class: 'empty-icon spin' }, icon('spinner')),
-            el('div', { class: 'type-title' }, host ? `Connecting to argusd on ${host}` : 'Connecting to argusd'),
+            el('div', { class: 'empty-title' }, `Connecting to argusd on ${host ?? 'this machine'}`),
             el('div', { class: 'fg-muted' }, 'The sidebar fills in as soon as the daemon answers.'),
             detail && el('div', { class: 'err' }, detail),
-            // Nothing is loaded to open the switcher from, so a host that cannot be
-            // reached needs its own way back.
-            host &&
-                el('button', { class: 'btn', onclick: () => call('set_host', { host: null }) }, 'Use this machine'),
+            // Nothing is loaded to open the switcher from, so there is always one
+            // way out: back to this machine, or to the settings.
+            host
+                ? el('button', { class: 'btn', onclick: () => call('set_host', { host: null }) }, 'Use this machine')
+                : el('button', { class: 'btn', onclick: openSettings }, icon('gear'), 'Settings'),
         ];
     }
     else if (!project) {
         measure = 'no-projects';
         body = [
             el('div', { class: 'empty-icon tile' }, icon('folder')),
-            el('div', { class: 'type-title' }, 'No projects'),
+            el('div', { class: 'empty-title' }, 'No projects'),
             el('div', { class: 'fg-muted' }, 'Add a folder of repositories, or run argus init in one.'),
             el('button', { class: 'btn primary', onclick: () => call('open_add_project', {}) }, icon('plus'), 'Add a project…'),
         ];
     }
     else {
         measure = 'no-pane';
+        empty.classList.add('no-pane');
         const repo = project.repositories.find((r) => r.id === state.rail.repository) ?? project.repositories[0];
         const co = repo?.checkouts[0];
         const keys = chordsFor('compose', 'anywhere');
         body = [
             el('div', { class: 'empty-icon tile' }, icon('terminal')),
-            el('div', { class: 'type-title' }, 'No pane on screen'),
+            el('div', { class: 'empty-title' }, 'No pane on screen'),
             el('div', { class: 'fg-muted' }, 'Start an agent on a checkout, open a shell, or pick up a pane that is still running.'),
             el('div', { class: 'empty-actions' }, el('button', { class: 'btn primary', onclick: () => call('show_composer', { open: true }) }, icon('plus'), 'Start an agent', keys.length > 0 ? keycaps(keys.slice(0, 1)) : ''), co &&
                 el('button', { class: 'btn', onclick: () => call('spawn_shell', { checkout: co.id }) }, icon('console'), 'Open a shell')),
@@ -669,13 +721,12 @@ const RUNNING_ORDER = {
 function stillRunning(project) {
     const cards = project.repositories
         .flatMap((repo) => repo.checkouts.flatMap((co) => co.panes.map((pane) => ({ where: co.branch || co.name, pane }))))
-        .filter(({ pane }) => pane.status !== 'exited')
+        .filter(({ pane }) => pane.status !== 'exited' && pane.status !== 'done')
         .toSorted((a, b) => (RUNNING_ORDER[a.pane.status] ?? 9) - (RUNNING_ORDER[b.pane.status] ?? 9))
         .slice(0, 3);
     if (cards.length === 0)
         return null;
-    return el('section', { class: 'running', 'aria-label': 'Still running' }, el('div', { class: 'running-head' }, 'Still running'), el('div', { class: 'running-cards' }, cards.map(({ where, pane }) => el('button', { class: 'rcard', onclick: () => call('select', { pane: pane.id }) }, el('span', { class: 'rcard-top' }, el('span', { class: 'mono ellipsis' }, where), PANE_WORD[pane.status] &&
-        el('span', { class: `st pillw ${pane.status}` }, PANE_WORD[pane.status])), el('span', { class: 'rcard-title ellipsis' }, pane.title), pane.note && el('span', { class: 'rcard-note mono ellipsis' }, pane.note)))));
+    return el('section', { class: 'running', 'aria-label': 'Still running' }, el('div', { class: 'running-head' }, 'Still running'), el('div', { class: 'running-cards' }, cards.map(({ where, pane }) => el('button', { class: 'rcard', onclick: () => call('select', { pane: pane.id }) }, el('span', { class: 'rcard-top' }, el('span', { class: 'mono ellipsis' }, where), el('span', { class: `st pillw ${pane.status}` }, PANE_WORD[pane.status] ?? pane.status)), el('span', { class: 'rcard-title ellipsis' }, pane.title), pane.note && el('span', { class: 'rcard-note mono ellipsis' }, pane.note)))));
 }
 let noticeTimer;
 /** Shows a line along the bottom of the window for a few seconds. */

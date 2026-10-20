@@ -139,6 +139,9 @@
 
 :root[data-theme='latte'] {
   color-scheme: light;
+  /* Raised is lighter than its stage here, as in the dark flavours; the
+     shared mix of the fill would sink it. */
+  --bg-raised: color-mix(in srgb, var(--bg-surface) 40%, white);
   --crust: #dce0e8;
   --mantle: #e6e9ef;
   --base: #eff1f5;
@@ -299,6 +302,8 @@
   --sp-24: 24px;
   --sp-32: 32px;
   --sp-44: 44px;
+  --tile: 56px;
+  --tick: 48px;
   --r-xs: 4px;
   --r-sm: 6px;
   --r-md: 10px;
@@ -928,6 +933,14 @@
   cursor: pointer;
   text-align: left;
 }
+.projbtn:hover,
+.projbtn[aria-expanded='true'] {
+  background: var(--fill);
+  color: var(--fg);
+}
+.projbtn:active {
+  background: color-mix(in srgb, var(--fill), var(--fg) 8%);
+}
 .badge {
   margin-left: auto;
   font-size: var(--fs-xs);
@@ -1028,10 +1041,11 @@
    chevron, where it read as a sibling of it. */
 .cofold {
   position: absolute;
-  left: var(--sp-16);
+  left: var(--sp-12);
   top: 0;
   bottom: 0;
-  width: var(--sp-16);
+  width: var(--sp-24);
+  border-radius: var(--r-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1043,6 +1057,7 @@
 }
 .cofold:hover {
   color: var(--fg);
+  background: var(--fill);
 }
 .cofolded {
   margin-left: auto;
@@ -1123,7 +1138,7 @@
   color: var(--fg-muted);
 }
 .pane:active {
-  background: color-mix(in srgb, var(--fill) 70%, var(--fg) 12%);
+  background: color-mix(in srgb, var(--fill), var(--fg) 8%);
 }
 /* Selected is a lit edge on the selection fill, hover only a tint, so the
    two never read as one with the pointer elsewhere. */
@@ -1161,6 +1176,20 @@
   height: 1.5px;
   background: var(--fg-faint);
   border-radius: 1px;
+}
+.sdot.done {
+  background: var(--ok);
+}
+/* Off the Workspace the pane on screen is not the selection, the stage's
+   own nav item is: it keeps a lit edge and its text, not the box. */
+.rail-list.offstage .pane.on,
+.rail-list.offstage .pane.on:hover {
+  background: transparent;
+  box-shadow: inset 2px 0 0 var(--accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.rail-list.offstage .pane.on:hover {
+  background: var(--fill);
 }
 /* The rail's picked row, which holds the keys: ringed, so it reads apart
    from the pane on screen. */
@@ -1732,12 +1761,64 @@ a:focus-visible,
   overflow-x: hidden;
   overflow-y: auto;
   padding-bottom: var(--sp-12);
+  /* The footer has its own border, so a row it cuts reads as "more below"
+     only when it fades. */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-24)), transparent);
 }
 .rail-list.held {
   opacity: 0.55;
 }
 .pane .st {
   flex: none;
+}
+/* A row's trailing group: its views and its status pill, which the close
+   button takes the place of while the row is pointed at. */
+.pane-end {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+/* One status pill: a dot and a word tinted from the status colour, in the
+   rail, the stage header and the still-running cards. */
+.st.pillw {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-8);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.st.pillw::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: currentColor;
+}
+/* Faint on faint fails 4.5:1 at 11px, so an ended or idle word is the
+   muted one, and its dot hollow. */
+.st.pillw.exited,
+.st.pillw.idle {
+  color: var(--fg-muted);
+}
+.st.pillw.exited::before,
+.st.pillw.idle::before {
+  background: transparent;
+  border: 1.5px solid currentColor;
+}
+.st.pillw.done {
+  color: var(--ok);
+}
+.badge {
+  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
+  background: color-mix(in srgb, var(--attention) 12%, transparent);
 }
 /* The close button sits over the status word, shown while the row is
    pointed at or holds the keyboard, so the rail stays a list of panes. */
@@ -1755,10 +1836,8 @@ a:focus-visible,
 .pane-row:focus-within .close {
   visibility: visible;
 }
-.pane-row:hover .st,
-.pane-row:focus-within .st,
-.pane-row:hover .pane-views,
-.pane-row:focus-within .pane-views {
+.pane-row:hover .pane-end,
+.pane-row:focus-within .pane-end {
   visibility: hidden;
 }
 .close:hover {
@@ -1782,14 +1861,10 @@ a:focus-visible,
   color: var(--fg-faint);
 }
 
-/* The project switcher opens under the heading. */
+/* The project switcher opens beside the rail, not over it: it changes the
+   tree, so the tree stays in view. Fixed, because the rail clips. */
 .projmenu {
   position: relative;
-}
-.projmenu .menu {
-  left: var(--sp-8);
-  right: auto;
-  top: 0;
 }
 .projbtn .label-aside {
   text-transform: none;
@@ -2125,11 +2200,17 @@ body.moving-pane * {
   justify-content: center;
   background: var(--atmosphere);
 }
+/* Where there is work to go back to, the block sits near the top, as the
+   mockup does, not in a dead band. */
+.empty.no-pane {
+  align-items: flex-start;
+  padding-top: var(--sp-44);
+}
 .empty-body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--sp-12);
+  gap: var(--sp-16);
   max-width: 520px;
   text-align: center;
   padding: var(--sp-24);
@@ -2137,21 +2218,23 @@ body.moving-pane * {
 .empty-body.no-projects {
   max-width: 460px;
 }
-.empty-body {
-  gap: var(--sp-16);
-}
-.empty-body .type-title {
+.empty-title {
   font: var(--type-hero);
 }
 .empty-body.no-pane {
   max-width: 760px;
 }
+.rail-wait {
+  padding: var(--sp-16);
+  font: var(--type-small);
+  color: var(--fg-faint);
+}
 .empty-icon {
   color: var(--fg-disabled);
 }
 .empty-icon.tile {
-  width: 56px;
-  height: 56px;
+  width: var(--tile);
+  height: var(--tile);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2362,6 +2445,9 @@ body.moving-pane * {
 .pick:focus-within {
   border-color: var(--ring);
 }
+.pick:has(select:focus-visible) {
+  box-shadow: var(--ring-shadow);
+}
 .pick-glyph {
   display: inline-flex;
   color: var(--fg-faint);
@@ -2456,7 +2542,7 @@ select option::checkmark {
   color: var(--fg-muted);
 }
 .compose-rule {
-  width: 48px;
+  width: var(--tick);
   height: 1px;
   background: var(--line-strong);
 }
@@ -4249,14 +4335,13 @@ body.console-fullscreen #bar {
 .srow.removed {
   opacity: 0.5;
 }
-.sdot {
+/* A session's dot is smaller than a pane's, and only live or not. */
+.srow .sdot {
   width: 7px;
   height: 7px;
-  flex: none;
-  border-radius: 50%;
-  border: 1px solid var(--fg-faint);
+  border-width: 1px;
 }
-.sdot.live {
+.srow .sdot.live {
   background: var(--ok);
   border-color: var(--ok);
 }
@@ -4362,8 +4447,14 @@ body.console-fullscreen #bar {
 /* ---- Projects: the switcher and the add dialog ---------------------------- */
 
 .projmenu .projects-menu {
-  top: 100%;
-  width: min(272px, calc(var(--rail-w) - 16px));
+  position: fixed;
+  left: calc(var(--rail-w) + var(--sp-8));
+  top: var(--pop-top, var(--header-h));
+  right: auto;
+  width: 272px;
+  max-height: calc(100vh - var(--pop-top, 0px) - var(--sp-16));
+  overflow-y: auto;
+  z-index: 30;
 }
 .projbtn .ellipsis {
   min-width: 0;
@@ -5439,15 +5530,10 @@ body.console-fullscreen #bar {
 }
 .pane-views {
   flex: none;
-  min-width: 16px;
-  box-sizing: border-box;
-  padding: 0 var(--sp-4);
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent);
   font-size: var(--fs-xs);
   font-weight: 600;
-  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* The views panel holds what the panel shows, beside its edge. */
@@ -5465,7 +5551,7 @@ body.console-fullscreen #bar {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 6px;
+  width: var(--sp-8);
   z-index: 4;
   cursor: col-resize;
 }
@@ -7150,59 +7236,83 @@ button.vtree-chev:focus-visible {
   background: var(--attention);
 }
 
-/* ---- The rail's status vocabulary and footer ----------------------------- */
+/* ---- The rail's footer and the empty moments' buttons --------------------- */
 
-/* One status pill, as the header and the board draw it: the word tinted
-   from its colour, on the row's right. */
-.st.pillw {
-  padding: 1px var(--sp-8);
-  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, currentColor 12%, transparent);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  line-height: 1.4;
-}
-/* Faint on faint fails 4.5:1 at 11px, so the ended word is the muted one. */
-.st.pillw.exited,
-.st.pillw.idle {
-  color: var(--fg-muted);
-  font-weight: 600;
-}
-.st.pillw.done {
-  color: var(--ok);
-}
-.badge {
-  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
-  background: color-mix(in srgb, var(--attention) 12%, transparent);
-}
-.pane .sdot {
-  width: 9px;
-  height: 9px;
-  border-width: 1.5px;
-}
-.pane .sdot.working {
-  border-color: var(--accent);
-  border-right-color: transparent;
-}
-.pane .sdot.exited,
-.pane .sdot.done {
-  border: 0;
-  height: 1.5px;
-}
-.pane .sdot.done {
-  background: var(--ok);
-}
 .empty-actions .btn svg,
 .empty-body .btn svg,
 .bar .icon.wide svg {
   width: 14px;
   height: 14px;
 }
-.empty-icon.tile .empty-icon {
-  color: inherit;
-}
 .btn.primary .kbd {
   color: var(--fg-on-accent);
   border-color: color-mix(in srgb, var(--fg-on-accent) 45%, transparent);
+}
+
+/* ---- Over and under the pane on screen --------------------------------- */
+
+/* Another pane asking for a person: the one thing the Workspace must not
+   hide behind the pane that is shown. */
+.attn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  margin: var(--sp-8) var(--sp-12) 0;
+  padding: var(--sp-8) var(--sp-12);
+  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--attention) 10%, transparent);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+.attn[hidden] {
+  display: none;
+}
+.attn > svg {
+  flex: none;
+  color: var(--attention);
+}
+.attn-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-8);
+}
+.attn-note {
+  color: var(--fg-muted);
+  min-width: 0;
+}
+.attn-more {
+  flex: none;
+  color: var(--fg-muted);
+}
+/* What a pane that ended offers: the program is gone, the screen is not. */
+.ended {
+  position: absolute;
+  left: var(--sp-16);
+  right: var(--sp-16);
+  bottom: var(--sp-16);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  padding: var(--sp-8) var(--sp-12);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-sm);
+}
+.ended[hidden] {
+  display: none;
+}
+.ended > svg {
+  flex: none;
+  color: var(--fg-muted);
+}
+.ended-text {
+  flex: 1;
+  min-width: 0;
 }

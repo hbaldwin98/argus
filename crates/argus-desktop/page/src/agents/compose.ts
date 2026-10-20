@@ -75,6 +75,7 @@ function pick(label: string, glyph: Node | string, select: HTMLSelectElement): H
 function build(): NonNullable<typeof parts> {
   const text = el('textarea', {
     id: 'compose-text',
+    'aria-label': 'What the agent should do',
     rows: '4',
     placeholder: 'Describe the work, or leave it empty to start the agent idle',
     oninput: () => {
