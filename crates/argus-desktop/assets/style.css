@@ -3153,11 +3153,6 @@ select option::checkmark {
     flex-wrap: wrap;
     row-gap: var(--sp-4);
   }
-  .brief-strip > .chips {
-    flex: 0 1 auto;
-    min-width: 0;
-    margin-left: auto;
-  }
   .brief-text {
     flex-basis: 12ch;
   }

@@ -7,6 +7,7 @@ import type { FeatureViewLink } from '../../bindings/FeatureViewLink';
 import type { Link } from '../../bindings/Link';
 import type { PageSaved } from '../../bindings/PageSaved';
 import { el } from '../../kit/dom.js';
+import type { MenuItem } from '../../kit/menu.js';
 import { forFeature } from '../../views/saved/logic.js';
 import { state } from '../../state.js';
 import { call } from '../../connection/tauri.js';
@@ -37,48 +38,28 @@ export function ticketLink(link: Link): HTMLElement {
   );
 }
 
-/** A view an agent showed that names the feature, drawn like a ticket with
- *  a view waiting: it opens that view in the views' panel. */
-export function featureViewLink(link: FeatureViewLink): HTMLElement {
-  return el(
-    'button',
-    {
-      class: 'track viewed',
-      type: 'button',
-      title: 'A view an agent showed of this feature',
-      onclick: (event: MouseEvent) => {
-        event.stopPropagation();
-        call('open_view', { pane: link.pane, id: link.id });
-      },
-    },
-    el('span', { class: 'vtitle' }, link.title),
-    el('span', { class: 'vdot', 'aria-hidden': 'true' }),
-  );
+/** A view an agent showed that names the feature: it opens that view in the
+ *  views' panel. */
+export function featureViewItem(link: FeatureViewLink): MenuItem {
+  return {
+    label: link.title,
+    hint: 'agent view',
+    run: () => call('open_view', { pane: link.pane, id: link.id }),
+  };
 }
 
 /** The saved views scoped or attached to feature `number` of the chosen
  *  repository, each opening its panel. */
-export function savedFeatureLinks(number: number): HTMLElement[] {
-  return forFeature(state.saved?.views ?? [], state.rail.repository, number).map(savedFeatureLink);
+export function savedFeatureItems(number: number): MenuItem[] {
+  return forFeature(state.saved?.views ?? [], state.rail.repository, number).map(savedFeatureItem);
 }
 
-function savedFeatureLink(view: PageSaved): HTMLElement {
-  return el(
-    'button',
-    {
-      class: view.stale ? 'track viewed stale' : 'track viewed',
-      type: 'button',
-      title: view.stale
-        ? 'A saved view of this feature, out of date'
-        : 'A saved view of this feature',
-      onclick: (event: MouseEvent) => {
-        event.stopPropagation();
-        call('open_saved_view', { id: view.id, from: null });
-      },
-    },
-    el('span', { class: 'vtitle' }, view.view.title),
-    el('span', { class: 'vdot', 'aria-hidden': 'true' }),
-  );
+function savedFeatureItem(view: PageSaved): MenuItem {
+  return {
+    label: view.view.title,
+    hint: view.stale ? 'saved, out of date' : 'saved view',
+    run: () => call('open_saved_view', { id: view.id, from: null }),
+  };
 }
 
 export function ticketLinks(links: readonly Link[]): HTMLElement | false {

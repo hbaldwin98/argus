@@ -12,7 +12,7 @@ import { $, el, icon, standingPill, statusPill } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
 import { openMenu } from '../../kit/menu.js';
 import { flowsAction, flowsLens } from './flows.js';
-import { featureViewLink, savedFeatureLinks, ticketLink } from '../tracker/tickets.js';
+import { featureViewItem, savedFeatureItems, ticketLink } from '../tracker/tickets.js';
 import { actionFor } from '../../keys/keymap.js';
 import { recordAction, recordLens } from './record.js';
 import { state } from '../../state.js';
@@ -247,7 +247,8 @@ function head(view) {
         'aria-label': 'Back to the features',
         title: 'Back to the features (Esc)',
         onclick: closeFeature,
-    }, icon('back')), standingPill(view.standing), el('span', { class: 'meta head-progress', title: tally.join(' · ') }, el('span', { class: 'pbar wide' }, progress), `${view.tasksDone}/${view.tasksTotal}`), el('span', { class: 'grow' }), 
+    }, icon('back')), standingPill(view.standing), el('span', { class: 'meta head-progress', title: tally.join(' · ') }, el('span', { class: 'pbar wide' }, progress), `${view.tasksDone}/${view.tasksTotal}`), view.links.length > 0 &&
+        el('span', { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' }, view.links.map(ticketLink)), el('span', { class: 'grow' }), 
     // Lenses switch what the feature is shown as, so they are segments, not tabs.
     el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Lens' }, LENSES.map(({ lens, name, key }) => el('button', {
         class: `segb${view.lens === lens ? ' on' : ''}`,
@@ -285,7 +286,7 @@ function briefStrip(view) {
         onclick: () => begin({ what: 'brief', text: view.brief }),
     }, 'Edit'), linked && said.length > 0 && el('span', { class: 'meta fg-changed' }, said.join(' · ')), linked &&
         view.reconcile &&
-        el('span', { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` }, waiting[view.reconcile] ?? ''), tickets(view));
+        el('span', { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` }, waiting[view.reconcile] ?? ''), overflow('More: link, reconcile, views', featureMenu(view)));
 }
 /** The count a lens carries as its suffix: what it has to show. */
 function lensCount(view, lens) {
@@ -295,20 +296,20 @@ function lensCount(view, lens) {
         return view.decided + view.open;
     return view.flows?.loaded ? view.flows.flows.length : null;
 }
-/** The tickets the feature is linked to, each opening the view an agent
- *  showed of it when one waits (`tracker/tickets.ts`), and the buttons of
- *  the link and reconcile dialogs. */
-function tickets(view) {
-    return el('span', { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' }, view.links.map(ticketLink), view.views.map(featureViewLink), savedFeatureLinks(view.number), el('button', {
-        class: 'btn sm',
-        title: 'Link a ticket (T)',
-        onclick: () => call('open_link', { map: false }),
-    }, view.links.length > 0 ? 'Link…' : 'Link a ticket…'), view.links.length > 0 &&
-        el('button', {
-            class: 'btn sm',
-            title: `Reconcile with its tickets (R) · ${view.reconciled ?? 'never reconciled'}`,
-            onclick: () => call('open_reconcile', {}),
-        }, 'Reconcile…'));
+/** What is rarer than the brief's own row: the link and reconcile dialogs,
+ *  and the views of the feature, which open in the views' panel. */
+function featureMenu(view) {
+    const views = [...view.views.map(featureViewItem), ...savedFeatureItems(view.number)];
+    return [
+        { label: 'Link a ticket…', hint: 'T', run: () => call('open_link', { map: false }) },
+        view.links.length > 0 && {
+            label: 'Reconcile with its tickets…',
+            hint: view.reconciled ?? 'never reconciled',
+            run: () => call('open_reconcile', {}),
+        },
+        views.length > 0 && 'sep',
+        ...views,
+    ];
 }
 function keyBar(view) {
     const lens = view.lens;
