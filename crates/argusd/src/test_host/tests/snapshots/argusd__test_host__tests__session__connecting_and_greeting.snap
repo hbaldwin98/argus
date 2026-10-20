@@ -1,6 +1,6 @@
 ---
 source: crates/argusd/src/test_host/tests/session.rs
-expression: t.finish()
+expression: text
 ---
 (connected)
 <- Templates [
@@ -25,6 +25,7 @@ expression: t.finish()
               "behind": 0,
               "branch": "main",
               "changed_files": 0,
+              "changes": "[changes]",
               "dirty": false,
               "last_commit": null,
               "staged": 0,

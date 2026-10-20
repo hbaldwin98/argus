@@ -22,6 +22,7 @@ expression: text
     "behind": 0,
     "branch": "side",
     "changed_files": 0,
+    "changes": "[changes]",
     "dirty": false,
     "last_commit": {
       "author": "Fixture",
@@ -98,6 +99,7 @@ expression: text
     "behind": 0,
     "branch": "side",
     "changed_files": 0,
+    "changes": "[changes]",
     "dirty": false,
     "last_commit": {
       "author": "Fixture",
