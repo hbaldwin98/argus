@@ -141,8 +141,8 @@ pub struct Preferences {
 
 pub const MIN_OPACITY: u8 = 30;
 
-/// The window's colours: a Catppuccin flavour, or whichever of Mocha and
-/// Latte the system's light or dark says.
+/// The window's colours: a Catppuccin flavour, Argus Night, or whichever of
+/// Mocha and Latte the system's light or dark says.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -155,6 +155,8 @@ pub enum Theme {
     Macchiato,
     Frappe,
     Latte,
+    /// Argus's own: a cool navy ground lit by one periwinkle accent.
+    Night,
 }
 
 impl Theme {
@@ -485,6 +487,8 @@ mod tests {
         assert_eq!(Theme::Frappe.resolve(false), Theme::Frappe, "a flavour chosen is kept");
         assert!(!Theme::Latte.is_dark(true));
         assert!(Theme::Macchiato.is_dark(false));
+        assert_eq!(Theme::Night.resolve(false), Theme::Night, "Night is chosen, never the system's");
+        assert!(Theme::Night.is_dark(false));
     }
 
     #[test]

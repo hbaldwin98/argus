@@ -3,7 +3,7 @@
 // played into the real page and captured, at each size asked for.
 //
 //   node test/screens/shoot.mjs [--scenes file] [--out dir] [--only a,b]
-//                               [--sizes 1440x900,1024x720] [--live http://127.0.0.1:port]
+//                               [--sizes 1440x900,1024x720] [--live http://127.0.0.1:port] [--theme night]
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';

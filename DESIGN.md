@@ -101,7 +101,8 @@ which is the table's groups drawn whole, opening with the rule that a pane has e
 leader. Both are drawn over everything, a review included, and a pane's leader key reaches them as a
 `Run` event, since only the page draws them. So does the Settings dialog, `Ctrl-,` (in a pane, the
 leader and `,`), also in the palette and behind the gear at the sidebar's foot: the theme (Mocha,
-Macchiato, Frappé or Latte, or following the system as Mocha in the dark and Latte in the light),
+Macchiato, Frappé, Latte or Argus Night — Argus's own, a cool navy lit by one periwinkle accent — or
+following the system as Mocha in the dark and Latte in the light),
 the background's opacity and what shows through it, the two fonts, where a file opens and the editor
 command, the system notification an agent coming to need you raises, and the layout a repository's
 Feature index opens as before it remembers its own. Each choice is a call that
@@ -113,7 +114,7 @@ half-typed name is not chosen until it is picked, entered or left. The code font
 monospaced families, goes in front of the bundled JetBrains Mono and Symbols Nerd Font Mono, so the
 panes draw a prompt's or an editor's Nerd Font icons whichever text face is chosen; a pane
 re-measures its cells when it changes. The interface font, offered from every family, goes in front
-of the system's own and draws the rest. The window is always built transparent, since that can only
+of the bundled Geist and then the system's own, and draws the rest. The window is always built transparent, since that can only
 be set as it is made, so the opacity is only the page's alpha on its large fills — the sidebar, the
 strip, the stages and the terminal's background — and never on text or borders, and moving it never
 rebuilds the window. What shows through is Clear, or on Windows Mica (Windows 11 only, greyed out

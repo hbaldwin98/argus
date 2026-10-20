@@ -7,7 +7,8 @@
 // events scenes.json recorded and every call goes nowhere. Live, the page
 // talks to `cargo test -p argus-desktop serve_screens -- --ignored`, a real
 // Session behind a test server, so a click is answered as the window would
-// answer it.
+// answer it. `--theme night` draws any scene in that theme, as the Settings
+// dialog would.
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -165,7 +166,13 @@ function stand(scene, live) {
       return add.call(this, type, ...rest);
     };
     let channel = null;
-    const deliver = (events) => { for (const event of events) channel.onmessage(event); };
+    const theme = ${JSON.stringify(option('theme', null))};
+    const deliver = (events) => {
+      for (const event of events) {
+        if (theme && event.type === 'settings') event.chosen.theme = theme;
+        channel.onmessage(event);
+      }
+    };
     const ask = (path, body) => {
       window.__pending++;
       return fetch('/__live/' + path, { method: 'POST', body: JSON.stringify(body) })

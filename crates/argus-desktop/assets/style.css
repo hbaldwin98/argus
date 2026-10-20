@@ -176,6 +176,44 @@
   --fg-on-accent: #ffffff;
 }
 
+/* Argus Night: one cool navy in four steps, lines the accent at low alpha
+ * so every border is tinted alike, and one periwinkle accent that lights
+ * what Argus is doing. Its extra tokens (raised, glow, the primary's
+ * gradient, the empty states' atmosphere) are set at their quiet defaults
+ * for the Catppuccin flavours below. */
+:root[data-theme='night'] {
+  --crust: #06070d;
+  --mantle: #0a0c16;
+  --base: #0d1020;
+  --surface0: #161a2e;
+  --surface1: #272e52;
+  --overlay: #7a86a0;
+  --subtext: #9aa7bd;
+  --text: #e6edf8;
+  --mauve: #98c0ef;
+  --blue: #9db0ff;
+  --green: #5fd4a8;
+  --yellow: #f2c46d;
+  --red: #f27a86;
+  --peach: #f0a070;
+  --teal: #6fd3e0;
+  --lilac: #1a1f3d;
+  --line: rgba(152, 192, 239, 0.12);
+  --line-strong: rgba(152, 192, 239, 0.24);
+  --fg-on-accent: #07080f;
+  --bg-raised: #11142a;
+  --ring: #7b8ff0;
+  --glow: 0 0 24px rgba(123, 143, 240, 0.22);
+  --primary-bg: linear-gradient(180deg, #d8ecf8, #98c0ef);
+  --atmosphere:
+    radial-gradient(900px 260px at 50% 0, rgba(123, 143, 240, 0.16), transparent 70%),
+    linear-gradient(rgba(152, 192, 239, 0.045) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgba(152, 192, 239, 0.045) 1px, transparent 1px) 0 0 / 32px 32px;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(152, 192, 239, 0.06);
+  --shadow-dialog: 0 28px 72px rgba(0, 0, 0, 0.6), 0 0 48px rgba(123, 143, 240, 0.08);
+  --scrim: rgba(4, 5, 10, 0.64);
+}
+
 /* Bundled, not left to the system: the terminal grid is measured in this
    face, and a machine without it would size every pane in a fallback.
    The terminal draws bold and italic, so all four faces ship (fonts/OFL.txt). */
@@ -207,6 +245,15 @@
   font-display: block;
   src: url('fonts/JetBrainsMono-BoldItalic.woff2') format('woff2');
 }
+/* The interface face, bundled so every system draws the same window
+ * (fonts/Geist-OFL.txt). One variable file covers every weight. */
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('fonts/Geist-Variable.woff2') format('woff2');
+}
 /* Nerd Font icons live in the Private Use Area, which JetBrains Mono and
    no system font fills: without this a prompt's or editor's icons are
    boxes (fonts/NerdFonts-LICENSE.txt). Behind the text face, so it draws
@@ -220,9 +267,9 @@
 }
 
 :root {
-  --font-ui-system: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --font-ui-bundled: 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
   /* The Settings dialog's interface font goes in front (settings/preferences.ts). */
-  --font-ui: var(--font-ui-system);
+  --font-ui: var(--font-ui-bundled);
   --font-mono-bundled:
     'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas, monospace;
   /* The Settings dialog's font goes in front of the bundled ones (settings/preferences.ts). */
@@ -253,8 +300,8 @@
   --sp-44: 44px;
   --r-xs: 4px;
   --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
+  --r-md: 10px;
+  --r-lg: 14px;
   --r-pill: 999px;
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.35);
   --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.45);
@@ -262,9 +309,15 @@
   --header-h: 47px;
   --control-h: 30px;
   --control-h-sm: 24px;
-  --icon-btn: 26px;
+  --icon-btn: 28px;
   --diff-gutter: 106px;
   --scrim: rgba(17, 17, 27, 0.62);
+  --bg-raised: color-mix(in srgb, var(--bg-surface) 55%, var(--fill));
+  --ring: var(--accent);
+  --ring-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 30%, transparent);
+  --glow: none;
+  --primary-bg: var(--accent);
+  --atmosphere: none;
 }
 
 /* The terminal's sixteen colours, beside the tokens rather than among
@@ -365,6 +418,25 @@
   --ansi-13: #ea76cb;
   --ansi-14: #179299;
   --ansi-15: #bcc0cc;
+}
+
+:root[data-theme='night'] {
+  --ansi-0: #272e52;
+  --ansi-1: #f27a86;
+  --ansi-2: #5fd4a8;
+  --ansi-3: #f2c46d;
+  --ansi-4: #8fb0ff;
+  --ansi-5: #c7a6ff;
+  --ansi-6: #6fd3e0;
+  --ansi-7: #c3cee0;
+  --ansi-8: #4a5577;
+  --ansi-9: #ff9aa5;
+  --ansi-10: #8fe3c4;
+  --ansi-11: #f7d796;
+  --ansi-12: #b0c8ff;
+  --ansi-13: #dcc6ff;
+  --ansi-14: #9be4ee;
+  --ansi-15: #e6edf8;
 }
 
 /* base */
@@ -491,12 +563,14 @@
   color: var(--fg-faint);
 }
 
-/* controls */
+/* controls: one button in four weights, one icon button, every state
+ * drawn. Hover tints, pressing deepens the tint, focus is the ring, and
+ * disabled keeps its label legible rather than fading the whole button. */
 .btn {
   flex: none;
   white-space: nowrap;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
   background: transparent;
   color: var(--fg);
   font: inherit;
@@ -508,16 +582,46 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-6);
+  transition:
+    background-color 120ms,
+    border-color 120ms,
+    filter 120ms;
+}
+.btn:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+}
+.btn:active {
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
 }
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--primary-bg);
+  border-color: transparent;
   color: var(--fg-on-accent);
+  box-shadow: var(--glow);
+}
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+.btn.primary:active {
+  filter: brightness(0.94);
 }
 .btn.danger {
   background: var(--danger);
   border-color: var(--danger);
   color: var(--fg-on-accent);
+}
+.btn.danger:hover {
+  filter: brightness(1.08);
+}
+.btn[disabled],
+.btn[disabled]:hover {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--fg-faint);
+  box-shadow: none;
+  filter: none;
+  cursor: default;
 }
 .btn.sm {
   height: var(--control-h-sm);
@@ -536,6 +640,16 @@
   justify-content: center;
   cursor: pointer;
   padding: 0;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+.icon:hover {
+  background: var(--fill);
+  color: var(--fg);
+}
+.icon:active {
+  background: color-mix(in srgb, var(--fill) 70%, var(--fg) 12%);
 }
 .icon.hot {
   background: var(--fill);
@@ -1558,10 +1672,19 @@ body {
 button {
   font: inherit;
 }
+/* One focus ring for everything the keyboard can reach. Inset, so a row
+ * in a list whose overflow is hidden still shows it. */
 button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible,
 .field:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+.field:focus {
+  border-color: var(--ring);
+  box-shadow: var(--ring-shadow);
+  outline: none;
 }
 [hidden] {
   display: none !important;
@@ -2181,10 +2304,6 @@ select option::checkmark {
   color: var(--fg-on-accent);
   border-color: var(--fg-on-accent);
 }
-.btn[disabled] {
-  opacity: 0.5;
-  cursor: default;
-}
 .compose-note {
   padding: 0 var(--sp-4);
 }
@@ -2565,10 +2684,6 @@ select option::checkmark {
   .index-list .irow .sub2 {
     grid-column: 2 / 5;
   }
-}
-.btn[disabled] {
-  color: var(--fg-faint);
-  cursor: default;
 }
 .board .kcol {
   overflow-x: hidden;

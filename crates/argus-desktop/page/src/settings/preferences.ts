@@ -1,6 +1,6 @@
 // The Settings dialog, and the look its choices give the window: the theme
 // on the document, the background's opacity as `--see` and the fonts in
-// front of `--font-mono`'s bundled faces and `--font-ui`'s system ones.
+// front of the bundled faces of `--font-mono` and `--font-ui`.
 //
 // Rust holds the choices (`src/settings/preferences.rs`) and saves each as
 // it is made; the dialog draws what Rust sends back, and is updated in place
@@ -28,6 +28,7 @@ const FLAVOURS: { theme: Flavour; name: string; colours: [string, string, string
   { theme: 'macchiato', name: 'Macchiato', colours: ['#24273a', '#1e2030', '#c6a0f6', '#a5adcb'] },
   { theme: 'frappe', name: 'Frappé', colours: ['#303446', '#292c3c', '#ca9ee6', '#a5adce'] },
   { theme: 'latte', name: 'Latte', colours: ['#eff1f5', '#e6e9ef', '#7a33d6', '#5c5f77'] },
+  { theme: 'night', name: 'Argus Night', colours: ['#0d1020', '#0a0c16', '#98c0ef', '#9aa7bd'] },
 ];
 
 const BACKDROPS: Record<Backdrop, string> = {
@@ -85,7 +86,7 @@ export function applyLook(): void {
   root.style.setProperty('--see', String(chosen.opacity / 100));
   // Rust leaves no quote in the name to end it early.
   putFont(root, '--font-mono', chosen.font, 'var(--font-mono-bundled)');
-  putFont(root, '--font-ui', chosen.uiFont, 'var(--font-ui-system)');
+  putFont(root, '--font-ui', chosen.uiFont, 'var(--font-ui-bundled)');
   for (const s of screens) s.retheme();
 }
 
@@ -274,7 +275,7 @@ export function openSettings(): void {
     ),
     font.node,
   );
-  const uiFont = fontPicker('Interface font', 'var(--font-ui-system)', 'System', (family) =>
+  const uiFont = fontPicker('Interface font', 'var(--font-ui-bundled)', 'Geist', (family) =>
     set({ set: 'uiFont', family }),
   );
   const uiFontWhy = el('span', { class: 'meta' });
