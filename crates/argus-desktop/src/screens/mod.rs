@@ -104,6 +104,7 @@ fn checkout(id: u64, name: &str, path: String, primary: bool, git: Git, panes: V
             behind: git.behind,
             upstream: Some(format!("origin/{}", git.branch)),
             last_commit: Some(git.last),
+            changes: 0,
         }),
         primary,
     }
