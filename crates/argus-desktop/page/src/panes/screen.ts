@@ -14,6 +14,7 @@ import type { Side } from '../bindings/Side';
 import { $, el, ghosts } from '../kit/dom.js';
 import { dragging } from '../layout/edge.js';
 import { call } from '../connection/tauri.js';
+import { readable } from './contrast.js';
 
 // The terminal's type, as the design system's --type-mono gives it.
 const FONT_SIZE = 13;
@@ -140,6 +141,7 @@ function makeScreen(terminal: HTMLElement, first: Side | null) {
       let fore = colour(fg, palette.fg) ?? palette.fg;
       let back = colour(bg, null);
       if (flags & REVERSE) [fore, back] = [back ?? palette.bg, fore];
+      if (back) fore = readable(fore, back);
       const x = col * cell.w;
       const width = (flags & WIDE ? 2 : cells.length) * cell.w;
       if (back) {

@@ -576,7 +576,7 @@ function file(c: CodePage): HTMLElement {
       el(
         'div',
         { class: 'fhdr' },
-        c.path && el('span', { class: 'mono path' }, c.path),
+        c.path && filePath(c.path),
         c.version && el('span', { class: 'pill mono' }, c.version),
         el('span', { class: 'grow' }),
         el(
@@ -770,4 +770,16 @@ function cropHits(stage: HTMLElement): void {
 export function codeAction(action: Action): boolean {
   gesture({ on: 'action', action });
   return true;
+}
+
+/** The file's name first and bold, its folder after in faint: the name is
+ *  what a narrow header must never lose, so only the folder is ellipsised. */
+function filePath(path: string): HTMLElement {
+  const at = path.lastIndexOf('/');
+  return el(
+    'span',
+    { class: 'mono path', title: path },
+    el('b', { class: 'fname' }, path.slice(at + 1)),
+    at > 0 && el('span', { class: 'fdir' }, path.slice(0, at)),
+  );
 }

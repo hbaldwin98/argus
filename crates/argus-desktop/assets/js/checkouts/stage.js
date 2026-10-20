@@ -28,6 +28,17 @@ export function checkoutsStrip() {
         ],
         // One primary and an overflow: Branches and Fetch all are the overflow's.
         tools: [
+            // Under 1200px the filter field folds into this; the field keeps its id.
+            el('button', {
+                class: 'icon filter-toggle',
+                type: 'button',
+                'aria-label': 'Filter branches',
+                title: 'Filter branches',
+                onclick: () => {
+                    if (document.body.classList.toggle('filtering'))
+                        $('checkouts-filter').focus();
+                },
+            }, icon('search')),
             el('button', { class: 'btn primary', onclick: () => checkoutsAction('newWorktree') }, 'New worktree'),
             el('button', {
                 class: 'icon',
@@ -67,12 +78,17 @@ function head(c) {
         onkeydown: (e) => {
             if (actionFor(['filter'], e) === 'leave') {
                 e.preventDefault();
+                document.body.classList.remove('filtering');
                 e.target.blur();
             }
         },
+        onblur: (e) => {
+            if (e.target instanceof HTMLInputElement && !e.target.value)
+                document.body.classList.remove('filtering');
+        },
     });
     filter.value = c.filter;
-    return el('div', { class: 'fhead index-head' }, el('div', { class: 'actions index-tools' }, filter));
+    return el('div', { class: `fhead index-head${c.filter ? ' has-filter' : ''}` }, el('div', { class: 'actions index-tools' }, filter));
 }
 /** The keys the table answers to, quietly under it. */
 function keyBar() {
@@ -173,6 +189,7 @@ function actions(row) {
 function tableRow(row, selected) {
     return el('tr', {
         class: selected ? 'on' : null,
+        title: row.last ? row.last.summary : null,
         'aria-selected': String(selected),
         onclick: () => call('select_checkout_row', { key: row.key }),
         ondblclick: () => call('checkouts_action', { action: 'choose' }),
@@ -203,7 +220,9 @@ function detailRow(c, row) {
     if (!d)
         return null;
     const checkout = row.checkout;
-    return el('tr', { class: 'detail-row' }, el('td', { colspan: '7' }, el('div', { class: 'cdetail' }, el('div', { class: 'cfacts' }, stack('Path', el('span', { class: 'mono', title: d.path }, repoRelative(d.path))), d.upstream && stack('Upstream', d.upstream), d.changes && stack('Changes', d.changes)), el('span', { class: 'grow' }), el('div', { class: 'cacts' }, checkout !== null && [
+    return el('tr', { class: 'detail-row' }, el('td', { colspan: '7' }, el('div', { class: 'cdetail' }, el('div', { class: 'cfacts' }, stack('Path', el('span', { class: 'mono', title: d.path }, repoRelative(d.path))), d.upstream && stack('Upstream', d.upstream), d.changes && stack('Changes', d.changes), 
+    // The table's column when it is too narrow to show.
+    row.last && lastFact(row.last)), el('span', { class: 'grow' }), el('div', { class: 'cacts' }, checkout !== null && [
         act('Review', 'R', () => call('open_review', { checkout })),
         act('History', 'H', () => call('open_history', { checkout })),
         act('Pull', 'P', () => call('checkouts_action', { action: 'pull' })),
@@ -228,6 +247,11 @@ function repoRelative(path) {
     const flat = path.replaceAll('\\', '/');
     const at = flat.indexOf('/.argus/');
     return at >= 0 ? flat.slice(at + 1) : path;
+}
+function lastFact(commit) {
+    const fact = stack('Last commit', commitLine(commit));
+    fact.classList.add('fact-last');
+    return fact;
 }
 function stack(label, value) {
     return el('div', { class: 'stack-2' }, el('span', { class: 'mlabel' }, label), el('span', { class: 'meta' }, value));
@@ -351,6 +375,7 @@ export function drawCheckouts() {
 /** Runs a Checkouts key, saying whether it took it. */
 export function checkoutsAction(action) {
     if (action === 'filter') {
+        document.body.classList.add('filtering');
         $('checkouts-filter').focus();
         return true;
     }

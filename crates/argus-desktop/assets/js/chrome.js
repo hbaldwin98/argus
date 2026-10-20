@@ -153,6 +153,8 @@ function repoRow(repo) {
     const chosen = repo.id === state.rail.repository;
     return el('div', {
         class: `repo${repo.quiet ? ' quiet' : ''}${chosen ? ' sel' : ''}`,
+        // The folded rail keeps only a divider here; the name is its tooltip.
+        title: repo.name,
         oncontextmenu: contextMenu(repo.name, () => [
             { heading: repo.name },
             {
@@ -262,6 +264,19 @@ export function paneMenu(pane, title, first = []) {
         { label: 'Close', danger: true, run: () => call('close', { pane }) },
     ];
 }
+/** The folded rail's tile: the initials of the task ('tc' for 'claude ·
+ *  trim context'), since the agent's name before the dot is the same on
+ *  most rows and would make the tiles alike. */
+function paneMark(title) {
+    const at = title.indexOf(' · ');
+    const words = (at >= 0 ? title.slice(at + 3) : title)
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim()
+        .split(' ');
+    const [first = '', second = ''] = words;
+    const mark = second ? first.slice(0, 1) + second.slice(0, 1) : first.slice(0, 2);
+    return mark.toLowerCase();
+}
 function paneRow(checkout, pane) {
     const word = PANE_SAYS.has(pane.status) ? statusWord(pane.status) : undefined;
     const picked = state.railPick?.pane === pane.id;
@@ -282,7 +297,9 @@ function paneRow(checkout, pane) {
         ])),
     }, el('button', {
         class: `pane${pane.on ? ' on' : ''}${picked ? ' picked' : ''}${pane.agent ? '' : ' sh'} ${pane.status}`,
-        title: pane.note ?? `${pane.agent ? 'agent' : 'shell'}, ${pane.status}`,
+        // The folded rail shows only the initials, so the tooltip carries the name.
+        title: `${pane.title} · ${pane.note ?? `${pane.agent ? 'agent' : 'shell'}, ${pane.status}`}`,
+        'data-mark': paneMark(pane.title),
         'aria-current': pane.on ? 'true' : null,
         // Dragged onto the stage it opens there, beside what is shown.
         onmousedown: (e) => dragFromRail(e, pane.id),
@@ -599,6 +616,7 @@ function drawBar() {
     const status = dot(colour);
     if (connection === 'stopped')
         status.classList.add('hollow');
+    status.title = words;
     const shown = connection === 'connected' && alarm;
     $('bar').replaceChildren(tallies.length > 0 ? el('div', { class: 'bar-row' }, tallies) : '', shown ? el('div', { class: 'bar-alarm fg-attention' }, alarm) : '', el('div', { class: 'bar-row' }, status, el('span', { class: 'grow ellipsis', title: host ?? '' }, words), consoleChip(), chimeSwitch(), settingsButton()));
 }
@@ -786,9 +804,9 @@ export function reconnect() {
 function railWidth(width) {
     const root = document.documentElement.style;
     if (width === null)
-        root.removeProperty('--rail-w');
+        root.removeProperty('--rail-set');
     else
-        root.setProperty('--rail-w', `${width}px`);
+        root.setProperty('--rail-set', `${width}px`);
 }
 /** The rail's right edge, for Rust to hold to its bounds, keep and send
  *  back; a double-click gives back the usual width. */

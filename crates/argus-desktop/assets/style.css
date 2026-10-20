@@ -314,7 +314,34 @@
   --r-pill: 999px;
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.35);
   --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.45);
-  --rail-w: 288px;
+  /* What the person dragged the rail to, else 288; the folded rail below
+     ignores it, so a drag made wide does not survive a narrow window. */
+  --rail-w: var(--rail-set, 288px);
+  --rail-folded: 56px;
+  /* The folded rail's tile: an agent's initials, or a stage's icon. */
+  --rail-tile: 40px;
+  /* A board column never goes narrower; the window scrolls instead. */
+  --board-col-min: 280px;
+  /* The most an agent's views drawer, and the Code stage's folded side
+     columns, take of a narrow window. */
+  --drawer-max: 560px;
+  /* A views tab is cut short with an ellipsis here; three fit a 420px dock. */
+  --vtab-max: 200px;
+  /* What a side dock leaves of the window at least, so the pane is never
+     squeezed to nothing... */
+  --dock-floor: 240px;
+  /* ...and above 1200px, the window width past which a views dock may grow
+     beyond --dock-min-pane, which is about a hundred terminal columns. */
+  --dock-min-pane: 440px;
+  --dock-room: 800px;
+  /* The narrowest a stat card in the views panel gets before they stack. */
+  --vstat-min: 200px;
+  /* The glyph in the folded rail's footer buttons. */
+  --icon-glyph: 16px;
+  /* The attention strip's height, which a drawer starts below. */
+  --attn-h: 44px;
+  --code-tree-narrow: 240px;
+  --code-outline-narrow: 184px;
   --header-h: 56px;
   --strip-h: 40px;
   --pane-head-h: 32px;
@@ -987,7 +1014,9 @@
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* Clipped, but for the sash, which reaches past the edge for a grab zone. */
+  overflow: clip;
+  overflow-clip-margin: var(--sp-12);
 }
 .brand {
   flex: none;
@@ -1664,10 +1693,23 @@
   box-sizing: border-box;
 }
 .kfoot {
+  display: flex;
+  gap: var(--sp-4);
   font-size: var(--fs-xs);
   color: var(--fg-muted);
   border-top: 1px solid var(--line);
   padding-top: var(--sp-8);
+}
+/* One line: the account is cut with an ellipsis, the time never wraps. */
+.kfoot-what {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kfoot-when {
+  flex: none;
+  white-space: nowrap;
 }
 /* A column with nothing in it says so, and what lands there. */
 .kempty {
@@ -2654,7 +2696,7 @@ body.moving-pane * {
 }
 .running-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--vstat-min), 1fr));
   gap: var(--sp-12);
 }
 .rcard {
@@ -2765,12 +2807,6 @@ body.moving-pane * {
 .notice-text {
   min-width: 0;
   padding: var(--sp-4) 0;
-}
-
-@media (max-width: 900px) {
-  :root {
-    --rail-w: 220px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3635,7 +3671,7 @@ body.float-moving * {
 }
 .dock-left,
 .dock-right {
-  max-width: calc(100% - 240px);
+  max-width: calc(100% - var(--dock-floor));
 }
 .dock-bottom {
   max-height: calc(100% - 120px);
@@ -3861,19 +3897,21 @@ body.panel-dragging * {
   display: none;
 }
 /* A side dock's edge, dragged as the views panel's is. */
+/* The grab zone is the element itself, 24px wide about the hairline, so a
+   target is never smaller than a button. */
 .dock-sash {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: var(--sp-24);
   z-index: 4;
   cursor: col-resize;
 }
 .dock-left .dock-sash {
-  right: -3px;
+  right: calc(-1 * var(--sp-12));
 }
 .dock-right .dock-sash {
-  left: -3px;
+  left: calc(-1 * var(--sp-12));
 }
 
 /* A resize edge shows a grip under the pointer: the hairline alone is hard
@@ -3912,13 +3950,6 @@ body.panel-dragging * {
 .split-sash:hover::after,
 .split-sash.held::after {
   opacity: 1;
-}
-/* The grab zone reaches further than the hairline looks, unseen. */
-.dock-sash::before,
-.split-sash::before {
-  content: '';
-  position: absolute;
-  inset: 0 calc(-1 * var(--sp-8));
 }
 .sash::before {
   content: '';
@@ -4528,11 +4559,23 @@ body.console-fullscreen #bar {
 .code-file .fhdr {
   min-width: 0;
 }
+/* The name first and whole; only the folder after it gives way. */
 .code-file .fhdr .path {
+  display: flex;
+  gap: var(--sp-8);
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+.code-file .fhdr .fname {
+  flex: none;
+  font-weight: 600;
+}
+.code-file .fhdr .fdir {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
+  color: var(--fg-faint);
 }
 .code-file .fhdr .meta {
   white-space: nowrap;
@@ -4736,6 +4779,22 @@ body.console-fullscreen #bar {
   .ctable .col-last {
     display: none;
   }
+}
+/* The column's content moves into the open row's details when it goes. */
+@container (min-width: 981px) {
+  .cfacts .fact-last {
+    display: none;
+  }
+}
+.cfacts .fact-last {
+  min-width: 0;
+  flex: 1 1 0;
+}
+.cfacts .fact-last .meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 @container (max-width: 820px) {
   .ctable .col-feature {
@@ -6300,7 +6359,7 @@ body.console-fullscreen #bar {
 
 .vstats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--vstat-min), 1fr));
   gap: var(--sp-8);
 }
 
@@ -6317,10 +6376,14 @@ body.console-fullscreen #bar {
 .vstat-label {
   font-size: var(--fs-sm);
   color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vstat-value {
   font: 650 22px/1.2 var(--font-ui);
+  white-space: nowrap;
 }
 
 .vstat-delta {
@@ -6548,15 +6611,27 @@ body.console-fullscreen #bar {
 .rail-sash {
   position: absolute;
   top: 0;
-  right: 0;
+  right: calc(-1 * var(--sp-12));
   bottom: 0;
-  width: var(--sp-8);
+  width: var(--sp-24);
   z-index: 4;
   cursor: col-resize;
 }
-.rail-sash:hover,
-.rail-sash.held {
-  box-shadow: inset -2px 0 0 0 var(--accent);
+.rail-sash::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--sp-12);
+  width: var(--sp-2);
+  transform: translateX(-100%);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+.rail-sash:hover::after,
+.rail-sash.held::after {
+  opacity: 1;
 }
 /* While the edge is held the pointer stays a resize arrow, and nothing it
    passes over is selected. */
@@ -6570,8 +6645,8 @@ body.resizing {
 .split-sash {
   position: relative;
   flex: none;
-  width: 6px;
-  margin: 0 -3px;
+  width: var(--sp-24);
+  margin: 0 calc(-1 * var(--sp-12));
   z-index: 2;
   cursor: col-resize;
 }
@@ -7986,7 +8061,8 @@ button.vtree-chev:focus-visible {
 .vref {
   border: 0;
   margin: 0;
-  padding: 1px var(--sp-6);
+  min-height: var(--sp-24);
+  padding: var(--sp-4) var(--sp-8);
   border-radius: var(--r-xs);
   background: var(--fill);
   color: var(--ref);
@@ -8326,6 +8402,8 @@ button.vtree-chev:focus-visible {
    hide behind the pane that is shown. */
 .attn {
   flex: none;
+  box-sizing: border-box;
+  min-height: var(--attn-h);
   display: flex;
   align-items: center;
   gap: var(--sp-12);
@@ -8385,4 +8463,368 @@ button.vtree-chev:focus-visible {
 .ended-text {
   flex: 1;
   min-width: 0;
+}
+
+/* ---- Selected rows still answer the pointer ------------------------------ */
+
+/* The selection's tint, lifted a step under the pointer, on every row that
+   can be both selected and pointed at. */
+.trow.on:hover,
+.orow.on:hover,
+.rfile.on:hover,
+.hrow.on:hover,
+.hline.on:hover {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 6%);
+}
+.cline.cursor:hover,
+.drow.cursor:not(.picked):hover .dside {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--fill), var(--fg) 6%),
+    color-mix(in srgb, var(--fill), var(--fg) 6%)
+  );
+}
+
+/* ---- The views panel's tabs ---------------------------------------------- */
+
+/* A tab is cut short with an ellipsis, never under the dock and hide
+   buttons; its close shows on the selected tab and under the pointer. */
+.vpanel-tab {
+  /* Tabs shrink before the strip scrolls, so the first is never a sliver. */
+  flex: 0 1 auto;
+  min-width: calc(var(--sp-32) * 3);
+  max-width: var(--vtab-max);
+  overflow: hidden;
+}
+.vpanel-tab-pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.vpanel-tab:not(.on):not(:hover):not(:focus-within) .x {
+  display: none;
+}
+.vpanel-tab:not(.on):not(:hover):not(:focus-within) .vpanel-tab-pick {
+  padding-right: var(--sp-12);
+}
+.vlauncher[aria-pressed='true'] {
+  background: var(--bg-selected);
+  border-color: var(--line-strong);
+}
+.vlauncher[aria-pressed='true']:hover {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 6%);
+}
+.vlauncher[aria-pressed='true']:active {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 10%);
+}
+
+/* ---- Narrow windows ------------------------------------------------------ */
+
+/* One breakpoint for the whole layer: 1200px of window. Under it the
+   sidebar folds, the views open as a drawer, and the Code stage narrows. */
+
+/* Above it the views panel leaves the pane about a hundred columns: the
+   dock is as wide as it was dragged, but no wider than 440px unless the
+   window has the room besides. */
+@media (min-width: 1201px) {
+  .dock-right {
+    max-width: min(
+      calc(100% - var(--dock-floor)),
+      max(var(--dock-min-pane), calc(100% - var(--dock-room)))
+    );
+  }
+}
+
+/* Under 1200px the sidebar folds to an icon rail: stages by their icon,
+   agents by their initials with the status dot at the corner, and every
+   name in a tooltip. What a wider rail says in words is still one hover
+   away; nothing is simply cut. */
+@media (max-width: 1200px) {
+  :root {
+    --rail-w: var(--rail-folded);
+  }
+  .rail-sash,
+  .projmenu,
+  .nav-extensions,
+  .co,
+  .rail-wait,
+  .empty-rail,
+  .pane .ttl,
+  .pane-end,
+  .pane .sdot,
+  .pane-row .close,
+  .bar-alarm,
+  .bar-row > .grow,
+  .bar-row > .strong,
+  .bar-row > .fg-accent,
+  .search > :not(svg),
+  .nav > :not(.ic) {
+    display: none;
+  }
+  body.mac .rail .brand,
+  .rail .brand {
+    justify-content: center;
+    padding: 0;
+  }
+  .navs {
+    align-items: center;
+    padding: 0 var(--sp-8) var(--sp-8);
+  }
+  .search,
+  .nav {
+    width: var(--rail-tile);
+    height: var(--rail-tile);
+    padding: 0;
+    justify-content: center;
+    margin-bottom: 0;
+  }
+  .search {
+    border-color: transparent;
+  }
+  .search:hover {
+    background: var(--fill);
+    color: var(--fg);
+  }
+  .nav .ic {
+    width: var(--sp-24);
+    height: var(--sp-24);
+  }
+  .nest {
+    margin: 0;
+    padding: 0;
+    border-left: 0;
+  }
+  /* A repository is a hairline between its agents and the next one's, its
+     name the tooltip. */
+  .repo {
+    display: block;
+    height: var(--sp-12);
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(var(--line), var(--line)) center / calc(100% - var(--sp-24)) 1px
+      no-repeat;
+  }
+  .repo > * {
+    display: none;
+  }
+  .rail-list > .repo:first-child {
+    display: none;
+  }
+  .rail-list {
+    padding-top: var(--sp-8);
+    /* More tiles than the rail has room for dissolve into the footer. */
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-44)), transparent);
+  }
+  .pane-row {
+    display: flex;
+    justify-content: center;
+    margin-bottom: var(--sp-4);
+  }
+  .pane {
+    position: relative;
+    width: var(--rail-tile);
+    height: var(--rail-tile);
+    padding: 0;
+    justify-content: center;
+    border-radius: var(--r-md);
+    border: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+  }
+  .pane::before {
+    content: attr(data-mark);
+  }
+  /* The status the row's dot and pill say in words, as a dot on the tile's
+     corner, ringed in the rail's colour so it reads over the border. */
+  .pane::after {
+    content: '';
+    position: absolute;
+    top: calc(-1 * var(--sp-2));
+    right: calc(-1 * var(--sp-2));
+    width: var(--sp-12);
+    height: var(--sp-12);
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid var(--bg-chrome);
+    background: var(--fg-faint);
+  }
+  .pane.working::after {
+    background: var(--accent);
+  }
+  .pane.waiting::after,
+  .pane.needs-review::after {
+    background: var(--attention);
+  }
+  .pane.failed::after {
+    background: var(--danger);
+  }
+  .pane.done::after {
+    background: var(--ok);
+  }
+  .pane.idle::after,
+  .pane.exited::after {
+    background: transparent;
+    border-color: var(--fg-faint);
+  }
+  .rail-list.offstage .pane.on,
+  .rail-list.offstage .pane.on:hover {
+    box-shadow: none;
+    border-radius: var(--r-md);
+  }
+  /* The footer: the connection dot, then three 28px buttons, each a 16px
+     glyph; the console's count is a badge on its corner. */
+  .bar {
+    align-items: center;
+    padding: var(--sp-8) 0;
+  }
+  .bar-row {
+    flex-direction: column;
+    gap: var(--sp-4);
+    min-height: 0;
+  }
+  .bar .icon,
+  .bar .icon.wide {
+    position: relative;
+    width: var(--icon-btn);
+    height: var(--icon-btn);
+    padding: 0;
+    justify-content: center;
+  }
+  .bar .icon svg,
+  .bar .icon.wide svg {
+    width: var(--icon-glyph);
+    height: var(--icon-glyph);
+  }
+  .bar .icount {
+    position: absolute;
+    top: calc(-1 * var(--sp-4));
+    right: calc(-1 * var(--sp-4));
+    min-width: var(--sp-16);
+    box-sizing: border-box;
+    padding: 0 var(--sp-4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    background: var(--bg-raised);
+    color: var(--fg-muted);
+    font-size: var(--fs-xs);
+    line-height: var(--sp-16);
+    text-align: center;
+  }
+
+  /* An agent's views open over the pane instead of squeezing it: the
+     terminal keeps its columns, and the drawer is as wide as it was
+     dragged, up to what leaves the pane a sliver to click back to. It
+     starts under the attention strip, so what that says stays reachable;
+     the Views button in the strip, lit, closes it. */
+  .dock-right {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    max-width: min(var(--drawer-max), calc(100% - var(--sp-44)));
+    box-shadow: var(--shadow-pop);
+    border-left-color: var(--line-strong);
+  }
+  .work:has(> .center > .attn:not([hidden])) .dock-right {
+    top: calc(var(--attn-h) + var(--sp-16));
+  }
+
+  /* The Code stage gives the file its room: narrower side columns, and the
+     tab strip without the keys, which the tooltips and the palette still say. */
+  .code-tree {
+    width: min(var(--code-tree-w, 288px), var(--code-tree-narrow));
+  }
+  .code-outline {
+    width: min(var(--code-outline-w, 232px), var(--code-outline-narrow));
+  }
+  .code-tabs {
+    gap: var(--sp-8);
+  }
+  .code-tabs .kbd {
+    display: none;
+  }
+}
+
+/* The filter folds into a search button in the header under 1200px; the
+   button opens the field (body.filtering) and keeps its id and keys. */
+.filter-toggle {
+  display: none;
+}
+@media (max-width: 1200px) {
+  .filter-toggle {
+    display: inline-flex;
+  }
+  .index-head .filter {
+    display: none;
+  }
+  body.filtering .index-head .filter,
+  .index-head.has-filter .filter {
+    display: block;
+  }
+  body:not(.filtering) .index-head.on-board {
+    display: none;
+  }
+}
+
+/* Board columns keep their floor and the board scrolls; the fade and the
+   chip say there is more to the right. */
+.board-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.board-wrap > .board {
+  flex: 1;
+  min-width: 0;
+}
+.board-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: calc(var(--sp-32) * 3);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--t-fast);
+  background: linear-gradient(to right, transparent, var(--bg-sunken) 70%);
+}
+.board-wrap.more > .board-fade {
+  opacity: 1;
+}
+/* In the fade, centred and clear of every column's outline. */
+.board-more {
+  position: absolute;
+  top: 50%;
+  right: var(--sp-12);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+  height: var(--control-h);
+  padding: 0 var(--sp-12);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+}
+.board-more[hidden] {
+  display: none;
+}
+.board-more span {
+  color: var(--fg-muted);
+}
+.board-more:hover {
+  background: var(--bg-selected);
+}
+.board-more:active {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 10%);
+}
+.board .kcol,
+.board .side {
+  min-width: var(--board-col-min);
 }

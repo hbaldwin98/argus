@@ -250,7 +250,25 @@ export function featuresStrip(): { meta: Child[]; tools: HTMLElement[] } | null 
         counts,
       ),
     ],
-    tools: [seg, el('button', { class: 'btn primary', onclick: openCapture }, 'New feature')],
+    tools: [
+      seg,
+      // Under 1200px the filter field folds into this; the field keeps its id.
+      el(
+        'button',
+        {
+          class: 'icon filter-toggle',
+          type: 'button',
+          'aria-label': 'Filter features',
+          title: 'Filter features',
+          onclick: () => {
+            const on = document.body.classList.toggle('filtering');
+            if (on) document.getElementById('feature-filter')?.focus();
+          },
+        },
+        icon('search'),
+      ),
+      el('button', { class: 'btn primary', onclick: openCapture }, 'New feature'),
+    ],
   };
 }
 
@@ -263,11 +281,24 @@ function indexHead(f: Features): HTMLElement {
     oninput: (e: Event) => {
       if (e.target instanceof HTMLInputElement) call('filter_features', { filter: e.target.value });
     },
+    onkeydown: (e: KeyboardEvent) => {
+      if (actionFor(['filter'], e) === 'leave') {
+        e.preventDefault();
+        document.body.classList.remove('filtering');
+        (e.target as HTMLElement).blur();
+      }
+    },
+    onblur: (e: FocusEvent) => {
+      if (e.target instanceof HTMLInputElement && !e.target.value)
+        document.body.classList.remove('filtering');
+    },
   });
   filter.value = f.filter;
   return el(
     'div',
-    { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` },
+    {
+      class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}${f.filter ? ' has-filter' : ''}`,
+    },
     el(
       'div',
       { class: 'actions index-tools' },
@@ -569,13 +600,64 @@ function board(f: Features): HTMLElement {
     }
     return section;
   };
-  return el(
+  const lanes = el(
     'div',
     { class: 'board' },
     column('queued'),
     column('active'),
     column('done'),
     el('div', { class: 'side' }, column('held'), column('archived')),
+  );
+  return withScrollCue(lanes);
+}
+
+/** One observer for the one board on screen: the stage is rebuilt on every
+ *  tree update, and an observer per draw would outlive its detached lanes. */
+let boardUpdate: () => void = () => {};
+const boardObserver = new ResizeObserver(() => boardUpdate());
+
+/** Columns keep a floor width, so a narrow window scrolls the board; this
+ *  says so, with a fade at the edge and a chip naming what is off to the
+ *  right, so a column is never lost without a sign. */
+function withScrollCue(lanes: HTMLElement): HTMLElement {
+  const chip = el('button', { class: 'board-more', type: 'button', hidden: true });
+  const wrap = el('div', { class: 'board-wrap' }, lanes, el('div', { class: 'board-fade' }), chip);
+  chip.addEventListener('click', () =>
+    lanes.scrollTo({ left: lanes.scrollWidth, behavior: 'smooth' }),
+  );
+  const update = (): void => {
+    const edge = lanes.getBoundingClientRect().right;
+    const hidden = [...lanes.querySelectorAll<HTMLElement>('.kcol')].filter(
+      (col) => col.getBoundingClientRect().right > edge + 1,
+    );
+    const more = lanes.scrollLeft + lanes.clientWidth < lanes.scrollWidth - 4;
+    wrap.classList.toggle('more', more);
+    chip.hidden = !more || hidden.length === 0;
+    chip.replaceChildren(
+      el('b', null, `${hidden.length} more`),
+      el('span', null, hidden.map((col) => GROUP_LABEL[col.dataset.group as Group]).join(' · ')),
+      icon('right'),
+    );
+  };
+  lanes.addEventListener('scroll', update, { passive: true });
+  // Measured once it is in the page: before that every column is nowhere.
+  // A column cut by the edge counts as more, not only one wholly off.
+  boardObserver.disconnect();
+  boardObserver.observe(lanes);
+  boardUpdate = update;
+  return wrap;
+}
+
+/** A card's footer on one line: the account is cut short with an ellipsis and
+ *  the time after the last dot keeps its own span, so 'ago' never wraps alone. */
+function footer(text: string): HTMLElement {
+  const at = text.lastIndexOf(' · ');
+  const when = at >= 0 && text.endsWith('ago') ? text.slice(at + 3) : null;
+  return el(
+    'span',
+    { class: 'kfoot' },
+    el('span', { class: 'kfoot-what' }, when === null ? text : text.slice(0, at)),
+    when !== null && el('span', { class: 'kfoot-when' }, `· ${when}`),
   );
 }
 
@@ -646,7 +728,7 @@ function card(row: FeatureRow): HTMLElement {
         el('span', { class: 'pause', 'aria-hidden': 'true' }),
         row.held,
       ),
-    el('span', { class: 'kfoot' }, row.footer),
+    footer(row.footer),
   );
   return node;
 }
@@ -929,6 +1011,7 @@ export function featureAction(action: Action): boolean {
       call('feature_action', { action });
       return true;
     case 'filter':
+      document.body.classList.add('filtering');
       document.getElementById('feature-filter')?.focus();
       return true;
     case 'newFeature':
