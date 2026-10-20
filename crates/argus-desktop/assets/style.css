@@ -1,17 +1,22 @@
 /* The desktop window's stylesheet.
  *
  * Tokens first, in two layers, as the design canvas's "Design system" row
- * documents them: the Catppuccin palette per theme (Latte's accents
+ * documents them: the palette layer per theme (Catppuccin flavours, Argus
+ * Night, and the seven named after the systems they follow; Latte's accents
  * darkened to read at 4.5:1), then the semantic names, which are the only
  * colours a component uses. Then fixed scales for type, space, radius,
- * shadow and sizes: a value off a scale is a value nobody chose.
+ * shadow and sizes, then a shape section where a theme sets its radii,
+ * control heights and heading weights and brings its own interface and code
+ * faces as the default, the Settings choice still going in front: a value off
+ * a scale is a value nobody chose.
  *
  * The tokens and the component rules up to "This window" are generated
  * from the canvas's design build; change them there and here together.
  */
 
 :root,
-:root[data-theme='mocha'] {
+:root[data-theme='mocha'],
+.themecard [data-theme='mocha'] {
   --crust: #11111b;
   --mantle: #181825;
   --base: #1e1e2e;
@@ -97,7 +102,8 @@
 
 /* Macchiato and Frappe are the palette layer alone: the semantic names
  * above read it wherever it is redeclared. */
-:root[data-theme='macchiato'] {
+:root[data-theme='macchiato'],
+.themecard [data-theme='macchiato'] {
   --crust: #181926;
   --mantle: #1e2030;
   --base: #24273a;
@@ -117,7 +123,8 @@
   --fg-on-accent: #181926;
 }
 
-:root[data-theme='frappe'] {
+:root[data-theme='frappe'],
+.themecard [data-theme='frappe'] {
   --crust: #232634;
   --mantle: #292c3c;
   --base: #303446;
@@ -137,7 +144,8 @@
   --fg-on-accent: #232634;
 }
 
-:root[data-theme='latte'] {
+:root[data-theme='latte'],
+.themecard [data-theme='latte'] {
   color-scheme: light;
   /* Raised is lighter than its stage here, as in the dark flavours; the
      shared mix of the fill would sink it. */
@@ -184,7 +192,8 @@
  * what Argus is doing. Its extra tokens (raised, glow, the primary's
  * gradient, the empty states' atmosphere) are set at their quiet defaults
  * for the Catppuccin flavours below. */
-:root[data-theme='night'] {
+:root[data-theme='night'],
+.themecard [data-theme='night'] {
   --crust: #06070d;
   --mantle: #0a0c16;
   --base: #0d1020;
@@ -215,6 +224,161 @@
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(152, 192, 239, 0.06);
   --shadow-dialog: 0 28px 72px rgba(0, 0, 0, 0.6), 0 0 48px rgba(123, 143, 240, 0.08);
   --scrim: rgba(4, 5, 10, 0.64);
+}
+
+/* Ledger: Near-black greys, one indigo, hairlines at a single step (after Linear). */
+:root[data-theme='ledger'],
+.themecard [data-theme='ledger'] {
+  --crust: #08090a;
+  --mantle: #0f1011;
+  --base: #141516;
+  --surface0: #23252a;
+  --surface1: #34343a;
+  --overlay: #8a8f98;
+  --subtext: #b4bac3;
+  --text: #f7f8f8;
+  --mauve: #828fff;
+  --blue: #4ea7fc;
+  --green: #4cb782;
+  --yellow: #f2c94c;
+  --red: #f07a7a;
+  --peach: #f2994a;
+  --teal: #26b5ce;
+  --lilac: #1e1f25;
+  --fg-on-accent: #08090a;
+}
+
+/* Carbon: IBM Carbon's Gray 100: neutral greys, Carbon blue, square and sober. */
+:root[data-theme='carbon'],
+.themecard [data-theme='carbon'] {
+  --crust: #000000;
+  --mantle: #161616;
+  --base: #161616;
+  --surface0: #393939;
+  --surface1: #525252;
+  --overlay: #8d8d8d;
+  --subtext: #c6c6c6;
+  --text: #f4f4f4;
+  --mauve: #78a9ff;
+  --blue: #a6c8ff;
+  --green: #42be65;
+  --yellow: #f1c21b;
+  --red: #ff8389;
+  --peach: #ff832b;
+  --teal: #3ddbd9;
+  --lilac: #002d9c;
+  --fg-on-accent: #161616;
+}
+
+/* Flexoki: Steph Ango's Flexoki dark: warm ink on black paper, cyan for what you can act on. */
+:root[data-theme='flexoki'],
+.themecard [data-theme='flexoki'] {
+  --crust: #100f0f;
+  --mantle: #1c1b1a;
+  --base: #100f0f;
+  --surface0: #282726;
+  --surface1: #403e3c;
+  --overlay: #878580;
+  --subtext: #b7b5ac;
+  --text: #cecdc3;
+  --mauve: #3aa99f;
+  --blue: #66a0c8;
+  --green: #879a39;
+  --yellow: #d0a215;
+  --red: #e8705f;
+  --peach: #da702c;
+  --teal: #8b7ec8;
+  --lilac: #343331;
+  --fg-on-accent: #100f0f;
+}
+
+/* Kanagawa Wave: sumi ink greys, aged-paper text, a wave-blue selection. */
+:root[data-theme='kanagawa'],
+.themecard [data-theme='kanagawa'] {
+  --crust: #16161d;
+  --mantle: #181820;
+  --base: #1f1f28;
+  --surface0: #2a2a37;
+  --surface1: #363646;
+  --overlay: #938aa9;
+  --subtext: #c8c093;
+  --text: #dcd7ba;
+  --mauve: #7e9cd8;
+  --blue: #7fb4ca;
+  --green: #98bb6c;
+  --yellow: #e6c384;
+  --red: #ff5d62;
+  --peach: #ffa066;
+  --teal: #7aa89f;
+  --lilac: #223249;
+  --fg-on-accent: #16161d;
+}
+
+/* Rosé Pine: dusky violet surfaces, nothing near black, rose as the one warm accent. */
+:root[data-theme='rosePine'],
+.themecard [data-theme='rosePine'] {
+  --crust: #191724;
+  --mantle: #1f1d2e;
+  --base: #191724;
+  --surface0: #26233a;
+  --surface1: #524f67;
+  --overlay: #908caa;
+  --subtext: #908caa;
+  --text: #e0def4;
+  --mauve: #ebbcba;
+  --blue: #c4a7e7;
+  --green: #9ccfd8;
+  --yellow: #f6c177;
+  --red: #eb6f92;
+  --peach: #ebbcba;
+  --teal: #3e8fb0;
+  --lilac: #26233a;
+  --fg-on-accent: #191724;
+}
+
+/* Nord: Polar Night greys, Snow Storm text, Frost blue as the accent. */
+:root[data-theme='nord'],
+.themecard [data-theme='nord'] {
+  --crust: #2e3440;
+  --mantle: #3b4252;
+  --base: #2e3440;
+  --surface0: #434c5e;
+  --surface1: #4c566a;
+  --overlay: #d8dee9;
+  --subtext: #e5e9f0;
+  --text: #eceff4;
+  --mauve: #88c0d0;
+  --blue: #8fbcbb;
+  --green: #a3be8c;
+  --yellow: #ebcb8b;
+  --red: #bf616a;
+  --peach: #d08770;
+  --teal: #b48ead;
+  --lilac: #4c566a;
+  --fg-on-accent: #2e3440;
+}
+
+/* Radix: Radix Colors' slate and blue, each step in the role its scale gives it. */
+:root[data-theme='radix'],
+.themecard [data-theme='radix'] {
+  --crust: #111113;
+  --mantle: #18191b;
+  --base: #111113;
+  --surface0: #363a3f;
+  --surface1: #43484e;
+  --overlay: #9a9fa7;
+  --subtext: #b0b4ba;
+  --text: #edeef0;
+  --mauve: #70b8ff;
+  --blue: #4ccce6;
+  --green: #71d083;
+  --yellow: #ffca16;
+  --red: #ff9592;
+  --peach: #ff801f;
+  --teal: #0bd8b6;
+  --lilac: #0d2847;
+  --fill: #272a2d;
+  --fg-on-accent: #111113;
 }
 
 /* Bundled, not left to the system: the terminal grid is measured in this
@@ -269,6 +433,409 @@
   src: url('fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
 }
 
+/* The faces each theme brings as its default (see "Shape per theme"), a
+   latin and a latin-ext file apiece so the unicode-range keeps the second
+   from loading until a glyph needs it. Their licences sit beside them in
+   fonts/ as <Family>-OFL.txt. The code faces are block, like JetBrains Mono,
+   because the terminal grid is measured in them; the interface faces swap.
+   DM Mono has no bold: its 500 files are declared as 700 too, so the
+   terminal's bold draws from a real face and not a smeared synthetic one. */
+/* Inter */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/Inter-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/Inter-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* IBM Plex Sans */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('fonts/IBMPlexSans-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('fonts/IBMPlexSans-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* Instrument Sans */
+@font-face {
+  font-family: 'Instrument Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('fonts/InstrumentSans-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Instrument Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('fonts/InstrumentSans-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* Noto Sans */
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/NotoSans-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/NotoSans-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* DM Sans */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: url('fonts/DMSans-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: url('fonts/DMSans-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* Rubik */
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url('fonts/Rubik-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url('fonts/Rubik-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* Source Code Pro */
+@font-face {
+  font-family: 'Source Code Pro';
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: block;
+  src: url('fonts/SourceCodePro-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Source Code Pro';
+  font-style: italic;
+  font-weight: 200 900;
+  font-display: block;
+  src: url('fonts/SourceCodePro-latin-wght-italic.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Source Code Pro';
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: block;
+  src: url('fonts/SourceCodePro-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Source Code Pro';
+  font-style: italic;
+  font-weight: 200 900;
+  font-display: block;
+  src: url('fonts/SourceCodePro-latin-ext-wght-italic.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* IBM Plex Mono */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/IBMPlexMono-latin-400.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/IBMPlexMono-latin-400-italic.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/IBMPlexMono-latin-700.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/IBMPlexMono-latin-700-italic.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/IBMPlexMono-latin-ext-400.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/IBMPlexMono-latin-ext-400-italic.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/IBMPlexMono-latin-ext-700.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/IBMPlexMono-latin-ext-700-italic.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* DM Mono */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/DMMono-latin-400.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/DMMono-latin-400-italic.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('fonts/DMMono-latin-500.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/DMMono-latin-500.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: italic;
+  font-weight: 500;
+  font-display: block;
+  src: url('fonts/DMMono-latin-500-italic.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/DMMono-latin-500-italic.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/DMMono-latin-ext-400.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/DMMono-latin-ext-400-italic.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('fonts/DMMono-latin-ext-500.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/DMMono-latin-ext-500.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: italic;
+  font-weight: 500;
+  font-display: block;
+  src: url('fonts/DMMono-latin-ext-500-italic.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/DMMono-latin-ext-500-italic.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
 :root {
   --font-ui-bundled: 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
   /* The Settings dialog's interface font goes in front (settings/preferences.ts). */
@@ -284,6 +851,10 @@
   --fs-lg: 15px;
   --fs-xl: 17px;
   --fs-2xl: 20px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
   --type-display: 650 20px/1.3 var(--font-ui);
   --type-hero: 700 28px/1.2 var(--font-ui);
   --type-title: 650 17px/1.3 var(--font-ui);
@@ -314,6 +885,19 @@
   --r-pill: 999px;
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.35);
   --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.45);
+  /* The marks a selected or current row carries: a bar down its leading edge,
+     a one-pixel edge in the accent or the focus ring. */
+  --mark-accent: inset 3px 0 0 var(--accent);
+  --mark-ring: inset 3px 0 0 var(--ring);
+  --edge-accent: 0 0 0 1px var(--accent);
+  --edge-ring-in: inset 0 0 0 1px var(--ring);
+  --opacity-dim: 0.55;
+  /* Layers within one stacking context, lowest first; the one-off layers
+     (floats, drag ghosts) keep their own numbers. */
+  --z-raised: 2;
+  --z-layer: 3;
+  --z-sash: 4;
+  --z-modal: 5;
   /* What the person dragged the rail to, else 288; the folded rail below
      ignores it, so a drag made wide does not survive a narrow window. */
   --rail-w: var(--rail-set, 288px);
@@ -350,6 +934,23 @@
   --t-fast: 120ms;
   --control-h: 30px;
   --control-h-sm: 24px;
+  --row-h: 28px;
+  --row-h-sm: 26px;
+  --chip-h: 20px;
+  --area-min-h: 96px;
+  --icon-box: 20px;
+  --icon-sm: 14px;
+  --icon-lg: 24px;
+  --check-box: 16px;
+  --dot-sm: 6px;
+  --dot-md: 7px;
+  --dot-lg: 8px;
+  --meter-h: 6px;
+  --dialog-w: min(560px, 94vw);
+  --dialog-w-sm: min(440px, 94vw);
+  /* The review and reader screens' list column, and where it narrows. */
+  --list-col-w: 300px;
+  --list-col-w-narrow: 220px;
   --icon-btn: 28px;
   --diff-gutter: 106px;
   --scrim: rgba(17, 17, 27, 0.62);
@@ -480,6 +1081,287 @@
   --ansi-15: #e6edf8;
 }
 
+:root[data-theme='ledger'] {
+  --ansi-0: #23252a;
+  --ansi-1: #eb5757;
+  --ansi-2: #4cb782;
+  --ansi-3: #f2c94c;
+  --ansi-4: #4ea7fc;
+  --ansi-5: #828fff;
+  --ansi-6: #26b5ce;
+  --ansi-7: #d0d6e0;
+  --ansi-8: #62666d;
+  --ansi-9: #f28b8b;
+  --ansi-10: #7fd1a6;
+  --ansi-11: #f7d774;
+  --ansi-12: #7ab8ff;
+  --ansi-13: #a3acff;
+  --ansi-14: #5fd0e3;
+  --ansi-15: #f7f8f8;
+}
+
+:root[data-theme='carbon'] {
+  --ansi-0: #393939;
+  --ansi-1: #fa4d56;
+  --ansi-2: #42be65;
+  --ansi-3: #f1c21b;
+  --ansi-4: #4589ff;
+  --ansi-5: #be95ff;
+  --ansi-6: #33b1ff;
+  --ansi-7: #c6c6c6;
+  --ansi-8: #6f6f6f;
+  --ansi-9: #ff8389;
+  --ansi-10: #6fdc8c;
+  --ansi-11: #fddc69;
+  --ansi-12: #78a9ff;
+  --ansi-13: #d4bbff;
+  --ansi-14: #82cfff;
+  --ansi-15: #f4f4f4;
+}
+
+:root[data-theme='flexoki'] {
+  --ansi-0: #282726;
+  --ansi-1: #d14d41;
+  --ansi-2: #879a39;
+  --ansi-3: #d0a215;
+  --ansi-4: #4385be;
+  --ansi-5: #ce5d97;
+  --ansi-6: #3aa99f;
+  --ansi-7: #b7b5ac;
+  --ansi-8: #575653;
+  --ansi-9: #e8705f;
+  --ansi-10: #a0af54;
+  --ansi-11: #dfb431;
+  --ansi-12: #66a0c8;
+  --ansi-13: #e47da8;
+  --ansi-14: #5abdac;
+  --ansi-15: #cecdc3;
+}
+
+:root[data-theme='kanagawa'] {
+  --ansi-0: #16161d;
+  --ansi-1: #c34043;
+  --ansi-2: #76946a;
+  --ansi-3: #c0a36e;
+  --ansi-4: #7e9cd8;
+  --ansi-5: #957fb8;
+  --ansi-6: #6a9589;
+  --ansi-7: #c8c093;
+  --ansi-8: #727169;
+  --ansi-9: #e82424;
+  --ansi-10: #98bb6c;
+  --ansi-11: #e6c384;
+  --ansi-12: #7fb4ca;
+  --ansi-13: #938aa9;
+  --ansi-14: #7aa89f;
+  --ansi-15: #dcd7ba;
+}
+
+:root[data-theme='rosePine'] {
+  --ansi-0: #26233a;
+  --ansi-1: #eb6f92;
+  --ansi-2: #31748f;
+  --ansi-3: #f6c177;
+  --ansi-4: #9ccfd8;
+  --ansi-5: #c4a7e7;
+  --ansi-6: #ebbcba;
+  --ansi-7: #e0def4;
+  --ansi-8: #6e6a86;
+  --ansi-9: #eb6f92;
+  --ansi-10: #31748f;
+  --ansi-11: #f6c177;
+  --ansi-12: #9ccfd8;
+  --ansi-13: #c4a7e7;
+  --ansi-14: #ebbcba;
+  --ansi-15: #e0def4;
+}
+
+:root[data-theme='nord'] {
+  --ansi-0: #3b4252;
+  --ansi-1: #bf616a;
+  --ansi-2: #a3be8c;
+  --ansi-3: #ebcb8b;
+  --ansi-4: #81a1c1;
+  --ansi-5: #b48ead;
+  --ansi-6: #88c0d0;
+  --ansi-7: #e5e9f0;
+  --ansi-8: #4c566a;
+  --ansi-9: #bf616a;
+  --ansi-10: #a3be8c;
+  --ansi-11: #ebcb8b;
+  --ansi-12: #81a1c1;
+  --ansi-13: #b48ead;
+  --ansi-14: #8fbcbb;
+  --ansi-15: #eceff4;
+}
+
+:root[data-theme='radix'] {
+  --ansi-0: #2e3135;
+  --ansi-1: #e5484d;
+  --ansi-2: #46a758;
+  --ansi-3: #ffc53d;
+  --ansi-4: #0090ff;
+  --ansi-5: #8e4ec6;
+  --ansi-6: #00a2c7;
+  --ansi-7: #b0b4ba;
+  --ansi-8: #5a6169;
+  --ansi-9: #ff9592;
+  --ansi-10: #71d083;
+  --ansi-11: #ffca16;
+  --ansi-12: #70b8ff;
+  --ansi-13: #d19dff;
+  --ansi-14: #4ccce6;
+  --ansi-15: #edeef0;
+}
+
+/* A Settings card previews a theme inside whatever the window is drawn in, and
+   custom properties inherit resolved, so a preview restates the Argus faces
+   the themes below do not bring. */
+.themecard [data-theme] {
+  --font-ui-bundled: 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --font-mono-bundled:
+    'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* Shape per theme: the radii, control heights and heading weights each
+   system draws with, and the interface and code faces it brings as the
+   default. The Settings choice still goes in front of these, and the
+   defaults above are Argus's own (Catppuccin and Night use them). Kanagawa,
+   Ledger and Radix keep the bundled code face. */
+:root[data-theme='ledger'],
+.themecard [data-theme='ledger'] {
+  --font-ui-bundled: 'Inter', 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --control-h: 28px;
+  --control-h-sm: 24px;
+  --icon-btn: 28px;
+  --type-display: 590 20px/1.3 var(--font-ui);
+  --type-title: 590 17px/1.3 var(--font-ui);
+  --type-heading: 510 15px/1.35 var(--font-ui);
+  --type-label: 510 11px/1.4 var(--font-ui);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme='carbon'],
+.themecard [data-theme='carbon'] {
+  --font-ui-bundled:
+    'IBM Plex Sans', 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --font-mono-bundled:
+    'IBM Plex Mono', 'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas,
+    monospace;
+  --r-xs: 0;
+  --r-sm: 0;
+  --r-md: 0;
+  --r-lg: 0;
+  --r-pill: 999px;
+  --control-h: 32px;
+  --control-h-sm: 24px;
+  --icon-btn: 32px;
+  --type-display: 400 20px/1.3 var(--font-ui);
+  --type-title: 400 17px/1.3 var(--font-ui);
+  --type-heading: 600 15px/1.35 var(--font-ui);
+  --type-label: 400 11px/1.4 var(--font-ui);
+  --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-dialog: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme='flexoki'],
+.themecard [data-theme='flexoki'] {
+  --font-ui-bundled:
+    'Instrument Sans', 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --font-mono-bundled:
+    'IBM Plex Mono', 'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas,
+    monospace;
+  --r-xs: 3px;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --control-h: 30px;
+  --control-h-sm: 24px;
+  --icon-btn: 28px;
+  --type-display: 600 20px/1.3 var(--font-ui);
+  --type-title: 600 17px/1.3 var(--font-ui);
+  --type-heading: 600 15px/1.35 var(--font-ui);
+  --type-label: 600 11px/1.4 var(--font-ui);
+  --shadow-pop: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme='kanagawa'],
+.themecard [data-theme='kanagawa'] {
+  --font-ui-bundled: 'Noto Sans', 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --r-xs: 4px;
+  --r-sm: 5px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --control-h: 28px;
+  --control-h-sm: 24px;
+  --icon-btn: 28px;
+  --type-display: 600 20px/1.3 var(--font-ui);
+  --type-title: 600 17px/1.3 var(--font-ui);
+  --type-heading: 600 15px/1.35 var(--font-ui);
+  --type-label: 600 11px/1.4 var(--font-ui);
+  --shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme='rosePine'],
+.themecard [data-theme='rosePine'] {
+  --font-ui-bundled: 'DM Sans', 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --font-mono-bundled:
+    'DM Mono', 'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas, monospace;
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --control-h: 32px;
+  --control-h-sm: 26px;
+  --icon-btn: 30px;
+  --type-display: 650 20px/1.3 var(--font-ui);
+  --type-title: 600 17px/1.3 var(--font-ui);
+  --type-heading: 600 15px/1.35 var(--font-ui);
+  --type-label: 600 11px/1.4 var(--font-ui);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme='nord'],
+.themecard [data-theme='nord'] {
+  --font-ui-bundled: 'Rubik', 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --font-mono-bundled:
+    'Source Code Pro', 'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas,
+    monospace;
+  --r-xs: 4px;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --control-h: 30px;
+  --control-h-sm: 24px;
+  --icon-btn: 28px;
+  --type-display: 500 20px/1.3 var(--font-ui);
+  --type-title: 500 17px/1.3 var(--font-ui);
+  --type-heading: 500 15px/1.35 var(--font-ui);
+  --type-label: 500 11px/1.4 var(--font-ui);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme='radix'],
+.themecard [data-theme='radix'] {
+  --font-ui-bundled: 'Inter', 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --control-h: 32px;
+  --control-h-sm: 24px;
+  --icon-btn: 32px;
+  --type-display: 700 20px/1.3 var(--font-ui);
+  --type-title: 700 17px/1.3 var(--font-ui);
+  --type-heading: 500 15px/1.35 var(--font-ui);
+  --type-label: 500 11px/1.4 var(--font-ui);
+  --shadow-pop: 0 0 0 1px #363a3f, 0 8px 40px rgba(0, 0, 0, 0.4);
+}
+
 /* base */
 .mono {
   font-family: var(--font-mono);
@@ -604,7 +1486,7 @@
 .label-aside {
   text-transform: none;
   letter-spacing: 0;
-  font-weight: 400;
+  font-weight: var(--weight-regular);
 }
 .n {
   font-family: var(--font-mono);
@@ -624,7 +1506,7 @@
   color: var(--fg);
   font: inherit;
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   padding: 0 var(--sp-12);
   height: var(--control-h);
   cursor: pointer;
@@ -738,7 +1620,7 @@
 }
 .pill {
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   padding: 1px var(--sp-8);
   border-radius: var(--r-pill);
   background: var(--fill);
@@ -763,7 +1645,7 @@
 }
 .track b {
   color: var(--ref);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
@@ -813,7 +1695,7 @@
   color: var(--fg-muted);
   font: inherit;
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   padding: 0 var(--sp-12);
   height: var(--control-h-sm);
   white-space: nowrap;
@@ -827,7 +1709,7 @@
   color: var(--fg);
 }
 .segb.on:not(:disabled):hover {
-  box-shadow: inset 0 0 0 1px var(--ring);
+  box-shadow: var(--edge-ring-in);
 }
 .segb:not(.on):not(:disabled):hover {
   background: var(--fill);
@@ -865,7 +1747,7 @@
 .crit .check {
   flex: 1;
   align-items: center;
-  min-height: 28px;
+  min-height: var(--row-h);
   cursor: pointer;
 }
 .crit .check input {
@@ -880,7 +1762,7 @@
 }
 .pbar {
   width: 56px;
-  height: 6px;
+  height: var(--meter-h);
   border-radius: var(--r-pill);
   background: var(--fill);
   overflow: hidden;
@@ -889,12 +1771,12 @@
 }
 .pbar span {
   display: block;
-  height: 6px;
+  height: var(--meter-h);
   background: var(--ok);
 }
 .dot {
-  width: 8px;
-  height: 8px;
+  width: var(--dot-lg);
+  height: var(--dot-lg);
   flex: none;
   box-sizing: border-box;
   border-radius: 50%;
@@ -906,8 +1788,8 @@
   border: 1.5px solid var(--fg-faint);
 }
 .chg {
-  width: 6px;
-  height: 6px;
+  width: var(--dot-sm);
+  height: var(--dot-sm);
   border-radius: 50%;
   background: var(--attention);
   display: inline-block;
@@ -916,7 +1798,7 @@
   position: absolute;
   right: var(--sp-8);
   top: 28px;
-  z-index: 2;
+  z-index: var(--z-raised);
   width: 210px;
   box-sizing: border-box;
   background: var(--bg-surface);
@@ -983,7 +1865,7 @@
 /* status words: the loud ones need a person */
 .st {
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .working {
   color: var(--accent);
@@ -999,7 +1881,7 @@
 .done,
 .exited {
   color: var(--fg-faint);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
 }
 /* A rail row's title is text to read; faint fails 4.5:1 on Latte's chrome. */
 .pane.idle,
@@ -1068,7 +1950,7 @@
 .badge {
   margin-left: auto;
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0;
   text-transform: none;
   padding: 1px var(--sp-8);
@@ -1103,9 +1985,9 @@
   color: var(--fg-muted);
   font: inherit;
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   padding: 0 var(--sp-4);
-  height: 28px;
+  height: var(--row-h);
   cursor: pointer;
   text-align: left;
 }
@@ -1120,14 +2002,14 @@
   color: var(--accent);
 }
 .chev {
-  width: 14px;
+  width: var(--icon-sm);
   flex: none;
   color: var(--fg-faint);
   display: inline-flex;
 }
 .rdot {
-  width: 7px;
-  height: 7px;
+  width: var(--dot-md);
+  height: var(--dot-md);
   border-radius: 50%;
   flex: none;
 }
@@ -1135,11 +2017,11 @@
   margin-left: auto;
   font-size: var(--fs-xs);
   color: var(--fg-faint);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
 }
 .quiet .repobtn {
   color: var(--fg-faint);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
 }
 .co {
   position: relative;
@@ -1195,13 +2077,13 @@
   margin-left: 0;
 }
 .co .icon {
-  width: 20px;
-  height: 20px;
+  width: var(--icon-box);
+  height: var(--icon-box);
   visibility: hidden;
 }
 .repo .icon {
-  width: 20px;
-  height: 20px;
+  width: var(--icon-box);
+  height: var(--icon-box);
   flex: none;
   visibility: hidden;
 }
@@ -1340,7 +2222,7 @@
   white-space: nowrap;
 }
 .held {
-  opacity: 0.55;
+  opacity: var(--opacity-dim);
 }
 .ghost {
   height: 12px;
@@ -1394,7 +2276,7 @@
   background: transparent;
   color: var(--fg-muted);
   font: inherit;
-  min-height: 24px;
+  min-height: var(--control-h-sm);
   padding: 0 var(--sp-4);
   border-radius: var(--r-sm);
   cursor: pointer;
@@ -1484,7 +2366,7 @@
 .srow {
   display: grid;
   grid-template-columns: 28px 150px minmax(0, 1fr);
-  min-height: 28px;
+  min-height: var(--row-h);
 }
 .prow {
   display: flex;
@@ -1516,7 +2398,7 @@
 .frow.on,
 .srow2.on {
   background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--mark-accent);
 }
 .key {
   font-family: var(--font-mono);
@@ -1583,7 +2465,7 @@
 .khead {
   display: flex;
   align-items: center;
-  height: 28px;
+  height: var(--row-h);
   box-sizing: border-box;
   white-space: nowrap;
   gap: var(--sp-8);
@@ -1591,8 +2473,8 @@
   padding: 0 var(--sp-8);
 }
 .kdot {
-  width: 8px;
-  height: 8px;
+  width: var(--dot-lg);
+  height: var(--dot-lg);
   border-radius: 50%;
   box-sizing: border-box;
   flex: none;
@@ -1652,7 +2534,7 @@
   background: transparent;
   align-items: center;
   justify-content: center;
-  min-height: 96px;
+  min-height: var(--area-min-h);
   cursor: default;
 }
 .krow {
@@ -1662,7 +2544,7 @@
   min-width: 0;
 }
 .kttl {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   line-height: 1.35;
 }
 .kcount-text {
@@ -1760,7 +2642,7 @@
   background: var(--bg-selected);
   color: var(--accent);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   padding: var(--sp-8);
   text-align: center;
 }
@@ -1793,7 +2675,7 @@
    default form (560) and `.sheet-dialog` (a screen's worth). */
 .dialog {
   box-sizing: border-box;
-  width: min(560px, 94vw);
+  width: var(--dialog-w);
   max-height: 90vh;
   background: var(--bg-surface);
   border: 1px solid var(--line-strong);
@@ -1804,7 +2686,7 @@
   overflow: hidden;
 }
 .dialog.confirm-dialog {
-  width: min(440px, 94vw);
+  width: var(--dialog-w-sm);
 }
 .dialog.sheet-dialog {
   width: min(1120px, 94vw);
@@ -2081,7 +2963,7 @@ a:focus-visible,
   scroll-padding-block: var(--sp-24);
 }
 .rail-list.held {
-  opacity: 0.55;
+  opacity: var(--opacity-dim);
 }
 .pane .st {
   flex: none;
@@ -2329,15 +3211,15 @@ body.mac .rail .brand {
   background: color-mix(in srgb, var(--tone) 12%, transparent);
   color: var(--tone);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0;
   text-transform: none;
   white-space: nowrap;
 }
 .spill::before {
   content: '';
-  width: 6px;
-  height: 6px;
+  width: var(--dot-sm);
+  height: var(--dot-sm);
   box-sizing: border-box;
   border-radius: 50%;
   background: var(--tone);
@@ -2453,7 +3335,7 @@ body.maximized .winbtn .restore {
   background: var(--bg-sunken);
 }
 .stage-body.held {
-  opacity: 0.55;
+  opacity: var(--opacity-dim);
 }
 /* The Workspace's panes: each cell is placed by the page from the grid
    Rust keeps, as percentages of this box, and a gutter lies on each seam. */
@@ -2523,12 +3405,12 @@ body.maximized .winbtn .restore {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--fg-muted);
 }
 .gutter {
   position: absolute;
-  z-index: 2;
+  z-index: var(--z-raised);
 }
 /* The gutter is the 8px gap between two cards; its target is 24px about it
    and its grip a line centred in that, lit on hover. */
@@ -2564,7 +3446,7 @@ body.maximized .winbtn .restore {
 }
 .drop-zone {
   position: absolute;
-  z-index: 3;
+  z-index: var(--z-layer);
   pointer-events: none;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   outline: 2px solid var(--accent);
@@ -2666,8 +3548,8 @@ body.moving-pane * {
   box-shadow: var(--glow);
 }
 .empty-icon.tile svg {
-  width: 24px;
-  height: 24px;
+  width: var(--icon-lg);
+  height: var(--icon-lg);
   /* The glyph's own empty-icon class would otherwise grey it. */
   color: inherit;
 }
@@ -2735,7 +3617,7 @@ body.moving-pane * {
   color: var(--fg-muted);
 }
 .rcard-title {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .rcard-note {
   font-size: var(--fs-xs);
@@ -2769,7 +3651,7 @@ body.moving-pane * {
   position: static;
   inset: auto;
   margin: 0;
-  width: min(440px, 94vw);
+  width: var(--dialog-w-sm);
   align-items: center;
   text-align: center;
   gap: var(--sp-12);
@@ -2884,7 +3766,7 @@ body.moving-pane * {
   font: var(--type-body);
   font-size: var(--fs-lg);
   line-height: 1.5;
-  min-height: 96px;
+  min-height: var(--area-min-h);
   padding: var(--sp-4);
 }
 .composer textarea::placeholder {
@@ -2984,7 +3866,7 @@ select option {
   padding: 0 var(--sp-8);
   border-radius: var(--r-sm);
   font-size: var(--fs-sm);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -3289,7 +4171,7 @@ select option::checkmark {
   grid-template-columns: 18px 36px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-6);
-  min-height: 26px;
+  min-height: var(--row-h-sm);
 }
 
 /* A feature opened from the index: its outline beside the row under the
@@ -3324,7 +4206,7 @@ select option::checkmark {
 }
 .wrow.on {
   background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--mark-accent);
 }
 .wrow:hover:not(.on),
 .rrow:hover:not(.on),
@@ -3339,7 +4221,7 @@ select option::checkmark {
   gap: var(--sp-4) var(--sp-12);
   text-transform: none;
   letter-spacing: 0;
-  font-weight: 400;
+  font-weight: var(--weight-regular);
 }
 .legend-item {
   display: inline-flex;
@@ -3359,14 +4241,14 @@ select option::checkmark {
 }
 .cmark {
   flex: none;
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
+  width: var(--check-box);
+  height: var(--check-box);
+  margin-top: var(--sp-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: var(--fs-sm);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   line-height: 1;
 }
 .cmark.gain {
@@ -3460,7 +4342,7 @@ select option::checkmark {
 }
 .brief-label {
   color: var(--fg-faint);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .brief-strip > :not(.brief-text) {
   flex: none;
@@ -3482,7 +4364,7 @@ select option::checkmark {
 }
 .field.area {
   height: auto;
-  min-height: 96px;
+  min-height: var(--area-min-h);
   padding: var(--sp-8);
   resize: vertical;
   line-height: 1.5;
@@ -3511,7 +4393,7 @@ select option::checkmark {
 }
 .option.on {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: var(--edge-accent);
 }
 .option input {
   accent-color: var(--accent);
@@ -3553,7 +4435,7 @@ select option::checkmark {
 /* The card under the pointer, drawn as the canvas's .kcard.dragging. */
 .ghost-card {
   position: fixed;
-  z-index: 5;
+  z-index: var(--z-modal);
   pointer-events: none;
   transform: rotate(-2deg);
 }
@@ -3562,7 +4444,7 @@ select option::checkmark {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 3;
+  z-index: var(--z-layer);
 }
 .layer > * {
   pointer-events: auto;
@@ -3682,8 +4564,8 @@ body.float-moving * {
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 14px;
-  height: 14px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   cursor: nwse-resize;
   background: linear-gradient(
     135deg,
@@ -3823,7 +4705,7 @@ body.float-moving * {
   color: var(--fg-muted);
   font: inherit;
   font-size: var(--fs-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -3954,7 +4836,7 @@ body.panel-dragging * {
   top: 0;
   bottom: 0;
   width: var(--sp-24);
-  z-index: 4;
+  z-index: var(--z-sash);
   cursor: col-resize;
 }
 .dock-left .dock-sash {
@@ -4034,7 +4916,7 @@ body.console-fullscreen #bar {
   margin: calc(var(--sp-12) * -1) 0;
   cursor: row-resize;
   position: relative;
-  z-index: 4;
+  z-index: var(--z-sash);
 }
 .chead {
   padding-left: var(--sp-12);
@@ -4093,7 +4975,7 @@ body.console-fullscreen #bar {
   color: var(--fg-muted);
   font: inherit;
   font-size: var(--fs-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
@@ -4122,7 +5004,7 @@ body.console-fullscreen #bar {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-6);
-  height: 20px;
+  height: var(--chip-h);
   padding: 0 var(--sp-6);
   border: 0;
   border-radius: var(--r-xs);
@@ -4224,7 +5106,7 @@ body.console-fullscreen #bar {
   padding: 0;
 }
 .ctable tr.on td:first-child {
-  box-shadow: inset 3px 0 0 var(--ring);
+  box-shadow: var(--mark-ring);
 }
 .ctable .git + .meta,
 .ctable .glyph + .st {
@@ -4249,7 +5131,7 @@ body.console-fullscreen #bar {
 }
 .cname {
   font-family: var(--font-mono);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .ctag {
   font: var(--type-small);
@@ -4354,7 +5236,7 @@ body.console-fullscreen #bar {
     top: 0;
     right: 0;
     bottom: 0;
-    z-index: 3;
+    z-index: var(--z-layer);
     width: min(440px, 100%);
     box-shadow: var(--shadow-pop);
   }
@@ -4377,7 +5259,7 @@ body.console-fullscreen #bar {
   color: var(--fg-faint);
 }
 .cf-checkout {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-size: var(--fs-md);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4413,7 +5295,7 @@ body.console-fullscreen #bar {
 }
 .cf-count {
   margin-left: var(--sp-6);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   color: var(--fg-faint);
 }
 .cf-crumb {
@@ -4448,7 +5330,7 @@ body.console-fullscreen #bar {
   align-items: center;
   gap: var(--sp-6);
   box-sizing: border-box;
-  height: 28px;
+  height: var(--row-h);
   flex: none;
   border-radius: var(--r-sm);
   padding: 0 var(--sp-8) 0 calc(var(--sp-4) + var(--d, 0) * 16px);
@@ -4464,7 +5346,7 @@ body.console-fullscreen #bar {
 }
 .cf-row.on {
   background: var(--bg-selected);
-  box-shadow: inset 0 0 0 1px var(--ring);
+  box-shadow: var(--edge-ring-in);
 }
 .cf-row.on:hover {
   background: color-mix(in srgb, var(--bg-selected), var(--fg) 6%);
@@ -4479,7 +5361,7 @@ body.console-fullscreen #bar {
 }
 .cf-chev {
   flex: none;
-  width: 14px;
+  width: var(--icon-sm);
   display: inline-flex;
   justify-content: center;
   color: var(--fg-faint);
@@ -4508,8 +5390,8 @@ body.console-fullscreen #bar {
   gap: var(--sp-2);
 }
 .cf-row .icon {
-  width: 24px;
-  height: 24px;
+  width: var(--icon-lg);
+  height: var(--icon-lg);
 }
 .cf-mark {
   flex: none;
@@ -4517,7 +5399,7 @@ body.console-fullscreen #bar {
   text-align: right;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 .cf-mark.changed {
   color: var(--changed);
@@ -4527,7 +5409,7 @@ body.console-fullscreen #bar {
 }
 .cf-mark.ignored {
   font-family: inherit;
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   color: var(--fg-faint);
 }
 .cf-note {
@@ -4560,7 +5442,7 @@ body.console-fullscreen #bar {
   border-top: 1px solid var(--line);
 }
 .cf-fname {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-size: var(--fs-sm);
   min-width: 0;
   overflow: hidden;
@@ -4659,7 +5541,7 @@ body.console-fullscreen #bar {
   font: inherit;
   font-size: var(--fs-md);
   text-align: left;
-  height: 28px;
+  height: var(--row-h);
   flex: none;
   padding: 0 var(--sp-8) 0 calc(var(--sp-6) + var(--d, 0) * 14px);
   cursor: pointer;
@@ -4677,7 +5559,7 @@ body.console-fullscreen #bar {
 .hline.on,
 .orow.on {
   background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--ring);
+  box-shadow: var(--mark-ring);
 }
 .trow .ttl,
 .hfile .ttl {
@@ -4692,7 +5574,7 @@ body.console-fullscreen #bar {
 }
 .hfile .ttl b {
   flex: none;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .hfile .dir {
   min-width: 0;
@@ -4730,8 +5612,8 @@ body.console-fullscreen #bar {
   gap: var(--sp-4);
 }
 .tchg {
-  width: 6px;
-  height: 6px;
+  width: var(--dot-sm);
+  height: var(--dot-sm);
   border-radius: 50%;
   background: var(--changed);
   display: inline-block;
@@ -4750,7 +5632,7 @@ body.console-fullscreen #bar {
 }
 .sopts {
   position: absolute;
-  right: 4px;
+  right: var(--sp-4);
   top: 0;
   height: 100%;
   align-items: center;
@@ -4789,7 +5671,7 @@ body.console-fullscreen #bar {
   align-items: center;
   column-gap: var(--sp-6);
   flex: none;
-  height: 26px;
+  height: var(--row-h-sm);
   padding: 0 var(--sp-8) 0 var(--sp-6);
   border: 0;
   border-radius: var(--r-sm);
@@ -4804,9 +5686,9 @@ body.console-fullscreen #bar {
 }
 .hcount {
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   padding: 0 var(--sp-6);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--fill);
   color: var(--fg-muted);
 }
@@ -4816,7 +5698,7 @@ body.console-fullscreen #bar {
   gap: var(--sp-6);
   align-items: start;
   flex: none;
-  min-height: 26px;
+  min-height: var(--row-h-sm);
   padding: var(--sp-4) var(--sp-8) var(--sp-4) 26px;
   border: 0;
   border-radius: var(--r-sm);
@@ -4884,7 +5766,7 @@ body.console-fullscreen #bar {
 }
 .code-file .fhdr .fname {
   flex: none;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .code-file .fhdr .fdir {
   min-width: 0;
@@ -4940,7 +5822,7 @@ body.console-fullscreen #bar {
   box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--fg) 5%, transparent);
 }
 .cline.cursor {
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--mark-accent);
   background-image: linear-gradient(var(--fill), var(--fill));
 }
 .cgone {
@@ -5005,8 +5887,8 @@ body.console-fullscreen #bar {
 }
 .code-ruler .m.hit {
   background: var(--attention);
-  left: 4px;
-  right: 4px;
+  left: var(--sp-4);
+  right: var(--sp-4);
   max-height: 3px;
 }
 
@@ -5048,8 +5930,8 @@ body.console-fullscreen #bar {
   font-size: var(--fs-sm);
   text-align: left;
   padding: var(--sp-4) var(--sp-8);
-  height: 28px;
-  min-height: 28px;
+  height: var(--row-h);
+  min-height: var(--row-h);
   box-sizing: border-box;
   cursor: pointer;
 }
@@ -5065,7 +5947,7 @@ body.console-fullscreen #bar {
   background: var(--fill);
   color: var(--ref);
   font-size: var(--fs-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5180,7 +6062,7 @@ body.console-fullscreen #bar {
 .rfile.on,
 .hrow.on {
   background: var(--bg-selected);
-  box-shadow: inset 0 0 0 1px var(--ring);
+  box-shadow: var(--edge-ring-in);
 }
 .palette-row .pic {
   flex: none;
@@ -5188,15 +6070,15 @@ body.console-fullscreen #bar {
   color: var(--fg-muted);
 }
 .palette-row .pic svg {
-  width: 14px;
-  height: 14px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .palette-row .kbd {
   min-width: var(--sp-20);
   box-sizing: border-box;
   text-align: center;
   color: var(--fg-muted);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .palette-results {
   overflow-y: auto;
@@ -5338,7 +6220,7 @@ body.console-fullscreen #bar {
 /* ---- The review dialog ------------------------------------------------- */
 
 .review-layer .scrim {
-  z-index: 5;
+  z-index: var(--z-modal);
 }
 /* A diff wants every column it can get, a split one most of all. */
 .review-dialog {
@@ -5357,7 +6239,7 @@ body.console-fullscreen #bar {
   display: flex;
 }
 .review-files {
-  width: 300px;
+  width: var(--list-col-w);
   flex: none;
   border-right: 1px solid var(--line);
   padding: var(--sp-12);
@@ -5401,7 +6283,7 @@ body.console-fullscreen #bar {
 .rfile.on,
 .hrow.on {
   background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--ring);
+  box-shadow: var(--mark-ring);
 }
 .rfile .rname,
 .hrow.file .rname {
@@ -5413,7 +6295,7 @@ body.console-fullscreen #bar {
 }
 .rfile .rbase {
   font-size: var(--fs-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .rfile .rdir {
   font-family: var(--font-mono);
@@ -5489,7 +6371,7 @@ body.console-fullscreen #bar {
 .drow.fold {
   align-items: center;
   gap: var(--sp-8);
-  min-height: 26px;
+  min-height: var(--row-h-sm);
   padding: 0 var(--sp-12);
   color: var(--fg-muted);
   background: var(--bg-chrome);
@@ -5564,7 +6446,7 @@ body.console-fullscreen #bar {
 }
 .drow.cursor,
 .drow.picked {
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--mark-accent);
 }
 .drow.cursor:not(.picked) .dside {
   background-image: linear-gradient(var(--fill), var(--fill));
@@ -5624,7 +6506,7 @@ body.console-fullscreen #bar {
 }
 @container (max-width: 900px) {
   .review-files {
-    width: 220px;
+    width: var(--list-col-w-narrow);
   }
 }
 
@@ -5660,11 +6542,11 @@ body.console-fullscreen #bar {
   min-width: 0;
 }
 .hrow.open .ellipsis {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .hrow.file {
   padding-left: var(--sp-24);
-  min-height: 28px;
+  min-height: var(--row-h);
 }
 .ellipsis {
   min-width: 0;
@@ -5693,8 +6575,8 @@ body.console-fullscreen #bar {
 }
 /* A session's dot is smaller than a pane's, and only live or not. */
 .srow .sdot {
-  width: 7px;
-  height: 7px;
+  width: var(--dot-md);
+  height: var(--dot-md);
   border-width: 1px;
 }
 .srow .sdot.live {
@@ -5772,7 +6654,7 @@ body.console-fullscreen #bar {
   min-width: 0;
 }
 .reader-turns {
-  width: 300px;
+  width: var(--list-col-w);
   flex: none;
   border-right: 1px solid var(--line);
   padding: var(--sp-12);
@@ -5799,11 +6681,11 @@ body.console-fullscreen #bar {
   box-shadow: 0 0 0 1px var(--line-strong);
 }
 .tline.found {
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: var(--edge-accent);
 }
 @media (max-width: 1100px) {
   .reader-turns {
-    width: 220px;
+    width: var(--list-col-w-narrow);
   }
 }
 
@@ -6045,11 +6927,11 @@ body.console-fullscreen #bar {
   width: auto;
   max-height: 280px;
   overflow-y: auto;
-  z-index: 3;
+  z-index: var(--z-layer);
 }
 .fontpick-list .mi {
   flex: none;
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 .fontpick-list .fontpick-note {
   color: var(--fg-faint);
@@ -6081,6 +6963,9 @@ body.console-fullscreen #bar {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  /* Taken here, where the window's shape holds: on the preview, a theme's
+     shape block would round it to that theme's radius instead. */
+  --pv-r: var(--r-sm);
 }
 .themecard:hover:not(:disabled) {
   border-color: var(--fg-faint);
@@ -6088,11 +6973,11 @@ body.console-fullscreen #bar {
 }
 .themecard.on {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: var(--edge-accent);
 }
 .themecard:disabled {
   cursor: default;
-  opacity: 0.55;
+  opacity: var(--opacity-dim);
 }
 .themecard .name {
   min-width: 0;
@@ -6100,16 +6985,19 @@ body.console-fullscreen #bar {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* A flavour's own colours, whatever the window is drawn in. */
+/* A flavour's own colours, whatever the window is drawn in: the card sets
+   data-theme on the preview, so the palette variables are its own. */
 .themecard .pv {
+  background: var(--base);
   height: 56px;
-  border-radius: var(--r-sm);
+  border-radius: var(--pv-r);
   display: flex;
   gap: var(--sp-4);
   padding: var(--sp-6);
   box-sizing: border-box;
 }
 .pv .side {
+  background: var(--mantle);
   width: 24px;
   border-radius: 3px;
 }
@@ -6122,8 +7010,10 @@ body.console-fullscreen #bar {
 .pv .lines span {
   height: 6px;
   border-radius: 3px;
+  background: var(--subtext);
 }
 .pv .lines span:first-child {
+  background: var(--mauve);
   width: 60%;
 }
 .toggle {
@@ -6140,9 +7030,9 @@ body.console-fullscreen #bar {
 .toggle span {
   position: absolute;
   top: 4px;
-  left: 4px;
-  width: 16px;
-  height: 16px;
+  left: var(--sp-4);
+  width: var(--check-box);
+  height: var(--check-box);
   border-radius: 50%;
   background: var(--fg-muted);
 }
@@ -6158,7 +7048,7 @@ body.console-fullscreen #bar {
 }
 .toggle:disabled {
   cursor: default;
-  opacity: 0.55;
+  opacity: var(--opacity-dim);
 }
 .segb:disabled {
   cursor: default;
@@ -6293,8 +7183,8 @@ body.console-fullscreen #bar {
   text-align: center;
 }
 .vdot {
-  width: 6px;
-  height: 6px;
+  width: var(--dot-sm);
+  height: var(--dot-sm);
   border-radius: 50%;
   background: var(--accent);
 }
@@ -6322,7 +7212,7 @@ body.console-fullscreen #bar {
   align-items: center;
   gap: var(--sp-4);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   padding: 1px var(--sp-8);
   border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--t) 16%, transparent);
@@ -6356,8 +7246,8 @@ body.console-fullscreen #bar {
   gap: var(--sp-6);
 }
 .vav {
-  width: 20px;
-  height: 20px;
+  width: var(--icon-box);
+  height: var(--icon-box);
   border-radius: 50%;
   background: color-mix(in srgb, var(--t, var(--fg-muted)) 24%, var(--fill));
   color: var(--fg);
@@ -6400,7 +7290,7 @@ body.console-fullscreen #bar {
 .vkey {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   padding: 1px var(--sp-6);
   border-radius: var(--r-xs);
   background: var(--fill);
@@ -6521,7 +7411,7 @@ body.console-fullscreen #bar {
 .md th {
   color: var(--fg-muted);
   background: var(--bg-chrome);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .vtable {
@@ -6685,7 +7575,7 @@ body.console-fullscreen #bar {
 }
 
 .vlist-title {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .vlist-body {
@@ -6701,7 +7591,7 @@ body.console-fullscreen #bar {
 }
 
 .vlist-event .vlist-title {
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   color: var(--fg-muted);
 }
 
@@ -6755,7 +7645,7 @@ body.console-fullscreen #bar {
 .vcallout svg {
   color: var(--t);
   flex: none;
-  margin-top: 2px;
+  margin-top: var(--sp-2);
 }
 
 .vcallout-text {
@@ -6773,7 +7663,7 @@ body.console-fullscreen #bar {
 .vcode-hd {
   display: flex;
   align-items: center;
-  height: 28px;
+  height: var(--row-h);
   padding: 0 var(--sp-12);
   background: var(--bg-chrome);
   border-bottom: 1px solid var(--line);
@@ -6824,7 +7714,7 @@ body.console-fullscreen #bar {
 
 .vd-name {
   fill: var(--fg);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .vd-actor {
@@ -6877,7 +7767,7 @@ body.console-fullscreen #bar {
 .vd-num {
   fill: var(--fg);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .vd-branch {
@@ -6895,7 +7785,7 @@ body.console-fullscreen #bar {
 
 .vd-branch-word {
   fill: var(--fg-faint);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .vd-branch-when {
@@ -6959,7 +7849,7 @@ body.console-fullscreen #bar {
   right: calc(-1 * var(--sp-12));
   bottom: 0;
   width: var(--sp-24);
-  z-index: 4;
+  z-index: var(--z-sash);
   cursor: col-resize;
 }
 .rail-sash::after {
@@ -6992,7 +7882,7 @@ body.resizing {
   flex: none;
   width: var(--sp-24);
   margin: 0 calc(-1 * var(--sp-12));
-  z-index: 2;
+  z-index: var(--z-raised);
   cursor: col-resize;
 }
 
@@ -7042,7 +7932,7 @@ body.resizing {
 .rrow.on,
 .steprow.on {
   background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--mark-accent);
 }
 .record-foot {
   padding: var(--sp-8);
@@ -7063,7 +7953,7 @@ body.resizing {
   grid-template-columns: 24px minmax(80px, 150px) minmax(0, 1fr);
   align-items: center;
   gap: var(--sp-6);
-  min-height: 28px;
+  min-height: var(--row-h);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -7127,7 +8017,7 @@ body.resizing {
 }
 .seq .lhead text {
   fill: var(--fg);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .seq .smsg {
   cursor: pointer;
@@ -7195,7 +8085,7 @@ body.resizing {
 }
 .seq .smsg.on .mtext {
   fill: var(--fg);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .seq .frame {
   fill: none;
@@ -7207,7 +8097,7 @@ body.resizing {
 }
 .seq .fkind {
   fill: var(--fg);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 .seq .ftext {
   fill: var(--fg-faint);
@@ -7226,7 +8116,7 @@ body.resizing {
 .expanded {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: var(--z-raised);
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
@@ -7318,7 +8208,7 @@ body.resizing {
   background: var(--bg-selected);
 }
 .ext-body .vtable-table tr.on td:first-child {
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--mark-accent);
 }
 /* The selected row's actions, on a row of their own under it that wraps,
    so the table is never widened by every button side by side. */
@@ -7327,7 +8217,7 @@ body.resizing {
   padding: var(--sp-4) var(--sp-8) var(--sp-8);
   white-space: normal;
   background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: var(--mark-accent);
 }
 /* A table wide enough has the selected row's buttons at its end instead:
    a zero-width cell pinned to the window's right edge, the buttons hung from
@@ -7383,7 +8273,7 @@ body.resizing {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  z-index: 5;
+  z-index: var(--z-modal);
 }
 .ext-dialogs:has(.ext-dialog) {
   background: var(--scrim);
@@ -7392,10 +8282,10 @@ body.resizing {
 }
 .ext-dialog {
   pointer-events: auto;
-  width: min(440px, 94vw);
+  width: var(--dialog-w-sm);
 }
 .ext-dialog:has(.label) {
-  width: min(560px, 94vw);
+  width: var(--dialog-w);
 }
 .ext-pick {
   position: static;
@@ -7504,8 +8394,8 @@ body.resizing {
 }
 .rc-tick::before {
   content: '';
-  width: 16px;
-  height: 16px;
+  width: var(--check-box);
+  height: var(--check-box);
   box-sizing: border-box;
   border: 1.5px solid var(--fg-faint);
   border-radius: var(--r-xs);
@@ -7524,7 +8414,7 @@ body.resizing {
   border-color: var(--accent);
 }
 .rc-tick:disabled {
-  opacity: 0.55;
+  opacity: var(--opacity-dim);
   cursor: default;
 }
 .field.area.rc-text {
@@ -7576,8 +8466,8 @@ body.resizing {
 }
 /* A row changed here since the feature was last reconciled. */
 .cdot {
-  width: 6px;
-  height: 6px;
+  width: var(--dot-sm);
+  height: var(--dot-sm);
   margin-left: var(--sp-6);
   border-radius: var(--r-pill);
   background: var(--changed);
@@ -7612,7 +8502,7 @@ body.resizing {
   min-width: 0;
 }
 .vcard-title {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -7641,7 +8531,7 @@ body.resizing {
   align-items: center;
   gap: var(--sp-8);
   cursor: pointer;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .vdetails-text {
   min-width: 0;
@@ -7773,7 +8663,7 @@ body.resizing {
 
 .vmeter {
   display: block;
-  height: 6px;
+  height: var(--meter-h);
   border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--t) 18%, transparent);
   overflow: hidden;
@@ -7925,7 +8815,7 @@ textarea.vform-input {
 .vtl-dot {
   width: 12px;
   height: 12px;
-  margin-top: 4px;
+  margin-top: var(--sp-4);
   border-radius: 50%;
   background: var(--t);
   box-shadow: 0 0 0 3px var(--bg);
@@ -7940,7 +8830,7 @@ textarea.vform-input {
 }
 
 .vtl-title {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   line-height: 20px;
 }
 
@@ -7963,7 +8853,7 @@ textarea.vform-input {
 
 .vtl-lane-head {
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--fg-muted);
   text-transform: uppercase;
   padding-bottom: var(--sp-8);
@@ -7993,7 +8883,7 @@ textarea.vform-input {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  min-height: 28px;
+  min-height: var(--row-h);
   padding-left: calc(var(--depth) * var(--sp-16));
 }
 
@@ -8002,8 +8892,8 @@ textarea.vform-input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: var(--icon-box);
+  height: var(--icon-box);
   padding: 0;
   border: 0;
   border-radius: var(--r-xs);
@@ -8069,8 +8959,8 @@ button.vtree-chev:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: var(--check-box);
+  height: var(--check-box);
   border: 1.5px solid var(--line-strong);
   border-radius: var(--r-xs);
   color: var(--fg-on-accent);
@@ -8160,12 +9050,12 @@ button.vtree-chev:focus-visible {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .vboard-count {
   color: var(--fg-muted);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   font-size: var(--fs-sm);
 }
 
@@ -8198,7 +9088,7 @@ button.vtree-chev:focus-visible {
 }
 
 .vboard-card-title {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   overflow-wrap: anywhere;
 }
 
@@ -8218,7 +9108,7 @@ button.vtree-chev:focus-visible {
 }
 
 .vmatrix th {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-size: var(--fs-sm);
   color: var(--fg-muted);
   padding: var(--sp-4) var(--sp-8);
@@ -8444,7 +9334,7 @@ button.vtree-chev:focus-visible {
   color: var(--ref);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   text-align: inherit;
   white-space: nowrap;
   cursor: pointer;
@@ -8552,7 +9442,7 @@ button.vtree-chev:focus-visible {
   cursor: pointer;
 }
 .vtable-chev svg {
-  transition: transform 0.12s;
+  transition: transform var(--t-fast);
 }
 .vtable-chev.open svg {
   transform: rotate(90deg);
@@ -8576,7 +9466,7 @@ button.vtree-chev:focus-visible {
 }
 .saved-head .ttl {
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8639,7 +9529,7 @@ button.vtree-chev:focus-visible {
   content: ' \2197';
 }
 .vsaved-missing {
-  opacity: 0.55;
+  opacity: var(--opacity-dim);
   text-decoration: line-through dotted;
 }
 .vopen {
@@ -8651,7 +9541,7 @@ button.vtree-chev:focus-visible {
   color: var(--ref);
   font: inherit;
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   cursor: pointer;
 }
 .vopen:hover,
@@ -8687,7 +9577,7 @@ button.vtree-chev:focus-visible {
   flex-wrap: wrap;
 }
 .vembed-title {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin-right: auto;
 }
 .vembed-gone {
@@ -8718,7 +9608,7 @@ button.vtree-chev:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  height: 24px;
+  height: var(--control-h-sm);
   padding: 0 var(--sp-4);
   border: 0;
   border-radius: var(--r-sm);
@@ -8736,7 +9626,7 @@ button.vtree-chev:focus-visible {
   margin: var(--sp-2) var(--sp-8) var(--sp-4);
 }
 .nav-filter .segb {
-  height: 20px;
+  height: var(--chip-h);
   padding: 0 var(--sp-8);
   font-size: var(--fs-xs);
 }
@@ -8744,7 +9634,7 @@ button.vtree-chev:focus-visible {
   padding: var(--sp-8) var(--sp-8) var(--sp-2);
   color: var(--fg-faint);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -8753,8 +9643,8 @@ button.vtree-chev:focus-visible {
 }
 .vstale-dot {
   flex: none;
-  width: 7px;
-  height: 7px;
+  width: var(--dot-md);
+  height: var(--dot-md);
   border-radius: 50%;
   background: var(--attention);
 }
@@ -8764,8 +9654,8 @@ button.vtree-chev:focus-visible {
 .empty-actions .btn svg,
 .empty-body .btn svg,
 .bar .icon.wide svg {
-  width: 14px;
-  height: 14px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .btn.primary:not([disabled]) .kbd {
   color: var(--fg-on-accent);
@@ -8780,7 +9670,7 @@ button.vtree-chev:focus-visible {
   left: var(--sp-16);
   right: var(--sp-16);
   bottom: var(--sp-16);
-  z-index: 3;
+  z-index: var(--z-layer);
   display: flex;
   align-items: center;
   gap: var(--sp-12);

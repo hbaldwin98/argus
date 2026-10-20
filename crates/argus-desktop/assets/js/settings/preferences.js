@@ -12,13 +12,60 @@ import { actionFor } from '../keys/keymap.js';
 import { screens } from '../panes/screen.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
-/** Each flavour's own colours for its card: base, mantle, accent, text. */
+// What the pickers say an empty field draws before the cards, which hold the
+// per-theme answer, are built. Keep it with style.css.
+const GEIST = { ui: 'Geist', mono: 'JetBrains Mono' };
+/** The flavours' cards. Their colours and default fonts are style.css's:
+ *  the preview carries the theme, so the stylesheet draws it. */
 const FLAVOURS = [
-    { theme: 'night', name: 'Argus Night', colours: ['#0d1020', '#0a0c16', '#98c0ef', '#9aa7bd'] },
-    { theme: 'mocha', name: 'Mocha', colours: ['#1e1e2e', '#181825', '#cba6f7', '#a6adc8'] },
-    { theme: 'macchiato', name: 'Macchiato', colours: ['#24273a', '#1e2030', '#c6a0f6', '#a5adcb'] },
-    { theme: 'frappe', name: 'Frappé', colours: ['#303446', '#292c3c', '#ca9ee6', '#a5adce'] },
-    { theme: 'latte', name: 'Latte', colours: ['#eff1f5', '#e6e9ef', '#7a33d6', '#5c5f77'] },
+    {
+        theme: 'night',
+        name: 'Argus Night',
+    },
+    {
+        theme: 'ledger',
+        name: 'Ledger',
+    },
+    {
+        theme: 'carbon',
+        name: 'Carbon',
+    },
+    {
+        theme: 'flexoki',
+        name: 'Flexoki',
+    },
+    {
+        theme: 'kanagawa',
+        name: 'Kanagawa',
+    },
+    {
+        theme: 'rosePine',
+        name: 'Rosé Pine',
+    },
+    {
+        theme: 'nord',
+        name: 'Nord',
+    },
+    {
+        theme: 'radix',
+        name: 'Radix',
+    },
+    {
+        theme: 'mocha',
+        name: 'Mocha',
+    },
+    {
+        theme: 'macchiato',
+        name: 'Macchiato',
+    },
+    {
+        theme: 'frappe',
+        name: 'Frappé',
+    },
+    {
+        theme: 'latte',
+        name: 'Latte',
+    },
 ];
 const BACKDROPS = {
     clear: 'Clear',
@@ -71,6 +118,21 @@ function drawn(theme) {
     if (theme !== 'system')
         return theme;
     return dark.matches ? 'mocha' : 'latte';
+}
+/** The bundled faces the window draws when no family is chosen. */
+function defaultFaces(theme, cards) {
+    const preview = cards.get(drawn(theme))?.querySelector('.pv');
+    if (!preview)
+        return GEIST;
+    // Read off the card's preview, which the stylesheet scopes to its theme.
+    const first = (property) => {
+        const stack = getComputedStyle(preview).getPropertyValue(property);
+        return (stack.split(',')[0] ?? '').trim().replace(/^["']|["']$/g, '');
+    };
+    return {
+        ui: first('--font-ui-bundled') || GEIST.ui,
+        mono: first('--font-mono-bundled') || GEIST.mono,
+    };
 }
 /** Puts the chosen theme and opacity on the window. The theme is left off
  *  the document when following the system, so the stylesheet's media
@@ -143,17 +205,7 @@ export function openSettings() {
     before = document.activeElement;
     const cards = new Map();
     for (const flavour of FLAVOURS) {
-        const [base, mantle, accent, text] = flavour.colours;
-        const preview = el('span', { class: 'pv' }, el('span', { class: 'side' }), el('span', { class: 'lines' }, el('span', null), el('span', null)));
-        preview.style.background = base;
-        const [side, lines] = [...preview.children];
-        if (side)
-            side.style.background = mantle;
-        const [accentLine, textLine] = [...(lines?.children ?? [])];
-        if (accentLine)
-            accentLine.style.background = accent;
-        if (textLine)
-            textLine.style.background = text;
+        const preview = el('span', { class: 'pv', 'data-theme': flavour.theme }, el('span', { class: 'side' }), el('span', { class: 'lines' }, el('span', null), el('span', null)));
         const card = el('button', {
             class: 'themecard',
             role: 'radio',
@@ -180,10 +232,10 @@ export function openSettings() {
     const [backdropGroup, backdrops] = segment('What shows through', page.backdrops.map((offer) => [offer.backdrop, BACKDROPS[offer.backdrop]]), (backdrop) => set({ set: 'backdrop', backdrop }));
     const backdropWhy = el('span', { class: 'meta' });
     const backdropRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'What shows through'), el('span', { class: 'meta' }, 'Clear shows the desktop; Mica and Acrylic blur it'), backdropWhy), backdropGroup);
-    const font = fontPicker('Code font', 'var(--font-mono-bundled)', 'JetBrains Mono', (family) => set({ set: 'font', family }));
+    const font = fontPicker('Code font', 'var(--font-mono-bundled)', GEIST.mono, (family) => set({ set: 'font', family }));
     const fontWhy = el('span', { class: 'meta' });
     const fontRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'Code font'), el('span', { class: 'meta' }, 'Panes and code, monospaced; a Nerd Font draws its icons'), fontWhy), font.node);
-    const uiFont = fontPicker('Interface font', 'var(--font-ui-bundled)', 'Geist', (family) => set({ set: 'uiFont', family }));
+    const uiFont = fontPicker('Interface font', 'var(--font-ui-bundled)', GEIST.ui, (family) => set({ set: 'uiFont', family }));
     const uiFontWhy = el('span', { class: 'meta' });
     const uiFontRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'Interface font'), el('span', { class: 'meta' }, 'Menus, lists, headings and prose'), uiFontWhy), uiFont.node);
     const [editorGroup, editors] = segment('Files open', EDITORS, (mode) => set({ set: 'editor', mode }));
@@ -324,6 +376,7 @@ export function drawSettings() {
         return;
     const { chosen } = page;
     const shown = drawn(chosen.theme);
+    const faces = defaultFaces(chosen.theme, controls.cards);
     for (const [theme, card] of controls.cards) {
         card.classList.toggle('on', theme === shown);
         card.setAttribute('aria-checked', String(theme === shown));
@@ -347,10 +400,12 @@ export function drawSettings() {
     controls.backdropWhy.textContent = why.join('. ');
     controls.backdropWhy.hidden = why.length === 0;
     const installed = page.fonts.filter((f) => draws(f.name));
+    controls.font.defaultName(faces.mono);
+    controls.uiFont.defaultName(faces.ui);
     controls.font.update(installed.filter((f) => f.mono).map((f) => f.name), chosen.font);
     controls.uiFont.update(installed.map((f) => f.name), chosen.uiFont);
-    missingNote(controls.fontWhy, chosen.font, 'JetBrains Mono');
-    missingNote(controls.uiFontWhy, chosen.uiFont, 'the system font');
+    missingNote(controls.fontWhy, chosen.font, faces.mono);
+    missingNote(controls.uiFontWhy, chosen.uiFont, faces.ui);
     setSegment(controls.editors, chosen.editor);
     // A field being typed in is ahead of what came back.
     if (document.activeElement !== controls.command)

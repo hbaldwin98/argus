@@ -46,6 +46,13 @@ fn border(theme: Theme) -> u32 {
         Theme::Macchiato => 0x363a4f,
         Theme::Frappe => 0x414559,
         Theme::Night => 0x161a2e,
+        Theme::Ledger => 0x23252a,
+        Theme::Carbon => 0x393939,
+        Theme::Flexoki => 0x282726,
+        Theme::Kanagawa => 0x2a2a37,
+        Theme::RosePine => 0x26233a,
+        Theme::Nord => 0x434c5e,
+        Theme::Radix => 0x363a3f,
         Theme::Mocha | Theme::System => 0x313244,
     }
 }
@@ -144,8 +151,44 @@ mod tests {
     #[test]
     fn the_border_takes_the_line_colour_the_stylesheet_names() {
         let css = include_str!("../../assets/style.css");
-        for theme in [Theme::Mocha, Theme::Macchiato, Theme::Frappe, Theme::Latte, Theme::Night] {
+        for theme in [
+            Theme::Mocha,
+            Theme::Macchiato,
+            Theme::Frappe,
+            Theme::Latte,
+            Theme::Night,
+            Theme::Ledger,
+            Theme::Carbon,
+            Theme::Flexoki,
+            Theme::Kanagawa,
+            Theme::RosePine,
+            Theme::Nord,
+            Theme::Radix,
+        ] {
             assert!(css.contains(&format!("--surface0: #{:06x};", border(theme))), "{theme:?}");
+        }
+    }
+
+    #[test]
+    fn every_theme_has_a_palette_and_terminal_colours() {
+        let css = include_str!("../../assets/style.css");
+        for theme in [
+            Theme::Mocha,
+            Theme::Macchiato,
+            Theme::Frappe,
+            Theme::Latte,
+            Theme::Night,
+            Theme::Ledger,
+            Theme::Carbon,
+            Theme::Flexoki,
+            Theme::Kanagawa,
+            Theme::RosePine,
+            Theme::Nord,
+            Theme::Radix,
+        ] {
+            let name = serde_json::to_value(theme).unwrap();
+            let selector = format!(":root[data-theme='{}']", name.as_str().unwrap());
+            assert!(css.matches(&selector).count() >= 2, "{theme:?}: palette and ansi blocks");
         }
     }
 }

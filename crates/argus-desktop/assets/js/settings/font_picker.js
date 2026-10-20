@@ -5,7 +5,7 @@
 import { el, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 /** `fallback` is the CSS stack drawn when the field is empty, and is named
- *  by `fallbackName` in the list's first row. */
+ *  by `fallbackName` in the list's first row; the name can change later. */
 export function fontPicker(label, fallback, fallbackName, choose) {
     let families = [];
     let chosen = '';
@@ -137,6 +137,14 @@ export function fontPicker(label, fallback, fallbackName, choose) {
     });
     return {
         node,
+        defaultName(name) {
+            if (name === fallbackName)
+                return;
+            fallbackName = name;
+            input.placeholder = name;
+            if (isOpen())
+                draw();
+        },
         update(next, nowChosen) {
             chosen = nowChosen;
             input.style.fontFamily = face(chosen);

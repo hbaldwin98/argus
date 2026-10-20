@@ -141,8 +141,9 @@ pub struct Preferences {
 
 pub const MIN_OPACITY: u8 = 30;
 
-/// The window's colours: a Catppuccin flavour, Argus Night, or whichever of
-/// Mocha and Latte the system's light or dark says.
+/// The window's colours: a Catppuccin flavour, Argus Night, one of the dark
+/// palettes borrowed from other tools (Ledger onward), or whichever of Mocha
+/// and Latte the system's light or dark says.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -157,6 +158,20 @@ pub enum Theme {
     Latte,
     /// Argus's own: a cool navy ground lit by one periwinkle accent.
     Night,
+    /// Near-black greys, one indigo, hairlines at a single step (after Linear).
+    Ledger,
+    /// IBM Carbon's Gray 100: neutral greys, Carbon blue, square and sober.
+    Carbon,
+    /// Steph Ango's Flexoki dark: warm ink on black paper, cyan for what you can act on.
+    Flexoki,
+    /// Kanagawa Wave: sumi ink greys, aged-paper text, a wave-blue selection.
+    Kanagawa,
+    /// Rosé Pine: dusky violet surfaces, nothing near black, rose as the one warm accent.
+    RosePine,
+    /// Nord: Polar Night greys, Snow Storm text, Frost blue as the accent.
+    Nord,
+    /// Radix Colors' slate and blue, each step in the role its scale gives it.
+    Radix,
 }
 
 impl Theme {

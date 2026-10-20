@@ -11,12 +11,14 @@ export type FontPicker = {
   /** The families to offer and the one chosen. A field being typed in is
    *  ahead of what came back, so it keeps its text. */
   update(families: string[], chosen: string): void;
+  /** Renames what an empty field draws, which a theme changes. */
+  defaultName(name: string): void;
 };
 
 type Row = { family: string; label: string } | { note: string };
 
 /** `fallback` is the CSS stack drawn when the field is empty, and is named
- *  by `fallbackName` in the list's first row. */
+ *  by `fallbackName` in the list's first row; the name can change later. */
 export function fontPicker(
   label: string,
   fallback: string,
@@ -163,6 +165,12 @@ export function fontPicker(
 
   return {
     node,
+    defaultName(name) {
+      if (name === fallbackName) return;
+      fallbackName = name;
+      input.placeholder = name;
+      if (isOpen()) draw();
+    },
     update(next, nowChosen) {
       chosen = nowChosen;
       input.style.fontFamily = face(chosen);

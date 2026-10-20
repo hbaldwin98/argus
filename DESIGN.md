@@ -102,19 +102,23 @@ leader. Both are drawn over everything, a review included, and a pane's leader k
 `Run` event, since only the page draws them. So does the Settings dialog, `Ctrl-,` (in a pane, the
 leader and `,`), also in the palette and behind the gear at the sidebar's foot: the theme (Mocha,
 Macchiato, Frappé, Latte or Argus Night — Argus's own, a cool navy lit by one periwinkle accent — or
-following the system as Mocha in the dark and Latte in the light),
+one of seven named for the systems they follow: Ledger, Carbon, Flexoki, Kanagawa, Rosé Pine, Nord
+and Radix, or following the system as Mocha in the dark and Latte in the light),
 the background's opacity and what shows through it, the two fonts, where a file opens and the editor
 command, the system notification an agent coming to need you raises, and the layout a repository's
 Feature index opens as before it remembers its own. Each choice is a call that
 `settings/preferences` holds and saves as it is made, and the page draws the look from what comes
-back. Each font is the family of one installed on the machine, typed or picked from a list under the
-field that draws each family in its own face: the families `settings/fonts` reads at start, those
-the webview can find under that name, with a note when nothing is called what the field holds. A
-half-typed name is not chosen until it is picked, entered or left. The code font, offered from the
-monospaced families, goes in front of the bundled JetBrains Mono and Symbols Nerd Font Mono, so the
-panes draw a prompt's or an editor's Nerd Font icons whichever text face is chosen; a pane
-re-measures its cells when it changes. The interface font, offered from every family, goes in front
-of the bundled Geist and then the system's own, and draws the rest. The window is always built transparent, since that can only
+back. A theme may also set the shape tokens, the radii, control heights and heading weights each
+system draws with, and brings its own interface and code faces as the default, with the Settings
+choice still in front of them. Each font is the family of one
+installed on the machine, typed or picked from a list under the field that draws each family in its
+own face: the families `settings/fonts` reads at start, those the webview can find under that name,
+with a note when nothing is called what the field holds. A half-typed name is not chosen until it is
+picked, entered or left. The code font, offered from the monospaced families, goes in front of the
+bundled code face (JetBrains Mono unless the theme bundles another) and Symbols Nerd Font Mono, so the panes draw a prompt's or an editor's Nerd
+Font icons whichever text face is chosen; a pane re-measures its cells when it changes. The
+interface font, offered from every family, goes in front of the theme's bundled face (Geist unless the theme bundles another) and then the system's
+own, and draws the rest. The window is always built transparent, since that can only
 be set as it is made, so the opacity is only the page's alpha on its large fills — the sidebar, the
 strip, the stages and the terminal's background — and never on text or borders, and moving it never
 rebuilds the window. What shows through is Clear, or on Windows Mica (Windows 11 only, greyed out
