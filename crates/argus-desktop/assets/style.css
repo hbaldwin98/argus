@@ -1809,6 +1809,14 @@
   width: min(1120px, 94vw);
   height: min(760px, 90vh);
 }
+/* Review, history, sessions and a transcript read diffs and long lines, so
+   they take the window less one gutter, as they did before the shell; a
+   capped sheet left them a column of code in a wide window. */
+.dialog.sheet-dialog.review-dialog {
+  width: calc(100vw - 2 * var(--sp-24));
+  height: calc(100vh - 2 * var(--sp-24));
+  max-height: none;
+}
 .dhead {
   display: flex;
   align-items: flex-start;
