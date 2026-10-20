@@ -64,6 +64,9 @@ pub enum Place {
     Writing,
     /// The Checkouts stage's table.
     Checkouts,
+    /// The files panel beside it, while a click or a key there has given it
+    /// the keys.
+    Files,
     /// A checkout's + menu while it is open, which holds the keys.
     Start,
     /// A menu over the stage, a right-click's or a button's, while it is
@@ -215,6 +218,12 @@ pub enum Action {
     AsReview,
     /// The file at the cursor in the person's editor.
     OpenEditor,
+    /// Show the selected checkout's files beside the table, or put them away.
+    Files,
+    /// Open the folder at the cursor, or step into it once open.
+    OpenFolder,
+    /// Shut the folder at the cursor, or step out to the folder it is in.
+    ShutFolder,
     /// Open the chosen repository's recent agent sessions.
     OpenSessions,
     /// Resume the session under the cursor in a new pane.
@@ -372,6 +381,8 @@ pub enum Layer {
     Outline,
     /// The Feature stage's index.
     Features,
+    /// The files panel beside the Checkouts table, once it has the keys.
+    Files,
     Checkouts,
     Code,
     /// An extension's view as the page.
@@ -443,6 +454,7 @@ impl Place {
             Place::Diagram => "An expanded diagram",
             Place::Writing => "Writing in a field",
             Place::Checkouts => "Checkouts",
+            Place::Files => "A checkout's files",
             Place::Start => "A checkout's + menu",
             Place::Menu => "A menu",
             Place::Review => "Review",
@@ -621,6 +633,17 @@ pub static BINDINGS: &[Binding] = &[
     bind(CheckoutsTable, &[Chord::key("h"), Chord::key("H")], OpenHistory, "history"),
     bind(CheckoutsTable, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell"),
     bind(CheckoutsTable, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent"),
+    bind(CheckoutsTable, &[Chord::key("e"), Chord::key("E")], Action::Files, "show its files"),
+    bind(Place::Files, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next row"),
+    bind(Place::Files, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
+    bind(Place::Files, &[Chord::key("Home")], First, "first row"),
+    bind(Place::Files, &[Chord::key("End")], Last, "last row"),
+    bind(Place::Files, &[Chord::key("Enter")], Choose, "open the file in Code, or open or close the folder"),
+    bind(Place::Files, &[Chord::key("o"), Chord::key("O")], OpenEditor, "open the file in your editor"),
+    bind(Place::Files, &[Chord::key("l"), Chord::key("ArrowRight")], OpenFolder, "open the folder, or step into it"),
+    bind(Place::Files, &[Chord::key("h"), Chord::key("ArrowLeft")], ShutFolder, "close the folder, or step out of it"),
+    bind(Place::Files, &[Chord::key("/")], Filter, "filter the files"),
+    bind(Place::Files, &[Chord::key("Escape")], CloseLayer, "put the files away"),
     bind(Start, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell"),
     bind(Start, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent"),
     bind(Start, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next item"),
@@ -765,6 +788,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Fetch, Some(CheckoutsTable), "Fetch this checkout"),
     (Pull, Some(CheckoutsTable), "Pull this checkout"),
     (Branches, Some(CheckoutsTable), "Show or hide the branches no checkout is on"),
+    (Action::Files, Some(CheckoutsTable), "Show or hide this checkout's files"),
     (Layout, Some(Place::Feature), "Show the features as a list or a board"),
     (Folded, Some(Place::Feature), "Show the folded features — held and archived on the list, archived on the board — or fold them"),
     (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
@@ -775,7 +799,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (TrackerMap, Some(Outline), "Edit the repository's tracker map…"),
 ];
 
-const ORDER: [Place; 23] = [
+const ORDER: [Place; 24] = [
     Anywhere,
     Pane,
     Window,
@@ -786,6 +810,7 @@ const ORDER: [Place; 23] = [
     Diagram,
     Writing,
     CheckoutsTable,
+    Place::Files,
     Place::Code,
     Start,
     Menu,
@@ -839,6 +864,9 @@ pub static LAYERS: &[KeyLayer] = &[
     layer(Layer::Diagram, Some(&[Diagram, Outline, Anywhere]), false),
     layer(Layer::Outline, Some(&[Outline, Anywhere]), false),
     layer(Layer::Features, Some(&[Anywhere, Place::Feature, Card]), false),
+    // Heard before the table's keys, so j and Enter move over the files
+    // while one has the keys; any other key goes on to the table's layer.
+    layer(Layer::Files, Some(&[Place::Files]), false),
     layer(Layer::Checkouts, Some(&[Anywhere, CheckoutsTable]), false),
     layer(Layer::Code, Some(&[Anywhere, Place::Code]), false),
     layer(Layer::ExtensionPage, Some(&[Anywhere, Place::Extension]), false),
@@ -927,6 +955,7 @@ mod tests {
                 "An expanded diagram",
                 "Writing in a field",
                 "Checkouts",
+                "A checkout's files",
                 "Code",
                 "A checkout's + menu",
                 "A menu",

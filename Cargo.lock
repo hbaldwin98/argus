@@ -148,6 +148,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-notification",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

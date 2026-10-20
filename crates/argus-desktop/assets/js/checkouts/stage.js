@@ -9,6 +9,7 @@ import { closeLayer, openMenu } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
+import { afterRedraw, beforeRedraw, filesOpenFor, filesPanel } from './files.js';
 function keycap(key) {
     return el('span', { class: 'kbd' }, key);
 }
@@ -91,15 +92,16 @@ function head(c) {
     return el('div', { class: `fhead index-head${c.filter ? ' has-filter' : ''}` }, el('div', { class: 'actions index-tools' }, filter));
 }
 /** The keys the table answers to, quietly under it. */
-function keyBar() {
+function keyBar(c) {
     const keys = [
         ['Enter', 'open'],
         ['R', 'review'],
         ['H', 'history'],
+        ['E', 'files'],
         ['P', 'pull'],
         ['N', 'new worktree'],
         ['D', 'delete'],
-    ];
+    ].filter(([key]) => key !== 'E' || c.filesOffered);
     return el('div', { class: 'kbar' }, keys.map(([key, what]) => el('span', { class: 'kbar-key' }, keycap(key), ` ${what}`)));
 }
 function running(row) {
@@ -121,6 +123,19 @@ function onRow(row, run) {
         run();
     };
 }
+/** Shows the files of a checkout beside the table, or puts them away: lit
+ *  while they are what is open. */
+function filesButton(row, checkout, name) {
+    const open = filesOpenFor(checkout);
+    return el('button', {
+        class: `icon${open ? ' hot' : ''}`,
+        type: 'button',
+        title: 'Files (E)',
+        'aria-label': `Files of ${name}`,
+        'aria-pressed': String(open),
+        onclick: onRow(row, () => call('checkouts_action', { action: 'files' })),
+    }, icon('folder-sm'));
+}
 /** What is done to a row, in the trailing column, on every row: the one
  *  thing most wanted, the start menu, and the rest behind the overflow.
  *  Quiet until the row is hovered or selected, and never over a cell. */
@@ -137,7 +152,7 @@ function actions(row) {
             class: 'btn sm',
             onclick: onRow(row, () => call('checkouts_action', { action: 'choose' })),
         }, 'Open');
-    return el('div', { class: 'ra' }, primary, checkout !== null &&
+    return el('div', { class: 'ra' }, primary, checkout !== null && state.checkouts?.filesOffered && filesButton(row, checkout, name), checkout !== null &&
         el('span', { class: 'start-at' }, el('button', {
             class: `icon${hot ? ' hot' : ''}`,
             title: 'Start a shell or an agent',
@@ -200,7 +215,7 @@ function tableRow(row, selected) {
         ]
         : // A branch with no directory is named where a checkout is, so the
             // first column is never blank.
-            el('span', { class: 'mono fg-ref bname' }, icon('branch'), row.branch)), el('td', { class: 'mono fg-ref' }, row.name !== null && row.branch), el('td', null, row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git), row.note && el('span', { class: 'meta' }, row.note)), el('td', { class: 'col-running' }, running(row)), el('td', { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` }, row.feature !== null && `#${row.feature}`), el('td', { class: 'col-last' }, row.last && commitLine(row.last)), el('td', { class: 'row-actions' }, actions(row)));
+            el('span', { class: 'mono fg-ref bname' }, icon('branch'), row.branch)), el('td', { class: 'col-branch mono fg-ref' }, row.name !== null && row.branch), el('td', null, row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git), row.note && el('span', { class: 'meta' }, row.note)), el('td', { class: 'col-running' }, running(row)), el('td', { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` }, row.feature !== null && `#${row.feature}`), el('td', { class: 'col-last' }, row.last && commitLine(row.last)), el('td', { class: 'row-actions' }, actions(row)));
 }
 function commitLine(commit) {
     return [
@@ -360,7 +375,14 @@ export function drawCheckouts() {
     const body = c.rows.length
         ? table(c)
         : empty(el('div', { class: 'fg-muted' }, c.filter ? `Nothing matches “${c.filter}”.` : 'No checkouts.'));
-    stage.replaceChildren(head(c), body, keyBar());
+    const before = beforeRedraw();
+    const main = [head(c), body, keyBar(c)];
+    stage.classList.toggle('with-files', c.files !== null);
+    if (c.files)
+        stage.replaceChildren(el('div', { class: 'cmain' }, main), filesPanel(c.files));
+    else
+        stage.replaceChildren(...main);
+    afterRedraw(before);
     drawConfirm(c);
     stage.querySelector('tr.on')?.scrollIntoView({ block: 'nearest' });
     // Redrawn as each letter arrives: the filter keeps the keys and the caret.

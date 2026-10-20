@@ -6,6 +6,7 @@ use argus_protocol::tree::column::{local_name, CheckoutRow};
 use argus_protocol::{CheckoutInfo, DecisionBoard, GitStatus, PaneKind, RepositoryInfo};
 use serde::Serialize;
 
+use crate::checkouts::files_page::FilesPage;
 use crate::checkouts::stage::Confirm;
 
 /// The Checkouts stage: the chosen repository's checkouts, and the
@@ -29,6 +30,11 @@ pub struct Checkouts {
     pub detail: Option<CheckoutDetail>,
     /// A question the stage is waiting on an answer to.
     pub confirm: Option<Confirm>,
+    /// The daemon lists a checkout's folders, so each row has the button
+    /// that opens them.
+    pub files_offered: bool,
+    /// The files panel beside the table, while one is open.
+    pub files: Option<FilesPage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -167,6 +173,8 @@ pub fn build(repo: &RepositoryInfo, view: &View) -> Checkouts {
         },
         // The stage's to say.
         confirm: None,
+        files_offered: false,
+        files: None,
     }
 }
 

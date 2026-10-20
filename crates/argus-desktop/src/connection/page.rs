@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chrome::add_project::{AddProjectGesture, AddProjectPage};
 use crate::board::capture_note::{CaptureGesture, CapturePage};
+use crate::checkouts::files::FilesGesture;
 use crate::checkouts::table::Checkouts;
 use crate::code::stage::{CodeGesture, CodePage};
 use crate::review::comment_box::CommentPage;
@@ -133,6 +134,8 @@ pub enum Call {
     FilterCheckouts { filter: String },
     /// A key or button of the Checkouts stage, acting on its selected row.
     CheckoutsAction { action: Action },
+    /// A gesture in the files panel beside the Checkouts table.
+    Files { gesture: FilesGesture },
     /// Asks whether to remove a worktree picked in the rail.
     RemoveCheckout { checkout: u64 },
     /// The answer to the Checkouts stage's question.

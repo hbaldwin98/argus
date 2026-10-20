@@ -211,7 +211,9 @@ them `values` draws one value, with `refs` for those that point into Argus, `chi
 `actions` draws the buttons an agent put in a view; and `views/ctx` and `system/copy` serve them
 all. `extensions/` holds `views` and `dialogs` (an extension's question). `agents/` holds `compose`,
 `sessions_dialog` and `transcript`. `checkouts/stage` and `code/stage` draw the Checkouts and Code
-stages. `review/` holds `dialog`, `history` and `comment_box` (the comment box under picked lines,
+stages; `checkouts/files` draws a checkout's files beside the Checkouts table, a column of it, or
+a drawer over it when the stage is under 900px, listed by the daemon a folder at a time (`ListDir`,
+`FILES`) off the disk, untracked and ignored files included, and marked by git. `review/` holds `dialog`, `history` and `comment_box` (the comment box under picked lines,
 the review's and the Code stage's). `board/` holds `feature_stage` and `capture`, the lenses in
 `lenses/` (`work`, `record`, `flows` and `sequence`), and in `tracker/` `link`, `reconcile` and
 `tickets` (a feature's ticket links). It is compiled into `assets/js` and committed, so building
@@ -618,7 +620,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `system/clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `system/logging` | where the window's own diagnostics go |
 | `system/notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
-| `system/opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
+| `system/opener` | handing something to the system's opener: a link in a view, only an `http` or `https` one, and a file or folder of a checkout the file manager shows, only one inside it |
 | `system/window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
 | `settings` | what the person chose for this window, what it remembers between runs, and what this machine offers to choose from |
 | `settings/backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
@@ -660,6 +662,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `agents/transcript_reader` | the full-transcript reader: the person's turns as a jump list and the one it is on, what find looks for and the match it is on, and the page it draws |
 | `checkouts` | a repository's checkouts as the Checkouts stage lists them |
 | `checkouts/stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — which of its keys and buttons are the `tree::column::verbs` it sends, and the table the page last heard |
+| `checkouts/files` | the files panel beside the Checkouts table as the window holds it — which checkout's folder it reads, the folders open, what each listing said, the selection, mode and filter — what its keys and clicks ask of the daemon and leave to the window, and the listings it takes, dropping a stale one |
+| `checkouts/files_page` | what that panel draws from the folders read: the tree's rows in order with each entry's mark, the breadcrumb, and the footer's size and age |
 | `checkouts/table` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
 | `code` | the Code stage and the files it reads in a checkout |
 | `code/stage` | the Code stage as the window holds it once opened — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the comment being written, the go-to-file field, the search, and the review it was opened from — the daemon's answers it takes, what its gestures ask of the daemon and leave to the window, and the page and gestures it trades with the page, last sent while it is up |

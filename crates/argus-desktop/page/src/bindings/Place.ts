@@ -3,4 +3,4 @@
 /**
  * Where a binding works: the shortcuts sheet's groups, in its order.
  */
-export type Place = "anywhere" | "pane" | "window" | "rail" | "feature" | "card" | "outline" | "diagram" | "writing" | "checkouts" | "start" | "menu" | "review" | "jump" | "history" | "sessions" | "transcript" | "filter" | "palette" | "extension" | "code" | "link" | "reconcile";
+export type Place = "anywhere" | "pane" | "window" | "rail" | "feature" | "card" | "outline" | "diagram" | "writing" | "checkouts" | "files" | "start" | "menu" | "review" | "jump" | "history" | "sessions" | "transcript" | "filter" | "palette" | "extension" | "code" | "link" | "reconcile";

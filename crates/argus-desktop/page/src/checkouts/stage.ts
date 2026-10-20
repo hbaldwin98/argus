@@ -25,6 +25,7 @@ import { closeLayer, openMenu } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
+import { afterRedraw, beforeRedraw, filesOpenFor, filesPanel } from './files.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);
@@ -135,15 +136,16 @@ function head(c: Checkouts): HTMLElement {
 }
 
 /** The keys the table answers to, quietly under it. */
-function keyBar(): HTMLElement {
+function keyBar(c: Checkouts): HTMLElement {
   const keys: [string, string][] = [
     ['Enter', 'open'],
     ['R', 'review'],
     ['H', 'history'],
+    ['E', 'files'],
     ['P', 'pull'],
     ['N', 'new worktree'],
     ['D', 'delete'],
-  ];
+  ].filter(([key]) => key !== 'E' || c.filesOffered) as [string, string][];
   return el(
     'div',
     { class: 'kbar' },
@@ -176,6 +178,24 @@ function onRow(row: CheckoutsRow, run: () => void): (e: MouseEvent) => void {
   };
 }
 
+/** Shows the files of a checkout beside the table, or puts them away: lit
+ *  while they are what is open. */
+function filesButton(row: CheckoutsRow, checkout: number, name: string): HTMLElement {
+  const open = filesOpenFor(checkout);
+  return el(
+    'button',
+    {
+      class: `icon${open ? ' hot' : ''}`,
+      type: 'button',
+      title: 'Files (E)',
+      'aria-label': `Files of ${name}`,
+      'aria-pressed': String(open),
+      onclick: onRow(row, () => call('checkouts_action', { action: 'files' })),
+    },
+    icon('folder-sm'),
+  );
+}
+
 /** What is done to a row, in the trailing column, on every row: the one
  *  thing most wanted, the start menu, and the rest behind the overflow.
  *  Quiet until the row is hovered or selected, and never over a cell. */
@@ -206,6 +226,7 @@ function actions(row: CheckoutsRow): Child {
     'div',
     { class: 'ra' },
     primary,
+    checkout !== null && state.checkouts?.filesOffered && filesButton(row, checkout, name),
     checkout !== null &&
       el(
         'span',
@@ -297,7 +318,7 @@ function tableRow(row: CheckoutsRow, selected: boolean): HTMLElement {
           // first column is never blank.
           el('span', { class: 'mono fg-ref bname' }, icon('branch'), row.branch),
     ),
-    el('td', { class: 'mono fg-ref' }, row.name !== null && row.branch),
+    el('td', { class: 'col-branch mono fg-ref' }, row.name !== null && row.branch),
     el(
       'td',
       null,
@@ -625,7 +646,12 @@ export function drawCheckouts(): void {
           c.filter ? `Nothing matches “${c.filter}”.` : 'No checkouts.',
         ),
       );
-  stage.replaceChildren(head(c), body, keyBar());
+  const before = beforeRedraw();
+  const main = [head(c), body, keyBar(c)];
+  stage.classList.toggle('with-files', c.files !== null);
+  if (c.files) stage.replaceChildren(el('div', { class: 'cmain' }, main), filesPanel(c.files));
+  else stage.replaceChildren(...main);
+  afterRedraw(before);
   drawConfirm(c);
   stage.querySelector('tr.on')?.scrollIntoView({ block: 'nearest' });
   // Redrawn as each letter arrives: the filter keeps the keys and the caret.

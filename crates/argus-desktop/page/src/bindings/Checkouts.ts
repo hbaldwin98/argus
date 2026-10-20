@@ -2,6 +2,7 @@
 import type { CheckoutDetail } from "./CheckoutDetail";
 import type { CheckoutsRow } from "./CheckoutsRow";
 import type { Confirm } from "./Confirm";
+import type { FilesPage } from "./FilesPage";
 
 /**
  * The Checkouts stage: the chosen repository's checkouts, and the
@@ -27,4 +28,13 @@ selected: string | null, detail: CheckoutDetail | null,
 /**
  * A question the stage is waiting on an answer to.
  */
-confirm: Confirm | null, };
+confirm: Confirm | null, 
+/**
+ * The daemon lists a checkout's folders, so each row has the button
+ * that opens them.
+ */
+filesOffered: boolean, 
+/**
+ * The files panel beside the table, while one is open.
+ */
+files: FilesPage | null, };

@@ -602,6 +602,29 @@ export const sent = [
       "place": "checkouts"
     },
     {
+      "action": "files",
+      "chords": [
+        {
+          "alt": false,
+          "ctrl": false,
+          "key": "e",
+          "leader": false,
+          "meta": false,
+          "shift": false
+        },
+        {
+          "alt": false,
+          "ctrl": false,
+          "key": "E",
+          "leader": false,
+          "meta": false,
+          "shift": false
+        }
+      ],
+      "label": "Show or hide this checkout's files",
+      "place": "checkouts"
+    },
+    {
       "action": "layout",
       "chords": [
         {
@@ -2910,10 +2933,218 @@ export const sent = [
             }
           ],
           "label": "start the default agent"
+        },
+        {
+          "action": "files",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "e",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            },
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "E",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "show its files"
         }
       ],
       "place": "checkouts",
       "title": "Checkouts"
+    },
+    {
+      "bindings": [
+        {
+          "action": "next",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "j",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            },
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "ArrowDown",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "next row"
+        },
+        {
+          "action": "previous",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "k",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            },
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "ArrowUp",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "previous row"
+        },
+        {
+          "action": "first",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "Home",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "first row"
+        },
+        {
+          "action": "last",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "End",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "last row"
+        },
+        {
+          "action": "choose",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "Enter",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "open the file in Code, or open or close the folder"
+        },
+        {
+          "action": "openEditor",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "o",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            },
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "O",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "open the file in your editor"
+        },
+        {
+          "action": "openFolder",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "l",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            },
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "ArrowRight",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "open the folder, or step into it"
+        },
+        {
+          "action": "shutFolder",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "h",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            },
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "ArrowLeft",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "close the folder, or step out of it"
+        },
+        {
+          "action": "filter",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "/",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "filter the files"
+        },
+        {
+          "action": "closeLayer",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "Escape",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "put the files away"
+        }
+      ],
+      "place": "files",
+      "title": "A checkout's files"
     },
     {
       "bindings": [
@@ -4959,6 +5190,13 @@ export const sent = [
       "takesFromPane": false
     },
     {
+      "layer": "files",
+      "places": [
+        "files"
+      ],
+      "takesFromPane": false
+    },
+    {
       "layer": "checkouts",
       "places": [
         "anywhere",
@@ -5584,6 +5822,8 @@ export const sent = [
     "path": "/src/main",
     "upstream": "none"
   },
+  "files": null,
+  "filesOffered": true,
   "filter": "",
   "main": null,
   "repository": "argus",

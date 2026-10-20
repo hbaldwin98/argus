@@ -3,4 +3,4 @@
 /**
  * What can hold the keys on the page, outside a pane, while it is up.
  */
-export type Layer = "field" | "extensionDialog" | "settings" | "sheet" | "addProject" | "link" | "reconcile" | "review" | "history" | "transcript" | "sessions" | "start" | "extension" | "rail" | "menu" | "capture" | "diagram" | "outline" | "features" | "checkouts" | "code" | "extensionPage" | "stage";
+export type Layer = "field" | "extensionDialog" | "settings" | "sheet" | "addProject" | "link" | "reconcile" | "review" | "history" | "transcript" | "sessions" | "start" | "extension" | "rail" | "menu" | "capture" | "diagram" | "outline" | "features" | "files" | "checkouts" | "code" | "extensionPage" | "stage";

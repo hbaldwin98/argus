@@ -9,6 +9,7 @@ import type { KeyLayer } from '../bindings/KeyLayer';
 import type { Place } from '../bindings/Place';
 import { captureOpen, discardCapture } from '../board/capture.js';
 import { answerNo, checkoutsAction } from '../checkouts/stage.js';
+import { closeFilesIfFocused, filesFocused, focusFilesFilter } from '../checkouts/files.js';
 import { codeAction } from '../code/stage.js';
 import { focusHistoryFilter, historyOpen } from '../review/history.js';
 import { linkAction, linkOpen } from '../board/tracker/link.js';
@@ -328,6 +329,21 @@ const handlers: Handlers = {
     },
   },
   features: { open: () => state.rail.stage === 'feature', keys: stageKeys },
+  // The files panel, once a click or a key has given it the keys: its own
+  // keys first, and any other goes on to the table's layer.
+  files: {
+    open: () => state.rail.stage === 'checkouts' && filesFocused(),
+    keys: (e, places) => {
+      const action = actionFor(places, e);
+      if (!action) return false;
+      if (action === 'filter') focusFilesFilter();
+      else if (action === 'closeLayer') run('closeLayer');
+      else call('files', { gesture: { on: 'action', action } });
+      e.preventDefault();
+      return true;
+    },
+    escape: () => state.rail.stage === 'checkouts' && closeFilesIfFocused(),
+  },
   checkouts: { open: () => state.rail.stage === 'checkouts', keys: stageKeys },
   code: {
     open: () => state.rail.stage === 'code',

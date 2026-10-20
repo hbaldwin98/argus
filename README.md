@@ -649,6 +649,7 @@ location. Typing filters the folders in the current directory.
 | `f` | Open the file picker |
 | `R` / Tab | Open review, from the rail or the Checkouts stage |
 | `H` | Open the checkout's commit history, from the rail or the Checkouts stage |
+| `E` | In the Checkouts stage, show the selected checkout's files beside the table, or put them away. In the panel: `j`/`k` move, `Enter` opens a file in Code or a folder, `O` opens a file in your editor, `→`/`←` open and close folders, `/` filters, `Esc` closes |
 | `N` | Jump to the next pane, or parent of a child, waiting, failed, or ready for review |
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |

@@ -41,7 +41,7 @@ use argus_protocol::connection::request_refusal::OlderDaemon;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, RequestRefusal, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS,
-    PASTE_FILE, RENAME_PANE, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion,
+    PASTE_FILE, RENAME_PANE, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion, FILES,
 };
 
 use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
@@ -51,6 +51,7 @@ use crate::extensions::keys::ExtensionKeys;
 use crate::extensions::views::{first_place, ExtensionGesture, ExtensionViews, Here, Placed};
 use crate::agents::templates::Agents;
 use crate::board::capture_note::{CaptureGesture, Capturing};
+use crate::checkouts::files::{Daemon, FilesGesture, Then as FilesThen};
 use crate::checkouts::stage::{CheckoutsStage, Opened};
 use crate::panes::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
 use crate::layout::docks::{Dock, DockGesture, Docks, Panel, Place};
@@ -368,6 +369,9 @@ impl Session {
         let Some(msg) = self.code.receive(msg) else {
             return;
         };
+        let Some(msg) = self.checkouts.receive(msg) else {
+            return;
+        };
         if let Some(effect) = self.shown.receive(&msg) {
             self.take(effect);
             return;
@@ -655,6 +659,7 @@ impl Session {
             Call::SelectCheckoutRow { key } => self.select_checkout_row(key),
             Call::FilterCheckouts { filter } => self.filter_checkouts(filter),
             Call::CheckoutsAction { action } => self.checkouts_action(action),
+            Call::Files { gesture } => self.files_gesture(gesture),
             Call::RemoveCheckout { checkout } => self.remove_checkout(CheckoutId(checkout)),
             Call::AnswerCheckouts { yes } => self.answer_checkouts(yes),
             Call::NewWorktree { name } => self.new_worktree(name),
@@ -2456,6 +2461,13 @@ impl Session {
                 Some(Opened::Say(text)) => self.passing.push(Event::Notice { text }),
                 None => {}
             },
+            Action::Files => {
+                let daemon = self.files_daemon();
+                match self.checkouts.toggle_files(&repo, daemon, || self.awaited.name()) {
+                    Ok(asks) => self.out.extend(asks),
+                    Err(text) => self.passing.push(Event::Notice { text }),
+                }
+            }
             Action::Fetch | Action::Pull => {
                 let verb = if action == Action::Fetch { Verb::Fetch } else { Verb::Pull };
                 match self.checkouts.act(&repo, verb) {
@@ -2485,6 +2497,50 @@ impl Session {
             _ => {}
         }
         self.finish()
+    }
+
+    /// What the files panel may offer, by where the daemon is.
+    fn files_daemon(&self) -> Daemon {
+        Daemon { lists_files: self.status.daemon_can(FILES), local: self.status.host().is_none() }
+    }
+
+    /// A gesture in the files panel, and what it leaves to the window.
+    fn files_gesture(&mut self, gesture: FilesGesture) -> Vec<ClientMsg> {
+        let mut out = Vec::new();
+        let then = self.checkouts.files_gesture(gesture, || self.awaited.name(), &mut out);
+        self.out.extend(out);
+        match then {
+            FilesThen::Nothing | FilesThen::Close => {}
+            FilesThen::Code { checkout, path } => {
+                if self.status.daemon_can(CODE) {
+                    self.open_code_at(checkout, CodeVersion::WorkingTree, Some(path), None, None);
+                } else {
+                    self.say(TOO_OLD_FOR_CODE);
+                }
+            }
+            FilesThen::Edit { checkout, path } => self.open_in_editor(checkout, path, None),
+            FilesThen::Shell { checkout } => {
+                let sent = self.spawn_shell(checkout);
+                self.out.extend(sent);
+            }
+            FilesThen::Reveal { checkout, path } => self.reveal(checkout, path),
+        }
+        self.finish()
+    }
+
+    /// An entry of a checkout in the file manager: only on this machine,
+    /// since a folder of another host is not one the file manager has.
+    fn reveal(&mut self, checkout: CheckoutId, path: Option<String>) {
+        if self.status.host().is_some() {
+            self.say("the file manager can only show a folder on this machine");
+            return;
+        }
+        let Some(info) = self.tree.checkout(checkout) else {
+            return;
+        };
+        if let Err(text) = crate::system::opener::reveal(std::path::Path::new(&info.path), path.as_deref()) {
+            self.say(&text);
+        }
     }
 
     /// A shell, or the agent offered first, on a checkout.
@@ -2848,6 +2904,11 @@ impl Session {
                 self.go(Stage::Checkouts);
                 self.checkouts.toggle_branches();
             }
+            Action::Files => {
+                self.go(Stage::Checkouts);
+                let sent = self.checkouts_action(action);
+                self.out.extend(sent);
+            }
             Action::Fetch | Action::Pull | Action::OpenReview | Action::OpenHistory | Action::StartShell | Action::StartAgent => {
                 self.on_this_checkout(action);
             }
@@ -3057,7 +3118,7 @@ impl Session {
         }
         if self.stages.now() == Stage::Checkouts {
             let repo = self.chosen_repository().cloned();
-            events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
+            events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), self.files_daemon(), now));
         }
         events.extend(self.code.take(self.stages.now() == Stage::Code, &self.tree));
         let extensions = self.placed_extensions();
@@ -3129,7 +3190,7 @@ impl Session {
         // reloaded holds none to show when it goes up.
         if !events.iter().any(|e| matches!(e, Event::Checkouts(_))) {
             let repo = self.chosen_repository().cloned();
-            events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now));
+            events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), self.files_daemon(), now));
         }
         events
     }
@@ -5094,6 +5155,98 @@ mod tests {
         assert!(matches!(s.checkouts_action(Action::Fetch).as_slice(), [ClientMsg::Fetch { checkout: CheckoutId(100) }]));
     }
 
+    fn files_daemon() -> Hello {
+        Hello { capabilities: vec![FILES.into(), CODE.into()], ..Hello::this_build() }
+    }
+
+    fn files_page(s: &mut Session) -> Option<crate::checkouts::files_page::FilesPage> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::Checkouts(table) => table.files,
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn e_on_a_checkout_row_opens_its_files_and_asks_for_the_root_and_again_puts_them_away() {
+        let mut s = session(files_daemon());
+        s.show_checkouts(true);
+        s.select_checkout_row("c100".into());
+        let sent = s.checkouts_action(Action::Files);
+        assert!(
+            sent.iter().any(|m| matches!(m, ClientMsg::ListDir { checkout: CheckoutId(100), path, .. } if path.is_empty())),
+            "{sent:?}"
+        );
+        assert!(files_page(&mut s).is_some_and(|f| f.loading && f.checkout == 100));
+        s.checkouts_action(Action::Files);
+        assert!(files_page(&mut s).is_none(), "the same key again closes it");
+    }
+
+    #[test]
+    fn a_daemon_that_cannot_list_files_is_not_asked_and_the_table_says_so() {
+        let mut s = session(without_focus());
+        s.show_checkouts(true);
+        let sent = s.checkouts_action(Action::Files);
+        assert!(!sent.iter().any(|m| matches!(m, ClientMsg::ListDir { .. })), "{sent:?}");
+        assert!(notices(&mut s).iter().any(|t| t.contains("too old to list files")));
+        let offered = s.events(0).into_iter().any(|e| matches!(e, Event::Checkouts(t) if t.files_offered));
+        assert!(!offered);
+    }
+
+    #[test]
+    fn a_listing_fills_the_panel_and_a_file_opens_in_code_at_its_path() {
+        use argus_protocol::{CheckoutDir, CheckoutEntry};
+        let mut s = session(files_daemon());
+        s.show_checkouts(true);
+        s.select_checkout_row("c100".into());
+        let sent = s.checkouts_action(Action::Files);
+        let Some(ClientMsg::ListDir { request_id, .. }) = sent.iter().find(|m| matches!(m, ClientMsg::ListDir { .. })) else {
+            panic!("{sent:?}");
+        };
+        let entries = vec![CheckoutEntry { name: "a.rs".into(), dir: false, size: Some(5), modified: None, git: None }];
+        s.receive(ServerMsg::CheckoutDir(CheckoutDir { request_id: *request_id, checkout: CheckoutId(100), path: String::new(), entries, truncated: false }));
+        let page = files_page(&mut s).expect("the panel is open");
+        assert_eq!(page.rows.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(), ["a.rs"]);
+        let sent = code_asks(s.files_gesture(FilesGesture::Open {
+            path: "a.rs".into(),
+            how: crate::checkouts::files::OpenIn::Code,
+        }));
+        assert!(
+            matches!(
+                sent.as_slice(),
+                [ClientMsg::ListCode { checkout: CheckoutId(100), .. }, ClientMsg::ReadCode { path, .. }] if path == "a.rs"
+            ),
+            "{sent:?}"
+        );
+        assert!(s.stages.now() == Stage::Code);
+    }
+
+    #[test]
+    fn a_refused_folder_is_said_in_the_panel_and_not_as_a_notice() {
+        let mut s = session(Hello { capabilities: vec![FILES.into(), REQUEST_REFUSALS.into()], ..Hello::this_build() });
+        s.show_checkouts(true);
+        s.select_checkout_row("c100".into());
+        let sent = s.checkouts_action(Action::Files);
+        let Some(ClientMsg::ListDir { request_id, .. }) = sent.iter().find(|m| matches!(m, ClientMsg::ListDir { .. })) else {
+            panic!("{sent:?}");
+        };
+        s.receive(refusal(*request_id, "no such folder", true));
+        assert_eq!(files_page(&mut s).and_then(|f| f.error).as_deref(), Some("no such folder"));
+        assert!(notices(&mut s).is_empty());
+    }
+
+    #[test]
+    fn a_checkout_that_goes_takes_its_files_with_it() {
+        let mut s = session(files_daemon());
+        s.show_checkouts(true);
+        s.select_checkout_row("c100".into());
+        s.checkouts_action(Action::Files);
+        assert!(files_page(&mut s).is_some());
+        let mut gone = tree();
+        gone[0].repositories[0].checkouts.retain(|c| c.id != CheckoutId(100));
+        s.receive(ServerMsg::Tree(gone));
+        assert!(files_page(&mut s).is_none());
+    }
+
     #[test]
     fn a_refused_branch_delete_is_asked_about_and_a_yes_forces_it() {
         let mut s = session(without_focus());
@@ -5170,7 +5323,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 142] = [
+    const CALLS: [&str; 143] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5218,6 +5371,7 @@ mod tests {
         r#"{"call":"select_checkout_row","key":"c100"}"#,
         r#"{"call":"filter_checkouts","filter":"ma"}"#,
         r#"{"call":"checkouts_action","action":"next"}"#,
+        r#"{"call":"files","gesture":{"on":"click","path":"src"}}"#,
         r#"{"call":"remove_checkout","checkout":100}"#,
         r#"{"call":"answer_checkouts","yes":false}"#,
         r#"{"call":"new_worktree","name":"spike"}"#,

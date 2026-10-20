@@ -81,7 +81,7 @@ pub use tree::held::{transitions, HeldTree, Lineage, Transition};
 pub use connection::hello::{
     ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
-    RENAME_PANE, SAVED_VIEWS, CODE, REQUEST_REFUSALS,
+    RENAME_PANE, SAVED_VIEWS, CODE, FILES, REQUEST_REFUSALS,
 };
 pub use connection::request_refusal::RequestRefusal;
 pub use code::{

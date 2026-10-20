@@ -6,10 +6,11 @@
 
 use argus_protocol::tree::column::CheckoutRow;
 use argus_protocol::tree::column::verbs::{force_delete, Verb};
-use argus_protocol::{CheckoutId, ClientMsg, DecisionBoard, PaneId, RepositoryInfo};
+use argus_protocol::{CheckoutId, ClientMsg, DecisionBoard, PaneId, RepositoryInfo, ServerMsg};
 use serde::Serialize;
 
 use crate::checkouts;
+use crate::checkouts::files::{Daemon, Files, FilesGesture, Then};
 use crate::checkouts::table::{last_commit, Checkouts, LastCommit, View};
 use crate::connection::page::Event;
 use crate::connection::sent::Sent;
@@ -35,6 +36,8 @@ pub struct CheckoutsStage {
     sent: Sent<Checkouts>,
     /// The question waiting on the person, and what a yes sends.
     confirm: Option<(Confirm, ClientMsg)>,
+    /// The files panel, while one checkout's folder is open beside the table.
+    files: Option<Files>,
 }
 
 /// What Enter on a row comes to.
@@ -152,9 +155,64 @@ impl CheckoutsStage {
         yes.then_some(msg)
     }
 
+    /// `E`: the selected checkout's files open beside the table, or are put
+    /// away if they are what is open.
+    pub fn toggle_files(&mut self, repo: &RepositoryInfo, daemon: Daemon, id: impl FnMut() -> u64) -> Result<Vec<ClientMsg>, String> {
+        if !daemon.lists_files {
+            return Err("argusd is too old to list files; restart it to update".into());
+        }
+        let checkout = self.checkout(repo).ok_or("a branch has no folder of its own to list")?;
+        if self.files.as_ref().is_some_and(|f| f.checkout() == checkout) {
+            self.files = None;
+            return Ok(Vec::new());
+        }
+        let (files, asks) = Files::open(checkout, id);
+        self.files = Some(files);
+        Ok(asks)
+    }
+
+    /// A gesture in the files panel, if one is open.
+    pub fn files_gesture(&mut self, gesture: FilesGesture, id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) -> Then {
+        let Some(files) = &mut self.files else {
+            return Then::Nothing;
+        };
+        match files.gesture(gesture, id, out) {
+            Then::Close => {
+                self.files = None;
+                Then::Nothing
+            }
+            then => then,
+        }
+    }
+
+    /// Takes the daemon's answers to the panel's asks, giving back any
+    /// message that is not the panel's. A listing with no panel open is
+    /// dropped, as one to an older ask is.
+    pub fn receive(&mut self, msg: ServerMsg) -> Option<ServerMsg> {
+        match msg {
+            ServerMsg::CheckoutDir(dir) => {
+                if let Some(files) = &mut self.files {
+                    files.receive(dir);
+                }
+                None
+            }
+            ServerMsg::Refused(refusal) => {
+                let mine = self.files.as_mut().is_some_and(|f| f.refused(&refusal));
+                (!mine).then_some(ServerMsg::Refused(refusal))
+            }
+            msg => Some(msg),
+        }
+    }
+
     /// The table, if it differs from what the page was last sent.
-    pub fn take(&mut self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> Option<Event> {
-        let table = self.table(repo, board, viewed, now);
+    pub fn take(&mut self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, daemon: Daemon, now: u64) -> Option<Event> {
+        // A checkout that went away takes its files with it.
+        if let (Some(files), Some(repo)) = (&self.files, repo) {
+            if !repo.checkouts.iter().any(|c| c.id == files.checkout()) {
+                self.files = None;
+            }
+        }
+        let table = self.table(repo, board, viewed, daemon, now);
         self.sent.take(Some(table)).map(|table| Event::Checkouts(Box::new(table)))
     }
 
@@ -163,7 +221,7 @@ impl CheckoutsStage {
         self.sent.forget();
     }
 
-    fn table(&self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> Checkouts {
+    fn table(&self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, daemon: Daemon, now: u64) -> Checkouts {
         let Some(repo) = repo else {
             return Checkouts {
                 branches_shown: self.branches_shown,
@@ -181,6 +239,11 @@ impl CheckoutsStage {
             now,
         });
         table.confirm = self.confirm.as_ref().map(|(question, _)| question.clone());
+        table.files_offered = daemon.lists_files;
+        table.files = self
+            .files
+            .as_ref()
+            .and_then(|f| repo.checkouts.iter().find(|c| c.id == f.checkout()).map(|c| f.page(c, daemon, now)));
         table
     }
 }
@@ -225,7 +288,7 @@ mod tests {
     }
 
     fn table(stage: &mut CheckoutsStage) -> Option<Checkouts> {
-        match stage.take(Some(&repo()), None, None, 0)? {
+        match stage.take(Some(&repo()), None, None, Daemon::default(), 0)? {
             Event::Checkouts(table) => Some(*table),
             other => panic!("{other:?}"),
         }
