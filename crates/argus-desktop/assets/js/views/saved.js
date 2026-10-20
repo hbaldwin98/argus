@@ -7,10 +7,11 @@
 import { actionButton } from './actions.js';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
-import { dockMenuButton } from '../layout/docks.js';
+import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
 import { closesOnMiddle } from '../kit/middle.js';
 import { draggable } from '../layout/drag.js';
 import { $, el, icon } from '../kit/dom.js';
+import { openMenu } from '../kit/menu.js';
 import { savedCtx } from './saved/ctx.js';
 import { count, grouped, nested, underGroup } from './saved/logic.js';
 import { savedView } from './saved/link.js';
@@ -62,7 +63,7 @@ function fill(p) {
         tops.set(body.getAttribute('data-for') ?? '', body.scrollTop);
     }
     const fresh = el('div', { class: 'saved-cols' }, p.columns.map((id, i) => column(p, i, id)));
-    section.replaceChildren(panelHead(p), fresh);
+    section.replaceChildren(...[headed(p) ? panelHead(p) : null, fresh].filter((n) => n !== null));
     for (const body of fresh.querySelectorAll('.vpanel-body[data-for]')) {
         body.scrollTop = tops.get(body.getAttribute('data-for') ?? '') ?? 0;
     }
@@ -79,6 +80,12 @@ function fill(p) {
         requestAnimationFrame(toEnd);
     }
 }
+/** Whether the panel draws a head of its own. A lone view in a dock with a
+ *  tab strip is named, closed and moved by its tab, so a second row saying
+ *  the same would be the view's name twice over. */
+function headed(p) {
+    return !(p.columns.length === 1 && dockShowsTabs(p.panel));
+}
 /** The strip across the panel: draggable like any panel's header, with the
  *  dock menu and the panel's close, which takes it out of its dock with its
  *  columns rather than hiding the dock and every tab in it. */
@@ -86,7 +93,7 @@ function panelHead(p) {
     const first = savedView(p.columns[0] ?? '');
     const title = first?.view.title ?? 'Saved view';
     const close = () => call('close_saved_column', { panel: p.panel, column: 0 });
-    const strip = el('div', { class: 'vpanel-tabs saved-head', role: 'toolbar', 'aria-label': 'Saved view' }, el('span', { class: 'ttl', title }, title), p.columns.length > 1 && el('span', { class: 'meta' }, `${p.columns.length} columns`), el('span', { class: 'grow' }), dockMenuButton(p.panel, 'Dock the view', true), el('button', {
+    const strip = el('div', { class: 'vpanel-tabs saved-head', role: 'toolbar', 'aria-label': 'Saved view' }, el('span', { class: 'ttl', title }, title), p.columns.length === 1 && first?.stale && chip({ label: 'stale', tone: 'warn' }), p.columns.length > 1 && el('span', { class: 'meta' }, `${p.columns.length} columns`), el('span', { class: 'grow' }), dockMenuButton(p.panel, 'Dock the view', true), el('button', {
         class: 'icon',
         type: 'button',
         title: 'Close',
@@ -101,7 +108,10 @@ function column(p, i, id) {
         return missing(p, i, id);
     const host = { panel: p.panel, column: i };
     const ctx = savedCtx(view, host, [id], 0, `${p.panel}/${i}`);
-    return el('section', { class: `saved-col${view.stale ? ' stale' : ''}`, 'aria-label': view.view.title }, header(p, i, view, ctx), el('div', { class: 'vpanel-body', 'data-for': `${i}|${id}` }, blocks(view.view.blocks, ctx)));
+    // A lone view is named and closed by whatever hosts it: the dock's tab, or
+    // the panel's head or float's title bar.
+    const lone = p.columns.length === 1;
+    return el('section', { class: `saved-col${view.stale ? ' stale' : ''}`, 'aria-label': view.view.title }, header(p, i, view, ctx, lone), el('div', { class: 'vpanel-body', 'data-for': `${i}|${id}` }, blocks(view.view.blocks, ctx)));
 }
 /** A column whose view the window no longer holds, or does not yet. */
 function missing(p, i, id) {
@@ -119,24 +129,27 @@ function closeButton(p, i) {
 function columnKey(p, i, view) {
     return `${p.panel}|${i}|${view.id}`;
 }
-function header(p, i, view, ctx) {
+function header(p, i, view, ctx, lone) {
     const k = columnKey(p, i, view);
     const open = unfolded.has(k);
-    return el('div', { class: 'vpanel-head' }, closesOnMiddle(el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.view.title), view.view.status && chip(view.view.status), view.stale && chip({ label: 'stale', tone: 'warn' }), i > 0 &&
-        el('button', {
-            class: 'icon',
-            type: 'button',
-            title: 'Open as a dialog',
-            'aria-label': 'Open as a dialog',
-            onclick: () => call('float_saved_column', { panel: p.panel, column: i }),
-        }, icon('box')), i > 0 &&
-        el('button', {
-            class: 'icon',
-            type: 'button',
-            title: 'Pop out into a panel of its own',
-            'aria-label': 'Pop out into a panel of its own',
-            onclick: () => call('pop_out_saved_column', { panel: p.panel, column: i }),
-        }, icon('expand')), closeButton(p, i)), () => call('close_saved_column', { panel: p.panel, column: i })), el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, view.scope.label), el('span', { class: 'meta', title: builtAt(view).toLocaleString() }, `built ${ago(builtAt(view).toISOString())}`, view.builtCommit ? ` at ${view.builtCommit.slice(0, 7)}` : '', view.refreshing ? ' · asked to build it again' : ''), el('span', { class: 'vpanel-acts' }, view.view.actions.map((a) => actionButton(a, ctx)), el('button', {
+    return el('div', { class: 'vpanel-head' }, !lone &&
+        closesOnMiddle(el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.view.title), view.view.status && chip(view.view.status), view.stale && chip({ label: 'stale', tone: 'warn' }), i > 0 &&
+            el('button', {
+                class: 'icon',
+                type: 'button',
+                title: 'Open as a dialog',
+                'aria-label': 'Open as a dialog',
+                onclick: () => call('float_saved_column', { panel: p.panel, column: i }),
+            }, icon('box')), i > 0 &&
+            el('button', {
+                class: 'icon',
+                type: 'button',
+                title: 'Pop out into a panel of its own',
+                'aria-label': 'Pop out into a panel of its own',
+                onclick: () => call('pop_out_saved_column', { panel: p.panel, column: i }),
+            }, icon('expand')), closeButton(p, i)), () => call('close_saved_column', { panel: p.panel, column: i })), el('div', { class: 'vpanel-meta' }, lone && view.view.status && chip(view.view.status), 
+    // Stale rides the head that names the view when there is one.
+    lone && view.stale && !headed(p) && chip({ label: 'stale', tone: 'warn' }), el('span', { class: 'meta' }, view.scope.label), el('span', { class: 'meta', title: builtAt(view).toLocaleString() }, `built ${ago(builtAt(view).toISOString())}`, view.builtCommit ? ` at ${view.builtCommit.slice(0, 7)}` : '', view.refreshing ? ' · asked to build it again' : ''), el('span', { class: 'vpanel-acts' }, view.view.actions.map((a) => actionButton(a, ctx)), el('button', {
         class: 'btn sm',
         type: 'button',
         disabled: view.refreshing,
@@ -148,7 +161,7 @@ function header(p, i, view, ctx) {
         disabled: view.stale,
         title: 'Say it is out of date',
         onclick: () => call('mark_saved_view_stale', { id: view.id }),
-    }, 'Mark stale'), deleteControl(k, view), el('button', {
+    }, 'Mark stale'), asking.has(k) && deleteConfirm(k, view), el('button', {
         class: 'btn sm',
         type: 'button',
         'aria-expanded': String(open),
@@ -160,25 +173,34 @@ function header(p, i, view, ctx) {
                 unfolded.add(k);
             drawSavedPanels();
         },
-    }, 'Details'))), open && metadata(view));
+    }, 'Details'), el('button', {
+        class: 'icon',
+        type: 'button',
+        title: 'More',
+        'aria-label': 'More',
+        'aria-haspopup': 'menu',
+        onclick: (e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            openMenu(view.view.title, [
+                {
+                    label: 'Delete…',
+                    danger: true,
+                    hint: 'for every window',
+                    run: () => {
+                        asking.add(k);
+                        drawSavedPanels();
+                    },
+                },
+            ], { x: box.right, y: box.bottom + 4, align: 'end' });
+        },
+    }, icon('more')))), open && metadata(view));
 }
 function builtAt(view) {
     return new Date(Number(view.builtAt) * 1000);
 }
 /** Delete asks first: it is for every window, and the agent that built the
- *  view would have to build it again. */
-function deleteControl(k, view) {
-    if (!asking.has(k)) {
-        return el('button', {
-            class: 'btn sm vtone-bad',
-            type: 'button',
-            title: 'Delete this saved view for every window',
-            onclick: () => {
-                asking.add(k);
-                drawSavedPanels();
-            },
-        }, 'Delete');
-    }
+ *  view would have to build it again. The menu's Delete… opens this. */
+function deleteConfirm(k, view) {
     return el('span', { class: 'vconfirm', role: 'group', 'aria-label': 'Delete this saved view?' }, el('span', { class: 'vconfirm-q' }, 'Delete it?'), el('button', {
         class: 'btn sm vtone-bad',
         type: 'button',

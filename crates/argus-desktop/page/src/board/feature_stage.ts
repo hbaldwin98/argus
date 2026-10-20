@@ -627,9 +627,12 @@ function withScrollCue(lanes: HTMLElement): HTMLElement {
   );
   const update = (): void => {
     const edge = lanes.getBoundingClientRect().right;
-    const hidden = [...lanes.querySelectorAll<HTMLElement>('.kcol')].filter(
-      (col) => col.getBoundingClientRect().right > edge + 1,
-    );
+    // A column counts as off only when under half of it shows: one mostly
+    // there is read, not announced.
+    const hidden = [...lanes.querySelectorAll<HTMLElement>('.kcol')].filter((col) => {
+      const box = col.getBoundingClientRect();
+      return box.right - edge > box.width / 2;
+    });
     const more = lanes.scrollLeft + lanes.clientWidth < lanes.scrollWidth - 4;
     wrap.classList.toggle('more', more);
     chip.hidden = !more || hidden.length === 0;

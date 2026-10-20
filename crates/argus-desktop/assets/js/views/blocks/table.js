@@ -11,8 +11,15 @@ import { chevron, openable, rowIds } from './table/details.js';
 import { openRows, selection } from './table/memory.js';
 import { markHeaders, sortRows } from './table/sort.js';
 import { value } from '../values.js';
-function classes(col) {
-    const names = [col.numeric && 'vtable-num', col.optional && 'vtable-optional'];
+/** How many of an extension's trailing columns give way, last first, as the
+ *  table narrows: its columns are listed most important first. */
+const DROPPABLE = 4;
+function classes(col, drop) {
+    const names = [
+        col.numeric && 'vtable-num',
+        col.optional && 'vtable-optional',
+        drop > 0 && `vtable-drop-${drop}`,
+    ];
     return names.filter(Boolean).join(' ') || null;
 }
 const nothing = () => { };
@@ -27,6 +34,14 @@ export function table(block, picks = null, ctx = null) {
     const hasDetails = agent !== null && block.rows.some((_, r) => openable(block, r));
     const open = agent && hasDetails ? openRows(agent.path, rowIds(block)) : new Set();
     const leading = (mode !== 'none' ? 1 : 0) + (hasDetails ? 1 : 0);
+    // Where the cell is for the nth column from the end that may be dropped; the
+    // first two columns, and the status chip leading them, always stay.
+    const dropOf = (c) => {
+        if (picks === null)
+            return 0;
+        const rank = block.columns.length - c;
+        return c >= 2 && rank <= DROPPABLE ? rank : 0;
+    };
     const rows = block.rows.map((cells, index) => {
         const key = picks?.keys[index] ?? (keyed ? (block.row_keys[index] ?? null) : null);
         const on = picks !== null && key !== null && key === picks.selected;
@@ -90,7 +105,7 @@ export function table(block, picks = null, ctx = null) {
     for (const row of rows) {
         row.tr.append(...lead(row), ...block.columns.map((col, c) => {
             const cell = row.cells[c];
-            const td = el('td', { class: classes(col) });
+            const td = el('td', { class: classes(col, dropOf(c)) });
             if (cell) {
                 td.appendChild(value(cell, ctx));
                 // Long text truncates in CSS, so the full text rides along as a tooltip.
@@ -101,6 +116,13 @@ export function table(block, picks = null, ctx = null) {
             }
             return td;
         }));
+        // A wide table keeps the selected row's buttons at its end, pinned to the
+        // table's window, so nothing is inserted to push the rows below down.
+        if (picks?.trailing) {
+            row.tr.append(el('td', { class: 'vtable-acts' }, row.actions && row.key !== null
+                ? el('div', { class: 'vtable-acts-bar' }, picks.trailing(row.key))
+                : null));
+        }
     }
     const lines = (r) => [r.tr, r.actions, r.detail].filter((n) => n !== null);
     for (const r of rows)
@@ -132,10 +154,12 @@ export function table(block, picks = null, ctx = null) {
     const head = el('tr', null, mode !== 'none'
         ? el('th', { class: 'vtable-pick', scope: 'col' }, mode === 'many' ? selectAll : null)
         : null, hasDetails ? el('th', { class: 'vtable-open', scope: 'col' }) : null, block.columns.map((col, c) => {
-        const th = el('th', { scope: 'col', class: classes(col) }, el('button', { type: 'button', class: 'vtable-sort', onclick: () => sortBy(c) }, col.title, el('span', { class: 'vtable-arrow', 'aria-hidden': 'true' })));
+        const th = el('th', { scope: 'col', class: classes(col, dropOf(c)) }, el('button', { type: 'button', class: 'vtable-sort', onclick: () => sortBy(c) }, col.title, el('span', { class: 'vtable-arrow', 'aria-hidden': 'true' })));
         headers.push(th);
         return th;
-    }));
+    }), picks?.trailing
+        ? el('th', { class: 'vtable-acts', scope: 'col', 'aria-label': 'Actions' })
+        : null);
     // The agent says it sorted this column but not which way, so "other"
     // rather than a descending we would be guessing at.
     markHeaders(headers, active, 'other');

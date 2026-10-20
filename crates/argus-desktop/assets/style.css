@@ -321,7 +321,7 @@
   /* The folded rail's tile: an agent's initials, or a stage's icon. */
   --rail-tile: 40px;
   /* A board column never goes narrower; the window scrolls instead. */
-  --board-col-min: 280px;
+  --board-col-min: 232px;
   /* The most an agent's views drawer, and the Code stage's folded side
      columns, take of a narrow window. */
   --drawer-max: 560px;
@@ -711,6 +711,10 @@
 }
 .icon.hot {
   background: var(--fill);
+  color: var(--accent);
+}
+.icon.hot:hover {
+  background: color-mix(in srgb, var(--fill) 70%, var(--fg) 10%);
   color: var(--accent);
 }
 .field {
@@ -2066,6 +2070,8 @@ a:focus-visible,
   /* The footer has its own border, so a row it cuts reads as "more below"
      only when it fades. */
   mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-24)), transparent);
+  /* A row scrolled into view clears the fade, not just the edge under it. */
+  scroll-padding-block: var(--sp-24);
 }
 .rail-list.held {
   opacity: 0.55;
@@ -2527,18 +2533,18 @@ body.maximized .winbtn .restore {
   position: absolute;
   z-index: 2;
 }
-/* The gutter is the 8px gap between two cards; its grip is a line centred
-   in it that lights on hover. */
+/* The gutter is the 8px gap between two cards; its target is 24px about it
+   and its grip a line centred in that, lit on hover. */
 .gutter.vertical {
-  width: var(--sp-8);
-  margin-left: calc(var(--sp-4) * -1);
+  width: var(--sp-24);
+  margin-left: calc(var(--sp-12) * -1);
   cursor: col-resize;
 }
 .gutter.horizontal {
   left: 0;
   right: 0;
-  height: var(--sp-8);
-  margin-top: calc(var(--sp-4) * -1);
+  height: var(--sp-24);
+  margin-top: calc(var(--sp-12) * -1);
   cursor: row-resize;
 }
 .gutter::after {
@@ -2803,6 +2809,10 @@ body.moving-pane * {
 .notice > svg {
   flex: none;
   color: var(--attention);
+}
+#notice .icon:hover {
+  background: var(--fill);
+  color: var(--fg);
 }
 .notice-text {
   min-width: 0;
@@ -3130,6 +3140,32 @@ select option::checkmark {
 }
 .fhead .seg {
   flex: none;
+}
+/* Under ~1200px the header's chips and buttons drop to a line of their own
+   rather than running off the edge, where nothing would say they were cut. */
+@media (max-width: 1200px) {
+  .brief-strip {
+    flex-wrap: wrap;
+    row-gap: var(--sp-4);
+  }
+  .brief-strip > .chips {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: auto;
+  }
+  .brief-text {
+    flex-basis: 12ch;
+  }
+  .fhead .head-row {
+    flex-wrap: wrap;
+    row-gap: var(--sp-4);
+  }
+  .fhead .chips {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    row-gap: var(--sp-4);
+    min-width: 0;
+  }
 }
 .fhead .head-progress {
   display: inline-flex;
@@ -3951,11 +3987,6 @@ body.panel-dragging * {
 .split-sash.held::after {
   opacity: 1;
 }
-.sash::before {
-  content: '';
-  position: absolute;
-  inset: calc(-1 * var(--sp-8)) 0;
-}
 
 /* ---- The console ------------------------------------------------------- */
 
@@ -3985,11 +4016,11 @@ body.console-fullscreen #bar {
 }
 .sash {
   flex: none;
-  height: 5px;
-  margin-top: -3px;
+  height: var(--sp-24);
+  margin: calc(var(--sp-12) * -1) 0;
   cursor: row-resize;
   position: relative;
-  z-index: 2;
+  z-index: 4;
 }
 .chead {
   padding-left: var(--sp-12);
@@ -5315,6 +5346,10 @@ body.console-fullscreen #bar {
 
 /* ---- The history dialog ------------------------------------------------ */
 
+.history-list > .hrow {
+  /* The list scrolls rather than squeezing its two-line rows into each other. */
+  flex: none;
+}
 .history-list {
   width: 520px;
   flex: none;
@@ -6214,6 +6249,28 @@ body.console-fullscreen #bar {
     linear-gradient(to left, var(--line-strong), transparent) right / var(--sp-8) 100% scroll
       no-repeat;
 }
+/* An extension's table gives up its last columns one at a time, the last
+   first, so the name and what it is doing stay whole in a narrow dock. */
+@container (max-width: 700px) {
+  .vtable-drop-1 {
+    display: none;
+  }
+}
+@container (max-width: 620px) {
+  .vtable-drop-2 {
+    display: none;
+  }
+}
+@container (max-width: 540px) {
+  .vtable-drop-3 {
+    display: none;
+  }
+}
+@container (max-width: 460px) {
+  .vtable-drop-4 {
+    display: none;
+  }
+}
 /* A column its author marked optional gives way before the table scrolls. */
 @container (max-width: 560px) {
   .vtable-optional {
@@ -6983,6 +7040,37 @@ body.resizing {
   white-space: normal;
   background: var(--bg-selected);
   box-shadow: inset 3px 0 0 var(--accent);
+}
+/* A table wide enough has the selected row's buttons at its end instead:
+   a zero-width cell pinned to the window's right edge, the buttons hung from
+   it over the row's own fill, so selecting a row moves nothing. */
+.vtable-table .vtable-acts {
+  position: sticky;
+  right: 0;
+  width: 0;
+  padding: 0;
+}
+.vtable-acts-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: 0 var(--sp-8) 0 var(--sp-16);
+  background: var(--bg-selected);
+  box-shadow: calc(var(--sp-12) * -1) 0 var(--sp-12) var(--bg-selected);
+}
+@container (min-width: 561px) {
+  .vtable-table tr.row-actions {
+    display: none;
+  }
+}
+@container (max-width: 560px) {
+  .vtable-table .vtable-acts {
+    display: none;
+  }
 }
 .row-actions-bar {
   /* As wide as the table's window, pinned to its left edge, so a table
@@ -8391,7 +8479,7 @@ button.vtree-chev:focus-visible {
   width: 14px;
   height: 14px;
 }
-.btn.primary .kbd {
+.btn.primary:not([disabled]) .kbd {
   color: var(--fg-on-accent);
   border-color: color-mix(in srgb, var(--fg-on-accent) 45%, transparent);
 }
@@ -8471,6 +8559,14 @@ button.vtree-chev:focus-visible {
    can be both selected and pointed at. */
 .trow.on:hover,
 .orow.on:hover,
+.irow.on:hover,
+.wrow.on:hover,
+.rrow.on:hover,
+.frow.on:hover,
+.steprow.on:hover,
+.settings-nav .frow.on:hover,
+.ctable tr.on:hover,
+.ext-body .vtable-table tr.on:hover,
 .rfile.on:hover,
 .hrow.on:hover,
 .hline.on:hover {
@@ -8613,6 +8709,7 @@ button.vtree-chev:focus-visible {
     padding-top: var(--sp-8);
     /* More tiles than the rail has room for dissolve into the footer. */
     mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-44)), transparent);
+    scroll-padding-block: var(--sp-44);
   }
   .pane-row {
     display: flex;

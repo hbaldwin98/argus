@@ -106,11 +106,27 @@ function header(view) {
     // As a page the row is only its buttons; its Dock button is the way back.
     return view.page ? head : draggable(head, view.panel, view.title);
 }
+function echoes(row, cell) {
+    const word = row.status?.label.trim().toLowerCase();
+    if (!word || !cell)
+        return false;
+    const text = cell.kind === 'text' ? cell.text : cell.kind === 'chip' ? cell.chip.label : null;
+    return text !== null && text.trim().toLowerCase() === word;
+}
 /** The view as an agent's table block: a row's status, when any has one,
  *  leads it as a chip. */
 function asBlock(view) {
     const status = view.rows.some((row) => row.status !== null);
     const lead = (row) => status ? [row.status ? { kind: 'chip', chip: row.status } : { kind: 'empty' }] : [];
+    // A cell that only repeats the row's status chip says nothing new; one that
+    // differs ("exited 137" beside "stopped") is the news. A column left with
+    // nothing to say goes.
+    const kept = view.columns.map((_, c) => !status || view.rows.length === 0 || !view.rows.every((r) => echoes(r, r.cells[c])));
+    const cells = (row) => row.cells.flatMap((cell, c) => {
+        if (!kept[c])
+            return [];
+        return [echoes(row, cell) ? { kind: 'empty' } : cell];
+    });
     return {
         kind: 'table',
         row_keys: [],
@@ -119,9 +135,9 @@ function asBlock(view) {
         details: [],
         columns: [
             ...(status ? [{ title: 'Status', numeric: false, optional: false }] : []),
-            ...view.columns,
+            ...view.columns.filter((_, c) => kept[c]),
         ],
-        rows: view.rows.map((row) => [...lead(row), ...row.cells]),
+        rows: view.rows.map((row) => [...lead(row), ...cells(row)]),
         sorted_by: null,
         total: null,
     };

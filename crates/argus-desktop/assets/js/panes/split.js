@@ -154,6 +154,8 @@ function drawGutters(split) {
                 class: 'gutter vertical',
                 role: 'separator',
                 'aria-orientation': 'vertical',
+                'aria-label': 'Resize the panes',
+                title: 'Drag to resize',
             });
             g.style.left = percent(rect.x + rect.w);
             g.style.top = percent(rect.y);
@@ -167,6 +169,8 @@ function drawGutters(split) {
                 class: 'gutter horizontal',
                 role: 'separator',
                 'aria-orientation': 'horizontal',
+                'aria-label': 'Resize the panes',
+                title: 'Drag to resize',
             });
             g.style.top = percent(next.y);
             grip(g, 'y', r, 0);
