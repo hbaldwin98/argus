@@ -67,7 +67,7 @@ export function commentBox(c: CommentPage, ways: CommentWays): HTMLElement {
       { class: 'actions' },
       el('span', { class: 'meta' }, 'Send to'),
       lit && c.recipients.length === 1
-        ? el('span', { class: 'chipf on' }, el('span', { class: 'glyph' }, '◆'), lit.title)
+        ? el('span', { class: 'strong' }, el('span', { class: 'glyph' }, '◆ '), lit.title)
         : c.recipients.map((p) =>
             el(
               'button',

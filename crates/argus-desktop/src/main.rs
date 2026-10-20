@@ -20,6 +20,8 @@ mod connection;
 mod extensions;
 #[cfg(test)]
 mod fixtures;
+#[cfg(test)]
+mod screens;
 mod keys;
 mod layout;
 mod panes;

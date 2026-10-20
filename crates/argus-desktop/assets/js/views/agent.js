@@ -9,6 +9,7 @@ import { chip } from './chip.js';
 import { dockMenuButton } from '../layout/docks.js';
 import { draggable } from '../layout/drag.js';
 import { $, el, icon } from '../kit/dom.js';
+import { openMenu } from '../kit/menu.js';
 import { closesOnMiddle } from '../kit/middle.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -29,8 +30,12 @@ export function drawViews(page = shown) {
     const launcher = $('views-tab');
     const open = page.open && page.views.find((v) => v.pane === page.open?.pane && v.view.id === page.open?.id);
     const waiting = page.views.length;
-    launcher.hidden = viewsOut() || waiting === 0;
-    launcher.replaceChildren(el('span', { class: 'vdot', 'aria-hidden': 'true' }), `${waiting} ${waiting === 1 ? 'view' : 'views'}`);
+    // Kept while the panel is out, lit, so it is the way to close a drawer.
+    const out = viewsOut();
+    launcher.hidden = waiting === 0;
+    launcher.setAttribute('aria-pressed', String(out));
+    launcher.replaceChildren('Views', el('span', { class: 'count' }, String(waiting)));
+    launcher.title = `${waiting} ${waiting === 1 ? 'view' : 'views'} agents showed`;
     drawPopped(page);
     if (!open) {
         panel.replaceChildren();
@@ -43,6 +48,8 @@ export function drawViews(page = shown) {
     const fresh = panel.querySelector('.vpanel-body');
     if (fresh)
         fresh.scrollTop = top;
+    // The open tab is never the one the strip scrolled away.
+    panel.querySelector('.vpanel-tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 /** The view open as a page over the stage: the header and body the panel
  *  has, without its tabs. Rust says which one, and when there is none. */
@@ -65,7 +72,7 @@ function key(v) {
     return `${v.pane}/${v.view.id}`;
 }
 function tabs(views, open) {
-    const strip = el('div', { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' }, views.map((v) => {
+    const strip = el('div', { class: 'vpanel-tabs', role: 'tablist', 'aria-label': 'Views' }, el('div', { class: 'tabs-scroll' }, views.map((v) => {
         const close = () => call('close_view', { pane: v.pane, id: v.view.id });
         return closesOnMiddle(el('div', { class: `vpanel-tab${v === open ? ' on' : ''}` }, el('button', {
             class: 'vpanel-tab-pick',
@@ -81,7 +88,7 @@ function tabs(views, open) {
             'aria-label': `Close ${v.view.title}`,
             onclick: close,
         }, icon('close'))), close);
-    }), el('span', { class: 'grow' }), dockMenuButton('views', 'Dock the views', true), el('button', {
+    })), dockMenuButton('views', 'Dock the views', true), el('button', {
         class: 'icon',
         type: 'button',
         'aria-label': 'Hide the views',
@@ -90,28 +97,43 @@ function tabs(views, open) {
     }, icon('close')));
     return draggable(strip, 'views', 'Views');
 }
+/** The view's actions and its overflow: in the panel they sit on the
+ *  title row, as a page the stage's strip carries them. */
+function viewActions(v, popped) {
+    const act = {
+        refresh: () => call('refresh_view', { pane: v.pane, id: v.view.id }),
+        place: () => call(popped ? 'open_view' : 'pop_out_view', { pane: v.pane, id: v.view.id }),
+        close: () => call('close_view', { pane: v.pane, id: v.view.id }),
+    };
+    const items = () => [
+        { label: 'Refresh', disabled: v.refreshing && 'Already asked', run: act.refresh },
+        // Opening it in the dock is what ends the page.
+        { label: popped ? 'Put back in its dock' : 'Pop out as a page', run: act.place },
+        'sep',
+        { label: 'Close this view for every window', danger: true, run: act.close },
+    ];
+    const more = el('button', {
+        class: 'icon',
+        type: 'button',
+        title: 'More: refresh, pop out, close',
+        'aria-label': `More about ${v.view.title}`,
+        'aria-haspopup': 'menu',
+        onclick: (e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            openMenu(v.view.title, items(), { x: box.right, y: box.bottom + 4, align: 'end' });
+        },
+    }, icon('more'));
+    return [...v.view.actions.map((a) => actionButton(a, ctxOf(v))), more];
+}
 function header(v, popped) {
     const at = new Date(Number(v.at) * 1000).toISOString();
     const subject = v.subject;
-    return el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading' }, v.view.title), v.view.status && chip(v.view.status)), el('div', { class: 'vpanel-meta' }, subject &&
-        viewLink(subject.url, el('span', { class: 'track' }, subject.tracker, ' ', el('b', null, subject.key))), el('span', { class: 'meta', title: new Date(at).toLocaleString() }, v.from ? `read by ${v.from} · ${ago(at)}` : ago(at), v.refreshing ? ' · asked to read it again' : ''), el('span', { class: 'vpanel-acts' }, v.view.actions.map((a) => actionButton(a, ctxOf(v))), el('button', {
-        class: 'btn sm',
-        type: 'button',
-        disabled: v.refreshing,
-        title: 'Ask the agent to read it again',
-        onclick: () => call('refresh_view', { pane: v.pane, id: v.view.id }),
-    }, 'Refresh'), el('button', {
-        class: 'btn sm',
-        type: 'button',
-        title: popped ? 'Put the view back in its dock' : 'Open the view as a page',
-        // Opening it in the dock is what ends the page.
-        onclick: () => call(popped ? 'open_view' : 'pop_out_view', { pane: v.pane, id: v.view.id }),
-    }, popped ? 'Dock' : 'Pop out'), el('button', {
-        class: 'btn sm',
-        type: 'button',
-        title: 'Close this view for every window',
-        onclick: () => call('close_view', { pane: v.pane, id: v.view.id }),
-    }, 'Close'))));
+    return el('div', { class: 'vpanel-head' }, 
+    // One row: the name and its status at the start, the actions at the end.
+    // As a page the stage's strip carries all three, so only the meta is left.
+    !popped &&
+        el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading vpanel-name' }, v.view.title), v.view.status && chip(v.view.status), el('span', { class: 'vpanel-acts' }, viewActions(v, false))), el('div', { class: 'vpanel-meta' }, subject &&
+        viewLink(subject.url, el('span', { class: 'track' }, subject.tracker, ' ', el('b', null, subject.key))), el('span', { class: 'meta', title: new Date(at).toLocaleString() }, v.from ? `read by ${v.from} · ${ago(at)}` : ago(at), v.refreshing ? ' · asked to read it again' : '')));
 }
 /** What the view's blocks, and the buttons in its header, are drawn with. */
 function ctxOf(v) {
@@ -135,8 +157,42 @@ export function viewOf(link) {
         (v.subject.url === link.url ||
             (v.subject.tracker === link.tracker && v.subject.key === link.key)));
 }
-/** Brings the newest view out, from the title strip's button. */
+/** The title of the view open as a page, for the strip. */
+export function poppedViewTitle() {
+    const at = shown.popped;
+    return at
+        ? (shown.views.find((v) => v.pane === at.pane && v.view.id === at.id)?.view.title ?? null)
+        : null;
+}
+/** What the stage's strip carries for the view open as a page: its status
+ *  beside the title, and its actions at the right. */
+export function poppedViewHead() {
+    const at = shown.popped;
+    const v = at && shown.views.find((p) => p.pane === at.pane && p.view.id === at.id);
+    if (!v)
+        return null;
+    const status = v.view.status;
+    return {
+        status: status && el('span', { class: `spill ${SPILL[status.tone]}` }, status.label),
+        tools: viewActions(v, true),
+    };
+}
+/** The strip's one pill speaks the statuses; a view's tone picks among them. */
+const SPILL = {
+    neutral: 'idle',
+    good: 'done',
+    warn: 'waiting',
+    bad: 'failed',
+    active: 'working',
+    info: 'info',
+};
+/** Brings the newest view out, from the title strip's button, which hides
+ *  the panel instead while it is out. */
 export function openNewestView() {
+    if (viewsOut()) {
+        call('hide_views', {});
+        return;
+    }
     const newest = shown.views[0];
     if (newest)
         call('open_view', { pane: newest.pane, id: newest.view.id });

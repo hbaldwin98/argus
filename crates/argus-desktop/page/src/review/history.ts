@@ -5,7 +5,7 @@
 
 import type { HistoryPage } from '../bindings/HistoryPage';
 import type { HistoryRowView } from '../bindings/HistoryRowView';
-import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { diffRow } from './dialog.js';
 import { state } from '../state.js';
@@ -18,14 +18,23 @@ function keycap(key: string): HTMLElement {
 function listRow(r: HistoryRowView): HTMLElement {
   const pick = (): void => call('history_action', { action: 'next', row: r.row });
   if (r.kind === 'file') {
+    const dir = r.text.slice(0, Math.max(0, r.text.lastIndexOf('/')));
     return el(
       'button',
       {
-        class: `hrow file${r.on ? ' on' : ''}`,
+        class: `hrow file rfile${r.on ? ' on' : ''}`,
+        title: r.text,
         onclick: pick,
         ondblclick: () => call('history_action', { action: 'choose', row: null }),
       },
-      el('span', { class: 'mono grow ellipsis' }, r.text),
+      // The review's markup for a changed file: the name leads, the
+      // folder trails it and is what gives way.
+      el(
+        'span',
+        { class: 'rname' },
+        el('b', { class: 'rbase' }, r.text.slice(r.text.lastIndexOf('/') + 1)),
+        el('span', { class: dir ? 'rdir' : 'rdir phrase' }, dir || 'repository root'),
+      ),
       el('span', { class: 'fg-ok' }, `+${r.added}`),
       el('span', { class: 'fg-danger' }, `−${r.removed}`),
     );
@@ -62,9 +71,20 @@ function diff(h: HistoryPage): HTMLElement {
       el(
         'div',
         { class: 'fhdr' },
-        el('span', { class: 'mono fg-faint' }, h.commit ?? ''),
-        el('span', { class: 'mono' }, h.path),
-        el('span', { class: 'meta' }, 'against its first parent'),
+        el(
+          'span',
+          { class: 'mono fg-faint', title: 'Diffed against its first parent' },
+          h.commit ?? '',
+        ),
+        // The name leads and the folder after it is what gives way, as in
+        // the file list: a path cut at its end loses the name.
+        el(
+          'span',
+          { class: 'mono cut', title: h.path },
+          el('span', { class: 'strong' }, h.path.slice(h.path.lastIndexOf('/') + 1)),
+          h.path.includes('/') &&
+            el('span', { class: 'fg-faint' }, `  ${h.path.slice(0, h.path.lastIndexOf('/'))}`),
+        ),
         el('span', { class: 'grow' }),
         el(
           'button',
@@ -135,7 +155,7 @@ export function drawHistory(): void {
       el(
         'section',
         {
-          class: 'dialog review-dialog',
+          class: 'dialog sheet-dialog review-dialog',
           role: 'dialog',
           'aria-modal': 'true',
           'aria-labelledby': 'history-title',
@@ -143,13 +163,12 @@ export function drawHistory(): void {
         el(
           'div',
           { class: 'dhead review-head' },
+          el('div', { class: 'type-title', id: 'history-title' }, 'History'),
           el(
-            'div',
-            { class: 'type-title', id: 'history-title' },
-            'History · ',
-            h.name,
-            ' ',
-            el('span', { class: 'mono fg-ref' }, h.branch),
+            'span',
+            { class: 'chip-branch', title: h.name },
+            icon('branch'),
+            el('span', { class: 'mono' }, h.branch),
           ),
           el('span', { class: 'meta' }, 'newest 100 on HEAD'),
           el('span', { class: 'grow' }),
@@ -173,19 +192,12 @@ export function drawHistory(): void {
         el(
           'div',
           { class: 'dfoot meta' },
-          keycap('J'),
-          keycap('K'),
-          ' move · ',
-          keycap('L'),
-          ' open · ',
-          keycap('H'),
-          ' fold · ',
-          keycap('Enter'),
-          ' file as a review · ',
-          keycap('/'),
-          ' filter · ',
-          keycap('Esc'),
-          ' close',
+          hint(['J', 'K'], 'move'),
+          hint('L', 'open'),
+          hint('H', 'fold'),
+          hint('Enter', 'file as a review'),
+          hint('/', 'filter'),
+          hint('Esc', 'close'),
         ),
       ),
     ),

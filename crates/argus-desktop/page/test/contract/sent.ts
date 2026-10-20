@@ -857,7 +857,7 @@ export const sent = [
               "shift": false
             }
           ],
-          "label": "search actions, panes, features and checkouts"
+          "label": "search everything"
         },
         {
           "action": "shortcuts",
@@ -1307,7 +1307,7 @@ export const sent = [
               "shift": false
             }
           ],
-          "label": "search actions, panes, features and checkouts"
+          "label": "search everything"
         },
         {
           "action": "shortcuts",
@@ -6498,6 +6498,7 @@ export const sent = [
     }
   ],
   "minOpacity": 30,
-  "type": "settings"
+  "type": "settings",
+  "version": "0.0.0"
 }
 ] satisfies Event[];

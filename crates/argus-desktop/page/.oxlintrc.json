@@ -24,5 +24,15 @@
         ]
       }
     ]
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "test/screens/**"
+      ],
+      "rules": {
+        "no-await-in-loop": "off"
+      }
+    }
+  ]
 }

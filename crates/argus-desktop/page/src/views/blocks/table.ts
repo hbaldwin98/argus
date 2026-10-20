@@ -29,8 +29,16 @@ export interface RowPicks {
   trailing: ((key: string) => Child) | null;
 }
 
-function classes(col: TableBlock['columns'][number]): string | null {
-  const names = [col.numeric && 'vtable-num', col.optional && 'vtable-optional'];
+/** How many of an extension's trailing columns give way, last first, as the
+ *  table narrows: its columns are listed most important first. */
+const DROPPABLE = 4;
+
+function classes(col: TableBlock['columns'][number], drop: number): string | null {
+  const names = [
+    col.numeric && 'vtable-num',
+    col.optional && 'vtable-optional',
+    drop > 0 && `vtable-drop-${drop}`,
+  ];
   return names.filter(Boolean).join(' ') || null;
 }
 
@@ -38,7 +46,8 @@ const nothing = (): void => {};
 
 interface Row {
   tr: HTMLElement;
-  /** An extension's selected-row buttons, a row of their own under it. */
+  /** An extension's selected-row buttons, a row of their own under it. Only
+   *  a narrow table draws it; a wide one has them at its row's end. */
   actions: HTMLElement | null;
   /** The block list this row opens to, drawn only while it is open. */
   detail: HTMLElement | null;
@@ -69,6 +78,14 @@ export function table(
   const hasDetails = agent !== null && block.rows.some((_, r) => openable(block, r));
   const open = agent && hasDetails ? openRows(agent.path, rowIds(block)) : new Set<string>();
   const leading = (mode !== 'none' ? 1 : 0) + (hasDetails ? 1 : 0);
+
+  // Where the cell is for the nth column from the end that may be dropped; the
+  // first two columns, and the status chip leading them, always stay.
+  const dropOf = (c: number): number => {
+    if (picks === null) return 0;
+    const rank = block.columns.length - c;
+    return c >= 2 && rank <= DROPPABLE ? rank : 0;
+  };
 
   const rows: Row[] = block.rows.map((cells, index) => {
     const key = picks?.keys[index] ?? (keyed ? (block.row_keys[index] ?? null) : null);
@@ -146,7 +163,7 @@ export function table(
       ...lead(row),
       ...block.columns.map((col, c) => {
         const cell = row.cells[c];
-        const td = el('td', { class: classes(col) });
+        const td = el('td', { class: classes(col, dropOf(c)) });
         if (cell) {
           td.appendChild(value(cell, ctx));
           // Long text truncates in CSS, so the full text rides along as a tooltip.
@@ -158,6 +175,19 @@ export function table(
         return td;
       }),
     );
+    // A wide table keeps the selected row's buttons at its end, pinned to the
+    // table's window, so nothing is inserted to push the rows below down.
+    if (picks?.trailing) {
+      row.tr.append(
+        el(
+          'td',
+          { class: 'vtable-acts' },
+          row.actions && row.key !== null
+            ? el('div', { class: 'vtable-acts-bar' }, picks.trailing(row.key))
+            : null,
+        ),
+      );
+    }
   }
 
   const lines = (r: Row): HTMLElement[] =>
@@ -199,7 +229,7 @@ export function table(
     block.columns.map((col, c) => {
       const th = el(
         'th',
-        { scope: 'col', class: classes(col) },
+        { scope: 'col', class: classes(col, dropOf(c)) },
         el(
           'button',
           { type: 'button', class: 'vtable-sort', onclick: () => sortBy(c) },
@@ -210,6 +240,9 @@ export function table(
       headers.push(th);
       return th;
     }),
+    picks?.trailing
+      ? el('th', { class: 'vtable-acts', scope: 'col', 'aria-label': 'Actions' })
+      : null,
   );
   // The agent says it sorted this column but not which way, so "other"
   // rather than a descending we would be guessing at.

@@ -26,36 +26,26 @@ export function ticketLink(link) {
         },
     }, link.tracker, ' ', el('b', null, link.key), view && el('span', { class: 'vdot', 'aria-label': 'a view of it waits' }));
 }
-/** A view an agent showed that names the feature, drawn like a ticket with
- *  a view waiting: it opens that view in the views' panel. */
-export function featureViewLink(link) {
-    return el('button', {
-        class: 'track viewed',
-        type: 'button',
-        title: 'A view an agent showed of this feature',
-        onclick: (event) => {
-            event.stopPropagation();
-            call('open_view', { pane: link.pane, id: link.id });
-        },
-    }, el('b', null, link.title), el('span', { class: 'vdot', 'aria-hidden': 'true' }));
+/** A view an agent showed that names the feature: it opens that view in the
+ *  views' panel. */
+export function featureViewItem(link) {
+    return {
+        label: link.title,
+        hint: 'agent view',
+        run: () => call('open_view', { pane: link.pane, id: link.id }),
+    };
 }
 /** The saved views scoped or attached to feature `number` of the chosen
  *  repository, each opening its panel. */
-export function savedFeatureLinks(number) {
-    return forFeature(state.saved?.views ?? [], state.rail.repository, number).map(savedFeatureLink);
+export function savedFeatureItems(number) {
+    return forFeature(state.saved?.views ?? [], state.rail.repository, number).map(savedFeatureItem);
 }
-function savedFeatureLink(view) {
-    return el('button', {
-        class: view.stale ? 'track viewed stale' : 'track viewed',
-        type: 'button',
-        title: view.stale
-            ? 'A saved view of this feature, out of date'
-            : 'A saved view of this feature',
-        onclick: (event) => {
-            event.stopPropagation();
-            call('open_saved_view', { id: view.id, from: null });
-        },
-    }, el('b', null, view.view.title), el('span', { class: 'vdot', 'aria-hidden': 'true' }));
+function savedFeatureItem(view) {
+    return {
+        label: view.view.title,
+        hint: view.stale ? 'saved, out of date' : 'saved view',
+        run: () => call('open_saved_view', { id: view.id, from: null }),
+    };
 }
 export function ticketLinks(links) {
     return links.length > 0 && el('span', { class: 'actions tickets' }, links.map(ticketLink));

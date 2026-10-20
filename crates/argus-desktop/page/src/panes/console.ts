@@ -90,7 +90,6 @@ function drawHead(): void {
   const split = page.beside !== null;
   const onScreen = (pane: number): boolean => pane === page.showing || pane === page.beside;
   $('console-head').replaceChildren(
-    el('span', { class: 'label' }, 'Console'),
     el(
       'div',
       { class: 'ctabs', role: 'tablist' },
@@ -111,7 +110,6 @@ function drawHead(): void {
                 title: `shell, ${tab.status}`,
                 onclick: () => gesture({ on: 'select', pane: tab.pane }),
               },
-              el('span', { class: 'glyph sh' }, '›'),
               el('span', { class: 'ttl' }, tab.title),
               el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' }),
             ),
@@ -222,7 +220,6 @@ function drawSideHead(id: string, pane: number | null): void {
         onclick: () => gesture({ on: 'select', pane: tab.pane }),
         oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, true)),
       },
-      el('span', { class: 'glyph sh' }, '›'),
       el('span', { class: 'ttl' }, tab.title),
       el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' }),
     ),

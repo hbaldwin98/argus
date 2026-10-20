@@ -542,6 +542,8 @@ pub struct SettingsPage {
     /// The families installed, for the font fields to offer; none until
     /// they have been read, a moment after the window opens.
     pub fonts: Vec<FontFamily>,
+    /// This build's version, for the dialog's footer.
+    pub version: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1728,6 +1730,7 @@ mod tests {
             min_opacity: 30,
             backdrops: vec![BackdropOffer { backdrop: Backdrop::Mica, unavailable: Some("Mica needs Windows 11".into()) }],
             fonts: vec![FontFamily { name: "Cascadia Mono".into(), mono: true }],
+            version: "0.0.0".into(),
         }));
         assert_eq!(
             as_json(event),
@@ -1741,7 +1744,8 @@ mod tests {
                 },
                 "minOpacity": 30,
                 "backdrops": [{"backdrop": "mica", "unavailable": "Mica needs Windows 11"}],
-                "fonts": [{"name": "Cascadia Mono", "mono": true}]
+                "fonts": [{"name": "Cascadia Mono", "mono": true}],
+                "version": "0.0.0"
             })
         );
     }

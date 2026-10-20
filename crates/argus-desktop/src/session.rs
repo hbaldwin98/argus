@@ -4170,6 +4170,7 @@ mod tests {
             min_opacity: 30,
             backdrops: vec![BackdropOffer { backdrop: Backdrop::Mica, unavailable: Some("Mica needs Windows 11".into()) }],
             fonts: vec![FontFamily { name: "Cascadia Mono".into(), mono: true }],
+            version: "0.0.0".into(),
         }));
         sent.push(serde_json::to_value(&settings).unwrap());
 

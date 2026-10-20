@@ -12,10 +12,11 @@ import type { ViewCtx } from './ctx.js';
 import { actionButton } from './actions.js';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
-import { dockMenuButton } from '../layout/docks.js';
+import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
 import { closesOnMiddle } from '../kit/middle.js';
 import { draggable } from '../layout/drag.js';
 import { $, el, icon } from '../kit/dom.js';
+import { openMenu } from '../kit/menu.js';
 import { savedCtx } from './saved/ctx.js';
 import { count, grouped, nested, underGroup, type Nested } from './saved/logic.js';
 import { savedView } from './saved/link.js';
@@ -75,7 +76,7 @@ function fill(p: SavedPanel): void {
     { class: 'saved-cols' },
     p.columns.map((id, i) => column(p, i, id)),
   );
-  section.replaceChildren(panelHead(p), fresh);
+  section.replaceChildren(...[headed(p) ? panelHead(p) : null, fresh].filter((n) => n !== null));
   for (const body of fresh.querySelectorAll<HTMLElement>('.vpanel-body[data-for]')) {
     body.scrollTop = tops.get(body.getAttribute('data-for') ?? '') ?? 0;
   }
@@ -93,6 +94,13 @@ function fill(p: SavedPanel): void {
   }
 }
 
+/** Whether the panel draws a head of its own. A lone view in a dock with a
+ *  tab strip is named, closed and moved by its tab, so a second row saying
+ *  the same would be the view's name twice over. */
+function headed(p: SavedPanel): boolean {
+  return !(p.columns.length === 1 && dockShowsTabs(p.panel));
+}
+
 /** The strip across the panel: draggable like any panel's header, with the
  *  dock menu and the panel's close, which takes it out of its dock with its
  *  columns rather than hiding the dock and every tab in it. */
@@ -104,6 +112,7 @@ function panelHead(p: SavedPanel): HTMLElement {
     'div',
     { class: 'vpanel-tabs saved-head', role: 'toolbar', 'aria-label': 'Saved view' },
     el('span', { class: 'ttl', title }, title),
+    p.columns.length === 1 && first?.stale && chip({ label: 'stale', tone: 'warn' }),
     p.columns.length > 1 && el('span', { class: 'meta' }, `${p.columns.length} columns`),
     el('span', { class: 'grow' }),
     dockMenuButton(p.panel, 'Dock the view', true),
@@ -127,10 +136,13 @@ function column(p: SavedPanel, i: number, id: string): HTMLElement {
   if (!view) return missing(p, i, id);
   const host = { panel: p.panel, column: i };
   const ctx = savedCtx(view, host, [id], 0, `${p.panel}/${i}`);
+  // A lone view is named and closed by whatever hosts it: the dock's tab, or
+  // the panel's head or float's title bar.
+  const lone = p.columns.length === 1;
   return el(
     'section',
     { class: `saved-col${view.stale ? ' stale' : ''}`, 'aria-label': view.view.title },
-    header(p, i, view, ctx),
+    header(p, i, view, ctx, lone),
     el('div', { class: 'vpanel-body', 'data-for': `${i}|${id}` }, blocks(view.view.blocks, ctx)),
   );
 }
@@ -172,50 +184,60 @@ function columnKey(p: SavedPanel, i: number, view: PageSaved): string {
   return `${p.panel}|${i}|${view.id}`;
 }
 
-function header(p: SavedPanel, i: number, view: PageSaved, ctx: ViewCtx): HTMLElement {
+function header(
+  p: SavedPanel,
+  i: number,
+  view: PageSaved,
+  ctx: ViewCtx,
+  lone: boolean,
+): HTMLElement {
   const k = columnKey(p, i, view);
   const open = unfolded.has(k);
   return el(
     'div',
     { class: 'vpanel-head' },
-    closesOnMiddle(
-      el(
-        'div',
-        { class: 'vpanel-title' },
-        el('span', { class: 'type-heading grow' }, view.view.title),
-        view.view.status && chip(view.view.status),
-        view.stale && chip({ label: 'stale', tone: 'warn' }),
-        i > 0 &&
-          el(
-            'button',
-            {
-              class: 'icon',
-              type: 'button',
-              title: 'Open as a dialog',
-              'aria-label': 'Open as a dialog',
-              onclick: () => call('float_saved_column', { panel: p.panel, column: i }),
-            },
-            icon('box'),
-          ),
-        i > 0 &&
-          el(
-            'button',
-            {
-              class: 'icon',
-              type: 'button',
-              title: 'Pop out into a panel of its own',
-              'aria-label': 'Pop out into a panel of its own',
-              onclick: () => call('pop_out_saved_column', { panel: p.panel, column: i }),
-            },
-            icon('expand'),
-          ),
-        closeButton(p, i),
+    !lone &&
+      closesOnMiddle(
+        el(
+          'div',
+          { class: 'vpanel-title' },
+          el('span', { class: 'type-heading grow' }, view.view.title),
+          view.view.status && chip(view.view.status),
+          view.stale && chip({ label: 'stale', tone: 'warn' }),
+          i > 0 &&
+            el(
+              'button',
+              {
+                class: 'icon',
+                type: 'button',
+                title: 'Open as a dialog',
+                'aria-label': 'Open as a dialog',
+                onclick: () => call('float_saved_column', { panel: p.panel, column: i }),
+              },
+              icon('box'),
+            ),
+          i > 0 &&
+            el(
+              'button',
+              {
+                class: 'icon',
+                type: 'button',
+                title: 'Pop out into a panel of its own',
+                'aria-label': 'Pop out into a panel of its own',
+                onclick: () => call('pop_out_saved_column', { panel: p.panel, column: i }),
+              },
+              icon('expand'),
+            ),
+          closeButton(p, i),
+        ),
+        () => call('close_saved_column', { panel: p.panel, column: i }),
       ),
-      () => call('close_saved_column', { panel: p.panel, column: i }),
-    ),
     el(
       'div',
       { class: 'vpanel-meta' },
+      lone && view.view.status && chip(view.view.status),
+      // Stale rides the head that names the view when there is one.
+      lone && view.stale && !headed(p) && chip({ label: 'stale', tone: 'warn' }),
       el('span', { class: 'meta' }, view.scope.label),
       el(
         'span',
@@ -250,7 +272,7 @@ function header(p: SavedPanel, i: number, view: PageSaved, ctx: ViewCtx): HTMLEl
           },
           'Mark stale',
         ),
-        deleteControl(k, view),
+        asking.has(k) && deleteConfirm(k, view),
         el(
           'button',
           {
@@ -266,6 +288,35 @@ function header(p: SavedPanel, i: number, view: PageSaved, ctx: ViewCtx): HTMLEl
           },
           'Details',
         ),
+        el(
+          'button',
+          {
+            class: 'icon',
+            type: 'button',
+            title: 'More',
+            'aria-label': 'More',
+            'aria-haspopup': 'menu',
+            onclick: (e: MouseEvent) => {
+              const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              openMenu(
+                view.view.title,
+                [
+                  {
+                    label: 'Delete…',
+                    danger: true,
+                    hint: 'for every window',
+                    run: () => {
+                      asking.add(k);
+                      drawSavedPanels();
+                    },
+                  },
+                ],
+                { x: box.right, y: box.bottom + 4, align: 'end' },
+              );
+            },
+          },
+          icon('more'),
+        ),
       ),
     ),
     open && metadata(view),
@@ -277,23 +328,8 @@ function builtAt(view: PageSaved): Date {
 }
 
 /** Delete asks first: it is for every window, and the agent that built the
- *  view would have to build it again. */
-function deleteControl(k: string, view: PageSaved): HTMLElement {
-  if (!asking.has(k)) {
-    return el(
-      'button',
-      {
-        class: 'btn sm vtone-bad',
-        type: 'button',
-        title: 'Delete this saved view for every window',
-        onclick: () => {
-          asking.add(k);
-          drawSavedPanels();
-        },
-      },
-      'Delete',
-    );
-  }
+ *  view would have to build it again. The menu's Delete… opens this. */
+function deleteConfirm(k: string, view: PageSaved): HTMLElement {
   return el(
     'span',
     { class: 'vconfirm', role: 'group', 'aria-label': 'Delete this saved view?' },
@@ -367,7 +403,7 @@ function metadata(view: PageSaved): HTMLElement {
 
 /** Whether the section is unfolded, and whether it lists only the views
  *  about where the person is. The page's own. */
-let listed = true;
+let listed = false;
 let hereOnly = true;
 /** The views whose linked views are unfolded under them, by id. */
 const navOpen = new Set<string>();

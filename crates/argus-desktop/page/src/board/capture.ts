@@ -5,7 +5,7 @@
 // pushed board holds the feature, which then opens.
 
 import type { CapturePage } from '../bindings/CapturePage';
-import { $, el, type Child } from '../kit/dom.js';
+import { $, el, statusPill, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -36,6 +36,27 @@ function note(): HTMLTextAreaElement | null {
   return node instanceof HTMLTextAreaElement ? node : null;
 }
 
+/** The note wraps, so a line number is as tall as the wrapped line it
+ *  stands for. A text field cannot say where it broke its lines, so the
+ *  lines are set again in a hidden copy of it at the same width and read. */
+function alignGutter(): void {
+  const field = note();
+  const numbers = document.getElementById('capture-gutter');
+  if (!field || !numbers) return;
+  const style = getComputedStyle(field);
+  const inner = field.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  if (inner <= 0) return;
+  const mirror = el('div', { class: 'note-mirror', 'aria-hidden': 'true' });
+  mirror.style.width = `${inner}px`;
+  for (const line of field.value.split('\n')) mirror.append(el('div', null, line || ' '));
+  field.parentElement?.append(mirror);
+  [...numbers.children].forEach((number, i) => {
+    const height = mirror.children[i]?.getBoundingClientRect().height;
+    if (number instanceof HTMLElement && height) number.style.height = `${height}px`;
+  });
+  mirror.remove();
+}
+
 function create(): void {
   const text = note()?.value ?? state.capture?.note ?? '';
   call('capture', { gesture: { on: 'create', note: text } });
@@ -53,6 +74,7 @@ export function drawCapture(): void {
     $('capture-head').replaceWith(head(page));
     $('capture-gutter').replaceWith(gutter(page, field.value));
     $('capture-reads').replaceWith(readsAs(page));
+    alignGutter();
     return;
   }
   const textarea = el('textarea', {
@@ -65,10 +87,12 @@ export function drawCapture(): void {
     oninput: () => {
       call('capture', { gesture: { on: 'note', note: textarea.value } });
       $('capture-gutter').replaceWith(gutter(state.capture ?? page, textarea.value));
+      alignGutter();
     },
     onscroll: () => {
       const numbers = document.getElementById('capture-gutter');
       if (numbers) numbers.scrollTop = textarea.scrollTop;
+      alignGutter();
     },
     onkeydown: (e: KeyboardEvent) => {
       const action = actionFor(['writing'], e);
@@ -94,7 +118,7 @@ export function drawCapture(): void {
         el('div', { class: 'note-box' }, gutter(page, page.note), textarea),
         el(
           'div',
-          { class: 'legend meta' },
+          { class: 'legend' },
           LEGEND.map(([mark, tone, means]) => [
             el('span', { class: tone ? `mono ${tone}` : '' }, mark),
             el('span', null, means),
@@ -105,6 +129,7 @@ export function drawCapture(): void {
     ),
   );
   textarea.focus();
+  requestAnimationFrame(alignGutter);
 }
 
 function head(page: CapturePage): HTMLElement {
@@ -117,20 +142,21 @@ function head(page: CapturePage): HTMLElement {
       el('button', { class: 'crumb', onclick: discardCapture }, 'Features'),
       el('span', { class: 'fg-faint' }, '›'),
       el('span', { class: 'fg' }, 'New'),
-      el('span', { class: 'grow' }),
-      el('span', { class: 'meta' }, el('span', { class: 'kbd' }, 'Esc'), ' discard'),
     ),
     el(
       'div',
       { class: 'actions head-row' },
       el('span', { class: 'type-title' }, `New feature in ${page.repository}`),
-      el(
-        'span',
-        { class: 'meta' },
-        'Write it as one note. It becomes the feature when you create it.',
-      ),
       el('span', { class: 'grow' }),
-      el('button', { class: 'btn', onclick: discardCapture }, 'Discard'),
+      el(
+        'button',
+        {
+          class: 'btn',
+          title: 'Discard the note (Esc)',
+          onclick: discardCapture,
+        },
+        'Discard',
+      ),
       el(
         'button',
         {
@@ -255,26 +281,17 @@ function readsAs(page: CapturePage): HTMLElement {
                 decision.label,
               ),
               el('span', null, decision.text),
-              el(
-                'span',
-                { class: `pill ${decision.open ? 'fg-attention' : 'fg-ok'}` },
-                decision.open ? 'open' : 'made',
-              ),
+              decision.open ? statusPill('waiting', 'open') : statusPill('done', 'made'),
             ),
             decision.options.length > 0 &&
               el(
                 'div',
-                { class: 'meta indent' },
-                decision.options.map((option, i) => el('div', null, `${i + 1} · ${option}`)),
+                { class: 'opts indent' },
+                decision.options.map((option) => el('span', { class: 'ktag' }, option)),
               ),
             decision.because && el('div', { class: 'meta indent' }, `because ${decision.because}`),
           ]),
         ),
-    ),
-    el(
-      'div',
-      { class: 'meta' },
-      "The daemon reads the note with the same grammar, so what is here is what it stores. A line it can't place is named here instead of dropped.",
     ),
   );
 }

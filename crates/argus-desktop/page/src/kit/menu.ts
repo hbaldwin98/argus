@@ -25,10 +25,15 @@ export function closeLayer(): void {
 
 /** Puts a built menu in the layer at `at`, kept inside the window, and
  *  gives its first choosable item the keys. */
-export function placeMenu(menu: HTMLElement, at: { x: number; y: number }): void {
+export function placeMenu(
+  menu: HTMLElement,
+  at: { x: number; y: number; align?: 'start' | 'end' },
+): void {
   $('layer').replaceChildren(menu);
   const box = menu.getBoundingClientRect();
-  menu.style.left = `${Math.max(8, Math.min(at.x, window.innerWidth - box.width - 8))}px`;
+  // `end` hangs the menu from its right edge, under a button at the strip's end.
+  const x = at.align === 'end' ? at.x - box.width : at.x;
+  menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - box.width - 8))}px`;
   menu.style.top = `${Math.max(8, Math.min(at.y, window.innerHeight - box.height - 8))}px`;
   menu.querySelector<HTMLElement>('.mi:not([disabled])')?.focus();
 }
@@ -36,7 +41,7 @@ export function placeMenu(menu: HTMLElement, at: { x: number; y: number }): void
 export function openMenu(
   label: string,
   items: (MenuItem | false | null | undefined)[],
-  at: { x: number; y: number },
+  at: { x: number; y: number; align?: 'start' | 'end' },
 ): void {
   const shown = items.filter((item): item is MenuItem => !!item);
   const menu = el(

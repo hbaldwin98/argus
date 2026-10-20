@@ -40,6 +40,8 @@ CI builds and lints the tests on Windows; a Linux machine without mingw-w64 cann
 
 To look at a TUI screen, run its ignored dump test: find it with `grep -rn 'fn dump_' crates/argus-client/src/ui/tests` and run one by name, `cargo test -p argus dump_frame -- --ignored --nocapture`. Add one for a new surface. This text dump stands in for a screenshot.
 
+To look at a desktop screen, photograph it: `cargo test -p argus-desktop write_screens -- --ignored` writes every scene in `src/screens` as the events a page hears, and `node test/screens/shoot.mjs` (in `crates/argus-desktop/page`, after `npm run build`) replays each into the real page under headless Chrome and saves a PNG. For clicks that Rust answers, serve the scenes live with `cargo test -p argus-desktop serve_screens -- --ignored` and pass `--live http://127.0.0.1:7878`; `audit.mjs` then hovers, clicks, right-clicks and tabs through every control and says which gave no feedback. Add a scene for a new surface.
+
 ## Commits, Releases & Review
 
 Recent commits use short, imperative, sentence-case subjects such as `Wake a pane's pump on the byte`. Keep commits narrowly scoped and explain non-obvious design choices in the body. Maintainer work is committed on `main` and pushed; open a branch or pull request only when asked. An outside contributor's pull request summarizes the user-visible behavior, lists its verification commands, and includes a screen dump for a TUI change. Update `README.md` or the design documents when commands, configuration, controls, or architecture change.

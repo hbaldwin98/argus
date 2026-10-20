@@ -8,7 +8,7 @@ import { call } from '../../connection/tauri.js';
 import { begin, DECISION_LINE, decisionAction, decisionDetail, editDecision, field, formButtons, stateMark, } from './work.js';
 export function recordLens(view) {
     const record = view.record;
-    const section = el('section', { class: 'work-outline', 'aria-label': 'Decisions' }, el('div', { class: 'label' }, el('span', null, 'Decisions'), el('span', { class: 'grow' }), el('span', null, 'in the order they were made')));
+    const section = el('section', { class: 'work-outline', 'aria-label': 'Decisions' }, el('div', { class: 'label' }, el('span', null, 'Decisions')));
     const rows = record?.rows ?? [];
     if (!rows.length) {
         section.append(el('div', { class: 'meta' }, 'Nothing decided yet: raise a decision, made already or still open.'));
@@ -19,9 +19,6 @@ export function recordLens(view) {
     if (editing?.what === 'addDecision' && editing.task === null) {
         const what = editing.under === null ? 'Decision on the feature' : 'Sub-decision';
         section.append(el('div', { class: 'stack-4 work-add' }, el('div', { class: 'label' }, what), field('edit-add', editing.text, false, (text) => (editing.text = text), DECISION_LINE), formButtons('Add')));
-    }
-    if (rows.length) {
-        section.append(el('div', { class: 'meta record-foot' }, 'Superseded and rejected decisions stay listed, struck through.'));
     }
     section.append(el('div', { class: 'actions work-foot' }, el('span', { class: 'grow' }), el('button', {
         class: 'btn',

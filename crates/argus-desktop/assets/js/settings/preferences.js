@@ -1,12 +1,12 @@
 // The Settings dialog, and the look its choices give the window: the theme
 // on the document, the background's opacity as `--see` and the fonts in
-// front of `--font-mono`'s bundled faces and `--font-ui`'s system ones.
+// front of the bundled faces of `--font-mono` and `--font-ui`.
 //
 // Rust holds the choices (`src/settings/preferences.rs`) and saves each as
 // it is made; the dialog draws what Rust sends back, and is updated in place
 // rather than rebuilt, so a slider being dragged or a command being typed
 // keeps its hold while the choices come back.
-import { $, el, icon } from '../kit/dom.js';
+import { $, el, focusQuietly, icon } from '../kit/dom.js';
 import { fontPicker } from './font_picker.js';
 import { actionFor } from '../keys/keymap.js';
 import { screens } from '../panes/screen.js';
@@ -14,6 +14,7 @@ import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 /** Each flavour's own colours for its card: base, mantle, accent, text. */
 const FLAVOURS = [
+    { theme: 'night', name: 'Argus Night', colours: ['#0d1020', '#0a0c16', '#98c0ef', '#9aa7bd'] },
     { theme: 'mocha', name: 'Mocha', colours: ['#1e1e2e', '#181825', '#cba6f7', '#a6adc8'] },
     { theme: 'macchiato', name: 'Macchiato', colours: ['#24273a', '#1e2030', '#c6a0f6', '#a5adcb'] },
     { theme: 'frappe', name: 'Frappé', colours: ['#303446', '#292c3c', '#ca9ee6', '#a5adce'] },
@@ -45,6 +46,22 @@ const SECTIONS = [
     'Views',
     'Connection',
 ];
+const SECTION_ICON = {
+    Appearance: 'workspace',
+    Editor: 'code',
+    Notifications: 'bell',
+    Features: 'list',
+    Views: 'split',
+    Connection: 'server',
+};
+const SECTION_ABOUT = {
+    Appearance: 'The theme, the background and the fonts',
+    Editor: 'Where a file opens, and with what',
+    Notifications: 'When Argus tells you something needs you',
+    Features: 'How the feature index opens',
+    Views: 'Where the links in a saved view open',
+    Connection: 'The daemon this window reaches',
+};
 const dark = matchMedia('(prefers-color-scheme: dark)');
 function set(change) {
     call('setting', { change });
@@ -70,7 +87,7 @@ export function applyLook() {
     root.style.setProperty('--see', String(chosen.opacity / 100));
     // Rust leaves no quote in the name to end it early.
     putFont(root, '--font-mono', chosen.font, 'var(--font-mono-bundled)');
-    putFont(root, '--font-ui', chosen.uiFont, 'var(--font-ui-system)');
+    putFont(root, '--font-ui', chosen.uiFont, 'var(--font-ui-bundled)');
     for (const s of screens)
         s.retheme();
 }
@@ -114,8 +131,10 @@ function setSegment(buttons, chosen) {
 function row(title, detail, control) {
     return el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, title), detail && el('span', { class: 'meta' }, detail)), control);
 }
+/** A section: its title and one line under it, then its rows in one bordered
+ *  group, divided from each other. */
 function section(name, ...rows) {
-    return el('section', { class: 'stack-2', 'aria-label': name, id: `settings-${name.toLowerCase()}` }, el('div', { class: 'label' }, name), rows);
+    return el('section', { class: 'setsection', 'aria-label': name, id: `settings-${name.toLowerCase()}` }, el('div', { class: 'sethead' }, el('div', { class: 'settitle' }, name), el('div', { class: 'meta' }, SECTION_ABOUT[name])), el('div', { class: 'setgroup' }, rows));
 }
 export function openSettings() {
     const page = state.settings;
@@ -139,7 +158,7 @@ export function openSettings() {
             class: 'themecard',
             role: 'radio',
             onclick: () => set({ set: 'theme', theme: flavour.theme }),
-        }, preview, el('span', { class: 'strong' }, flavour.name));
+        }, preview, el('span', { class: 'strong name' }, flavour.name, icon('check')));
         cards.set(flavour.theme, card);
     }
     const follow = toggle('Follow the system', () => {
@@ -164,7 +183,7 @@ export function openSettings() {
     const font = fontPicker('Code font', 'var(--font-mono-bundled)', 'JetBrains Mono', (family) => set({ set: 'font', family }));
     const fontWhy = el('span', { class: 'meta' });
     const fontRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'Code font'), el('span', { class: 'meta' }, 'Panes and code, monospaced; a Nerd Font draws its icons'), fontWhy), font.node);
-    const uiFont = fontPicker('Interface font', 'var(--font-ui-system)', 'System', (family) => set({ set: 'uiFont', family }));
+    const uiFont = fontPicker('Interface font', 'var(--font-ui-bundled)', 'Geist', (family) => set({ set: 'uiFont', family }));
     const uiFontWhy = el('span', { class: 'meta' });
     const uiFontRow = el('div', { class: 'setrow' }, el('div', { class: 'grow stack-2' }, el('span', null, 'Interface font'), el('span', { class: 'meta' }, 'Menus, lists, headings and prose'), uiFontWhy), uiFont.node);
     const [editorGroup, editors] = segment('Files open', EDITORS, (mode) => set({ set: 'editor', mode }));
@@ -212,14 +231,29 @@ export function openSettings() {
                 block: 'start',
             });
         },
-    }, name)));
+    }, icon(SECTION_ICON[name]), name)), el('div', { class: 'grow' }), page.version && el('div', { class: 'meta setversion' }, `argus ${page.version}`));
+    // The section in view is the one lit in the nav, so a long page says where it is.
+    const spy = () => {
+        const top = body.getBoundingClientRect().top;
+        let current = SECTIONS[0];
+        for (const name of SECTIONS) {
+            const block = document.getElementById(`settings-${name.toLowerCase()}`);
+            if (block && block.getBoundingClientRect().top - top <= 24)
+                current = name;
+        }
+        nav.querySelectorAll('button').forEach((button) => {
+            button.classList.toggle('on', button.textContent === current);
+        });
+    };
+    body.addEventListener('scroll', spy);
+    spy();
     const close = el('button', { class: 'icon', 'aria-label': 'Close settings', onclick: closeSettings }, icon('close'));
     const dialog = el('section', {
-        class: 'dialog settings',
+        class: 'dialog sheet-dialog settings',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'settings-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'settings-title' }, 'Settings'), el('span', { class: 'meta' }, 'Saved as you change them'), close), el('div', { class: 'split' }, nav, body));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'settings-title' }, 'Settings'), el('span', { class: 'meta saved' }, icon('check'), 'Saved as you change them'), close), el('div', { class: 'split' }, nav, body));
     // Escape puts it away from any of its controls, a field included.
     dialog.addEventListener('keydown', (e) => {
         const action = actionFor(['anywhere'], e);
@@ -238,7 +272,7 @@ export function openSettings() {
     }, dialog));
     drawSettings();
     $('input').blur();
-    close.focus();
+    focusQuietly(close);
 }
 export function closeSettings() {
     if (!settingsOpen())

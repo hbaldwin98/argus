@@ -12,6 +12,7 @@ import { closeLayer, placeMenu } from '../../kit/menu.js';
 import {
   clickable,
   drawSequence,
+  type Drawn,
   editSource,
   editStep,
   openExpanded,
@@ -20,7 +21,7 @@ import {
 import { el, icon, type Child } from '../../kit/dom.js';
 import { state } from '../../state.js';
 import { call } from '../../connection/tauri.js';
-import { begin, edit, field, formButtons, keycap, lineList, titled } from './work.js';
+import { begin, edit, field, formButtons, keycap, lineList, overflow, titled } from './work.js';
 
 export function flowsLens(view: FeatureView): HTMLElement {
   const flows = view.flows;
@@ -70,20 +71,13 @@ export function flowsLens(view: FeatureView): HTMLElement {
         { class: 'stack-4 work-add' },
         el('div', { class: 'label' }, 'New flow'),
         field('edit-add', editing.text, false, (text) => (editing.text = text), 'What it shows'),
-        el('div', { class: 'meta' }, 'It starts as two lifelines and a request; edit its source.'),
         formButtons('Add'),
       ),
     );
   }
   if (flow) {
     list.append(
-      el(
-        'div',
-        { class: 'label steps-label' },
-        el('span', null, 'Steps'),
-        el('span', { class: 'grow' }),
-        el('span', { class: 'label-aside' }, 'the diagram is drawn from these'),
-      ),
+      el('div', { class: 'label steps-label' }, el('span', null, 'Steps')),
       el('div', { class: 'stack-2 steps-list' }, flowSteps(flow)),
       el('div', { class: 'step-below' }, stepBelow(flow)),
     );
@@ -165,19 +159,20 @@ function stepBelow(flow: FlowDetail): Child {
     { class: 'stack-8 step-detail' },
     nothing && el('div', { class: 'meta' }, `Nothing binds step ${step.number} yet.`),
     step.boundBy.length > 0 &&
-      titled(`Step ${step.number} is bound by`, lineList(step.boundBy, '✓', 'fg-ok')),
+      titled(`Step ${step.number} is bound by`, lineList(step.boundBy, '◆', 'fg-ref')),
     step.carriedOutBy.length > 0 &&
       titled('Carried out by', lineList(step.carriedOutBy, '·', 'fg-faint')),
     el(
       'div',
-      { class: 'actions' },
+      { class: 'actions detail-foot' },
+      el('span', { class: 'grow' }),
+      el('button', { class: 'btn sm', onclick: () => editStep(flow) }, 'Edit step'),
       el(
         'button',
-        { class: 'btn', onclick: (e: MouseEvent) => bindMenu(flow, e) },
+        { class: 'btn sm', onclick: (e: MouseEvent) => bindMenu(flow, e) },
         'Bind a decision…',
       ),
-      el('button', { class: 'btn', onclick: () => editStep(flow) }, 'Edit step'),
-      el('button', { class: 'btn', onclick: () => editSource(flow) }, 'Edit source'),
+      overflow('More: edit source', [{ label: 'Edit source', run: () => editSource(flow) }]),
     ),
   );
 }
@@ -208,8 +203,41 @@ function picture(flow: FlowDetail | null): HTMLElement {
         keycap('F'),
       ),
     ),
-    el('div', { class: 'seq-holder' }, drawn.node),
+    fitted(el('div', { class: 'seq-holder' }, drawn.node), drawn),
   );
+}
+
+/** The diagram scaled down, no further than 85%, so a few lifelines fit
+ *  the box; when it still overflows, the selected step is brought into view
+ *  only if it is outside it, and both edges fade as far as there is more to scroll to. */
+function fitted(holder: HTMLElement, drawn: Drawn): HTMLElement {
+  const update = (): void => {
+    const more = holder.scrollWidth - holder.clientWidth - holder.scrollLeft > 4;
+    holder.classList.toggle('scrolls', more);
+    holder.classList.toggle('scrolled', holder.scrollLeft > 0);
+    holder.title = more || holder.scrollLeft > 0 ? 'Scroll sideways for the rest' : '';
+  };
+  holder.addEventListener('scroll', update, { passive: true });
+  requestAnimationFrame(() => {
+    // Minus the holder's padding and border, which it also scrolls inside.
+    const room = holder.clientWidth - 24;
+    if (room <= 0) return;
+    // Down to 70% when that is what makes the whole width fit at once.
+    const scale = Math.max(0.7, Math.min(1, room / drawn.width));
+    drawn.node.setAttribute('width', String(drawn.width * scale));
+    drawn.node.setAttribute('height', String(drawn.height * scale));
+    const lit = holder.querySelector('.smsg.on');
+    if (lit && holder.scrollWidth > holder.clientWidth) {
+      // Only the overflow, so the lifelines on the left stay in view unless
+      // the selected step is itself out of the box.
+      const at = lit.getBoundingClientRect();
+      const box = holder.getBoundingClientRect();
+      if (at.right > box.right) holder.scrollLeft += at.right - box.right + 24;
+      else if (at.left < box.left) holder.scrollLeft -= box.left - at.left + 24;
+    }
+    update();
+  });
+  return holder;
 }
 
 /** Puts the cursor on a flow and, given one, a step of it, counted from

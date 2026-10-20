@@ -3,7 +3,7 @@
 // and the repository's tracker map with its editor. Rust holds the dialog
 // (`src/board/tracker/link_dialog.rs`) and reads the URL as the daemon
 // will; the page draws it and says what was typed and pressed.
-import { $, el, icon } from '../../kit/dom.js';
+import { $, el, escKey, icon } from '../../kit/dom.js';
 import { actionFor } from '../../keys/keymap.js';
 import { call } from '../../connection/tauri.js';
 let page = null;
@@ -127,8 +127,11 @@ export function drawLink(next) {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'link-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'stack-6 grow' }, el('div', { class: 'type-title', id: 'link-title' }, `Link #${p.number} to a ticket`), el('div', { class: 'meta' }, 'Argus keeps each ticket’s key and URL. Titles and statuses stay in the tracker, so nothing shown here can go stale.')), el('button', { class: 'icon', 'aria-label': 'Close', onclick: () => send({ on: 'close' }) }, icon('close'))), el('div', { class: 'tracker-body stack-12' }, el('label', { class: 'stack-6' }, el('span', { class: 'label' }, 'Ticket URL'), input('link-url', 'Ticket URL', p.url, 'https://linear.app/…/issue/ENG-88/…'), read(p)), el('label', { class: 'stack-6' }, el('span', { class: 'label' }, 'What it is to this feature'), input('link-role', 'Role', p.role, 'the work, the PM’s ticket… (optional)')), linked(p), map(p)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' ticket · ', keycap('O'), ' open · ', keycap('X'), ' unlink · ', keycap('Esc'), ' close', el('span', { class: 'grow' }), el('span', null, 'Nothing is written to a tracker by linking.'), el('button', { class: 'btn sm', onclick: () => send({ on: 'close' }) }, 'Cancel'), el('button', {
-        class: 'btn sm primary',
+    }, el('div', { class: 'dhead' }, el('div', { class: 'stack-6 grow' }, el('div', { class: 'type-title', id: 'link-title' }, `Link #${p.number} to a ticket`), el('div', { class: 'meta' }, 'Argus keeps each ticket’s key and URL. Titles and statuses stay in the tracker, so nothing shown here can go stale.')), el('button', { class: 'icon', 'aria-label': 'Close', onclick: () => send({ on: 'close' }) }, icon('close'))), el('div', { class: 'tracker-body stack-12' }, el('label', { class: 'stack-6' }, el('span', { class: 'label' }, 'Ticket URL'), input('link-url', 'Ticket URL', p.url, 'https://linear.app/…/issue/ENG-88/…'), read(p)), el('label', { class: 'stack-6' }, el('span', { class: 'label' }, 'What it is to this feature'), input('link-role', 'Role', p.role, 'the work, the PM’s ticket… (optional)')), linked(p), map(p)), el('div', { class: 'dfoot' }, el('span', {
+        class: 'dwhy grow',
+        title: 'J and K move through the tickets; O opens one, X unlinks it.',
+    }, icon('info'), 'Nothing is written to a tracker by linking.'), el('button', { class: 'btn', onclick: () => send({ on: 'close' }) }, 'Cancel ', escKey()), el('button', {
+        class: 'btn primary',
         disabled: !p.read || p.pending,
         onclick: () => send({ on: 'link', ...fields() }),
     }, p.pending ? 'Linking…' : key ? `Link ${key} ` : 'Link ', el('span', { class: 'kbd on-accent' }, 'Enter'))))));

@@ -45,6 +45,7 @@ fn border(theme: Theme) -> u32 {
         Theme::Latte => 0xccd0da,
         Theme::Macchiato => 0x363a4f,
         Theme::Frappe => 0x414559,
+        Theme::Night => 0x161a2e,
         Theme::Mocha | Theme::System => 0x313244,
     }
 }
@@ -143,7 +144,7 @@ mod tests {
     #[test]
     fn the_border_takes_the_line_colour_the_stylesheet_names() {
         let css = include_str!("../../assets/style.css");
-        for theme in [Theme::Mocha, Theme::Macchiato, Theme::Frappe, Theme::Latte] {
+        for theme in [Theme::Mocha, Theme::Macchiato, Theme::Frappe, Theme::Latte, Theme::Night] {
             assert!(css.contains(&format!("--surface0: #{:06x};", border(theme))), "{theme:?}");
         }
     }

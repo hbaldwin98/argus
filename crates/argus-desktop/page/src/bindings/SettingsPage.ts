@@ -21,4 +21,8 @@ backdrops: Array<BackdropOffer>,
  * The families installed, for the font fields to offer; none until
  * they have been read, a moment after the window opens.
  */
-fonts: Array<FontFamily>, };
+fonts: Array<FontFamily>, 
+/**
+ * This build's version, for the dialog's footer.
+ */
+version: string, };

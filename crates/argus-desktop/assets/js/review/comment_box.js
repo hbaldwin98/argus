@@ -40,7 +40,7 @@ export function commentBox(c, ways) {
     // so there is someone to click.
     const lit = c.recipients.find((p) => p.pane === c.to);
     return el('div', { class: 'comment-card' }, el('div', { class: 'actions' }, el('span', { class: 'fg-accent strong' }, 'Comment'), el('span', { class: 'meta' }, c.about)), body, el('div', { class: 'actions' }, el('span', { class: 'meta' }, 'Send to'), lit && c.recipients.length === 1
-        ? el('span', { class: 'chipf on' }, el('span', { class: 'glyph' }, '◆'), lit.title)
+        ? el('span', { class: 'strong' }, el('span', { class: 'glyph' }, '◆ '), lit.title)
         : c.recipients.map((p) => el('button', {
             class: `chipf${p.pane === c.to ? ' on' : ''}`,
             onclick: () => ways.choose(p.pane),

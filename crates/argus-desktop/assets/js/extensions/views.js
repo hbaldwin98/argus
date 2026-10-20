@@ -6,9 +6,10 @@
 // (`src/extensions/views.rs`, `src/extensions/keys.rs`), and `docks` puts
 // a docked view's element in its dock; a row changes only when its
 // extension publishes it again.
-import { dockMenuButton } from '../layout/docks.js';
-import { $, el, icon } from '../kit/dom.js';
+import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
+import { $, closeButton, el, escKey, focusQuietly, icon } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
+import { echoes } from './status_echo.js';
 import { closeLayer } from '../kit/menu.js';
 import { keycaps } from '../keys/chords.js';
 import { bindView, keyView, screen, viewScreen } from '../panes/screen.js';
@@ -91,21 +92,35 @@ function modeButton(view, page) {
 function header(view) {
     // An ended console's actions are in the strip beside how it ended.
     const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
-    const head = el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), dockMenuButton(view.panel, view.title, !view.page), !view.page &&
-        el('button', {
+    const head = el('div', { class: 'vpanel-head' }, 
+    // As a page the strip already names the view; docked it names itself.
+    // A dock's tab strip names a docked view too, and holds its dock menu.
+    !view.page &&
+        !dockShowsTabs(view.panel) &&
+        el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), dockMenuButton(view.panel, view.title, true), el('button', {
             class: 'icon',
             type: 'button',
             title: 'Hide',
             'aria-label': `Hide ${view.title}`,
             onclick: () => call('docks', { gesture: { on: 'hide', panel: view.panel } }),
         }, icon('close'))), el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'vpanel-acts' }, wide.map((action) => actionButton(view, action, 'btn sm')), modeButton(view, !view.page))));
-    return draggable(head, view.panel, view.title);
+    // As a page the row is only its buttons; its Dock button is the way back.
+    return view.page ? head : draggable(head, view.panel, view.title);
 }
 /** The view as an agent's table block: a row's status, when any has one,
  *  leads it as a chip. */
 function asBlock(view) {
     const status = view.rows.some((row) => row.status !== null);
     const lead = (row) => status ? [row.status ? { kind: 'chip', chip: row.status } : { kind: 'empty' }] : [];
+    // A cell that only repeats the row's status chip says nothing new; one that
+    // differs ("exited 137" beside "stopped") is the news. A column left with
+    // nothing to say goes.
+    const kept = view.columns.map((_, c) => !status || view.rows.length === 0 || !view.rows.every((r) => echoes(r, r.cells[c])));
+    const cells = (row) => row.cells.flatMap((cell, c) => {
+        if (!kept[c])
+            return [];
+        return [echoes(row, cell) ? { kind: 'empty' } : cell];
+    });
     return {
         kind: 'table',
         row_keys: [],
@@ -114,9 +129,9 @@ function asBlock(view) {
         details: [],
         columns: [
             ...(status ? [{ title: 'Status', numeric: false, optional: false }] : []),
-            ...view.columns,
+            ...view.columns.filter((_, c) => kept[c]),
         ],
-        rows: view.rows.map((row) => [...lead(row), ...row.cells]),
+        rows: view.rows.map((row) => [...lead(row), ...cells(row)]),
         sorted_by: null,
         total: null,
     };
@@ -329,14 +344,14 @@ export function drawExtensionConfirm() {
         role: 'alertdialog',
         'aria-modal': 'true',
         'aria-labelledby': 'extension-confirm-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'extension-confirm-title' }, `${question.label}?`)), el('div', { class: 'dbody' }, el('div', { class: 'fg-muted' }, question.question)), el('div', { class: 'dfoot' }, el('span', { class: 'meta' }, `from ${question.extension}`), el('span', { class: 'grow' }), el('button', { class: 'btn', id: 'extension-keep', onclick: answerExtensionNo }, 'Cancel'), el('button', {
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'extension-confirm-title' }, `${question.label}?`), closeButton(answerExtensionNo)), el('div', { class: 'dbody prose' }, el('div', { class: 'fg-muted' }, question.question)), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, `from ${question.extension}`), el('button', { class: 'btn', id: 'extension-keep', onclick: answerExtensionNo }, 'Cancel ', escKey()), el('button', {
         class: 'btn danger',
         onclick: () => {
             call('answer_extension', { yes: true });
             closeLayer();
         },
     }, question.label)))));
-    document.getElementById('extension-keep')?.focus();
+    focusQuietly(document.getElementById('extension-keep'));
 }
 /** The extensions' headings of the shortcuts sheet, after the keymap's. */
 export function extensionSheetGroups() {

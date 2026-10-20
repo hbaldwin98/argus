@@ -70,7 +70,7 @@
     --green: #2f7d1f;
     --yellow: #a35200;
     --red: #c20f37;
-    --peach: #b84a06;
+    --peach: #a8420a;
     --teal: #11766f;
     --lilac: #dcd4f2;
     --bg-sunken: var(--crust);
@@ -139,6 +139,9 @@
 
 :root[data-theme='latte'] {
   color-scheme: light;
+  /* Raised is lighter than its stage here, as in the dark flavours; the
+     shared mix of the fill would sink it. */
+  --bg-raised: color-mix(in srgb, var(--bg-surface) 40%, white);
   --crust: #dce0e8;
   --mantle: #e6e9ef;
   --base: #eff1f5;
@@ -152,7 +155,7 @@
   --green: #2f7d1f;
   --yellow: #a35200;
   --red: #c20f37;
-  --peach: #b84a06;
+  --peach: #a8420a;
   --teal: #11766f;
   --lilac: #dcd4f2;
   --bg-sunken: var(--crust);
@@ -174,6 +177,44 @@
   --changed: var(--peach);
   --info: var(--teal);
   --fg-on-accent: #ffffff;
+}
+
+/* Argus Night: one cool navy in four steps, lines the accent at low alpha
+ * so every border is tinted alike, and one periwinkle accent that lights
+ * what Argus is doing. Its extra tokens (raised, glow, the primary's
+ * gradient, the empty states' atmosphere) are set at their quiet defaults
+ * for the Catppuccin flavours below. */
+:root[data-theme='night'] {
+  --crust: #06070d;
+  --mantle: #0a0c16;
+  --base: #0d1020;
+  --surface0: #161a2e;
+  --surface1: #272e52;
+  --overlay: #7a86a0;
+  --subtext: #9aa7bd;
+  --text: #e6edf8;
+  --mauve: #98c0ef;
+  --blue: #9db0ff;
+  --green: #5fd4a8;
+  --yellow: #f2c46d;
+  --red: #f27a86;
+  --peach: #f0a070;
+  --teal: #6fd3e0;
+  --lilac: #1a1f3d;
+  --line: rgba(152, 192, 239, 0.12);
+  --line-strong: rgba(152, 192, 239, 0.24);
+  --fg-on-accent: #07080f;
+  --bg-raised: #11142a;
+  --ring: #7b8ff0;
+  --glow: 0 0 24px rgba(123, 143, 240, 0.22);
+  --primary-bg: linear-gradient(180deg, #d8ecf8, #98c0ef);
+  --atmosphere:
+    radial-gradient(900px 260px at 50% 0, rgba(123, 143, 240, 0.16), transparent 70%),
+    linear-gradient(rgba(152, 192, 239, 0.045) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgba(152, 192, 239, 0.045) 1px, transparent 1px) 0 0 / 32px 32px;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(152, 192, 239, 0.06);
+  --shadow-dialog: 0 28px 72px rgba(0, 0, 0, 0.6), 0 0 48px rgba(123, 143, 240, 0.08);
+  --scrim: rgba(4, 5, 10, 0.64);
 }
 
 /* Bundled, not left to the system: the terminal grid is measured in this
@@ -207,6 +248,15 @@
   font-display: block;
   src: url('fonts/JetBrainsMono-BoldItalic.woff2') format('woff2');
 }
+/* The interface face, bundled so every system draws the same window
+ * (fonts/Geist-OFL.txt). One variable file covers every weight. */
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('fonts/Geist-Variable.woff2') format('woff2');
+}
 /* Nerd Font icons live in the Private Use Area, which JetBrains Mono and
    no system font fills: without this a prompt's or editor's icons are
    boxes (fonts/NerdFonts-LICENSE.txt). Behind the text face, so it draws
@@ -220,9 +270,9 @@
 }
 
 :root {
-  --font-ui-system: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --font-ui-bundled: 'Geist', system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
   /* The Settings dialog's interface font goes in front (settings/preferences.ts). */
-  --font-ui: var(--font-ui-system);
+  --font-ui: var(--font-ui-bundled);
   --font-mono-bundled:
     'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, Menlo, Consolas, monospace;
   /* The Settings dialog's font goes in front of the bundled ones (settings/preferences.ts). */
@@ -235,6 +285,7 @@
   --fs-xl: 17px;
   --fs-2xl: 20px;
   --type-display: 650 20px/1.3 var(--font-ui);
+  --type-hero: 700 28px/1.2 var(--font-ui);
   --type-title: 650 17px/1.3 var(--font-ui);
   --type-heading: 600 15px/1.35 var(--font-ui);
   --type-body: 400 13px/1.45 var(--font-ui);
@@ -251,20 +302,64 @@
   --sp-24: 24px;
   --sp-32: 32px;
   --sp-44: 44px;
+  /* What the pane's own input line takes at the stage's foot, which the
+     terminal draws and the page cannot measure: a toast clears it. */
+  --stage-foot: calc(var(--sp-44) + var(--sp-32) + var(--sp-12));
+  --tile: 56px;
+  --tick: 48px;
   --r-xs: 4px;
   --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
+  --r-md: 10px;
+  --r-lg: 14px;
   --r-pill: 999px;
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.35);
   --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.45);
-  --rail-w: 288px;
-  --header-h: 47px;
+  /* What the person dragged the rail to, else 288; the folded rail below
+     ignores it, so a drag made wide does not survive a narrow window. */
+  --rail-w: var(--rail-set, 288px);
+  --rail-folded: 56px;
+  /* The folded rail's tile: an agent's initials, or a stage's icon. */
+  --rail-tile: 40px;
+  /* A board column never goes narrower; the window scrolls instead. */
+  --board-col-min: 232px;
+  /* The most an agent's views drawer, and the Code stage's folded side
+     columns, take of a narrow window. */
+  --drawer-max: 560px;
+  /* A views tab is cut short with an ellipsis here; three fit a 420px dock. */
+  --vtab-max: 200px;
+  /* What a side dock leaves of the window at least, so the pane is never
+     squeezed to nothing... */
+  --dock-floor: 240px;
+  /* ...and above 1200px, the window width past which a views dock may grow
+     beyond --dock-min-pane, which is about a hundred terminal columns. */
+  --dock-min-pane: 440px;
+  --dock-room: 800px;
+  /* The narrowest a stat card in the views panel gets before they stack. */
+  --vstat-min: 200px;
+  /* The glyph in the folded rail's footer buttons. */
+  --icon-glyph: 16px;
+  /* The attention strip's height, which a drawer starts below. */
+  --attn-h: 44px;
+  --code-tree-narrow: 240px;
+  --code-outline-narrow: 184px;
+  --header-h: 56px;
+  --strip-h: 40px;
+  --pane-head-h: 32px;
+  --tab-max: 220px;
+  --grip-w: var(--sp-4);
+  --grip-l: var(--sp-32);
+  --t-fast: 120ms;
   --control-h: 30px;
   --control-h-sm: 24px;
-  --icon-btn: 26px;
+  --icon-btn: 28px;
   --diff-gutter: 106px;
   --scrim: rgba(17, 17, 27, 0.62);
+  --bg-raised: color-mix(in srgb, var(--bg-surface) 55%, var(--fill));
+  --ring: var(--accent);
+  --ring-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 30%, transparent);
+  --glow: none;
+  --primary-bg: var(--accent);
+  --atmosphere: none;
 }
 
 /* The terminal's sixteen colours, beside the tokens rather than among
@@ -365,6 +460,25 @@
   --ansi-13: #ea76cb;
   --ansi-14: #179299;
   --ansi-15: #bcc0cc;
+}
+
+:root[data-theme='night'] {
+  --ansi-0: #272e52;
+  --ansi-1: #f27a86;
+  --ansi-2: #5fd4a8;
+  --ansi-3: #f2c46d;
+  --ansi-4: #8fb0ff;
+  --ansi-5: #c7a6ff;
+  --ansi-6: #6fd3e0;
+  --ansi-7: #c3cee0;
+  --ansi-8: #4a5577;
+  --ansi-9: #ff9aa5;
+  --ansi-10: #8fe3c4;
+  --ansi-11: #f7d796;
+  --ansi-12: #b0c8ff;
+  --ansi-13: #dcc6ff;
+  --ansi-14: #9be4ee;
+  --ansi-15: #e6edf8;
 }
 
 /* base */
@@ -480,6 +594,14 @@
   align-items: center;
   gap: var(--sp-8);
 }
+/* One field-label style across the form dialogs: sentence case, stacked
+   above its input. The uppercase tracked label stays for page chrome. */
+.dialog .label {
+  font: 500 var(--fs-md) / 1.4 var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fg);
+}
 .label-aside {
   text-transform: none;
   letter-spacing: 0;
@@ -491,12 +613,14 @@
   color: var(--fg-faint);
 }
 
-/* controls */
+/* controls: one button in four weights, one icon button, every state
+ * drawn. Hover tints, pressing deepens the tint, focus is the ring, and
+ * disabled keeps its label legible rather than fading the whole button. */
 .btn {
   flex: none;
   white-space: nowrap;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
   background: transparent;
   color: var(--fg);
   font: inherit;
@@ -508,16 +632,54 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-6);
+  transition:
+    background-color var(--t-fast),
+    border-color var(--t-fast),
+    filter var(--t-fast);
+}
+.btn:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+}
+.btn:active {
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
 }
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--primary-bg);
+  border-color: transparent;
   color: var(--fg-on-accent);
+  box-shadow: var(--glow);
+}
+.btn.primary:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    var(--glow),
+    0 0 0 3px color-mix(in srgb, var(--ring) 22%, transparent);
+}
+.btn.primary:active {
+  filter: brightness(0.94);
 }
 .btn.danger {
   background: var(--danger);
   border-color: var(--danger);
   color: var(--fg-on-accent);
+}
+.btn.danger:hover {
+  filter: brightness(1.08);
+}
+.btn[disabled] .kbd {
+  color: var(--fg-faint);
+  border-color: var(--line);
+  background: transparent;
+}
+.btn[disabled],
+.btn[disabled]:hover {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--fg-faint);
+  box-shadow: none;
+  filter: none;
+  cursor: default;
 }
 .btn.sm {
   height: var(--control-h-sm);
@@ -536,9 +698,23 @@
   justify-content: center;
   cursor: pointer;
   padding: 0;
+  transition:
+    background-color var(--t-fast),
+    color var(--t-fast);
+}
+.icon:hover {
+  background: var(--fill);
+  color: var(--fg);
+}
+.icon:active {
+  background: color-mix(in srgb, var(--fill) 70%, var(--fg) 12%);
 }
 .icon.hot {
   background: var(--fill);
+  color: var(--accent);
+}
+.icon.hot:hover {
+  background: color-mix(in srgb, var(--fill) 70%, var(--fg) 10%);
   color: var(--accent);
 }
 .field {
@@ -582,6 +758,10 @@
   cursor: pointer;
   font-family: inherit;
 }
+.track:hover {
+  background: var(--fill);
+  color: var(--fg);
+}
 .track b {
   color: var(--ref);
   font-weight: 600;
@@ -611,6 +791,10 @@
   align-items: center;
   gap: var(--sp-4);
 }
+.chipf:hover:not(.on) {
+  background: var(--fill);
+  color: var(--fg);
+}
 .chipf.on {
   background: var(--fill);
   color: var(--fg);
@@ -636,9 +820,38 @@
   white-space: nowrap;
   cursor: pointer;
 }
+/* Raised with an edge, not a tint: a --fill on the track's own fill vanishes
+   in a light theme. */
 .segb.on {
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--fg);
+}
+.segb.on:not(:disabled):hover {
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.segb:not(.on):not(:disabled):hover {
   background: var(--fill);
   color: var(--fg);
+}
+.segb:not(:disabled):active {
+  background: var(--bg-selected);
+  color: var(--fg);
+}
+.seg-label {
+  color: var(--fg-faint);
+  font: var(--type-small);
+}
+.chip-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: var(--icon-btn);
+  padding: 0 var(--sp-8);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  color: var(--ref);
+  font-size: var(--fs-sm);
 }
 .check {
   display: flex;
@@ -648,6 +861,23 @@
 .check input {
   margin: 3px 0 0;
   accent-color: var(--accent);
+}
+/* The box is 13px; the label around it is what is pressed, and is 24px. */
+.crit .check {
+  flex: 1;
+  align-items: center;
+  min-height: 28px;
+  cursor: pointer;
+}
+.crit .check input {
+  margin: 0;
+}
+.crit .icon {
+  opacity: 0;
+}
+.crit:hover .icon,
+.crit .icon:focus-visible {
+  opacity: 1;
 }
 .pbar {
   width: 56px;
@@ -666,9 +896,15 @@
 .dot {
   width: 8px;
   height: 8px;
+  flex: none;
+  box-sizing: border-box;
   border-radius: 50%;
   background: var(--ok);
   display: inline-block;
+}
+.dot.hollow {
+  background: transparent;
+  border: 1.5px solid var(--fg-faint);
 }
 .chg {
   width: 6px;
@@ -729,13 +965,14 @@
 .mi:focus-visible,
 .mi:not([disabled]):hover {
   background: var(--fill);
-  outline: none;
+}
+.mi:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 .mlabel {
-  font: var(--type-label);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
+  font: 600 var(--fs-sm) / 1.4 var(--font-ui);
+  color: var(--fg-muted);
   padding: var(--sp-6) var(--sp-8) var(--sp-2);
 }
 .msep {
@@ -753,15 +990,23 @@
   color: var(--accent);
 }
 .waiting,
-.needs-review,
-.failed {
+.needs-review {
   color: var(--attention);
+}
+.failed {
+  color: var(--danger);
 }
 .idle,
 .done,
 .exited {
   color: var(--fg-faint);
   font-weight: 400;
+}
+/* A rail row's title is text to read; faint fails 4.5:1 on Latte's chrome. */
+.pane.idle,
+.pane.done,
+.pane.exited {
+  color: var(--fg-muted);
 }
 
 /* rail */
@@ -773,7 +1018,9 @@
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* Clipped, but for the sash, which reaches past the edge for a grab zone. */
+  overflow: clip;
+  overflow-clip-margin: var(--sp-12);
 }
 .brand {
   flex: none;
@@ -785,10 +1032,6 @@
   padding: 0 var(--sp-16);
   border-bottom: 1px solid var(--line);
 }
-.wordmark {
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
 .projbtn {
   display: flex;
   align-items: center;
@@ -797,13 +1040,31 @@
   box-sizing: border-box;
   border: 0;
   background: transparent;
-  color: var(--fg-muted);
-  font: var(--type-label);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: var(--sp-12) var(--sp-16) var(--sp-6);
+  color: var(--fg);
+  font: 600 var(--fs-md) / 1.3 var(--font-ui);
+  height: var(--control-h);
+  padding: 0 var(--sp-6);
+  border-radius: var(--r-sm);
   cursor: pointer;
   text-align: left;
+}
+.projbtn:hover {
+  background: var(--fill);
+}
+/* Open is its own state, so pointing at the button while its menu is up
+   still shows a hover. */
+.projbtn[aria-expanded='true'] {
+  background: var(--bg-selected);
+}
+.projbtn[aria-expanded='true']:hover {
+  background: color-mix(in srgb, var(--bg-selected), var(--fill));
+}
+.projbtn:active {
+  background: color-mix(in srgb, var(--fill), var(--fg) 8%);
+}
+.projbtn svg {
+  flex: none;
+  color: var(--fg-faint);
 }
 .badge {
   margin-left: auto;
@@ -813,7 +1074,8 @@
   text-transform: none;
   padding: 1px var(--sp-8);
   border-radius: var(--r-pill);
-  background: var(--fill);
+  background: color-mix(in srgb, var(--attention) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
   color: var(--attention);
 }
 /* The rail as the sidebar's tree: a quiet heading per repository, a
@@ -850,6 +1112,7 @@
 }
 .repobtn:hover {
   color: var(--fg);
+  background: var(--fill);
 }
 .repo.sel .repobtn {
   color: var(--fg);
@@ -894,6 +1157,7 @@
 }
 .co:hover {
   color: var(--fg-muted);
+  background: var(--fill);
 }
 .co .name {
   font-family: var(--font-mono);
@@ -903,10 +1167,11 @@
    chevron, where it read as a sibling of it. */
 .cofold {
   position: absolute;
-  left: var(--sp-16);
+  left: var(--sp-12);
   top: 0;
   bottom: 0;
-  width: var(--sp-16);
+  width: var(--sp-24);
+  border-radius: var(--r-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -918,6 +1183,7 @@
 }
 .cofold:hover {
   color: var(--fg);
+  background: var(--fill);
 }
 .cofolded {
   margin-left: auto;
@@ -997,9 +1263,16 @@
 .pane.sh {
   color: var(--fg-muted);
 }
-.pane.on {
+.pane:active {
+  background: color-mix(in srgb, var(--fill), var(--fg) 8%);
+}
+/* Selected is a lit edge on the selection fill, hover only a tint, so the
+   two never read as one with the pointer elsewhere. */
+.pane.on,
+.pane.on:hover {
   background: var(--bg-selected);
   color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 .sdot {
   width: 9px;
@@ -1015,10 +1288,13 @@
   animation: spin 1s linear infinite;
 }
 .sdot.waiting,
-.sdot.needs-review,
-.sdot.failed {
+.sdot.needs-review {
   border-color: var(--attention);
   background: var(--attention);
+}
+.sdot.failed {
+  border-color: var(--danger);
+  background: var(--danger);
 }
 .sdot.exited,
 .sdot.done {
@@ -1026,6 +1302,20 @@
   height: 1.5px;
   background: var(--fg-faint);
   border-radius: 1px;
+}
+.sdot.done {
+  background: var(--ok);
+}
+/* Off the Workspace the pane on screen is not the selection, the stage's
+   own nav item is: it keeps a lit edge and its text, not the box. */
+.rail-list.offstage .pane.on,
+.rail-list.offstage .pane.on:hover {
+  background: transparent;
+  box-shadow: inset 2px 0 0 var(--accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.rail-list.offstage .pane.on:hover {
+  background: var(--fill);
 }
 /* The rail's picked row, which holds the keys: ringed, so it reads apart
    from the pane on screen. */
@@ -1105,8 +1395,14 @@
   background: transparent;
   color: var(--fg-muted);
   font: inherit;
-  padding: 0;
+  min-height: 24px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
   cursor: pointer;
+}
+.crumb:hover {
+  color: var(--fg);
+  background: var(--fill);
 }
 .term {
   flex: 1;
@@ -1170,23 +1466,8 @@
 }
 .lens {
   display: flex;
-  gap: var(--sp-20);
-}
-.lt {
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-weight: 600;
-  padding: var(--sp-8) 0;
-  cursor: pointer;
-  display: inline-flex;
-  gap: var(--sp-6);
-  align-items: center;
-}
-.lt.on {
-  color: var(--fg);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-8);
 }
 .orow,
 .srow,
@@ -1232,10 +1513,8 @@
   cursor: pointer;
 }
 .orow.on,
-.srow.on,
 .prow.on,
 .frow.on,
-.irow.on,
 .srow2.on {
   background: var(--bg-selected);
   box-shadow: inset 3px 0 0 var(--accent);
@@ -1260,14 +1539,21 @@
   gap: var(--sp-8);
   width: 100%;
   box-sizing: border-box;
-  border: 0;
   border-radius: var(--r-md);
   background: transparent;
   color: var(--fg);
   font: inherit;
   text-align: left;
   padding: var(--sp-6) var(--sp-12);
+  border: 1px solid transparent;
   cursor: pointer;
+}
+.irow:hover {
+  background: var(--fill);
+}
+.irow.on {
+  background: var(--bg-selected);
+  border-color: var(--ring);
 }
 .irow .sub2 {
   grid-column: 2 / 6;
@@ -1298,37 +1584,65 @@
 .khead {
   display: flex;
   align-items: center;
-  height: 24px;
+  height: 28px;
   box-sizing: border-box;
   white-space: nowrap;
   gap: var(--sp-8);
-  font: var(--type-label);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: var(--sp-2) var(--sp-4) var(--sp-4);
+  font: var(--type-heading);
+  padding: 0 var(--sp-8);
 }
-.khead .meta {
-  text-transform: none;
-  letter-spacing: 0;
+.kdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  flex: none;
+  background: var(--fg-faint);
 }
+.kdot.queued {
+  background: transparent;
+  border: 1.5px solid var(--fg-faint);
+}
+.kdot.active {
+  background: var(--accent);
+}
+.kdot.done {
+  background: var(--ok);
+}
+.kcount {
+  font: var(--type-small);
+  color: var(--fg-muted);
+  background: var(--fill);
+  border-radius: var(--r-pill);
+  padding: 0 var(--sp-6);
+  min-width: 18px;
+  text-align: center;
+  box-sizing: border-box;
+}
+/* One card for the board and its peeks: raised, a hairline, lit when it is
+   the one being read. */
 .kcard {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-6);
+  gap: var(--sp-8);
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   color: var(--fg);
   font: inherit;
   text-align: left;
-  padding: var(--sp-8) var(--sp-12);
+  padding: var(--sp-12);
   cursor: grab;
 }
+.kcard:hover {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--bg-raised) 85%, var(--fg) 6%);
+}
 .kcard.on {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  border-color: var(--ring);
+  box-shadow: var(--glow);
 }
 .kcard.dragging {
   box-shadow: var(--shadow-pop);
@@ -1352,11 +1666,95 @@
   font-weight: 600;
   line-height: 1.35;
 }
+.kcount-text {
+  white-space: nowrap;
+}
+.ktag {
+  font: var(--type-small);
+  color: var(--fg-muted);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  padding: 0 var(--sp-8);
+  white-space: nowrap;
+}
+.khold {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  background: var(--fill);
+  border-radius: var(--r-sm);
+  padding: var(--sp-6) var(--sp-8);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+/* Two bars: the one pause glyph, drawn so it takes the text colour. */
+.pause {
+  flex: none;
+  width: 8px;
+  height: 10px;
+  border-left: 2.5px solid currentColor;
+  border-right: 2.5px solid currentColor;
+  box-sizing: border-box;
+}
 .kfoot {
+  display: flex;
+  gap: var(--sp-4);
   font-size: var(--fs-xs);
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   border-top: 1px solid var(--line);
-  padding-top: var(--sp-6);
+  padding-top: var(--sp-8);
+}
+/* One line: the account is cut with an ellipsis, the time never wraps. */
+.kfoot-what {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kfoot-when {
+  flex: none;
+  white-space: nowrap;
+}
+/* A column with nothing in it says so, and what lands there. */
+.kempty {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  padding: var(--sp-24) var(--sp-12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+  text-align: center;
+  font: var(--type-small);
+  color: var(--fg-faint);
+}
+.kempty .empty-icon {
+  color: var(--ok);
+  margin-bottom: var(--sp-8);
+}
+.kempty-title {
+  font: var(--type-body);
+  color: var(--fg);
+}
+.kfold {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  width: 100%;
+  height: 36px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg);
+  font: var(--type-heading);
+  padding: 0 var(--sp-8);
+  cursor: pointer;
+}
+.kfold:hover {
+  background: var(--fill);
+}
+.kcol.folded {
+  padding: var(--sp-2);
 }
 .dropzone {
   border-radius: var(--r-sm);
@@ -1386,12 +1784,18 @@
   right: 0;
   bottom: 0;
   background: var(--scrim);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
 }
+/* The one shell every dialog is cut from, centred on the window over one
+   scrim. It has three widths: `.confirm-dialog` (440, one question), the
+   default form (560) and `.sheet-dialog` (a screen's worth). */
 .dialog {
   box-sizing: border-box;
+  width: min(560px, 94vw);
+  max-height: 90vh;
   background: var(--bg-surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
@@ -1400,20 +1804,83 @@
   flex-direction: column;
   overflow: hidden;
 }
+.dialog.confirm-dialog {
+  width: min(440px, 94vw);
+}
+.dialog.sheet-dialog {
+  width: min(1120px, 94vw);
+  height: min(760px, 90vh);
+}
 .dhead {
   display: flex;
   align-items: flex-start;
   gap: var(--sp-12);
-  padding: var(--sp-16) var(--sp-20) var(--sp-12);
-  border-bottom: 1px solid var(--line);
+  padding: var(--sp-24) var(--sp-24) var(--sp-16);
 }
 .dfoot {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  padding: var(--sp-12) var(--sp-20);
+  padding: var(--sp-16) var(--sp-24);
   border-top: 1px solid var(--line);
-  background: var(--bg-chrome);
+}
+/* Why the primary is off, or what a click will not do: the footer's left. */
+.dfoot > .dwhy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  min-width: 0;
+  color: var(--fg-muted);
+  font: var(--type-small);
+}
+/* The dialog's body in the interface font and on its surface; the diff's
+   `.dbody` below is the code, and sets its own. */
+.dialog .dbody.prose {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--sp-24) var(--sp-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-12);
+  background: transparent;
+  font: var(--type-body);
+  color: var(--fg-muted);
+}
+/* A scrolling body shows it has more: a shade at the edge that still has
+   content beyond it, drawn behind the text from the surface colour. */
+.dialog .dbody.prose,
+.ap-body,
+.tracker-body,
+.sheet-body {
+  background:
+    linear-gradient(var(--bg-surface) 30%, transparent) top / 100% 24px no-repeat local,
+    linear-gradient(transparent, var(--bg-surface) 70%) bottom / 100% 24px no-repeat local,
+    radial-gradient(
+        farthest-side at 50% 0,
+        color-mix(in srgb, var(--fg) 14%, transparent),
+        transparent
+      )
+      top / 100% 8px no-repeat scroll,
+    radial-gradient(
+        farthest-side at 50% 100%,
+        color-mix(in srgb, var(--fg) 14%, transparent),
+        transparent
+      )
+      bottom / 100% 8px no-repeat scroll;
+}
+/* The ✕ centres on the title's first line, not on a head that grows. */
+.dhead > .icon {
+  flex: none;
+  margin-top: calc(var(--sp-2) * -1);
+}
+/* A sheet's head is a toolbar, one row tall like a stage's. */
+.sheet-dialog > .dhead {
+  align-items: center;
+  min-height: calc(var(--sp-44) + var(--sp-12));
+  box-sizing: border-box;
+  padding: var(--sp-8) var(--sp-24);
+  border-bottom: 1px solid var(--line);
 }
 .code {
   font-family: var(--font-mono);
@@ -1558,10 +2025,22 @@ body {
 button {
   font: inherit;
 }
+/* One focus ring for everything the keyboard can reach. Inset, so a row
+ * in a list whose overflow is hidden still shows it. */
 button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible,
 .field:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+.field:focus {
+  border-color: var(--ring);
+  box-shadow: var(--ring-shadow);
+  outline: none;
+}
+.field:hover:not(:focus) {
+  border-color: var(--fg-faint);
 }
 [hidden] {
   display: none !important;
@@ -1588,12 +2067,25 @@ button:focus-visible,
   overflow-x: hidden;
   overflow-y: auto;
   padding-bottom: var(--sp-12);
+  /* The footer has its own border, so a row it cuts reads as "more below"
+     only when it fades. */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-24)), transparent);
+  /* A row scrolled into view clears the fade, not just the edge under it. */
+  scroll-padding-block: var(--sp-24);
 }
 .rail-list.held {
   opacity: 0.55;
 }
 .pane .st {
   flex: none;
+}
+/* A row's trailing group: its views and its status pill, which the close
+   button takes the place of while the row is pointed at. */
+.pane-end {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
 }
 /* The close button sits over the status word, shown while the row is
    pointed at or holds the keyboard, so the rail stays a list of panes. */
@@ -1611,19 +2103,22 @@ button:focus-visible,
 .pane-row:focus-within .close {
   visibility: visible;
 }
-.pane-row:hover .st,
-.pane-row:focus-within .st,
-.pane-row:hover .pane-views,
-.pane-row:focus-within .pane-views {
+.pane-row:hover .pane-end,
+.pane-row:focus-within .pane-end {
   visibility: hidden;
 }
 .close:hover {
   color: var(--fg);
   background: var(--fill);
 }
-.bar .icon {
-  width: 20px;
-  height: 20px;
+.bar .icon.wide {
+  width: auto;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-8);
+}
+.icount {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 .skeleton {
   padding-top: var(--sp-8);
@@ -1633,17 +2128,17 @@ button:focus-visible,
   color: var(--fg-faint);
 }
 
-/* The project switcher opens under the heading. */
+/* The project switcher is the project's name in the brand row, and its menu
+   drops from the rail's top edge (the rail is the positioned ancestor) over
+   the nav, never over the tree it changes. */
 .projmenu {
-  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 .projmenu .menu {
   left: var(--sp-8);
   right: auto;
-  top: 0;
-}
-.projbtn .label-aside {
-  text-transform: none;
+  top: var(--header-h);
 }
 
 /* The sidebar runs to the window's top edge: its brand row is the title
@@ -1771,22 +2266,142 @@ body.mac .rail .brand {
   padding: 0 var(--sp-16) 0 var(--sp-20);
   border-bottom: 0;
 }
-.head-line {
+/* The breadcrumb over the title: a stage is named once, here. */
+.head-stack {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-12);
-  white-space: nowrap;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-2);
 }
-.head-line .crumbs {
-  gap: var(--sp-6);
+.head-stack .crumbs {
+  gap: var(--sp-4);
+  font-size: var(--fs-xs);
+  line-height: var(--sp-16);
+  min-height: var(--sp-16);
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.head-stack .crumbs > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.head-stack .crumbs .mono {
+  font-size: var(--fs-xs);
+}
+.head-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  white-space: nowrap;
 }
 .head-name {
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-6);
+  align-items: center;
+  gap: var(--sp-8);
   min-width: 0;
+}
+/* The one status pill: a dot and a word, tinted by the status it names.
+   The strip, the rail, the board and the checkouts all use it. */
+.spill {
+  --tone: var(--fg-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  flex: none;
+  min-height: var(--sp-20);
+  box-sizing: border-box;
+  padding: 0 var(--sp-8);
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  color: var(--tone);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+.spill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.spill.working {
+  --tone: var(--accent);
+}
+.spill.waiting,
+.spill.needs-review {
+  --tone: var(--attention);
+}
+.spill.failed {
+  --tone: var(--danger);
+}
+.spill.done {
+  --tone: var(--ok);
+}
+.spill.info {
+  --tone: var(--info);
+}
+.spill.idle::before,
+.spill.exited::before {
+  background: transparent;
+  border: 1.5px solid var(--tone);
+}
+/* Faint on faint fails 4.5:1 at 11px, so an ended or idle word is the
+   muted one, its dot and edge still faint. */
+.spill.idle,
+.spill.exited {
+  color: var(--fg-muted);
+}
+/* A state that blocks on a person is louder than one that does not. */
+.spill.waiting,
+.spill.needs-review,
+.spill.failed {
+  background: color-mix(in srgb, var(--tone) 22%, transparent);
+  border-color: color-mix(in srgb, var(--tone) 60%, transparent);
+}
+/* Debugging detail, so faint, and gone when the strip is short of room. */
+.head-size {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+}
+@media (max-width: 1100px) {
+  .head-size {
+    display: none;
+  }
+}
+/* The strip's actions: the views launcher, the overflow, and a hairline
+   before the window's own buttons. */
+.strip-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding-right: var(--sp-8);
+}
+/* The stage's own tools land in this span; without a flex box they touch. */
+#head-more {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+}
+.strip-tools::after {
+  content: '';
+  order: 3;
+  width: 1px;
+  height: var(--sp-20);
+  background: var(--line);
+  margin-left: var(--sp-4);
 }
 .winbtns {
   flex: none;
@@ -1830,6 +2445,17 @@ body.maximized .winbtn .restore {
   position: relative;
   background: var(--bg-sunken);
 }
+/* The Workspace insets its terminal in a card so its edges agree with the
+   attention strip above it. */
+.stage-body:has(> .split:not([hidden])) {
+  padding: 0 var(--sp-16) var(--sp-16);
+}
+.stage-body > .split:not([hidden]) {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
 .stage-body.held {
   opacity: 0.55;
 }
@@ -1856,22 +2482,41 @@ body.maximized .winbtn .restore {
 .gcell > .terminal {
   min-height: 0;
 }
+/* The workspace's panes sit on the stage as cards, not edge to edge: the
+   gutter around them is the stage showing through. */
+/* Cells abut at their seam, so each keeps half the 8px gap as a transparent
+   border: the outside margin is 16 less that half, and two cards sit 8 apart
+   on the same scale as the gutter around them. The hairline is an inset
+   shadow because a border would be the transparent one. */
+#split {
+  margin: calc(var(--sp-16) - var(--sp-4));
+}
+#split > .gcell {
+  background: var(--bg-surface);
+  background-clip: padding-box;
+  border: var(--sp-4) solid transparent;
+  border-radius: calc(var(--r-md) + var(--sp-4));
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow: hidden;
+}
 .gcell.keyed > .thead {
+  background: var(--bg-selected);
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+.gcell.keyed > .thead .ttl {
+  color: var(--fg);
 }
 /* One height for every pane's header, close button or not: the terminal
    under it gets what is left, so a header an icon taller sizes its pane a
    row shorter than its neighbour's. */
 .thead.gripper {
-  height: var(--control-h-sm);
-  box-sizing: border-box;
   cursor: grab;
   gap: var(--sp-6);
-  padding-left: var(--sp-8);
+  padding-left: var(--sp-12);
   user-select: none;
 }
 .thead.gripper .x-room {
-  width: 20px;
+  width: var(--control-h-sm);
   flex: none;
 }
 .thead.gripper .ttl {
@@ -1880,38 +2525,45 @@ body.maximized .winbtn .restore {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--fg-muted);
 }
 .gutter {
   position: absolute;
   z-index: 2;
-  background: var(--line);
 }
+/* The gutter is the 8px gap between two cards; its target is 24px about it
+   and its grip a line centred in that, lit on hover. */
 .gutter.vertical {
-  width: 1px;
-  margin-left: -0.5px;
+  width: var(--sp-24);
+  margin-left: calc(var(--sp-12) * -1);
   cursor: col-resize;
 }
 .gutter.horizontal {
   left: 0;
   right: 0;
-  height: 1px;
-  margin-top: -0.5px;
+  height: var(--sp-24);
+  margin-top: calc(var(--sp-12) * -1);
   cursor: row-resize;
 }
-/* A wider target than the line, so the seam is easy to take. */
-.gutter::before {
+.gutter::after {
   content: '';
   position: absolute;
-}
-.gutter.vertical::before {
-  inset: 0 -4px;
-}
-.gutter.horizontal::before {
-  inset: -4px 0;
-}
-.gutter:hover,
-.gutter.held {
+  border-radius: var(--r-pill);
   background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+.gutter.vertical::after {
+  inset: var(--sp-8) calc(50% - 1px);
+}
+.gutter.horizontal::after {
+  inset: calc(50% - 1px) var(--sp-8);
+}
+.gutter:hover::after,
+.gutter.held::after {
+  opacity: 1;
 }
 .drop-zone {
   position: absolute;
@@ -1955,13 +2607,6 @@ body.moving-pane * {
   resize: none;
   overflow: hidden;
 }
-.head .glyph {
-  width: auto;
-  font-size: var(--fs-md);
-}
-.head .meta.mono {
-  font-family: var(--font-mono);
-}
 .head-title {
   min-width: 0;
   overflow: hidden;
@@ -1974,12 +2619,20 @@ body.moving-pane * {
   display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--atmosphere);
+  background-color: var(--see-surface);
+}
+/* Where there is work to go back to, the block sits near the top, as the
+   mockup does, not in a dead band. */
+.empty.no-pane {
+  align-items: flex-start;
+  padding-top: var(--sp-44);
 }
 .empty-body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--sp-12);
+  gap: var(--sp-16);
   max-width: 520px;
   text-align: center;
   padding: var(--sp-24);
@@ -1987,11 +2640,107 @@ body.moving-pane * {
 .empty-body.no-projects {
   max-width: 460px;
 }
+.empty-title {
+  font: var(--type-hero);
+}
 .empty-body.no-pane {
-  max-width: 440px;
+  max-width: 760px;
+}
+.rail-wait {
+  padding: var(--sp-16);
+  font: var(--type-small);
+  color: var(--fg-faint);
 }
 .empty-icon {
   color: var(--fg-disabled);
+}
+.empty-icon.tile {
+  width: var(--tile);
+  height: var(--tile);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  color: var(--accent);
+  box-shadow: var(--glow);
+}
+.empty-icon.tile svg {
+  width: 24px;
+  height: 24px;
+  /* The glyph's own empty-icon class would otherwise grey it. */
+  color: inherit;
+}
+.empty-where {
+  font: var(--type-small);
+}
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-12);
+}
+.running {
+  align-self: stretch;
+  margin-top: var(--sp-32);
+  text-align: left;
+}
+.running-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  margin-bottom: var(--sp-12);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.running-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.running-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--vstat-min), 1fr));
+  gap: var(--sp-12);
+}
+.rcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  min-width: 0;
+  padding: var(--sp-12);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rcard:hover {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--bg-raised) 88%, var(--fg) 6%);
+}
+.rcard:active {
+  background: color-mix(in srgb, var(--bg-raised) 80%, var(--fg) 10%);
+}
+.rcard-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-8);
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+.rcard-title {
+  font-weight: 600;
+}
+.rcard-note {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
 }
 .spinner {
   animation: spin 1s linear infinite;
@@ -2002,37 +2751,77 @@ body.moving-pane * {
   }
 }
 
-/* "argusd was stopped" sits over the whole window. */
+/* "argusd was stopped" blocks the whole window, so it has a scrim and the
+   empty moment's atmosphere like every other thing that stops work. */
 .overlay {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--atmosphere), var(--scrim);
+  backdrop-filter: blur(2px);
 }
-.overlay .card {
-  pointer-events: auto;
+.overlay[hidden] {
+  display: none;
+}
+.overlay .stopped-card {
+  position: static;
+  inset: auto;
+  margin: 0;
+  width: min(440px, 94vw);
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-12);
+  padding: var(--sp-32) var(--sp-24) var(--sp-24);
+}
+.stopped-icon {
+  color: var(--attention);
+}
+.stopped-card .btn {
+  margin-top: var(--sp-8);
 }
 
-/* A notice passes along the bottom of the stage, on whichever is showing. */
+/* A toast sits bottom-centre of the stage, above the pane's input line, with
+   an icon and a dismiss. */
 .notice {
   position: absolute;
   left: calc(50% + var(--rail-w) / 2);
-  bottom: var(--sp-24);
+  bottom: calc(var(--stage-foot) + var(--sp-24));
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
   max-width: 70%;
   box-sizing: border-box;
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-pop);
-  padding: var(--sp-8) var(--sp-12);
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-12);
   color: var(--fg);
 }
-
-@media (max-width: 900px) {
-  :root {
-    --rail-w: 220px;
-  }
+.notice[hidden] {
+  display: none;
+}
+.notice > svg {
+  flex: none;
+  color: var(--attention);
+}
+/* --fill can sit close to the toast's own --bg-raised, so the hover tints
+   from the text colour, which every theme keeps apart from it. */
+#notice .icon:hover {
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  color: var(--fg);
+}
+#notice .icon:active {
+  background: color-mix(in srgb, var(--fg) 20%, transparent);
+}
+.notice-text {
+  min-width: 0;
+  padding: var(--sp-4) 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2068,7 +2857,7 @@ body.moving-pane * {
   margin-top: -60px;
 }
 .compose-title {
-  font: var(--type-display);
+  font: var(--type-hero);
   text-align: center;
 }
 .composer {
@@ -2077,11 +2866,15 @@ body.moving-pane * {
   gap: var(--sp-12);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
-  background: var(--bg-chrome);
+  background: var(--bg-raised);
   padding: var(--sp-12);
 }
+.composer:hover:not(:focus-within) {
+  border-color: color-mix(in srgb, var(--ring) 50%, var(--line-strong));
+}
 .composer:focus-within {
-  border-color: var(--accent);
+  border-color: var(--ring);
+  box-shadow: var(--glow);
 }
 .composer textarea {
   resize: none;
@@ -2104,19 +2897,33 @@ body.moving-pane * {
   gap: var(--sp-6);
   flex-wrap: wrap;
 }
+.nowrap {
+  white-space: nowrap;
+  flex: none;
+}
 .pick {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-6);
   height: var(--control-h);
   box-sizing: border-box;
-  padding: 0 var(--sp-4) 0 var(--sp-8);
+  padding: 0 var(--sp-8);
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-pill);
-  color: var(--fg-muted);
+  border-radius: var(--r-sm);
+  background: var(--bg-chrome);
+  color: var(--fg);
+}
+.pick:hover:not(:focus-within) {
+  border-color: var(--fg-faint);
+}
+.pick:hover {
+  background: var(--fill);
+  color: var(--fg);
 }
 .pick:focus-within {
-  border-color: var(--accent);
+  border-color: var(--ring);
+}
+.pick:has(select:focus-visible) {
+  box-shadow: var(--ring-shadow);
 }
 .pick-glyph {
   display: inline-flex;
@@ -2130,7 +2937,6 @@ body.moving-pane * {
   color: var(--fg);
   font: inherit;
   font-size: var(--fs-sm);
-  font-weight: 600;
   cursor: pointer;
 }
 /* A select's list drawn as a .menu rather than by the system: WebView2's
@@ -2140,8 +2946,25 @@ select,
 ::picker(select) {
   appearance: base-select;
 }
+/* The chevron icon('down') draws, not the system's ▼, so a select and a
+   menu button open with one glyph. */
+select.field {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  max-width: 220px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+}
 select::picker-icon {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background: currentColor;
   color: var(--fg-faint);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 5.5L7 9l3.5-3.5'/%3E%3C/svg%3E")
+    center / contain no-repeat;
   transition: rotate 0.15s;
 }
 select:open::picker-icon {
@@ -2177,23 +3000,39 @@ select option:checked {
 select option::checkmark {
   color: var(--accent);
 }
-.kbd.on-accent {
+.btn.primary:not([disabled]) .kbd,
+.btn:not([disabled]) .kbd.on-accent {
   color: var(--fg-on-accent);
   border-color: var(--fg-on-accent);
 }
-.btn[disabled] {
-  opacity: 0.5;
-  cursor: default;
-}
-.compose-note {
-  padding: 0 var(--sp-4);
-}
-.compose-where {
+.compose-foot {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-8) var(--sp-16);
+  padding: 0 var(--sp-4);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.compose-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+/* What it starts in, as the line above the question, ruled either side. */
+.compose-where {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap: var(--sp-16);
-  text-align: center;
+  gap: var(--sp-12);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.compose-rule {
+  width: var(--tick);
+  height: 1px;
+  background: var(--line-strong);
 }
 .compose-keys {
   display: inline-flex;
@@ -2223,6 +3062,10 @@ select option::checkmark {
   overflow-y: auto;
 }
 .index-list .irow.label {
+  font: var(--type-label);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
   cursor: default;
   padding-top: 0;
   padding-bottom: var(--sp-4);
@@ -2230,10 +3073,30 @@ select option::checkmark {
 .group-label {
   padding: var(--sp-12) var(--sp-12) var(--sp-2);
 }
-.index-foot {
-  padding: var(--sp-8) var(--sp-12) 0;
+.kbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-16);
+  flex: none;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 0 var(--sp-20);
   border-top: 1px solid var(--line);
-  margin-top: auto;
+  font: var(--type-small);
+  color: var(--fg-faint);
+}
+.kbar-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  white-space: nowrap;
+}
+/* A mono value that gives way with an ellipsis rather than wrapping its row. */
+.cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .peek {
   width: clamp(280px, 34%, 420px);
@@ -2267,14 +3130,65 @@ select option::checkmark {
   width: 0;
 }
 .pbar.wide {
-  width: 160px;
+  width: 96px;
+  flex: none;
+}
+.fhead .head-row {
+  /* The title gives way with an ellipsis before the lenses drop a line. */
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.fhead .chips {
+  flex: none;
+  flex-wrap: nowrap;
+  margin-left: 0;
+}
+.fhead .seg {
+  flex: none;
+}
+/* Under ~1200px the header's chips and buttons drop to a line of their own
+   rather than running off the edge, where nothing would say they were cut. */
+@media (max-width: 1200px) {
+  .brief-strip {
+    flex-wrap: wrap;
+    row-gap: var(--sp-4);
+  }
+  .brief-text {
+    flex-basis: 12ch;
+  }
+  .fhead .head-row {
+    flex-wrap: wrap;
+    row-gap: var(--sp-4);
+  }
+  .fhead .chips {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    row-gap: var(--sp-4);
+    min-width: 0;
+  }
+}
+.fhead .head-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+}
+.fhead .head-progress .pbar.wide {
+  width: 56px;
+}
+.fhead .head-row .type-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fhead .head-row .meta,
+.fhead .head-row .spill {
+  white-space: nowrap;
+  flex: none;
 }
 .head-row {
   align-items: center;
   gap: var(--sp-12);
-}
-.fhead .head-row:last-child {
-  padding-bottom: var(--sp-12);
 }
 .prose {
   white-space: pre-wrap;
@@ -2304,6 +3218,7 @@ select option::checkmark {
   overflow-y: auto;
 }
 .note-box {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -2335,16 +3250,40 @@ select option::checkmark {
   color: var(--fg);
   font: var(--type-mono);
   padding: var(--sp-8) var(--sp-12) var(--sp-8) 0;
-  white-space: pre;
-  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+/* The hidden copy the gutter is measured against: the field's own box. */
+.note-mirror {
+  position: absolute;
+  visibility: hidden;
+  font: var(--type-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
 }
 .note-field::placeholder {
   color: var(--fg-faint);
 }
 .legend {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
-  gap: var(--sp-4) var(--sp-12);
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--sp-4) var(--sp-16);
+  padding: var(--sp-12) var(--sp-16);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.legend .mono {
+  color: var(--ref);
 }
 .nrow {
   display: grid;
@@ -2388,6 +3327,69 @@ select option::checkmark {
   background: var(--bg-selected);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+.wrow:hover:not(.on),
+.rrow:hover:not(.on),
+.steprow:hover:not(.on):not(.branch),
+.frow:hover:not(.on) {
+  background: var(--fill);
+}
+.legend-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-4) var(--sp-12);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.ktag.active {
+  color: var(--attention);
+  border-color: color-mix(in srgb, var(--attention) 40%, transparent);
+}
+/* A gain is a round plus and a cost a square minus, so the two differ in
+   shape and sign, not only in colour. */
+.conseq {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-8);
+}
+.cmark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  line-height: 1;
+}
+.cmark.gain {
+  border-radius: 50%;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+}
+.cmark.cost {
+  border-radius: var(--r-xs);
+  color: var(--attention);
+  background: color-mix(in srgb, var(--attention) 16%, transparent);
+}
+.btn.quiet {
+  align-self: flex-start;
+  border-color: transparent;
+  background: transparent;
+  color: var(--fg-muted);
+}
+.btn.quiet:hover {
+  background: var(--fill);
+  color: var(--fg);
+}
 .work-foot {
   margin-top: auto;
   padding: var(--sp-8) var(--sp-8) 0;
@@ -2405,23 +3407,76 @@ select option::checkmark {
   gap: var(--sp-16);
   overflow-y: auto;
 }
+.work-detail.pinned {
+  overflow: hidden;
+  padding-bottom: var(--sp-12);
+}
+.detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-16);
+}
+.work-detail.pinned > .detail-foot {
+  flex: none;
+}
+.agent-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-width: 0;
+}
+.agent-line .spill {
+  flex: none;
+}
+.idrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-height: 20px;
+}
+.waits {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  white-space: nowrap;
+}
+/* One footer for every lens's detail: the actions at the right, the
+   overflow last. */
+.detail-foot {
+  align-items: center;
+  gap: var(--sp-8);
+}
 .detail-title {
   margin-top: var(--sp-6);
 }
-.brief-row {
+.brief-strip {
   display: flex;
-  align-items: flex-start;
-  gap: var(--sp-12);
+  align-items: center;
+  gap: var(--sp-8);
+  padding-bottom: var(--sp-8);
+  font: var(--type-small);
 }
-.brief-row > :first-child {
-  flex: 1;
+.brief-label {
+  color: var(--fg-faint);
+  font-weight: 600;
 }
-/* The header never scrolls, so a long brief scrolls in itself rather than
-   push the lenses and the work under them off the window. */
-.brief-row > .prose {
-  max-height: var(--brief-h, min(30vh, 240px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
+.brief-strip > :not(.brief-text) {
+  flex: none;
+  white-space: nowrap;
+}
+.brief-text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.fhead .brief-edit {
+  padding-bottom: var(--sp-12);
 }
 .brief-edit .field.area {
   max-height: 45vh;
@@ -2442,12 +3497,9 @@ select option::checkmark {
   align-items: flex-start;
   gap: var(--sp-8);
 }
-.crit .check {
-  flex: 1;
-}
 .icon.sm {
-  width: 20px;
-  height: 20px;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
 }
 .option {
   display: flex;
@@ -2524,22 +3576,22 @@ select option::checkmark {
 .scrim {
   z-index: 4;
 }
-.hold-dialog {
-  width: 460px;
-}
-.hold-dialog .dbody {
-  padding: var(--sp-16) var(--sp-20);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-8);
-}
 
 .small-mono {
   font-size: var(--fs-sm);
 }
 .index-head {
-  padding-bottom: var(--sp-12);
+  padding: var(--sp-12) var(--sp-20);
+  border-bottom: 0;
 }
+.head-meta {
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Only the filter, and what narrows the list, stays in the stage; the
+   counts and the actions are in the strip. */
 .index-tools {
   align-items: center;
   gap: var(--sp-12);
@@ -2550,7 +3602,7 @@ select option::checkmark {
   container-type: inline-size;
 }
 .index-list .irow {
-  grid-template-columns: 40px minmax(120px, 1fr) 96px 92px 96px;
+  grid-template-columns: 40px minmax(120px, 1fr) 96px 92px minmax(96px, 150px);
 }
 .index-list .irow .sub2 {
   grid-column: 2 / 6;
@@ -2565,10 +3617,6 @@ select option::checkmark {
   .index-list .irow .sub2 {
     grid-column: 2 / 5;
   }
-}
-.btn[disabled] {
-  color: var(--fg-faint);
-  cursor: default;
 }
 .board .kcol {
   overflow-x: hidden;
@@ -2615,7 +3663,7 @@ body.filled .rail {
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   background: var(--bg-surface);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+  box-shadow: var(--shadow-pop);
   overflow: hidden;
   pointer-events: auto;
 }
@@ -2674,7 +3722,7 @@ body.float-moving * {
 }
 .dock-left,
 .dock-right {
-  max-width: calc(100% - 240px);
+  max-width: calc(100% - var(--dock-floor));
 }
 .dock-bottom {
   max-height: calc(100% - 120px);
@@ -2686,14 +3734,17 @@ body.float-moving * {
 .dock-right {
   border-left: 1px solid var(--line);
 }
-/* A dock's tabs, only while it holds more than one panel; each panel
-   heads itself. */
-.dock-tabs {
+/* ONE tab strip for the dock's panels, the console's tabs and an agent's
+   views: the same height, the same tab, the same selected state. A tab
+   switches what is shown; a segment (.seg) switches a mode. */
+.dock-tabs,
+.chead,
+.vpanel-tabs {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  height: 32px;
+  gap: var(--sp-4);
+  height: var(--strip-h);
   box-sizing: border-box;
   padding: 0 var(--sp-8);
   border-bottom: 1px solid var(--line);
@@ -2703,43 +3754,103 @@ body.float-moving * {
 .dock-tabs[hidden] {
   display: none;
 }
-.dock-tab {
+.dock-tab,
+.ctab,
+.vpanel-tab,
+.lt {
   flex: none;
   display: inline-flex;
   align-items: center;
-  max-width: 200px;
+  min-width: 0;
+  max-width: var(--tab-max);
+  height: var(--icon-btn);
+  box-sizing: border-box;
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
+  /* .lt is a <button>: without this the UA's ButtonFace shows as a grey block. */
+  background: transparent;
+  transition:
+    background-color var(--t-fast),
+    border-color var(--t-fast);
 }
-.dock-tab:hover {
+.dock-tab:hover,
+.ctab:hover,
+.vpanel-tab:hover,
+.lt:hover {
   background: var(--fill);
 }
-.dock-tab.on {
-  background: var(--bg-surface);
-  box-shadow: inset 0 -2px 0 var(--accent);
+.dock-tab.on,
+.ctab.on,
+.vpanel-tab.on,
+.lt.on {
+  background: var(--bg-selected);
+  border-color: var(--line-strong);
 }
-.dock-tab-pick {
+/* The views panel's tabs shrink and scroll in their own box, so the dock
+   and hide buttons after them are never pushed off the edge; the fade is
+   the cue that more lies beyond. */
+.tabs-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-24)), transparent);
+}
+.tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+.vpanel-tabs > :not(.tabs-scroll) {
+  flex: none;
+}
+/* The selected tab still answers the pointer: its edge lights. */
+.dock-tab.on:hover,
+.ctab.on:hover,
+.vpanel-tab.on:hover,
+.lt.on:hover {
+  border-color: var(--ring);
+}
+.dock-tab-pick,
+.ctab-pick,
+.vpanel-tab-pick,
+.lt {
   display: inline-flex;
   align-items: center;
+  gap: var(--sp-6);
   min-width: 0;
-  height: var(--control-h-sm);
-  padding: 0 var(--sp-8);
-  border: 0;
-  background: transparent;
+  padding: 0 var(--sp-4) 0 var(--sp-12);
   color: var(--fg-muted);
   font: inherit;
   font-size: var(--fs-sm);
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
 }
-.dock-tab:has(.x) .dock-tab-pick {
-  padding-right: var(--sp-2);
+.dock-tab-pick,
+.ctab-pick,
+.vpanel-tab-pick {
+  height: 100%;
+  border: 0;
+  background: transparent;
 }
-.dock-tab.on .dock-tab-pick {
+.dock-tab:not(:has(.x)) .dock-tab-pick,
+.ctab:not(:has(.x)) .ctab-pick,
+.vpanel-tab:not(:has(.x)) .vpanel-tab-pick,
+.lt {
+  padding-right: var(--sp-12);
+}
+.dock-tab.on .dock-tab-pick,
+.ctab.on .ctab-pick,
+.vpanel-tab.on .vpanel-tab-pick,
+.lt.on {
   color: var(--fg);
 }
 /* A long title is cut short in its tab; the whole of it is the tab's
    tooltip. */
 .dock-tab .ttl,
+.ctab .ttl,
 .vpanel-tab .ttl {
   min-width: 0;
   overflow: hidden;
@@ -2747,12 +3858,20 @@ body.float-moving * {
   white-space: nowrap;
 }
 .dock-tab .x,
-.vpanel-tab .x {
+.ctab .x,
+.vpanel-tab .x,
+.thead .x {
   flex: none;
-  width: 20px;
-  height: 20px;
-  margin-right: var(--sp-2);
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  margin-right: var(--sp-4);
   color: var(--fg-faint);
+}
+.dock-tab .x:hover,
+.ctab .x:hover,
+.vpanel-tab .x:hover,
+.thead .x:hover {
+  color: var(--fg);
 }
 .dock-body {
   flex: 1;
@@ -2829,23 +3948,59 @@ body.panel-dragging * {
   display: none;
 }
 /* A side dock's edge, dragged as the views panel's is. */
+/* The grab zone is the element itself, 24px wide about the hairline, so a
+   target is never smaller than a button. */
 .dock-sash {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: var(--sp-24);
   z-index: 4;
   cursor: col-resize;
 }
 .dock-left .dock-sash {
-  right: -3px;
+  right: calc(-1 * var(--sp-12));
 }
 .dock-right .dock-sash {
-  left: -3px;
+  left: calc(-1 * var(--sp-12));
 }
-.dock-sash:hover,
-.dock-sash.held {
-  box-shadow: inset 3px 0 0 -1px var(--accent);
+
+/* A resize edge shows a grip under the pointer: the hairline alone is hard
+   to find, and hovering it says it can be taken. It is the only hover
+   treatment an edge has. */
+.dock-sash::after,
+.sash::after,
+.split-sash::after {
+  content: '';
+  position: absolute;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--t-fast);
+  pointer-events: none;
+}
+.dock-sash::after,
+.split-sash::after {
+  top: 50%;
+  left: 50%;
+  width: var(--grip-w);
+  height: var(--grip-l);
+  transform: translate(-50%, -50%);
+}
+.sash::after {
+  top: 50%;
+  left: 50%;
+  width: var(--grip-l);
+  height: var(--grip-w);
+  transform: translate(-50%, -50%);
+}
+.dock-sash:hover::after,
+.dock-sash.held::after,
+.sash:hover::after,
+.sash.held::after,
+.split-sash:hover::after,
+.split-sash.held::after {
+  opacity: 1;
 }
 
 /* ---- The console ------------------------------------------------------- */
@@ -2876,77 +4031,21 @@ body.console-fullscreen #bar {
 }
 .sash {
   flex: none;
-  height: 5px;
-  margin-top: -3px;
+  height: var(--sp-24);
+  margin: calc(var(--sp-12) * -1) 0;
   cursor: row-resize;
   position: relative;
-  z-index: 2;
-}
-.sash span {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 2px;
-  height: 1px;
-}
-.sash:hover span {
-  background: var(--accent);
-  height: 2px;
-  top: 1px;
+  z-index: 4;
 }
 .chead {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: 36px;
-  box-sizing: border-box;
-  padding: 0 var(--sp-8) 0 var(--sp-16);
-  background: var(--bg-chrome);
-  border-bottom: 1px solid var(--line);
+  padding-left: var(--sp-12);
 }
 .ctabs {
   display: flex;
-  gap: var(--sp-2);
+  gap: var(--sp-4);
   min-width: 0;
-  margin-left: var(--sp-8);
+  margin-left: var(--sp-4);
   overflow: hidden;
-}
-.ctab {
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--r-sm);
-  min-width: 0;
-}
-.ctab:hover {
-  background: var(--fill);
-}
-.ctab.on {
-  background: var(--bg-surface);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-.ctab-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-6);
-  min-width: 0;
-  height: var(--icon-btn);
-  padding: 0 var(--sp-4) 0 var(--sp-12);
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: var(--fs-sm);
-  white-space: nowrap;
-  cursor: pointer;
-}
-.ctab.on .ctab-pick {
-  color: var(--fg);
-}
-.ctab .x {
-  width: 20px;
-  height: 20px;
-  color: var(--fg-faint);
 }
 .cbody {
   flex: 1;
@@ -2956,7 +4055,7 @@ body.console-fullscreen #bar {
 }
 .csep {
   width: 1px;
-  height: 16px;
+  height: var(--sp-16);
   margin: 0 var(--sp-4);
   background: var(--line);
 }
@@ -2977,11 +4076,10 @@ body.console-fullscreen #bar {
   flex: none;
   display: flex;
   align-items: center;
-  padding-right: var(--sp-4);
+  box-sizing: border-box;
+  height: var(--pane-head-h);
+  background: var(--bg-chrome);
   border-bottom: 1px solid var(--line);
-}
-.thead.on {
-  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .thead-pick {
   flex: 1;
@@ -2989,25 +4087,38 @@ body.console-fullscreen #bar {
   display: flex;
   align-items: center;
   gap: var(--sp-6);
-  height: 24px;
+  height: 100%;
   padding: 0 var(--sp-12);
   border: 0;
   background: transparent;
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   font: inherit;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
+  font-weight: 500;
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
+}
+.thead:not(.on):hover {
+  background: var(--fill);
+}
+.thead:hover .thead-pick {
+  color: var(--fg);
+}
+.thead.on {
+  background: var(--bg-selected);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.thead.on:hover {
+  background: color-mix(in srgb, var(--bg-selected) 85%, var(--fill));
 }
 .thead.on .thead-pick {
   color: var(--fg);
 }
 .thead .x {
-  width: 20px;
-  height: 20px;
-  color: var(--fg-faint);
+  margin-right: var(--sp-4);
 }
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -3034,6 +4145,7 @@ body.console-fullscreen #bar {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding: 0 var(--sp-16);
 }
 .ctable {
   width: 100%;
@@ -3100,18 +4212,61 @@ body.console-fullscreen #bar {
 .ctable tr.on {
   background: var(--bg-selected);
 }
+.ctable tbody tr:not(.group):not(.on):hover {
+  background: var(--fill);
+}
+.ctable tr.on td {
+  border-bottom: 0;
+}
+.ctable tr.on + .detail-row td {
+  border-bottom: 1px solid var(--line);
+}
+.cfacts .mlabel {
+  padding: 0;
+}
 .ctable tr.on td:first-child {
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--ring);
 }
 .ctable .git + .meta,
 .ctable .glyph + .st {
   margin-left: var(--sp-6);
 }
 .ctable .row-actions {
+  width: 148px;
   text-align: right;
+  white-space: nowrap;
 }
-.ctable .row-actions > * + * {
+.ctable .ra {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+/* Quiet, not disabled: the buttons of a row at rest keep a readable text and a
+   border, and take the full button once the row is hovered or chosen. */
+.ctable tr:not(.on):not(:hover) .ra .btn:not(:focus-visible) {
+  background: transparent;
+  color: var(--fg-muted);
+  border-color: var(--line);
+}
+.cname {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.ctag {
+  font: var(--type-small);
+  color: var(--fg-muted);
+  background: var(--fill);
+  border-radius: var(--r-pill);
+  padding: 0 var(--sp-8);
   margin-left: var(--sp-6);
+}
+.bname {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+.ctable .col-actions {
+  text-align: right;
 }
 .start-at {
   position: relative;
@@ -3123,20 +4278,44 @@ body.console-fullscreen #bar {
   top: 28px;
   text-align: left;
 }
+/* Under the selected row, joined to it: its facts at the left, what is
+   done to it at the right. */
+.ctable .detail-row td {
+  height: auto;
+  padding: 0;
+  background: var(--bg-selected);
+}
 .cdetail {
   display: flex;
-  align-items: center;
-  gap: var(--sp-24);
-  padding: var(--sp-12) var(--sp-20);
-  background: var(--bg-chrome);
-  border-top: 1px solid var(--line);
+  align-items: flex-end;
+  gap: var(--sp-8);
+  padding: var(--sp-8) var(--sp-12) var(--sp-12);
 }
-.cdetail {
+.cacts {
+  display: flex;
+  gap: var(--sp-6);
+  flex: none;
+}
+.btn.danger-line {
+  background: transparent;
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+.btn.danger-line:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.cfacts {
+  display: flex;
   flex-wrap: wrap;
-  row-gap: var(--sp-8);
+  gap: var(--sp-8) var(--sp-32);
+  min-width: 0;
 }
-.cdetail .mono {
+.cfacts .mono {
   overflow-wrap: anywhere;
+}
+.ctable th:last-child,
+.ctable .pane-status + .pane-status {
+  margin-left: var(--sp-4);
 }
 
 /* The table gives up what matters least as the stage narrows: the actions
@@ -3150,16 +4329,6 @@ body.console-fullscreen #bar {
    the person dragged them: `--code-tree-w` and `--code-outline-w`. */
 .kstage {
   container-type: inline-size;
-}
-.code-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-8);
-  padding: 0 var(--sp-16);
-  border-bottom: 1px solid var(--line);
-  height: 40px;
-  box-sizing: border-box;
-  flex: none;
 }
 .code-split {
   flex: 1;
@@ -3185,11 +4354,17 @@ body.console-fullscreen #bar {
   align-items: center;
   gap: var(--sp-6);
 }
+.code-tabs {
+  gap: var(--sp-16);
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.code-tabs .lt .kbd {
+  margin-left: var(--sp-2);
+}
 .code-tools .segb {
   padding: 0 var(--sp-8);
-}
-.code-search {
-  margin-left: auto;
 }
 .code-list {
   flex: 1;
@@ -3215,7 +4390,7 @@ body.console-fullscreen #bar {
   font: inherit;
   font-size: var(--fs-md);
   text-align: left;
-  height: 26px;
+  height: 28px;
   flex: none;
   padding: 0 var(--sp-8) 0 calc(var(--sp-6) + var(--d, 0) * 14px);
   cursor: pointer;
@@ -3223,17 +4398,58 @@ body.console-fullscreen #bar {
 .trow.dir {
   color: var(--fg-muted);
 }
+.trow:hover,
+.hline:hover,
+.hfile:hover,
+.orow:hover {
+  background: var(--fill);
+}
 .trow.on,
 .hline.on,
 .orow.on {
   background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--ring);
 }
 .trow .ttl,
 .hfile .ttl {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.hfile .ttl {
+  display: flex;
+  gap: var(--sp-8);
+  align-items: baseline;
+}
+.hfile .ttl b {
+  flex: none;
+  font-weight: 600;
+}
+.hfile .dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-faint);
+  font-size: var(--fs-sm);
+}
+/* Results want room: while searching, the column is as wide as a line
+   of code is long enough to read, unless the person set another width. */
+.code-tree.searching {
+  width: var(--code-tree-w, 400px);
+  max-width: 55%;
+}
+/* With no file open the results are all there is to read: they take the room
+   up to a long line's worth and the empty state keeps the rest. */
+.code-tree.searching.alone {
+  width: auto;
+  flex: 1 1 auto;
+  max-width: 720px;
+}
+.code-empty {
+  height: 100%;
+  box-sizing: border-box;
+  background: var(--atmosphere);
+  font: var(--type-body);
 }
 .chev {
   display: inline-flex;
@@ -3261,18 +4477,20 @@ body.console-fullscreen #bar {
   position: relative;
 }
 .sbox .field {
-  padding-right: 84px;
+  padding-right: 100px;
 }
 .sopts {
   position: absolute;
   right: 4px;
-  top: 3px;
+  top: 0;
+  height: 100%;
+  align-items: center;
   display: flex;
   gap: 2px;
 }
 .sopt {
-  width: 24px;
-  height: 22px;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
   border: 1px solid transparent;
   border-radius: var(--r-xs);
   background: transparent;
@@ -3281,6 +4499,10 @@ body.console-fullscreen #bar {
   font-size: var(--fs-xs);
   cursor: pointer;
   padding: 0;
+}
+.sopt:hover {
+  background: var(--fill);
+  color: var(--fg);
 }
 .sopt.on {
   background: var(--bg-selected);
@@ -3323,10 +4545,10 @@ body.console-fullscreen #bar {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
   gap: var(--sp-6);
-  align-items: center;
+  align-items: start;
   flex: none;
-  height: 24px;
-  padding: 0 var(--sp-8) 0 26px;
+  min-height: 26px;
+  padding: var(--sp-4) var(--sp-8) var(--sp-4) 26px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -3343,9 +4565,26 @@ body.console-fullscreen #bar {
   text-align: right;
 }
 .hline .tx {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* One line a match, so the rows keep their rhythm; the line is scrolled
+     to its hit and fades where it was cut. */
+  position: relative;
   white-space: pre;
+  overflow: hidden;
+}
+.hline .tx.cut-left {
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+.hline .tx.cut-right {
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+.hline .tx.cut-left.cut-right {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 24px,
+    #000 calc(100% - 24px),
+    transparent
+  );
 }
 .hline mark {
   background: color-mix(in srgb, var(--attention) 32%, transparent);
@@ -3366,11 +4605,23 @@ body.console-fullscreen #bar {
 .code-file .fhdr {
   min-width: 0;
 }
+/* The name first and whole; only the folder after it gives way. */
 .code-file .fhdr .path {
+  display: flex;
+  gap: var(--sp-8);
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+.code-file .fhdr .fname {
+  flex: none;
+  font-weight: 600;
+}
+.code-file .fhdr .fdir {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
+  color: var(--fg-faint);
 }
 .code-file .fhdr .meta {
   white-space: nowrap;
@@ -3410,6 +4661,14 @@ body.console-fullscreen #bar {
 }
 .cline.picked {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+/* The rows that take clicks show it: one tint under the pointer, drawn
+   inset so the add and remove tints keep their own. */
+.cline:hover:not(.cursor):not(.picked) {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.drow:hover:not(.cursor):not(.picked) .dside {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--fg) 5%, transparent);
 }
 .cline.cursor {
   box-shadow: inset 3px 0 0 var(--accent);
@@ -3506,7 +4765,7 @@ body.console-fullscreen #bar {
 }
 .orow {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-6);
   flex: none;
@@ -3519,8 +4778,10 @@ body.console-fullscreen #bar {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   text-align: left;
-  padding: 0 var(--sp-8);
-  height: 24px;
+  padding: var(--sp-4) var(--sp-8);
+  height: 28px;
+  min-height: 28px;
+  box-sizing: border-box;
   cursor: pointer;
 }
 .orow .t {
@@ -3529,8 +4790,16 @@ body.console-fullscreen #bar {
   white-space: nowrap;
 }
 .okind {
-  color: var(--fg-faint);
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  background: var(--fill);
+  color: var(--ref);
   font-size: var(--fs-xs);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 @container (max-width: 1100px) {
   .code-tree {
@@ -3557,6 +4826,22 @@ body.console-fullscreen #bar {
     display: none;
   }
 }
+/* The column's content moves into the open row's details when it goes. */
+@container (min-width: 981px) {
+  .cfacts .fact-last {
+    display: none;
+  }
+}
+.cfacts .fact-last {
+  min-width: 0;
+  flex: 1 1 0;
+}
+.cfacts .fact-last .meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 @container (max-width: 820px) {
   .ctable .col-feature {
     display: none;
@@ -3569,9 +4854,6 @@ body.console-fullscreen #bar {
   .ctable .col-running {
     display: none;
   }
-}
-.confirm-dialog {
-  width: 560px;
 }
 
 /* ---- The palette and the shortcuts sheet --------------------------------- */
@@ -3588,16 +4870,64 @@ body.console-fullscreen #bar {
   width: min(620px, 92vw);
   max-height: 70vh;
 }
-.palette-field {
-  height: var(--sp-44);
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  /* The dialog's inner corners, so the focus ring follows its curve
-     instead of being clipped square by it. */
-  border-radius: calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0 0;
-  background: var(--bg-surface);
-  font-size: var(--fs-lg);
+.palette-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
   padding: 0 var(--sp-16);
+  height: var(--sp-44);
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg-muted);
+}
+/* Bare: the head is the field, and its halo would be a second box. */
+.palette-field {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-lg);
+}
+.palette-foot {
+  padding: var(--sp-12) var(--sp-16);
+  gap: var(--sp-16);
+}
+.palette-foot .dwhy {
+  gap: var(--sp-6);
+}
+.open-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  color: var(--fg-muted);
+  font: var(--type-small);
+}
+/* One selection for a list row inside a dialog: a fill and a lit 1px border. */
+.palette-row.on,
+.rfile.on,
+.hrow.on {
+  background: var(--bg-selected);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.palette-row .pic {
+  flex: none;
+  display: inline-flex;
+  color: var(--fg-muted);
+}
+.palette-row .pic svg {
+  width: 14px;
+  height: 14px;
+}
+.palette-row .kbd {
+  min-width: var(--sp-20);
+  box-sizing: border-box;
+  text-align: center;
+  color: var(--fg-muted);
+  font-weight: 500;
 }
 .palette-results {
   overflow-y: auto;
@@ -3646,20 +4976,20 @@ body.console-fullscreen #bar {
 .hint:hover {
   color: var(--fg);
 }
-.sheet {
-  width: min(980px, 94vw);
-  max-height: 84vh;
-}
-.sheet-rule {
-  padding: var(--sp-12) var(--sp-20);
-  border-bottom: 1px solid var(--line);
-  color: var(--fg-muted);
-}
 .sheet-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-8) var(--sp-20) var(--sp-20);
-  columns: 280px 3;
+  padding: var(--sp-16) var(--sp-24) var(--sp-24);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-items: start;
   column-gap: var(--sp-32);
+}
+.sheet-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .sheet-group {
   break-inside: avoid;
@@ -3669,11 +4999,71 @@ body.console-fullscreen #bar {
   padding-left: 0;
 }
 .sheet-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-12);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sp-2) var(--sp-12);
   padding: var(--sp-2) 0;
   font: var(--type-small);
+}
+/* The label wraps; the caps never do, so a long chord stays beside its row. */
+.sheet-row > .keys {
+  white-space: nowrap;
+}
+.sheet-row > .grow {
+  min-width: 0;
+}
+/* The sheet fades out at the foot while there is more below it. */
+.sheet-body.more {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+
+/* A pickable diff line lights under the pointer. */
+.review-diff > .dbody:not(.prose) > div:hover {
+  background: var(--fill);
+}
+/* The mark a destructive confirm leads with, so it cannot pass for a
+   harmless one. */
+.danger-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--sp-32);
+  height: var(--sp-32);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+.warn-callout {
+  display: flex;
+  gap: var(--sp-8);
+  align-items: flex-start;
+  border-radius: var(--r-md);
+  padding: var(--sp-8) var(--sp-12);
+  background: color-mix(in srgb, var(--attention) 12%, transparent);
+  color: var(--fg);
+}
+.warn-callout > svg {
+  flex: none;
+  margin-top: var(--sp-2);
+  color: var(--attention);
+}
+.themecard .name > svg,
+.saved > svg {
+  color: var(--ok);
+}
+.themecard .name > svg {
+  display: none;
+  margin-left: var(--sp-6);
+  vertical-align: -1px;
+}
+.themecard.on .name > svg {
+  display: inline;
+}
+.saved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
 }
 
 /* ---- The review dialog ------------------------------------------------- */
@@ -3683,8 +5073,6 @@ body.console-fullscreen #bar {
 }
 /* A diff wants every column it can get, a split one most of all. */
 .review-dialog {
-  width: calc(100% - 2 * var(--sp-24));
-  height: calc(100% - 2 * var(--sp-24));
   display: flex;
   flex-direction: column;
 }
@@ -3714,9 +5102,18 @@ body.console-fullscreen #bar {
   flex-direction: column;
   gap: var(--sp-2);
 }
+.seg-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+.seg-group + .seg-group {
+  padding-left: var(--sp-12);
+  border-left: 1px solid var(--line);
+}
 .rfile {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--sp-6);
   border: 0;
   border-radius: var(--r-sm);
@@ -3728,16 +5125,42 @@ body.console-fullscreen #bar {
   padding: var(--sp-4) var(--sp-8);
   cursor: pointer;
 }
-.rfile.on {
-  background: var(--bg-selected);
+.rfile:hover:not(.on),
+.hrow:hover:not(.on) {
+  background: var(--fill);
 }
-.rfile .rname {
+.rfile.on,
+.hrow.on {
+  background: var(--bg-selected);
+  box-shadow: inset 3px 0 0 var(--ring);
+}
+.rfile .rname,
+.hrow.file .rname {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.rfile .rbase {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.rfile .rdir {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+}
+.rfile .rdir.phrase {
+  font-family: inherit;
+}
+/* The directory is the part that gives way; the filename on its own line
+   above it is cut only when it alone is wider than the list. */
+.rfile .rbase,
+.rfile .rdir {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
 }
 .review-diff {
   flex: 1;
@@ -3753,6 +5176,12 @@ body.console-fullscreen #bar {
   border-bottom: 1px solid var(--line);
   background: var(--bg-chrome);
 }
+.fhdr > .path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dbody {
   flex: 1;
   min-height: 0;
@@ -3764,6 +5193,7 @@ body.console-fullscreen #bar {
 }
 .review-empty {
   padding: var(--sp-24);
+  font: var(--type-body);
 }
 /* One column as wide as the longest line, so every row's colour runs on
    past the pane's edge when it is scrolled sideways; `auto` stretches it
@@ -3899,7 +5329,7 @@ body.console-fullscreen #bar {
   margin: var(--sp-8) var(--sp-12) var(--sp-8) 104px;
   padding: var(--sp-12);
   background: var(--bg-surface);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--ring);
   border-radius: var(--r-md);
   display: flex;
   flex-direction: column;
@@ -3931,6 +5361,10 @@ body.console-fullscreen #bar {
 
 /* ---- The history dialog ------------------------------------------------ */
 
+.history-list > .hrow {
+  /* The list scrolls rather than squeezing its two-line rows into each other. */
+  flex: none;
+}
 .history-list {
   width: 520px;
   flex: none;
@@ -3956,9 +5390,6 @@ body.console-fullscreen #bar {
   cursor: pointer;
   min-width: 0;
 }
-.hrow.on {
-  background: var(--bg-selected);
-}
 .hrow.open .ellipsis {
   font-weight: 600;
 }
@@ -3980,24 +5411,31 @@ body.console-fullscreen #bar {
 
 /* ---- The recent-sessions dialog ---------------------------------------- */
 
-.shead {
-  padding: var(--sp-8) var(--sp-8) var(--sp-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* A session whose worktree is gone is told by its struck checkout, not by
+   fading the whole row below the contrast a title needs. */
+.srow.removed .grow {
+  color: var(--fg-muted);
 }
-.srow.removed {
-  opacity: 0.5;
+.srow.removed .meta {
+  color: var(--fg-muted);
 }
-.sdot {
+.srow.removed .scheckout {
+  text-decoration: line-through;
+}
+/* A session's dot is smaller than a pane's, and only live or not. */
+.srow .sdot {
   width: 7px;
   height: 7px;
-  flex: none;
-  border-radius: 50%;
-  border: 1px solid var(--fg-faint);
+  border-width: 1px;
 }
-.sdot.live {
+.srow .sdot.live {
   background: var(--ok);
   border-color: var(--ok);
+}
+.scheckout,
+.sid {
+  font-family: var(--font-mono);
+  color: var(--fg-faint);
 }
 .scheckout {
   max-width: 120px;
@@ -4009,9 +5447,11 @@ body.console-fullscreen #bar {
   background: var(--bg-sunken);
   color: var(--fg);
 }
-.dbody.transcript {
-  padding: var(--sp-12) var(--sp-16);
+.review-diff > .dbody.transcript {
+  /* Not the diff's one column as wide as its longest line: prose wraps. */
   display: flex;
+  container-type: normal;
+  padding: var(--sp-12) var(--sp-16);
   flex-direction: column;
   gap: var(--sp-8);
 }
@@ -4101,7 +5541,6 @@ body.console-fullscreen #bar {
 /* ---- Projects: the switcher and the add dialog ---------------------------- */
 
 .projmenu .projects-menu {
-  top: 100%;
   width: min(272px, calc(var(--rail-w) - 16px));
 }
 .projbtn .ellipsis {
@@ -4114,8 +5553,7 @@ body.console-fullscreen #bar {
   color: var(--danger);
 }
 .add-dialog {
-  width: min(820px, calc(100vw - 32px));
-  max-height: min(720px, 94vh);
+  max-height: min(720px, 90vh);
 }
 .ap-head {
   align-items: center;
@@ -4124,7 +5562,7 @@ body.console-fullscreen #bar {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--sp-16) var(--sp-20);
+  padding: 0 var(--sp-24) var(--sp-24);
 }
 .ap-body .seg {
   align-self: flex-start;
@@ -4140,12 +5578,13 @@ body.console-fullscreen #bar {
 }
 .ap-split {
   display: flex;
-  gap: var(--sp-16);
-  height: 300px;
+  flex-direction: column;
+  gap: var(--sp-12);
   flex: none;
 }
 .ap-folders {
-  flex: 1;
+  flex: none;
+  max-height: 180px;
   min-width: 0;
   overflow: auto;
   border: 1px solid var(--line);
@@ -4176,7 +5615,6 @@ body.console-fullscreen #bar {
   padding: var(--sp-8);
 }
 .ap-outcome {
-  width: 300px;
   flex: none;
   min-width: 0;
   display: flex;
@@ -4202,17 +5640,20 @@ body.console-fullscreen #bar {
   width: 300px;
   max-width: 50%;
 }
-@media (max-width: 640px) {
-  .ap-split {
-    flex-direction: column;
-    height: auto;
-  }
-  .ap-folders {
-    max-height: 220px;
-  }
-  .ap-outcome {
-    width: auto;
-  }
+/* A form stacks its labels above its fields, here as in the link dialog. */
+.add-dialog .setrow .label {
+  min-height: var(--sp-24);
+}
+.add-dialog .setrow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-6);
+  border-top: 0;
+  padding-top: 0;
+}
+.add-dialog .setrow .field {
+  width: auto;
+  max-width: none;
 }
 
 /* The see-through fills, after every rule that paints these regions. */
@@ -4220,9 +5661,12 @@ body.console-fullscreen #bar {
   background: var(--see-chrome);
 }
 .strip,
-.fstage,
-.nstage {
+.fstage {
   background: var(--see-surface);
+}
+.nstage {
+  background: var(--atmosphere);
+  background-color: var(--see-surface);
 }
 .stage-body,
 .dock,
@@ -4233,12 +5677,15 @@ body.console-fullscreen #bar {
 
 /* ---- The Settings dialog ----------------------------------------------- */
 
-.settings {
-  width: min(960px, 94vw);
-  height: min(700px, 88vh);
-}
 .settings .split {
   min-height: 0;
+}
+.settings-nav .frow:hover {
+  background: var(--fill);
+}
+.settings-nav .frow.on {
+  background: var(--bg-selected);
+  box-shadow: none;
 }
 .settings-nav {
   width: 200px;
@@ -4258,10 +5705,42 @@ body.console-fullscreen #bar {
   flex-direction: column;
   gap: var(--sp-24);
 }
+.setsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+.sethead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.settitle {
+  font: 600 var(--fs-lg) / 1.3 var(--font-ui);
+}
+.setgroup {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.setgroup > * {
+  padding: var(--sp-12) var(--sp-16);
+}
+.setgroup > * + * {
+  border-top: 1px solid var(--line);
+}
 .settings .setrow {
   border-top: 0;
-  border-bottom: 1px solid var(--line);
-  padding: var(--sp-12) 0;
+}
+.setversion {
+  padding: var(--sp-8);
+}
+.settings-nav .frow {
+  gap: var(--sp-8);
+  justify-content: flex-start;
+}
+.settings-nav .frow svg {
+  flex: none;
+  color: var(--fg-faint);
 }
 .settings .setrow .field {
   width: 260px;
@@ -4315,15 +5794,16 @@ body.console-fullscreen #bar {
   color: var(--fg-faint);
 }
 .themecards {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--sp-12);
 }
 .themecard {
   display: flex;
   flex-direction: column;
   gap: var(--sp-6);
-  width: 150px;
+  width: auto;
+  min-width: 0;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   padding: var(--sp-8);
@@ -4333,6 +5813,10 @@ body.console-fullscreen #bar {
   text-align: left;
   cursor: pointer;
 }
+.themecard:hover:not(:disabled) {
+  border-color: var(--fg-faint);
+  background: var(--fill);
+}
 .themecard.on {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
@@ -4340,6 +5824,12 @@ body.console-fullscreen #bar {
 .themecard:disabled {
   cursor: default;
   opacity: 0.55;
+}
+.themecard .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* A flavour's own colours, whatever the window is drawn in. */
 .themecard .pv {
@@ -4368,8 +5858,8 @@ body.console-fullscreen #bar {
   width: 60%;
 }
 .toggle {
-  width: 34px;
-  height: 20px;
+  width: 40px;
+  height: var(--sp-24);
   flex: none;
   border: 0;
   border-radius: var(--r-pill);
@@ -4380,18 +5870,21 @@ body.console-fullscreen #bar {
 }
 .toggle span {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 4px;
+  left: 4px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   background: var(--fg-muted);
 }
+.toggle:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
 .toggle.on {
   background: var(--accent);
 }
 .toggle.on span {
-  left: 16px;
+  left: 20px;
   background: var(--fg-on-accent);
 }
 .toggle:disabled {
@@ -4409,9 +5902,12 @@ body.console-fullscreen #bar {
 }
 .opacity input {
   width: 200px;
+  height: var(--sp-24);
   accent-color: var(--accent);
 }
 .opacity .n {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   width: 4ch;
   text-align: right;
 }
@@ -4428,47 +5924,6 @@ body.console-fullscreen #bar {
   background: var(--bg-surface);
   min-width: 0;
   min-height: 0;
-}
-.vpanel-tabs {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  height: var(--header-h);
-  box-sizing: border-box;
-  padding: 0 var(--sp-8);
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-chrome);
-  overflow-x: auto;
-}
-.vpanel-tab {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  max-width: 200px;
-  border-radius: var(--r-sm);
-}
-.vpanel-tab.on {
-  background: var(--fill);
-}
-.vpanel-tab-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-6);
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  padding: 0 var(--sp-2) 0 var(--sp-8);
-  height: var(--control-h-sm);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.vpanel-tab.on .vpanel-tab-pick {
-  color: var(--fg);
 }
 .vspin {
   width: 10px;
@@ -4492,7 +5947,12 @@ body.console-fullscreen #bar {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-  flex-wrap: wrap;
+}
+.vpanel-title .vpanel-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .vpanel-meta {
   display: flex;
@@ -4500,14 +5960,17 @@ body.console-fullscreen #bar {
   gap: var(--sp-8);
   flex-wrap: wrap;
 }
-/* The buttons wrap as one right-aligned group, so on a narrow panel they
-   stack under the meta rather than scatter across two lines. */
+/* The actions stay on the title row, one group at its end. */
 .vpanel-acts {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex: none;
+  align-items: center;
   gap: var(--sp-8);
   margin-left: auto;
+}
+.vpanel-meta .meta {
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
 }
 .vpanel-meta .vlink .track {
   cursor: pointer;
@@ -4544,30 +6007,21 @@ body.console-fullscreen #bar {
 .vtabs-bar {
   border-bottom: 1px solid var(--line);
 }
-/* In the title strip, before the window's buttons, where it covers nothing. */
-.vlauncher {
-  flex: none;
-  align-self: center;
-  margin-right: var(--sp-8);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-6);
-  height: 24px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  background: var(--bg-chrome);
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  padding: 0 var(--sp-8);
-  cursor: pointer;
-}
-.vlauncher:hover {
-  background: var(--fill);
-}
+/* In the title strip, before the overflow: a pill button like any other,
+   its count a quiet badge. */
 .vlauncher[hidden] {
   display: none;
+}
+.vlauncher .count {
+  min-width: var(--sp-20);
+  box-sizing: border-box;
+  padding: 0 var(--sp-6);
+  border-radius: var(--r-pill);
+  background: var(--fill);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--sp-20);
+  text-align: center;
 }
 .vdot {
   width: 6px;
@@ -4805,6 +6259,39 @@ body.console-fullscreen #bar {
   overflow-x: auto;
   max-width: 100%;
   container-type: inline-size;
+  /* Scroll cue: an edge shadow shows on a side only while more lies past
+     it. The local covers hide the scroll-attached shadows at the ends. */
+  background:
+    linear-gradient(to right, var(--bg-surface), transparent) left / var(--sp-24) 100% local
+      no-repeat,
+    linear-gradient(to left, var(--bg-surface), transparent) right / var(--sp-24) 100% local
+      no-repeat,
+    linear-gradient(to right, var(--line-strong), transparent) left / var(--sp-8) 100% scroll
+      no-repeat,
+    linear-gradient(to left, var(--line-strong), transparent) right / var(--sp-8) 100% scroll
+      no-repeat;
+}
+/* An extension's table gives up its last columns one at a time, the last
+   first, so the name and what it is doing stay whole in a narrow dock. */
+@container (max-width: 700px) {
+  .vtable-drop-1 {
+    display: none;
+  }
+}
+@container (max-width: 620px) {
+  .vtable-drop-2 {
+    display: none;
+  }
+}
+@container (max-width: 540px) {
+  .vtable-drop-3 {
+    display: none;
+  }
+}
+@container (max-width: 460px) {
+  .vtable-drop-4 {
+    display: none;
+  }
 }
 /* A column its author marked optional gives way before the table scrolls. */
 @container (max-width: 560px) {
@@ -4951,7 +6438,7 @@ body.console-fullscreen #bar {
 
 .vstats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--vstat-min), 1fr));
   gap: var(--sp-8);
 }
 
@@ -4968,10 +6455,14 @@ body.console-fullscreen #bar {
 .vstat-label {
   font-size: var(--fs-sm);
   color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vstat-value {
   font: 650 22px/1.2 var(--font-ui);
+  white-space: nowrap;
 }
 
 .vstat-delta {
@@ -5167,23 +6658,20 @@ body.console-fullscreen #bar {
 
 /* A ticket link a view waits on: it opens the view. */
 .track.viewed {
-  border-color: var(--accent);
   color: var(--fg);
+}
+.track .vdot {
+  background: var(--attention);
+}
+/* Ticket and view chips are the same height and shape as the buttons
+ * beside them. */
+.chips .track,
+.chips .btn.sm {
+  height: var(--control-h);
+  border-radius: var(--r-pill);
 }
 .tickets {
   gap: var(--sp-6);
-}
-.pane-views {
-  flex: none;
-  min-width: 16px;
-  box-sizing: border-box;
-  padding: 0 var(--sp-4);
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  text-align: center;
 }
 
 /* The views panel holds what the panel shows, beside its edge. */
@@ -5199,15 +6687,27 @@ body.console-fullscreen #bar {
 .rail-sash {
   position: absolute;
   top: 0;
-  right: 0;
+  right: calc(-1 * var(--sp-12));
   bottom: 0;
-  width: 6px;
+  width: var(--sp-24);
   z-index: 4;
   cursor: col-resize;
 }
-.rail-sash:hover,
-.rail-sash.held {
-  box-shadow: inset -2px 0 0 0 var(--accent);
+.rail-sash::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--sp-12);
+  width: var(--sp-2);
+  transform: translateX(-100%);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+.rail-sash:hover::after,
+.rail-sash.held::after {
+  opacity: 1;
 }
 /* While the edge is held the pointer stays a resize arrow, and nothing it
    passes over is selected. */
@@ -5215,31 +6715,16 @@ body.resizing {
   cursor: col-resize;
   user-select: none;
 }
-body.resizing:has(.brief-sash.held) {
-  cursor: row-resize;
-}
 
 /* An open feature's edges: between the outline and the detail, and under
    the brief, whose sizes Rust keeps as it does the rail's. */
 .split-sash {
+  position: relative;
   flex: none;
-  width: 6px;
-  margin: 0 -3px;
+  width: var(--sp-24);
+  margin: 0 calc(-1 * var(--sp-12));
   z-index: 2;
   cursor: col-resize;
-}
-.brief-sash {
-  height: 6px;
-  margin: calc(-1 * var(--sp-8)) 0 -4px;
-  cursor: row-resize;
-}
-.split-sash:hover,
-.split-sash.held {
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-.brief-sash:hover,
-.brief-sash.held {
-  box-shadow: inset 0 -2px 0 0 var(--accent);
 }
 
 /* ---- An open feature's lenses ------------------------------------------ */
@@ -5250,9 +6735,6 @@ body.resizing:has(.brief-sash.held) {
   flex-wrap: wrap;
   gap: var(--sp-6);
   margin-left: auto;
-}
-.lens-keys {
-  align-self: center;
 }
 .wtext {
   display: flex;
@@ -5300,8 +6782,12 @@ body.resizing:has(.brief-sash.held) {
   min-height: var(--control-h);
   cursor: pointer;
 }
+/* A section break like the others in the stage, so the steps do not read as
+ * the last row of the flows above them. */
 .steps-label {
-  padding: var(--sp-12) var(--sp-8) var(--sp-4);
+  margin-top: var(--sp-16);
+  border-top: 1px solid var(--line);
+  padding: var(--sp-16) var(--sp-8) var(--sp-4);
 }
 .steprow {
   display: grid;
@@ -5330,6 +6816,21 @@ body.resizing:has(.brief-sash.held) {
 }
 .step-detail {
   padding: var(--sp-12) var(--sp-8) 0;
+}
+.flow-picture .seq-holder.scrolls {
+  mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+}
+.flow-picture .seq-holder.scrolled {
+  mask-image: linear-gradient(to right, transparent, #000 56px);
+}
+.flow-picture .seq-holder.scrolls.scrolled {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 56px,
+    #000 calc(100% - 56px),
+    transparent
+  );
 }
 .flow-picture .seq-holder {
   flex: 1;
@@ -5372,13 +6873,30 @@ body.resizing:has(.brief-sash.held) {
 }
 .seq .smsg .hit {
   stroke: transparent;
-  stroke-width: 16;
+  stroke-width: 24;
   fill: none;
 }
-.seq .lhead-solid {
+.seq .smsg:hover:not(.on) .line,
+.seq .smsg:hover:not(.on) .head-open {
+  stroke: var(--fg);
+}
+.seq .smsg:hover:not(.on) .head-solid {
+  fill: var(--fg);
+}
+.seq .smsg:focus-visible {
+  outline: none;
+}
+.seq .smsg:focus-visible .line {
+  stroke: var(--ring);
+  stroke-width: 2;
+}
+.seq .smsg:focus-visible .hit {
+  stroke: color-mix(in srgb, var(--ring) 22%, transparent);
+}
+.seq .head-solid {
   fill: var(--fg-muted);
 }
-.seq .lhead-open {
+.seq .head-open {
   stroke: var(--fg-muted);
   stroke-width: 1.4;
   fill: none;
@@ -5517,8 +7035,12 @@ body.resizing:has(.brief-sash.held) {
 .ext-body:focus {
   outline: none;
 }
+/* A region-sized focusable is not a control: it gets a hairline, not the
+   full ring the buttons and fields do. */
 .ext-body:focus-visible {
-  box-shadow: inset 0 0 0 1px var(--accent);
+  outline: 0;
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 .ext-body .vtable-table tbody tr {
   cursor: pointer;
@@ -5538,42 +7060,73 @@ body.resizing:has(.brief-sash.held) {
   background: var(--bg-selected);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+/* A table wide enough has the selected row's buttons at its end instead:
+   a zero-width cell pinned to the window's right edge, the buttons hung from
+   it over the row's own fill, so selecting a row moves nothing. */
+.vtable-table .vtable-acts {
+  position: sticky;
+  right: 0;
+  width: 0;
+  padding: 0;
+}
+.vtable-acts-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: 0 var(--sp-8) 0 var(--sp-16);
+  background: var(--bg-selected);
+  box-shadow: calc(var(--sp-12) * -1) 0 var(--sp-12) var(--bg-selected);
+}
+@container (min-width: 561px) {
+  .vtable-table tr.row-actions {
+    display: none;
+  }
+}
+@container (max-width: 560px) {
+  .vtable-table .vtable-acts {
+    display: none;
+  }
+}
 .row-actions-bar {
+  /* As wide as the table's window, pinned to its left edge, so a table
+     scrolled sideways never carries the buttons off the right of it. */
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: calc(100cqi - var(--sp-16));
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--sp-6);
 }
 
-/* An extension's question: over the window's top and never a scrim, so one
-   raised on its own leaves the pane under it to be typed in. */
+/* An extension's question blocks, so it has the scrim and the window's centre
+   like any dialog, whether the person asked for it or not: anything that
+   blocks has a scrim. */
 .ext-dialogs {
   position: absolute;
-  top: 48px;
-  left: 0;
-  right: 0;
+  inset: 0;
   display: flex;
+  align-items: center;
   justify-content: center;
   pointer-events: none;
   z-index: 5;
 }
+.ext-dialogs:has(.ext-dialog) {
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
+}
 .ext-dialog {
   pointer-events: auto;
-  width: min(480px, calc(100vw - 32px));
+  width: min(440px, 94vw);
 }
-/* `.dbody` is the diff's: monospace, unpadded and sunken, which a
-   question laid over a live pane must not be. */
-.ext-dialog .dbody {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-8);
-  padding: var(--sp-12) var(--sp-16);
-  font-family: var(--font-ui);
-  line-height: 1.5;
-  background: var(--bg-surface);
-}
-.ext-dialog.unasked:not(:focus-within) {
-  opacity: 0.92;
+.ext-dialog:has(.label) {
+  width: min(560px, 94vw);
 }
 .ext-pick {
   position: static;
@@ -5636,19 +7189,18 @@ body.resizing:has(.brief-sash.held) {
 
 /* ---- The tracker dialogs ----------------------------------------------- */
 
-.tracker-dialog {
-  width: min(760px, 94vw);
-  max-height: min(820px, 92vh);
+.sheet-dialog.tracker-dialog > .dhead {
+  align-items: flex-start;
+  padding: var(--sp-24) var(--sp-24) var(--sp-16);
 }
-.tracker-dialog.wide {
-  width: min(1180px, 94vw);
-  height: min(780px, 92vh);
+.sheet-dialog.tracker-dialog > .tracker-body {
+  padding-top: var(--sp-16);
 }
 .tracker-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-16) var(--sp-20);
+  padding: 0 var(--sp-24) var(--sp-24);
 }
 .tracker-body.stack-12 {
   display: flex;
@@ -5670,6 +7222,49 @@ body.resizing:has(.brief-sash.held) {
   gap: var(--sp-20);
   height: 100%;
   min-height: 0;
+}
+.rc-tick {
+  flex: none;
+  appearance: none;
+  margin: 0;
+  width: var(--sp-24);
+  height: var(--sp-24);
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+}
+.rc-tick::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--fg-faint);
+  border-radius: var(--r-xs);
+  background: var(--bg-chrome);
+  color: var(--fg-on-accent);
+  font-size: var(--fs-xs);
+  line-height: 13px;
+  text-align: center;
+}
+.rc-tick:hover::before {
+  border-color: var(--fg);
+}
+.rc-tick:checked::before {
+  content: '✓';
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.rc-tick:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.field.area.rc-text {
+  field-sizing: content;
+  min-height: calc(var(--sp-24) * 4);
+  max-height: 40%;
+}
+.rc-asked {
+  margin-top: var(--sp-12);
 }
 .rc-lines {
   flex: 1.3;
@@ -5812,15 +7407,19 @@ body.resizing:has(.brief-sash.held) {
   gap: var(--sp-8);
 }
 
+/* The viewBox is the chart's pixel size, so labels keep their size when
+   the panel grows: the chart stops at its own width instead of scaling. */
 .vchart-svg {
   width: 100%;
+  max-width: min(100%, 720px);
+  max-height: 360px;
   height: auto;
   display: block;
 }
 
 .vchart-axes text {
-  fill: var(--fg-muted);
-  font: 10px var(--font-mono);
+  fill: var(--fg-faint);
+  font: var(--fs-xs) var(--font-ui);
 }
 
 .vchart-grid {
@@ -5845,6 +7444,10 @@ body.resizing:has(.brief-sash.held) {
 .vchart-bar,
 .vchart-dot {
   fill: var(--t);
+}
+
+.vchart-bar {
+  rx: var(--r-sm);
 }
 
 .vchart-key {
@@ -6565,7 +8168,8 @@ button.vtree-chev:focus-visible {
 .vref {
   border: 0;
   margin: 0;
-  padding: 1px var(--sp-6);
+  min-height: var(--sp-24);
+  padding: var(--sp-4) var(--sp-8);
   border-radius: var(--r-xs);
   background: var(--fill);
   color: var(--ref);
@@ -6623,8 +8227,8 @@ button.vtree-chev:focus-visible {
 
 /* A view changed since the person last had it in front of them. */
 .vpanel-tab .vnew {
-  width: 6px;
-  height: 6px;
+  width: var(--sp-6);
+  height: var(--sp-6);
   border-radius: var(--r-pill);
   background: var(--changed);
   flex: none;
@@ -6884,4 +8488,474 @@ button.vtree-chev:focus-visible {
   height: 7px;
   border-radius: 50%;
   background: var(--attention);
+}
+
+/* ---- The rail's footer and the empty moments' buttons --------------------- */
+
+.empty-actions .btn svg,
+.empty-body .btn svg,
+.bar .icon.wide svg {
+  width: 14px;
+  height: 14px;
+}
+.btn.primary:not([disabled]) .kbd {
+  color: var(--fg-on-accent);
+  border-color: color-mix(in srgb, var(--fg-on-accent) 45%, transparent);
+}
+
+/* ---- Over and under the pane on screen --------------------------------- */
+
+/* Another pane asking for a person: the one thing the Workspace must not
+   hide behind the pane that is shown. */
+.attn {
+  flex: none;
+  box-sizing: border-box;
+  min-height: var(--attn-h);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  margin: var(--sp-8) var(--sp-16) 0;
+  padding: var(--sp-8) var(--sp-12);
+  border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--attention) 10%, transparent);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+.attn[hidden] {
+  display: none;
+}
+.attn > .dot {
+  background: var(--attention);
+}
+.attn-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-8);
+}
+.attn-note {
+  color: var(--fg-muted);
+  min-width: 0;
+}
+.attn-more {
+  flex: none;
+  color: var(--fg-muted);
+}
+/* What a pane that ended offers: the program is gone, the screen is not. */
+.ended {
+  position: absolute;
+  left: var(--sp-16);
+  right: var(--sp-16);
+  bottom: var(--sp-16);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  padding: var(--sp-8) var(--sp-12);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-sm);
+}
+.ended[hidden] {
+  display: none;
+}
+.ended > svg {
+  flex: none;
+  color: var(--fg-muted);
+}
+.ended-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- Selected rows still answer the pointer ------------------------------ */
+
+/* The selection's tint, lifted a step under the pointer, on every row that
+   can be both selected and pointed at. */
+.trow.on:hover,
+.orow.on:hover,
+.irow.on:hover,
+.wrow.on:hover,
+.rrow.on:hover,
+.frow.on:hover,
+.steprow.on:hover,
+.settings-nav .frow.on:hover,
+.ctable tr.on:hover,
+.ext-body .vtable-table tr.on:hover,
+.rfile.on:hover,
+.hrow.on:hover,
+.hline.on:hover {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 6%);
+}
+.cline.cursor:hover,
+.drow.cursor:not(.picked):hover .dside {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--fill), var(--fg) 6%),
+    color-mix(in srgb, var(--fill), var(--fg) 6%)
+  );
+}
+
+/* ---- The views panel's tabs ---------------------------------------------- */
+
+/* A tab is cut short with an ellipsis, never under the dock and hide
+   buttons; its close shows on the selected tab and under the pointer. */
+.vpanel-tab {
+  /* Tabs shrink before the strip scrolls, so the first is never a sliver. */
+  flex: 0 1 auto;
+  min-width: calc(var(--sp-32) * 3);
+  max-width: var(--vtab-max);
+  overflow: hidden;
+}
+.vpanel-tab-pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.vpanel-tab:not(.on):not(:hover):not(:focus-within) .x {
+  display: none;
+}
+.vpanel-tab:not(.on):not(:hover):not(:focus-within) .vpanel-tab-pick {
+  padding-right: var(--sp-12);
+}
+.vlauncher[aria-pressed='true'] {
+  background: var(--bg-selected);
+  border-color: var(--line-strong);
+}
+.vlauncher[aria-pressed='true']:hover {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 6%);
+}
+.vlauncher[aria-pressed='true']:active {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 10%);
+}
+
+/* ---- Narrow windows ------------------------------------------------------ */
+
+/* One breakpoint for the whole layer: 1200px of window. Under it the
+   sidebar folds, the views open as a drawer, and the Code stage narrows. */
+
+/* Above it the views panel leaves the pane about a hundred columns: the
+   dock is as wide as it was dragged, but no wider than 440px unless the
+   window has the room besides. */
+@media (min-width: 1201px) {
+  .dock-right {
+    max-width: min(
+      calc(100% - var(--dock-floor)),
+      max(var(--dock-min-pane), calc(100% - var(--dock-room)))
+    );
+  }
+}
+
+/* Under 1200px the sidebar folds to an icon rail: stages by their icon,
+   agents by their initials with the status dot at the corner, and every
+   name in a tooltip. What a wider rail says in words is still one hover
+   away; nothing is simply cut. */
+@media (max-width: 1200px) {
+  :root {
+    --rail-w: var(--rail-folded);
+  }
+  .rail-sash,
+  .projmenu,
+  .nav-extensions,
+  .co,
+  .rail-wait,
+  .empty-rail,
+  .pane .ttl,
+  .pane-end,
+  .pane .sdot,
+  .pane-row .close,
+  .bar-alarm,
+  .bar-row > .grow,
+  .bar-row > .strong,
+  .bar-row > .fg-accent,
+  .search > :not(svg),
+  .nav > :not(.ic) {
+    display: none;
+  }
+  body.mac .rail .brand,
+  .rail .brand {
+    justify-content: center;
+    padding: 0;
+  }
+  .navs {
+    align-items: center;
+    padding: 0 var(--sp-8) var(--sp-8);
+  }
+  .search,
+  .nav {
+    width: var(--rail-tile);
+    height: var(--rail-tile);
+    padding: 0;
+    justify-content: center;
+    margin-bottom: 0;
+  }
+  .search {
+    border-color: transparent;
+  }
+  .search:hover {
+    background: var(--fill);
+    color: var(--fg);
+  }
+  .nav .ic {
+    width: var(--sp-24);
+    height: var(--sp-24);
+  }
+  .nest {
+    margin: 0;
+    padding: 0;
+    border-left: 0;
+  }
+  /* A repository is a hairline between its agents and the next one's, its
+     name the tooltip. */
+  .repo {
+    display: block;
+    height: var(--sp-12);
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(var(--line), var(--line)) center / calc(100% - var(--sp-24)) 1px
+      no-repeat;
+  }
+  .repo > * {
+    display: none;
+  }
+  .rail-list > .repo:first-child {
+    display: none;
+  }
+  .rail-list {
+    padding-top: var(--sp-8);
+    /* More tiles than the rail has room for dissolve into the footer. */
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-44)), transparent);
+    scroll-padding-block: var(--sp-44);
+  }
+  .pane-row {
+    display: flex;
+    justify-content: center;
+    margin-bottom: var(--sp-4);
+  }
+  .pane {
+    position: relative;
+    width: var(--rail-tile);
+    height: var(--rail-tile);
+    padding: 0;
+    justify-content: center;
+    border-radius: var(--r-md);
+    border: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+  }
+  .pane::before {
+    content: attr(data-mark);
+  }
+  /* The status the row's dot and pill say in words, as a dot on the tile's
+     corner, ringed in the rail's colour so it reads over the border. */
+  .pane::after {
+    content: '';
+    position: absolute;
+    top: calc(-1 * var(--sp-2));
+    right: calc(-1 * var(--sp-2));
+    width: var(--sp-12);
+    height: var(--sp-12);
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid var(--bg-chrome);
+    background: var(--fg-faint);
+  }
+  .pane.working::after {
+    background: var(--accent);
+  }
+  .pane.waiting::after,
+  .pane.needs-review::after {
+    background: var(--attention);
+  }
+  .pane.failed::after {
+    background: var(--danger);
+  }
+  .pane.done::after {
+    background: var(--ok);
+  }
+  .pane.idle::after,
+  .pane.exited::after {
+    background: transparent;
+    border-color: var(--fg-faint);
+  }
+  .rail-list.offstage .pane.on,
+  .rail-list.offstage .pane.on:hover {
+    box-shadow: none;
+    border-radius: var(--r-md);
+  }
+  /* The footer: the connection dot, then three 28px buttons, each a 16px
+     glyph; the console's count is a badge on its corner. */
+  .bar {
+    align-items: center;
+    padding: var(--sp-8) 0;
+  }
+  .bar-row {
+    flex-direction: column;
+    gap: var(--sp-4);
+    min-height: 0;
+  }
+  .bar .icon,
+  .bar .icon.wide {
+    position: relative;
+    width: var(--icon-btn);
+    height: var(--icon-btn);
+    padding: 0;
+    justify-content: center;
+  }
+  .bar .icon svg,
+  .bar .icon.wide svg {
+    width: var(--icon-glyph);
+    height: var(--icon-glyph);
+  }
+  .bar .icount {
+    position: absolute;
+    top: calc(-1 * var(--sp-4));
+    right: calc(-1 * var(--sp-4));
+    min-width: var(--sp-16);
+    box-sizing: border-box;
+    padding: 0 var(--sp-4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    background: var(--bg-raised);
+    color: var(--fg-muted);
+    font-size: var(--fs-xs);
+    line-height: var(--sp-16);
+    text-align: center;
+  }
+
+  /* An agent's views open over the pane instead of squeezing it: the
+     terminal keeps its columns, and the drawer is as wide as it was
+     dragged, up to what leaves the pane a sliver to click back to. It
+     starts under the attention strip, so what that says stays reachable;
+     the Views button in the strip, lit, closes it. */
+  .dock-right {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    max-width: min(var(--drawer-max), calc(100% - var(--sp-44)));
+    box-shadow: var(--shadow-pop);
+    border-left-color: var(--line-strong);
+  }
+  .work:has(> .center > .attn:not([hidden])) .dock-right {
+    top: calc(var(--attn-h) + var(--sp-16));
+  }
+  /* The drawer covers the stage's right edge, so its actions sit beside
+     the title at the left where they stay reachable, and a table cut by the
+     drawer fades instead of ending mid-word. */
+  #xstage .vpanel-acts {
+    margin-left: 0;
+  }
+  body:has(#xstage:not([hidden])) .dock-right::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--sp-32) * -1);
+    width: var(--sp-32);
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--bg-sunken));
+  }
+
+  /* The Code stage gives the file its room: narrower side columns, and the
+     tab strip without the keys, which the tooltips and the palette still say. */
+  .code-tree {
+    width: min(var(--code-tree-w, 288px), var(--code-tree-narrow));
+  }
+  .code-outline {
+    width: min(var(--code-outline-w, 232px), var(--code-outline-narrow));
+  }
+  .code-tabs {
+    gap: var(--sp-8);
+  }
+  .code-tabs .kbd {
+    display: none;
+  }
+}
+
+/* The filter folds into a search button in the header under 1200px; the
+   button opens the field (body.filtering) and keeps its id and keys. */
+.filter-toggle {
+  display: none;
+}
+@media (max-width: 1200px) {
+  .filter-toggle {
+    display: inline-flex;
+  }
+  .index-head .filter {
+    display: none;
+  }
+  body.filtering .index-head .filter,
+  .index-head.has-filter .filter {
+    display: block;
+  }
+  body:not(.filtering) .index-head.on-board {
+    display: none;
+  }
+}
+
+/* Board columns keep their floor and the board scrolls; the fade and the
+   chip say there is more to the right. */
+.board-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.board-wrap > .board {
+  flex: 1;
+  min-width: 0;
+}
+.board-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: calc(var(--sp-32) * 3);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--t-fast);
+  background: linear-gradient(to right, transparent, var(--bg-sunken) 70%);
+}
+.board-wrap.more > .board-fade {
+  opacity: 1;
+}
+/* In the fade, centred and clear of every column's outline. */
+.board-more {
+  position: absolute;
+  bottom: var(--sp-16);
+  right: var(--sp-12);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+  height: var(--control-h);
+  padding: 0 var(--sp-12);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+}
+.board-more[hidden] {
+  display: none;
+}
+.board-more span {
+  color: var(--fg-muted);
+}
+.board-more:hover {
+  background: var(--bg-selected);
+}
+.board-more:active {
+  background: color-mix(in srgb, var(--bg-selected), var(--fg) 10%);
+}
+.board .kcol,
+.board .side {
+  min-width: var(--board-col-min);
 }

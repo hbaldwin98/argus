@@ -117,6 +117,7 @@ impl Chosen {
             min_opacity: MIN_OPACITY,
             backdrops: backdrop::offered(),
             fonts: self.fonts.clone(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         })
     }
 

@@ -1,6 +1,6 @@
 // The Settings dialog, and the look its choices give the window: the theme
 // on the document, the background's opacity as `--see` and the fonts in
-// front of `--font-mono`'s bundled faces and `--font-ui`'s system ones.
+// front of the bundled faces of `--font-mono` and `--font-ui`.
 //
 // Rust holds the choices (`src/settings/preferences.rs`) and saves each as
 // it is made; the dialog draws what Rust sends back, and is updated in place
@@ -13,7 +13,7 @@ import type { Layout } from '../bindings/Layout';
 import type { SavedLinks } from '../bindings/SavedLinks';
 import type { SettingChange } from '../bindings/SettingChange';
 import type { Theme } from '../bindings/Theme';
-import { $, el, icon, type Child } from '../kit/dom.js';
+import { $, el, focusQuietly, icon, type Child, type IconName } from '../kit/dom.js';
 import { fontPicker, type FontPicker } from './font_picker.js';
 import { actionFor } from '../keys/keymap.js';
 import { screens } from '../panes/screen.js';
@@ -24,6 +24,7 @@ type Flavour = Exclude<Theme, 'system'>;
 
 /** Each flavour's own colours for its card: base, mantle, accent, text. */
 const FLAVOURS: { theme: Flavour; name: string; colours: [string, string, string, string] }[] = [
+  { theme: 'night', name: 'Argus Night', colours: ['#0d1020', '#0a0c16', '#98c0ef', '#9aa7bd'] },
   { theme: 'mocha', name: 'Mocha', colours: ['#1e1e2e', '#181825', '#cba6f7', '#a6adc8'] },
   { theme: 'macchiato', name: 'Macchiato', colours: ['#24273a', '#1e2030', '#c6a0f6', '#a5adcb'] },
   { theme: 'frappe', name: 'Frappé', colours: ['#303446', '#292c3c', '#ca9ee6', '#a5adce'] },
@@ -61,6 +62,26 @@ const SECTIONS = [
   'Connection',
 ] as const;
 
+type Section = (typeof SECTIONS)[number];
+
+const SECTION_ICON: Record<Section, IconName> = {
+  Appearance: 'workspace',
+  Editor: 'code',
+  Notifications: 'bell',
+  Features: 'list',
+  Views: 'split',
+  Connection: 'server',
+};
+
+const SECTION_ABOUT: Record<Section, string> = {
+  Appearance: 'The theme, the background and the fonts',
+  Editor: 'Where a file opens, and with what',
+  Notifications: 'When Argus tells you something needs you',
+  Features: 'How the feature index opens',
+  Views: 'Where the links in a saved view open',
+  Connection: 'The daemon this window reaches',
+};
+
 const dark = matchMedia('(prefers-color-scheme: dark)');
 
 function set(change: SettingChange): void {
@@ -85,7 +106,7 @@ export function applyLook(): void {
   root.style.setProperty('--see', String(chosen.opacity / 100));
   // Rust leaves no quote in the name to end it early.
   putFont(root, '--font-mono', chosen.font, 'var(--font-mono-bundled)');
-  putFont(root, '--font-ui', chosen.uiFont, 'var(--font-ui-system)');
+  putFont(root, '--font-ui', chosen.uiFont, 'var(--font-ui-bundled)');
   for (const s of screens) s.retheme();
 }
 
@@ -180,12 +201,19 @@ function row(title: string, detail: string | null, control: HTMLElement): HTMLEl
   );
 }
 
-function section(name: string, ...rows: Child[]): HTMLElement {
+/** A section: its title and one line under it, then its rows in one bordered
+ *  group, divided from each other. */
+function section(name: Section, ...rows: Child[]): HTMLElement {
   return el(
     'section',
-    { class: 'stack-2', 'aria-label': name, id: `settings-${name.toLowerCase()}` },
-    el('div', { class: 'label' }, name),
-    rows,
+    { class: 'setsection', 'aria-label': name, id: `settings-${name.toLowerCase()}` },
+    el(
+      'div',
+      { class: 'sethead' },
+      el('div', { class: 'settitle' }, name),
+      el('div', { class: 'meta' }, SECTION_ABOUT[name]),
+    ),
+    el('div', { class: 'setgroup' }, rows),
   );
 }
 
@@ -217,7 +245,7 @@ export function openSettings(): void {
         onclick: () => set({ set: 'theme', theme: flavour.theme }),
       },
       preview,
-      el('span', { class: 'strong' }, flavour.name),
+      el('span', { class: 'strong name' }, flavour.name, icon('check')),
     );
     cards.set(flavour.theme, card);
   }
@@ -274,7 +302,7 @@ export function openSettings(): void {
     ),
     font.node,
   );
-  const uiFont = fontPicker('Interface font', 'var(--font-ui-system)', 'System', (family) =>
+  const uiFont = fontPicker('Interface font', 'var(--font-ui-bundled)', 'Geist', (family) =>
     set({ set: 'uiFont', family }),
   );
   const uiFontWhy = el('span', { class: 'meta' });
@@ -403,10 +431,28 @@ export function openSettings(): void {
             });
           },
         },
+        icon(SECTION_ICON[name]),
         name,
       ),
     ),
+    el('div', { class: 'grow' }),
+    page.version && el('div', { class: 'meta setversion' }, `argus ${page.version}`),
   );
+
+  // The section in view is the one lit in the nav, so a long page says where it is.
+  const spy = (): void => {
+    const top = body.getBoundingClientRect().top;
+    let current: string = SECTIONS[0];
+    for (const name of SECTIONS) {
+      const block = document.getElementById(`settings-${name.toLowerCase()}`);
+      if (block && block.getBoundingClientRect().top - top <= 24) current = name;
+    }
+    nav.querySelectorAll('button').forEach((button) => {
+      button.classList.toggle('on', button.textContent === current);
+    });
+  };
+  body.addEventListener('scroll', spy);
+  spy();
 
   const close = el(
     'button',
@@ -416,7 +462,7 @@ export function openSettings(): void {
   const dialog = el(
     'section',
     {
-      class: 'dialog settings',
+      class: 'dialog sheet-dialog settings',
       role: 'dialog',
       'aria-modal': 'true',
       'aria-labelledby': 'settings-title',
@@ -425,7 +471,7 @@ export function openSettings(): void {
       'div',
       { class: 'dhead' },
       el('div', { class: 'type-title grow', id: 'settings-title' }, 'Settings'),
-      el('span', { class: 'meta' }, 'Saved as you change them'),
+      el('span', { class: 'meta saved' }, icon('check'), 'Saved as you change them'),
       close,
     ),
     el('div', { class: 'split' }, nav, body),
@@ -453,7 +499,7 @@ export function openSettings(): void {
   );
   drawSettings();
   $('input').blur();
-  close.focus();
+  focusQuietly(close);
 }
 
 export function closeSettings(): void {

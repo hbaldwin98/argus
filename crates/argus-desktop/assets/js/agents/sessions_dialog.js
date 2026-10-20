@@ -4,7 +4,7 @@
 // place of the list. Rust holds the list, the filters and what each
 // session offers (`src/agents/sessions_dialog.rs`); the page draws them
 // and says what was pressed.
-import { $, el, ghosts, icon } from '../kit/dom.js';
+import { $, el, ghosts, hint, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -22,7 +22,7 @@ function listRow(r) {
         title: r.removed ? `ran in ${r.checkout}, a worktree since removed` : null,
         onclick: () => call('sessions_action', { action: 'next', row: r.row }),
         ondblclick: () => act('choose'),
-    }, el('span', { class: `sdot${r.live ? ' live' : ''}`, 'aria-hidden': 'true' }), el('span', { class: 'grow ellipsis' }, r.title), el('span', { class: 'meta' }, r.harness), el('span', { class: 'meta mono ellipsis scheckout' }, r.checkout), turns && el('span', { class: 'meta' }, turns), el('span', { class: 'meta' }, r.live ? 'live' : r.ago));
+    }, el('span', { class: `sdot${r.live ? ' live' : ''}`, 'aria-hidden': 'true' }), el('span', { class: 'grow ellipsis' }, r.title), el('span', { class: 'meta' }, r.harness), el('span', { class: 'meta mono ellipsis scheckout' }, r.checkout), r.removed && el('span', { class: 'meta' }, 'removed'), turns && el('span', { class: 'meta' }, turns), el('span', { class: 'meta' }, r.live ? 'live' : r.ago));
 }
 /** The rows under a heading for the live ones and one for the rest. */
 function list(s) {
@@ -33,9 +33,9 @@ function list(s) {
     const live = s.rows.filter((r) => r.live);
     const ended = s.rows.filter((r) => !r.live);
     return [
-        live.length > 0 && el('div', { class: 'shead meta' }, 'Live'),
+        live.length > 0 && el('div', { class: 'mlabel' }, 'Live'),
         live.map(listRow),
-        ended.length > 0 && el('div', { class: 'shead meta' }, 'Ended'),
+        ended.length > 0 && el('div', { class: 'mlabel' }, 'Ended'),
         ended.map(listRow),
     ];
 }
@@ -50,10 +50,27 @@ function transcript(p) {
         p.entries.map((l) => said(l)),
     ];
 }
+/** The daemon sends the moment a session began as an ISO instant; a person
+ *  reads it as a day and a time in their own zone. */
+function humanTime(iso) {
+    const at = new Date(iso);
+    if (Number.isNaN(at.getTime()))
+        return iso;
+    return at.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    });
+}
 function preview(s) {
     const p = s.preview;
     return el('section', { class: 'review-diff' }, p &&
-        el('div', { class: 'fhdr' }, el('span', { class: 'ellipsis' }, p.title), el('span', { class: 'meta' }, p.harness), el('span', { class: 'meta mono' }, p.checkout), p.started && el('span', { class: 'meta' }, p.started), el('span', { class: 'grow' }), el('span', { class: 'meta mono ellipsis' }, p.sessionId)), el('div', { class: 'dbody transcript', id: 'sessions-body' }, p ? transcript(p) : el('div', { class: 'review-empty fg-muted' }, 'Pick a session.')));
+        el('div', { class: 'fhdr' }, el('span', { class: 'ellipsis' }, p.title), el('span', { class: 'meta' }, p.harness), el('span', { class: 'meta mono scheckout' }, p.checkout), p.started &&
+            el('span', { class: 'meta', title: p.started }, `started ${humanTime(p.started)}`), el('span', { class: 'grow' }), 
+        // The whole id is for finding the file; eight characters tell
+        // sessions apart, and the rest is a hover away.
+        el('span', { class: 'meta mono sid', title: p.sessionId }, p.sessionId.slice(0, 8))), el('div', { class: 'dbody transcript', id: 'sessions-body' }, p ? transcript(p) : el('div', { class: 'review-empty fg-muted' }, 'Pick a session.')));
 }
 /** The reader, for a session whose harness keeps a transcript to open. */
 function readButton(p) {
@@ -109,14 +126,16 @@ function searchField(search) {
     field.value = live instanceof HTMLInputElement ? live.value : search;
     return field;
 }
-/** A menu over what the listing holds; its first option is all of them. */
+/** A select over what the listing holds, in the one field style; its
+ *  first option is all of them. */
 function menu(label, all, options, chosen, pick) {
     const select = el('select', {
+        class: 'field',
         'aria-label': label,
         onchange: () => pick(select.value === '' ? null : select.value),
     }, el('option', { value: '' }, all), options.map((o) => el('option', { value: o }, o)));
     select.value = chosen ?? '';
-    return el('label', { class: 'pick' }, select);
+    return select;
 }
 function filters(harness, checkout) {
     call('filter_sessions', { harness, checkout });
@@ -153,7 +172,7 @@ export function drawSessions() {
     }
     placeReader(null, 0);
     host.replaceChildren(el('div', { class: 'scrim' }, el('section', {
-        class: 'dialog review-dialog',
+        class: 'dialog sheet-dialog review-dialog',
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'sessions-title',
@@ -161,7 +180,7 @@ export function drawSessions() {
         class: 'icon',
         'aria-label': 'Close the recent sessions',
         onclick: () => act('closeLayer'),
-    }, icon('close'))), el('div', { class: 'review-split' }, el('aside', { class: 'history-list', id: 'sessions-list', 'aria-label': 'Sessions' }, list(s)), preview(s)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' move · ', keycap('/'), ' search · ', keycap('H'), keycap('C'), ' harness, checkout · ', keycap('O'), ' whole · ', keycap('Esc'), ' close', el('span', { class: 'grow' }), offer(s.preview)))));
+    }, icon('close'))), el('div', { class: 'review-split' }, el('aside', { class: 'history-list', id: 'sessions-list', 'aria-label': 'Sessions' }, list(s)), preview(s)), el('div', { class: 'dfoot meta' }, hint(['J', 'K'], 'move'), hint('/', 'search'), hint(['H', 'C'], 'harness, checkout'), hint('O', 'whole'), hint('Esc', 'close'), el('span', { class: 'grow' }), offer(s.preview)))));
     ['sessions-list', 'sessions-body'].forEach((id, i) => {
         const node = document.getElementById(id);
         if (node)

@@ -2,7 +2,7 @@
 // on Enter. The row keeps its old name until the daemon's tree says the
 // new one, so a refused rename leaves it showing what is true.
 
-import { $, el } from '../kit/dom.js';
+import { $, closeButton, el, escKey } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { closeLayer } from '../kit/menu.js';
 import { call } from '../connection/tauri.js';
@@ -31,7 +31,7 @@ export function renameDialog(pane: number, title: string): void {
       el(
         'section',
         {
-          class: 'dialog hold-dialog',
+          class: 'dialog',
           role: 'dialog',
           'aria-modal': 'true',
           'aria-labelledby': 'rename-title',
@@ -39,20 +39,20 @@ export function renameDialog(pane: number, title: string): void {
         el(
           'div',
           { class: 'dhead' },
-          el('div', { class: 'type-title', id: 'rename-title' }, `Rename ${title}`),
+          el('div', { class: 'type-title grow', id: 'rename-title' }, `Rename ${title}`),
+          closeButton(closeLayer),
         ),
         el(
           'div',
-          { class: 'dbody' },
+          { class: 'dbody prose' },
           el('label', { class: 'label', for: 'rename-name' }, 'Name'),
           name,
-          el('div', { class: 'meta' }, 'An agent may rename its own pane later.'),
         ),
         el(
           'div',
           { class: 'dfoot' },
-          el('span', { class: 'grow' }),
-          el('button', { class: 'btn', onclick: closeLayer }, 'Cancel'),
+          el('span', { class: 'dwhy grow' }, 'An agent may rename its own pane later.'),
+          el('button', { class: 'btn', onclick: closeLayer }, 'Cancel ', escKey()),
           el('button', { class: 'btn primary', onclick: rename }, 'Rename'),
         ),
       ),

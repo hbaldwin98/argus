@@ -5,7 +5,7 @@
 //
 // What it lists comes from Rust while it is open (`src/keys/palette.rs`),
 // and choosing one is a call: the palette runs nothing itself.
-import { $, el } from '../kit/dom.js';
+import { $, el, icon, sentence } from '../kit/dom.js';
 import { extensionResults } from '../extensions/views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './chords.js';
@@ -32,7 +32,7 @@ export function openPalette() {
     query = '';
     top();
     const field = el('input', {
-        class: 'field palette-field',
+        class: 'palette-field',
         placeholder: 'Search, or > for commands, # for features',
         'aria-label': 'Search actions, panes, features and checkouts',
         autocomplete: 'off',
@@ -69,10 +69,14 @@ export function openPalette() {
             if (e.target === e.currentTarget)
                 closePalette();
         },
-    }, el('section', { class: 'dialog palette', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Palette' }, field, el('div', { class: 'palette-results', id: 'palette-results', role: 'listbox' }))));
+    }, el('section', { class: 'dialog palette', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Palette' }, el('div', { class: 'palette-head' }, icon('search'), field, el('span', { class: 'kbd' }, 'Esc')), el('div', { class: 'palette-results', id: 'palette-results', role: 'listbox' }), el('div', { class: 'dfoot palette-foot' }, hint(['↑', '↓'], 'move'), hint(['↵'], 'open'), hint(['Tab'], 'next group'), el('span', { class: 'grow' }), hint(['>'], 'commands'), hint(['#'], 'features')))));
     call('palette', { open: true });
     drawResults();
     field.focus();
+}
+/** A footer hint: its keycaps, then what they do. */
+function hint(keys, what) {
+    return el('span', { class: 'dwhy' }, keys.map((k) => el('span', { class: 'kbd' }, k)), what);
 }
 /** Puts the palette away, giving the keys back to what had them. */
 export function closePalette() {
@@ -103,6 +107,24 @@ function choose(result) {
     closePalette();
     result.choose();
 }
+const COMMAND_ICON = {
+    workspace: 'workspace',
+    feature: 'list',
+    newFeature: 'list',
+    checkouts: 'branch',
+    branches: 'branch',
+    code: 'code',
+    openCode: 'code',
+    console: 'console',
+    toggleConsole: 'console',
+    palette: 'search',
+    search: 'search',
+    shortcuts: 'keyboard',
+    settings: 'gear',
+    compose: 'plus',
+    startShell: 'terminal',
+    startAgent: 'plus',
+};
 function commandResult(command) {
     const place = command.place && command.place !== 'anywhere'
         ? state.keymap.find((g) => g.place === command.place)?.title
@@ -110,7 +132,8 @@ function commandResult(command) {
     return {
         group: 'Commands',
         key: `command ${command.action}`,
-        text: command.label,
+        text: sentence(command.label),
+        icon: COMMAND_ICON[command.action] ?? 'right',
         aside: command.chords.length
             ? el('span', { class: 'aside' }, place && el('span', { class: 'fg-faint' }, place), keycaps(command.chords))
             : null,
@@ -129,6 +152,7 @@ function everything() {
             group: 'Panes',
             key: `pane ${pane.id}`,
             text: pane.title,
+            icon: 'terminal',
             detail: pane.place,
             aside: word(pane.status, `st ${pane.status}`),
             choose: () => {
@@ -140,6 +164,7 @@ function everything() {
             group: 'Features',
             key: `feature ${feature.slug}`,
             text: `#${feature.number} ${feature.title}`,
+            icon: 'list',
             aside: word(feature.standing, 'st fg-faint'),
             choose: () => call('go_to_feature', { slug: feature.slug }),
         })),
@@ -147,6 +172,7 @@ function everything() {
             group: 'Checkouts',
             key: `checkout ${checkout.id}`,
             text: `${checkout.repository} / ${checkout.name}`,
+            icon: 'branch',
             detail: checkout.branch || undefined,
             aside: checkout.git ? word(checkout.git, `git${checkout.clean ? ' clean' : ''}`) : null,
             choose: () => call('go_to_checkout', { checkout: checkout.id }),
@@ -241,7 +267,7 @@ function drawResults() {
                     highlight(i);
                     drawResults();
                 },
-            }, el('span', { class: 'grow ttl' }, marked(r.text, hits)), r.detail && el('span', { class: 'meta mono' }, r.detail), r.aside);
+            }, el('span', { class: 'pic', 'aria-hidden': 'true' }, icon(r.icon ?? 'puzzle')), el('span', { class: 'grow ttl' }, marked(r.text, hits)), r.detail && el('span', { class: 'meta mono' }, r.detail), r.aside);
             buttons.push(button);
             rows.push(button);
         }
@@ -252,8 +278,11 @@ function drawResults() {
     }
     const kept = results.findIndex((r) => r.key === held);
     highlight(kept >= 0 ? kept : Math.min(at, Math.max(0, results.length - 1)));
-    buttons[at]?.classList.add('on');
-    buttons[at]?.setAttribute('aria-selected', 'true');
+    const active = buttons[at];
+    active?.classList.add('on');
+    // What Enter does, said on the row it will do it to.
+    active?.insertBefore(el('span', { class: 'open-hint' }, 'Open ', el('span', { class: 'kbd' }, '↵')), results[at]?.aside ?? null);
+    active?.setAttribute('aria-selected', 'true');
     list.replaceChildren(...rows);
     list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
 }

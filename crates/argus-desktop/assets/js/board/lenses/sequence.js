@@ -27,7 +27,16 @@ function svg(tag, attrs, ...children) {
 }
 export function drawSequence(sequence) {
     const count = Math.max(sequence.lifelines.length, 1);
-    const width = MARGIN * 2 + count * COLUMN;
+    // A call to itself on the last lifeline writes its text out to the right.
+    const loops = sequence.items.some((item) => item.kind === 'message' && item.from === item.to && item.from === count - 1);
+    // A self-call's text starts 48 right of its lifeline; the frame must reach
+    // past its end, measured at 12px mono (7.2 a character) plus a margin.
+    const reach = sequence.items.reduce((most, item) => {
+        if (item.kind !== 'message' || item.from !== item.to)
+            return most;
+        return Math.max(most, MARGIN + COLUMN / 2 + item.from * COLUMN + 48 + item.text.length * 7.2);
+    }, 0);
+    const width = Math.max(MARGIN * 2 + count * COLUMN + (loops ? 120 : 0), Math.ceil(reach) + MARGIN + 8);
     const x = (at) => MARGIN + COLUMN / 2 + at * COLUMN;
     const frames = svg('g', { class: 'frames' });
     const messages = svg('g', { class: 'messages' });
@@ -39,9 +48,13 @@ export function drawSequence(sequence) {
             case 'message': {
                 const from = x(item.from);
                 const lit = item.on ? ' on' : '';
+                const named = (to) => sequence.lifelines[to]?.label ?? '';
                 const group = svg('g', {
                     class: `smsg${lit}${item.reply ? ' reply' : ''}`,
                     'data-step': item.step,
+                    role: 'button',
+                    tabindex: 0,
+                    'aria-label': `Step ${item.step}: ${named(item.from)} → ${named(item.to)}, ${item.text}`,
                 });
                 if (item.from === item.to) {
                     const loop = `M ${from} ${y} H ${from + 40} V ${y + 22} H ${from + 4}`;
@@ -124,10 +137,22 @@ function badge(group, x, y, step) {
 }
 /** Clicks on a drawn diagram's arrows put the cursor on their step. */
 export function clickable(drawn, flow) {
+    drawn.node.setAttribute('aria-label', `Sequence diagram: ${flow.title}`);
     drawn.node.addEventListener('click', (e) => {
         const step = stepOf(e.target);
         if (step !== null && !drag.moved)
             selectStep(flow.id, step - 1);
+    });
+    drawn.node.addEventListener('keydown', (e) => {
+        // `code`, not the key's name: the keymap owns what a key means, and these
+        // are only the keys that press a focused control, as a button's own do.
+        if (e.code !== 'Enter' && e.code !== 'Space' && e.code !== 'NumpadEnter')
+            return;
+        const step = stepOf(e.target);
+        if (step === null)
+            return;
+        e.preventDefault();
+        selectStep(flow.id, step - 1);
     });
 }
 function stepOf(target) {
@@ -278,7 +303,7 @@ function panel(view, flow) {
                 onclick: () => move(at + 1),
             }, '›'));
         })), titled('Bound by', step.boundBy.length
-            ? lineList(step.boundBy, '✓', 'fg-ok')
+            ? lineList(step.boundBy, '◆', 'fg-ref')
             : el('div', { class: 'fg-faint' }, 'No decision binds it yet.')), step.carriedOutBy.length > 0 &&
             titled('Carried out by', lineList(step.carriedOutBy, '·', 'fg-faint')), el('div', { class: 'actions' }, el('button', { class: 'btn', onclick: () => editStep(flow) }, 'Edit step'), el('button', { class: 'btn', onclick: (e) => bindMenu(flow, e) }, 'Bind a decision…'), el('button', { class: 'btn', onclick: () => editSource(flow) }, 'Edit source')));
     }
