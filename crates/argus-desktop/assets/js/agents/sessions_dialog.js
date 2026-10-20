@@ -4,6 +4,7 @@
 // place of the list. Rust holds the list, the filters and what each
 // session offers (`src/agents/sessions_dialog.rs`); the page draws them
 // and says what was pressed.
+import { ago } from '../kit/clock.js';
 import { $, el, ghosts, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
@@ -53,7 +54,8 @@ function transcript(p) {
 function preview(s) {
     const p = s.preview;
     return el('section', { class: 'review-diff' }, p &&
-        el('div', { class: 'fhdr' }, el('span', { class: 'ellipsis' }, p.title), el('span', { class: 'meta' }, p.harness), el('span', { class: 'meta mono' }, p.checkout), p.started && el('span', { class: 'meta' }, p.started), el('span', { class: 'grow' }), el('span', { class: 'meta mono ellipsis' }, p.sessionId)), el('div', { class: 'dbody transcript', id: 'sessions-body' }, p ? transcript(p) : el('div', { class: 'review-empty fg-muted' }, 'Pick a session.')));
+        el('div', { class: 'fhdr' }, el('span', { class: 'ellipsis' }, p.title), el('span', { class: 'meta' }, p.harness), el('span', { class: 'meta mono' }, p.checkout), p.started &&
+            el('span', { class: 'meta nowrap', title: p.started }, ago(p.started) ?? p.started), el('span', { class: 'grow' }), el('span', { class: 'meta mono nowrap', title: p.sessionId }, p.sessionId.slice(0, 8))), el('div', { class: 'dbody transcript', id: 'sessions-body' }, p ? transcript(p) : el('div', { class: 'review-empty fg-muted' }, 'Pick a session.')));
 }
 /** The reader, for a session whose harness keeps a transcript to open. */
 function readButton(p) {

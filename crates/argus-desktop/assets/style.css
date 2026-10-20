@@ -552,6 +552,14 @@
   align-items: center;
   gap: var(--sp-8);
 }
+/* One field-label style across the form dialogs: sentence case, stacked
+   above its input. The uppercase tracked label stays for page chrome. */
+.dialog .label {
+  font: 500 var(--fs-md) / 1.4 var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fg);
+}
 .label-aside {
   text-transform: none;
   letter-spacing: 0;
@@ -614,6 +622,11 @@
 .btn.danger:hover {
   filter: brightness(1.08);
 }
+.btn[disabled] .kbd {
+  color: var(--fg-faint);
+  border-color: var(--line);
+  background: transparent;
+}
 .btn[disabled],
 .btn[disabled]:hover {
   background: transparent;
@@ -665,6 +678,9 @@
   font: inherit;
   padding: 0 var(--sp-8);
   height: var(--control-h);
+}
+.field:hover:not(:focus) {
+  border-color: var(--fg-faint);
 }
 .kbd {
   font-family: var(--font-mono);
@@ -750,9 +766,31 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.segb.on {
+.segb:hover:not(.on) {
   background: var(--fill);
   color: var(--fg);
+}
+/* Raised with an edge, not a tint: a --fill on the track's own fill vanishes
+   in a light theme. */
+.segb.on {
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--fg);
+}
+.seg-label {
+  color: var(--fg-faint);
+  font: var(--type-small);
+}
+.chip-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: var(--icon-btn);
+  padding: 0 var(--sp-8);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  color: var(--ref);
+  font-size: var(--fs-sm);
 }
 .check {
   display: flex;
@@ -843,7 +881,10 @@
 .mi:focus-visible,
 .mi:not([disabled]):hover {
   background: var(--fill);
-  outline: none;
+}
+.mi:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 .mlabel {
   font: var(--type-label);
@@ -1562,6 +1603,28 @@
   background: transparent;
   font: var(--type-body);
   color: var(--fg-muted);
+}
+/* A scrolling body shows it has more: a shade at the edge that still has
+   content beyond it, drawn behind the text from the surface colour. */
+.dialog .dbody.prose,
+.ap-body,
+.tracker-body,
+.sheet-body {
+  background:
+    linear-gradient(var(--bg-surface) 30%, transparent) top / 100% 24px no-repeat local,
+    linear-gradient(transparent, var(--bg-surface) 70%) bottom / 100% 24px no-repeat local,
+    radial-gradient(
+        farthest-side at 50% 0,
+        color-mix(in srgb, var(--fg) 14%, transparent),
+        transparent
+      )
+      top / 100% 8px no-repeat scroll,
+    radial-gradient(
+        farthest-side at 50% 100%,
+        color-mix(in srgb, var(--fg) 14%, transparent),
+        transparent
+      )
+      bottom / 100% 8px no-repeat scroll;
 }
 /* The ✕ centres on the title's first line, not on a head that grows. */
 .dhead > .icon {
@@ -2311,19 +2374,27 @@ body.moving-pane * {
   gap: var(--sp-6);
   flex-wrap: wrap;
 }
+.nowrap {
+  white-space: nowrap;
+  flex: none;
+}
 .pick {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-6);
   height: var(--control-h);
   box-sizing: border-box;
-  padding: 0 var(--sp-4) 0 var(--sp-8);
+  padding: 0 var(--sp-8);
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-pill);
-  color: var(--fg-muted);
+  border-radius: var(--r-sm);
+  background: var(--bg-chrome);
+  color: var(--fg);
+}
+.pick:hover:not(:focus-within) {
+  border-color: var(--fg-faint);
 }
 .pick:focus-within {
-  border-color: var(--accent);
+  border-color: var(--ring);
+  box-shadow: var(--ring-shadow);
 }
 .pick-glyph {
   display: inline-flex;
@@ -2337,7 +2408,6 @@ body.moving-pane * {
   color: var(--fg);
   font: inherit;
   font-size: var(--fs-sm);
-  font-weight: 600;
   cursor: pointer;
 }
 /* A select's list drawn as a .menu rather than by the system: WebView2's
@@ -2347,8 +2417,15 @@ select,
 ::picker(select) {
   appearance: base-select;
 }
+/* A chevron, the one Settings' fields draw, not the system's ▼. */
 select::picker-icon {
-  color: var(--fg-faint);
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin: 4px 2px 0 var(--sp-8);
+  border-right: 1.5px solid var(--fg-faint);
+  border-bottom: 1.5px solid var(--fg-faint);
+  transform: rotate(45deg);
   transition: rotate 0.15s;
 }
 select:open::picker-icon {
@@ -2384,7 +2461,7 @@ select option:checked {
 select option::checkmark {
   color: var(--accent);
 }
-.kbd.on-accent {
+.btn:not([disabled]) .kbd.on-accent {
   color: var(--fg-on-accent);
   border-color: var(--fg-on-accent);
 }
@@ -3775,16 +3852,45 @@ body.console-fullscreen #bar {
   width: min(620px, 92vw);
   max-height: 70vh;
 }
-.palette-field {
-  height: var(--sp-44);
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  /* The dialog's inner corners, so the focus ring follows its curve
-     instead of being clipped square by it. */
-  border-radius: calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0 0;
-  background: var(--bg-surface);
-  font-size: var(--fs-lg);
+.palette-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
   padding: 0 var(--sp-16);
+  height: var(--sp-44);
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg-muted);
+}
+/* Bare: the head is the field, and its halo would be a second box. */
+.palette-field {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-lg);
+}
+.palette-foot {
+  padding: var(--sp-12) var(--sp-16);
+  gap: var(--sp-16);
+}
+.palette-foot .dwhy {
+  gap: var(--sp-6);
+}
+.open-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  color: var(--fg-muted);
+  font: var(--type-small);
+}
+.palette-row.on {
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
 }
 .palette-results {
   overflow-y: auto;
@@ -3833,17 +3939,20 @@ body.console-fullscreen #bar {
 .hint:hover {
   color: var(--fg);
 }
-.sheet-rule {
-  padding: var(--sp-12) var(--sp-24);
-  border-bottom: 1px solid var(--line);
-  color: var(--fg-muted);
-  font: var(--type-small);
-}
 .sheet-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--sp-16) var(--sp-24) var(--sp-24);
-  columns: 280px 3;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-items: start;
   column-gap: var(--sp-32);
+}
+.sheet-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .sheet-group {
   break-inside: avoid;
@@ -3855,9 +3964,21 @@ body.console-fullscreen #bar {
 .sheet-row {
   display: flex;
   align-items: center;
-  gap: var(--sp-12);
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-12);
   padding: var(--sp-2) 0;
   font: var(--type-small);
+}
+/* The keys keep their width. A label with long keycaps beside it sends them
+   to a line of their own rather than wrapping to three lines of words. */
+.sheet-row > .keys {
+  flex: none;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.sheet-row > .grow {
+  flex: 1 1 var(--sp-44);
+  min-width: 11em;
 }
 
 /* ---- The review dialog ------------------------------------------------- */
@@ -3898,7 +4019,7 @@ body.console-fullscreen #bar {
 }
 .rfile {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--sp-6);
   border: 0;
   border-radius: var(--r-sm);
@@ -3910,16 +4031,33 @@ body.console-fullscreen #bar {
   padding: var(--sp-4) var(--sp-8);
   cursor: pointer;
 }
+.rfile:hover:not(.on) {
+  background: var(--fill);
+}
 .rfile.on {
   background: var(--bg-selected);
 }
 .rfile .rname {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.rfile .rbase {
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The directory is the part that may be cut; the filename above it never is. */
+.rfile .rdir {
+  color: var(--fg-faint);
   font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .review-diff {
   flex: 1;
@@ -4138,6 +4276,9 @@ body.console-fullscreen #bar {
   cursor: pointer;
   min-width: 0;
 }
+.hrow:hover:not(.on) {
+  background: var(--fill);
+}
 .hrow.on {
   background: var(--bg-selected);
 }
@@ -4196,6 +4337,12 @@ body.console-fullscreen #bar {
   display: flex;
   flex-direction: column;
   gap: var(--sp-8);
+}
+/* Prose wraps at the pane; the diff's max-content column is for code. */
+.review-diff > .dbody.transcript {
+  display: flex;
+  flex-direction: column;
+  container-type: normal;
 }
 .tearlier {
   text-align: center;
@@ -4384,6 +4531,9 @@ body.console-fullscreen #bar {
   max-width: 50%;
 }
 /* A form stacks its labels above its fields, here as in the link dialog. */
+.add-dialog .setrow .label {
+  min-height: var(--sp-24);
+}
 .add-dialog .setrow {
   flex-direction: column;
   align-items: stretch;
@@ -4517,6 +4667,10 @@ body.console-fullscreen #bar {
   text-align: left;
   cursor: pointer;
 }
+.themecard:hover:not(:disabled) {
+  border-color: var(--fg-faint);
+  background: var(--fill);
+}
 .themecard.on {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
@@ -4552,8 +4706,8 @@ body.console-fullscreen #bar {
   width: 60%;
 }
 .toggle {
-  width: 34px;
-  height: 20px;
+  width: 40px;
+  height: var(--sp-24);
   flex: none;
   border: 0;
   border-radius: var(--r-pill);
@@ -4564,18 +4718,23 @@ body.console-fullscreen #bar {
 }
 .toggle span {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 4px;
+  left: 4px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   background: var(--fg-muted);
 }
-.toggle.on {
+.toggle:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fill) 70%, var(--fg) 16%);
+  filter: brightness(1.12);
+}
+.toggle.on,
+.toggle.on:hover:not(:disabled) {
   background: var(--accent);
 }
 .toggle.on span {
-  left: 16px;
+  left: 20px;
   background: var(--fg-on-accent);
 }
 .toggle:disabled {
@@ -4593,6 +4752,7 @@ body.console-fullscreen #bar {
 }
 .opacity input {
   width: 200px;
+  height: var(--sp-24);
   accent-color: var(--accent);
 }
 .opacity .n {
@@ -5730,9 +5890,8 @@ body.resizing:has(.brief-sash.held) {
 }
 
 /* An extension's question blocks, so it has the scrim and the window's centre
-   like any dialog. One raised on its own, which the person did not ask for,
-   waits bottom-centre without a scrim and leaves the pane under it to be
-   typed in. */
+   like any dialog, whether the person asked for it or not: anything that
+   blocks has a scrim. */
 .ext-dialogs {
   position: absolute;
   inset: 0;
@@ -5742,14 +5901,10 @@ body.resizing:has(.brief-sash.held) {
   pointer-events: none;
   z-index: 5;
 }
-.ext-dialogs:has(.ext-dialog:not(.unasked)) {
+.ext-dialogs:has(.ext-dialog) {
   background: var(--scrim);
   backdrop-filter: blur(2px);
   pointer-events: auto;
-}
-.ext-dialogs:has(.ext-dialog.unasked) {
-  align-items: flex-end;
-  padding-bottom: calc(var(--sp-44) * 2 + var(--sp-24));
 }
 .ext-dialog {
   pointer-events: auto;
@@ -5852,6 +6007,52 @@ body.resizing:has(.brief-sash.held) {
   gap: var(--sp-20);
   height: 100%;
   min-height: 0;
+}
+.rc-tick {
+  flex: none;
+  width: var(--sp-24);
+  height: var(--sp-24);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.rc-tick input {
+  appearance: none;
+  margin: 0;
+  width: var(--sp-24);
+  height: var(--sp-24);
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+}
+.rc-tick input::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--fg-faint);
+  border-radius: var(--r-xs);
+  background: var(--bg-chrome);
+  color: var(--fg-on-accent);
+  font-size: var(--fs-xs);
+  line-height: 13px;
+  text-align: center;
+}
+.rc-tick input:hover::before {
+  border-color: var(--fg);
+}
+.rc-tick input:checked::before {
+  content: '✓';
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.rc-tick input:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.rc-asked {
+  margin-top: var(--sp-12);
 }
 .rc-lines {
   flex: 1.3;

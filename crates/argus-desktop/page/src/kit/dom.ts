@@ -9,6 +9,10 @@ export const $ = (id: string): HTMLElement => {
 
 const ICON = {
   down: '<svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5L7 9l3.5-3.5"></path></svg>',
+  search:
+    '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>',
+  refresh:
+    '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 2.5v2.5h-2.5"></path></svg>',
   up: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"></path></svg>',
   right:
     '<svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5L9 7l-3.5 3.5"></path></svg>',
@@ -135,4 +139,11 @@ export function closeButton(onclick: () => void, label = 'Close'): HTMLElement {
  *  button the key answers. */
 export function escKey(): HTMLElement {
   return el('span', { class: 'kbd' }, 'Esc');
+}
+
+/** Gives a dialog's safe button the keys without drawing the focus ring:
+ *  a dialog that opens already ringed reads as an error state. Tab still
+ *  shows the ring, since it moves focus by keyboard. */
+export function focusQuietly(node: HTMLElement | null | undefined): void {
+  node?.focus({ focusVisible: false } as FocusOptions);
 }

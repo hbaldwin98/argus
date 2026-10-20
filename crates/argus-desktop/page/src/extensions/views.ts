@@ -15,7 +15,7 @@ import type { ExtTableConsole } from '../bindings/ExtTableConsole';
 import type { Panel } from '../bindings/Panel';
 import type { Value } from '../bindings/Value';
 import { dockMenuButton } from '../layout/docks.js';
-import { $, closeButton, el, escKey, icon, type IconName } from '../kit/dom.js';
+import { $, closeButton, el, escKey, focusQuietly, icon, type IconName } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
 import { closeLayer } from '../kit/menu.js';
 import { keycaps } from '../keys/chords.js';
@@ -471,7 +471,7 @@ export function drawExtensionConfirm(): void {
       ),
     ),
   );
-  document.getElementById('extension-keep')?.focus();
+  focusQuietly(document.getElementById('extension-keep'));
 }
 
 /** The extensions' headings of the shortcuts sheet, after the keymap's. */

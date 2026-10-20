@@ -9,6 +9,7 @@ import type { Action } from '../bindings/Action';
 import type { SessionPreview } from '../bindings/SessionPreview';
 import type { SessionRowView } from '../bindings/SessionRowView';
 import type { SessionsPage } from '../bindings/SessionsPage';
+import { ago } from '../kit/clock.js';
 import { $, el, ghosts, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
@@ -82,9 +83,10 @@ function preview(s: SessionsPage): HTMLElement {
         el('span', { class: 'ellipsis' }, p.title),
         el('span', { class: 'meta' }, p.harness),
         el('span', { class: 'meta mono' }, p.checkout),
-        p.started && el('span', { class: 'meta' }, p.started),
+        p.started &&
+          el('span', { class: 'meta nowrap', title: p.started }, ago(p.started) ?? p.started),
         el('span', { class: 'grow' }),
-        el('span', { class: 'meta mono ellipsis' }, p.sessionId),
+        el('span', { class: 'meta mono nowrap', title: p.sessionId }, p.sessionId.slice(0, 8)),
       ),
     el(
       'div',

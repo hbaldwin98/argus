@@ -36,32 +36,36 @@ function head(r: ReviewPage): HTMLElement {
   return el(
     'div',
     { class: 'dhead review-head' },
+    el('div', { class: 'type-title', id: 'review-title' }, 'Review'),
+    // The branch once, as a chip: the checkout's name is its tooltip.
     el(
-      'div',
-      { class: 'type-title', id: 'review-title' },
-      'Review · ',
-      r.name,
-      ' ',
-      el('span', { class: 'mono fg-ref' }, r.branch),
+      'span',
+      { class: 'chip-branch', title: r.name },
+      icon('branch'),
+      el('span', { class: 'mono' }, r.branch),
     ),
     r.base === 'commit'
       ? el('span', { class: 'meta mono' }, r.commit ?? '')
-      : el(
-          'div',
-          { class: 'seg', role: 'radiogroup', 'aria-label': 'Side' },
-          segment(
-            'Unstaged ',
-            r.base === 'unstaged',
-            () => click({ on: 'side', staged: false }),
-            count(r.unstaged),
+      : [
+          el('span', { class: 'seg-label' }, 'Changes'),
+          el(
+            'div',
+            { class: 'seg', role: 'radiogroup', 'aria-label': 'Side' },
+            segment(
+              'Unstaged ',
+              r.base === 'unstaged',
+              () => click({ on: 'side', staged: false }),
+              count(r.unstaged),
+            ),
+            segment(
+              'Staged ',
+              r.base === 'staged',
+              () => click({ on: 'side', staged: true }),
+              count(r.staged),
+            ),
           ),
-          segment(
-            'Staged ',
-            r.base === 'staged',
-            () => click({ on: 'side', staged: true }),
-            count(r.staged),
-          ),
-        ),
+        ],
+    el('span', { class: 'seg-label' }, 'View'),
     el(
       'div',
       { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' },
@@ -78,7 +82,16 @@ function head(r: ReviewPage): HTMLElement {
         el('span', { class: 'fg-danger' }, `−${r.removed}`),
       ),
     el('span', { class: 'grow' }),
-    el('button', { class: 'btn sm', onclick: () => call('review_refresh', {}) }, 'Refresh'),
+    el(
+      'button',
+      {
+        class: 'icon',
+        'aria-label': 'Refresh',
+        title: 'Refresh',
+        onclick: () => call('review_refresh', {}),
+      },
+      icon('refresh'),
+    ),
     el(
       'button',
       {
@@ -160,7 +173,13 @@ function files(r: ReviewPage): HTMLElement {
               title: f.path,
               onclick: () => click({ on: 'file', file: i }),
             },
-            el('span', { class: 'rname' }, el('span', { class: 'fg-faint' }, f.dir), f.name),
+            // The filename first, on its own line: a path cut short loses it.
+            el(
+              'span',
+              { class: 'rname' },
+              el('span', { class: 'rbase' }, f.name),
+              f.dir && el('span', { class: 'rdir' }, f.dir),
+            ),
             el('span', { class: 'fg-ok' }, `+${f.added}`),
             el('span', { class: 'fg-danger' }, `−${f.removed}`),
           )

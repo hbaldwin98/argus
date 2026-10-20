@@ -7,7 +7,7 @@
 // a docked view's element in its dock; a row changes only when its
 // extension publishes it again.
 import { dockMenuButton } from '../layout/docks.js';
-import { $, closeButton, el, escKey, icon } from '../kit/dom.js';
+import { $, closeButton, el, escKey, focusQuietly, icon } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
 import { closeLayer } from '../kit/menu.js';
 import { keycaps } from '../keys/chords.js';
@@ -336,7 +336,7 @@ export function drawExtensionConfirm() {
             closeLayer();
         },
     }, question.label)))));
-    document.getElementById('extension-keep')?.focus();
+    focusQuietly(document.getElementById('extension-keep'));
 }
 /** The extensions' headings of the shortcuts sheet, after the keymap's. */
 export function extensionSheetGroups() {

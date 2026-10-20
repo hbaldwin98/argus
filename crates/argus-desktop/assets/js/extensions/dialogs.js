@@ -4,8 +4,8 @@
 // (`src/extensions/dialog.rs`) and which is open; the page draws that one.
 //
 // One that answers a command the person just ran takes the keys. One raised
-// on its own is drawn without a scrim and waits for a click, so a pane being
-// typed in keeps every key.
+// on its own is drawn over the same scrim but leaves focus where it was, so a
+// pane being typed in keeps every key until the person reaches for the card.
 import { $, closeButton, el, escKey } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { call } from '../connection/tauri.js';
@@ -73,7 +73,7 @@ export function drawExtensionDialog(page) {
     }
     const yes = 'confirm' in kind ? (kind.confirm.yes ?? 'Yes') : 'pick' in kind ? 'Choose' : 'OK';
     const card = el('section', {
-        class: `dialog ext-dialog${page.prompted ? '' : ' unasked'}`,
+        class: 'dialog ext-dialog',
         role: 'dialog',
         'aria-labelledby': 'ext-dialog-title',
         onkeydown: (e) => {
@@ -90,7 +90,7 @@ export function drawExtensionDialog(page) {
                 submit();
             }
         },
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'ext-dialog-title' }, dialog.title), closeButton(cancel)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, `from ${page.extension}`, el('span', { class: 'ext-waiting' }, waitingWords(page.waiting))), el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()), el('button', { class: 'btn primary', type: 'button', id: 'ext-dialog-yes', onclick: submit }, yes)));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'ext-dialog-title' }, dialog.title), closeButton(cancel)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, `Asked by the ${page.extension} extension`, el('span', { class: 'ext-waiting' }, waitingWords(page.waiting))), el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()), el('button', { class: 'btn primary', type: 'button', id: 'ext-dialog-yes', onclick: submit }, yes)));
     holder.replaceChildren(card);
     if (page.prompted) {
         (document.getElementById('ext-dialog-first') ?? document.getElementById('ext-dialog-yes'))?.focus();

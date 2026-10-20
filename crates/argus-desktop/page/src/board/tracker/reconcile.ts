@@ -69,16 +69,21 @@ function lines(p: ReconcilePage): HTMLElement {
               class: `hrow rc-line${row.on ? ' on' : ''}`,
               onclick: () => send({ on: 'select', line: row.line }),
             },
-            el('input', {
-              type: 'checkbox',
-              'aria-label': `Tick ${row.key} ${row.does}`,
-              checked: row.ticked,
-              disabled: !proposing,
-              onclick: (e: MouseEvent) => {
-                e.stopPropagation();
-                send({ on: 'tick', line: row.line });
-              },
-            }),
+            // The input is itself 24px (its box is drawn smaller), so the tick is easy to hit.
+            el(
+              'label',
+              { class: 'rc-tick', onclick: (e: MouseEvent) => e.stopPropagation() },
+              el('input', {
+                type: 'checkbox',
+                'aria-label': `Tick ${row.key} ${row.does}`,
+                checked: row.ticked,
+                disabled: !proposing,
+                onclick: (e: MouseEvent) => {
+                  e.stopPropagation();
+                  send({ on: 'tick', line: row.line });
+                },
+              }),
+            ),
             el('span', { class: 'mono fg-ref rc-key' }, row.key),
             el('span', { class: row.on ? 'strong' : '' }, row.does),
             el('span', { class: 'meta grow ellipsis' }, row.why),
@@ -316,7 +321,12 @@ export function drawReconcile(next: ReconcilePage): void {
               p.tickets ? `Reconcile #${p.number} with ${p.tickets}` : `Reconcile #${p.number}`,
             ),
             p.asked &&
-              el('div', null, el('span', { class: 'label' }, 'You asked '), `“${p.asked}”`),
+              el(
+                'div',
+                { class: 'rc-asked' },
+                el('span', { class: 'label' }, 'You asked '),
+                `“${p.asked}”`,
+              ),
             el(
               'div',
               { class: 'meta' },

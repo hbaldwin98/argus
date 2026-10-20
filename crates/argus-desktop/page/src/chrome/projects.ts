@@ -9,7 +9,7 @@ import type { AddKind } from '../bindings/AddKind';
 import type { AddProjectPage } from '../bindings/AddProjectPage';
 import type { ProjectChoice } from '../bindings/ProjectChoice';
 import type { Removing } from '../bindings/Removing';
-import { $, closeButton, el, escKey, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, closeButton, el, escKey, focusQuietly, ghosts, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -301,7 +301,7 @@ export function drawRemoving(): void {
   }
   if (shown) return;
   $('layer').replaceChildren(removeDialog(r));
-  document.getElementById('remove-keep')?.focus();
+  focusQuietly(document.getElementById('remove-keep'));
 }
 
 // ---- Adding one --------------------------------------------------------------
@@ -546,17 +546,22 @@ function addDialog(a: AddProjectPage): HTMLElement {
           el('div', { class: 'ap-outcome' }, outcome(a)),
         ),
         setRow(
-          el('label', { for: 'ap-name' }, 'Project name'),
+          el('label', { class: 'label', for: 'ap-name' }, 'Project name'),
           null,
-          field('ap-name', a.name, { placeholder: a.defaultName, oninput: fieldsChanged }),
+          field('ap-name', a.name, {
+            'aria-label': 'Project name',
+            placeholder: a.defaultName,
+            oninput: fieldsChanged,
+          }),
         ),
         a.kind === 'folder' &&
           setRow(
-            el('label', { for: 'ap-skip' }, 'Also skip'),
+            el('label', { class: 'label', for: 'ap-skip' }, 'Also skip'),
             a.alwaysSkipped.length > 0 &&
               el('span', { class: 'meta' }, `${a.alwaysSkipped.join(', ')} are always skipped`),
             field('ap-skip', a.skip, {
               class: 'field mono',
+              'aria-label': 'Also skip',
               placeholder: 'vendor, infra/legacy',
               spellcheck: 'false',
               oninput: fieldsChanged,

@@ -13,7 +13,7 @@ import type { Layout } from '../bindings/Layout';
 import type { SavedLinks } from '../bindings/SavedLinks';
 import type { SettingChange } from '../bindings/SettingChange';
 import type { Theme } from '../bindings/Theme';
-import { $, el, icon, type Child } from '../kit/dom.js';
+import { $, el, focusQuietly, icon, type Child } from '../kit/dom.js';
 import { fontPicker, type FontPicker } from './font_picker.js';
 import { actionFor } from '../keys/keymap.js';
 import { screens } from '../panes/screen.js';
@@ -469,7 +469,7 @@ export function openSettings(): void {
   );
   drawSettings();
   $('input').blur();
-  close.focus();
+  focusQuietly(close);
 }
 
 export function closeSettings(): void {

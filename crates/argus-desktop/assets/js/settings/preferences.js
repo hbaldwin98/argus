@@ -6,7 +6,7 @@
 // it is made; the dialog draws what Rust sends back, and is updated in place
 // rather than rebuilt, so a slider being dragged or a command being typed
 // keeps its hold while the choices come back.
-import { $, el, icon } from '../kit/dom.js';
+import { $, el, focusQuietly, icon } from '../kit/dom.js';
 import { fontPicker } from './font_picker.js';
 import { actionFor } from '../keys/keymap.js';
 import { screens } from '../panes/screen.js';
@@ -254,7 +254,7 @@ export function openSettings() {
     }, dialog));
     drawSettings();
     $('input').blur();
-    close.focus();
+    focusQuietly(close);
 }
 export function closeSettings() {
     if (!settingsOpen())

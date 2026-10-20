@@ -4,7 +4,7 @@
 // (`src/checkouts/table.rs`); the page draws them and reports what is
 // chosen.
 import { startMenu, toggleStart } from '../chrome.js';
-import { $, closeButton, el, escKey, ghosts, icon } from '../kit/dom.js';
+import { $, closeButton, el, escKey, focusQuietly, ghosts, icon } from '../kit/dom.js';
 import { closeLayer } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
@@ -209,7 +209,7 @@ function drawConfirm(c) {
     if (shown)
         return;
     layer.replaceChildren(confirmDialog(c.confirm));
-    document.getElementById('confirm-keep')?.focus();
+    focusQuietly(document.getElementById('confirm-keep'));
 }
 export function drawCheckouts() {
     if (state.rail.stage !== 'checkouts')

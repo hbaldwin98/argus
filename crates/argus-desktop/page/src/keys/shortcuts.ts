@@ -1,7 +1,7 @@
 // The shortcuts sheet: every binding of the keymap Rust sends, under the
 // heading of where it works, so it lists exactly the keys dispatch runs.
 
-import { $, el, icon } from '../kit/dom.js';
+import { $, el, escKey, focusQuietly, icon } from '../kit/dom.js';
 import { extensionSheetGroups } from '../extensions/views.js';
 import { keycaps, leader } from './chords.js';
 import { state } from '../state.js';
@@ -16,6 +16,19 @@ export function sheetOpen(): boolean {
 export function toggleSheet(): void {
   if (sheetOpen()) closeSheet();
   else openSheet();
+}
+
+/** Deals the groups into three columns, each under the shortest so far, so a
+ *  heading always tops its rows: CSS columns split a group taller than the
+ *  sheet across two. */
+function columns(groups: HTMLElement[]): HTMLElement[] {
+  const cols = [0, 1, 2].map(() => ({ rows: 0, node: el('div', { class: 'sheet-col' }) }));
+  for (const group of groups) {
+    const col = cols.reduce((a, b) => (b.rows < a.rows ? b : a));
+    col.node.append(group);
+    col.rows += group.querySelectorAll('.sheet-row').length + 2;
+  }
+  return cols.map((c) => c.node);
 }
 
 export function openSheet(): void {
@@ -64,22 +77,25 @@ export function openSheet(): void {
           el('div', { class: 'type-title grow', id: 'sheet-title' }, 'Keyboard shortcuts'),
           close,
         ),
+        el('div', { class: 'sheet-body' }, columns([...groups, ...extensionSheetGroups()])),
         el(
           'div',
-          { class: 'sheet-rule' },
-          'Inside a pane every key goes to the pane, except those listed under Everywhere and ',
-          el('span', { class: 'kbd' }, lead),
-          ': the key after it is the window’s, and ',
-          el('span', { class: 'kbd' }, lead),
-          ' twice sends one through.',
+          { class: 'dfoot' },
+          el(
+            'span',
+            { class: 'dwhy grow' },
+            'Keys inside a pane go to the pane, except the Everywhere group and ',
+            el('span', { class: 'kbd' }, lead),
+            ' then a key',
+          ),
+          el('button', { class: 'btn', type: 'button', onclick: closeSheet }, 'Close ', escKey()),
         ),
-        el('div', { class: 'sheet-body' }, groups, extensionSheetGroups()),
       ),
     ),
   );
   // The sheet holds the keys while open; Escape or ? puts it away.
   $('input').blur();
-  close.focus();
+  focusQuietly(close);
 }
 
 export function closeSheet(): void {

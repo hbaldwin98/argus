@@ -552,7 +552,9 @@ function drawBar() {
         line.push(dot('var(--attention)'), el('span', { class: 'grow ellipsis', title: host ?? '' }, `Connecting${where}`), settingsButton());
     }
     else {
-        line.push(dot('var(--fg-faint)'), el('span', { class: 'grow' }, 'Stopped'), el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'), settingsButton());
+        line.push(dot('var(--fg-faint)'), 
+        // Status only: the stopped card over the window owns Reconnect.
+        el('span', { class: 'grow' }, 'Stopped'), settingsButton());
     }
     const shown = connection === 'connected' && alarm;
     $('bar').replaceChildren(tallies.length > 0 ? el('div', { class: 'bar-row' }, tallies) : '', shown ? el('div', { class: 'bar-alarm fg-attention' }, alarm) : '', el('div', { class: 'bar-row' }, line));

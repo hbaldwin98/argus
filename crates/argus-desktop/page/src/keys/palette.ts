@@ -7,7 +7,7 @@
 // and choosing one is a call: the palette runs nothing itself.
 
 import type { Command } from '../bindings/Command';
-import { $, el } from '../kit/dom.js';
+import { $, el, icon } from '../kit/dom.js';
 import { extensionResults } from '../extensions/views.js';
 import { actionFor } from './keymap.js';
 import { keycaps } from './chords.js';
@@ -49,7 +49,7 @@ export function openPalette(): void {
   query = '';
   top();
   const field = el('input', {
-    class: 'field palette-field',
+    class: 'palette-field',
     placeholder: 'Search, or > for commands, # for features',
     'aria-label': 'Search actions, panes, features and checkouts',
     autocomplete: 'off',
@@ -87,14 +87,40 @@ export function openPalette(): void {
       el(
         'section',
         { class: 'dialog palette', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Palette' },
-        field,
+        el(
+          'div',
+          { class: 'palette-head' },
+          icon('search'),
+          field,
+          el('span', { class: 'kbd' }, 'Esc'),
+        ),
         el('div', { class: 'palette-results', id: 'palette-results', role: 'listbox' }),
+        el(
+          'div',
+          { class: 'dfoot palette-foot' },
+          hint(['↑', '↓'], 'move'),
+          hint(['↵'], 'open'),
+          hint(['Tab'], 'next group'),
+          el('span', { class: 'grow' }),
+          hint(['>'], 'commands'),
+          hint(['#'], 'features'),
+        ),
       ),
     ),
   );
   call('palette', { open: true });
   drawResults();
   field.focus();
+}
+
+/** A footer hint: its keycaps, then what they do. */
+function hint(keys: string[], what: string): HTMLElement {
+  return el(
+    'span',
+    { class: 'dwhy' },
+    keys.map((k) => el('span', { class: 'kbd' }, k)),
+    what,
+  );
 }
 
 /** Puts the palette away, giving the keys back to what had them. */
@@ -280,8 +306,14 @@ function drawResults(): void {
   }
   const kept = results.findIndex((r) => r.key === held);
   highlight(kept >= 0 ? kept : Math.min(at, Math.max(0, results.length - 1)));
-  buttons[at]?.classList.add('on');
-  buttons[at]?.setAttribute('aria-selected', 'true');
+  const active = buttons[at];
+  active?.classList.add('on');
+  // What Enter does, said on the row it will do it to.
+  active?.insertBefore(
+    el('span', { class: 'open-hint' }, 'Open ', el('span', { class: 'kbd' }, '↵')),
+    results[at]?.aside ?? null,
+  );
+  active?.setAttribute('aria-selected', 'true');
   list.replaceChildren(...rows);
   list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
 }

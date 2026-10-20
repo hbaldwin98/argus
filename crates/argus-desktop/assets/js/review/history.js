@@ -98,7 +98,7 @@ export function drawHistory() {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'history-title',
-    }, el('div', { class: 'dhead review-head' }, el('div', { class: 'type-title', id: 'history-title' }, 'History · ', h.name, ' ', el('span', { class: 'mono fg-ref' }, h.branch)), el('span', { class: 'meta' }, 'newest 100 on HEAD'), el('span', { class: 'grow' }), filterField(h.filter), el('button', {
+    }, el('div', { class: 'dhead review-head' }, el('div', { class: 'type-title', id: 'history-title' }, 'History'), el('span', { class: 'chip-branch', title: h.name }, icon('branch'), el('span', { class: 'mono' }, h.branch)), el('span', { class: 'meta' }, 'newest 100 on HEAD'), el('span', { class: 'grow' }), filterField(h.filter), el('button', {
         class: 'icon',
         'aria-label': 'Close the history',
         onclick: () => call('history_action', { action: 'closeLayer', row: null }),

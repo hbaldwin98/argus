@@ -4,8 +4,8 @@
 // (`src/extensions/dialog.rs`) and which is open; the page draws that one.
 //
 // One that answers a command the person just ran takes the keys. One raised
-// on its own is drawn without a scrim and waits for a click, so a pane being
-// typed in keeps every key.
+// on its own is drawn over the same scrim but leaves focus where it was, so a
+// pane being typed in keeps every key until the person reaches for the card.
 
 import type { ExtAnswer } from '../bindings/ExtAnswer';
 import type { ExtDialogPage } from '../bindings/ExtDialogPage';
@@ -80,7 +80,7 @@ export function drawExtensionDialog(page: ExtDialogPage): void {
   const card = el(
     'section',
     {
-      class: `dialog ext-dialog${page.prompted ? '' : ' unasked'}`,
+      class: 'dialog ext-dialog',
       role: 'dialog',
       'aria-labelledby': 'ext-dialog-title',
       onkeydown: (e: KeyboardEvent) => {
@@ -109,7 +109,7 @@ export function drawExtensionDialog(page: ExtDialogPage): void {
       el(
         'span',
         { class: 'dwhy grow' },
-        `from ${page.extension}`,
+        `Asked by the ${page.extension} extension`,
         el('span', { class: 'ext-waiting' }, waitingWords(page.waiting)),
       ),
       el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()),

@@ -143,13 +143,12 @@ export function drawHistory(): void {
         el(
           'div',
           { class: 'dhead review-head' },
+          el('div', { class: 'type-title', id: 'history-title' }, 'History'),
           el(
-            'div',
-            { class: 'type-title', id: 'history-title' },
-            'History · ',
-            h.name,
-            ' ',
-            el('span', { class: 'mono fg-ref' }, h.branch),
+            'span',
+            { class: 'chip-branch', title: h.name },
+            icon('branch'),
+            el('span', { class: 'mono' }, h.branch),
           ),
           el('span', { class: 'meta' }, 'newest 100 on HEAD'),
           el('span', { class: 'grow' }),

@@ -708,8 +708,8 @@ function drawBar(): void {
   } else {
     line.push(
       dot('var(--fg-faint)'),
+      // Status only: the stopped card over the window owns Reconnect.
       el('span', { class: 'grow' }, 'Stopped'),
-      el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'),
       settingsButton(),
     );
   }

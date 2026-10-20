@@ -10,7 +10,7 @@ import type { Confirm } from '../bindings/Confirm';
 import type { CheckoutsRow } from '../bindings/CheckoutsRow';
 import type { LastCommit } from '../bindings/LastCommit';
 import { startMenu, toggleStart } from '../chrome.js';
-import { $, closeButton, el, escKey, ghosts, icon, type Child } from '../kit/dom.js';
+import { $, closeButton, el, escKey, focusQuietly, ghosts, icon, type Child } from '../kit/dom.js';
 import { closeLayer } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
@@ -421,7 +421,7 @@ function drawConfirm(c: Checkouts): void {
   }
   if (shown) return;
   layer.replaceChildren(confirmDialog(c.confirm));
-  document.getElementById('confirm-keep')?.focus();
+  focusQuietly(document.getElementById('confirm-keep'));
 }
 
 export function drawCheckouts(): void {
