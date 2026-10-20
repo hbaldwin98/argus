@@ -16,7 +16,7 @@ use argus_protocol::agents::transcript::{Conversation, Entry, Meta, Transcript};
 use argus_protocol::{
     grid_runs, AgentTelemetry, Cell, ChangeKind, CheckoutId, CheckoutInfo, ChildAgentInfo, ClientMsg, CodeChange,
     CodeFile, CodeLine, CodeMatch, CodeMatches, CodeSymbol, CodeTree, Color, CommitFile, CommitInfo, Consequence,
-    Criterion, Cursor, Decision, DecisionBoard, DecisionState, DiagramAction, DiagramList, DiffLine, DirEntry,
+    CheckoutDir, CheckoutEntry, EntryGit, Criterion, Cursor, Decision, DecisionBoard, DecisionState, DiagramAction, DiagramList, DiffLine, DirEntry,
     DirListing, ExtDialog, ExtDialogKind, Feature, FeatureState, FileDiff, GitStatus, Hello, HighlightKind,
     HighlightSpan, Hunk, LineKind, Noticed, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo,
     ProjectPreview, ProposedLine, Reconcile, Reconciled, RepositoryId, RepositoryInfo, RequestRefusal, Review,
@@ -1590,6 +1590,53 @@ pub fn answer(s: &mut Session, sent: &[ClientMsg]) {
     }
 }
 
+/// What a folder of a checkout holds on disk, for the files panel: the
+/// shape of this repository, with a build directory git ignores and some
+/// changes under `crates`.
+fn folder(path: &str) -> Vec<CheckoutEntry> {
+    let dir = |name: &str, git: Option<EntryGit>| CheckoutEntry { name: name.into(), dir: true, size: None, modified: Some(NOW - 3_600), git };
+    let file = |name: &str, size: u64, ago: u64, git: Option<EntryGit>| CheckoutEntry {
+        name: name.into(),
+        dir: false,
+        size: Some(size),
+        modified: Some(NOW - ago),
+        git,
+    };
+    match path {
+        "" => vec![
+            dir(".argus", None),
+            dir("crates", Some(EntryGit::Changed)),
+            dir("scripts", None),
+            dir("target", Some(EntryGit::Ignored)),
+            dir("target-check", Some(EntryGit::Ignored)),
+            file("AGENTS.md", 9_400, 86_400 * 3, None),
+            file("Cargo.lock", 148_000, 86_400, None),
+            file("DESIGN.md", 301_000, 600, Some(EntryGit::Changed)),
+            file("README.md", 27_800, 86_400 * 9, None),
+        ],
+        "crates" => vec![
+            dir("argus-client", None),
+            dir("argus-desktop", Some(EntryGit::Changed)),
+            dir("argus-protocol", None),
+            dir("argusd", None),
+            file("Cargo.toml", 1_200, 86_400 * 4, None),
+        ],
+        "crates/argus-desktop" => vec![
+            dir("assets", Some(EntryGit::Changed)),
+            dir("page", None),
+            dir("src", None),
+            file("Cargo.toml", 2_100, 86_400, None),
+        ],
+        "crates/argus-desktop/assets" => vec![
+            dir("fonts", None),
+            dir("js", Some(EntryGit::Changed)),
+            file("index.html", 4_300, 86_400 * 2, None),
+            file("style.css", 212 * 1024, 240, Some(EntryGit::Changed)),
+        ],
+        _ => Vec::new(),
+    }
+}
+
 /// What argusd would answer `msg` with, given this tree.
 fn reply(msg: &ClientMsg) -> Vec<ServerMsg> {
     match msg {
@@ -1603,6 +1650,13 @@ fn reply(msg: &ClientMsg) -> Vec<ServerMsg> {
         }
         ClientMsg::Task { feature, action: TaskAction::List, .. } => vec![ServerMsg::Tasks(Box::new(tasks(feature)))],
         ClientMsg::SequenceDiagram { feature, action: DiagramAction::List, .. } => vec![ServerMsg::SequenceDiagrams(Box::new(diagrams(feature)))],
+        ClientMsg::ListDir { request_id, checkout, path } => vec![ServerMsg::CheckoutDir(CheckoutDir {
+            request_id: *request_id,
+            checkout: *checkout,
+            path: path.clone(),
+            entries: folder(path),
+            truncated: false,
+        })],
         ClientMsg::ListCode { request_id, checkout, version } => vec![ServerMsg::CodeTree(CodeTree {
             request_id: *request_id,
             checkout: *checkout,
@@ -1883,6 +1937,18 @@ pub fn scenes() -> Vec<Scene> {
         scene("checkouts", "Checkouts — a repository's worktrees and branches", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::ShowCheckouts { open: true }).call(Call::SelectCheckoutRow { key: format!("c{DESKTOP}") });
+            w.s
+        }),
+        scene("checkouts-files", "Checkouts — a worktree's files, opened to a changed one", || {
+            use crate::checkouts::files::FilesGesture;
+            let mut w = Window::showing(P_TRIM);
+            w.call(Call::ShowCheckouts { open: true })
+                .call(Call::SelectCheckoutRow { key: format!("c{DESKTOP}") })
+                .call(Call::CheckoutsAction { action: Action::Files });
+            for path in ["crates", "crates/argus-desktop", "crates/argus-desktop/assets"] {
+                w.call(Call::Files { gesture: FilesGesture::Click { path: path.into() } });
+            }
+            w.call(Call::Files { gesture: FilesGesture::Click { path: "crates/argus-desktop/assets/style.css".into() } });
             w.s
         }),
         scene("checkouts-delete", "Checkouts — removing a worktree asks first", || {
