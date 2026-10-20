@@ -93,8 +93,7 @@ fn changes(repo: &git2::Repository, version: &CodeVersion) -> anyhow::Result<Vec
     let mut opts = git2::DiffOptions::new();
     opts.context_lines(0)
         .include_untracked(true)
-        .recurse_untracked_dirs(true)
-        .show_untracked_content(true);
+        .recurse_untracked_dirs(true);
     let diff = match version {
         CodeVersion::WorkingTree => repo.diff_tree_to_workdir_with_index(base.as_ref(), Some(&mut opts))?,
         CodeVersion::Index => repo.diff_tree_to_index(base.as_ref(), None, Some(&mut opts))?,
@@ -109,9 +108,16 @@ fn changes(repo: &git2::Repository, version: &CodeVersion) -> anyhow::Result<Vec
         let Some(path) = delta.new_file().path().or_else(|| delta.old_file().path()) else {
             continue;
         };
-        let (added, removed) = match git2::Patch::from_diff(&diff, i) {
-            Ok(Some(patch)) => patch.line_stats().map(|(_, a, r)| (a as u32, r as u32)).unwrap_or((0, 0)),
-            _ => (0, 0),
+        let (added, removed) = if delta.status() == git2::Delta::Untracked {
+            // Not through libgit2's patch: it loads every untracked file
+            // whole to count lines, and a build directory nobody ignored
+            // holds gigabytes of them — the tree took minutes to answer.
+            (untracked_lines(repo, path), 0)
+        } else {
+            match git2::Patch::from_diff(&diff, i) {
+                Ok(Some(patch)) => patch.line_stats().map(|(_, a, r)| (a as u32, r as u32)).unwrap_or((0, 0)),
+                _ => (0, 0),
+            }
         };
         // Git calls a file modified when only its line endings moved — a
         // checkout with autocrlf, a tool that rewrote it — and the patch it
@@ -124,6 +130,26 @@ fn changes(repo: &git2::Repository, version: &CodeVersion) -> anyhow::Result<Vec
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(out)
+}
+
+/// The lines an untracked file adds: all of them, as `read` would show
+/// them, so none for a file it would not show (binary or too large).
+fn untracked_lines(repo: &git2::Repository, path: &Path) -> u32 {
+    use std::io::Read;
+    let Some(root) = repo.workdir() else {
+        return 0;
+    };
+    let Ok(file) = std::fs::File::open(root.join(path)) else {
+        return 0;
+    };
+    let mut bytes = Vec::new();
+    if file.take(MAX_FILE_BYTES as u64 + 1).read_to_end(&mut bytes).is_err()
+        || bytes.len() > MAX_FILE_BYTES
+        || bytes[..bytes.len().min(BINARY_SNIFF)].contains(&0)
+    {
+        return 0;
+    }
+    String::from_utf8_lossy(&bytes).lines().count() as u32
 }
 
 /// The bytes of `file` at `version`, or None where that version has no
@@ -408,5 +434,26 @@ mod tests {
         let (files, changes) = list(&root, &CodeVersion::Head).unwrap();
         assert_eq!(files, ["a.rs", "src/b.rs"], "untracked files are not in HEAD");
         assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn untracked_files_too_large_or_binary_to_show_count_no_lines() {
+        // The Code stage shows these as "too large to display" / "binary
+        // file", so the tree marks them changed without a line count.
+        let (_dir, root) = repo_with(&[("a.rs", "one\n")]);
+        write(&root, "big.txt", &"x\n".repeat(MAX_FILE_BYTES));
+        std::fs::write(root.join("blob.bin"), [0u8, 1, 2, 0, 3]).unwrap();
+        write(&root, "new.rs", "fresh\nlines\n");
+
+        let (files, changes) = list(&root, &CodeVersion::WorkingTree).unwrap();
+        assert_eq!(files, ["a.rs", "big.txt", "blob.bin", "new.rs"]);
+        assert_eq!(
+            changes,
+            [
+                CodeChange { path: "big.txt".into(), added: 0, removed: 0 },
+                CodeChange { path: "blob.bin".into(), added: 0, removed: 0 },
+                CodeChange { path: "new.rs".into(), added: 2, removed: 0 },
+            ]
+        );
     }
 }

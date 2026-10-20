@@ -1781,6 +1781,16 @@ mod tests {
     }
 
     #[test]
+    fn a_tree_the_daemon_refuses_stops_loading_and_says_why() {
+        let (mut s, _) = stage(None, None);
+        assert!(s.page(None).tree_loading, "asked, not answered");
+        assert!(s.failed(1, "could not read the checkout".into()));
+        let page = s.page(None);
+        assert!(!page.tree_loading, "a refusal is an answer");
+        assert_eq!(page.failed.as_deref(), Some("could not read the checkout"));
+    }
+
+    #[test]
     fn a_refusal_of_the_stages_read_is_its_own_and_any_other_is_given_back() {
         let refused = |request_id| {
             ServerMsg::Refused(RequestRefusal { request_id, reason: "gone.rs is not in this version".into(), read: true })
