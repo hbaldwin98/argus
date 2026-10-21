@@ -78,7 +78,8 @@ expression: text
     "code",
     "code-edit",
     "files",
-    "request-refusals"
+    "request-refusals",
+    "browsers"
   ],
   "protocol": 1,
   "version": "[version]"
@@ -105,7 +106,8 @@ expression: text
     "code",
     "code-edit",
     "files",
-    "request-refusals"
+    "request-refusals",
+    "browsers"
   ],
   "protocol": 1,
   "version": "[version]"
