@@ -34,12 +34,12 @@ pub enum ShellState {
 
 impl Shell {
     /// The shell `program` runs, by its file name; the error is that name,
-    /// for a shell Argus cannot type a `cd` into.
+    /// for a shell Argus cannot type a `cd` into. Split on either slash,
+    /// not by `Path`, which on Unix takes a backslash for part of a name.
     pub fn named(program: &OsStr) -> Result<Shell, String> {
-        let name = Path::new(program)
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().to_ascii_lowercase())
-            .unwrap_or_default();
+        let program = program.to_string_lossy().to_ascii_lowercase();
+        let file = program.rsplit(['\\', '/']).next().unwrap_or_default();
+        let name = file.strip_suffix(".exe").unwrap_or(file).to_string();
         match name.as_str() {
             "bash" | "sh" | "zsh" | "dash" | "ksh" | "mksh" | "ash" => Ok(Shell::Posix),
             "fish" => Ok(Shell::Fish),
