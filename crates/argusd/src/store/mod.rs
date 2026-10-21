@@ -622,6 +622,8 @@ fn decode_row<T: serde::de::DeserializeOwned>(raw: &str, column: usize) -> rusql
 
 /// Panes worth starting again.
 ///
+/// Browsers are left out as well: one is its agent's, and the agent opens it again.
+///
 /// Editors are left out on purpose: one belongs to the floating window it
 /// opened in, and reopening a file nobody asked for would be noise. A pane
 /// whose checkout is no longer configured is dropped too.
@@ -630,7 +632,7 @@ pub fn restorable<'a>(
     known: &'a [PathBuf],
 ) -> impl Iterator<Item = &'a SessionPane> {
     panes.iter().filter(move |p| {
-        p.kind != PaneKind::Editor && known.iter().any(|k| same_path(k, &p.checkout_path))
+        !matches!(p.kind, PaneKind::Editor | PaneKind::Browser) && known.iter().any(|k| same_path(k, &p.checkout_path))
     })
 }
 

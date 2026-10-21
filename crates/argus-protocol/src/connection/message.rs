@@ -547,11 +547,11 @@ pub enum ClientMsg {
     /// again whenever which it draws changes, so a browser no one looks at
     /// costs a client nothing. Only to a daemon that listed `BROWSERS`.
     WatchBrowsers { showing: Vec<PaneId> },
-    /// The person's hand on a pane's browser. One the pane no longer has
+    /// The person's hand on a browser pane. One the daemon no longer has
     /// is ignored: the browser it was meant for is gone.
     BrowserInput { pane: PaneId, input: crate::browser::BrowserInput },
-    /// The person closed a pane's browser. The agent's next request for it
-    /// opens another.
+    /// The person closed a browser pane, which ends its browser. The
+    /// agent's next request for it opens another.
     CloseBrowser { pane: PaneId },
     /// Start being sent the saved views: every one now, as one
     /// [`ServerMsg::SavedViews`], and each change after. Only to a daemon
@@ -922,15 +922,15 @@ pub enum ServerMsg {
     /// A view is gone: closed by its agent or a person, pushed out by a
     /// newer one, or its pane ended.
     ViewClosed { pane: PaneId, id: String },
-    /// Where a pane's browser is, to a client that sent
+    /// Where a browser pane's browser is, to a client that sent
     /// [`ClientMsg::WatchBrowsers`]: as it opens, and whenever its page
     /// changes address or title.
     BrowserPage(crate::browser::BrowserPage),
-    /// The latest picture of a pane's browser, sent as the page changes.
+    /// The latest picture of a browser pane, sent as the page changes.
     /// A client that falls behind is sent the latest, never the backlog.
     BrowserFrame(Box<crate::browser::BrowserFrame>),
-    /// A pane's browser is gone: closed by its agent or a person, ended, or
-    /// its pane removed.
+    /// A browser pane's browser is gone: closed by its agent or a person,
+    /// ended, or its agent's pane removed. `pane` is the browser's own.
     BrowserClosed { pane: PaneId },
     /// A [`ClientMsg::PressView`] that was not relayed to the agent: the
     /// view is no longer held, no longer offers the action, or its agent

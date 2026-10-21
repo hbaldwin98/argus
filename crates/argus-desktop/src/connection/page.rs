@@ -23,7 +23,7 @@ use crate::code::edit::{EditEvent, EditGesture};
 use crate::code::stage::{CodeGesture, CodePage};
 use crate::review::comment_box::CommentPage;
 use crate::panes::console::{ConsoleGesture, ConsolePage};
-use crate::layout::docks::{Dock, DockGesture, DocksPage, Panel};
+use crate::layout::docks::{DockGesture, DocksPage, Panel};
 use crate::extensions::dialog::ExtDialogPage;
 use crate::extensions::views::{ExtensionGesture, ExtensionsPage};
 use crate::board::features::Layout;
@@ -121,17 +121,14 @@ pub enum Call {
     ShowFeatures { open: bool },
     /// `open` true shows the Checkouts stage, false goes back to the Workspace.
     ShowCheckouts { open: bool },
-    /// Shows the Browsers stage: `pane`'s browser filling it, or every
-    /// browser at once without one.
+    /// Goes to the Browsers stage, every browser at once, or puts `pane`'s
+    /// browser on screen in the Workspace as a click on it in the rail does.
     ShowBrowsers { pane: Option<u64> },
     /// The person's hand on a pane's browser.
     BrowserInput { pane: u64, input: argus_protocol::BrowserInput },
     /// Closes a pane's browser for every client; its agent's next request
     /// opens another.
     CloseBrowser { pane: u64 },
-    /// A pane's browser dragged to a dock, shown in the browser panel there,
-    /// or with no dock to the stage, filling it.
-    PlaceBrowser { pane: u64, dock: Option<Dock> },
     /// `open` true shows the Code stage on the checkout on screen, false
     /// goes back to the Workspace.
     ShowCode { open: bool },
@@ -850,7 +847,7 @@ pub enum Stage {
     View,
     /// A checkout's files, one of them read whole.
     Code,
-    /// The browsers agents' panes run, every one at once or one chosen.
+    /// The browsers agents' panes run, every one at once.
     Browsers,
 }
 
@@ -864,6 +861,8 @@ pub struct Shown {
     pub checkout: String,
     pub branch: String,
     pub agent: bool,
+    /// A browser pane: its cell draws the owner's screencast, not a terminal.
+    pub browser: bool,
     pub title: String,
     #[cfg_attr(test, ts(as = "crate::connection::page::StatusWord"))]
     pub status: &'static str,
@@ -1907,6 +1906,7 @@ mod tests {
                 checkout: "main".into(),
                 branch: "main".into(),
                 agent: true,
+                browser: false,
                 title: "claude".into(),
                 status: "working",
                 resumed: Some(Resumed { at: Some("2026-10-14T13:52:00Z".into()), turns: Some(48) }),

@@ -450,7 +450,7 @@ impl Daemon {
     /// Drops a pane from the tree without touching the checkout's managed
     /// hooks — for a pane being replaced in place, where an agent is about
     /// to take its seat and would only have to write them back.
-    fn remove_pane(&self, pane: PaneId) {
+    pub(super) fn remove_pane(&self, pane: PaneId) {
         let removed = {
             let mut inner = self.inner.lock().unwrap();
             remove_pane_with_checkout(&mut inner.projects, pane).map(|(p, _)| p)

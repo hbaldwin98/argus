@@ -25,7 +25,7 @@ pub(super) trait Processes: Send + Sync {
 }
 
 /// A running pane process, as the tree holds it.
-pub(super) trait Process: Send {
+pub(crate) trait Process: Send {
     /// A handle to its keyboard that outlives the tree lock it was found
     /// under.
     fn input(&self) -> Arc<dyn Keyboard>;
@@ -39,7 +39,7 @@ pub(super) trait Process: Send {
     fn broadcast_snapshot(&self, pane: PaneId);
 }
 
-pub(super) trait Keyboard: Send + Sync {
+pub(crate) trait Keyboard: Send + Sync {
     fn write(&self, bytes: &[u8]) -> anyhow::Result<()>;
     /// Pasted text, bracketed when the program asked for that.
     fn paste(&self, bytes: &[u8]) -> anyhow::Result<()>;

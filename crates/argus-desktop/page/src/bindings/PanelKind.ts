@@ -3,4 +3,4 @@
 /**
  * Which of the page's modules draws a panel.
  */
-export type PanelKind = "console" | "views" | "browser" | "extension" | "saved";
+export type PanelKind = "console" | "views" | "extension" | "saved";

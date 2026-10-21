@@ -41,7 +41,7 @@ mod git_ops;
 mod git_reads;
 mod panel;
 mod panes;
-mod processes;
+pub(crate) mod processes;
 mod pushes;
 #[cfg(test)]
 pub(crate) mod scripted;

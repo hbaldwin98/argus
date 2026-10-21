@@ -8,6 +8,7 @@ import {
   dragGutter,
   dropZone,
   keyedSplit,
+  staleView,
   toThousandths,
   zoneRect,
 } from '../../src/panes/split_math.ts';
@@ -65,4 +66,15 @@ test("the keys on a split name its screen, and on the Workspace's or off the gri
   assert.equal(keyedSplit(null), null);
   assert.equal(keyedSplit(0), null);
   assert.equal(keyedSplit(3), 2);
+});
+
+test('a view that moved to an earlier cell is not taken out of it by the later cell', () => {
+  const box0 = { id: 'cell 0' };
+  const box1 = { id: 'cell 1' };
+  const view = { parentElement: box0 };
+  // Cell 0 took the view first; cell 1 still holds it as its old one.
+  assert.equal(staleView(view, null, box1), null);
+  assert.equal(staleView(view, null, box0), view, 'its own cell gives it up');
+  assert.equal(staleView(view, view, box0), null, 'a view kept is not taken out');
+  assert.equal(staleView(null, view, box0), null);
 });

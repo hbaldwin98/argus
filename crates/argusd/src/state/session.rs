@@ -101,7 +101,9 @@ impl Daemon {
             .flat_map(|c| {
                 c.panes
                     .iter()
-                    .filter(|pane| !matches!(pane.status, PaneStatus::Exited { .. }))
+                    // A browser is its agent's, opened again when the agent
+                    // asks; recording it would also record every title it takes.
+                    .filter(|pane| pane.kind != PaneKind::Browser && !matches!(pane.status, PaneStatus::Exited { .. }))
                     .map(|pane| crate::store::SessionPane {
                         checkout_path: c.path.clone(),
                         kind: pane.kind,

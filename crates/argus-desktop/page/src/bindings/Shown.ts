@@ -5,7 +5,11 @@ import type { StatusWord } from "./StatusWord";
 /**
  * The pane on screen, as the stage's header names it.
  */
-export type Shown = { pane: number, repository: string, checkout: string, branch: string, agent: boolean, title: string, status: StatusWord, 
+export type Shown = { pane: number, repository: string, checkout: string, branch: string, agent: boolean, 
+/**
+ * A browser pane: its cell draws the owner's screencast, not a terminal.
+ */
+browser: boolean, title: string, status: StatusWord, 
 /**
  * The session this window resumed in it, while the pane lasts.
  */

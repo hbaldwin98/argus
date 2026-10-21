@@ -10739,9 +10739,9 @@ button.vtree-chev:focus-visible {
   min-width: var(--board-col-min);
 }
 
-/* The Browsers stage: every agent's browser as a live tile, or the chosen
- * one filling the stage under its address bar. A picture keeps its page's
- * shape at any width, so a click lands where it was aimed. */
+/* The Browsers stage: every agent's browser as a live tile; a browser's own
+ * pane is a grid cell (.bpane). A picture keeps its page's shape at any
+ * width, so a click lands where it was aimed. */
 .bstage {
   background: var(--bg-sunken);
 }
@@ -10815,7 +10815,12 @@ button.vtree-chev:focus-visible {
   height: 100%;
   object-fit: contain;
 }
-.bchosen {
+/* A browser pane fills its grid card, which clips the page to its corners;
+ * the terminal it replaces stays in the cell, hidden. */
+.gcell.bcell > .terminal {
+  display: none;
+}
+.bpane {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -10835,16 +10840,16 @@ button.vtree-chev:focus-visible {
 }
 /* No padding: the box is the viewport the page is laid out at, so the
  * canvas filling it draws the picture one pixel to one. */
-.bchosen-screen {
+.bpane > .bpane-screen {
   flex: 1;
   min-height: 0;
   overflow: hidden;
   background: var(--bg-chrome);
 }
-.bchosen-screen .bscreen {
+.bpane > .bpane-screen .bscreen {
   cursor: default;
 }
-.bchosen-screen .bscreen:focus {
+.bpane > .bpane-screen .bscreen:focus {
   outline: none;
 }
 /* Who has a browser: the agent at work, the person moving it, or the
@@ -10897,19 +10902,6 @@ button.vtree-chev:focus-visible {
   flex: none;
   padding-inline: var(--sp-8);
 }
-.bgrip {
-  flex: none;
-  cursor: grab;
-  color: var(--fg-faint);
-  padding: 0 var(--sp-4);
-  user-select: none;
-}
-.bgrip:hover {
-  color: var(--fg);
-}
-.btile {
-  cursor: grab;
-}
 .nav-chev {
   display: inline-flex;
   align-items: center;
@@ -10923,41 +10915,6 @@ button.vtree-chev:focus-visible {
   background: var(--bg-selected);
   color: var(--fg);
 }
-.bpanel-inner {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-/* A browser sits as a card, as a workspace pane does: inset from the dock's
- * edges with the dock showing through, rounded, and the page clipped to the
- * corners. */
-.dock-body > .bpanel,
-.bstage > .bchosen {
-  margin: var(--sp-8);
-  border-radius: var(--r-md);
-  box-shadow: inset 0 0 0 1px var(--line);
-  background: var(--bg-surface);
-  overflow: hidden;
-}
-.dock-body > .bpanel .bchosen-screen,
-.bstage > .bchosen .bchosen-screen {
-  /* Inside the hairline, so the page does not paint over it. */
-  margin: 0 1px 1px;
-  border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px);
-}
-.bpanel-head {
-  flex-direction: row;
-  align-items: center;
-  padding: var(--sp-6) var(--sp-12);
-  border-bottom: 1px solid var(--line);
-}
-.bpanel .bbar {
-  padding: var(--sp-6) var(--sp-8);
-}
-.bpanel .bbar .btn {
-  padding-inline: var(--sp-8);
-}
-.bchosen-screen .bscreen:focus-visible {
+.bpane > .bpane-screen .bscreen:focus-visible {
   outline: 2px solid var(--ring);
 }

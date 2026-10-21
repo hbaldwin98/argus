@@ -13,6 +13,7 @@
 import type { Shown } from '../bindings/Shown';
 import type { Zone } from '../bindings/Zone';
 import { $, el, icon } from '../kit/dom.js';
+import { browserView } from '../browser/pane.js';
 import { splitScreen, screen } from './screen.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -21,6 +22,7 @@ import {
   dragGutter,
   dropZone,
   type Rect,
+  staleView,
   toThousandths,
   zoneRect,
 } from './split_math.js';
@@ -30,6 +32,8 @@ interface Cell {
   terminal: HTMLElement;
   head: HTMLElement | null;
   shown: boolean;
+  /** The browser view that fills this cell in place of its terminal. */
+  view: HTMLElement | null;
 }
 
 const cells: Cell[] = [];
@@ -65,7 +69,13 @@ function ensureCell(i: number): Cell {
   const known = cells[i];
   if (known) return known;
   if (i === 0) {
-    const cell = { box: $('gcell-0'), terminal: $('terminal'), head: null, shown: true };
+    const cell: Cell = {
+      box: $('gcell-0'),
+      terminal: $('terminal'),
+      head: null,
+      shown: true,
+      view: null,
+    };
     cells[0] = cell;
     return cell;
   }
@@ -73,9 +83,20 @@ function ensureCell(i: number): Cell {
   const box = el('div', { class: 'gcell', hidden: true }, terminal);
   splitEl().append(box);
   splitScreen(i - 1, terminal);
-  const cell = { box, terminal, head: null, shown: false };
+  const cell: Cell = { box, terminal, head: null, shown: false, view: null };
   cells[i] = cell;
   return cell;
+}
+
+/** Fills `cell` with `browser`'s view, or gives it back to its terminal.
+ *  The terminal is only hidden, never taken out, so its screen is there
+ *  again when a terminal pane is shown in the cell. */
+function showBrowser(cell: Cell, browser: number | null): void {
+  const view = browser === null ? null : browserView(browser);
+  staleView(cell.view, view, cell.box)?.remove();
+  cell.view = view;
+  cell.box.classList.toggle('bcell', view !== null);
+  if (view && view.parentElement !== cell.box) cell.box.append(view);
 }
 
 /** The pane in slot `i`: 0 is the Workspace's own. */
@@ -152,6 +173,7 @@ export function drawSplit(): void {
     const cell = ensureCell(i);
     const visible = i < wanted;
     cell.box.hidden = !visible;
+    if (!visible) showBrowser(cell, null);
     if (visible && !cell.shown && i > 0) {
       // Back on screen after being let go: it has to say its room again,
       // since Rust forgot the size when it dropped the pane.
@@ -171,6 +193,7 @@ export function drawSplit(): void {
     cell.head?.remove();
     cell.head = split && pane ? head(i, pane) : null;
     if (cell.head) cell.box.prepend(cell.head);
+    showBrowser(cell, pane?.browser ? pane.pane : null);
     const rect = rects.get(i);
     if (rect) place(cell.box, rect);
     const keyed = state.rail.row.keyed === i;

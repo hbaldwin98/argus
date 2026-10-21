@@ -20,6 +20,9 @@ pub enum PaneKind {
     Agent,
     /// The user's own editor, opened on a file from the review (§6).
     Editor,
+    /// An agent's browser, owned by it. Its content is pictures, not a
+    /// terminal, so a client that cannot draw them is never sent one.
+    Browser,
 }
 
 /// See DESIGN.md §8b. Everything but `Exited` comes from the agent itself,
@@ -372,9 +375,11 @@ impl GitStatus {
 impl CheckoutInfo {
     /// The panes the tree lists. An editor belongs to the window it opened
     /// in, not to the checkout's pane list — it is a way of looking at a
-    /// file, not something running here that you might come back to.
+    /// file, not something running here that you might come back to. A
+    /// browser is listed only in the Browsers section, beside the agent
+    /// that owns it, and so would be a second row here for one thing.
     pub fn listed_panes(&self) -> impl Iterator<Item = &PaneInfo> {
-        self.panes.iter().filter(|p| p.kind != PaneKind::Editor)
+        self.panes.iter().filter(|p| !matches!(p.kind, PaneKind::Editor | PaneKind::Browser))
     }
 
     /// Every state the checkout's rows stand for, children included: what
@@ -639,6 +644,15 @@ mod tests {
         );
         assert_eq!(PaneStatus::loudest(c.statuses()), Some(PaneStatus::Waiting));
         assert_eq!(PaneStatus::loudest(checkout(Vec::new()).statuses()), None);
+    }
+
+    #[test]
+    fn a_browser_is_not_listed_under_its_checkout_but_stays_in_its_panes() {
+        let mut browser = pane(PaneStatus::Idle, &[]);
+        browser.kind = PaneKind::Browser;
+        let c = checkout(vec![pane(PaneStatus::Working, &[]), browser]);
+        assert_eq!(c.listed_panes().count(), 1, "the Browsers section lists it");
+        assert_eq!(c.panes.len(), 2, "the grid still tiles it");
     }
 
     #[test]

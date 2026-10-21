@@ -10,6 +10,7 @@ mod chrome;
 mod input;
 pub(crate) mod mux;
 mod pipe;
+pub(crate) mod process;
 mod screen;
 
 use std::time::Duration;
@@ -83,6 +84,19 @@ impl Browser {
     /// A line for an agent's browser tool, and what the browser says to it.
     pub(crate) fn attach(&self) -> (mux::Line, mpsc::UnboundedReceiver<String>) {
         self.mux.join(mux::Who::Agent)
+    }
+}
+
+#[cfg(test)]
+impl Browser {
+    /// A browser that is not one: nothing is started and nothing is heard,
+    /// so a test of what the daemon does with a browser pane needs no
+    /// Chrome.
+    pub(crate) fn idle() -> Browser {
+        let (to, _) = mpsc::unbounded_channel();
+        let (_, from) = mpsc::unbounded_channel();
+        let (input, _) = mpsc::unbounded_channel();
+        Browser { mux: mux::Mux::new(to, from), input, task: tokio::spawn(std::future::pending()) }
     }
 }
 

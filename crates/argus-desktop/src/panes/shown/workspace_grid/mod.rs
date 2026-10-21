@@ -439,6 +439,7 @@ mod tests {
                 checkout: String::new(),
                 branch: String::new(),
                 agent: false,
+                browser: false,
                 title: format!("pane {pane}"),
                 status: "idle",
                 resumed: None,

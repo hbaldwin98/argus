@@ -161,3 +161,19 @@ async fn an_agent_asking_to_move_outside_its_project_is_told_why_not() {
     assert_eq!(checkout_of(&d, pane), primary.path().to_string_lossy());
     d.close_pane(pane).unwrap();
 }
+
+#[tokio::test]
+async fn an_agents_browser_pane_follows_it_into_another_checkout() {
+    // A browser pane lives in its owner's checkout; left behind, removing
+    // the old worktree would close a browser whose agent lives on.
+    let primary = tempfile::tempdir().unwrap();
+    let (d, pane, worktree) = agent_beside_an_undiscovered_worktree(primary.path());
+    let (_reports, heard) = tokio::sync::mpsc::unbounded_channel();
+    let browser = d.open_browser_pane(pane, crate::browser::Browser::idle(), heard).unwrap();
+
+    d.move_agent_into(pane, None, &worktree).unwrap();
+
+    assert_eq!(checkout_of(&d, pane), worktree.to_string_lossy());
+    assert_eq!(checkout_of(&d, browser), worktree.to_string_lossy());
+    d.close_pane(pane).unwrap();
+}

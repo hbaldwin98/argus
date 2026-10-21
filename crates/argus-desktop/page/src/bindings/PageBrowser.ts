@@ -2,9 +2,17 @@
 import type { BrowserDriver } from "./BrowserDriver";
 import type { BrowserTab } from "./BrowserTab";
 
-export type PageBrowser = { pane: number, 
+export type PageBrowser = { 
 /**
- * The pane's title, which names the agent driving it.
+ * The browser's own pane, which the grid tiles.
+ */
+pane: number, 
+/**
+ * The agent's pane that owns it, and so closes it.
+ */
+owner: number, 
+/**
+ * The owner's title, which names the agent driving it.
  */
 agent: string, url: string, title: string, tabs: Array<BrowserTab>, 
 /**

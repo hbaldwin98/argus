@@ -191,6 +191,7 @@ pub fn shown(tree: &[ProjectInfo], pane: PaneId) -> Option<page::Shown> {
         checkout: lineage.checkout.name.clone(),
         branch: branch(lineage.checkout),
         agent: info.kind == PaneKind::Agent,
+        browser: info.kind == PaneKind::Browser,
         title: info.title.clone(),
         status: status(info),
         // The session's to say: the tree does not carry it.

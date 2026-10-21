@@ -141,6 +141,9 @@ pub struct Session {
     agents: Agents,
     views: AgentViews,
     browsers: Browsers,
+    /// Browsers that opened beside the pane on screen and are not in the
+    /// grid yet, for want of the tree that holds them.
+    browsers_beside: Vec<PaneId>,
     /// The views agents saved, and the columns of each panel showing them.
     saved: SavedViews,
     /// What the extensions publish: their views, the one out in the side
@@ -224,6 +227,7 @@ impl Session {
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
             browsers: Browsers::default(),
+            browsers_beside: Vec::new(),
             saved: SavedViews::default(),
             extension_views: ExtensionViews::new(settings.extensions),
             opening_feature: PendingFeature::default(),
@@ -476,14 +480,13 @@ impl Session {
                 self.passing.push(Event::Notice { text });
             }
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
-            // A browser that opens comes out in its panel, on the right
-            // unless the person has put the panel elsewhere.
+            // A browser that opens beside the agent the person is looking
+            // at joins it in the grid; any other is only listed.
             ServerMsg::BrowserPage(page) => {
+                let pane = page.pane;
                 if self.browsers.page(page) {
-                    // Placed the first time only: after, it is where the
-                    // person put it.
-                    self.docks.place(&Panel::Browser, Place::Dock(Dock::Right));
-                    self.docks.show(&Panel::Browser);
+                    self.browsers_beside.push(pane);
+                    self.open_browsers_beside();
                 }
             }
             ServerMsg::BrowserClosed { pane } => self.browsers.closed(pane),
@@ -556,6 +559,36 @@ impl Session {
         let tree = &self.tree;
         self.sessions.forget_resumed(|pane| tree.panes().any(|p| p.id == pane));
         self.settle_made();
+        self.open_browsers_beside();
+    }
+
+    /// Opens each browser that just opened beside its owner, when the owner
+    /// is the pane the Workspace shows. The browser's page can arrive
+    /// before the tree that holds its pane, so one not there yet waits for
+    /// the tree; one whose owner the person has left is only listed.
+    fn open_browsers_beside(&mut self) {
+        for pane in std::mem::take(&mut self.browsers_beside) {
+            let Some(owner) = self.browsers.owner(pane) else {
+                continue;
+            };
+            // On screen is anywhere in the grid, not only its first cell.
+            if !self.shown.grid().holds(owner) || self.stages.now() != Stage::Workspace || self.shown.grid().holds(pane) {
+                continue;
+            }
+            if self.project_of(pane).is_none() {
+                self.browsers_beside.push(pane);
+                continue;
+            }
+            // The agent opened it, not the person: the keys stay where the
+            // person had them, or what they were typing would go to a page.
+            let keyed = self.shown.pane();
+            // A refusal (no room) leaves it listed, which is all it asked.
+            if self.join_grid(pane).is_ok() {
+                if let Some(keyed) = keyed {
+                    self.shown.focus(keyed);
+                }
+            }
+        }
     }
 
     /// The daemon's consoles, after its greeting and after every tree. A
@@ -685,7 +718,6 @@ impl Session {
                 self.browsers.close(PaneId(pane), &mut self.out);
                 self.finish()
             }
-            Call::PlaceBrowser { pane, dock } => self.place_browser(PaneId(pane), dock),
             Call::ShowCode { open } => self.show_code(open),
             Call::Code { gesture } => self.code_gesture(gesture),
             Call::ShowComposer { open } => self.show_composer(open),
@@ -1250,10 +1282,19 @@ impl Session {
         self.finish()
     }
 
+    /// The pane that bytes typed now go to: the one with the keys, unless it
+    /// is a browser, which has no program to hear them. The page sends a
+    /// browser its input itself, as `BrowserInput`.
+    fn typed_to(&self) -> Option<PaneId> {
+        let pane = self.shown.pane()?;
+        let browser = self.tree.lineage_of_pane(pane).is_some_and(|(_, info)| info.kind == argus_protocol::PaneKind::Browser);
+        (!browser).then_some(pane)
+    }
+
     /// Typing returns the view to the live screen: the child's echo lands
     /// there, and a parked view is not where input can be seen.
     fn input(&mut self, bytes: Vec<u8>) {
-        if let (Some(pane), false) = (self.shown.pane(), bytes.is_empty()) {
+        if let (Some(pane), false) = (self.typed_to(), bytes.is_empty()) {
             self.live();
             self.out.push(ClientMsg::Input { pane, bytes });
         }
@@ -1261,7 +1302,7 @@ impl Session {
 
     /// A paste, as one event: the daemon brackets it only if the child asked.
     pub fn paste(&mut self, text: String) -> Vec<ClientMsg> {
-        if let (Some(pane), false) = (self.shown.pane(), text.is_empty()) {
+        if let (Some(pane), false) = (self.typed_to(), text.is_empty()) {
             self.live();
             self.out.push(ClientMsg::Paste { pane, text: paste::normalize(&text) });
         }
@@ -1273,7 +1314,7 @@ impl Session {
     /// machine's. The daemon keeps it and pastes its path, the one form
     /// every harness takes an image in.
     pub fn paste_file(&mut self, name: String, bytes: Vec<u8>) -> Vec<ClientMsg> {
-        let Some(pane) = self.shown.pane() else {
+        let Some(pane) = self.typed_to() else {
             return self.finish();
         };
         let note = if !self.status.daemon_can(PASTE_FILE) {
@@ -1879,7 +1920,7 @@ impl Session {
                 self.docks.move_to(panel, dock);
                 self.show_views_panel();
             }
-            Panel::Saved(_) | Panel::Browser => self.docks.move_to(panel, dock),
+            Panel::Saved(_) => self.docks.move_to(panel, dock),
             Panel::Extension(_) => {
                 self.extension_views.touch(panel);
                 self.dock_extension(panel, Some(dock));
@@ -1910,13 +1951,6 @@ impl Session {
         match panel {
             Panel::Console => self.open_console_tab(),
             Panel::Extension(_) => self.extension_mode(panel, true),
-            // Its browser fills the Browsers stage, and leaves the dock, as
-            // one browser is never drawn twice.
-            Panel::Browser => {
-                self.browsers.choose(self.browsers.docked());
-                self.go(Stage::Browsers);
-                self.docks.hide(&Panel::Browser);
-            }
             Panel::Views | Panel::Saved(_) => {}
         }
     }
@@ -1927,7 +1961,7 @@ impl Session {
     fn close_panel(&mut self, panel: &Panel) {
         match panel {
             Panel::Saved(owner) => self.close_saved_column(owner, 0),
-            Panel::Console | Panel::Views | Panel::Browser | Panel::Extension(_) => {}
+            Panel::Console | Panel::Views | Panel::Extension(_) => {}
         }
     }
 
@@ -1946,9 +1980,6 @@ impl Session {
         let mut present = vec![Panel::Console];
         if !self.views.is_empty() {
             present.push(Panel::Views);
-        }
-        if !self.browsers.is_empty() {
-            present.push(Panel::Browser);
         }
         present.extend(self.extension_views.present(&self.here()));
         present.extend(self.saved.present());
@@ -2295,29 +2326,16 @@ impl Session {
         self.finish()
     }
 
-    /// A browser dragged to a dock or to the stage.
-    fn place_browser(&mut self, pane: PaneId, dock: Option<Dock>) -> Vec<ClientMsg> {
-        if !self.browsers.has(pane) {
-            return self.finish();
-        }
-        match dock {
-            Some(dock) => {
-                self.browsers.dock(pane);
-                self.docks.move_to(&Panel::Browser, dock);
-            }
-            None => {
-                self.browsers.choose(Some(pane));
-                self.go(Stage::Browsers);
-            }
-        }
-        self.finish()
-    }
-
-    /// The Browsers stage, on `pane`'s browser or on every one.
+    /// The Browsers stage with every browser, or `pane`'s browser put on
+    /// screen as a click on it in the rail would.
     fn show_browsers(&mut self, pane: Option<PaneId>) -> Vec<ClientMsg> {
-        self.browsers.choose(pane);
-        self.go(Stage::Browsers);
-        self.finish()
+        match pane {
+            Some(pane) => self.select(pane),
+            None => {
+                self.go(Stage::Browsers);
+                self.finish()
+            }
+        }
     }
 
     /// A browser's picture, kept for a page that loads later and handed
@@ -3148,9 +3166,9 @@ impl Session {
             let request_id = self.awaited.name();
             self.out.extend(self.sessions.read(&self.status, &wanted, request_id));
         }
-        self.browsers.follow(self.shown.pane());
         if self.status.daemon_can(BROWSERS) {
-            let drawn = self.browsers.drawn(self.docks.shows(&Panel::Browser), self.stages.now() == Stage::Browsers);
+            let placed = if self.stages.shows_workspace(self.console.fullscreen()) { self.shown.panes() } else { Vec::new() };
+            let drawn = self.browsers.drawn(&placed, self.stages.now() == Stage::Browsers);
             self.browsers.watch(drawn, &mut self.out);
         }
         let reads_board = matches!(self.stages.now(), Stage::Feature | Stage::Checkouts) || self.palette;
@@ -3201,7 +3219,6 @@ impl Session {
         events.extend(self.docks.take(|panel| match panel {
             Panel::Console => "Console".into(),
             Panel::Views => "Views".into(),
-            Panel::Browser => "Browser".into(),
             Panel::Extension(_) => views.get(panel, &here).map(|v| v.title.clone()).unwrap_or_default(),
             Panel::Saved(id) => saved.title(id),
         }));
@@ -4196,14 +4213,131 @@ mod tests {
         assert_eq!(s.everything(0).len(), 8, "a fresh page hears it all, the keymap first");
     }
 
+    /// `tree()` with a browser pane, `pane`, in the checkout of the agent
+    /// that owns it.
+    fn tree_with_browser(pane: u64) -> Vec<ProjectInfo> {
+        let mut tree = tree();
+        tree[0].repositories[0].checkouts[0].panes.push(crate::fixtures::pane(pane, PaneKind::Browser, "Browser", PaneStatus::Idle));
+        tree
+    }
+
+    fn browser_page(pane: u64, owner: u64) -> ServerMsg {
+        ServerMsg::BrowserPage(argus_protocol::BrowserPage {
+            pane: PaneId(pane),
+            owner: PaneId(owner),
+            url: "https://a.test".into(),
+            title: "A".into(),
+            tabs: Vec::new(),
+            shown: None,
+            following: true,
+            held: false,
+            driver: None,
+        })
+    }
+
     #[test]
-    fn a_browser_fills_the_browsers_stage_named_by_its_agent_and_takes_the_persons_hand() {
-        use argus_protocol::{BrowserInput, BrowserPage};
+    fn a_browser_opened_by_the_agent_on_screen_joins_the_grid_beside_it() {
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(1));
+        // The page comes before the tree that holds its pane, as the daemon sends them.
+        s.receive(browser_page(30, 1));
+        assert!(!s.shown.grid().holds(PaneId(30)), "the pane is not in the tree yet");
+        s.receive(with_tree(tree_with_browser(30)));
+        assert!(s.shown.grid().holds(PaneId(30)));
+        assert_eq!(s.shown.on(Side::Beside(0)), Some(PaneId(30)));
+        assert_eq!(s.shown.pane(), Some(PaneId(1)), "the agent opened it: the keys stay with the person's pane");
+        assert_eq!(typed(&mut s), ["input 1 [97]"], "what they were typing still reaches the agent");
+        let shown = s.rail(0).row.beside[0].clone().expect("its cell is described");
+        assert!(shown.browser && !shown.agent);
+    }
+
+    #[test]
+    fn a_browser_opens_beside_its_agent_wherever_in_the_grid_the_agent_is() {
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(2));
+        s.call(Call::OpenBeside { pane: 1 });
+        assert!(s.shown.grid().holds(PaneId(1)) && s.shown.on(Side::Workspace) != Some(PaneId(1)));
+        let keyed = s.shown.pane();
+        s.receive(browser_page(30, 1));
+        s.receive(with_tree(tree_with_browser(30)));
+        assert!(s.shown.grid().holds(PaneId(30)), "its agent is on screen beside another pane");
+        assert_eq!(s.shown.pane(), keyed);
+    }
+
+    #[test]
+    fn a_browser_of_an_agent_not_on_screen_is_only_listed() {
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(2));
+        s.receive(with_tree(tree_with_browser(30)));
+        s.receive(browser_page(30, 1));
+        assert!(!s.shown.grid().holds(PaneId(30)));
+        s.receive(with_tree(tree_with_browser(30)));
+        assert!(!s.shown.grid().holds(PaneId(30)), "nor does a later tree bring it");
+        assert_eq!(s.shown.pane(), Some(PaneId(2)));
+    }
+
+    #[test]
+    fn a_browser_pane_with_the_keys_is_sent_no_bytes() {
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(1));
+        s.receive(with_tree(tree_with_browser(30)));
+        s.receive(browser_page(30, 1));
+        assert!(s.shown.focus(PaneId(30)), "the person gives the browser the keys");
+        assert_eq!(s.shown.pane(), Some(PaneId(30)));
+        // Where the person is may be reported; what they type is not sent.
+        assert!(typed(&mut s).iter().all(|m| !m.starts_with("input")));
+        assert!(s.paste("x".into()).is_empty());
+        assert!(s.paste_file("a.png".into(), vec![1]).iter().all(|m| !matches!(m, ClientMsg::PasteFile { .. })));
+        assert_eq!(names(&s.text("é")), Vec::<String>::new());
+        s.select(PaneId(1));
+        assert_eq!(typed(&mut s), ["input 1 [97]"], "the agent beside it still hears");
+    }
+
+    #[test]
+    fn showing_a_browser_puts_its_pane_on_screen_and_none_goes_to_the_stage() {
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(2));
+        s.receive(with_tree(tree_with_browser(30)));
+        s.receive(browser_page(30, 1));
+        s.call(Call::ShowBrowsers { pane: Some(30) });
+        assert_eq!((s.stages.now(), s.shown.on(Side::Workspace)), (Stage::Workspace, Some(PaneId(30))));
+        s.call(Call::ShowBrowsers { pane: None });
+        assert_eq!(s.stages.now(), Stage::Browsers);
+    }
+
+    #[test]
+    fn pictures_are_asked_for_of_the_browsers_in_the_grid_and_every_one_on_the_stage() {
+        let watched = |sent: &[ClientMsg]| {
+            sent.iter().rev().find_map(|m| match m {
+                ClientMsg::WatchBrowsers { showing } => Some(showing.clone()),
+                _ => None,
+            })
+        };
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(1));
+        s.receive(with_tree(tree_with_browser(30)));
+        let sent = s.receive(browser_page(30, 1));
+        assert_eq!(watched(&sent), Some(vec![PaneId(30)]), "the grid draws it");
+        let sent = s.call(Call::ShowBrowsers { pane: None });
+        assert_eq!(watched(&sent), None, "the stage draws it too, asked once");
+        let sent = s.call(Call::ShowFeatures { open: true });
+        assert_eq!(watched(&sent), Some(Vec::new()), "a stage that draws no browser asks for none");
+    }
+
+    #[test]
+    fn the_stage_names_each_browser_by_its_owners_title_and_a_browser_takes_the_persons_hand() {
+        use argus_protocol::BrowserInput;
         let mut s = session(Hello::this_build());
         let _ = s.events(0);
-        s.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(1), url: "https://a.test".into(), title: "A".into(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None }));
-        assert!(s.docks.shows(&Panel::Browser), "a browser that opens comes out in its panel");
-        s.call(Call::ShowBrowsers { pane: Some(1) });
+        s.receive(with_tree(tree_with_browser(30)));
+        s.receive(browser_page(30, 1));
+        s.call(Call::ShowBrowsers { pane: None });
         assert_eq!(s.stages.now(), Stage::Browsers);
         let events = s.events(0);
         let page = events.iter().find_map(|e| match e {
@@ -4211,14 +4345,11 @@ mod tests {
             _ => None,
         });
         let page = page.expect("the stage is told of the browser");
-        assert_eq!((page.chosen, page.browsers[0].agent.as_str()), (Some(1), "claude"));
-        let sent = s.call(Call::BrowserInput { pane: 1, input: BrowserInput::Reload });
-        assert!(sent.iter().any(|m| matches!(m, ClientMsg::BrowserInput { pane: PaneId(1), .. })), "{sent:?}");
-        s.call(Call::PlaceBrowser { pane: 1, dock: Some(Dock::Left) });
-        assert_eq!(s.docks.dock_of(&Panel::Browser), Some(Dock::Left), "dragged to a dock, it is there");
-        assert!(s.docks.shows(&Panel::Browser));
-        s.receive(ServerMsg::BrowserClosed { pane: PaneId(1) });
-        let sent = s.call(Call::BrowserInput { pane: 1, input: BrowserInput::Reload });
+        assert_eq!((page.browsers[0].pane, page.browsers[0].owner, page.browsers[0].agent.as_str()), (30, 1, "claude"));
+        let sent = s.call(Call::BrowserInput { pane: 30, input: BrowserInput::Reload });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::BrowserInput { pane: PaneId(30), .. })), "{sent:?}");
+        s.receive(ServerMsg::BrowserClosed { pane: PaneId(30) });
+        let sent = s.call(Call::BrowserInput { pane: 30, input: BrowserInput::Reload });
         assert!(sent.is_empty(), "a browser that went takes no input");
     }
 
@@ -5481,7 +5612,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 149] = [
+    const CALLS: [&str; 148] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5520,7 +5651,6 @@ mod tests {
         r#"{"call":"show_browsers","pane":null}"#,
         r#"{"call":"browser_input","pane":1,"input":{"kind":"click","x":10,"y":20}}"#,
         r#"{"call":"close_browser","pane":1}"#,
-        r#"{"call":"place_browser","pane":1,"dock":"left"}"#,
         r#"{"call":"show_code","open":true}"#,
         r#"{"call":"code","gesture":{"on":"click","target":{"on":"tree","path":"src"}}}"#,
         r#"{"call":"code","gesture":{"on":"action","action":"next"}}"#,

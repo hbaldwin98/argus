@@ -107,3 +107,16 @@ export function zoneRect(zone: Zone): Rect {
 export function keyedSplit(cell: number | null): number | null {
   return cell === null || cell === 0 ? null : cell - 1;
 }
+
+/** The view a cell has to take out before showing `next`: its old one, but
+ *  only while that is still inside the cell's own box. Cells are filled in
+ *  order, so a view that moved to an earlier cell in the same draw is
+ *  already in that cell's box, and taking it out would blank the cell that
+ *  just received it. */
+export function staleView<V extends { parentElement: unknown }>(
+  held: V | null,
+  next: V | null,
+  box: unknown,
+): V | null {
+  return held !== null && held !== next && held.parentElement === box ? held : null;
+}

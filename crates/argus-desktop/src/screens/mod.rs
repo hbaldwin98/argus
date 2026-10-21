@@ -158,6 +158,10 @@ const P_RATATUI: u64 = 5;
 const P_FAULTS: u64 = 6;
 const P_FAULTS_TEST: u64 = 7;
 const P_NEBULA: u64 = 8;
+/// An agent's browser pane, by the agent that owns it.
+const B_TRIM: u64 = 30;
+const B_SCREENS: u64 = 31;
+const B_FAULTS: u64 = 32;
 const P_API_SHELL: u64 = 20;
 const P_API_AGENT: u64 = 21;
 const C_CONSOLE: u64 = 50;
@@ -1853,16 +1857,30 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// Three agents each with a browser open, and a picture of each.
+/// The tree with each browser a pane in its agent's checkout, as the
+/// daemon holds them.
+fn tree_with_browsers(owners: &[(u64, u64)]) -> Vec<ProjectInfo> {
+    let mut tree = tree();
+    for &(browser, owner) in owners {
+        let checkouts = tree.iter_mut().flat_map(|p| &mut p.repositories).flat_map(|r| &mut r.checkouts);
+        let checkout = checkouts.into_iter().find(|c| c.panes.iter().any(|p| p.id == PaneId(owner))).expect("the owner is in the tree");
+        checkout.panes.push(pane(browser, PaneKind::Browser, "Browser", PaneStatus::Idle, 60));
+    }
+    tree
+}
+
+/// Three agents each with a browser open, and a picture of each. The
+/// window shows the first agent, so its browser opens beside it.
 fn browsing() -> Window {
     use argus_protocol::{BrowserDriver, BrowserFrame, BrowserPage, BrowserTab};
     let mut w = Window::showing(P_TRIM);
+    w.receive(ServerMsg::Tree(tree_with_browsers(&[(B_TRIM, P_TRIM), (B_SCREENS, P_SCREENS), (B_FAULTS, P_FAULTS)])));
     let open = [
-        (P_TRIM, "http://localhost:5173/settings", "Argus — Settings", [64, 112, 224]),
-        (P_SCREENS, "https://docs.rs/tokio-tungstenite/latest/tokio_tungstenite/", "tokio_tungstenite - Rust", [56, 142, 60]),
-        (P_FAULTS, "http://127.0.0.1:8080/login", "Sign in", [200, 90, 40]),
+        (B_TRIM, P_TRIM, "http://localhost:5173/settings", "Argus — Settings", [64, 112, 224]),
+        (B_SCREENS, P_SCREENS, "https://docs.rs/tokio-tungstenite/latest/tokio_tungstenite/", "tokio_tungstenite - Rust", [56, 142, 60]),
+        (B_FAULTS, P_FAULTS, "http://127.0.0.1:8080/login", "Sign in", [200, 90, 40]),
     ];
-    for (pane, url, title, accent) in open {
+    for (pane, owner, url, title, accent) in open {
         let tabs = vec![
             BrowserTab { id: format!("{pane}-docs"), url: "https://docs.rs/".into(), title: "Docs.rs".into() },
             BrowserTab { id: format!("{pane}-work"), url: url.into(), title: title.into() },
@@ -1870,10 +1888,10 @@ fn browsing() -> Window {
         let shown = Some(format!("{pane}-work"));
         // One agent at work in its browser, one the person has taken from
         // its agent, and one looked at on a tab the person picked.
-        let driver = (pane == P_TRIM).then_some(BrowserDriver::Agent);
-        let held = pane == P_FAULTS;
-        let following = pane != P_SCREENS;
-        w.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(pane), url: url.into(), title: title.into(), tabs, shown, following, held, driver }));
+        let driver = (owner == P_TRIM).then_some(BrowserDriver::Agent);
+        let held = owner == P_FAULTS;
+        let following = owner != P_SCREENS;
+        w.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(pane), owner: PaneId(owner), url: url.into(), title: title.into(), tabs, shown, following, held, driver }));
         w.receive(ServerMsg::BrowserFrame(Box::new(BrowserFrame { pane: PaneId(pane), jpeg: page_shot(accent), width: 1280, height: 800 })));
     }
     w
@@ -2026,9 +2044,10 @@ pub fn scenes() -> Vec<Scene> {
             w.call(Call::ShowBrowsers { pane: None });
             w.s
         }),
-        scene("browser", "Browsers — one agent's browser, to watch or take over", || {
+        scene("browser", "Browser — an agent's browser, a pane beside it in the grid", || {
             let mut w = browsing();
-            w.call(Call::ShowBrowsers { pane: Some(P_SCREENS) });
+            w.call(Call::Resize { side: Side::Workspace, rows: ROWS, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(0), rows: ROWS, cols: COLS / 2 - 1 });
             w.s
         }),
         scene("browsers-none", "Browsers — no agent has one open", || {

@@ -106,6 +106,10 @@ impl Daemon {
         pane: PaneId,
         destination: &std::path::Path,
     ) -> anyhow::Result<()> {
+        // Looked up before `inner` is taken, which the browsers' lock
+        // follows: the browser pane lives in its agent's checkout, so it
+        // goes where the agent goes.
+        let browser = self.browser_of(pane);
         let (source_path, target_path, template, source_has_agent) = {
             let mut inner = self.inner.lock().unwrap();
             let (project_index, source_repository_index, source_index, pane_index) = inner
@@ -175,6 +179,13 @@ impl Daemon {
             project.repositories[target_repository_index].checkouts[target_index]
                 .panes
                 .push(moving);
+            if let Some(browser) = browser {
+                let source = &mut project.repositories[source_repository_index].checkouts[source_index].panes;
+                if let Some(at) = source.iter().position(|candidate| candidate.id == browser) {
+                    let owned = source.remove(at);
+                    project.repositories[target_repository_index].checkouts[target_index].panes.push(owned);
+                }
+            }
             let source_has_agent = project.repositories[source_repository_index].checkouts
                 [source_index]
                 .panes

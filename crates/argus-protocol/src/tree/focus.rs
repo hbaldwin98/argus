@@ -144,6 +144,7 @@ fn focus_pane(pane: &PaneInfo) -> FocusPane {
         PaneKind::Shell => "shell",
         PaneKind::Agent => "agent",
         PaneKind::Editor => "editor",
+        PaneKind::Browser => "browser",
     };
     FocusPane {
         id: pane.id,

@@ -634,15 +634,29 @@ fn greet(
     );
     conn.subs.runs = hello.can(CELL_RUNS);
     let (consoles, takes) = (hello.can(CONSOLES), hello.can(EXTENSIONS));
+    let hello_browsers = hello.can(BROWSERS);
     let asks = takes && hello.can(EXTENSION_DIALOGS);
     // Before the answer, not after: a tree pushed in between would go
     // without the consoles beside it. The client listed what it can take,
     // so it can read one a moment ahead of the answer.
     conn.peer.set(hello);
     let _ = out_tx.send(ServerMsg::Hello(Hello::this_build()));
-    // The tree went before the greeting; the consoles could not, and they
-    // follow the daemon's own greeting.
-    if consoles {
+    // The tree went before the greeting, with no browser panes in it, as the
+    // peer was not yet known to read them. One that can is sent it again,
+    // but only when a browser is in it: most are not. The tree comes from
+    // joining its topic anew, not from a send of our own, because the old
+    // forwarder may hold a tree it stripped before the peer was set, and
+    // would send that after ours; joining aborts it. The join also sends
+    // the consoles.
+    let browsing = hello_browsers
+        && daemon.snapshot().iter().flat_map(|p| &p.repositories).flat_map(|r| &r.checkouts).any(|c| {
+            c.panes.iter().any(|pane| pane.kind == argus_protocol::PaneKind::Browser)
+        });
+    if browsing {
+        conn.topics.join(topics::Tree { peer: conn.peer.clone() });
+    } else if consoles {
+        // The consoles could not go before it either, and they follow the
+        // daemon's own greeting.
         let _ = out_tx.send(ServerMsg::Consoles(daemon.consoles()));
     }
     // Likewise what the extensions publish, and whether this client is one

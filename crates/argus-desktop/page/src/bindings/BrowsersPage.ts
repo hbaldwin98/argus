@@ -2,20 +2,12 @@
 import type { PageBrowser } from "./PageBrowser";
 
 /**
- * The Browsers stage, whole, whenever where a browser is or which is
- * chosen changes. Its pictures come apart, as `BrowserShot`s, since they
- * come many times a second.
+ * The Browsers stage, whole, whenever a browser opens, moves or closes.
+ * Its pictures come apart, as `BrowserShot`s, since they come many times a
+ * second.
  */
 export type BrowsersPage = { 
 /**
  * In pane order, which is the order the agents were started in.
  */
-browsers: Array<PageBrowser>, 
-/**
- * The browser that fills the stage; every browser at once while none.
- */
-chosen: number | null, 
-/**
- * The browser the browser panel shows.
- */
-docked: number | null, };
+browsers: Array<PageBrowser>, };

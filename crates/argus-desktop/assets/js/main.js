@@ -25,7 +25,7 @@ import { drawFrame, screen } from './panes/screen.js';
 import { state } from './state.js';
 import { call, connect } from './connection/tauri.js';
 import { drawViews, openNewestView } from './views/agent.js';
-import { browserShot, browsersHeard, drawBrowserPanel } from './browser/stage.js';
+import { browserShot, browsersHeard } from './browser/stage.js';
 import { drawExtensionDialog } from './extensions/dialogs.js';
 import { drawExtensionConfirm, drawExtensionPanels } from './extensions/views.js';
 import { drawSavedNav, drawSavedPanels } from './views/saved.js';
@@ -47,6 +47,13 @@ function dialogKeys() {
             input.focus();
     }
 }
+/** Whether the pane with the keys is a browser's, which draws a page and
+ *  types into it itself, not into the hidden text area. */
+function keyedBrowser(rail) {
+    const { keyed, beside } = rail.row;
+    const pane = keyed === 0 ? rail.shown : keyed === null ? null : beside[keyed - 1];
+    return pane?.browser ?? false;
+}
 function receive(event) {
     switch (event.type) {
         case 'status':
@@ -57,7 +64,6 @@ function receive(event) {
             state.docks = event;
             drawDocks();
             drawViews();
-            drawBrowserPanel();
             // Which saved panel is out marks its entry in the sidebar.
             drawSavedNav();
             break;
@@ -94,6 +100,10 @@ function receive(event) {
                 $('input').blur();
             else if (railPicked())
                 return;
+            // A browser pane takes the keys itself, on a click in its cell; the
+            // text area stays out of its way.
+            else if (keyedBrowser(event))
+                $('input').blur();
             else if (shown || (event.shown && event.stage !== before.stage))
                 $('input').focus();
             break;
@@ -176,7 +186,6 @@ function receive(event) {
             break;
         case 'browsers':
             browsersHeard(event);
-            // The chosen browser's agent names the strip.
             drawHead();
             break;
         case 'browserShot':

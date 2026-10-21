@@ -75,8 +75,6 @@ const DOCKS: [Dock; 3] = [Dock::Left, Dock::Right, Dock::Bottom];
 pub enum Panel {
     Console,
     Views,
-    /// The browser of an agent's pane: the one on screen, or the newest.
-    Browser,
     Extension(String),
     /// A saved view's panel, named by the view it opened with; the columns
     /// that follow it are `views::saved`'.
@@ -105,7 +103,7 @@ impl Panel {
     fn home(&self) -> Option<Dock> {
         match self {
             Panel::Console => Some(Dock::Bottom),
-            Panel::Views | Panel::Browser => Some(Dock::Right),
+            Panel::Views => Some(Dock::Right),
             Panel::Extension(_) | Panel::Saved(_) => None,
         }
     }
@@ -127,7 +125,6 @@ impl Panel {
         match self {
             Panel::Console => PanelKind::Console,
             Panel::Views => PanelKind::Views,
-            Panel::Browser => PanelKind::Browser,
             Panel::Extension(_) => PanelKind::Extension,
             Panel::Saved(_) => PanelKind::Saved,
         }
@@ -139,7 +136,7 @@ impl Panel {
     /// new kind of panel is decided here rather than defaulted.
     fn stages(&self) -> bool {
         match self {
-            Panel::Console | Panel::Extension(_) | Panel::Browser => true,
+            Panel::Console | Panel::Extension(_) => true,
             Panel::Views | Panel::Saved(_) => false,
         }
     }
@@ -150,7 +147,7 @@ impl Panel {
     fn closes(&self) -> bool {
         match self {
             Panel::Saved(_) => true,
-            Panel::Console | Panel::Views | Panel::Browser | Panel::Extension(_) => false,
+            Panel::Console | Panel::Views | Panel::Extension(_) => false,
         }
     }
 
@@ -164,7 +161,6 @@ impl fmt::Display for Panel {
         match self {
             Panel::Console => f.write_str("console"),
             Panel::Views => f.write_str("views"),
-            Panel::Browser => f.write_str("browser"),
             Panel::Extension(key) => write!(f, "{EXTENSION}{key}"),
             Panel::Saved(id) => write!(f, "{SAVED}{id}"),
         }
@@ -188,7 +184,6 @@ impl Panel {
         match name {
             "console" => Ok(Panel::Console),
             "views" => Ok(Panel::Views),
-            "browser" => Ok(Panel::Browser),
             _ => match (name.strip_prefix(EXTENSION), name.strip_prefix(SAVED)) {
                 (Some(key), _) if key.split_once('/').is_some_and(|(e, v)| !e.is_empty() && !v.is_empty()) => {
                     Ok(Panel::Extension(key.to_string()))
@@ -358,7 +353,6 @@ pub struct DockTab {
 pub enum PanelKind {
     Console,
     Views,
-    Browser,
     Extension,
     Saved,
 }

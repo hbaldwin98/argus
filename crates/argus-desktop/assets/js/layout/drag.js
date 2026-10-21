@@ -70,10 +70,8 @@ window.addEventListener('click', (e) => {
 }, true);
 /** Makes a press on `handle` able to drag `panel`, naming it `title` under
  *  the pointer, and gives the handle back. A press on a button inside it
- *  stays the button's, unless the handle is that button. `place`, when
- *  given, is what a drop does in place of moving the panel: a browser
- *  dragged from the stage says which browser goes there. */
-export function draggable(handle, panel, title, place = (target) => drop(panel, target)) {
+ *  stays the button's, unless the handle is that button. */
+export function draggable(handle, panel, title) {
     handle.addEventListener('mousedown', (down) => {
         if (down.button !== 0)
             return;
@@ -129,7 +127,7 @@ export function draggable(handle, panel, title, place = (target) => drop(panel, 
                 swallowClick = false;
             }, 0);
             if (dropped && target)
-                place(target);
+                drop(panel, target);
         };
         const up = () => end(true);
         const key = (k) => {

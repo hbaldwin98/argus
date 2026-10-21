@@ -208,7 +208,9 @@ in, moved by the header and resized by the corner), `drag`, `panels` (what Rust 
 that exists is and can do) and `edge` (a side column's edge, dragged). `panes/` holds `screen`,
 `input`, `split` and `split_math`, `size_label` (what the header says of the grid), `console` and `rename`. `keys/` holds `keymap`, `focus` (which
 layer has a key), `chords` (how a key is written), `palette`, `sections` (the sheet's sections, filter and opening place) and
-`shortcuts`. `views/` is the views
+`shortcuts`. `browser/` holds `stage` (the overview tiles and the sidebar rows), `pane` (a browser
+pane's grid cell), `shots` (the pictures and the canvases that paint them), `page` (the browsers as
+Rust last said), `status` (who has it) and `input`. `views/` is the views
 agents show and save: `agent` is the agents' views panel and `saved` the saved views', its parts in
 `saved/` (`ctx`, `logic` and `link`); `blocks` draws a view's blocks and hands each to the module
 of its kind in `blocks/` (`markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`,
@@ -468,7 +470,7 @@ to the type or its locking.
 | `state/board/address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
 | `state/board/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `state/views` | which views agents have shown, per pane, and which go when |
-| `state/browsers` | which panes run a browser, where each is and its latest picture, and which go when |
+| `state/browsers` | which browser panes run a browser, where each is and its latest picture, and which go when: the browser pane in its agent's checkout, owned by that agent |
 | `state/views/timers` | which views are being asked to refresh, and the task that asks |
 | `state/views/saved` | the views agents kept: saving, marking stale, deleting, refreshing and pressing them, which of them an agent may reach, what each client is told as the rows or the tree change, and the staleness read off the tree |
 | `connection` | one client connection: which task each message runs on, and the topics it has joined |
@@ -494,6 +496,7 @@ to the type or its locking.
 | `review/diff` | a review's stable snapshot and its diff, and a commit's |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
 | `browser` | a browser run for an agent's pane: started, followed while it runs, and ended when its handle is dropped |
+| `browser/process` | a browser pane's process: what a terminal's keys, sizes and scrollback come to for a pane whose content is a browser, which is nothing |
 | `browser/chrome` | which browser runs, and starting it: headless, on a profile of its own that goes with it and that the next daemon clears if this one is killed, handed its pipe |
 | `browser/pipe` | the DevTools pipe to a browser: two anonymous pipes it is started holding, in place of a port any process could reach, and the NUL-ended messages on them |
 | `browser/mux` | one DevTools connection shared by the daemon's view of a browser and agents' tools: ids rewritten so answers find their way back, events sent to who can use them, the tab an agent acts on told to the daemon, and an agent's input refused while the person holds the browser |
@@ -658,7 +661,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `settings/preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
 | `settings/remembered` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
 | `chrome` | the rail and the status bar around the stage |
-| `browser` | the browsers agents' panes run, as this window holds them: where each is, its latest picture, and which one the Browsers stage has chosen |
+| `browser` | the browsers agents' panes run, as this window holds them: where each is, its owner and latest picture, and which the window draws |
 | `chrome/add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
 | `chrome/rail` | what the rail lists from the tree, and what a row says |
 | `chrome/status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
@@ -2811,8 +2814,24 @@ API's `devtools` endpoint, `ws://127.0.0.1:<port>/pane/<id>/devtools?token=<toke
 in the query since a browser tool given a URL sets no header. The agent drives it with whatever tool
 it brings — `agent-browser --cdp <url>`, a DevTools MCP server, Playwright — so Argus never chooses
 how an agent browses, and a second open answers the same URL. `browser close`, the person's close
-(`ClientMsg::CloseBrowser`), the pane leaving the tree (`retire_pane`) and the daemon stopping each
-kill it; on Windows a job takes its renderers with it.
+(`ClientMsg::CloseBrowser`), the browser pane or its agent's leaving the tree (`retire_pane`) and
+the daemon stopping each kill it; on Windows a job takes its renderers with it.
+
+A browser is a pane of its own: `PaneKind::Browser`, in the checkout of the agent that opened it,
+with its own `PaneId`, so it tiles, fills, splits and closes in the Workspace grid as a shell does.
+It is owned by that agent, one each: `BrowserPage::owner` names the agent, and every other browser
+message (`BrowserFrame`, `BrowserInput`, `CloseBrowser`, `BrowserClosed`) names the browser pane. The
+DevTools URL stays the agent's, since the agent's token and identity are what the pane API knows.
+Its content is pictures, not a terminal, so its process (`browser::process`) is inert: keys, sizes
+and scrollback come to nothing, and the person's hand arrives as `BrowserInput`. Closing the pane
+closes the browser, a browser that ends on its own takes its pane out of the tree, and closing the
+agent's pane closes the browser's. The pane is titled for the page it shows, `Browser` with none.
+`CheckoutInfo::listed_panes` leaves browsers out, as it does editors: the sidebar lists a browser
+only in its Browsers section, not under its checkout. A browser is never restored after a daemon
+restart (`session_panes` does not record it, `restorable` skips it): the agent opens it again. A
+client that did not list `BROWSERS` cannot decode `PaneKind::Browser`, and with it the whole tree,
+so the Tree topic strips browser panes from every tree it sends such a client; the tree joined
+before the greeting is sent again after it, once the client is known to take them.
 
 A pipe is one DevTools connection, and `browser::mux` shares it: the daemon's own view and each
 agent's socket are clients whose command ids it rewrites so each answer finds its way back, a
@@ -2842,18 +2861,21 @@ looks at costs no connection anything. The channel is shallow, and a client that
 sent each browser's latest picture rather than the backlog. The frame carries Chrome's base64 as it
 came, so neither side decodes it on the way.
 
-A browser that opens brings out the browser panel (`Panel::Browser`), placed in the right dock the
-first time and wherever the person moves it after; it shows the newest, follows the person to the
-pane on screen when they go to one with a browser, and otherwise stays on the browser they put there.
-The desktop's Browsers stage (`6`) shows every browser as a live tile, named by its pane's title and
-who has it, or the one chosen filling the stage; the sidebar's Browsers row folds out a row for each,
-which a press shows in the browser panel, leaving the stage as it was. A tile, a row or the stage's grip drags its browser to a dock or the stage (`Call::PlaceBrowser`).
-Drawn large, in the panel or on the stage, a browser has its tabs, Follow agent while the person has
-picked a tab, Take control or Hand back, an address bar, back, forward, reload and close; the panel
-leaves a browser the stage has open to it, so one page is never laid out for two sizes in turn.
+A browser pane tiles in the Workspace's grid like a shell or an agent, with the same fill, split and
+close, and the sidebar lists it only in its Browsers section, whose row puts that pane on screen
+(`Call::ShowBrowsers { pane: Some(_) }`, as a click on a pane in the rail does). When a browser opens
+while its agent's pane is the one the Workspace shows, the window opens the browser beside it, as
+`OpenBeside` would; the browser's page can arrive before the tree that holds its pane, so the open
+waits for the tree. A browser opened for an agent the person is not looking at is only listed. The
+window asks for the pictures of the browsers the grid holds while the Workspace is up, and of every
+browser while the Browsers stage is. The Browsers stage (`6`, `Call::ShowBrowsers { pane: None }`) is
+the overview: every browser as a live tile, named by its owner's title and who has it. A cell that
+draws a browser has its tabs, Follow agent while the person has picked a tab, Take control or Hand
+back, an address bar, back, forward, reload and close. Keys, pastes and mouse bytes never go to a
+browser pane as pty input (`Session::typed_to`): the page sends it `BrowserInput` itself.
 Frames reach the page past the session (`Shared::browser_shot`), since they come many a second and
 change nothing else; the page decodes each into a bitmap and paints its canvas, because its CSP
-admits no `data:` image. A click, wheel or key on a browser drawn large is sent as a
+admits no `data:` image. A click, wheel or key on a browser's cell is sent as a
 `ClientMsg::BrowserInput` in the page's CSS pixels, which `browser::input` turns into DevTools input
 on the tab shown; a navigation is refused unless it is `http`, `https` or `about:blank`.
 

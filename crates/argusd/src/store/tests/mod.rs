@@ -207,6 +207,16 @@ fn editors_are_not_restored() {
 }
 
 #[test]
+fn browsers_are_not_restored() {
+    // A browser is its agent's: restoring one would reach `restore_panes`,
+    // which starts a shell for any kind it has no other word for.
+    let known = vec![PathBuf::from("/repo")];
+    let panes = vec![pane("/repo", PaneKind::Browser, "Browser"), pane("/repo", PaneKind::Shell, "shell")];
+    let out: Vec<&SessionPane> = restorable(&panes, &known).collect();
+    assert_eq!(out.iter().map(|p| p.kind).collect::<Vec<_>>(), [PaneKind::Shell]);
+}
+
+#[test]
 fn a_pane_whose_checkout_is_gone_is_dropped() {
     let known = vec![PathBuf::from("/still-here")];
     let panes = vec![

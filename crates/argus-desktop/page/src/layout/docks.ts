@@ -116,8 +116,6 @@ function element(panel: Panel): HTMLElement | null {
       return state.console?.place === 'docked' ? $('console') : null;
     case 'views':
       return $('views');
-    case 'browser':
-      return $('browser');
     case 'saved':
       return savedElement(panel);
     case 'extension':

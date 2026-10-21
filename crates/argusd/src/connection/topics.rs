@@ -10,7 +10,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use argus_protocol::{ServerMsg, WorkspaceInfo, CONSOLES, PANE_TELEMETRY};
+use argus_protocol::{ServerMsg, WorkspaceInfo, BROWSERS, CONSOLES, PANE_TELEMETRY};
 use tokio::sync::broadcast::{self, error::RecvError};
 use tokio::sync::mpsc;
 
@@ -121,8 +121,21 @@ pub(super) struct Tree {
 }
 
 impl Tree {
+    /// The tree as this client can read it: a client that did not list
+    /// `BROWSERS` fails to decode a pane kind it does not know, and with it
+    /// the whole tree, so it is sent none. Joined before the greeting, the
+    /// peer is unset and counts as not capable until `greet` sends again.
+    fn readable(&self, mut tree: Vec<argus_protocol::ProjectInfo>) -> Vec<argus_protocol::ProjectInfo> {
+        if !self.peer.can(BROWSERS) {
+            for checkout in tree.iter_mut().flat_map(|p| p.repositories.iter_mut()).flat_map(|r| r.checkouts.iter_mut()) {
+                checkout.panes.retain(|pane| pane.kind != argus_protocol::PaneKind::Browser);
+            }
+        }
+        tree
+    }
+
     fn sent(&self, daemon: &Daemon, tree: Vec<argus_protocol::ProjectInfo>) -> Vec<ServerMsg> {
-        let mut sent = vec![ServerMsg::Tree(tree)];
+        let mut sent = vec![ServerMsg::Tree(self.readable(tree))];
         if self.peer.can(CONSOLES) {
             sent.push(ServerMsg::Consoles(daemon.consoles()));
         }
@@ -146,7 +159,7 @@ impl Topic for Tree {
             }
             // A client that cannot take one pane's record is sent them all
             // in a tree.
-            TreeNews::Telemetry { .. } => vec![ServerMsg::Tree(daemon.snapshot())],
+            TreeNews::Telemetry { .. } => vec![ServerMsg::Tree(self.readable(daemon.snapshot()))],
         }
     }
 

@@ -990,6 +990,74 @@ mod tests {
         assert!(matches!(next(&mut client).await, ServerMsg::Tree(_)), "no consoles between the trees");
     }
 
+    fn browsers_in(tree: &[argus_protocol::ProjectInfo]) -> usize {
+        let panes = tree.iter().flat_map(|p| &p.repositories).flat_map(|r| &r.checkouts).flat_map(|c| &c.panes);
+        panes.filter(|p| p.kind == argus_protocol::PaneKind::Browser).count()
+    }
+
+    /// The next tree, skipping the consoles beside it.
+    async fn next_tree(client: &mut tokio::io::DuplexStream) -> Vec<argus_protocol::ProjectInfo> {
+        loop {
+            if let ServerMsg::Tree(tree) = next(client).await {
+                return tree;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_client_that_cannot_take_browsers_is_never_sent_a_tree_with_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, agent) = daemon_with_an_agent(dir.path());
+        let mut older = connect_to(daemon.clone()).await;
+        let without = Hello::this_build().without(argus_protocol::BROWSERS);
+        argus_protocol::write_msg(&mut older, &ClientMsg::Hello(without)).await.unwrap();
+        assert!(matches!(next(&mut older).await, ServerMsg::Hello(_)));
+        assert!(matches!(next(&mut older).await, ServerMsg::Consoles(_)));
+
+        let (_reports, heard) = mpsc::unbounded_channel();
+        daemon.open_browser_pane(agent, crate::browser::Browser::idle(), heard).unwrap();
+        assert_eq!(browsers_in(&daemon.snapshot()), 1, "the daemon has it");
+        let tree = next_tree(&mut older).await;
+        assert_eq!(browsers_in(&tree), 0, "a tree it could not decode is not sent");
+        assert!(tree[0].repositories[0].checkouts[0].panes.iter().any(|p| p.id == agent), "the rest of it is");
+    }
+
+    #[tokio::test]
+    async fn a_client_that_takes_browsers_is_sent_the_tree_with_them_again_on_greeting() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, agent) = daemon_with_an_agent(dir.path());
+        let (_reports, heard) = mpsc::unbounded_channel();
+        daemon.open_browser_pane(agent, crate::browser::Browser::idle(), heard).unwrap();
+
+        let mut client = connect_to(daemon.clone()).await;
+        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(Hello::this_build())).await.unwrap();
+        assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));
+        assert_eq!(browsers_in(&next_tree(&mut client).await), 1, "the tree it joined with had none to show");
+    }
+
+    #[tokio::test]
+    async fn a_tree_broadcast_while_the_hello_is_handled_never_leaves_a_greeted_client_without_browsers() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, agent) = daemon_with_an_agent(dir.path());
+        let mut client = connect_to(daemon.clone()).await;
+        // Broadcast before the hello is written, so the tree forwarder holds
+        // news to strip for a peer that has not yet greeted.
+        let (_reports, heard) = mpsc::unbounded_channel();
+        daemon.open_browser_pane(agent, crate::browser::Browser::idle(), heard).unwrap();
+        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(Hello::this_build())).await.unwrap();
+
+        // Whatever went before the greeting is for a peer that could not read
+        // browsers; every tree after it must carry this one.
+        while !matches!(next(&mut client).await, ServerMsg::Hello(_)) {}
+        let mut last = None;
+        while let Ok(msg) = tokio::time::timeout(std::time::Duration::from_millis(300), next(&mut client)).await {
+            if let ServerMsg::Tree(tree) = msg {
+                last = Some(browsers_in(&tree));
+            }
+        }
+        assert_eq!(last, Some(1), "the last tree the client was sent has its browser");
+    }
+
     #[tokio::test]
     async fn a_console_belongs_to_no_checkout_but_is_a_pane_like_any_other() {
         let dir = tempfile::tempdir().unwrap();

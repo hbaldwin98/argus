@@ -24,11 +24,16 @@ pub enum BrowserRequest {
     Close,
 }
 
-/// Where a pane's browser is, sent as it opens and whenever a tab opens,
-/// closes, changes address or title, or another is shown.
+/// Where a browser pane's browser is, sent as it opens and whenever a tab
+/// opens, closes, changes address or title, or another is shown.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BrowserPage {
+    /// The browser's own pane, in its owner's checkout: what every other
+    /// browser message names.
     pub pane: PaneId,
+    /// The agent pane that opened it, and whose pane API it is driven
+    /// through. It ends with that pane.
+    pub owner: PaneId,
     /// The shown tab's address and title, or nothing with no tab open.
     pub url: String,
     pub title: String,
