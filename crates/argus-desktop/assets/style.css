@@ -4497,7 +4497,9 @@ select option::checkmark {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: var(--z-layer);
+  /* With the dialogs' scrims, later in the page and so above them: the
+     sessions' filter menu opens from inside one. */
+  z-index: var(--z-modal);
 }
 .layer > * {
   pointer-events: auto;

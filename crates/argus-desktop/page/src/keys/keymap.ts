@@ -32,7 +32,7 @@ import { featureAction } from '../board/feature_stage.js';
 import { escapeFrom, type Handlers, takesFromPane, up } from './focus.js';
 import { closeLayer } from '../kit/menu.js';
 import { closePalette, openPalette } from './palette.js';
-import { addProjectOpen, answerRemoveNo } from '../chrome/projects.js';
+import { addProjectOpen, answerRemoveNo, closeProjectMenu } from '../chrome/projects.js';
 import { closeSettings, openSettings, settingsOpen } from '../settings/preferences.js';
 import { closeSheet, openSheet, sheetOpen, toggleSheet } from './shortcuts.js';
 import type { Where } from './sections.js';
@@ -327,7 +327,7 @@ const handlers: Handlers = {
     },
     escape: () => {
       // A question the stage asked is answered no, not only put away.
-      if (answerNo() || answerRemoveNo() || answerExtensionNo()) return true;
+      if (answerNo() || answerRemoveNo() || answerExtensionNo() || closeProjectMenu()) return true;
       if (!layerOpen()) return false;
       closeLayer();
       return true;
@@ -386,6 +386,12 @@ const handlers: Handlers = {
 function hear(layer: KeyLayer, e: KeyboardEvent): boolean {
   const handler = handlers[layer.layer];
   if (layer.places === null) return true;
+  // A menu a dialog opened (the sessions' filter) is drawn over it, and so
+  // hears Escape before it; the dialog is listed first, and would close
+  // under the menu and leave it standing.
+  const menu = state.layers.find((l) => l.layer === 'menu');
+  if (layer.takesFromPane && menu?.places && $('layer').querySelector('.menu'))
+    return handlers.menu.keys?.(e, menu.places) ?? true;
   if (handler.keys) return handler.keys(e, layer.places);
   const action = actionFor(layer.places, e);
   if (action === 'shortcuts') {

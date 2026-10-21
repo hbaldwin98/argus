@@ -81,6 +81,9 @@ export function openSheet(where, actionOf) {
                 find.value = query = '';
                 current = s.id;
                 draw();
+                // The list is rebuilt, so the clicked button is gone; without
+                // this the keys fall to the page and Up/Down stop working.
+                focusQuietly(nav.querySelector('.on'));
             },
         }, el('span', { class: 'grow' }, s.title), s.id === here && el('span', { class: 'ks-here' }, 'here'))));
         pane.replaceChildren(...(filtering

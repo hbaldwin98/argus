@@ -23,6 +23,14 @@ function closeMenu(): void {
   drawHeading();
 }
 
+/** Puts the switcher away for Escape; it draws in the heading, not the
+ *  menu layer, so the layer's own close does not reach it. */
+export function closeProjectMenu(): boolean {
+  if (!state.menuOpen) return false;
+  closeMenu();
+  return true;
+}
+
 /** What a project's row says of its agents: who needs you, else who is
  *  working, else that it is quiet. */
 function tally(choice: ProjectChoice): HTMLElement {
