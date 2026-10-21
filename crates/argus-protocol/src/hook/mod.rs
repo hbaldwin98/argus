@@ -197,6 +197,11 @@ pub enum Endpoint {
     /// A [`crate::BrowserRequest`]: the pane's browser opened, answered with
     /// the DevTools URL an agent's browser tool attaches to, or closed.
     Browser,
+    /// `GET`, upgraded to a WebSocket: the DevTools Protocol of the pane's
+    /// browser, for an agent's browser tool. Its token is in the query
+    /// ([`devtools_url`]), since such a tool is given a URL and sets no
+    /// header.
+    DevTools,
 }
 
 impl Endpoint {
@@ -229,6 +234,7 @@ impl Endpoint {
             Endpoint::Agent => Cow::Borrowed("agent"),
             Endpoint::Agents => Cow::Borrowed("agents"),
             Endpoint::Browser => Cow::Borrowed("browser"),
+            Endpoint::DevTools => Cow::Borrowed("devtools"),
         }
     }
 
@@ -249,7 +255,8 @@ impl Endpoint {
             | Endpoint::Telemetry
             | Endpoint::Inbox
             | Endpoint::Agents
-            | Endpoint::Browser => MAX_HOOK_BODY,
+            | Endpoint::Browser
+            | Endpoint::DevTools => MAX_HOOK_BODY,
             Endpoint::Decide | Endpoint::DecisionChange => MAX_DECISION_BODY,
             // Mermaid source in JSON, with room for the encoding.
             Endpoint::Diagrams => crate::MAX_DIAGRAM_BODY_BYTES + 4096,
@@ -319,6 +326,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "agent" => Endpoint::Agent,
         "agents" => Endpoint::Agents,
         "browser" => Endpoint::Browser,
+        "devtools" => Endpoint::DevTools,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -389,6 +397,21 @@ pub fn parse_request_target(target: &str) -> (Option<(PaneId, Endpoint)>, Artifa
         ArtifactScope::RepositoryBranch
     };
     (parse_pane_path(route), scope)
+}
+
+/// The query parameter a DevTools URL carries its token in.
+const TOKEN_QUERY: &str = "token";
+
+/// `ws://127.0.0.1:<port>/pane/<id>/devtools?token=<token>` — what an
+/// agent's browser tool attaches to its pane's browser by.
+pub fn devtools_url(port: u16, pane: PaneId, token: &str) -> String {
+    format!("ws://{LOOPBACK}:{port}{}?{TOKEN_QUERY}={token}", pane_path(pane, Endpoint::DevTools))
+}
+
+/// The token a request target's query carries, if any.
+pub fn query_token(target: &str) -> Option<&str> {
+    let (_, query) = target.split_once('?')?;
+    query.split('&').find_map(|part| part.strip_prefix(TOKEN_QUERY)?.strip_prefix('='))
 }
 
 /// Set beside `ARGUS_HOOK_URL` and `ARGUS_HOOK_TOKEN` for an extension the
@@ -541,6 +564,7 @@ mod tests {
             Endpoint::Agent,
             Endpoint::Agents,
             Endpoint::Browser,
+            Endpoint::DevTools,
             Endpoint::TrackerMap,
             Endpoint::Reconcile,
         ];

@@ -71,6 +71,9 @@ async fn main() -> anyhow::Result<()> {
     // After the hook server, so a restored agent gets working hooks.
     daemon.restore_session();
     // After the hook server too: each extension is handed its port.
+    // Before any browser starts: what a daemon of this instance killed
+    // outright left behind.
+    browser::sweep();
     let extensions = daemon.start_extensions(config::load_extensions(), argus_protocol::config_dir());
 
     tracing::info!("argusd listening");

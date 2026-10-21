@@ -36,6 +36,22 @@ pub struct BrowserPage {
     pub tabs: Vec<BrowserTab>,
     /// The tab whose pictures are sent, by its id in `tabs`.
     pub shown: Option<String>,
+    /// Whether the tab shown is the one the agent works in, rather than one
+    /// the person picked.
+    pub following: bool,
+    /// Whether the person holds the browser: the agent's input is refused
+    /// until they hand it back.
+    pub held: bool,
+    /// Who moved the page in the last few seconds, if anyone did.
+    pub driver: Option<BrowserDriver>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserDriver {
+    Agent,
+    Person,
 }
 
 /// One of a browser's tabs, by the browser's own id for it.
@@ -76,9 +92,14 @@ pub enum BrowserInput {
     Back,
     Forward,
     Reload,
-    /// The tab to show, by its id; a tab the agent opens after is shown in
-    /// its place.
+    /// The tab to show, by its id, until it closes or the person goes back
+    /// to following the agent.
     ShowTab { id: String },
+    /// Show the tab the agent works in, as it moves between them.
+    FollowAgent,
+    /// Take the browser from the agent, or hand it back: while held, the
+    /// agent's input and navigation are refused, and it is told why.
+    Hold { held: bool },
     NewTab,
     CloseTab { id: String },
     /// The room the person's view of it has, in CSS pixels, and how many
@@ -88,6 +109,15 @@ pub enum BrowserInput {
 }
 
 impl BrowserInput {
+    /// Whether this is the person moving the page, which marks them as its
+    /// driver; looking at it, sizing or picking a tab is not.
+    pub fn drives(&self) -> bool {
+        !matches!(
+            self,
+            BrowserInput::ShowTab { .. } | BrowserInput::FollowAgent | BrowserInput::Hold { .. } | BrowserInput::Viewport { .. }
+        )
+    }
+
     /// A viewport the browser can lay a page out at: no smaller than a
     /// phone, no larger than a 4K screen's pixels, whatever a client asks.
     pub fn held_viewport(width: u32, height: u32, scale: f64) -> (u32, u32, f64) {

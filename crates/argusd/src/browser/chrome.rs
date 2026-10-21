@@ -1,16 +1,15 @@
 //! Which browser runs, and starting it: headless, on a profile of its own
-//! that goes with it, its DevTools socket on a loopback port it picks.
+//! that goes with it, spoken to over a pipe it is handed rather than a port
+//! any process on the machine could reach.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use argus_protocol::BROWSER_VAR;
 
-/// How long a browser has to open its DevTools port: a cold start of
-/// Chrome on a loaded machine takes a few seconds.
-const STARTUP: Duration = Duration::from_secs(20);
+use super::pipe::{self, Pipe};
 
 /// A running browser. Dropped, it is killed — with every process it
 /// started, on Windows, by its job — and its profile deleted.
@@ -21,8 +20,6 @@ pub(crate) struct Chrome {
     #[cfg(windows)]
     _job: Option<crate::pty::ProcessJob>,
     profile: PathBuf,
-    /// The `ws://` DevTools endpoint of the browser as a whole.
-    pub(crate) endpoint: String,
 }
 
 impl Drop for Chrome {
@@ -41,12 +38,30 @@ impl Drop for Chrome {
     }
 }
 
-/// Starts the browser and waits for its DevTools endpoint.
-pub(crate) async fn start() -> anyhow::Result<Chrome> {
+/// Where this daemon's browsers keep their profiles: one folder per
+/// instance, so a daemon clears its own and never another's.
+fn profiles() -> PathBuf {
+    let instance = argus_protocol::instance_name().unwrap_or_else(|| "default".into());
+    std::env::temp_dir().join(format!("argus-browsers-{instance}"))
+}
+
+/// Deletes every profile a daemon of this instance left: one killed
+/// outright never deleted its browsers', and none of them runs now.
+pub(crate) fn sweep() {
+    let Ok(entries) = std::fs::read_dir(profiles()) else { return };
+    for entry in entries.flatten() {
+        let _ = std::fs::remove_dir_all(entry.path());
+    }
+}
+
+/// Starts the browser, and the pipe the daemon speaks to it over.
+pub(crate) fn start() -> anyhow::Result<(Chrome, Pipe)> {
     let program = find().context(format!(
         "no Chrome, Chromium or Edge was found; set {BROWSER_VAR} to the browser to run"
     ))?;
-    let profile = tempfile::Builder::new().prefix("argus-browser-").tempdir()?.keep();
+    std::fs::create_dir_all(profiles())?;
+    let profile = tempfile::Builder::new().prefix("profile-").tempdir_in(profiles())?.keep();
+    let (pipe, ends) = pipe::make()?;
     // Not system::command's: the browser takes no part of the daemon's
     // environment that `quiet` strips, and it keeps its own console hidden
     // below.
@@ -57,59 +72,38 @@ pub(crate) async fn start() -> anyhow::Result<Chrome> {
     // a high-density screen; a lower one is sent pictures scaled down to it.
     command
         .arg("--headless=new")
-        .arg("--remote-debugging-port=0")
         .arg("--force-device-scale-factor=2")
         .arg(format!("--user-data-dir={}", profile.display()))
-        .args(["--no-first-run", "--no-default-browser-check", "--window-size=1280,800", "about:blank"])
+        .args(["--no-first-run", "--no-default-browser-check", "--window-size=1280,800"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    ends.hand_to(&mut command);
+    command.arg("about:blank");
     #[cfg(windows)]
     command.creation_flags(0x0800_0000);
-    let mut child = command.spawn().with_context(|| format!("starting {}", program.display()))?;
-    #[cfg(windows)]
-    let job = contain(&child);
-    let endpoint = match endpoint(&profile, &mut child).await {
-        Ok(endpoint) => endpoint,
+    let child = match command.spawn() {
+        Ok(child) => child,
         Err(error) => {
             let _ = std::fs::remove_dir_all(&profile);
-            return Err(error);
+            return Err(error).with_context(|| format!("starting {}", program.display()));
         }
     };
-    Ok(Chrome {
-        _child: child,
-        #[cfg(windows)]
-        _job: job,
-        profile,
-        endpoint,
-    })
-}
-
-/// The endpoint the browser writes into its profile as `DevToolsActivePort`
-/// once its socket is open: the port, then the path, a line each.
-async fn endpoint(profile: &Path, child: &mut tokio::process::Child) -> anyhow::Result<String> {
-    let file = profile.join("DevToolsActivePort");
-    let deadline = tokio::time::Instant::now() + STARTUP;
-    while tokio::time::Instant::now() < deadline {
-        if let Some(status) = child.try_wait()? {
-            bail!("the browser exited as it started ({status})");
-        }
-        if let Some(endpoint) = std::fs::read_to_string(&file).ok().as_deref().and_then(read_active_port) {
-            return Ok(endpoint);
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    bail!("the browser did not open its DevTools port within {}s", STARTUP.as_secs())
-}
-
-/// `DevToolsActivePort`'s two lines as a URL; `None` while it is half
-/// written.
-fn read_active_port(text: &str) -> Option<String> {
-    let mut lines = text.lines();
-    let port: u16 = lines.next()?.trim().parse().ok()?;
-    let path = lines.next()?.trim();
-    path.starts_with("/devtools/browser/").then(|| format!("ws://127.0.0.1:{port}{path}"))
+    // The browser holds its ends now; the daemon's copies would keep the
+    // pipe open after the browser closed its own.
+    drop(ends);
+    #[cfg(windows)]
+    let job = contain(&child);
+    Ok((
+        Chrome {
+            _child: child,
+            #[cfg(windows)]
+            _job: job,
+            profile,
+        },
+        pipe,
+    ))
 }
 
 /// The browser `ARGUS_BROWSER` names, or the first installed of those each
@@ -166,20 +160,4 @@ fn contain(child: &tokio::process::Child) -> Option<crate::pty::ProcessJob> {
     let job = crate::pty::ProcessJob::shell().ok()?;
     job.assign(child.raw_handle()?).ok()?;
     Some(job)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reads_the_endpoint_once_both_lines_are_written() {
-        assert_eq!(
-            read_active_port("53412\n/devtools/browser/0b5e\n").as_deref(),
-            Some("ws://127.0.0.1:53412/devtools/browser/0b5e")
-        );
-        assert_eq!(read_active_port("53412\n"), None);
-        assert_eq!(read_active_port(""), None);
-        assert_eq!(read_active_port("53412\n/json\n"), None);
-    }
 }

@@ -1855,7 +1855,7 @@ fn base64(bytes: &[u8]) -> String {
 
 /// Three agents each with a browser open, and a picture of each.
 fn browsing() -> Window {
-    use argus_protocol::{BrowserFrame, BrowserPage, BrowserTab};
+    use argus_protocol::{BrowserDriver, BrowserFrame, BrowserPage, BrowserTab};
     let mut w = Window::showing(P_TRIM);
     let open = [
         (P_TRIM, "http://localhost:5173/settings", "Argus — Settings", [64, 112, 224]),
@@ -1868,7 +1868,12 @@ fn browsing() -> Window {
             BrowserTab { id: format!("{pane}-work"), url: url.into(), title: title.into() },
         ];
         let shown = Some(format!("{pane}-work"));
-        w.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(pane), url: url.into(), title: title.into(), tabs, shown }));
+        // One agent at work in its browser, one the person has taken from
+        // its agent, and one looked at on a tab the person picked.
+        let driver = (pane == P_TRIM).then_some(BrowserDriver::Agent);
+        let held = pane == P_FAULTS;
+        let following = pane != P_SCREENS;
+        w.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(pane), url: url.into(), title: title.into(), tabs, shown, following, held, driver }));
         w.receive(ServerMsg::BrowserFrame(Box::new(BrowserFrame { pane: PaneId(pane), jpeg: page_shot(accent), width: 1280, height: 800 })));
     }
     w

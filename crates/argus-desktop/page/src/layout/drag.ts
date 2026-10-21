@@ -18,7 +18,7 @@ import { call } from '../connection/tauri.js';
 /** How far the pointer goes before a press is a drag. */
 const THRESHOLD = 5;
 
-type Target = Dock | 'stage';
+export type Target = Dock | 'stage';
 
 interface Box {
   left: number;
@@ -95,8 +95,15 @@ window.addEventListener(
 
 /** Makes a press on `handle` able to drag `panel`, naming it `title` under
  *  the pointer, and gives the handle back. A press on a button inside it
- *  stays the button's, unless the handle is that button. */
-export function draggable<T extends HTMLElement>(handle: T, panel: Panel, title: string): T {
+ *  stays the button's, unless the handle is that button. `place`, when
+ *  given, is what a drop does in place of moving the panel: a browser
+ *  dragged from the stage says which browser goes there. */
+export function draggable<T extends HTMLElement>(
+  handle: T,
+  panel: Panel,
+  title: string,
+  place: (target: Target) => void = (target) => drop(panel, target),
+): T {
   handle.addEventListener('mousedown', (down) => {
     if (down.button !== 0) return;
     // A dialog's header moves the dialog (`floats`); its dock menu docks it.
@@ -148,7 +155,7 @@ export function draggable<T extends HTMLElement>(handle: T, panel: Panel, title:
       setTimeout(() => {
         swallowClick = false;
       }, 0);
-      if (dropped && target) drop(panel, target);
+      if (dropped && target) place(target);
     };
     const up = (): void => end(true);
     const key = (k: KeyboardEvent): void => {

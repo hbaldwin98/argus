@@ -40,7 +40,12 @@ pub(crate) fn commands(input: &BrowserInput) -> Vec<(&'static str, Value)> {
         BrowserInput::Forward => vec![("Runtime.evaluate", json!({ "expression": "history.forward()" }))],
         BrowserInput::Reload => vec![("Page.reload", json!({}))],
         // The browser's own, or `screen`'s: none is a command on the page.
-        BrowserInput::ShowTab { .. } | BrowserInput::NewTab | BrowserInput::CloseTab { .. } | BrowserInput::Viewport { .. } => {
+        BrowserInput::ShowTab { .. }
+        | BrowserInput::FollowAgent
+        | BrowserInput::Hold { .. }
+        | BrowserInput::NewTab
+        | BrowserInput::CloseTab { .. }
+        | BrowserInput::Viewport { .. } => {
             Vec::new()
         }
     }

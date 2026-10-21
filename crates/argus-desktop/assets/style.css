@@ -10847,6 +10847,82 @@ button.vtree-chev:focus-visible {
 .bchosen-screen .bscreen:focus {
   outline: none;
 }
+/* Who has a browser: the agent at work, the person moving it, or the
+ * person holding it from the agent. */
+.bstatus {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-8);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  border: 1px solid var(--line-strong);
+}
+.bstatus::before,
+.bdot::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+/* The sidebar's rows colour their icons; a browser's dot says its own. */
+.bstatus.agent,
+.nav .bdot.agent {
+  color: var(--accent);
+}
+.bstatus.person,
+.nav .bdot.person {
+  color: var(--ok);
+}
+.bstatus.held,
+.nav .bdot.held {
+  color: var(--attention);
+}
+.bdot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-faint);
+}
+.btile-agent {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-width: 0;
+}
+.btabs .btn {
+  flex: none;
+  padding-inline: var(--sp-8);
+}
+.bgrip {
+  flex: none;
+  cursor: grab;
+  color: var(--fg-faint);
+  padding: 0 var(--sp-4);
+  user-select: none;
+}
+.bgrip:hover {
+  color: var(--fg);
+}
+.btile {
+  cursor: grab;
+}
+.nav-chev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  color: var(--fg-muted);
+}
+.nav-chev:hover {
+  background: var(--bg-selected);
+  color: var(--fg);
+}
 .bpanel-inner {
   flex: 1;
   min-height: 0;

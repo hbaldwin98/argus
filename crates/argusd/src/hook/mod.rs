@@ -22,6 +22,7 @@ use argus_protocol::{parse_request_target, Endpoint, PaneId, MAX_HOOK_BODY};
 
 use crate::state::{Daemon, Filing};
 
+mod devtools;
 mod http;
 
 use http::{Request, Response};
@@ -126,6 +127,10 @@ async fn handle_hook_request(
                 return Response::empty(401, "Unauthorized").write(&mut wr).await;
             }
             return serve_inbox(reader, wr, daemon, pane, request.reporter).await;
+        }
+        // Authorized there, by the token in its query.
+        if let Some((pane, Endpoint::DevTools)) = parse_request_target(&request.target).0 {
+            return devtools::serve(reader, wr, daemon, pane, request).await;
         }
     }
     let path = if request.method == "POST" { request.target.as_str() } else { "" };

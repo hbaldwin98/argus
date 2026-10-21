@@ -1,51 +1,88 @@
 //! A browser run for an agent's pane: started, followed while it runs, and
 //! ended when its handle is dropped.
 //!
-//! The agent drives it over DevTools with its own tool; what the daemon
-//! reads of it is only what a person is shown, as `Report`s.
+//! The agent drives it over DevTools with its own tool, attached through
+//! the pane API rather than to the browser, which listens on no port; what
+//! the daemon reads of it is only what a person is shown, as `Report`s.
 
 mod cdp;
 mod chrome;
 mod input;
+pub(crate) mod mux;
+mod pipe;
 mod screen;
 
-use argus_protocol::{BrowserInput, BrowserTab};
+use std::time::Duration;
+
+use argus_protocol::{BrowserDriver, BrowserInput, BrowserTab};
+use serde_json::json;
 use tokio::sync::mpsc;
 
+pub(crate) use chrome::sweep;
+
+/// How long a browser has to answer its first command: a cold start of
+/// Chrome on a loaded machine takes a few seconds.
+const STARTUP: Duration = Duration::from_secs(20);
+
 /// What a running browser says of itself. The channel closing is its end:
-/// the browser exited, or its socket closed.
+/// the browser exited, or its pipe closed.
 #[derive(Debug)]
 pub(crate) enum Report {
-    /// Its tabs, and the one shown, by id.
-    Page { tabs: Vec<BrowserTab>, shown: Option<String> },
+    Page(Seen),
     Frame { jpeg: String, width: u32, height: u32 },
+}
+
+/// A browser as the person is told of it: its tabs, the one shown, and who
+/// has it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct Seen {
+    pub(crate) tabs: Vec<BrowserTab>,
+    pub(crate) shown: Option<String>,
+    pub(crate) following: bool,
+    pub(crate) held: bool,
+    pub(crate) driver: Option<BrowserDriver>,
 }
 
 /// A running browser. Dropping it kills the browser.
 pub(crate) struct Browser {
-    /// The DevTools URL an agent attaches to.
-    pub(crate) endpoint: String,
+    mux: mux::Mux,
     input: mpsc::UnboundedSender<BrowserInput>,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl Browser {
-    /// Starts a browser, its reports sent to `reports` until it ends.
+    /// Starts a browser, its reports sent to `reports` until it ends; an
+    /// error when it does not start, or does not answer.
     pub(crate) async fn start(reports: mpsc::UnboundedSender<Report>) -> anyhow::Result<Browser> {
-        let chrome = chrome::start().await?;
-        let (cdp, events) = cdp::connect(&chrome.endpoint).await?;
+        let (chrome, pipe) = chrome::start()?;
+        let (to, from) = pipe.open();
+        let mux = mux::Mux::new(to, from);
+        let (line, heard) = mux.join(mux::Who::Screen);
+        let (cdp, events) = cdp::over(line, heard);
+        // Answered with a created event for every tab already open, so the
+        // first tab is heard like any other.
+        let discovering = cdp.call("Target.setDiscoverTargets", json!({ "discover": true }), None);
+        match tokio::time::timeout(STARTUP, discovering).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => return Err(error.context("the browser closed as it started")),
+            Err(_) => anyhow::bail!("the browser did not answer within {}s", STARTUP.as_secs()),
+        }
         let (input, hands) = mpsc::unbounded_channel();
-        let endpoint = chrome.endpoint.clone();
         let task = tokio::spawn(async move {
             // Held for as long as the browser is followed: it ends with it.
             let _chrome = chrome;
             screen::follow(cdp, events, hands, reports).await;
         });
-        Ok(Browser { endpoint, input, task })
+        Ok(Browser { mux, input, task })
     }
 
     pub(crate) fn input(&self, input: BrowserInput) {
         let _ = self.input.send(input);
+    }
+
+    /// A line for an agent's browser tool, and what the browser says to it.
+    pub(crate) fn attach(&self) -> (mux::Line, mpsc::UnboundedReceiver<String>) {
+        self.mux.join(mux::Who::Agent)
     }
 }
 
@@ -86,6 +123,34 @@ mod tests {
         None
     }
 
+    /// The answer to the agent's command `id`, as the agent sent it.
+    async fn answer(told: &mut mpsc::UnboundedReceiver<String>, id: u64) -> serde_json::Value {
+        let wait = async {
+            loop {
+                let text = told.recv().await.expect("the line closed");
+                let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+                if value["id"] == id {
+                    return value;
+                }
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(20), wait).await.expect("no answer")
+    }
+
+    /// Whether the browser is said to be as `want` has it within a while.
+    async fn seen_until(heard: &mut mpsc::UnboundedReceiver<Report>, want: impl Fn(&Seen) -> bool) -> bool {
+        let wait = async {
+            loop {
+                if let Some(Report::Page(seen)) = heard.recv().await {
+                    if want(&seen) {
+                        return;
+                    }
+                }
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(20), wait).await.is_ok()
+    }
+
     async fn next(heard: &mut mpsc::UnboundedReceiver<Report>, want: fn(&Report) -> bool) -> Option<Report> {
         let wait = async {
             loop {
@@ -105,9 +170,13 @@ mod tests {
     async fn shows_a_real_browser_and_takes_the_persons_hand() {
         let (reports, mut heard) = mpsc::unbounded_channel();
         let browser = Browser::start(reports).await.unwrap();
-        assert!(browser.endpoint.starts_with("ws://127.0.0.1:"), "{}", browser.endpoint);
 
         let frame = next(&mut heard, |r| matches!(r, Report::Frame { .. })).await.expect("no picture");
+        // A browser with a debugging port writes it into its profile; one on
+        // a pipe has none for another process to reach.
+        let profiles = std::env::temp_dir().join("argus-browsers-default");
+        let listening = std::fs::read_dir(&profiles).unwrap().flatten().any(|p| p.path().join("DevToolsActivePort").exists());
+        assert!(!listening, "the browser opened a debugging port");
         let Report::Frame { jpeg, width, height } = frame else { unreachable!() };
         assert!(jpeg.starts_with("/9j/"), "a JPEG, as base64");
         assert!(width > 0 && height > 0);
@@ -131,7 +200,7 @@ mod tests {
             }
         });
         browser.input(BrowserInput::Navigate { url: format!("http://{address}/") });
-        let titled = next(&mut heard, |r| matches!(r, Report::Page { tabs, .. } if tabs.iter().any(|t| t.title == "Shown"))).await;
+        let titled = next(&mut heard, |r| matches!(r, Report::Page(seen) if seen.tabs.iter().any(|t| t.title == "Shown"))).await;
         assert!(titled.is_some(), "the page's title was never reported");
 
         browser.input(BrowserInput::Viewport { width: 900, height: 600, scale: 2.0 });
@@ -149,20 +218,37 @@ mod tests {
         assert!(sharp, "its picture has a pixel for each of the screen's");
 
         browser.input(BrowserInput::NewTab);
-        let opened = next(&mut heard, |r| matches!(r, Report::Page { tabs, shown } if tabs.len() == 2 && shown.as_ref() == Some(&tabs[1].id))).await;
-        let Some(Report::Page { tabs, .. }) = opened else { panic!("a new tab was never shown") };
-        browser.input(BrowserInput::ShowTab { id: tabs[0].id.clone() });
-        let first = tabs[0].id.clone();
-        let picked = tokio::time::timeout(Duration::from_secs(20), async {
-            loop {
-                if let Some(Report::Page { shown, .. }) = heard.recv().await {
-                    if shown.as_ref() == Some(&first) {
-                        return;
-                    }
-                }
-            }
-        });
-        assert!(picked.await.is_ok(), "the tab the person picked is shown");
+        let opened = next(&mut heard, |r| matches!(r, Report::Page(s) if s.tabs.len() == 2 && s.shown.as_ref() == Some(&s.tabs[1].id))).await;
+        let Some(Report::Page(seen)) = opened else { panic!("a new tab was never shown") };
+        let (first, second) = (seen.tabs[0].id.clone(), seen.tabs[1].id.clone());
+        browser.input(BrowserInput::ShowTab { id: first.clone() });
+        assert!(seen_until(&mut heard, |s| s.shown.as_ref() == Some(&first) && !s.following).await, "the tab the person picked is shown");
+
+        // An agent's tool, on a line of its own: its ids are its own, and
+        // the tab it acts on is the one followed once the person lets it be.
+        let (line, mut told) = browser.attach();
+        browser.input(BrowserInput::FollowAgent);
+        line.send(&serde_json::json!({ "id": 7, "method": "Target.attachToTarget", "params": { "targetId": second, "flatten": true } }).to_string());
+        let attached = answer(&mut told, 7).await;
+        let session = attached["result"]["sessionId"].as_str().expect("a session for the agent").to_string();
+        line.send(&serde_json::json!({ "id": 8, "sessionId": session, "method": "Runtime.evaluate", "params": { "expression": "1 + 1" } }).to_string());
+        assert_eq!(answer(&mut told, 8).await["result"]["result"]["value"], 2);
+        assert!(seen_until(&mut heard, |s| s.shown.as_ref() == Some(&second)).await, "the tab the agent acts on is followed");
+
+        // Held by the person, the page is theirs: the agent may look, not move.
+        browser.input(BrowserInput::Hold { held: true });
+        assert!(seen_until(&mut heard, |s| s.held).await);
+        let click = serde_json::json!({ "type": "mouseMoved", "x": 1, "y": 1 });
+        line.send(&serde_json::json!({ "id": 9, "sessionId": session, "method": "Input.dispatchMouseEvent", "params": click }).to_string());
+        let refused = answer(&mut told, 9).await;
+        assert!(refused["error"]["message"].as_str().unwrap_or_default().contains("taken control"), "{refused}");
+        line.send(&serde_json::json!({ "id": 10, "sessionId": session, "method": "Runtime.evaluate", "params": { "expression": "2" } }).to_string());
+        assert_eq!(answer(&mut told, 10).await["result"]["result"]["value"], 2);
+        browser.input(BrowserInput::Hold { held: false });
+        assert!(seen_until(&mut heard, |s| !s.held).await);
+        line.send(&serde_json::json!({ "id": 11, "sessionId": session, "method": "Input.dispatchMouseEvent", "params": click }).to_string());
+        assert!(answer(&mut told, 11).await.get("error").is_none());
+        assert!(seen_until(&mut heard, |s| s.driver == Some(BrowserDriver::Agent)).await, "an agent moving the page is said to drive it");
 
         drop(browser);
         let ended = tokio::time::timeout(Duration::from_secs(10), async { while heard.recv().await.is_some() {} }).await;

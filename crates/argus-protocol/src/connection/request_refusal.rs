@@ -102,7 +102,7 @@ impl Asked {
             | M::PressView { .. } | M::WatchSavedViews | M::RefreshSavedView { .. }
             | M::MarkSavedViewStale { .. } | M::DeleteSavedView { .. } | M::PressSavedView { .. }
             | M::ExtensionAction { .. } | M::ExtensionCommand { .. } | M::ExtensionDialogAnswer { .. }
-            | M::DescribeExtensions | M::WatchBrowsers | M::BrowserInput { .. } | M::CloseBrowser { .. }
+            | M::DescribeExtensions | M::WatchBrowsers { .. } | M::BrowserInput { .. } | M::CloseBrowser { .. }
             | M::Hello(_) => (0, false, Older::Error),
             // An edit's refusals are its own messages, keyed by the file.
             M::OpenEdit { .. } | M::Edit { .. } | M::CloseEdit { .. } => (0, false, Older::Error),

@@ -111,9 +111,10 @@ agent-browser --cdp "<url>" open http://localhost:5173
 ```
 
 Any tool that attaches over the Chrome DevTools Protocol works in place of
-`agent-browser`. The newest tab is the one the person sees, so open a tab for
-the page you want them to watch. It is headless with a fresh profile, and goes
-when the pane does.
+`agent-browser`. The person sees the tab you last acted in. If they take
+control, your clicks, typing and navigation fail with an error saying so:
+stop driving and wait, or ask them; reading the page still works. It is
+headless with a fresh profile, and goes when the pane does.
 
 ## Extensions
 

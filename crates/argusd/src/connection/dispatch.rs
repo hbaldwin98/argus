@@ -163,8 +163,10 @@ pub(super) fn dispatch(
         }
         // A browser is a pane's, named by it, and each message needs the
         // capability that brought it, as the saved views' do.
-        ClientMsg::WatchBrowsers if conn.can(BROWSERS) => {
-            conn.topics.join(topics::Browsers);
+        // Joined again as the client draws other browsers: what it has
+        // not been drawing is sent as it stands, latest picture and all.
+        ClientMsg::WatchBrowsers { showing } if conn.can(BROWSERS) => {
+            conn.topics.join(topics::Browsers { showing: showing.into_iter().collect() });
             Ok(())
         }
         ClientMsg::BrowserInput { pane, input } if conn.can(BROWSERS) => {
@@ -175,7 +177,7 @@ pub(super) fn dispatch(
             daemon.close_browser(pane);
             Ok(())
         }
-        ClientMsg::WatchBrowsers | ClientMsg::BrowserInput { .. } | ClientMsg::CloseBrowser { .. } => {
+        ClientMsg::WatchBrowsers { .. } | ClientMsg::BrowserInput { .. } | ClientMsg::CloseBrowser { .. } => {
             tracing::debug!("a client sent a browser message without listing BROWSERS");
             Ok(())
         }

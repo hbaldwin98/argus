@@ -22,7 +22,7 @@ import { $, el, icon } from '../kit/dom.js';
 import { closesOnMiddle } from '../kit/middle.js';
 import { actionFor } from '../keys/keymap.js';
 import { dockMenuButton } from '../layout/docks.js';
-import { draggable } from '../layout/drag.js';
+import { draggable, type Target } from '../layout/drag.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 import { address, keyInput, within } from './input.js';
@@ -43,8 +43,12 @@ const painting = new Map<number, number>();
 const told = new Map<number, string>();
 const urlFields = new Map<Place, HTMLInputElement>();
 
+/** Whether the open browsers are listed under Browsers in the sidebar. */
+let listed = true;
+
 export function browsersHeard(event: BrowsersPage): void {
   page = event;
+  drawBrowsersNav();
   const open = new Set(event.browsers.map((b) => b.pane));
   for (const pane of shots.keys()) {
     if (!open.has(pane)) {
@@ -66,6 +70,74 @@ export function browserShot(shot: BrowserShot): void {
 export function browsersTitle(): string {
   return byPane(page.chosen)?.agent ?? 'Every agent';
 }
+
+/** `pane`'s browser dropped on a dock, shown in the panel there, or on the
+ *  stage, filling it. */
+function placeBrowser(pane: number, target: Target): void {
+  call('place_browser', { pane, dock: target === 'stage' ? null : target });
+}
+
+/** Makes `handle` drag `browser` to a dock or the stage. */
+function dragsBrowser<T extends HTMLElement>(handle: T, browser: PageBrowser): T {
+  return draggable(handle, 'browser', `${browser.agent}’s browser`, (target) =>
+    placeBrowser(browser.pane, target),
+  );
+}
+
+/** The open browsers under Browsers in the sidebar: a fold on its row, and
+ *  a row each, which opens it and drags it to a dock. */
+export function drawBrowsersNav(): void {
+  const count = page.browsers.length;
+  const fold = $('nav-browsers-fold');
+  const list = $('nav-browsers-list');
+  $('nav-browsers-count').textContent = count > 0 ? String(count) : '';
+  fold.hidden = count === 0;
+  fold.setAttribute('aria-expanded', String(listed));
+  fold.setAttribute('aria-label', listed ? 'Fold the open browsers' : 'List the open browsers');
+  fold.replaceChildren(icon(listed ? 'down' : 'right'));
+  list.hidden = count === 0 || !listed;
+  const docked = state.docks
+    ? [state.docks.left, state.docks.right, state.docks.bottom].some((d) => d.shown === 'browser')
+    : false;
+  list.replaceChildren(
+    ...page.browsers.map((browser) => {
+      const on =
+        (state.rail.stage === 'browsers' && page.chosen === browser.pane) ||
+        (docked && page.docked === browser.pane);
+      return dragsBrowser(
+        el(
+          'button',
+          {
+            class: `nav nav-sub${on ? ' on' : ''}`,
+            type: 'button',
+            title: `${browser.agent} · ${browser.url}`,
+            'aria-current': on ? 'page' : null,
+            onclick: () => call('show_browsers', { pane: browser.pane }),
+          },
+          el('span', { class: `ic bdot${dotKind(browser)}` }),
+          el('span', { class: 'grow ttl' }, browser.agent),
+          el('span', { class: 'meta ttl' }, browser.title || browser.url),
+        ),
+        browser,
+      );
+    }),
+  );
+}
+
+function dotKind(browser: PageBrowser): string {
+  if (browser.held) return ' held';
+  if (browser.driver === 'agent') return ' agent';
+  if (browser.driver === 'person') return ' person';
+  return '';
+}
+
+const foldToggle = (e: Event): void => {
+  e.preventDefault();
+  e.stopPropagation();
+  listed = !listed;
+  drawBrowsersNav();
+};
+$('nav-browsers-fold').addEventListener('click', foldToggle);
 
 function byPane(pane: number | null): PageBrowser | null {
   return page.browsers.find((b) => b.pane === pane) ?? null;
@@ -221,7 +293,18 @@ function where(browser: PageBrowser): HTMLElement {
 }
 
 function tile(browser: PageBrowser): HTMLElement {
-  return el(
+  const head = el(
+    'span',
+    { class: 'btile-head' },
+    el(
+      'span',
+      { class: 'btile-agent' },
+      el('span', { class: 'bagent' }, browser.agent),
+      status(browser),
+    ),
+    where(browser),
+  );
+  const made = el(
     'button',
     {
       class: 'btile',
@@ -229,14 +312,20 @@ function tile(browser: PageBrowser): HTMLElement {
       title: `Open ${browser.agent}'s browser`,
       onclick: () => call('show_browsers', { pane: browser.pane }),
     },
-    el(
-      'span',
-      { class: 'btile-head' },
-      el('span', { class: 'bagent' }, browser.agent),
-      where(browser),
-    ),
+    head,
     el('span', { class: 'btile-screen' }, canvasFor(browser.pane, 'tile')),
   );
+  // The whole tile is the handle: dragged, it goes to a dock; pressed, it
+  // opens on the stage.
+  return dragsBrowser(made, browser);
+}
+
+/** Who has the browser, said only when someone does. */
+function status(browser: PageBrowser): HTMLElement | null {
+  if (browser.held) return el('span', { class: 'bstatus held' }, 'You have control');
+  if (browser.driver === 'agent') return el('span', { class: 'bstatus agent' }, 'Agent driving');
+  if (browser.driver === 'person') return el('span', { class: 'bstatus person' }, 'You’re driving');
+  return null;
 }
 
 /** A browser drawn large: its tabs, its address bar with `lead` before
@@ -250,7 +339,7 @@ function browserView(browser: PageBrowser, place: Place, lead: HTMLElement[]): H
   return el(
     'div',
     { class: 'bchosen' },
-    tabStrip(browser),
+    tabStrip(browser, place),
     el(
       'div',
       { class: 'bbar' },
@@ -271,13 +360,27 @@ function tabName(tab: BrowserTab): string {
   return tab.title || tab.url || 'New tab';
 }
 
-/** The browser's own tabs: the one shown lit, each closed by its ×, and a
- *  + for a new one. */
-function tabStrip(browser: PageBrowser): HTMLElement {
+/** The browser's own tabs — the one shown lit, each closed by its ×, and a
+ *  + for a new one — then who has it, and the person's way to take it or
+ *  give it back. On the stage a grip drags it to a dock; in the panel, the
+ *  panel's header does. */
+function tabStrip(browser: PageBrowser, place: Place): HTMLElement {
   const pane = browser.pane;
+  const grip =
+    place === 'stage'
+      ? dragsBrowser(
+          el(
+            'span',
+            { class: 'bgrip', title: 'Drag to a dock', 'aria-label': 'Drag to a dock' },
+            '⠿',
+          ),
+          browser,
+        )
+      : null;
   return el(
     'div',
     { class: 'vpanel-tabs btabs', role: 'tablist', 'aria-label': 'Tabs' },
+    grip,
     el(
       'div',
       { class: 'tabs-scroll' },
@@ -327,6 +430,21 @@ function tabStrip(browser: PageBrowser): HTMLElement {
       },
       icon('plus'),
     ),
+    status(browser),
+    browser.following
+      ? null
+      : button('Follow agent', 'Show the tab the agent works in, as it moves', () =>
+          send(pane, { kind: 'follow_agent' }),
+        ),
+    browser.held
+      ? button('Hand back', 'Let the agent drive again', () =>
+          send(pane, { kind: 'hold', held: false }),
+        )
+      : button(
+          'Take control',
+          'Hold the browser: the agent’s clicks and typing are refused until you hand it back',
+          () => send(pane, { kind: 'hold', held: true }),
+        ),
   );
 }
 

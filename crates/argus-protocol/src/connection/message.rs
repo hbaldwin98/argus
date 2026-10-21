@@ -542,9 +542,11 @@ pub enum ClientMsg {
     /// it again.
     PressView { pane: PaneId, press: crate::views::press::ViewPress },
     /// Start being sent the browsers agents' panes run: where each one is
-    /// and its latest picture now, and each change and picture after. Only
-    /// to a daemon that listed `BROWSERS`.
-    WatchBrowsers,
+    /// now and each change after, and the pictures of those in `showing`,
+    /// the ones the client draws — the latest now, and each after. Sent
+    /// again whenever which it draws changes, so a browser no one looks at
+    /// costs a client nothing. Only to a daemon that listed `BROWSERS`.
+    WatchBrowsers { showing: Vec<PaneId> },
     /// The person's hand on a pane's browser. One the pane no longer has
     /// is ignored: the browser it was meant for is gone.
     BrowserInput { pane: PaneId, input: crate::browser::BrowserInput },

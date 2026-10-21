@@ -1,19 +1,20 @@
-//! One DevTools Protocol connection to a browser: commands sent and their
-//! answers matched back by id, and everything else read as an event.
+//! The daemon's own DevTools client of a browser, on a line of its `Mux`:
+//! commands sent and their answers matched back by id, and everything else
+//! read as an event.
 //!
-//! Sessions are flat — one socket, each command and event naming the
-//! target's session it is for — so the page shown and the browser itself
-//! are spoken to over the same connection.
+//! Sessions are flat — each command and event names the tab's session it
+//! is for — so the tab shown and the browser itself are spoken to over the
+//! same line.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use anyhow::{anyhow, Context};
-use futures_util::{SinkExt, StreamExt};
+use anyhow::anyhow;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
-use tokio_tungstenite::tungstenite::Message;
+
+use super::mux::Line;
 
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
 
@@ -25,36 +26,23 @@ pub(crate) struct Event {
     pub(crate) session: Option<String>,
 }
 
-/// The sending half. Dropping every copy and the event receiver closes the
-/// socket.
+/// The sending half. Dropping every copy leaves the mux.
 #[derive(Clone)]
 pub(crate) struct Cdp {
-    out: mpsc::UnboundedSender<Message>,
+    line: Arc<Line>,
     pending: Pending,
     next: Arc<AtomicU64>,
 }
 
-/// Connects to `url`, a `ws://` DevTools endpoint. The receiver ends when
-/// the browser closes the socket, which is how its end is noticed.
-pub(crate) async fn connect(url: &str) -> anyhow::Result<(Cdp, mpsc::UnboundedReceiver<Event>)> {
-    let (socket, _) = tokio_tungstenite::connect_async(url).await.context("connecting to the browser")?;
-    let (mut sink, mut stream) = socket.split();
-    let (out, mut outgoing) = mpsc::unbounded_channel::<Message>();
+/// A client on `line`, which hears `heard`. The event receiver ends when
+/// the browser does, which is how its end is noticed.
+pub(crate) fn over(line: Line, mut heard: mpsc::UnboundedReceiver<String>) -> (Cdp, mpsc::UnboundedReceiver<Event>) {
     let (events, received) = mpsc::unbounded_channel();
     let pending: Pending = Arc::default();
-
-    tokio::spawn(async move {
-        while let Some(message) = outgoing.recv().await {
-            if sink.send(message).await.is_err() {
-                break;
-            }
-        }
-    });
     let answers = pending.clone();
     tokio::spawn(async move {
-        while let Some(Ok(message)) = stream.next().await {
-            let Ok(text) = message.to_text() else { continue };
-            let Ok(value) = serde_json::from_str::<Value>(text) else { continue };
+        while let Some(text) = heard.recv().await {
+            let Ok(value) = serde_json::from_str::<Value>(&text) else { continue };
             if let Some(id) = value.get("id").and_then(Value::as_u64) {
                 // A command sent with `tell` has no one waiting.
                 if let Some(waiting) = answers.lock().unwrap().remove(&id) {
@@ -76,11 +64,11 @@ pub(crate) async fn connect(url: &str) -> anyhow::Result<(Cdp, mpsc::UnboundedRe
                 break;
             }
         }
-        // Whoever is still waiting hears the socket went rather than
+        // Whoever is still waiting hears the browser went rather than
         // waiting for ever.
         answers.lock().unwrap().clear();
     });
-    Ok((Cdp { out, pending, next: Arc::new(AtomicU64::new(1)) }, received))
+    (Cdp { line: Arc::new(line), pending, next: Arc::new(AtomicU64::new(1)) }, received)
 }
 
 impl Cdp {
@@ -89,7 +77,7 @@ impl Cdp {
         if let Some(session) = session {
             command["sessionId"] = json!(session);
         }
-        let _ = self.out.send(Message::text(command.to_string()));
+        self.line.send(&command.to_string());
     }
 
     /// Sends a command and waits for its answer.

@@ -25,7 +25,7 @@ import { state } from './state.js';
 import { featureEdges } from './board/lenses/work.js';
 import { codeEdges } from './code/stage.js';
 import { call } from './connection/tauri.js';
-import { browsersTitle, drawBrowsers } from './browser/stage.js';
+import { browsersTitle, drawBrowsers, drawBrowsersNav } from './browser/stage.js';
 const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 export function drawChrome() {
     const stopped = state.status.connection === 'stopped';
@@ -84,6 +84,7 @@ function drawNav() {
         $(`nav-${name}-keys`).replaceChildren(keycaps(chordsFor(action, 'anywhere')));
     }
     $('nav-search-keys').replaceChildren(keycaps(chordsFor('palette', 'anywhere')));
+    drawBrowsersNav();
     drawExtensionNav();
     drawSavedNav();
 }

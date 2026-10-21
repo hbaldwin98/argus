@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 
-use argus_protocol::{BrowserFrame, BrowserInput, BrowserPage, BrowserTab, ClientMsg, PaneId};
+use argus_protocol::{BrowserDriver, BrowserFrame, BrowserInput, BrowserPage, BrowserTab, ClientMsg, PaneId};
 use serde::Serialize;
 
 use crate::connection::sent::Sent;
@@ -41,6 +41,12 @@ pub struct PageBrowser {
     pub tabs: Vec<BrowserTab>,
     /// The tab whose pictures come, by id.
     pub shown: Option<String>,
+    /// Whether that is the tab the agent works in, not one the person
+    /// picked.
+    pub following: bool,
+    /// Whether the person holds it, the agent's input refused.
+    pub held: bool,
+    pub driver: Option<BrowserDriver>,
 }
 
 /// One picture of a pane's browser, as the daemon sent it.
@@ -62,6 +68,12 @@ pub struct Browsers {
     shots: BTreeMap<PaneId, BrowserShot>,
     chosen: Option<PaneId>,
     docked: Option<PaneId>,
+    /// The pane on screen the panel last followed, so it follows the person
+    /// to another pane and otherwise stays where they put it.
+    followed: Option<PaneId>,
+    /// The browsers whose pictures the daemon was last asked for; `None`
+    /// before a connection asks for any.
+    watching: Option<Vec<PaneId>>,
     sent: Sent<BrowsersPage>,
 }
 
@@ -71,7 +83,32 @@ impl Browsers {
     pub fn connected(&mut self, out: &mut Vec<ClientMsg>) {
         self.open.clear();
         self.shots.clear();
-        out.push(ClientMsg::WatchBrowsers);
+        self.watching = Some(Vec::new());
+        out.push(ClientMsg::WatchBrowsers { showing: Vec::new() });
+    }
+
+    /// Asks for the pictures of the browsers the window draws now, when
+    /// they are not the ones it asked for last: a browser no one looks at
+    /// costs the connection nothing.
+    pub fn watch(&mut self, showing: Vec<PaneId>, out: &mut Vec<ClientMsg>) {
+        if self.watching.as_ref().is_some_and(|asked| *asked != showing) {
+            self.watching = Some(showing.clone());
+            out.push(ClientMsg::WatchBrowsers { showing });
+        }
+    }
+
+    /// The browsers drawn: the docked one while its panel is out, and on the
+    /// Browsers stage the chosen one, or every one as tiles.
+    pub fn drawn(&self, panel_out: bool, stage_up: bool) -> Vec<PaneId> {
+        let mut drawn = Vec::new();
+        if stage_up {
+            drawn.extend(self.chosen.map_or_else(|| self.open.keys().copied().collect(), |pane| vec![pane]));
+        }
+        if let Some(docked) = self.docked.filter(|pane| panel_out && !drawn.contains(pane)) {
+            drawn.push(docked);
+        }
+        drawn.sort();
+        drawn
     }
 
     /// Where a browser is now; `true` when it has just opened, which the
@@ -85,11 +122,27 @@ impl Browsers {
         opened
     }
 
-    /// The pane on screen: its browser, when it has one, is the one the
-    /// panel shows, so the panel follows the person between agents.
+    /// The pane on screen: going to one with a browser makes it the one the
+    /// panel shows, so the panel follows the person between agents. Staying
+    /// there leaves the panel on whichever the person docked since.
     pub fn follow(&mut self, on_screen: Option<PaneId>) {
+        if on_screen == self.followed {
+            return;
+        }
+        self.followed = on_screen;
         if let Some(pane) = on_screen.filter(|pane| self.has(*pane)) {
             self.docked = Some(pane);
+        }
+    }
+
+    /// The person put `pane`'s browser in the panel. The stage lets it go
+    /// back to every browser, as one browser is drawn large in one place.
+    pub fn dock(&mut self, pane: PaneId) {
+        if self.has(pane) {
+            self.docked = Some(pane);
+            if self.chosen == Some(pane) {
+                self.chosen = None;
+            }
         }
     }
 
@@ -159,6 +212,9 @@ impl Browsers {
                     title: page.title.clone(),
                     tabs: page.tabs.clone(),
                     shown: page.shown.clone(),
+                    following: page.following,
+                    held: page.held,
+                    driver: page.driver,
                 })
                 .collect(),
             chosen: self.chosen.map(|pane| pane.0),
@@ -179,7 +235,7 @@ mod tests {
     use super::*;
 
     fn page(pane: u64, url: &str) -> BrowserPage {
-        BrowserPage { pane: PaneId(pane), url: url.into(), title: String::new(), tabs: Vec::new(), shown: None }
+        BrowserPage { pane: PaneId(pane), url: url.into(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None }
     }
 
     #[test]
@@ -191,6 +247,12 @@ mod tests {
         assert_eq!(browsers.docked(), Some(PaneId(2)));
         browsers.follow(Some(PaneId(1)));
         assert_eq!(browsers.docked(), Some(PaneId(1)));
+        browsers.dock(PaneId(2));
+        browsers.follow(Some(PaneId(1)));
+        assert_eq!(browsers.docked(), Some(PaneId(2)), "staying on a pane leaves the panel where the person put it");
+        browsers.follow(Some(PaneId(9)));
+        browsers.follow(Some(PaneId(1)));
+        assert_eq!(browsers.docked(), Some(PaneId(1)), "going back to it follows it again");
         browsers.follow(Some(PaneId(9)));
         assert_eq!(browsers.docked(), Some(PaneId(1)), "a pane without a browser leaves the panel be");
         browsers.closed(PaneId(1));
@@ -243,13 +305,33 @@ mod tests {
     }
 
     #[test]
+    fn pictures_are_asked_for_only_of_the_browsers_drawn_and_again_only_when_that_changes() {
+        let mut browsers = Browsers::default();
+        let mut out = Vec::new();
+        browsers.watch(vec![PaneId(1)], &mut out);
+        assert!(out.is_empty(), "nothing is asked before a connection is");
+        browsers.connected(&mut out);
+        browsers.page(page(1, "about:blank"));
+        browsers.page(page(2, "about:blank"));
+        out.clear();
+        assert_eq!(browsers.drawn(false, false), [], "nothing on screen draws none");
+        assert_eq!(browsers.drawn(true, false), [PaneId(2)], "the panel draws the docked one");
+        assert_eq!(browsers.drawn(false, true), [PaneId(1), PaneId(2)], "the stage's tiles draw them all");
+        browsers.choose(Some(PaneId(1)));
+        assert_eq!(browsers.drawn(true, true), [PaneId(1), PaneId(2)]);
+        browsers.watch(browsers.drawn(false, true), &mut out);
+        browsers.watch(browsers.drawn(false, true), &mut out);
+        assert!(matches!(&out[..], [ClientMsg::WatchBrowsers { showing }] if showing == &[PaneId(1)]), "{out:?}");
+    }
+
+    #[test]
     fn a_reconnect_drops_what_the_last_daemon_ran() {
         let mut browsers = Browsers::default();
         browsers.page(page(1, "about:blank"));
         browsers.shot(BrowserFrame { pane: PaneId(1), jpeg: "x".into(), width: 1, height: 1 });
         let mut out = Vec::new();
         browsers.connected(&mut out);
-        assert!(matches!(out[..], [ClientMsg::WatchBrowsers]));
+        assert!(matches!(&out[..], [ClientMsg::WatchBrowsers { showing }] if showing.is_empty()));
         assert!(browsers.forget().is_empty());
         assert_eq!(browsers.take(|_| None), None);
     }

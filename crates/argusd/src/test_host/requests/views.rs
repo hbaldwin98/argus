@@ -59,6 +59,10 @@ pub fn browser_input(k: &Known) -> BoxedStrategy<ClientMsg> {
     (pane(k), input).prop_map(|(pane, input)| ClientMsg::BrowserInput { pane, input }).boxed()
 }
 
+pub fn watch_browsers(k: &Known) -> BoxedStrategy<ClientMsg> {
+    proptest::collection::vec(pane(k), 0..3).prop_map(|showing| ClientMsg::WatchBrowsers { showing }).boxed()
+}
+
 pub fn close_browser(k: &Known) -> BoxedStrategy<ClientMsg> {
     pane(k).prop_map(|pane| ClientMsg::CloseBrowser { pane }).boxed()
 }

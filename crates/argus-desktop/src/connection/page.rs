@@ -23,7 +23,7 @@ use crate::code::edit::{EditEvent, EditGesture};
 use crate::code::stage::{CodeGesture, CodePage};
 use crate::review::comment_box::CommentPage;
 use crate::panes::console::{ConsoleGesture, ConsolePage};
-use crate::layout::docks::{DockGesture, DocksPage, Panel};
+use crate::layout::docks::{Dock, DockGesture, DocksPage, Panel};
 use crate::extensions::dialog::ExtDialogPage;
 use crate::extensions::views::{ExtensionGesture, ExtensionsPage};
 use crate::board::features::Layout;
@@ -129,6 +129,9 @@ pub enum Call {
     /// Closes a pane's browser for every client; its agent's next request
     /// opens another.
     CloseBrowser { pane: u64 },
+    /// A pane's browser dragged to a dock, shown in the browser panel there,
+    /// or with no dock to the stage, filling it.
+    PlaceBrowser { pane: u64, dock: Option<Dock> },
     /// `open` true shows the Code stage on the checkout on screen, false
     /// goes back to the Workspace.
     ShowCode { open: bool },

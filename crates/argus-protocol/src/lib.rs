@@ -25,7 +25,7 @@ pub mod tree;
 pub mod views;
 
 pub use ago::ago;
-pub use browser::{navigable, BrowserFrame, BrowserInput, BrowserKey, BrowserPage, BrowserRequest, BrowserTab, BROWSER_VAR};
+pub use browser::{navigable, BrowserFrame, BrowserInput, BrowserKey, BrowserPage, BrowserDriver, BrowserRequest, BrowserTab, BROWSER_VAR};
 pub use agents::launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
 pub use agents::roster::{roster, AgentListing};
 pub use views::agent_view::{
@@ -94,7 +94,7 @@ pub use code::edit::{EditChanged, EditOpened, TextChange};
 pub use files::{CheckoutDir, CheckoutEntry, EntryGit, MAX_DIR_ENTRIES};
 pub use hook::{
     endpoint_url, extension_path, extension_prefix, extension_url, parse_extension_path, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,
-    parse_request_target, requested_feature, requested_scope, Endpoint, ExtEndpoint, PaneUrl, EXTENSION_VAR, MAX_HOOK_BODY, Report, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND, HELPER_VAR,
+    devtools_url, parse_request_target, query_token, requested_feature, requested_scope, Endpoint, ExtEndpoint, PaneUrl, EXTENSION_VAR, MAX_HOOK_BODY, Report, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND, HELPER_VAR,
     BACKGROUND_HEADER, DIRECTORY_HEADER, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, PANE_VAR, SESSION_HEADER,
     SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };

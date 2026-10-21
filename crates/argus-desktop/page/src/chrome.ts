@@ -29,7 +29,7 @@ import { state } from './state.js';
 import { featureEdges } from './board/lenses/work.js';
 import { codeEdges } from './code/stage.js';
 import { call } from './connection/tauri.js';
-import { browsersTitle, drawBrowsers } from './browser/stage.js';
+import { browsersTitle, drawBrowsers, drawBrowsersNav } from './browser/stage.js';
 
 const LOUD = new Set<StatusWord>(['waiting', 'needs-review', 'failed']);
 
@@ -88,6 +88,7 @@ function drawNav(): void {
     $(`nav-${name}-keys`).replaceChildren(keycaps(chordsFor(action, 'anywhere')));
   }
   $('nav-search-keys').replaceChildren(keycaps(chordsFor('palette', 'anywhere')));
+  drawBrowsersNav();
   drawExtensionNav();
   drawSavedNav();
 }

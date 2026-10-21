@@ -2,18 +2,28 @@
 //! off as the page changes, laid out at the size the person sees it, and
 //! the person's input put on it.
 //!
-//! A tab the person picks is shown until it closes or another opens; a
-//! tab that opens is shown, since an agent that opens one is about to work
-//! in it. With neither, the newest is. The agent's own connection is
-//! untouched: this one attaches beside it.
+//! The tab shown is the one the agent works in — the last it acted on, or
+//! failing that the last opened, since an agent that opens one is about to
+//! work in it — until the person picks another, which is shown until it
+//! closes or they go back to following the agent. The agent's own line is
+//! untouched: this one attaches beside it, and hears from the `Mux` which
+//! tab the agent acts on.
 
-use argus_protocol::{BrowserInput, BrowserTab};
+use std::time::Duration;
+
+use argus_protocol::{BrowserDriver, BrowserInput, BrowserTab};
 use serde_json::json;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 
 use super::cdp::{Cdp, Event};
 use super::input::{browser_command, commands};
-use super::Report;
+use super::mux::{AGENT_ACTED, HOLD};
+use super::{Report, Seen};
+
+/// How long after the last move of the page its mover is still said to be
+/// driving it.
+const DRIVING: Duration = Duration::from_secs(3);
 
 /// The pictures asked for when no one has said how big they look: the
 /// window's size the browser starts at.
@@ -22,11 +32,12 @@ const UNSIZED: (u32, u32, f64) = (1280, 800, 1.0);
 /// reads as sharp as the page's own.
 const QUALITY: u32 = 85;
 
-/// The browser's tabs in the order they opened, and the one the person
-/// picked.
+/// The browser's tabs in the order they opened, the one the agent works
+/// in, and the one the person picked.
 #[derive(Debug, Default)]
 struct Tabs {
     open: Vec<BrowserTab>,
+    working: Option<String>,
     picked: Option<String>,
 }
 
@@ -45,16 +56,24 @@ impl Tabs {
                 match self.open.iter_mut().find(|held| held.id == tab.id) {
                     Some(held) => *held = tab,
                     None => {
+                        self.working = Some(tab.id.clone());
                         self.open.push(tab);
-                        self.picked = None;
                     }
                 }
             }
             "Target.targetDestroyed" => {
                 let id = event.params["targetId"].as_str().unwrap_or_default();
                 self.open.retain(|tab| tab.id != id);
-                if self.picked.as_deref() == Some(id) {
-                    self.picked = None;
+                for kept in [&mut self.working, &mut self.picked] {
+                    if kept.as_deref() == Some(id) {
+                        *kept = None;
+                    }
+                }
+            }
+            AGENT_ACTED => {
+                let id = event.params["targetId"].as_str().unwrap_or_default();
+                if self.get(id).is_some() {
+                    self.working = Some(id.to_string());
                 }
             }
             _ => {}
@@ -68,8 +87,13 @@ impl Tabs {
         }
     }
 
+    fn follow_agent(&mut self) {
+        self.picked = None;
+    }
+
     fn to_show(&self) -> Option<&BrowserTab> {
-        self.picked.as_deref().and_then(|id| self.get(id)).or(self.open.last())
+        let kept = |id: &Option<String>| id.as_deref().and_then(|id| self.get(id));
+        kept(&self.picked).or(kept(&self.working)).or(self.open.last())
     }
 
     fn get(&self, id: &str) -> Option<&BrowserTab> {
@@ -91,20 +115,21 @@ pub(super) async fn follow(
     mut input: mpsc::UnboundedReceiver<BrowserInput>,
     reports: mpsc::UnboundedSender<Report>,
 ) {
-    // Answered with a created event for every target already open, so the
-    // first tab is heard like any other.
-    if let Err(error) = cdp.call("Target.setDiscoverTargets", json!({ "discover": true }), None).await {
-        tracing::warn!("browser: discovering its tabs: {error:#}");
-        return;
-    }
     let mut tabs = Tabs::default();
     let mut shown: Option<Shown> = None;
     let mut viewport: Option<(u32, u32, f64)> = None;
-    let mut told: Option<(Vec<BrowserTab>, Option<String>)> = None;
+    let mut held = false;
+    let mut driver: Option<(BrowserDriver, Instant)> = None;
+    let mut told: Option<Seen> = None;
     loop {
+        let quiet = driver.map(|(_, at)| at + DRIVING);
         tokio::select! {
+            _ = tokio::time::sleep_until(quiet.unwrap_or_else(Instant::now)), if quiet.is_some() => driver = None,
             event = events.recv() => {
                 let Some(mut event) = event else { return };
+                if event.method == AGENT_ACTED && event.params["drives"].as_bool() == Some(true) {
+                    driver = Some((BrowserDriver::Agent, Instant::now()));
+                }
                 let on_shown = shown.as_ref().is_some_and(|s| event.session.as_deref() == Some(&*s.session));
                 match event.method.as_str() {
                     "Page.screencastFrame" if on_shown => {
@@ -127,8 +152,17 @@ pub(super) async fn follow(
             }
             hand = input.recv() => {
                 let Some(hand) = hand else { return };
+                if hand.drives() {
+                    driver = Some((BrowserDriver::Person, Instant::now()));
+                }
                 match &hand {
                     BrowserInput::ShowTab { id } => tabs.pick(id),
+                    BrowserInput::FollowAgent => tabs.follow_agent(),
+                    BrowserInput::Hold { held: now } => {
+                        if cdp.call(HOLD, json!({ "held": now }), None).await.is_ok() {
+                            held = *now;
+                        }
+                    }
                     BrowserInput::Viewport { width, height, scale } => {
                         let held = BrowserInput::held_viewport(*width, *height, *scale);
                         if viewport != Some(held) {
@@ -154,9 +188,15 @@ pub(super) async fn follow(
         if want != shown.as_ref().map(|s| s.target.clone()) {
             shown = show(&cdp, shown.take(), want, viewport).await;
         }
-        let now = (tabs.open.clone(), shown.as_ref().map(|s| s.target.clone()));
+        let now = Seen {
+            tabs: tabs.open.clone(),
+            shown: shown.as_ref().map(|s| s.target.clone()),
+            following: tabs.picked.is_none(),
+            held,
+            driver: driver.map(|(who, _)| who),
+        };
         if told.as_ref() != Some(&now) {
-            let _ = reports.send(Report::Page { tabs: now.0.clone(), shown: now.1.clone() });
+            let _ = reports.send(Report::Page(now.clone()));
             told = Some(now);
         }
     }
@@ -264,8 +304,26 @@ mod tests {
         assert_eq!(shown(&tabs), None);
     }
 
+    fn acted(id: &str) -> Event {
+        Event { method: AGENT_ACTED.into(), params: json!({ "targetId": id, "drives": true }), session: None }
+    }
+
     #[test]
-    fn a_picked_tab_is_shown_until_it_closes_or_another_opens() {
+    fn the_tab_shown_is_the_one_the_agent_last_acted_on() {
+        let mut tabs = Tabs::default();
+        tabs.heard(&target("Target.targetCreated", "a", "page", ""));
+        tabs.heard(&target("Target.targetCreated", "b", "page", ""));
+        assert_eq!(shown(&tabs), Some("b"), "a tab that opens is where the agent is about to work");
+        tabs.heard(&acted("a"));
+        assert_eq!(shown(&tabs), Some("a"), "and the tab it then acts on is where it works");
+        tabs.heard(&acted("gone"));
+        assert_eq!(shown(&tabs), Some("a"), "a tab the browser lacks is not followed");
+        tabs.heard(&destroyed("a"));
+        assert_eq!(shown(&tabs), Some("b"));
+    }
+
+    #[test]
+    fn a_picked_tab_is_shown_until_it_closes_or_the_person_follows_the_agent_again() {
         let mut tabs = Tabs::default();
         tabs.heard(&target("Target.targetCreated", "a", "page", ""));
         tabs.heard(&target("Target.targetCreated", "b", "page", ""));
@@ -274,9 +332,12 @@ mod tests {
         tabs.pick("gone");
         assert_eq!(shown(&tabs), Some("a"), "a tab the browser lacks is not picked");
         tabs.heard(&target("Target.targetCreated", "c", "page", ""));
-        assert_eq!(shown(&tabs), Some("c"));
-        tabs.pick("a");
-        tabs.heard(&destroyed("a"));
-        assert_eq!(shown(&tabs), Some("c"));
+        tabs.heard(&acted("b"));
+        assert_eq!(shown(&tabs), Some("a"), "the agent moving on does not take the person's tab from them");
+        tabs.follow_agent();
+        assert_eq!(shown(&tabs), Some("b"));
+        tabs.pick("c");
+        tabs.heard(&destroyed("c"));
+        assert_eq!(shown(&tabs), Some("b"));
     }
 }

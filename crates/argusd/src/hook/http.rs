@@ -26,6 +26,8 @@ pub(super) struct Request {
     pub(super) background: bool,
     /// Where that conversation is working.
     pub(super) directory: Option<PathBuf>,
+    /// A WebSocket upgrade's key, which its answer must hash.
+    pub(super) websocket_key: Option<String>,
 }
 
 /// The request line and headers, checked against `token`; the body is left
@@ -43,6 +45,7 @@ pub(super) async fn read_head<R: AsyncBufRead + Unpin>(reader: &mut R, token: &s
         reporter: None,
         background: false,
         directory: None,
+        websocket_key: None,
     };
     loop {
         let mut line = String::new();
@@ -64,6 +67,8 @@ pub(super) async fn read_head<R: AsyncBufRead + Unpin>(reader: &mut R, token: &s
             request.background = !v.is_empty();
         } else if let Some(v) = strip_header(&line, argus_protocol::DIRECTORY_HEADER) {
             request.directory = (!v.is_empty()).then(|| PathBuf::from(v));
+        } else if let Some(v) = strip_header(&line, "Sec-WebSocket-Key") {
+            request.websocket_key = Some(v.to_string());
         }
     }
     Ok(request)

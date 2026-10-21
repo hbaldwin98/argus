@@ -488,13 +488,16 @@ to the type or its locking.
 | `test_host/requests/views` | generated requests about what agents and extensions show: views, saved views, presses, extension actions, commands and dialogs |
 | `test_host/requests/session` | generated greetings: this build's, one missing capabilities, one on another protocol |
 | `hook` | the loopback pane API: which daemon call each agent's or extension's request reaches, behind its token |
+| `hook/devtools` | the pane API's DevTools socket: an agent's browser tool attached to its pane's browser, behind the pane API's token |
 | `hook/http` | the pane API's HTTP: a request's line, headers and bounded body read off the socket, the answer written back, and an event stream held open with its heartbeat |
 | `review`, `review/queue` | a review's diff, and when it is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
 | `review/diff` | a review's stable snapshot and its diff, and a commit's |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
 | `browser` | a browser run for an agent's pane: started, followed while it runs, and ended when its handle is dropped |
-| `browser/chrome` | which browser runs, and starting it: headless, on a profile of its own that goes with it, its DevTools socket on a loopback port it picks |
-| `browser/cdp` | one DevTools Protocol connection to a browser: commands sent and their answers matched back by id, and everything else read as an event |
+| `browser/chrome` | which browser runs, and starting it: headless, on a profile of its own that goes with it and that the next daemon clears if this one is killed, handed its pipe |
+| `browser/pipe` | the DevTools pipe to a browser: two anonymous pipes it is started holding, in place of a port any process could reach, and the NUL-ended messages on them |
+| `browser/mux` | one DevTools connection shared by the daemon's view of a browser and agents' tools: ids rewritten so answers find their way back, events sent to who can use them, the tab an agent acts on told to the daemon, and an agent's input refused while the person holds the browser |
+| `browser/cdp` | the daemon's own DevTools client of a browser, on a line of its mux: commands sent and their answers matched back by id, and everything else read as an event |
 | `browser/screen` | which of a browser's tabs is shown, and showing it: laid out at the size the person sees it, its pictures read off as the page changes, and the person's input put on it |
 | `browser/input` | what the person's hand on a browser becomes: the DevTools commands, in order, that do it to the page shown |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
@@ -2800,42 +2803,59 @@ checkout is on.
 
 An agent pane can have a browser. `argus-hook browser` posts a `BrowserRequest` to the pane API's
 `browser` endpoint; the daemon starts Chrome, Chromium or Edge (`ARGUS_BROWSER` names another)
-headless, on a fresh profile in the temporary directory, with its DevTools socket on a loopback
-port Chrome picks, and answers the `ws://` URL. The agent drives it with whatever tool it brings —
-`agent-browser --cdp <url>`, a DevTools MCP server, Playwright — so Argus never chooses how an agent
-browses, and a second open answers the same URL. `browser close`, the person's close
+headless, on a fresh profile under the temporary directory's `argus-browsers-<instance>`, which the
+next daemon of the instance clears should this one be killed outright. The browser listens on no
+port: it is handed two anonymous pipes (fds 3 and 4 on Unix, `--remote-debugging-io-pipes` on
+Windows), so no other process on the machine can drive it. The daemon answers the URL of the pane
+API's `devtools` endpoint, `ws://127.0.0.1:<port>/pane/<id>/devtools?token=<token>`, the hook token
+in the query since a browser tool given a URL sets no header. The agent drives it with whatever tool
+it brings — `agent-browser --cdp <url>`, a DevTools MCP server, Playwright — so Argus never chooses
+how an agent browses, and a second open answers the same URL. `browser close`, the person's close
 (`ClientMsg::CloseBrowser`), the pane leaving the tree (`retire_pane`) and the daemon stopping each
 kill it; on Windows a job takes its renderers with it.
 
+A pipe is one DevTools connection, and `browser::mux` shares it: the daemon's own view and each
+agent's socket are clients whose command ids it rewrites so each answer finds its way back, a
+session's events go to the client that attached it (or every agent, when the browser attached it
+itself), and the rest to everyone. Sitting there, it sees which tab an agent acts on and whether
+the act moves the page, and tells the daemon's view as an `Argus.agentActed` event. While the person
+holds the browser (`BrowserInput::Hold`) it answers an agent's input and navigation with an error
+that says so; reading the page is still the agent's.
+
 What the person sees is read by the daemon, not the window, so a window on another host sees the
 daemon's browser and the terminal client never has to. `browser::screen` keeps the browser's tabs
-and attaches its own session beside the agent's to one of them: the one the person picked
-(`BrowserInput::ShowTab`), until it closes or another opens, since a tab an agent opens is the one
-it is about to work in; else the newest. It asks that tab for a screencast: JPEG frames, each
-acknowledged before the next comes, so a slow reader throttles the browser rather than queueing
-behind it. The tabs' addresses and titles come from the targets' events and from reading the shown
-one's again once it loads, since Chrome does not report a title its document sets. A view drawn
-large sends `BrowserInput::Viewport`, its room in CSS pixels and the screen's density; the tab is
-laid out at that size (`Emulation.setDeviceMetricsOverride`) and its frames asked for at that
-many device pixels, so they are drawn one to one. A headless screencast is drawn at the browser's
-own density whatever density is emulated, so Chrome is started at a scale of 2. A client that lists `BROWSERS` and sends `ClientMsg::WatchBrowsers` is
-sent every browser's `BrowserPage` and latest `BrowserFrame` now, then each as it changes; the
-channel is shallow, and a client that falls behind is sent each browser's latest picture rather
-than the backlog. The frame carries Chrome's base64 as it came, so neither side decodes it on the
-way.
+and attaches its own session to one: the one the agent last acted on, or failing that the last
+opened, since an agent that opens a tab is about to work in it — unless the person picked another
+(`BrowserInput::ShowTab`), which is shown until it closes or they follow the agent again
+(`FollowAgent`). It asks that tab for a screencast: JPEG frames, each acknowledged before the next
+comes, so a slow reader throttles the browser rather than queueing behind it. The tabs' addresses
+and titles come from the targets' events and from reading the shown one's again once it loads,
+since Chrome does not report a title its document sets. Who moved the page in the last three
+seconds, the agent or the person, is its `driver`. A view drawn large sends
+`BrowserInput::Viewport`, its room in CSS pixels and the screen's density; the tab is laid out at
+that size (`Emulation.setDeviceMetricsOverride`) and its frames asked for at that many device
+pixels, so they are drawn one to one. A headless screencast is drawn at the browser's own density
+whatever density is emulated, so Chrome is started at a scale of 2. A client that lists `BROWSERS`
+sends `ClientMsg::WatchBrowsers` with the browsers it draws, and again whenever that changes; it is
+sent every browser's `BrowserPage`, and the frames only of those it draws, so a browser no window
+looks at costs no connection anything. The channel is shallow, and a client that falls behind is
+sent each browser's latest picture rather than the backlog. The frame carries Chrome's base64 as it
+came, so neither side decodes it on the way.
 
 A browser that opens brings out the browser panel (`Panel::Browser`), placed in the right dock the
-first time and wherever the person moves it after; it shows the browser of the pane on screen, or
-the newest. The desktop's Browsers stage (`6`) shows every browser as a live tile, named by its
-pane's title, or the one chosen filling the stage. Drawn large, in the panel or on the stage, a
-browser has its tabs, an address bar, back, forward, reload and close; the panel leaves a browser
-the stage has open to it, so one page is never laid out for two sizes in turn. Frames
-reach the page past the session (`Shared::browser_shot`), since they come many a second and
+first time and wherever the person moves it after; it shows the newest, follows the person to the
+pane on screen when they go to one with a browser, and otherwise stays on the browser they put there.
+The desktop's Browsers stage (`6`) shows every browser as a live tile, named by its pane's title and
+who has it, or the one chosen filling the stage; the sidebar's Browsers row folds out a row for each.
+A tile, a row or the stage's grip drags its browser to a dock or the stage (`Call::PlaceBrowser`).
+Drawn large, in the panel or on the stage, a browser has its tabs, Follow agent while the person has
+picked a tab, Take control or Hand back, an address bar, back, forward, reload and close; the panel
+leaves a browser the stage has open to it, so one page is never laid out for two sizes in turn.
+Frames reach the page past the session (`Shared::browser_shot`), since they come many a second and
 change nothing else; the page decodes each into a bitmap and paints its canvas, because its CSP
-admits no `data:` image. A click, wheel or key on the chosen browser is sent as a
-`ClientMsg::BrowserInput` in the page's CSS pixels, which `browser::input` turns into DevTools
-input on the page shown; a navigation is refused unless it is `http`, `https` or `about:blank`.
-Nothing marks who is driving: the person and the agent act on the same page at once.
+admits no `data:` image. A click, wheel or key on a browser drawn large is sent as a
+`ClientMsg::BrowserInput` in the page's CSS pixels, which `browser::input` turns into DevTools input
+on the tab shown; a navigation is refused unless it is `http`, `https` or `about:blank`.
 
 ## Extensions
 

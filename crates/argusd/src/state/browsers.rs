@@ -13,7 +13,7 @@ use argus_protocol::{BrowserFrame, BrowserInput, BrowserPage, BrowserRequest, Pa
 use tokio::sync::{broadcast, mpsc};
 
 use super::*;
-use crate::browser::{Browser, Report};
+use crate::browser::{Browser, Report, Seen};
 
 /// A pane's running browser, and what was last heard of it.
 struct Open {
@@ -53,17 +53,20 @@ impl Daemon {
     /// An agent's `browser` request: its pane's browser opened, answered
     /// with the DevTools URL to attach to, or closed, answered with nothing.
     ///
-    /// Opening one already open answers its URL again. The browser is
-    /// started outside the lock, so two requests at once may both start
-    /// one; the second to finish is dropped and answered the first's URL.
+    /// The URL is the pane API's, behind its token: the browser listens on
+    /// no port of its own. Opening one already open answers it again. The
+    /// browser is started outside the lock, so two requests at once may
+    /// both start one; the second to finish is dropped.
     pub async fn browser_for_agent(self: &Arc<Self>, pane: PaneId, request: BrowserRequest) -> anyhow::Result<String> {
         self.agent_checkout(pane)?;
         if request == BrowserRequest::Close {
             self.close_browser(pane);
             return Ok(String::new());
         }
-        if let Some(open) = self.browsers.lock().unwrap().open.get(&pane) {
-            return Ok(open.browser.endpoint.clone());
+        let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+        let endpoint = argus_protocol::devtools_url(port, pane, self.hook_token());
+        if self.browsers.lock().unwrap().open.contains_key(&pane) {
+            return Ok(endpoint);
         }
         let (reports, heard) = mpsc::unbounded_channel();
         let browser = Browser::start(reports).await?;
@@ -71,18 +74,32 @@ impl Daemon {
         // The pane may have gone while the browser started; looked for
         // under this lock, which `drop_browser_of` takes too.
         self.agent_checkout(pane)?;
-        if let Some(open) = browsers.open.get(&pane) {
-            return Ok(open.browser.endpoint.clone());
+        if browsers.open.contains_key(&pane) {
+            return Ok(endpoint);
         }
         browsers.starts += 1;
         let started = browsers.starts;
-        let endpoint = browser.endpoint.clone();
-        let page = BrowserPage { pane, url: "about:blank".into(), title: String::new(), tabs: Vec::new(), shown: None };
+        let page = BrowserPage {
+            pane,
+            url: "about:blank".into(),
+            title: String::new(),
+            tabs: Vec::new(),
+            shown: None,
+            following: true,
+            held: false,
+            driver: None,
+        };
         browsers.open.insert(pane, Open { browser, started, page: page.clone(), frame: None });
         self.pushes.browser(&browsers, BrowserNews::Page(page));
         drop(browsers);
         tokio::spawn(heed(self.clone(), pane, started, heard));
         Ok(endpoint)
+    }
+
+    /// A line to the pane's browser for an agent's browser tool, if it has
+    /// one open.
+    pub(crate) fn attach_browser(&self, pane: PaneId) -> Option<(crate::browser::mux::Line, mpsc::UnboundedReceiver<String>)> {
+        self.browsers.lock().unwrap().open.get(&pane).map(|open| open.browser.attach())
     }
 
     /// The person's hand on a pane's browser; one the pane does not have
@@ -135,10 +152,11 @@ impl Daemon {
             return false;
         };
         let news = match report {
-            Report::Page { tabs, shown } => {
-                let on = shown.as_deref().and_then(|id| tabs.iter().find(|tab| tab.id == id));
+            Report::Page(seen) => {
+                let on = seen.shown.as_deref().and_then(|id| seen.tabs.iter().find(|tab| tab.id == id));
                 let (url, title) = on.map(|tab| (tab.url.clone(), tab.title.clone())).unwrap_or_default();
-                open.page = BrowserPage { pane, url, title, tabs, shown };
+                let Seen { tabs, shown, following, held, driver } = seen;
+                open.page = BrowserPage { pane, url, title, tabs, shown, following, held, driver };
                 BrowserNews::Page(open.page.clone())
             }
             Report::Frame { jpeg, width, height } => {

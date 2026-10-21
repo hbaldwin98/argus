@@ -280,18 +280,32 @@ impl Topic for Views {
 }
 
 /// The browsers agents' panes run, for a client that listed `BROWSERS`
-/// and asked.
-pub(super) struct Browsers;
+/// and asked: where each is, and the pictures of those it draws.
+pub(super) struct Browsers {
+    pub(super) showing: std::collections::HashSet<argus_protocol::PaneId>,
+}
+
+impl Browsers {
+    fn wanted(&self, news: &BrowserNews) -> bool {
+        match news {
+            BrowserNews::Frame(frame) => self.showing.contains(&frame.pane),
+            BrowserNews::Page(_) | BrowserNews::Closed { .. } => true,
+        }
+    }
+}
 
 impl Topic for Browsers {
     type News = BrowserNews;
 
     fn join(&mut self, daemon: &Daemon) -> (Vec<ServerMsg>, broadcast::Receiver<BrowserNews>) {
         let (now, rx) = daemon.watch_browsers();
-        (now.into_iter().map(BrowserNews::message).collect(), rx)
+        (now.into_iter().filter(|news| self.wanted(news)).map(BrowserNews::message).collect(), rx)
     }
 
     fn news(&mut self, _: &Daemon, news: BrowserNews) -> Vec<ServerMsg> {
+        if !self.wanted(&news) {
+            return Vec::new();
+        }
         vec![news.message()]
     }
 

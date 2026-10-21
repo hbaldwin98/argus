@@ -685,6 +685,7 @@ impl Session {
                 self.browsers.close(PaneId(pane), &mut self.out);
                 self.finish()
             }
+            Call::PlaceBrowser { pane, dock } => self.place_browser(PaneId(pane), dock),
             Call::ShowCode { open } => self.show_code(open),
             Call::Code { gesture } => self.code_gesture(gesture),
             Call::ShowComposer { open } => self.show_composer(open),
@@ -2294,6 +2295,24 @@ impl Session {
         self.finish()
     }
 
+    /// A browser dragged to a dock or to the stage.
+    fn place_browser(&mut self, pane: PaneId, dock: Option<Dock>) -> Vec<ClientMsg> {
+        if !self.browsers.has(pane) {
+            return self.finish();
+        }
+        match dock {
+            Some(dock) => {
+                self.browsers.dock(pane);
+                self.docks.move_to(&Panel::Browser, dock);
+            }
+            None => {
+                self.browsers.choose(Some(pane));
+                self.go(Stage::Browsers);
+            }
+        }
+        self.finish()
+    }
+
     /// The Browsers stage, on `pane`'s browser or on every one.
     fn show_browsers(&mut self, pane: Option<PaneId>) -> Vec<ClientMsg> {
         self.browsers.choose(pane);
@@ -3129,6 +3148,11 @@ impl Session {
             let request_id = self.awaited.name();
             self.out.extend(self.sessions.read(&self.status, &wanted, request_id));
         }
+        self.browsers.follow(self.shown.pane());
+        if self.status.daemon_can(BROWSERS) {
+            let drawn = self.browsers.drawn(self.docks.shows(&Panel::Browser), self.stages.now() == Stage::Browsers);
+            self.browsers.watch(drawn, &mut self.out);
+        }
         let reads_board = matches!(self.stages.now(), Stage::Feature | Stage::Checkouts) || self.palette;
         self.features.set_board_wanted(reads_board);
         // Whatever changed may have changed which board the stage reads.
@@ -3167,7 +3191,6 @@ impl Session {
         if let Some(page) = self.choices.take() {
             events.push(Event::Settings(Box::new(page)));
         }
-        self.browsers.follow(self.shown.pane());
         // Before the rail, so the page knows which side has the keys when
         // the rail says which pane the Workspace shows.
         let present = self.present();
@@ -4178,7 +4201,7 @@ mod tests {
         use argus_protocol::{BrowserInput, BrowserPage};
         let mut s = session(Hello::this_build());
         let _ = s.events(0);
-        s.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(1), url: "https://a.test".into(), title: "A".into(), tabs: Vec::new(), shown: None }));
+        s.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(1), url: "https://a.test".into(), title: "A".into(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None }));
         assert!(s.docks.shows(&Panel::Browser), "a browser that opens comes out in its panel");
         s.call(Call::ShowBrowsers { pane: Some(1) });
         assert_eq!(s.stages.now(), Stage::Browsers);
@@ -4191,6 +4214,9 @@ mod tests {
         assert_eq!((page.chosen, page.browsers[0].agent.as_str()), (Some(1), "claude"));
         let sent = s.call(Call::BrowserInput { pane: 1, input: BrowserInput::Reload });
         assert!(sent.iter().any(|m| matches!(m, ClientMsg::BrowserInput { pane: PaneId(1), .. })), "{sent:?}");
+        s.call(Call::PlaceBrowser { pane: 1, dock: Some(Dock::Left) });
+        assert_eq!(s.docks.dock_of(&Panel::Browser), Some(Dock::Left), "dragged to a dock, it is there");
+        assert!(s.docks.shows(&Panel::Browser));
         s.receive(ServerMsg::BrowserClosed { pane: PaneId(1) });
         let sent = s.call(Call::BrowserInput { pane: 1, input: BrowserInput::Reload });
         assert!(sent.is_empty(), "a browser that went takes no input");
@@ -5455,7 +5481,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 148] = [
+    const CALLS: [&str; 149] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5494,6 +5520,7 @@ mod tests {
         r#"{"call":"show_browsers","pane":null}"#,
         r#"{"call":"browser_input","pane":1,"input":{"kind":"click","x":10,"y":20}}"#,
         r#"{"call":"close_browser","pane":1}"#,
+        r#"{"call":"place_browser","pane":1,"dock":"left"}"#,
         r#"{"call":"show_code","open":true}"#,
         r#"{"call":"code","gesture":{"on":"click","target":{"on":"tree","path":"src"}}}"#,
         r#"{"call":"code","gesture":{"on":"action","action":"next"}}"#,
