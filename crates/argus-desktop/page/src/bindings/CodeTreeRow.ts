@@ -4,4 +4,9 @@ export type CodeTreeRow = { path: string, name: string, depth: number, folder: b
 /**
  * The file being read.
  */
-on: boolean, };
+on: boolean, 
+/**
+ * Git ignores it. The page folds these into one row at the foot, and
+ * they open to nothing: only the name is known.
+ */
+ignored: boolean, };

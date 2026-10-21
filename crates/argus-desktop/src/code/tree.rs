@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use argus_protocol::CodeChange;
+use argus_protocol::{CheckoutEntry, CodeChange, EntryGit};
 
 /// One row of the tree as drawn.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +21,9 @@ pub struct TreeRow {
     pub changed: bool,
     pub added: u32,
     pub removed: u32,
+    /// Git ignores it: a top-level entry of the checkout that no file of the
+    /// version is under, which the page folds into one row.
+    pub ignored: bool,
 }
 
 /// The folders of `path`, outermost first: `a`, `a/b` for `a/b/c.rs`.
@@ -71,6 +74,7 @@ pub fn rows(files: &[String], changes: &[CodeChange], open: &HashSet<String>, ch
                     changed: changed_folders.contains(folder),
                     added: 0,
                     removed: 0,
+                    ignored: false,
                 });
             }
             shown = is_open;
@@ -85,10 +89,36 @@ pub fn rows(files: &[String], changes: &[CodeChange], open: &HashSet<String>, ch
                 changed: change.is_some(),
                 added: change.map_or(0, |c| c.added),
                 removed: change.map_or(0, |c| c.removed),
+                ignored: false,
             });
         }
     }
     rows
+}
+
+/// The checkout's top-level entries git ignores, as rows to follow `shown`.
+/// A version's files come from git, which lists none of them; the disk
+/// listing of the root does, and the Files panel folds the same entries. A
+/// name `shown` already has is left out (a force-added file under an ignored
+/// folder), so no path is a row twice. They are never opened: the tree can
+/// say what is ignored but holds nothing under it.
+pub fn ignored_rows(entries: &[CheckoutEntry], shown: &[TreeRow]) -> Vec<TreeRow> {
+    let taken: HashSet<&str> = shown.iter().filter(|r| r.depth == 0).map(|r| r.path.as_str()).collect();
+    entries
+        .iter()
+        .filter(|e| e.git == Some(EntryGit::Ignored) && !taken.contains(e.name.as_str()))
+        .map(|e| TreeRow {
+            path: e.name.clone(),
+            name: e.name.clone(),
+            depth: 0,
+            folder: e.dir,
+            open: false,
+            changed: false,
+            added: 0,
+            removed: 0,
+            ignored: true,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -152,5 +182,21 @@ mod tests {
     fn a_files_folders_are_outermost_first() {
         assert_eq!(folders_of("a/b/c.rs").collect::<Vec<_>>(), ["a", "a/b"]);
         assert_eq!(folders_of("c.rs").count(), 0);
+    }
+
+    #[test]
+    fn the_roots_ignored_entries_follow_the_tree_unless_a_tracked_file_is_under_one() {
+        let entry = |name: &str, dir: bool, git: Option<EntryGit>| CheckoutEntry { name: name.into(), dir, size: None, modified: None, git };
+        let entries = [
+            entry("src", true, None),
+            entry("target", true, Some(EntryGit::Ignored)),
+            entry("vendor", true, Some(EntryGit::Ignored)),
+            entry("a.log", false, Some(EntryGit::Ignored)),
+            entry("new.rs", false, Some(EntryGit::Untracked)),
+        ];
+        let shown = rows(&files(&["src/a.rs", "vendor/forced.rs"]), &[], &HashSet::new(), false);
+        let ignored = ignored_rows(&entries, &shown);
+        assert_eq!(ignored.iter().map(|r| (r.path.as_str(), r.folder, r.ignored)).collect::<Vec<_>>(), [("target", true, true), ("a.log", false, true)]);
+        assert!(ignored.iter().all(|r| r.depth == 0 && !r.open && !r.changed));
     }
 }

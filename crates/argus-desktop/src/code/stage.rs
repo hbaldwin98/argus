@@ -12,7 +12,7 @@
 use std::collections::HashSet;
 
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatches, CodeTree, CodeVersion, HeldTree, PaneId,
+    CheckoutDir, CheckoutEntry, CheckoutId, CheckoutInfo, ClientMsg, CodeChange, CodeFile, CodeMatches, CodeTree, CodeVersion, HeldTree, PaneId,
     ProjectInfo, RequestRefusal, ReviewAnchor, ReviewBase, SearchOptions, ServerMsg,
 };
 use serde::{Deserialize, Serialize};
@@ -104,6 +104,9 @@ pub struct CodeTreeRow {
     pub removed: u32,
     /// The file being read.
     pub on: bool,
+    /// Git ignores it. The page folds these into one row at the foot, and
+    /// they open to nothing: only the name is known.
+    pub ignored: bool,
 }
 
 /// A file the version changed, named and placed as a list reads it.
@@ -366,6 +369,14 @@ impl Code {
                     stage.receive_tree(tree);
                 }
             }
+            // The Files panel asks for folders too, so a listing that is not
+            // the stage's own root goes on to it.
+            ServerMsg::CheckoutDir(dir) => {
+                if stage.is_some_and(|s| s.receive_root(&dir)) {
+                    return None;
+                }
+                return Some(ServerMsg::CheckoutDir(dir));
+            }
             ServerMsg::Code(file) => {
                 if let Some(stage) = stage {
                     stage.receive_file(*file);
@@ -468,6 +479,10 @@ struct CodeStage {
     files: Vec<String>,
     changes: Vec<CodeChange>,
     tree_asked: Option<u64>,
+    /// The checkout's root as it is on disk, which is where its ignored
+    /// entries are: the version's files, from git, hold none.
+    root: Vec<CheckoutEntry>,
+    root_asked: Option<u64>,
     open: HashSet<String>,
     path: Option<String>,
     file: Option<Box<CodeFile>>,
@@ -505,6 +520,8 @@ impl CodeStage {
             files: Vec::new(),
             changes: Vec::new(),
             tree_asked: None,
+            root: Vec::new(),
+            root_asked: None,
             open: HashSet::new(),
             path: None,
             file: None,
@@ -523,12 +540,19 @@ impl CodeStage {
         if let Some(path) = path {
             msgs.push(stage.read(path, line, id()));
         }
+        // Last, so the ids the stage's other asks take do not move.
+        msgs.push(stage.ask_root(id()));
         (stage, msgs)
     }
 
     fn ask_tree(&mut self, request_id: u64) -> ClientMsg {
         self.tree_asked = Some(request_id);
         ClientMsg::ListCode { request_id, checkout: self.checkout, version: self.version.clone() }
+    }
+
+    fn ask_root(&mut self, request_id: u64) -> ClientMsg {
+        self.root_asked = Some(request_id);
+        ClientMsg::ListDir { request_id, checkout: self.checkout, path: String::new() }
     }
 
     /// Reads `path`, with the folders above it opened so the tree shows
@@ -551,6 +575,7 @@ impl CodeStage {
             let line = Some(self.cursor as u32 + 1);
             msgs.push(self.read(path, line, id()));
         }
+        msgs.push(self.ask_root(id()));
         msgs
     }
 
@@ -561,6 +586,15 @@ impl CodeStage {
         self.tree_asked = None;
         self.files = tree.files;
         self.changes = tree.changes;
+        true
+    }
+
+    fn receive_root(&mut self, dir: &CheckoutDir) -> bool {
+        if dir.checkout != self.checkout || self.root_asked != Some(dir.request_id) {
+            return false;
+        }
+        self.root_asked = None;
+        self.root = dir.entries.clone();
         true
     }
 
@@ -1003,6 +1037,17 @@ impl CodeStage {
 
     /// The stage as the page draws it, given the checkout as the tree has
     /// it now: its agents may have come or gone.
+    /// The tree's rows, and after them the root's ignored entries unless
+    /// the tree lists only what changed, which an ignored entry never did.
+    fn tree_rows(&self) -> Vec<code::tree::TreeRow> {
+        let mut rows = code::tree::rows(&self.files, &self.changes, &self.open, self.changed_only);
+        if !self.changed_only {
+            let ignored = code::tree::ignored_rows(&self.root, &rows);
+            rows.extend(ignored);
+        }
+        rows
+    }
+
     fn page(&self, checkout: Option<&CheckoutInfo>) -> CodePage {
         let (from, to) = self.picked();
         let picking = self.mark.is_some() || self.comment_box.is_open();
@@ -1069,9 +1114,11 @@ impl CodeStage {
             },
             changed_only: self.changed_only,
             changed: self.changes.len(),
-            tree: code::tree::rows(&self.files, &self.changes, &self.open, self.changed_only)
+            tree: self
+                .tree_rows()
                 .into_iter()
                 .map(|r| CodeTreeRow {
+                    ignored: r.ignored,
                     on: !r.folder && Some(&r.path) == self.path.as_ref(),
                     path: r.path,
                     name: r.name,
@@ -1295,6 +1342,7 @@ mod tests {
     use super::*;
     use crate::fixtures::{checkout, pane, project, repository};
     use argus_protocol::{CodeLine, CodeMatch, CodeSymbol, PaneKind, PaneStatus, Removed, RequestRefusal};
+    use argus_protocol::EntryGit;
 
     fn stage(path: Option<&str>, line: Option<u32>) -> (CodeStage, Vec<ClientMsg>) {
         let mut ids = 0;
@@ -1353,7 +1401,7 @@ mod tests {
         let (mut s, sent) = stage(Some("src/a.rs"), Some(3));
         assert!(matches!(
             sent.as_slice(),
-            [ClientMsg::ListCode { request_id: 1, .. }, ClientMsg::ReadCode { request_id: 2, path, .. }] if path == "src/a.rs"
+            [ClientMsg::ListCode { request_id: 1, .. }, ClientMsg::ReadCode { request_id: 2, path, .. }, ClientMsg::ListDir { request_id: 3, .. }] if path == "src/a.rs"
         ));
         assert!(s.receive_tree(tree(1)));
         assert!(s.receive_file(file(2, "src/a.rs")));
@@ -1363,6 +1411,40 @@ mod tests {
         assert_eq!(names, [("src", false), ("a.rs", true), ("b.rs", false), ("README.md", false)], "its folder opened");
         assert_eq!((page.added, page.removed, page.changed, page.language), (2, 1, 1, Some("Rust")));
         assert_eq!(page.version, None, "the working tree goes without saying");
+    }
+
+    fn root(request_id: u64, checkout: u64) -> CheckoutDir {
+        let entry = |name: &str, dir: bool, git: Option<EntryGit>| CheckoutEntry { name: name.into(), dir, size: None, modified: None, git };
+        CheckoutDir {
+            request_id,
+            checkout: CheckoutId(checkout),
+            path: String::new(),
+            entries: vec![entry("src", true, None), entry("target", true, Some(EntryGit::Ignored)), entry("README.md", false, None)],
+            truncated: false,
+        }
+    }
+
+    #[test]
+    fn the_roots_ignored_folders_close_the_tree_and_are_left_out_of_a_changed_only_list() {
+        let (mut s, sent) = stage(None, None);
+        assert!(matches!(sent.as_slice(), [ClientMsg::ListCode { .. }, ClientMsg::ListDir { request_id: 2, path, .. }] if path.is_empty()));
+        s.receive_tree(tree(1));
+        assert!(!s.receive_root(&root(9, 100)), "an ask it did not make");
+        assert!(s.receive_root(&root(2, 100)));
+        let rows = s.page(None).tree;
+        let last = rows.last().unwrap();
+        assert_eq!((last.name.as_str(), last.ignored, last.folder, last.open), ("target", true, true, false));
+        assert_eq!(rows.iter().filter(|r| r.ignored).count(), 1);
+        s.click(CodeClick::ChangedOnly { only: true }, || 0);
+        assert!(s.page(None).tree.iter().all(|r| !r.ignored));
+    }
+
+    #[test]
+    fn a_listing_that_is_not_the_stages_root_goes_on_to_the_files_panel() {
+        let mut code = Code::default();
+        code.open(&checkout(100, "main", true, Vec::new()), CodeVersion::WorkingTree, None, None, None, || 7);
+        assert!(matches!(code.receive(ServerMsg::CheckoutDir(root(8, 100))), Some(ServerMsg::CheckoutDir(_))));
+        assert!(code.receive(ServerMsg::CheckoutDir(root(7, 100))).is_none());
     }
 
     #[test]

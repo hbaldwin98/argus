@@ -178,8 +178,7 @@ function entryOf(r: CodeTreeRow, under: Map<string, number>): TreeEntry {
     dir: r.folder,
     open: r.open,
     on: r.on,
-    // The version's files are what git lists: it holds no ignored ones to fold.
-    ignored: false,
+    ignored: r.ignored,
     mark,
   };
 }
@@ -197,13 +196,15 @@ function tree(c: CodePage): HTMLElement {
             entry: entryOf(r, under),
             name: r.name,
             depth: r.depth,
-            ignored: false,
+            ignored: r.ignored,
           })),
           'code',
           ({ entry }) =>
             fileRow(entry, {
               tag: 'button',
-              onclick: () => click({ on: 'tree', path: entry.path }),
+              // An ignored entry is only named here: nothing under it is
+              // listed to open or to read.
+              onclick: entry.ignored ? () => {} : () => click({ on: 'tree', path: entry.path }),
             }),
         ),
   );
