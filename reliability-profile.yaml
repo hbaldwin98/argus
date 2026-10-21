@@ -172,6 +172,7 @@ impacted:
     - { glob: "crates/argusd/**", args: -p argusd }
     - { glob: "crates/argus-client/**", args: -p argus }
     - { glob: "crates/argus-desktop/**", args: -p argus-desktop }
+    - { glob: "crates/argus-desktop-core/**", args: -p argus-desktop-core -p argus-desktop }
 
 tiers:
   # The snapshots take about 11s and catch side effects before an agent stops;
