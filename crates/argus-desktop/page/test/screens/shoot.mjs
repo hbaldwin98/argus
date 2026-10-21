@@ -1,5 +1,5 @@
 // Screenshots of every screen the window shows: each scene in scenes.json
-// (written by `cargo test -p argus-desktop write_screens -- --ignored`) is
+// (written by `cargo test -p argus-desktop-core write_screens -- --ignored`) is
 // played into the real page and captured, at each size asked for.
 //
 //   node test/screens/shoot.mjs [--scenes file] [--out dir] [--only a,b]

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Argus is a Rust 2021 workspace of four crates. `crates/argus-client/` contains the `argus` terminal UI, `crates/argusd/` contains the daemon plus `argus-hook`, `crates/argus-desktop/` contains the `argus-desktop` window, and `crates/argus-protocol/` owns everything the binaries have to agree on.
+Argus is a Rust 2021 workspace of six crates. `crates/argus-client/` contains the `argus` terminal UI, `crates/argusd/` contains the daemon plus `argus-hook`, `crates/argus-desktop-core/` contains what the desktop window holds and says with no window in it (the session, each surface, the page contract), `crates/argus-desktop/` contains the `argus-desktop` Tauri window, `crates/argus-gpui/` contains the GPUI spike of the desktop window, and `crates/argus-protocol/` owns everything the binaries have to agree on.
 
 One rule decides where code goes: **a module is named after the question it answers, and answers only that one.** Nothing is split across two files, and no file holds two subjects. If you cannot name a module's single responsibility in a sentence, it is two modules. A folder is named after its domain, by the same name in every crate that has a folder for it, and its parent is always `dir/mod.rs`; only a leaf whose tests are split out keeps `name.rs` beside `name/tests.rs`. That `mod.rs` is either an umbrella, the existing module the whole folder is about, with its `pub mod` lines straight after its `//!` header, or a pure group, a one-clause `//!` header naming the folder's question and then its sorted `pub mod` lines and nothing else. Adding, moving or deleting a module fails `cargo test -p argus-protocol --test design_table` until the table in `DESIGN.md` §"Where each responsibility lives" has its row, so change the row in the same edit.
 
@@ -12,9 +12,9 @@ Tests live beside the code they cover, in a `#[cfg(test)] mod tests` block for a
 
 ## Build, Test, and Development Commands
 
-- Package names for `-p` are `argus` (`crates/argus-client`), `argusd`, `argus-desktop` and `argus-protocol`.
-- The desktop page is TypeScript in `crates/argus-desktop/page` (`npm ci` once there). After editing `page/src`, `npm run build` and commit `assets/js` with it; `npm run check` is CI's compile, oxlint and oxfmt check. After changing `src/connection/page.rs`, `cargo test -p argus-desktop` rewrites `page/src/bindings`, and `page/test/contract/sent.ts`, the events a page is sent, which `npm run check` holds to those types; commit both.
-- `argus-desktop` is not a default member: plain `cargo build`/`cargo test` skip it, `--workspace` builds it. On Linux it needs `libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config`. Under a headless X server, start it inside `dbus-run-session` or it stalls before opening its window.
+- Package names for `-p` are `argus` (`crates/argus-client`), `argusd`, `argus-desktop-core`, `argus-desktop`, `argus-gpui` and `argus-protocol`.
+- The desktop page is TypeScript in `crates/argus-desktop/page` (`npm ci` once there). After editing `page/src`, `npm run build` and commit `assets/js` with it; `npm run check` is CI's compile, oxlint and oxfmt check. After changing `crates/argus-desktop-core/src/connection/page.rs`, `cargo test -p argus-desktop-core` rewrites `page/src/bindings`, and `page/test/contract/sent.ts`, the events a page is sent, which `npm run check` holds to those types; commit both.
+- `argus-desktop` is not a default member: plain `cargo build`/`cargo test` skip it, `--workspace` builds it. On Linux `argus-desktop` needs `libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config`. Under a headless X server, start it inside `dbus-run-session` or it stalls before opening its window. `argus-desktop-core` has no webview and is a default member.
 - `rustup update stable` before a batch of work: CI lints with the newest stable, so an older local clippy passes what CI rejects.
 - `cargo test -p <pkg> --locked 2>&1 | grep -E '^error|^test .* FAILED|panicked at|^test result'` runs one crate's tests and prints only failures and totals; `cargo test --workspace --locked` is the full suite.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` is CI's lint. A crate is clippy-clean before it is handed to another agent as a contract.
@@ -40,7 +40,7 @@ CI builds and lints the tests on Windows; a Linux machine without mingw-w64 cann
 
 To look at a TUI screen, run its ignored dump test: find it with `grep -rn 'fn dump_' crates/argus-client/src/ui/tests` and run one by name, `cargo test -p argus dump_frame -- --ignored --nocapture`. Add one for a new surface. This text dump stands in for a screenshot.
 
-To look at a desktop screen, photograph it: `cargo test -p argus-desktop write_screens -- --ignored` writes every scene in `src/screens` as the events a page hears, and `node test/screens/shoot.mjs` (in `crates/argus-desktop/page`, after `npm run build`) replays each into the real page under headless Chrome and saves a PNG. For clicks that Rust answers, serve the scenes live with `cargo test -p argus-desktop serve_screens -- --ignored` and pass `--live http://127.0.0.1:7878`; `audit.mjs` then hovers, clicks, right-clicks and tabs through every control and says which gave no feedback. Add a scene for a new surface.
+To look at a desktop screen, photograph it: `cargo test -p argus-desktop-core write_screens -- --ignored` writes every scene in `crates/argus-desktop-core/src/screens` as the events a page hears, and `node test/screens/shoot.mjs` (in `crates/argus-desktop/page`, after `npm run build`) replays each into the real page under headless Chrome and saves a PNG. For clicks that Rust answers, serve the scenes live with `cargo test -p argus-desktop-core serve_screens -- --ignored` and pass `--live http://127.0.0.1:7878`; `audit.mjs` then hovers, clicks, right-clicks and tabs through every control and says which gave no feedback. Add a scene for a new surface.
 
 ## Commits, Releases & Review
 

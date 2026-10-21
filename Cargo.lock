@@ -318,25 +318,37 @@ dependencies = [
 name = "argus-desktop"
 version = "0.38.2"
 dependencies = [
- "anyhow",
  "arboard",
+ "argus-desktop-core",
  "argus-protocol",
  "fontdb 0.24.0",
  "png 0.18.1",
- "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-notification",
+ "tokio",
+ "tracing",
+ "ttf-parser",
+ "window-vibrancy",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "argus-desktop-core"
+version = "0.38.2"
+dependencies = [
+ "anyhow",
+ "argus-protocol",
+ "png 0.18.1",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "ts-rs",
- "ttf-parser",
  "unicode-width",
- "window-vibrancy",
- "windows-sys 0.61.2",
  "windows-version",
 ]
 

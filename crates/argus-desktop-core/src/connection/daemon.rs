@@ -8,7 +8,11 @@
 //! host is the same child with ssh in front, and ssh's own words are turned
 //! into what to do about them by the protocol's `ssh_bridge`, as the
 //! terminal client's.
+//!
+//! The loop reaches the session only through [`SessionOwner`], which each
+//! window implements over the state it keeps the session in.
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -21,9 +25,10 @@ use argus_protocol::{
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::process::{Child, Command};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
-use crate::connection::shared::Shared;
+use crate::connection::page::Event;
+use crate::session::Session;
 
 /// The gap between failed rounds. Each round already waits on `argus
 /// bridge`, which spends half a minute trying to start a daemon.
@@ -79,10 +84,37 @@ impl Target {
     }
 }
 
+/// What the connection loop needs of whatever holds the session: the
+/// window's own state, which also owns what is windowing (a page's channel,
+/// an app handle) and so cannot live here. Each method is the one the loop
+/// has always called on it.
+pub trait SessionOwner: Send + Sync + 'static {
+    /// The host the loop should be reaching, which it follows.
+    fn watch_host(&self) -> watch::Receiver<Option<String>>;
+    /// Changes the session and sends what the change asks of the daemon.
+    fn act(&self, change: impl FnOnce(&mut Session) -> Vec<ClientMsg>);
+    /// A connection is up: what the page asks goes over `out` from now on.
+    fn connected(
+        &self,
+        out: mpsc::UnboundedSender<ClientMsg>,
+        daemon: Option<Hello>,
+        alarm: Option<String>,
+        opening: Vec<ServerMsg>,
+    );
+    fn disconnected(&self);
+    /// Tells the page what the daemon said of a file its editor has open.
+    fn tell_page(&self, event: Event);
+    /// A browser's picture: kept in the session and told the window past the
+    /// rest of it, many a second, without every surface being built again.
+    fn browser_shot(&self, frame: argus_protocol::BrowserFrame);
+    /// Resolves once a reconnect is asked for.
+    fn reconnect_asked(&self) -> impl Future<Output = ()> + Send;
+}
+
 /// Keeps the window connected for as long as it is open, to whichever host
 /// it is switched to: the bridge of the last is dropped, which kills it,
 /// and a connection loop starts for the next.
-pub async fn run(shared: Arc<Shared>) {
+pub async fn run<S: SessionOwner>(shared: Arc<S>) {
     let mut host = shared.watch_host();
     loop {
         let target = Target::for_host(host.borrow_and_update().as_deref());
@@ -96,10 +128,10 @@ pub async fn run(shared: Arc<Shared>) {
     }
 }
 
-async fn keep(shared: Arc<Shared>, target: Target) {
+async fn keep<S: SessionOwner>(shared: Arc<S>, target: Target) {
     let mut greet = true;
     loop {
-        match connect_once(&shared, &target, greet).await {
+        match connect_once(shared.as_ref(), &target, greet).await {
             // A daemon from before the greeting hung up on it: it is
             // reached again at once, without one.
             Ended::Predates => {
@@ -150,7 +182,7 @@ enum Ended {
     Closed { stopped: bool },
 }
 
-async fn connect_once(shared: &Shared, target: &Target, greet: bool) -> Ended {
+async fn connect_once<S: SessionOwner>(shared: &S, target: &Target, greet: bool) -> Ended {
     let mut bridge = match Bridge::start(target) {
         Ok(bridge) => bridge,
         Err(err) => {
@@ -191,7 +223,7 @@ async fn connect_once(shared: &Shared, target: &Target, greet: bool) -> Ended {
         if !crate::code::edit::is_edit(&msg) {
             shared.act(|s| s.receive(msg));
         } else if let Some(event) = crate::code::edit::event(msg) {
-            shared.tell_page(crate::connection::page::Event::Edit(event));
+            shared.tell_page(Event::Edit(event));
         }
     }
     shared.disconnected();

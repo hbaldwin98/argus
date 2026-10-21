@@ -5,7 +5,7 @@
 //
 // A scene is played one of two ways. Replayed, `connect` hands the page the
 // events scenes.json recorded and every call goes nowhere. Live, the page
-// talks to `cargo test -p argus-desktop serve_screens -- --ignored`, a real
+// talks to `cargo test -p argus-desktop-core serve_screens -- --ignored`, a real
 // Session behind a test server, so a click is answered as the window would
 // answer it. `--theme night` draws any scene in that theme, as the Settings
 // dialog would.

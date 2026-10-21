@@ -7,24 +7,22 @@ repository.workspace = true
 
 [dependencies]
 argus-protocol = { workspace = true }
+# The session, each surface and the page contract: everything that needs no
+# window, shared with the GPUI one.
+argus-desktop-core = { path = "../argus-desktop-core" }
 # `macos-private-api`: a transparent window on macOS, which the background
 # opacity setting needs (`macOSPrivateApi` in tauri.conf.json too).
 # No `common-controls-v6`: it links TaskDialogIndirect, whose manifest only
 # the [[bin]] gets, so the bin's test harness fails to start on MSVC.
 tauri = { version = "2.12.3", default-features = false, features = ["wry", "compression", "x11", "dbus", "custom-protocol", "macos-private-api"] }
 tokio = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-anyhow = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 # The clipboard, read and written in Rust rather than by the page: a
 # webview's clipboard API wants a user gesture that a copy finished over
 # IPC no longer has. `image-data` reads a screenshot for Ctrl-V.
 arboard = { version = "3", default-features = false, features = ["image-data"] }
 png = "0.18"
-# The version alacritty uses, so a cell's width here is the daemon's.
-unicode-width = "0.2"
 # The system notification an agent coming to need you raises.
 tauri-plugin-notification = "2"
 # Mica and Acrylic behind a see-through window, put on and taken off a
@@ -39,21 +37,11 @@ ttf-parser = "0.25"
 # The title bar's colour, set through DWM.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_Graphics_Dwm", "Win32_UI_Input_KeyboardAndMouse"] }
-# The build, which says whether Mica and Acrylic are there to offer: the one
-# `window-vibrancy` reads.
-windows-version = "0.1"
 
 # A Linux desktop is as likely Wayland as X11 now, as the terminal client
 # found.
 [target.'cfg(target_os = "linux")'.dependencies]
 arboard = { version = "3", default-features = false, features = ["image-data", "wayland-data-control"] }
-
-[dev-dependencies]
-# Writes connection/page.rs's types as TypeScript for the page, in test
-# builds only.
-ts-rs = "12.0.1"
-argus-protocol = { workspace = true, features = ["ts"] }
-tempfile = { workspace = true }
 
 [build-dependencies]
 tauri-build = "2.7.2"

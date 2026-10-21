@@ -1,5 +1,5 @@
 // `keys/sections` under node, against the keymap Rust really sends (the
-// events `cargo test -p argus-desktop` writes to test/contract/sent.ts):
+// events `cargo test -p argus-desktop-core` writes to test/contract/sent.ts):
 // the sheet is generated from it, so every binding has to land on a row.
 
 import assert from 'node:assert/strict';

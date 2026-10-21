@@ -2,35 +2,21 @@
 //! client shows, drawn in a webview.
 //!
 //! Startup only: a runtime of our own, handed to Tauri before anything
-//! else, the window, and running until it closes. The model is `session`,
-//! the daemon is reached in `connection::daemon`, and the page in
-//! `assets/` draws what it is sent.
+//! else, the window, and running until it closes. The model is
+//! `argus_desktop_core::session`, the daemon is reached in
+//! `argus_desktop_core::connection::daemon`, and the page in `assets/`
+//! draws what it is sent. What is here is only what needs Tauri or the
+//! machine: the IPC glue, the window's frame and backdrop, the clipboard,
+//! notifications and the installed fonts.
 //!
 //! On Windows the release binary is a GUI program, so starting it opens no
 //! console window beside it; tests keep the console subsystem so their
 //! output is still seen.
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
-mod agents;
-mod board;
-mod browser;
-mod checkouts;
-mod chrome;
-mod code;
 mod connection;
-mod extensions;
-#[cfg(test)]
-mod fixtures;
-#[cfg(test)]
-mod screens;
-mod keys;
-mod layout;
-mod panes;
-mod review;
-mod session;
 mod settings;
 mod system;
-mod views;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,9 +24,13 @@ use std::time::Duration;
 use tauri::webview::PageLoadEvent;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
-use crate::connection::{commands, daemon, shared::Shared};
-use crate::settings::{fonts, remembered};
-use crate::system::{logging, window_frame};
+use argus_desktop_core::connection::daemon;
+use argus_desktop_core::settings::remembered;
+use argus_desktop_core::system::logging;
+
+use crate::connection::{commands, shared::Shared};
+use crate::settings::installed_fonts;
+use crate::system::window_frame;
 
 /// How often the shown pane's changed rows are sent: about a frame.
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
@@ -78,7 +68,7 @@ fn main() {
             tauri::async_runtime::spawn(daemon::run(shared.clone()));
             let found = shared.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                let fonts = fonts::installed();
+                let fonts = installed_fonts::installed();
                 found.act(|session| session.found_fonts(fonts));
             });
             let configured = shared.clone();

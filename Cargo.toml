@@ -4,6 +4,7 @@ members = [
     "crates/argus-protocol",
     "crates/argusd",
     "crates/argus-client",
+    "crates/argus-desktop-core",
     "crates/argus-desktop",
     "crates/argus-gpui",
 ]
@@ -11,10 +12,12 @@ members = [
 # own, so a plain `cargo build` or `cargo test` leaves it out; `--workspace`
 # or `-p argus-desktop` builds it. `argus-gpui` is out for the same reason: it
 # brings GPUI's crates, so it builds with `--workspace` or `-p argus-gpui`.
+# `argus-desktop-core` has no webview, so it is built by default.
 default-members = [
     "crates/argus-protocol",
     "crates/argusd",
     "crates/argus-client",
+    "crates/argus-desktop-core",
 ]
 
 [workspace.package]

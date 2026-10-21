@@ -6,12 +6,13 @@ checkouts. This document describes the code as it exists today. Desired behavior
 
 ## Process model
 
-Argus has four binaries:
+Argus has four binaries and one library:
 
 - `argus`: the ratatui/crossterm client.
 - `argusd`: the daemon that owns PTYs, terminal state, Git state, and runtime persistence.
 - `argus-hook`: the helper managed hooks run, and the command an agent runs to report on itself.
 - `argus-desktop`: a desktop window, a second view of the same daemon, drawn in a webview.
+- `argus-desktop-core` (the library): what that window holds and says, with no window in it, for the webview window and the GPUI one to share.
 
 The client starts the daemon lazily when it cannot connect. On Unix the daemon process calls
 `setsid`; on Windows it starts in a detached process group. Closing the client does not stop the
@@ -114,7 +115,7 @@ back. A theme may also set the shape tokens, the radii, control heights and head
 system draws with, and brings its own interface and code faces as the default, with the Settings
 choice still in front of them. Each font is the family of one
 installed on the machine, typed or picked from a list under the field that draws each family in its
-own face: the families `settings/fonts` reads at start, those the webview can find under that name,
+own face: the families `settings/installed_fonts` reads at start, those the webview can find under that name,
 with a note when nothing is called what the field holds. A half-typed name is not chosen until it is
 picked, entered or left. The code font, offered from the monospaced families, goes in front of the
 bundled code face (JetBrains Mono unless the theme bundles another) and Symbols Nerd Font Mono, so the panes draw a prompt's or an editor's Nerd
@@ -124,7 +125,7 @@ own, and draws the rest. The window is always built transparent, since that can 
 be set as it is made, so the opacity is only the page's alpha on its large fills — the sidebar, the
 strip, the stages and the terminal's background — and never on text or borders, and moving it never
 rebuilds the window. What shows through is Clear, or on Windows Mica (Windows 11 only, greyed out
-with the reason elsewhere) or Acrylic, which `settings/backdrop` puts on and takes off the live
+with the reason elsewhere) or Acrylic, which `settings/vibrancy` puts on and takes off the live
 window through `window-vibrancy`; elsewhere only Clear is offered. A notification names the pane,
 what came of it and where, for an agent turning waiting, needs-review or failed, never for the pane
 watched in a focused window, and by default only while the window is in the background: the window's
@@ -645,28 +646,25 @@ result of a request; `ui` is a pure function of it.
 | `settings` | preferences, and where they live on disk |
 | `fixtures` | the builders every test module shares: the tree, and a pane's view as the daemon's messages leave it |
 
-`argus-desktop` is the desktop window. It holds what it was sent and draws it; everything it knows
-of a pane, a checkout or the daemon came from the protocol, and the page only draws and reports.
+`argus-desktop-core` is what the desktop window holds and says with no window in it: the session
+over the daemon's tree, each surface's state, the events and calls the page and the daemon trade, and
+what is remembered between runs. It names no windowing or platform crate, so the Tauri window and the
+GPUI one both stand on it.
 
 | module | answers |
 | --- | --- |
-| `main` | startup: the runtime, the window, and running until it closes |
 | `session` | what this window holds of the daemon and routes between its parts — the tree, the project and repository chosen on the rail — and which part each message, refusal and page call is for |
 | `connection` | how the window trades with the daemon and the page |
-| `connection/commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `connection::page::Call` — and which part of the window answers each call |
-| `connection/daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
+| `connection/daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes; the state that holds the session is reached through `SessionOwner` |
 | `connection/page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call`; a surface that keeps what it last sent defines its own page and gestures, which these name |
 | `connection/sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once, or of something always on screen, so it hears only what differs |
-| `connection/shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
 | `system` | what the window asks of the machine it runs on |
-| `system/clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `system/logging` | where the window's own diagnostics go |
-| `system/notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
+| `system/notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, and what it says |
 | `system/opener` | handing something to the system's opener: a link in a view, only an `http` or `https` one, and a file or folder of a checkout the file manager shows, only one inside it |
-| `system/window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
 | `settings` | what the person chose for this window, what it remembers between runs, and what this machine offers to choose from |
-| `settings/backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
-| `settings/fonts` | which font families this machine has installed, by every name the webview might know each by, and which are monospaced, for the Settings dialog to offer |
+| `settings/backdrop` | which backdrops this machine can draw behind a see-through window, and whether one may be chosen |
+| `settings/fonts` | which font families to offer in the Settings dialog from the faces a machine has: each once, by every name the webview might know it by, monospaced if any of its faces is |
 | `settings/preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
 | `settings/remembered` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
 | `chrome` | the rail and the status bar around the stage |
@@ -735,6 +733,24 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 | `screens` | the scenes the screenshot harness draws: a session brought to each screen the window shows, and the events a fresh page hears there, with a stand-in daemon answering what each scene asks |
 | `screens/live` | a scene served live to a page in a browser: its calls reach a real session, the stand-in daemon answers them, and what the page hears goes back |
+
+`argus-desktop` is the Tauri desktop window. It holds what it was sent and draws it; everything it knows
+of a pane, a checkout or the daemon came from the protocol, and the page only draws and reports. What is
+here is only what needs Tauri or the machine; the rest is `argus-desktop-core`.
+
+| module | answers |
+| --- | --- |
+| `main` | startup: the runtime, the window, and running until it closes |
+| `connection` | how the Tauri window hands the page's calls to the session and the session's events to the page |
+| `connection/commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `connection::page::Call` — and which part of the window answers each call |
+| `connection/shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
+| `system` | what the Tauri window asks of the machine it runs on |
+| `system/clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
+| `system/toast` | handing an alert to the system's notifications, best effort |
+| `system/window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
+| `settings` | what the Tauri window draws behind itself and which fonts it finds installed; the choices themselves are `argus-desktop-core`'s |
+| `settings/vibrancy` | putting the chosen backdrop on the live window, taking off whichever was there |
+| `settings/installed_fonts` | which font families this machine has installed, read from its font files by every name the webview might know each by, and which are monospaced |
 
 `argus-gpui` is the spike for moving the desktop window onto GPUI through `gpui-kit`. It proves each
 piece the port depends on in a frame of its own, independent of `Session`, and is replaced by the

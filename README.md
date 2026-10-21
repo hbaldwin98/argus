@@ -6,12 +6,13 @@ Argus is a terminal workspace for running shells and AI command-line agents acro
 One persistent daemon owns the processes and PTYs; the TUI can detach and reconnect without stopping
 them.
 
-The workspace builds four executables:
+The workspace builds four executables and one library:
 
 - `argus`: the terminal client.
 - `argusd`: the daemon that owns panes, Git state, and session restore.
 - `argus-hook`: a helper that lets agent harnesses report status and pane titles.
 - `argus-desktop`: a desktop window onto the same daemon, opened with `argus desktop`.
+- `argus-desktop-core`: the library the desktop builds on, holding what that window holds and says with no window in it.
 
 ## Features
 
@@ -88,7 +89,7 @@ sudo apt install libwebkit2gtk-4.1-0                   # to run
 
 macOS and Windows need nothing extra; Windows uses the WebView2 runtime it ships with. A plain
 `cargo build` or `cargo test` leaves the desktop crate out, so the terminal client and the daemon
-build without WebKitGTK; `--workspace` or `-p argus-desktop` builds it.
+build without WebKitGTK; `--workspace` or `-p argus-desktop` builds it (`argus-desktop-core`, which has no webview, is built by default).
 
 libgit2 is built from vendored source, and Argus reads repositories only locally — fetching and
 pulling go through the `git` on `PATH` — so neither OpenSSL nor a system libgit2 is required.
@@ -981,8 +982,8 @@ npm run fmt       # format the TypeScript and assets/style.css with oxfmt
 npm run check     # compile, oxlint with warnings denied, and oxfmt --check, as CI does
 ```
 
-The types of what Rust sends the page are written from `crates/argus-desktop/src/connection/page.rs`
-into `page/src/bindings` by `cargo test -p argus-desktop`; commit them with the change to
+The types of what Rust sends the page are written from `crates/argus-desktop-core/src/connection/page.rs`
+into `page/src/bindings` by `cargo test -p argus-desktop-core`; commit them with the change to
 `connection/page.rs`. A `tsconfig.json` is in `page/`, so any TypeScript language server reads the
 page as the compiler does.
 

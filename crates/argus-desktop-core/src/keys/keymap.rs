@@ -1266,7 +1266,7 @@ mod tests {
     #[test]
     fn the_page_reads_keys_only_through_the_keymap() {
         use std::path::{Path, PathBuf};
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/page/src");
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../argus-desktop/page/src");
         // Every folder but `bindings`, whose types are Rust's, each module
         // named by its path under `src` with `/` on every system.
         fn walk(dir: &Path, src: &Path, out: &mut Vec<(String, PathBuf)>) {

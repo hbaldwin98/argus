@@ -1,56 +1,17 @@
-//! Which font families this machine has installed, by every name the
-//! webview might know each by, and which are monospaced, for the Settings
-//! dialog to offer.
+//! Which font families to offer in the Settings dialog, from the faces a
+//! machine has: each family once, by every name the webview might know it
+//! by, marked monospaced if any of its faces is. Reading the faces is the
+//! window's (`installed_fonts` in the binary that draws).
 
 use std::collections::BTreeMap;
 
-use ttf_parser::name_id::{FAMILY, TYPOGRAPHIC_FAMILY};
-use ttf_parser::Language;
-
 use crate::connection::page::FontFamily;
-
-/// Read from every font file on the machine, so slow enough to be done
-/// once, off the window's thread.
-pub fn installed() -> Vec<FontFamily> {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
-    let mut faces = Vec::new();
-    for face in db.faces() {
-        db.with_face_data(face.id, |data, index| {
-            if let Ok(parsed) = ttf_parser::Face::parse(data, index) {
-                faces.push((names(&parsed), parsed.is_monospaced()));
-            }
-        });
-    }
-    families(faces)
-}
-
-/// A face's family as both its legacy and its typographic name: Windows
-/// knows a Nerd Font as `JetBrainsMono NFM`, fontconfig as `JetBrainsMono
-/// Nerd Font Mono`, and the page keeps whichever its webview draws.
-fn names(face: &ttf_parser::Face) -> Vec<String> {
-    // Only a Unicode record decodes; a Mac Roman copy of the same name is
-    // skipped rather than chosen and lost.
-    let english = |id: u16| {
-        let named = || {
-            face.names()
-                .into_iter()
-                .filter(move |n| n.name_id == id)
-                .filter_map(|n| Some((n.language(), n.to_string()?)))
-        };
-        named()
-            .find(|(language, _)| *language == Language::English_UnitedStates)
-            .or_else(|| named().next())
-            .map(|(_, name)| name)
-    };
-    [FAMILY, TYPOGRAPHIC_FAMILY].into_iter().filter_map(english).collect()
-}
 
 /// The families, once each, in the order a person reads them, each
 /// monospaced if any of its faces is. A name starting with a dot is
 /// macOS's own, hidden from every picker; one with a quote could not be
 /// chosen, since the setting strips it.
-fn families(faces: Vec<(Vec<String>, bool)>) -> Vec<FontFamily> {
+pub fn families(faces: Vec<(Vec<String>, bool)>) -> Vec<FontFamily> {
     let mut unique: BTreeMap<String, FontFamily> = BTreeMap::new();
     for (names, mono) in faces {
         for name in names {

@@ -192,7 +192,7 @@ try {
   // Another file clicked: Rust says so at once, the daemon's text follows.
   // Every frame between is recorded: none may show a skeleton or an empty
   // editor, and the new file's first frame is coloured already.
-  const other = 'crates/argus-desktop/src/chrome/rail.rs';
+  const other = 'crates/argus-desktop-core/src/chrome/rail.rs';
   const otherText = readFileSync(resolve(here, '../../../../..', other), 'utf8').replaceAll(
     '\r\n',
     '\n',

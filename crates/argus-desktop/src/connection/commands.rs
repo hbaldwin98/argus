@@ -14,10 +14,10 @@ use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{State, WebviewWindow};
 
-use crate::settings::backdrop;
+use crate::settings::vibrancy;
 use crate::system::clipboard;
-use crate::system::opener;
-use crate::connection::page::{Call, Event, SettingChange};
+use argus_desktop_core::system::opener;
+use argus_desktop_core::connection::page::{Call, Event, SettingChange};
 use crate::connection::shared::Shared;
 use crate::system::window_frame;
 
@@ -80,7 +80,7 @@ pub fn scale(window: &WebviewWindow, shared: &Shared) -> Answer {
 pub fn dress(window: &WebviewWindow, shared: &Shared) {
     let (theme, chosen) = shared.read(|s| s.look());
     window_frame::paint(window, theme);
-    backdrop::show(window, chosen, theme.is_dark(window_frame::system_dark(window)));
+    vibrancy::show(window, chosen, theme.is_dark(window_frame::system_dark(window)));
 }
 
 fn paste_clipboard(shared: &Shared) {

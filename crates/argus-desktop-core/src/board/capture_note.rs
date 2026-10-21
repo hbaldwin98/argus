@@ -77,6 +77,7 @@ pub struct NoteDecision {
     pub because: Option<String>,
 }
 
+#[derive(Default)]
 pub struct CaptureNote {
     note: String,
     sent: Option<Sending>,

@@ -1,5 +1,5 @@
-# Read by ts-rs when `cargo test -p argus-desktop` writes the page's
-# TypeScript types from crates/argus-desktop/src/connection/page.rs: ids
+# Read by ts-rs when `cargo test -p argus-desktop-core` writes the page's
+# TypeScript types from crates/argus-desktop-core/src/connection/page.rs: ids
 # travel as JSON numbers, not bigints, and the types land beside the
 # page's own sources.
 [env]

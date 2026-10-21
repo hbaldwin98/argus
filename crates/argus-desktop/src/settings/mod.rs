@@ -1,7 +1,5 @@
-//! What the person chose for this window, what it remembers between runs,
-//! and what this machine offers to choose from.
+//! What the Tauri window draws behind itself and which fonts it finds
+//! installed; the choices themselves are `argus_desktop_core::settings`.
 
-pub mod backdrop;
-pub mod fonts;
-pub mod preferences;
-pub mod remembered;
+pub mod installed_fonts;
+pub mod vibrancy;

@@ -1,7 +1,5 @@
-//! How the window trades with the daemon and the page.
+//! How the Tauri window hands the page's calls to the session and the
+//! session's events to the page.
 
 pub mod commands;
-pub mod daemon;
-pub mod page;
-pub mod sent;
 pub mod shared;

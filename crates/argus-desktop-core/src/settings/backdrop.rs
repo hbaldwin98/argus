@@ -1,15 +1,10 @@
-//! What shows through the window where its background is see-through: the
-//! backdrops this machine can draw, and putting the chosen one on the live
-//! window.
+//! Which backdrops this machine can draw behind a see-through window, and
+//! whether one may be chosen. Putting one on a window is the window's
+//! (`settings::vibrancy` in the binary that draws).
 //!
-//! The window is always built transparent, since that can only be set when
-//! it is made; how much shows through is the page's alpha on its fills, so
-//! neither the opacity nor the backdrop ever rebuilds the window. Mica and
-//! Acrylic are Windows' own, through `window-vibrancy`, which puts one on
-//! and takes it off a live window. Elsewhere only Clear is offered: Linux
-//! has no blur to ask for, and macOS's own vibrancy is left for later.
-
-use tauri::WebviewWindow;
+//! Mica and Acrylic are Windows' own, so what is offered is a question of
+//! the Windows build. Elsewhere only Clear is offered: Linux has no blur to
+//! ask for, and macOS's own vibrancy is left for later.
 
 use crate::connection::page::BackdropOffer;
 use crate::settings::remembered::Backdrop;
@@ -55,29 +50,6 @@ fn windows_build() -> Option<u32> {
 #[cfg(not(windows))]
 fn windows_build() -> Option<u32> {
     None
-}
-
-/// Puts `backdrop` behind the window, taking off whichever was there.
-/// `dark` is the theme drawn, which Mica takes its tint from.
-pub fn show(window: &WebviewWindow, backdrop: Backdrop, dark: bool) {
-    #[cfg(windows)]
-    {
-        // Clearing one that is not on is no error worth hearing.
-        let _ = window_vibrancy::clear_mica(window);
-        let _ = window_vibrancy::clear_acrylic(window);
-        let shown = match backdrop {
-            Backdrop::Clear => Ok(()),
-            Backdrop::Mica => window_vibrancy::apply_mica(window, Some(dark)),
-            // No tint of its own: the page's background, at the opacity
-            // chosen, is the tint.
-            Backdrop::Acrylic => window_vibrancy::apply_acrylic(window, Some((0, 0, 0, 0))),
-        };
-        if let Err(err) = shown {
-            tracing::warn!("could not put {backdrop:?} behind the window: {err}");
-        }
-    }
-    #[cfg(not(windows))]
-    let _ = (window, backdrop, dark);
 }
 
 #[cfg(test)]

@@ -1304,7 +1304,7 @@ fn claude_trim(cols: usize) -> (Vec<String>, (usize, usize)) {
 
 fn claude_screens(cols: usize) -> (Vec<String>, (usize, usize)) {
     let mut lines: Vec<String> = [
-        "«g»●«/» «b»Bash«/»(cargo test -p argus-desktop --locked write_screens -- --ignored)",
+        "«g»●«/» «b»Bash«/»(cargo test -p argus-desktop-core --locked write_screens -- --ignored)",
         "  ⎿  running 1 test",
         "     test screens::write_screens ... «g»ok«/»",
         "     test result: «g»ok«/». 1 passed; 0 failed; 0 ignored; 0 measured; 433 filtered out; finished in 1.92s",
@@ -1323,7 +1323,7 @@ fn claude_screens(cols: usize) -> (Vec<String>, (usize, usize)) {
         "  «b»Not reachable from the session«/»",
         "  • a dialog only the page opens is opened by the harness with a click",
         "",
-        "  «d»cargo test -p argus-desktop --locked      434 passed«/»",
+        "  «d»cargo test -p argus-desktop-core --locked 434 passed«/»",
         "  «d»cargo clippy … -D warnings               clean«/»",
         "",
     ]
@@ -1514,7 +1514,7 @@ fn npm_dev() -> (Vec<String>, (usize, usize)) {
 
 /// An editor open on `session.rs`, its rows highlighted as the review's are.
 fn editor_rows(rows: usize, cols: usize) -> Vec<Vec<Cell>> {
-    let source = read_file("crates/argus-desktop/src/session.rs");
+    let source = read_file("crates/argus-desktop-core/src/session.rs");
     let colour = |kind: HighlightKind| match kind {
         HighlightKind::Keyword => Color::Rgb(203, 166, 247),
         HighlightKind::Str => Color::Rgb(166, 227, 161),
@@ -1548,7 +1548,7 @@ fn editor_rows(rows: usize, cols: usize) -> Vec<Vec<Cell>> {
             cells
         })
         .collect();
-    let mode = format!("«inv» NORMAL «/» crates\\argus-desktop\\src\\session.rs{}rust  utf-8  {}:9 ", " ".repeat(cols.saturating_sub(70)), first + 4);
+    let mode = format!("«inv» NORMAL «/» crates\\argus-desktop-core\\src\\session.rs{}rust  utf-8  {}:9 ", " ".repeat(cols.saturating_sub(70)), first + 4);
     grid.push(styled(&mode, cols));
     grid.push(styled("", cols));
     grid
@@ -2063,14 +2063,14 @@ pub fn scenes() -> Vec<Scene> {
         scene("code", "Code — a file with its tree and outline", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::ShowCode { open: true })
-                .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Tree { path: "crates/argus-desktop/src/chrome/status.rs".into() } } })
+                .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Tree { path: "crates/argus-desktop-core/src/chrome/status.rs".into() } } })
                 .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Line { line: 52, extend: false } } });
             w.s
         }),
         scene("code-edit", "Code — the file open in the editor", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::ShowCode { open: true })
-                .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Tree { path: "crates/argus-desktop/src/chrome/status.rs".into() } } })
+                .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Tree { path: "crates/argus-desktop-core/src/chrome/status.rs".into() } } })
                 .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Line { line: 52, extend: false } } });
             w.s
         }),
@@ -2238,7 +2238,7 @@ fn write_screens() {
         }
         lines.push(serde_json::to_string(&json).unwrap());
     }
-    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("page/test/screens");
+    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../argus-desktop/page/test/screens");
     std::fs::create_dir_all(&out).unwrap();
     std::fs::write(out.join("scenes.json"), format!("[\n{}\n]\n", lines.join(",\n"))).unwrap();
 }

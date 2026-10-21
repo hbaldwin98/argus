@@ -247,6 +247,7 @@ impl AddProject {
     /// The add, named `request_id`, or none, with why said in the dialog.
     /// The dialog stays up until the daemon has made the project and a
     /// tree holds it, so a refusal leaves what was typed.
+    #[allow(clippy::result_unit_err)]
     pub fn add(&mut self, request_id: u64) -> Result<ClientMsg, ()> {
         if self.adding.is_some() {
             return Err(());

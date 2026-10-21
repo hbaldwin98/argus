@@ -1,5 +1,6 @@
 //! The system notification an agent coming to need you raises: whether a
-//! tree's changes raise one, what it says, and handing it to the system.
+//! tree's changes raise one, and what it says. Handing it to the system is
+//! the window's (`system::toast` in the binary that draws).
 //!
 //! The window's version of the terminal client's bell. Like the chime it
 //! leaves out the pane being watched in a focused window; the person may
@@ -7,8 +8,6 @@
 //! to miss and a notification is the only thing on screen.
 
 use argus_protocol::{HeldTree, PaneId, PaneStatus, ProjectInfo, Transition};
-use tauri::AppHandle;
-use tauri_plugin_notification::NotificationExt;
 
 use crate::settings::remembered::Preferences;
 
@@ -69,14 +68,6 @@ fn place(tree: &[ProjectInfo], pane: PaneId) -> Option<String> {
 fn capitalise(text: &str) -> String {
     let mut chars = text.chars();
     chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
-}
-
-/// Best effort: a system with notifications off, or none to show them,
-/// costs the person the notification and nothing else.
-pub fn show(app: &AppHandle, alert: &Alert) {
-    if let Err(err) = app.notification().builder().title(&alert.title).body(&alert.body).show() {
-        tracing::warn!("could not raise a notification: {err}");
-    }
 }
 
 #[cfg(test)]

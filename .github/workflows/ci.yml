@@ -72,7 +72,7 @@ jobs:
         run: cargo test --workspace --locked
 
       # `cargo test` writes the desktop page's TypeScript types from
-      # crates/argus-desktop/src/connection/page.rs; what is committed has
+      # crates/argus-desktop-core/src/connection/page.rs; what is committed has
       # to be what it writes, or the page compiles against a contract Rust
       # no longer keeps. Checked on one platform: the output is the same on
       # each.
@@ -83,7 +83,7 @@ jobs:
           changed="$(git status --porcelain -- crates/argus-desktop/page/src/bindings crates/argus-desktop/page/test/contract)"
           if [[ -n "$changed" ]]; then
             echo "$changed"
-            echo "run cargo test -p argus-desktop and commit page/src/bindings and page/test/contract" >&2
+            echo "run cargo test -p argus-desktop-core and commit page/src/bindings and page/test/contract" >&2
             exit 1
           fi
 

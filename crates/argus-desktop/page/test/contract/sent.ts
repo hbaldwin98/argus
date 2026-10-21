@@ -1,4 +1,4 @@
-// Written by `cargo test -p argus-desktop`, from session.rs: every event a
+// Written by `cargo test -p argus-desktop-core`, from session.rs: every event a
 // page is sent, for `npm run check` to hold to the bindings. Not edited by hand.
 
 import type { Event } from '../../src/bindings/Event';

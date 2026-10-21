@@ -4564,13 +4564,13 @@ mod tests {
 
         let values: Vec<String> = sent.iter().map(|value| serde_json::to_string_pretty(value).unwrap()).collect();
         let file = format!(
-            "// Written by `cargo test -p argus-desktop`, from session.rs: every event a\n\
+            "// Written by `cargo test -p argus-desktop-core`, from session.rs: every event a\n\
              // page is sent, for `npm run check` to hold to the bindings. Not edited by hand.\n\n\
              import type {{ Event }} from '../../src/bindings/Event';\n\n\
              export const sent = [\n{}\n] satisfies Event[];\n",
             values.join(",\n"),
         );
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("page/test/contract/sent.ts");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../argus-desktop/page/test/contract/sent.ts");
         if std::fs::read_to_string(&path).ok().as_deref() != Some(file.as_str()) {
             std::fs::write(&path, file).unwrap();
         }

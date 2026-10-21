@@ -8,7 +8,7 @@
 
 use tauri::{WebviewWindow, WebviewWindowBuilder, Wry};
 
-use crate::settings::remembered::Theme;
+use argus_desktop_core::settings::remembered::Theme;
 
 /// Takes the system's title bar off a window about to be built.
 pub fn frameless<'a>(

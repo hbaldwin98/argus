@@ -971,7 +971,7 @@ mod tests {
     #[test]
     fn the_page_never_reads_what_a_panel_can_do_from_its_name() {
         use std::path::{Path, PathBuf};
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/page/src");
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../argus-desktop/page/src");
         let prefixes = ["'saved:", "\"saved:", "`saved:", "'extension:", "\"extension:", "`extension:"];
         let names = ["=== 'console'", "!== 'console'", "=== 'views'", "!== 'views'"];
         // Every folder but `bindings`, whose types are Rust's, each module

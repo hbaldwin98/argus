@@ -15,11 +15,12 @@ use tauri::AppHandle;
 use tokio::sync::{mpsc, watch, Notify};
 
 use crate::system::clipboard;
-use crate::system::notifications;
-use crate::code::edit::EditEvent;
-use crate::connection::page::Event;
-use crate::session::Session;
-use crate::settings::remembered::{self, Settings};
+use crate::system::toast;
+use argus_desktop_core::code::edit::EditEvent;
+use argus_desktop_core::connection::daemon::SessionOwner;
+use argus_desktop_core::connection::page::Event;
+use argus_desktop_core::session::Session;
+use argus_desktop_core::settings::remembered::{self, Settings};
 
 pub struct Shared {
     session: Mutex<Session>,
@@ -58,7 +59,7 @@ impl Shared {
         // Written here rather than by the page, which may write only
         // inside the gesture's own handler, and a key reaches Rust first.
         if let Some(url) = session.take_opening() {
-            if let Err(said) = crate::system::opener::open(&url) {
+            if let Err(said) = argus_desktop_core::system::opener::open(&url) {
                 let msgs = session.note(said);
                 self.send(msgs);
             }
@@ -79,7 +80,7 @@ impl Shared {
         let alerts = session.take_alerts();
         if let Some(app) = self.app.get() {
             for alert in &alerts {
-                notifications::show(app, alert);
+                toast::show(app, alert);
             }
         }
     }
@@ -119,13 +120,6 @@ impl Shared {
     /// Tells the page what the daemon said of a file its editor has open,
     /// past the session as `relay` is.
     pub fn tell_page(&self, event: Event) {
-        self.publish(vec![event]);
-    }
-
-    /// A browser's picture: kept in the session, and sent the page past
-    /// the rest of it, as `tell_page` is.
-    pub fn browser_shot(&self, frame: argus_protocol::BrowserFrame) {
-        let event = lock(&self.session).browser_shot(frame);
         self.publish(vec![event]);
     }
 
@@ -199,6 +193,45 @@ impl Shared {
                 tracing::debug!("the page did not take an event: {err}");
             }
         }
+    }
+}
+
+/// What `connection::daemon`'s loop calls, each the method of the same
+/// name above: this window's `Shared` is the session's owner.
+impl SessionOwner for Shared {
+    fn watch_host(&self) -> watch::Receiver<Option<String>> {
+        Shared::watch_host(self)
+    }
+
+    fn act(&self, change: impl FnOnce(&mut Session) -> Vec<ClientMsg>) {
+        Shared::act(self, change)
+    }
+
+    fn connected(
+        &self,
+        out: mpsc::UnboundedSender<ClientMsg>,
+        daemon: Option<Hello>,
+        alarm: Option<String>,
+        opening: Vec<ServerMsg>,
+    ) {
+        Shared::connected(self, out, daemon, alarm, opening)
+    }
+
+    fn disconnected(&self) {
+        Shared::disconnected(self)
+    }
+
+    fn browser_shot(&self, frame: argus_protocol::BrowserFrame) {
+        let event = lock(&self.session).browser_shot(frame);
+        self.publish(vec![event]);
+    }
+
+    fn tell_page(&self, event: Event) {
+        Shared::tell_page(self, event)
+    }
+
+    async fn reconnect_asked(&self) {
+        Shared::reconnect_asked(self).await
     }
 }
 
