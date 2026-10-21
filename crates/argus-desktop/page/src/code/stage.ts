@@ -641,7 +641,9 @@ function file(c: CodePage): HTMLElement {
       el(
         'div',
         { class: 'code-wrap' },
-        loaded ? loaded.host(c) : ghosts([[0.5], [0.9], [0.8], [0.7]]),
+        // Blank while the editor first loads, as the editor itself is: a
+        // skeleton would jump to the text.
+        loaded ? loaded.host(c, drawCode) : el('div', { class: 'code-editor' }),
       ),
     );
   }
@@ -860,7 +862,7 @@ export function drawCode(): void {
   if (editing && editor && editing.dataset['path'] === c.path) {
     // Everything round the editor is built anew, and the editor left where
     // it is: moved, it would lose the keys and an input method's text.
-    const kept = editor.host(c);
+    const kept = editor.host(c, drawCode);
     const wrap = editing.querySelector('.code-wrap');
     // The first draw after the editor loaded holds its placeholder.
     if (wrap && kept.parentElement !== wrap) wrap.replaceChildren(kept);

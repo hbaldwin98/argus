@@ -10,7 +10,7 @@
 import { Annotation, ChangeSet, Compartment, Decoration, EditorSelection, EditorState, EditorView, GutterMarker, RangeSet, StateEffect, StateField, Transaction, Vim, WidgetType, bracketMatching, closeBrackets, closeBracketsKeymap, defaultKeymap, drawSelection, gutter, highlightActiveLine, highlightActiveLineGutter, highlightSelectionMatches, history, historyKeymap, indentUnit, indentWithTab, keymap, lineNumbers, searchKeymap, vim, } from '../vendor/codemirror.js';
 import { colours } from './colours.js';
 import { offerFor } from './grammar/fetch.js';
-import { install, installedFor } from './grammar/load.js';
+import { install, installedFor, loadedFor } from './grammar/load.js';
 import { el } from '../kit/dom.js';
 import { call } from '../connection/tauri.js';
 import { state as page } from '../state.js';
@@ -353,6 +353,7 @@ function create(checkout, path, at) {
         reread: null,
         marked: '',
         page: null,
+        redraw: null,
         retiring: false,
         reopen: false,
         at,
@@ -366,6 +367,7 @@ function create(checkout, path, at) {
 function mountView(s, text) {
     const sync = new Synced(text, 0);
     s.sync = sync;
+    const ready = loadedFor(s.path);
     const state = EditorState.create({
         doc: text,
         extensions: [
@@ -382,8 +384,9 @@ function mountView(s, text) {
             bracketMatching(),
             closeBrackets(),
             highlightSelectionMatches(),
-            // Filled once the file's grammar is found installed, or installed.
-            s.colour.of([]),
+            // A grammar loaded already colours the first paint; otherwise it is
+            // filled once found installed, or installed.
+            s.colour.of(ready ? colours(ready) : []),
             lit,
             clashed,
             s.editable.of(EditorState.readOnly.of(false)),
@@ -414,7 +417,8 @@ function mountView(s, text) {
     if (s.page)
         mark(s, s.page);
     goTo(s, s.at);
-    void findGrammar(s);
+    if (!ready)
+        void findGrammar(s);
 }
 function stage(action) {
     call('code', { gesture: { on: 'action', action } });
@@ -516,11 +520,9 @@ function resolve(s, keep) {
 }
 /** The editor for the file `c` reads, kept across redraws: the stage
  *  builds itself anew each time, and the buffer must not go with it. */
-export function host(c) {
+export function host(c, redraw) {
     const path = c.path ?? '';
     const key = keyOf(c.checkout, path);
-    if (current && current.key !== key)
-        retire(current);
     let s = sessions.get(key);
     if (!s)
         s = create(c.checkout, path, c.at);
@@ -530,10 +532,19 @@ export function host(c) {
         ask({ on: 'open', checkout: s.checkout, path: s.path });
     }
     s.retiring = false;
-    if (s !== current)
-        s.focus = true;
-    current = s;
     mark(s, c);
+    if (s !== current) {
+        // The file before stays up until this one's text is in hand, rather
+        // than an empty editor between the two.
+        if (!s.view && s.status !== 'closed' && current?.view) {
+            s.redraw = redraw;
+            return current.el;
+        }
+        if (current)
+            retire(current);
+        s.focus = true;
+        current = s;
+    }
     // A line Rust moved to — the outline, a change — is gone to; the
     // editor's own cursor moves are never told it.
     if (c.at !== s.at) {
@@ -588,6 +599,12 @@ export function receive(e) {
             else
                 fromTheDisk(s, s.sync.reopened(e.text, e.version));
             s.view?.dispatch({ effects: s.editable.reconfigure(EditorState.readOnly.of(false)) });
+            // In place of the file that stayed up while this one opened.
+            if (s.redraw) {
+                const redraw = s.redraw;
+                s.redraw = null;
+                redraw();
+            }
             if (s.view && current === s)
                 shown();
             write(s);
@@ -621,6 +638,11 @@ export function receive(e) {
             break;
         case 'closed':
             tell(s, 'closed', e.reason);
+            if (s.redraw) {
+                const redraw = s.redraw;
+                s.redraw = null;
+                redraw();
+            }
             s.view?.dispatch({ effects: s.editable.reconfigure(EditorState.readOnly.of(true)) });
             done(s);
             break;

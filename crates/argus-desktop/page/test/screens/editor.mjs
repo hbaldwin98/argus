@@ -188,6 +188,53 @@ try {
   })`);
   console.log(`clash bar: ${JSON.stringify(clash.bar)}, theirs shown: ${clash.marked}`);
   writeFileSync(join(out, 'editor-clash.png'), await screenshot(tab));
+
+  // Another file clicked: Rust says so at once, the daemon's text follows.
+  // Every frame between is recorded: none may show a skeleton or an empty
+  // editor, and the new file's first frame is coloured already.
+  const other = 'crates/argus-desktop/src/chrome/rail.rs';
+  const otherText = readFileSync(resolve(here, '../../../../..', other), 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
+  await tab.evaluate(`(() => {
+    window.__frames = [];
+    const sample = () => {
+      const content = document.querySelector('#kstage .code-editor .cm-content');
+      window.__frames.push({
+        skeleton: !!document.querySelector('#kstage .skeleton'),
+        editor: !!content,
+        rail: !!content && content.textContent.includes('Rail'),
+        coloured: !!document.querySelector('#kstage .cm-content .sx-k'),
+      });
+      if (window.__frames.length < 40) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+    return true;
+  })()`);
+  const switched = { ...code, path: other, lines: [], fileLoading: true };
+  await tab.evaluate(`window.__deliver([${JSON.stringify(switched)}]); true`);
+  await settle(60);
+  await tab.evaluate(
+    `window.__deliver([${JSON.stringify({
+      type: 'edit',
+      on: 'opened',
+      checkout: code.checkout,
+      path: other,
+      version: 0,
+      text: otherText,
+    })}]); true`,
+  );
+  await settle(700);
+  const frames = await tab.evaluate('window.__frames');
+  const first = frames.findIndex((f) => f.rail);
+  if (frames.some((f) => f.skeleton || !f.editor) || first < 0 || !frames[first].coloured)
+    process.exitCode = 1;
+  console.log(
+    `switching files: ${frames.length} frames, skeleton in ${frames.filter((f) => f.skeleton).length}, ` +
+      `no editor in ${frames.filter((f) => !f.editor).length}, new file from frame ${first}, ` +
+      `coloured there: ${first >= 0 && frames[first].coloured}`,
+  );
 } finally {
   close();
 }

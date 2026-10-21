@@ -21,6 +21,10 @@ import {
 } from '../vendor/codemirror.js';
 import type { Loaded } from './grammar/load.js';
 
+/** How large a file is parsed before its first paint rather than after:
+ *  one opened coloured, not plain for a frame, at a cost paid once. */
+const PARSE_FIRST = 256 * 1024;
+
 /** A capture's colour by its first word, as the daemon colours the read
  *  view (`CAPTURES` in argusd's `syntax/highlight`), so both agree: a
  *  `keyword.control` is a keyword. Plain variables are left uncoloured. */
@@ -128,7 +132,8 @@ export function colours(grammar: Loaded): Extension {
 
       constructor(readonly view: EditorView) {
         this.parser.setLanguage(grammar.language);
-        this.queue();
+        if (view.state.doc.length <= PARSE_FIRST) this.parse();
+        else this.queue();
       }
 
       update(u: ViewUpdate): void {
@@ -157,15 +162,20 @@ export function colours(grammar: Loaded): Extension {
 
       private work(): void {
         this.queued = false;
-        if (this.gone || !this.stale) return;
+        if (this.gone || !this.stale || !this.parse()) return;
+        // A transaction of nothing, for the view to read the colours.
+        this.view.dispatch({});
+      }
+
+      /** Parses and colours, saying whether it could. */
+      private parse(): boolean {
         const next = this.parser.parse(reader(this.view.state.doc), this.tree);
-        if (!next) return;
+        if (!next) return false;
         this.tree?.delete();
         this.tree = next;
         this.stale = false;
         this.decorations = this.draw();
-        // A transaction of nothing, for the view to read the colours.
-        this.view.dispatch({});
+        return true;
       }
 
       private draw(): DecorationSet {

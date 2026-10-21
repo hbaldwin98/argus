@@ -13,6 +13,8 @@ function start() {
     return runtime;
 }
 const ready = new Map();
+/** The ones loaded, for an editor to colour with in its first paint. */
+const done = new Map();
 function load(grammar) {
     let loading = ready.get(grammar.name);
     if (!loading) {
@@ -26,6 +28,7 @@ function load(grammar) {
             };
         });
         ready.set(grammar.name, loading);
+        void loading.then((loaded) => done.set(loaded.name, loaded), () => { });
         // A grammar that failed to load may be installed again.
         loading.catch(() => ready.delete(grammar.name));
     }
@@ -39,6 +42,11 @@ export async function installedFor(path) {
         return null;
     const grammar = await installed(name);
     return grammar ? load(grammar) : null;
+}
+/** The grammar for `path` if it is loaded already, without waiting. */
+export function loadedFor(path) {
+    const name = knownFor(path)?.name ?? languageKey(path);
+    return name ? (done.get(name) ?? null) : null;
 }
 function languageKey(path) {
     const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase();

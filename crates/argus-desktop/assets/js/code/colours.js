@@ -4,6 +4,9 @@
 // its own straight after the key, which lands before the frame that paints
 // it, so a key costs only its text. Only the lines drawn are coloured.
 import { Decoration, Edit, Parser, RangeSetBuilder, ViewPlugin, } from '../vendor/codemirror.js';
+/** How large a file is parsed before its first paint rather than after:
+ *  one opened coloured, not plain for a frame, at a cost paid once. */
+const PARSE_FIRST = 256 * 1024;
 /** A capture's colour by its first word, as the daemon colours the read
  *  view (`CAPTURES` in argusd's `syntax/highlight`), so both agree: a
  *  `keyword.control` is a keyword. Plain variables are left uncoloured. */
@@ -103,7 +106,10 @@ export function colours(grammar) {
         constructor(view) {
             this.view = view;
             this.parser.setLanguage(grammar.language);
-            this.queue();
+            if (view.state.doc.length <= PARSE_FIRST)
+                this.parse();
+            else
+                this.queue();
         }
         update(u) {
             if (u.docChanged) {
@@ -131,17 +137,21 @@ export function colours(grammar) {
         }
         work() {
             this.queued = false;
-            if (this.gone || !this.stale)
+            if (this.gone || !this.stale || !this.parse())
                 return;
+            // A transaction of nothing, for the view to read the colours.
+            this.view.dispatch({});
+        }
+        /** Parses and colours, saying whether it could. */
+        parse() {
             const next = this.parser.parse(reader(this.view.state.doc), this.tree);
             if (!next)
-                return;
+                return false;
             this.tree?.delete();
             this.tree = next;
             this.stale = false;
             this.decorations = this.draw();
-            // A transaction of nothing, for the view to read the colours.
-            this.view.dispatch({});
+            return true;
         }
         draw() {
             const tree = this.tree;

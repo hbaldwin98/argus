@@ -452,7 +452,10 @@ function file(c) {
     let body;
     if (c.editing && c.path) {
         const loaded = theEditor();
-        return el('section', { class: 'code-file editing', 'data-path': c.path }, header(c), remark(c), el('div', { class: 'code-wrap' }, loaded ? loaded.host(c) : ghosts([[0.5], [0.9], [0.8], [0.7]])));
+        return el('section', { class: 'code-file editing', 'data-path': c.path }, header(c), remark(c), el('div', { class: 'code-wrap' }, 
+        // Blank while the editor first loads, as the editor itself is: a
+        // skeleton would jump to the text.
+        loaded ? loaded.host(c, drawCode) : el('div', { class: 'code-editor' })));
     }
     if (c.failed && c.lines.length === 0)
         body = el('div', { class: 'review-empty fg-muted' }, c.failed);
@@ -572,7 +575,7 @@ export function drawCode() {
     if (editing && editor && editing.dataset['path'] === c.path) {
         // Everything round the editor is built anew, and the editor left where
         // it is: moved, it would lose the keys and an input method's text.
-        const kept = editor.host(c);
+        const kept = editor.host(c, drawCode);
         const wrap = editing.querySelector('.code-wrap');
         // The first draw after the editor loaded holds its placeholder.
         if (wrap && kept.parentElement !== wrap)

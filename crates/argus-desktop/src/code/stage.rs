@@ -771,10 +771,15 @@ impl CodeStage {
         if self.version != CodeVersion::WorkingTree {
             return Err("only the working tree is edited; this version is history");
         }
+        if self.path.is_none() {
+            return Err("no file to edit");
+        }
+        // Not waiting on the read: the editor stands from the first draw, so
+        // a click between files never shows the read view's skeleton on the
+        // way. A file the read finds is not text gives the editor up then.
         match self.shown() {
-            Some(file) if file.note.is_none() => Ok(()),
-            Some(_) => Err("this file is not text that can be edited here"),
-            None => Err("no file to edit"),
+            Some(file) if file.note.is_some() => Err("this file is not text that can be edited here"),
+            _ => Ok(()),
         }
     }
 
@@ -1635,6 +1640,20 @@ mod tests {
         assert!(sent.iter().any(|m| matches!(m, ClientMsg::ListCode { .. })), "and the tree, whose changes it moved");
         assert_eq!(s.land, Some(3), "the cursor stays");
         assert_eq!(s.mark, Some(0), "and so does what was picked");
+    }
+
+    #[test]
+    fn a_file_clicked_is_edited_from_the_first_draw_not_once_its_read_arrives() {
+        let mut s = reading("src/a.rs", None);
+        s.can_edit = true;
+        s.click(CodeClick::Tree { path: "src/b.rs".into() }, || 7);
+        assert!(s.page(None).editing, "no read view's skeleton between the two editors");
+
+        let mut binary = file(7, "src/b.rs");
+        binary.lines.clear();
+        binary.note = Some("binary file".into());
+        s.receive_file(binary);
+        assert!(!s.page(None).editing, "the read says it is not text");
     }
 
     #[test]

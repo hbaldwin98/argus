@@ -47,7 +47,7 @@ import {
 } from '../vendor/codemirror.js';
 import { colours } from './colours.js';
 import { offerFor, type Offer } from './grammar/fetch.js';
-import { install, installedFor, type Loaded } from './grammar/load.js';
+import { install, installedFor, loadedFor, type Loaded } from './grammar/load.js';
 import { el } from '../kit/dom.js';
 import { call } from '../connection/tauri.js';
 import { state as page } from '../state.js';
@@ -102,6 +102,9 @@ interface Session {
   marked: string;
   /** The page they came on, kept until the editor mounts. */
   page: CodePage | null;
+  /** Draws the stage again: this one waits on its text while the file
+   *  before it stays up. */
+  redraw: (() => void) | null;
   /** No longer the one shown: closed once everything is written. */
   retiring: boolean;
   /** Opened again after the connection came back. */
@@ -453,6 +456,7 @@ function create(checkout: number, path: string, at: number): Session {
     reread: null,
     marked: '',
     page: null,
+    redraw: null,
     retiring: false,
     reopen: false,
     at,
@@ -467,6 +471,7 @@ function create(checkout: number, path: string, at: number): Session {
 function mountView(s: Session, text: string): void {
   const sync = new Synced(text, 0);
   s.sync = sync;
+  const ready = loadedFor(s.path);
   const state = EditorState.create({
     doc: text,
     extensions: [
@@ -483,8 +488,9 @@ function mountView(s: Session, text: string): void {
       bracketMatching(),
       closeBrackets(),
       highlightSelectionMatches(),
-      // Filled once the file's grammar is found installed, or installed.
-      s.colour.of([]),
+      // A grammar loaded already colours the first paint; otherwise it is
+      // filled once found installed, or installed.
+      s.colour.of(ready ? colours(ready) : []),
       lit,
       clashed,
       s.editable.of(EditorState.readOnly.of(false)),
@@ -513,7 +519,7 @@ function mountView(s: Session, text: string): void {
   byView.set(s.view, s);
   if (s.page) mark(s, s.page);
   goTo(s, s.at);
-  void findGrammar(s);
+  if (!ready) void findGrammar(s);
 }
 
 function stage(action: 'filter' | 'search'): void {
@@ -612,10 +618,9 @@ function resolve(s: Session, keep: 'mine' | 'theirs'): void {
 
 /** The editor for the file `c` reads, kept across redraws: the stage
  *  builds itself anew each time, and the buffer must not go with it. */
-export function host(c: CodePage): HTMLElement {
+export function host(c: CodePage, redraw: () => void): HTMLElement {
   const path = c.path ?? '';
   const key = keyOf(c.checkout, path);
-  if (current && current.key !== key) retire(current);
   let s = sessions.get(key);
   if (!s) s = create(c.checkout, path, c.at);
   else if (s.reopen) {
@@ -624,9 +629,18 @@ export function host(c: CodePage): HTMLElement {
     ask({ on: 'open', checkout: s.checkout, path: s.path });
   }
   s.retiring = false;
-  if (s !== current) s.focus = true;
-  current = s;
   mark(s, c);
+  if (s !== current) {
+    // The file before stays up until this one's text is in hand, rather
+    // than an empty editor between the two.
+    if (!s.view && s.status !== 'closed' && current?.view) {
+      s.redraw = redraw;
+      return current.el;
+    }
+    if (current) retire(current);
+    s.focus = true;
+    current = s;
+  }
   // A line Rust moved to — the outline, a change — is gone to; the
   // editor's own cursor moves are never told it.
   if (c.at !== s.at) {
@@ -679,6 +693,12 @@ export function receive(e: EditEvent): void {
       if (!s.sync) mountView(s, e.text);
       else fromTheDisk(s, s.sync.reopened(e.text, e.version));
       s.view?.dispatch({ effects: s.editable.reconfigure(EditorState.readOnly.of(false)) });
+      // In place of the file that stayed up while this one opened.
+      if (s.redraw) {
+        const redraw = s.redraw;
+        s.redraw = null;
+        redraw();
+      }
       if (s.view && current === s) shown();
       write(s);
       break;
@@ -709,6 +729,11 @@ export function receive(e: EditEvent): void {
       break;
     case 'closed':
       tell(s, 'closed', e.reason);
+      if (s.redraw) {
+        const redraw = s.redraw;
+        s.redraw = null;
+        redraw();
+      }
       s.view?.dispatch({ effects: s.editable.reconfigure(EditorState.readOnly.of(true)) });
       done(s);
       break;
