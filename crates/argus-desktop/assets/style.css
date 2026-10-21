@@ -889,6 +889,11 @@
      a one-pixel edge in the accent or the focus ring. */
   --mark-accent: inset 3px 0 0 var(--accent);
   --mark-ring: inset 3px 0 0 var(--ring);
+  /* The one mark a selected row carries on top of --bg-selected, chosen per
+     theme below; keyboard focus is the ring outline, never this. A card has a
+     border to light instead of a shadow, so it takes the edge's colour. */
+  --mark-sel: inset 3px 0 0 var(--ring);
+  --mark-sel-edge: var(--ring);
   --edge-accent: 0 0 0 1px var(--accent);
   --edge-ring-in: inset 0 0 0 1px var(--ring);
   --opacity-dim: 0.55;
@@ -1243,6 +1248,9 @@
   --type-heading: 510 15px/1.35 var(--font-ui);
   --type-label: 510 11px/1.4 var(--font-ui);
   --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
+  /* Linear marks a selected row with grey fill and hairline, no colour. */
+  --mark-sel: inset 0 0 0 1px var(--line-strong);
+  --mark-sel-edge: var(--line-strong);
 }
 
 :root[data-theme='carbon'],
@@ -1266,6 +1274,9 @@
   --type-label: 400 11px/1.4 var(--font-ui);
   --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-dialog: 0 2px 6px rgba(0, 0, 0, 0.3);
+  /* Carbon's selected row is a solid leading bar in its interactive blue. */
+  --mark-sel: inset 3px 0 0 var(--ring);
+  --mark-sel-edge: var(--ring);
 }
 
 :root[data-theme='flexoki'],
@@ -1287,6 +1298,9 @@
   --type-heading: 600 15px/1.35 var(--font-ui);
   --type-label: 600 11px/1.4 var(--font-ui);
   --shadow-pop: 0 4px 16px rgba(0, 0, 0, 0.4);
+  /* Flexoki is ink on paper: a selected row is outlined like a ruled box, not lit. */
+  --mark-sel: inset 0 0 0 1px var(--line-strong);
+  --mark-sel-edge: var(--line-strong);
 }
 
 :root[data-theme='kanagawa'],
@@ -1304,6 +1318,9 @@
   --type-heading: 600 15px/1.35 var(--font-ui);
   --type-label: 600 11px/1.4 var(--font-ui);
   --shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.45);
+  /* Kanagawa's selection is a wave-blue fill alone; nothing else is drawn on it. */
+  --mark-sel: none;
+  --mark-sel-edge: var(--line-strong);
 }
 
 :root[data-theme='rosePine'],
@@ -1323,6 +1340,9 @@
   --type-heading: 600 15px/1.35 var(--font-ui);
   --type-label: 600 11px/1.4 var(--font-ui);
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.35);
+  /* Rosé Pine is soft and rounded; the highlight fill is the whole selection. */
+  --mark-sel: none;
+  --mark-sel-edge: var(--line-strong);
 }
 
 :root[data-theme='nord'],
@@ -1343,6 +1363,9 @@
   --type-heading: 500 15px/1.35 var(--font-ui);
   --type-label: 500 11px/1.4 var(--font-ui);
   --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.3);
+  /* Nord's selection is a Polar Night fill (nord2) with no edge. */
+  --mark-sel: none;
+  --mark-sel-edge: var(--line-strong);
 }
 
 :root[data-theme='radix'],
@@ -1360,6 +1383,9 @@
   --type-heading: 500 15px/1.35 var(--font-ui);
   --type-label: 500 11px/1.4 var(--font-ui);
   --shadow-pop: 0 0 0 1px #363a3f, 0 8px 40px rgba(0, 0, 0, 0.4);
+  /* Radix gives a selected item a step-5 fill, and a step-7 border where it needs one. */
+  --mark-sel: inset 0 0 0 1px var(--line-strong);
+  --mark-sel-edge: var(--line-strong);
 }
 
 /* base */
@@ -2153,7 +2179,7 @@
 .pane.on:hover {
   background: var(--bg-selected);
   color: var(--fg);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
+  box-shadow: var(--mark-sel);
 }
 .sdot {
   width: 9px;
@@ -2188,11 +2214,13 @@
   background: var(--ok);
 }
 /* Off the Workspace the pane on screen is not the selection, the stage's
-   own nav item is: it keeps a lit edge and its text, not the box. */
+   own nav item is: it keeps an edge and its text, not the box. The edge is
+   drawn whatever the theme's mark, since a fill-only theme would otherwise
+   leave nothing to say which pane is on screen. */
 .rail-list.offstage .pane.on,
 .rail-list.offstage .pane.on:hover {
   background: transparent;
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 var(--mark-sel-edge);
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
 }
 .rail-list.offstage .pane.on:hover {
@@ -2202,7 +2230,7 @@
    from the pane on screen. */
 .co.picked,
 .pane.picked {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--ring);
   outline-offset: -1px;
 }
 .glyph {
@@ -2398,7 +2426,7 @@
 .frow.on,
 .srow2.on {
   background: var(--bg-selected);
-  box-shadow: var(--mark-accent);
+  box-shadow: var(--mark-sel);
 }
 .key {
   font-family: var(--font-mono);
@@ -2522,8 +2550,8 @@
   background: color-mix(in srgb, var(--bg-raised) 85%, var(--fg) 6%);
 }
 .kcard.on {
-  border-color: var(--ring);
-  box-shadow: var(--glow);
+  background: var(--bg-selected);
+  border-color: var(--mark-sel-edge);
 }
 .kcard.dragging {
   box-shadow: var(--shadow-pop);
@@ -4206,7 +4234,7 @@ select option::checkmark {
 }
 .wrow.on {
   background: var(--bg-selected);
-  box-shadow: var(--mark-accent);
+  box-shadow: var(--mark-sel);
 }
 .wrow:hover:not(.on),
 .rrow:hover:not(.on),
@@ -5105,8 +5133,10 @@ body.console-fullscreen #bar {
 .cfacts .mlabel {
   padding: 0;
 }
+/* A table row's mark sits on its first cell, where a hairline would box
+   that one cell in; the edge's colour is drawn as a leading bar instead. */
 .ctable tr.on td:first-child {
-  box-shadow: var(--mark-ring);
+  box-shadow: inset 3px 0 0 var(--mark-sel-edge);
 }
 .ctable .git + .meta,
 .ctable .glyph + .st {
@@ -5346,7 +5376,7 @@ body.console-fullscreen #bar {
 }
 .cf-row.on {
   background: var(--bg-selected);
-  box-shadow: var(--edge-ring-in);
+  box-shadow: var(--mark-sel);
 }
 .cf-row.on:hover {
   background: color-mix(in srgb, var(--bg-selected), var(--fg) 6%);
@@ -5556,10 +5586,9 @@ body.console-fullscreen #bar {
   background: var(--fill);
 }
 .trow.on,
-.hline.on,
-.orow.on {
+.hline.on {
   background: var(--bg-selected);
-  box-shadow: var(--mark-ring);
+  box-shadow: var(--mark-sel);
 }
 .trow .ttl,
 .hfile .ttl {
@@ -5822,7 +5851,7 @@ body.console-fullscreen #bar {
   box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--fg) 5%, transparent);
 }
 .cline.cursor {
-  box-shadow: var(--mark-accent);
+  box-shadow: var(--mark-sel);
   background-image: linear-gradient(var(--fill), var(--fill));
 }
 .cgone {
@@ -6057,12 +6086,12 @@ body.console-fullscreen #bar {
   color: var(--fg-muted);
   font: var(--type-small);
 }
-/* One selection for a list row inside a dialog: a fill and a lit 1px border. */
+/* One selection for a list row inside a dialog: the fill and the theme's mark. */
 .palette-row.on,
 .rfile.on,
 .hrow.on {
   background: var(--bg-selected);
-  box-shadow: var(--edge-ring-in);
+  box-shadow: var(--mark-sel);
 }
 .palette-row .pic {
   flex: none;
@@ -6280,11 +6309,6 @@ body.console-fullscreen #bar {
 .hrow:hover:not(.on) {
   background: var(--fill);
 }
-.rfile.on,
-.hrow.on {
-  background: var(--bg-selected);
-  box-shadow: var(--mark-ring);
-}
 .rfile .rname,
 .hrow.file .rname {
   flex: 1;
@@ -6446,7 +6470,7 @@ body.console-fullscreen #bar {
 }
 .drow.cursor,
 .drow.picked {
-  box-shadow: var(--mark-accent);
+  box-shadow: var(--mark-sel);
 }
 .drow.cursor:not(.picked) .dside {
   background-image: linear-gradient(var(--fill), var(--fill));
@@ -7932,7 +7956,7 @@ body.resizing {
 .rrow.on,
 .steprow.on {
   background: var(--bg-selected);
-  box-shadow: var(--mark-accent);
+  box-shadow: var(--mark-sel);
 }
 .record-foot {
   padding: var(--sp-8);
@@ -8208,7 +8232,7 @@ body.resizing {
   background: var(--bg-selected);
 }
 .ext-body .vtable-table tr.on td:first-child {
-  box-shadow: var(--mark-accent);
+  box-shadow: inset 3px 0 0 var(--mark-sel-edge);
 }
 /* The selected row's actions, on a row of their own under it that wraps,
    so the table is never widened by every button side by side. */
@@ -8217,7 +8241,7 @@ body.resizing {
   padding: var(--sp-4) var(--sp-8) var(--sp-8);
   white-space: normal;
   background: var(--bg-selected);
-  box-shadow: var(--mark-accent);
+  box-shadow: inset 3px 0 0 var(--mark-sel-edge);
 }
 /* A table wide enough has the selected row's buttons at its end instead:
    a zero-width cell pinned to the window's right edge, the buttons hung from
