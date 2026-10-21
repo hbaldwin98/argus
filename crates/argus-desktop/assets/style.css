@@ -6731,8 +6731,21 @@ body.console-fullscreen #bar {
 
 /* ---- Projects: the switcher and the add dialog ---------------------------- */
 
+/* The menu floats over the nav, so it may run past a narrow rail rather than
+   wrap a label or cut a workspace's name to "defa…". */
 .projmenu .projects-menu {
-  width: min(272px, calc(var(--rail-w) - 16px));
+  width: max-content;
+  min-width: 260px;
+  max-width: 360px;
+  padding: var(--sp-6);
+  gap: 1px;
+}
+.projects-menu .mi {
+  height: 32px;
+  white-space: nowrap;
+}
+.projects-menu .mlabel {
+  padding: var(--sp-4) var(--sp-8);
 }
 .projbtn .ellipsis {
   min-width: 0;
