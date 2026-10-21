@@ -7,8 +7,10 @@
 // buffer in step with the disk. Vim's keys are on unless Settings turns
 // them off. Loaded the first time a file is shown, so the window does not
 // parse CodeMirror at start for a stage it may never open.
-import { Annotation, ChangeSet, Compartment, Decoration, EditorSelection, EditorState, EditorView, GutterMarker, RangeSet, StateEffect, StateField, StreamLanguage, Transaction, Vim, WidgetType, bracketMatching, closeBrackets, closeBracketsKeymap, csharp, css, defaultKeymap, drawSelection, gutter, highlightActiveLine, highlightActiveLineGutter, highlightSelectionMatches, history, historyKeymap, indentUnit, indentWithTab, javascript, json, keymap, lineNumbers, markdown, python, rust, searchKeymap, tagHighlighter, tags, toml, vim, yaml, } from '../vendor/codemirror.js';
+import { Annotation, ChangeSet, Compartment, Decoration, EditorSelection, EditorState, EditorView, GutterMarker, RangeSet, StateEffect, StateField, Transaction, Vim, WidgetType, bracketMatching, closeBrackets, closeBracketsKeymap, defaultKeymap, drawSelection, gutter, highlightActiveLine, highlightActiveLineGutter, highlightSelectionMatches, history, historyKeymap, indentUnit, indentWithTab, keymap, lineNumbers, searchKeymap, vim, } from '../vendor/codemirror.js';
 import { colours } from './colours.js';
+import { offerFor } from './grammar/fetch.js';
+import { install, installedFor } from './grammar/load.js';
 import { el } from '../kit/dom.js';
 import { call } from '../connection/tauri.js';
 import { state as page } from '../state.js';
@@ -29,8 +31,13 @@ const RETRY_MS = 1000;
 const sessions = new Map();
 let current = null;
 const byView = new WeakMap();
+/** Grammars the person said not now to, until the window closes. */
+const declined = new Set();
 function vimOn() {
     return page.settings?.chosen.vim ?? true;
+}
+function autoInstall() {
+    return page.settings?.chosen.installGrammars ?? false;
 }
 const keyOf = (checkout, path) => `${checkout}\n${path}`;
 function ask(gesture) {
@@ -193,71 +200,6 @@ function comment(view) {
     call('code', { gesture: { on: 'action', action: 'comment' } });
     return true;
 }
-/** The stylesheet's syntax classes, the ones the reading view's spans use,
- *  for Lezer's tags. */
-const syntax = tagHighlighter([
-    {
-        tag: [
-            tags.keyword,
-            tags.controlKeyword,
-            tags.modifier,
-            tags.definitionKeyword,
-            tags.moduleKeyword,
-            tags.operatorKeyword,
-            tags.self,
-        ],
-        class: 'sx-k',
-    },
-    { tag: [tags.string, tags.special(tags.string), tags.regexp, tags.character], class: 'sx-s' },
-    { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], class: 'sx-c' },
-    { tag: [tags.number, tags.bool, tags.null, tags.atom], class: 'sx-n' },
-    { tag: [tags.typeName, tags.className, tags.namespace], class: 'sx-t' },
-    {
-        tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.macroName],
-        class: 'sx-f',
-    },
-    { tag: [tags.propertyName, tags.attributeName, tags.labelName], class: 'sx-p' },
-    { tag: [tags.operator, tags.punctuation], class: 'sx-o' },
-]);
-/** The grammar a file is coloured by, by its extension. Only its parser
- *  is used: `colours` parses outside the key, and indentation copies the
- *  line before rather than asking the grammar. */
-function language(path) {
-    const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-    switch (ext) {
-        case 'rs':
-            return rust().language;
-        case 'ts':
-        case 'mts':
-        case 'cts':
-            return javascript({ typescript: true }).language;
-        case 'tsx':
-            return javascript({ typescript: true, jsx: true }).language;
-        case 'js':
-        case 'mjs':
-        case 'cjs':
-            return javascript().language;
-        case 'jsx':
-            return javascript({ jsx: true }).language;
-        case 'py':
-            return python().language;
-        case 'css':
-            return css().language;
-        case 'json':
-            return json().language;
-        case 'md':
-            return markdown().language;
-        case 'yml':
-        case 'yaml':
-            return yaml().language;
-        case 'toml':
-            return StreamLanguage.define(toml);
-        case 'cs':
-            return StreamLanguage.define(csharp);
-        default:
-            return null;
-    }
-}
 const SAID = {
     opening: 'Opening…',
     saved: 'Saved',
@@ -279,13 +221,106 @@ function tell(s, status, said = '') {
 function bar(s) {
     const state = el('span', { class: `ed-state ${s.status}` }, s.said ? `${SAID[s.status]}: ${s.said}` : SAID[s.status]);
     if (s.status !== 'clash')
-        return [state];
+        return [state, ...grammarBar(s)];
     return [
         state,
         el('span', { class: 'grow' }),
         el('button', { class: 'btn sm', onclick: () => resolve(s, 'mine') }, 'Keep mine'),
         el('button', { class: 'btn sm primary', onclick: () => resolve(s, 'theirs') }, "Take the agent's"),
     ];
+}
+function size(bytes) {
+    return bytes >= 1024 * 1024
+        ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+        : `${Math.ceil(bytes / 1024)} KB`;
+}
+/** The grammar offered for this file, or what became of installing it. */
+function grammarBar(s) {
+    if (s.grammar)
+        return [el('span', { class: 'grow' }), el('span', { class: 'ed-grammar' }, s.grammar)];
+    const offer = s.offer;
+    if (!offer)
+        return [];
+    const bytes = [offer.wasm, ...offer.queries].reduce((sum, f) => sum + f.size, 0);
+    const from = offer.pinned
+        ? `${offer.source} from npm, ${size(bytes)}`
+        : `${offer.source} from npm${offer.publisher ? ` by ${offer.publisher}` : ''}, ${size(bytes)}; found by searching, not checked by Argus`;
+    return [
+        el('span', { class: 'grow' }),
+        el('span', { class: 'ed-grammar' }, `No colours for ${offer.label} yet. Install its tree-sitter grammar? `, el('span', { class: 'mono' }, from)),
+        el('button', { class: 'btn sm primary', onclick: () => void installOffer(s) }, 'Install'),
+        el('button', { class: 'btn sm', onclick: () => notNow(s) }, 'Not now'),
+    ];
+}
+function redrawBar(s) {
+    s.bar.replaceChildren(...bar(s));
+}
+/** Colours every open editor of the grammar's files. */
+function colourWith(grammar, path) {
+    for (const other of sessions.values()) {
+        if (!other.view || !sameKind(other.path, path))
+            continue;
+        other.offer = null;
+        other.grammar = '';
+        other.view.dispatch({ effects: other.colour.reconfigure(colours(grammar)) });
+        redrawBar(other);
+    }
+}
+/** A file's extension, or its whole name when it has none. */
+const extOf = (p) => p
+    .slice(p.lastIndexOf('/') + 1)
+    .split('.')
+    .slice(1)
+    .pop() ?? p;
+function sameKind(a, b) {
+    return extOf(a).toLowerCase() === extOf(b).toLowerCase();
+}
+/** The file's grammar if it is installed; otherwise what to offer, or the
+ *  install itself where Settings says not to ask for one Argus pinned. */
+async function findGrammar(s) {
+    try {
+        const got = await installedFor(s.path);
+        if (got) {
+            colourWith(got, s.path);
+            return;
+        }
+    }
+    catch (e) {
+        s.grammar = `Could not load the grammar: ${String(e)}`;
+        redrawBar(s);
+        return;
+    }
+    const offer = await offerFor(s.path);
+    if (!offer || declined.has(offer.name))
+        return;
+    s.offer = offer;
+    if (offer.pinned && autoInstall()) {
+        await installOffer(s);
+        return;
+    }
+    redrawBar(s);
+}
+async function installOffer(s) {
+    const offer = s.offer;
+    if (!offer)
+        return;
+    s.offer = null;
+    s.grammar = `Installing the ${offer.label} grammar…`;
+    redrawBar(s);
+    try {
+        colourWith(await install(offer, s.path), s.path);
+    }
+    catch (e) {
+        s.grammar = `Could not install ${offer.source}: ${e instanceof Error ? e.message : String(e)}`;
+        redrawBar(s);
+    }
+}
+function notNow(s) {
+    if (s.offer)
+        declined.add(s.offer.name);
+    s.offer = null;
+    redrawBar(s);
+    s.view?.focus();
 }
 function settled(s) {
     if (!s.sync)
@@ -308,6 +343,9 @@ function create(checkout, path, at) {
         sync: null,
         editable: new Compartment(),
         keys: new Compartment(),
+        colour: new Compartment(),
+        offer: null,
+        grammar: '',
         status: 'saved',
         said: '',
         quiet: null,
@@ -328,7 +366,6 @@ function create(checkout, path, at) {
 function mountView(s, text) {
     const sync = new Synced(text, 0);
     s.sync = sync;
-    const grammar = language(s.path);
     const state = EditorState.create({
         doc: text,
         extensions: [
@@ -345,7 +382,8 @@ function mountView(s, text) {
             bracketMatching(),
             closeBrackets(),
             highlightSelectionMatches(),
-            grammar ? colours(grammar, syntax) : [],
+            // Filled once the file's grammar is found installed, or installed.
+            s.colour.of([]),
             lit,
             clashed,
             s.editable.of(EditorState.readOnly.of(false)),
@@ -376,6 +414,7 @@ function mountView(s, text) {
     if (s.page)
         mark(s, s.page);
     goTo(s, s.at);
+    void findGrammar(s);
 }
 function stage(action) {
     call('code', { gesture: { on: 'action', action } });

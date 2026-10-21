@@ -221,8 +221,11 @@ them `values` draws one value, with `refs` for those that point into Argus, `chi
 all. `extensions/` holds `views` and `dialogs` (an extension's question). `agents/` holds `compose`,
 `sessions_dialog` and `transcript`. `checkouts/stage` and `code/stage` draw the Checkouts and Code
 stages, `code/editor` the Code stage's editor, `code/sync` the editor's buffer kept in step with the
-disk, and `code/colours` its syntax colours (they are loaded the first time a file is edited, with
-`vendor/codemirror`, CodeMirror bundled by esbuild in `npm run build`) (Checkouts is a slim table of Checkout, State and Last commit, State saying nothing for a
+disk, `code/colours` its syntax colours, and in `code/grammar/` the tree-sitter grammars they
+come from: `known` (the pinned registry), `fetch` (what to offer and downloading it), `store` (the
+installed ones) and `load` (the runtime and each language, loaded once). They are loaded the first
+time a file is shown, with `vendor/codemirror`, CodeMirror and tree-sitter's WebAssembly runtime
+bundled by esbuild in `npm run build` (Checkouts is a slim table of Checkout, State and Last commit, State saying nothing for a
 clean idle checkout, with the selected checkout in a side column that the files panel replaces
 while open; `checkouts/says` words the State cell); `checkouts/files` draws a checkout's files beside the Checkouts table, a column of it, or
 a drawer over it when the stage is under 900px, listed by the daemon a folder at a time (`ListDir`,
@@ -2022,16 +2025,34 @@ with what is typed; the file and tree are read again 400ms after writes stop (`W
 keeps the marks, the outline and the tree's counts current without the cursor or a comment moving.
 The editor is CodeMirror in the page, and its buffer is the page's, the
 one thing in the window Rust does not hold: a key is applied and drawn in the handler that heard it
-and never waits on Rust or the daemon. Its syntax colours are not CodeMirror's language support,
-which parses inside the key's transaction and redrew every visible line's colours there; the
-colours drawn move with the text at once, and the file is parsed incrementally in a task right
-after the key, which lands before the frame that paints it. The grammar is used only to colour, so
-indentation on Enter copies the line's own.
+and never waits on Rust or the daemon.
+
+Its syntax colours come from tree-sitter grammars run as WebAssembly (`web-tree-sitter`), not
+CodeMirror's language support, which parsed inside the key's transaction and redrew every visible
+line's colours there. The colours drawn move with the text at once; the tree is told each change
+(`Tree.edit`) and parsed again from the old one in a task right after the key, which lands before
+the frame that paints it, and the query is run over the lines drawn only. A capture is coloured by
+its first word, as the daemon colours the read view, plain variables left alone. The grammar only
+colours, so Enter copies the line's indentation.
+
+No grammar ships with the window. One is installed when a file needs it, on the person's word:
+the bar over the editor names it, where it comes from and its size, with Install and Not now (not
+asked again until the window closes). `known` pins 23 languages' npm packages — each one's parser
+and highlight queries, the queries of a language that only adds to another's (TypeScript to
+JavaScript's, C++ to C's) with both — to a version and the SHA-256 of every file, downloaded from
+jsDelivr and refused if a hash differs. Settings → Editor → Install grammars without asking installs
+a pinned one when its file opens. For any other extension npm is searched for
+`tree-sitter-<language>` (or `@scope/tree-sitter-<language>`) shipping a parser named for it and
+`queries/highlights.scm`; nothing vouches for that, so the bar says so, names the publisher, and it
+is always asked about. A grammar is kept only once it has loaded and its query compiled, in the
+webview's IndexedDB, so an instance downloads each once. `node test/code/registry.mjs` checks every
+pin over the network.
 
 CodeMirror lays itself out with a `<style>` element it writes, so the window's content security
 policy allows inline styles (`style-src 'self' 'unsafe-inline'`), and Tauri is told not to add its
 nonces to that directive, which would make a browser ignore `'unsafe-inline'`. Scripts stay
-`'self'` only. The screens harness serves the same policy, so a page that only works without it
+`'self'`, with `'wasm-unsafe-eval'` for tree-sitter's WebAssembly, and the page may fetch from
+jsDelivr and npm's registry, where grammars come from. The screens harness serves the same policy, so a page that only works without it
 fails there too.
 
 The file on disk is the authority, and the daemon referees it. `OpenEdit` reads the file, CRLF read

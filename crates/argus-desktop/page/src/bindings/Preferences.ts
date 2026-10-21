@@ -27,6 +27,12 @@ editorCommand: string,
  */
 vim: boolean, 
 /**
+ * A grammar Argus pinned installs when a file needs it, rather than
+ * being offered first. Off unless turned on: it is code downloaded and
+ * run, if sandboxed. One npm search found is always asked about.
+ */
+installGrammars: boolean, 
+/**
  * An OS notification naming the pane when an agent comes to need you:
  * the window's version of the terminal client's bell.
  */

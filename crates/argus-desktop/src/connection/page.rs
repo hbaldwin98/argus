@@ -323,6 +323,7 @@ pub enum SettingChange {
     Editor { mode: EditorMode },
     EditorCommand { command: String },
     Vim { on: bool },
+    InstallGrammars { on: bool },
     Notify { on: bool },
     NotifyInBackground { only: bool },
     FeatureLayout { layout: Layout },
@@ -1771,7 +1772,7 @@ mod tests {
                 "type": "settings",
                 "chosen": {
                     "theme": "system", "opacity": 100, "backdrop": "clear", "editor": "floating",
-                    "editorCommand": "", "vim": true, "notify": true, "notifyInBackground": true, "featureLayout": "list",
+                    "editorCommand": "", "vim": true, "installGrammars": false, "notify": true, "notifyInBackground": true, "featureLayout": "list",
                     "savedLinks": "dialog",
                     "font": "", "uiFont": "", "zoom": 100
                 },
@@ -1789,6 +1790,7 @@ mod tests {
         assert_eq!(read(r#"{"set":"theme","theme":"macchiato"}"#), SettingChange::Theme { theme: Theme::Macchiato });
         assert_eq!(read(r#"{"set":"editor","mode":"separately"}"#), SettingChange::Editor { mode: EditorMode::Separately });
         assert_eq!(read(r#"{"set":"vim","on":false}"#), SettingChange::Vim { on: false });
+        assert_eq!(read(r#"{"set":"installGrammars","on":true}"#), SettingChange::InstallGrammars { on: true });
         assert_eq!(read(r#"{"set":"notifyInBackground","only":false}"#), SettingChange::NotifyInBackground { only: false });
         assert_eq!(read(r#"{"set":"featureLayout","layout":"board"}"#), SettingChange::FeatureLayout { layout: Layout::Board });
     }

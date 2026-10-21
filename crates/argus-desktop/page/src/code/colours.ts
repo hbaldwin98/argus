@@ -1,57 +1,108 @@
-// The editor's syntax colours, parsed and drawn after a key rather than in
-// it. CodeMirror's own language support parses inside the transaction a
-// key makes and redraws every visible line's colours with it: over a
-// millisecond of each key on a small file, most of what a key cost. Here
-// the colours already drawn move with the text at once, and the parse runs
-// in a task of its own straight after the key, which lands before the frame
-// that paints it; a long parse is cut into slices, so a key never waits.
+// The editor's syntax colours, from a tree-sitter grammar, parsed and drawn
+// after a key rather than in it. The colours already drawn move with the
+// text at once; the tree is told what changed and parsed again in a task of
+// its own straight after the key, which lands before the frame that paints
+// it, so a key costs only its text. Only the lines drawn are coloured.
 
 import {
   Decoration,
+  Edit,
+  Parser,
   RangeSetBuilder,
-  TreeFragment,
   ViewPlugin,
-  highlightTree,
+  type ChangeSet,
   type DecorationSet,
   type EditorView,
   type Extension,
-  type Highlighter,
-  type Input,
-  type Language,
-  type PartialParse,
+  type Point,
   type Text,
+  type TSTree,
   type ViewUpdate,
 } from '../vendor/codemirror.js';
+import type { Loaded } from './grammar/load.js';
 
-/** How long one slice of a parse may run before it lets a key in. */
-const SLICE_MS = 6;
+/** A capture's colour by its first word, as the daemon colours the read
+ *  view (`CAPTURES` in argusd's `syntax/highlight`), so both agree: a
+ *  `keyword.control` is a keyword. Plain variables are left uncoloured. */
+const CLASSES: Record<string, string> = {
+  attribute: 'sx-p',
+  boolean: 'sx-n',
+  comment: 'sx-c',
+  constant: 'sx-n',
+  constructor: 'sx-t',
+  escape: 'sx-s',
+  function: 'sx-f',
+  keyword: 'sx-k',
+  label: 'sx-n',
+  module: 'sx-t',
+  namespace: 'sx-t',
+  number: 'sx-n',
+  operator: 'sx-o',
+  property: 'sx-p',
+  punctuation: 'sx-o',
+  string: 'sx-s',
+  tag: 'sx-t',
+  type: 'sx-t',
+};
+
+export function classOf(capture: string): string | null {
+  const dot = capture.indexOf('.');
+  return CLASSES[dot < 0 ? capture : capture.slice(0, dot)] ?? null;
+}
 
 /** Tasks run after the current one, ahead of any timer: a parse queued by
  *  a key is done before the frame that draws the key, as a rule. */
-const channel = new MessageChannel();
+let channel: MessageChannel | null = null;
 const tasks: (() => void)[] = [];
-channel.port1.addEventListener('message', () => tasks.shift()?.());
-channel.port1.start();
 function soon(task: () => void): void {
+  // Opened on first use: an open port keeps a process that only imports
+  // this module, a test, from ever exiting.
+  if (!channel) {
+    channel = new MessageChannel();
+    channel.port1.addEventListener('message', () => tasks.shift()?.());
+    channel.port1.start();
+  }
   tasks.push(task);
   channel.port2.postMessage(null);
 }
 
-/** A document read by the parser a line at a time, never copied whole. */
-class TextInput implements Input {
-  readonly lineChunks = true;
-  readonly length: number;
-  constructor(readonly doc: Text) {
-    this.length = doc.length;
-  }
-  chunk(from: number): string {
-    const line = this.doc.lineAt(from);
-    const rest = line.text.slice(from - line.from);
-    return line.to < this.doc.length ? `${rest}\n` : rest;
-  }
-  read(from: number, to: number): string {
-    return this.doc.sliceString(from, to);
-  }
+function pointAt(doc: Text, pos: number): Point {
+  const line = doc.lineAt(pos);
+  return { row: line.number - 1, column: pos - line.from };
+}
+
+/** Where `text` ends when it starts at `from`. */
+function pointAfter(from: Point, text: string): Point {
+  const last = text.lastIndexOf('\n');
+  if (last < 0) return { row: from.row, column: from.column + text.length };
+  let rows = 0;
+  for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) rows++;
+  return { row: from.row + rows, column: text.length - last - 1 };
+}
+
+/** The tree-sitter edits a change set makes, each positioned in the text
+ *  as the edits before it left it, the order a tree takes them in. */
+export function edits(changes: ChangeSet, before: Text, after: Text): Edit[] {
+  const out: Edit[] = [];
+  changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+    const startPosition = pointAt(after, fromB);
+    out.push(
+      new Edit({
+        startIndex: fromB,
+        oldEndIndex: fromB + (toA - fromA),
+        newEndIndex: toB,
+        startPosition,
+        oldEndPosition: pointAfter(startPosition, before.sliceString(fromA, toA)),
+        newEndPosition: pointAfter(startPosition, inserted.toString()),
+      }),
+    );
+  });
+  return out;
+}
+
+/** The document a chunk at a time, never copied whole. */
+export function reader(doc: Text): (index: number) => string | undefined {
+  return (index) => (index >= doc.length ? undefined : doc.sliceString(index, index + 4096));
 }
 
 const marks = new Map<string, Decoration>();
@@ -64,41 +115,38 @@ function mark(cls: string): Decoration {
   return found;
 }
 
-export function colours(language: Language, highlighter: Highlighter): Extension {
-  const parser = language.parser;
+export function colours(grammar: Loaded): Extension {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet = Decoration.none;
-      private fragments: readonly TreeFragment[] = [];
-      private parse: PartialParse | null = null;
-      private tree: ReturnType<PartialParse['advance']> = null;
+      private parser = new Parser();
+      private tree: TSTree | null = null;
+      /** The tree has been told of every change since it was parsed. */
+      private stale = true;
       private queued = false;
       private gone = false;
 
       constructor(readonly view: EditorView) {
+        this.parser.setLanguage(grammar.language);
         this.queue();
       }
 
       update(u: ViewUpdate): void {
         if (u.docChanged) {
-          // Drawn where the text moved to; what was typed is coloured by
-          // the parse that follows.
           this.decorations = this.decorations.map(u.changes);
-          const changed: { fromA: number; toA: number; fromB: number; toB: number }[] = [];
-          u.changes.iterChangedRanges((fromA, toA, fromB, toB) =>
-            changed.push({ fromA, toA, fromB, toB }),
-          );
-          this.fragments = TreeFragment.applyChanges(this.fragments, changed);
-          this.parse = null;
-          this.tree = null;
+          if (this.tree)
+            for (const e of edits(u.changes, u.startState.doc, u.state.doc)) this.tree.edit(e);
+          this.stale = true;
           this.queue();
-        } else if (u.viewportChanged && this.tree) {
+        } else if (u.viewportChanged && !this.stale) {
           this.decorations = this.draw();
         }
       }
 
       destroy(): void {
         this.gone = true;
+        this.tree?.delete();
+        this.parser.delete();
       }
 
       private queue(): void {
@@ -109,20 +157,12 @@ export function colours(language: Language, highlighter: Highlighter): Extension
 
       private work(): void {
         this.queued = false;
-        if (this.gone) return;
-        this.parse ??= parser.startParse(new TextInput(this.view.state.doc), this.fragments);
-        const until = performance.now() + SLICE_MS;
-        let tree = this.parse.advance();
-        while (!tree) {
-          if (performance.now() > until) {
-            this.queue();
-            return;
-          }
-          tree = this.parse.advance();
-        }
-        this.parse = null;
-        this.tree = tree;
-        this.fragments = TreeFragment.addTree(tree, this.fragments);
+        if (this.gone || !this.stale) return;
+        const next = this.parser.parse(reader(this.view.state.doc), this.tree);
+        if (!next) return;
+        this.tree?.delete();
+        this.tree = next;
+        this.stale = false;
         this.decorations = this.draw();
         // A transaction of nothing, for the view to read the colours.
         this.view.dispatch({});
@@ -132,14 +172,24 @@ export function colours(language: Language, highlighter: Highlighter): Extension
         const tree = this.tree;
         if (!tree) return this.decorations;
         const out = new RangeSetBuilder<Decoration>();
-        for (const { from, to } of this.view.visibleRanges)
-          highlightTree(
-            tree,
-            highlighter,
-            (start, end, cls) => out.add(start, end, mark(cls)),
-            from,
-            to,
-          );
+        let end = 0;
+        const doc = this.view.state.doc;
+        // The lines drawn, a margin past the window included, so a short
+        // scroll shows no line yet to be coloured.
+        for (const { from, to } of [this.view.viewport]) {
+          // By rows: the runtime reads a query's indexes as bytes, two to
+          // each of the UTF-16 units its nodes are counted in.
+          for (const { name, node } of grammar.query.captures(tree.rootNode, {
+            startPosition: { row: doc.lineAt(from).number - 1, column: 0 },
+            endPosition: { row: doc.lineAt(to).number, column: 0 },
+          })) {
+            const cls = classOf(name);
+            // The first capture of a run wins; one inside it is skipped.
+            if (!cls || node.startIndex < end || node.endIndex <= node.startIndex) continue;
+            out.add(node.startIndex, node.endIndex, mark(cls));
+            end = node.endIndex;
+          }
+        }
         return out.finish();
       }
     },

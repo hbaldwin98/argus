@@ -799,6 +799,11 @@ the working tree changed. In the editor: `:w` or Ctrl S writes at once, `]c` / `
 without Vim) step between changes, `/` or Ctrl F searches the file, Alt C comments to an agent on
 the selected lines, Ctrl P goes to a file and Ctrl Shift F searches the checkout.
 
+Colours come from tree-sitter grammars, which install the first time you open a file of their
+language, after you say yes in the bar over the editor (or without asking, with **Settings →
+Editor → Install grammars without asking**). Argus pins 23 languages' grammars to a version and
+checksum; for any other language it searches npm and says it found one it has not checked.
+
 The keys below are the read view's, a commit's or the index's:
 
 | Key | Action |

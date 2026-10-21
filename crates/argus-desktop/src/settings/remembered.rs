@@ -114,6 +114,11 @@ pub struct Preferences {
     /// stage's own keys are Vim's, and so are the person's.
     #[serde(default = "on")]
     pub vim: bool,
+    /// A grammar Argus pinned installs when a file needs it, rather than
+    /// being offered first. Off unless turned on: it is code downloaded and
+    /// run, if sandboxed. One npm search found is always asked about.
+    #[serde(default)]
+    pub install_grammars: bool,
     /// An OS notification naming the pane when an agent comes to need you:
     /// the window's version of the terminal client's bell.
     #[serde(default = "on")]
@@ -243,6 +248,7 @@ impl Default for Preferences {
             editor: EditorMode::default(),
             editor_command: String::new(),
             vim: true,
+            install_grammars: false,
             notify: true,
             notify_in_background: true,
             feature_layout: Layout::default(),
@@ -419,6 +425,7 @@ mod tests {
             editor: EditorMode::Separately,
             editor_command: "code -w".into(),
             vim: false,
+            install_grammars: true,
             notify: false,
             notify_in_background: false,
             feature_layout: Layout::Board,

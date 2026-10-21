@@ -248,6 +248,7 @@ export function openSettings() {
     });
     command.addEventListener('input', () => set({ set: 'editorCommand', command: command.value }));
     const vim = toggle("Vim's keys in the Code stage", () => set({ set: 'vim', on: !(state.settings?.chosen.vim ?? true) }));
+    const grammars = toggle('Install known grammars without asking', () => set({ set: 'installGrammars', on: !(state.settings?.chosen.installGrammars ?? false) }));
     const notify = toggle('Notify when an agent needs you', () => set({ set: 'notify', on: !(state.settings?.chosen.notify ?? true) }));
     const background = toggle('Only while this window is in the background', () => set({ set: 'notifyInBackground', only: !(state.settings?.chosen.notifyInBackground ?? true) }));
     const [layoutGroup, layouts] = segment('Feature index layout', LAYOUTS, (layout) => set({ set: 'featureLayout', layout }));
@@ -267,6 +268,7 @@ export function openSettings() {
         editors,
         command,
         vim,
+        grammars,
         notify,
         background,
         layouts,
@@ -277,7 +279,7 @@ export function openSettings() {
     ]), row('Follow the system', 'Mocha when it is dark, Latte when it is light', follow), row('Background opacity', 'The desktop shows through the background; text and borders stay solid', el('div', { class: 'opacity' }, opacity, percent)), 
     // Clear alone is no choice: where it is all this system draws, the
     // row is left out.
-    page.backdrops.length > 1 ? backdropRow : null, fontRow, uiFontRow), section('Editor', row('Files open', 'A known GUI editor always opens on its own', editorGroup), row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command), row('Vim keys', 'In the Code stage: normal, insert and visual modes, and :w', vim)), section('Notifications', row('When an agent needs you', 'A system notification naming the pane: waiting, needs-review or failed', notify), row('Only while this window is in the background', null, background)), section('Features', row('Feature index', 'Remembered per repository; this is what a new one opens as', layoutGroup)), section('Views', row('Links in a saved view open', 'A dialog over the stage, or the next column beside the view', linksGroup)), section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')));
+    page.backdrops.length > 1 ? backdropRow : null, fontRow, uiFontRow), section('Editor', row('Files open', 'A known GUI editor always opens on its own', editorGroup), row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command), row('Vim keys', 'In the Code stage: normal, insert and visual modes, and :w', vim), row('Install grammars without asking', 'Colours for a language Argus knows download from npm when its file opens; one found by searching npm is still asked about', grammars)), section('Notifications', row('When an agent needs you', 'A system notification naming the pane: waiting, needs-review or failed', notify), row('Only while this window is in the background', null, background)), section('Features', row('Feature index', 'Remembered per repository; this is what a new one opens as', layoutGroup)), section('Views', row('Links in a saved view open', 'A dialog over the stage, or the next column beside the view', linksGroup)), section('Connection', el('div', { class: 'meta placeholder' }, 'Nothing to set here yet.')));
     const nav = el('nav', { class: 'settings-nav', 'aria-label': 'Settings sections' }, SECTIONS.map((name) => el('button', {
         class: 'frow',
         onclick: () => {
@@ -413,6 +415,7 @@ export function drawSettings() {
     if (document.activeElement !== controls.command)
         controls.command.value = chosen.editorCommand;
     setToggle(controls.vim, chosen.vim);
+    setToggle(controls.grammars, chosen.installGrammars);
     setToggle(controls.notify, chosen.notify);
     setToggle(controls.background, chosen.notifyInBackground);
     controls.background.disabled = !chosen.notify;

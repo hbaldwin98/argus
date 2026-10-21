@@ -198,6 +198,7 @@ let controls: {
   editors: Map<EditorMode, HTMLButtonElement>;
   command: HTMLInputElement;
   vim: HTMLButtonElement;
+  grammars: HTMLButtonElement;
   notify: HTMLButtonElement;
   background: HTMLButtonElement;
   layouts: Map<Layout, HTMLButtonElement>;
@@ -392,6 +393,9 @@ export function openSettings(): void {
   const vim = toggle("Vim's keys in the Code stage", () =>
     set({ set: 'vim', on: !(state.settings?.chosen.vim ?? true) }),
   );
+  const grammars = toggle('Install known grammars without asking', () =>
+    set({ set: 'installGrammars', on: !(state.settings?.chosen.installGrammars ?? false) }),
+  );
 
   const notify = toggle('Notify when an agent needs you', () =>
     set({ set: 'notify', on: !(state.settings?.chosen.notify ?? true) }),
@@ -421,6 +425,7 @@ export function openSettings(): void {
     editors,
     command,
     vim,
+    grammars,
     notify,
     background,
     layouts,
@@ -452,6 +457,11 @@ export function openSettings(): void {
       row('Files open', 'A known GUI editor always opens on its own', editorGroup),
       row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command),
       row('Vim keys', 'In the Code stage: normal, insert and visual modes, and :w', vim),
+      row(
+        'Install grammars without asking',
+        'Colours for a language Argus knows download from npm when its file opens; one found by searching npm is still asked about',
+        grammars,
+      ),
     ),
     section(
       'Notifications',
@@ -652,6 +662,7 @@ export function drawSettings(): void {
   // A field being typed in is ahead of what came back.
   if (document.activeElement !== controls.command) controls.command.value = chosen.editorCommand;
   setToggle(controls.vim, chosen.vim);
+  setToggle(controls.grammars, chosen.installGrammars);
   setToggle(controls.notify, chosen.notify);
   setToggle(controls.background, chosen.notifyInBackground);
   controls.background.disabled = !chosen.notify;

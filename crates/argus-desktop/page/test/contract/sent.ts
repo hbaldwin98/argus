@@ -7010,6 +7010,7 @@ export const sent = [
     "editorCommand": "",
     "featureLayout": "list",
     "font": "",
+    "installGrammars": false,
     "notify": true,
     "notifyInBackground": true,
     "opacity": 100,

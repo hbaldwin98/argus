@@ -53,6 +53,25 @@ try {
     `getComputedStyle(document.querySelector('.code-editor .cm-scroller')).display === 'flex'`,
   );
   if (!laidOut) throw new Error("CodeMirror's own styles did not apply");
+  // No grammar is installed in a fresh profile: Rust's is offered, and
+  // installs on the person's word, from npm, checked against its pin.
+  const offered = await tab.evaluate(`document.querySelector('.ed-grammar')?.textContent ?? ''`);
+  console.log(`grammar offered: ${JSON.stringify(offered)}`);
+  await tab.evaluate(
+    `[...document.querySelectorAll('.ed-bar button')].find((b) => b.textContent === 'Install')?.click(); true`,
+  );
+  let coloured = false;
+  for (let i = 0; i < 100 && !coloured; i++) {
+    await settle(200);
+    coloured = await tab.evaluate(`!!document.querySelector('.code-editor .cm-content .sx-k')`);
+  }
+  console.log(`coloured after install: ${coloured}`);
+  if (!coloured)
+    console.log(
+      `  bar says: ${await tab.evaluate(`document.querySelector('.ed-bar')?.textContent`)}`,
+    );
+  writeFileSync(join(out, 'editor-coloured.png'), await screenshot(tab));
+
   const fat = `!!document.querySelector('.code-editor .cm-fat-cursor')`;
   console.log(`opens in vim's normal mode: ${await tab.evaluate(fat)}`);
 
