@@ -168,6 +168,50 @@ The feature board holds each with its reasons; in short:
   than `argus-desktop` growing a library target that would pull Tauri
   into the new crate's build.
 
+## What the spike found
+
+`crates/argus-gpui`, one example per item (`cargo run -p argus-gpui
+--example <item>`). Each was built by one agent and checked by another
+against the registry sources.
+
+- **Edit loop**: about 2.2 s for an incremental rebuild after a one-line
+  change, 0.5 s with nothing changed. No hot reload, but fast enough.
+- **Terminal**: a full 140x40 frame paints in about 0.55 ms in release,
+  so the terminal's cost is input, selection and IME, not drawing. A
+  16 ms timer only ticks about every 28 ms on Windows: repaint from the
+  daemon's frames (or `request_animation_frame`), not a poll. Parity
+  still needs the page's per-theme ANSI palette, wide glyphs centred in
+  their two cells, and the element reconciling the daemon's grid with
+  its own size.
+- **Text**: `Input` and `Textarea` work, and an image paste is caught in
+  `on_paste`. Ctrl+Enter-to-send cannot be built on `PressEnter` alone:
+  the engine inserts the newline at the caret before it fires. The
+  keymap layer needs its own `secondary-enter` binding ahead of the
+  input's, or a small upstream patch.
+- **Dock**: `Sidebar`, nested `h_resizable`/`v_resizable` and `TabBar`
+  compose the shell. A `SidebarMenuItem`'s selection is not observable
+  to the test harness, so the rail is better as our own list (it needs
+  per-row menus, middle-click and the keyboard model anyway). The
+  default minimum panel is 100 px; split sizes are read from
+  `ResizableState` and persisted by us. The bundled icons have no git
+  or code glyphs.
+- **Backdrop**: `Blurred` is Acrylic on Windows; Mica and Mica Alt do
+  nothing below build 22621 and say nothing, so Settings checks the
+  build itself. The DWM border colour needs the `raw-window-handle`
+  crate (gpui-pre implements the trait but re-exports nothing). The
+  window controls go through `WindowControlArea` hit-testing, which is
+  what gives the Windows 11 snap layout.
+- **Screenshots**: on Windows, `render_to_image` works only from a real
+  window opened hidden inside `Application::run`, through DirectX; the
+  headless test context draws no pixels. A shot takes about 0.2-0.3 s.
+  CI screenshots therefore need a Windows runner with a D3D11 device
+  (WARP may serve); the wgpu headless renderer is the untried
+  alternative. The window must open on a real monitor, or Windows
+  replaces its bounds.
+- **Lockfile**: `gpui-kit`'s optional `gpui-fast` pins conflict with
+  `gpui-pre`'s even with the feature off; a `cargo update` can fail
+  until resolved from the committed lock.
+
 ## The Code editor
 
 `main` now edits a working file inline in the Code stage: CodeMirror with
