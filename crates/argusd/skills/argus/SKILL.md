@@ -101,20 +101,37 @@ require creating a feature or tasks.
 ## Browser
 
 When the work needs a web page — checking a UI you changed, reading a page
-behind a dev server — use the pane's own browser, which the person watches in
-the window's Browsers stage and can take over:
+behind a dev server — use the pane's own browser. It opens beside your pane
+in the Argus window, where the person watches it and can take it over.
+
+Drive it with `agent-browser` when you have it: if the `agent-browser` skill
+is installed, load it (`/agent-browser`) and follow it, attaching to this
+browser rather than starting one of your own:
 
 ```bash
-"$ARGUS_HOOK" browser          # prints its DevTools URL, starting it if needed
+"$ARGUS_HOOK" browser                          # prints its DevTools URL, starting it if needed
 agent-browser --cdp "<url>" open http://localhost:5173
-"$ARGUS_HOOK" browser close    # when you are done with it
 ```
 
-Any tool that attaches over the Chrome DevTools Protocol works in place of
-`agent-browser`. The person sees the tab you last acted in. If they take
-control, your clicks, typing and navigation fail with an error saying so:
-stop driving and wait, or ask them; reading the page still works. It is
-headless with a fresh profile, and goes when the pane does.
+Without `agent-browser`, use the built-in commands. Do not write your own
+DevTools client:
+
+```bash
+"$ARGUS_HOOK" browser go http://localhost:5173   # navigates the tab, opening the browser if needed
+"$ARGUS_HOOK" browser text                       # the page's text
+"$ARGUS_HOOK" browser click "button[type=submit]"
+"$ARGUS_HOOK" browser type "#search" rust tokio
+"$ARGUS_HOOK" browser eval "document.title"      # any script; prints its value as JSON
+"$ARGUS_HOOK" browser shot                       # saves a PNG and prints its path; read it to see the page
+"$ARGUS_HOOK" browser tabs | back | reload | new [url] | close
+```
+
+Reuse the tab you are on: go to each new page in it. Open another tab only
+when you need two pages at once, and close the browser when you are done.
+The person sees the tab you last acted in. If they take control, anything
+that moves the page fails with an error saying so: stop and wait, or ask
+them; reading the page still works. It is headless with a fresh profile, and
+goes when your pane does.
 
 ## Extensions
 

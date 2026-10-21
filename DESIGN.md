@@ -502,6 +502,7 @@ to the type or its locking.
 | `browser/mux` | one DevTools connection shared by the daemon's view of a browser and agents' tools: ids rewritten so answers find their way back, events sent to who can use them, the tab an agent acts on told to the daemon, and an agent's input refused while the person holds the browser |
 | `browser/cdp` | the daemon's own DevTools client of a browser, on a line of its mux: commands sent and their answers matched back by id, and everything else read as an event |
 | `browser/screen` | which of a browser's tabs is shown, and showing it: laid out at the size the person sees it, its pictures read off as the page changes, and the person's input put on it |
+| `browser/act` | what an agent's built-in browser commands do to the tab the person watches: each a few DevTools calls on the daemon's own session, a load waited for, a picture saved |
 | `browser/input` | what the person's hand on a browser becomes: the DevTools commands, in order, that do it to the page shown |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
@@ -2813,7 +2814,13 @@ Windows), so no other process on the machine can drive it. The daemon answers th
 API's `devtools` endpoint, `ws://127.0.0.1:<port>/pane/<id>/devtools?token=<token>`, the hook token
 in the query since a browser tool given a URL sets no header. The agent drives it with whatever tool
 it brings — `agent-browser --cdp <url>`, a DevTools MCP server, Playwright — so Argus never chooses
-how an agent browses, and a second open answers the same URL. `browser close`, the person's close
+how an agent browses, and a second open answers the same URL. An agent with no tool of its own uses
+the built-in commands instead (`BrowserRequest::Act`, `browser::act`): `go`, `back`, `reload`, `new`,
+`tabs`, `text`, `click`, `type`, `eval` and `shot`, each a few DevTools calls on the daemon's own
+session to the tab shown, a load waited for off the follow loop so the pictures keep coming. They
+exist because an agent left to write its own client opened a tab for every page; the skill points
+it to `agent-browser` first and to these second. Those that move the page are refused while the
+person holds the browser, as the same moves through the mux are. `browser close`, the person's close
 (`ClientMsg::CloseBrowser`), the browser pane or its agent's leaving the tree (`retire_pane`) and
 the daemon stopping each kill it; on Windows a job takes its renderers with it.
 

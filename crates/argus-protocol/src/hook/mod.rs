@@ -255,8 +255,10 @@ impl Endpoint {
             | Endpoint::Telemetry
             | Endpoint::Inbox
             | Endpoint::Agents
-            | Endpoint::Browser
             | Endpoint::DevTools => MAX_HOOK_BODY,
+            // A script to run in the page, or text to type into it, is the
+            // agent's to size; past this it belongs in a file the page loads.
+            Endpoint::Browser => 64 * 1024,
             Endpoint::Decide | Endpoint::DecisionChange => MAX_DECISION_BODY,
             // Mermaid source in JSON, with room for the encoding.
             Endpoint::Diagrams => crate::MAX_DIAGRAM_BODY_BYTES + 4096,

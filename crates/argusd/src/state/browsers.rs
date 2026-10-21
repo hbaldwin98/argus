@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use argus_protocol::{BrowserFrame, BrowserInput, BrowserPage, BrowserRequest, PaneId, PaneKind, ServerMsg};
+use argus_protocol::{BrowserAct, BrowserFrame, BrowserInput, BrowserPage, BrowserRequest, PaneId, PaneKind, ServerMsg};
 use tokio::sync::{broadcast, mpsc};
 
 use super::*;
@@ -71,21 +71,44 @@ impl Daemon {
     /// requests at once may both start one; the second to finish is dropped.
     pub async fn browser_for_agent(self: &Arc<Self>, agent: PaneId, request: BrowserRequest) -> anyhow::Result<String> {
         self.agent_checkout(agent)?;
-        if request == BrowserRequest::Close {
-            if let Some(pane) = self.browser_of(agent) {
-                self.close_browser(pane);
+        match request {
+            BrowserRequest::Close => {
+                if let Some(pane) = self.browser_of(agent) {
+                    self.close_browser(pane);
+                }
+                Ok(String::new())
             }
-            return Ok(String::new());
+            BrowserRequest::Open => {
+                self.agents_browser(agent).await?;
+                let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+                Ok(argus_protocol::devtools_url(port, agent, self.hook_token()))
+            }
+            BrowserRequest::Act(act) => {
+                // Going somewhere needs no browser open first; anything else
+                // done to one that is not would only be refused by it.
+                let pane = match self.browser_of(agent) {
+                    Some(pane) => pane,
+                    None if matches!(act, BrowserAct::Go { .. } | BrowserAct::New { .. }) => self.agents_browser(agent).await?,
+                    None => anyhow::bail!("no browser is open; `argus-hook browser go <url>` opens one at the page"),
+                };
+                let answer = {
+                    let browsers = self.browsers.lock().unwrap();
+                    browsers.open.get(&pane).map(|open| open.browser.act(act))
+                };
+                let answer = answer.ok_or_else(|| anyhow::anyhow!("the browser closed"))?;
+                answer.await.map_err(|_| anyhow::anyhow!("the browser closed before it answered"))?.map_err(anyhow::Error::msg)
+            }
         }
-        let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
-        let endpoint = argus_protocol::devtools_url(port, agent, self.hook_token());
-        if self.browser_of(agent).is_some() {
-            return Ok(endpoint);
+    }
+
+    /// The agent's browser pane, started first if it has none.
+    async fn agents_browser(self: &Arc<Self>, agent: PaneId) -> anyhow::Result<PaneId> {
+        if let Some(pane) = self.browser_of(agent) {
+            return Ok(pane);
         }
         let (reports, heard) = mpsc::unbounded_channel();
         let browser = Browser::start(reports).await?;
-        self.open_browser_pane(agent, browser, heard)?;
-        Ok(endpoint)
+        self.open_browser_pane(agent, browser, heard)
     }
 
     /// Puts a started browser in the tree as a pane of its own, in the

@@ -51,6 +51,9 @@ tree-sitter-md = { workspace = true }
 # its pane's browser by. Loopback only, so no TLS.
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
+# A tab's picture, which DevTools answers as base64, written out as the PNG
+# an agent's `browser shot` reads.
+base64 = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_ProcessStatus", "Win32_System_Threading", "Wdk_System_Threading"] }

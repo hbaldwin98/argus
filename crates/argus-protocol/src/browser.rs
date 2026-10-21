@@ -17,11 +17,57 @@ pub const BROWSER_VAR: &str = "ARGUS_BROWSER";
 /// What an agent asks of its pane's browser through the pane API. Opening
 /// one that is open answers its endpoint again, so an agent that lost the
 /// URL asks for it the same way it got it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrowserRequest {
     Open,
     Close,
+    /// One of the built-in commands, for an agent with no browser tool of
+    /// its own.
+    Act(BrowserAct),
+}
+
+/// A built-in command, done to the tab the person is watching: an agent
+/// with no browser tool drives the browser with these rather than writing
+/// its own DevTools client, which is how tabs pile up — a script opens one
+/// for every page where navigating the one it has would do.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserAct {
+    /// The tab goes to `url`, opening the browser if it is not.
+    Go { url: String },
+    Back,
+    Reload,
+    /// A tab of its own, at `url` or blank: only for a second page at once.
+    New { url: Option<String> },
+    /// The tabs, the one shown marked.
+    Tabs,
+    /// The page's text, as the person would read it.
+    Text,
+    /// A real click, at the middle of the first element `selector` matches.
+    Click { selector: String },
+    /// `text` typed into the first element `selector` matches.
+    Type { selector: String, text: String },
+    /// A script run in the page, answered with its value as JSON.
+    Eval { expression: String },
+    /// A picture of the tab as PNG, saved where the answer says.
+    Shot,
+}
+
+impl BrowserAct {
+    /// Whether it moves the page, which is refused while the person holds
+    /// the browser, as the same move through the agent's own tool is.
+    pub fn drives(&self) -> bool {
+        matches!(
+            self,
+            BrowserAct::Go { .. }
+                | BrowserAct::Back
+                | BrowserAct::Reload
+                | BrowserAct::New { .. }
+                | BrowserAct::Click { .. }
+                | BrowserAct::Type { .. }
+        )
+    }
 }
 
 /// Where a browser pane's browser is, sent as it opens and whenever a tab
@@ -210,5 +256,15 @@ mod tests {
     fn an_agent_request_reads_as_a_word() {
         assert_eq!(serde_json::from_str::<BrowserRequest>(r#""open""#).unwrap(), BrowserRequest::Open);
         assert_eq!(serde_json::to_string(&BrowserRequest::Close).unwrap(), r#""close""#);
+    }
+
+    #[test]
+    fn a_built_in_command_moves_the_page_only_when_it_says_so() {
+        let go = BrowserRequest::Act(BrowserAct::Go { url: "https://a.test".into() });
+        let json = serde_json::to_string(&go).unwrap();
+        assert_eq!(json, r#"{"act":{"go":{"url":"https://a.test"}}}"#);
+        assert_eq!(serde_json::from_str::<BrowserRequest>(&json).unwrap(), go);
+        assert!(BrowserAct::Click { selector: "a".into() }.drives());
+        assert!(!BrowserAct::Text.drives() && !BrowserAct::Shot.drives() && !BrowserAct::Tabs.drives());
     }
 }

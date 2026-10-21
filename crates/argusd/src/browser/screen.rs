@@ -11,14 +11,15 @@
 
 use std::time::Duration;
 
-use argus_protocol::{BrowserDriver, BrowserInput, BrowserTab};
+use argus_protocol::{BrowserAct, BrowserDriver, BrowserInput, BrowserTab};
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::cdp::{Cdp, Event};
 use super::input::{browser_command, commands};
-use super::mux::{AGENT_ACTED, HOLD};
+use super::act::{self, Reply};
+use super::mux::{AGENT_ACTED, HELD, HOLD};
 use super::{Report, Seen};
 
 /// How long after the last move of the page its mover is still said to be
@@ -113,6 +114,8 @@ pub(super) async fn follow(
     cdp: Cdp,
     mut events: mpsc::UnboundedReceiver<Event>,
     mut input: mpsc::UnboundedReceiver<BrowserInput>,
+    mut acts: mpsc::UnboundedReceiver<(BrowserAct, Reply)>,
+    shots: std::path::PathBuf,
     reports: mpsc::UnboundedSender<Report>,
 ) {
     let mut tabs = Tabs::default();
@@ -149,6 +152,26 @@ pub(super) async fn follow(
                     _ => {}
                 }
                 tabs.heard(&event);
+            }
+            // An agent's built-in command, done on this session to the tab
+            // shown; one that waits for a page to load waits off this loop,
+            // so the pictures keep coming meanwhile.
+            asked = acts.recv() => {
+                let Some((asked, reply)) = asked else { return };
+                if held && asked.drives() {
+                    let _ = reply.send(Err(HELD.to_string()));
+                } else if asked == BrowserAct::Tabs {
+                    let _ = reply.send(Ok(listed(&tabs, shown.as_ref())));
+                } else {
+                    if asked.drives() {
+                        driver = Some((BrowserDriver::Agent, Instant::now()));
+                        if let Some(shown) = &shown {
+                            tabs.working = Some(shown.target.clone());
+                        }
+                    }
+                    let session = shown.as_ref().map(|s| s.session.clone());
+                    tokio::spawn(act::run(cdp.clone(), session, asked, shots.clone(), reply));
+                }
             }
             hand = input.recv() => {
                 let Some(hand) = hand else { return };
@@ -200,6 +223,21 @@ pub(super) async fn follow(
             told = Some(now);
         }
     }
+}
+
+/// The tabs as an agent reads them: one a line, the shown one marked.
+fn listed(tabs: &Tabs, shown: Option<&Shown>) -> String {
+    if tabs.open.is_empty() {
+        return "no tabs open".into();
+    }
+    let line = |tab: &BrowserTab| {
+        let on = if shown.is_some_and(|s| s.target == tab.id) { "* " } else { "  " };
+        let title = if tab.title.is_empty() || tab.title == tab.url { String::new() } else { format!(" — {}", tab.title) };
+        format!("{on}{}{title}", tab.url)
+    };
+    let mut lines: Vec<String> = tabs.open.iter().map(line).collect();
+    lines.push("* is the tab shown, which the commands act on".into());
+    lines.join("\n")
 }
 
 /// Stops showing `old` and starts showing `target`, laid out at `viewport`;

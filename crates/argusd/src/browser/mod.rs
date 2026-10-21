@@ -5,6 +5,7 @@
 //! the pane API rather than to the browser, which listens on no port; what
 //! the daemon reads of it is only what a person is shown, as `Report`s.
 
+mod act;
 mod cdp;
 mod chrome;
 mod input;
@@ -15,7 +16,7 @@ mod screen;
 
 use std::time::Duration;
 
-use argus_protocol::{BrowserDriver, BrowserInput, BrowserTab};
+use argus_protocol::{BrowserAct, BrowserDriver, BrowserInput, BrowserTab};
 use serde_json::json;
 use tokio::sync::mpsc;
 
@@ -48,6 +49,7 @@ pub(crate) struct Seen {
 pub(crate) struct Browser {
     mux: mux::Mux,
     input: mpsc::UnboundedSender<BrowserInput>,
+    acts: mpsc::UnboundedSender<(BrowserAct, act::Reply)>,
     task: tokio::task::JoinHandle<()>,
 }
 
@@ -69,16 +71,26 @@ impl Browser {
             Err(_) => anyhow::bail!("the browser did not answer within {}s", STARTUP.as_secs()),
         }
         let (input, hands) = mpsc::unbounded_channel();
+        let (acts, asked) = mpsc::unbounded_channel();
+        let shots = chrome::shots();
         let task = tokio::spawn(async move {
             // Held for as long as the browser is followed: it ends with it.
             let _chrome = chrome;
-            screen::follow(cdp, events, hands, reports).await;
+            screen::follow(cdp, events, hands, asked, shots, reports).await;
         });
-        Ok(Browser { mux, input, task })
+        Ok(Browser { mux, input, acts, task })
     }
 
     pub(crate) fn input(&self, input: BrowserInput) {
         let _ = self.input.send(input);
+    }
+
+    /// Does a built-in command to the tab shown. The answer is awaited after
+    /// whatever lock this was reached under is let go.
+    pub(crate) fn act(&self, act: BrowserAct) -> tokio::sync::oneshot::Receiver<Result<String, String>> {
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        let _ = self.acts.send((act, reply));
+        answer
     }
 
     /// A line for an agent's browser tool, and what the browser says to it.
@@ -96,7 +108,8 @@ impl Browser {
         let (to, _) = mpsc::unbounded_channel();
         let (_, from) = mpsc::unbounded_channel();
         let (input, _) = mpsc::unbounded_channel();
-        Browser { mux: mux::Mux::new(to, from), input, task: tokio::spawn(std::future::pending()) }
+        let (acts, _) = mpsc::unbounded_channel();
+        Browser { mux: mux::Mux::new(to, from), input, acts, task: tokio::spawn(std::future::pending()) }
     }
 }
 
@@ -205,7 +218,8 @@ mod tests {
                 // unread is reset, and the browser shows an error page.
                 let mut request = [0u8; 4096];
                 let _ = stream.read(&mut request).await;
-                let page = "<title>Shown</title><p>hello";
+                let page = "<title>Shown</title><p>hello</p><input id=q>\
+                            <button id=b onclick=\"document.title = document.getElementById('q').value\">go</button>";
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
                     page.len()
@@ -216,6 +230,29 @@ mod tests {
         browser.input(BrowserInput::Navigate { url: format!("http://{address}/") });
         let titled = next(&mut heard, |r| matches!(r, Report::Page(seen) if seen.tabs.iter().any(|t| t.title == "Shown"))).await;
         assert!(titled.is_some(), "the page's title was never reported");
+
+        // The built-in commands, on the tab shown.
+        let act = |act: BrowserAct| {
+            let answer = browser.act(act);
+            async move { tokio::time::timeout(Duration::from_secs(30), answer).await.expect("no answer").expect("dropped") }
+        };
+        let page = format!("http://{address}/");
+        assert!(act(BrowserAct::Go { url: page.clone() }).await.unwrap().ends_with("— Shown"));
+        assert!(act(BrowserAct::Text).await.unwrap().contains("hello"));
+        assert_eq!(act(BrowserAct::Type { selector: "#q".into(), text: "typed".into() }).await, Ok("typed into #q".into()));
+        assert_eq!(act(BrowserAct::Click { selector: "#b".into() }).await, Ok("clicked #b".into()));
+        assert_eq!(act(BrowserAct::Eval { expression: "document.title".into() }).await, Ok("\"typed\"".into()), "a real click ran the page's handler");
+        assert!(act(BrowserAct::Click { selector: "#nothing".into() }).await.unwrap_err().contains("nothing on the page matches"));
+        assert!(act(BrowserAct::Eval { expression: "throw new Error('no')".into() }).await.unwrap_err().contains("no"));
+        let shot = act(BrowserAct::Shot).await.unwrap();
+        assert!(std::fs::read(&shot).unwrap().starts_with(b"\x89PNG"), "{shot} is a PNG");
+        assert!(act(BrowserAct::Tabs).await.unwrap().lines().next().unwrap().starts_with("* "), "the shown tab is marked");
+        browser.input(BrowserInput::Hold { held: true });
+        assert!(seen_until(&mut heard, |s| s.held).await);
+        assert!(act(BrowserAct::Reload).await.unwrap_err().contains("taken control"), "held, the page is the person's");
+        assert!(act(BrowserAct::Text).await.is_ok(), "reading it is still the agent's");
+        browser.input(BrowserInput::Hold { held: false });
+        assert!(seen_until(&mut heard, |s| !s.held).await);
 
         browser.input(BrowserInput::Viewport { width: 900, height: 600, scale: 2.0 });
         let sized = next(&mut heard, |r| matches!(r, Report::Frame { width: 900, height: 600, .. })).await;

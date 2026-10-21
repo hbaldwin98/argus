@@ -40,7 +40,7 @@ fn drives(method: &str) -> bool {
         )
 }
 
-const HELD: &str = "The person has taken control of this browser; wait until they hand it back.";
+pub(crate) const HELD: &str = "The person has taken control of this browser; wait until they hand it back.";
 
 struct Client {
     who: Who,

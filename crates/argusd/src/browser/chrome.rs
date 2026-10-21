@@ -45,6 +45,12 @@ fn profiles() -> PathBuf {
     std::env::temp_dir().join(format!("argus-browsers-{instance}"))
 }
 
+/// Where an agent's `browser shot` pictures are kept: beside the profiles,
+/// so the next daemon of the instance clears them with them.
+pub(super) fn shots() -> PathBuf {
+    profiles().join("shots")
+}
+
 /// Deletes every profile a daemon of this instance left: one killed
 /// outright never deleted its browsers', and none of them runs now.
 pub(crate) fn sweep() {
