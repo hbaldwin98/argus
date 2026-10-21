@@ -3,15 +3,19 @@
 //! holds the window controls.
 //!
 //! No title bar and no status bar (`GPUI.md`, Decided): the foot of the
-//! sidebar holds the counts and the daemon line. The stage is the live pane;
-//! its header names the pane on screen.
+//! sidebar holds the counts and the daemon line. Under the stage's header is
+//! the work area (`layout/work`): the live pane with the docks around it. The
+//! header names the pane on screen.
 
+use argus_desktop_core::connection::page::Side;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, Context, Entity, Subscription, Window};
 
 use crate::chrome::rail::RailView;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::layout::work::WorkView;
+use crate::panes::console::ConsoleView;
 use crate::panes::terminal::Terminal;
 use crate::theme::Ledger;
 use crate::window::Header;
@@ -19,17 +23,20 @@ use crate::window::Header;
 pub struct Shell {
     heard: Entity<Heard>,
     rail: Entity<RailView>,
-    terminal: Entity<Terminal>,
+    work: Entity<WorkView>,
     _observing: Subscription,
 }
 
 impl Shell {
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let terminal = cx.new(|cx| Terminal::new(heard.clone(), caller.clone(), window, cx));
+        let terminal = cx.new(|cx| Terminal::new(heard.clone(), caller.clone(), Side::Workspace, window, cx));
         let stage = terminal.read(cx).focus_handle().clone();
-        let rail = cx.new(|cx| RailView::new(heard.clone(), caller, stage, window, cx));
+        let rail = cx.new(|cx| RailView::new(heard.clone(), caller.clone(), stage.clone(), window, cx));
+        let console = cx.new(|cx| ConsoleView::new(heard.clone(), caller.clone(), stage, window, cx));
+        // The Workspace's pane is the stage the docks sit around.
+        let work = cx.new(|cx| WorkView::new(heard.clone(), caller, terminal.into(), console.into(), cx));
         let observing = cx.observe(&heard, |_, _, cx| cx.notify());
-        Self { heard, rail, terminal, _observing: observing }
+        Self { heard, rail, work, _observing: observing }
     }
 
     #[cfg(test)]
@@ -58,7 +65,7 @@ impl Render for Shell {
                     .min_w_0()
                     .h_full()
                     .child(Header::new().title(title))
-                    .child(div().id("stage").flex_1().min_h_0().child(self.terminal.clone())),
+                    .child(div().id("stage").flex_1().min_h_0().child(self.work.clone())),
             )
     }
 }

@@ -74,7 +74,7 @@ fn open(cx: &mut TestAppContext) -> Opened {
             |window, cx| {
                 let heard = cx.new(|_| Heard::new());
                 heard.update(cx, |heard, cx| heard.listen(listening, cx));
-                let terminal = cx.new(|cx| Terminal::new(heard.clone(), caller, window, cx));
+                let terminal = cx.new(|cx| Terminal::new(heard.clone(), caller, Side::Workspace, window, cx));
                 built = Some((heard, terminal.clone()));
                 terminal
             },
@@ -263,14 +263,32 @@ fn a_size_that_changes_again_inside_the_settle_time_is_reported_once(cx: &mut Te
 fn picking_another_pane_draws_nothing_until_its_first_frame_arrives() {
     let blank = Arc::new(Screen::new());
     let mut heard = Heard::new();
-    assert!(drawn(&heard, &blank).pane().is_none(), "no pane on screen");
+    assert!(drawn(&heard, Side::Workspace, &blank).pane().is_none(), "no pane on screen");
     heard.hear(rail(7));
     heard.hear(frame(7, Side::Workspace, "seven"));
-    assert_eq!(drawn(&heard, &blank).row_text(0), "seven");
+    assert_eq!(drawn(&heard, Side::Workspace, &blank).row_text(0), "seven");
     heard.hear(rail(8));
-    assert!(drawn(&heard, &blank).pane().is_none(), "the rail moved; pane 7's rows are not pane 8's");
+    assert!(drawn(&heard, Side::Workspace, &blank).pane().is_none(), "the rail moved; pane 7's rows are not pane 8's");
     heard.hear(frame(8, Side::Workspace, "eight"));
-    assert_eq!(drawn(&heard, &blank).row_text(0), "eight");
+    assert_eq!(drawn(&heard, Side::Workspace, &blank).row_text(0), "eight");
+}
+
+#[test]
+fn a_console_side_draws_its_own_sides_rows_only_while_they_are_of_the_console_it_shows() {
+    use argus_desktop_core::panes::console::ConsolePage;
+    let blank = Arc::new(Screen::new());
+    let mut heard = Heard::new();
+    heard.hear(frame(5, Side::First, "first"));
+    heard.hear(frame(6, Side::Second, "second"));
+    assert!(drawn(&heard, Side::First, &blank).pane().is_none(), "the console shows nothing yet");
+    let page = ConsolePage { showing: Some(5), beside: Some(6), ..ConsolePage::default() };
+    heard.hear(Event::Console(Box::new(page)));
+    assert_eq!(drawn(&heard, Side::First, &blank).row_text(0), "first");
+    assert_eq!(drawn(&heard, Side::Second, &blank).row_text(0), "second");
+    assert!(drawn(&heard, Side::Workspace, &blank).pane().is_none(), "the Workspace's rows are its own");
+    let page = ConsolePage { showing: Some(6), ..ConsolePage::default() };
+    heard.hear(Event::Console(Box::new(page)));
+    assert!(drawn(&heard, Side::First, &blank).pane().is_none(), "another console is shown: pane 5's rows are not its");
 }
 
 #[test]
@@ -280,5 +298,35 @@ fn a_pane_taken_off_the_screen_leaves_the_stage_empty() {
     heard.hear(rail(7));
     heard.hear(frame(7, Side::Workspace, "seven"));
     heard.hear(Event::Rail(Box::new(Rail { loaded: true, ..Rail::default() })));
-    assert!(drawn(&heard, &blank).pane().is_none());
+    assert!(drawn(&heard, Side::Workspace, &blank).pane().is_none());
+}
+
+#[gpui_kit::test]
+fn no_room_is_reported_while_a_dock_sash_is_held_and_the_last_is_when_it_is_let_go(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    cx.executor().advance_clock(SETTLE * 2);
+    cx.run_until_parked();
+    assert_eq!(resizes(&opened).len(), 1);
+    let resizing = |cx: &mut TestAppContext, on: bool| {
+        cx.update(|cx| {
+            opened.heard.update(cx, |heard, cx| {
+                heard.resizing = on;
+                cx.notify();
+            })
+        });
+        cx.run_until_parked();
+    };
+
+    // SHELL-EDGE-1: the page's panes wait for a held sash to settle.
+    resizing(cx, true);
+    cx.simulate_window_resize(opened.handle, size(px(WIDTH), px(HEIGHT / 2.0)));
+    settle(cx, &opened);
+    cx.executor().advance_clock(SETTLE * 2);
+    cx.run_until_parked();
+    assert_eq!(resizes(&opened).len(), 1, "a size was reported mid-drag: {:?}", resizes(&opened));
+
+    resizing(cx, false);
+    let sent = resizes(&opened);
+    assert_eq!(sent.len(), 2, "the size the gesture settled on is reported once it ends: {sent:?}");
+    assert_eq!(sent[1].1, (((HEIGHT / 2.0) - 16.0) / 20.0).floor() as u16);
 }

@@ -759,30 +759,43 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 
 | module | answers |
 | --- | --- |
-| `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, the window, and the unattended report of what was heard |
+| `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, the window, and the unattended report of what was heard |
 | `chrome` | the window's frame around the stage: the sidebar and its foot |
 | `chrome/foot` | the sidebar's foot: the tallies that need a look, a daemon's alarm, and the connection in one shape in every state |
 | `chrome/nav` | the sidebar's way between stages: which items there are, which one the stage on screen lights, and the call each press makes |
 | `chrome/rail` | the sidebar: the nav, the projects, the picked project's repositories with their checkouts and panes, the picked row and where it goes when a fold or a close takes its row away, and the foot; dimmed while the daemon is gone, and neither calling nor picking on a press |
-| `chrome/shell` | which regions the window is made of and how they sit: the sidebar at full height, and beside it the stage under its header |
+| `chrome/shell` | which regions the window is made of and how they sit: the sidebar at full height, and beside it the work area under the stage's header |
 | `connection` | how the window trades with the daemon and its own views |
 | `connection/caller` | how a view hands a `Call` on without knowing who answers it |
-| `connection/heard` | what the window has heard from its session: the latest of each kind of event a view draws, in one model every view observes, and whether the sidebar is held |
-| `connection/owner` | the state the daemon loop and the views' calls share, and the order their effects leave in; the session behind a mutex, the events out over a channel the UI thread drains |
+| `connection/heard` | what the window has heard from its session: the latest of each kind of event a view draws (the tree, the docks, the console's tabs and sides, the screens of the Workspace and of the console's two sides), in one model every view observes, whether the sidebar is held, and whether a dock's sash is held (set by the work area for the pane to wait on) |
+| `connection/owner` | the state the daemon loop and the views' calls share, and the order their effects leave in; the session behind a mutex, the events out over a channel the UI thread drains, and the frame tick that lasts as long as the window listens to it |
 | `keys` | how a key or committed text reaches the session |
+| `keys/caps` | how a chord of the session's keymap is written for a menu or a tooltip: the leader's press first when the chord follows it, modifiers before the key |
 | `keys/page_key` | which `PageKey` a GPUI keystroke is: the DOM's names for the keys, the character typed rather than the key printed, AltGr as a character and not a chord |
 | `keys/text` | the text an input method commits into the pane: GPUI's input handler for the terminal view, which holds no text and draws no preedit |
+| `layout` | where the stage and the docks sit around each other, and how a panel is moved between them |
+| `layout/dock` | one dock drawn from Rust's `DocksPage`: its tab strip while it holds more than one panel, the shown panel under a head of its own while it holds one, its sash, and the press each of them makes; dimmed and not answering while the daemon is gone |
+| `layout/dock_menu` | what a panel's dock menu and a dock tab's context menu offer, which item is where the panel already is, and the `Call` each sends |
+| `layout/drop_target` | where a panel dropped at a point would land (a dock, or the stage for a panel that has a page), the area to preview, and the call the drop sends |
+| `layout/panel` | what a docked panel's body draws while it is not ported: its name and a quiet line that it is not in the GPUI window yet (the console is drawn by `panes/console`) |
+| `layout/sash` | what size a dock has with its sash under the pointer: measured from the dock's own edge, the grab offset kept, held to Rust's bounds |
+| `layout/work` | the work area under the header: the stage between a left, right and bottom dock, and the one drag that carries a panel or sizes a dock, sending its `Call` only when it ends |
 | `panes` | the panes on screen and how each is drawn |
+| `panes/console` | the console: a tab per console the daemon holds with its dot, the strip's buttons and menus, and its first and second side each drawn with a terminal of their own under a header while split; every gesture is the page's `Call`, nothing on screen changes before the `Console` event, and the focus follows the keys the console says it has |
+| `panes/console/rename` | the rename dialog: a modal with one field, `RenamePane` asked of the daemon on Enter (never for a blank or unchanged name), Escape closing it, the keys given back to what had them |
+| `panes/console/strip` | what the console's tab strip and menus offer as plain data: which tabs wear a dot, a tab's menu, the more menu (split, stage, fullscreen, the docks), and the calls each item sends |
 | `panes/element` | the element that paints a pane's screen: one measured cell, shaped text runs and merged background quads, the cursor, and the room it holds said once per size |
 | `panes/grid` | how many rows and columns a size in pixels holds: whole cells, never fewer than one |
 | `panes/layout` | how the rows a screen holds become runs of same-styled text and rectangles of background, for the cells that fit |
 | `panes/palette` | which colour a packed wire colour is in the terminal's palette (the Ledger's sixteen, the cube and the greys), and which text stays readable on a background a program chose |
 | `panes/screen` | what the window holds of the Workspace pane's screen: every row's segments, the cursor and the parked view, and how a full, partial or resized frame is applied to them |
-| `panes/terminal` | the Workspace's live pane on the stage: what it draws of the shown pane, who has the keys, the keys it sends as the page does, and the room it reports once it holds still |
+| `panes/terminal` | a live pane's screen, the Workspace's on the stage or one of the console's two sides: what it draws of the pane its side shows, who has the keys, the keys it sends as the page does, and the room it reports once it holds still |
+| `pointer` | how the pointer's gestures over the window are told apart and followed |
+| `pointer/drag` | the one drag helper: a press that becomes a drag at 5 px and a click before, Escape cancelling with nothing dropped, the pointer followed over the whole window and the keys taken for the drag and given back |
 | `system` | what the GPUI window asks of the machine it runs on |
 | `system/clipboard` | the system clipboard through arboard, as `effects::Clipboard`: text, a picture encoded as a PNG, and the files a file manager copied |
 | `theme` | which colours and faces the Ledger look uses: the palette as `gpui-kit` theme roles, and the roles it lacks (changed, fainter) kept beside it |
-| `window` | how a frameless main window opens around an example's own view, and what its header strip holds: the drag region and the window controls |
+| `window` | how a frameless main window opens around an example's own view, what its header strip holds (the drag region and the window controls), and ending what ran for the window when the last one closes |
 
 ## Views
 

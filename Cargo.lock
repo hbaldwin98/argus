@@ -362,6 +362,7 @@ dependencies = [
  "argus-protocol",
  "gpui-kit",
  "image",
+ "proptest",
  "tokio",
  "tracing",
 ]

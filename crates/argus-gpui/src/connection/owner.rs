@@ -10,7 +10,7 @@
 //! ever touches a view.
 
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::connection::daemon::SessionOwner;
@@ -110,6 +110,25 @@ impl Owner {
         let mut session = lock(&self.session);
         let frames = session.take_frames();
         self.publish(frames);
+    }
+
+    /// Whether a window still drains what is published. Its receiver goes
+    /// with the window's model, so a closed one is a window that is gone and
+    /// whatever is still ticking for it has nobody to tell.
+    pub fn listening(&self) -> bool {
+        !self.heard.is_closed()
+    }
+
+    /// Takes the shown panes' changed rows on a short interval, as the Tauri
+    /// window's tick does, and ends once the window stops listening: taking
+    /// frames nobody draws would still empty the session's queue.
+    pub async fn frames(self: Arc<Self>) {
+        let mut tick = tokio::time::interval(Duration::from_millis(16));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        while self.listening() {
+            tick.tick().await;
+            self.tick();
+        }
     }
 
     /// Read off the UI thread: the clipboard can name files, and each is
@@ -248,5 +267,21 @@ mod tests {
         });
         owner.call(Call::Reconnect);
         assert!(waiting(&owner).await, "a reconnect asked while stopped was lost");
+    }
+
+    /// The tick belongs to the window: once the model that drains the
+    /// channel is gone it must end, not go on taking frames until the
+    /// process does.
+    #[tokio::test]
+    async fn the_frame_tick_ends_with_the_window_that_listened() {
+        let (owner, listening) = Owner::new(Settings::default());
+        let ticking = tokio::spawn(owner.clone().frames());
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert!(!ticking.is_finished(), "the tick stopped while the window still listened");
+        assert!(owner.listening());
+        drop(listening);
+        assert!(!owner.listening());
+        let ended = tokio::time::timeout(Duration::from_millis(500), ticking).await;
+        assert!(ended.is_ok(), "the tick went on after the window's receiver was dropped");
     }
 }

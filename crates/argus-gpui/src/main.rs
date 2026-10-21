@@ -11,7 +11,6 @@
 // A console window behind the GUI is noise outside a debug build.
 #![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use argus_desktop_core::connection::daemon;
@@ -43,13 +42,19 @@ fn main() {
         saved.host = std::env::var("ARGUS_DESKTOP_HOST").ok().filter(|host| !host.trim().is_empty());
     }
     let (owner, events) = Owner::new(saved);
-    runtime.spawn(daemon::run(owner.clone()));
-    runtime.spawn(frames(owner.clone()));
+    let daemon = runtime.spawn(daemon::run(owner.clone()));
+    let frames = runtime.spawn(owner.clone().frames());
 
     let quit_after: Option<u64> = std::env::var("ARGUS_GPUI_QUIT_MS").ok().and_then(|ms| ms.parse().ok());
     let calls = owner.clone();
     window::application().run(move |cx: &mut App| {
         window::init(cx);
+        // The loops are the window's: they end with it, and so does the app.
+        window::quit_when_closed(cx, move || {
+            daemon.abort();
+            frames.abort();
+        })
+        .detach();
         let heard = cx.new(|_| Heard::new());
         heard.update(cx, |heard, cx| heard.listen(events, cx));
         let caller = Caller::new(move |call| calls.call(call));
@@ -105,18 +110,6 @@ fn probe(heard: Entity<Heard>, caller: Caller, pane: u64, cx: &mut App) {
     .detach();
 }
 
-/// Takes the shown panes' changed rows on a short interval and hands them to
-/// the window. The window repaints when they arrive, so this is only how
-/// often the session is asked what changed, as the Tauri window asks it.
-async fn frames(owner: Arc<Owner>) {
-    let mut tick = tokio::time::interval(Duration::from_millis(16));
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        tick.tick().await;
-        owner.tick();
-    }
-}
-
 /// What the window heard, on one line.
 fn report(heard: &Heard) -> String {
     let rail = &heard.rail;
@@ -132,7 +125,7 @@ fn report(heard: &Heard) -> String {
         .collect();
     let panes = listed.len();
     format!(
-        "argus-gpui heard: connection={:?} loaded={} projects={} project={} repositories={} checkouts={} panes={} [{}] shown={} screen={}",
+        "argus-gpui heard: connection={:?} loaded={} projects={} project={} repositories={} checkouts={} panes={} [{}] shown={} docks=[{}] console=[{}] screen={}",
         heard.connection(),
         rail.loaded,
         rail.projects.len(),
@@ -142,7 +135,44 @@ fn report(heard: &Heard) -> String {
         panes,
         listed.join(" "),
         rail.shown.as_ref().map_or("-", |s| s.title.as_str()),
+        docks(&heard.docks),
+        console(&heard.console),
         screen(heard),
+    )
+}
+
+/// The docks as they are drawn: each one's size and tabs, the shown one marked.
+fn docks(docks: &argus_desktop_core::layout::docks::DocksPage) -> String {
+    [("left", &docks.left), ("right", &docks.right), ("bottom", &docks.bottom)]
+        .into_iter()
+        .map(|(name, page)| {
+            let tabs: Vec<String> = page
+                .tabs
+                .iter()
+                .map(|tab| format!("{}{}", if page.shown.as_ref() == Some(&tab.panel) { "*" } else { "" }, tab.title))
+                .collect();
+            let open = if page.shown.is_some() { page.size.to_string() } else { "closed".to_owned() };
+            format!("{name} {open} {}", tabs.join("|"))
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// The console as it is drawn: where it is, a tab per console (the ones on a
+/// side marked), and which consoles the sides show and type in.
+fn console(page: &argus_desktop_core::panes::console::ConsolePage) -> String {
+    let tabs: Vec<String> =
+        page.tabs.iter().map(|tab| format!("{}:{}:{}{}", tab.pane, tab.title, tab.status, if tab.on { "*" } else { "" })).collect();
+    let pane = |pane: Option<u64>| pane.map_or("-".to_owned(), |pane| pane.to_string());
+    format!(
+        "{:?} tabs={} [{}] first={} second={} typing={} spawn={}",
+        page.place,
+        tabs.len(),
+        tabs.join(" "),
+        pane(page.showing),
+        pane(page.beside),
+        pane(page.typing),
+        page.can_spawn
     )
 }
 

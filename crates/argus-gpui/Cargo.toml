@@ -36,3 +36,4 @@ arboard = { version = "3", default-features = false, features = ["image-data", "
 # `#[gpui_kit::test]`, the headless window and `render_to_image` sit behind
 # this feature, from the same pinned source as the normal dependency.
 gpui-kit = { version = "=0.8.0", features = ["test-support"] }
+proptest = { workspace = true }

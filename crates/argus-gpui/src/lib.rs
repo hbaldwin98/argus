@@ -3,7 +3,9 @@
 pub mod chrome;
 pub mod connection;
 pub mod keys;
+pub mod layout;
 pub mod panes;
+pub mod pointer;
 pub mod system;
 pub mod theme;
 pub mod window;
