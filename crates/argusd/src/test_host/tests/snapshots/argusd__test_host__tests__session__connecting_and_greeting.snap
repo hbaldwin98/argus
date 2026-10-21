@@ -76,6 +76,7 @@ expression: text
     "rename-pane",
     "saved-views",
     "code",
+    "code-edit",
     "files",
     "request-refusals"
   ],
@@ -102,6 +103,7 @@ expression: text
     "rename-pane",
     "saved-views",
     "code",
+    "code-edit",
     "files",
     "request-refusals"
   ],
