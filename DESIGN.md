@@ -222,7 +222,7 @@ stages (Checkouts is a slim table of Checkout, State and Last commit, State sayi
 clean idle checkout, with the selected checkout in a side column that the files panel replaces
 while open; `checkouts/says` words the State cell); `checkouts/files` draws a checkout's files beside the Checkouts table, a column of it, or
 a drawer over it when the stage is under 900px, listed by the daemon a folder at a time (`ListDir`,
-`FILES`) off the disk, untracked and ignored files included, and marked by git. `review/` holds `dialog`, `history` and `comment_box` (the comment box under picked lines,
+`FILES`) off the disk, untracked and ignored files included, and marked by git. Both draw their tree with `kit/file_tree` (`kit/ignored_fold` holds the top-level ignored folders in one row); Code's one field takes a leading `#` as a text search. `review/` holds `dialog`, `history` and `comment_box` (the comment box under picked lines,
 the review's and the Code stage's). `board/` holds `feature_stage` and `capture`, the lenses in
 `lenses/` (`work`, `record`, `flows` and `sequence`), and in `tracker/` `link`, `reconcile` and
 `tickets` (a feature's ticket links). It is compiled into `assets/js` and committed, so building
