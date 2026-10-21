@@ -28,6 +28,19 @@ pub fn folders_of(path: &str) -> impl Iterator<Item = &str> {
     path.match_indices('/').map(move |(at, _)| &path[..at])
 }
 
+/// Folders before files at every level, each in name order whatever the
+/// case: the order a person reads a tree in, which the daemon's flat byte
+/// order is not (`README.md` sorts before `src/`).
+fn folders_first(files: &[String]) -> Vec<&String> {
+    let key = |path: &str| -> Vec<(bool, String)> {
+        let last = path.matches('/').count();
+        path.split('/').enumerate().map(|(i, part)| (i == last, part.to_lowercase())).collect()
+    };
+    let mut ordered: Vec<&String> = files.iter().collect();
+    ordered.sort_by_cached_key(|path| key(path));
+    ordered
+}
+
 /// The rows that show of `files` with `open` folders open. With `changed`
 /// only, the files a version changed are listed under their folders, every
 /// one of which shows open: a short list is read whole.
@@ -36,7 +49,7 @@ pub fn rows(files: &[String], changes: &[CodeChange], open: &HashSet<String>, ch
     let changed_folders: HashSet<&str> = changes.iter().flat_map(|c| folders_of(&c.path)).collect();
     let mut rows = Vec::new();
     let mut listed: HashSet<&str> = HashSet::new();
-    for file in files {
+    for file in folders_first(files) {
         let change = by_path.get(file.as_str());
         if changed_only && change.is_none() {
             continue;
@@ -64,7 +77,7 @@ pub fn rows(files: &[String], changes: &[CodeChange], open: &HashSet<String>, ch
         }
         if shown {
             rows.push(TreeRow {
-                path: file.clone(),
+                path: file.to_string(),
                 name: file.rsplit('/').next().unwrap_or(file).to_owned(),
                 depth: folders_of(file).count(),
                 folder: false,
@@ -100,9 +113,19 @@ mod tests {
     fn closed_folders_hide_what_is_under_them() {
         let all = files(&["README.md", "src/a.rs", "src/deep/b.rs"]);
         let open = HashSet::new();
-        assert_eq!(shown(&rows(&all, &[], &open, false)), ["README.md", "src/"]);
+        assert_eq!(shown(&rows(&all, &[], &open, false)), ["src/", "README.md"]);
         let open: HashSet<String> = ["src".to_string()].into();
-        assert_eq!(shown(&rows(&all, &[], &open, false)), ["README.md", "src/", "  a.rs", "  deep/"]);
+        assert_eq!(shown(&rows(&all, &[], &open, false)), ["src/", "  deep/", "  a.rs", "README.md"]);
+    }
+
+    #[test]
+    fn folders_come_before_files_at_every_level_whatever_the_case() {
+        let all = files(&["Zed.md", "alpha.rs", "src/b.rs", "src/Z/c.rs", "Src2/x"]);
+        let open: HashSet<String> = ["src".to_string(), "src/Z".to_string()].into();
+        assert_eq!(
+            shown(&rows(&all, &[], &open, false)),
+            ["src/", "  Z/", "    c.rs", "  b.rs", "Src2/", "alpha.rs", "Zed.md"]
+        );
     }
 
     #[test]

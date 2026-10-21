@@ -51,6 +51,9 @@ pub enum FilesGesture {
     Open { path: String, how: OpenIn },
     Mode { mode: Mode },
     Filter { filter: String },
+    /// Enter in the filter field after a `#`: the checkout's text searched
+    /// in the Code stage, which the field's hint promises.
+    Search { query: String },
     /// The open folders read again.
     Reread,
     /// An entry shown in the file manager; with no `path`, the checkout's
@@ -68,6 +71,7 @@ pub enum Then {
     Close,
     Code { checkout: CheckoutId, path: String },
     Edit { checkout: CheckoutId, path: String },
+    Search { checkout: CheckoutId, query: String },
     Reveal { checkout: CheckoutId, path: Option<String> },
     Shell { checkout: CheckoutId },
 }
@@ -254,6 +258,7 @@ impl Files {
             }
             FilesGesture::Mode { mode } => self.mode = mode,
             FilesGesture::Filter { filter } => self.filter = filter,
+            FilesGesture::Search { query } => return Then::Search { checkout: self.checkout, query },
             FilesGesture::Reread => out.extend(self.reread(id)),
             FilesGesture::Reveal { path } => return Then::Reveal { checkout: self.checkout, path },
             FilesGesture::Shell => return Then::Shell { checkout: self.checkout },
@@ -427,6 +432,15 @@ mod tests {
         assert_eq!(files.selected.as_deref(), Some("src"), "out to the folder it is in");
         files.act(Action::ShutFolder, ids(), &mut out);
         assert_eq!(paths(&files), ["src", "a.rs"], "then the folder itself shuts");
+    }
+
+    #[test]
+    fn a_hash_search_from_the_filter_field_is_the_code_stages_to_run() {
+        let mut files = opened();
+        let mut out = Vec::new();
+        let then = files.gesture(FilesGesture::Search { query: "needle".into() }, ids(), &mut out);
+        assert_eq!(then, Then::Search { checkout: CO, query: "needle".into() });
+        assert!(out.is_empty(), "the daemon is asked by the Code stage, not the panel");
     }
 
     #[test]

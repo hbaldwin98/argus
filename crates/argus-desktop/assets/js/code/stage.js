@@ -5,6 +5,7 @@
 // typed.
 import { commentBox, settleDraft } from '../review/comment_box.js';
 import { $, el, ghosts, icon } from '../kit/dom.js';
+import { fileRow, treeRows } from '../kit/file_tree.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
@@ -46,16 +47,24 @@ export function codeStrip() {
     ];
     return { crumb, tools };
 }
-/** A field whose letters and keys go to Rust as gestures. It keeps the
- *  caret across redraws, as the review's jump does. */
-function field(id, kind, placeholder, query, extra = {}) {
+/** The one field over the tree: a name goes to a file, a leading `#` turns
+ *  it to a search of the text. Its letters and keys go to Rust as gestures,
+ *  which decides which of the two the text is; the field shows a search as
+ *  `#query` so what is typed and what is drawn agree. It keeps the caret
+ *  across redraws, as the review's jump does. */
+function find(c) {
+    const kind = c.search ? 'search' : 'jump';
     const send = (g) => gesture({ on: kind, gesture: g });
-    const live = document.getElementById(id);
+    const hint = 'Go to a file, or # to search text';
     const input = el('input', {
-        class: 'field',
-        id,
-        placeholder,
-        'aria-label': placeholder,
+        class: 'field cf-filter',
+        id: 'code-find',
+        placeholder: hint,
+        'aria-label': hint,
+        autocomplete: 'off',
+        spellcheck: 'false',
+        // The field is always there; reaching it opens the list it filters.
+        onfocus: () => c.jump || c.search || codeAction('filter'),
         oninput: (e) => {
             if (e.target instanceof HTMLInputElement)
                 send({ on: 'query', text: e.target.value });
@@ -81,32 +90,72 @@ function field(id, kind, placeholder, query, extra = {}) {
                 return;
             e.preventDefault();
         },
-        ...extra,
     });
-    input.value = live instanceof HTMLInputElement ? live.value : query;
-    return input;
+    // The text typed is kept while it still means what Rust holds, so a key
+    // pressed between a gesture and its redraw is not lost; a `#` that moved
+    // the field from one list to the other, or a list put away, is Rust's word.
+    const live = document.getElementById('code-find');
+    const held = c.search ? `#${c.search.query}` : (c.jump?.query ?? '');
+    const same = live instanceof HTMLInputElement &&
+        (c.search || c.jump) &&
+        live.value.startsWith('#') === !!c.search;
+    input.value = same ? live.value : held;
+    return el('div', { class: 'sbox' }, el('label', { class: 'cf-search' }, icon('search'), input, !c.search && el('span', { class: 'kbd cf-slash', 'aria-hidden': 'true' }, 'Ctrl P')), c.search &&
+        el('div', { class: 'sopts', role: 'group', 'aria-label': 'How to match' }, option('Aa', c.search.case, 'case', 'Match case  Alt C'), option('ab', c.search.word, 'word', 'Whole word  Alt W'), option('.*', c.search.regex, 'regex', 'Regular expression  Alt R')));
 }
 function chevron(open) {
     return el('span', { class: 'chev' }, icon(open ? 'down' : 'right'));
 }
-function counts(added, removed) {
-    return el('span', { class: 'tright cnum' }, added > 0 && el('span', { class: 'fg-ok' }, `+${added}`), removed > 0 && el('span', { class: 'fg-danger' }, `−${removed}`));
+/** How many changed files are under each folder, for the count a folder
+ *  carries in the changed colour. */
+function changedUnder(c) {
+    const under = new Map();
+    for (const f of c.changedFiles) {
+        const parts = f.path.split('/');
+        for (let i = 1; i < parts.length; i++) {
+            const folder = parts.slice(0, i).join('/');
+            under.set(folder, (under.get(folder) ?? 0) + 1);
+        }
+    }
+    return under;
+}
+function entryOf(r, under) {
+    const inside = under.get(r.path) ?? 0;
+    let mark = null;
+    if (r.folder && r.changed)
+        mark = {
+            text: String(inside),
+            tone: 'changed',
+            title: `${inside} changed ${inside === 1 ? 'file' : 'files'} under it`,
+        };
+    else if (r.changed)
+        mark = { text: 'M', tone: 'changed', title: `Changed: +${r.added} −${r.removed}` };
+    return {
+        path: r.path,
+        name: r.name,
+        depth: r.depth,
+        dir: r.folder,
+        open: r.open,
+        on: r.on,
+        // The version's files are what git lists: it holds no ignored ones to fold.
+        ignored: false,
+        mark,
+    };
 }
 function tree(c) {
+    const under = changedUnder(c);
     return el('div', { class: 'code-list', id: 'code-list' }, c.treeLoading
         ? ghosts([[0.6], [0.8], [0.5], [0.7]])
-        : c.tree.map((r) => el('button', {
-            class: `trow${r.folder ? ' dir' : ''}${r.on ? ' on' : ''}`,
-            style: `--d: ${r.depth}`,
-            title: r.path,
-            onclick: () => click({ on: 'tree', path: r.path }),
-        }, r.folder ? chevron(r.open) : el('span', null), el('span', { class: 'ttl' }, r.name), r.folder
-            ? r.changed
-                ? el('span', { class: 'tright' }, el('span', { class: 'tchg', 'aria-label': 'changes under it' }))
-                : el('span', null)
-            : r.changed
-                ? counts(r.added, r.removed)
-                : el('span', null))));
+        : treeRows(c.tree.map((r) => ({
+            r,
+            entry: entryOf(r, under),
+            name: r.name,
+            depth: r.depth,
+            ignored: false,
+        })), 'code', ({ entry }) => fileRow(entry, {
+            tag: 'button',
+            onclick: () => click({ on: 'tree', path: entry.path }),
+        })));
 }
 function jumpList(j) {
     return el('div', { class: 'code-list', id: 'code-list' }, j.matches.map((path, i) => el('button', { class: `trow${i === j.at ? ' on' : ''}`, onclick: () => click({ on: 'tree', path }) }, el('span', null), el('span', { class: 'ttl mono' }, path), el('span', null))), j.matches.length === 0 && el('div', { class: 'meta' }, `No file matches “${j.query}”.`));
@@ -149,7 +198,6 @@ function searchPanel(s) {
         said = el('div', { class: 'sum' }, `${s.total}${s.truncated ? '+' : ''} matches in ${files} ${files === 1 ? 'file' : 'files'}`);
     }
     return [
-        el('div', { class: 'sbox' }, field('code-search', 'search', 'Search the checkout', s.query, { class: 'field mono' }), el('div', { class: 'sopts', role: 'group', 'aria-label': 'How to match' }, option('Aa', s.case, 'case', 'Match case  Alt C'), option('ab', s.word, 'word', 'Whole word  Alt W'), option('.*', s.regex, 'regex', 'Regular expression  Alt R'))),
         el('input', {
             class: 'field mono',
             id: 'code-glob',
@@ -177,30 +225,20 @@ function searchPanel(s) {
         el('div', { class: 'code-list hits', id: 'code-list' }, s.current && s.files.flatMap(hitFile)),
     ];
 }
-function tab(label, on, pick, key) {
-    return el('button', { class: `lt${on ? ' on' : ''}`, role: 'tab', 'aria-selected': String(on), onclick: pick }, label, key && kbd(key));
-}
-/** Files and Search as one tab strip over the column, in both modes, so
- *  the way back from a search to the tree is always where it was. */
-function sideTabs(c) {
-    return el('div', { class: 'lens code-tabs', role: 'tablist', 'aria-label': 'Files or search' }, tab('Files', !c.search, () => c.search && gesture({ on: 'search', gesture: { on: 'close' } }), 'Ctrl P'), tab('Search', !!c.search, () => c.search || codeAction('search'), 'Ctrl F'));
+/** The checkout's name, and which of its files the tree lists. */
+function scope(c) {
+    return el('div', { class: 'code-tools' }, el('span', { class: 'code-scope mono', title: c.branch || c.name }, c.name), el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Which files' }, segment('All', !c.changedOnly, () => click({ on: 'changedOnly', only: false })), segment(el('span', null, 'Changed ', el('span', { class: 'cf-count' }, String(c.changed))), c.changedOnly, () => click({ on: 'changedOnly', only: true }))));
 }
 function side(c) {
     const body = c.search
         ? searchPanel(c.search)
-        : [
-            field('code-jump', 'jump', 'Go to a file   Ctrl P', c.jump?.query ?? '', {
-                // The field is always there; reaching it opens the list it filters.
-                onfocus: () => c.jump || codeAction('filter'),
-            }),
-            !c.jump &&
-                el('div', { class: 'code-tools' }, el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Which files' }, segment('All', !c.changedOnly, () => click({ on: 'changedOnly', only: false })), segment(`Changed ${c.changed}`, c.changedOnly, () => click({ on: 'changedOnly', only: true })))),
-            c.jump ? jumpList(c.jump) : tree(c),
-        ];
+        : c.jump
+            ? [jumpList(c.jump)]
+            : [scope(c), tree(c)];
     return el('aside', {
         class: `code-tree${c.search ? ` searching${c.path ? '' : ' alone'}` : ''}`,
         'aria-label': 'Files in the checkout',
-    }, sideTabs(c), body);
+    }, find(c), body);
 }
 /** The widths the person dragged the tree and the outline to, or the
  *  stylesheet's own. */
@@ -354,26 +392,54 @@ function selectedHit(c) {
     }
     return null;
 }
+/** The files opened in each checkout this session, newest first. Kept here:
+ *  it is a convenience of this window, not something the daemon holds. */
+const opened = new Map();
+const OPENED_KEPT = 8;
+function remember(c) {
+    if (!c.path)
+        return;
+    const was = opened.get(c.checkout) ?? [];
+    if (was[0] === c.path)
+        return;
+    opened.set(c.checkout, [c.path, ...was.filter((p) => p !== c.path)].slice(0, OPENED_KEPT));
+}
+/** A file in a list: its name, then its folder faint in mono. */
+function fileLine(path, name, dir, counts) {
+    return el('button', { class: 'cs-row', title: path, onclick: () => click({ on: 'tree', path }) }, icon('file-sm'), el('span', { class: 'cs-name' }, name), el('span', { class: 'cs-dir mono' }, dir || 'repository root'), counts);
+}
+/** With no file open: what changed here, and what was open lately, which are
+ *  the files the next click is most likely to want. */
+function start(c) {
+    const lately = (opened.get(c.checkout) ?? []).map((path) => {
+        const at = path.lastIndexOf('/');
+        return fileLine(path, path.slice(at + 1), at > 0 ? path.slice(0, at) : '');
+    });
+    const SHOWN = 10;
+    const changed = c.changedFiles
+        .slice(0, SHOWN)
+        .map((f) => fileLine(f.path, f.name, f.dir, el('span', { class: 'cnum' }, f.added > 0 && el('span', { class: 'fg-ok' }, `+${f.added}`), f.removed > 0 && el('span', { class: 'fg-danger' }, `−${f.removed}`))));
+    const more = c.changedFiles.length - SHOWN;
+    return el('section', { class: 'code-start', 'aria-label': 'Nothing open' }, el('div', { class: 'cs-sec' }, el('h2', null, `Changed on ${c.branch || c.name}`), changed.length > 0
+        ? el('div', { class: 'cs-list' }, changed, more > 0 &&
+            el('div', { class: 'meta' }, `and ${more} more, under Changed in the tree.`))
+        : el('p', { class: 'fg-muted' }, c.since
+            ? ['Nothing since ', el('span', { class: 'mono' }, c.since), '.']
+            : 'No changes.')), lately.length > 0 &&
+        el('div', { class: 'cs-sec' }, el('h2', null, 'Opened lately'), el('div', { class: 'cs-list' }, lately)), el('p', { class: 'cs-hint' }, 'Type in the field to go to a file by name; start with ', kbd('#'), " to search the checkout's text instead."));
+}
 function file(c) {
     let body;
     if (c.failed && c.lines.length === 0)
         body = el('div', { class: 'review-empty fg-muted' }, c.failed);
     else if (!c.path) {
         const found = selectedHit(c);
-        body = el('div', { class: 'empty code-empty' }, el('div', { class: 'empty-body' }, icon('file'), found
-            ? [
-                el('div', { class: 'type-title' }, 'Open the selected match'),
-                el('div', { class: 'fg-muted' }, el('span', { class: 'mono' }, `${found.file.name}:${found.hit.line}`), ' is the one under the cursor in the results.'),
-                el('button', {
-                    class: 'btn primary',
-                    onclick: () => click({ on: 'match', index: found.hit.index }),
-                }, 'Open it', kbd('Enter')),
-            ]
-            : [
-                el('div', { class: 'type-title' }, 'Pick a file'),
-                el('div', { class: 'fg-muted' }, 'Choose one in the tree, or search by name.'),
-                el('button', { class: 'btn', onclick: () => codeAction('filter') }, 'Go to a file', kbd('Ctrl P')),
-            ]));
+        body = found
+            ? el('div', { class: 'empty code-empty' }, el('div', { class: 'empty-body' }, icon('file'), el('div', { class: 'type-title' }, 'Open the selected match'), el('div', { class: 'fg-muted' }, el('span', { class: 'mono' }, `${found.file.name}:${found.hit.line}`), ' is the one under the cursor in the results.'), el('button', {
+                class: 'btn primary',
+                onclick: () => click({ on: 'match', index: found.hit.index }),
+            }, 'Open it', kbd('Enter'))))
+            : start(c);
     }
     else if (c.fileLoading && c.lines.length === 0)
         body = ghosts([[0.5], [0.9], [0.8], [0.7], [0.6]]);
@@ -455,6 +521,7 @@ export function drawCode() {
     const on = `${list}:${c.search ? (hit?.index ?? '') : (c.jump?.at ?? c.path ?? '')}`;
     const cursor = `${c.path ?? ''}:${c.at}`;
     settleDraft('code-comment', c.comment !== null);
+    remember(c);
     const typing = document.activeElement?.id;
     const files = side(c);
     // An outline of no file is 200px of chrome with nothing in it.
@@ -489,9 +556,9 @@ export function drawCode() {
     placeMarks();
     trackView();
     // The field with the keys keeps them; one just opened takes them.
-    const want = c.comment ? 'code-comment' : c.search ? 'code-search' : c.jump ? 'code-jump' : null;
+    const want = c.comment ? 'code-comment' : c.search || c.jump ? 'code-find' : null;
     const keep = typing && document.getElementById(typing);
-    const focus = keep && typing !== 'code-jump' ? keep : want ? document.getElementById(want) : null;
+    const focus = keep && typing !== 'code-find' ? keep : want ? document.getElementById(want) : null;
     if (focus instanceof HTMLInputElement || focus instanceof HTMLTextAreaElement) {
         if (document.activeElement !== focus)
             focus.focus();

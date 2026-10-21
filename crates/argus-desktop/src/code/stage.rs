@@ -52,6 +52,11 @@ pub struct CodePage {
     pub changed: usize,
     pub tree: Vec<CodeTreeRow>,
     pub tree_loading: bool,
+    /// Every file this version changed, whatever folders are open: what the
+    /// stage lists when no file is read.
+    pub changed_files: Vec<CodeChangedFile>,
+    /// The commit the checkout is on, short, for "Nothing since …".
+    pub since: Option<String>,
     /// The file being read.
     pub path: Option<String>,
     /// Its language, by its extension, when there is a name for it.
@@ -99,6 +104,19 @@ pub struct CodeTreeRow {
     pub removed: u32,
     /// The file being read.
     pub on: bool,
+}
+
+/// A file the version changed, named and placed as a list reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CodeChangedFile {
+    pub path: String,
+    pub name: String,
+    /// Its folder, empty at the root.
+    pub dir: String,
+    pub added: u32,
+    pub removed: u32,
 }
 
 /// One line of the file being read.
@@ -861,6 +879,18 @@ impl CodeStage {
         let Some(jump) = &mut self.jump else {
             return Vec::new();
         };
+        // One field serves both: a leading `#` hands what follows to the
+        // search, as the search field's own text is shown with it.
+        if let ReviewJumpGesture::Query { text } = &gesture {
+            if let Some(query) = text.strip_prefix('#') {
+                let query = query.to_owned();
+                self.open_search();
+                if let Some(search) = &mut self.search {
+                    search.query = query;
+                }
+                return Vec::new();
+            }
+        }
         match jump.gesture(gesture, &self.files) {
             Jumped::Kept => Vec::new(),
             Jumped::Closed => {
@@ -891,7 +921,16 @@ impl CodeStage {
         };
         let found = search.found.as_ref().map_or(0, |f| f.matches.len());
         match gesture {
-            ReviewJumpGesture::Query { text } => search.query = text,
+            ReviewJumpGesture::Query { text } => match text.strip_prefix('#') {
+                Some(query) => search.query = query.to_owned(),
+                // The `#` was deleted: the field is the go-to-file one again.
+                None => {
+                    self.open_jump();
+                    if let Some(jump) = &mut self.jump {
+                        jump.gesture(ReviewJumpGesture::Query { text }, &self.files);
+                    }
+                }
+            },
             ReviewJumpGesture::Step { by } => search.at = search.at.saturating_add_signed(by).min(found.saturating_sub(1)),
             ReviewJumpGesture::Close => self.search = None,
             ReviewJumpGesture::Choose => return self.choose_search(id),
@@ -1045,6 +1084,21 @@ impl CodeStage {
                 })
                 .collect(),
             tree_loading: self.tree_asked.is_some() && self.files.is_empty(),
+            changed_files: self
+                .changes
+                .iter()
+                .map(|c| {
+                    let (dir, name) = c.path.rsplit_once('/').unwrap_or(("", &c.path));
+                    CodeChangedFile {
+                        path: c.path.clone(),
+                        name: name.to_owned(),
+                        dir: dir.to_owned(),
+                        added: c.added,
+                        removed: c.removed,
+                    }
+                })
+                .collect(),
+            since: checkout.and_then(|c| c.git.as_ref()).and_then(|g| g.last_commit.as_ref()).map(|c| c.short.clone()),
             path: self.path.clone(),
             language: self.path.as_deref().and_then(language),
             added: change.map_or(0, |c| c.added),
@@ -1306,7 +1360,7 @@ mod tests {
         let page = s.page(None);
         assert_eq!((page.at, page.lines.iter().position(|r| r.cursor)), (3, Some(2)));
         let names: Vec<(&str, bool)> = page.tree.iter().map(|r| (r.name.as_str(), r.on)).collect();
-        assert_eq!(names, [("README.md", false), ("src", false), ("a.rs", true), ("b.rs", false)], "its folder opened");
+        assert_eq!(names, [("src", false), ("a.rs", true), ("b.rs", false), ("README.md", false)], "its folder opened");
         assert_eq!((page.added, page.removed, page.changed, page.language), (2, 1, 1, Some("Rust")));
         assert_eq!(page.version, None, "the working tree goes without saying");
     }
@@ -1436,6 +1490,34 @@ mod tests {
     }
 
     #[test]
+    fn a_leading_hash_in_the_go_to_file_field_searches_the_text_instead() {
+        let mut s = reading("src/a.rs", None);
+        s.open_jump();
+        s.jump(ReviewJumpGesture::Query { text: "#mor".into() }, || 0);
+        let page = s.page(None);
+        assert!(page.jump.is_none(), "the file list gives way to the results");
+        assert_eq!(page.search.unwrap().query, "mor");
+        // Typing on in the same field is the search's.
+        s.search(ReviewJumpGesture::Query { text: "#more".into() }, || 0);
+        assert_eq!(s.page(None).search.unwrap().query, "more");
+        // Taking the `#` away is the go-to-file field again, with what is left.
+        s.search(ReviewJumpGesture::Query { text: "b.rs".into() }, || 0);
+        let page = s.page(None);
+        assert!(page.search.is_none());
+        assert_eq!(page.jump.unwrap().matches[0], "src/b.rs");
+    }
+
+    #[test]
+    fn the_stage_lists_every_changed_file_and_the_commit_it_is_on_for_the_empty_state() {
+        let mut s = reading("src/a.rs", None);
+        s.path = None;
+        let page = s.page(None);
+        let listed: Vec<_> = page.changed_files.iter().map(|f| (f.name.as_str(), f.dir.as_str(), f.added)).collect();
+        assert_eq!(listed, [("a.rs", "src", 2)]);
+        assert_eq!(page.since, None, "a checkout with no commit says nothing of one");
+    }
+
+    #[test]
     fn go_to_file_lights_only_a_match_it_shows() {
         let (mut s, _) = stage(None, None);
         let mut many = tree(1);
@@ -1469,7 +1551,7 @@ mod tests {
     fn enter_searches_with_the_options_and_enter_again_reads_the_match() {
         let mut s = reading("src/a.rs", None);
         s.open_search();
-        s.search(ReviewJumpGesture::Query { text: "more".into() }, || 0);
+        s.search(ReviewJumpGesture::Query { text: "#more".into() }, || 0);
         s.click(CodeClick::SearchOption { option: "word".into() }, || 0);
         s.set_glob("src/**".into());
         let sent = s.search(ReviewJumpGesture::Choose, || 20);
@@ -1497,7 +1579,7 @@ mod tests {
     fn an_option_flipped_on_a_search_made_searches_again() {
         let mut s = reading("src/a.rs", None);
         s.open_search();
-        s.search(ReviewJumpGesture::Query { text: "more".into() }, || 0);
+        s.search(ReviewJumpGesture::Query { text: "#more".into() }, || 0);
         s.search(ReviewJumpGesture::Choose, || 20);
         s.receive_matches(found(20, "more", SearchOptions::default()));
         let sent = s.click(CodeClick::SearchOption { option: "case".into() }, || 21);
@@ -1509,7 +1591,7 @@ mod tests {
     fn a_search_that_cannot_run_says_why_in_the_search() {
         let mut s = reading("src/a.rs", None);
         s.open_search();
-        s.search(ReviewJumpGesture::Query { text: "(".into() }, || 0);
+        s.search(ReviewJumpGesture::Query { text: "#(".into() }, || 0);
         s.search(ReviewJumpGesture::Choose, || 20);
         assert!(s.failed(20, "“(” is not a regular expression this can read".into()));
         let page = s.page(None);
@@ -1521,7 +1603,7 @@ mod tests {
     fn a_files_matches_can_be_folded() {
         let mut s = reading("src/a.rs", None);
         s.open_search();
-        s.search(ReviewJumpGesture::Query { text: "more".into() }, || 0);
+        s.search(ReviewJumpGesture::Query { text: "#more".into() }, || 0);
         s.search(ReviewJumpGesture::Choose, || 20);
         s.receive_matches(found(20, "more", SearchOptions::default()));
         s.click(CodeClick::HitFile { path: "src/a.rs".into() }, || 0);

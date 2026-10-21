@@ -6,4 +6,4 @@ import type { OpenIn } from "./OpenIn";
 /**
  * What was done in the panel.
  */
-export type FilesGesture = { "on": "close" } | { "on": "action", action: Action, } | { "on": "click", path: string, } | { "on": "select", path: string, } | { "on": "open", path: string, how: OpenIn, } | { "on": "mode", mode: Mode, } | { "on": "filter", filter: string, } | { "on": "reread" } | { "on": "reveal", path: string | null, } | { "on": "shell" };
+export type FilesGesture = { "on": "close" } | { "on": "action", action: Action, } | { "on": "click", path: string, } | { "on": "select", path: string, } | { "on": "open", path: string, how: OpenIn, } | { "on": "mode", mode: Mode, } | { "on": "filter", filter: string, } | { "on": "search", query: string, } | { "on": "reread" } | { "on": "reveal", path: string | null, } | { "on": "shell" };

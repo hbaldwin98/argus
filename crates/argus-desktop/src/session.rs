@@ -2523,6 +2523,22 @@ impl Session {
                 }
             }
             FilesThen::Edit { checkout, path } => self.open_in_editor(checkout, path, None),
+            FilesThen::Search { checkout, query } => {
+                if self.status.daemon_can(CODE) {
+                    self.open_code_at(checkout, CodeVersion::WorkingTree, None, None, None);
+                    // The stage's own gestures, so the search is the one typed there.
+                    // Not `code_gesture`: its `finish` would take the messages out from under this one's.
+                    for gesture in [
+                        CodeGesture::Action { action: Action::Search },
+                        CodeGesture::Search { gesture: ReviewJumpGesture::Query { text: format!("#{query}") } },
+                        CodeGesture::Search { gesture: ReviewJumpGesture::Choose },
+                    ] {
+                        self.code.gesture(gesture, &self.tree, || self.awaited.name(), &mut self.out);
+                    }
+                } else {
+                    self.say(TOO_OLD_FOR_CODE);
+                }
+            }
             FilesThen::Shell { checkout } => {
                 let sent = self.spawn_shell(checkout);
                 self.out.extend(sent);
@@ -3837,7 +3853,7 @@ mod tests {
         s.show_code(true);
         s.code_gesture(CodeGesture::Action { action: Action::Search });
         let search = |s: &mut Session, text: &str| {
-            let query = CodeGesture::Search { gesture: ReviewJumpGesture::Query { text: text.into() } };
+            let query = CodeGesture::Search { gesture: ReviewJumpGesture::Query { text: format!("#{text}") } };
             s.call(Call::Code { gesture: query });
             let choose = CodeGesture::Search { gesture: ReviewJumpGesture::Choose };
             let sent = code_asks(s.call(Call::Code { gesture: choose }));

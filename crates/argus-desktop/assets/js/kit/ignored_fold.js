@@ -1,0 +1,23 @@
+// Which rows of a file tree fold into the one "N ignored" row at its foot.
+// Pure, so the rule is held under node without a page (`test/kit`).
+/** Ignored entries at the top of the tree are build output, caches and the
+ *  agents' own folders: seven of them between a person and the sources they
+ *  came for. Deeper ones stay where they are, since folding one out of the
+ *  middle of its folder would lose where it was. */
+export function foldIgnored(rows) {
+    const folded = { shown: [], held: [], names: [] };
+    let inside = false;
+    for (const row of rows) {
+        if (row.depth === 0) {
+            inside = row.ignored;
+            if (inside)
+                folded.names.push(row.name);
+        }
+        (inside ? folded.held : folded.shown).push(row);
+    }
+    return folded;
+}
+/** What the fold's row says: `4 ignored · .argus, .opencode, target`. */
+export function foldLabel(names) {
+    return `${names.length} ignored · ${names.join(', ')}`;
+}

@@ -1963,11 +1963,16 @@ pub fn scenes() -> Vec<Scene> {
                 .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Line { line: 52, extend: false } } });
             w.s
         }),
-        scene("code-search", "Code — searching the checkout", || {
+        scene("code-start", "Code — nothing open yet: what changed, and the one field", || {
+            let mut w = Window::showing(P_TRIM);
+            w.call(Call::ShowCode { open: true });
+            w.s
+        }),
+        scene("code-search","Code — searching the checkout", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::ShowCode { open: true })
                 .call(Call::Code { gesture: CodeGesture::Action { action: Action::Search } })
-                .call(Call::Code { gesture: CodeGesture::Search { gesture: ReviewJumpGesture::Query { text: "DraggedWidth".into() } } })
+                .call(Call::Code { gesture: CodeGesture::Search { gesture: ReviewJumpGesture::Query { text: "#DraggedWidth".into() } } })
                 .call(Call::Code { gesture: CodeGesture::Search { gesture: ReviewJumpGesture::Choose } });
             w.s
         }),

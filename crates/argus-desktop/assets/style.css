@@ -5422,15 +5422,16 @@ body.console-fullscreen #bar {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  gap: var(--sp-8);
 }
 .cf-kicker {
-  font: var(--type-small);
-  color: var(--fg-faint);
+  font-size: var(--fs-md);
+  font-weight: var(--weight-bold);
 }
 .cf-checkout {
-  font-weight: var(--weight-bold);
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
+  color: var(--fg-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5480,6 +5481,63 @@ body.console-fullscreen #bar {
 }
 .cf-crumb .cf-last {
   color: var(--fg-muted);
+}
+/* The folder the selection is in, and which files the tree lists. */
+.cf-crumbrow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: 0 var(--sp-12) var(--sp-8) var(--sp-16);
+}
+.cf-crumbrow .cf-crumb {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+/* The tree is shared with the Code stage, whose rows are buttons. */
+button.cf-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-md);
+  text-align: left;
+}
+/* The ignored top-level folders held in one row, opening to show them. */
+.ft-fold {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  width: 100%;
+  box-sizing: border-box;
+  height: var(--row-h);
+  margin-top: var(--sp-6);
+  padding: 0 var(--sp-8) 0 var(--sp-4);
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg-faint);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.ft-fold:hover {
+  color: var(--fg-muted);
+}
+.ft-fold[aria-expanded='true'] .cf-chev svg {
+  transform: rotate(90deg);
+}
+.ft-held[hidden] {
+  display: none;
+}
+.ft-held .cf-row {
+  opacity: 0.7;
 }
 .cf-tree {
   flex: 1;
@@ -5662,21 +5720,12 @@ body.console-fullscreen #bar {
   gap: var(--sp-6);
   min-height: 0;
 }
-/* Search drops under the segments when the column is too narrow for both. */
+/* The checkout and which of its files the tree lists. */
 .code-tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-6);
-}
-.code-tabs {
-  gap: var(--sp-16);
-  padding: 0 var(--sp-4);
-  border-bottom: 1px solid var(--line);
-  flex: none;
-}
-.code-tabs .lt .kbd {
-  margin-left: var(--sp-2);
 }
 .code-tools .segb {
   padding: 0 var(--sp-8);
@@ -5790,8 +5839,93 @@ body.console-fullscreen #bar {
 .sbox {
   position: relative;
 }
-.sbox .field {
+.sbox:has(.sopts) .field {
   padding-right: 100px;
+}
+.code-tree .cf-filter {
+  padding-right: 56px;
+}
+.code-scope {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+}
+.code-tools .cf-count {
+  margin-left: 0;
+}
+
+/* Nothing open: what changed here and what was open lately. */
+.code-start {
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: var(--sp-44);
+  font: var(--type-body);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-32);
+  background: var(--atmosphere);
+}
+.cs-sec {
+  max-width: 640px;
+}
+.cs-sec h2 {
+  margin: 0 0 var(--sp-8);
+  font-size: var(--fs-lg);
+  font-weight: var(--weight-bold);
+}
+.cs-sec p {
+  margin: 0;
+}
+.cs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 var(--sp-12);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cs-row:hover {
+  background: var(--fill);
+}
+.cs-row > svg {
+  flex: none;
+  color: var(--fg-muted);
+}
+.cs-name {
+  flex: none;
+}
+.cs-dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--fg-faint);
+}
+.cs-hint {
+  margin: 0;
+  max-width: 520px;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--fg-faint);
 }
 .sopts {
   position: absolute;
@@ -10315,19 +10449,12 @@ button.vtree-chev:focus-visible {
     background: linear-gradient(to right, transparent, var(--bg-sunken));
   }
 
-  /* The Code stage gives the file its room: narrower side columns, and the
-     tab strip without the keys, which the tooltips and the palette still say. */
+  /* The Code stage gives the file its room: narrower side columns. */
   .code-tree {
     width: min(var(--code-tree-w, 288px), var(--code-tree-narrow));
   }
   .code-outline {
     width: min(var(--code-outline-w, 232px), var(--code-outline-narrow));
-  }
-  .code-tabs {
-    gap: var(--sp-8);
-  }
-  .code-tabs .kbd {
-    display: none;
   }
 }
 

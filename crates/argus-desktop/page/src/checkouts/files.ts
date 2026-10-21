@@ -9,6 +9,7 @@ import type { FilesPage } from '../bindings/FilesPage';
 import type { Mode } from '../bindings/Mode';
 import { actionFor } from '../keys/keymap.js';
 import { el, ghosts, icon } from '../kit/dom.js';
+import { fileRow, treeRows, type TreeEntry, type TreeMark } from '../kit/file_tree.js';
 import { contextMenu, type MenuItem } from '../kit/menu.js';
 import { call } from '../connection/tauri.js';
 import { state } from '../state.js';
@@ -82,16 +83,9 @@ function menuFor(files: FilesPage, row: FileRow): (MenuItem | false)[] {
   ];
 }
 
-function mark(row: FileRow): HTMLElement | null {
-  if (row.mark === 'changed')
-    return el('span', { class: 'cf-mark changed', title: 'Changed', 'aria-label': 'changed' }, 'M');
-  if (row.mark === 'untracked')
-    return el(
-      'span',
-      { class: 'cf-mark untracked', title: 'Untracked', 'aria-label': 'untracked' },
-      '?',
-    );
-  if (row.mark === 'ignored') return el('span', { class: 'cf-mark ignored' }, 'ignored');
+function markOf(row: FileRow): TreeMark | null {
+  if (row.mark === 'changed') return { text: 'M', tone: 'changed', title: 'Changed' };
+  if (row.mark === 'untracked') return { text: '?', tone: 'untracked', title: 'Untracked' };
   return null;
 }
 
@@ -134,31 +128,43 @@ function treeRow(files: FilesPage, row: FileRow, at: number): HTMLElement {
           ),
         )
       : null;
-  return el(
-    'div',
-    {
-      class: `cf-row${on ? ' on' : ''}${row.mark === 'ignored' ? ' ignored' : ''}${row.dir ? ' dir' : ''}`,
+  const entry: TreeEntry = {
+    path: row.path,
+    name: row.name,
+    depth: row.depth,
+    dir: row.dir,
+    open: row.open,
+    on,
+    ignored: row.mark === 'ignored',
+    mark: markOf(row),
+  };
+  return fileRow(entry, {
+    tag: 'div',
+    attrs: {
       id: `cf-r${at}`,
       role: 'treeitem',
       'aria-level': String(row.depth + 1),
       'aria-selected': String(on),
       'aria-expanded': row.dir ? String(row.open) : null,
-      title: row.path,
-      style: `--d: ${row.depth}`,
-      onclick: () => gesture({ on: 'click', path: row.path }),
-      ondblclick: () => {
-        if (!row.dir) gesture({ on: 'open', path: row.path, how: 'code' });
-      },
-      oncontextmenu: (e: MouseEvent) => {
-        gesture({ on: 'select', path: row.path });
-        contextMenu(`${row.name}`, () => menuFor(files, row))(e);
-      },
     },
-    el('span', { class: `cf-chev${row.open ? ' open' : ''}` }, row.dir ? icon('right') : null),
-    el('span', { class: 'cf-glyph' }, icon(row.dir ? 'folder-sm' : 'file-sm')),
-    el('span', { class: 'cf-name' }, row.name),
-    buttons,
-    mark(row),
+    onclick: () => gesture({ on: 'click', path: row.path }),
+    ondblclick: () => {
+      if (!row.dir) gesture({ on: 'open', path: row.path, how: 'code' });
+    },
+    oncontextmenu: (e: MouseEvent) => {
+      gesture({ on: 'select', path: row.path });
+      contextMenu(`${row.name}`, () => menuFor(files, row))(e);
+    },
+    extra: buttons,
+  });
+}
+
+/** A header action: an icon, named for the pointer and for a screen reader. */
+function action(label: string, glyph: Element, run: () => void): HTMLElement {
+  return el(
+    'button',
+    { class: 'icon', type: 'button', title: label, 'aria-label': label, onclick: run },
+    glyph,
   );
 }
 
@@ -173,65 +179,37 @@ function head(files: FilesPage): HTMLElement {
       el('span', { class: 'cf-checkout mono', title: files.root }, files.name),
     ),
     files.canReveal &&
-      el(
-        'button',
-        {
-          class: 'btn sm',
-          type: 'button',
-          title: `${files.reveal}: the checkout's folder`,
-          onclick: () => gesture({ on: 'reveal', path: null }),
-        },
-        icon('folder-sm'),
-        files.reveal,
-      ),
-    el(
-      'button',
-      {
-        class: 'icon',
-        type: 'button',
-        title: 'Open a shell here',
-        'aria-label': 'Open a shell here',
-        onclick: () => gesture({ on: 'shell' }),
-      },
-      icon('console-sm'),
-    ),
-    el(
-      'button',
-      {
-        class: 'icon',
-        type: 'button',
-        title: 'Read the folder again',
-        'aria-label': 'Read the folder again',
-        onclick: () => gesture({ on: 'reread' }),
-      },
-      icon('refresh'),
-    ),
-    el(
-      'button',
-      {
-        class: 'icon',
-        type: 'button',
-        title: 'Close the files (Esc)',
-        'aria-label': 'Close the files',
-        onclick: () => gesture({ on: 'close' }),
-      },
-      icon('close'),
-    ),
+      action(files.reveal, icon('folder-sm'), () => gesture({ on: 'reveal', path: null })),
+    action('Open a shell here', icon('console-sm'), () => gesture({ on: 'shell' })),
+    action('Read the folder again', icon('refresh'), () => gesture({ on: 'reread' })),
+    action('Close the files (Esc)', icon('close'), () => gesture({ on: 'close' })),
   );
 }
 
 function tools(files: FilesPage): HTMLElement {
+  const hint = 'Filter files, or # to search text';
   const filter = el('input', {
     class: 'field cf-filter',
     id: 'cfiles-filter',
-    placeholder: 'Filter files',
-    'aria-label': 'Filter the files shown',
+    placeholder: hint,
+    'aria-label': hint,
     autocomplete: 'off',
     spellcheck: 'false',
     oninput: (e: Event) => {
-      if (e.target instanceof HTMLInputElement) gesture({ on: 'filter', filter: e.target.value });
+      if (!(e.target instanceof HTMLInputElement)) return;
+      // A `#` is a search of the text, run on Enter: the names are not
+      // filtered by it meanwhile.
+      gesture({ on: 'filter', filter: e.target.value.startsWith('#') ? '' : e.target.value });
     },
     onkeydown: (e: KeyboardEvent) => {
+      if (actionFor(['jump'], e) === 'choose' && e.target instanceof HTMLInputElement) {
+        const query = e.target.value.slice(1);
+        if (e.target.value.startsWith('#') && query.trim() !== '') {
+          e.preventDefault();
+          gesture({ on: 'search', query });
+          return;
+        }
+      }
       if (actionFor(['filter'], e) === 'leave') {
         e.preventDefault();
         keepKeys = true;
@@ -239,7 +217,25 @@ function tools(files: FilesPage): HTMLElement {
       }
     },
   });
-  filter.value = files.filter;
+  // What was typed after a `#` is not Rust's to give back: it holds no filter.
+  const live = document.getElementById('cfiles-filter');
+  const searching = live instanceof HTMLInputElement && live.value.startsWith('#');
+  filter.value = searching && files.filter === '' ? live.value : files.filter;
+  return el(
+    'div',
+    { class: 'cf-tools' },
+    el(
+      'label',
+      { class: 'cf-search' },
+      icon('search'),
+      filter,
+      el('span', { class: 'kbd cf-slash', 'aria-hidden': 'true' }, '/'),
+    ),
+  );
+}
+
+function crumb(files: FilesPage): HTMLElement {
+  const last = files.crumb.length - 1;
   const mode = (value: Mode, label: string, count: number | null): HTMLElement =>
     el(
       'button',
@@ -254,13 +250,14 @@ function tools(files: FilesPage): HTMLElement {
     );
   return el(
     'div',
-    { class: 'cf-tools' },
+    { class: 'cf-crumbrow' },
     el(
-      'label',
-      { class: 'cf-search' },
-      icon('search'),
-      filter,
-      el('span', { class: 'kbd cf-slash', 'aria-hidden': 'true' }, '/'),
+      'div',
+      { class: 'cf-crumb mono', 'aria-label': 'Folder' },
+      files.crumb.flatMap((part, i) => [
+        i > 0 && el('span', { class: 'cf-sep' }, '/'),
+        el('span', { class: i === last ? 'cf-last' : null }, part),
+      ]),
     ),
     el(
       'div',
@@ -268,18 +265,6 @@ function tools(files: FilesPage): HTMLElement {
       mode('all', 'All', null),
       mode('changed', 'Changed', files.changed),
     ),
-  );
-}
-
-function crumb(files: FilesPage): HTMLElement {
-  const last = files.crumb.length - 1;
-  return el(
-    'div',
-    { class: 'cf-crumb mono', 'aria-label': 'Folder' },
-    files.crumb.flatMap((part, i) => [
-      i > 0 && el('span', { class: 'cf-sep' }, '/'),
-      el('span', { class: i === last ? 'cf-last' : null }, part),
-    ]),
   );
 }
 
@@ -301,10 +286,17 @@ function body(files: FilesPage): HTMLElement {
         : 'This folder is empty.';
     return el('div', { class: 'cf-note' }, text);
   }
+  const rows = files.rows.map((row, at) => ({
+    row,
+    at,
+    name: row.name,
+    depth: row.depth,
+    ignored: row.mark === 'ignored',
+  }));
   return el(
     'div',
     { class: 'cf-rows' },
-    files.rows.map((row, i) => treeRow(files, row, i)),
+    treeRows(rows, 'files', (r) => treeRow(files, r.row, r.at)),
   );
 }
 
