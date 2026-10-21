@@ -90,6 +90,7 @@ struct Script {
     on_exit: Option<OnExit>,
     written: Arc<Mutex<Vec<u8>>>,
     killed: Arc<AtomicBool>,
+    shell: Arc<Mutex<Option<pty::ShellState>>>,
 }
 
 #[derive(Default)]
@@ -131,6 +132,14 @@ impl ScriptedProcesses {
             .unwrap_or_default()
     }
 
+    /// Says what the pane's shell is doing from now on. A shell starts at
+    /// its prompt, and a program has none.
+    pub fn set_shell(&self, pane: PaneId, state: Option<pty::ShellState>) {
+        if let Some(script) = self.panes.lock().unwrap().get(&pane) {
+            *script.shell.lock().unwrap() = state;
+        }
+    }
+
     pub fn killed(&self, pane: PaneId) -> bool {
         let panes = self.panes.lock().unwrap();
         panes
@@ -155,6 +164,9 @@ impl Processes for ScriptedProcesses {
         };
         let written = Arc::new(Mutex::new(Vec::new()));
         let killed = Arc::new(AtomicBool::new(false));
+        let shell = Arc::new(Mutex::new(
+            program.is_none().then_some(pty::ShellState::AtPrompt(pty::Shell::Posix)),
+        ));
         self.panes.lock().unwrap().insert(
             id,
             Script {
@@ -167,6 +179,7 @@ impl Processes for ScriptedProcesses {
                 on_exit: Some(on_exit),
                 written: written.clone(),
                 killed: killed.clone(),
+                shell: shell.clone(),
             },
         );
         let (damage_tx, _) = broadcast::channel(16);
@@ -174,6 +187,7 @@ impl Processes for ScriptedProcesses {
             size: Mutex::new((24, 80)),
             keyboard: Arc::new(ScriptedKeyboard(written)),
             killed,
+            shell,
             damage_tx,
         }))
     }
@@ -183,6 +197,7 @@ struct ScriptedProcess {
     size: Mutex<(u16, u16)>,
     keyboard: Arc<ScriptedKeyboard>,
     killed: Arc<AtomicBool>,
+    shell: Arc<Mutex<Option<pty::ShellState>>>,
     damage_tx: broadcast::Sender<ServerMsg>,
 }
 
@@ -228,6 +243,10 @@ impl Process for ScriptedProcess {
     }
 
     fn broadcast_snapshot(&self, _pane: PaneId) {}
+
+    fn shell(&self) -> Option<pty::ShellState> {
+        self.shell.lock().unwrap().clone()
+    }
 }
 
 struct ScriptedKeyboard(Arc<Mutex<Vec<u8>>>);

@@ -202,7 +202,9 @@ default; the arrows and Enter for the rest). The template the window last starte
 and remembered across runs. A checkout several agents share says so: `⚠2` on its rail row, and
 "shared by 2" on the Checkouts stage. A project with `exclusive` set refuses a second agent there, and
 the window says which agent holds it. `×` on a pane, shown while it is pointed at and in
-the stage header, closes it. The Checkouts stage (`3`) lists the chosen repository's checkouts, and
+the stage header, closes it. A pane's row dragged onto another checkout's row moves it there: an
+agent is told to work in that checkout, and a shell is sent a `cd` there, but only while it waits
+at its prompt; one running a command is left where it is, and the window says why. The Checkouts stage (`3`) lists the chosen repository's checkouts, and
 with `B` the branches without one: Enter opens a checkout on its first pane or switches the primary
 checkout to a branch, `F` fetches, `P` pulls, and `S`/`A` start a shell or the default agent in the
 selected checkout. `N` gives a branch row a worktree, or a checkout a new branch in one; `D`

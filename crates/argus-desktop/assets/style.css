@@ -2066,6 +2066,12 @@
   color: var(--fg-muted);
   background: var(--fill);
 }
+/* After the hover, which the pointer always is while it carries a pane. */
+.co.drop-target {
+  background: var(--bg-selected);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
 .co .name {
   font-family: var(--font-mono);
 }

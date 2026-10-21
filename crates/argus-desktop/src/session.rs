@@ -41,7 +41,7 @@ use argus_protocol::connection::request_refusal::OlderDaemon;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, RequestRefusal, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS,
-    PASTE_FILE, RENAME_PANE, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion, FILES, BROWSERS,
+    PASTE_FILE, RENAME_PANE, MOVE_TO_CHECKOUT, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion, FILES, BROWSERS,
 };
 
 use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
@@ -697,6 +697,9 @@ impl Session {
             Call::SpawnAgent { checkout, template } => self.spawn_agent(CheckoutId(checkout), template),
             Call::Close { pane } => self.close(PaneId(pane)),
             Call::RenamePane { pane, title } => self.rename(PaneId(pane), title),
+            Call::MoveToCheckout { pane, checkout } => {
+                self.move_to_checkout(PaneId(pane), CheckoutId(checkout))
+            }
             Call::Focus { focused } => self.focus(focused),
             Call::SelectProject { project } => self.select_project(ProjectId(project)),
             Call::OpenWorkspace { workspace } => self.open_workspace(WorkspaceId(workspace)),
@@ -1416,6 +1419,21 @@ impl Session {
         }
         if self.project_of(pane).is_some() || self.console.holds(pane) {
             self.out.push(ClientMsg::RenamePane { pane, title });
+        }
+        self.finish()
+    }
+
+    /// Asks the daemon to move a pane to another checkout; the rail shows
+    /// it there once a tree says so, and a refusal leaves it where it was.
+    fn move_to_checkout(&mut self, pane: PaneId, checkout: CheckoutId) -> Vec<ClientMsg> {
+        if !self.status.daemon_can(MOVE_TO_CHECKOUT) {
+            return self.note(
+                "argusd is too old to move panes between checkouts: run `argus server restart`",
+            );
+        }
+        let already = self.tree.lineage_of_pane(pane).is_some_and(|(l, _)| l.checkout.id == checkout);
+        if self.project_of(pane).is_some() && !already {
+            self.out.push(ClientMsg::MoveToCheckout { pane, checkout });
         }
         self.finish()
     }
@@ -3527,6 +3545,23 @@ mod tests {
     }
 
     #[test]
+    fn a_pane_dropped_on_another_checkout_is_asked_of_the_daemon() {
+        let mut s = session(Hello::this_build());
+        let sent = s.move_to_checkout(PaneId(1), CheckoutId(99));
+        assert!(matches!(
+            sent.as_slice(),
+            [ClientMsg::MoveToCheckout { pane: PaneId(1), checkout: CheckoutId(99) }]
+        ));
+        assert!(s.move_to_checkout(PaneId(98), CheckoutId(99)).is_empty());
+    }
+
+    #[test]
+    fn a_daemon_without_move_to_checkout_is_not_sent_one() {
+        let mut s = session(without_focus());
+        assert!(s.move_to_checkout(PaneId(1), CheckoutId(99)).is_empty());
+    }
+
+    #[test]
     fn a_daemon_without_rename_is_not_sent_one() {
         let mut s = session(without_focus());
         assert!(s.rename(PaneId(1), "the pty deadlock".into()).is_empty());
@@ -5612,7 +5647,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 148] = [
+    const CALLS: [&str; 149] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5759,6 +5794,7 @@ mod tests {
         r#"{"call":"open_url","url":"https://example.com"}"#,
         r#"{"call":"copy_text","text":"ab"}"#,
         r#"{"call":"rename_pane","pane":1,"title":"the pty deadlock"}"#,
+        r#"{"call":"move_to_checkout","pane":1,"checkout":1}"#,
         r#"{"call":"reveal_checkout","checkout":1}"#,
         r#"{"call":"edit","gesture":{"on":"change","checkout":1,"path":"a.rs","base":0,"changes":[{"from":0,"to":1,"insert":"x"}]}}"#,
     ];

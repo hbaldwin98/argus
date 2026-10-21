@@ -17,6 +17,7 @@ mod pane_api;
 mod pastes;
 mod reconcile;
 mod reconcile_tickets;
+mod relocate;
 mod reload;
 mod restore;
 mod saved_views;

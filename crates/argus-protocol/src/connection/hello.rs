@@ -39,6 +39,7 @@ pub const CAPABILITIES: &[&str] = &[
     VIEW_ACTIONS,
     DESCRIBE_EXTENSIONS,
     RENAME_PANE,
+    MOVE_TO_CHECKOUT,
     SAVED_VIEWS,
     CODE,
     CODE_EDIT,
@@ -118,6 +119,10 @@ pub const DESCRIBE_EXTENSIONS: &str = "describe-extensions";
 /// `ClientMsg::RenamePane`: a person naming a pane or a console from a
 /// client.
 pub const RENAME_PANE: &str = "rename-pane";
+
+/// `ClientMsg::MoveToCheckout`: a person moving a pane to another checkout
+/// from a client.
+pub const MOVE_TO_CHECKOUT: &str = "move-to-checkout";
 
 /// Saved views: `ClientMsg::WatchSavedViews`, `ClientMsg::RefreshSavedView`,
 /// `ClientMsg::MarkSavedViewStale`, `ClientMsg::DeleteSavedView` and

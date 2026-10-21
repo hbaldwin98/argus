@@ -125,6 +125,14 @@ pub enum ClientMsg {
         pane: PaneId,
         title: String,
     },
+    /// A person moving a pane to another checkout of its project. The
+    /// daemon moves the pane's process as well as its row: an agent is told
+    /// where it works now, and a shell is sent a `cd` there, so a shell
+    /// that is running something is refused.
+    MoveToCheckout {
+        pane: PaneId,
+        checkout: CheckoutId,
+    },
     /// `git worktree add` a new checkout in `base`'s project, branched off
     /// `base`'s current HEAD, and add it to the tree.
     CreateWorktree {

@@ -51,6 +51,10 @@ impl Process for BrowserProcess {
     }
 
     fn broadcast_snapshot(&self, _: PaneId) {}
+
+    fn shell(&self) -> Option<crate::pty::ShellState> {
+        None
+    }
 }
 
 /// Bytes meant for a terminal, which a picture has no use for.

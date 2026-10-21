@@ -86,7 +86,7 @@ fn answered(kind: Kind) -> Answered {
         K::ReviewComment => Answered::BySavedComment,
         K::Feature => Answered::ByBoardOrId,
         K::Subscribe | K::Unsubscribe | K::Input | K::Paste | K::PasteFile | K::Scrollback
-        | K::Resize | K::Kill | K::RenamePane | K::RemoveCheckout | K::OpenWorkspace
+        | K::Resize | K::Kill | K::RenamePane | K::MoveToCheckout | K::RemoveCheckout | K::OpenWorkspace
         | K::CreateWorkspace | K::ListCommitFiles | K::GetDecisions | K::TrackerMap
         | K::Reconcile | K::Task | K::Decide | K::ChangeDecision | K::SequenceDiagram
         | K::ListBranches | K::ListFiles | K::SwitchBranch | K::CreateBranch | K::DeleteBranch

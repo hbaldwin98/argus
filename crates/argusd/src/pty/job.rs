@@ -164,8 +164,8 @@ impl ProcessJob {
         Ok(info.BasicLimitInformation.LimitFlags)
     }
 
-    /// The PIDs of every process in the job.
-    #[cfg(test)]
+    /// The PIDs of every process in the job. A job holding more than the
+    /// list has room for is an error, not a short list.
     pub(super) fn process_ids(&self) -> anyhow::Result<Vec<u32>> {
         use windows_sys::Win32::System::JobObjects::{
             JobObjectBasicProcessIdList, QueryInformationJobObject,
@@ -175,12 +175,12 @@ impl ProcessJob {
         // holds; windows-sys declares its list one entry long.
         #[repr(C)]
         struct IdList {
-            _assigned: u32,
+            assigned: u32,
             listed: u32,
             ids: [usize; 64],
         }
         let mut list = IdList {
-            _assigned: 0,
+            assigned: 0,
             listed: 0,
             ids: [0; 64],
         };
@@ -195,6 +195,9 @@ impl ProcessJob {
         };
         if queried == 0 {
             return Err(std::io::Error::last_os_error().into());
+        }
+        if list.listed < list.assigned {
+            anyhow::bail!("the job holds {} processes", list.assigned);
         }
         Ok(list.ids[..list.listed as usize]
             .iter()

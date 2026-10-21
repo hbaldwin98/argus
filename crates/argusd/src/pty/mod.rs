@@ -22,6 +22,7 @@ use portable_pty::ChildKiller;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::broadcast;
 
+mod cd;
 #[cfg(windows)]
 mod console_host;
 mod job;
@@ -30,6 +31,7 @@ mod vt;
 use job::*;
 #[cfg(windows)]
 pub(crate) use job::ProcessJob;
+pub use cd::{Shell, ShellState};
 pub use vt::Scrolled;
 use vt::*;
 
@@ -217,6 +219,8 @@ pub struct PaneRuntime {
     /// The session the child leads, for the Unix sweep.
     #[cfg(unix)]
     pid: Option<u32>,
+    /// The shell it runs, for the user's shell; `None` for a program.
+    shell: Option<Result<Shell, String>>,
     damage_tx: broadcast::Sender<ServerMsg>,
     /// How many times the pump has woken, so a test can tell an idle pane
     /// from one ticking on a timer. Only a Unix test reads it: a ConPTY
@@ -302,7 +306,9 @@ impl PaneRuntime {
         #[cfg(not(windows))]
         let pair = pty_system.openpty(size)?;
 
+        let starts_shell = matches!(spec, Spawn::DefaultShell);
         let (mut cmd, resource_policy) = spec.into_command();
+        let shell = starts_shell.then(|| cd::default_shell(&cmd));
         set_pty_terminal(&mut cmd);
         // Argus owns the outer Herdr pane. Processes nested in its PTYs must
         // not compete with the client's aggregate lifecycle report for it.
@@ -506,10 +512,24 @@ impl PaneRuntime {
             killer,
             #[cfg(unix)]
             pid,
+            shell,
             damage_tx,
             #[cfg(test)]
             pump_wakes,
         })
+    }
+
+    /// What its shell is doing; `None` when it runs a program instead.
+    pub fn shell(&self) -> Option<ShellState> {
+        let shell = match self.shell.as_ref()? {
+            Ok(shell) => *shell,
+            Err(name) => return Some(ShellState::Unknown(name.clone())),
+        };
+        #[cfg(windows)]
+        let idle = cd::idle(&self.job);
+        #[cfg(unix)]
+        let idle = cd::idle(self.master.as_ref(), self.pid);
+        Some(if idle { ShellState::AtPrompt(shell) } else { ShellState::Running })
     }
 
     pub fn input(&self) -> PaneInput {

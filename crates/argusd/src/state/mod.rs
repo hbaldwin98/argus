@@ -43,6 +43,7 @@ mod panel;
 mod panes;
 pub(crate) mod processes;
 mod pushes;
+mod relocate;
 #[cfg(test)]
 pub(crate) mod scripted;
 mod session;

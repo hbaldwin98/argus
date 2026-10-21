@@ -98,7 +98,7 @@ macro_rules! kinds {
 
 kinds! {
     Subscribe, Unsubscribe, Input, Paste, PasteFile, Scrollback, Resize, SpawnShell, SpawnAgent,
-    SpawnConsole, Kill, RenamePane, CreateWorktree, RemoveCheckout, OpenWorkspace,
+    SpawnConsole, Kill, RenamePane, MoveToCheckout, CreateWorktree, RemoveCheckout, OpenWorkspace,
     CreateWorkspace, Review, ReviewContext, ListCode, ReadCode, SearchCode, OpenEdit, Edit, CloseEdit,
     ListDir, ListCommits,
     ListCommitFiles, ListSessions, ReadSession, ListResumes, ResumeSession, ReviewComment,
@@ -126,6 +126,7 @@ pub fn kind(msg: &ClientMsg) -> Kind {
         M::SpawnConsole { .. } => Kind::SpawnConsole,
         M::Kill { .. } => Kind::Kill,
         M::RenamePane { .. } => Kind::RenamePane,
+        M::MoveToCheckout { .. } => Kind::MoveToCheckout,
         M::CreateWorktree { .. } => Kind::CreateWorktree,
         M::RemoveCheckout { .. } => Kind::RemoveCheckout,
         M::OpenWorkspace { .. } => Kind::OpenWorkspace,
@@ -209,6 +210,7 @@ pub fn generate(kind: Kind, k: &Known) -> BoxedStrategy<ClientMsg> {
         K::SpawnConsole => panes::spawn_console(),
         K::Kill => panes::kill(k),
         K::RenamePane => panes::rename_pane(k),
+        K::MoveToCheckout => panes::move_to_checkout(k),
         K::OpenInEditor => panes::open_in_editor(k),
         K::CreateWorktree => git::create_worktree(k),
         K::RemoveCheckout => git::remove_checkout(k),
@@ -324,6 +326,7 @@ pub fn request_id_mut(msg: &mut ClientMsg) -> Option<&mut u64> {
         | M::Resize { .. }
         | M::Kill { .. }
         | M::RenamePane { .. }
+        | M::MoveToCheckout { .. }
         | M::RemoveCheckout { .. }
         | M::OpenWorkspace { .. }
         | M::CreateWorkspace { .. }

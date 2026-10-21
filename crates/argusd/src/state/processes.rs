@@ -37,6 +37,8 @@ pub(crate) trait Process: Send {
     fn scrollback(&self, offset: usize, top: Option<u64>) -> pty::Scrolled;
     fn snapshot_and_subscribe(&self) -> PaneSubscription;
     fn broadcast_snapshot(&self, pane: PaneId);
+    /// What its shell is doing; `None` when it runs a program instead.
+    fn shell(&self) -> Option<pty::ShellState>;
 }
 
 pub(crate) trait Keyboard: Send + Sync {
@@ -86,6 +88,10 @@ impl Process for PaneRuntime {
 
     fn broadcast_snapshot(&self, pane: PaneId) {
         PaneRuntime::broadcast_snapshot(self, pane)
+    }
+
+    fn shell(&self) -> Option<pty::ShellState> {
+        PaneRuntime::shell(self)
     }
 }
 

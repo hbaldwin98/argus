@@ -91,7 +91,7 @@ impl Asked {
             // whoever is there.
             M::Subscribe { .. } | M::Unsubscribe { .. } | M::Input { .. } | M::Paste { .. }
             | M::PasteFile { .. } | M::Scrollback { .. } | M::Resize { .. } | M::Kill { .. }
-            | M::RenamePane { .. } | M::RemoveCheckout { .. } | M::OpenWorkspace { .. }
+            | M::RenamePane { .. } | M::MoveToCheckout { .. } | M::RemoveCheckout { .. } | M::OpenWorkspace { .. }
             | M::CreateWorkspace { .. } | M::ListCommitFiles { .. }
             | M::GetDecisions { .. } | M::TrackerMap { .. } | M::Reconcile { .. } | M::Task { .. }
             | M::Decide { .. } | M::ChangeDecision { .. } | M::SequenceDiagram { .. }

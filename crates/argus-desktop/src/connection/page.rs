@@ -101,6 +101,9 @@ pub enum Call {
     Close { pane: u64 },
     /// A pane or console named from its menu.
     RenamePane { pane: u64, title: String },
+    /// A pane's row dropped on another checkout's row in the rail: the
+    /// daemon moves it there, and the rail shows it once a tree says so.
+    MoveToCheckout { pane: u64, checkout: u64 },
     /// The window gained or lost focus.
     Focus { focused: bool },
     SelectProject { project: u64 },

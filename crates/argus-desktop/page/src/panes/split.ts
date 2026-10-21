@@ -348,19 +348,38 @@ function target(
 
 /** Where a dragged pane was let go: on a cell's zone, or over the stage
  *  on no cell, or neither. */
-type Landing = { onto: Shown; zone: Zone } | 'stage' | null;
+type Landing = { onto: Shown; zone: Zone } | { checkout: number } | 'stage' | null;
 
 /** Drags a pane by a press at `e`, lighting the zone of the cell under the
  *  pointer, and hands `drop` where it was let go. `slot` is the cell the
  *  pane is already in, which is never a target, or -1 for one coming from
- *  the rail. Esc cancels. */
-function dragPane(e: MouseEvent, slot: number, drop: (landing: Landing) => void): void {
+ *  the rail. `from` is the checkout a rail row's pane is in, which makes
+ *  the other checkouts' rows targets; null for a drag that has none. Esc
+ *  cancels. */
+function dragPane(
+  e: MouseEvent,
+  slot: number,
+  from: number | null,
+  drop: (landing: Landing) => void,
+): void {
   if (e.button !== 0) return;
   const origin = [e.clientX, e.clientY];
   let marker: HTMLElement | null = null;
   let over: ReturnType<typeof target> = null;
   let onStage = false;
+  let row: HTMLElement | null = null;
   const lit = (m: MouseEvent): void => {
+    if (from !== null) {
+      const hit = document
+        .elementFromPoint(m.clientX, m.clientY)
+        ?.closest<HTMLElement>('[data-checkout]');
+      const next = hit && Number(hit.dataset.checkout) !== from ? hit : null;
+      if (next !== row) {
+        row?.classList.remove('drop-target');
+        next?.classList.add('drop-target');
+        row = next;
+      }
+    }
     over = splitEl().hidden ? null : target(m.clientX, m.clientY, slot);
     const stage = $('body').getBoundingClientRect();
     onStage =
@@ -399,9 +418,16 @@ function dragPane(e: MouseEvent, slot: number, drop: (landing: Landing) => void)
     window.removeEventListener('keydown', key, true);
     document.body.classList.remove('moving-pane', 'dropping-on-stage');
     marker?.remove();
+    row?.classList.remove('drop-target');
     const moved = busy;
     const onto = over && cells[over.slot] ? paneAt(over.slot) : null;
-    const landing: Landing = onto && over ? { onto, zone: over.zone } : onStage ? 'stage' : null;
+    const landing: Landing = row
+      ? { checkout: Number(row.dataset.checkout) }
+      : onto && over
+        ? { onto, zone: over.zone }
+        : onStage
+          ? 'stage'
+          : null;
     busy = false;
     if (dropped && moved) drop(landing);
     else drawSplit();
@@ -420,8 +446,8 @@ function dragPane(e: MouseEvent, slot: number, drop: (landing: Landing) => void)
 
 /** A header dragged onto another pane moves it there. */
 function startMove(e: MouseEvent, slot: number, pane: number): void {
-  dragPane(e, slot, (landing) => {
-    if (landing && landing !== 'stage')
+  dragPane(e, slot, null, (landing) => {
+    if (landing && landing !== 'stage' && 'onto' in landing)
       call('move_pane', { pane, onto: landing.onto.pane, zone: landing.zone });
     else drawSplit();
   });
@@ -430,12 +456,17 @@ function startMove(e: MouseEvent, slot: number, pane: number): void {
 /** A pane dragged from the rail and let go over the stage opens there: on
  *  a pane's zone it lands as a header's drop would put it, and anywhere
  *  else on the stage it joins the grid by the grid rule. A click is left to
- *  the row, since no drag began. */
-export function dragFromRail(e: MouseEvent, pane: number): void {
+ *  the row, since no drag began. Let go on another checkout's row it moves
+ *  there instead, when `checkout` says where it is now: the daemon answers
+ *  with a tree, and the rail changes then. Null for a pane that cannot move
+ *  between checkouts, a browser's. */
+export function dragFromRail(e: MouseEvent, pane: number, checkout: number | null = null): void {
   // No text is selected across the rail while the pane is carried.
   if (e.button === 0) e.preventDefault();
-  dragPane(e, -1, (landing) => {
+  dragPane(e, -1, checkout, (landing) => {
     if (landing === 'stage') call('drop_pane', { pane, onto: null, zone: 'centre' });
+    else if (landing && 'checkout' in landing)
+      call('move_to_checkout', { pane, checkout: landing.checkout });
     else if (landing && landing.onto.pane !== pane) {
       call('drop_pane', { pane, onto: landing.onto.pane, zone: landing.zone });
     } else drawSplit();

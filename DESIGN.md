@@ -450,6 +450,7 @@ to the type or its locking.
 | `state/agents` | what an agent reports about itself, and what it is told |
 | `state/agents/launch` | an agent starting another: which checkout it lands in, which template it gets, and who may ask |
 | `state/agents/follow` | which checkout a pane belongs to: the one its agent works in, moved to when the agent says so or a status report says its turn ended in another worktree, and the primary checkout once its worktree is removed outside Argus |
+| `state/relocate` | a person moving a pane to another checkout of its project: an agent told where it works now, a shell at its prompt sent a `cd` there, and one running something refused, so a row never claims a directory its process is not in |
 | `state/viewers` | what each client is showing: the one pty size reconciled out of what they all ask for, and the view of the client the person was last at |
 | `state/git_ops` | the writes to Git |
 | `state/git_reads` | the port the tree's reads of Git go through — status, HEAD, worktrees, a root's repositories — so a test can script what Git answers |
@@ -495,6 +496,7 @@ to the type or its locking.
 | `review`, `review/queue` | a review's diff, and when it is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
 | `review/diff` | a review's stable snapshot and its diff, and a commit's |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
+| `pty/cd` | moving a shell to another directory by typing into it: which shell it is, whether it waits at its prompt with nothing of its own running, and the keys that clear its line and `cd` it in its own syntax |
 | `browser` | a browser run for an agent's pane: started, followed while it runs, and ended when its handle is dropped |
 | `browser/process` | a browser pane's process: what a terminal's keys, sizes and scrollback come to for a pane whose content is a browser, which is nothing |
 | `browser/chrome` | which browser runs, and starting it: headless, on a profile of its own that goes with it and that the next daemon clears if this one is killed, handed its pipe |
@@ -1363,6 +1365,18 @@ already moved to, the innermost checkout holding that directory takes the row, a
 since the last poll is looked for before the move is refused. The refusal is the answer's body,
 and the helper prints it, because a move that failed in silence left agents believing the row had
 followed them.
+A person moves a pane the other way round (`ClientMsg::MoveToCheckout`, a rail row dropped on
+another checkout's row), so the process is moved after the row and the row is never left
+claiming a directory its process is not in. An agent's row moves and the agent is told, through its
+inbox or typed in, to change into the checkout and run `argus-hook checkout` there; a turn that
+still ends in the old directory does not drag the row back, since only a directory that changes
+does. A shell is typed a `cd` in its own syntax (`pty/cd`), after the keys that empty its line,
+because `rm -rf ` left half-typed would otherwise take the destination as its argument; and only
+while it waits at its prompt, since typed text goes to whatever runs in the foreground. On Unix
+that is the shell leading the terminal's foreground process group; on Windows the pane's job
+holding nothing but its console server and one chain of shells, none under a copy of its own
+image, as a Git Bash fork running a native program is. A shell whose syntax is not known, or a
+path it cannot be given intact, is refused rather than guessed at.
 What each endpoint is posted and answers with is declared once, in `argus_protocol::hook::call`:
 `argus-hook` makes its call through the declaration and the daemon answers through it. A body the
 endpoint cannot read is refused with a `400` in serde's words, a refusal is a `409` carrying the

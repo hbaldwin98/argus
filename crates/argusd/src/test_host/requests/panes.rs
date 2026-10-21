@@ -83,6 +83,10 @@ pub fn rename_pane(k: &Known) -> BoxedStrategy<ClientMsg> {
     (pane(k), text()).prop_map(|(pane, title)| ClientMsg::RenamePane { pane, title }).boxed()
 }
 
+pub fn move_to_checkout(k: &Known) -> BoxedStrategy<ClientMsg> {
+    (pane(k), checkout(k)).prop_map(|(pane, checkout)| ClientMsg::MoveToCheckout { pane, checkout }).boxed()
+}
+
 pub fn open_in_editor(k: &Known) -> BoxedStrategy<ClientMsg> {
     (checkout(k), checkout_path(k), proptest::option::of(0..200u32), request_id())
         .prop_map(|(checkout, path, line, request_id)| ClientMsg::OpenInEditor {

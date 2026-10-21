@@ -110,6 +110,7 @@ pub(super) fn dispatch(
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
         ClientMsg::RenamePane { pane, title } => daemon.rename_pane(pane, &title),
+        ClientMsg::MoveToCheckout { pane, checkout } => daemon.move_to_checkout(pane, checkout),
         ClientMsg::CloseView { pane, id } => {
             daemon.close_view(pane, &id);
             Ok(())

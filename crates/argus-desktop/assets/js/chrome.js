@@ -204,6 +204,7 @@ function checkoutRow(repository, co) {
     return el('div', {
         class: `co${picked ? ' picked' : ''}${open ? ' hot' : ''}`,
         title: co.branch ? `${where} on ${co.branch}` : where,
+        'data-checkout': String(co.id),
         onclick: () => pickRail(co.id, null),
         oncontextmenu: contextMenu(`${repository} ${co.name}`, () => checkoutMenu(co)),
     }, co.count > 0 &&
@@ -308,7 +309,7 @@ function paneRow(checkout, pane) {
         'data-mark': paneMark(pane.title),
         'aria-current': pane.on ? 'true' : null,
         // Dragged onto the stage it opens there, beside what is shown.
-        onmousedown: (e) => dragFromRail(e, pane.id),
+        onmousedown: (e) => dragFromRail(e, pane.id, checkout),
         // The pane comes on screen, but the keys stay in the rail
         // until Enter or a click on the terminal, so x closes it.
         onclick: () => {

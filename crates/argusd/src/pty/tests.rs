@@ -1765,3 +1765,56 @@ fn a_switch_with_no_request_in_the_chunk_logs_its_tail() {
     chunk.extend_from_slice(b"end");
     assert!(switch_context(&chunk).ends_with("end"));
 }
+
+/// A real shell is at its prompt while nothing it started runs, and not
+/// while a command does: what decides whether a `cd` may be typed into it.
+#[tokio::test]
+async fn a_shell_is_at_its_prompt_only_while_nothing_it_started_runs() {
+    let pane = PaneRuntime::spawn(PaneId(91), &std::env::temp_dir(), Spawn::DefaultShell, |_| {})
+        .unwrap();
+    // Until its prompt is drawn the shell may still be starting, and its
+    // startup scripts may run programs of their own.
+    wait_for(&pane, |g| rows_of(g).iter().any(|row| !row.trim().is_empty())).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(matches!(pane.shell(), Some(ShellState::AtPrompt(_))), "{:?}", pane.shell());
+
+    // Only the command's own output says it started: the typed line is
+    // echoed before it runs.
+    let (command, says) = if cfg!(windows) {
+        (&b"ping -n 30 127.0.0.1\r"[..], "bytes")
+    } else {
+        (&b"printf 'argus-%s\\n' busy; sleep 30\r"[..], "argus-busy")
+    };
+    pane.input().write(command).unwrap();
+    wait_for(&pane, |g| grid_contains(g, says)).await;
+    assert_eq!(pane.shell(), Some(ShellState::Running));
+    let _ = pane.kill();
+}
+
+/// The keys a move types reach the directory even with something left
+/// half-typed at the prompt, which they clear first rather than run.
+#[tokio::test]
+async fn a_cd_typed_over_a_half_typed_line_moves_the_shell_and_runs_nothing_else() {
+    let target = tempfile::Builder::new().prefix("argus-moved-").tempdir().unwrap();
+    let pane = PaneRuntime::spawn(PaneId(92), &std::env::temp_dir(), Spawn::DefaultShell, |_| {})
+        .unwrap();
+    wait_for(&pane, |g| rows_of(g).iter().any(|row| !row.trim().is_empty())).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let Some(ShellState::AtPrompt(shell)) = pane.shell() else {
+        panic!("the shell is not at its prompt: {:?}", pane.shell());
+    };
+    // Printed upper-cased, so only the output matches, not the typed line.
+    let print = match shell {
+        Shell::Posix | Shell::Fish => &b"echo \"$PWD\" | tr a-z A-Z\r"[..],
+        Shell::Pwsh => &b"$PWD.Path.ToUpper()\r"[..],
+        // cmd cannot upper-case its output.
+        Shell::Cmd => return,
+    };
+
+    pane.input().write(b"echo argus-junk-").unwrap();
+    pane.input().write(&shell.cd(target.path()).unwrap()).unwrap();
+    pane.input().write(print).unwrap();
+
+    wait_for(&pane, |g| grid_contains(g, "ARGUS-MOVED-")).await;
+    let _ = pane.kill();
+}

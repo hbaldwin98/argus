@@ -116,6 +116,17 @@ fn parent_of(process: &OwnedHandle) -> Option<u32> {
     (status >= 0).then_some(info.InheritedFromUniqueProcessId as u32)
 }
 
+/// The process that started `pid`, and the image `pid` runs, if it can be
+/// opened.
+pub(super) fn parent_and_image_of(pid: u32) -> Option<(u32, String)> {
+    let raw = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if raw.is_null() {
+        return None;
+    }
+    let process = unsafe { OwnedHandle::from_raw_handle(raw as _) };
+    Some((parent_of(&process)?, image_name(&process)?))
+}
+
 fn image_name(process: &OwnedHandle) -> Option<String> {
     let mut path = [0u16; 1024];
     let mut len = path.len() as u32;
@@ -130,7 +141,7 @@ fn image_name(process: &OwnedHandle) -> Option<String> {
     (named != 0).then(|| String::from_utf16_lossy(&path[..len as usize]))
 }
 
-fn is_server(path: &str) -> bool {
+pub(super) fn is_server(path: &str) -> bool {
     let name = path.rsplit(['\\', '/']).next().unwrap_or(path).to_ascii_lowercase();
     SERVER_NAMES.contains(&name.as_str())
 }
