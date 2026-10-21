@@ -149,10 +149,14 @@ The feature board holds each with its reasons; in short:
 
 - **A new crate** beside `argus-desktop`, the two side by side until the
   new one replaces it.
-- **The look is a hybrid**: `gpui-kit`'s flat surfaces and components,
-  kept full-window as today (no title bar, no status bar, the stage keeps
-  its header and the window controls, the sidebar foot keeps the counts).
-  The canvas https://claude.ai/artifact/VeXPoEQLFzJWDLpR26qfcx shows it.
+- **The look is the desktop page's**: its bundled fonts, type scale,
+  spacing, radii, shadows, hover and press states and motion, ported as
+  tokens into the GPUI theme; `gpui-kit` supplies behaviour, not its stock
+  look. The layout stays full-window as today (no title bar, no status bar,
+  the stage keeps its header and the window controls, the sidebar foot
+  keeps the counts). This replaces the earlier flat `gpui-kit` hybrid
+  (canvas https://claude.ai/artifact/VeXPoEQLFzJWDLpR26qfcx), which read as
+  utilitarian beside the page once it was running.
 - **Git gets a sidenav entry** with Changes and History. Changes replaces
   the review dialog, History the history dialog; branch rows stay in
   Checkouts.
