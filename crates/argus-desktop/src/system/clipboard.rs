@@ -1,5 +1,26 @@
 //! The desktop clipboard: what a dragged selection copies to, and the
-//! picture, files or text the paste key reads.
+//! picture, files or text the paste key reads, and the Tauri window's
+//! answer to `effects::Clipboard`.
+
+use argus_desktop_core::connection::effects;
+
+/// The system clipboard, for the order in `effects` to call.
+pub struct System;
+
+impl effects::Clipboard for System {
+    fn write(&self, text: &str) -> Result<(), String> {
+        write(text)
+    }
+    fn read(&self) -> Option<String> {
+        read()
+    }
+    fn read_image(&self) -> Option<Vec<u8>> {
+        read_image()
+    }
+    fn read_files(&self) -> Vec<std::path::PathBuf> {
+        read_files()
+    }
+}
 
 /// The clipboard's text, or `None` when there is none to read.
 pub fn read() -> Option<String> {

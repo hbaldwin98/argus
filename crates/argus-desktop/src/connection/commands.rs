@@ -14,11 +14,13 @@ use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{State, WebviewWindow};
 
+use argus_desktop_core::connection::effects;
+use argus_desktop_core::connection::page::{Call, Event, SettingChange};
+use argus_desktop_core::system::opener;
+
+use crate::connection::shared::Shared;
 use crate::settings::vibrancy;
 use crate::system::clipboard;
-use argus_desktop_core::system::opener;
-use argus_desktop_core::connection::page::{Call, Event, SettingChange};
-use crate::connection::shared::Shared;
 use crate::system::window_frame;
 
 type Answer = Result<(), String>;
@@ -84,26 +86,8 @@ pub fn dress(window: &WebviewWindow, shared: &Shared) {
 }
 
 fn paste_clipboard(shared: &Shared) {
-    // A picture first, as the terminal client does: a screenshot copied
-    // from some apps carries a text form too, and the picture is the point.
-    if let Some(png) = clipboard::read_image() {
-        shared.act(|s| s.paste_file("clipboard.png".into(), png));
-        return;
-    }
-    let files = clipboard::read_files();
-    if !files.is_empty() {
-        for path in files {
-            let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
-            match std::fs::read(&path) {
-                Ok(bytes) => shared.act(|s| s.paste_file(name, bytes)),
-                Err(e) => shared.act(|s| s.note(format!("could not read {name}: {e}"))),
-            }
-        }
-        return;
-    }
-    match clipboard::read() {
-        Some(text) => shared.act(|s| s.paste(text)),
-        None => shared.act(|s| s.note("nothing on the clipboard to paste")),
+    for pasting in effects::pastings(&clipboard::System) {
+        shared.act(|s| effects::paste(s, pasting));
     }
 }
 

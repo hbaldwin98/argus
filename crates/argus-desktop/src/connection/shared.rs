@@ -18,9 +18,11 @@ use crate::system::clipboard;
 use crate::system::toast;
 use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::connection::daemon::SessionOwner;
+use argus_desktop_core::connection::effects::{self, Outlets};
 use argus_desktop_core::connection::page::Event;
 use argus_desktop_core::session::Session;
 use argus_desktop_core::settings::remembered::{self, Settings};
+use argus_desktop_core::system::opener;
 
 pub struct Shared {
     session: Mutex<Session>,
@@ -54,35 +56,24 @@ impl Shared {
     /// tells the page what it changed.
     pub fn act(&self, change: impl FnOnce(&mut Session) -> Vec<ClientMsg>) {
         let mut session = lock(&self.session);
-        let msgs = change(&mut session);
-        self.send(msgs);
-        // Written here rather than by the page, which may write only
-        // inside the gesture's own handler, and a key reaches Rust first.
-        if let Some(url) = session.take_opening() {
-            if let Err(said) = argus_desktop_core::system::opener::open(&url) {
-                let msgs = session.note(said);
-                self.send(msgs);
-            }
-        }
-        if let Some(text) = session.take_copied() {
-            let said = match clipboard::write(&text) {
-                Ok(()) => format!("copied {text}"),
-                Err(e) => format!("could not copy: {e}"),
-            };
-            let msgs = session.note(said);
-            self.send(msgs);
-        }
-        let events = session.events(now());
-        self.publish(events);
-        if let Some(settings) = session.take_settings() {
-            remembered::save(&settings);
-        }
-        let alerts = session.take_alerts();
-        if let Some(app) = self.app.get() {
-            for alert in &alerts {
-                toast::show(app, alert);
-            }
-        }
+        let app = self.app.get();
+        effects::act(
+            &mut session,
+            now(),
+            change,
+            &mut Outlets {
+                send: &mut |msgs| self.send(msgs),
+                publish: &mut |events| self.publish(events),
+                alert: &mut |alert| {
+                    if let Some(app) = app {
+                        toast::show(app, alert);
+                    }
+                },
+                open: &mut |url| opener::open(url),
+                save: &mut |settings| remembered::save(settings),
+                clipboard: &clipboard::System,
+            },
+        );
     }
 
     pub fn set_app(&self, app: AppHandle) {

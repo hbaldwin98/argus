@@ -2972,6 +2972,16 @@ impl Session {
         std::mem::take(&mut self.alerts)
     }
 
+    /// Leaves a link to open, text to copy and an alert to raise, as the
+    /// gestures that do so would, for the tests of the order they leave in
+    /// (`connection::effects`), which cannot reach the fields.
+    #[cfg(test)]
+    pub(crate) fn owing(&mut self, open: &str, copy: &str, alert: Alert) {
+        self.opening = Some(open.into());
+        self.copied = Some(copy.into());
+        self.alerts.push(alert);
+    }
+
     fn set_chime(&mut self, on: bool) -> Vec<ClientMsg> {
         self.status.set_chime(on);
         self.finish()
@@ -4562,7 +4572,21 @@ mod tests {
         }));
         sent.push(serde_json::to_value(&settings).unwrap());
 
-        let values: Vec<String> = sent.iter().map(|value| serde_json::to_string_pretty(value).unwrap()).collect();
+        // Keys sorted by hand: GPUI's crates turn on serde_json's
+        // `preserve_order` for any build that includes them, which would
+        // otherwise write fields in declaration order and change the file.
+        fn sorted(value: &serde_json::Value) -> serde_json::Value {
+            match value {
+                serde_json::Value::Object(map) => {
+                    let mut keys: Vec<&String> = map.keys().collect();
+                    keys.sort();
+                    serde_json::Value::Object(keys.into_iter().map(|k| (k.clone(), sorted(&map[k]))).collect())
+                }
+                serde_json::Value::Array(items) => serde_json::Value::Array(items.iter().map(sorted).collect()),
+                other => other.clone(),
+            }
+        }
+        let values: Vec<String> = sent.iter().map(|value| serde_json::to_string_pretty(&sorted(value)).unwrap()).collect();
         let file = format!(
             "// Written by `cargo test -p argus-desktop-core`, from session.rs: every event a\n\
              // page is sent, for `npm run check` to hold to the bindings. Not edited by hand.\n\n\

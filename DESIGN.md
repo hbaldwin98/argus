@@ -656,6 +656,7 @@ GPUI one both stand on it.
 | `session` | what this window holds of the daemon and routes between its parts — the tree, the project and repository chosen on the rail — and which part each message, refusal and page call is for |
 | `connection` | how the window trades with the daemon and the page |
 | `connection/daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes; the state that holds the session is reached through `SessionOwner` |
+| `connection/effects` | the order a session change's effects leave in — what it asks of the daemon, the link opened and text copied, the events, the settings kept, the alerts — and what the paste key reads off the clipboard, for every window that owns a session; where each goes, and the system calls themselves (the opener, the settings file, the clipboard through `Clipboard`), are the owner's |
 | `connection/page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call`; a surface that keeps what it last sent defines its own page and gestures, which these name |
 | `connection/sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once, or of something always on screen, so it hears only what differs |
 | `system` | what the window asks of the machine it runs on |
@@ -743,22 +744,43 @@ here is only what needs Tauri or the machine; the rest is `argus-desktop-core`.
 | `main` | startup: the runtime, the window, and running until it closes |
 | `connection` | how the Tauri window hands the page's calls to the session and the session's events to the page |
 | `connection/commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `connection::page::Call` — and which part of the window answers each call |
-| `connection/shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
+| `connection/shared` | what the page's calls, the daemon's messages and the frame tick share, handing each change to `connection::effects` with the Tauri window's outlets |
 | `system` | what the Tauri window asks of the machine it runs on |
-| `system/clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
+| `system/clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads, with a picture or copied files; the Tauri window's `effects::Clipboard` |
 | `system/toast` | handing an alert to the system's notifications, best effort |
 | `system/window_frame` | the window without the system's title bar, and the calls the page's strip makes to move, size and close it |
 | `settings` | what the Tauri window draws behind itself and which fonts it finds installed; the choices themselves are `argus-desktop-core`'s |
 | `settings/vibrancy` | putting the chosen backdrop on the live window, taking off whichever was there |
 | `settings/installed_fonts` | which font families this machine has installed, read from its font files by every name the webview might know each by, and which are monospaced |
 
-`argus-gpui` is the spike for moving the desktop window onto GPUI through `gpui-kit`. It proves each
-piece the port depends on in a frame of its own, independent of `Session`, and is replaced by the
-port's crate or grows into it (`GPUI.md`).
+`argus-gpui` is the port of the desktop window onto GPUI through `gpui-kit`. It began as a spike
+that proved each piece in a frame of its own (its examples still build) and grows into the window:
+the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so far (`GPUI.md`).
 
 | module | answers |
 | --- | --- |
-| `main` | the spike's binary: the Ledger window with an empty stage |
+| `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, the window, and the unattended report of what was heard |
+| `chrome` | the window's frame around the stage: the sidebar and its foot |
+| `chrome/foot` | the sidebar's foot: the tallies that need a look, a daemon's alarm, and the connection in one shape in every state |
+| `chrome/nav` | the sidebar's way between stages: which items there are, which one the stage on screen lights, and the call each press makes |
+| `chrome/rail` | the sidebar: the nav, the projects, the picked project's repositories with their checkouts and panes, the picked row and where it goes when a fold or a close takes its row away, and the foot; dimmed while the daemon is gone, and neither calling nor picking on a press |
+| `chrome/shell` | which regions the window is made of and how they sit: the sidebar at full height, and beside it the stage under its header |
+| `connection` | how the window trades with the daemon and its own views |
+| `connection/caller` | how a view hands a `Call` on without knowing who answers it |
+| `connection/heard` | what the window has heard from its session: the latest of each kind of event a view draws, in one model every view observes, and whether the sidebar is held |
+| `connection/owner` | the state the daemon loop and the views' calls share, and the order their effects leave in; the session behind a mutex, the events out over a channel the UI thread drains |
+| `keys` | how a key or committed text reaches the session |
+| `keys/page_key` | which `PageKey` a GPUI keystroke is: the DOM's names for the keys, the character typed rather than the key printed, AltGr as a character and not a chord |
+| `keys/text` | the text an input method commits into the pane: GPUI's input handler for the terminal view, which holds no text and draws no preedit |
+| `panes` | the panes on screen and how each is drawn |
+| `panes/element` | the element that paints a pane's screen: one measured cell, shaped text runs and merged background quads, the cursor, and the room it holds said once per size |
+| `panes/grid` | how many rows and columns a size in pixels holds: whole cells, never fewer than one |
+| `panes/layout` | how the rows a screen holds become runs of same-styled text and rectangles of background, for the cells that fit |
+| `panes/palette` | which colour a packed wire colour is in the terminal's palette (the Ledger's sixteen, the cube and the greys), and which text stays readable on a background a program chose |
+| `panes/screen` | what the window holds of the Workspace pane's screen: every row's segments, the cursor and the parked view, and how a full, partial or resized frame is applied to them |
+| `panes/terminal` | the Workspace's live pane on the stage: what it draws of the shown pane, who has the keys, the keys it sends as the page does, and the room it reports once it holds still |
+| `system` | what the GPUI window asks of the machine it runs on |
+| `system/clipboard` | the system clipboard through arboard, as `effects::Clipboard`: text, a picture encoded as a PNG, and the files a file manager copied |
 | `theme` | which colours and faces the Ledger look uses: the palette as `gpui-kit` theme roles, and the roles it lacks (changed, fainter) kept beside it |
 | `window` | how a frameless main window opens around an example's own view, and what its header strip holds: the drag region and the window controls |
 

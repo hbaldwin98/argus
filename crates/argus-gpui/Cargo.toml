@@ -13,7 +13,12 @@ repository.workspace = true
 # left off until the editor track picks its grammars; they pull the
 # `tree-sitter` native library, which the workspace already links once.
 gpui-kit = "=0.8.0"
+# The window's logic: the session, the events it publishes and the calls it
+# takes (`argus-desktop-core`), and the protocol types they are made of.
+argus-desktop-core = { path = "../argus-desktop-core" }
+argus-protocol = { workspace = true }
 anyhow = { workspace = true }
+tracing = { workspace = true }
 tokio = { workspace = true }
 # `Window::render_to_image` returns an `image::RgbaImage`; `png` writes it
 # for the screenshots.
@@ -21,6 +26,11 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # The clipboard, for pasting a screenshot into a text control, as the Tauri
 # window does.
 arboard = { version = "3", default-features = false, features = ["image-data"] }
+
+# A Linux desktop is as likely Wayland as X11 now, as the terminal client
+# found.
+[target.'cfg(target_os = "linux")'.dependencies]
+arboard = { version = "3", default-features = false, features = ["image-data", "wayland-data-control"] }
 
 [dev-dependencies]
 # `#[gpui_kit::test]`, the headless window and `render_to_image` sit behind

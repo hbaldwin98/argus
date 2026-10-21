@@ -211,6 +211,15 @@ against the registry sources.
 - **Lockfile**: `gpui-kit`'s optional `gpui-fast` pins conflict with
   `gpui-pre`'s even with the feature off; a `cargo update` can fail
   until resolved from the committed lock.
+- **Focus follows the rail**: a row click gives the rail the keys (SHELL-RAIL-13);
+  `x` closes a picked pane, Enter or Escape hands the keys to the Terminal,
+  and a pane newly shown while nothing is picked takes them (SEAM-9 g), as does
+  any stage change with a pane shown, except in the composer and the Feature
+  stage, which keep them for their own text (SEAM-9 d, e). A press outside the
+  rail (the stage header, the window controls, any button on the stage) drops
+  the pick and gives the Terminal the keys when a pane is shown (SEAM-14). The
+  rail takes the keys on a click because its root tracks focus and GPUI
+  focuses it. The rail's other keys (`j`/`k`, `s`, `a`, `r`, `h`, `z`) are held, not yet acted on.
 
 ## The Code editor
 
