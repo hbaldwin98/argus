@@ -21,7 +21,7 @@ The workspace builds four executables:
 - Runs Claude Code, Codex, OpenCode, pi, Google Antigravity (AGY), Cursor Agent (`agent`), or custom command-line agent templates.
 - Names each agent pane from the user's latest prompt, so a column of running agents is not a list of identical template names.
 - Shows each checkout's Git state: `↑` ahead of and `↓` behind its upstream, `+` staged and `!`
-  unstaged files, or `clean`.
+  unstaged files, and nothing when it is clean.
 - Reviews staged and unstaged work as two separate diffs, the way Git itself keeps them apart.
 - Captures deleted, renamed, and non-ignored untracked content for review.
 - Reads a diff unified or split side by side, with comments meaning the same thing in either.

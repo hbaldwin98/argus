@@ -9,12 +9,15 @@ import { $, el, ghosts } from '../kit/dom.js';
 import { dragging } from '../layout/edge.js';
 import { call } from '../connection/tauri.js';
 import { readable } from './contrast.js';
+import { sizeLabel as sizeText } from './size_label.js';
 // The terminal's type, as the design system's --type-mono gives it.
 const FONT_SIZE = 13;
 const LINE_HEIGHT = 20;
 // How long a pane being switched to may take before its skeleton shows: a
 // live pane's first screen comes well inside it, and would only flash it.
 const SKELETON_DELAY_MS = 250;
+/** How long the grid's size shows after it changes. */
+const SIZE_SHOWN_MS = 1000;
 // A segment's flags, as `src/connection/page.rs` packs them.
 const BOLD = 1;
 const ITALIC = 2;
@@ -61,6 +64,7 @@ function makeScreen(terminal, first) {
     // text it covers is read from Rust's grid when the drag ends.
     let selection = null;
     let parked = null;
+    let sizeUntil = 0;
     let mouse = false;
     // Whether this side has the keys: the other side of a split draws its
     // cursor hollow, as an unfocused window does.
@@ -224,6 +228,7 @@ function makeScreen(terminal, first) {
         // standing, so the palette is read again until it is there.
         if (!palette.fg)
             readPalette();
+        const switched = f.pane !== pane;
         if (f.pane !== pane || f.full) {
             if (f.pane !== pane)
                 selection = null;
@@ -231,6 +236,9 @@ function makeScreen(terminal, first) {
             mirror = Array.from({ length: f.rows }, () => []);
         }
         const resized = f.rows !== rows || f.cols !== cols;
+        // A new pane's first grid is not a resize anyone made.
+        if (resized && !switched && cols)
+            showSize();
         const moved = f.parked?.offset !== parked?.offset || f.parked?.depth !== parked?.depth;
         rows = f.rows;
         cols = f.cols;
@@ -274,13 +282,16 @@ function makeScreen(terminal, first) {
         selection = next;
         drawCursor();
     }
-    // A parked view leads with how far back it is: otherwise it looks like
-    // a pane gone quiet.
     function sizeLabel() {
-        if (!cols)
-            return '';
-        const back = parked ? `↑ ${parked.offset}/${parked.depth} · ` : '';
-        return `${back}${cols} × ${rows}`;
+        return sizeText({ cols, rows, parked, shownUntil: sizeUntil, now: Date.now() });
+    }
+    function showSize() {
+        sizeUntil = Date.now() + SIZE_SHOWN_MS;
+        setTimeout(() => {
+            const label = side === 'workspace' ? document.getElementById('size') : null;
+            if (label)
+                label.textContent = sizeLabel();
+        }, SIZE_SHOWN_MS + 20);
     }
     // The room the side has, in cells. The daemon sizes a pane to the
     // client the person was last at, so the grid that comes back may differ.

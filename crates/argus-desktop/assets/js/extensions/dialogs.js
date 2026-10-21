@@ -90,7 +90,9 @@ export function drawExtensionDialog(page) {
                 submit();
             }
         },
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title grow', id: 'ext-dialog-title' }, dialog.title), closeButton(cancel)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'dwhy grow' }, `Asked by the ${page.extension} extension`, el('span', { class: 'ext-waiting' }, waitingWords(page.waiting))), el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()), el('button', { class: 'btn primary', type: 'button', id: 'ext-dialog-yes', onclick: submit }, yes)));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'grow' }, el('div', { class: 'type-title', id: 'ext-dialog-title' }, dialog.title), 
+    // Who asked sits under the title, where the question is read, not in the footer.
+    el('div', { class: 'meta ext-asker' }, `Asked by the ${page.extension} extension`, el('span', { class: 'ext-waiting' }, waitingWords(page.waiting)))), closeButton(cancel)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()), el('button', { class: 'btn primary', type: 'button', id: 'ext-dialog-yes', onclick: submit }, yes)));
     holder.replaceChildren(card);
     if (page.prompted) {
         (document.getElementById('ext-dialog-first') ?? document.getElementById('ext-dialog-yes'))?.focus();

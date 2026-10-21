@@ -139,14 +139,14 @@ function head(page: CapturePage): HTMLElement {
     el(
       'div',
       { class: 'crumbs' },
+      el('span', null, page.repository),
+      el('span', { class: 'fg-faint' }, '/'),
       el('button', { class: 'crumb', onclick: discardCapture }, 'Features'),
-      el('span', { class: 'fg-faint' }, '›'),
-      el('span', { class: 'fg' }, 'New'),
     ),
     el(
       'div',
       { class: 'actions head-row' },
-      el('span', { class: 'type-title' }, `New feature in ${page.repository}`),
+      el('span', { class: 'type-title' }, 'New feature'),
       el('span', { class: 'grow' }),
       el(
         'button',

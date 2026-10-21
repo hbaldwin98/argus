@@ -202,7 +202,7 @@ field and the installed families under it). `chrome/` holds `projects`, the proj
 switcher. `layout/` is where each surface sits: `docks`, `floats` (the dialogs a saved view floats
 in, moved by the header and resized by the corner), `drag`, `panels` (what Rust says each panel
 that exists is and can do) and `edge` (a side column's edge, dragged). `panes/` holds `screen`,
-`input`, `split` and `split_math`, `console` and `rename`. `keys/` holds `keymap`, `focus` (which
+`input`, `split` and `split_math`, `size_label` (what the header says of the grid), `console` and `rename`. `keys/` holds `keymap`, `focus` (which
 layer has a key), `chords` (how a key is written), `palette` and `shortcuts`. `views/` is the views
 agents show and save: `agent` is the agents' views panel and `saved` the saved views', its parts in
 `saved/` (`ctx`, `logic` and `link`); `blocks` draws a view's blocks and hands each to the module

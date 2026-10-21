@@ -209,9 +209,6 @@ export function drawHeading(): void {
     },
     el('span', { class: 'ellipsis' }, project?.name ?? 'Projects'),
     icon('down'),
-    project &&
-      project.needsYou > 0 &&
-      el('span', { class: 'badge' }, `${project.needsYou} need you`),
   );
   heading.replaceChildren(button, state.menuOpen ? projectMenu() : '');
 }

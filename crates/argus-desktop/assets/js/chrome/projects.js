@@ -139,9 +139,7 @@ export function drawHeading() {
             state.hostsOpen = false;
             drawHeading();
         },
-    }, el('span', { class: 'ellipsis' }, project?.name ?? 'Projects'), icon('down'), project &&
-        project.needsYou > 0 &&
-        el('span', { class: 'badge' }, `${project.needsYou} need you`));
+    }, el('span', { class: 'ellipsis' }, project?.name ?? 'Projects'), icon('down'));
     heading.replaceChildren(button, state.menuOpen ? projectMenu() : '');
 }
 // ---- Removing one ------------------------------------------------------------

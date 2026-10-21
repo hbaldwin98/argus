@@ -284,10 +284,9 @@ documents the tokens.
   the paste chord (Cmd+V on macOS, Ctrl+Shift+V elsewhere), which is left to the browser so the
   `paste` event fires → `paste{text}`. `compositionend` → `text{text}`. Modifier-only keydowns are
   not sent. Click on the terminal focuses the textarea; window `focus`/`blur` → `focus`.
-- Rail: the same rail as the TUI's, on every stage. A project heading (name, a project switcher,
-  "N need you"); its repositories, the active ones first and the quiet ones after a bare divider
+- Rail: the same rail as the TUI's, on every stage. A project heading (name, a project switcher); its repositories, the active ones first and the quiet ones after a bare divider
   with no label; under each repository its checkout rows (name, branch or "detached", git summary
-  like the TUI's `git_state`: `↑a ↓b +staged !unstaged`, or `clean`), and under each checkout its
+  like the TUI's `git_state`: `↑a ↓b +staged !unstaged`, and nothing when clean), and under each checkout its
   pane rows (`◆` agent / `›` shell, title, loudest status word; a working pane animates subtly).
   Features are not in the rail; the Feature stage opens on their index. Clicking a pane row →
   `select`; a checkout row's `+` menu offers Shell → `spawnShell` (Agent · each harness comes with

@@ -110,7 +110,7 @@ export function drawCapture() {
     requestAnimationFrame(alignGutter);
 }
 function head(page) {
-    return el('div', { class: 'fhead capture-head', id: 'capture-head' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: discardCapture }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, 'New')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, `New feature in ${page.repository}`), el('span', { class: 'grow' }), el('button', {
+    return el('div', { class: 'fhead capture-head', id: 'capture-head' }, el('div', { class: 'crumbs' }, el('span', null, page.repository), el('span', { class: 'fg-faint' }, '/'), el('button', { class: 'crumb', onclick: discardCapture }, 'Features')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, 'New feature'), el('span', { class: 'grow' }), el('button', {
         class: 'btn',
         title: 'Discard the note (Esc)',
         onclick: discardCapture,

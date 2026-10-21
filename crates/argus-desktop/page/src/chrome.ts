@@ -126,7 +126,7 @@ function drawRail(): void {
   rail.classList.toggle('offstage', state.rail.stage !== 'workspace');
   if (!loaded) {
     // The stage is the one loading surface; the rail only says what it waits on.
-    rail.replaceChildren(el('div', { class: 'rail-wait' }, 'Waiting for argusd'));
+    rail.replaceChildren(el('div', { class: 'rail-wait' }));
     return;
   }
   if (!project) {
@@ -259,7 +259,8 @@ function checkoutRow(repository: string, co: RailCheckout): HTMLElement {
         icon('people'),
         `${co.shared}`,
       ),
-    co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git),
+    // A clean checkout says nothing: only changes and ahead/behind are news.
+    co.git != null && !co.clean && el('span', { class: 'git' }, co.git),
     !co.open &&
       el(
         'span',
@@ -674,15 +675,15 @@ export function drawHead(): void {
         { class: 'head-name' },
         // Rename lives in the overflow; right-click was an undiscoverable second way.
         el('span', { class: 'type-heading head-title' }, shown.title),
-        // A shell or editor has no work to report: "idle" on a file is noise, so
-        // only an agent, or a program that ended or asks, gets the pill.
+        // The rail's row and footer tally already say what the pane wants; the
+        // chip is drawn for the folded rail alone, where the row is not seen.
         shown.agent || PANE_SAYS.has(shown.status)
-          ? el('span', { class: `spill ${shown.status}` }, statusWord(shown.status))
+          ? el('span', { class: `spill head-status ${shown.status}` }, statusWord(shown.status))
           : null,
         shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '',
       ),
     ),
-    // The grid is debugging detail: faint, and its words are in the tooltip.
+    // Empty but for a parked view's place, and the grid for a moment after a resize.
     el(
       'span',
       { class: 'meta mono head-size', id: 'size', title: 'Size in columns and rows' },
@@ -770,11 +771,18 @@ function drawBar(): void {
     connection === 'connected'
       ? [undefined, `argusd · ${host ?? 'local'}`]
       : connection === 'connecting'
-        ? ['var(--attention)', 'argusd · connecting']
-        : [undefined, 'argusd · stopped'];
+        ? ['var(--attention)', 'argusd']
+        : [undefined, 'argusd'];
   const status = dot(colour);
   if (connection === 'stopped') status.classList.add('hollow');
-  status.title = words;
+  // The stage and the stopped card say the state in words; the dot's label keeps it for a reader.
+  const stateWords =
+    connection === 'connected'
+      ? words
+      : `argusd · ${connection === 'connecting' ? 'connecting' : 'stopped'}`;
+  status.title = stateWords;
+  status.setAttribute('role', 'img');
+  status.setAttribute('aria-label', stateWords);
   const shown = connection === 'connected' && alarm;
   $('bar').replaceChildren(
     tallies.length > 0 ? el('div', { class: 'bar-row' }, tallies) : '',
@@ -867,8 +875,8 @@ function drawEnded(): void {
     el(
       'span',
       { class: 'ended-text' },
-      el('strong', null, `${shown.title} exited`),
-      found?.pane.note && el('span', { class: 'fg-muted' }, ` \u00b7 ${found.pane.note}`),
+      // The rail row and the header already say it ended; only its note is news.
+      found?.pane.note ? el('span', { class: 'fg-muted' }, found.pane.note) : '',
     ),
     found
       ? el(
@@ -1063,6 +1071,8 @@ function railWidth(width: number | null): void {
   const root = document.documentElement.style;
   if (width === null) root.removeProperty('--rail-set');
   else root.setProperty('--rail-set', `${width}px`);
+  // 56 is the stylesheet's --rail-folded: the header's status chip returns with it.
+  document.documentElement.classList.toggle('rail-folded', width !== null && width <= 56);
 }
 
 /** The rail's right edge, for Rust to hold to its bounds, keep and send

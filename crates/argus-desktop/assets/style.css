@@ -3292,6 +3292,22 @@ body.mac .rail .brand {
   font-size: var(--fs-xs);
   color: var(--fg-faint);
 }
+.head-size:empty {
+  display: none;
+}
+/* The rail's row says what the pane wants; the header repeats it only when
+   the rail is folded to icons and the row's words are not on screen. */
+.head-status {
+  display: none;
+}
+.rail-folded .head-status {
+  display: inline-flex;
+}
+@media (max-width: 1200px) {
+  .head-status {
+    display: inline-flex;
+  }
+}
 @media (max-width: 1100px) {
   .head-size {
     display: none;
@@ -3686,7 +3702,7 @@ body.moving-pane * {
   padding: var(--sp-32) var(--sp-24) var(--sp-24);
 }
 .stopped-icon {
-  color: var(--attention);
+  color: var(--fg-muted);
 }
 .stopped-card .btn {
   margin-top: var(--sp-8);

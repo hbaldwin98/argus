@@ -232,7 +232,7 @@ function everything(): Result[] {
       text: `${checkout.repository} / ${checkout.name}`,
       icon: 'branch',
       detail: checkout.branch || undefined,
-      aside: checkout.git ? word(checkout.git, `git${checkout.clean ? ' clean' : ''}`) : null,
+      aside: checkout.git && !checkout.clean ? word(checkout.git, 'git') : null,
       choose: () => call('go_to_checkout', { checkout: checkout.id }),
     })),
   ];
