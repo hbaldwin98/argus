@@ -15,6 +15,16 @@
 //! box. The scroll offset stays across every update and the cursor's row is
 //! brought into view when the rows change, "nearest" (SHARED-5): no movement
 //! while it is already visible.
+//!
+//! A long line is never cut, as in the page. Unified, every row is as wide as
+//! the longest line (or the pane, when that is wider) so the list scrolls
+//! sideways and each row's colour runs on past the edge; the list measures
+//! one item for its content width, so each row carries that width itself.
+//! Split, each half wraps at the cell and the list is told each row's height
+//! up front, which is why the wrapping is done here (`lines::wrap`) rather
+//! than left to the text system, and why the heights are recomputed when the
+//! pane's width changes: a canvas reports it, the render reads it a frame
+//! later.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -22,13 +32,13 @@ use std::rc::Rc;
 use argus_desktop_core::connection::page::{DiffRow, DiffSide};
 use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::{
-    div, prelude::*, px, AnyElement, AnyView, ClickEvent, Context, ElementId, EventEmitter, FontStyle, HighlightStyle,
-    Pixels, ScrollStrategy, SharedString, Size, Styled, StyledText, TestSupportExt as _, Window,
+    canvas, div, prelude::*, px, AnyElement, AnyView, ClickEvent, Context, ElementId, EventEmitter, Font, FontStyle,
+    HighlightStyle, Pixels, ScrollStrategy, SharedString, Size, Styled, StyledText, TestSupportExt as _, Window,
 };
 use gpui_kit::component::{v_virtual_list, VirtualListScrollHandle};
 use gpui_kit::size;
 
-use crate::diff::lines::{self, Item, Shape};
+use crate::diff::lines::{self, Code, Item, Shape};
 use crate::theme::Ledger;
 
 /// The width of a line-number column, and of the marker's.
@@ -36,6 +46,13 @@ const NUMBER: f32 = 44.0;
 const MARKER: f32 = 16.0;
 /// What a comment box's left edge clears: both number columns and the marker.
 pub const GUTTER: f32 = NUMBER * 2.0 + MARKER + 4.0;
+/// Room after the last cell of a line, so its end is not flush with the edge
+/// of its colour.
+const TAIL: f32 = 8.0;
+/// A hunk header's or note's side padding, both sides.
+const HEADING_PAD: f32 = 24.0;
+/// What a row's own border takes of its width, both sides.
+const ROW_BORDER: f32 = 2.0;
 
 /// What a press on the diff means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +80,19 @@ pub struct DiffView {
     sizes: Rc<Vec<Size<Pixels>>>,
     scroll: VirtualListScrollHandle,
     built: Cell<usize>,
+    /// Each row's left and right side as drawn (tabs stopped), made once per
+    /// rows rather than per frame.
+    drawn: Vec<[Code; 2]>,
+    /// Each row's height: a pair's grows with the lines its longer half wraps to.
+    heights: Vec<f32>,
+    /// The cells of the widest line, and of the widest hunk header or note.
+    widest: (usize, usize),
+    /// The list's width as the last frame laid it out, and the advance of one
+    /// mono cell in the diff's font, once rendered.
+    pane: Rc<Cell<Pixels>>,
+    advance: Pixels,
+    /// The cells a split half's code is wrapped at when `heights` was made.
+    per_line: usize,
 }
 
 #[cfg(test)]
@@ -94,6 +124,12 @@ impl DiffView {
             sizes: Rc::default(),
             scroll: VirtualListScrollHandle::new(),
             built: Cell::new(0),
+            drawn: Vec::new(),
+            heights: Vec::new(),
+            widest: (0, 0),
+            pane: Rc::default(),
+            advance: px(0.0),
+            per_line: 0,
         }
     }
 
@@ -113,26 +149,100 @@ impl DiffView {
         }
         if !same_rows {
             self.rows = Rc::new(rows.to_vec());
+            self.draw();
         }
         self.split = split;
         self.slot = slot;
         self.items = Rc::new(lines::items(&self.rows, self.slot.is_some()));
-        let slot_height = self.slot.as_ref().map_or(px(0.0), |slot| slot.height);
-        self.sizes = Rc::new(
-            self.items
-                .iter()
-                .map(|item| match item {
-                    Item::Row(i) => size(px(0.0), px(lines::height(&self.rows[*i]))),
-                    Item::Comment => size(px(0.0), slot_height),
-                })
-                .collect(),
-        );
+        self.per_line = self.wrap_at();
+        self.size();
         if !same_rows {
             if let Some(at) = lines::cursor_item(&self.rows, &self.items) {
                 self.scroll.scroll_to_item(at, ScrollStrategy::Top);
             }
         }
         cx.notify();
+    }
+
+    /// The sides of every row as drawn, and how wide the widest are.
+    fn draw(&mut self) {
+        self.drawn = self
+            .rows
+            .iter()
+            .map(|row| {
+                let code = |side: &Option<DiffSide>| side.as_ref().map(lines::code).unwrap_or_default();
+                [code(&row.left), code(&row.right)]
+            })
+            .collect();
+        let mut widest = (0, 0);
+        for (row, drawn) in self.rows.iter().zip(&self.drawn) {
+            match lines::shape(row) {
+                Shape::Hunk | Shape::Note => widest.1 = widest.1.max(lines::cells(&row.text)),
+                Shape::Line => widest.0 = widest.0.max(lines::cells(&drawn[0].text)),
+                Shape::Fold | Shape::Pair => {}
+            }
+        }
+        self.widest = widest;
+    }
+
+    /// The cells a split half's code wraps at in this pane: 0, no wrapping,
+    /// until the pane and the font have been measured and for a unified diff.
+    fn wrap_at(&self) -> usize {
+        let (pane, advance) = (f32::from(self.pane.get()), f32::from(self.advance));
+        if !self.split || pane <= 0.0 || advance <= 0.0 {
+            return 0;
+        }
+        // Row border both sides, the second half's left rule, and a few
+        // pixels of slack against a rounding that would push a full line over.
+        let half = (pane - ROW_BORDER - 1.0) / 2.0;
+        (((half - NUMBER - MARKER - TAIL) / advance).floor() as usize).max(1)
+    }
+
+    /// `heights` and `sizes` for the rows at `per_line`.
+    fn size(&mut self) {
+        self.heights = self
+            .rows
+            .iter()
+            .zip(&self.drawn)
+            .map(|(row, drawn)| match lines::shape(row) {
+                Shape::Pair => {
+                    let most = drawn.iter().map(|side| lines::wrapped_lines(&side.text, self.per_line)).max().unwrap_or(1);
+                    lines::pair_height(most)
+                }
+                _ => lines::height(row),
+            })
+            .collect();
+        let slot_height = self.slot.as_ref().map_or(px(0.0), |slot| slot.height);
+        self.sizes = Rc::new(
+            self.items
+                .iter()
+                .map(|item| match item {
+                    Item::Row(i) => size(px(0.0), px(self.heights[*i])),
+                    Item::Comment => size(px(0.0), slot_height),
+                })
+                .collect(),
+        );
+    }
+
+    /// A row's width: unified, the longest line's or the pane's if wider, so
+    /// the rows share the width the list measures; split, the pane's. `None`
+    /// before the pane is known, when a row takes what it is given.
+    fn width(&self) -> Option<Pixels> {
+        let pane = self.pane.get();
+        if self.split {
+            return (pane > px(0.0)).then_some(pane);
+        }
+        let advance = f32::from(self.advance);
+        let line = NUMBER * 2.0 + MARKER + self.widest.0 as f32 * advance + TAIL + ROW_BORDER;
+        let heading = HEADING_PAD + self.widest.1 as f32 * advance;
+        Some(pane.max(px(line.max(heading).ceil())))
+    }
+
+    fn wide<E: Styled>(&self, element: E) -> E {
+        match self.width() {
+            Some(width) => element.w(width),
+            None => element.w_full(),
+        }
     }
 
     /// How many items the list holds: its rows and the slot.
@@ -163,15 +273,15 @@ impl DiffView {
         let base = match lines::shape(row) {
             Shape::Hunk | Shape::Note => return self.heading(ix, row, ledger),
             Shape::Fold => return self.fold(ix, row, ledger, cx),
-            Shape::Line => self.line(row, ledger),
-            Shape::Pair => self.pair(row, ledger),
+            Shape::Line => self.line(ix, row, ledger),
+            Shape::Pair => self.pair(ix, row, ledger),
         };
         let (number, interactive) = (row.row, self.interactive);
-        base.id(Self::row_id(ix))
+        self.wide(base)
+            .id(Self::row_id(ix))
             .test_support()
             .flex_shrink_0()
-            .h(px(lines::LINE))
-            .w_full()
+            .h(px(self.heights[ix]))
             .border_1()
             .border_color(if row.cursor || row.picked { ledger.line_strong } else { gpui_kit::transparent_black() })
             .when(interactive, |row| {
@@ -184,19 +294,19 @@ impl DiffView {
 
     /// A hunk's `@@` line or a note: said, never picked.
     fn heading(&self, ix: usize, row: &DiffRow, ledger: &Ledger) -> AnyElement {
-        h_flex()
+        self.wide(h_flex())
             .id(Self::row_id(ix))
             .test_support()
             .flex_shrink_0()
             .h(px(lines::HUNK))
-            .w_full()
             .px_3()
             .items_center()
             .bg(ledger.chrome)
             .text_color(ledger.faint)
             .border_b_1()
             .border_color(ledger.line)
-            .truncate()
+            .overflow_hidden()
+            .whitespace_nowrap()
             .child(SharedString::from(row.text.clone()))
             .into_any_element()
     }
@@ -228,12 +338,11 @@ impl DiffView {
                 }))
                 .child(SharedString::from(label))
         };
-        h_flex()
+        self.wide(h_flex())
             .id(Self::row_id(ix))
             .test_support()
             .flex_shrink_0()
             .h(px(lines::FOLD))
-            .w_full()
             .px_3()
             .gap_2()
             .items_center()
@@ -264,16 +373,16 @@ impl DiffView {
     }
 
     /// A unified line: two numbers, a marker, then code.
-    fn line(&self, row: &DiffRow, ledger: &Ledger) -> gpui_kit::Div {
+    fn line(&self, ix: usize, row: &DiffRow, ledger: &Ledger) -> gpui_kit::Div {
         let side = row.left.as_ref();
         let kind = side.map_or("context", |side| side.kind);
         let fill = lines::fill(kind, row.picked, row.cursor, ledger);
-        h_flex().items_center().when_some(fill, |row, fill| row.bg(fill)).child(half(side, true, ledger)).overflow_hidden()
+        h_flex().items_center().when_some(fill, |row, fill| row.bg(fill)).child(half(side, &self.drawn[ix][0], true, ledger)).overflow_hidden()
     }
 
     /// A split pair: its two halves, each with its own number, marker and
     /// code, cut at its own half. A missing half is blank and recessed.
-    fn pair(&self, row: &DiffRow, ledger: &Ledger) -> gpui_kit::Div {
+    fn pair(&self, ix: usize, row: &DiffRow, ledger: &Ledger) -> gpui_kit::Div {
         let side = |side: Option<&DiffSide>, second: bool| {
             let fill = match side {
                 Some(side) => lines::fill(side.kind, row.picked, row.cursor, ledger),
@@ -287,9 +396,13 @@ impl DiffView {
                 .overflow_hidden()
                 .when(second, |half| half.border_l_1().border_color(ledger.line))
                 .when_some(fill, |half, fill| half.bg(fill))
-                .child(half(side, false, ledger))
+                .child(half(side, &lines::wrap(&self.drawn[ix][usize::from(second)], self.per_line), false, ledger))
         };
-        h_flex().items_center().child(side(row.left.as_ref(), false)).child(side(row.right.as_ref(), true))
+        h_flex()
+            .items_center()
+            .when(self.heights[ix] > lines::LINE, |pair| pair.line_height(px(lines::LINE)))
+            .child(side(row.left.as_ref(), false))
+            .child(side(row.right.as_ref(), true))
     }
 
     fn item(&self, ix: usize, ledger: &Ledger, cx: &mut Context<Self>) -> AnyElement {
@@ -315,7 +428,7 @@ impl DiffView {
 }
 
 /// A line's number or numbers, its marker and its code.
-fn half(side: Option<&DiffSide>, both: bool, ledger: &Ledger) -> impl IntoElement {
+fn half(side: Option<&DiffSide>, drawn: &Code, both: bool, ledger: &Ledger) -> impl IntoElement {
     let changed = side.is_some_and(|side| side.kind != "context");
     let number_colour = if changed { ledger.faint } else { ledger.fainter };
     let marker_colour = match side.map(|side| side.kind) {
@@ -345,12 +458,11 @@ fn half(side: Option<&DiffSide>, both: bool, ledger: &Ledger) -> impl IntoElemen
                 .text_color(marker_colour)
                 .child(SharedString::from(side.map_or("", |side| side.marker))),
         )
-        .child(div().flex_1().min_w_0().truncate().children(side.map(|side| code(side, ledger))))
+        .child(div().flex_1().min_w_0().whitespace_nowrap().children(side.map(|_| code(drawn, ledger))))
 }
 
 /// The side's text with its highlight kinds as colours.
-fn code(side: &DiffSide, ledger: &Ledger) -> impl IntoElement {
-    let drawn = lines::code(side);
+fn code(drawn: &Code, ledger: &Ledger) -> impl IntoElement {
     let highlights = drawn.spans.iter().filter_map(|(range, kind)| {
         let tone = lines::tone(kind, ledger)?;
         let style = HighlightStyle {
@@ -360,14 +472,23 @@ fn code(side: &DiffSide, ledger: &Ledger) -> impl IntoElement {
         };
         Some((range.clone(), style))
     });
-    StyledText::new(SharedString::from(drawn.text)).with_highlights(highlights)
+    StyledText::new(SharedString::from(drawn.text.clone())).with_highlights(highlights)
 }
 
 impl Render for DiffView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let (family, text_size) = (theme.mono_font_family.clone(), theme.mono_font_size);
         let ledger = *Ledger::global(cx);
+        // One cell is the advance of `M`, as the terminal panes measure it.
+        let text = window.text_system();
+        let font_id = text.resolve_font(&Font { family: family.clone(), ..Font::default() });
+        self.advance = text.advance(font_id, text_size, 'M').map_or(text_size * 0.6, |advance| advance.width);
+        if self.wrap_at() != self.per_line {
+            self.per_line = self.wrap_at();
+            self.size();
+        }
+        let (pane, diff) = (self.pane.clone(), cx.entity());
         div()
             .id(SharedString::from(format!("{}-body", self.id)))
             .size_full()
@@ -376,6 +497,21 @@ impl Render for DiffView {
             .font_family(family)
             .text_size(text_size)
             .text_color(ledger.muted)
+            .child(
+                // Where the list ends up is only known once it is laid out; a
+                // change asks for one more render that reads it.
+                canvas(
+                    move |bounds, _, cx| {
+                        if pane.get() != bounds.size.width {
+                            pane.set(bounds.size.width);
+                            cx.defer(move |cx| diff.update(cx, |_, cx| cx.notify()));
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .child(
                 v_virtual_list(
                     cx.entity(),
@@ -394,7 +530,7 @@ mod tests {
 
     use super::*;
     use gpui_kit::test::TestWindowExt as _;
-    use gpui_kit::{size, Bounds, Entity, TestAppContext, WindowBounds, WindowOptions};
+    use gpui_kit::{point, size, Bounds, Entity, TestAppContext, WindowBounds, WindowOptions};
 
     fn line(row: usize) -> DiffRow {
         let side = DiffSide { old: Some(row as u32), new: Some(row as u32), marker: "", kind: "context", parts: vec![("x".into(), "")] };
@@ -508,5 +644,100 @@ mod tests {
         show(cx, &opened, &[line(0)]);
         assert_eq!(opened.notified.get(), before + 1);
         cx.update(|cx| assert_eq!(opened.view.read(cx).len(), 1));
+    }
+
+    fn text_line(row: usize, text: &str) -> DiffRow {
+        let mut line = line(row);
+        line.left.as_mut().unwrap().parts = vec![(text.into(), "")];
+        line
+    }
+
+    fn pair(row: usize, left: &str, right: &str) -> DiffRow {
+        let side = |text: &str, kind: &'static str| DiffSide { old: Some(row as u32), new: Some(row as u32), marker: "", kind, parts: vec![(text.into(), "")] };
+        DiffRow {
+            row,
+            kind: "pair",
+            text: String::new(),
+            hidden: None,
+            step: None,
+            left: Some(side(left, "removed")),
+            right: Some(side(right, "added")),
+            cursor: false,
+            picked: false,
+        }
+    }
+
+    /// The rows drawn and settled: the pane's width is read a frame after it is laid out.
+    fn settle(cx: &mut TestAppContext, opened: &Opened, rows: &[DiffRow], split: bool) {
+        cx.update(|cx| opened.view.update(cx, |view, cx| view.show(rows, split, None, cx)));
+        for _ in 0..3 {
+            cx.run_until_parked();
+            cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+        }
+    }
+
+    #[gpui_kit::test]
+    fn a_line_longer_than_the_pane_scrolls_sideways_and_is_not_cut(cx: &mut TestAppContext) {
+        let opened = open(cx, true);
+        let rows = [line(0), text_line(1, &"x".repeat(400)), line(2)];
+        settle(cx, &opened, &rows, false);
+        let scroll = cx.update(|cx| opened.view.read(cx).scroll().clone());
+        let max = scroll.max_offset().x;
+        // 400 cells are far more than the 600 px pane, whatever the font.
+        assert!(max > px(600.0), "the list has {max:?} to scroll sideways");
+        let long = cx.update_window(opened.handle, |_, window, _| window.find(("diff-row", 1usize)).bounds()).unwrap();
+        let short = cx.update_window(opened.handle, |_, window, _| window.find(("diff-row", 0usize)).bounds()).unwrap();
+        assert_eq!(long.size.width, short.size.width, "every row carries the column's width, so each colour runs on");
+        assert!(long.size.width > px(1000.0), "the row is {:?} wide, not cut at the pane", long.size.width);
+        assert_eq!(scroll.offset().x, px(0.0));
+        cx.update_window(opened.handle, |_, window, cx| {
+            // Over the first screenful: the long row's centre is off the window.
+            let wheel = gpui_kit::ScrollWheelEvent {
+                position: point(px(100.0), px(30.0)),
+                delta: gpui_kit::ScrollDelta::Pixels(point(px(-120.0), px(0.0))),
+                ..Default::default()
+            };
+            window.dispatch_event(gpui_kit::InputEvent::to_platform_input(wheel), cx);
+            window.render_frame(cx);
+        })
+        .unwrap();
+        assert_eq!(scroll.offset().x, px(-120.0), "a sideways wheel moves the list sideways");
+    }
+
+    #[gpui_kit::test]
+    fn a_diff_of_short_lines_has_no_sideways_range_and_fills_the_pane(cx: &mut TestAppContext) {
+        let opened = open(cx, true);
+        settle(cx, &opened, &[line(0), text_line(1, "short"), line(2)], false);
+        let scroll = cx.update(|cx| opened.view.read(cx).scroll().clone());
+        assert_eq!(scroll.max_offset().x, px(0.0));
+        let width = cx.update_window(opened.handle, |_, window, _| window.find(("diff-row", 1usize)).bounds().size.width).unwrap();
+        assert_eq!(width, px(600.0), "a row is stretched to the pane");
+    }
+
+    #[gpui_kit::test]
+    fn a_long_half_of_a_split_row_wraps_and_the_rows_around_it_keep_one_line(cx: &mut TestAppContext) {
+        let opened = open(cx, true);
+        let rows = [pair(0, "a", "b"), pair(1, &"y".repeat(200), "short"), pair(2, "c", "d")];
+        settle(cx, &opened, &rows, true);
+        let narrow = cx.update(|cx| opened.view.read(cx).heights.clone());
+        assert_eq!(narrow[0], lines::LINE);
+        assert_eq!(narrow[2], lines::LINE);
+        assert!(narrow[1] > lines::LINE * 2.0, "200 cells in a half of a 600 px pane are several lines, got {}", narrow[1]);
+        let drawn = cx.update_window(opened.handle, |_, window, _| window.find(("diff-row", 1usize)).bounds().size.height).unwrap();
+        assert_eq!(drawn, px(narrow[1]), "the row is drawn as tall as the list was told");
+        let scroll = cx.update(|cx| opened.view.read(cx).scroll().clone());
+        assert_eq!(scroll.max_offset().x, px(0.0), "a split view wraps and never scrolls sideways");
+
+        let before = opened.notified.get();
+        cx.simulate_window_resize(opened.handle, size(px(1200.0), px(400.0)));
+        cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+        cx.run_until_parked();
+        assert!(opened.notified.get() > before, "a new pane width asks the view for another render, which reads it");
+        for _ in 0..3 {
+            cx.run_until_parked();
+            cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+        }
+        let wide = cx.update(|cx| opened.view.read(cx).heights.clone());
+        assert!(wide[1] > lines::LINE && wide[1] < narrow[1], "a wider pane wraps the half to fewer lines: {} then {}", narrow[1], wide[1]);
     }
 }

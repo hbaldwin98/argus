@@ -11,7 +11,7 @@ use std::ops::Range;
 
 use argus_desktop_core::connection::page::{DiffRow, DiffSide};
 use gpui_kit::Hsla;
-use unicode_width::UnicodeWidthChar as _;
+use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 
 use crate::theme::Ledger;
 
@@ -53,6 +53,16 @@ pub fn height(row: &DiffRow) -> f32 {
         Shape::Hunk | Shape::Note => HUNK,
         Shape::Fold => FOLD,
         Shape::Line | Shape::Pair => LINE,
+    }
+}
+
+/// A pair of `lines` lines tall: a single line is a row; more take their
+/// lines whole and the row's two border pixels besides.
+pub fn pair_height(lines: usize) -> f32 {
+    if lines <= 1 {
+        LINE
+    } else {
+        lines as f32 * LINE + 2.0
     }
 }
 
@@ -109,6 +119,64 @@ pub fn code(side: &DiffSide) -> Code {
         }
     }
     out
+}
+
+/// How many cells a drawn text takes: a wide glyph is two, as in `code`.
+pub fn cells(text: &str) -> usize {
+    text.width()
+}
+
+/// The byte offsets a text breaks before when each line holds `per_line`
+/// cells. The page wraps a split half "anywhere"; gpui's own wrapper prefers
+/// a word boundary, so the row's height could not be known up front. Cutting
+/// at the cell makes the number of lines a fact of the text and the width.
+/// A glyph wider than the line takes a line of its own.
+fn breaks(text: &str, per_line: usize) -> impl Iterator<Item = usize> + '_ {
+    let mut column = 0usize;
+    text.char_indices().filter_map(move |(at, c)| {
+        let width = c.width().unwrap_or(0);
+        let cut = column > 0 && column + width > per_line;
+        column = if cut { width } else { column + width };
+        cut.then_some(at)
+    })
+}
+
+/// How many lines `text` takes at `per_line` cells a line; 0 means unbounded.
+pub fn wrapped_lines(text: &str, per_line: usize) -> usize {
+    if per_line == 0 {
+        return 1;
+    }
+    1 + breaks(text, per_line).count()
+}
+
+/// `drawn` with a newline at each break, its spans moved to stay on the same
+/// characters. Unbounded when `per_line` is 0.
+pub fn wrap(drawn: &Code, per_line: usize) -> Code {
+    if per_line == 0 {
+        return drawn.clone();
+    }
+    let cuts: Vec<usize> = breaks(&drawn.text, per_line).collect();
+    if cuts.is_empty() {
+        return drawn.clone();
+    }
+    let mut text = String::with_capacity(drawn.text.len() + cuts.len());
+    let mut from = 0;
+    for &cut in &cuts {
+        text.push_str(&drawn.text[from..cut]);
+        text.push('\n');
+        from = cut;
+    }
+    text.push_str(&drawn.text[from..]);
+    let spans = drawn
+        .spans
+        .iter()
+        .map(|(range, kind)| {
+            let start = range.start + cuts.partition_point(|cut| *cut <= range.start);
+            let end = range.end + cuts.partition_point(|cut| *cut < range.end);
+            (start..end, *kind)
+        })
+        .collect();
+    Code { text, spans }
 }
 
 /// How a highlight kind is drawn.
@@ -336,5 +404,29 @@ mod tests {
         assert!(tone("zz", &ledger).is_none());
         assert!(tone("c", &ledger).unwrap().italic, "a comment is italic");
         assert!(wash("added", &ledger).is_some() && wash("removed", &ledger).is_some() && wash("context", &ledger).is_none());
+    }
+
+    #[test]
+    fn a_text_wraps_at_the_cell_with_no_regard_for_words() {
+        assert_eq!(wrapped_lines("abcdefghij", 4), 3);
+        assert_eq!(wrapped_lines("abcd", 4), 1);
+        assert_eq!(wrapped_lines("abcde", 4), 2);
+        assert_eq!(wrapped_lines("a b c d e f g", 4), 4, "the spaces are cells like any other");
+        assert_eq!(wrapped_lines("abcdefghij", 0), 1, "unbounded");
+        assert_eq!(wrapped_lines("", 4), 1);
+        assert_eq!(wrapped_lines("ab\u{4e2d}", 3), 2, "a wide glyph that does not fit moves down whole");
+        assert_eq!(wrapped_lines("\u{4e2d}\u{4e2d}", 1), 2, "a glyph wider than the line takes one alone");
+    }
+
+    #[test]
+    fn wrapping_keeps_each_span_on_its_characters() {
+        let drawn = code(&side(None, None, "context", &[("abcd", ""), ("efgh", "k"), ("ij", "")]));
+        let wrapped = wrap(&drawn, 3);
+        assert_eq!(wrapped.text, "abc\ndef\nghi\nj");
+        assert_eq!(wrapped.text.lines().count(), wrapped_lines(&drawn.text, 3));
+        let cut: Vec<&str> = wrapped.spans.iter().map(|(range, _)| &wrapped.text[range.clone()]).collect();
+        assert_eq!(cut, ["ef\ngh"]);
+        assert_eq!(wrap(&drawn, 0), drawn);
+        assert_eq!(wrap(&drawn, 100), drawn);
     }
 }
