@@ -736,6 +736,16 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `screens` | the scenes the screenshot harness draws: a session brought to each screen the window shows, and the events a fresh page hears there, with a stand-in daemon answering what each scene asks |
 | `screens/live` | a scene served live to a page in a browser: its calls reach a real session, the stand-in daemon answers them, and what the page hears goes back |
 
+`argus-gpui` is the spike for moving the desktop window onto GPUI through `gpui-kit`. It proves each
+piece the port depends on in a frame of its own, independent of `Session`, and is replaced by the
+port's crate or grows into it (`GPUI.md`).
+
+| module | answers |
+| --- | --- |
+| `main` | the spike's binary: the Ledger window with an empty stage |
+| `theme` | which colours and faces the Ledger look uses: the palette as `gpui-kit` theme roles, and the roles it lacks (changed, fainter) kept beside it |
+| `window` | how a frameless main window opens around an example's own view, and what its header strip holds: the drag region and the window controls |
+
 ## Views
 
 The production client follows `Argus Command Center.dc.html`: a two-row product-and-navigation
