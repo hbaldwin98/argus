@@ -956,6 +956,39 @@ page as the compiler does.
 Some tests launch real PTYs and Git processes. `cargo test` can finish all assertions while a spawned
 test process briefly delays command teardown.
 
+### Reliability evidence (reliab)
+
+[reliab](https://github.com/hbaldwin98/reliab) runs the test layers in `reliability-profile.yaml`
+(unit tests, properties, the daemon's transcripts, request fuzz, store faults, mutation of changed
+code) in tiers, and holds agents to the testing rules in `AGENTS.md`. The version is pinned in
+`.reliab-version`. Claude Code sessions get it from the plugin enabled in `.claude/settings.json`;
+for your own shell, install the pinned version into `~/.reliab/bin` and put that on your PATH:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/hbaldwin98/reliab/main/scripts/install.sh | sh
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/hbaldwin98/reliab/main/scripts/install.ps1)))
+```
+
+Both read `.reliab-version` in the current directory. The tiers also need `cargo-nextest` and
+`cargo-mutants` at the versions the profile lists under `roles`.
+
+```sh
+reliab verify --tier inner     # a change is done (about 5 minutes)
+reliab verify --tier prepr     # before a push (up to 30 minutes, with mutation of changed code)
+reliab report route            # what to do about each finding
+reliab doctor                  # check the install against the profile
+```
+
+The `reliab` workflow runs the pre-PR tier on every push to `main` and every pull request, and on a
+pull request lists any protected path it changes (snapshots, proptest regressions, store fixtures,
+the profile): those need a person's approval, which the pull request's reviewer gives. Locally a
+person approves one with `reliab approve <path>`; an agent never does. To bump reliab, edit
+`.reliab-version`, re-run `reliab profile init --starting-condition maintained` (it refreshes the
+rules in `AGENTS.md` and keeps what is there), and commit both.
+
 ## Publishing a Release
 
 Releases are created from version tags. The tag must exactly match `workspace.package.version` in

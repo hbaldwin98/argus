@@ -1,0 +1,118 @@
+name: reliab
+
+# The agent-free gates of reliab's testing contract (reliability-profile.yaml).
+# In a session they are hooks, which a bypassed permission weakens; here they
+# are authoritative.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reliab-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  prepr:
+    name: Pre-PR tier
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      # Full history: the tier diffs against a base for its relevance skips
+      # and mutation_changed takes the merge base with origin/main.
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install stable Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup component add clippy
+
+      - name: Install WebKitGTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config
+
+      # The versions the profile's roles T1 and T4 were verified with.
+      - name: Install cargo-nextest and cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148,cargo-mutants@27.1.0
+
+      - name: Install reliab
+        shell: bash
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/hbaldwin98/reliab/main/scripts/install.sh | sh -s -- "$(cat .reliab-version)"
+          echo "$HOME/.reliab/bin" >> "$GITHUB_PATH"
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # A push to main has no merge base of its own to judge relevance
+      # against, so it uses the commit the push replaced; a new branch's
+      # first push has none and runs every layer.
+      - name: Run the pre-PR tier
+        shell: bash
+        env:
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+        run: |
+          if [[ -n "$BEFORE" && "$BEFORE" != 0000000000000000000000000000000000000000 ]]; then
+            reliab verify --tier prepr --base "$BEFORE"
+          else
+            reliab verify --tier prepr
+          fi
+
+      - name: Summarize
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          reliab report summary | tee -a "$GITHUB_STEP_SUMMARY"
+          reliab report export --format junit -o reliab-report.xml
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: reliab-report
+          path: |
+            reliab-report.xml
+            .reliab/reports/
+            .reliab/out/
+          include-hidden-files: true
+
+  # Protected oracles (snapshots, regression seeds, the profile) change only
+  # with a person's approval. Approvals live in a local .reliab/, so here
+  # every protected change fails: the reviewer approving the pull request is
+  # that person.
+  protected:
+    name: Protected paths
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install reliab
+        shell: bash
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/hbaldwin98/reliab/main/scripts/install.sh | sh -s -- "$(cat .reliab-version)"
+          echo "$HOME/.reliab/bin" >> "$GITHUB_PATH"
+
+      - name: List protected changes
+        run: reliab gate protected --base origin/${{ github.base_ref }}
