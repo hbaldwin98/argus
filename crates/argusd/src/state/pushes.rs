@@ -15,6 +15,7 @@ use argus_protocol::{
 };
 use tokio::sync::broadcast;
 
+use super::browsers::{self, BrowserNews};
 use super::views::saved::{self, SavedViewNews};
 use super::views::{self, ViewNews};
 use super::ExtensionNews;
@@ -37,6 +38,9 @@ const FOCUS_DEPTH: usize = 16;
 pub(crate) const VIEWS_DEPTH: usize = 64;
 const SAVED_VIEWS_DEPTH: usize = 64;
 pub(crate) const EXTENSIONS_DEPTH: usize = 64;
+/// Shallow on purpose: a watcher this far behind is sent each browser's
+/// latest picture rather than the backlog.
+const BROWSERS_DEPTH: usize = 16;
 
 /// The tree, or one pane's merged telemetry, on one channel. A report is
 /// apart from the tree because it changes on every tool call, and a client
@@ -102,6 +106,7 @@ pub struct Pushes {
     views: broadcast::Sender<ViewNews>,
     saved_views: broadcast::Sender<SavedViewNews>,
     extensions: broadcast::Sender<ExtensionNews>,
+    browsers: broadcast::Sender<BrowserNews>,
 }
 
 impl Pushes {
@@ -116,6 +121,7 @@ impl Pushes {
             views: broadcast::channel(VIEWS_DEPTH).0,
             saved_views: broadcast::channel(SAVED_VIEWS_DEPTH).0,
             extensions: broadcast::channel(EXTENSIONS_DEPTH).0,
+            browsers: broadcast::channel(BROWSERS_DEPTH).0,
         }
     }
 
@@ -210,6 +216,16 @@ impl Pushes {
 
     pub(crate) fn subscribe_focus(&self) -> broadcast::Receiver<()> {
         self.focus.subscribe()
+    }
+
+    /// Sent under the browsers lock, for the same reason.
+    pub(super) fn browser(&self, _held: &browsers::Browsers, news: BrowserNews) {
+        let _ = self.browsers.send(news);
+    }
+
+    /// Only under the browsers lock: see `Daemon::watch_browsers`.
+    pub(super) fn subscribe_browsers(&self) -> broadcast::Receiver<BrowserNews> {
+        self.browsers.subscribe()
     }
 
     /// Only under the views lock: see `Daemon::watch_views`.

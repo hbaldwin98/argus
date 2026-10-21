@@ -429,6 +429,7 @@ live in this crate and a contract written twice drifts in silence.
 | `views/requests` | what an agent is typed when the person acts on one of its views — a press, a refresh of a shown view, a refresh of a saved one — each on one line with no control character in it |
 | `views/patch` | how a patch replaces one block of a held view: the block path an agent names it by, and the view with that block swapped |
 | `checkout_path` | whether a path an agent wrote stays inside the checkout it is read against |
+| `browser` | a browser the daemon runs for an agent's pane: what an agent asks of it, what a client is shown of it, and what the person's hands do to it |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
 behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
@@ -467,6 +468,7 @@ to the type or its locking.
 | `state/board/address` | which board a request addresses, and who hears of it: an agent's pane or a client's checkout resolved once into the board's store key, its project and the repositories a push of it names |
 | `state/board/asker` | who is asking for a change to a board — a person at a client, or an agent with its pane and session — and how a row an agent left names it |
 | `state/views` | which views agents have shown, per pane, and which go when |
+| `state/browsers` | which panes run a browser, where each is and its latest picture, and which go when |
 | `state/views/timers` | which views are being asked to refresh, and the task that asks |
 | `state/views/saved` | the views agents kept: saving, marking stale, deleting, refreshing and pressing them, which of them an agent may reach, what each client is told as the rows or the tree change, and the staleness read off the tree |
 | `connection` | one client connection: which task each message runs on, and the topics it has joined |
@@ -490,6 +492,11 @@ to the type or its locking.
 | `review`, `review/queue` | a review's diff, and when it is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
 | `review/diff` | a review's stable snapshot and its diff, and a commit's |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
+| `browser` | a browser run for an agent's pane: started, followed while it runs, and ended when its handle is dropped |
+| `browser/chrome` | which browser runs, and starting it: headless, on a profile of its own that goes with it, its DevTools socket on a loopback port it picks |
+| `browser/cdp` | one DevTools Protocol connection to a browser: commands sent and their answers matched back by id, and everything else read as an event |
+| `browser/screen` | which of a browser's pages is shown, and showing it: its pictures read off as the page changes, and the person's input put on it |
+| `browser/input` | what the person's hand on a browser becomes: the DevTools commands, in order, that do it to the page shown |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
@@ -537,6 +544,7 @@ to the type or its locking.
 | `bin/argus-hook/board/reconcile` | `argus-hook reconcile`: reading the reconcile asked for, proposing its lines, and reporting what was carried out |
 | `bin/argus-hook/view` | `argus-hook view`: showing the person a view of what the agent read, taking it down, and keeping one in the store |
 | `bin/argus-hook/agents` | `argus-hook agents`: the other agents in every project of the open workspace, one a line with the pane id a view links them by |
+| `bin/argus-hook/browser` | `argus-hook browser`: the pane's browser opened, answered with the DevTools URL a browser tool attaches to, or closed |
 | `bin/argus-hook/launch` | `argus-hook agent`: an agent starting another in a pane of its own, here, in a new worktree or in another repository's checkout |
 | `bin/argus-hook/inbox` | relaying the pane's inbox, one item a line, for a plugin that cannot hold the stream open itself |
 | `bin/argus-hook/transcript` | appending a turn to a transcript in the neutral format, for a harness that keeps none of its own |
@@ -647,6 +655,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `settings/preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
 | `settings/remembered` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
 | `chrome` | the rail and the status bar around the stage |
+| `browser` | the browsers agents' panes run, as this window holds them: where each is, its latest picture, and which one the Browsers stage has chosen |
 | `chrome/add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
 | `chrome/rail` | what the rail lists from the tree, and what a row says |
 | `chrome/status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
@@ -2786,6 +2795,38 @@ suggest but never silently assign, typed artifacts beyond decisions and tasks �
 assumptions, open questions, summaries — and a bounded context packet that says why each durable
 item was included. Until those land, an agent still infers its work from whichever feature its
 checkout is on.
+
+## Browsers
+
+An agent pane can have a browser. `argus-hook browser` posts a `BrowserRequest` to the pane API's
+`browser` endpoint; the daemon starts Chrome, Chromium or Edge (`ARGUS_BROWSER` names another)
+headless, on a fresh profile in the temporary directory, with its DevTools socket on a loopback
+port Chrome picks, and answers the `ws://` URL. The agent drives it with whatever tool it brings —
+`agent-browser --cdp <url>`, a DevTools MCP server, Playwright — so Argus never chooses how an agent
+browses, and a second open answers the same URL. `browser close`, the person's close
+(`ClientMsg::CloseBrowser`), the pane leaving the tree (`retire_pane`) and the daemon stopping each
+kill it; on Windows a job takes its renderers with it.
+
+What the person sees is read by the daemon, not the window, so a window on another host sees the
+daemon's browser and the terminal client never has to. `browser::screen` attaches its own session
+beside the agent's to the newest page — a tab an agent opens is the one it is about to work in —
+and asks for a screencast: JPEG frames, each acknowledged before the next comes, so a slow reader
+throttles the browser rather than queueing behind it. The page's address and title come from the
+target's events and from reading its info again once it loads, since Chrome does not report a
+title its document sets. A client that lists `BROWSERS` and sends `ClientMsg::WatchBrowsers` is
+sent every browser's `BrowserPage` and latest `BrowserFrame` now, then each as it changes; the
+channel is shallow, and a client that falls behind is sent each browser's latest picture rather
+than the backlog. The frame carries Chrome's base64 as it came, so neither side decodes it on the
+way.
+
+The desktop's Browsers stage (`6`) shows every browser as a live tile, named by its pane's title,
+or the one chosen filling the stage with an address bar, back, forward, reload and close. Frames
+reach the page past the session (`Shared::browser_shot`), since they come many a second and
+change nothing else; the page decodes each into a bitmap and paints its canvas, because its CSP
+admits no `data:` image. A click, wheel or key on the chosen browser is sent as a
+`ClientMsg::BrowserInput` in the page's CSS pixels, which `browser::input` turns into DevTools
+input on the page shown; a navigation is refused unless it is `http`, `https` or `about:blank`.
+Nothing marks who is driving: the person and the agent act on the same page at once.
 
 ## Extensions
 

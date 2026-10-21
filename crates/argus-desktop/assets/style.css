@@ -10738,3 +10738,112 @@ button.vtree-chev:focus-visible {
 .board .side {
   min-width: var(--board-col-min);
 }
+
+/* The Browsers stage: every agent's browser as a live tile, or the chosen
+ * one filling the stage under its address bar. A picture keeps its page's
+ * shape at any width, so a click lands where it was aimed. */
+.bstage {
+  background: var(--bg-sunken);
+}
+.bgrid {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  align-content: start;
+  gap: var(--sp-12);
+  padding: var(--sp-12);
+}
+.btile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+.btile:hover {
+  border-color: var(--line-strong);
+}
+.btile:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.btile-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-8) var(--sp-12);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.bagent {
+  font-weight: var(--weight-semibold);
+}
+.bwhere {
+  display: flex;
+  gap: var(--sp-8);
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+.btitle,
+.burl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.btitle {
+  flex: none;
+  max-width: 50%;
+}
+.btile-screen {
+  display: block;
+  aspect-ratio: 16 / 10;
+  background: var(--bg-chrome);
+}
+.bscreen {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.bchosen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: var(--sp-8) var(--sp-12);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-surface);
+}
+.burl-field {
+  flex: 1;
+  min-width: 0;
+}
+.bchosen-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-12);
+}
+.bchosen-screen .bscreen {
+  cursor: default;
+}
+.bchosen-screen .bscreen:focus-visible {
+  outline: 2px solid var(--ring);
+}

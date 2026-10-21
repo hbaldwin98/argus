@@ -15,7 +15,7 @@ use tokio::sync::broadcast::{self, error::RecvError};
 use tokio::sync::mpsc;
 
 use super::Peer;
-use crate::state::{BoardNews, Daemon, ExtensionNews, SavedViewNews, TreeNews, ViewNews, ViewerId};
+use crate::state::{BoardNews, BrowserNews, Daemon, ExtensionNews, SavedViewNews, TreeNews, ViewNews, ViewerId};
 
 /// One thing a client can be pushed. The capability it needs is checked
 /// where it is joined; a client that never listed one never joins.
@@ -275,6 +275,29 @@ impl Topic for Views {
     /// The replay again. A view closed in the gap is the one thing it
     /// cannot say, and the next change to it will.
     fn caught_up(&mut self, daemon: &Daemon) -> (Vec<ServerMsg>, broadcast::Receiver<ViewNews>) {
+        self.join(daemon)
+    }
+}
+
+/// The browsers agents' panes run, for a client that listed `BROWSERS`
+/// and asked.
+pub(super) struct Browsers;
+
+impl Topic for Browsers {
+    type News = BrowserNews;
+
+    fn join(&mut self, daemon: &Daemon) -> (Vec<ServerMsg>, broadcast::Receiver<BrowserNews>) {
+        let (now, rx) = daemon.watch_browsers();
+        (now.into_iter().map(BrowserNews::message).collect(), rx)
+    }
+
+    fn news(&mut self, _: &Daemon, news: BrowserNews) -> Vec<ServerMsg> {
+        vec![news.message()]
+    }
+
+    /// The replay again: each browser's latest picture, never the
+    /// pictures missed, which are already stale.
+    fn caught_up(&mut self, daemon: &Daemon) -> (Vec<ServerMsg>, broadcast::Receiver<BrowserNews>) {
         self.join(daemon)
     }
 }

@@ -85,6 +85,8 @@ pub enum Place {
     Transcript,
     /// A field that filters the list under it, which holds every other key.
     Filter,
+    /// A browser's address field, which holds every other key.
+    Address,
     /// The palette's search field while it is open, which holds the keys.
     Palette,
     /// An extension's view in its dock or as the page, once a click there gives
@@ -176,6 +178,8 @@ pub enum Action {
     /// What the highlighted item of a menu does, or Enter on a row.
     Choose,
     Checkouts,
+    /// The Browsers stage: what agents' browsers show.
+    Browsers,
     /// Show or hide the branches no checkout is on.
     Branches,
     Fetch,
@@ -470,6 +474,7 @@ impl Place {
             Place::Sessions => "Recent sessions",
             Place::Transcript => "A full transcript",
             Place::Filter => "A filter or search field",
+            Place::Address => "A browser's address",
             Place::Palette => "Palette",
             Place::Extension => "An extension's view",
             Place::Code => "Code",
@@ -524,6 +529,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Anywhere, &[Chord::key("3")], Action::Checkouts, "Checkouts"),
     bind(Anywhere, &[Chord::key("4")], Action::Console, "Console"),
     bind(Anywhere, &[Chord::key("5")], Action::Code, "Code"),
+    bind(Anywhere, &[Chord::key("6")], Action::Browsers, "Browsers"),
     bind(Anywhere, &[Chord::key("`")], ToggleConsole, "show or hide the console"),
     bind(Anywhere, &[Chord::key("n").ctrl()], Compose, "start a shell or an agent"),
     bind(Anywhere, &[Chord::key("Escape")], CloseLayer, "close the menu or dialog"),
@@ -539,6 +545,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("3").after_leader()], Action::Checkouts, "Checkouts"),
     bind(Pane, &[Chord::key("4").after_leader()], Action::Console, "Console"),
     bind(Pane, &[Chord::key("5").after_leader()], Action::Code, "Code"),
+    bind(Pane, &[Chord::key("6").after_leader()], Action::Browsers, "Browsers"),
     bind(Pane, &[Chord::key("`").after_leader()], ToggleConsole, "show or hide the console"),
     bind(Pane, &[Chord::key("z").after_leader()], ConsoleFullscreen, "the console fills the window, and back"),
     bind(Pane, &[Chord::key("\\").after_leader()], SplitConsole, "split the console in two, and back"),
@@ -726,6 +733,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Transcript, &[Chord::key("r"), Chord::key("R")], Resume, "resume in a new pane"),
     bind(Place::Transcript, &[Chord::key("Enter")], Choose, "go to its pane, while it runs"),
     bind(Place::Filter, &[Chord::key("Enter"), Chord::key("Escape")], Leave, "back to the list, filtered"),
+    bind(Place::Address, &[Chord::key("Enter")], Choose, "go to the address typed"),
+    bind(Place::Address, &[Chord::key("Escape")], Leave, "put the page's address back"),
     bind(Place::Filter, &[Chord::key("c").alt()], MatchCase, "in Code's search: case always matters"),
     bind(Place::Filter, &[Chord::key("w").alt()], WholeWord, "in Code's search: whole words only"),
     bind(Place::Filter, &[Chord::key("r").alt()], UseRegex, "in Code's search: a regular expression"),
@@ -765,6 +774,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Action::Checkouts, Some(Anywhere), "Go to the Checkouts stage"),
     (Action::Console, Some(Anywhere), "Go to the Console"),
     (Action::Code, Some(Anywhere), "Read the code of the checkout on screen"),
+    (Action::Browsers, Some(Anywhere), "Go to the Browsers stage: every agent's browser"),
     (ToggleConsole, Some(Anywhere), "Show or hide the console"),
     (ConsoleFullscreen, Some(Pane), "Console fullscreen beside the sidebar, and back"),
     (NewConsole, None, "Start a console shell in the home directory"),
@@ -810,7 +820,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (TrackerMap, Some(Outline), "Edit the repository's tracker map…"),
 ];
 
-const ORDER: [Place; 25] = [
+const ORDER: [Place; 26] = [
     Anywhere,
     Pane,
     Window,
@@ -831,6 +841,7 @@ const ORDER: [Place; 25] = [
     Sessions,
     Place::Transcript,
     Place::Filter,
+    Place::Address,
     Place::Palette,
     Place::Extension,
     Place::Link,
@@ -977,6 +988,7 @@ mod tests {
                 "Recent sessions",
                 "A full transcript",
                 "A filter or search field",
+                "A browser's address",
                 "Palette",
                 "An extension's view",
                 "Linking a ticket",
@@ -1071,7 +1083,7 @@ mod tests {
     fn no_key_is_bound_twice_where_it_is_heard() {
         let lens = |b: &&Binding| b.place == Outline && matches!(b.action, WorkLens | Action::RecordLens | Action::FlowsLens);
         let shadows = [(Diagram, Outline)];
-        let alone: [&[Place]; 5] = [&[Writing], &[Pane], &[Jump], &[Place::Filter], &[Place::Palette]];
+        let alone: [&[Place]; 6] = [&[Writing], &[Pane], &[Jump], &[Place::Filter], &[Place::Address], &[Place::Palette]];
         for places in LAYERS.iter().filter_map(|l| l.places).chain(alone) {
             let heard: Vec<(Place, &Chord)> = places
                 .iter()
@@ -1274,7 +1286,9 @@ mod tests {
         walk(Path::new(dir), Path::new(dir), &mut modules);
         let mut read = 0;
         for (name, path) in modules {
-            if name == "keys/keymap.ts" || name == "panes/input.ts" {
+            // What a pane or a browser is typed, which goes to its program
+            // as the key it is rather than as one of the window's.
+            if name == "keys/keymap.ts" || name == "panes/input.ts" || name == "browser/input.ts" {
                 continue;
             }
             read += 1;

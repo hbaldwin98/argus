@@ -541,6 +541,16 @@ pub enum ClientMsg {
     /// refresh is asked of it, and the view stays as it is until it shows
     /// it again.
     PressView { pane: PaneId, press: crate::views::press::ViewPress },
+    /// Start being sent the browsers agents' panes run: where each one is
+    /// and its latest picture now, and each change and picture after. Only
+    /// to a daemon that listed `BROWSERS`.
+    WatchBrowsers,
+    /// The person's hand on a pane's browser. One the pane no longer has
+    /// is ignored: the browser it was meant for is gone.
+    BrowserInput { pane: PaneId, input: crate::browser::BrowserInput },
+    /// The person closed a pane's browser. The agent's next request for it
+    /// opens another.
+    CloseBrowser { pane: PaneId },
     /// Start being sent the saved views: every one now, as one
     /// [`ServerMsg::SavedViews`], and each change after. Only to a daemon
     /// that listed `SAVED_VIEWS`.
@@ -910,6 +920,16 @@ pub enum ServerMsg {
     /// A view is gone: closed by its agent or a person, pushed out by a
     /// newer one, or its pane ended.
     ViewClosed { pane: PaneId, id: String },
+    /// Where a pane's browser is, to a client that sent
+    /// [`ClientMsg::WatchBrowsers`]: as it opens, and whenever its page
+    /// changes address or title.
+    BrowserPage(crate::browser::BrowserPage),
+    /// The latest picture of a pane's browser, sent as the page changes.
+    /// A client that falls behind is sent the latest, never the backlog.
+    BrowserFrame(Box<crate::browser::BrowserFrame>),
+    /// A pane's browser is gone: closed by its agent or a person, ended, or
+    /// its pane removed.
+    BrowserClosed { pane: PaneId },
     /// A [`ClientMsg::PressView`] that was not relayed to the agent: the
     /// view is no longer held, no longer offers the action, or its agent
     /// is not running to be told. Sent only to the client that pressed, and

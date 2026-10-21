@@ -29,6 +29,7 @@ import { state } from './state.js';
 import { featureEdges } from './board/lenses/work.js';
 import { codeEdges } from './code/stage.js';
 import { call } from './connection/tauri.js';
+import { browsersTitle, drawBrowsers } from './browser/stage.js';
 
 const LOUD = new Set<StatusWord>(['waiting', 'needs-review', 'failed']);
 
@@ -43,11 +44,13 @@ export function drawChrome(): void {
   $('kstage').hidden = stage !== 'code';
   $('xstage').hidden = stage !== 'extension';
   $('vstage').hidden = stage !== 'view';
+  $('bstage').hidden = stage !== 'browsers';
   $('body').hidden = !state.rail.workspaceShown;
   drawFeatures();
   drawCheckouts();
   drawCode();
   drawExtensionPage();
+  drawBrowsers();
   drawComposer();
   drawSplit();
   drawConsole();
@@ -76,6 +79,7 @@ function drawNav(): void {
     ['checkouts', 'checkouts'],
     ['code', 'code'],
     ['console', 'console'],
+    ['browsers', 'browsers'],
   ] as const) {
     const nav = $(`nav-${name}`);
     nav.classList.toggle('on', stage === name);
@@ -96,6 +100,7 @@ const STAGE_NAME = {
   console: 'Console',
   extension: 'Extensions',
   view: 'View',
+  browsers: 'Browsers',
 } as const;
 
 /** The repository the Feature and Checkouts stages read. */
@@ -614,7 +619,11 @@ export function drawHead(): void {
   const head = $('head');
   const more = $('head-more');
   if (stage !== 'workspace') {
-    const repository = stage === 'console' || stage === 'extension' ? null : chosenRepository();
+    // The browsers are every project's agents', so no repository names them.
+    const repository =
+      stage === 'console' || stage === 'extension' || stage === 'browsers'
+        ? null
+        : chosenRepository();
     const code = stage === 'code' ? codeStrip() : null;
     // An open feature is the stage's title; the way back is its crumb and Esc.
     const feature = stage === 'feature' ? (state.features?.open ?? null) : null;
@@ -635,8 +644,8 @@ export function drawHead(): void {
               ...trail.flatMap((part) => [el('span', { class: 'fg-faint' }, '/'), part]),
             )
           : // Every stage has a crumb, so every title sits on one baseline.
-            stage === 'extension'
-            ? STAGE_NAME.extension
+            stage === 'extension' || stage === 'browsers'
+            ? STAGE_NAME[stage]
             : null,
         el(
           'span',
@@ -647,7 +656,9 @@ export function drawHead(): void {
               ? extensionPageTitle()
               : stage === 'view'
                 ? (poppedViewTitle() ?? STAGE_NAME.view)
-                : STAGE_NAME[stage],
+                : stage === 'browsers'
+                  ? browsersTitle()
+                  : STAGE_NAME[stage],
         ),
         popped?.status ?? null,
         ...(strip?.meta ?? []),

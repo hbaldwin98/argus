@@ -44,6 +44,7 @@ pub const CAPABILITIES: &[&str] = &[
     CODE_EDIT,
     FILES,
     REQUEST_REFUSALS,
+    BROWSERS,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
@@ -69,6 +70,13 @@ pub const FOCUS: &str = "focus";
 /// `ClientMsg::CloseView` and `ClientMsg::RefreshView` from a client,
 /// `ServerMsg::ViewShown` and `ServerMsg::ViewClosed` from the daemon.
 pub const AGENT_VIEWS: &str = "agent-views";
+
+/// The browsers the daemon runs for agents' panes: `ClientMsg::WatchBrowsers`,
+/// `ClientMsg::BrowserInput` and `ClientMsg::CloseBrowser` from a client,
+/// `ServerMsg::BrowserPage`, `ServerMsg::BrowserFrame` and
+/// `ServerMsg::BrowserClosed` from the daemon. A client that cannot draw a
+/// picture leaves it off and is sent none.
+pub const BROWSERS: &str = "browsers";
 
 /// `ClientMsg::PressView`: a press of an action an agent put in a view, and
 /// `ServerMsg::ViewPressFailed` to the client that pressed when the agent

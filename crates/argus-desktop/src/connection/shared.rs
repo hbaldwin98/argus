@@ -122,6 +122,13 @@ impl Shared {
         self.publish(vec![event]);
     }
 
+    /// A browser's picture: kept in the session, and sent the page past
+    /// the rest of it, as `tell_page` is.
+    pub fn browser_shot(&self, frame: argus_protocol::BrowserFrame) {
+        let event = lock(&self.session).browser_shot(frame);
+        self.publish(vec![event]);
+    }
+
     /// A page has loaded and holds nothing: it hears everything.
     pub fn attach_page(&self, page: Channel<Event>) {
         let mut session = lock(&self.session);

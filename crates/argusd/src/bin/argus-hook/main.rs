@@ -117,6 +117,7 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 
 mod agents;
 mod board;
+mod browser;
 mod comments;
 mod context;
 mod inbox;
@@ -187,6 +188,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("inbox", inbox::inbox),
     ("agent", launch::agent),
     ("agents", agents::agents),
+    ("browser", browser::browser),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {

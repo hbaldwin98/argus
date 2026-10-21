@@ -5,4 +5,4 @@
  * any of them over the Workspace keeps its pane to come back to, hidden and
  * without the keys meanwhile.
  */
-export type Stage = "workspace" | "feature" | "checkouts" | "new" | "console" | "extension" | "view" | "code";
+export type Stage = "workspace" | "feature" | "checkouts" | "new" | "console" | "extension" | "view" | "code" | "browsers";

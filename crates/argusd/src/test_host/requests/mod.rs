@@ -107,7 +107,8 @@ kinds! {
     RemoveProject, RemoveRepository, AddProject, PreviewProject, ListDirectories, AddRepository,
     InitRepository, Restart, Stop, View, WatchFocus, WatchViews, CloseView, RefreshView, PressView,
     WatchSavedViews, RefreshSavedView, MarkSavedViewStale, DeleteSavedView, PressSavedView,
-    ExtensionAction, ExtensionCommand, ExtensionDialogAnswer, DescribeExtensions, Hello,
+    ExtensionAction, ExtensionCommand, ExtensionDialogAnswer, DescribeExtensions, WatchBrowsers,
+    BrowserInput, CloseBrowser, Hello,
 }
 
 pub fn kind(msg: &ClientMsg) -> Kind {
@@ -185,6 +186,9 @@ pub fn kind(msg: &ClientMsg) -> Kind {
         M::ExtensionCommand { .. } => Kind::ExtensionCommand,
         M::ExtensionDialogAnswer { .. } => Kind::ExtensionDialogAnswer,
         M::DescribeExtensions => Kind::DescribeExtensions,
+        M::WatchBrowsers => Kind::WatchBrowsers,
+        M::BrowserInput { .. } => Kind::BrowserInput,
+        M::CloseBrowser { .. } => Kind::CloseBrowser,
         M::Hello(_) => Kind::Hello,
     }
 }
@@ -263,6 +267,9 @@ pub fn generate(kind: Kind, k: &Known) -> BoxedStrategy<ClientMsg> {
         K::ExtensionCommand => views::extension_command(k),
         K::ExtensionDialogAnswer => views::extension_dialog_answer(),
         K::DescribeExtensions => Just(ClientMsg::DescribeExtensions).boxed(),
+        K::WatchBrowsers => Just(ClientMsg::WatchBrowsers).boxed(),
+        K::BrowserInput => views::browser_input(k),
+        K::CloseBrowser => views::close_browser(k),
         K::Hello => session::hello(),
         K::Restart => Just(ClientMsg::Restart).boxed(),
         K::Stop => Just(ClientMsg::Stop).boxed(),
@@ -354,6 +361,9 @@ pub fn request_id_mut(msg: &mut ClientMsg) -> Option<&mut u64> {
         | M::ExtensionCommand { .. }
         | M::ExtensionDialogAnswer { .. }
         | M::DescribeExtensions
+        | M::WatchBrowsers
+        | M::BrowserInput { .. }
+        | M::CloseBrowser { .. }
         | M::Hello(_)
         | M::OpenEdit { .. }
         | M::Edit { .. }

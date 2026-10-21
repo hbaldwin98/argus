@@ -13,6 +13,7 @@
 
 mod agents;
 mod board;
+mod browser;
 mod checkouts;
 mod chrome;
 mod code;

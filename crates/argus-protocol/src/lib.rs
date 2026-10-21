@@ -10,6 +10,7 @@
 pub mod agents;
 pub mod ago;
 pub mod board;
+pub mod browser;
 pub mod checkout_path;
 pub mod code;
 pub mod connection;
@@ -24,6 +25,7 @@ pub mod tree;
 pub mod views;
 
 pub use ago::ago;
+pub use browser::{navigable, BrowserFrame, BrowserInput, BrowserKey, BrowserPage, BrowserRequest, BROWSER_VAR};
 pub use agents::launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
 pub use agents::roster::{roster, AgentListing};
 pub use views::agent_view::{
@@ -79,7 +81,7 @@ pub use tree::focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusReposi
 pub use connection::framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use tree::held::{transitions, HeldTree, Lineage, Transition};
 pub use connection::hello::{
-    ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
+    ADD_PROJECT, AGENT_VIEWS, BROWSERS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
     RENAME_PANE, SAVED_VIEWS, CODE, CODE_EDIT, FILES, REQUEST_REFUSALS,
 };

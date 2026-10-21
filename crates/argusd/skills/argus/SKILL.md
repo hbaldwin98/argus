@@ -98,6 +98,23 @@ and embeds), read [references/views.md](references/views.md) first.
 Keep those records relevant to the requested work. Answering a question does not
 require creating a feature or tasks.
 
+## Browser
+
+When the work needs a web page — checking a UI you changed, reading a page
+behind a dev server — use the pane's own browser, which the person watches in
+the window's Browsers stage and can take over:
+
+```bash
+"$ARGUS_HOOK" browser          # prints its DevTools URL, starting it if needed
+agent-browser --cdp "<url>" open http://localhost:5173
+"$ARGUS_HOOK" browser close    # when you are done with it
+```
+
+Any tool that attaches over the Chrome DevTools Protocol works in place of
+`agent-browser`. The newest tab is the one the person sees, so open a tab for
+the page you want them to watch. It is headless with a fresh profile, and goes
+when the pane does.
+
 ## Extensions
 
 To build an Argus extension, or find out what a running one does, ask the

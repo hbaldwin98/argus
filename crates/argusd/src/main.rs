@@ -1,6 +1,7 @@
 //! Daemon startup: build the `Daemon`, start the pollers, watchers and
 //! hook receiver, then accept clients until the process is asked to stop.
 
+mod browser;
 mod code;
 mod config;
 mod connection;
@@ -88,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     extensions.stop().await;
+    daemon.close_browsers();
     daemon.sweep_stale_hooks();
     Ok(())
 }

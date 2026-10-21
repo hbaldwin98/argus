@@ -194,6 +194,9 @@ pub enum Endpoint {
     /// Every agent pane in every project, as [`crate::AgentListing`]s:
     /// what an agent links another by.
     Agents,
+    /// A [`crate::BrowserRequest`]: the pane's browser opened, answered with
+    /// the DevTools URL an agent's browser tool attaches to, or closed.
+    Browser,
 }
 
 impl Endpoint {
@@ -225,6 +228,7 @@ impl Endpoint {
             Endpoint::SavedView => Cow::Borrowed("saved-view"),
             Endpoint::Agent => Cow::Borrowed("agent"),
             Endpoint::Agents => Cow::Borrowed("agents"),
+            Endpoint::Browser => Cow::Borrowed("browser"),
         }
     }
 
@@ -244,7 +248,8 @@ impl Endpoint {
             | Endpoint::Tasks
             | Endpoint::Telemetry
             | Endpoint::Inbox
-            | Endpoint::Agents => MAX_HOOK_BODY,
+            | Endpoint::Agents
+            | Endpoint::Browser => MAX_HOOK_BODY,
             Endpoint::Decide | Endpoint::DecisionChange => MAX_DECISION_BODY,
             // Mermaid source in JSON, with room for the encoding.
             Endpoint::Diagrams => crate::MAX_DIAGRAM_BODY_BYTES + 4096,
@@ -313,6 +318,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "saved-view" => Endpoint::SavedView,
         "agent" => Endpoint::Agent,
         "agents" => Endpoint::Agents,
+        "browser" => Endpoint::Browser,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -534,6 +540,7 @@ mod tests {
             Endpoint::SavedView,
             Endpoint::Agent,
             Endpoint::Agents,
+            Endpoint::Browser,
             Endpoint::TrackerMap,
             Endpoint::Reconcile,
         ];

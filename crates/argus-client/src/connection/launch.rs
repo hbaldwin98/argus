@@ -84,7 +84,8 @@ pub(crate) async fn greet(channels: crate::Connection, wait: Duration) -> Greete
     let hello = Hello::this_build()
         .without(argus_protocol::EXTENSIONS)
         .without(argus_protocol::EXTENSION_DIALOGS)
-        .without(argus_protocol::REQUEST_REFUSALS);
+        .without(argus_protocol::REQUEST_REFUSALS)
+        .without(argus_protocol::BROWSERS);
     let _ = in_tx.send(ClientMsg::Hello(hello));
 
     let (daemon, opening) = match Greeting::read(&mut out_rx, wait).await {

@@ -1809,6 +1809,66 @@ impl Window {
     }
 }
 
+/// A picture of a made-up page for a browser scene: a bar in `accent`, a
+/// heading and lines of text, as a PNG in base64. The window decodes a
+/// picture by its bytes, so a PNG stands in for the browser's JPEG.
+fn page_shot(accent: [u8; 3]) -> String {
+    const W: u32 = 640;
+    const H: u32 = 400;
+    let mut pixels = vec![255u8; (W * H * 3) as usize];
+    let mut fill = |x0: u32, y0: u32, w: u32, h: u32, rgb: [u8; 3]| {
+        for y in y0..(y0 + h).min(H) {
+            for x in x0..(x0 + w).min(W) {
+                let at = ((y * W + x) * 3) as usize;
+                pixels[at..at + 3].copy_from_slice(&rgb);
+            }
+        }
+    };
+    fill(0, 0, W, 36, accent);
+    fill(32, 64, 300, 22, [40, 40, 48]);
+    for line in 0..8 {
+        fill(32, 108 + line * 22, if line % 3 == 2 { 380 } else { 560 }, 10, [200, 202, 208]);
+    }
+    fill(32, 300, 120, 32, accent);
+    let mut png = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png, W, H);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&pixels).unwrap();
+    }
+    base64(&png)
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = chunk.iter().enumerate().fold(0u32, |n, (i, b)| n | (*b as u32) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() { ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
+}
+
+/// Three agents each with a browser open, and a picture of each.
+fn browsing() -> Window {
+    use argus_protocol::{BrowserFrame, BrowserPage};
+    let mut w = Window::showing(P_TRIM);
+    let open = [
+        (P_TRIM, "http://localhost:5173/settings", "Argus — Settings", [64, 112, 224]),
+        (P_SCREENS, "https://docs.rs/tokio-tungstenite/latest/tokio_tungstenite/", "tokio_tungstenite - Rust", [56, 142, 60]),
+        (P_FAULTS, "http://127.0.0.1:8080/login", "Sign in", [200, 90, 40]),
+    ];
+    for (pane, url, title, accent) in open {
+        w.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(pane), url: url.into(), title: title.into() }));
+        w.receive(ServerMsg::BrowserFrame(Box::new(BrowserFrame { pane: PaneId(pane), jpeg: page_shot(accent), width: 1280, height: 800 })));
+    }
+    w
+}
+
 fn on_feature(w: &mut Window, slug: &str) {
     w.call(Call::ShowFeatures { open: true }).call(Call::OpenFeature { slug: Some(slug.into()) });
 }
@@ -1949,6 +2009,21 @@ pub fn scenes() -> Vec<Scene> {
                 w.call(Call::Files { gesture: FilesGesture::Click { path: path.into() } });
             }
             w.call(Call::Files { gesture: FilesGesture::Click { path: "crates/argus-desktop/assets/style.css".into() } });
+            w.s
+        }),
+        scene("browsers", "Browsers — every agent's browser at once, live", || {
+            let mut w = browsing();
+            w.call(Call::ShowBrowsers { pane: None });
+            w.s
+        }),
+        scene("browser", "Browsers — one agent's browser, to watch or take over", || {
+            let mut w = browsing();
+            w.call(Call::ShowBrowsers { pane: Some(P_SCREENS) });
+            w.s
+        }),
+        scene("browsers-none", "Browsers — no agent has one open", || {
+            let mut w = Window::showing(P_TRIM);
+            w.call(Call::ShowBrowsers { pane: None });
             w.s
         }),
         scene("checkouts-delete", "Checkouts — removing a worktree asks first", || {

@@ -41,10 +41,11 @@ use argus_protocol::connection::request_refusal::OlderDaemon;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, RequestRefusal, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS,
-    PASTE_FILE, RENAME_PANE, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion, FILES,
+    PASTE_FILE, RENAME_PANE, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion, FILES, BROWSERS,
 };
 
 use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
+use crate::browser::Browsers;
 use crate::views::agent::AgentViews;
 use crate::extensions::dialog::ExtensionDialogs;
 use crate::extensions::keys::ExtensionKeys;
@@ -139,6 +140,7 @@ pub struct Session {
     older: OlderDaemon,
     agents: Agents,
     views: AgentViews,
+    browsers: Browsers,
     /// The views agents saved, and the columns of each panel showing them.
     saved: SavedViews,
     /// What the extensions publish: their views, the one out in the side
@@ -221,6 +223,7 @@ impl Session {
             older: OlderDaemon::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
+            browsers: Browsers::default(),
             saved: SavedViews::default(),
             extension_views: ExtensionViews::new(settings.extensions),
             opening_feature: PendingFeature::default(),
@@ -339,6 +342,9 @@ impl Session {
         self.shown.reconnected(&mut self.out);
         if self.status.daemon_can(AGENT_VIEWS) {
             self.views.connected(&mut self.out);
+        }
+        if self.status.daemon_can(BROWSERS) {
+            self.browsers.connected(&mut self.out);
         }
         if self.status.daemon_can(SAVED_VIEWS) {
             self.saved.connected(&mut self.out);
@@ -470,6 +476,14 @@ impl Session {
                 self.passing.push(Event::Notice { text });
             }
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
+            ServerMsg::BrowserPage(page) => self.browsers.page(page),
+            ServerMsg::BrowserClosed { pane } => self.browsers.closed(pane),
+            // Taken past the session by `connection::daemon`; one that
+            // reaches here is passed on all the same.
+            ServerMsg::BrowserFrame(frame) => {
+                let shot = self.browsers.shot(*frame);
+                self.passing.push(Event::BrowserShot(shot));
+            }
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
             _ => {}
@@ -653,6 +667,15 @@ impl Session {
             Call::ChooseRepository { repository } => self.choose_repository(RepositoryId(repository)),
             Call::ShowFeatures { open } => self.show_features(open),
             Call::ShowCheckouts { open } => self.show_checkouts(open),
+            Call::ShowBrowsers { pane } => self.show_browsers(pane.map(PaneId)),
+            Call::BrowserInput { pane, input } => {
+                self.browsers.input(PaneId(pane), input, &mut self.out);
+                self.finish()
+            }
+            Call::CloseBrowser { pane } => {
+                self.browsers.close(PaneId(pane), &mut self.out);
+                self.finish()
+            }
             Call::ShowCode { open } => self.show_code(open),
             Call::Code { gesture } => self.code_gesture(gesture),
             Call::ShowComposer { open } => self.show_composer(open),
@@ -1129,6 +1152,7 @@ impl Session {
             Action::Workspace => self.back_to_workspace(),
             Action::Feature => self.go(Stage::Feature),
             Action::Checkouts => self.go(Stage::Checkouts),
+            Action::Browsers => self.go(Stage::Browsers),
             Action::Code => self.open_code(),
             Action::Compose => self.go(Stage::Composer),
             Action::Console => self.open_console_tab(),
@@ -2251,6 +2275,19 @@ impl Session {
         self.finish()
     }
 
+    /// The Browsers stage, on `pane`'s browser or on every one.
+    fn show_browsers(&mut self, pane: Option<PaneId>) -> Vec<ClientMsg> {
+        self.browsers.choose(pane);
+        self.go(Stage::Browsers);
+        self.finish()
+    }
+
+    /// A browser's picture, kept for a page that loads later and handed
+    /// back to send the page there is now.
+    pub fn browser_shot(&mut self, frame: argus_protocol::BrowserFrame) -> Event {
+        Event::BrowserShot(self.browsers.shot(frame))
+    }
+
     fn peek(&mut self, slug: &str) -> Vec<ClientMsg> {
         self.features.peek(slug, &mut self.out);
         self.finish()
@@ -2877,6 +2914,7 @@ impl Session {
             Action::Workspace
             | Action::Feature
             | Action::Checkouts
+            | Action::Browsers
             | Action::Code
             | Action::Compose
             | Action::Shortcuts
@@ -3159,6 +3197,9 @@ impl Session {
         if let Some(page) = self.views.take(views_out, can_press, popped, |pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
             events.push(Event::Views(Box::new(page)));
         }
+        if let Some(page) = self.browsers.take(|pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
+            events.push(Event::Browsers(Box::new(page)));
+        }
         let placed = self.placed_saved();
         let (whereabouts, can_press) = (self.whereabouts(), self.status.daemon_can(SAVED_VIEWS));
         if let Some(page) = self.saved.take(whereabouts, &self.tree, &placed, can_press) {
@@ -3198,6 +3239,7 @@ impl Session {
         self.checkouts.reload();
         self.code.reload();
         self.views.forget();
+        let shots = self.browsers.forget();
         self.saved.forget();
         self.extension_views.reload();
         self.extension_dialogs.reload();
@@ -3218,6 +3260,7 @@ impl Session {
             let repo = self.chosen_repository().cloned();
             events.extend(self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), self.files_daemon(), now));
         }
+        events.extend(shots.into_iter().map(Event::BrowserShot));
         events
     }
 
@@ -4107,6 +4150,28 @@ mod tests {
         s.toggle_repository(RepositoryId(10));
         assert!(matches!(s.events(0).as_slice(), [Event::Rail(_)]));
         assert_eq!(s.everything(0).len(), 8, "a fresh page hears it all, the keymap first");
+    }
+
+    #[test]
+    fn a_browser_fills_the_browsers_stage_named_by_its_agent_and_takes_the_persons_hand() {
+        use argus_protocol::{BrowserInput, BrowserPage};
+        let mut s = session(Hello::this_build());
+        let _ = s.events(0);
+        s.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(1), url: "https://a.test".into(), title: "A".into() }));
+        s.call(Call::ShowBrowsers { pane: Some(1) });
+        assert_eq!(s.stages.now(), Stage::Browsers);
+        let events = s.events(0);
+        let page = events.iter().find_map(|e| match e {
+            Event::Browsers(page) => Some(page),
+            _ => None,
+        });
+        let page = page.expect("the stage is told of the browser");
+        assert_eq!((page.chosen, page.browsers[0].agent.as_str()), (Some(1), "claude"));
+        let sent = s.call(Call::BrowserInput { pane: 1, input: BrowserInput::Reload });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::BrowserInput { pane: PaneId(1), .. })), "{sent:?}");
+        s.receive(ServerMsg::BrowserClosed { pane: PaneId(1) });
+        let sent = s.call(Call::BrowserInput { pane: 1, input: BrowserInput::Reload });
+        assert!(sent.is_empty(), "a browser that went takes no input");
     }
 
     /// A dialog by name, how a session opens it, and how its event says it
@@ -5368,7 +5433,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 145] = [
+    const CALLS: [&str; 148] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5404,6 +5469,9 @@ mod tests {
         r#"{"call":"choose_repository","repository":10}"#,
         r#"{"call":"show_features","open":true}"#,
         r#"{"call":"show_checkouts","open":true}"#,
+        r#"{"call":"show_browsers","pane":null}"#,
+        r#"{"call":"browser_input","pane":1,"input":{"kind":"click","x":10,"y":20}}"#,
+        r#"{"call":"close_browser","pane":1}"#,
         r#"{"call":"show_code","open":true}"#,
         r#"{"call":"code","gesture":{"on":"click","target":{"on":"tree","path":"src"}}}"#,
         r#"{"call":"code","gesture":{"on":"action","action":"next"}}"#,

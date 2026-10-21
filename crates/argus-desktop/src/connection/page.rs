@@ -14,6 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::browser::{BrowserShot, BrowsersPage};
 use crate::chrome::add_project::{AddProjectGesture, AddProjectPage};
 use crate::board::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::files::FilesGesture;
@@ -120,6 +121,14 @@ pub enum Call {
     ShowFeatures { open: bool },
     /// `open` true shows the Checkouts stage, false goes back to the Workspace.
     ShowCheckouts { open: bool },
+    /// Shows the Browsers stage: `pane`'s browser filling it, or every
+    /// browser at once without one.
+    ShowBrowsers { pane: Option<u64> },
+    /// The person's hand on a pane's browser.
+    BrowserInput { pane: u64, input: argus_protocol::BrowserInput },
+    /// Closes a pane's browser for every client; its agent's next request
+    /// opens another.
+    CloseBrowser { pane: u64 },
     /// `open` true shows the Code stage on the checkout on screen, false
     /// goes back to the Workspace.
     ShowCode { open: bool },
@@ -491,6 +500,12 @@ pub enum Event {
     /// The views agents showed, whole, whenever one comes, goes or is
     /// opened.
     Views(Box<ViewsPage>),
+    /// The Browsers stage, whole, whenever a browser comes, goes, moves or
+    /// is chosen.
+    Browsers(Box<BrowsersPage>),
+    /// A browser's latest picture, past the session: it comes many times a
+    /// second, and nothing else changes with it.
+    BrowserShot(BrowserShot),
     /// The saved views and the columns of the panels showing them, whole,
     /// whenever one changes.
     SavedViews(Box<SavedViewsPage>),
@@ -832,6 +847,8 @@ pub enum Stage {
     View,
     /// A checkout's files, one of them read whole.
     Code,
+    /// The browsers agents' panes run, every one at once or one chosen.
+    Browsers,
 }
 
 /// The pane on screen, as the stage's header names it.

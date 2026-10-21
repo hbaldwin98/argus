@@ -182,6 +182,12 @@ async fn connect_once(shared: &Shared, target: &Target, greet: bool) -> Ended {
     let mut stopped = false;
     while let Some(msg) = link.incoming.recv().await {
         stopped |= matches!(msg, ServerMsg::Stopping);
+        // Many a second, and they change nothing but themselves: the page
+        // is told without every surface being built again.
+        if let ServerMsg::BrowserFrame(frame) = msg {
+            shared.browser_shot(*frame);
+            continue;
+        }
         if !crate::code::edit::is_edit(&msg) {
             shared.act(|s| s.receive(msg));
         } else if let Some(event) = crate::code::edit::event(msg) {

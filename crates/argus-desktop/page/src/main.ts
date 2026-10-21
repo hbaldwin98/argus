@@ -36,6 +36,7 @@ import { drawFrame, screen } from './panes/screen.js';
 import { state } from './state.js';
 import { call, connect } from './connection/tauri.js';
 import { drawViews, openNewestView } from './views/agent.js';
+import { browserShot, browsersHeard } from './browser/stage.js';
 import { drawExtensionDialog } from './extensions/dialogs.js';
 import { drawExtensionConfirm, drawExtensionPanels } from './extensions/views.js';
 import { drawSavedNav, drawSavedPanels } from './views/saved.js';
@@ -179,6 +180,14 @@ function receive(event: Event): void {
       // A ticket link says when a view of it waits.
       drawFeatures();
       break;
+    case 'browsers':
+      browsersHeard(event);
+      // The chosen browser's agent names the strip.
+      drawHead();
+      break;
+    case 'browserShot':
+      browserShot(event);
+      break;
     case 'savedViews':
       state.saved = event;
       drawSavedPanels();
@@ -244,6 +253,7 @@ $('nav-feature').addEventListener('click', () => call('show_features', { open: t
 $('nav-checkouts').addEventListener('click', () => call('show_checkouts', { open: true }));
 $('nav-code').addEventListener('click', () => call('show_code', { open: true }));
 $('nav-console').addEventListener('click', () => call('console', { gesture: { on: 'tab' } }));
+$('nav-browsers').addEventListener('click', () => call('show_browsers', { pane: null }));
 
 drawChrome();
 connect(receive);

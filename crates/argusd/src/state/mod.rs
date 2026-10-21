@@ -32,6 +32,7 @@ use argus_protocol::{
 
 mod agents;
 mod board;
+mod browsers;
 mod build;
 mod clock;
 mod extensions;
@@ -52,6 +53,7 @@ mod workspaces;
 
 pub use board::parts::FeaturePart;
 pub(crate) use board::features::Filing;
+pub use browsers::BrowserNews;
 pub use extensions::ExtensionNews;
 pub use pushes::{BoardNews, Pushes, TreeNews};
 #[cfg(test)]
@@ -341,6 +343,9 @@ pub struct Daemon {
     /// The views agents kept, and what clients were last told of them.
     /// Changes are sent while this is locked, as the agents' are.
     saved_views: StdMutex<views::saved::Held>,
+    /// The browsers agents' panes run. Changes are sent while this is
+    /// locked, as the views' are.
+    browsers: StdMutex<browsers::Browsers>,
     /// Agent templates, replaceable: `reload_config` swaps them, and every
     /// start looks its template up by name at the time it runs.
     templates: StdMutex<Vec<AgentConfig>>,

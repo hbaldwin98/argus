@@ -82,6 +82,21 @@ export const sent = [
       "place": "anywhere"
     },
     {
+      "action": "browsers",
+      "chords": [
+        {
+          "alt": false,
+          "ctrl": false,
+          "key": "6",
+          "leader": false,
+          "meta": false,
+          "shift": false
+        }
+      ],
+      "label": "Go to the Browsers stage: every agent's browser",
+      "place": "anywhere"
+    },
+    {
       "action": "toggleConsole",
       "chords": [
         {
@@ -827,6 +842,20 @@ export const sent = [
           "label": "Code"
         },
         {
+          "action": "browsers",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "6",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "Browsers"
+        },
+        {
           "action": "toggleConsole",
           "chords": [
             {
@@ -1041,6 +1070,20 @@ export const sent = [
             }
           ],
           "label": "Code"
+        },
+        {
+          "action": "browsers",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "6",
+              "leader": true,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "Browsers"
         },
         {
           "action": "toggleConsole",
@@ -4585,6 +4628,40 @@ export const sent = [
       ],
       "place": "filter",
       "title": "A filter or search field"
+    },
+    {
+      "bindings": [
+        {
+          "action": "choose",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "Enter",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "go to the address typed"
+        },
+        {
+          "action": "leave",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "Escape",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "put the page's address back"
+        }
+      ],
+      "place": "address",
+      "title": "A browser's address"
     },
     {
       "bindings": [

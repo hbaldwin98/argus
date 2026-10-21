@@ -247,5 +247,16 @@ impl Call for Agents {
     type ReplyForm = Json;
 }
 
+pub enum Browser {}
+impl Call for Browser {
+    const ENDPOINT: Endpoint = Endpoint::Browser;
+    const BODY: &'static str = "browser request";
+    type Body = crate::BrowserRequest;
+    type BodyForm = Json;
+    /// The DevTools URL of the browser opened; nothing for a close.
+    type Reply = String;
+    type ReplyForm = Text;
+}
+
 #[cfg(test)]
 mod tests;

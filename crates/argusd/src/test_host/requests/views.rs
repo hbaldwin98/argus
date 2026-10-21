@@ -1,9 +1,10 @@
 //! Requests about what agents and extensions show: where the person is,
-//! agents' views and saved views and presses on them, and extensions'
-//! actions, commands and dialogs. A host runs no agent view and no
-//! extension, so most of these name something that is not there.
+//! agents' views and saved views and presses on them, their browsers and
+//! the person's hand on them, and extensions' actions, commands and
+//! dialogs. A host runs no agent view, browser or extension, so most of
+//! these name something that is not there.
 
-use argus_protocol::{Answer, AnswerValue, ClientMsg, ExtAnswer, View, ViewPress};
+use argus_protocol::{Answer, AnswerValue, BrowserInput, BrowserKey, ClientMsg, ExtAnswer, View, ViewPress};
 use proptest::prelude::*;
 
 use super::values::{checkout, maybe_text, pane, project, text};
@@ -41,6 +42,25 @@ pub fn refresh_view(k: &Known) -> BoxedStrategy<ClientMsg> {
 
 pub fn press_view(k: &Known) -> BoxedStrategy<ClientMsg> {
     (pane(k), press()).prop_map(|(pane, press)| ClientMsg::PressView { pane, press }).boxed()
+}
+
+pub fn browser_input(k: &Known) -> BoxedStrategy<ClientMsg> {
+    let point = (any::<f64>(), any::<f64>());
+    let input = prop_oneof![
+        point.prop_map(|(x, y)| BrowserInput::Click { x, y }),
+        (any::<f64>(), any::<f64>(), any::<f64>(), any::<f64>())
+            .prop_map(|(x, y, dx, dy)| BrowserInput::Wheel { x, y, dx, dy }),
+        text().prop_map(|text| BrowserInput::Text { text }),
+        Just(BrowserInput::Key { key: BrowserKey::Enter }),
+        text().prop_map(|url| BrowserInput::Navigate { url }),
+        Just(BrowserInput::Back),
+        Just(BrowserInput::Reload),
+    ];
+    (pane(k), input).prop_map(|(pane, input)| ClientMsg::BrowserInput { pane, input }).boxed()
+}
+
+pub fn close_browser(k: &Known) -> BoxedStrategy<ClientMsg> {
+    pane(k).prop_map(|pane| ClientMsg::CloseBrowser { pane }).boxed()
 }
 
 pub fn refresh_saved_view() -> BoxedStrategy<ClientMsg> {

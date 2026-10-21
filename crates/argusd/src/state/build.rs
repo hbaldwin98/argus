@@ -160,6 +160,7 @@ impl Daemon {
             pushes: super::pushes::Pushes::new(),
             agent_views: StdMutex::new(Default::default()),
             saved_views: StdMutex::new(saved_views),
+            browsers: StdMutex::new(Default::default()),
             templates: StdMutex::new(templates),
             harnesses,
             hook_port: std::sync::atomic::AtomicU16::new(0),

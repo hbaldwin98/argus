@@ -19,7 +19,7 @@ use super::*;
 use crate::state::FeaturePart;
 use crate::review::queue::ReviewAsk;
 use argus_protocol::connection::request_refusal::Asked;
-use argus_protocol::{Created, ReviewBase, REQUEST_REFUSALS};
+use argus_protocol::{Created, ReviewBase, BROWSERS, REQUEST_REFUSALS};
 
 /// What one review generation comes to: the diff, or why it could not be read.
 pub(super) type Generated = Result<crate::review::diff::GeneratedReview, String>;
@@ -159,6 +159,24 @@ pub(super) fn dispatch(
         | ClientMsg::DeleteSavedView { .. }
         | ClientMsg::PressSavedView { .. } => {
             tracing::debug!("a client sent a saved-view message without listing SAVED_VIEWS");
+            Ok(())
+        }
+        // A browser is a pane's, named by it, and each message needs the
+        // capability that brought it, as the saved views' do.
+        ClientMsg::WatchBrowsers if conn.can(BROWSERS) => {
+            conn.topics.join(topics::Browsers);
+            Ok(())
+        }
+        ClientMsg::BrowserInput { pane, input } if conn.can(BROWSERS) => {
+            daemon.browser_input(pane, input);
+            Ok(())
+        }
+        ClientMsg::CloseBrowser { pane } if conn.can(BROWSERS) => {
+            daemon.close_browser(pane);
+            Ok(())
+        }
+        ClientMsg::WatchBrowsers | ClientMsg::BrowserInput { .. } | ClientMsg::CloseBrowser { .. } => {
+            tracing::debug!("a client sent a browser message without listing BROWSERS");
             Ok(())
         }
         ClientMsg::OpenInEditor {
