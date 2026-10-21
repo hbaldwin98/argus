@@ -495,7 +495,7 @@ to the type or its locking.
 | `browser` | a browser run for an agent's pane: started, followed while it runs, and ended when its handle is dropped |
 | `browser/chrome` | which browser runs, and starting it: headless, on a profile of its own that goes with it, its DevTools socket on a loopback port it picks |
 | `browser/cdp` | one DevTools Protocol connection to a browser: commands sent and their answers matched back by id, and everything else read as an event |
-| `browser/screen` | which of a browser's pages is shown, and showing it: its pictures read off as the page changes, and the person's input put on it |
+| `browser/screen` | which of a browser's tabs is shown, and showing it: laid out at the size the person sees it, its pictures read off as the page changes, and the person's input put on it |
 | `browser/input` | what the person's hand on a browser becomes: the DevTools commands, in order, that do it to the page shown |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
@@ -2808,19 +2808,28 @@ browses, and a second open answers the same URL. `browser close`, the person's c
 kill it; on Windows a job takes its renderers with it.
 
 What the person sees is read by the daemon, not the window, so a window on another host sees the
-daemon's browser and the terminal client never has to. `browser::screen` attaches its own session
-beside the agent's to the newest page — a tab an agent opens is the one it is about to work in —
-and asks for a screencast: JPEG frames, each acknowledged before the next comes, so a slow reader
-throttles the browser rather than queueing behind it. The page's address and title come from the
-target's events and from reading its info again once it loads, since Chrome does not report a
-title its document sets. A client that lists `BROWSERS` and sends `ClientMsg::WatchBrowsers` is
+daemon's browser and the terminal client never has to. `browser::screen` keeps the browser's tabs
+and attaches its own session beside the agent's to one of them: the one the person picked
+(`BrowserInput::ShowTab`), until it closes or another opens, since a tab an agent opens is the one
+it is about to work in; else the newest. It asks that tab for a screencast: JPEG frames, each
+acknowledged before the next comes, so a slow reader throttles the browser rather than queueing
+behind it. The tabs' addresses and titles come from the targets' events and from reading the shown
+one's again once it loads, since Chrome does not report a title its document sets. A view drawn
+large sends `BrowserInput::Viewport`, its room in CSS pixels and the screen's density; the tab is
+laid out at that size (`Emulation.setDeviceMetricsOverride`) and its frames asked for at that
+many device pixels, so they are drawn one to one. A headless screencast is drawn at the browser's
+own density whatever density is emulated, so Chrome is started at a scale of 2. A client that lists `BROWSERS` and sends `ClientMsg::WatchBrowsers` is
 sent every browser's `BrowserPage` and latest `BrowserFrame` now, then each as it changes; the
 channel is shallow, and a client that falls behind is sent each browser's latest picture rather
 than the backlog. The frame carries Chrome's base64 as it came, so neither side decodes it on the
 way.
 
-The desktop's Browsers stage (`6`) shows every browser as a live tile, named by its pane's title,
-or the one chosen filling the stage with an address bar, back, forward, reload and close. Frames
+A browser that opens brings out the browser panel (`Panel::Browser`), placed in the right dock the
+first time and wherever the person moves it after; it shows the browser of the pane on screen, or
+the newest. The desktop's Browsers stage (`6`) shows every browser as a live tile, named by its
+pane's title, or the one chosen filling the stage. Drawn large, in the panel or on the stage, a
+browser has its tabs, an address bar, back, forward, reload and close; the panel leaves a browser
+the stage has open to it, so one page is never laid out for two sizes in turn. Frames
 reach the page past the session (`Shared::browser_shot`), since they come many a second and
 change nothing else; the page decodes each into a bitmap and paints its canvas, because its CSP
 admits no `data:` image. A click, wheel or key on the chosen browser is sent as a

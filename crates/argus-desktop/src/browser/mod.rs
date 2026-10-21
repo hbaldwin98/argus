@@ -1,14 +1,15 @@
 //! The browsers agents' panes run, as this window holds them: where each
-//! is, its latest picture, and which one the Browsers stage has chosen —
-//! none for every one at once.
+//! is, its tabs and latest picture, which one the Browsers stage has
+//! chosen — none for every one at once — and which one the browser panel
+//! in its dock shows.
 //!
 //! The daemon owns the browsers. The person's hand on one, or their close,
 //! is sent and changes nothing here until the daemon says it did; only
-//! which one is chosen is the window's own.
+//! which one is chosen, and which is docked, are the window's own.
 
 use std::collections::BTreeMap;
 
-use argus_protocol::{BrowserFrame, BrowserInput, BrowserPage, ClientMsg, PaneId};
+use argus_protocol::{BrowserFrame, BrowserInput, BrowserPage, BrowserTab, ClientMsg, PaneId};
 use serde::Serialize;
 
 use crate::connection::sent::Sent;
@@ -24,6 +25,8 @@ pub struct BrowsersPage {
     pub browsers: Vec<PageBrowser>,
     /// The browser that fills the stage; every browser at once while none.
     pub chosen: Option<u64>,
+    /// The browser the browser panel shows.
+    pub docked: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -35,6 +38,9 @@ pub struct PageBrowser {
     pub agent: String,
     pub url: String,
     pub title: String,
+    pub tabs: Vec<BrowserTab>,
+    /// The tab whose pictures come, by id.
+    pub shown: Option<String>,
 }
 
 /// One picture of a pane's browser, as the daemon sent it.
@@ -55,6 +61,7 @@ pub struct Browsers {
     open: BTreeMap<PaneId, BrowserPage>,
     shots: BTreeMap<PaneId, BrowserShot>,
     chosen: Option<PaneId>,
+    docked: Option<PaneId>,
     sent: Sent<BrowsersPage>,
 }
 
@@ -67,8 +74,31 @@ impl Browsers {
         out.push(ClientMsg::WatchBrowsers);
     }
 
-    pub fn page(&mut self, page: BrowserPage) {
-        self.open.insert(page.pane, page);
+    /// Where a browser is now; `true` when it has just opened, which the
+    /// browser panel comes out for, on it.
+    pub fn page(&mut self, page: BrowserPage) -> bool {
+        let pane = page.pane;
+        let opened = self.open.insert(pane, page).is_none();
+        if opened {
+            self.docked = Some(pane);
+        }
+        opened
+    }
+
+    /// The pane on screen: its browser, when it has one, is the one the
+    /// panel shows, so the panel follows the person between agents.
+    pub fn follow(&mut self, on_screen: Option<PaneId>) {
+        if let Some(pane) = on_screen.filter(|pane| self.has(*pane)) {
+            self.docked = Some(pane);
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.open.is_empty()
+    }
+
+    pub fn docked(&self) -> Option<PaneId> {
+        self.docked
     }
 
     /// A picture, kept as the one a page that loads now is sent, and handed
@@ -86,6 +116,9 @@ impl Browsers {
         self.shots.remove(&pane);
         if self.chosen == Some(pane) {
             self.chosen = None;
+        }
+        if self.docked == Some(pane) {
+            self.docked = self.open.keys().next_back().copied();
         }
     }
 
@@ -124,9 +157,12 @@ impl Browsers {
                     agent: agent(page.pane).unwrap_or_else(|| format!("pane {}", page.pane.0)),
                     url: page.url.clone(),
                     title: page.title.clone(),
+                    tabs: page.tabs.clone(),
+                    shown: page.shown.clone(),
                 })
                 .collect(),
             chosen: self.chosen.map(|pane| pane.0),
+            docked: self.docked.map(|pane| pane.0),
         });
         self.sent.take(now)
     }
@@ -143,7 +179,24 @@ mod tests {
     use super::*;
 
     fn page(pane: u64, url: &str) -> BrowserPage {
-        BrowserPage { pane: PaneId(pane), url: url.into(), title: String::new() }
+        BrowserPage { pane: PaneId(pane), url: url.into(), title: String::new(), tabs: Vec::new(), shown: None }
+    }
+
+    #[test]
+    fn the_panel_shows_the_newest_browser_then_the_one_on_screen() {
+        let mut browsers = Browsers::default();
+        assert!(browsers.page(page(1, "about:blank")), "a browser that opens brings the panel out");
+        assert!(browsers.page(page(2, "about:blank")));
+        assert!(!browsers.page(page(2, "https://b.test")), "one that moves does not");
+        assert_eq!(browsers.docked(), Some(PaneId(2)));
+        browsers.follow(Some(PaneId(1)));
+        assert_eq!(browsers.docked(), Some(PaneId(1)));
+        browsers.follow(Some(PaneId(9)));
+        assert_eq!(browsers.docked(), Some(PaneId(1)), "a pane without a browser leaves the panel be");
+        browsers.closed(PaneId(1));
+        assert_eq!(browsers.docked(), Some(PaneId(2)));
+        browsers.closed(PaneId(2));
+        assert_eq!(browsers.docked(), None);
     }
 
     #[test]

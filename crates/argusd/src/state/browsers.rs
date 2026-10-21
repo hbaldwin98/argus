@@ -77,7 +77,7 @@ impl Daemon {
         browsers.starts += 1;
         let started = browsers.starts;
         let endpoint = browser.endpoint.clone();
-        let page = BrowserPage { pane, url: "about:blank".into(), title: String::new() };
+        let page = BrowserPage { pane, url: "about:blank".into(), title: String::new(), tabs: Vec::new(), shown: None };
         browsers.open.insert(pane, Open { browser, started, page: page.clone(), frame: None });
         self.pushes.browser(&browsers, BrowserNews::Page(page));
         drop(browsers);
@@ -135,8 +135,10 @@ impl Daemon {
             return false;
         };
         let news = match report {
-            Report::Page { url, title } => {
-                open.page = BrowserPage { pane, url, title };
+            Report::Page { tabs, shown } => {
+                let on = shown.as_deref().and_then(|id| tabs.iter().find(|tab| tab.id == id));
+                let (url, title) = on.map(|tab| (tab.url.clone(), tab.title.clone())).unwrap_or_default();
+                open.page = BrowserPage { pane, url, title, tabs, shown };
                 BrowserNews::Page(open.page.clone())
             }
             Report::Frame { jpeg, width, height } => {

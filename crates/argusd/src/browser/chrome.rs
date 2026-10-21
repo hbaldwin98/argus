@@ -52,9 +52,13 @@ pub(crate) async fn start() -> anyhow::Result<Chrome> {
     // below.
     #[allow(clippy::disallowed_methods)]
     let mut command = tokio::process::Command::new(&program);
+    // A headless screencast is drawn at the browser's own pixel density,
+    // whatever density a page is emulated at, so it is made dense enough for
+    // a high-density screen; a lower one is sent pictures scaled down to it.
     command
         .arg("--headless=new")
         .arg("--remote-debugging-port=0")
+        .arg("--force-device-scale-factor=2")
         .arg(format!("--user-data-dir={}", profile.display()))
         .args(["--no-first-run", "--no-default-browser-check", "--window-size=1280,800", "about:blank"])
         .stdin(Stdio::null())

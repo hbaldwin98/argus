@@ -10833,16 +10833,37 @@ button.vtree-chev:focus-visible {
   flex: 1;
   min-width: 0;
 }
+/* No padding: the box is the viewport the page is laid out at, so the
+ * canvas filling it draws the picture one pixel to one. */
 .bchosen-screen {
   flex: 1;
   min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--sp-12);
+  overflow: hidden;
+  background: var(--bg-chrome);
 }
 .bchosen-screen .bscreen {
   cursor: default;
+}
+.bchosen-screen .bscreen:focus {
+  outline: none;
+}
+.bpanel-inner {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bpanel-head {
+  flex-direction: row;
+  align-items: center;
+  padding: var(--sp-6) var(--sp-12);
+  border-bottom: 1px solid var(--line);
+}
+.bpanel .bbar {
+  padding: var(--sp-6) var(--sp-8);
+}
+.bpanel .bbar .btn {
+  padding-inline: var(--sp-8);
 }
 .bchosen-screen .bscreen:focus-visible {
   outline: 2px solid var(--ring);

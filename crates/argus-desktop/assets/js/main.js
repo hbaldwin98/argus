@@ -25,7 +25,7 @@ import { drawFrame, screen } from './panes/screen.js';
 import { state } from './state.js';
 import { call, connect } from './connection/tauri.js';
 import { drawViews, openNewestView } from './views/agent.js';
-import { browserShot, browsersHeard } from './browser/stage.js';
+import { browserShot, browsersHeard, drawBrowserPanel } from './browser/stage.js';
 import { drawExtensionDialog } from './extensions/dialogs.js';
 import { drawExtensionConfirm, drawExtensionPanels } from './extensions/views.js';
 import { drawSavedNav, drawSavedPanels } from './views/saved.js';
@@ -57,6 +57,7 @@ function receive(event) {
             state.docks = event;
             drawDocks();
             drawViews();
+            drawBrowserPanel();
             // Which saved panel is out marks its entry in the sidebar.
             drawSavedNav();
             break;

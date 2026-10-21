@@ -25,7 +25,7 @@ pub mod tree;
 pub mod views;
 
 pub use ago::ago;
-pub use browser::{navigable, BrowserFrame, BrowserInput, BrowserKey, BrowserPage, BrowserRequest, BROWSER_VAR};
+pub use browser::{navigable, BrowserFrame, BrowserInput, BrowserKey, BrowserPage, BrowserRequest, BrowserTab, BROWSER_VAR};
 pub use agents::launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
 pub use agents::roster::{roster, AgentListing};
 pub use views::agent_view::{

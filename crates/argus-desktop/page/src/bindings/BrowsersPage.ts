@@ -14,4 +14,8 @@ browsers: Array<PageBrowser>,
 /**
  * The browser that fills the stage; every browser at once while none.
  */
-chosen: number | null, };
+chosen: number | null, 
+/**
+ * The browser the browser panel shows.
+ */
+docked: number | null, };

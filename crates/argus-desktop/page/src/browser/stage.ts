@@ -1,39 +1,60 @@
-// The Browsers stage: every browser agents' panes run, each a live tile,
-// or the one chosen filling the stage with its controls. Rust says which
-// browsers there are and which is chosen (`src/browser/mod.rs`); their
-// pictures come apart, many a second, and are painted onto each one's
-// canvas as they come. The page's CSP allows no `data:` image, so a
-// picture is decoded to a bitmap and drawn rather than set as a source.
+// The browsers agents' panes run, in the two places the window shows them:
+// the browser panel in its dock — one browser, the right dock's until it is
+// moved — and the Browsers stage, every browser at once as live tiles or
+// the chosen one filling it. Rust says which browsers there are, their
+// tabs, which is chosen and which is docked (`src/browser/mod.rs`); their
+// pictures come apart, many a second, and are painted onto each canvas
+// showing that browser as they come. The page's CSP allows no `data:`
+// image, so a picture is decoded to a bitmap and drawn rather than set as
+// a source.
+//
+// A browser drawn large tells the daemon the room it has and the screen's
+// pixel density, and the page is laid out at that size and pictured at
+// that density, so it is drawn one to one rather than stretched. A tile
+// says nothing: it shows what the large view was sent, smaller.
 
 import type { BrowserInput } from '../bindings/BrowserInput';
 import type { BrowserShot } from '../bindings/BrowserShot';
 import type { BrowsersPage } from '../bindings/BrowsersPage';
+import type { BrowserTab } from '../bindings/BrowserTab';
 import type { PageBrowser } from '../bindings/PageBrowser';
-import { $, el } from '../kit/dom.js';
+import { $, el, icon } from '../kit/dom.js';
+import { closesOnMiddle } from '../kit/middle.js';
 import { actionFor } from '../keys/keymap.js';
+import { dockMenuButton } from '../layout/docks.js';
+import { draggable } from '../layout/drag.js';
+import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 import { address, keyInput, within } from './input.js';
 
-let page: BrowsersPage = { browsers: [], chosen: null };
+/** Where a browser is drawn: a tile on the stage, the stage's chosen
+ *  browser, or the dock's. Each has a canvas of its own. */
+type Place = 'tile' | 'stage' | 'dock';
+const PLACES: readonly Place[] = ['tile', 'stage', 'dock'];
+
+let page: BrowsersPage = { browsers: [], chosen: null, docked: null };
 const shots = new Map<number, BrowserShot>();
-/** Each browser's canvas, kept across redraws so a tile does not go blank
- *  between pictures. */
-const canvases = new Map<number, HTMLCanvasElement>();
-/** The newest picture each canvas has started decoding, so one that
+const canvases = new Map<string, HTMLCanvasElement>();
+/** The newest picture each browser has started decoding, so one that
  *  finishes after a newer one is dropped. */
 const painting = new Map<number, number>();
-let urlField: HTMLInputElement | null = null;
+/** The viewport each browser was last told, so a redraw says it again
+ *  only when it changed. */
+const told = new Map<number, string>();
+const urlFields = new Map<Place, HTMLInputElement>();
 
 export function browsersHeard(event: BrowsersPage): void {
   page = event;
   const open = new Set(event.browsers.map((b) => b.pane));
-  for (const pane of canvases.keys()) {
+  for (const pane of shots.keys()) {
     if (!open.has(pane)) {
-      canvases.delete(pane);
       shots.delete(pane);
+      told.delete(pane);
+      for (const place of PLACES) canvases.delete(`${pane}:${place}`);
     }
   }
   drawBrowsers();
+  drawBrowserPanel();
 }
 
 export function browserShot(shot: BrowserShot): void {
@@ -43,43 +64,112 @@ export function browserShot(shot: BrowserShot): void {
 
 /** The strip's title on this stage: the chosen browser's agent. */
 export function browsersTitle(): string {
-  const chosen = chosenBrowser();
-  return chosen ? chosen.agent : 'Every agent';
+  return byPane(page.chosen)?.agent ?? 'Every agent';
 }
 
-function chosenBrowser(): PageBrowser | null {
-  return page.browsers.find((b) => b.pane === page.chosen) ?? null;
+function byPane(pane: number | null): PageBrowser | null {
+  return page.browsers.find((b) => b.pane === pane) ?? null;
+}
+
+/** Whether the Browsers stage is up on `pane`'s browser, which the dock
+ *  then leaves to it: one browser drawn large in two sizes would have the
+ *  page laid out for each in turn. */
+function onStage(pane: number): boolean {
+  return state.rail.stage === 'browsers' && page.chosen === pane;
 }
 
 export function drawBrowsers(): void {
   const stage = $('bstage');
   if (stage.hidden) return;
-  const chosen = chosenBrowser();
+  const chosen = byPane(page.chosen);
   if (chosen) {
-    stage.replaceChildren(chosenView(chosen));
-  } else if (page.browsers.length === 0) {
     stage.replaceChildren(
+      browserView(chosen, 'stage', [
+        button('All browsers', 'Every agent’s browser at once', () =>
+          call('show_browsers', { pane: null }),
+        ),
+      ]),
+    );
+  } else if (page.browsers.length === 0) {
+    stage.replaceChildren(empty());
+  } else {
+    stage.replaceChildren(el('div', { class: 'bgrid' }, page.browsers.map(tile)));
+  }
+  for (const browser of page.browsers) paint(browser.pane);
+}
+
+/** The browser panel's body: the docked browser, under a header that drags
+ *  the panel and docks or hides it. */
+export function drawBrowserPanel(): void {
+  const panel = $('browser-inner');
+  const docked = byPane(page.docked);
+  const strip = draggable(
+    el(
+      'div',
+      { class: 'vpanel-head bpanel-head' },
+      el('span', { class: 'bagent' }, docked ? docked.agent : 'Browser'),
+      el('span', { class: 'grow' }),
+      dockMenuButton('browser', 'Dock the browser', true),
+      el(
+        'button',
+        {
+          class: 'icon',
+          type: 'button',
+          'aria-label': 'Hide the browser',
+          title: 'Hide',
+          onclick: () => call('docks', { gesture: { on: 'hide', panel: 'browser' } }),
+        },
+        icon('close'),
+      ),
+    ),
+    'browser',
+    'Browser',
+  );
+  if (!docked) {
+    panel.replaceChildren(strip, empty());
+  } else if (onStage(docked.pane)) {
+    panel.replaceChildren(
+      strip,
       el(
         'div',
         { class: 'empty' },
         el(
           'div',
           { class: 'empty-body' },
-          el('p', null, 'No agent has a browser open.'),
-          el(
-            'p',
-            { class: 'fg-muted' },
-            'An agent opens one with ',
-            el('code', null, 'argus-hook browser'),
-            ' and drives it with its own browser tool; it shows here as it works.',
-          ),
+          el('p', null, `${docked.agent}’s browser is open on the Browsers stage.`),
         ),
       ),
     );
   } else {
-    stage.replaceChildren(el('div', { class: 'bgrid' }, page.browsers.map(tile)));
+    panel.replaceChildren(
+      strip,
+      browserView(docked, 'dock', [
+        button('Large', 'Open on the Browsers stage', () =>
+          call('show_browsers', { pane: docked.pane }),
+        ),
+      ]),
+    );
+    paint(docked.pane);
   }
-  for (const browser of page.browsers) paint(browser.pane);
+}
+
+function empty(): HTMLElement {
+  return el(
+    'div',
+    { class: 'empty' },
+    el(
+      'div',
+      { class: 'empty-body' },
+      el('p', null, 'No agent has a browser open.'),
+      el(
+        'p',
+        { class: 'fg-muted' },
+        'An agent opens one with ',
+        el('code', null, 'argus-hook browser'),
+        ' and drives it with its own browser tool; it shows here as it works.',
+      ),
+    ),
+  );
 }
 
 /** Sends the person's hand to `pane`'s browser. */
@@ -87,35 +177,35 @@ function send(pane: number, input: BrowserInput): void {
   call('browser_input', { pane, input });
 }
 
-/** A browser's canvas, made once. It answers the mouse and keys only while
- *  its browser fills the stage; as a tile, a press opens it instead. */
-function canvasFor(pane: number): HTMLCanvasElement {
-  const held = canvases.get(pane);
+/** A browser's canvas in one place, made once. Drawn large it answers the
+ *  mouse and keys; as a tile, a press opens it instead. */
+function canvasFor(pane: number, place: Place): HTMLCanvasElement {
+  const held = canvases.get(`${pane}:${place}`);
   if (held) return held;
   const canvas = el('canvas', { class: 'bscreen' }) as HTMLCanvasElement;
-  const chosen = () => page.chosen === pane;
-  canvas.addEventListener('mousedown', (e) => {
-    if (!chosen()) return;
-    canvas.focus();
-    const at = point(pane, canvas, e);
-    if (at) send(pane, { kind: 'click', ...at });
-  });
-  canvas.addEventListener('wheel', (e) => {
-    if (!chosen()) return;
-    e.preventDefault();
-    const at = point(pane, canvas, e);
-    if (at) send(pane, { kind: 'wheel', ...at, dx: e.deltaX, dy: e.deltaY });
-  });
-  canvas.addEventListener('keydown', (e) => {
-    const input = chosen() ? keyInput(e) : null;
-    if (!input) return;
-    // The browser's, not the window's: a digit typed into a form is not
-    // a stage key.
-    e.preventDefault();
-    e.stopPropagation();
-    send(pane, input);
-  });
-  canvases.set(pane, canvas);
+  if (place !== 'tile') {
+    canvas.tabIndex = 0;
+    canvas.addEventListener('mousedown', (e) => {
+      canvas.focus();
+      const at = point(pane, canvas, e);
+      if (at) send(pane, { kind: 'click', ...at });
+    });
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const at = point(pane, canvas, e);
+      if (at) send(pane, { kind: 'wheel', ...at, dx: e.deltaX, dy: e.deltaY });
+    });
+    canvas.addEventListener('keydown', (e) => {
+      const input = keyInput(e);
+      if (!input) return;
+      // The browser's, not the window's: a digit typed into a form is not
+      // a stage key.
+      e.preventDefault();
+      e.stopPropagation();
+      send(pane, input);
+    });
+  }
+  canvases.set(`${pane}:${place}`, canvas);
   return canvas;
 }
 
@@ -131,8 +221,6 @@ function where(browser: PageBrowser): HTMLElement {
 }
 
 function tile(browser: PageBrowser): HTMLElement {
-  const canvas = canvasFor(browser.pane);
-  canvas.removeAttribute('tabindex');
   return el(
     'button',
     {
@@ -147,66 +235,151 @@ function tile(browser: PageBrowser): HTMLElement {
       el('span', { class: 'bagent' }, browser.agent),
       where(browser),
     ),
-    el('span', { class: 'btile-screen' }, canvas),
+    el('span', { class: 'btile-screen' }, canvasFor(browser.pane, 'tile')),
   );
 }
 
-function chosenView(browser: PageBrowser): HTMLElement {
+/** A browser drawn large: its tabs, its address bar with `lead` before
+ *  it, and the page, sized to the room it is given. */
+function browserView(browser: PageBrowser, place: Place, lead: HTMLElement[]): HTMLElement {
   const pane = browser.pane;
-  const canvas = canvasFor(pane);
-  canvas.tabIndex = 0;
+  const canvas = canvasFor(pane, place);
   canvas.setAttribute('aria-label', `${browser.agent}'s browser`);
-  const field = urlFieldFor(browser.url);
+  const screen = el('div', { class: 'bchosen-screen' }, canvas);
+  watchSize(pane, screen);
   return el(
     'div',
     { class: 'bchosen' },
+    tabStrip(browser),
     el(
       'div',
       { class: 'bbar' },
-      button('All browsers', 'Every agent’s browser at once', () =>
-        call('show_browsers', { pane: null }),
-      ),
+      ...lead,
       button('←', 'Back', () => send(pane, { kind: 'back' })),
       button('→', 'Forward', () => send(pane, { kind: 'forward' })),
       button('⟳', 'Reload', () => send(pane, { kind: 'reload' })),
-      field,
+      urlFieldFor(place, browser),
       button('Close', 'Close this browser; the agent’s next request opens another', () =>
         call('close_browser', { pane }),
       ),
     ),
-    el('div', { class: 'bchosen-screen' }, canvas),
+    screen,
   );
+}
+
+function tabName(tab: BrowserTab): string {
+  return tab.title || tab.url || 'New tab';
+}
+
+/** The browser's own tabs: the one shown lit, each closed by its ×, and a
+ *  + for a new one. */
+function tabStrip(browser: PageBrowser): HTMLElement {
+  const pane = browser.pane;
+  return el(
+    'div',
+    { class: 'vpanel-tabs btabs', role: 'tablist', 'aria-label': 'Tabs' },
+    el(
+      'div',
+      { class: 'tabs-scroll' },
+      browser.tabs.map((tab) => {
+        const shown = tab.id === browser.shown;
+        const close = (): void => send(pane, { kind: 'close_tab', id: tab.id });
+        return closesOnMiddle(
+          el(
+            'div',
+            { class: `vpanel-tab${shown ? ' on' : ''}` },
+            el(
+              'button',
+              {
+                class: 'vpanel-tab-pick',
+                role: 'tab',
+                type: 'button',
+                'aria-selected': String(shown),
+                title: tab.url,
+                onclick: () => send(pane, { kind: 'show_tab', id: tab.id }),
+              },
+              el('span', { class: 'ttl' }, tabName(tab)),
+            ),
+            el(
+              'button',
+              {
+                class: 'icon x',
+                type: 'button',
+                title: 'Close this tab',
+                'aria-label': `Close ${tabName(tab)}`,
+                onclick: close,
+              },
+              icon('close'),
+            ),
+          ),
+          close,
+        );
+      }),
+    ),
+    el(
+      'button',
+      {
+        class: 'icon',
+        type: 'button',
+        title: 'New tab',
+        'aria-label': 'New tab',
+        onclick: () => send(pane, { kind: 'new_tab' }),
+      },
+      icon('plus'),
+    ),
+  );
+}
+
+/** Tells the daemon the room `screen` has whenever it changes, once it is
+ *  laid out: a box not on screen has none, and says nothing. */
+function watchSize(pane: number, screen: HTMLElement): void {
+  const observer = new ResizeObserver(() => {
+    if (!screen.isConnected) return observer.disconnect();
+    const box = screen.getBoundingClientRect();
+    const width = Math.floor(box.width);
+    const height = Math.floor(box.height);
+    if (width < 50 || height < 50) return;
+    const scale = window.devicePixelRatio || 1;
+    const viewport = `${width}x${height}@${scale}`;
+    if (told.get(pane) === viewport) return;
+    told.set(pane, viewport);
+    send(pane, { kind: 'viewport', width, height, scale });
+  });
+  observer.observe(screen);
 }
 
 function button(label: string, title: string, onclick: () => void): HTMLElement {
   return el('button', { class: 'btn', type: 'button', title, onclick }, label);
 }
 
-/** The address field, made once so typing in it survives the page
- *  changing under it; it shows the chosen page's address unless the
- *  person is mid-edit. */
-function urlFieldFor(url: string): HTMLInputElement {
-  if (!urlField) {
-    const field = el('input', {
+/** A place's address field, made once so typing in it survives the page
+ *  changing under it; it shows its browser's address unless the person is
+ *  mid-edit. */
+function urlFieldFor(place: Place, browser: PageBrowser): HTMLInputElement {
+  let field = urlFields.get(place);
+  if (!field) {
+    const made = el('input', {
       class: 'field burl-field mono',
       'aria-label': 'Address',
       spellcheck: 'false',
     }) as HTMLInputElement;
-    field.addEventListener('keydown', (e) => {
+    made.addEventListener('keydown', (e) => {
       // Its keys are its own, never the window's.
       e.stopPropagation();
-      const chosen = chosenBrowser();
+      const now = byPane(Number(made.dataset.pane));
       const action = actionFor(['address'], e);
-      if (!chosen || !action) return;
+      if (!now || !action) return;
       e.preventDefault();
-      if (action === 'choose') send(chosen.pane, { kind: 'navigate', url: address(field.value) });
-      else field.value = chosen.url;
-      field.blur();
+      if (action === 'choose') send(now.pane, { kind: 'navigate', url: address(made.value) });
+      else made.value = now.url;
+      made.blur();
     });
-    urlField = field;
+    urlFields.set(place, made);
+    field = made;
   }
-  if (document.activeElement !== urlField) urlField.value = url;
-  return urlField;
+  field.dataset.pane = String(browser.pane);
+  if (document.activeElement !== field) field.value = browser.url;
+  return field;
 }
 
 /** The point under the mouse in the page's CSS pixels, which the browser
@@ -222,19 +395,24 @@ function point(
   return within(box, shot, e.clientX, e.clientY);
 }
 
+/** Paints `pane`'s latest picture on every canvas on screen showing it. */
 function paint(pane: number): void {
   const shot = shots.get(pane);
-  const canvas = canvases.get(pane);
-  if (!shot || !canvas || !canvas.isConnected) return;
+  const showing = PLACES.map((place) => canvases.get(`${pane}:${place}`)).filter(
+    (canvas): canvas is HTMLCanvasElement => !!canvas?.isConnected,
+  );
+  if (!shot || showing.length === 0) return;
   const ticket = (painting.get(pane) ?? 0) + 1;
   painting.set(pane, ticket);
   const bytes = Uint8Array.from(atob(shot.jpeg), (c) => c.charCodeAt(0));
   createImageBitmap(new Blob([bytes], { type: 'image/jpeg' }))
     .then((bitmap) => {
       if (painting.get(pane) !== ticket) return bitmap.close();
-      if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
-      if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
-      canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+      for (const canvas of showing) {
+        if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
+        if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
+        canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+      }
       bitmap.close();
     })
     .catch(() => {});

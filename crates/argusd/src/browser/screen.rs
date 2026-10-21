@@ -1,36 +1,37 @@
-//! Which of a browser's pages is shown, and showing it: its pictures read
-//! off as the page changes, and the person's input put on it.
+//! Which of a browser's tabs is shown, and showing it: its pictures read
+//! off as the page changes, laid out at the size the person sees it, and
+//! the person's input put on it.
 //!
-//! The newest page is the one shown, since an agent that opens a tab is
-//! about to work in it; when it closes, the newest left is. The agent's
-//! own connection is untouched: this one attaches beside it.
+//! A tab the person picks is shown until it closes or another opens; a
+//! tab that opens is shown, since an agent that opens one is about to work
+//! in it. With neither, the newest is. The agent's own connection is
+//! untouched: this one attaches beside it.
 
-use argus_protocol::BrowserInput;
-use serde_json::{json, Value};
+use argus_protocol::{BrowserInput, BrowserTab};
+use serde_json::json;
 use tokio::sync::mpsc;
 
 use super::cdp::{Cdp, Event};
-use super::input::commands;
+use super::input::{browser_command, commands};
 use super::Report;
 
-/// The pictures asked for: the window's size at most, and a quality that
-/// keeps one to a few tens of kilobytes.
-const SCREENCAST: fn() -> Value =
-    || json!({ "format": "jpeg", "quality": 60, "maxWidth": 1280, "maxHeight": 800, "everyNthFrame": 1 });
+/// The pictures asked for when no one has said how big they look: the
+/// window's size the browser starts at.
+const UNSIZED: (u32, u32, f64) = (1280, 800, 1.0);
+/// Each picture's JPEG quality: high enough that text drawn one to one
+/// reads as sharp as the page's own.
+const QUALITY: u32 = 85;
 
-#[derive(Debug, Clone, PartialEq)]
-struct Page {
-    target: String,
-    url: String,
-    title: String,
+/// The browser's tabs in the order they opened, and the one the person
+/// picked.
+#[derive(Debug, Default)]
+struct Tabs {
+    open: Vec<BrowserTab>,
+    picked: Option<String>,
 }
 
-/// The browser's pages in the order they opened.
-#[derive(Debug, Default)]
-struct Pages(Vec<Page>);
-
-impl Pages {
-    /// What a target event says of the pages; anything not a page, such as
+impl Tabs {
+    /// What a target event says of the tabs; anything not a page, such as
     /// a worker, is not one to show.
     fn heard(&mut self, event: &Event) {
         match event.method.as_str() {
@@ -40,31 +41,44 @@ impl Pages {
                     return;
                 }
                 let text = |key: &str| info[key].as_str().unwrap_or_default().to_string();
-                let page = Page { target: text("targetId"), url: text("url"), title: text("title") };
-                match self.0.iter_mut().find(|held| held.target == page.target) {
-                    Some(held) => *held = page,
-                    None => self.0.push(page),
+                let tab = BrowserTab { id: text("targetId"), url: text("url"), title: text("title") };
+                match self.open.iter_mut().find(|held| held.id == tab.id) {
+                    Some(held) => *held = tab,
+                    None => {
+                        self.open.push(tab);
+                        self.picked = None;
+                    }
                 }
             }
             "Target.targetDestroyed" => {
-                let target = event.params["targetId"].as_str().unwrap_or_default();
-                self.0.retain(|page| page.target != target);
+                let id = event.params["targetId"].as_str().unwrap_or_default();
+                self.open.retain(|tab| tab.id != id);
+                if self.picked.as_deref() == Some(id) {
+                    self.picked = None;
+                }
             }
             _ => {}
         }
     }
 
-    fn newest(&self) -> Option<&Page> {
-        self.0.last()
+    /// Picks a tab the browser has; any other is not.
+    fn pick(&mut self, id: &str) {
+        if self.get(id).is_some() {
+            self.picked = Some(id.to_string());
+        }
     }
 
-    fn get(&self, target: &str) -> Option<&Page> {
-        self.0.iter().find(|page| page.target == target)
+    fn to_show(&self) -> Option<&BrowserTab> {
+        self.picked.as_deref().and_then(|id| self.get(id)).or(self.open.last())
+    }
+
+    fn get(&self, id: &str) -> Option<&BrowserTab> {
+        self.open.iter().find(|tab| tab.id == id)
     }
 }
 
-/// The page being shown: its target, and the session this connection
-/// holds on it.
+/// The tab being shown: its target, and the session this connection holds
+/// on it.
 struct Shown {
     target: String,
     session: String,
@@ -78,15 +92,15 @@ pub(super) async fn follow(
     reports: mpsc::UnboundedSender<Report>,
 ) {
     // Answered with a created event for every target already open, so the
-    // first page is heard like any other.
+    // first tab is heard like any other.
     if let Err(error) = cdp.call("Target.setDiscoverTargets", json!({ "discover": true }), None).await {
-        tracing::warn!("browser: discovering its pages: {error:#}");
+        tracing::warn!("browser: discovering its tabs: {error:#}");
         return;
     }
-    let mut pages = Pages::default();
+    let mut tabs = Tabs::default();
     let mut shown: Option<Shown> = None;
-    // Nothing shown is not news until something was.
-    let mut told: Option<(String, String)> = Some(Default::default());
+    let mut viewport: Option<(u32, u32, f64)> = None;
+    let mut told: Option<(Vec<BrowserTab>, Option<String>)> = None;
     loop {
         tokio::select! {
             event = events.recv() => {
@@ -109,34 +123,51 @@ pub(super) async fn follow(
                     }
                     _ => {}
                 }
-                pages.heard(&event);
-                let newest = pages.newest().map(|page| page.target.clone());
-                if newest != shown.as_ref().map(|s| s.target.clone()) {
-                    shown = show(&cdp, shown.take(), newest).await;
-                }
-                let now = shown.as_ref().and_then(|s| pages.get(&s.target));
-                let page = now.map(|p| (p.url.clone(), p.title.clone())).unwrap_or_default();
-                if told.as_ref() != Some(&page) {
-                    let _ = reports.send(Report::Page { url: page.0.clone(), title: page.1.clone() });
-                    told = Some(page);
-                }
+                tabs.heard(&event);
             }
             hand = input.recv() => {
                 let Some(hand) = hand else { return };
-                let Some(shown) = &shown else { continue };
-                for (method, params) in commands(&hand) {
-                    cdp.tell(method, params, Some(&shown.session));
+                match &hand {
+                    BrowserInput::ShowTab { id } => tabs.pick(id),
+                    BrowserInput::Viewport { width, height, scale } => {
+                        let held = BrowserInput::held_viewport(*width, *height, *scale);
+                        if viewport != Some(held) {
+                            viewport = Some(held);
+                            if let Some(shown) = &shown {
+                                size(&cdp, &shown.session, held).await;
+                            }
+                        }
+                    }
+                    _ => {
+                        if let Some((method, params)) = browser_command(&hand) {
+                            cdp.tell(method, params, None);
+                        } else if let Some(shown) = &shown {
+                            for (method, params) in commands(&hand) {
+                                cdp.tell(method, params, Some(&shown.session));
+                            }
+                        }
+                    }
                 }
             }
+        }
+        let want = tabs.to_show().map(|tab| tab.id.clone());
+        if want != shown.as_ref().map(|s| s.target.clone()) {
+            shown = show(&cdp, shown.take(), want, viewport).await;
+        }
+        let now = (tabs.open.clone(), shown.as_ref().map(|s| s.target.clone()));
+        if told.as_ref() != Some(&now) {
+            let _ = reports.send(Report::Page { tabs: now.0.clone(), shown: now.1.clone() });
+            told = Some(now);
         }
     }
 }
 
-/// Stops showing `old` and starts showing `target`; what is shown after,
-/// which is nothing when the page could not be attached to — it may have
-/// closed in the moment between.
-async fn show(cdp: &Cdp, old: Option<Shown>, target: Option<String>) -> Option<Shown> {
+/// Stops showing `old` and starts showing `target`, laid out at `viewport`;
+/// what is shown after, which is nothing when the tab could not be attached
+/// to — it may have closed in the moment between.
+async fn show(cdp: &Cdp, old: Option<Shown>, target: Option<String>, viewport: Option<(u32, u32, f64)>) -> Option<Shown> {
     if let Some(old) = old {
+        cdp.tell("Page.stopScreencast", json!({}), Some(&old.session));
         cdp.tell("Target.detachFromTarget", json!({ "sessionId": old.session }), None);
     }
     let target = target?;
@@ -144,15 +175,42 @@ async fn show(cdp: &Cdp, old: Option<Shown>, target: Option<String>) -> Option<S
     let session = match attached {
         Ok(answer) => answer["sessionId"].as_str()?.to_string(),
         Err(error) => {
-            tracing::debug!("browser: attaching to a page: {error:#}");
+            tracing::debug!("browser: attaching to a tab: {error:#}");
             return None;
         }
     };
     let _ = cdp.call("Page.enable", json!({}), Some(&session)).await;
-    if let Err(error) = cdp.call("Page.startScreencast", SCREENCAST(), Some(&session)).await {
-        tracing::debug!("browser: starting its pictures: {error:#}");
+    match viewport {
+        Some(viewport) => size(cdp, &session, viewport).await,
+        None => screencast(cdp, &session, UNSIZED).await,
     }
     Some(Shown { target, session })
+}
+
+/// Lays the shown tab out at `viewport` and asks for its pictures at that
+/// many device pixels, so the person's view draws them one to one.
+async fn size(cdp: &Cdp, session: &str, viewport: (u32, u32, f64)) {
+    let (width, height, scale) = viewport;
+    let metrics = json!({ "width": width, "height": height, "deviceScaleFactor": scale, "mobile": false });
+    if let Err(error) = cdp.call("Emulation.setDeviceMetricsOverride", metrics, Some(session)).await {
+        tracing::debug!("browser: sizing a tab: {error:#}");
+    }
+    let _ = cdp.call("Page.stopScreencast", json!({}), Some(session)).await;
+    screencast(cdp, session, viewport).await;
+}
+
+async fn screencast(cdp: &Cdp, session: &str, (width, height, scale): (u32, u32, f64)) {
+    let pixels = |css: u32| (css as f64 * scale).round() as u32;
+    let asked = json!({
+        "format": "jpeg",
+        "quality": QUALITY,
+        "maxWidth": pixels(width),
+        "maxHeight": pixels(height),
+        "everyNthFrame": 1,
+    });
+    if let Err(error) = cdp.call("Page.startScreencast", asked, Some(session)).await {
+        tracing::debug!("browser: starting its pictures: {error:#}");
+    }
 }
 
 /// Passes one picture on, and acknowledges it: the browser sends the next
@@ -186,18 +244,39 @@ mod tests {
         Event { method: "Target.targetDestroyed".into(), params: json!({ "targetId": id }), session: None }
     }
 
+    fn shown(tabs: &Tabs) -> Option<&str> {
+        tabs.to_show().map(|tab| tab.id.as_str())
+    }
+
     #[test]
-    fn shows_the_newest_page_and_falls_back_when_it_closes() {
-        let mut pages = Pages::default();
-        pages.heard(&target("Target.targetCreated", "a", "page", "about:blank"));
-        pages.heard(&target("Target.targetCreated", "w", "service_worker", ""));
-        pages.heard(&target("Target.targetCreated", "b", "page", "https://example.com"));
-        assert_eq!(pages.newest().unwrap().target, "b");
-        pages.heard(&target("Target.targetInfoChanged", "a", "page", "https://a.test"));
-        assert_eq!(pages.newest().unwrap().target, "b", "a page that navigates is not a new one");
-        pages.heard(&destroyed("b"));
-        assert_eq!(pages.newest().unwrap().url, "https://a.test");
-        pages.heard(&destroyed("a"));
-        assert!(pages.newest().is_none());
+    fn shows_the_newest_tab_and_falls_back_when_it_closes() {
+        let mut tabs = Tabs::default();
+        tabs.heard(&target("Target.targetCreated", "a", "page", "about:blank"));
+        tabs.heard(&target("Target.targetCreated", "w", "service_worker", ""));
+        tabs.heard(&target("Target.targetCreated", "b", "page", "https://example.com"));
+        assert_eq!(shown(&tabs), Some("b"));
+        assert_eq!(tabs.open.len(), 2, "a worker is not a tab");
+        tabs.heard(&target("Target.targetInfoChanged", "a", "page", "https://a.test"));
+        assert_eq!(shown(&tabs), Some("b"), "a tab that navigates is not a new one");
+        tabs.heard(&destroyed("b"));
+        assert_eq!(tabs.to_show().unwrap().url, "https://a.test");
+        tabs.heard(&destroyed("a"));
+        assert_eq!(shown(&tabs), None);
+    }
+
+    #[test]
+    fn a_picked_tab_is_shown_until_it_closes_or_another_opens() {
+        let mut tabs = Tabs::default();
+        tabs.heard(&target("Target.targetCreated", "a", "page", ""));
+        tabs.heard(&target("Target.targetCreated", "b", "page", ""));
+        tabs.pick("a");
+        assert_eq!(shown(&tabs), Some("a"));
+        tabs.pick("gone");
+        assert_eq!(shown(&tabs), Some("a"), "a tab the browser lacks is not picked");
+        tabs.heard(&target("Target.targetCreated", "c", "page", ""));
+        assert_eq!(shown(&tabs), Some("c"));
+        tabs.pick("a");
+        tabs.heard(&destroyed("a"));
+        assert_eq!(shown(&tabs), Some("c"));
     }
 }

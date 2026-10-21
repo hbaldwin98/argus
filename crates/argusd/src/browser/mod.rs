@@ -9,14 +9,15 @@ mod chrome;
 mod input;
 mod screen;
 
-use argus_protocol::BrowserInput;
+use argus_protocol::{BrowserInput, BrowserTab};
 use tokio::sync::mpsc;
 
 /// What a running browser says of itself. The channel closing is its end:
 /// the browser exited, or its socket closed.
 #[derive(Debug)]
 pub(crate) enum Report {
-    Page { url: String, title: String },
+    /// Its tabs, and the one shown, by id.
+    Page { tabs: Vec<BrowserTab>, shown: Option<String> },
     Frame { jpeg: String, width: u32, height: u32 },
 }
 
@@ -58,6 +59,32 @@ impl Drop for Browser {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    /// A base64 JPEG's size in pixels, from its start-of-frame marker.
+    fn jpeg_size(base64: &str) -> Option<(u32, u32)> {
+        const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut bytes = Vec::new();
+        let (mut bits, mut held) = (0u32, 0);
+        for c in base64.bytes().filter(|&c| c != b'=') {
+            bits = bits << 6 | ALPHABET.iter().position(|&a| a == c)? as u32;
+            held += 6;
+            if held >= 8 {
+                held -= 8;
+                bytes.push((bits >> held) as u8);
+            }
+        }
+        let mut at = 2;
+        while at + 9 < bytes.len() {
+            let (marker, length) = (bytes[at + 1], u16::from_be_bytes([bytes[at + 2], bytes[at + 3]]) as usize);
+            if matches!(marker, 0xC0..=0xC2) {
+                let height = u16::from_be_bytes([bytes[at + 5], bytes[at + 6]]) as u32;
+                let width = u16::from_be_bytes([bytes[at + 7], bytes[at + 8]]) as u32;
+                return Some((width, height));
+            }
+            at += 2 + length;
+        }
+        None
+    }
 
     async fn next(heard: &mut mpsc::UnboundedReceiver<Report>, want: fn(&Report) -> bool) -> Option<Report> {
         let wait = async {
@@ -104,8 +131,38 @@ mod tests {
             }
         });
         browser.input(BrowserInput::Navigate { url: format!("http://{address}/") });
-        let titled = next(&mut heard, |r| matches!(r, Report::Page { title, .. } if title == "Shown")).await;
+        let titled = next(&mut heard, |r| matches!(r, Report::Page { tabs, .. } if tabs.iter().any(|t| t.title == "Shown"))).await;
         assert!(titled.is_some(), "the page's title was never reported");
+
+        browser.input(BrowserInput::Viewport { width: 900, height: 600, scale: 2.0 });
+        let sized = next(&mut heard, |r| matches!(r, Report::Frame { width: 900, height: 600, .. })).await;
+        assert!(sized.is_some(), "the page is laid out at the size the person sees it");
+        // The picture taken as the size changes may be part-way there; a
+        // reload's are drawn at it.
+        let mut sharp = false;
+        for _ in 0..5 {
+            browser.input(BrowserInput::Reload);
+            if let Some(Report::Frame { jpeg, .. }) = next(&mut heard, |r| matches!(r, Report::Frame { .. })).await {
+                sharp |= jpeg_size(&jpeg) == Some((1800, 1200));
+            }
+        }
+        assert!(sharp, "its picture has a pixel for each of the screen's");
+
+        browser.input(BrowserInput::NewTab);
+        let opened = next(&mut heard, |r| matches!(r, Report::Page { tabs, shown } if tabs.len() == 2 && shown.as_ref() == Some(&tabs[1].id))).await;
+        let Some(Report::Page { tabs, .. }) = opened else { panic!("a new tab was never shown") };
+        browser.input(BrowserInput::ShowTab { id: tabs[0].id.clone() });
+        let first = tabs[0].id.clone();
+        let picked = tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                if let Some(Report::Page { shown, .. }) = heard.recv().await {
+                    if shown.as_ref() == Some(&first) {
+                        return;
+                    }
+                }
+            }
+        });
+        assert!(picked.await.is_ok(), "the tab the person picked is shown");
 
         drop(browser);
         let ended = tokio::time::timeout(Duration::from_secs(10), async { while heard.recv().await.is_some() {} }).await;

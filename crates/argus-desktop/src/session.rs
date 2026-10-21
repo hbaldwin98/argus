@@ -476,7 +476,16 @@ impl Session {
                 self.passing.push(Event::Notice { text });
             }
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
-            ServerMsg::BrowserPage(page) => self.browsers.page(page),
+            // A browser that opens comes out in its panel, on the right
+            // unless the person has put the panel elsewhere.
+            ServerMsg::BrowserPage(page) => {
+                if self.browsers.page(page) {
+                    // Placed the first time only: after, it is where the
+                    // person put it.
+                    self.docks.place(&Panel::Browser, Place::Dock(Dock::Right));
+                    self.docks.show(&Panel::Browser);
+                }
+            }
             ServerMsg::BrowserClosed { pane } => self.browsers.closed(pane),
             // Taken past the session by `connection::daemon`; one that
             // reaches here is passed on all the same.
@@ -1869,7 +1878,7 @@ impl Session {
                 self.docks.move_to(panel, dock);
                 self.show_views_panel();
             }
-            Panel::Saved(_) => self.docks.move_to(panel, dock),
+            Panel::Saved(_) | Panel::Browser => self.docks.move_to(panel, dock),
             Panel::Extension(_) => {
                 self.extension_views.touch(panel);
                 self.dock_extension(panel, Some(dock));
@@ -1900,6 +1909,13 @@ impl Session {
         match panel {
             Panel::Console => self.open_console_tab(),
             Panel::Extension(_) => self.extension_mode(panel, true),
+            // Its browser fills the Browsers stage, and leaves the dock, as
+            // one browser is never drawn twice.
+            Panel::Browser => {
+                self.browsers.choose(self.browsers.docked());
+                self.go(Stage::Browsers);
+                self.docks.hide(&Panel::Browser);
+            }
             Panel::Views | Panel::Saved(_) => {}
         }
     }
@@ -1910,7 +1926,7 @@ impl Session {
     fn close_panel(&mut self, panel: &Panel) {
         match panel {
             Panel::Saved(owner) => self.close_saved_column(owner, 0),
-            Panel::Console | Panel::Views | Panel::Extension(_) => {}
+            Panel::Console | Panel::Views | Panel::Browser | Panel::Extension(_) => {}
         }
     }
 
@@ -1929,6 +1945,9 @@ impl Session {
         let mut present = vec![Panel::Console];
         if !self.views.is_empty() {
             present.push(Panel::Views);
+        }
+        if !self.browsers.is_empty() {
+            present.push(Panel::Browser);
         }
         present.extend(self.extension_views.present(&self.here()));
         present.extend(self.saved.present());
@@ -3148,6 +3167,7 @@ impl Session {
         if let Some(page) = self.choices.take() {
             events.push(Event::Settings(Box::new(page)));
         }
+        self.browsers.follow(self.shown.pane());
         // Before the rail, so the page knows which side has the keys when
         // the rail says which pane the Workspace shows.
         let present = self.present();
@@ -3158,6 +3178,7 @@ impl Session {
         events.extend(self.docks.take(|panel| match panel {
             Panel::Console => "Console".into(),
             Panel::Views => "Views".into(),
+            Panel::Browser => "Browser".into(),
             Panel::Extension(_) => views.get(panel, &here).map(|v| v.title.clone()).unwrap_or_default(),
             Panel::Saved(id) => saved.title(id),
         }));
@@ -4157,7 +4178,8 @@ mod tests {
         use argus_protocol::{BrowserInput, BrowserPage};
         let mut s = session(Hello::this_build());
         let _ = s.events(0);
-        s.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(1), url: "https://a.test".into(), title: "A".into() }));
+        s.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(1), url: "https://a.test".into(), title: "A".into(), tabs: Vec::new(), shown: None }));
+        assert!(s.docks.shows(&Panel::Browser), "a browser that opens comes out in its panel");
         s.call(Call::ShowBrowsers { pane: Some(1) });
         assert_eq!(s.stages.now(), Stage::Browsers);
         let events = s.events(0);

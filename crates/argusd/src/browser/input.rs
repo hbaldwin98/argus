@@ -39,6 +39,20 @@ pub(crate) fn commands(input: &BrowserInput) -> Vec<(&'static str, Value)> {
         BrowserInput::Back => vec![("Runtime.evaluate", json!({ "expression": "history.back()" }))],
         BrowserInput::Forward => vec![("Runtime.evaluate", json!({ "expression": "history.forward()" }))],
         BrowserInput::Reload => vec![("Page.reload", json!({}))],
+        // The browser's own, or `screen`'s: none is a command on the page.
+        BrowserInput::ShowTab { .. } | BrowserInput::NewTab | BrowserInput::CloseTab { .. } | BrowserInput::Viewport { .. } => {
+            Vec::new()
+        }
+    }
+}
+
+/// The command `input` is sent as to the browser itself, for what is not
+/// done to a page but to its tabs.
+pub(crate) fn browser_command(input: &BrowserInput) -> Option<(&'static str, Value)> {
+    match input {
+        BrowserInput::NewTab => Some(("Target.createTarget", json!({ "url": "about:blank" }))),
+        BrowserInput::CloseTab { id } => Some(("Target.closeTarget", json!({ "targetId": id }))),
+        _ => None,
     }
 }
 
@@ -62,6 +76,15 @@ mod tests {
         let tab = commands(&BrowserInput::Key { key: BrowserKey::Tab });
         assert_eq!(tab[0].1["type"], "rawKeyDown");
         assert_eq!(tab[0].1["windowsVirtualKeyCode"], 9);
+    }
+
+    #[test]
+    fn a_tab_is_opened_and_closed_by_the_browser_not_the_page() {
+        assert_eq!(browser_command(&BrowserInput::NewTab).unwrap().0, "Target.createTarget");
+        let close = browser_command(&BrowserInput::CloseTab { id: "t".into() }).unwrap();
+        assert_eq!((close.0, close.1["targetId"].as_str()), ("Target.closeTarget", Some("t")));
+        assert!(commands(&BrowserInput::NewTab).is_empty());
+        assert!(browser_command(&BrowserInput::Reload).is_none());
     }
 
     #[test]

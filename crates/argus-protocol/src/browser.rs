@@ -24,11 +24,25 @@ pub enum BrowserRequest {
     Close,
 }
 
-/// Where a pane's browser is, sent as it opens and whenever the page it
-/// shows changes address or title.
+/// Where a pane's browser is, sent as it opens and whenever a tab opens,
+/// closes, changes address or title, or another is shown.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BrowserPage {
     pub pane: PaneId,
+    /// The shown tab's address and title, or nothing with no tab open.
+    pub url: String,
+    pub title: String,
+    /// Every tab, in the order they opened.
+    pub tabs: Vec<BrowserTab>,
+    /// The tab whose pictures are sent, by its id in `tabs`.
+    pub shown: Option<String>,
+}
+
+/// One of a browser's tabs, by the browser's own id for it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct BrowserTab {
+    pub id: String,
     pub url: String,
     pub title: String,
 }
@@ -62,6 +76,29 @@ pub enum BrowserInput {
     Back,
     Forward,
     Reload,
+    /// The tab to show, by its id; a tab the agent opens after is shown in
+    /// its place.
+    ShowTab { id: String },
+    NewTab,
+    CloseTab { id: String },
+    /// The room the person's view of it has, in CSS pixels, and how many
+    /// device pixels each is: the page is laid out at that size and its
+    /// pictures sent at that resolution, so they are drawn one to one.
+    Viewport { width: u32, height: u32, scale: f64 },
+}
+
+impl BrowserInput {
+    /// A viewport the browser can lay a page out at: no smaller than a
+    /// phone, no larger than a 4K screen's pixels, whatever a client asks.
+    pub fn held_viewport(width: u32, height: u32, scale: f64) -> (u32, u32, f64) {
+        let scale = if scale.is_finite() { scale.clamp(1.0, 3.0) } else { 1.0 };
+        let width = width.clamp(320, 3840);
+        let height = height.clamp(240, 2400);
+        // The pictures, not the layout, are what cost: past 4K's pixels
+        // they come at a lower scale rather than at a smaller size.
+        let most = (3840.0 * 2400.0) / (width as f64 * height as f64);
+        (width, height, scale.min(most.sqrt()).max(1.0))
+    }
 }
 
 /// The keys that do something other than type, each sent as the browser's
@@ -123,6 +160,15 @@ mod tests {
         assert!(!navigable("file:///etc/passwd"));
         assert!(!navigable("javascript:alert(1)"));
         assert!(!navigable("chrome://settings"));
+    }
+
+    #[test]
+    fn a_viewport_is_held_to_what_a_browser_can_lay_out_and_send() {
+        assert_eq!(BrowserInput::held_viewport(1200, 800, 2.0), (1200, 800, 2.0));
+        assert_eq!(BrowserInput::held_viewport(0, 0, f64::NAN), (320, 240, 1.0));
+        assert_eq!(BrowserInput::held_viewport(99_999, 99_999, 9.0), (3840, 2400, 1.0));
+        let (w, h, scale) = BrowserInput::held_viewport(2560, 1600, 3.0);
+        assert!(w as f64 * h as f64 * scale * scale <= 3840.0 * 2400.0 + 1.0);
     }
 
     #[test]
