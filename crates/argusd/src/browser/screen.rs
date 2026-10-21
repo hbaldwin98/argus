@@ -34,38 +34,57 @@ const UNSIZED: (u32, u32, f64) = (1280, 800, 1.0);
 const QUALITY: u32 = 85;
 
 /// The browser's tabs in the order they opened, the one the agent works
-/// in, and the one the person picked.
+/// in, the one the person picked, and the blank one it started with.
 #[derive(Debug, Default)]
 struct Tabs {
     open: Vec<BrowserTab>,
     working: Option<String>,
     picked: Option<String>,
+    /// The tab Chrome opens itself, while nothing has taken it anywhere: a
+    /// tool that opens a tab of its own leaves it behind, blank, so it is
+    /// closed when the first other tab opens.
+    starting: Option<String>,
+}
+
+fn blank(url: &str) -> bool {
+    url.is_empty() || url == "about:blank"
 }
 
 impl Tabs {
     /// What a target event says of the tabs; anything not a page, such as
-    /// a worker, is not one to show.
-    fn heard(&mut self, event: &Event) {
+    /// a worker, is not one to show. Answers the starting tab to close when
+    /// another has just opened while it is still blank.
+    fn heard(&mut self, event: &Event) -> Option<String> {
         match event.method.as_str() {
             "Target.targetCreated" | "Target.targetInfoChanged" => {
                 let info = &event.params["targetInfo"];
                 if info["type"] != "page" {
-                    return;
+                    return None;
                 }
                 let text = |key: &str| info[key].as_str().unwrap_or_default().to_string();
                 let tab = BrowserTab { id: text("targetId"), url: text("url"), title: text("title") };
+                if self.starting.as_deref() == Some(&*tab.id) && !blank(&tab.url) {
+                    self.starting = None;
+                }
                 match self.open.iter_mut().find(|held| held.id == tab.id) {
                     Some(held) => *held = tab,
                     None => {
+                        let first = self.open.is_empty();
+                        if first && blank(&tab.url) {
+                            self.starting = Some(tab.id.clone());
+                        }
                         self.working = Some(tab.id.clone());
                         self.open.push(tab);
+                        if !first {
+                            return self.starting.take();
+                        }
                     }
                 }
             }
             "Target.targetDestroyed" => {
                 let id = event.params["targetId"].as_str().unwrap_or_default();
                 self.open.retain(|tab| tab.id != id);
-                for kept in [&mut self.working, &mut self.picked] {
+                for kept in [&mut self.working, &mut self.picked, &mut self.starting] {
                     if kept.as_deref() == Some(id) {
                         *kept = None;
                     }
@@ -79,6 +98,13 @@ impl Tabs {
             }
             _ => {}
         }
+        None
+    }
+
+    /// Whether the only tab is the blank one Chrome started with, which a
+    /// new tab asked for is better made of than opened beside.
+    fn only_starting(&self) -> bool {
+        self.open.len() == 1 && self.starting.as_deref() == Some(&*self.open[0].id)
     }
 
     /// Picks a tab the browser has; any other is not.
@@ -151,13 +177,20 @@ pub(super) async fn follow(
                     }
                     _ => {}
                 }
-                tabs.heard(&event);
+                if let Some(starting) = tabs.heard(&event) {
+                    cdp.tell("Target.closeTarget", json!({ "targetId": starting }), None);
+                }
             }
             // An agent's built-in command, done on this session to the tab
             // shown; one that waits for a page to load waits off this loop,
             // so the pictures keep coming meanwhile.
             asked = acts.recv() => {
-                let Some((asked, reply)) = asked else { return };
+                let Some((mut asked, reply)) = asked else { return };
+                if let BrowserAct::New { url } = &asked {
+                    if tabs.only_starting() {
+                        asked = BrowserAct::Go { url: url.clone().unwrap_or_else(|| "about:blank".into()) };
+                    }
+                }
                 if held && asked.drives() {
                     let _ = reply.send(Err(HELD.to_string()));
                 } else if asked == BrowserAct::Tabs {
@@ -344,6 +377,22 @@ mod tests {
 
     fn acted(id: &str) -> Event {
         Event { method: AGENT_ACTED.into(), params: json!({ "targetId": id, "drives": true }), session: None }
+    }
+
+    #[test]
+    fn the_blank_tab_chrome_starts_with_is_closed_when_another_opens_unless_it_was_used() {
+        let mut tabs = Tabs::default();
+        assert_eq!(tabs.heard(&target("Target.targetCreated", "start", "page", "about:blank")), None);
+        assert!(tabs.only_starting(), "a new tab asked for is made of it");
+        assert_eq!(tabs.heard(&target("Target.targetCreated", "w", "service_worker", "")), None, "a worker is no tab");
+        assert_eq!(tabs.heard(&target("Target.targetCreated", "agents", "page", "about:blank")), Some("start".into()));
+        assert_eq!(tabs.heard(&target("Target.targetCreated", "third", "page", "")), None, "closed once");
+
+        let mut used = Tabs::default();
+        used.heard(&target("Target.targetCreated", "start", "page", "about:blank"));
+        used.heard(&target("Target.targetInfoChanged", "start", "page", "https://a.test"));
+        assert!(!used.only_starting());
+        assert_eq!(used.heard(&target("Target.targetCreated", "next", "page", "")), None, "a tab that was used stays");
     }
 
     #[test]

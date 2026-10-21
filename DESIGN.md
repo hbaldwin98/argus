@@ -2853,7 +2853,9 @@ daemon's browser and the terminal client never has to. `browser::screen` keeps t
 and attaches its own session to one: the one the agent last acted on, or failing that the last
 opened, since an agent that opens a tab is about to work in it — unless the person picked another
 (`BrowserInput::ShowTab`), which is shown until it closes or they follow the agent again
-(`FollowAgent`). It asks that tab for a screencast: JPEG frames, each acknowledged before the next
+(`FollowAgent`). The blank tab Chrome starts with is closed when another opens before anything has
+taken it anywhere, since a tool that opens a tab of its own would leave it behind; a built-in `new`
+while it is the only tab goes there instead. It asks that tab for a screencast: JPEG frames, each acknowledged before the next
 comes, so a slow reader throttles the browser rather than queueing behind it. The tabs' addresses
 and titles come from the targets' events and from reading the shown one's again once it loads,
 since Chrome does not report a title its document sets. Who moved the page in the last three

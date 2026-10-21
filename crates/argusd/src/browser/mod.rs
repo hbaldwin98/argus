@@ -191,6 +191,22 @@ mod tests {
     }
 
     /// Needs a Chrome, Chromium or Edge installed, or `ARGUS_BROWSER`:
+    /// `cargo test -p argusd a_real_browser -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn a_real_browser_drops_its_blank_starting_tab_when_a_tool_opens_its_own() {
+        let (reports, mut heard) = mpsc::unbounded_channel();
+        let browser = Browser::start(reports).await.unwrap();
+        assert!(seen_until(&mut heard, |s| s.tabs.len() == 1).await, "Chrome starts with a tab");
+        let (line, _told) = browser.attach();
+        line.send(&serde_json::json!({ "id": 1, "method": "Target.createTarget", "params": { "url": "about:blank#tool" } }).to_string());
+        assert!(
+            seen_until(&mut heard, |s| s.tabs.len() == 1 && s.tabs[0].url.ends_with("#tool")).await,
+            "only the tool's tab is left"
+        );
+    }
+
+    /// Needs a Chrome, Chromium or Edge installed, or `ARGUS_BROWSER`:
     /// `cargo test -p argusd shows_a_real_browser -- --ignored`.
     #[tokio::test]
     #[ignore]
