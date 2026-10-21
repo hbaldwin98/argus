@@ -6,7 +6,12 @@
 //! runtime, the window, and running until it closes.
 //!
 //! Set `ARGUS_GPUI_QUIT_MS` to have it print what it heard after that long
-//! and exit, which is how an agent runs it unattended.
+//! and exit, which is how an agent runs it unattended. `ARGUS_GPUI_PROBE_SHELL`
+//! shows one pane, `ARGUS_GPUI_PROBE_GIT` opens a checkout's review, reads
+//! what the Git stage was sent and closes it again, and
+//! `ARGUS_GPUI_PROBE_HISTORY` does the same for its history, unfolding the
+//! newest commit and filtering to nothing on the way.
+
 
 // A console window behind the GUI is noise outside a debug build.
 #![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
@@ -15,6 +20,7 @@ use std::time::Duration;
 
 use argus_desktop_core::connection::daemon;
 use argus_desktop_core::connection::page::Call;
+use argus_desktop_core::keys::keymap::Action;
 use argus_desktop_core::keys::page_key::PageKey;
 use argus_desktop_core::settings::remembered;
 use argus_desktop_core::system::logging;
@@ -65,7 +71,13 @@ fn main() {
             .expect("the window opens");
         cx.activate(true);
         if let Some(pane) = std::env::var("ARGUS_GPUI_PROBE_SHELL").ok().and_then(|pane| pane.parse().ok()) {
-            probe(heard.clone(), probing, pane, cx);
+            probe(heard.clone(), probing.clone(), pane, cx);
+        }
+        if let Ok(which) = std::env::var("ARGUS_GPUI_PROBE_GIT") {
+            probe_git(heard.clone(), probing.clone(), which, cx);
+        }
+        if let Ok(which) = std::env::var("ARGUS_GPUI_PROBE_HISTORY") {
+            probe_history(heard.clone(), probing.clone(), which, cx);
         }
         if let Some(ms) = quit_after {
             cx.spawn(async move |cx| {
@@ -110,6 +122,122 @@ fn probe(heard: Entity<Heard>, caller: Caller, pane: u64, cx: &mut App) {
     .detach();
 }
 
+/// Opens the review of one checkout, `first` for the rail's first or its id, and
+/// prints what the Git stage drew from it, then closes it: how an agent checks
+/// the stage against a daemon without a person. Only a review is opened and
+/// shut, which reads and changes nothing in the checkout: nothing is staged,
+/// picked, commented or discarded.
+fn probe_git(heard: Entity<Heard>, caller: Caller, which: String, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let wait = |ms| cx.background_executor().timer(Duration::from_millis(ms));
+        wait(1500).await;
+        let checkout = cx.update(|cx| {
+            let heard = heard.read(cx);
+            let first = heard.rail.project.iter().flat_map(|p| &p.repositories).flat_map(|r| &r.checkouts).map(|c| c.id).next();
+            which.parse().ok().or(first)
+        });
+        let Some(checkout) = checkout else {
+            println!("probe: git no checkout to open");
+            return;
+        };
+        caller.call(Call::OpenReview { checkout });
+        wait(2500).await;
+        println!("probe: git checkout {checkout} up={} {}", cx.update(|cx| heard.read(cx).git_up()), cx.update(|cx| review(heard.read(cx))));
+        caller.call(Call::ReviewAction { action: Action::CloseLayer });
+        wait(1000).await;
+        println!("probe: git closed up={} {}", cx.update(|cx| heard.read(cx).git_up()), cx.update(|cx| review(heard.read(cx))));
+    })
+    .detach();
+}
+
+/// Opens the history of one checkout, `first` for the rail's first or its id,
+/// unfolds the newest commit, filters to nothing and clears it, printing what
+/// the History tab was sent at each step, then closes it. Every call reads: the
+/// list of commits, a commit's files and its diff. Nothing in the checkout or
+/// the daemon's store is changed.
+fn probe_history(heard: Entity<Heard>, caller: Caller, which: String, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let wait = |ms| cx.background_executor().timer(Duration::from_millis(ms));
+        wait(1500).await;
+        let checkout = cx.update(|cx| {
+            let heard = heard.read(cx);
+            let first = heard.rail.project.iter().flat_map(|p| &p.repositories).flat_map(|r| &r.checkouts).map(|c| c.id).next();
+            which.parse().ok().or(first)
+        });
+        let Some(checkout) = checkout else {
+            println!("probe: history no checkout to open");
+            return;
+        };
+        let said = |step: &str, cx: &gpui_kit::AsyncApp| {
+            let line = cx.update(|cx| format!("up={} {}", heard.read(cx).git_up(), history(heard.read(cx))));
+            println!("probe: history {step} {line}");
+        };
+        caller.call(Call::OpenHistory { checkout });
+        wait(2500).await;
+        said("opened", cx);
+        caller.call(Call::HistoryAction { action: Action::Unfold, row: None });
+        wait(2500).await;
+        said("unfolded", cx);
+        caller.call(Call::FilterHistory { filter: "zzzzqqqq".into() });
+        wait(1000).await;
+        said("filtered", cx);
+        caller.call(Call::FilterHistory { filter: String::new() });
+        wait(1000).await;
+        said("cleared", cx);
+        caller.call(Call::HistoryAction { action: Action::CloseLayer, row: None });
+        wait(1000).await;
+        said("closed", cx);
+    })
+    .detach();
+}
+
+/// The history as the Git stage is sent it, on one line.
+fn history(heard: &Heard) -> String {
+    let Some(page) = &heard.history else {
+        return "history=none".to_owned();
+    };
+    format!(
+        "history={} branch={} rows={} commits={} files={} on={:?} loading={} empty={:?} filter={:?} path={:?} diff_rows={} diff_loading={} diff_empty={:?}",
+        page.name,
+        page.branch,
+        page.rows.len(),
+        page.rows.iter().filter(|row| row.kind == "commit").count(),
+        page.rows.iter().filter(|row| row.kind == "file").count(),
+        page.rows.iter().position(|row| row.on),
+        page.loading,
+        page.empty,
+        page.filter,
+        page.path,
+        page.diff.len(),
+        page.diff_loading,
+        page.diff_empty,
+    )
+}
+
+/// The review as the Git stage is sent it, on one line.
+fn review(heard: &Heard) -> String {
+    let Some(page) = &heard.review else {
+        return "review=none".to_owned();
+    };
+    format!(
+        "review={} base={} files={} rows={} file={:?} split={} loading={} empty={:?} +{} -{} unstaged={:?} staged={:?} comment={} jump={}",
+        page.name,
+        page.base,
+        page.files.len(),
+        page.rows.len(),
+        page.file,
+        page.split,
+        page.loading,
+        page.empty,
+        page.added,
+        page.removed,
+        page.unstaged,
+        page.staged,
+        page.comment.is_some(),
+        page.jump.is_some(),
+    )
+}
+
 /// What the window heard, on one line.
 fn report(heard: &Heard) -> String {
     let rail = &heard.rail;
@@ -125,7 +253,7 @@ fn report(heard: &Heard) -> String {
         .collect();
     let panes = listed.len();
     format!(
-        "argus-gpui heard: connection={:?} loaded={} projects={} project={} repositories={} checkouts={} panes={} [{}] shown={} docks=[{}] console=[{}] screen={}",
+        "argus-gpui heard: connection={:?} loaded={} projects={} project={} repositories={} checkouts={} panes={} [{}] shown={} docks=[{}] console=[{}] git_up={} {} screen={}",
         heard.connection(),
         rail.loaded,
         rail.projects.len(),
@@ -137,6 +265,8 @@ fn report(heard: &Heard) -> String {
         rail.shown.as_ref().map_or("-", |s| s.title.as_str()),
         docks(&heard.docks),
         console(&heard.console),
+        heard.git_up(),
+        review(heard),
         screen(heard),
     )
 }

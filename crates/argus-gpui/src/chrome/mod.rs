@@ -4,3 +4,4 @@ pub mod foot;
 pub mod nav;
 pub mod rail;
 pub mod shell;
+pub mod stage;

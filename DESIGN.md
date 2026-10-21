@@ -765,10 +765,14 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `chrome/nav` | the sidebar's way between stages: which items there are, which one the stage on screen lights, and the call each press makes |
 | `chrome/rail` | the sidebar: the nav, the projects, the picked project's repositories with their checkouts and panes, the picked row and where it goes when a fold or a close takes its row away, and the foot; dimmed while the daemon is gone, and neither calling nor picking on a press |
 | `chrome/shell` | which regions the window is made of and how they sit: the sidebar at full height, and beside it the work area under the stage's header |
+| `chrome/stage` | which view fills the stage while the Workspace would: the Git stage while the session has a review or history open, else the Workspace's live pane |
 | `connection` | how the window trades with the daemon and its own views |
 | `connection/caller` | how a view hands a `Call` on without knowing who answers it |
-| `connection/heard` | what the window has heard from its session: the latest of each kind of event a view draws (the tree, the docks, the console's tabs and sides, the screens of the Workspace and of the console's two sides), in one model every view observes, whether the sidebar is held, and whether a dock's sash is held (set by the work area for the pane to wait on) |
+| `connection/heard` | what the window has heard from its session: the latest of each kind of event a view draws (the tree, the docks, the console's tabs and sides, the screens of the Workspace and of the console's two sides, the review, the history and the window-local Git entry state), in one model every view observes, whether the sidebar is held, and whether a dock's sash is held (set by the work area for the pane to wait on) |
 | `connection/owner` | the state the daemon loop and the views' calls share, and the order their effects leave in; the session behind a mutex, the events out over a channel the UI thread drains, and the frame tick that lasts as long as the window listens to it |
+| `diff` | how a diff is drawn: what each row shows, and the virtual list that holds them |
+| `diff/lines` | what one diff row shows as plain data: its height, the number each half carries, a line's text with tabs stopped by cells and highlight kinds cut into spans, the wash and fill by side, and where a comment box sits among the rows |
+| `diff/view` | a diff in a virtual list so only the rows on screen are built: unified lines or split pairs, folds with their buttons, a slot under one row, the scroll kept across updates and the cursor brought into view; it reports a press and sends no call, and serves review, history, the patch block and the Code stage |
 | `keys` | how a key or committed text reaches the session |
 | `keys/caps` | how a chord of the session's keymap is written for a menu or a tooltip: the leader's press first when the chord follows it, modifiers before the key |
 | `keys/page_key` | which `PageKey` a GPUI keystroke is: the DOM's names for the keys, the character typed rather than the key printed, AltGr as a character and not a chord |
@@ -792,6 +796,18 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `panes/terminal` | a live pane's screen, the Workspace's on the stage or one of the console's two sides: what it draws of the pane its side shows, who has the keys, the keys it sends as the page does, and the room it reports once it holds still |
 | `pointer` | how the pointer's gestures over the window are told apart and followed |
 | `pointer/drag` | the one drag helper: a press that becomes a drag at 5 px and a click before, Escape cancelling with nothing dropped, the pointer followed over the whole window and the keys taken for the drag and given back |
+| `review` | the Git stage: how it is entered and left, and the Changes and History tabs it holds |
+| `review/changes` | the Changes tab: the review of a checkout's working changes or of one commit as a full stage, its files beside its diff, every field of the session's `ReviewPage` drawn, and each press sending the page's call and changing nothing until the event |
+| `review/comment` | the comment box under the picked lines: what it is about, the agent it goes to, the words kept until the session shuts the box, Ctrl Enter and Meta Enter each sending, the engine's secondary key by its binding and the other as a captured key, ahead of the engine's newline, Escape putting it away |
+| `review/entry` | how the window enters and leaves the Git stage and the calls each way sends: Git opens the review of the checkout the window is on, a tab closes the other and opens its own, any other way out closes what is open; the stage is the session's to say |
+| `review/filter` | the history's filter field in the stage's strip: each edit sent as it stands with no debounce, its text its own until the history shuts, Enter and Escape giving the list its keys back without closing the history |
+| `review/files` | the changed-files column: the side read, the files or the jump field's matches, the lit file brought into view, and the jump field whose own keys step, choose and close ahead of the input's |
+| `review/hints` | the footer that names a tab's keys, as caps and what each does, shared by the Changes and History tabs |
+| `review/history` | the History tab: a checkout's commits unfolding to their files beside the diff of the file under the cursor as a full stage, every field of the session's `HistoryPage` drawn, the diff only once an event carries it, and each press sending the page's call and changing nothing until the event |
+| `review/keys` | which gesture a key is while a tab holds the keys, read from the session's own bindings: the review's, the history's (`/` unsent) or the jump field's |
+| `review/segment` | a choice of a few drawn as pills in one rounded track: the Git tabs, the side and the layout |
+| `review/split` | how wide the left column of a Git tab is, the files beside the diff or the commits beside it: the window's own width, followed by its sash through the one drag helper so it moves after 5 px and Escape puts it back, kept across the tabs and never sent |
+| `review/stage` | the Git stage under its header: the branch, the Changes and History tabs, the count, refresh and close, the keys held and each tab's heard, taking the keys as it appears and giving a closed field's or a closed history's back |
 | `system` | what the GPUI window asks of the machine it runs on |
 | `system/clipboard` | the system clipboard through arboard, as `effects::Clipboard`: text, a picture encoded as a PNG, and the files a file manager copied |
 | `theme` | which colours and faces the Ledger look uses: the palette as `gpui-kit` theme roles, and the roles it lacks (changed, fainter) kept beside it |

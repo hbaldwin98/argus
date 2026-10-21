@@ -2,10 +2,12 @@
 
 pub mod chrome;
 pub mod connection;
+pub mod diff;
 pub mod keys;
 pub mod layout;
 pub mod panes;
 pub mod pointer;
+pub mod review;
 pub mod system;
 pub mod theme;
 pub mod window;

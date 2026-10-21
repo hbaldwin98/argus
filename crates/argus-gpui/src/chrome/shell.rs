@@ -4,19 +4,22 @@
 //!
 //! No title bar and no status bar (`GPUI.md`, Decided): the foot of the
 //! sidebar holds the counts and the daemon line. Under the stage's header is
-//! the work area (`layout/work`): the live pane with the docks around it. The
-//! header names the pane on screen.
+//! the work area (`layout/work`): the live pane with the docks around it, or the
+//! Git stage in its place while it is up (`chrome/stage`). The header names
+//! the pane on screen, or Git.
 
 use argus_desktop_core::connection::page::Side;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, Context, Entity, Subscription, Window};
 
 use crate::chrome::rail::RailView;
+use crate::chrome::stage::StageView;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::layout::work::WorkView;
 use crate::panes::console::ConsoleView;
 use crate::panes::terminal::Terminal;
+use crate::review::stage::GitStage;
 use crate::theme::Ledger;
 use crate::window::Header;
 
@@ -34,7 +37,9 @@ impl Shell {
         let rail = cx.new(|cx| RailView::new(heard.clone(), caller.clone(), stage.clone(), window, cx));
         let console = cx.new(|cx| ConsoleView::new(heard.clone(), caller.clone(), stage, window, cx));
         // The Workspace's pane is the stage the docks sit around.
-        let work = cx.new(|cx| WorkView::new(heard.clone(), caller, terminal.into(), console.into(), cx));
+        let git = cx.new(|cx| GitStage::new(heard.clone(), caller.clone(), window, cx));
+        let stage = cx.new(|cx| StageView::new(heard.clone(), terminal.into(), git.into(), cx));
+        let work = cx.new(|cx| WorkView::new(heard.clone(), caller, stage.into(), console.into(), cx));
         let observing = cx.observe(&heard, |_, _, cx| cx.notify());
         Self { heard, rail, work, _observing: observing }
     }
@@ -44,8 +49,11 @@ impl Shell {
         &self.rail
     }
 
-    /// What the header says: the pane on screen.
+    /// What the header says: Git while its stage is up, else the pane on screen.
     pub fn title(heard: &Heard) -> String {
+        if heard.git_up() {
+            return "Git".to_owned();
+        }
         heard.rail.shown.as_ref().map_or_else(|| "Argus".to_owned(), |shown| shown.title.clone())
     }
 }

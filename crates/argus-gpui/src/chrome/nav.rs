@@ -2,7 +2,9 @@
 //! stage on screen lights, and the call each press makes.
 //!
 //! The calls are the page's (`main.ts`): Workspace is the Feature stage
-//! shut, so it sends `show_features{open:false}`.
+//! shut, so it sends `show_features{open:false}`. Git is not a stage of the
+//! session's: it asks for a review, which names a checkout only the window
+//! knows, so its calls are `review::entry`'s.
 
 use argus_desktop_core::connection::page::{Call, Stage};
 use argus_desktop_core::panes::console::ConsoleGesture;
@@ -15,13 +17,22 @@ pub enum Nav {
     Workspace,
     Features,
     Checkouts,
+    Git,
     Code,
     Console,
 }
 
 impl Nav {
-    pub const ALL: [Nav; 7] =
-        [Nav::Search, Nav::New, Nav::Workspace, Nav::Features, Nav::Checkouts, Nav::Code, Nav::Console];
+    pub const ALL: [Nav; 8] = [
+        Nav::Search,
+        Nav::New,
+        Nav::Workspace,
+        Nav::Features,
+        Nav::Checkouts,
+        Nav::Git,
+        Nav::Code,
+        Nav::Console,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -30,6 +41,7 @@ impl Nav {
             Nav::Workspace => "Workspace",
             Nav::Features => "Features",
             Nav::Checkouts => "Checkouts",
+            Nav::Git => "Git",
             Nav::Code => "Code",
             Nav::Console => "Console",
         }
@@ -43,6 +55,7 @@ impl Nav {
             Nav::Workspace => "nav-workspace",
             Nav::Features => "nav-feature",
             Nav::Checkouts => "nav-checkouts",
+            Nav::Git => "nav-git",
             Nav::Code => "nav-code",
             Nav::Console => "nav-console",
         }
@@ -56,20 +69,40 @@ impl Nav {
             Nav::Workspace => IconName::LayoutDashboard,
             Nav::Features => IconName::Star,
             Nav::Checkouts => IconName::HardDrive,
+            Nav::Git => IconName::Network,
             Nav::Code => IconName::FileText,
             Nav::Console => IconName::SquareTerminal,
         }
     }
 
-    pub fn call(self) -> Call {
-        match self {
+    /// The call a press sends, for every item but Git, whose call names a
+    /// checkout and is `review::entry`'s.
+    pub fn call(self) -> Option<Call> {
+        Some(match self {
             Nav::Search => Call::Palette { open: true },
             Nav::New => Call::ShowComposer { open: true },
             Nav::Workspace => Call::ShowFeatures { open: false },
             Nav::Features => Call::ShowFeatures { open: true },
             Nav::Checkouts => Call::ShowCheckouts { open: true },
+            Nav::Git => return None,
             Nav::Code => Call::ShowCode { open: true },
             Nav::Console => Call::Console { gesture: ConsoleGesture::Tab },
+        })
+    }
+
+    /// Whether a press leaves the Git stage: every item that goes to a stage
+    /// does. Search is a palette over whatever is up, and Git is the stage.
+    pub fn leaves_git(self) -> bool {
+        !matches!(self, Nav::Search | Nav::Git)
+    }
+
+    /// Whether the item is lit: Git while its stage is up, which the window
+    /// draws over whichever stage the session is on, else the item `stage` lights.
+    pub fn lit(self, stage: Stage, git_up: bool) -> bool {
+        if git_up {
+            self == Nav::Git
+        } else {
+            self.lit_by(stage)
         }
     }
 
@@ -122,8 +155,28 @@ mod tests {
     }
 
     #[test]
+    fn git_is_lit_by_its_own_stage_over_whichever_stage_the_session_is_on() {
+        for stage in [Stage::Workspace, Stage::Feature, Stage::Console] {
+            let lit: Vec<Nav> = Nav::ALL.into_iter().filter(|nav| nav.lit(stage, true)).collect();
+            assert_eq!(lit, [Nav::Git], "{stage:?}");
+            assert!(!Nav::Git.lit(stage, false), "no stage of the session's lights Git");
+        }
+        assert!(Nav::Workspace.lit(Stage::Workspace, false));
+    }
+
+    #[test]
+    fn every_stage_item_leaves_git_and_search_and_git_do_not() {
+        let leaving: Vec<Nav> = Nav::ALL.into_iter().filter(|nav| nav.leaves_git()).collect();
+        assert_eq!(leaving, [Nav::New, Nav::Workspace, Nav::Features, Nav::Checkouts, Nav::Code, Nav::Console]);
+        for nav in leaving {
+            assert!(nav.call().is_some(), "{nav:?} goes to a stage with a call");
+        }
+        assert!(Nav::Git.call().is_none(), "Git's call names a checkout the window knows");
+    }
+
+    #[test]
     fn workspace_is_the_feature_stage_shut() {
-        assert!(matches!(Nav::Workspace.call(), Call::ShowFeatures { open: false }));
-        assert!(matches!(Nav::Features.call(), Call::ShowFeatures { open: true }));
+        assert!(matches!(Nav::Workspace.call(), Some(Call::ShowFeatures { open: false })));
+        assert!(matches!(Nav::Features.call(), Some(Call::ShowFeatures { open: true })));
     }
 }

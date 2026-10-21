@@ -237,7 +237,9 @@ impl Render for WorkView {
         let ledger = *Ledger::global(cx);
         // The Console stage and fullscreen give the console the stage: the
         // Workspace's pane has none then (`ConsolePage::showing`).
-        let on_stage = matches!(self.heard.read(cx).console.place, ConsolePlace::Tab | ConsolePlace::Fullscreen);
+        // Git takes the stage from the console too, while its stage is up.
+        let on_stage = !self.heard.read(cx).git_up()
+            && matches!(self.heard.read(cx).console.place, ConsolePlace::Tab | ConsolePlace::Fullscreen);
         let stage = if on_stage { self.console.clone() } else { self.stage.clone() };
         h_flex()
             .id("work")

@@ -35,6 +35,7 @@ use crate::chrome::foot::foot;
 use crate::chrome::nav::Nav;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::review::entry::checkout_here;
 use crate::theme::Ledger;
 
 pub const WIDTH: f32 = 248.0;
@@ -58,6 +59,8 @@ pub struct RailView {
     shown: Option<u64>,
     /// The stage when the tree last changed.
     last_stage: Stage,
+    /// Whether the Git stage was up when the tree last changed.
+    last_git: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -66,21 +69,25 @@ impl RailView {
         let focus = cx.focus_handle();
         let subscriptions = vec![
             cx.observe_in(&heard, window, |this, heard, window, cx| {
-                let (picked, shown, stage) = {
-                    let rail = &heard.read(cx).rail;
-                    (settled(this.picked, rail), rail.shown.as_ref().map(|shown| shown.pane), rail.stage)
+                let (picked, shown, stage, git) = {
+                    let heard = heard.read(cx);
+                    let rail = &heard.rail;
+                    (settled(this.picked, rail), rail.shown.as_ref().map(|shown| shown.pane), rail.stage, heard.git_up())
                 };
                 this.picked = picked;
                 // A pane newly shown, or any shown pane after a stage change,
                 // takes the keys unless a row holds them (SEAM-9 f, g). The
                 // composer and the Feature stage keep them for their own
-                // text (SEAM-9 d, e).
-                let moved = shown != this.shown || stage != this.last_stage;
+                // text (SEAM-9 d, e). Git takes them itself as it appears (its observer runs
+                // after this one) and they come back to the pane through this once
+                // it goes (CROSS-11).
+                let moved = shown != this.shown || stage != this.last_stage || git != this.last_git;
                 if shown.is_some() && moved && this.picked.is_none() && !matches!(stage, Stage::Composer | Stage::Feature) {
                     window.focus(&this.stage, cx);
                 }
                 this.shown = shown;
                 this.last_stage = stage;
+                this.last_git = git;
                 cx.notify();
             }),
             // A press outside the rail lets the pick go (SHELL-RAIL-19).
@@ -89,11 +96,11 @@ impl RailView {
                 cx.notify();
             }),
         ];
-        let (shown, last_stage) = {
-            let rail = &heard.read(cx).rail;
-            (rail.shown.as_ref().map(|shown| shown.pane), rail.stage)
+        let (shown, last_stage, last_git) = {
+            let heard = heard.read(cx);
+            (heard.rail.shown.as_ref().map(|shown| shown.pane), heard.rail.stage, heard.git_up())
         };
-        Self { heard, caller, picked: None, focus, stage, shown, last_stage, _subscriptions: subscriptions }
+        Self { heard, caller, picked: None, focus, stage, shown, last_stage, last_git, _subscriptions: subscriptions }
     }
 
     /// A press outside the rail: the pick goes, and the keys go to the pane
@@ -150,14 +157,51 @@ impl RailView {
         }
     }
 
-    fn nav(&self, rail: &Rail, held: bool, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    /// A press of a nav item. Git asks for the review of the checkout the
+    /// window is on; every item that goes to another stage first closes what
+    /// the session has open of Git, in the same breath (`review::entry`), so
+    /// the stage is the session's to say and is never left standing under
+    /// another.
+    fn go(&mut self, nav: Nav, held: bool, cx: &mut Context<Self>) {
+        if held {
+            return;
+        }
+        let picked = self.picked.map(|picked| picked.checkout);
+        let calls = match nav {
+            Nav::Git => self.heard.update(cx, |heard, cx| {
+                let (open, here) = (heard.open(), checkout_here(&heard.rail, picked));
+                let calls = heard.git.enter(open, here);
+                // A Git pressed with nothing to open puts the stage up on the window's word alone.
+                cx.notify();
+                calls
+            }),
+            _ if nav.leaves_git() => self.leave_git(cx),
+            _ => Vec::new(),
+        };
+        for call in calls.into_iter().chain(nav.call()) {
+            self.caller.call(call);
+        }
+    }
+
+    /// The close of whatever the session has open of Git, for a press that
+    /// goes somewhere else.
+    fn leave_git(&mut self, cx: &mut Context<Self>) -> Vec<Call> {
+        self.heard.update(cx, |heard, cx| {
+            let open = heard.open();
+            let calls = heard.git.leave(open);
+            cx.notify();
+            calls
+        })
+    }
+
+    fn nav(&self, rail: &Rail, git_up: bool, held: bool, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex().flex_shrink_0().px_2().pt_2().pb_1().gap_px().children(Nav::ALL.map(|nav| {
-            let lit = nav.lit_by(rail.stage);
+            let lit = nav.lit(rail.stage, git_up);
             row(nav.id(), ledger)
                 .aria_selected(lit)
                 .aria_label(nav.label())
                 .when(lit, |row| row.bg(ledger.selected).text_color(ledger.foreground))
-                .on_click(cx.listener(move |this, _, _, _| this.ask(held, nav.call())))
+                .on_click(cx.listener(move |this, _, _, cx| this.go(nav, held, cx)))
                 .child(Icon::new(nav.icon()).small())
                 .child(div().flex_1().child(nav.label()))
         }))
@@ -335,6 +379,12 @@ impl RailView {
                 // root on a press inside it, held or not: a held rail picks
                 // nothing, so `press` answers no key.
                 this.pick(held, Picked { checkout, pane: Some(id) });
+                // A pane comes on screen where Git was, so Git goes first.
+                if !held {
+                    for call in this.leave_git(cx) {
+                        this.caller.call(call);
+                    }
+                }
                 this.ask(held, Call::Select { pane: id });
                 cx.notify();
             }))
@@ -389,10 +439,11 @@ impl RailView {
 impl Render for RailView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let ledger = *Ledger::global(cx);
-        let (rail, held, link, alarm) = {
+        let (rail, git_up, held, link, alarm) = {
             let heard = self.heard.read(cx);
             (
                 heard.rail.clone(),
+                heard.git_up(),
                 heard.held(),
                 heard.link(),
                 heard.status.as_ref().and_then(|s| s.alarm.clone()),
@@ -402,7 +453,7 @@ impl Render for RailView {
             .flex_1()
             .min_h_0()
             .when(held, |body| body.opacity(0.5))
-            .child(self.nav(&rail, held, &ledger, cx))
+            .child(self.nav(&rail, git_up, held, &ledger, cx))
             .when(!rail.projects.is_empty(), |body| body.child(self.projects(&rail, held, &ledger, cx)))
             .child(self.listing(&rail, held, &ledger, cx));
         v_flex()
@@ -1042,7 +1093,9 @@ mod tests {
         refused(cx, "ChooseRepository");
         click(cx, &opened, "project-2");
         refused(cx, "SelectProject");
-        for nav in Nav::ALL {
+        // Git is the window's as much as the session's: pressed with no checkout it puts its
+        // stage up on the window's word alone, and `review/stage` has its own refusal test.
+        for nav in Nav::ALL.into_iter().filter(|nav| *nav != Nav::Git) {
             click(cx, &opened, nav.id());
             refused(cx, nav.id());
         }

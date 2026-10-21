@@ -14,9 +14,10 @@
 //! changed any emits a [`Painted`] for each side it changed, which the
 //! terminal of that side alone repaints for.
 
+use std::rc::Rc;
 use std::sync::Arc;
 
-use argus_desktop_core::connection::page::{Connection, Event, Rail, Side, Status};
+use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Rail, ReviewPage, Side, Status};
 use argus_desktop_core::keys::keymap::Group;
 use argus_desktop_core::layout::docks::{DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
@@ -24,6 +25,7 @@ use gpui_kit::{Context, EventEmitter, Task};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::panes::screen::Screen;
+use crate::review::entry::{Entry, Open};
 
 /// How the foot says the daemon is reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +54,16 @@ pub struct Heard {
     pub console: ConsolePage,
     /// Every binding the session sent, for a menu to show the keys beside what it does.
     pub keymap: Vec<Group>,
+    /// The review the session holds, while it is open: what the Git stage's
+    /// Changes tab draws. Shared, so a view that keeps its rows across
+    /// unrelated events does not copy them.
+    pub review: Option<Rc<ReviewPage>>,
+    /// The history the session holds, while it is open.
+    pub history: Option<Rc<HistoryPage>>,
+    /// What only the window knows of the Git stage (`review::entry`): that Git
+    /// was pressed with no checkout to open, and the tab pressed last. Set by
+    /// the rail and the stage, as `resizing` is by the work area.
+    pub git: Entry,
     /// The Workspace pane's rows. Shared with the element drawing them, which
     /// holds the last one while the next is applied (copy on write).
     pub screen: Arc<Screen>,
@@ -77,6 +89,9 @@ impl Heard {
             docks: DocksPage::default(),
             console: ConsolePage::default(),
             keymap: Vec::new(),
+            review: None,
+            history: None,
+            git: Entry::default(),
             screen: Arc::new(Screen::new()),
             first: Arc::new(Screen::new()),
             second: Arc::new(Screen::new()),
@@ -118,6 +133,19 @@ impl Heard {
             Event::Docks(docks) => self.docks = *docks,
             Event::Console(console) => self.console = *console,
             Event::Keymap { groups, .. } => self.keymap = groups,
+            // A dialog is held only while it is open: `open` false is the session's word that it is not.
+            Event::Review(page) => {
+                if page.open {
+                    self.git.opened(page.checkout);
+                }
+                self.review = page.open.then(|| Rc::new(*page));
+            }
+            Event::History(page) => {
+                if page.open {
+                    self.git.history_opened();
+                }
+                self.history = page.open.then(|| Rc::new(*page));
+            }
             // The Workspace's side and the console's two are drawn; the
             // splits' and the views' frames are dropped, as a page drops one
             // for a side it has no screen for.
@@ -170,6 +198,16 @@ impl Heard {
     /// Whether the console says its keys are in `pane`.
     pub fn keyed(&self, pane: Option<u64>) -> bool {
         pane.is_some() && self.console.typing == pane
+    }
+
+    /// What the session has open of the Git stage.
+    pub fn open(&self) -> Open {
+        Open { review: self.review.is_some(), history: self.history.is_some() }
+    }
+
+    /// Whether the Git stage is up: the work area draws it in the pane's place.
+    pub fn git_up(&self) -> bool {
+        self.git.up(self.open())
     }
 
     pub fn connection(&self) -> Connection {

@@ -365,6 +365,7 @@ dependencies = [
  "proptest",
  "tokio",
  "tracing",
+ "unicode-width",
 ]
 
 [[package]]
