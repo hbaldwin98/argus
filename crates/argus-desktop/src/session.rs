@@ -4176,7 +4176,7 @@ mod tests {
                 Box::new(|s| {
                     let dialog = argus_protocol::ExtDialog {
                         title: "Restart".into(),
-                        kind: argus_protocol::ExtDialogKind::Confirm { message: "sure?".into(), yes: None },
+                        kind: argus_protocol::ExtDialogKind::Confirm { message: "sure?".into(), yes: None, danger: false },
                         answers: None,
                     };
                     s.receive(ServerMsg::ExtensionDialog { extension: "docker".into(), id: 9, dialog, prompted: false });
@@ -6721,7 +6721,7 @@ mod tests {
         let mut s = session(Hello::this_build());
         let dialog = argus_protocol::ExtDialog {
             title: "Restart".into(),
-            kind: argus_protocol::ExtDialogKind::Confirm { message: "sure?".into(), yes: None },
+            kind: argus_protocol::ExtDialogKind::Confirm { message: "sure?".into(), yes: None, danger: false },
             answers: Some(4),
         };
         s.receive(ServerMsg::ExtensionDialog { extension: "docker".into(), id: 9, dialog, prompted: true });

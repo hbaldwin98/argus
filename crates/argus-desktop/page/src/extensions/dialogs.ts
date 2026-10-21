@@ -77,6 +77,7 @@ export function drawExtensionDialog(page: ExtDialogPage): void {
       answer(id, { form: Object.fromEntries(fields.map((f) => [f.name, f.input.value])) });
   }
   const yes = 'confirm' in kind ? (kind.confirm.yes ?? 'Yes') : 'pick' in kind ? 'Choose' : 'OK';
+  const dangerous = 'confirm' in kind && kind.confirm.danger;
   const card = el(
     'section',
     {
@@ -121,7 +122,12 @@ export function drawExtensionDialog(page: ExtDialogPage): void {
       el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()),
       el(
         'button',
-        { class: 'btn primary', type: 'button', id: 'ext-dialog-yes', onclick: submit },
+        {
+          class: dangerous ? 'btn danger' : 'btn primary',
+          type: 'button',
+          id: 'ext-dialog-yes',
+          onclick: submit,
+        },
         yes,
       ),
     ),

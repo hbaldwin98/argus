@@ -140,7 +140,7 @@ async fn a_client_that_fell_behind_is_put_its_open_dialogs_again() {
 
     let dialog = argus_protocol::ExtDialog {
         title: "t".into(),
-        kind: argus_protocol::ExtDialogKind::Confirm { message: "m".into(), yes: None },
+        kind: argus_protocol::ExtDialogKind::Confirm { message: "m".into(), yes: None, danger: false },
         answers: None,
     };
     let id = daemon.raise_dialog("docker", dialog).unwrap();

@@ -114,6 +114,19 @@ mod tests {
     }
 
     #[test]
+    fn the_page_is_told_when_a_confirm_is_dangerous() {
+        let mut dialogs = ExtensionDialogs::default();
+        let confirm = ExtDialog {
+            title: "Stop".into(),
+            kind: ExtDialogKind::Confirm { message: "Stop it?".into(), yes: None, danger: true },
+            answers: None,
+        };
+        dialogs.asked("docker".into(), 1, confirm, false);
+        let json = serde_json::to_value(dialogs.page().unwrap()).unwrap();
+        assert_eq!(json["dialog"]["kind"]["confirm"]["danger"], true);
+    }
+
+    #[test]
     fn a_withdrawn_question_goes_and_cannot_be_answered() {
         let mut dialogs = ExtensionDialogs::default();
         dialogs.asked("docker".into(), 1, prompt("first"), false);

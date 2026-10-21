@@ -6983,6 +6983,7 @@ export const sent = [
     "answers": null,
     "kind": {
       "confirm": {
+        "danger": false,
         "message": "sure?",
         "yes": null
       }

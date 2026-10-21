@@ -926,7 +926,7 @@ mod tests {
 
         let id = daemon.raise_dialog("docker", argus_protocol::ExtDialog {
             title: "t".into(),
-            kind: argus_protocol::ExtDialogKind::Confirm { message: "m".into(), yes: None },
+            kind: argus_protocol::ExtDialogKind::Confirm { message: "m".into(), yes: None, danger: false },
             answers: None,
         })
         .unwrap();

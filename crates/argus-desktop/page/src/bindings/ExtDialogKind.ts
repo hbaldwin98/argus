@@ -2,4 +2,11 @@
 import type { ExtField } from "./ExtField";
 import type { ExtItem } from "./ExtItem";
 
-export type ExtDialogKind = { "confirm": { message: string, yes: string | null, } } | { "prompt": { message: string, initial: string, } } | { "pick": { message: string, items: Array<ExtItem>, } } | { "form": { fields: Array<ExtField>, } };
+export type ExtDialogKind = { "confirm": { message: string, yes: string | null, 
+/**
+ * Saying yes ends or removes something: the yes button is drawn as a
+ * danger button. Only the style changes, Enter still confirms, since
+ * the person has the message in front of them. Defaulted so every
+ * extension written before it keeps working.
+ */
+danger: boolean, } } | { "prompt": { message: string, initial: string, } } | { "pick": { message: string, items: Array<ExtItem>, } } | { "form": { fields: Array<ExtField>, } };

@@ -603,7 +603,8 @@ their cancelling it, arrives later as an event naming that id.
 {"dialog": 7}
 ```
 
-- `confirm` is yes or no; `yes` is what its button says.
+- `confirm` is yes or no; `yes` is what its button says, and `danger: true` draws that button as a
+  destructive one when saying yes ends or removes something (Enter still confirms).
 - `prompt` takes one line of text, starting from `initial`.
 - `pick` is one of at most {{MAX_ITEMS}} `items`, each a `key` that comes back and a `label`.
 - `form` is named lines of text, at most {{MAX_ITEMS}} `fields`, answered together.

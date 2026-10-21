@@ -2077,7 +2077,7 @@ pub fn scenes() -> Vec<Scene> {
                 id: 9,
                 dialog: ExtDialog {
                     title: "Stop api-web".into(),
-                    kind: ExtDialogKind::Confirm { message: "Stop api-web? api-worker depends on it and stops with it.".into(), yes: Some("Stop both".into()) },
+                    kind: ExtDialogKind::Confirm { message: "Stop api-web? api-worker depends on it and stops with it.".into(), yes: Some("Stop both".into()), danger: true },
                     answers: None,
                 },
                 prompted: false,

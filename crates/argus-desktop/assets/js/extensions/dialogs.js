@@ -72,6 +72,7 @@ export function drawExtensionDialog(page) {
         submit = () => answer(id, { form: Object.fromEntries(fields.map((f) => [f.name, f.input.value])) });
     }
     const yes = 'confirm' in kind ? (kind.confirm.yes ?? 'Yes') : 'pick' in kind ? 'Choose' : 'OK';
+    const dangerous = 'confirm' in kind && kind.confirm.danger;
     const card = el('section', {
         class: 'dialog ext-dialog',
         role: 'dialog',
@@ -92,7 +93,12 @@ export function drawExtensionDialog(page) {
         },
     }, el('div', { class: 'dhead' }, el('div', { class: 'grow' }, el('div', { class: 'type-title', id: 'ext-dialog-title' }, dialog.title), 
     // Who asked sits under the title, where the question is read, not in the footer.
-    el('div', { class: 'meta ext-asker' }, `Asked by the ${page.extension} extension`, el('span', { class: 'ext-waiting' }, waitingWords(page.waiting)))), closeButton(cancel)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()), el('button', { class: 'btn primary', type: 'button', id: 'ext-dialog-yes', onclick: submit }, yes)));
+    el('div', { class: 'meta ext-asker' }, `Asked by the ${page.extension} extension`, el('span', { class: 'ext-waiting' }, waitingWords(page.waiting)))), closeButton(cancel)), el('div', { class: 'dbody prose' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', type: 'button', onclick: cancel }, 'Cancel ', escKey()), el('button', {
+        class: dangerous ? 'btn danger' : 'btn primary',
+        type: 'button',
+        id: 'ext-dialog-yes',
+        onclick: submit,
+    }, yes)));
     holder.replaceChildren(card);
     if (page.prompted) {
         (document.getElementById('ext-dialog-first') ?? document.getElementById('ext-dialog-yes'))?.focus();

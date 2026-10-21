@@ -313,7 +313,7 @@ async fn a_command_carries_where_the_person_was_and_its_id() {
 }
 
 fn confirm(answers: Option<u64>) -> ExtDialog {
-    ExtDialog { title: "Restart".into(), kind: ExtDialogKind::Confirm { message: "sure?".into(), yes: None }, answers }
+    ExtDialog { title: "Restart".into(), kind: ExtDialogKind::Confirm { message: "sure?".into(), yes: None, danger: false }, answers }
 }
 
 /// The client a dialog was put to, and whether it was prompted.

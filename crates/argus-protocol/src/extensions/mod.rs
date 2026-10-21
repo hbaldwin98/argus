@@ -441,6 +441,12 @@ pub enum ExtDialogKind {
         message: String,
         #[serde(default)]
         yes: Option<String>,
+        /// Saying yes ends or removes something: the yes button is drawn as a
+        /// danger button. Only the style changes, Enter still confirms, since
+        /// the person has the message in front of them. Defaulted so every
+        /// extension written before it keeps working.
+        #[serde(default)]
+        danger: bool,
     },
     /// One line of text.
     Prompt {
@@ -773,6 +779,17 @@ mod tests {
         assert_eq!(serde_json::to_string(&answer).unwrap(), r#"{"event":"answer","dialog":2,"answer":{"picked":"prod"}}"#);
         let yes = ExtEvent::Answer { dialog: 2, answer: ExtAnswer::Yes };
         assert_eq!(serde_json::to_string(&yes).unwrap(), r#"{"event":"answer","dialog":2,"answer":"yes"}"#);
+    }
+
+    #[test]
+    fn a_confirm_is_not_dangerous_unless_it_says_so() {
+        // Extensions written before `danger` existed send neither field.
+        let old: ExtDialogKind = serde_json::from_str(r#"{"confirm":{"message":"sure?"}}"#).unwrap();
+        assert_eq!(old, ExtDialogKind::Confirm { message: "sure?".into(), yes: None, danger: false });
+        let set = ExtDialogKind::Confirm { message: "Stop it?".into(), yes: Some("Stop".into()), danger: true };
+        let json = serde_json::to_string(&set).unwrap();
+        assert_eq!(json, r#"{"confirm":{"message":"Stop it?","yes":"Stop","danger":true}}"#);
+        assert_eq!(serde_json::from_str::<ExtDialogKind>(&json).unwrap(), set);
     }
 
     #[test]
