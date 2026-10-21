@@ -162,19 +162,19 @@ The feature board holds each with its reasons; in short:
 - The seven cross-cutting behaviour questions: see
   `gpui/parity/cross-cutting.md` §Decided.
 
-## Still open
-
-- **Where `Session` lives.** `argus-desktop` is a binary with no library
-  target, so a new crate cannot use `session.rs` as it stands. Either the
-  Tauri-free modules move into a crate both front ends depend on, or
-  `argus-desktop` grows a library target; the architecture phase decides.
+- **`Session` moves into a shared crate.** `argus-desktop` is a binary
+  with no library target; its Tauri-free modules (`session.rs` and the
+  per-surface state) move into a crate both front ends depend on, rather
+  than `argus-desktop` growing a library target that would pull Tauri
+  into the new crate's build.
 
 ## The Code editor
 
 `main` now edits a working file inline in the Code stage: CodeMirror with
 Vim mode, tree-sitter grammars installed on request, live with agents
-(`page/src/code/editor.ts`, `sync.ts`, `grammar/`). `gpui-kit`'s `Editor`
-has tree-sitter but no Vim mode, and the live sync is ours. It is its own
+(`page/src/code/editor.ts`, `sync.ts`, `grammar/`). The GPUI editor keeps
+Vim mode, built on `gpui-kit`'s `Editor`, which has tree-sitter but no
+Vim layer; the live sync with agents is built for GPUI too. It is its own
 track, inventoried and specced after the spike, and does not hold the
 spike up.
 
