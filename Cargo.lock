@@ -110,7 +110,7 @@ dependencies = [
 
 [[package]]
 name = "argus"
-version = "0.38.1"
+version = "0.38.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "argus-desktop"
-version = "0.38.1"
+version = "0.38.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "argus-protocol"
-version = "0.38.1"
+version = "0.38.2"
 dependencies = [
  "compact_str 0.10.0",
  "directories",
@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "argusd"
-version = "0.38.1"
+version = "0.38.2"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
