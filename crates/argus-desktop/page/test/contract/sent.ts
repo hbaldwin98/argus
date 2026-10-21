@@ -3299,6 +3299,20 @@ export const sent = [
           "label": "open in your editor"
         },
         {
+          "action": "editHere",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "Enter",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "edit the file here; Escape puts it back"
+        },
+        {
           "action": "pick",
           "chords": [
             {

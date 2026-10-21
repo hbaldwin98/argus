@@ -18,6 +18,7 @@ use crate::chrome::add_project::{AddProjectGesture, AddProjectPage};
 use crate::board::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::files::FilesGesture;
 use crate::checkouts::table::Checkouts;
+use crate::code::edit::{EditEvent, EditGesture};
 use crate::code::stage::{CodeGesture, CodePage};
 use crate::review::comment_box::CommentPage;
 use crate::panes::console::{ConsoleGesture, ConsolePage};
@@ -124,6 +125,8 @@ pub enum Call {
     ShowCode { open: bool },
     /// A gesture in the Code stage.
     Code { gesture: CodeGesture },
+    /// The editor's ask of the daemon, put to it as it is.
+    Edit { gesture: EditGesture },
     /// `open` true shows the composer, false goes back to the Workspace.
     ShowComposer { open: bool },
     /// The composer's start: a shell without a `template`, else an agent
@@ -456,6 +459,8 @@ pub enum Event {
     /// The Code stage, whole, whenever it changes; `open` false once it
     /// goes away.
     Code(Box<CodePage>),
+    /// The daemon's word on a file the editor has open, as it arrives.
+    Edit(EditEvent),
     /// The note a new feature is written as, whole, whenever it changes;
     /// `open` false once it closes.
     Capture(Box<CapturePage>),

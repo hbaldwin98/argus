@@ -319,6 +319,7 @@ impl Session {
         self.awaited.forget_asked();
         self.features.forget_asked();
         self.code.forget_sent_comment();
+        self.code.set_can_edit(self.status.daemon_can(argus_protocol::CODE_EDIT));
         self.dialogs.forget_sent_comments();
         self.sessions = Sessions::default();
         self.older = OlderDaemon::default();
@@ -730,7 +731,8 @@ impl Session {
             | Call::CloseWindow
             | Call::DragWindow
             | Call::SnapLayouts
-            | Call::OpenUrl { .. } => self.finish(),
+            | Call::OpenUrl { .. }
+            | Call::Edit { .. } => self.finish(),
             Call::OpenView { pane, id } => {
                 if self.views.open(PaneId(pane), id) {
                     self.show_views_panel();
@@ -5366,7 +5368,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 144] = [
+    const CALLS: [&str; 145] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5511,6 +5513,7 @@ mod tests {
         r#"{"call":"copy_text","text":"ab"}"#,
         r#"{"call":"rename_pane","pane":1,"title":"the pty deadlock"}"#,
         r#"{"call":"reveal_checkout","checkout":1}"#,
+        r#"{"call":"edit","gesture":{"on":"change","checkout":1,"path":"a.rs","base":0,"changes":[{"from":0,"to":1,"insert":"x"}]}}"#,
     ];
 
     /// Each call reads as the page writes it and goes through the session,

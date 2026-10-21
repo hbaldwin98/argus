@@ -225,6 +225,8 @@ pub enum Action {
     AsReview,
     /// The file at the cursor in the person's editor.
     OpenEditor,
+    /// Edit the file read where it is, in the Code stage.
+    EditHere,
     /// Show the selected checkout's files beside the table, or put them away.
     Files,
     /// Open the folder at the cursor, or step into it once open.
@@ -685,6 +687,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Code, &[Chord::key("p").ctrl()], Filter, "go to a file"),
     bind(Place::Code, &[Chord::key("f").ctrl()], Search, "search the checkout"),
     bind(Place::Code, &[Chord::key("e"), Chord::key("E")], OpenEditor, "open in your editor"),
+    bind(Place::Code, &[Chord::key("Enter")], EditHere, "edit the file here; Escape puts it back"),
     bind(Place::Code, &[Chord::key("v"), Chord::key("V")], Pick, "pick a range"),
     bind(Place::Code, &[Chord::key("c"), Chord::key("C")], Comment, "comment to an agent"),
     bind(Place::Code, &[Chord::key("r"), Chord::key("R")], Refresh, "read the files again"),

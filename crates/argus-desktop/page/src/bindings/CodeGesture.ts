@@ -6,4 +6,4 @@ import type { ReviewJumpGesture } from "./ReviewJumpGesture";
 /**
  * What was done in the Code stage.
  */
-export type CodeGesture = { "on": "click", target: CodeClick, } | { "on": "action", action: Action, } | { "on": "jump", gesture: ReviewJumpGesture, } | { "on": "search", gesture: ReviewJumpGesture, } | { "on": "glob", glob: string, } | { "on": "comment", body: string | null, };
+export type CodeGesture = { "on": "click", target: CodeClick, } | { "on": "action", action: Action, } | { "on": "jump", gesture: ReviewJumpGesture, } | { "on": "search", gesture: ReviewJumpGesture, } | { "on": "glob", glob: string, } | { "on": "comment", body: string | null, } | { "on": "edited", line: number, };

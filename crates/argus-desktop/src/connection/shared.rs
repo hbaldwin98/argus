@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, watch, Notify};
 
 use crate::system::clipboard;
 use crate::system::notifications;
+use crate::code::edit::EditEvent;
 use crate::connection::page::Event;
 use crate::session::Session;
 use crate::settings::remembered::{self, Settings};
@@ -106,6 +107,19 @@ impl Shared {
 
     pub fn disconnected(&self) {
         *lock(&self.out) = None;
+        self.tell_page(Event::Edit(EditEvent::Lost));
+    }
+
+    /// Puts the editor's ask to the daemon without the session: nothing in
+    /// it changes, and every page it holds would be built again to say so.
+    pub fn relay(&self, msg: ClientMsg) {
+        self.send(vec![msg]);
+    }
+
+    /// Tells the page what the daemon said of a file its editor has open,
+    /// past the session as `relay` is.
+    pub fn tell_page(&self, event: Event) {
+        self.publish(vec![event]);
     }
 
     /// A page has loaded and holds nothing: it hears everything.

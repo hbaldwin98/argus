@@ -173,6 +173,8 @@ function stand(scene, live) {
         channel.onmessage(event);
       }
     };
+    // For a script to play what the daemon would say after the scene.
+    window.__deliver = deliver;
     const ask = (path, body) => {
       window.__pending++;
       return fetch('/__live/' + path, { method: 'POST', body: JSON.stringify(body) })

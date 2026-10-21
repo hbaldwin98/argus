@@ -787,10 +787,18 @@ with the lines it changed washed as a review washes them and a mark where lines 
 ruler beside it marking where in the whole file it changed, and that file's outline with the
 changes in it listed. A file whose only change is its line endings is not counted as changed.
 Opened from a staged review it reads the index, and from the history a commit, and says so in its
-header. It is read-only; `e` opens the file in your editor.
+header. `e` opens the file in your editor.
+
+Enter edits a working-tree file in place, at the cursor's line, and Escape (or **Done**) puts the
+editor away. What you type is written as you type, once you pause; when an agent writes the same
+file, its change appears in the editor as it lands, lit for a moment, with your cursor and your
+unwritten typing kept. If the agent changed the very characters you were typing, its text is shown
+beside yours and nothing is written until you choose **Keep mine** or **Take the agent's**. Undo
+undoes only your own typing. Ctrl S writes at once; Ctrl F searches the file.
 
 | Key | Action |
 | --- | --- |
+| Enter | Edit the file here (the working tree only) |
 | `j` / `k`, arrows | Move through the file's lines |
 | Home / End | First or last line |
 | `]` / `[` | The next or previous change |

@@ -192,7 +192,9 @@ back. A panel moved to a dock is shown there, out of fullscreen, the Console sta
 the dock it left shows the tab before it, or closes once empty. A `desktop.json` from before the
 docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
 right dock's, and each extension view where the person had put it. Rust holds the model
-(`session`); the page draws what it is sent and reports gestures. It is TypeScript in
+(`session`); the page draws what it is sent and reports gestures. The one exception is the Code
+stage's editor, whose buffer is the page's: a key must be drawn in the handler that heard it, with
+no round trip to Rust (see "Editing a file"). It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject, in folders named as the window's Rust ones
 are, so a surface's page module sits under the same folder as its Rust module. At the root are
 `main`, `state` (what the page holds) and `chrome` (the sidebar, strip and foot, which draw every
@@ -218,7 +220,9 @@ them `values` draws one value, with `refs` for those that point into Argus, `chi
 `actions` draws the buttons an agent put in a view; and `views/ctx` and `system/copy` serve them
 all. `extensions/` holds `views` and `dialogs` (an extension's question). `agents/` holds `compose`,
 `sessions_dialog` and `transcript`. `checkouts/stage` and `code/stage` draw the Checkouts and Code
-stages (Checkouts is a slim table of Checkout, State and Last commit, State saying nothing for a
+stages, `code/editor` the Code stage's editor, `code/sync` the editor's buffer kept in step with the
+disk, and `code/colours` its syntax colours (they are loaded the first time a file is edited, with
+`vendor/codemirror`, CodeMirror bundled by esbuild in `npm run build`) (Checkouts is a slim table of Checkout, State and Last commit, State saying nothing for a
 clean idle checkout, with the selected checkout in a side column that the files panel replaces
 while open; `checkouts/says` words the State cell); `checkouts/files` draws a checkout's files beside the Checkouts table, a column of it, or
 a drawer over it when the stage is under 900px, listed by the daemon a folder at a time (`ListDir`,
@@ -390,6 +394,7 @@ live in this crate and a contract written twice drifts in silence.
 | `review/agent_comment` | a comment on picked lines to an agent, from a review, a commit's review or the Code stage in either client: whether one may be written, which agent hears it as agents come and go, the words each refusal is said in, and the message that sends it |
 | `review/history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
 | `code` | a checkout's code as the Code stage reads it: which version, a file's lines and the ones that version changed, what the file defines, and where text occurs across the checkout |
+| `code/edit` | a working file edited live: the changes the daemon and a client trade, positioned in UTF-16 units of the text with CRLF read as LF, and the version each is made on |
 | `files` | a checkout's folder as it is on disk, one level: each entry's kind, size and age, and what Git makes of it, with the cap on how many one listing carries |
 | `paths` | where Argus keeps its files and which instance it is, shared so `ARGUS_CONFIG_DIR` points the daemon and every client at one place |
 | `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
@@ -505,6 +510,8 @@ to the type or its locking.
 | `syntax`, `syntax/grammar` | which tree-sitter grammar reads a file, chosen by its extension, so highlighting and outlines agree on its language |
 | `syntax/highlight` | what each token of a diff's or a file's lines is, for highlighting |
 | `code`, `code/search`, `code/symbols` | what the Code stage reads: a version's files and how much each changed, one file's lines with the ones it changed, where text occurs in the working tree, and what a file defines |
+| `code/edit` | a working file held open for one connection to edit: its text and version, a client's change written only onto the version it was made on, and any other write read back, settled, and sent as a change as it lands |
+| `code/edit/text` | a text's changes in the editor's positions: applying a client's change set whole or refusing it, and the change set between two texts, a line diff narrowed to the characters |
 | `files` | one folder of a checkout read off disk, never past its root, with each entry marked changed, untracked or ignored |
 | `config` | `projects.toml`, which is read and never written |
 | `system`, `system/daemon_lock`, `system/logging`, `system/command`, `system/paths`, `system/editor` | what the daemon asks of the machine it runs on: the one daemon allowed to own an instance, where its diagnostics go, a command run without a console window, whether two spellings name one place, and the person's editor |
@@ -675,6 +682,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `checkouts/files_page` | what that panel draws from the folders read: the tree's rows in order with each entry's mark, the breadcrumb, and the footer's size and age |
 | `checkouts/table` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
 | `code` | the Code stage and the files it reads in a checkout |
+| `code/edit` | the page's editor and the daemon joined: its asks put to the daemon and the answers handed back as they are, past the session, which keeps none of it |
 | `code/stage` | the Code stage as the window holds it once opened — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the comment being written, the go-to-file field, the search, and the review it was opened from — the daemon's answers it takes, what its gestures ask of the daemon and leave to the window, and the page and gestures it trades with the page, last sent while it is up |
 | `code/tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
 | `review` | the review and history dialogs as the window holds them: which is open or parked, the daemon's answers and refusals routed to the one that asked whether open or parked, the layout the next review opens on, and what the page last heard of each |
@@ -2000,6 +2008,39 @@ words as a review's. Its anchor is the side
 of a review the version is: the working tree as unstaged work, the index as staged, a commit as
 that commit. It carries the version's line numbers only; the other side's would need a diff, and
 an agent reading the comment needs no more than one.
+
+### Editing a file
+
+Enter on a working-tree file puts an editor in place of the file read, at the cursor's line;
+Escape (or Done) puts it away once what was typed is written, and the file is read again there.
+Only the working tree is edited, only by a daemon that listed `code-edit`, and only a file the
+stage could read as text. The editor is CodeMirror in the page, and its buffer is the page's, the
+one thing in the window Rust does not hold: a key is applied and drawn in the handler that heard it
+and never waits on Rust or the daemon. Its syntax colours are not CodeMirror's language support,
+which parses inside the key's transaction and redrew every visible line's colours there; the
+colours drawn move with the text at once, and the file is parsed incrementally in a task right
+after the key, which lands before the frame that paints it. The grammar is used only to colour, so
+indentation on Enter copies the line's own.
+
+The file on disk is the authority, and the daemon referees it. `OpenEdit` reads the file, CRLF read
+as LF and written back as it was, and watches its folder for writes. A client's `Edit` is written
+only when its `base` is the version the daemon holds and the disk still holds that text; otherwise
+the write that moved it is sent first as `EditChanged`, and the edit refused with no reason, so
+the client makes it again on top. Any other write — an agent's above all — is sent as
+`EditChanged` the moment it lands: the daemon waits only until two reads 8ms apart agree, so a
+write that truncates first is never sent half done, and narrows the change to the characters that
+differ. Positions count UTF-16 units, as the editor does. What is typed is written once typing
+pauses for 200ms, or every second while it never does; one write is in flight at a time.
+
+In the page, `sync` holds the disk's text at the daemon's version, the write in flight, and what
+was typed since. An agent's change that touches nothing the person has not yet written lands in
+the buffer at once, lit for a moment, and what was typed is moved over it, so the cursor stays
+where it was and nothing is undone by it. One that touches the same characters is held: the
+buffer keeps what was typed, the agent's text is shown beside it, and nothing is written until the
+person keeps theirs (written over the agent's) or takes the agent's (their own clashing changes
+dropped, the rest kept). Undo never undoes the agent's change. The connection going leaves the
+buffer as it is; once back, the file is opened again and what it became meanwhile is folded in the
+same way.
 
 ## Features and the decision board
 

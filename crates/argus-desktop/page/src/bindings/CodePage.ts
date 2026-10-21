@@ -80,4 +80,14 @@ pick: string | null,
 /**
  * The comment box, while it is open.
  */
-comment: CommentPage | null, };
+comment: CommentPage | null, 
+/**
+ * Whether the file read may be edited here: it is the working tree's,
+ * read whole, and the daemon edits.
+ */
+editable: boolean, 
+/**
+ * Whether the page's editor stands in for the file read. Its buffer
+ * is the page's; this says only that it is up.
+ */
+editing: boolean, };

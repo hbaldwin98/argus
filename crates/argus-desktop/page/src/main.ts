@@ -15,7 +15,7 @@ import {
   unpickRail,
 } from './chrome.js';
 import { drawCheckouts } from './checkouts/stage.js';
-import { drawCode } from './code/stage.js';
+import { drawCode, editEvent } from './code/stage.js';
 import { drawDocks, listen as listenToDocks } from './layout/docks.js';
 import { clearComposer, focusComposer } from './agents/compose.js';
 import { $ } from './kit/dom.js';
@@ -149,6 +149,9 @@ function receive(event: Event): void {
     case 'code':
       state.code = event;
       drawCode();
+      break;
+    case 'edit':
+      editEvent(event);
       break;
     case 'features':
       state.features = event;

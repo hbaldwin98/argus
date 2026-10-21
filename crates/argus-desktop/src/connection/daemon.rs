@@ -182,7 +182,11 @@ async fn connect_once(shared: &Shared, target: &Target, greet: bool) -> Ended {
     let mut stopped = false;
     while let Some(msg) = link.incoming.recv().await {
         stopped |= matches!(msg, ServerMsg::Stopping);
-        shared.act(|s| s.receive(msg));
+        if !crate::code::edit::is_edit(&msg) {
+            shared.act(|s| s.receive(msg));
+        } else if let Some(event) = crate::code::edit::event(msg) {
+            shared.tell_page(crate::connection::page::Event::Edit(event));
+        }
     }
     shared.disconnected();
     Ended::Closed { stopped }

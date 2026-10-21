@@ -6124,6 +6124,129 @@ button.cf-row {
   box-shadow: var(--mark-sel);
   background-image: linear-gradient(var(--fill), var(--fill));
 }
+/* The Code stage's editor: CodeMirror, dressed as the reading view is.
+   Each rule names .code-editor .cm-editor so it outranks the base theme
+   CodeMirror injects. */
+.code-editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-sunken);
+}
+.ed-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-height: 26px;
+  padding: var(--sp-2) var(--sp-12);
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+  border-bottom: 1px solid var(--line);
+}
+.ed-state.unsaved,
+.ed-state.saving {
+  color: var(--fg-muted);
+}
+.ed-state.failed,
+.ed-state.closed,
+.ed-state.clash {
+  color: var(--danger);
+}
+.ed-state.offline {
+  color: var(--attention);
+}
+/* CodeMirror holds its editor at position: relative, so it fills the mount
+   by height; its own scroller then scrolls the file, not the page. */
+.ed-mount {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.code-editor .cm-editor {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  color: var(--fg);
+  background: var(--bg-sunken);
+}
+.code-editor .cm-editor.cm-focused {
+  outline: none;
+}
+.code-editor .cm-editor .cm-scroller {
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  line-height: 20px;
+}
+.code-editor .cm-editor .cm-content {
+  padding: var(--sp-4) 0;
+  caret-color: var(--fg);
+}
+.code-editor .cm-editor .cm-gutters {
+  background: var(--bg-sunken);
+  color: var(--fg-faint);
+  border-right: none;
+}
+.code-editor .cm-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 44px;
+  padding: 0 var(--sp-12) 0 var(--sp-4);
+}
+.code-editor .cm-editor .cm-activeLine,
+.code-editor .cm-editor .cm-activeLineGutter {
+  background: var(--fill);
+}
+.code-editor .cm-editor .cm-cursor {
+  border-left: 2px solid var(--accent);
+}
+.code-editor .cm-editor .cm-selectionBackground,
+.code-editor .cm-editor.cm-focused .cm-selectionBackground {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.code-editor .cm-editor .cm-selectionMatch {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.code-editor .cm-editor .cm-matchingBracket {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.code-editor .cm-editor .cm-panels {
+  background: var(--bg-surface);
+  color: var(--fg);
+  border-bottom: 1px solid var(--line);
+}
+.code-editor .cm-editor .cm-panel input,
+.code-editor .cm-editor .cm-panel button {
+  font: inherit;
+  color: inherit;
+}
+/* What an agent just wrote, lit and let fade. */
+.code-editor .cm-editor .cm-agent-edit {
+  animation: agent-edit 1.6s ease-out forwards;
+}
+@keyframes agent-edit {
+  from {
+    background: color-mix(in srgb, var(--blue) 35%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+.code-editor .cm-editor .cm-clash {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  text-decoration: underline wavy color-mix(in srgb, var(--danger) 70%, transparent);
+}
+.code-editor .cm-editor .cm-theirs {
+  margin-left: var(--sp-6);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-xs);
+  font-style: italic;
+  white-space: pre;
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--blue) 18%, transparent);
+}
 .cgone {
   padding-left: 68px;
   font-family: var(--font-ui);

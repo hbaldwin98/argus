@@ -2,7 +2,8 @@
 // file read whole with its changes washed and ruled beside it, and what the
 // file defines. Rust holds the files, the cursor, the fields and the search
 // (`src/code/stage.rs`); the page draws them and says what was clicked or
-// typed.
+// typed. A file edited is the exception: its buffer is `editor`'s, which
+// this loads the first time one is.
 import { commentBox, settleDraft } from '../review/comment_box.js';
 import { $, el, ghosts, icon } from '../kit/dom.js';
 import { fileRow, treeRows } from '../kit/file_tree.js';
@@ -12,6 +13,24 @@ import { call } from '../connection/tauri.js';
 import { dragEdge } from '../layout/edge.js';
 function gesture(g) {
     call('code', { gesture: g });
+}
+let editor = null;
+let loadingEditor = false;
+/** The editor, or null while it loads; the stage is drawn again once it has. */
+function theEditor() {
+    if (editor || loadingEditor)
+        return editor;
+    loadingEditor = true;
+    void import('./editor.js').then((loaded) => {
+        editor = loaded;
+        drawCode();
+    });
+    return null;
+}
+/** The daemon's word on a file being edited. Only an editor that is loaded
+ *  has asked for one. */
+export function editEvent(event) {
+    editor?.receive(event);
 }
 const ways = {
     id: 'code-comment',
@@ -431,6 +450,10 @@ function start(c) {
 }
 function file(c) {
     let body;
+    if (c.editing && c.path) {
+        const loaded = theEditor();
+        return el('section', { class: 'code-file editing', 'data-path': c.path }, header(c), el('div', { class: 'code-wrap' }, loaded ? loaded.host(c) : ghosts([[0.5], [0.9], [0.8], [0.7]])));
+    }
     if (c.failed && c.lines.length === 0)
         body = el('div', { class: 'review-empty fg-muted' }, c.failed);
     else if (!c.path) {
@@ -458,6 +481,12 @@ function file(c) {
             ...(c.removedAtEnd > 0 ? [gone(c.removedAtEnd)] : []),
         ];
     }
+    return el('section', { class: 'code-file' }, header(c), el('div', { class: 'code-wrap' }, el('div', { class: 'code-body', id: 'code-body', onscroll: trackView }, body), c.lines.length > 0 && ruler(c)));
+}
+/** The file's name and version, what is known of it, and its buttons. */
+function header(c) {
+    if (!c.path && !c.back)
+        return null;
     const here = c.search?.files.find((f) => f.path === c.path);
     const matchAt = here?.hits.findIndex((h) => h.on) ?? -1;
     const facts = [
@@ -466,11 +495,14 @@ function file(c) {
         c.language,
         c.lines.length > 0 && `${c.lines.length} lines`,
     ].filter(Boolean);
-    return el('section', { class: 'code-file' }, (c.path || c.back) &&
-        el('div', { class: 'fhdr' }, c.path && filePath(c.path), c.version && el('span', { class: 'pill mono' }, c.version), el('span', { class: 'grow' }), el('span', { class: 'meta' }, facts.join(' · '), (c.added > 0 || c.removed > 0) && ' · ', c.added > 0 && el('span', { class: 'fg-ok' }, `+${c.added}`), c.added > 0 && c.removed > 0 && ' ', c.removed > 0 && el('span', { class: 'fg-danger' }, `−${c.removed}`)), c.back &&
-            el('button', { class: 'btn sm', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, kbd('B')), c.path &&
-            el('button', { class: 'btn sm', onclick: () => codeAction('openEditor') }, 'Open in editor', kbd('E')), !c.outline &&
-            el('button', { class: 'btn sm outline-show', onclick: () => click({ on: 'outline' }) }, 'Outline', kbd('O'))), el('div', { class: 'code-wrap' }, el('div', { class: 'code-body', id: 'code-body', onscroll: trackView }, body), c.lines.length > 0 && ruler(c)));
+    return el('div', { class: 'fhdr' }, c.path && filePath(c.path), c.version && el('span', { class: 'pill mono' }, c.version), el('span', { class: 'grow' }), el('span', { class: 'meta' }, facts.join(' · '), (c.added > 0 || c.removed > 0) && ' · ', c.added > 0 && el('span', { class: 'fg-ok' }, `+${c.added}`), c.added > 0 && c.removed > 0 && ' ', c.removed > 0 && el('span', { class: 'fg-danger' }, `−${c.removed}`)), c.back &&
+        el('button', { class: 'btn sm', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, kbd('B')), c.editing &&
+        el('button', { class: 'btn sm primary', onclick: () => editor?.leave() }, 'Done', kbd('Esc')), c.editable &&
+        !c.editing &&
+        el('button', { class: 'btn sm primary', onclick: () => codeAction('editHere') }, 'Edit', kbd('Enter')), c.path &&
+        !c.editing &&
+        el('button', { class: 'btn sm', onclick: () => codeAction('openEditor') }, 'Open in editor', kbd('E')), !c.outline &&
+        el('button', { class: 'btn sm outline-show', onclick: () => click({ on: 'outline' }) }, 'Outline', kbd('O')));
 }
 function outline(c) {
     return el('aside', { class: 'code-outline', 'aria-label': 'Outline' }, el('div', { class: 'ohd' }, el('span', { class: 'mlabel grow' }, 'Outline'), el('button', {
@@ -527,7 +559,32 @@ export function drawCode() {
     const files = side(c);
     // An outline of no file is 200px of chrome with nothing in it.
     const defined = c.outline && c.path ? outline(c) : null;
-    stage.replaceChildren(el('div', { class: 'code-split' }, files, sash(files, 'tree'), file(c), defined && sash(defined, 'outline'), defined));
+    if (!c.editing)
+        editor?.retire();
+    const editing = c.editing ? stage.querySelector('section.code-file.editing') : null;
+    if (editing && editor && editing.dataset['path'] === c.path) {
+        // Everything round the editor is built anew, and the editor left where
+        // it is: moved, it would lose the keys and an input method's text.
+        const kept = editor.host(c);
+        const wrap = editing.querySelector('.code-wrap');
+        // The first draw after the editor loaded holds its placeholder.
+        if (wrap && kept.parentElement !== wrap)
+            wrap.replaceChildren(kept);
+        for (const sibling of Array.from(editing.parentElement?.children ?? []))
+            if (sibling !== editing)
+                sibling.remove();
+        editing.before(files, sash(files, 'tree'));
+        if (defined)
+            editing.after(sash(defined, 'outline'), defined);
+        const head = header(c);
+        const old = editing.querySelector('.fhdr');
+        if (head && old)
+            old.replaceWith(head);
+    }
+    else
+        stage.replaceChildren(el('div', { class: 'code-split' }, files, sash(files, 'tree'), file(c), defined && sash(defined, 'outline'), defined));
+    if (c.editing)
+        editor?.shown();
     const body = document.getElementById('code-body');
     if (body) {
         body.scrollTop = scrolledTo.file.get(c.path ?? '') ?? 0;

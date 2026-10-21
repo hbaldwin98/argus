@@ -40,6 +40,7 @@ pub async fn call(shared: State<'_, Arc<Shared>>, window: WebviewWindow, call: C
         Call::Copy { from, to } => copy(&shared, from, to),
         Call::CopyText { text } => copy_text(&shared, &text),
         Call::Reconnect => shared.ask_reconnect(),
+        Call::Edit { gesture } => shared.relay(gesture.message()),
         Call::SetHost { host } => shared.set_host(host),
         Call::Minimize => return window_frame::minimize(&window),
         Call::ToggleMaximize => return window_frame::toggle_maximize(&window),
