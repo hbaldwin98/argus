@@ -4,7 +4,7 @@
   "description": "The desktop window's page: TypeScript compiled into ../assets/js, which is committed so building the crate needs no Node.",
   "type": "module",
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('../assets/js', { recursive: true, force: true })\" && tsc -p . && esbuild src/vendor/codemirror.ts --bundle --format=esm --minify --legal-comments=none --target=es2022 --outfile=../assets/js/vendor/codemirror.js --external:fs --external:fs/promises --external:module --external:path --external:url --allow-overwrite --log-level=warning && node -e \"require('node:fs').copyFileSync('node_modules/web-tree-sitter/web-tree-sitter.wasm', '../assets/js/vendor/web-tree-sitter.wasm')\" && node -e \"require('node:fs').rmSync('../assets/js/bindings', { recursive: true, force: true })\"",
+    "build": "node -e \"require('node:fs').rmSync('../assets/js', { recursive: true, force: true })\" && tsc -p . && esbuild src/vendor/codemirror.ts --bundle --format=esm --minify --legal-comments=none --target=es2022 --outfile=../assets/js/vendor/codemirror.js --external:fs --external:fs/promises --external:module --external:path --external:url --allow-overwrite --log-level=warning && node -e \"const fs = require('node:fs'); fs.writeFileSync('../assets/js/vendor/web-tree-sitter.wasm', fs.readFileSync('node_modules/web-tree-sitter/web-tree-sitter.wasm'))\" && node -e \"require('node:fs').rmSync('../assets/js/bindings', { recursive: true, force: true })\"",
     "lint": "oxlint",
     "fmt": "cd .. && oxfmt -c page/.oxfmtrc.json page/src page/test assets/style.css",
     "check": "npm run build && tsc -p test/contract && oxlint --deny-warnings && cd .. && oxfmt -c page/.oxfmtrc.json --check page/src page/test assets/style.css",
