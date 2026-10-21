@@ -20,7 +20,7 @@ const USAGE: &str = "browser: use `browser` (or `browser open`) for the DevTools
 /// The line that says what to do with the URL, since that is why it was
 /// asked for.
 const HOW: &str = "attach your browser tool to it, e.g. `agent-browser --cdp <url> open https://example.com`; \
-                   the person sees the newest tab in the Argus window";
+                   the person watches the tab you act in, in the Argus window";
 
 pub(super) fn browser_message(rest: &[&str], base_url: &str, token: &str) -> String {
     let request = match rest {

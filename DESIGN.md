@@ -2846,8 +2846,8 @@ A browser that opens brings out the browser panel (`Panel::Browser`), placed in 
 first time and wherever the person moves it after; it shows the newest, follows the person to the
 pane on screen when they go to one with a browser, and otherwise stays on the browser they put there.
 The desktop's Browsers stage (`6`) shows every browser as a live tile, named by its pane's title and
-who has it, or the one chosen filling the stage; the sidebar's Browsers row folds out a row for each.
-A tile, a row or the stage's grip drags its browser to a dock or the stage (`Call::PlaceBrowser`).
+who has it, or the one chosen filling the stage; the sidebar's Browsers row folds out a row for each,
+which a press shows in the browser panel, leaving the stage as it was. A tile, a row or the stage's grip drags its browser to a dock or the stage (`Call::PlaceBrowser`).
 Drawn large, in the panel or on the stage, a browser has its tabs, Follow agent while the person has
 picked a tab, Take control or Hand back, an address bar, back, forward, reload and close; the panel
 leaves a browser the stage has open to it, so one page is never laid out for two sizes in turn.

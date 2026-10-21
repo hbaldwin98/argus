@@ -65,8 +65,18 @@ function placeBrowser(pane, target) {
 function dragsBrowser(handle, browser) {
     return draggable(handle, 'browser', `${browser.agent}’s browser`, (target) => placeBrowser(browser.pane, target));
 }
+/** The dock the browser panel is in, or the right one, its home, before it
+ *  has been put anywhere. */
+function panelDock() {
+    const docks = state.docks;
+    if (!docks)
+        return 'right';
+    const found = ['left', 'right', 'bottom'].find((d) => docks[d].tabs.some((tab) => tab.panel === 'browser'));
+    return found ?? 'right';
+}
 /** The open browsers under Browsers in the sidebar: a fold on its row, and
- *  a row each, which opens it and drags it to a dock. */
+ *  a row each, which shows it in the browser panel beside what is on the
+ *  stage rather than taking the stage, and drags it to a dock. */
 export function drawBrowsersNav() {
     const count = page.browsers.length;
     const fold = $('nav-browsers-fold');
@@ -88,7 +98,7 @@ export function drawBrowsersNav() {
             type: 'button',
             title: `${browser.agent} · ${browser.url}`,
             'aria-current': on ? 'page' : null,
-            onclick: () => call('show_browsers', { pane: browser.pane }),
+            onclick: () => placeBrowser(browser.pane, panelDock()),
         }, el('span', { class: `ic bdot${dotKind(browser)}` }), el('span', { class: 'grow ttl' }, browser.agent), el('span', { class: 'meta ttl' }, browser.title || browser.url)), browser);
     }));
 }

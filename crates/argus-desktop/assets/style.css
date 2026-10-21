@@ -10929,6 +10929,23 @@ button.vtree-chev:focus-visible {
   display: flex;
   flex-direction: column;
 }
+/* A browser sits as a card, as a workspace pane does: inset from the dock's
+ * edges with the dock showing through, rounded, and the page clipped to the
+ * corners. */
+.dock-body > .bpanel,
+.bstage > .bchosen {
+  margin: var(--sp-8);
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+.dock-body > .bpanel .bchosen-screen,
+.bstage > .bchosen .bchosen-screen {
+  /* Inside the hairline, so the page does not paint over it. */
+  margin: 0 1px 1px;
+  border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px);
+}
 .bpanel-head {
   flex-direction: row;
   align-items: center;

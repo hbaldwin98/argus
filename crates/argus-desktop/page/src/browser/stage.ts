@@ -14,6 +14,7 @@
 // says nothing: it shows what the large view was sent, smaller.
 
 import type { BrowserInput } from '../bindings/BrowserInput';
+import type { Dock } from '../bindings/Dock';
 import type { BrowserShot } from '../bindings/BrowserShot';
 import type { BrowsersPage } from '../bindings/BrowsersPage';
 import type { BrowserTab } from '../bindings/BrowserTab';
@@ -84,8 +85,20 @@ function dragsBrowser<T extends HTMLElement>(handle: T, browser: PageBrowser): T
   );
 }
 
+/** The dock the browser panel is in, or the right one, its home, before it
+ *  has been put anywhere. */
+function panelDock(): Dock {
+  const docks = state.docks;
+  if (!docks) return 'right';
+  const found = (['left', 'right', 'bottom'] as const).find((d) =>
+    docks[d].tabs.some((tab) => tab.panel === 'browser'),
+  );
+  return found ?? 'right';
+}
+
 /** The open browsers under Browsers in the sidebar: a fold on its row, and
- *  a row each, which opens it and drags it to a dock. */
+ *  a row each, which shows it in the browser panel beside what is on the
+ *  stage rather than taking the stage, and drags it to a dock. */
 export function drawBrowsersNav(): void {
   const count = page.browsers.length;
   const fold = $('nav-browsers-fold');
@@ -112,7 +125,7 @@ export function drawBrowsersNav(): void {
             type: 'button',
             title: `${browser.agent} · ${browser.url}`,
             'aria-current': on ? 'page' : null,
-            onclick: () => call('show_browsers', { pane: browser.pane }),
+            onclick: () => placeBrowser(browser.pane, panelDock()),
           },
           el('span', { class: `ic bdot${dotKind(browser)}` }),
           el('span', { class: 'grow ttl' }, browser.agent),
