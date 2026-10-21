@@ -44,11 +44,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config
 
-      # The versions the profile's roles T1 and T4 were verified with.
+      # The versions the profile's roles T1 and T4 were verified with, from
+      # their own releases and checked against these hashes.
+      # taiki-e/install-action refuses to run on this image, which exports a
+      # bash function into the environment.
       - name: Install cargo-nextest and cargo-mutants
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest@0.9.148,cargo-mutants@27.1.0
+        shell: bash
+        run: |
+          get() {
+            curl -fsSL -o "$RUNNER_TEMP/$1.tgz" "$2"
+            echo "$3  $RUNNER_TEMP/$1.tgz" | sha256sum -c -
+            tar xzf "$RUNNER_TEMP/$1.tgz" -C "$HOME/.cargo/bin"
+          }
+          get nextest https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.148/cargo-nextest-0.9.148-x86_64-unknown-linux-gnu.tar.gz 223ba936714cc861a9cdedad5a8eb664dfdd69d6fbdf6cea6aa8184f523290dc
+          get mutants https://github.com/sourcefrog/cargo-mutants/releases/download/v27.1.0/cargo-mutants-x86_64-unknown-linux-gnu.tar.gz dfe6dc37d0342c891d2829b5a695aa57c2d0edecef7e7d0399a30cc6e206411e
+          cargo nextest --version
+          cargo mutants --version
 
       - name: Install reliab
         shell: bash
