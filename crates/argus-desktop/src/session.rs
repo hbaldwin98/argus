@@ -660,6 +660,10 @@ impl Session {
             Call::FilterCheckouts { filter } => self.filter_checkouts(filter),
             Call::CheckoutsAction { action } => self.checkouts_action(action),
             Call::Files { gesture } => self.files_gesture(gesture),
+            Call::RevealCheckout { checkout } => {
+                self.reveal(CheckoutId(checkout), None);
+                self.finish()
+            }
             Call::RemoveCheckout { checkout } => self.remove_checkout(CheckoutId(checkout)),
             Call::AnswerCheckouts { yes } => self.answer_checkouts(yes),
             Call::NewWorktree { name } => self.new_worktree(name),
@@ -5323,7 +5327,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 143] = [
+    const CALLS: [&str; 144] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5467,6 +5471,7 @@ mod tests {
         r#"{"call":"open_url","url":"https://example.com"}"#,
         r#"{"call":"copy_text","text":"ab"}"#,
         r#"{"call":"rename_pane","pane":1,"title":"the pty deadlock"}"#,
+        r#"{"call":"reveal_checkout","checkout":1}"#,
     ];
 
     /// Each call reads as the page writes it and goes through the session,

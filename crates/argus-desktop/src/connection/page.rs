@@ -136,6 +136,8 @@ pub enum Call {
     CheckoutsAction { action: Action },
     /// A gesture in the files panel beside the Checkouts table.
     Files { gesture: FilesGesture },
+    /// A checkout's folder shown in the file manager.
+    RevealCheckout { checkout: u64 },
     /// Asks whether to remove a worktree picked in the rail.
     RemoveCheckout { checkout: u64 },
     /// The answer to the Checkouts stage's question.

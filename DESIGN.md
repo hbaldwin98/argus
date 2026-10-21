@@ -218,7 +218,9 @@ them `values` draws one value, with `refs` for those that point into Argus, `chi
 `actions` draws the buttons an agent put in a view; and `views/ctx` and `system/copy` serve them
 all. `extensions/` holds `views` and `dialogs` (an extension's question). `agents/` holds `compose`,
 `sessions_dialog` and `transcript`. `checkouts/stage` and `code/stage` draw the Checkouts and Code
-stages; `checkouts/files` draws a checkout's files beside the Checkouts table, a column of it, or
+stages (Checkouts is a slim table of Checkout, State and Last commit, State saying nothing for a
+clean idle checkout, with the selected checkout in a side column that the files panel replaces
+while open; `checkouts/says` words the State cell); `checkouts/files` draws a checkout's files beside the Checkouts table, a column of it, or
 a drawer over it when the stage is under 900px, listed by the daemon a folder at a time (`ListDir`,
 `FILES`) off the disk, untracked and ignored files included, and marked by git. `review/` holds `dialog`, `history` and `comment_box` (the comment box under picked lines,
 the review's and the Code stage's). `board/` holds `feature_stage` and `capture`, the lenses in

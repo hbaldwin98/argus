@@ -33,6 +33,9 @@ pub struct Checkouts {
     /// The daemon lists a checkout's folders, so each row has the button
     /// that opens them.
     pub files_offered: bool,
+    /// What the button that shows a checkout in the file manager says;
+    /// `None` when the daemon is not on this machine.
+    pub reveal: Option<&'static str>,
     /// The files panel beside the table, while one is open.
     pub files: Option<FilesPage>,
 }
@@ -53,6 +56,13 @@ pub struct CheckoutsRow {
     /// The compact git state, as on the rail; a branch row has none.
     pub git: Option<String>,
     pub clean: bool,
+    /// Files with changes, staged or not; zero when clean or unread.
+    pub changed: usize,
+    /// Commits ahead of and behind its upstream.
+    pub ahead: usize,
+    pub behind: usize,
+    /// The checkout is on no branch.
+    pub detached: bool,
     /// Said beside the git state: `remote only` for what a fetch turned up,
     /// `merged` for a branch main already has.
     pub note: Option<&'static str>,
@@ -71,6 +81,9 @@ pub struct CheckoutsRow {
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Running {
+    /// The pane, so the side column can go to it.
+    pub id: u64,
+    pub title: String,
     pub agent: bool,
     #[cfg_attr(test, ts(as = "crate::connection::page::StatusWord"))]
     pub status: &'static str,
@@ -98,6 +111,8 @@ pub struct CheckoutDetail {
     pub upstream: Option<String>,
     /// `1 unstaged file`, `3 staged · 2 unstaged files`, `no changes`.
     pub changes: Option<String>,
+    /// The title of the feature the checkout is on, beside its number.
+    pub feature_title: Option<String>,
 }
 
 /// What the table is asked to show besides the repository itself.
@@ -168,12 +183,13 @@ pub fn build(repo: &RepositoryInfo, view: &View) -> Checkouts {
         rows: listed.iter().filter_map(|row| row_of(repo, *row, view)).collect(),
         selected: selected.and_then(|row| key(repo, row)),
         detail: match selected {
-            Some(CheckoutRow::Checkout(i)) => repo.checkouts.get(i).map(detail),
+            Some(CheckoutRow::Checkout(i)) => repo.checkouts.get(i).map(|c| detail(c, view.board)),
             _ => None,
         },
         // The stage's to say.
         confirm: None,
         files_offered: false,
+        reveal: None,
         files: None,
     }
 }
@@ -196,11 +212,15 @@ fn row_of(repo: &RepositoryInfo, row: CheckoutRow, view: &View) -> Option<Checko
                 branch: branch(c),
                 git: c.git.as_ref().map(GitStatus::summary),
                 clean: c.git.as_ref().is_some_and(|g| !g.dirty),
+                changed: c.git.as_ref().map_or(0, changed_count),
+                ahead: c.git.as_ref().map_or(0, |g| g.ahead),
+                behind: c.git.as_ref().map_or(0, |g| g.behind),
+                detached: c.git.as_ref().is_some_and(|g| g.branch.is_none()),
                 note: None,
                 last: c.git.as_ref().and_then(|g| g.last_commit.as_ref()).map(|commit| last_commit(commit, view.now)),
                 running: c
                     .listed_panes()
-                    .map(|p| Running { agent: p.kind == PaneKind::Agent, status: p.loudest_state().status.word() })
+                    .map(|p| Running { id: p.id.0, title: p.title.clone(), agent: p.kind == PaneKind::Agent, status: p.loudest_state().status.word() })
                     .collect(),
                 shared: c.shared_by(),
                 feature,
@@ -224,6 +244,10 @@ fn row_of(repo: &RepositoryInfo, row: CheckoutRow, view: &View) -> Option<Checko
                 git: ahead.filter(|n| *n > 0).map(|n| format!("↑{n}")),
                 branch: name,
                 clean: false,
+                changed: 0,
+                ahead: 0,
+                behind: 0,
+                detached: false,
                 note: match (remote, ahead) {
                     (true, _) => Some("remote only"),
                     (false, Some(0)) => Some("merged"),
@@ -256,8 +280,10 @@ fn branch(c: &CheckoutInfo) -> String {
     }
 }
 
-fn detail(c: &CheckoutInfo) -> CheckoutDetail {
+fn detail(c: &CheckoutInfo, board: Option<&DecisionBoard>) -> CheckoutDetail {
+    let on = board.and_then(|b| b.features.iter().find(|f| f.number > 0 && f.checkouts.contains(&c.path)));
     CheckoutDetail {
+        feature_title: on.map(|f| f.title.clone()),
         name: c.name.clone(),
         path: c.path.clone(),
         upstream: c.git.as_ref().map(|g| {
@@ -275,6 +301,16 @@ fn detail(c: &CheckoutInfo) -> CheckoutDetail {
         }),
         changes: c.git.as_ref().map(changes),
     }
+}
+
+/// Files with changes, each once: a path both staged and edited again
+/// counts in both of the staged and unstaged figures, so those two only
+/// stand in for a daemon that sends no total.
+fn changed_count(g: &GitStatus) -> usize {
+    if !g.dirty {
+        return 0;
+    }
+    g.changed_files.max(g.staged).max(g.unstaged)
 }
 
 fn changes(g: &GitStatus) -> String {
@@ -361,5 +397,20 @@ mod tests {
         let table = build(&repo, &view(true, "", None));
         let shared: Vec<_> = table.rows.iter().map(|r| (r.key.as_str(), r.shared)).collect();
         assert_eq!(shared, [("c100", Some(2)), ("c101", None), ("bold", None), ("rorigin/transcripts", None)]);
+    }
+
+    #[test]
+    fn a_checkout_row_says_its_state_in_numbers_and_its_panes_by_name() {
+        let mut repo = repo();
+        let git = repo.checkouts[1].git.as_mut().unwrap();
+        (git.dirty, git.changed_files, git.ahead, git.behind) = (true, 3, 2, 1);
+        repo.checkouts[0].git.as_mut().unwrap().branch = None;
+        repo.checkouts[0].panes = vec![pane(7, PaneKind::Agent, "Trim", PaneStatus::Working)];
+        let table = build(&repo, &view(false, "", Some("c101")));
+        let (main, desktop) = (&table.rows[0], &table.rows[1]);
+        assert_eq!((desktop.changed, desktop.ahead, desktop.behind, desktop.detached), (3, 2, 1, false));
+        assert!(main.detached);
+        assert_eq!((main.running[0].id, main.running[0].title.as_str()), (7, "Trim"));
+        assert_eq!((main.changed, main.ahead, main.behind), (0, 0, 0));
     }
 }

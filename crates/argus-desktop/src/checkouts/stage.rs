@@ -240,6 +240,7 @@ impl CheckoutsStage {
         });
         table.confirm = self.confirm.as_ref().map(|(question, _)| question.clone());
         table.files_offered = daemon.lists_files;
+        table.reveal = daemon.local.then_some(crate::checkouts::files_page::REVEAL_LABEL);
         table.files = self
             .files
             .as_ref()

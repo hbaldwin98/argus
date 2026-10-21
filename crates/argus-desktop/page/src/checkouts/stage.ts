@@ -1,6 +1,6 @@
-// The Checkouts stage: the chosen repository's checkouts as an operational
-// table, the branches without one beneath them while shown, and the
-// selected checkout said in full along the foot. Rust builds every row
+// The Checkouts stage: the chosen repository's checkouts as a slim table,
+// the branches without one folded under it, and the selected checkout said
+// in full in a column beside it. Rust builds every row
 // (`src/checkouts/table.rs`); the page draws them and reports what is
 // chosen.
 
@@ -18,14 +18,15 @@ import {
   focusQuietly,
   ghosts,
   icon,
-  statusPill,
+  statusWord,
   type Child,
 } from '../kit/dom.js';
 import { closeLayer, openMenu } from '../kit/menu.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
-import { afterRedraw, beforeRedraw, filesOpenFor, filesPanel } from './files.js';
+import { afterRedraw, beforeRedraw, filesPanel } from './files.js';
+import { branchBeside, stateOf, type Say } from './says.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);
@@ -35,12 +36,53 @@ function empty(...body: Child[]): HTMLElement {
   return el('div', { class: 'empty' }, el('div', { class: 'empty-body' }, body));
 }
 
+/** The one filter field. It lives in the strip, which is rebuilt on every
+ *  redraw, so the element is kept and handed back: typing redraws as each
+ *  letter arrives, and a field made anew each time would lose the caret. */
+let filterField: HTMLInputElement | null = null;
+
+function filterInput(c: Checkouts): HTMLInputElement {
+  if (!filterField) {
+    const field = el('input', {
+      class: 'field filter head-filter',
+      id: 'checkouts-filter',
+      placeholder: 'Filter checkouts and branches',
+      'aria-label': 'Filter checkouts and branches',
+      oninput: (e: Event) => {
+        if (e.target instanceof HTMLInputElement)
+          call('filter_checkouts', { filter: e.target.value });
+      },
+      onkeydown: (e: KeyboardEvent) => {
+        if (actionFor(['filter'], e) === 'leave') {
+          e.preventDefault();
+          (e.target as HTMLElement).blur();
+        }
+      },
+    });
+    filterField = field;
+  }
+  const field = filterField;
+  // What Rust last heard, unless the person is mid-word: their text is newer.
+  if (document.activeElement !== field && field.value !== c.filter) field.value = c.filter;
+  return field;
+}
+
 /** What the strip carries on the Checkouts stage: the counts beside the
- *  title, and the branch and fetch buttons and the primary action. */
+ *  title, and the filter, the primary action and the overflow. */
 export function checkoutsStrip(): { meta: Child[]; tools: HTMLElement[] } | null {
   const c = state.checkouts;
   if (!c?.repository) return null;
   const branches = `${c.branches} other branch${c.branches === 1 ? '' : 'es'}`;
+  const field = filterInput(c);
+  const typing = document.activeElement === field;
+  const caret = field.selectionStart ?? field.value.length;
+  // Moving the field into a rebuilt strip drops its focus; give it back.
+  if (typing)
+    queueMicrotask(() => {
+      if (!field.isConnected) return;
+      field.focus();
+      field.setSelectionRange(caret, caret);
+    });
   return {
     meta: [
       el(
@@ -52,20 +94,7 @@ export function checkoutsStrip(): { meta: Child[]; tools: HTMLElement[] } | null
     ],
     // One primary and an overflow: Branches and Fetch all are the overflow's.
     tools: [
-      // Under 1200px the filter field folds into this; the field keeps its id.
-      el(
-        'button',
-        {
-          class: 'icon filter-toggle',
-          type: 'button',
-          'aria-label': 'Filter branches',
-          title: 'Filter branches',
-          onclick: () => {
-            if (document.body.classList.toggle('filtering')) $('checkouts-filter').focus();
-          },
-        },
-        icon('search'),
-      ),
+      field,
       el(
         'button',
         { class: 'btn primary', onclick: () => checkoutsAction('newWorktree') },
@@ -105,36 +134,6 @@ export function checkoutsStrip(): { meta: Child[]; tools: HTMLElement[] } | null
   };
 }
 
-function head(c: Checkouts): HTMLElement {
-  const filter = el('input', {
-    class: 'field filter',
-    id: 'checkouts-filter',
-    placeholder: 'Filter branches',
-    'aria-label': 'Filter checkouts and branches',
-    oninput: (e: Event) => {
-      if (e.target instanceof HTMLInputElement)
-        call('filter_checkouts', { filter: e.target.value });
-    },
-    onkeydown: (e: KeyboardEvent) => {
-      if (actionFor(['filter'], e) === 'leave') {
-        e.preventDefault();
-        document.body.classList.remove('filtering');
-        (e.target as HTMLElement).blur();
-      }
-    },
-    onblur: (e: FocusEvent) => {
-      if (e.target instanceof HTMLInputElement && !e.target.value)
-        document.body.classList.remove('filtering');
-    },
-  });
-  filter.value = c.filter;
-  return el(
-    'div',
-    { class: `fhead index-head${c.filter ? ' has-filter' : ''}` },
-    el('div', { class: 'actions index-tools' }, filter),
-  );
-}
-
 /** The keys the table answers to, quietly under it. */
 function keyBar(c: Checkouts): HTMLElement {
   const keys: [string, string][] = [
@@ -153,21 +152,6 @@ function keyBar(c: Checkouts): HTMLElement {
   );
 }
 
-function running(row: CheckoutsRow): Child {
-  if (!row.running.length) return null;
-  return [
-    row.shared !== null &&
-      el('span', { class: 'shared' }, icon('people'), ` shared by ${row.shared} `),
-    row.running.map((pane) =>
-      el(
-        'span',
-        { class: 'pane-status', title: pane.agent ? 'an agent' : 'a shell' },
-        statusPill(pane.status),
-      ),
-    ),
-  ];
-}
-
 /** Puts the cursor on a row before an action that works on the cursor's
  *  row; a click on the row's own button must not wait for a second one. */
 function onRow(row: CheckoutsRow, run: () => void): (e: MouseEvent) => void {
@@ -178,32 +162,12 @@ function onRow(row: CheckoutsRow, run: () => void): (e: MouseEvent) => void {
   };
 }
 
-/** Shows the files of a checkout beside the table, or puts them away: lit
- *  while they are what is open. */
-function filesButton(row: CheckoutsRow, checkout: number, name: string): HTMLElement {
-  const open = filesOpenFor(checkout);
-  return el(
-    'button',
-    {
-      class: `icon${open ? ' hot' : ''}`,
-      type: 'button',
-      title: 'Files (E)',
-      'aria-label': `Files of ${name}`,
-      'aria-pressed': String(open),
-      onclick: onRow(row, () => call('checkouts_action', { action: 'files' })),
-    },
-    icon('folder-sm'),
-  );
-}
-
-/** What is done to a row, in the trailing column, on every row: the one
- *  thing most wanted, the start menu, and the rest behind the overflow.
- *  Quiet until the row is hovered or selected, and never over a cell. */
+/** What is done to a row, in the trailing column: Open and the overflow,
+ *  quiet until the row is hovered or selected. Everything else a row can do
+ *  is the overflow's, or the side column's. */
 function actions(row: CheckoutsRow): Child {
   const checkout = row.checkout;
   const name = row.name ?? row.branch;
-  const hot =
-    checkout !== null && state.start?.checkout === checkout && state.start.from === 'table';
   const primary =
     checkout === null
       ? el(
@@ -226,27 +190,6 @@ function actions(row: CheckoutsRow): Child {
     'div',
     { class: 'ra' },
     primary,
-    checkout !== null && state.checkouts?.filesOffered && filesButton(row, checkout, name),
-    checkout !== null &&
-      el(
-        'span',
-        { class: 'start-at' },
-        el(
-          'button',
-          {
-            class: `icon${hot ? ' hot' : ''}`,
-            title: 'Start a shell or an agent',
-            'aria-label': `Start a shell or an agent on ${name}`,
-            'aria-expanded': String(hot),
-            onclick: (e: MouseEvent) => {
-              e.stopPropagation();
-              toggleStart(checkout, 'table');
-            },
-          },
-          icon('plus'),
-        ),
-        hot && startMenu(name, checkout),
-      ),
     el(
       'button',
       {
@@ -261,6 +204,8 @@ function actions(row: CheckoutsRow): Child {
               call('select_checkout_row', { key: row.key });
             run();
           };
+          const c = state.checkouts;
+          const agents = checkout === null ? [] : state.rail.templates;
           openMenu(
             `More actions for ${name}`,
             [
@@ -276,6 +221,26 @@ function actions(row: CheckoutsRow): Child {
                 label: 'Pull',
                 run: choose(() => call('checkouts_action', { action: 'pull' })),
               },
+              checkout !== null &&
+                !!c?.filesOffered && {
+                  label: 'Files',
+                  hint: keycap('E'),
+                  run: choose(() => call('checkouts_action', { action: 'files' })),
+                },
+              checkout !== null &&
+                !!c?.reveal && {
+                  label: c.reveal,
+                  run: () => call('reveal_checkout', { checkout }),
+                },
+              checkout !== null && 'sep',
+              checkout !== null && {
+                label: 'New shell',
+                run: () => call('spawn_shell', { checkout }),
+              },
+              ...agents.map((template) => ({
+                label: `New agent · ${template}`,
+                run: () => call('spawn_agent', { checkout: checkout as number, template }),
+              })),
               checkout === null && {
                 label: 'New worktree',
                 run: choose(() => checkoutsAction('newWorktree')),
@@ -296,7 +261,40 @@ function actions(row: CheckoutsRow): Child {
   );
 }
 
+/** A State cell's words as markup; a quiet row yields none. */
+function sayings(says: Say[], row: CheckoutsRow): Child[] {
+  return says.map((say) => {
+    switch (say.kind) {
+      case 'detached':
+        return el('span', { class: 'mono st-detached' }, 'detached');
+      case 'changed':
+        return el('span', { class: 'st-changed' }, say.text);
+      case 'distance':
+        return el('span', { class: 'mono fg-muted' }, say.text);
+      case 'panes':
+        return el(
+          'span',
+          { class: 'st-panes' },
+          row.running.map((pane) =>
+            el('span', {
+              class: `sdot ${pane.status}`,
+              title: `${pane.title}: ${statusWord(pane.status)}`,
+            }),
+          ),
+          `${say.count} pane${say.count === 1 ? '' : 's'}`,
+        );
+      case 'feature':
+        return el(
+          'span',
+          { class: `mono${say.viewed ? ' fg-accent' : ' fg-muted'}` },
+          `#${say.number}`,
+        );
+    }
+  });
+}
+
 function tableRow(row: CheckoutsRow, selected: boolean): HTMLElement {
+  const beside = branchBeside(row);
   return el(
     'tr',
     {
@@ -308,112 +306,75 @@ function tableRow(row: CheckoutsRow, selected: boolean): HTMLElement {
     },
     el(
       'td',
-      null,
+      { class: 'col-name' },
       row.name !== null
         ? [
             el('span', { class: 'cname' }, row.name),
-            el('span', { class: 'ctag' }, row.primary ? 'primary' : 'worktree'),
+            row.primary && el('span', { class: 'ctag' }, 'primary'),
+            beside && el('span', { class: 'cbranch mono' }, beside),
           ]
         : // A branch with no directory is named where a checkout is, so the
           // first column is never blank.
           el('span', { class: 'mono fg-ref bname' }, icon('branch'), row.branch),
     ),
-    el('td', { class: 'col-branch mono fg-ref' }, row.name !== null && row.branch),
     el(
       'td',
-      null,
-      row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git),
-      row.note && el('span', { class: 'meta' }, row.note),
+      { class: 'col-state' },
+      row.name !== null
+        ? sayings(stateOf(row), row)
+        : [
+            row.git !== null && el('span', { class: 'mono fg-muted' }, row.git),
+            row.note && el('span', { class: 'meta' }, row.note),
+            // A feature's branch stays listed with the rest folded; its number says why.
+            row.feature !== null &&
+              sayings([{ kind: 'feature', number: row.feature, viewed: row.viewed }], row),
+          ],
     ),
-    el('td', { class: 'col-running' }, running(row)),
-    el(
-      'td',
-      { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` },
-      row.feature !== null && `#${row.feature}`,
-    ),
-    el('td', { class: 'col-last' }, row.last && commitLine(row.last)),
+    el('td', { class: 'col-last' }, row.last && commitLine(row.last, false)),
     el('td', { class: 'row-actions' }, actions(row)),
   );
 }
 
-function commitLine(commit: LastCommit): Child {
+function commitLine(commit: LastCommit, ago = true): Child {
   return [
     el('span', { class: 'mono fg-faint' }, commit.short),
     ' ',
     el('span', { class: 'fg-muted' }, commit.summary),
-    el('span', { class: 'fg-faint' }, ` · ${commit.ago}`),
+    ago && el('span', { class: 'fg-faint' }, ` · ${commit.ago}`),
   ];
 }
 
-function act(label: string, key: string, run: () => void, danger = false): HTMLElement {
-  return el(
-    'button',
-    { class: `btn sm${danger ? ' danger-line' : ''}`, onclick: run },
-    label,
-    ' ',
-    keycap(key),
-  );
-}
-
-/** The selected row's own strip, directly under it: where it is, what it
- *  tracks, what changed, and what can be done to it. */
-function detailRow(c: Checkouts, row: CheckoutsRow): HTMLElement | null {
-  const d = c.detail;
-  if (!d) return null;
-  const checkout = row.checkout;
+/** The row that stands for the branches without a checkout: they are a
+ *  count until it is opened, then the rows beneath it. */
+function branchesFold(c: Checkouts): HTMLElement {
+  const label = `${c.branches} branch${c.branches === 1 ? '' : 'es'} without a checkout`;
   return el(
     'tr',
-    { class: 'detail-row' },
+    { class: 'fold' },
     el(
       'td',
-      { colspan: '7' },
+      { colspan: '4' },
       el(
-        'div',
-        { class: 'cdetail' },
-        el(
-          'div',
-          { class: 'cfacts' },
-          stack('Path', el('span', { class: 'mono', title: d.path }, repoRelative(d.path))),
-          d.upstream && stack('Upstream', d.upstream),
-          d.changes && stack('Changes', d.changes),
-          // The table's column when it is too narrow to show.
-          row.last && lastFact(row.last),
-        ),
-        el('span', { class: 'grow' }),
-        el(
-          'div',
-          { class: 'cacts' },
-          checkout !== null && [
-            act('Review', 'R', () => call('open_review', { checkout })),
-            act('History', 'H', () => call('open_history', { checkout })),
-            act('Pull', 'P', () => call('checkouts_action', { action: 'pull' })),
-          ],
-          checkout === null && act('New worktree', 'N', () => checkoutsAction('newWorktree')),
-          !row.primary &&
-            act(
-              checkout === null ? 'Delete' : 'Remove',
-              'D',
-              () => call('checkouts_action', { action: 'delete' }),
-              true,
-            ),
-        ),
+        'button',
+        {
+          class: 'fold-btn',
+          type: 'button',
+          'aria-expanded': String(c.branchesShown),
+          title: 'B',
+          onclick: () => call('checkouts_action', { action: 'branches' }),
+        },
+        icon(c.branchesShown ? 'down' : 'right'),
+        label,
       ),
     ),
   );
 }
 
-function group(label: string): HTMLElement {
-  return el('tr', { class: 'group' }, el('td', { colspan: '7' }, label));
-}
-
 function table(c: Checkouts): HTMLElement {
   const checkouts = c.rows.filter((row) => row.checkout !== null);
   const branches = c.rows.filter((row) => row.checkout === null);
-  const rows = (list: CheckoutsRow[]): (HTMLElement | null)[] =>
-    list.flatMap((row) => {
-      const selected = row.key === c.selected;
-      return [tableRow(row, selected), selected ? detailRow(c, row) : null];
-    });
+  const rows = (list: CheckoutsRow[]): HTMLElement[] =>
+    list.map((row) => tableRow(row, row.key === c.selected));
   return el(
     'div',
     { class: 'ctable-wrap' },
@@ -426,42 +387,169 @@ function table(c: Checkouts): HTMLElement {
         el(
           'tr',
           null,
-          ['Checkout', 'Branch', 'Git', 'Running', 'Feature', 'Last commit'].map((name) =>
-            el('th', { class: `col-${name.split(' ')[0]?.toLowerCase()}` }, name),
-          ),
-          el('th', { class: 'col-actions' }, 'Actions'),
+          el('th', { class: 'col-name' }, 'Checkout'),
+          el('th', { class: 'col-state' }, 'State'),
+          el('th', { class: 'col-last' }, 'Last commit'),
+          el('th', { class: 'col-actions' }, el('span', { class: 'sr-only' }, 'Actions')),
         ),
       ),
-      el(
-        'tbody',
-        null,
-        checkouts.length > 0 && [group('Checkouts'), rows(checkouts)],
-        branches.length > 0 && [group('Branches without a checkout'), rows(branches)],
-      ),
+      el('tbody', null, rows(checkouts), c.branches > 0 && branchesFold(c), rows(branches)),
     ),
   );
 }
 
+// ---- The selected checkout, beside the table -------------------------------
+
+function act(label: string, key: string, run: () => void): HTMLElement {
+  return el('button', { class: 'btn sm', onclick: run }, label, ' ', keycap(key));
+}
+
+function fact(label: string, value: Child): HTMLElement[] {
+  return [el('dt', null, label), el('dd', null, value)];
+}
+
 /** A worktree's path from the repository's own `.argus/` folder when it
  *  lives under one, whole otherwise; the absolute path stays in the tooltip. */
-function repoRelative(path: string): string {
+export function repoRelative(path: string): string {
   const flat = path.replaceAll('\\', '/');
   const at = flat.indexOf('/.argus/');
   return at >= 0 ? flat.slice(at + 1) : path;
 }
 
-function lastFact(commit: LastCommit): HTMLElement {
-  const fact = stack('Last commit', commitLine(commit));
-  fact.classList.add('fact-last');
-  return fact;
-}
-
-function stack(label: string, value: Child): HTMLElement {
+/** The column for the selected row: where it is, what it tracks, what is
+ *  running on it and what can be done to it. It follows the selection, and
+ *  every button is a key the table answers to as well. */
+function sideColumn(c: Checkouts, row: CheckoutsRow): HTMLElement {
+  const d = c.detail;
+  const checkout = row.checkout;
+  const name = row.name ?? row.branch;
+  const hot =
+    checkout !== null && state.start?.checkout === checkout && state.start.from === 'table';
   return el(
-    'div',
-    { class: 'stack-2' },
-    el('span', { class: 'mlabel' }, label),
-    el('span', { class: 'meta' }, value),
+    'aside',
+    { class: 'cside', id: 'cside', 'aria-label': `${name}, selected` },
+    el(
+      'div',
+      null,
+      el(
+        'div',
+        { class: 'cs-title' },
+        el('h2', { class: row.name === null ? 'mono' : '' }, name),
+        row.primary && el('span', { class: 'ctag' }, 'primary'),
+      ),
+      d && el('div', { class: 'cs-path mono', title: d.path }, repoRelative(d.path)),
+      row.note && el('div', { class: 'meta' }, row.note),
+    ),
+    el(
+      'div',
+      { class: 'cs-acts' },
+      checkout !== null && [
+        el(
+          'button',
+          { class: 'btn sm', onclick: () => call('checkouts_action', { action: 'choose' }) },
+          'Open',
+        ),
+        act('Review', 'R', () => call('open_review', { checkout })),
+        act('History', 'H', () => call('open_history', { checkout })),
+        act('Pull', 'P', () => call('checkouts_action', { action: 'pull' })),
+      ],
+      checkout === null && act('Check out', 'N', () => checkoutsAction('newWorktree')),
+    ),
+    d &&
+      el(
+        'dl',
+        { class: 'cs-facts' },
+        d.upstream && fact('Upstream', d.upstream),
+        d.changes && fact('Changes', d.changes),
+        row.feature !== null &&
+          fact('Feature', [
+            el('span', { class: `mono${row.viewed ? ' fg-accent' : ''}` }, `#${row.feature}`),
+            d.featureTitle && ` ${d.featureTitle}`,
+          ]),
+        row.last && fact('Last commit', commitLine(row.last)),
+      ),
+    row.running.length > 0 &&
+      el(
+        'div',
+        { class: 'cs-running' },
+        el(
+          'div',
+          { class: 'mlabel' },
+          row.shared !== null ? `Running here · shared by ${row.shared}` : 'Running here',
+        ),
+        row.running.map((pane) =>
+          el(
+            'button',
+            {
+              class: 'cs-pane',
+              type: 'button',
+              title: pane.agent ? 'an agent' : 'a shell',
+              onclick: () => call('go_to_pane', { pane: pane.id }),
+            },
+            el('span', { class: `sdot ${pane.status}` }),
+            el('span', { class: 'cut grow' }, pane.title),
+            el('span', { class: `cs-word ${pane.status}` }, statusWord(pane.status)),
+          ),
+        ),
+      ),
+    el('div', { class: 'grow' }),
+    el(
+      'div',
+      { class: 'cs-foot' },
+      checkout !== null &&
+        c.filesOffered &&
+        el(
+          'button',
+          {
+            class: 'btn sm cs-quiet',
+            onclick: () => call('checkouts_action', { action: 'files' }),
+          },
+          icon('folder-sm'),
+          'Files',
+          ' ',
+          keycap('E'),
+        ),
+      checkout !== null &&
+        c.reveal &&
+        el(
+          'button',
+          { class: 'btn sm cs-quiet', onclick: () => call('reveal_checkout', { checkout }) },
+          icon('external'),
+          c.reveal,
+        ),
+      checkout !== null &&
+        el(
+          'span',
+          { class: 'start-at' },
+          el(
+            'button',
+            {
+              class: `btn sm cs-quiet${hot ? ' hot' : ''}`,
+              'aria-expanded': String(hot),
+              title: 'Start a shell or an agent',
+              onclick: (e: MouseEvent) => {
+                e.stopPropagation();
+                toggleStart(checkout, 'table');
+              },
+            },
+            icon('plus'),
+            'New pane',
+          ),
+          hot && startMenu(name, checkout),
+        ),
+      el('span', { class: 'grow' }),
+      !row.primary &&
+        el(
+          'button',
+          {
+            class: 'btn sm danger-line',
+            onclick: () => call('checkouts_action', { action: 'delete' }),
+          },
+          checkout === null ? 'Delete' : 'Remove',
+          ' ',
+          keycap('D'),
+        ),
+    ),
   );
 }
 
@@ -636,7 +724,6 @@ export function drawCheckouts(): void {
     );
     return;
   }
-  const filterHad = document.activeElement?.id === 'checkouts-filter';
   const body = c.rows.length
     ? table(c)
     : empty(
@@ -647,27 +734,20 @@ export function drawCheckouts(): void {
         ),
       );
   const before = beforeRedraw();
-  const main = [head(c), body, keyBar(c)];
-  stage.classList.toggle('with-files', c.files !== null);
-  if (c.files) stage.replaceChildren(el('div', { class: 'cmain' }, main), filesPanel(c.files));
-  else stage.replaceChildren(...main);
+  const row = c.rows.find((r) => r.key === c.selected);
+  // The files panel takes the side column's place: both are about the
+  // selected checkout, and the table keeps its room.
+  const side = c.files ? filesPanel(c.files) : row && sideColumn(c, row);
+  stage.classList.add('with-side');
+  stage.replaceChildren(el('div', { class: 'cmain' }, body, keyBar(c)), ...(side ? [side] : []));
   afterRedraw(before);
   drawConfirm(c);
   stage.querySelector('tr.on')?.scrollIntoView({ block: 'nearest' });
-  // Redrawn as each letter arrives: the filter keeps the keys and the caret.
-  if (filterHad) {
-    const again = document.getElementById('checkouts-filter');
-    if (again instanceof HTMLInputElement) {
-      again.focus();
-      again.setSelectionRange(again.value.length, again.value.length);
-    }
-  }
 }
 
 /** Runs a Checkouts key, saying whether it took it. */
 export function checkoutsAction(action: Action): boolean {
   if (action === 'filter') {
-    document.body.classList.add('filtering');
     $('checkouts-filter').focus();
     return true;
   }

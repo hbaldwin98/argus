@@ -21,6 +21,18 @@ name: string | null, primary: boolean, branch: string,
  */
 git: string | null, clean: boolean, 
 /**
+ * Files with changes, staged or not; zero when clean or unread.
+ */
+changed: number, 
+/**
+ * Commits ahead of and behind its upstream.
+ */
+ahead: number, behind: number, 
+/**
+ * The checkout is on no branch.
+ */
+detached: boolean, 
+/**
  * Said beside the git state: `remote only` for what a fetch turned up,
  * `merged` for a branch main already has.
  */

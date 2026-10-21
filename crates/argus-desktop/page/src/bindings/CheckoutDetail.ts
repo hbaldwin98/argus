@@ -12,4 +12,8 @@ upstream: string | null,
 /**
  * `1 unstaged file`, `3 staged · 2 unstaged files`, `no changes`.
  */
-changes: string | null, };
+changes: string | null, 
+/**
+ * The title of the feature the checkout is on, beside its number.
+ */
+featureTitle: string | null, };

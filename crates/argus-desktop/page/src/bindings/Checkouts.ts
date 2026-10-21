@@ -35,6 +35,11 @@ confirm: Confirm | null,
  */
 filesOffered: boolean, 
 /**
+ * What the button that shows a checkout in the file manager says;
+ * `None` when the daemon is not on this machine.
+ */
+reveal: string | null, 
+/**
  * The files panel beside the table, while one is open.
  */
 files: FilesPage | null, };

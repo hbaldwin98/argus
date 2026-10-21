@@ -5853,6 +5853,7 @@ export const sent = [
   "confirm": null,
   "detail": {
     "changes": "no changes",
+    "featureTitle": "Trim context injection",
     "name": "main",
     "path": "/src/main",
     "upstream": "none"
@@ -5862,11 +5863,16 @@ export const sent = [
   "filter": "",
   "main": null,
   "repository": "argus",
+  "reveal": "Show in Explorer",
   "rows": [
     {
+      "ahead": 0,
+      "behind": 0,
       "branch": "main",
+      "changed": 0,
       "checkout": 100,
       "clean": true,
+      "detached": false,
       "feature": 7,
       "git": "clean",
       "key": "c100",
@@ -5877,40 +5883,58 @@ export const sent = [
       "running": [
         {
           "agent": false,
-          "status": "idle"
+          "id": 1,
+          "status": "idle",
+          "title": "agent"
         },
         {
           "agent": true,
-          "status": "working"
+          "id": 2,
+          "status": "working",
+          "title": "agent"
         },
         {
           "agent": true,
-          "status": "waiting"
+          "id": 3,
+          "status": "waiting",
+          "title": "agent"
         },
         {
           "agent": true,
-          "status": "needs-review"
+          "id": 4,
+          "status": "needs-review",
+          "title": "agent"
         },
         {
           "agent": true,
-          "status": "done"
+          "id": 5,
+          "status": "done",
+          "title": "agent"
         },
         {
           "agent": true,
-          "status": "failed"
+          "id": 6,
+          "status": "failed",
+          "title": "agent"
         },
         {
           "agent": true,
-          "status": "exited"
+          "id": 7,
+          "status": "exited",
+          "title": "agent"
         }
       ],
       "shared": 5,
       "viewed": true
     },
     {
+      "ahead": 0,
+      "behind": 0,
       "branch": "topic",
+      "changed": 0,
       "checkout": 101,
       "clean": true,
+      "detached": false,
       "feature": null,
       "git": "clean",
       "key": "c101",
@@ -5921,7 +5945,9 @@ export const sent = [
       "running": [
         {
           "agent": true,
-          "status": "waiting"
+          "id": 20,
+          "status": "waiting",
+          "title": "claude"
         }
       ],
       "shared": null,
