@@ -64,6 +64,7 @@ impl Chosen {
             SettingChange::Editor { mode } => next.editor = mode,
             SettingChange::EditorCommand { command } => next.editor_command = command,
             SettingChange::Notify { on } => next.notify = on,
+            SettingChange::Vim { on } => next.vim = on,
             SettingChange::NotifyInBackground { only } => next.notify_in_background = only,
             SettingChange::FeatureLayout { layout } => next.feature_layout = layout,
             SettingChange::SavedLinks { opens } => next.saved_links = opens,

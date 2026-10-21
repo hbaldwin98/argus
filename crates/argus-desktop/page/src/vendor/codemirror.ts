@@ -6,6 +6,7 @@
 export {
   ChangeSet,
   Compartment,
+  RangeSet,
   RangeSetBuilder,
   EditorSelection,
   EditorState,
@@ -21,7 +22,9 @@ export {
 export {
   Decoration,
   EditorView,
+  GutterMarker,
   ViewPlugin,
+  gutter,
   WidgetType,
   drawSelection,
   highlightActiveLine,
@@ -46,3 +49,4 @@ export { markdown } from '@codemirror/lang-markdown';
 export { yaml } from '@codemirror/lang-yaml';
 export { toml } from '@codemirror/legacy-modes/mode/toml';
 export { csharp } from '@codemirror/legacy-modes/mode/clike';
+export { Vim, vim } from '@replit/codemirror-vim';

@@ -47,6 +47,30 @@ try {
   await quiet(tab);
   const opened = await tab.evaluate(`!!document.querySelector('.code-editor .cm-content')`);
   if (!opened) throw new Error('the editor did not open');
+  // CodeMirror lays itself out with styles it injects; a policy that stops
+  // them leaves the gutter stacked over the text.
+  const laidOut = await tab.evaluate(
+    `getComputedStyle(document.querySelector('.code-editor .cm-scroller')).display === 'flex'`,
+  );
+  if (!laidOut) throw new Error("CodeMirror's own styles did not apply");
+  const fat = `!!document.querySelector('.code-editor .cm-fat-cursor')`;
+  console.log(`opens in vim's normal mode: ${await tab.evaluate(fat)}`);
+
+  // Rust reads the file again after writes; the lines it says changed are
+  // marked in the gutter.
+  const marked = { ...code, lines: code.lines.map((l, i) => ({ ...l, added: i >= 9 && i < 12 })) };
+  await tab.evaluate(`window.__deliver([${JSON.stringify(marked)}]); true`);
+  await settle(100);
+  console.log(
+    `change marks: ${await tab.evaluate(`document.querySelectorAll('.cm-change.added').length`)}`,
+  );
+
+  const press = async (key) => {
+    await tab.send('Input.dispatchKeyEvent', { type: 'keyDown', ...key });
+    await tab.send('Input.dispatchKeyEvent', { type: 'keyUp', key: key.key });
+  };
+  await press({ key: 'i', text: 'i', unmodifiedText: 'i' });
+  await settle(50);
   writeFileSync(join(out, 'editor-open.png'), await screenshot(tab));
 
   // Timing hooks: each key's event time, when the editor's state held
@@ -79,6 +103,9 @@ try {
     await settle(5);
   }
   await settle(100);
+  await press({ key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await settle(50);
+  console.log(`Escape back to normal mode: ${await tab.evaluate(fat)}`);
   const lat = await tab.evaluate('window.__lat');
   console.log(`${lat.length} of ${keys} keys timed`);
   console.log(`key event to buffer: ${stat(lat.map((l) => l.state - l.t0))}`);

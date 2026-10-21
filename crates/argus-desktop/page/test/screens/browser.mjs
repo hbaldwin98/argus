@@ -42,6 +42,9 @@ const types = {
   '.png': 'image/png',
 };
 
+const csp = JSON.parse(readFileSync(resolve(here, '../../../tauri.conf.json'), 'utf8')).app.security
+  .csp;
+
 /** Serves the assets, and passes /__live/* on to the live Session's server
  *  so the page calls it from its own origin. */
 export function serve(live) {
@@ -62,7 +65,11 @@ export function serve(live) {
       res.writeHead(404).end();
       return;
     }
-    res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' });
+    const headers = { 'content-type': types[extname(file)] ?? 'application/octet-stream' };
+    // The window's own policy, so a page that only works without it (a
+    // style injected where style-src forbids it) fails here too.
+    if (file.endsWith('.html')) headers['content-security-policy'] = csp;
+    res.writeHead(200, headers);
     res.end(readFileSync(file));
   });
   return new Promise((done) => server.listen(0, '127.0.0.1', () => done(server)));

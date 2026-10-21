@@ -3,13 +3,15 @@
 // buffer is the page's alone — a key is drawn in the handler that heard it
 // and never waits on Rust — and writes go to the daemon in the background,
 // a burst of typing at a time. Rust says only that the editor is up
-// (`CodePage.editing`); `sync` keeps the buffer in step with the disk.
-// Loaded the first time a file is edited, so the window does not parse
-// CodeMirror at start for a stage it may never open.
-import { Annotation, ChangeSet, Compartment, Decoration, EditorSelection, EditorState, EditorView, StateEffect, StateField, StreamLanguage, Transaction, WidgetType, bracketMatching, closeBrackets, closeBracketsKeymap, csharp, css, defaultKeymap, drawSelection, highlightActiveLine, highlightActiveLineGutter, highlightSelectionMatches, history, historyKeymap, indentUnit, indentWithTab, javascript, json, keymap, lineNumbers, markdown, python, rust, searchKeymap, tagHighlighter, tags, toml, yaml, } from '../vendor/codemirror.js';
+// (`CodePage.editing`, every working-tree file it reads); `sync` keeps the
+// buffer in step with the disk. Vim's keys are on unless Settings turns
+// them off. Loaded the first time a file is shown, so the window does not
+// parse CodeMirror at start for a stage it may never open.
+import { Annotation, ChangeSet, Compartment, Decoration, EditorSelection, EditorState, EditorView, GutterMarker, RangeSet, StateEffect, StateField, StreamLanguage, Transaction, Vim, WidgetType, bracketMatching, closeBrackets, closeBracketsKeymap, csharp, css, defaultKeymap, drawSelection, gutter, highlightActiveLine, highlightActiveLineGutter, highlightSelectionMatches, history, historyKeymap, indentUnit, indentWithTab, javascript, json, keymap, lineNumbers, markdown, python, rust, searchKeymap, tagHighlighter, tags, toml, vim, yaml, } from '../vendor/codemirror.js';
 import { colours } from './colours.js';
 import { el } from '../kit/dom.js';
 import { call } from '../connection/tauri.js';
+import { state as page } from '../state.js';
 import { Synced } from './sync.js';
 /** How long typing may pause before what was typed is written: short
  *  enough that an agent reads what the person sees, long enough that a
@@ -19,13 +21,17 @@ const QUIET_MS = 200;
 const MOST_MS = 1000;
 /** How long an agent's change stays lit. */
 const LIT_MS = 1600;
-/** How long putting the editor away waits on its last write before the
- *  file is read again without it. */
-const LEAVE_MS = 1500;
+/** How long after a write settles the file is read again for its change
+ *  marks and outline: a burst of writes is read once. */
+const REREAD_MS = 400;
 /** How long after a failed write it is tried again. */
 const RETRY_MS = 1000;
 const sessions = new Map();
 let current = null;
+const byView = new WeakMap();
+function vimOn() {
+    return page.settings?.chosen.vim ?? true;
+}
 const keyOf = (checkout, path) => `${checkout}\n${path}`;
 function ask(gesture) {
     call('edit', { gesture });
@@ -86,6 +92,107 @@ const clashed = StateField.define({
     },
     provide: (field) => EditorView.decorations.from(field),
 });
+class ChangeMark extends GutterMarker {
+    kind;
+    constructor(kind) {
+        super();
+        this.kind = kind;
+    }
+    eq(other) {
+        return other.kind === this.kind;
+    }
+    toDOM() {
+        return el('span', { class: `cm-change ${this.kind}` });
+    }
+}
+const added = new ChangeMark('added');
+const removed = new ChangeMark('removed');
+/** Which lines this version changed, as Rust last read the file, moved
+ *  with what is typed until it is read again. */
+const markChanges = StateEffect.define();
+const changed = StateField.define({
+    create: () => RangeSet.empty,
+    update(marks, tr) {
+        marks = marks.map(tr.changes);
+        for (const e of tr.effects)
+            if (e.is(markChanges))
+                marks = e.value;
+        return marks;
+    },
+});
+function changeMarks(view, c) {
+    const doc = view.state.doc;
+    const out = [];
+    for (const [i, row] of c.lines.entries()) {
+        if (i + 1 > doc.lines)
+            break;
+        const at = doc.line(i + 1).from;
+        if (row.added)
+            out.push(added.range(at));
+        else if (row.removedBefore > 0)
+            out.push(removed.range(at));
+    }
+    return RangeSet.of(out, true);
+}
+/** Draws the change marks of the page Rust sent, when they are new. */
+function mark(s, c) {
+    s.page = c;
+    const view = s.view;
+    if (!view)
+        return;
+    const rows = c.lines.map((r) => (r.added ? '+' : r.removedBefore > 0 ? '-' : '.')).join('');
+    const key = `${c.lines.length}:${rows}`;
+    if (key === s.marked)
+        return;
+    s.marked = key;
+    view.dispatch({ effects: markChanges.of(changeMarks(view, c)) });
+}
+/** The next change after the cursor's line, or the last before it. A run
+ *  of changed lines is one change, stepped to at its first line. */
+function stepChange(view, forward) {
+    const doc = view.state.doc;
+    const here = doc.lineAt(view.state.selection.main.head).number;
+    let target = null;
+    let previous = -2;
+    view.state.field(changed).between(0, doc.length, (from) => {
+        const line = doc.lineAt(from).number;
+        const run = line === previous + 1;
+        previous = line;
+        if (run)
+            return;
+        if (forward && line > here && target === null)
+            target = from;
+        if (!forward && line < here)
+            target = from;
+    });
+    if (target === null)
+        return false;
+    view.dispatch({
+        selection: EditorSelection.cursor(target),
+        effects: EditorView.scrollIntoView(target, { y: 'center' }),
+    });
+    return true;
+}
+// Vim's own ways to write and to step between changes.
+Vim.defineEx('write', 'w', (cm) => {
+    const s = byView.get(cm.cm6);
+    if (s)
+        write(s);
+});
+Vim.defineAction('nextChange', (cm) => void stepChange(cm.cm6, true));
+Vim.defineAction('previousChange', (cm) => void stepChange(cm.cm6, false));
+Vim.mapCommand(']c', 'action', 'nextChange', {}, { context: 'normal' });
+Vim.mapCommand('[c', 'action', 'previousChange', {}, { context: 'normal' });
+/** The lines the selection covers become the stage's pick, and the
+ *  comment box opens on them, as `v` and `c` do in a review. */
+function comment(view) {
+    const { from, to } = view.state.selection.main;
+    const first = view.state.doc.lineAt(from).number;
+    const last = view.state.doc.lineAt(to).number;
+    call('code', { gesture: { on: 'click', target: { on: 'range', from: first, to: last } } });
+    call('code', { gesture: { on: 'action', action: 'comment' } });
+    return true;
+}
 /** The stylesheet's syntax classes, the ones the reading view's spans use,
  *  for Lezer's tags. */
 const syntax = tagHighlighter([
@@ -200,12 +307,14 @@ function create(checkout, path, at) {
         view: null,
         sync: null,
         editable: new Compartment(),
+        keys: new Compartment(),
         status: 'saved',
         said: '',
         quiet: null,
         since: null,
-        leaving: null,
-        leaveBy: null,
+        reread: null,
+        marked: '',
+        page: null,
         retiring: false,
         reopen: false,
         at,
@@ -223,7 +332,11 @@ function mountView(s, text) {
     const state = EditorState.create({
         doc: text,
         extensions: [
+            // First: Vim's keys are heard before any other keymap's.
+            s.keys.of(vimOn() ? vim() : []),
             lineNumbers(),
+            gutter({ class: 'cm-changes', markers: (v) => v.state.field(changed) }),
+            changed,
             highlightActiveLineGutter(),
             history(),
             drawSelection(),
@@ -242,10 +355,13 @@ function mountView(s, text) {
                 ...searchKeymap,
                 ...historyKeymap,
                 indentWithTab,
-                // After the defaults, which take Escape first to drop a second
-                // cursor; with one cursor left it puts the editor away.
-                { key: 'Escape', run: () => (leave(), true) },
                 { key: 'Mod-s', run: () => (write(s), true), preventDefault: true },
+                // The stage's own keys that must work with the editor holding them.
+                { key: 'Mod-p', run: () => (stage('filter'), true), preventDefault: true },
+                { key: 'Mod-Shift-f', run: () => (stage('search'), true), preventDefault: true },
+                { key: 'Alt-c', run: comment, preventDefault: true },
+                { key: 'Alt-]', run: (v) => stepChange(v, true) },
+                { key: 'Alt-[', run: (v) => stepChange(v, false) },
             ]),
             EditorView.updateListener.of((update) => {
                 if (!update.docChanged || update.transactions.some((tr) => tr.annotation(fromDisk)))
@@ -256,7 +372,24 @@ function mountView(s, text) {
         ],
     });
     s.view = new EditorView({ state, parent: s.mount });
+    byView.set(s.view, s);
+    if (s.page)
+        mark(s, s.page);
     goTo(s, s.at);
+}
+function stage(action) {
+    call('code', { gesture: { on: 'action', action } });
+}
+/** The file is read again once writes stop, for its change marks and
+ *  outline; only the one on screen is. */
+function readAgain(s) {
+    if (s.reread !== null)
+        clearTimeout(s.reread);
+    s.reread = setTimeout(() => {
+        s.reread = null;
+        if (current === s)
+            call('code', { gesture: { on: 'written' } });
+    }, REREAD_MS);
 }
 function goTo(s, line) {
     const view = s.view;
@@ -303,16 +436,10 @@ function write(s) {
     tell(s, settled(s));
     done(s);
 }
-/** Everything written: a leave is told, a retired session closed. */
+/** Everything written: a retired session is closed. */
 function done(s) {
     const sync = s.sync;
     const clean = !sync || (!sync.pending() && !sync.clashing());
-    if (s.leaving !== null && (clean || (s.leaveBy !== null && performance.now() > s.leaveBy))) {
-        const line = s.leaving;
-        s.leaving = null;
-        s.leaveBy = null;
-        call('code', { gesture: { on: 'edited', line } });
-    }
     if (s.retiring && (clean || s.status === 'closed')) {
         ask({ on: 'close', checkout: s.checkout, path: s.path });
         s.view?.destroy();
@@ -367,6 +494,7 @@ export function host(c) {
     if (s !== current)
         s.focus = true;
     current = s;
+    mark(s, c);
     // A line Rust moved to — the outline, a change — is gone to; the
     // editor's own cursor moves are never told it.
     if (c.at !== s.at) {
@@ -381,10 +509,17 @@ export function shown() {
     if (!s?.view)
         return;
     s.view.requestMeasure();
-    if (s.focus) {
+    // Just shown, or the keys let go by a box that closed: back to the file.
+    if (s.focus || document.activeElement === document.body) {
         s.focus = false;
         s.view.focus();
     }
+}
+/** Settings changed: Vim's keys on or off in every editor open. */
+export function prefs() {
+    const on = vimOn();
+    for (const s of sessions.values())
+        s.view?.dispatch({ effects: s.keys.reconfigure(on ? vim() : []) });
 }
 /** The editor is no longer up: what is typed is written, and then let go. */
 export function retire(s = current) {
@@ -394,21 +529,6 @@ export function retire(s = current) {
         current = null;
     s.retiring = true;
     write(s);
-}
-/** Escape, or the Done button: the file is read again once written. */
-export function leave() {
-    const s = current;
-    if (!s)
-        return;
-    if (s.sync?.clashing()) {
-        tell(s, 'clash', 'keep yours or take the agent’s first');
-        return;
-    }
-    const view = s.view;
-    s.leaving = view ? view.state.doc.lineAt(view.state.selection.main.head).number : s.at;
-    s.leaveBy = performance.now() + LEAVE_MS;
-    write(s);
-    setTimeout(() => done(s), LEAVE_MS + 10);
 }
 export function receive(e) {
     if (e.on === 'lost') {
@@ -445,11 +565,13 @@ export function receive(e) {
             }
             fromTheDisk(s, shownChange);
             write(s);
+            readAgain(s);
             break;
         }
         case 'saved':
             s.sync?.saved(e.base, e.version);
             write(s);
+            readAgain(s);
             break;
         case 'refused':
             s.sync?.refused(e.base, e.reason);

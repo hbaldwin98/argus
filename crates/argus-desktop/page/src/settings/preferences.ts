@@ -197,6 +197,7 @@ let controls: {
   uiFontWhy: HTMLElement;
   editors: Map<EditorMode, HTMLButtonElement>;
   command: HTMLInputElement;
+  vim: HTMLButtonElement;
   notify: HTMLButtonElement;
   background: HTMLButtonElement;
   layouts: Map<Layout, HTMLButtonElement>;
@@ -388,6 +389,9 @@ export function openSettings(): void {
     spellcheck: 'false',
   });
   command.addEventListener('input', () => set({ set: 'editorCommand', command: command.value }));
+  const vim = toggle("Vim's keys in the Code stage", () =>
+    set({ set: 'vim', on: !(state.settings?.chosen.vim ?? true) }),
+  );
 
   const notify = toggle('Notify when an agent needs you', () =>
     set({ set: 'notify', on: !(state.settings?.chosen.notify ?? true) }),
@@ -416,6 +420,7 @@ export function openSettings(): void {
     uiFontWhy,
     editors,
     command,
+    vim,
     notify,
     background,
     layouts,
@@ -446,6 +451,7 @@ export function openSettings(): void {
       'Editor',
       row('Files open', 'A known GUI editor always opens on its own', editorGroup),
       row('Editor command', 'Empty uses $VISUAL, then $EDITOR', command),
+      row('Vim keys', 'In the Code stage: normal, insert and visual modes, and :w', vim),
     ),
     section(
       'Notifications',
@@ -645,6 +651,7 @@ export function drawSettings(): void {
   setSegment(controls.editors, chosen.editor);
   // A field being typed in is ahead of what came back.
   if (document.activeElement !== controls.command) controls.command.value = chosen.editorCommand;
+  setToggle(controls.vim, chosen.vim);
   setToggle(controls.notify, chosen.notify);
   setToggle(controls.background, chosen.notifyInBackground);
   controls.background.disabled = !chosen.notify;

@@ -6222,6 +6222,53 @@ button.cf-row {
   font: inherit;
   color: inherit;
 }
+/* The lines this version changed, as the reading view washes them. */
+.code-editor .cm-editor .cm-changes .cm-gutterElement {
+  width: 3px;
+  padding: 0;
+}
+.code-editor .cm-change {
+  display: block;
+  width: 3px;
+}
+.code-editor .cm-change.added {
+  height: 100%;
+  background: var(--ok);
+}
+.code-editor .cm-change.removed {
+  height: 4px;
+  background: var(--danger);
+}
+/* Vim's block cursor and its command line, in the theme's accent. */
+.code-editor .cm-editor .cm-fat-cursor {
+  background: color-mix(in srgb, var(--accent) 70%, transparent) !important;
+  color: var(--bg-sunken) !important;
+  outline: none !important;
+}
+.code-editor .cm-editor:not(.cm-focused) .cm-fat-cursor {
+  background: none !important;
+  outline: 1px solid var(--accent) !important;
+}
+.code-editor .cm-editor .cm-vim-panel {
+  padding: var(--sp-2) var(--sp-12);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.code-editor .cm-editor .cm-vim-panel input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+}
+.code-file .ed-comment:empty {
+  display: none;
+}
+.code-file .ed-comment {
+  padding: var(--sp-8) var(--sp-12);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-sunken);
+}
 /* What an agent just wrote, lit and let fade. */
 .code-editor .cm-editor .cm-agent-edit {
   animation: agent-edit 1.6s ease-out forwards;

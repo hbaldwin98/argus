@@ -637,6 +637,7 @@ function file(c: CodePage): HTMLElement {
       'section',
       { class: 'code-file editing', 'data-path': c.path },
       header(c),
+      remark(c),
       el(
         'div',
         { class: 'code-wrap' },
@@ -704,6 +705,16 @@ function file(c: CodePage): HTMLElement {
   );
 }
 
+/** The comment box over the editor, on the lines its selection picked. */
+function remark(c: CodePage): HTMLElement {
+  return el('div', { class: 'ed-comment' }, c.comment && commentBox(c.comment, ways));
+}
+
+/** Settings changed, which the editor's keys follow. */
+export function codeSettings(): void {
+  editor?.prefs();
+}
+
 /** The file's name and version, what is known of it, and its buttons. */
 function header(c: CodePage): HTMLElement | null {
   if (!c.path && !c.back) return null;
@@ -711,7 +722,8 @@ function header(c: CodePage): HTMLElement | null {
   const matchAt = here?.hits.findIndex((h) => h.on) ?? -1;
   const facts = [
     here && matchAt >= 0 && `Match ${matchAt + 1} of ${here.hits.length} in this file`,
-    c.lines.length > 0 && `Ln ${c.at}`,
+    // The editor's cursor is its own; Rust's would be stale beside it.
+    !c.editing && c.lines.length > 0 && `Ln ${c.at}`,
     c.language,
     c.lines.length > 0 && `${c.lines.length} lines`,
   ].filter(Boolean);
@@ -737,23 +749,13 @@ function header(c: CodePage): HTMLElement | null {
         `Back to ${c.back}`,
         kbd('B'),
       ),
-    c.editing &&
-      el('button', { class: 'btn sm primary', onclick: () => editor?.leave() }, 'Done', kbd('Esc')),
-    c.editable &&
-      !c.editing &&
-      el(
-        'button',
-        { class: 'btn sm primary', onclick: () => codeAction('editHere') },
-        'Edit',
-        kbd('Enter'),
-      ),
     c.path &&
-      !c.editing &&
       el(
         'button',
         { class: 'btn sm', onclick: () => codeAction('openEditor') },
         'Open in editor',
-        kbd('E'),
+        // In the editor, E is a letter.
+        !c.editing && kbd('E'),
       ),
     !c.outline &&
       el(
@@ -869,6 +871,7 @@ export function drawCode(): void {
     const head = header(c);
     const old = editing.querySelector('.fhdr');
     if (head && old) old.replaceWith(head);
+    editing.querySelector('.ed-comment')?.replaceWith(remark(c));
   } else
     stage.replaceChildren(
       el(

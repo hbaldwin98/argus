@@ -15,7 +15,7 @@ import {
   unpickRail,
 } from './chrome.js';
 import { drawCheckouts } from './checkouts/stage.js';
-import { drawCode, editEvent } from './code/stage.js';
+import { codeSettings, drawCode, editEvent } from './code/stage.js';
 import { drawDocks, listen as listenToDocks } from './layout/docks.js';
 import { clearComposer, focusComposer } from './agents/compose.js';
 import { $ } from './kit/dom.js';
@@ -192,6 +192,7 @@ function receive(event: Event): void {
     case 'settings':
       state.settings = event;
       drawSettings();
+      codeSettings();
       break;
     case 'keymap':
       state.keymap = event.groups;

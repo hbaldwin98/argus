@@ -110,6 +110,10 @@ pub struct Preferences {
     /// `$VISUAL`, then `$EDITOR`.
     #[serde(default)]
     pub editor_command: String,
+    /// Vim's keys in the Code stage's editor. On unless turned off: the
+    /// stage's own keys are Vim's, and so are the person's.
+    #[serde(default = "on")]
+    pub vim: bool,
     /// An OS notification naming the pane when an agent comes to need you:
     /// the window's version of the terminal client's bell.
     #[serde(default = "on")]
@@ -238,6 +242,7 @@ impl Default for Preferences {
             backdrop: Backdrop::default(),
             editor: EditorMode::default(),
             editor_command: String::new(),
+            vim: true,
             notify: true,
             notify_in_background: true,
             feature_layout: Layout::default(),
@@ -413,6 +418,7 @@ mod tests {
             backdrop: Backdrop::Mica,
             editor: EditorMode::Separately,
             editor_command: "code -w".into(),
+            vim: false,
             notify: false,
             notify_in_background: false,
             feature_layout: Layout::Board,
@@ -423,6 +429,15 @@ mod tests {
         };
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path), settings);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_file_from_before_vim_keys_has_them_on() {
+        let path = scratch("vim");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{ "preferences": { "theme": "frappe" } }"#).unwrap();
+        assert!(load_from(&path).preferences.vim);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

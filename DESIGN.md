@@ -2011,16 +2011,28 @@ an agent reading the comment needs no more than one.
 
 ### Editing a file
 
-Enter on a working-tree file puts an editor in place of the file read, at the cursor's line;
-Escape (or Done) puts it away once what was typed is written, and the file is read again there.
-Only the working tree is edited, only by a daemon that listed `code-edit`, and only a file the
-stage could read as text. The editor is CodeMirror in the page, and its buffer is the page's, the
+A working-tree file is shown in an editor rather than read: no key opens it. A commit's or the
+index's is read as above. Only a daemon that listed `code-edit` edits, and only a file the stage
+could read as text. Vim's keys are on unless Settings turns them off (`vim` in the window's
+settings); with them `:w` writes and `]c`/`[c` step between changes. The keys the stage needs with
+the editor holding them are the editor's own: Ctrl P, Ctrl Shift F (the checkout's search; Ctrl F
+is the file's), and Alt C, which makes the selection's lines the pick and opens the comment box over
+the editor. The gutter marks the lines the working tree changed as Rust last read the file, moved
+with what is typed; the file and tree are read again 400ms after writes stop (`Written`), which
+keeps the marks, the outline and the tree's counts current without the cursor or a comment moving.
+The editor is CodeMirror in the page, and its buffer is the page's, the
 one thing in the window Rust does not hold: a key is applied and drawn in the handler that heard it
 and never waits on Rust or the daemon. Its syntax colours are not CodeMirror's language support,
 which parses inside the key's transaction and redrew every visible line's colours there; the
 colours drawn move with the text at once, and the file is parsed incrementally in a task right
 after the key, which lands before the frame that paints it. The grammar is used only to colour, so
 indentation on Enter copies the line's own.
+
+CodeMirror lays itself out with a `<style>` element it writes, so the window's content security
+policy allows inline styles (`style-src 'self' 'unsafe-inline'`), and Tauri is told not to add its
+nonces to that directive, which would make a browser ignore `'unsafe-inline'`. Scripts stay
+`'self'` only. The screens harness serves the same policy, so a page that only works without it
+fails there too.
 
 The file on disk is the authority, and the daemon referees it. `OpenEdit` reads the file, CRLF read
 as LF and written back as it was, and watches its folder for writes. A client's `Edit` is written

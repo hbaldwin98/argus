@@ -789,16 +789,20 @@ changes in it listed. A file whose only change is its line endings is not counte
 Opened from a staged review it reads the index, and from the history a commit, and says so in its
 header. `e` opens the file in your editor.
 
-Enter edits a working-tree file in place, at the cursor's line, and Escape (or **Done**) puts the
-editor away. What you type is written as you type, once you pause; when an agent writes the same
-file, its change appears in the editor as it lands, lit for a moment, with your cursor and your
-unwritten typing kept. If the agent changed the very characters you were typing, its text is shown
-beside yours and nothing is written until you choose **Keep mine** or **Take the agent's**. Undo
-undoes only your own typing. Ctrl S writes at once; Ctrl F searches the file.
+A working-tree file opens in an editor, with Vim's keys unless **Settings → Editor → Vim keys**
+turns them off; a commit or the index is read as below. What you type is written as you type, once
+you pause; when an agent writes the same file, its change appears in the editor as it lands, lit
+for a moment, with your cursor and your unwritten typing kept. If the agent changed the very
+characters you were typing, its text is shown beside yours and nothing is written until you choose
+**Keep mine** or **Take the agent's**. Undo undoes only your own typing. The gutter marks the lines
+the working tree changed. In the editor: `:w` or Ctrl S writes at once, `]c` / `[c` (Alt ] / Alt [
+without Vim) step between changes, `/` or Ctrl F searches the file, Alt C comments to an agent on
+the selected lines, Ctrl P goes to a file and Ctrl Shift F searches the checkout.
+
+The keys below are the read view's, a commit's or the index's:
 
 | Key | Action |
 | --- | --- |
-| Enter | Edit the file here (the working tree only) |
 | `j` / `k`, arrows | Move through the file's lines |
 | Home / End | First or last line |
 | `]` / `[` | The next or previous change |

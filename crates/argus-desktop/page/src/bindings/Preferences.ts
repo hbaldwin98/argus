@@ -22,6 +22,11 @@ opacity: number, backdrop: Backdrop, editor: EditorMode,
  */
 editorCommand: string, 
 /**
+ * Vim's keys in the Code stage's editor. On unless turned off: the
+ * stage's own keys are Vim's, and so are the person's.
+ */
+vim: boolean, 
+/**
  * An OS notification naming the pane when an agent comes to need you:
  * the window's version of the terminal client's bell.
  */

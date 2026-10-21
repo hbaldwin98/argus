@@ -88,11 +88,9 @@ pub struct CodePage {
     pub pick: Option<String>,
     /// The comment box, while it is open.
     pub comment: Option<CommentPage>,
-    /// Whether the file read may be edited here: it is the working tree's,
-    /// read whole, and the daemon edits.
-    pub editable: bool,
-    /// Whether the page's editor stands in for the file read. Its buffer
-    /// is the page's; this says only that it is up.
+    /// Whether the page's editor stands in for the file read: it is the
+    /// working tree's, read whole, and the daemon edits. Its buffer is the
+    /// page's; this says only that it is up.
     pub editing: bool,
 }
 
@@ -248,6 +246,8 @@ pub enum CodeClick {
     Tree { path: String },
     /// With `extend`, the range's other end stays where it was.
     Line { line: u32, extend: bool },
+    /// The lines the editor's selection covers, from one, for a comment.
+    Range { from: u32, to: u32 },
     Recipient { pane: u64 },
     /// An outline row, a change, or a mark on the ruler.
     Go { line: u32 },
@@ -281,9 +281,9 @@ pub enum CodeGesture {
     Glob { glob: String },
     /// The comment sent, or with no `body` the box put away.
     Comment { body: Option<String> },
-    /// The editor put away, its cursor on `line`: the file is read again,
-    /// as written.
-    Edited { line: u32 },
+    /// The editor wrote the file: it is read again, for its changes and
+    /// outline.
+    Written,
 }
 
 /// What a gesture leaves for the window to do beyond the daemon's messages.
@@ -356,7 +356,6 @@ impl Code {
         self.can_edit = can;
         if let Some(stage) = &mut self.stage {
             stage.can_edit = can;
-            stage.editing &= can;
         }
     }
 
@@ -463,7 +462,7 @@ impl Code {
                 Ok(msg) => out.push(msg),
                 Err(text) => return Then::Say(text.into()),
             },
-            CodeGesture::Edited { line } => out.extend(stage.edited(line, id)),
+            CodeGesture::Written => out.extend(stage.written(id)),
         }
         Then::Nothing
     }
@@ -522,7 +521,6 @@ struct CodeStage {
     back: Option<Back>,
     failed: Option<String>,
     can_edit: bool,
-    editing: bool,
 }
 
 impl CodeStage {
@@ -560,7 +558,6 @@ impl CodeStage {
             back,
             failed: None,
             can_edit: false,
-            editing: false,
         };
         let mut msgs = vec![stage.ask_tree(id())];
         if let Some(path) = path {
@@ -699,11 +696,6 @@ impl CodeStage {
                 }
             }
             Action::Refresh => out.extend(self.refresh(id)),
-            Action::EditHere => {
-                if let Err(why) = self.edit() {
-                    return Then::Say(why.into());
-                }
-            }
             Action::OpenEditor => {
                 return match self.editor_target() {
                     Some((checkout, path, line)) => Then::Edit { checkout, path, line },
@@ -732,6 +724,11 @@ impl CodeStage {
                     self.mark = None;
                 }
                 self.go_to(line);
+            }
+            CodeClick::Range { from, to } => {
+                self.go_to(from);
+                self.mark = (to != from).then_some(self.cursor);
+                self.go_to(to);
             }
             CodeClick::Go { line } => self.go_to(line),
             CodeClick::Recipient { pane } => self.comment_box.choose(PaneId(pane)),
@@ -781,23 +778,20 @@ impl CodeStage {
         }
     }
 
-    fn edit(&mut self) -> Result<(), &'static str> {
-        self.editable()?;
-        self.mark = None;
-        self.comment_box.close();
-        self.editing = true;
-        Ok(())
-    }
-
-    /// The editor put away on `line`: what it wrote is read back, with the
-    /// tree, whose changes it moved.
-    fn edited(&mut self, line: u32, id: impl FnMut() -> u64) -> Vec<ClientMsg> {
-        if !self.editing {
+    /// The editor wrote the file: it and the tree, whose changes it moved,
+    /// are read again. Unlike `refresh`, what is picked and the comment
+    /// being written stay, and so does the cursor.
+    fn written(&mut self, mut id: impl FnMut() -> u64) -> Vec<ClientMsg> {
+        let Some(path) = self.path.clone() else {
             return Vec::new();
-        }
-        self.editing = false;
-        self.cursor = (line as usize).saturating_sub(1);
-        self.refresh(id)
+        };
+        let request_id = id();
+        self.file_asked = Some(request_id);
+        self.land = Some(self.cursor as u32 + 1);
+        vec![
+            self.ask_tree(id()),
+            ClientMsg::ReadCode { request_id, checkout: self.checkout, path, version: self.version.clone() },
+        ]
     }
 
     fn escape(&mut self) -> bool {
@@ -1261,8 +1255,7 @@ impl CodeStage {
             back: self.back.as_ref().map(|b| b.label.clone()),
             pick,
             comment,
-            editable: self.editable().is_ok(),
-            editing: self.editing && self.editable().is_ok(),
+            editing: self.editable().is_ok(),
             failed: self.failed.clone(),
         }
     }
@@ -1626,37 +1619,41 @@ mod tests {
         assert_eq!(s.page(None).version.as_deref(), Some("abc1234"));
     }
 
-    fn act(s: &mut CodeStage, action: Action) -> Then {
-        s.act(action, None, || 9, &mut Vec::new())
-    }
-
     #[test]
-    fn i_edits_the_working_trees_file_and_putting_the_editor_away_reads_it_again_at_its_line() {
-        let mut s = reading("src/a.rs", None);
+    fn a_working_tree_file_opens_in_the_editor_and_a_write_reads_it_again_where_the_cursor_is() {
+        let mut s = reading("src/a.rs", Some(3));
         s.can_edit = true;
-        assert_eq!(act(&mut s, Action::EditHere), Then::Nothing);
-        assert!(s.page(None).editing);
+        s.mark = Some(0);
+        assert!(s.page(None).editing, "no key to press first");
 
         let mut ids = 10;
-        let sent = s.edited(4, || {
+        let sent = s.written(|| {
             ids += 1;
             ids
         });
-        assert!(!s.page(None).editing);
         assert!(sent.iter().any(|m| matches!(m, ClientMsg::ReadCode { path, .. } if path == "src/a.rs")), "what was written is read");
-        assert_eq!(s.land, Some(4), "and the cursor lands where the editor left it");
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::ListCode { .. })), "and the tree, whose changes it moved");
+        assert_eq!(s.land, Some(3), "the cursor stays");
+        assert_eq!(s.mark, Some(0), "and so does what was picked");
     }
 
     #[test]
     fn only_a_working_tree_file_a_daemon_can_edit_is_edited() {
         let mut s = reading("src/a.rs", None);
-        assert!(matches!(act(&mut s, Action::EditHere), Then::Say(_)), "a daemon that cannot");
-        assert!(!s.page(None).editable);
+        assert!(!s.page(None).editing, "a daemon that cannot");
 
         s.can_edit = true;
         s.version = CodeVersion::Head;
-        assert!(matches!(act(&mut s, Action::EditHere), Then::Say(_)), "history is not edited");
-        assert!(!s.page(None).editing);
+        assert!(!s.page(None).editing, "history is read, not edited");
+    }
+
+    #[test]
+    fn the_editors_selection_picks_the_lines_a_comment_is_on() {
+        let mut s = reading("src/a.rs", None);
+        s.click(CodeClick::Range { from: 2, to: 4 }, || 0);
+        assert_eq!(s.page(None).pick.as_deref(), Some("lines 2–4"));
+        s.click(CodeClick::Range { from: 3, to: 3 }, || 0);
+        assert_eq!((s.cursor, s.mark), (2, None), "one line is the cursor's");
     }
 
     #[test]

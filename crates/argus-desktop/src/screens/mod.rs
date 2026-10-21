@@ -1967,8 +1967,7 @@ pub fn scenes() -> Vec<Scene> {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::ShowCode { open: true })
                 .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Tree { path: "crates/argus-desktop/src/chrome/status.rs".into() } } })
-                .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Line { line: 52, extend: false } } })
-                .call(Call::Code { gesture: CodeGesture::Action { action: Action::EditHere } });
+                .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Line { line: 52, extend: false } } });
             w.s
         }),
         scene("code-start", "Code — nothing open yet: what changed, and the one field", || {

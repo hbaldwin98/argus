@@ -3,4 +3,4 @@
 /**
  * What a click in the Code stage landed on.
  */
-export type CodeClick = { "on": "tree", path: string, } | { "on": "line", line: number, extend: boolean, } | { "on": "recipient", pane: number, } | { "on": "go", line: number, } | { "on": "changedOnly", only: boolean, } | { "on": "outline" } | { "on": "match", index: number, } | { "on": "hitFile", path: string, } | { "on": "searchOption", option: "regex" | "case" | "word", } | { "on": "back" };
+export type CodeClick = { "on": "tree", path: string, } | { "on": "line", line: number, extend: boolean, } | { "on": "range", from: number, to: number, } | { "on": "recipient", pane: number, } | { "on": "go", line: number, } | { "on": "changedOnly", only: boolean, } | { "on": "outline" } | { "on": "match", index: number, } | { "on": "hitFile", path: string, } | { "on": "searchOption", option: "regex" | "case" | "word", } | { "on": "back" };

@@ -4,7 +4,7 @@
 import { chime, listen as listenForSound } from './system/chime.js';
 import { closeStart, drawChrome, drawHead, listenToRailEdge, notice, railPicked, reconnect, unpickRail, } from './chrome.js';
 import { drawCheckouts } from './checkouts/stage.js';
-import { drawCode, editEvent } from './code/stage.js';
+import { codeSettings, drawCode, editEvent } from './code/stage.js';
 import { drawDocks, listen as listenToDocks } from './layout/docks.js';
 import { clearComposer, focusComposer } from './agents/compose.js';
 import { $ } from './kit/dom.js';
@@ -185,6 +185,7 @@ function receive(event) {
         case 'settings':
             state.settings = event;
             drawSettings();
+            codeSettings();
             break;
         case 'keymap':
             state.keymap = event.groups;

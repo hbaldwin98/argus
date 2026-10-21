@@ -452,7 +452,7 @@ function file(c) {
     let body;
     if (c.editing && c.path) {
         const loaded = theEditor();
-        return el('section', { class: 'code-file editing', 'data-path': c.path }, header(c), el('div', { class: 'code-wrap' }, loaded ? loaded.host(c) : ghosts([[0.5], [0.9], [0.8], [0.7]])));
+        return el('section', { class: 'code-file editing', 'data-path': c.path }, header(c), remark(c), el('div', { class: 'code-wrap' }, loaded ? loaded.host(c) : ghosts([[0.5], [0.9], [0.8], [0.7]])));
     }
     if (c.failed && c.lines.length === 0)
         body = el('div', { class: 'review-empty fg-muted' }, c.failed);
@@ -483,6 +483,14 @@ function file(c) {
     }
     return el('section', { class: 'code-file' }, header(c), el('div', { class: 'code-wrap' }, el('div', { class: 'code-body', id: 'code-body', onscroll: trackView }, body), c.lines.length > 0 && ruler(c)));
 }
+/** The comment box over the editor, on the lines its selection picked. */
+function remark(c) {
+    return el('div', { class: 'ed-comment' }, c.comment && commentBox(c.comment, ways));
+}
+/** Settings changed, which the editor's keys follow. */
+export function codeSettings() {
+    editor?.prefs();
+}
 /** The file's name and version, what is known of it, and its buttons. */
 function header(c) {
     if (!c.path && !c.back)
@@ -491,17 +499,16 @@ function header(c) {
     const matchAt = here?.hits.findIndex((h) => h.on) ?? -1;
     const facts = [
         here && matchAt >= 0 && `Match ${matchAt + 1} of ${here.hits.length} in this file`,
-        c.lines.length > 0 && `Ln ${c.at}`,
+        // The editor's cursor is its own; Rust's would be stale beside it.
+        !c.editing && c.lines.length > 0 && `Ln ${c.at}`,
         c.language,
         c.lines.length > 0 && `${c.lines.length} lines`,
     ].filter(Boolean);
     return el('div', { class: 'fhdr' }, c.path && filePath(c.path), c.version && el('span', { class: 'pill mono' }, c.version), el('span', { class: 'grow' }), el('span', { class: 'meta' }, facts.join(' · '), (c.added > 0 || c.removed > 0) && ' · ', c.added > 0 && el('span', { class: 'fg-ok' }, `+${c.added}`), c.added > 0 && c.removed > 0 && ' ', c.removed > 0 && el('span', { class: 'fg-danger' }, `−${c.removed}`)), c.back &&
-        el('button', { class: 'btn sm', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, kbd('B')), c.editing &&
-        el('button', { class: 'btn sm primary', onclick: () => editor?.leave() }, 'Done', kbd('Esc')), c.editable &&
-        !c.editing &&
-        el('button', { class: 'btn sm primary', onclick: () => codeAction('editHere') }, 'Edit', kbd('Enter')), c.path &&
-        !c.editing &&
-        el('button', { class: 'btn sm', onclick: () => codeAction('openEditor') }, 'Open in editor', kbd('E')), !c.outline &&
+        el('button', { class: 'btn sm', onclick: () => click({ on: 'back' }) }, `Back to ${c.back}`, kbd('B')), c.path &&
+        el('button', { class: 'btn sm', onclick: () => codeAction('openEditor') }, 'Open in editor', 
+        // In the editor, E is a letter.
+        !c.editing && kbd('E')), !c.outline &&
         el('button', { class: 'btn sm outline-show', onclick: () => click({ on: 'outline' }) }, 'Outline', kbd('O')));
 }
 function outline(c) {
@@ -580,6 +587,7 @@ export function drawCode() {
         const old = editing.querySelector('.fhdr');
         if (head && old)
             old.replaceWith(head);
+        editing.querySelector('.ed-comment')?.replaceWith(remark(c));
     }
     else
         stage.replaceChildren(el('div', { class: 'code-split' }, files, sash(files, 'tree'), file(c), defined && sash(defined, 'outline'), defined));
