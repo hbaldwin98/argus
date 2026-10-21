@@ -51,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
     let host = match parse_command(&std::env::args().skip(1).collect::<Vec<_>>())? {
         Command::ServerRestart => return launch::restart_daemon().await,
         Command::ServerStop => return launch::stop_daemon().await,
+        Command::Update { check } => return commands::update::run(check).await,
         Command::Init(dir) => return launch::init(dir).await,
         Command::Bridge => return bridge::run().await,
         Command::Desktop => return desktop::run(),
@@ -93,6 +94,9 @@ enum Command {
     Host(String),
     /// Where the person is working, as JSON: once, or a line per change.
     Focus { watch: bool },
+    /// This installation replaced with the newest release, or with
+    /// `--check` only asked whether there is one.
+    Update { check: bool },
     /// The guide to building an extension, or what the running ones are,
     /// from the daemon here or on an ssh host.
     Extension { ask: extension::Ask, host: Option<String> },
@@ -108,6 +112,8 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [init] if init == "init" => Ok(Command::Init(None)),
         [init, dir] if init == "init" => Ok(Command::Init(Some(dir.clone()))),
         [bridge] if bridge == "bridge" => Ok(Command::Bridge),
+        [update] if update == "update" => Ok(Command::Update { check: false }),
+        [update, check] if update == "update" && check == "--check" => Ok(Command::Update { check: true }),
         [desktop] if desktop == "desktop" => Ok(Command::Desktop),
         [focus] if focus == "focus" => Ok(Command::Focus { watch: false }),
         [focus, watch] if focus == "focus" && watch == "--watch" => {
@@ -120,7 +126,7 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         }
         _ => Err(anyhow::anyhow!(
             "usage: argus [--host HOST | init [DIR] | server (restart | stop) | focus [--watch] \
-             | desktop | bridge | [--host HOST] extension (guide | list | show NAME)]"
+             | desktop | update [--check] | bridge | [--host HOST] extension (guide | list | show NAME)]"
         )),
     }
 }
@@ -582,6 +588,16 @@ mod tests {
         let watch = ["focus".to_string(), "--watch".to_string()];
         assert_eq!(parse_command(&watch).unwrap(), Command::Focus { watch: true });
         let other = ["focus".to_string(), "--json".to_string()];
+        assert!(parse_command(&other).is_err());
+    }
+
+    #[test]
+    fn update_installs_the_newest_release_or_only_checks_for_one() {
+        let update = ["update".to_string()];
+        assert_eq!(parse_command(&update).unwrap(), Command::Update { check: false });
+        let check = ["update".to_string(), "--check".to_string()];
+        assert_eq!(parse_command(&check).unwrap(), Command::Update { check: true });
+        let other = ["update".to_string(), "--force".to_string()];
         assert!(parse_command(&other).is_err());
     }
 

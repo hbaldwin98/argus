@@ -29,6 +29,11 @@ png = "0.18"
 base64 = { workspace = true }
 mermaid-text = "0.57.0"
 unicode-width = "0.2"
+ureq = { version = "3.5.0", default-features = false, features = ["rustls", "platform-verifier"] }
+sha2 = "0.11.1"
+tar = "0.4.46"
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
+flate2 = "1.1.10"
 
 [dev-dependencies]
 tempfile = { workspace = true }

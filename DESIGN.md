@@ -574,6 +574,12 @@ result of a request; `ui` is a pure function of it.
 | `commands/desktop` | the `argus desktop` command: opening the desktop window beside this terminal client |
 | `commands/focus` | the `argus focus` command: where the person is working, as JSON, once or on every change |
 | `commands/extension` | the `argus extension` command: the guide to building one, and the running extensions listed or one shown whole, as the daemon here or under `--host` describes them |
+| `commands/update` | the `argus update` command: this installation's executables replaced with the newest release's and the daemon restarted onto them, or with `--check` only whether there is one |
+| `commands/update/release` | which release is the newest, and which of its archives this machine runs, named as the release workflow names them |
+| `commands/update/download` | fetching a release's files over HTTPS in this process, against the operating system's certificates, and an archive held to its published checksum |
+| `commands/update/archive` | the executables in a release archive, read out of it under Argus's own names and nothing else |
+| `commands/update/swap` | replacing the installed executables with a release's, all or none, the old ones renamed aside since Windows will not overwrite a running one |
+| `commands/update/progress` | how an update shows what it is doing: a bar redrawn while the archive downloads, then a line per step, and plain lines when not on a terminal |
 | `connection` | how this client reaches its daemons and talks to them |
 | `connection/launch` | reaching this machine's daemon, starting one if nothing is listening, and the daemon lifecycle command |
 | `connection/wire` | the socket a connection runs over: the two tasks between the app and the daemon, and a frame's subscription churn collapsed between them |

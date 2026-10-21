@@ -297,6 +297,20 @@ Each archive contains `argus`, `argusd`, and `argus-hook` together. Extract the 
 directory to `PATH`; do not move only one executable. A matching `.sha256` file is published for
 each archive.
 
+To update an installation to the newest release, run:
+
+```sh
+argus update            # or `argus update --check` to only ask whether there is one
+```
+
+It downloads this platform's archive from GitHub Releases in its own process, checks it against
+the release's published SHA-256, and replaces `argus`, `argusd`, `argus-hook` and `argus-desktop`
+beside the running `argus` — whether they came from an archive or `cargo install` — all of them or
+none. It then restarts a running daemon onto them, its panes restored; run inside an Argus pane,
+where a restart would end that pane's shell, it says to run `argus server restart` from outside
+instead. On Windows the old executables are renamed aside, since a running `.exe` cannot be
+overwritten, and the next update deletes them.
+
 Linux and macOS binaries are not code-signed. macOS may require approval in Privacy & Security after
 the first launch. Windows binaries are not Authenticode-signed and may show a SmartScreen warning.
 

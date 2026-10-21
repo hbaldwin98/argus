@@ -6,3 +6,4 @@ pub mod bridge;
 pub mod desktop;
 pub mod extension;
 pub mod focus;
+pub mod update;
