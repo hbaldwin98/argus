@@ -9,7 +9,7 @@
 import { $, el, icon } from '../kit/dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
-import { extensionElement, extensionOnStage } from '../extensions/views.js';
+import { extensionElement, extensionOnStage, extensionTools } from '../extensions/views.js';
 import { drawFloats } from './floats.js';
 import { savedElement } from '../views/saved.js';
 import { contextMenu, openMenu } from '../kit/menu.js';
@@ -187,7 +187,7 @@ function drawTabs(dock, page, shown) {
         return close ? closesOnMiddle(node, close) : node;
     }), 
     // The shown panel's dock menu rides the strip's end, not a row of its own.
-    el('span', { class: 'grow' }), own && shown ? dockMenuButton(shown, own.title, true) : '');
+    el('span', { class: 'grow' }), ...(shown ? extensionTools(shown) : []), own && shown ? dockMenuButton(shown, own.title, true) : '');
 }
 /** What closing a panel's tab does, or `null` for a panel Rust says has no
  *  close of its own: its dock's hide puts it away. */

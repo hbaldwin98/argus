@@ -13,7 +13,7 @@ import type { Panel } from '../bindings/Panel';
 import { $, el, icon, type IconName } from '../kit/dom.js';
 import { draggable } from './drag.js';
 import { dragEdge } from './edge.js';
-import { extensionElement, extensionOnStage } from '../extensions/views.js';
+import { extensionElement, extensionOnStage, extensionTools } from '../extensions/views.js';
 import { drawFloats } from './floats.js';
 import { savedElement } from '../views/saved.js';
 import { contextMenu, type MenuItem, openMenu } from '../kit/menu.js';
@@ -224,6 +224,7 @@ function drawTabs(dock: Dock, page: DockPage | null, shown: Panel | null): void 
     }),
     // The shown panel's dock menu rides the strip's end, not a row of its own.
     el('span', { class: 'grow' }),
+    ...(shown ? extensionTools(shown) : []),
     own && shown ? dockMenuButton(shown, own.title, true) : '',
   );
 }

@@ -4993,17 +4993,17 @@ body.console-fullscreen #bar {
   margin: 0 var(--sp-4);
   background: var(--line);
 }
-/* A side of the console: the whole of it, or half while it is split. */
-.cside {
+/* A side of the console (not the Checkouts stage's `.cside`): the whole of it, or half while it is split. */
+.cpane {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
-.cside + .cside {
+.cpane + .cpane {
   border-left: 1px solid var(--line);
 }
-.cside > .terminal {
+.cpane > .terminal {
   min-height: 0;
 }
 .thead {
@@ -8711,6 +8711,18 @@ body.resizing {
 .row-act:focus-visible {
   background: var(--line);
   color: var(--fg);
+}
+/* Narrow, as in a dock, the buttons would cover the row's name: one ⋯ button
+   opens them as a menu instead. Wide, the text buttons show and it does not. */
+@container (max-width: 560px) {
+  .vtable-acts-bar .row-act {
+    display: none;
+  }
+}
+@container (min-width: 561px) {
+  .vtable-acts-bar .row-more {
+    display: none;
+  }
 }
 /* A status as a dot and a quiet word; only a bad one is loud. */
 .vdotted {

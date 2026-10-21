@@ -6,7 +6,7 @@
 // (`src/extensions/views.rs`, `src/extensions/keys.rs`), and `docks` puts
 // a docked view's element in its dock; a row changes only when its
 // extension publishes it again.
-import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
+import { dockMenuButton, dockShowsTabs, drawDocks } from '../layout/docks.js';
 import { $, closeButton, el, escKey, focusQuietly, icon } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
 import { echoes } from './status_echo.js';
@@ -70,16 +70,43 @@ export function drawExtensionNav() {
 }
 /** `caps` writes the action's key on it; a row's buttons leave it to the
  *  dock's menu, which lists every key once, and carry it in the tooltip. */
-function actionButton(view, action, kind, caps = true) {
+function actionButton(view, action, kind, caps = true, row = null) {
     return el('button', {
         class: kind,
         type: 'button',
         title: !caps && action.key ? `${action.label} (${action.key})` : null,
         onclick: (e) => {
             e.stopPropagation();
-            extensionGesture(view.panel, { on: 'act', action: action.id });
+            runOn(view, action, row);
         },
     }, action.label, caps && action.key && [' ', keycap(action.key)]);
+}
+/** An action acts on the selected row, and the click that took it stopped
+ *  before the row's own select: a hovered row is selected first. */
+function runOn(view, action, row) {
+    if (row !== null && row !== view.selected)
+        extensionGesture(view.panel, { on: 'select', key: row });
+    extensionGesture(view.panel, { on: 'act', action: action.id });
+}
+/** A narrow table's row actions behind one button, so they never cover the
+ *  row's name; the wide table shows them as text instead (`.row-more`). */
+function rowMore(view, actions, row) {
+    return el('button', {
+        class: 'icon row-more',
+        type: 'button',
+        title: 'Actions',
+        'aria-label': 'Row actions',
+        'aria-haspopup': 'menu',
+        onclick: (e) => {
+            e.stopPropagation();
+            const box = e.currentTarget.getBoundingClientRect();
+            openMenu('Row actions', actions.map((a) => ({
+                label: a.label,
+                hint: a.key ? keycap(a.key) : false,
+                run: () => runOn(view, a, row),
+            })), { x: box.right, y: box.bottom + 4, align: 'end' });
+        },
+    }, icon('more'));
 }
 /** The chords the keymap gives the view's move to a page or back. */
 function modeChords(page) {
@@ -110,11 +137,21 @@ function pageButton(view) {
         onclick: () => call('extension_mode', { panel: view.panel, page: true }),
     }, icon('external'));
 }
+/** A docked view's tools, for its dock's tab strip or its own title row. */
+export function extensionTools(panel) {
+    const view = tableOf(panel);
+    return view && !view.page ? [pageButton(view), viewMenu(panel, view.title)] : [];
+}
 /** A docked view's ⋯ menu: the extension's view-wide actions, then every
  *  action that answers to a key, run on the selected row, so the keys are
  *  listed once here and not on every row. */
-function viewMenu(view) {
+function viewMenu(panel, title) {
+    // Read at the click: a dock's tab strip is drawn on the docks' events and
+    // the view may have published since.
     const items = () => {
+        const view = tableOf(panel);
+        if (!view)
+            return [];
         const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
         const rows = withKeys(view.actions.filter((a) => !a.viewWide));
         const item = (a, off) => ({
@@ -134,11 +171,11 @@ function viewMenu(view) {
         class: 'icon',
         type: 'button',
         title: 'More',
-        'aria-label': `${view.title} menu`,
+        'aria-label': `${title} menu`,
         'aria-haspopup': 'menu',
         onclick: (e) => {
             const box = e.currentTarget.getBoundingClientRect();
-            openMenu(view.title, items(), { x: box.right, y: box.bottom + 4, align: 'end' });
+            openMenu(title, items(), { x: box.right, y: box.bottom + 4, align: 'end' });
         },
     }, icon('more'));
 }
@@ -147,8 +184,11 @@ function header(view) {
     const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
     // A docked view's tools: its move to a page and its menu. As a page the
     // row keeps the extension's name, its actions and the way back.
-    const tools = [pageButton(view), viewMenu(view)];
-    const head = el('div', { class: 'vpanel-head' }, 
+    const tools = extensionTools(view.panel);
+    const tabbed = !view.page && dockShowsTabs(view.panel);
+    const head = el('div', 
+    // Docked under a tab strip, the tools ride the strip and this has nothing.
+    { class: 'vpanel-head', hidden: tabbed }, 
     // As a page the strip already names the view; docked it names itself.
     // A dock's tab strip names a docked view too, and holds its dock menu.
     !view.page &&
@@ -161,8 +201,7 @@ function header(view) {
             onclick: () => call('docks', { gesture: { on: 'hide', panel: view.panel } }),
         }, icon('close'))), view.page
         ? el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'vpanel-acts' }, wide.map((action) => actionButton(view, action, 'btn sm')), dockButton(view)))
-        : dockShowsTabs(view.panel) &&
-            el('div', { class: 'vpanel-meta' }, el('span', { class: 'vpanel-acts' }, ...tools)));
+        : null);
     // As a page the row is only its buttons; its Dock button is the way back.
     return view.page ? head : draggable(head, view.panel, view.title);
 }
@@ -283,7 +322,10 @@ function body(view) {
         // whether or not its select has landed yet.
         activate: view.default ? (row) => extensionGesture(view.panel, { on: 'default', row }) : null,
         trailing: perRow.length
-            ? () => perRow.map((a) => actionButton(view, a, 'row-act', false))
+            ? (row) => [
+                ...perRow.map((a) => actionButton(view, a, 'row-act', false, row)),
+                rowMore(view, perRow, row),
+            ]
             : null,
         dots: true,
     }));
@@ -318,6 +360,8 @@ export function drawExtensionPanels() {
     }
     releaseConsoles();
     syncKeyedConsole();
+    // A dock's tab strip carries the shown view's tools, drawn from this event.
+    drawDocks();
     if (focused)
         refocus(focused);
 }
