@@ -44,10 +44,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config
 
-      # The versions the profile's roles T1 and T4 were verified with, from
-      # their own releases and checked against these hashes.
+      # The versions the profile's roles T1 and T4 were verified with.
       # taiki-e/install-action refuses to run on this image, which exports a
-      # bash function into the environment.
+      # bash function into the environment. nextest comes from its release,
+      # checked against this hash; cargo-mutants' release binary needs a
+      # newer glibc than 22.04's, so it is built, its lockfile held to.
       - name: Install cargo-nextest and cargo-mutants
         shell: bash
         run: |
@@ -57,7 +58,7 @@ jobs:
             tar xzf "$RUNNER_TEMP/$1.tgz" -C "$HOME/.cargo/bin"
           }
           get nextest https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.148/cargo-nextest-0.9.148-x86_64-unknown-linux-gnu.tar.gz 223ba936714cc861a9cdedad5a8eb664dfdd69d6fbdf6cea6aa8184f523290dc
-          get mutants https://github.com/sourcefrog/cargo-mutants/releases/download/v27.1.0/cargo-mutants-x86_64-unknown-linux-gnu.tar.gz dfe6dc37d0342c891d2829b5a695aa57c2d0edecef7e7d0399a30cc6e206411e
+          cargo install cargo-mutants --version 27.1.0 --locked
           cargo nextest --version
           cargo mutants --version
 
