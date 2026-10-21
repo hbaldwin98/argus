@@ -357,6 +357,13 @@ impl App {
             // The answer to `argus extension`, which asks on a connection
             // of its own.
             ServerMsg::ExtensionsDescribed(_) => {}
+            // Sent only to a client that listed `CODE_EDIT`, which the
+            // terminal does not.
+            ServerMsg::EditOpened(_)
+            | ServerMsg::EditChanged(_)
+            | ServerMsg::EditSaved { .. }
+            | ServerMsg::EditRefused { .. }
+            | ServerMsg::EditClosed { .. } => {}
             ServerMsg::Stopping => self.should_quit = true,
         }
     }

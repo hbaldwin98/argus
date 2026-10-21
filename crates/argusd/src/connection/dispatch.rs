@@ -509,6 +509,34 @@ pub(super) fn dispatch(
                 truncated,
             }))
         }),
+        // A working file edited live: its writes by anything else are sent
+        // as they land, for as long as it is open.
+        ClientMsg::OpenEdit { checkout, path } => {
+            match daemon.checkout_path(checkout) {
+                Ok(root) => {
+                    let open = crate::code::edit::Open::start(checkout, root, path.clone(), out_tx.clone());
+                    conn.edits.insert((checkout, path), open);
+                }
+                Err(e) => {
+                    let _ = out_tx.send(ServerMsg::EditClosed { checkout, path, reason: e.to_string() });
+                }
+            }
+            Ok(())
+        }
+        ClientMsg::Edit { checkout, path, base, changes } => {
+            match conn.edits.get(&(checkout, path.clone())) {
+                Some(open) => open.edit(checkout, path, base, changes, out_tx.clone()),
+                None => {
+                    let reason = Some(format!("{path} is not open"));
+                    let _ = out_tx.send(ServerMsg::EditRefused { checkout, path, base, reason });
+                }
+            }
+            Ok(())
+        }
+        ClientMsg::CloseEdit { checkout, path } => {
+            conn.edits.remove(&(checkout, path));
+            Ok(())
+        }
         // A folder as it is on disk, for the Checkouts stage's files.
         ClientMsg::ListDir {
             request_id,

@@ -81,13 +81,14 @@ pub use tree::held::{transitions, HeldTree, Lineage, Transition};
 pub use connection::hello::{
     ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
-    RENAME_PANE, SAVED_VIEWS, CODE, FILES, REQUEST_REFUSALS,
+    RENAME_PANE, SAVED_VIEWS, CODE, CODE_EDIT, FILES, REQUEST_REFUSALS,
 };
 pub use connection::request_refusal::RequestRefusal;
 pub use code::{
     CodeChange, CodeFile, CodeLine, CodeMatch, CodeMatches, CodeSymbol, CodeTree, CodeVersion, Removed, SearchOptions,
     MAX_CODE_MATCHES,
 };
+pub use code::edit::{EditChanged, EditOpened, TextChange};
 pub use files::{CheckoutDir, CheckoutEntry, EntryGit, MAX_DIR_ENTRIES};
 pub use hook::{
     endpoint_url, extension_path, extension_prefix, extension_url, parse_extension_path, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,

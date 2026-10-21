@@ -4,8 +4,10 @@
 //! the file defines. Read-only, and nothing here writes to the object
 //! database: the working tree is read off disk, the rest out of trees Git
 //! already holds. Where text occurs across the working tree is `search`'s,
-//! and what a file defines `symbols`'s.
+//! what a file defines `symbols`'s, and a working file edited live
+//! `edit`'s.
 
+pub mod edit;
 pub mod search;
 pub mod symbols;
 
@@ -15,11 +17,11 @@ use anyhow::{bail, Context};
 use argus_protocol::{is_checkout_relative, CodeChange, CodeLine, CodeSymbol, CodeVersion, Removed};
 
 /// Files larger than this are named but not read, as a review lists them.
-const MAX_FILE_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_FILE_BYTES: usize = 1024 * 1024;
 /// How far into a file a NUL marks it binary: Git's own heuristic.
-const BINARY_SNIFF: usize = 8000;
-const BINARY_NOTE: &str = "binary file";
-const TOO_LARGE_NOTE: &str = "too large to display";
+pub(crate) const BINARY_SNIFF: usize = 8000;
+pub(crate) const BINARY_NOTE: &str = "binary file";
+pub(crate) const TOO_LARGE_NOTE: &str = "too large to display";
 
 /// One file at one version.
 pub struct ReadFile {

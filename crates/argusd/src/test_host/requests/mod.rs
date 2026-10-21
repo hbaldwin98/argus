@@ -99,7 +99,8 @@ macro_rules! kinds {
 kinds! {
     Subscribe, Unsubscribe, Input, Paste, PasteFile, Scrollback, Resize, SpawnShell, SpawnAgent,
     SpawnConsole, Kill, RenamePane, CreateWorktree, RemoveCheckout, OpenWorkspace,
-    CreateWorkspace, Review, ReviewContext, ListCode, ReadCode, SearchCode, ListDir, ListCommits,
+    CreateWorkspace, Review, ReviewContext, ListCode, ReadCode, SearchCode, OpenEdit, Edit, CloseEdit,
+    ListDir, ListCommits,
     ListCommitFiles, ListSessions, ReadSession, ListResumes, ResumeSession, ReviewComment,
     GetDecisions, Feature, TrackerMap, Reconcile, Task, Decide, ChangeDecision, SequenceDiagram,
     ListBranches, ListFiles, SwitchBranch, CreateBranch, DeleteBranch, Fetch, Pull, OpenInEditor,
@@ -133,6 +134,9 @@ pub fn kind(msg: &ClientMsg) -> Kind {
         M::ListCode { .. } => Kind::ListCode,
         M::ReadCode { .. } => Kind::ReadCode,
         M::SearchCode { .. } => Kind::SearchCode,
+        M::OpenEdit { .. } => Kind::OpenEdit,
+        M::Edit { .. } => Kind::Edit,
+        M::CloseEdit { .. } => Kind::CloseEdit,
         M::ListDir { .. } => Kind::ListDir,
         M::ListCommits { .. } => Kind::ListCommits,
         M::ListCommitFiles { .. } => Kind::ListCommitFiles,
@@ -209,6 +213,9 @@ pub fn generate(kind: Kind, k: &Known) -> BoxedStrategy<ClientMsg> {
         K::ListCode => git::list_code(k),
         K::ReadCode => git::read_code(k),
         K::SearchCode => git::search_code(k),
+        K::OpenEdit => git::open_edit(k),
+        K::Edit => git::edit(k),
+        K::CloseEdit => git::close_edit(k),
         K::ListDir => git::list_dir(k),
         K::ListCommits => git::list_commits(k),
         K::ListCommitFiles => git::list_commit_files(k),
@@ -347,7 +354,10 @@ pub fn request_id_mut(msg: &mut ClientMsg) -> Option<&mut u64> {
         | M::ExtensionCommand { .. }
         | M::ExtensionDialogAnswer { .. }
         | M::DescribeExtensions
-        | M::Hello(_) => None,
+        | M::Hello(_)
+        | M::OpenEdit { .. }
+        | M::Edit { .. }
+        | M::CloseEdit { .. } => None,
     }
 }
 

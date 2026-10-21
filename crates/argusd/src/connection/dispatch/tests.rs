@@ -468,6 +468,51 @@ async fn the_code_stage_reads_a_versions_files_one_file_and_a_search() {
 }
 
 #[tokio::test]
+async fn an_open_file_takes_the_clients_changes_and_tells_it_of_any_other_write() {
+    use argus_protocol::TextChange;
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    let file = dir.path().join("a.rs");
+    std::fs::write(&file, "fn a() {}\r\n").unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    let path = "a.rs".to_string();
+
+    h.send(ClientMsg::OpenEdit { checkout, path: path.clone() });
+    match answer(&mut h).await {
+        ServerMsg::EditOpened(o) => assert_eq!((o.version, o.text.as_str()), (0, "fn a() {}\n")),
+        other => panic!("unexpected {other:?}"),
+    }
+
+    let changes = vec![TextChange { from: 3, to: 4, insert: "b".into() }];
+    h.send(ClientMsg::Edit { checkout, path: path.clone(), base: 0, changes });
+    assert!(matches!(answer(&mut h).await, ServerMsg::EditSaved { base: 0, version: 1, .. }));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "fn b() {}\r\n", "written with the file's own endings");
+
+    // An agent's write, which the watch hears of without being asked.
+    std::fs::write(&file, "fn b() {}\r\nfn c() {}\r\n").unwrap();
+    loop {
+        match answer(&mut h).await {
+            ServerMsg::EditChanged(c) => {
+                assert_eq!((c.from, c.version), (1, 2));
+                assert_eq!(c.changes, [TextChange { from: 10, to: 10, insert: "fn c() {}\n".into() }]);
+                break;
+            }
+            // The client's own write, heard back by the watch, is no change.
+            ServerMsg::EditOpened(_) | ServerMsg::EditSaved { .. } => panic!("unexpected echo"),
+            _ => {}
+        }
+    }
+
+    h.send(ClientMsg::CloseEdit { checkout, path: path.clone() });
+    h.send(ClientMsg::Edit { checkout, path: path.clone(), base: 2, changes: Vec::new() });
+    assert!(matches!(answer(&mut h).await, ServerMsg::EditRefused { reason: Some(_), .. }), "closed, so no longer written");
+
+    h.send(ClientMsg::OpenEdit { checkout, path: "../out.rs".into() });
+    assert!(matches!(answer(&mut h).await, ServerMsg::EditClosed { .. }));
+}
+
+#[tokio::test]
 async fn a_folder_of_a_checkout_is_listed_and_one_outside_it_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     git2::Repository::init(dir.path()).unwrap();

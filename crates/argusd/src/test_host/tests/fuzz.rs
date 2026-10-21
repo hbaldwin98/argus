@@ -94,7 +94,8 @@ fn answered(kind: Kind) -> Answered {
         | K::View | K::WatchFocus | K::WatchViews | K::CloseView | K::RefreshView
         | K::PressView | K::WatchSavedViews | K::RefreshSavedView | K::MarkSavedViewStale
         | K::DeleteSavedView | K::PressSavedView | K::ExtensionAction | K::ExtensionCommand
-        | K::ExtensionDialogAnswer | K::DescribeExtensions | K::Hello => Answered::NotById,
+        | K::ExtensionDialogAnswer | K::DescribeExtensions | K::Hello | K::OpenEdit | K::Edit
+        | K::CloseEdit => Answered::NotById,
     }
 }
 

@@ -44,6 +44,7 @@ tempfile = "3"
 proptest = "1"
 insta = { version = "1", default-features = false }
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+similar = "2.7"
 rusqlite = { version = "0.40", features = ["bundled"] }
 tree-sitter = "0.27"
 tree-sitter-highlight = "0.27"

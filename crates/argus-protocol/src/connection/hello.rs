@@ -41,6 +41,7 @@ pub const CAPABILITIES: &[&str] = &[
     RENAME_PANE,
     SAVED_VIEWS,
     CODE,
+    CODE_EDIT,
     FILES,
     REQUEST_REFUSALS,
 ];
@@ -122,6 +123,12 @@ pub const SAVED_VIEWS: &str = "saved-views";
 /// `ServerMsg::Code`, `ServerMsg::CodeMatches` and their refusals from the
 /// daemon.
 pub const CODE: &str = "code";
+
+/// Editing a working file live: `ClientMsg::OpenEdit`, `ClientMsg::Edit`
+/// and `ClientMsg::CloseEdit` from a client, `ServerMsg::EditOpened`,
+/// `ServerMsg::EditChanged`, `ServerMsg::EditSaved`,
+/// `ServerMsg::EditRefused` and `ServerMsg::EditClosed` from the daemon.
+pub const CODE_EDIT: &str = "code-edit";
 
 /// A checkout's folders as they are on disk: `ClientMsg::ListDir` from a
 /// client, `ServerMsg::CheckoutDir` and its refusals from the daemon.

@@ -1,7 +1,9 @@
 //! A checkout's code as the Code stage reads it: which version of its
 //! files, a file's lines and the ones that version changed, what the file
 //! defines, and where text occurs across the checkout. Read-only; changing
-//! code is the editor's.
+//! a working file is `edit`'s.
+
+pub mod edit;
 
 use serde::{Deserialize, Serialize};
 

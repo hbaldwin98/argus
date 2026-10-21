@@ -2,7 +2,7 @@
 //! its review and history, its files and their search, and the agent
 //! sessions recorded against it.
 
-use argus_protocol::{ClientMsg, CodeVersion, ReviewAnchor, ReviewBase, SearchOptions};
+use argus_protocol::{ClientMsg, CodeVersion, ReviewAnchor, ReviewBase, SearchOptions, TextChange};
 use proptest::prelude::*;
 
 use super::values::{checkout, checkout_path, commit, maybe_text, pane, repository, request_id, text};
@@ -95,6 +95,23 @@ pub fn search_code(k: &Known) -> BoxedStrategy<ClientMsg> {
     (request_id(), checkout(k), query, options)
         .prop_map(|(request_id, checkout, query, options)| ClientMsg::SearchCode { request_id, checkout, query, options })
         .boxed()
+}
+
+pub fn open_edit(k: &Known) -> BoxedStrategy<ClientMsg> {
+    (checkout(k), checkout_path(k)).prop_map(|(checkout, path)| ClientMsg::OpenEdit { checkout, path }).boxed()
+}
+
+/// Changes on a version that may or may not be the one open, positioned
+/// in or past the text, overlapping or out of order as often as not.
+pub fn edit(k: &Known) -> BoxedStrategy<ClientMsg> {
+    let change = (0u32..64, 0u32..8, text()).prop_map(|(from, len, insert)| TextChange { from, to: from + len, insert });
+    (checkout(k), checkout_path(k), 0u64..4, proptest::collection::vec(change, 0..4))
+        .prop_map(|(checkout, path, base, changes)| ClientMsg::Edit { checkout, path, base, changes })
+        .boxed()
+}
+
+pub fn close_edit(k: &Known) -> BoxedStrategy<ClientMsg> {
+    (checkout(k), checkout_path(k)).prop_map(|(checkout, path)| ClientMsg::CloseEdit { checkout, path }).boxed()
 }
 
 pub fn list_commits(k: &Known) -> BoxedStrategy<ClientMsg> {

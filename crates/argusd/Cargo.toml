@@ -32,6 +32,7 @@ git2 = { workspace = true }
 ignore = "0.4"
 regex = "1"
 notify = { workspace = true }
+similar = { workspace = true }
 tempfile = { workspace = true }
 rusqlite = { workspace = true }
 tree-sitter = { workspace = true }

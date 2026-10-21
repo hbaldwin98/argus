@@ -322,6 +322,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn edits_survive_the_wire_with_their_text_whole() {
+        use crate::code::edit::{EditChanged, TextChange};
+        // A surrogate pair and a CR: what the positions count must reach the
+        // other side as it was sent.
+        let changes = vec![TextChange { from: 2, to: 4, insert: "é😀\r\n".into() }];
+        let sent = ClientMsg::Edit { checkout: CheckoutId(3), path: "src/a.rs".into(), base: 7, changes: changes.clone() };
+        let back = roundtrip(&sent).await;
+        assert_eq!(format!("{sent:?}"), format!("{back:?}"));
+
+        let sent = ServerMsg::EditChanged(EditChanged { checkout: CheckoutId(3), path: "src/a.rs".into(), from: 7, version: 8, changes });
+        let ServerMsg::EditChanged(back) = roundtrip(&sent).await else {
+            panic!("variant changed across the wire");
+        };
+        assert_eq!((back.from, back.version, back.changes[0].insert.as_str()), (7, 8, "é😀\r\n"));
+
+        let sent = ServerMsg::EditRefused { checkout: CheckoutId(3), path: "a".into(), base: 1, reason: None };
+        assert!(matches!(roundtrip(&sent).await, ServerMsg::EditRefused { reason: None, base: 1, .. }));
+    }
+
+    #[tokio::test]
     async fn every_pane_status_survives_the_wire() {
         for status in [
             PaneStatus::Idle,

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::views::agent_view::ShownView;
 use crate::panes::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::code::{CodeFile, CodeMatches, CodeTree, CodeVersion, SearchOptions};
+use crate::code::edit::{EditChanged, EditOpened, TextChange};
 use crate::files::CheckoutDir;
 use crate::panes::damage::{CellRun, Scroll};
 use crate::board::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
@@ -205,6 +206,28 @@ pub enum ClientMsg {
         query: String,
         #[serde(default)]
         options: SearchOptions,
+    },
+    /// A working-tree file held open for this client to edit, its writes
+    /// by anything else sent as they land. Answered `EditOpened`, or
+    /// `EditClosed` for a file that cannot be edited. Only to a daemon that
+    /// listed `CODE_EDIT`.
+    OpenEdit {
+        checkout: CheckoutId,
+        path: String,
+    },
+    /// The client's changes to a file it opened, made on version `base`,
+    /// written at once. Answered `EditSaved`, or `EditRefused` when the
+    /// file moved on first.
+    Edit {
+        checkout: CheckoutId,
+        path: String,
+        base: u64,
+        changes: Vec<TextChange>,
+    },
+    /// The file is let go: its writes are no longer sent.
+    CloseEdit {
+        checkout: CheckoutId,
+        path: String,
     },
     /// One folder of a checkout as it is on disk, with what Git makes of
     /// each entry. `path` is relative to the checkout, `/`-separated, empty
@@ -713,6 +736,34 @@ pub enum ServerMsg {
         request_id: u64,
         checkout: CheckoutId,
         message: String,
+    },
+    /// The answer to `ClientMsg::OpenEdit`.
+    EditOpened(EditOpened),
+    /// A file open for editing written by something else.
+    EditChanged(EditChanged),
+    /// The client's change made on `base` is on disk, as `version`.
+    EditSaved {
+        checkout: CheckoutId,
+        path: String,
+        base: u64,
+        version: u64,
+    },
+    /// The client's change made on `base` was not written. With no
+    /// `reason` the file had moved on, and the `EditChanged` that says how
+    /// was sent first, so the change can be made again on it; otherwise the
+    /// write failed, and the reason is the person's to read.
+    EditRefused {
+        checkout: CheckoutId,
+        path: String,
+        base: u64,
+        reason: Option<String>,
+    },
+    /// A file is no longer open for editing — it could not be read, or was
+    /// deleted — and nothing more is sent of it.
+    EditClosed {
+        checkout: CheckoutId,
+        path: String,
+        reason: String,
     },
     /// The answer to `ClientMsg::ReviewContext`.
     ReviewContext(ReviewContext),

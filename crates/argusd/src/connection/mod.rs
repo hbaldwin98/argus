@@ -105,6 +105,9 @@ struct Connection {
     viewer: ViewerId,
     subs: Subscriptions,
     reviews: ReviewLane<dispatch::Generated>,
+    /// The files the client has open to edit, each watched until it lets
+    /// go of it or goes.
+    edits: std::collections::HashMap<(argus_protocol::CheckoutId, String), crate::code::edit::Open>,
     /// What the client is pushed: the tree, the workspaces and the boards
     /// from the start, and the rest once it asks or greets for them.
     topics: topics::Topics,
@@ -117,6 +120,7 @@ impl Connection {
             viewer: daemon.new_viewer(),
             subs: Subscriptions::new(frames),
             reviews: daemon.review_lane(),
+            edits: std::collections::HashMap::new(),
             topics: topics::Topics::new(daemon.clone(), out),
             peer: Peer::default(),
         }
