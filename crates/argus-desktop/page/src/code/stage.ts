@@ -79,7 +79,7 @@ export function codeStrip(): { crumb: HTMLElement[]; tools: HTMLElement[] } | nu
 function find(c: CodePage): HTMLElement {
   const kind = c.search ? 'search' : 'jump';
   const send = (g: ReviewJumpGesture) => gesture({ on: kind, gesture: g });
-  const hint = 'Go to a file, or # to search text';
+  const hint = 'Go to a file, or # for text';
   const input = el('input', {
     class: 'field cf-filter',
     id: 'code-find',
