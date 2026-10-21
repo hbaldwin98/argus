@@ -6,6 +6,8 @@
 // agent's table is `table/bar`'s, a row opening to blocks `table/details`'s,
 // and the sorting `table/sort`'s; this builds the table they work on.
 import { el } from '../../kit/dom.js';
+import { showsActions } from '../../extensions/row_actions.js';
+import { dotted } from '../chip.js';
 import { rowText, tableBar } from './table/bar.js';
 import { chevron, openable, rowIds } from './table/details.js';
 import { openRows, selection } from './table/memory.js';
@@ -55,7 +57,6 @@ export function table(block, picks = null, ctx = null) {
             : null);
         const row = {
             tr,
-            actions: null,
             detail: null,
             cells,
             text: rowText(cells).join('\n').toLowerCase(),
@@ -64,11 +65,6 @@ export function table(block, picks = null, ctx = null) {
             shown: true,
             refresh: null,
         };
-        // A row of its own, so a long run of buttons wraps instead of widening
-        // the table, and moves with its row when the table is sorted.
-        if (on && key !== null && picks?.trailing) {
-            row.actions = el('tr', { class: 'row-actions' }, el('td', { colspan: String(block.columns.length) }, el('div', { class: 'row-actions-bar' }, picks.trailing(key))));
-        }
         return row;
     });
     const body = el('tbody', null);
@@ -107,7 +103,7 @@ export function table(block, picks = null, ctx = null) {
             const cell = row.cells[c];
             const td = el('td', { class: classes(col, dropOf(c)) });
             if (cell) {
-                td.appendChild(value(cell, ctx));
+                td.appendChild(picks?.dots && cell.kind === 'chip' ? dotted(cell.chip) : value(cell, ctx));
                 // Long text truncates in CSS, so the full text rides along as a tooltip.
                 if (cell.kind === 'text' && cell.text.length > 24) {
                     td.classList.add('vtable-long');
@@ -116,15 +112,31 @@ export function table(block, picks = null, ctx = null) {
             }
             return td;
         }));
-        // A wide table keeps the selected row's buttons at its end, pinned to the
-        // table's window, so nothing is inserted to push the rows below down.
-        if (picks?.trailing) {
-            row.tr.append(el('td', { class: 'vtable-acts' }, row.actions && row.key !== null
-                ? el('div', { class: 'vtable-acts-bar' }, picks.trailing(row.key))
-                : null));
+        // The buttons of the selected row, and of the one under the pointer, sit
+        // at the row's end, pinned to the table's window, so nothing is inserted
+        // to push the rows below down. Built only while shown: a row at rest has
+        // none in the document, and the selected row always has them, so what
+        // the keys reach is never mouse-only.
+        if (picks?.trailing && row.key !== null) {
+            const key = row.key;
+            const trailing = picks.trailing;
+            const cell = el('td', { class: 'vtable-acts' });
+            const bar = () => {
+                if (!cell.firstChild)
+                    cell.append(el('div', { class: 'vtable-acts-bar' }, trailing(key)));
+            };
+            if (showsActions(key, picks.selected, null))
+                bar();
+            row.tr.addEventListener('pointerenter', bar);
+            row.tr.addEventListener('pointerleave', () => {
+                if (!showsActions(key, picks.selected, null) && !cell.contains(document.activeElement)) {
+                    cell.replaceChildren();
+                }
+            });
+            row.tr.append(cell);
         }
     }
-    const lines = (r) => [r.tr, r.actions, r.detail].filter((n) => n !== null);
+    const lines = (r) => [r.tr, r.detail].filter((n) => n !== null);
     for (const r of rows)
         r.refresh?.();
     body.append(...rows.flatMap(lines));

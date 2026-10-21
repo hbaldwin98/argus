@@ -2808,7 +2808,7 @@ fold of quiet repositories is not; whether it is unfolded is kept in `desktop.js
 a panel of its own (see the docks): it opens in its dock, or as a page filling the stage
 (`Stage::Extension`), wherever its extension's `place` (`left`, `right` — or `panel`, the same —
 `bottom` or `stage`) says the first time and wherever the person put it after: a docked view's
-header offers Open as page and its dock menu, a page's Dock, also the keymap's `ExtensionPage` and
+header offers an Open as page icon, a ⋯ menu (the extension's view-wide actions and every row action's key) and its dock menu, a page's Dock; a row's own actions, text without key caps, show only on the selected or hovered row, its status a dot and a quiet word; the console's strip likewise keeps one ⋯ menu for split, move and fullscreen, also the keymap's `ExtensionPage` and
 `ExtensionDock` (`>` and `<` while the view has the keys, from the palette on the view last used),
 and the docks keep the choice in `desktop.json`, across its extension republishing or restarting.
 Docking goes back to the stage the page opened over. A view has no digit, the digits being the

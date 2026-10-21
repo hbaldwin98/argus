@@ -8,11 +8,13 @@
 
 import type { ConsoleGesture } from '../bindings/ConsoleGesture';
 import type { ConsoleTab } from '../bindings/ConsoleTab';
-import { DOCK_ICON, dockMenuButton, dockOf, dockWords, drawDocks } from '../layout/docks.js';
+import type { Dock } from '../bindings/Dock';
+import { dockOf, dockWords, drawDocks, moveItems } from '../layout/docks.js';
 import { $, el, icon } from '../kit/dom.js';
-import { chordsFor, presses } from '../keys/chords.js';
-import { contextMenu, type MenuItem } from '../kit/menu.js';
+import { chordsFor, keycaps, presses } from '../keys/chords.js';
+import { contextMenu, type MenuItem, openMenu } from '../kit/menu.js';
 import { closesOnMiddle } from '../kit/middle.js';
+import { stripItems, wearsDot, type StripAction } from './console_strip.js';
 import { renameDialog } from './rename.js';
 import {
   type Screen,
@@ -66,6 +68,32 @@ function tabMenu(tab: ConsoleTab, side: boolean): MenuItem[] {
   ].filter((item): item is MenuItem => !!item);
 }
 
+/** The keymap entries whose keys the menu shows beside what it does. */
+const STRIP_KEYS: Partial<
+  Record<StripAction, ['console' | 'consoleFullscreen' | 'splitConsole', 'anywhere' | 'pane']>
+> = {
+  split: ['splitConsole', 'pane'],
+  tab: ['console', 'anywhere'],
+  fullscreen: ['consoleFullscreen', 'pane'],
+};
+
+/** The ⋯ menu: split, move the console between its dock and the Console
+ *  stage, fill the window, and the docks it can be moved to. */
+function stripMenu(docked: boolean, full: boolean, split: boolean, dock: Dock): MenuItem[] {
+  const items = stripItems({ split, docked, full, dock: dockWords(dock).slice(5) }).map(
+    (item): MenuItem => {
+      const key = STRIP_KEYS[item.action];
+      const chords = key ? chordsFor(key[0], key[1]) : [];
+      return {
+        label: item.label,
+        hint: chords.length > 0 && keycaps(chords),
+        run: () => gesture({ on: item.action }),
+      };
+    },
+  );
+  return [...items, 'sep', ...moveItems('console', docked)];
+}
+
 const PLACES = ['hidden', 'docked', 'tab', 'fullscreen'] as const;
 
 export function drawConsole(): void {
@@ -111,7 +139,8 @@ function drawHead(): void {
                 onclick: () => gesture({ on: 'select', pane: tab.pane }),
               },
               el('span', { class: 'ttl' }, tab.title),
-              el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' }),
+              wearsDot(tab.status) &&
+                el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' }),
             ),
             el(
               'button',
@@ -144,47 +173,21 @@ function drawHead(): void {
     el(
       'button',
       {
-        class: `icon${split ? ' hot' : ''}`,
-        title: titled(split ? 'Put the split away' : 'Split', 'splitConsole'),
-        'aria-label': 'Split',
-        'aria-pressed': String(split),
-        onclick: () => gesture({ on: 'split' }),
+        class: 'icon',
+        type: 'button',
+        title: 'Split, move, fill the window',
+        'aria-label': 'Console menu',
+        'aria-haspopup': 'menu',
+        onclick: (e: MouseEvent) => {
+          const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          openMenu('Console', stripMenu(docked, full, split, dock), {
+            x: box.right,
+            y: box.bottom + 4,
+            align: 'end',
+          });
+        },
       },
-      icon('split'),
-    ),
-    el('span', { class: 'csep' }),
-    docked
-      ? el(
-          'button',
-          {
-            class: 'icon',
-            title: titled('Open in the Console stage', 'console'),
-            'aria-label': 'Open in the Console stage',
-            onclick: () => gesture({ on: 'tab' }),
-          },
-          icon('up'),
-        )
-      : el(
-          'button',
-          {
-            class: 'icon',
-            title: dockWords(dock),
-            'aria-label': dockWords(dock),
-            onclick: () => gesture({ on: 'dock' }),
-          },
-          icon(DOCK_ICON[dock]),
-        ),
-    dockMenuButton('console', 'Dock the console', docked, 'chevron'),
-    el(
-      'button',
-      {
-        class: `icon${full ? ' hot' : ''}`,
-        title: titled(full ? 'Leave fullscreen' : 'Fullscreen', 'consoleFullscreen'),
-        'aria-label': 'Fullscreen',
-        'aria-pressed': String(full),
-        onclick: () => gesture({ on: 'fullscreen' }),
-      },
-      icon('expand'),
+      icon('more'),
     ),
     el(
       'button',
@@ -221,7 +224,7 @@ function drawSideHead(id: string, pane: number | null): void {
         oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, true)),
       },
       el('span', { class: 'ttl' }, tab.title),
-      el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' }),
+      wearsDot(tab.status) && el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' }),
     ),
     el(
       'button',

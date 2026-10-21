@@ -17,8 +17,6 @@ const FILTERABLE = 8;
 /** What the bar needs of a row. */
 export interface BarRow {
   tr: HTMLElement;
-  /** An extension's selected-row buttons, a row of their own under it. */
-  actions: HTMLElement | null;
   detail: HTMLElement | null;
   cells: readonly Value[];
   text: string;
@@ -86,7 +84,6 @@ export function tableBar(
     for (const r of rows) {
       r.shown = !q || r.text.includes(q);
       r.tr.hidden = !r.shown;
-      if (r.actions) r.actions.hidden = !r.shown;
       if (r.detail) r.detail.hidden = !r.shown;
     }
     shownCount.textContent = q

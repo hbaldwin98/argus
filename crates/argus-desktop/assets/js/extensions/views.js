@@ -10,8 +10,9 @@ import { dockMenuButton, dockShowsTabs } from '../layout/docks.js';
 import { $, closeButton, el, escKey, focusQuietly, icon } from '../kit/dom.js';
 import { draggable } from '../layout/drag.js';
 import { echoes } from './status_echo.js';
-import { closeLayer } from '../kit/menu.js';
-import { keycaps } from '../keys/chords.js';
+import { closeLayer, openMenu } from '../kit/menu.js';
+import { keycaps, presses } from '../keys/chords.js';
+import { keyed as withKeys } from './row_actions.js';
 import { bindView, keyView, screen, viewScreen } from '../panes/screen.js';
 import { state } from '../state.js';
 import { table } from '../views/blocks/table.js';
@@ -67,43 +68,101 @@ export function drawExtensionNav() {
         onclick: () => call('open_extension_view', { extension: v.extension, view: v.view }),
     }, el('span', { class: 'ic' }, viewIcon(v.icon)), el('span', { class: 'grow ttl' }, v.title), el('span', { class: 'meta' }, v.extension)), v.panel, v.title))));
 }
-function actionButton(view, action, kind) {
+/** `caps` writes the action's key on it; a row's buttons leave it to the
+ *  dock's menu, which lists every key once, and carry it in the tooltip. */
+function actionButton(view, action, kind, caps = true) {
     return el('button', {
         class: kind,
         type: 'button',
+        title: !caps && action.key ? `${action.label} (${action.key})` : null,
         onclick: (e) => {
             e.stopPropagation();
             extensionGesture(view.panel, { on: 'act', action: action.id });
         },
-    }, action.label, action.key && [' ', keycap(action.key)]);
+    }, action.label, caps && action.key && [' ', keycap(action.key)]);
 }
-/** Moves the view to a page or back into its dock, named with its key. */
-function modeButton(view, page) {
-    const label = page ? 'Open as page' : 'Dock';
-    const chord = state.keymap
+/** The chords the keymap gives the view's move to a page or back. */
+function modeChords(page) {
+    return (state.keymap
         .find((g) => g.place === 'extension')
-        ?.bindings.find((b) => b.action === (page ? 'extensionPage' : 'extensionDock'))?.chords;
+        ?.bindings.find((b) => b.action === (page ? 'extensionPage' : 'extensionDock'))?.chords ?? []);
+}
+/** Moves a page back into its dock, named with its key. */
+function dockButton(view) {
+    const chord = modeChords(false);
     return el('button', {
         class: 'btn sm',
         type: 'button',
-        onclick: () => call('extension_mode', { panel: view.panel, page }),
-    }, label, chord && [' ', keycaps(chord)]);
+        onclick: () => call('extension_mode', { panel: view.panel, page: false }),
+    }, 'Dock', chord.length > 0 && [' ', keycaps(chord)]);
+}
+/** A docked view's move to a page, an icon with its name and key as its
+ *  label so it costs the header no words. */
+function pageButton(view) {
+    const keys = modeChords(true)
+        .map((chord) => presses(chord).join(' '))
+        .join(', ');
+    return el('button', {
+        class: 'icon',
+        type: 'button',
+        title: keys ? `Open as page (${keys})` : 'Open as page',
+        'aria-label': 'Open as page',
+        onclick: () => call('extension_mode', { panel: view.panel, page: true }),
+    }, icon('external'));
+}
+/** A docked view's ⋯ menu: the extension's view-wide actions, then every
+ *  action that answers to a key, run on the selected row, so the keys are
+ *  listed once here and not on every row. */
+function viewMenu(view) {
+    const items = () => {
+        const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
+        const rows = withKeys(view.actions.filter((a) => !a.viewWide));
+        const item = (a, off) => ({
+            label: a.label,
+            hint: off || (a.key ? keycap(a.key) : false),
+            disabled: off,
+            run: () => extensionGesture(view.panel, { on: 'act', action: a.id }),
+        });
+        return [
+            ...wide.map((a) => item(a, false)),
+            wide.length > 0 && rows.length > 0 && 'sep',
+            rows.length > 0 && { heading: 'Keys, on the selected row' },
+            ...rows.map((a) => item(a, view.selected === null && 'no row selected')),
+        ];
+    };
+    return el('button', {
+        class: 'icon',
+        type: 'button',
+        title: 'More',
+        'aria-label': `${view.title} menu`,
+        'aria-haspopup': 'menu',
+        onclick: (e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            openMenu(view.title, items(), { x: box.right, y: box.bottom + 4, align: 'end' });
+        },
+    }, icon('more'));
 }
 function header(view) {
     // An ended console's actions are in the strip beside how it ended.
     const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
+    // A docked view's tools: its move to a page and its menu. As a page the
+    // row keeps the extension's name, its actions and the way back.
+    const tools = [pageButton(view), viewMenu(view)];
     const head = el('div', { class: 'vpanel-head' }, 
     // As a page the strip already names the view; docked it names itself.
     // A dock's tab strip names a docked view too, and holds its dock menu.
     !view.page &&
         !dockShowsTabs(view.panel) &&
-        el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), dockMenuButton(view.panel, view.title, true), el('button', {
+        el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), ...tools, dockMenuButton(view.panel, view.title, true), el('button', {
             class: 'icon',
             type: 'button',
             title: 'Hide',
             'aria-label': `Hide ${view.title}`,
             onclick: () => call('docks', { gesture: { on: 'hide', panel: view.panel } }),
-        }, icon('close'))), el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'vpanel-acts' }, wide.map((action) => actionButton(view, action, 'btn sm')), modeButton(view, !view.page))));
+        }, icon('close'))), view.page
+        ? el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'vpanel-acts' }, wide.map((action) => actionButton(view, action, 'btn sm')), dockButton(view)))
+        : dockShowsTabs(view.panel) &&
+            el('div', { class: 'vpanel-meta' }, el('span', { class: 'vpanel-acts' }, ...tools)));
     // As a page the row is only its buttons; its Dock button is the way back.
     return view.page ? head : draggable(head, view.panel, view.title);
 }
@@ -223,7 +282,10 @@ function body(view) {
         // The row rides along, so the default is taken on the row clicked
         // whether or not its select has landed yet.
         activate: view.default ? (row) => extensionGesture(view.panel, { on: 'default', row }) : null,
-        trailing: perRow.length ? () => perRow.map((a) => actionButton(view, a, 'btn sm')) : null,
+        trailing: perRow.length
+            ? () => perRow.map((a) => actionButton(view, a, 'row-act', false))
+            : null,
+        dots: true,
     }));
 }
 /** Each docked view's element, kept across redraws so `docks` can move it

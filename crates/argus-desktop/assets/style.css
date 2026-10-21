@@ -8669,18 +8669,9 @@ body.resizing {
 .ext-body .vtable-table tr.on td:first-child {
   box-shadow: inset 3px 0 0 var(--mark-sel-edge);
 }
-/* The selected row's actions, on a row of their own under it that wraps,
-   so the table is never widened by every button side by side. */
-.vtable-table tr.row-actions > td {
-  height: auto;
-  padding: var(--sp-4) var(--sp-8) var(--sp-8);
-  white-space: normal;
-  background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--mark-sel-edge);
-}
-/* A table wide enough has the selected row's buttons at its end instead:
-   a zero-width cell pinned to the window's right edge, the buttons hung from
-   it over the row's own fill, so selecting a row moves nothing. */
+/* The actions of the selected row, and of the one under the pointer, hang
+   from a zero-width cell pinned to the table window's right edge over the
+   row's own fill, so showing them moves nothing and never widens the table. */
 .vtable-table .vtable-acts {
   position: sticky;
   right: 0;
@@ -8694,32 +8685,53 @@ body.resizing {
   bottom: 0;
   display: flex;
   align-items: center;
-  gap: var(--sp-6);
+  gap: var(--sp-4);
   padding: 0 var(--sp-8) 0 var(--sp-16);
+  background: var(--fill);
+  box-shadow: calc(var(--sp-12) * -1) 0 var(--sp-12) var(--fill);
+}
+.vtable-table tr.on .vtable-acts-bar {
   background: var(--bg-selected);
   box-shadow: calc(var(--sp-12) * -1) 0 var(--sp-12) var(--bg-selected);
 }
-@container (min-width: 561px) {
-  .vtable-table tr.row-actions {
-    display: none;
-  }
+/* Text, not chips: the keys are in the dock's menu, not on every button. */
+.row-act {
+  height: var(--control-h-sm);
+  padding: 0 var(--sp-8);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
 }
-@container (max-width: 560px) {
-  .vtable-table .vtable-acts {
-    display: none;
-  }
+.row-act:hover,
+.row-act:focus-visible {
+  background: var(--line);
+  color: var(--fg);
 }
-.row-actions-bar {
-  /* As wide as the table's window, pinned to its left edge, so a table
-     scrolled sideways never carries the buttons off the right of it. */
-  position: sticky;
-  left: 0;
-  box-sizing: border-box;
-  width: calc(100cqi - var(--sp-16));
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--sp-6);
+/* A status as a dot and a quiet word; only a bad one is loud. */
+.vdotted {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+  white-space: nowrap;
+}
+.vdotted-dot {
+  width: var(--dot-sm);
+  height: var(--dot-sm);
+  flex: none;
+  border-radius: 50%;
+  background: var(--t);
+}
+.vdotted-word {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+.vdotted.t-bad .vdotted-word {
+  color: var(--danger);
 }
 
 /* An extension's question blocks, so it has the scrim and the window's centre

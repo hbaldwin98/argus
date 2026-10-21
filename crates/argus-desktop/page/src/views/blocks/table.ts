@@ -9,6 +9,8 @@
 import type { Block } from '../../bindings/Block';
 import type { Value } from '../../bindings/Value';
 import { el, type Child } from '../../kit/dom.js';
+import { showsActions } from '../../extensions/row_actions.js';
+import { dotted } from '../chip.js';
 import { rowText, tableBar } from './table/bar.js';
 import { chevron, openable, rowIds } from './table/details.js';
 import { openRows, selection } from './table/memory.js';
@@ -20,13 +22,15 @@ export type TableBlock = Extract<Block, { kind: 'table' }>;
 
 /** What an extension's view adds to a table: a key per row, the one
  *  selected, what a click and a double-click on a row do, and what the
- *  selected row offers on a line under it. An agent's table has none of it. */
+ *  selected or hovered row offers at its end. An agent's table has none of it. */
 export interface RowPicks {
   keys: readonly string[];
   selected: string | null;
   select: (key: string) => void;
   activate: ((key: string) => void) | null;
   trailing: ((key: string) => Child) | null;
+  /** Whether a chip cell is drawn as a dot and a quiet word, not a pill. */
+  dots?: boolean;
 }
 
 /** How many of an extension's trailing columns give way, last first, as the
@@ -46,9 +50,6 @@ const nothing = (): void => {};
 
 interface Row {
   tr: HTMLElement;
-  /** An extension's selected-row buttons, a row of their own under it. Only
-   *  a narrow table draws it; a wide one has them at its row's end. */
-  actions: HTMLElement | null;
   /** The block list this row opens to, drawn only while it is open. */
   detail: HTMLElement | null;
   cells: readonly Value[];
@@ -103,7 +104,6 @@ export function table(
     );
     const row: Row = {
       tr,
-      actions: null,
       detail: null,
       cells,
       text: rowText(cells).join('\n').toLowerCase(),
@@ -112,19 +112,6 @@ export function table(
       shown: true,
       refresh: null,
     };
-    // A row of its own, so a long run of buttons wraps instead of widening
-    // the table, and moves with its row when the table is sorted.
-    if (on && key !== null && picks?.trailing) {
-      row.actions = el(
-        'tr',
-        { class: 'row-actions' },
-        el(
-          'td',
-          { colspan: String(block.columns.length) },
-          el('div', { class: 'row-actions-bar' }, picks.trailing(key)),
-        ),
-      );
-    }
     return row;
   });
 
@@ -165,7 +152,9 @@ export function table(
         const cell = row.cells[c];
         const td = el('td', { class: classes(col, dropOf(c)) });
         if (cell) {
-          td.appendChild(value(cell, ctx));
+          td.appendChild(
+            picks?.dots && cell.kind === 'chip' ? dotted(cell.chip) : value(cell, ctx),
+          );
           // Long text truncates in CSS, so the full text rides along as a tooltip.
           if (cell.kind === 'text' && cell.text.length > 24) {
             td.classList.add('vtable-long');
@@ -175,23 +164,31 @@ export function table(
         return td;
       }),
     );
-    // A wide table keeps the selected row's buttons at its end, pinned to the
-    // table's window, so nothing is inserted to push the rows below down.
-    if (picks?.trailing) {
-      row.tr.append(
-        el(
-          'td',
-          { class: 'vtable-acts' },
-          row.actions && row.key !== null
-            ? el('div', { class: 'vtable-acts-bar' }, picks.trailing(row.key))
-            : null,
-        ),
-      );
+    // The buttons of the selected row, and of the one under the pointer, sit
+    // at the row's end, pinned to the table's window, so nothing is inserted
+    // to push the rows below down. Built only while shown: a row at rest has
+    // none in the document, and the selected row always has them, so what
+    // the keys reach is never mouse-only.
+    if (picks?.trailing && row.key !== null) {
+      const key = row.key;
+      const trailing = picks.trailing;
+      const cell = el('td', { class: 'vtable-acts' });
+      const bar = (): void => {
+        if (!cell.firstChild) cell.append(el('div', { class: 'vtable-acts-bar' }, trailing(key)));
+      };
+      if (showsActions(key, picks.selected, null)) bar();
+      row.tr.addEventListener('pointerenter', bar);
+      row.tr.addEventListener('pointerleave', () => {
+        if (!showsActions(key, picks.selected, null) && !cell.contains(document.activeElement)) {
+          cell.replaceChildren();
+        }
+      });
+      row.tr.append(cell);
     }
   }
 
   const lines = (r: Row): HTMLElement[] =>
-    [r.tr, r.actions, r.detail].filter((n): n is HTMLElement => n !== null);
+    [r.tr, r.detail].filter((n): n is HTMLElement => n !== null);
   for (const r of rows) r.refresh?.();
   body.append(...rows.flatMap(lines));
 

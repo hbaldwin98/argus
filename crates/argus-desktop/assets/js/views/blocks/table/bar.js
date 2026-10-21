@@ -47,8 +47,6 @@ export function tableBar(block, agent, rows, picking) {
         for (const r of rows) {
             r.shown = !q || r.text.includes(q);
             r.tr.hidden = !r.shown;
-            if (r.actions)
-                r.actions.hidden = !r.shown;
             if (r.detail)
                 r.detail.hidden = !r.shown;
         }

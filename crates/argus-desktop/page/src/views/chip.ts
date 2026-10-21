@@ -10,6 +10,17 @@ export function toneClass(tone: Tone): string {
   return `t-${tone}`;
 }
 
+/** The quiet form of a status in a dense table: a dot in the tone's colour
+ *  and the word in muted text, the word itself coloured only for a bad one. */
+export function dotted(c: Chip): HTMLElement {
+  return el(
+    'span',
+    { class: `vdotted ${toneClass(c.tone)}` },
+    el('span', { class: 'vdotted-dot', 'aria-hidden': 'true' }),
+    el('span', { class: 'vdotted-word' }, c.label),
+  );
+}
+
 export function chip(c: Chip): HTMLElement {
   return el('span', { class: `vchip ${toneClass(c.tone)}` }, c.label);
 }

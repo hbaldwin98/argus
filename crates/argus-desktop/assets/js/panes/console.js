@@ -5,11 +5,12 @@
 // the keys (`src/panes/console.rs`), and which dock holds it
 // (`src/layout/docks.rs`); this draws that, puts the keys' text area in the
 // screen that has them, and reports what was pressed.
-import { DOCK_ICON, dockMenuButton, dockOf, dockWords, drawDocks } from '../layout/docks.js';
+import { dockOf, dockWords, drawDocks, moveItems } from '../layout/docks.js';
 import { $, el, icon } from '../kit/dom.js';
-import { chordsFor, presses } from '../keys/chords.js';
-import { contextMenu } from '../kit/menu.js';
+import { chordsFor, keycaps, presses } from '../keys/chords.js';
+import { contextMenu, openMenu } from '../kit/menu.js';
 import { closesOnMiddle } from '../kit/middle.js';
+import { stripItems, wearsDot } from './console_strip.js';
 import { renameDialog } from './rename.js';
 import { beside, besideScreen, consoleScreen, keyedViewScreen, screen, screens, } from './screen.js';
 import { keyedSplit } from './split_math.js';
@@ -49,6 +50,26 @@ function tabMenu(tab, side) {
         },
     ].filter((item) => !!item);
 }
+/** The keymap entries whose keys the menu shows beside what it does. */
+const STRIP_KEYS = {
+    split: ['splitConsole', 'pane'],
+    tab: ['console', 'anywhere'],
+    fullscreen: ['consoleFullscreen', 'pane'],
+};
+/** The ⋯ menu: split, move the console between its dock and the Console
+ *  stage, fill the window, and the docks it can be moved to. */
+function stripMenu(docked, full, split, dock) {
+    const items = stripItems({ split, docked, full, dock: dockWords(dock).slice(5) }).map((item) => {
+        const key = STRIP_KEYS[item.action];
+        const chords = key ? chordsFor(key[0], key[1]) : [];
+        return {
+            label: item.label,
+            hint: chords.length > 0 && keycaps(chords),
+            run: () => gesture({ on: item.action }),
+        };
+    });
+    return [...items, 'sep', ...moveItems('console', docked)];
+}
 const PLACES = ['hidden', 'docked', 'tab', 'fullscreen'];
 export function drawConsole() {
     const page = state.console;
@@ -80,7 +101,8 @@ function drawHead() {
         'aria-selected': String(tab.on),
         title: `shell, ${tab.status}`,
         onclick: () => gesture({ on: 'select', pane: tab.pane }),
-    }, el('span', { class: 'ttl' }, tab.title), el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' })), el('button', {
+    }, el('span', { class: 'ttl' }, tab.title), wearsDot(tab.status) &&
+        el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' })), el('button', {
         class: 'icon x',
         title: 'Close',
         'aria-label': `Close ${tab.title}`,
@@ -93,30 +115,20 @@ function drawHead() {
             onclick: () => gesture({ on: 'spawn' }),
         }, icon('plus'))
         : '', el('span', { class: 'grow' }), el('button', {
-        class: `icon${split ? ' hot' : ''}`,
-        title: titled(split ? 'Put the split away' : 'Split', 'splitConsole'),
-        'aria-label': 'Split',
-        'aria-pressed': String(split),
-        onclick: () => gesture({ on: 'split' }),
-    }, icon('split')), el('span', { class: 'csep' }), docked
-        ? el('button', {
-            class: 'icon',
-            title: titled('Open in the Console stage', 'console'),
-            'aria-label': 'Open in the Console stage',
-            onclick: () => gesture({ on: 'tab' }),
-        }, icon('up'))
-        : el('button', {
-            class: 'icon',
-            title: dockWords(dock),
-            'aria-label': dockWords(dock),
-            onclick: () => gesture({ on: 'dock' }),
-        }, icon(DOCK_ICON[dock])), dockMenuButton('console', 'Dock the console', docked, 'chevron'), el('button', {
-        class: `icon${full ? ' hot' : ''}`,
-        title: titled(full ? 'Leave fullscreen' : 'Fullscreen', 'consoleFullscreen'),
-        'aria-label': 'Fullscreen',
-        'aria-pressed': String(full),
-        onclick: () => gesture({ on: 'fullscreen' }),
-    }, icon('expand')), el('button', {
+        class: 'icon',
+        type: 'button',
+        title: 'Split, move, fill the window',
+        'aria-label': 'Console menu',
+        'aria-haspopup': 'menu',
+        onclick: (e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            openMenu('Console', stripMenu(docked, full, split, dock), {
+                x: box.right,
+                y: box.bottom + 4,
+                align: 'end',
+            });
+        },
+    }, icon('more')), el('button', {
         class: 'icon',
         title: titled('Hide the console', 'toggleConsole'),
         'aria-label': 'Hide the console',
@@ -140,7 +152,7 @@ function drawSideHead(id, pane) {
         title: page.typing === tab.pane ? tab.title : `Type in ${tab.title}`,
         onclick: () => gesture({ on: 'select', pane: tab.pane }),
         oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, true)),
-    }, el('span', { class: 'ttl' }, tab.title), el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' })), el('button', {
+    }, el('span', { class: 'ttl' }, tab.title), wearsDot(tab.status) && el('span', { class: `sdot ${tab.status}`, 'aria-hidden': 'true' })), el('button', {
         class: 'icon x',
         title: 'Take out of the split',
         'aria-label': `Take ${tab.title} out of the split`,
