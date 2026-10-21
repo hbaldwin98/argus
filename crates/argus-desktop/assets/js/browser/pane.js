@@ -14,7 +14,7 @@ import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 import { address, keyInput } from './input.js';
 import { browsers, byPane } from './page.js';
-import { canvasFor, paint, point } from './shots.js';
+import { canvasFor, dropShot, paint, point } from './shots.js';
 import { status } from './status.js';
 const views = new Map();
 /** The viewport each browser was last told, so a redraw says it again
@@ -68,11 +68,12 @@ export function browserView(pane) {
     const strip = el('div', { class: 'vpanel-tabs btabs', role: 'tablist', 'aria-label': 'Tabs' });
     // No padding: the box is the viewport the page is laid out at, so the
     // canvas filling it draws the picture one pixel to one.
-    const screen = el('div', { class: 'bpane-screen' }, canvas);
+    const blank = el('div', { class: 'bpane-blank', hidden: true }, el('p', null, 'No tab open'), barButton('New tab', 'Open a tab', () => send(pane, { kind: 'new_tab' })));
+    const screen = el('div', { class: 'bpane-screen' }, canvas, blank);
     const root = el('div', { class: 'bpane' }, strip, el('div', { class: 'bbar' }, barButton('←', 'Back', () => send(pane, { kind: 'back' })), barButton('→', 'Forward', () => send(pane, { kind: 'forward' })), barButton('⟳', 'Reload', () => send(pane, { kind: 'reload' })), field, barButton('Close', 'Close this browser; the agent’s next request opens another', () => call('close_browser', { pane }))), screen);
     root.addEventListener('mousedown', () => keyPane(pane), true);
     const observer = watchSize(pane, screen);
-    const view = { root, strip, canvas, field, observer };
+    const view = { root, strip, canvas, field, observer, blank };
     views.set(pane, view);
     update(pane, view);
     paint(pane);
@@ -98,6 +99,10 @@ function update(pane, view) {
     const browser = byPane(pane);
     view.strip.replaceChildren(...(browser ? tabControls(browser) : []));
     view.canvas.setAttribute('aria-label', browser ? `${browser.agent}'s browser` : 'Browser');
+    const tabless = browser?.shown === null;
+    view.blank.hidden = !tabless;
+    if (tabless)
+        dropShot(pane);
     if (browser && document.activeElement !== view.field)
         view.field.value = browser.url;
 }

@@ -270,6 +270,11 @@ impl Daemon {
                 let (url, title) = on.map(|tab| (tab.url.clone(), tab.title.clone())).unwrap_or_default();
                 titled = Some(if title.is_empty() { UNTITLED.to_string() } else { title.clone() });
                 let Seen { tabs, shown, following, held, driver } = seen;
+                // With no tab shown there is no page: the last picture is of
+                // one that closed, and a client that joins is not sent it.
+                if shown.is_none() {
+                    open.frame = None;
+                }
                 open.page = BrowserPage { pane, owner, url, title, tabs, shown, following, held, driver };
                 BrowserNews::Page(open.page.clone())
             }

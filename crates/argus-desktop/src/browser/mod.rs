@@ -105,6 +105,10 @@ impl Browsers {
     /// Where a browser is now; `true` when it has just opened, which a
     /// pane beside its agent's is opened for.
     pub fn page(&mut self, page: BrowserPage) -> bool {
+        // No tab, no page: a page that loads is not sent a closed one's picture.
+        if page.shown.is_none() {
+            self.shots.remove(&page.pane);
+        }
         self.open.insert(page.pane, page).is_none()
     }
 
@@ -244,6 +248,18 @@ mod tests {
         browsers.watch(browsers.drawn(&[], true), &mut out);
         browsers.watch(browsers.drawn(&[], true), &mut out);
         assert!(matches!(&out[..], [ClientMsg::WatchBrowsers { showing }] if showing == &[PaneId(1), PaneId(2)]), "{out:?}");
+    }
+
+    #[test]
+    fn a_browser_whose_last_tab_closed_keeps_no_picture_for_a_page_that_loads() {
+        let mut browsers = Browsers::default();
+        let mut shown = page(1, "https://a.test");
+        shown.shown = Some("t1".into());
+        browsers.page(shown);
+        browsers.shot(BrowserFrame { pane: PaneId(1), jpeg: "x".into(), width: 1, height: 1 });
+        assert_eq!(browsers.forget().len(), 1);
+        browsers.page(page(1, ""));
+        assert!(browsers.forget().is_empty(), "the picture was of a tab that closed");
     }
 
     #[test]

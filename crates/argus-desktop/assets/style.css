@@ -10817,6 +10817,20 @@ button.vtree-chev:focus-visible {
 }
 /* A browser pane fills its grid card, which clips the page to its corners;
  * the terminal it replaces stays in the cell, hidden. */
+/* A browser with no tab open says so where its page was. */
+.bpane-blank {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-8);
+  color: var(--fg-muted);
+}
+.bpane-blank[hidden] {
+  display: none;
+}
 .gcell.bcell > .terminal {
   display: none;
 }
@@ -10841,6 +10855,7 @@ button.vtree-chev:focus-visible {
 /* No padding: the box is the viewport the page is laid out at, so the
  * canvas filling it draws the picture one pixel to one. */
 .bpane > .bpane-screen {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;

@@ -12,7 +12,7 @@ import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 import { forgetViews, updateBrowserViews } from './pane.js';
 import { browsers, setBrowsers } from './page.js';
-import { canvasFor, forgetShots, hearShot, paint, shotPanes } from './shots.js';
+import { canvasFor, dropShot, forgetShots, hearShot, paint, shotPanes } from './shots.js';
 import { dotKind, status } from './status.js';
 /** Whether the open browsers are listed under Browsers in the sidebar. */
 let listed = true;
@@ -22,6 +22,10 @@ export function browsersHeard(event) {
     for (const pane of shotPanes())
         if (!open.has(pane))
             forgetShots(pane);
+    // A browser whose last tab closed shows nothing, not that tab's last page.
+    for (const browser of event.browsers)
+        if (browser.shown === null)
+            dropShot(browser.pane);
     forgetViews();
     drawBrowsersNav();
     drawBrowsers();

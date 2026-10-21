@@ -248,6 +248,26 @@ async fn a_browser_pane_is_named_for_the_page_it_shows() {
 }
 
 #[tokio::test]
+async fn a_browser_whose_last_tab_closed_shows_a_joining_client_no_picture() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, _, pane, reports) = with_browser(dir.path());
+    let tab = argus_protocol::BrowserTab { id: "t1".into(), url: "http://x.test/".into(), title: "X".into() };
+    let page = |tabs: Vec<argus_protocol::BrowserTab>| {
+        Report::Page(Seen { shown: tabs.first().map(|t| t.id.clone()), tabs, following: true, held: false, driver: None })
+    };
+    let pictures = |d: &Daemon| d.watch_browsers().0.into_iter().filter(|n| matches!(n, BrowserNews::Frame(_))).count();
+    let settle = || tokio::time::sleep(std::time::Duration::from_millis(50));
+    reports.send(page(vec![tab])).unwrap();
+    reports.send(Report::Frame { jpeg: "x".into(), width: 1, height: 1 }).unwrap();
+    settle().await;
+    assert_eq!(pictures(&d), 1);
+    reports.send(page(Vec::new())).unwrap();
+    settle().await;
+    assert_eq!(pictures(&d), 0, "the picture was of a page that closed");
+    assert!(browser_panes(&d).iter().any(|p| p.id == pane), "the browser itself stays open");
+}
+
+#[tokio::test]
 async fn browser_panes_are_not_recorded_for_a_restart() {
     let dir = tempfile::tempdir().unwrap();
     let (d, _, _, _reports) = with_browser(dir.path());

@@ -25,6 +25,19 @@ export function hearShot(shot) {
     shots.set(shot.pane, shot);
     paint(shot.pane);
 }
+/** Lets go of a browser's picture, and blanks every canvas showing it: its
+ *  last tab closed, and what it showed is gone. */
+export function dropShot(pane) {
+    if (!shots.delete(pane))
+        return;
+    // A picture still decoding is dropped when it lands.
+    painting.set(pane, (painting.get(pane) ?? 0) + 1);
+    for (const place of PLACES) {
+        const canvas = canvases.get(`${pane}:${place}`);
+        if (canvas)
+            canvas.width = canvas.height = 0;
+    }
+}
 /** Lets go of a browser that closed. */
 export function forgetShots(pane) {
     shots.delete(pane);
