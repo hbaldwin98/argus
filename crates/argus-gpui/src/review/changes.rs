@@ -66,16 +66,27 @@ pub struct Changes {
 }
 
 impl Changes {
+    /// The diff on screen, for the stage's sideways keys.
+    pub fn diff(&self) -> &Entity<DiffView> {
+        &self.diff
+    }
+
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let files = cx.new(|cx| Files::new(heard.clone(), caller.clone(), window, cx));
         let comment = cx.new(|cx| CommentBox::new(heard.clone(), caller.clone(), window, cx));
-        let diff = cx.new(|_| DiffView::new("review-diff", true));
+        let diff = cx.new(|cx| DiffView::new("review-diff", true, true, cx));
         let split = cx.new(|cx| Split::new("review-split", "Resize the files", FILES, FILES_MIN, FILES_MAX, cx));
         let resized = cx.observe(&split, |_, _, cx| cx.notify());
         let pressed = cx.subscribe(&diff, |this, _, event: &DiffEvent, cx| {
             let target = match *event {
                 DiffEvent::Row { row, extend } => ReviewClick::Row { row, extend },
                 DiffEvent::Fold { row, all } => ReviewClick::Fold { row, all },
+                // A drag across rows is the click on its first and the shift-click
+                // on its last, and nothing is picked until the session says so.
+                DiffEvent::Range { first, last } => {
+                    this.ask(Call::ReviewClick { target: ReviewClick::Row { row: first, extend: false } }, cx);
+                    ReviewClick::Row { row: last, extend: true }
+                }
             };
             this.ask(Call::ReviewClick { target }, cx);
         });
@@ -90,6 +101,11 @@ impl Changes {
         self.files.update(cx, |files, cx| files.follow(page, window, cx));
         let slot = page.comment.as_ref().map(|_| Slot { view: self.comment.clone().into(), height: comment::HEIGHT });
         self.diff.update(cx, |diff, cx| diff.show(&page.rows, page.split, slot, cx));
+    }
+
+    /// Copies the diff's selected text; whether there was any.
+    pub fn copy(&self, cx: &mut Context<Self>) -> bool {
+        self.diff.update(cx, |diff, cx| diff.copy(cx))
     }
 
     fn ask(&self, call: Call, cx: &Context<Self>) {

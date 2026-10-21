@@ -66,8 +66,18 @@ pub struct History {
 }
 
 impl History {
+    /// Copies the diff's selected text; whether there was any.
+    pub fn copy(&self, cx: &mut Context<Self>) -> bool {
+        self.diff.update(cx, |diff, cx| diff.copy(cx))
+    }
+
+    /// The diff on screen, for the stage's sideways keys.
+    pub fn diff(&self) -> &Entity<DiffView> {
+        &self.diff
+    }
+
     pub fn new(heard: Entity<Heard>, caller: Caller, cx: &mut Context<Self>) -> Self {
-        let diff = cx.new(|_| DiffView::new("history-diff", false));
+        let diff = cx.new(|cx| DiffView::new("history-diff", false, false, cx));
         let split = cx.new(|cx| Split::new("history-split", "Resize the commits", COMMITS, COMMITS_MIN, COMMITS_MAX, cx));
         let resized = cx.observe(&split, |_, _, cx| cx.notify());
         Self { heard, caller, diff, split, scroll: ScrollHandle::new(), lit: None, _resized: resized }

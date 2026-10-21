@@ -461,6 +461,46 @@ fn picking_a_range_sends_the_clicks_the_page_sends_a_plain_one_then_one_with_shi
     assert_eq!(taken(&opened), ["ReviewAction { action: Pick }"]);
 }
 
+/// A drag from the start of the code of row `from` to the end of the code of row `to`.
+fn drag_rows(cx: &mut TestAppContext, opened: &Opened, from: usize, to: usize) {
+    cx.update_window(opened.handle, |_, window, cx| {
+        let (a, b) = (window.find(("diff-row", from)).bounds(), window.find(("diff-row", to)).bounds());
+        // Past the two number columns and the marker, one pixel into the code.
+        let start = point(a.origin.x + px(106.0), a.center().y);
+        window.drag(start, point(b.right() - px(4.0), b.center().y), cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+}
+
+#[gpui_kit::test]
+fn dragging_across_rows_sends_the_click_on_the_first_and_the_shift_click_on_the_last_and_draws_no_pick(cx: &mut TestAppContext) {
+    let opened = reviewed(cx);
+    drag_rows(cx, &opened, 1, 3);
+    assert_eq!(
+        taken(&opened),
+        ["ReviewClick { target: Row { row: 1, extend: false } }", "ReviewClick { target: Row { row: 3, extend: true } }"]
+    );
+    assert!(!present(cx, &opened, "review-pick"), "nothing is picked until the Review event says so");
+    // The text it passed over is selected, and Ctrl+C copies it.
+    press(cx, &opened, "ctrl-c");
+    assert_eq!(
+        cx.read_from_clipboard().and_then(|item| item.text()).as_deref(),
+        Some("fn main() {
+    old();
+    new();")
+    );
+    assert_eq!(taken(&opened).len(), 2, "the copy sent nothing");
+}
+
+#[gpui_kit::test]
+fn dragging_within_one_row_picks_nothing(cx: &mut TestAppContext) {
+    let opened = reviewed(cx);
+    drag_rows(cx, &opened, 2, 2);
+    assert!(taken(&opened).is_empty(), "{:?}", taken(&opened));
+}
+
 #[gpui_kit::test]
 fn a_hunk_header_and_a_note_take_no_click(cx: &mut TestAppContext) {
     let opened = reviewed(cx);
@@ -1039,6 +1079,21 @@ fn picking_a_file_asks_and_draws_its_diff_only_when_the_event_carries_it(cx: &mu
 }
 
 #[gpui_kit::test]
+fn dragging_across_a_historys_diff_selects_text_and_sends_nothing(cx: &mut TestAppContext) {
+    let opened = historied(cx);
+    forget(&opened);
+    drag_rows(cx, &opened, 1, 3);
+    assert!(taken(&opened).is_empty(), "{:?}", taken(&opened));
+    press(cx, &opened, "ctrl-c");
+    assert_eq!(
+        cx.read_from_clipboard().and_then(|item| item.text()).as_deref(),
+        Some("fn main() {
+    old();
+    new();")
+    );
+}
+
+#[gpui_kit::test]
 fn each_press_on_a_row_or_button_sends_the_call_the_page_sends(cx: &mut TestAppContext) {
     let opened = historied(cx);
     // An open commit folds, a folded one opens, each with its row.
@@ -1373,4 +1428,22 @@ fn a_sash_press_leaves_the_tabs_keys_with_the_stage(cx: &mut TestAppContext) {
     forget(&opened);
     press(cx, &opened, "j");
     assert_eq!(taken(&opened), ["ReviewAction { action: Next }"], "the keys went back to the stage after the drag");
+}
+
+#[gpui_kit::test]
+fn left_and_right_scroll_the_diff_sideways_and_send_nothing(cx: &mut TestAppContext) {
+    let opened = reviewed(cx);
+    let mut page = review();
+    page.rows = vec![hunk(0), line(1, "context", &"y".repeat(400)), line(2, "context", "z")];
+    hear(cx, &opened, vec![reviewing(page)]);
+    hear(cx, &opened, vec![]);
+    forget(&opened);
+    let x = |cx: &mut TestAppContext| cx.update_window(opened.handle, |_, window, _| window.find(("diff-row", 1usize)).bounds().origin.x).unwrap();
+    let before = x(cx);
+    press(cx, &opened, "right");
+    let after = x(cx);
+    assert!(after < before, "right moved the line from {before:?} to {after:?}");
+    press(cx, &opened, "left");
+    assert_eq!(x(cx), before, "left brings it back");
+    assert!(taken(&opened).is_empty(), "the arrows are the window's own: {:?}", taken(&opened));
 }

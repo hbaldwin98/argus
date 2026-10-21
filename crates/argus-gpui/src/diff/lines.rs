@@ -179,6 +179,56 @@ pub fn wrap(drawn: &Code, per_line: usize) -> Code {
     Code { text, spans }
 }
 
+/// The index in `drawn` of the character at `index` in `wrapped` (`drawn`
+/// with a newline at each break): the newlines before it are not in `drawn`.
+pub fn unwrapped(wrapped: &str, index: usize) -> usize {
+    index - wrapped.as_bytes()[..index.min(wrapped.len())].iter().filter(|b| **b == b'\n').count()
+}
+
+/// The index in `wrapped` of the byte at `index` in the text it was cut
+/// from. At a break the byte is the first of the next line, which a start of
+/// a range takes (`after`) and an end does not.
+pub fn wrapped_index(wrapped: &str, index: usize, after: bool) -> usize {
+    let (mut seen, mut at) = (0, 0);
+    for (i, b) in wrapped.bytes().enumerate() {
+        if b == b'\n' {
+            continue;
+        }
+        if seen == index {
+            return if after { i } else { at };
+        }
+        seen += 1;
+        at = i + 1;
+    }
+    wrapped.len()
+}
+
+/// A stretch of a side's text: its highlight kind, and whether it is selected.
+pub type Run = (Range<usize>, Option<&'static str>, bool);
+
+/// `code`'s text cut where its highlight kinds or `selected` change, in order
+/// and apart, leaving out the stretches of neither: what `StyledText` is told.
+pub fn runs(code: &Code, selected: Option<Range<usize>>) -> Vec<Run> {
+    let mut cuts: Vec<usize> = vec![0, code.text.len()];
+    for (range, _) in &code.spans {
+        cuts.extend([range.start, range.end]);
+    }
+    if let Some(range) = &selected {
+        cuts.extend([range.start, range.end]);
+    }
+    cuts.retain(|cut| *cut <= code.text.len());
+    cuts.sort_unstable();
+    cuts.dedup();
+    cuts.windows(2)
+        .filter_map(|pair| {
+            let range = pair[0]..pair[1];
+            let kind = code.spans.iter().find(|(span, _)| span.start <= range.start && range.end <= span.end).map(|(_, kind)| *kind);
+            let chosen = selected.as_ref().is_some_and(|sel| sel.start <= range.start && range.end <= sel.end);
+            (kind.is_some() || chosen).then_some((range, kind, chosen))
+        })
+        .collect()
+}
+
 /// How a highlight kind is drawn.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tone {
@@ -428,5 +478,31 @@ mod tests {
         assert_eq!(cut, ["ef\ngh"]);
         assert_eq!(wrap(&drawn, 0), drawn);
         assert_eq!(wrap(&drawn, 100), drawn);
+    }
+
+    #[test]
+    fn a_selection_cuts_the_highlight_runs_where_it_starts_and_ends() {
+        let drawn = code(&side(None, None, "context", &[("abcd", ""), ("efgh", "k")]));
+        assert_eq!(runs(&drawn, None), [(4..8, Some("k"), false)]);
+        assert_eq!(
+            runs(&drawn, Some(2..6)),
+            [(2..4, None, true), (4..6, Some("k"), true), (6..8, Some("k"), false)]
+        );
+    }
+
+    #[test]
+    fn a_selection_is_carried_between_the_text_and_its_wrapped_form() {
+        let drawn = code(&side(None, None, "context", &[("abcdefghij", "")]));
+        let wrapped = wrap(&drawn, 3);
+        assert_eq!(wrapped.text, "abc
+def
+ghi
+j");
+        assert_eq!(unwrapped(&wrapped.text, 5), 4);
+        assert_eq!(unwrapped(&wrapped.text, wrapped.text.len()), 10);
+        assert_eq!(wrapped_index(&wrapped.text, 3, true), 4);
+        assert_eq!(wrapped_index(&wrapped.text, 3, false), 3);
+        assert_eq!(wrapped_index(&wrapped.text, 10, false), wrapped.text.len());
+        assert_eq!(wrapped_index(&wrapped.text, 0, true), 0);
     }
 }

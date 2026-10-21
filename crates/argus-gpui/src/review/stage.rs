@@ -158,6 +158,33 @@ impl GitStage {
             let heard = self.heard.read(cx);
             (heard.git.tab(heard.open()), heard.review.is_some(), heard.history.is_some())
         };
+        // Left and Right are no key of the review's or the history's: they
+        // scroll the diff on screen sideways, as the page's native box does.
+        let sideways = match event.keystroke.key.as_str() {
+            "left" => -4.0,
+            "right" => 4.0,
+            _ => 0.0,
+        };
+        if sideways != 0.0 && !event.keystroke.modifiers.modified() {
+            let diff = match tab {
+                Tab::Changes => self.changes.read(cx).diff().clone(),
+                Tab::History => self.history.read(cx).diff().clone(),
+            };
+            diff.update(cx, |diff, cx| diff.nudge(sideways, cx));
+            return;
+        }
+        // Ctrl+C (Cmd+C) copies what a drag selected in the diff on screen;
+        // with nothing selected it is no key of the review's.
+        let keystroke = &event.keystroke;
+        if keystroke.key == "c" && (keystroke.modifiers.control || keystroke.modifiers.platform) && !keystroke.modifiers.alt {
+            let copied = match tab {
+                Tab::Changes => self.changes.update(cx, |changes, cx| changes.copy(cx)),
+                Tab::History => self.history.update(cx, |history, cx| history.copy(cx)),
+            };
+            if copied {
+                return;
+            }
+        }
         let Some(key) = page_key::from_keystroke(&event.keystroke) else { return };
         // Each tab hears its own keys once the session has it open; before that
         // only Escape is heard, which shuts the stage as it does the tab.
