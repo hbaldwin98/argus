@@ -84,7 +84,7 @@ text field, each dialog, the sidebar's pick, a menu over the stage, each stage �
 it hears in order and whether it takes the keys from a pane it opens over. The first layer up has
 the key, Escape puts away the first thing it finds in the same order, and the page (`keys/focus`) holds a
 handler per layer but no order of its own, so a dialog is added in one place and a test checks every
-layer's places for a key bound twice. A binding of the Everywhere place, the zoom keys', is heard by
+layer's places for a key bound twice. A binding of the Window place, the zoom keys', is heard by
 the page before anything else, a pane and a text field included, and so is bound nowhere else. The
 zoom is the webview's own rather than the page's CSS, so a pane's cells grow with the rest and its
 grid refits to the new size; it steps as a browser's does and is kept in `desktop.json`.
@@ -97,8 +97,10 @@ and `#` to features; a command chosen is a call that `session` runs where its ke
 checkout ones on the Checkouts stage's row or else the pane on screen's checkout. A stage hides the
 pane, so from one the pane commands find nothing on screen, and a held or archived feature chosen
 unfolds the Feature index to it. `?` (in a pane, the leader and `?`) opens the shortcuts sheet,
-which is the table's groups drawn whole, opening with the rule that a pane has every key but the
-leader. Both are drawn over everything, a review included, and a pane's leader key reaches them as a
+the table's groups as a list of sections beside the keys of the one chosen, generated from the table
+(`keys/sections` pairs next and previous, and the four arrows, into a row each). It opens on the
+section for where the person is, filters across all of them, and says the leader once in the pane's
+header rather than on every row. Both are drawn over everything, a review included, and a pane's leader key reaches them as a
 `Run` event, since only the page draws them. So does the Settings dialog, `Ctrl-,` (in a pane, the
 leader and `,`), also in the palette and behind the gear at the sidebar's foot: the theme (Mocha,
 Macchiato, Frappé, Latte or Argus Night — Argus's own, a cool navy lit by one periwinkle accent — or
@@ -203,7 +205,8 @@ switcher. `layout/` is where each surface sits: `docks`, `floats` (the dialogs a
 in, moved by the header and resized by the corner), `drag`, `panels` (what Rust says each panel
 that exists is and can do) and `edge` (a side column's edge, dragged). `panes/` holds `screen`,
 `input`, `split` and `split_math`, `size_label` (what the header says of the grid), `console` and `rename`. `keys/` holds `keymap`, `focus` (which
-layer has a key), `chords` (how a key is written), `palette` and `shortcuts`. `views/` is the views
+layer has a key), `chords` (how a key is written), `palette`, `sections` (the sheet's sections, filter and opening place) and
+`shortcuts`. `views/` is the views
 agents show and save: `agent` is the agents' views panel and `saved` the saved views', its parts in
 `saved/` (`ctx`, `logic` and `link`); `blocks` draws a view's blocks and hands each to the module
 of its kind in `blocks/` (`markdown`, `fields`, `table`, `list`, `stats`, `callout`, `code`,

@@ -41,7 +41,7 @@ pub enum Place {
     Anywhere,
     /// In a pane, where `session` dispatches; everywhere else the page does.
     Pane,
-    /// Everywhere, a pane, a text field and an open dialog included: the
+    /// The whole window, a pane, a text field and an open dialog included: the
     /// page hears these before anything else can.
     Window,
     /// A checkout or pane clicked in the sidebar, which holds the keys
@@ -96,6 +96,9 @@ pub enum Place {
     Link,
     /// The reconcile dialog while it is open and no field has the keys.
     Reconcile,
+    /// The shortcuts sheet while it is open, its list of sections and its
+    /// find field alike.
+    Sheet,
 }
 
 /// What a binding does. The page runs those of the places it dispatches,
@@ -446,7 +449,7 @@ impl Place {
         match self {
             Place::Anywhere => "Anywhere",
             Place::Pane => "In a pane",
-            Place::Window => "Everywhere",
+            Place::Window => "Window",
             Place::Rail => "Sidebar",
             Place::Feature => "Feature",
             Place::Card => "Board card",
@@ -468,6 +471,7 @@ impl Place {
             Place::Code => "Code",
             Place::Link => "Linking a ticket",
             Place::Reconcile => "Reconciling with the tickets",
+            Place::Sheet => "The shortcuts sheet",
         }
     }
 }
@@ -649,6 +653,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Start, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next item"),
     bind(Start, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous item"),
     bind(Start, &[Chord::key("Enter")], Choose, "start the highlighted one"),
+    bind(Place::Sheet, &[Chord::key("ArrowDown")], Next, "next section"),
+    bind(Place::Sheet, &[Chord::key("ArrowUp")], Previous, "previous section"),
     bind(Menu, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next item"),
     bind(Menu, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous item"),
     bind(Review, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next line"),
@@ -799,7 +805,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (TrackerMap, Some(Outline), "Edit the repository's tracker map…"),
 ];
 
-const ORDER: [Place; 24] = [
+const ORDER: [Place; 25] = [
     Anywhere,
     Pane,
     Window,
@@ -824,6 +830,7 @@ const ORDER: [Place; 24] = [
     Place::Extension,
     Place::Link,
     Place::Reconcile,
+    Place::Sheet,
 ];
 
 const fn layer(layer: Layer, places: Option<&'static [Place]>, takes_from_pane: bool) -> KeyLayer {
@@ -842,7 +849,7 @@ pub static LAYERS: &[KeyLayer] = &[
     layer(Layer::Field, None, false),
     layer(Layer::ExtensionDialog, None, false),
     layer(Layer::Settings, None, false),
-    layer(Layer::Sheet, Some(&[Anywhere]), false),
+    layer(Layer::Sheet, Some(&[Anywhere, Place::Sheet]), false),
     // A dialog over a pane, opened by leader-Tab, has to take the keys
     // from the pane's text area, or the pane would go on hearing them.
     layer(Layer::AddProject, None, true),
@@ -947,7 +954,7 @@ mod tests {
             [
                 "Anywhere",
                 "In a pane",
-                "Everywhere",
+                "Window",
                 "Sidebar",
                 "Feature",
                 "Board card",
@@ -968,7 +975,8 @@ mod tests {
                 "Palette",
                 "An extension's view",
                 "Linking a ticket",
-                "Reconciling with the tickets"
+                "Reconciling with the tickets",
+                "The shortcuts sheet"
             ]
         );
     }

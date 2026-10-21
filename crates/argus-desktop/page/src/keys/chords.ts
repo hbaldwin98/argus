@@ -21,7 +21,7 @@ const NAMES: Record<string, string> = {
 };
 
 /** One press, its modifiers first: `Ctrl K`, `Shift PgUp`, `j`. */
-function press(chord: Chord): string {
+export function press(chord: Chord): string {
   const name = NAMES[chord.key] ?? chord.key;
   const modifiers = [
     chord.ctrl && 'Ctrl',

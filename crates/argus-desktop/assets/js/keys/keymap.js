@@ -156,13 +156,35 @@ export function runOver(action) {
     else if (action === 'shortcuts') {
         closePalette();
         closeSettings();
-        toggleSheet();
+        toggleSheet(whereNow(), sheetAction);
     }
     else if (action === 'settings') {
         closePalette();
         closeSheet();
         openSettings();
     }
+}
+/** The sheet's keys, which it asks for itself since its find field holds
+ *  the keys from the window's dispatch. */
+const sheetAction = (e) => actionFor(['anywhere', 'sheet'], e);
+/** What the sheet opens on: the keys' place, from the focus and stage
+ *  they are in now. A `?` heard in a pane arrives after Rust dispatched it,
+ *  with the pane's text area still holding focus. */
+function whereNow() {
+    return {
+        pane: document.activeElement === $('input'),
+        dialog: reviewOpen()
+            ? 'review'
+            : historyOpen()
+                ? 'history'
+                : sessionsOpen()
+                    ? 'sessions'
+                    : null,
+        rail: railPicked(),
+        outline: workOpen(),
+        diagram: workOpen() && expandedOpen(),
+        stage: state.rail.stage,
+    };
 }
 /** The keys a dialog does not answer, open over it. */
 const NOT_THEIRS = new Set([
@@ -357,7 +379,7 @@ function hear(layer, e) {
     const action = actionFor(layer.places, e);
     if (action === 'shortcuts') {
         e.preventDefault();
-        openSheet();
+        openSheet(whereNow(), sheetAction);
     }
     else if (action && !NOT_THEIRS.has(action)) {
         e.preventDefault();

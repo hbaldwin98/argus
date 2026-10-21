@@ -353,10 +353,6 @@ export function drawExtensionConfirm() {
     }, question.label)))));
     focusQuietly(document.getElementById('extension-keep'));
 }
-/** The extensions' headings of the shortcuts sheet, after the keymap's. */
-export function extensionSheetGroups() {
-    return (state.extensions?.groups ?? []).map((group) => el('section', { class: 'sheet-group' }, el('div', { class: 'mlabel' }, group.title), group.bindings.map((binding) => el('div', { class: 'sheet-row' }, el('span', { class: 'grow' }, binding.label), keycaps(binding.chords)))));
-}
 /** Runs an extension's command with where the person is; the rail's picked
  *  row is the page's to say. */
 export function runExtensionCommand(extension, command) {

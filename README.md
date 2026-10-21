@@ -267,7 +267,8 @@ consoles again as were running, each a fresh shell in the home directory.
 `Ctrl-K` (from a pane, the leader and `k`) opens the palette: one search over the window's commands,
 the project's panes and checkouts and the chosen repository's features, each with its key or its
 status beside it. A leading `>` searches only commands, `#` only features. `?` (from a pane, the
-leader and `?`) opens the shortcuts sheet, every key grouped by where it works.
+leader and `?`) opens the shortcuts sheet: a list of sections, one per place a key works, opening on the one for
+where you are, with a field that finds a key or an action across all of them.
 
 `Ctrl-=` and `Ctrl--` (`Cmd` on a Mac) zoom the whole window in and out, a pane's text with the
 rest, and `Ctrl-0` puts it back; they work everywhere, a pane included, and the zoom is kept in

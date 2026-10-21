@@ -14,7 +14,7 @@ const NAMES = {
     PageDown: 'PgDn',
 };
 /** One press, its modifiers first: `Ctrl K`, `Shift PgUp`, `j`. */
-function press(chord) {
+export function press(chord) {
     const name = NAMES[chord.key] ?? chord.key;
     const modifiers = [
         chord.ctrl && 'Ctrl',

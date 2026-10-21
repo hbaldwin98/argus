@@ -1432,7 +1432,7 @@ export const sent = [
         }
       ],
       "place": "window",
-      "title": "Everywhere"
+      "title": "Window"
     },
     {
       "bindings": [
@@ -5047,6 +5047,40 @@ export const sent = [
       ],
       "place": "reconcile",
       "title": "Reconciling with the tickets"
+    },
+    {
+      "bindings": [
+        {
+          "action": "next",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "ArrowDown",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "next section"
+        },
+        {
+          "action": "previous",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "ArrowUp",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "previous section"
+        }
+      ],
+      "place": "sheet",
+      "title": "The shortcuts sheet"
     }
   ],
   "layers": [
@@ -5068,7 +5102,8 @@ export const sent = [
     {
       "layer": "sheet",
       "places": [
-        "anywhere"
+        "anywhere",
+        "sheet"
       ],
       "takesFromPane": false
     },
