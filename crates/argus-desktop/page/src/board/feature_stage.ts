@@ -34,6 +34,7 @@ import { ticketLinks } from './tracker/tickets.js';
 import { actionFor } from '../keys/keymap.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
+import { featureTools } from './lenses/head.js';
 import { drawWork } from './lenses/work.js';
 
 type Group = FeatureRow['group'];
@@ -215,7 +216,9 @@ function moveKey(to: string): HTMLElement | null {
  *  title, and the layout switch and the primary action at the right. */
 export function featuresStrip(): { meta: Child[]; tools: HTMLElement[] } | null {
   const f = state.features;
-  if (!f?.repository || f.open) return null;
+  // An open feature's lenses, views and menu sit on its title's own line.
+  if (f?.open) return { meta: [], tools: featureTools(f.open) };
+  if (!f?.repository) return null;
   const parts = [
     f.active > 0 && el('span', { class: 'fg-attention' }, `${f.active} active`),
     f.queued > 0 && el('span', null, `${f.queued} queued`),

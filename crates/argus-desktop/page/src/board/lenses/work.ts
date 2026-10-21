@@ -17,11 +17,12 @@ import type { TaskDetail } from '../../bindings/TaskDetail';
 import type { WorkRow } from '../../bindings/WorkRow';
 import { notice } from '../../chrome.js';
 import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
-import { $, el, icon, standingPill, statusPill, type Child } from '../../kit/dom.js';
+import { $, el, icon, statusPill, type Child } from '../../kit/dom.js';
 import { dragEdge } from '../../layout/edge.js';
 import { openMenu, type MenuItem } from '../../kit/menu.js';
 import { flowsAction, flowsLens } from './flows.js';
-import { featureViewItem, savedFeatureItems, ticketLink } from '../tracker/tickets.js';
+import { ticketLink } from '../tracker/tickets.js';
+import { statusLine } from './head.js';
 import { actionFor } from '../../keys/keymap.js';
 import { recordAction, recordLens } from './record.js';
 import { state, type Editing } from '../../state.js';
@@ -201,7 +202,7 @@ export function drawWork(): void {
     body = el('div', { class: 'split' }, side, outlineSash(side), detail(view));
   }
   const scrolled = scrollOffsets(stage);
-  stage.replaceChildren(head(view), body, keyBar(view));
+  stage.replaceChildren(statusLine(view), body, keyBar(view));
   restoreScroll(stage, scrolled);
   drawExpanded();
   const again = focused?.id ? document.getElementById(focused.id) : null;
@@ -268,152 +269,6 @@ function stillThere(view: FeatureView): boolean {
   }
 }
 
-function head(view: FeatureView): HTMLElement {
-  const tally = [
-    `${view.tasksDone}/${view.tasksTotal} tasks`,
-    view.decided > 0 && `${view.decided} decided`,
-    view.open > 0 && `${view.open} open`,
-  ].filter((part) => part !== false);
-  const progress = el('span', null);
-  progress.style.width = `${view.tasksTotal ? Math.round((view.tasksDone / view.tasksTotal) * 100) : 0}%`;
-  // The window's header names the feature, so this row opens on its state;
-  // the back arrow is the way out the breadcrumb used to be.
-  return el(
-    'div',
-    { class: 'fhead' },
-    el(
-      'div',
-      { class: 'actions head-row' },
-      el(
-        'button',
-        {
-          class: 'icon',
-          type: 'button',
-          'aria-label': 'Back to the features',
-          title: 'Back to the features (Esc)',
-          onclick: closeFeature,
-        },
-        icon('back'),
-      ),
-      standingPill(view.standing),
-      el(
-        'span',
-        { class: 'meta head-progress', title: tally.join(' · ') },
-        el('span', { class: 'pbar wide' }, progress),
-        `${view.tasksDone}/${view.tasksTotal}`,
-      ),
-      view.links.length > 0 &&
-        el(
-          'span',
-          { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' },
-          view.links.map(ticketLink),
-        ),
-      el('span', { class: 'grow' }),
-      // Lenses switch what the feature is shown as, so they are segments, not tabs.
-      el(
-        'div',
-        { class: 'seg', role: 'radiogroup', 'aria-label': 'Lens' },
-        LENSES.map(({ lens, name, key }) =>
-          el(
-            'button',
-            {
-              class: `segb${view.lens === lens ? ' on' : ''}`,
-              role: 'radio',
-              'aria-checked': String(view.lens === lens),
-              title: `${name} (${key})`,
-              onclick: () => setLens(lens),
-            },
-            name,
-            lensCount(view, lens) !== null &&
-              el('span', { class: 'fg-faint' }, ` ${lensCount(view, lens)}`),
-          ),
-        ),
-      ),
-    ),
-    briefStrip(view),
-  );
-}
-
-/** The brief on one line, with when the tickets were last reconciled and
- *  how much changed since, which the outline's rows no longer say one by one. */
-function briefStrip(view: FeatureView): HTMLElement {
-  const editing = state.editing;
-  if (editing?.what === 'brief') {
-    const area = field(
-      'edit-brief',
-      editing.text,
-      true,
-      (text) => (editing.text = text),
-      'What is being built, and why',
-    );
-    return el('div', { class: 'stack-6 brief-edit' }, area, formButtons('Save the brief'));
-  }
-  const waiting: Record<string, string> = {
-    asked: 'an agent is reading',
-    proposed: 'a proposal waits',
-    carrying: 'being carried out',
-  };
-  const linked = view.links.length > 0;
-  const changes = view.changes ?? 0;
-  const said = [
-    view.reconciled
-      ? `Reconciled ${view.reconciled.replace(/^reconciled /i, '').replace(/ by .*$/, '')}`
-      : null,
-    changes > 0 ? `${changes} change${changes === 1 ? '' : 's'} since` : null,
-  ].filter((part): part is string => part !== null);
-  return el(
-    'div',
-    { class: 'brief-strip' },
-    el('span', { class: 'brief-label' }, 'Brief'),
-    el(
-      'span',
-      { class: view.brief ? 'brief-text' : 'brief-text fg-faint', title: view.brief },
-      view.brief || 'No brief yet.',
-    ),
-    el(
-      'button',
-      {
-        class: 'btn sm',
-        title: 'Edit the brief (B)',
-        onclick: () => begin({ what: 'brief', text: view.brief }),
-      },
-      'Edit',
-    ),
-    linked && said.length > 0 && el('span', { class: 'meta fg-changed' }, said.join(' · ')),
-    linked &&
-      view.reconcile &&
-      el(
-        'span',
-        { class: `spill ${view.reconcile === 'proposed' ? 'waiting' : 'working'}` },
-        waiting[view.reconcile] ?? '',
-      ),
-    overflow('More: link, reconcile, views', featureMenu(view)),
-  );
-}
-
-/** The count a lens carries as its suffix: what it has to show. */
-function lensCount(view: FeatureView, lens: Lens): number | null {
-  if (lens === 'work') return view.tasksTotal;
-  if (lens === 'record') return view.decided + view.open;
-  return view.flows?.loaded ? view.flows.flows.length : null;
-}
-
-/** What is rarer than the brief's own row: the link and reconcile dialogs,
- *  and the views of the feature, which open in the views' panel. */
-function featureMenu(view: FeatureView): (MenuItem | false)[] {
-  const views = [...view.views.map(featureViewItem), ...savedFeatureItems(view.number)];
-  return [
-    { label: 'Link a ticket…', hint: 'T', run: () => call('open_link', { map: false }) },
-    view.links.length > 0 && {
-      label: 'Reconcile with its tickets…',
-      hint: view.reconciled ?? 'never reconciled',
-      run: () => call('open_reconcile', {}),
-    },
-    views.length > 0 && 'sep',
-    ...views,
-  ];
-}
-
 function keyBar(view: FeatureView): HTMLElement {
   const lens = view.lens;
   const keys: [string, string][] =
@@ -431,27 +286,18 @@ function keyBar(view: FeatureView): HTMLElement {
             ['E', 'source'],
             ['A', 'flow'],
           ]
-        : [
-            ['E', 'edit'],
-            ['A', 'task'],
+        : // E, A, D and R are on buttons in view, or in the feature's menu.
+          [
             ['S', 'under it'],
-            ['D', 'decision'],
             ['B', 'brief'],
             ['T', 'link'],
-            ['R', 'reconcile'],
+            ['?', 'more'],
           ];
   return el(
     'div',
     { class: 'kbar' },
     keys.map(([key, what]) => el('span', { class: 'kbar-key' }, keycap(key), ` ${what}`)),
     el('span', { class: 'grow' }),
-    (view.branch || view.agent) &&
-      el(
-        'span',
-        { class: 'kbar-key' },
-        view.branch && el('span', { class: 'mono fg-ref' }, view.branch),
-        view.agent && [`${view.agent.title} `, statusPill(view.agent.status)],
-      ),
     el('span', { class: 'kbar-key' }, keycap('Esc'), ' back to features'),
   );
 }
@@ -496,9 +342,23 @@ function outline(view: FeatureView): HTMLElement {
       'div',
       { class: 'label' },
       el('span', null, 'Outline'),
-      el('span', { class: 'grow' }),
-      legend(markChanged(view)),
+      el(
+        'button',
+        {
+          class: 'icon legend-ask',
+          type: 'button',
+          'aria-label': 'What the marks mean',
+          title: 'What the marks mean',
+          'aria-expanded': String(legendShown),
+          onclick: () => {
+            legendShown = !legendShown;
+            drawWork();
+          },
+        },
+        '?',
+      ),
     ),
+    legendShown && legend(markChanged(view)),
   );
   if (!view.loaded) section.append(el('div', { class: 'meta' }, 'Reading its tasks…'));
   else if (!view.rows.length) {
@@ -519,11 +379,11 @@ function outline(view: FeatureView): HTMLElement {
     el(
       'div',
       { class: 'actions work-foot' },
-      el('span', { class: 'grow' }),
       el(
         'button',
         { class: 'btn', onclick: () => begin({ what: 'addTask', parent: null, text: '' }) },
         '+ Task',
+        keycap('A'),
       ),
       el(
         'button',
@@ -532,26 +392,33 @@ function outline(view: FeatureView): HTMLElement {
           onclick: () => begin({ what: 'addDecision', under: null, task: null, text: '' }),
         },
         '+ Decision',
+        keycap('D'),
       ),
     ),
   );
   return section;
 }
 
-/** What each glyph of the outline means, as the outline's own header. */
+/** Whether the outline's legend is open. It is asked for, not drawn: the
+ *  marks carry a tooltip each, and a row of words above every outline was
+ *  the loudest thing on it. */
+let legendShown = false;
+
+const MARK_WORDS: [string, string][] = [
+  ['todo', 'to do'],
+  ['doing', 'in progress'],
+  ['done', 'done'],
+  ['accepted', 'decided'],
+  ['open', 'open'],
+  ['rejected', 'rejected'],
+];
+
+/** What each glyph of the outline means, as a popover under its header. */
 function legend(changed: boolean): HTMLElement {
-  const words: [string, string][] = [
-    ['todo', 'to do'],
-    ['doing', 'in progress'],
-    ['done', 'done'],
-    ['accepted', 'decided'],
-    ['open', 'open'],
-    ['rejected', 'rejected'],
-  ];
   return el(
-    'span',
-    { class: 'legend-row' },
-    words.map(([word, say]) => {
+    'div',
+    { class: 'legend-pop', role: 'group', 'aria-label': 'What the marks mean' },
+    MARK_WORDS.map(([word, say]) => {
       const [mark, tone] = stateMark(word);
       return el('span', { class: 'legend-item' }, el('span', { class: tone }, mark), say);
     }),
@@ -563,6 +430,11 @@ function legend(changed: boolean): HTMLElement {
         'changed since reconcile',
       ),
   );
+}
+
+/** The words a glyph stands for, as its tooltip says them. */
+function markWord(word: string): string {
+  return MARK_WORDS.find(([mark]) => mark === word)?.[1] ?? word;
 }
 
 export function stateMark(word: string): [string, string] {
@@ -616,7 +488,7 @@ function workRow(row: WorkRow, sub: [number, number] | null, mixed: boolean): HT
       onclick: () => call('select_work', { at: row.at }),
       ondblclick: () => editRow(),
     },
-    el('span', { class: tone }, mark),
+    el('span', { class: tone, title: markWord(row.state) }, mark),
     el(
       'span',
       {
@@ -839,9 +711,14 @@ function taskDetail(view: FeatureView, task: TaskDetail): HTMLElement {
       'div',
       { class: 'actions detail-foot' },
       el('span', { class: 'grow' }),
-      el('button', { class: 'btn', onclick: () => editRow() }, 'Edit'),
+      el('button', { class: 'btn', onclick: () => editRow() }, 'Edit', keycap('E')),
       view.agent &&
-        el('button', { class: 'btn primary', onclick: () => goToPane(view) }, 'Go to pane'),
+        el(
+          'button',
+          { class: 'btn', title: 'Go to its pane (G)', onclick: () => goToPane(view) },
+          el('span', { class: `spill ${view.agent.status} dot-only`, 'aria-hidden': 'true' }),
+          view.agent.title,
+        ),
       overflow('More: subtask, decision', [
         {
           label: 'Add subtask',
@@ -1156,7 +1033,10 @@ export function workOpen(): boolean {
  *  expanded diagram, then the feature, back to the index. */
 export function leaveWork(): void {
   if (state.editing) cancel();
-  else if (state.expanded) {
+  else if (legendShown) {
+    legendShown = false;
+    drawWork();
+  } else if (state.expanded) {
     closeExpanded();
     drawWork();
   } else closeFeature();

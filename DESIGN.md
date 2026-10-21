@@ -2563,8 +2563,7 @@ for an extension's table, and a path that is absolute or climbs out of the check
 text. Copy, on a code block or a table as TSV, goes through Rust's clipboard. A feature's ticket
 links, in the index's peek and the open feature's heading, open the ticket in the browser, or, when a
 view of that ticket waits, carry a dot and open the view instead; the page matches them by URL, or by
-tracker and key. An open feature's header lists its tickets with their roles, when it was last reconciled and by whom,
-and how many of its tasks and decisions changed here since; the Work lens dots each of those rows.
+tracker and key. An open feature's header is one quiet line (state, progress, its tickets as one button, the brief as one line that opens it for editing); when it was last reconciled and how many of its tasks and decisions changed since is the secondary text of Reconcile in the ⋯ menu, which carries a dot while a proposal waits; the Work lens dots each of those rows.
 `T` (or Link…) opens the link dialog: a pasted URL is read as its tracker and key by
 `LinkWrite::checked`, as the daemon will read it, with a role beside it; the tickets already linked
 open in the browser or unlink, and the repository's tracker map shows under them, with Edit the

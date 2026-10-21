@@ -2367,7 +2367,7 @@
 
 /* feature stage */
 .fhead {
-  padding: var(--sp-12) var(--sp-20) 0;
+  padding: var(--sp-8) var(--sp-20);
   border-bottom: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -4058,40 +4058,6 @@ select option::checkmark {
   width: 96px;
   flex: none;
 }
-.fhead .head-row {
-  /* The title gives way with an ellipsis before the lenses drop a line. */
-  flex-wrap: nowrap;
-  min-width: 0;
-}
-.fhead .chips {
-  flex: none;
-  flex-wrap: nowrap;
-  margin-left: 0;
-}
-.fhead .seg {
-  flex: none;
-}
-/* Under ~1200px the header's chips and buttons drop to a line of their own
-   rather than running off the edge, where nothing would say they were cut. */
-@media (max-width: 1200px) {
-  .brief-strip {
-    flex-wrap: wrap;
-    row-gap: var(--sp-4);
-  }
-  .brief-text {
-    flex-basis: 12ch;
-  }
-  .fhead .head-row {
-    flex-wrap: wrap;
-    row-gap: var(--sp-4);
-  }
-  .fhead .chips {
-    flex: 0 1 auto;
-    flex-wrap: wrap;
-    row-gap: var(--sp-4);
-    min-width: 0;
-  }
-}
 .fhead .head-progress {
   display: inline-flex;
   align-items: center;
@@ -4099,21 +4065,6 @@ select option::checkmark {
 }
 .fhead .head-progress .pbar.wide {
   width: 56px;
-}
-.fhead .head-row .type-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.fhead .head-row .meta,
-.fhead .head-row .spill {
-  white-space: nowrap;
-  flex: none;
-}
-.head-row {
-  align-items: center;
-  gap: var(--sp-12);
 }
 .prose {
   white-space: pre-wrap;
@@ -4258,19 +4209,100 @@ select option::checkmark {
 .frow:hover:not(.on) {
   background: var(--fill);
 }
-.legend-row {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--sp-4) var(--sp-12);
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: var(--weight-regular);
-}
 .legend-item {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-4);
+}
+/* The legend is asked for with the ? beside the Outline label and hangs
+   under it over the rows, so asking moves nothing. */
+.work-outline {
+  position: relative;
+}
+.legend-ask {
+  width: var(--sp-20);
+  height: var(--sp-20);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font: var(--type-small);
+  color: var(--fg-faint);
+}
+.legend-pop {
+  position: absolute;
+  top: 28px;
+  left: var(--sp-8);
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4) var(--sp-12);
+  padding: var(--sp-8) var(--sp-12);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+/* The header's one line: state, progress, tickets, then the brief taking
+   what room is left. */
+.head-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  min-width: 0;
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.head-line > :not(.brief-line) {
+  flex: none;
+  white-space: nowrap;
+}
+.brief-line {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.brief-line:hover {
+  color: var(--fg);
+}
+.brief-label {
+  color: var(--fg);
+  margin-right: var(--sp-8);
+}
+.menu-dots {
+  position: relative;
+}
+.attn-dot {
+  position: absolute;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  width: var(--dot-sm);
+  height: var(--dot-sm);
+  border-radius: 50%;
+  background: var(--attention);
+}
+/* A status that is only its dot, in front of a pane's name. */
+.spill.dot-only {
+  padding: 0;
+  min-height: 0;
+}
+/* A row's id is a locator, not content: smaller than its words. */
+.wrow .n {
+  font-size: var(--fs-xs);
+}
+/* Capture's header keeps the row it has always had. */
+.head-row {
+  align-items: center;
+  gap: var(--sp-12);
 }
 .ktag.active {
   color: var(--attention);
@@ -4376,29 +4408,6 @@ select option::checkmark {
 }
 .detail-title {
   margin-top: var(--sp-6);
-}
-.brief-strip {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-8);
-  padding-bottom: var(--sp-8);
-  font: var(--type-small);
-}
-.brief-label {
-  color: var(--fg-faint);
-  font-weight: var(--weight-semibold);
-}
-.brief-strip > :not(.brief-text) {
-  flex: none;
-  white-space: nowrap;
-}
-.brief-text {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-muted);
 }
 .fhead .brief-edit {
   padding-bottom: var(--sp-12);
