@@ -5877,7 +5877,7 @@ export const sent = [
   "filter": "",
   "main": null,
   "repository": "argus",
-  "reveal": "Show in Explorer",
+  "reveal": "Show in Files",
   "rows": [
     {
       "ahead": 0,

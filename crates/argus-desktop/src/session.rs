@@ -4214,10 +4214,28 @@ mod tests {
     fn the_events_a_page_is_sent_are_written_for_its_compiler_to_check() {
         use crate::connection::page::{BackdropOffer, FontFamily, SettingsPage};
         use crate::settings::remembered::Preferences;
+        // The file manager's name is this machine's ("Show in Explorer" here,
+        // "Show in Files" on CI's Linux); the file must read the same on both.
+        fn one_reveal(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Object(map) => {
+                    for (key, field) in map.iter_mut() {
+                        if key == "reveal" && field.is_string() {
+                            *field = "Show in Files".into();
+                        } else {
+                            one_reveal(field);
+                        }
+                    }
+                }
+                serde_json::Value::Array(items) => items.iter_mut().for_each(one_reveal),
+                _ => {}
+            }
+        }
         let mut sent: Vec<serde_json::Value> = Vec::new();
         let mut keep = |events: Vec<Event>| {
             for event in events {
-                let value = serde_json::to_value(&event).unwrap();
+                let mut value = serde_json::to_value(&event).unwrap();
+                one_reveal(&mut value);
                 if value["type"] != "settings" && !sent.contains(&value) {
                     sent.push(value);
                 }
