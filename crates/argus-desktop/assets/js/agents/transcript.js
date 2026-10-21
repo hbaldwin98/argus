@@ -5,7 +5,7 @@
 // (`src/agents/transcript_reader.rs`); the page draws it and says what
 // was pressed.
 import { clock, hhmm, span } from '../kit/clock.js';
-import { el, ghosts } from '../kit/dom.js';
+import { el, ghosts, icon } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { call } from '../connection/tauri.js';
 function keycap(key) {
@@ -14,10 +14,35 @@ function keycap(key) {
 function act(action) {
     call('sessions_action', { action, row: null });
 }
+/**
+ * A tool call told as prose with a small icon, the way a person would say
+ * it: "Read", "Edited", "Ran", "Searched for". A tool this does not know
+ * keeps its own name and no icon, since a wrong verb would misreport what
+ * the agent did. Harnesses name the same act differently (`Bash`, `shell`).
+ */
+const VERBS = {
+    read: ['tool-read', 'Read'],
+    view: ['tool-read', 'Read'],
+    grep: ['tool-search', 'Searched for'],
+    glob: ['tool-search', 'Searched for'],
+    search: ['tool-search', 'Searched for'],
+    write: ['tool-edit', 'Wrote'],
+    edit: ['tool-edit', 'Edited'],
+    multiedit: ['tool-edit', 'Edited'],
+    notebookedit: ['tool-edit', 'Edited'],
+    apply_patch: ['tool-edit', 'Edited'],
+    bash: ['tool-run', 'Ran'],
+    shell: ['tool-run', 'Ran'],
+    exec_command: ['tool-run', 'Ran'],
+};
+export function toolVerb(tool) {
+    return VERBS[tool.toLowerCase()] ?? null;
+}
 /** One thing said or done; `mark` is its find highlight, if any. */
 export function said(l, id = null, mark = '') {
     if (l.kind === 'tool') {
-        return el('div', { class: `tline tool${l.failed ? ' failed' : ''}${mark}`, id }, el('span', { class: 'ttool' }, l.tool), el('span', { class: 'mono ellipsis' }, l.text), l.failed && el('span', { class: 'fg-danger' }, 'failed'));
+        const verb = toolVerb(l.tool);
+        return el('div', { class: `tline tool${l.failed ? ' failed' : ''}${mark}`, id }, verb && icon(verb[0]), el('span', { class: 'ttool' }, verb ? verb[1] : l.tool), el('span', { class: 'mono ellipsis' }, l.text), l.failed && el('span', { class: 'fg-danger' }, 'failed'));
     }
     const at = hhmm(l.at);
     return el('div', { class: `tline ${l.kind}${mark}`, id }, el('div', { class: 'twho meta' }, l.kind === 'user' ? 'You' : 'Agent', at && ` · ${at}`), el('div', { class: 'ttext' }, l.text));

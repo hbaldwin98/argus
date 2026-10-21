@@ -6741,6 +6741,30 @@ body.console-fullscreen #bar {
   /* The list scrolls rather than squeezing its two-line rows into each other. */
   flex: none;
 }
+.history-col {
+  width: 520px;
+  flex: none;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+.history-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-6) var(--sp-8) 0 var(--sp-16);
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+.history-col > .history-list {
+  width: auto;
+  flex: 1;
+  min-height: 0;
+  border-right: 0;
+}
 .history-list {
   width: 520px;
   flex: none;
@@ -6769,9 +6793,28 @@ body.console-fullscreen #bar {
 .hrow.open .ellipsis {
   font-weight: var(--weight-semibold);
 }
+/* The chevron turns down on an open commit; it is the whole row that clicks. */
+.hrow .chev {
+  flex: none;
+  display: inline-flex;
+  color: var(--fg-faint);
+  transition: transform var(--t-fast);
+}
+.hrow.open .chev {
+  transform: rotate(90deg);
+  color: var(--fg-muted);
+}
 .hrow.file {
-  padding-left: var(--sp-24);
+  padding-left: var(--sp-32);
   min-height: var(--row-h);
+}
+/* A file is one line: its folder, dim, then its name. The name is what a
+   row is found by, so the folder is what the line gives way at the front
+   of: it is cut only when the whole path is wider than the list. */
+.hcfile .hcdir {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
 }
 .ellipsis {
   min-width: 0;
@@ -6780,33 +6823,65 @@ body.console-fullscreen #bar {
   white-space: nowrap;
 }
 @media (max-width: 1100px) {
-  .history-list {
+  .history-list,
+  .history-col {
     width: 360px;
   }
 }
 
 /* ---- The recent-sessions dialog ---------------------------------------- */
 
-/* A session whose worktree is gone is told by its struck checkout, not by
-   fading the whole row below the contrast a title needs. */
-.srow.removed .grow {
+/* A row is a title over a sentence of what ran where. A session whose
+   worktree is gone says so in that sentence; its colours are dimmed no
+   further than the contrast a title needs. */
+.srow {
+  padding-top: var(--sp-6);
+  padding-bottom: var(--sp-6);
+}
+.srow .scol {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.srow .smeta {
+  font-size: var(--fs-xs);
+}
+.srow.removed .stitle,
+.srow.removed .smeta {
   color: var(--fg-muted);
 }
-.srow.removed .meta {
+/* The group's row: Live names itself; Ended is the one that folds. */
+.sgroup {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  flex: none;
+}
+.sgroup.sfold {
+  margin-top: var(--sp-8);
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
   color: var(--fg-muted);
+  font: 600 var(--fs-sm) / 1.4 var(--font-ui);
+  text-align: left;
+  padding: var(--sp-8);
+  cursor: pointer;
 }
-.srow.removed .scheckout {
-  text-decoration: line-through;
+.sgroup.sfold:hover {
+  background: var(--fill);
 }
-/* A session's dot is smaller than a pane's, and only live or not. */
-.srow .sdot {
-  width: var(--dot-md);
-  height: var(--dot-md);
-  border-width: 1px;
+.sgroup .chev {
+  display: inline-flex;
+  color: var(--fg-faint);
 }
-.srow .sdot.live {
-  background: var(--ok);
-  border-color: var(--ok);
+.sgroup.sfold[aria-expanded='true'] .chev {
+  transform: rotate(90deg);
+}
+.sgroup .meta {
+  font-weight: 400;
 }
 .scheckout,
 .sid {
@@ -6846,10 +6921,13 @@ body.console-fullscreen #bar {
   overflow-wrap: anywhere;
   color: var(--fg);
 }
+/* The person's turn is a quiet block with its own label: the accent is for
+   what is selected, and a bar of it down a transcript read as one. */
 .tline.user .ttext {
-  padding: var(--sp-6) var(--sp-8);
-  border-left: 3px solid var(--accent);
-  background: var(--bg-surface);
+  padding: var(--sp-8) var(--sp-12);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
 }
 .tline.tool {
   display: flex;
@@ -6858,9 +6936,18 @@ body.console-fullscreen #bar {
   color: var(--fg-muted);
   min-width: 0;
 }
+.tline.tool > svg {
+  flex: none;
+}
+/* The verb is prose, in the interface's face; the path or command after it
+   stays in mono. */
 .ttool {
   flex: none;
-  color: var(--fg-faint);
+  font-family: var(--font-ui);
+  color: var(--fg-muted);
+}
+.tline.tool.failed {
+  color: var(--danger);
 }
 .tline.tool.failed .ttool {
   color: var(--danger);

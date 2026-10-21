@@ -11,6 +11,7 @@ import type { SessionRowView } from '../bindings/SessionRowView';
 import type { SessionsPage } from '../bindings/SessionsPage';
 import { $, el, ghosts, hint, icon, type Child } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
+import { openMenu, type MenuItem } from '../kit/menu.js';
 import { state } from '../state.js';
 import { call } from '../connection/tauri.js';
 import { drawReader, placeReader, said } from './transcript.js';
@@ -23,8 +24,16 @@ function act(action: Action): void {
   call('sessions_action', { action, row: null });
 }
 
-function listRow(r: SessionRowView): HTMLElement {
+/** "claude on main · 31 turns": what ran where, as a sentence. */
+function sessionMeta(r: SessionRowView): string {
   const turns = r.turns === null ? null : `${r.turns} turn${r.turns === 1 ? '' : 's'}`;
+  const where = r.removed ? `${r.checkout}, since removed` : r.checkout;
+  return [`${r.harness} on ${where}`, turns].filter(Boolean).join(' \u00b7 ');
+}
+
+/** The group says which are live, so a row does not: an ended one keeps its
+ *  age, the only thing that tells it from its neighbours. */
+function listRow(r: SessionRowView): HTMLElement {
   return el(
     'button',
     {
@@ -33,26 +42,50 @@ function listRow(r: SessionRowView): HTMLElement {
       onclick: () => call('sessions_action', { action: 'next', row: r.row }),
       ondblclick: () => act('choose'),
     },
-    el('span', { class: `sdot${r.live ? ' live' : ''}`, 'aria-hidden': 'true' }),
-    el('span', { class: 'grow ellipsis' }, r.title),
-    el('span', { class: 'meta' }, r.harness),
-    el('span', { class: 'meta mono ellipsis scheckout' }, r.checkout),
-    r.removed && el('span', { class: 'meta' }, 'removed'),
-    turns && el('span', { class: 'meta' }, turns),
-    el('span', { class: 'meta' }, r.live ? 'live' : r.ago),
+    el(
+      'span',
+      { class: 'scol grow' },
+      el('span', { class: 'stitle ellipsis' }, r.title),
+      el('span', { class: 'smeta meta ellipsis' }, sessionMeta(r)),
+    ),
+    !r.live && el('span', { class: 'meta' }, r.ago),
   );
 }
 
-/** The rows under a heading for the live ones and one for the rest. */
+/** "Ended \u00b7 4 \u00b7 newest 20m ago". */
+function endedSummary(s: SessionsPage): string {
+  const newest =
+    s.endedNewest && s.endedNewest !== '\u2014' ? ` \u00b7 newest ${s.endedNewest} ago` : '';
+  return `${s.endedCount}${newest}`;
+}
+
+/** The rows under a heading for the live ones and one for the rest, which
+ *  folds to a single row. */
 function list(s: SessionsPage): Child {
   if (s.loading) return ghosts([[0.8], [0.7], [0.9], [0.6], [0.75], [0.85]]);
   if (s.empty) return el('div', { class: 'review-empty fg-muted' }, s.empty);
   const live = s.rows.filter((r) => r.live);
   const ended = s.rows.filter((r) => !r.live);
+  // A search or a filter asks for what is in the group, and a listing with
+  // nothing live has no row to rest the cursor on but these: neither folds.
+  const folds = live.length > 0 && !s.search.trim() && s.harness === null && s.checkout === null;
   return [
-    live.length > 0 && el('div', { class: 'mlabel' }, 'Live'),
+    live.length > 0 && el('div', { class: 'mlabel sgroup' }, 'Live'),
     live.map(listRow),
-    ended.length > 0 && el('div', { class: 'mlabel' }, 'Ended'),
+    s.endedCount > 0 &&
+      (folds
+        ? el(
+            'button',
+            {
+              class: 'sgroup sfold',
+              'aria-expanded': s.endedFolded ? 'false' : 'true',
+              onclick: () => act('toggleEnded'),
+            },
+            el('span', { class: 'chev', 'aria-hidden': 'true' }, icon('right')),
+            'Ended',
+            el('span', { class: 'meta' }, endedSummary(s)),
+          )
+        : el('div', { class: 'mlabel sgroup' }, 'Ended')),
     ended.map(listRow),
   ];
 }
@@ -183,27 +216,53 @@ function searchField(search: string): HTMLElement {
   return field;
 }
 
-/** A select over what the listing holds, in the one field style; its
- *  first option is all of them. */
-function menu(
-  label: string,
+/** A choice of the popover: all of them, or one the listing holds. */
+function choices(
+  heading: string,
   all: string,
   options: string[],
   chosen: string | null,
   pick: (value: string | null) => void,
-): HTMLElement {
-  const select = el(
-    'select',
+): MenuItem[] {
+  const item = (label: string, value: string | null): MenuItem => ({
+    label,
+    run: () => pick(value),
+    hint: chosen === value ? icon('check') : false,
+  });
+  return [{ heading }, item(all, null), ...options.map((o) => item(o, o))];
+}
+
+/** One button for both filters: they are seldom set, and two selects in the
+ *  head spent its room on what is usually "Every ...". */
+function filterButton(s: SessionsPage): HTMLElement {
+  const active = [s.harness, s.checkout].filter((v) => v !== null);
+  const button = el(
+    'button',
     {
-      class: 'field',
-      'aria-label': label,
-      onchange: () => pick(select.value === '' ? null : select.value),
+      class: 'btn sm',
+      'aria-haspopup': 'menu',
+      onclick: () => {
+        const at = button.getBoundingClientRect();
+        openMenu(
+          'Filter sessions',
+          [
+            ...choices('Harness', 'Every harness', s.harnesses, s.harness, (h) =>
+              filters(h, s.checkout),
+            ),
+            'sep',
+            ...choices('Checkout', 'Every checkout', s.checkouts, s.checkout, (c) =>
+              filters(s.harness, c),
+            ),
+          ],
+          { x: at.right, y: at.bottom + 4, align: 'end' },
+        );
+      },
     },
-    el('option', { value: '' }, all),
-    options.map((o) => el('option', { value: o }, o)),
+    icon('filter'),
+    'Filter',
+    active.length > 0 && el('span', { class: 'meta' }, active.join(' \u00b7 ')),
   );
-  select.value = chosen ?? '';
-  return select;
+  return button;
 }
 
 function filters(harness: string | null, checkout: string | null): void {
@@ -269,8 +328,7 @@ export function drawSessions(): void {
           el('span', { class: 'meta' }, 'newest 100, every checkout'),
           el('span', { class: 'grow' }),
           searchField(s.search),
-          menu('Harness', 'Every harness', s.harnesses, s.harness, (h) => filters(h, s.checkout)),
-          menu('Checkout', 'Every checkout', s.checkouts, s.checkout, (c) => filters(s.harness, c)),
+          filterButton(s),
           el(
             'button',
             {
@@ -297,7 +355,6 @@ export function drawSessions(): void {
           hint(['J', 'K'], 'move'),
           hint('/', 'search'),
           hint(['H', 'C'], 'harness, checkout'),
-          hint('O', 'whole'),
           hint('Esc', 'close'),
           el('span', { class: 'grow' }),
           offer(s.preview),

@@ -217,6 +217,10 @@ pub enum Action {
     WholeWord,
     UseRegex,
     Fold,
+    /// Fold every commit of the history.
+    FoldAll,
+    /// Show or put away the sessions the dialog keeps folded under one row.
+    ToggleEnded,
     /// The commit under the cursor as a review.
     AsReview,
     /// The file at the cursor in the person's editor.
@@ -696,6 +700,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(History, &[Chord::key("End")], Last, "oldest"),
     bind(History, &[Chord::key("l"), Chord::key("ArrowRight")], Unfold, "open a commit"),
     bind(History, &[Chord::key("h"), Chord::key("ArrowLeft")], Fold, "fold it"),
+    bind(History, &[Chord::key("H")], FoldAll, "fold every commit"),
     bind(History, &[Chord::key("Enter")], Choose, "open a commit, or a file as a review"),
     bind(History, &[Chord::key("o"), Chord::key("O")], AsReview, "open as a review"),
     bind(History, &[Chord::key("c"), Chord::key("C")], OpenCode, "read its files in Code"),
@@ -1114,6 +1119,21 @@ mod tests {
             taking,
             [Layer::AddProject, Layer::Link, Layer::Reconcile, Layer::Review, Layer::History, Layer::Transcript, Layer::Sessions]
         );
+    }
+
+    /// Capital H folds every commit; lower-case h folds the one under the
+    /// cursor, and neither shadows the other.
+    #[test]
+    fn history_folds_a_commit_with_h_and_all_of_them_with_capital_h() {
+        let history = |key: &str| {
+            BINDINGS
+                .iter()
+                .filter(|b| b.place == History)
+                .find(|b| b.chords.iter().any(|c| c.matches(&page(key))))
+                .map(|b| b.action)
+        };
+        assert_eq!(history("h"), Some(Fold));
+        assert_eq!(history("H"), Some(FoldAll));
     }
 
     /// As in the terminal client's rail: j and k move the pick, s and a

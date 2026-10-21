@@ -44,6 +44,12 @@ pub struct SessionsPage {
     /// cannot list them.
     pub empty: Option<String>,
     pub rows: Vec<SessionRowView>,
+    /// The ended sessions are held under one row and `rows` leaves them out.
+    pub ended_folded: bool,
+    /// How many ended sessions the group holds, folded or not, and how long
+    /// since the newest was written: what its row says while it is folded.
+    pub ended_count: usize,
+    pub ended_newest: String,
     /// `None` while the full transcript is open, which draws it instead.
     pub preview: Option<SessionPreview>,
     /// The full transcript, read in place of the list.
@@ -119,6 +125,9 @@ pub struct SessionsDialog {
     /// The full transcript of the session under the cursor, open in place
     /// of the list, which holds the keys until it closes.
     reader: Option<TranscriptReader>,
+    /// The Ended group is opened out. It starts folded: the live sessions
+    /// are what a person comes back for.
+    ended_open: bool,
 }
 
 /// What a gesture in the dialog comes to.
@@ -156,6 +165,7 @@ impl SessionsDialog {
             harness: None,
             checkout: None,
             reader: None,
+            ended_open: false,
         }
     }
 
@@ -175,6 +185,22 @@ impl SessionsDialog {
         sessions.listed(self.repository).unwrap_or(&[])
     }
 
+    /// Whether the Ended group is held under its row. Not while a search or
+    /// a filter is set, which asks for what is in it, and not when nothing
+    /// is live, or the dialog would open on an empty preview.
+    fn ended_folded(&self, listed: &[Session]) -> bool {
+        !self.ended_open
+            && self.search.trim().is_empty()
+            && self.harness.is_none()
+            && self.checkout.is_none()
+            && listed.iter().any(|s| s.pane.is_some())
+    }
+
+    /// Opens the Ended group out, or folds it back under its row.
+    pub fn toggle_ended(&mut self) {
+        self.ended_open = !self.ended_open;
+    }
+
     /// The listing's indices, live sessions first and each part newest
     /// first, as the daemon ordered them.
     fn ordered(listed: &[Session]) -> Vec<usize> {
@@ -186,8 +212,10 @@ impl SessionsDialog {
     /// The ordered indices the search and the filters show.
     fn shown(&self, listed: &[Session], tree: &[ProjectInfo]) -> Vec<usize> {
         let words: Vec<String> = self.search.split_whitespace().map(str::to_lowercase).collect();
+        let folded = self.ended_folded(listed);
         Self::ordered(listed)
             .into_iter()
+            .filter(|&i| !(folded && listed[i].pane.is_none()))
             .filter(|&i| {
                 let session = &listed[i];
                 let place = place(session, tree);
@@ -405,6 +433,13 @@ impl SessionsDialog {
         page.checkouts = places(listed, tree);
         let shown = self.shown(listed, tree);
         let cursor = self.cursor(listed, &shown);
+        page.ended_folded = self.ended_folded(listed);
+        let ended = Self::ordered(listed).into_iter().filter(|&i| listed[i].pane.is_none()).collect::<Vec<_>>();
+        page.ended_count = ended.len();
+        page.ended_newest = ended
+            .first()
+            .map(|&i| argus_protocol::ago(listed[i].modified.map(|ms| ms / 1000), now))
+            .unwrap_or_default();
         page.rows = shown
             .iter()
             .map(|&i| {
@@ -665,8 +700,41 @@ mod tests {
         sessions
     }
 
+    /// As opened, but with the Ended group out: most tests walk its rows.
     fn dialog() -> SessionsDialog {
+        let mut d = folded();
+        d.toggle_ended();
+        d
+    }
+
+    fn folded() -> SessionsDialog {
         SessionsDialog::new(RepositoryId(10), "argus".into(), false)
+    }
+
+    #[test]
+    fn the_ended_group_is_held_under_one_row_until_opened_or_asked_for_by_a_search() {
+        let sessions = held(listing());
+        let mut d = folded();
+        let page = d.page(&sessions, &tree(), 1_000);
+        assert_eq!(ids(&page), ["live"]);
+        assert_eq!((page.ended_folded, page.ended_count, page.ended_newest.as_str()), (true, 3, "1m"));
+        d.set_search("old".into());
+        let page = d.page(&sessions, &tree(), 1_000);
+        assert_eq!(ids(&page), ["old"], "a search reaches into the group");
+        assert!(!page.ended_folded);
+        d.set_search(String::new());
+        d.toggle_ended();
+        assert_eq!(ids(&d.page(&sessions, &tree(), 1_000)), ["live", "old", "gone", "plain"]);
+        d.toggle_ended();
+        assert!(d.page(&sessions, &tree(), 1_000).ended_folded, "folded again");
+    }
+
+    #[test]
+    fn with_nothing_live_the_ended_group_stays_open_so_the_dialog_has_a_session_to_show() {
+        let sessions = held(vec![session("old", "claude", 100)]);
+        let page = folded().page(&sessions, &tree(), 1_000);
+        assert_eq!(ids(&page), ["old"]);
+        assert!(!page.ended_folded);
     }
 
     fn ids(page: &SessionsPage) -> Vec<String> {

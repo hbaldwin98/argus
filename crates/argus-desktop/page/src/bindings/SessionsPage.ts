@@ -23,6 +23,15 @@ harnesses: Array<string>, harness: string | null, checkouts: Array<string>, chec
  */
 empty: string | null, rows: Array<SessionRowView>, 
 /**
+ * The ended sessions are held under one row and `rows` leaves them out.
+ */
+endedFolded: boolean, 
+/**
+ * How many ended sessions the group holds, folded or not, and how long
+ * since the newest was written: what its row says while it is folded.
+ */
+endedCount: number, endedNewest: string, 
+/**
  * `None` while the full transcript is open, which draws it instead.
  */
 preview: SessionPreview | null, 

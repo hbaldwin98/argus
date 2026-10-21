@@ -104,7 +104,20 @@ impl HistoryDialog {
     pub fn receive_files(&mut self, checkout: CheckoutId, commit: &str, files: Vec<CommitFile>) {
         if let Some(view) = self.waiting_on(checkout, commit) {
             view.receive_files(commit, files);
+            // Opened to be read: the first file is shown at once, and its
+            // diff is asked for by `catch_up` since no id is at hand here.
+            view.select_first_file(commit);
         }
+    }
+
+    /// The diff of the file under the cursor, when a commit's files landing
+    /// put the cursor on one whose diff nothing has asked for.
+    pub fn catch_up(&mut self, id: impl FnMut() -> u64) -> Then {
+        let unread = self.view.as_ref().and_then(HistoryView::selected_oid).is_some_and(|oid| self.unread.contains_key(oid));
+        if unread {
+            return Then::Nothing;
+        }
+        self.want_diff(id)
     }
 
     pub fn files_failed(&mut self, checkout: CheckoutId, commit: &str) {
@@ -209,14 +222,22 @@ impl HistoryDialog {
 
     /// `l`: unfolds a commit to its files, asking what they are the first
     /// time.
-    pub fn unfold(&mut self) -> Then {
+    pub fn unfold(&mut self, id: impl FnMut() -> u64) -> Then {
         let hidden = !self.cursor_shown();
         let Some(view) = self.view.as_mut().filter(|_| !hidden) else {
             return Then::Nothing;
         };
+        let at = view.selected_oid().map(str::to_owned);
         match view.drill() {
             Drill::Fetch(commit) => Then::Ask(Box::new(ClientMsg::ListCommitFiles { checkout: self.checkout, commit })),
-            Drill::Open | Drill::Shown => Then::Nothing,
+            // Files already held: the first is shown as the commit opens.
+            Drill::Shown => {
+                if let Some(oid) = at {
+                    view.select_first_file(&oid);
+                }
+                self.want_diff(id)
+            }
+            Drill::Open => Then::Nothing,
         }
     }
 
@@ -227,10 +248,17 @@ impl HistoryDialog {
         }
     }
 
+    /// `H`: folds every commit.
+    pub fn fold_all(&mut self) {
+        if let Some(view) = &mut self.view {
+            view.collapse_all();
+        }
+    }
+
     /// Enter: a commit unfolds; a file opens as a review of its commit.
-    pub fn choose(&mut self) -> Then {
+    pub fn choose(&mut self, id: impl FnMut() -> u64) -> Then {
         match self.selected_row() {
-            Some(HistoryRow::Commit { .. }) => self.unfold(),
+            Some(HistoryRow::Commit { .. }) => self.unfold(id),
             Some(HistoryRow::File { .. }) => self.as_review(),
             None => Then::Nothing,
         }
@@ -472,20 +500,49 @@ mod tests {
     #[test]
     fn unfolding_a_commit_asks_for_its_files_once() {
         let mut d = opened();
-        assert!(matches!(d.unfold(), Then::Ask(msg) if matches!(&*msg, ClientMsg::ListCommitFiles { commit, .. } if commit == "aaaa1")));
+        assert!(matches!(d.unfold(|| 1), Then::Ask(msg) if matches!(&*msg, ClientMsg::ListCommitFiles { commit, .. } if commit == "aaaa1")));
         assert!(d.page(0).rows[0].loading);
         d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("DESKTOP.md")]);
         let page = d.page(0);
         assert_eq!(page.rows.iter().map(|r| r.kind).collect::<Vec<_>>(), ["commit", "file", "commit"]);
     }
 
+    /// An opened commit is opened to be read: its first file is selected and
+    /// its diff asked for, so the right side never says to pick a file.
+    #[test]
+    fn a_commit_opens_on_its_first_file_and_asks_for_its_diff() {
+        let mut d = opened();
+        d.unfold(|| 1);
+        d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("a.md"), commit_file("b.md")]);
+        let page = d.page(0);
+        assert_eq!(page.path.as_deref(), Some("a.md"));
+        assert!(page.rows[1].on && !page.rows[0].on);
+        asked(d.catch_up(|| 40));
+        assert!(matches!(d.catch_up(|| 41), Then::Nothing), "asked once");
+        d.fold();
+        d.select_row(0, || 99);
+        assert!(matches!(d.unfold(|| 42), Then::Nothing), "files held and diff held: nothing to ask");
+        assert_eq!(d.page(0).path.as_deref(), Some("a.md"), "opening again lands on the first file too");
+    }
+
+    #[test]
+    fn folding_all_leaves_only_commit_rows() {
+        let mut d = opened();
+        d.unfold(|| 1);
+        d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("a.md")]);
+        d.fold_all();
+        let page = d.page(0);
+        assert_eq!(page.rows.iter().map(|r| r.kind).collect::<Vec<_>>(), ["commit", "commit"]);
+        assert!(page.rows[0].on && page.path.is_none());
+    }
+
     #[test]
     fn a_file_under_the_cursor_shows_its_commits_diff_asked_for_once() {
         let mut d = opened();
-        d.unfold();
+        d.unfold(|| 1);
         d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("DESKTOP.md")]);
         let mut ids = 40..;
-        let Then::Ask(msg) = d.move_by(1, || ids.next().unwrap()) else {
+        let Then::Ask(msg) = d.catch_up(|| ids.next().unwrap()) else {
             panic!("the diff is asked for");
         };
         let ClientMsg::Review { request_id, commit, base, .. } = *msg else {
@@ -498,7 +555,7 @@ mod tests {
         let page = d.page(0);
         assert_eq!(page.diff.len(), 2, "its hunk and its line");
         assert!(matches!(
-            d.choose(),
+            d.choose(|| 99),
             Then::Review { commit, file } if commit == "aaaa1" && file.as_deref() == Some("DESKTOP.md")
         ));
     }
@@ -517,9 +574,9 @@ mod tests {
     /// The newest commit unfolded to its one file, with the cursor on it.
     fn on_a_file() -> (HistoryDialog, u64) {
         let mut d = opened();
-        d.unfold();
+        d.unfold(|| 1);
         d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("DESKTOP.md")]);
-        let id = asked(d.move_by(1, || 40));
+        let id = asked(d.catch_up(|| 40));
         (d, id)
     }
 
@@ -546,10 +603,10 @@ mod tests {
     #[test]
     fn two_commits_asked_back_to_back_each_keep_their_diff() {
         let mut d = opened();
-        d.unfold();
+        d.unfold(|| 1);
         d.receive_files(CheckoutId(100), "aaaa1", vec![commit_file("a.md")]);
         d.select_row(2, || 99);
-        d.unfold();
+        d.unfold(|| 1);
         d.receive_files(CheckoutId(100), "bbbb2", vec![commit_file("b.md")]);
         let a = asked(d.select_row(1, || 40));
         let b = asked(d.select_row(3, || 41));

@@ -1983,13 +1983,19 @@ pub fn scenes() -> Vec<Scene> {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::OpenHistory { checkout: MAIN })
                 .call(Call::HistoryAction { action: Action::Next, row: None })
-                .call(Call::HistoryAction { action: Action::Unfold, row: None })
-                .call(Call::HistoryAction { action: Action::Next, row: None });
+                .call(Call::HistoryAction { action: Action::Unfold, row: None });
             w.s
         }),
         scene("sessions", "Sessions — a repository's agent sessions and one's transcript", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::OpenSessions { repository: ARGUS });
+            w.s
+        }),
+        scene("sessions-ended", "Sessions — the Ended group opened out", || {
+            let mut w = Window::showing(P_TRIM);
+            w.call(Call::OpenSessions { repository: ARGUS })
+                .call(Call::SessionsAction { action: Action::ToggleEnded, row: None })
+                .call(Call::SessionsAction { action: Action::Next, row: None });
             w.s
         }),
         scene("add-project", "Add a project — browsing for a folder", || {

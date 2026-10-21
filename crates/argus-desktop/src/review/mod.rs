@@ -295,9 +295,13 @@ impl Dialogs {
     /// The review answers go to reads its sides again if its checkout's
     /// working changes moved while it could not: a read was out, or its
     /// comment box was open.
-    pub fn catch_up(&mut self, id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) {
+    pub fn catch_up(&mut self, mut id: impl FnMut() -> u64, out: &mut Vec<ClientMsg>) {
         if let Some(dialog) = self.review_mut() {
-            out.extend(dialog.catch_up(id));
+            out.extend(dialog.catch_up(&mut id));
+        }
+        // A commit opened asks for its first file's diff once its files land.
+        if let Some(Then::Ask(msg)) = self.history.as_mut().map(|h| h.catch_up(&mut id)) {
+            out.push(*msg);
         }
     }
 
@@ -338,17 +342,31 @@ impl Dialogs {
             return;
         };
         let then = match (action, row) {
+            // A click on a commit toggles it: the chevron says which.
+            (Action::Fold | Action::Unfold, Some(row)) => {
+                dialog.select_row(row, &mut id);
+                if action == Action::Fold {
+                    dialog.fold();
+                    Then::Nothing
+                } else {
+                    dialog.unfold(&mut id)
+                }
+            }
             (_, Some(row)) => dialog.select_row(row, &mut id),
             (Action::Next, _) => dialog.move_by(1, &mut id),
             (Action::Previous, _) => dialog.move_by(-1, &mut id),
             (Action::First, _) => dialog.ends(false, &mut id),
             (Action::Last, _) => dialog.ends(true, &mut id),
-            (Action::Unfold, _) => dialog.unfold(),
+            (Action::Unfold, _) => dialog.unfold(&mut id),
             (Action::Fold, _) => {
                 dialog.fold();
                 Then::Nothing
             }
-            (Action::Choose, _) => dialog.choose(),
+            (Action::FoldAll, _) => {
+                dialog.fold_all();
+                Then::Nothing
+            }
+            (Action::Choose, _) => dialog.choose(&mut id),
             (Action::AsReview, _) => dialog.as_review(),
             (Action::CloseLayer, _) => {
                 self.history = None;
@@ -703,6 +721,26 @@ mod tests {
                 _ => None,
             })
             .expect("a history is open")
+    }
+
+    /// The chevron says what a click does: an open commit folds, a folded
+    /// one opens, and `H` folds them all.
+    #[test]
+    fn a_click_on_a_commit_row_folds_it_when_open_and_opens_it_when_folded() {
+        let mut id = ids();
+        let mut dialogs = Dialogs::new(ReviewLayout::default());
+        history_on_a_file(&mut dialogs, &mut id);
+        let mut out = Vec::new();
+        let kinds = |d: &mut Dialogs| history_page(d).rows.iter().map(|r| r.kind).collect::<Vec<_>>();
+        assert_eq!(kinds(&mut dialogs), ["commit", "file"]);
+        dialogs.history_action(Action::Fold, Some(0), &tree(), &mut id, &mut out);
+        assert_eq!(kinds(&mut dialogs), ["commit"], "an open commit folds on a click");
+        dialogs.history_action(Action::Unfold, Some(0), &tree(), &mut id, &mut out);
+        let page = history_page(&mut dialogs);
+        assert_eq!(page.rows.len(), 2);
+        assert_eq!(page.path.as_deref(), Some("DESKTOP.md"), "and opens on its first file");
+        dialogs.history_action(Action::FoldAll, None, &tree(), &mut id, &mut out);
+        assert_eq!(kinds(&mut dialogs), ["commit"]);
     }
 
     #[test]

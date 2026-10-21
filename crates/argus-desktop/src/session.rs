@@ -2694,6 +2694,10 @@ impl Session {
                 dialog.ends(action == Action::Last, sessions, tree);
                 SessionsThen::Nothing
             }
+            (Action::ToggleEnded, _) => {
+                dialog.toggle_ended();
+                SessionsThen::Nothing
+            }
             (Action::FilterHarness, _) => {
                 dialog.cycle_harness(sessions);
                 SessionsThen::Nothing
@@ -3789,14 +3793,15 @@ mod tests {
         s.receive(ServerMsg::Commits { request_id: *request_id, checkout: CheckoutId(100), commits: vec![commit] });
         s.history_action(Action::Unfold, None);
         let files = vec![crate::fixtures::commit_file("a.md")];
-        s.receive(ServerMsg::CommitFiles { checkout: CheckoutId(100), commit: oid, files });
         let asked = |sent: Vec<ClientMsg>| {
             sent.into_iter().find_map(|m| match m {
                 ClientMsg::Review { request_id, .. } => Some(request_id),
                 _ => None,
             })
         };
-        let diff = asked(s.history_action(Action::Next, None)).expect("the file's diff is asked for");
+        // The commit opens on its first file, whose diff is asked for as the
+        // files land.
+        let diff = asked(s.receive(ServerMsg::CommitFiles { checkout: CheckoutId(100), commit: oid, files })).expect("the file's diff is asked for");
         s.events(0);
 
         s.receive(refusal(diff, "bad object", true));
@@ -5648,7 +5653,16 @@ mod tests {
         listing_sessions_from(Hello::this_build())
     }
 
+    /// The same, with the Ended group opened out: most tests walk to the
+    /// ended session.
     fn listing_sessions_from(daemon: Hello) -> Session {
+        let mut s = listing_sessions_folded(daemon);
+        s.call(Call::SessionsAction { action: Action::ToggleEnded, row: None });
+        s
+    }
+
+    /// The dialog as it opens: the Ended group folded under its row.
+    fn listing_sessions_folded(daemon: Hello) -> Session {
         let mut s = session(daemon);
         let sent = s.call(Call::OpenSessions { repository: 10 });
         let [ClientMsg::ListSessions { request_id: list, repository: RepositoryId(10) }, ClientMsg::ListResumes { request_id: resumes }] =
@@ -5688,6 +5702,19 @@ mod tests {
         assert!(matches!(sent.as_slice(), [ClientMsg::ReadSession { session_id, .. }] if session_id == "ended"), "{sent:?}");
         s.call(Call::SessionsAction { action: Action::CloseLayer, row: None });
         assert!(sessions_page(&mut s).is_some_and(|p| !p.open), "its closing is sent once");
+    }
+
+    #[test]
+    fn the_ended_group_starts_folded_under_one_row_and_a_click_opens_it() {
+        let mut s = listing_sessions_folded(Hello::this_build());
+        let page = sessions_page(&mut s).expect("the dialog is sent");
+        assert_eq!(page.rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(), ["live work"]);
+        assert!(page.ended_folded);
+        assert_eq!(page.ended_count, 1);
+        s.call(Call::SessionsAction { action: Action::ToggleEnded, row: None });
+        let page = sessions_page(&mut s).expect("the group opened");
+        assert!(!page.ended_folded);
+        assert_eq!(page.rows.len(), 2);
     }
 
     #[test]

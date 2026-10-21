@@ -4047,6 +4047,20 @@ export const sent = [
           "label": "fold it"
         },
         {
+          "action": "foldAll",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "H",
+              "leader": false,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "fold every commit"
+        },
+        {
           "action": "choose",
           "chords": [
             {
@@ -6890,6 +6904,9 @@ export const sent = [
   "checkout": null,
   "checkouts": [],
   "empty": null,
+  "endedCount": 0,
+  "endedFolded": false,
+  "endedNewest": "",
   "harness": null,
   "harnesses": [],
   "loading": true,

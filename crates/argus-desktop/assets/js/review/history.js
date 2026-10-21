@@ -10,29 +10,45 @@ import { call } from '../connection/tauri.js';
 function keycap(key) {
     return el('span', { class: 'kbd' }, key);
 }
-function listRow(r) {
-    const pick = () => call('history_action', { action: 'next', row: r.row });
-    if (r.kind === 'file') {
-        const dir = r.text.slice(0, Math.max(0, r.text.lastIndexOf('/')));
-        return el('button', {
-            class: `hrow file rfile${r.on ? ' on' : ''}`,
-            title: r.text,
-            onclick: pick,
-            ondblclick: () => call('history_action', { action: 'choose', row: null }),
-        }, 
-        // The review's markup for a changed file: the name leads, the
-        // folder trails it and is what gives way.
-        el('span', { class: 'rname' }, el('b', { class: 'rbase' }, r.text.slice(r.text.lastIndexOf('/') + 1)), el('span', { class: dir ? 'rdir' : 'rdir phrase' }, dir || 'repository root')), el('span', { class: 'fg-ok' }, `+${r.added}`), el('span', { class: 'fg-danger' }, `−${r.removed}`));
-    }
+/**
+ * A file is one line: the folder it sits in, dim, before its name, and its
+ * counts at the right. A file in the root has no folder to name, so shows
+ * only itself.
+ */
+export function fileRow(r) {
+    const cut = r.text.lastIndexOf('/');
+    const dir = cut < 0 ? '' : r.text.slice(0, cut + 1);
     return el('button', {
-        class: `hrow${r.on ? ' on' : ''}${r.expanded ? ' open' : ''}`,
-        onclick: pick,
-        ondblclick: () => call('history_action', { action: 'unfold', row: null }),
-    }, el('span', { class: 'mono fg-faint' }, r.short), el('span', { class: 'grow ellipsis' }, r.text), r.loading
+        class: `hrow file${r.on ? ' on' : ''}`,
+        title: r.text,
+        onclick: () => call('history_action', { action: 'next', row: r.row }),
+        ondblclick: () => call('history_action', { action: 'choose', row: null }),
+    }, el('span', { class: 'hcfile grow ellipsis' }, dir && el('span', { class: 'hcdir' }, dir), r.text.slice(cut + 1)), el('span', { class: 'fg-ok mono' }, `+${r.added}`), el('span', { class: 'fg-danger mono' }, `−${r.removed}`));
+}
+/** A commit toggles on a click, which its chevron says; Rust decides what
+ *  the click leaves open. */
+function commitRow(r) {
+    return el('button', {
+        class: `hrow commit${r.on ? ' on' : ''}${r.expanded ? ' open' : ''}`,
+        'aria-expanded': r.expanded ? 'true' : 'false',
+        onclick: () => call('history_action', { action: r.expanded ? 'fold' : 'unfold', row: r.row }),
+    }, el('span', { class: 'chev', 'aria-hidden': 'true' }, icon('right')), el('span', { class: 'mono fg-faint' }, r.short), el('span', { class: 'grow ellipsis' }, r.text), r.loading
         ? el('span', { class: 'meta' }, 'loading…')
         : r.expanded &&
             r.files !== null &&
             el('span', { class: 'meta' }, `${r.files} file${r.files === 1 ? '' : 's'}`), el('span', { class: 'meta' }, r.ago));
+}
+function listRow(r) {
+    return r.kind === 'file' ? fileRow(r) : commitRow(r);
+}
+/** The commits' small header: what the list is, and the way to fold it all
+ *  by mouse. */
+function listHead() {
+    return el('div', { class: 'history-head' }, el('span', { class: 'grow' }, 'Commits'), el('button', {
+        class: 'btn sm quiet',
+        title: 'Fold every commit',
+        onclick: () => call('history_action', { action: 'foldAll', row: null }),
+    }, icon('fold-all'), 'Fold all'));
 }
 function diff(h) {
     let body;
@@ -111,7 +127,7 @@ export function drawHistory() {
         class: 'icon',
         'aria-label': 'Close the history',
         onclick: () => call('history_action', { action: 'closeLayer', row: null }),
-    }, icon('close'))), el('div', { class: 'review-split' }, el('aside', { class: 'history-list', id: 'history-list', 'aria-label': 'Commits' }, list), diff(h)), el('div', { class: 'dfoot meta' }, hint(['J', 'K'], 'move'), hint('L', 'open'), hint('H', 'fold'), hint('Enter', 'file as a review'), hint('/', 'filter'), hint('Esc', 'close')))));
+    }, icon('close'))), el('div', { class: 'review-split' }, el('div', { class: 'history-col' }, listHead(), el('aside', { class: 'history-list', id: 'history-list', 'aria-label': 'Commits' }, list)), diff(h)), el('div', { class: 'dfoot meta' }, hint(['J', 'K'], 'move'), hint(['L', 'H'], 'open / fold'), hint('Shift H', 'fold all'), hint('Enter', 'as a review'), hint('/', 'filter'), hint('Esc', 'close')))));
     ['history-list', 'history-body'].forEach((id, i) => {
         const node = document.getElementById(id);
         if (node)

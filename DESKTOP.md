@@ -382,11 +382,17 @@ Settled while drawing the canvas, so the issues that build them start from here.
 - **Expanded sequence diagram** (HUN-172): Expand (`F`) on the Flows lens fills the window, with
   zoom, Fit and a steps panel. Dragging a step or a lifeline rewrites the flow's Mermaid and sends
   the existing `DiagramAction::Rewrite`; no new protocol.
+- **History**: every commit has a chevron and a click toggles it; `l` and `h` open and fold the
+  commit under the cursor, `H` folds them all (so does the Fold all button), and an opened commit
+  lands on its first file so its diff is already showing.
 - **Recent sessions** (HUN-174): a dialog per repository, opened from the clock on its rail row,
   with previews read from transcripts and "Resume in a new pane" from the harness's `resume_id`
   template. A harness without one (such as `generic`) offers only the transcript. It needs the
   transcript readers back (HUN-169), including a way for the generic harness to name its transcript
   (HUN-176).
+  The Ended group is folded under one row ("Ended · N · newest 1h ago") while something is live; a
+  click or Enter on it opens it, and a search or filter opens it too. One Filter button holds the
+  harness and checkout choices.
 
 Still open: splits (two panes side by side) or one pane at a time; side panels or dialogs for
 reconcile and sessions; the settings' Connection section (desktop settings live in

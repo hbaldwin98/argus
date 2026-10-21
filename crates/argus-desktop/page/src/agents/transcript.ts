@@ -10,7 +10,7 @@ import type { ReaderPage } from '../bindings/ReaderPage';
 import type { SessionPreview } from '../bindings/SessionPreview';
 import type { TranscriptLine } from '../bindings/TranscriptLine';
 import { clock, hhmm, span } from '../kit/clock.js';
-import { el, ghosts, type Child } from '../kit/dom.js';
+import { el, ghosts, icon, type Child, type IconName } from '../kit/dom.js';
 import { actionFor } from '../keys/keymap.js';
 import { call } from '../connection/tauri.js';
 
@@ -22,13 +22,41 @@ function act(action: Action): void {
   call('sessions_action', { action, row: null });
 }
 
+/**
+ * A tool call told as prose with a small icon, the way a person would say
+ * it: "Read", "Edited", "Ran", "Searched for". A tool this does not know
+ * keeps its own name and no icon, since a wrong verb would misreport what
+ * the agent did. Harnesses name the same act differently (`Bash`, `shell`).
+ */
+const VERBS: Record<string, [IconName, string]> = {
+  read: ['tool-read', 'Read'],
+  view: ['tool-read', 'Read'],
+  grep: ['tool-search', 'Searched for'],
+  glob: ['tool-search', 'Searched for'],
+  search: ['tool-search', 'Searched for'],
+  write: ['tool-edit', 'Wrote'],
+  edit: ['tool-edit', 'Edited'],
+  multiedit: ['tool-edit', 'Edited'],
+  notebookedit: ['tool-edit', 'Edited'],
+  apply_patch: ['tool-edit', 'Edited'],
+  bash: ['tool-run', 'Ran'],
+  shell: ['tool-run', 'Ran'],
+  exec_command: ['tool-run', 'Ran'],
+};
+
+export function toolVerb(tool: string): [IconName, string] | null {
+  return VERBS[tool.toLowerCase()] ?? null;
+}
+
 /** One thing said or done; `mark` is its find highlight, if any. */
 export function said(l: TranscriptLine, id: string | null = null, mark = ''): HTMLElement {
   if (l.kind === 'tool') {
+    const verb = toolVerb(l.tool);
     return el(
       'div',
       { class: `tline tool${l.failed ? ' failed' : ''}${mark}`, id },
-      el('span', { class: 'ttool' }, l.tool),
+      verb && icon(verb[0]),
+      el('span', { class: 'ttool' }, verb ? verb[1] : l.tool),
       el('span', { class: 'mono ellipsis' }, l.text),
       l.failed && el('span', { class: 'fg-danger' }, 'failed'),
     );

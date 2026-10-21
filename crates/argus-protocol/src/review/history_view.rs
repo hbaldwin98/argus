@@ -194,6 +194,42 @@ impl HistoryView {
         true
     }
 
+    /// Fold every commit, the cursor going to the header of the one it was
+    /// in. False when nothing was unfolded.
+    pub fn collapse_all(&mut self) -> bool {
+        if !self.commits.iter().any(|c| c.expanded) {
+            return false;
+        }
+        let anchor = self.rows.get(self.sel).map(|r| r.commit());
+        for entry in &mut self.commits {
+            entry.expanded = false;
+        }
+        self.rows = flatten(&self.commits);
+        self.sel = anchor
+            .and_then(|commit| self.rows.iter().position(|r| matches!(r, HistoryRow::Commit { commit: c } if *c == commit)))
+            .unwrap_or(0);
+        true
+    }
+
+    /// Move the cursor from an unfolded commit's header onto its first
+    /// file, so what the commit did is in view as it opens. False when the
+    /// cursor is elsewhere or the commit has no file rows yet.
+    pub fn select_first_file(&mut self, oid: &str) -> bool {
+        let Some(HistoryRow::Commit { commit }) = self.rows.get(self.sel).copied() else {
+            return false;
+        };
+        if self.commits.get(commit).is_none_or(|c| c.info.oid != oid || !c.expanded) {
+            return false;
+        }
+        match self.rows.iter().position(|r| *r == HistoryRow::File { commit, file: 0 }) {
+            Some(at) => {
+                self.sel = at;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// A summary arrived. False when it names a commit this view no longer
     /// has — a reply that outlived the list it was asked for.
     pub fn receive_files(&mut self, oid: &str, files: Vec<CommitFile>) -> bool {
@@ -334,6 +370,32 @@ mod tests {
         assert!(matches!(v.drill(), Drill::Fetch(_)));
         assert!(v.collapse());
         assert_eq!(v.drill(), Drill::Shown, "the first request is still out");
+    }
+
+    #[test]
+    fn folding_all_closes_every_commit_and_leaves_the_cursor_on_its_header() {
+        let mut v = two_commits();
+        v.drill();
+        v.receive_files("aaaaaaa111", vec![file("a.rs"), file("b.rs")]);
+        v.sel = 3;
+        v.drill();
+        v.receive_files("bbbbbbb222", vec![file("c.rs")]);
+        v.sel = 2;
+        assert!(v.collapse_all());
+        assert_eq!(v.rows.len(), 2);
+        assert_eq!(v.sel, 0, "the cursor was in the first commit");
+        assert!(!v.collapse_all(), "nothing left to fold");
+    }
+
+    #[test]
+    fn the_first_file_takes_the_cursor_only_from_the_header_it_opened() {
+        let mut v = two_commits();
+        v.drill();
+        v.receive_files("aaaaaaa111", vec![file("a.rs"), file("b.rs")]);
+        assert!(!v.select_first_file("bbbbbbb222"), "another commit's files do not move it");
+        assert!(v.select_first_file("aaaaaaa111"));
+        assert_eq!(v.selected_file().map(|f| f.path.as_str()), Some("a.rs"));
+        assert!(!v.select_first_file("aaaaaaa111"), "already on a file");
     }
 
     #[test]
