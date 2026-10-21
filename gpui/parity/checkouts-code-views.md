@@ -4,7 +4,7 @@ Requirements a GPUI port must meet, written so a surface can be ported and teste
 
 ## How to read this
 
-Path prefixes used in citations (all under `crates/argus-desktop/`):
+Path prefixes used in citations. `ts:`-style page paths and `page/` are under `crates/argus-desktop/`; a bare `src/...` and `rs:` mean `crates/argus-desktop-core/src/...`; `tauri:` means `crates/argus-desktop/src/...`:
 
 | Short | Path |
 |---|---|
@@ -179,7 +179,7 @@ What it is: one checkout's folder as it is on disk, a level at a time, drawn in 
 20. CHECKOUTS-CODE-VIEWS-FILES-20. The foot shows the selected entry: glyph, name (mono), and `<size> · changed <ago> ago` (`B` under 1 KiB, rounded `KB`, `MB` to a tenth); for a file a button "Open in Code Enter" sends `open { how: code }`. With nothing selected it says "Select a file." Source: `ck/files.ts:303-329`; `ck/files_page.rs:206-225`; test `sizes_and_ages_are_said_the_way_a_file_manager_says_them` (309).
 21. CHECKOUTS-CODE-VIEWS-FILES-21. Scroll: the tree's scroll offset is carried across redraws; after a redraw the selected row is scrolled into view with nearest alignment. Source: `ck/files.ts:367-389`.
 22. CHECKOUTS-CODE-VIEWS-FILES-22. "Open a shell here" sends `Files { gesture: shell }`; Rust spawns a shell on the checkout (`SpawnShell`). Reveal outside a local daemon says "the file manager can only show a folder on this machine". Source: `session.rs:2540-2573`.
-23. CHECKOUTS-CODE-VIEWS-FILES-23. Keyboard selection walks into rows hidden in the closed ignored fold. `j`/`k`/`Home`/`End` step over the flat rows and know nothing of the page-only fold, so the selected row can be invisible and scrolling it into view does nothing. The port must decide whether the fold is part of the row model. Source: `crates/argus-desktop/src/checkouts/files.rs:178-201` (steps over `self.rows()`); `page/src/kit/file_tree.ts:77-100` (held rows in a hidden group); `page/src/checkouts/files.ts:389`.
+23. CHECKOUTS-CODE-VIEWS-FILES-23. Keyboard selection walks into rows hidden in the closed ignored fold. `j`/`k`/`Home`/`End` step over the flat rows and know nothing of the page-only fold, so the selected row can be invisible and scrolling it into view does nothing. The port must decide whether the fold is part of the row model. Source: `crates/argus-desktop-core/src/checkouts/files.rs:178-201` (steps over `self.rows()`); `page/src/kit/file_tree.ts:77-100` (held rows in a hidden group); `page/src/checkouts/files.ts:389`.
 24. CHECKOUTS-CODE-VIEWS-FILES-24. Every tree row's tooltip is its relative path. The ignored fold row's title is "Ignored by git". "Show in Explorer/Finder/Files" in the row menu sends `Files { gesture: reveal, path: <the row's path> }`, not null. Source: `page/src/kit/file_tree.ts:49,87`; `page/src/checkouts/files.ts:75-78`.
 
 ### Page-side logic that must move to Rust

@@ -2,9 +2,9 @@
 
 Group: review dialog, comment box, history dialog, compose box, sessions dialog, transcript reader.
 Requirements a GPUI port must meet, written so it can be ported and tested without reading the TypeScript.
-Paths are under `crates/argus-desktop/` unless they start with `DESIGN.md`.
+Paths are under `crates/argus-desktop/` unless they start with `DESIGN.md`, `rs:` or `src/`; `rs:` and a bare `src/...` mean `crates/argus-desktop-core/src/...`, and `tauri:` means `crates/argus-desktop/src/...`.
 
-Citation forms: `ts:review/dialog.ts:160` is `page/src/review/dialog.ts` line 160. `rs:review/mod.rs:195` is `src/review/mod.rs`. `proto:` is under `crates/argus-protocol/src/`. `test:` names a Rust test. `scene:` names a `src/screens/mod.rs` scene. `design:` is a DESIGN.md section. Rust line numbers inside long modules are approximate where marked `~`.
+Citation forms: `ts:review/dialog.ts:160` is `page/src/review/dialog.ts` line 160. `rs:review/mod.rs:195` is `crates/argus-desktop-core/src/review/mod.rs`. `proto:` is under `crates/argus-protocol/src/`. `test:` names a Rust test. `scene:` names a `src/screens/mod.rs` scene. `design:` is a DESIGN.md section. Rust line numbers inside long modules are approximate where marked `~`.
 
 `page/src/...` is the TypeScript being replaced. `src/session.rs` is the seam and stays (GPUI.md "The seam"): the port sends `Call`s and renders the latest snapshot `Event`.
 

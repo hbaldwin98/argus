@@ -4,7 +4,7 @@ Requirements a GPUI port must meet, written so a surface can be ported and teste
 
 ## Conventions
 
-- Paths are relative to `crates/argus-desktop/`. `ts:` is `page/src/board/...` unless it starts `page/`. `rs:` is `src/...`.
+- Paths are relative to `crates/argus-desktop/`. `ts:` is `page/src/board/...` unless it starts `page/`. `rs:` is `crates/argus-desktop-core/src/...` (not relative to `crates/argus-desktop/`); `tauri:` is `crates/argus-desktop/src/...`.
 - A behaviour id is `BOARD-<SURFACE>-<n>`. Surfaces: INDEX, LIST, COLS, DRAG, PEEK, MENU, KEYS, CAPTURE, HEAD, WORK, FORM, RECORD, FLOWS, SEQ, LINK, RECONCILE, TICKETS.
 - "Call" means a `connection::page::Call` variant (rs:connection/page.rs). The page's `call('snake_name', ...)` is the same Call. The port keeps `Session::call(Call)` as the only way a gesture reaches the app; the client never predicts a result (AGENTS.md: "the client never predicts the result of a request"). Every "shows when the pushed board says so" rule below is that rule.
 - Source tags: `DESIGN` = DESIGN.md "The feature view" (line ~2183), "Sequence diagrams" (~2267), "What a feature row says" (~2292), tracker paragraphs (~2370-2410, ~2571-2582). `DESKTOP` = DESKTOP.md "Decided for later slices" (line 372). Tests are cited by name and file.
@@ -420,7 +420,7 @@ Not mapped (no doc fetched or none exists): the `Plot` component for the diagram
 
 ## Scenes and coverage
 
-Scenes in `src/screens/mod.rs` (line 1890-1936) that show this group:
+Scenes in `rs:screens/mod.rs` (line 1890-1936) that show this group:
 
 | Scene | Shows |
 |---|---|
