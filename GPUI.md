@@ -143,16 +143,40 @@ and pane headers.
   packages and a headless renderer come in. README, AGENTS.md and DESIGN.md
   rows change with them.
 
-## Open questions
+## Decided
 
-Raised on the feature as open decisions for the human:
+The feature board holds each with its reasons; in short:
 
-- A new crate beside `argus-desktop` or the port inside it, and how long
-  the two front ends coexist.
-- Today's look reproduced, or `gpui-kit`'s Design Guides followed.
-- Platform order: Windows first, then Linux and macOS, or all three per
-  surface.
-- Whether a headless renderer in CI is required before the port starts.
+- **A new crate** beside `argus-desktop`, the two side by side until the
+  new one replaces it.
+- **The look is a hybrid**: `gpui-kit`'s flat surfaces and components,
+  kept full-window as today (no title bar, no status bar, the stage keeps
+  its header and the window controls, the sidebar foot keeps the counts).
+  The canvas https://claude.ai/artifact/VeXPoEQLFzJWDLpR26qfcx shows it.
+- **Git gets a sidenav entry** with Changes and History. Changes replaces
+  the review dialog, History the history dialog; branch rows stay in
+  Checkouts.
+- **Windows first**, Linux and macOS after.
+- **Both screenshots and UI integration tests** gate each surface, so a
+  headless `render_to_image` has to work before the port starts.
+- The seven cross-cutting behaviour questions: see
+  `gpui/parity/cross-cutting.md` §Decided.
+
+## Still open
+
+- **Where `Session` lives.** `argus-desktop` is a binary with no library
+  target, so a new crate cannot use `session.rs` as it stands. Either the
+  Tauri-free modules move into a crate both front ends depend on, or
+  `argus-desktop` grows a library target; the architecture phase decides.
+
+## The Code editor
+
+`main` now edits a working file inline in the Code stage: CodeMirror with
+Vim mode, tree-sitter grammars installed on request, live with agents
+(`page/src/code/editor.ts`, `sync.ts`, `grammar/`). `gpui-kit`'s `Editor`
+has tree-sitter but no Vim mode, and the live sync is ours. It is its own
+track, inventoried and specced after the spike, and does not hold the
+spike up.
 
 ## Phases
 
@@ -163,9 +187,12 @@ the next.
 2. **Parity spec**: per surface group, every behaviour the port must keep,
    drawn from DESIGN.md, the code and the scenes; each spec checked against
    the code by an independent agent; a completeness pass for what is missing.
-3. **Spike**: the terminal element, the dock, IME in `Textarea`, Mica and
-   `Blurred` on a live window, `render_to_image` of one scene, and the time
-   from a one-line style change to seeing it.
+3. **Spike**, on Windows, in the new crate, independent of `Session`: a
+   frameless window in the Ledger palette with the window controls; the
+   terminal element drawing rows shaped like `Frame`; IME in a `Textarea`
+   and a screenshot pasted into it; the dock and resizable splits; Mica,
+   `Blurred` and opacity switched on a live window; `render_to_image` of a
+   view in a test; and the time from a one-line style change to seeing it.
 4. **Architecture**: the open questions decided.
 5. **Port**: per surface, a sonnet implementer in an isolated worktree, an
    independent verifier against the parity spec, the coordinator's read

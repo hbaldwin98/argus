@@ -100,12 +100,15 @@ What the four group specs (`shell.md`, `board.md`, `checkouts-code-views.md`, `r
 - CROSS-32. **Live scenes answer through the same stand-in daemon.** `serve_screens` builds a scene and answers each call the page makes against it, with the same `answer` the static scenes use (`rs:screens/live.rs:1-16,54-80`), which is how `audit.mjs` gets real answers to clicks. A GPUI port drives `Session::call` in-process instead, so the HTTP server goes, but the stand-in daemon (`answer`, `Window`, `rs:screens/mod.rs:1768-1810`) is the fixture every port test of CROSS-6 and CROSS-27 needs.
 - CROSS-33. **States no scene shows, across groups:** connecting **after** a tree was loaded (CROSS-5), a host switch in progress (CROSS-4), a protocol alarm (CROSS-3), a dialog open while stopped, an overlay over an overlay (CROSS-12), any window narrower than 1200 px (CROSS-25), a zoom other than 100 % (CROSS-24), the light theme (every scene is drawn in the default `system` theme of the machine that shoots it), and reduced motion (CROSS-26).
 
-## Open questions for a human
+## Decided
 
-1. While connecting after a loss (CROSS-5), should the window dim or disable what it shows, as it does when stopped?
-2. One focus-return rule for every overlay (CROSS-11): back to what had the keys, always?
-3. Should dialogs trap Tab (CROSS-13)?
-4. Which surfaces keep selectable text (CROSS-16)?
-5. The stacking order (CROSS-21): should floats sit under menus, dialogs and the stopped card?
-6. One drag threshold and Escape-cancels-every-drag (CROSS-18)?
-7. Should relative times refresh on a timer (CROSS-29)?
+The person settled these on the feature board (decisions #49-#55); a port
+builds the decided behaviour, not today's where they differ.
+
+1. While connecting after a loss (CROSS-5), the window dims the tree, disables actions and says Reconnecting in the sidebar foot, as it does when stopped.
+2. Closing any overlay gives the keys back to what had them, the pane included (CROSS-11).
+3. Modal dialogs trap Tab; the extension dialog that leaves focus in the pane stays non-modal (CROSS-13).
+4. Text is selectable only in the terminal, diffs, the Code stage, transcripts and markdown blocks; ids and paths get copy buttons (CROSS-16).
+5. Stacking from the bottom: floats, menus and popovers, dialogs, the stopped card and notifications (CROSS-21).
+6. One 5 px drag threshold, and Escape cancels any drag (CROSS-18).
+7. Relative times repaint on a 30 s tick (CROSS-29).
