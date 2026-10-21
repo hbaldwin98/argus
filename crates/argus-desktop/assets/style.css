@@ -7139,18 +7139,20 @@ button.cf-row {
 
 /* ---- Projects: the switcher and the add dialog ---------------------------- */
 
-/* The menu floats over the nav, so it may run past a narrow rail rather than
-   wrap a label or cut a workspace's name to "defa…". */
+/* The rail clips what runs past it, so the menu keeps inside the rail: as
+   wide as its rows, never wider than the rail. Its rows keep to one line, and
+   a hint gives way before a label does. */
 .projmenu .projects-menu {
   width: max-content;
-  min-width: 260px;
-  max-width: 360px;
+  min-width: min(260px, calc(var(--rail-w) - 16px));
+  max-width: calc(var(--rail-w) - 16px);
   padding: var(--sp-6);
   gap: 1px;
 }
 .projects-menu .mi {
   height: 32px;
   white-space: nowrap;
+  overflow: hidden;
 }
 .projects-menu .mlabel {
   padding: var(--sp-4) var(--sp-8);
