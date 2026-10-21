@@ -234,6 +234,11 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join("a.rs"), "x").unwrap();
         rx.recv_timeout(std::time::Duration::from_secs(5)).expect("the write wakes the watch");
+        // One write is several events (the create, then its data and its
+        // metadata), each a wake of its own and none promised to come before
+        // the first take. Once they have all come, a second take holds only
+        // what take left behind, rather than the rest of the same write.
+        while rx.recv_timeout(std::time::Duration::from_millis(300)).is_ok() {}
         let taken = watch.take();
         assert!(taken.paths.iter().any(|p| p.ends_with("a.rs")), "{taken:?}");
         assert!(taken.paths.iter().all(|p| !in_git_dir(p)), "{taken:?}");
