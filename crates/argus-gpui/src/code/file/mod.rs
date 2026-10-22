@@ -8,9 +8,12 @@
 //! list forgets; and only a move of the cursor brings it into view, and then a third of the way down
 //! (`code::scroll`). The lines are the diff's rows in one view (`kit/diff`); while the stage edits the
 //! file, `editor` takes their place and the comment box is an in-flow block above it, with no ruler.
+//! A markdown file is read as a document (`rendered`) until the header's choice says Source, which
+//! this window keeps by path; the lines come back while a comment is open, since it is on them.
 
 pub mod editor;
 mod header;
+pub mod rendered;
 mod ruler;
 mod scroll;
 mod states;
@@ -32,6 +35,9 @@ use crate::review::comment::{self, ways, CommentBox};
 use crate::theme::scale::{rem, zoom};
 use crate::theme::Tokens;
 use editor::CodeEditor;
+use rendered::mode::{is_markdown, Mode, Modes};
+use rendered::choice::Choose;
+use rendered::Rendered;
 use ruler::Ruler;
 
 pub use header::bar as header;
@@ -44,6 +50,9 @@ pub struct CodeFile {
     ruler: Entity<Ruler>,
     /// The editor that stands in for the lines while the stage edits the file.
     editor: Entity<CodeEditor>,
+    /// The markdown file read as a document, and which way each markdown file was last read.
+    document: Entity<Rendered>,
+    modes: Modes,
     /// Where each file was scrolled, by path: kept here, since a list that is not drawn forgets.
     scrolled: HashMap<String, f32>,
     /// The file whose lines the list is showing, once they are there: what its scroll is kept under.
@@ -63,6 +72,7 @@ impl CodeFile {
         let comment = cx.new(|cx| CommentBox::new(heard.clone(), caller.clone(), Rc::new(ways::Code), window, cx));
         let ruler = cx.new(|cx| Ruler::new(heard.clone(), caller.clone(), diff.clone(), cx));
         let editor = cx.new(|cx| CodeEditor::new(heard.clone(), caller.clone(), window, cx));
+        let document = cx.new(|cx| Rendered::new(heard.clone(), caller.clone(), editor.clone(), cx));
         let pressed = cx.subscribe(&diff, |this, _, event: &DiffEvent, cx| match *event {
             // A click on a line moves the cursor to it, and Shift extends a range from where it was.
             DiffEvent::Row { row, extend } => this.ask(CodeGesture::Click { target: CodeClick::Line { line: row as u32, extend } }, cx),
@@ -76,7 +86,7 @@ impl CodeFile {
         });
         // The list's first layout says how tall it is, which the cursor's place on screen waits for.
         let laid_out = cx.observe(&diff, |_, _, cx| cx.notify());
-        Self { heard, caller, diff, comment, ruler, editor, scrolled: HashMap::new(), shown: None, cursor: (None, 0), settle: false, _pressed: pressed, _laid_out: laid_out }
+        Self { heard, caller, diff, comment, ruler, editor, document, modes: Modes::default(), scrolled: HashMap::new(), shown: None, cursor: (None, 0), settle: false, _pressed: pressed, _laid_out: laid_out }
     }
 
     /// The list of lines, for the stage's sideways keys and a test.
@@ -118,6 +128,30 @@ impl CodeFile {
         cx.notify();
     }
 
+    /// How the header offers to read the file shown, when it is a markdown file with text to show,
+    /// whether the lines or the editor stand for it. The comment box is on that text, so a comment open
+    /// shows it as it is whatever was chosen.
+    fn reading(&self, page: &CodePage) -> Option<Mode> {
+        let path = page.path.as_deref().filter(|path| is_markdown(path) && matches!(area(page), Area::Lines | Area::Editor))?;
+        Some(if page.comment.is_some() { Mode::Source } else { self.modes.of(path) })
+    }
+
+    fn reads_rendered(&self, page: &CodePage) -> bool {
+        self.reading(page) == Some(Mode::Rendered)
+    }
+
+    fn choose(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(page) = self.heard.read(cx).code.clone() else { return };
+        if let Some(path) = page.path.clone() {
+            self.modes.choose(&path, mode);
+            // The text is the editor's again, with the keys it had before the document stood over it.
+            if mode == Mode::Source && page.editing {
+                self.editor.update(cx, |editor, cx| editor.take_keys(window, cx));
+            }
+            cx.notify();
+        }
+    }
+
     fn body(&self, page: &CodePage, tokens: &Tokens) -> AnyElement {
         match area(page) {
             Area::Failed(why) => states::said("code-failed", why, tokens),
@@ -125,6 +159,7 @@ impl CodeFile {
             Area::Loading => states::loading(tokens),
             // The start panel and the match card are the stage's, which has the press to send.
             Area::Start => div().into_any_element(),
+            Area::Editor | Area::Lines if self.reads_rendered(page) => div().id("code-wrap").test_support().size_full().min_h_0().child(self.document.clone()).into_any_element(),
             // In the editor the comment box is an in-flow block above it, not among the lines.
             Area::Editor => v_flex()
                 .id("code-wrap")
@@ -153,12 +188,16 @@ impl Render for CodeFile {
             return div().into_any_element();
         };
         scroll::settle(self, &page, cx);
+        let me = cx.weak_entity();
+        let choose: Choose = Rc::new(move |mode, window, cx| {
+            me.update(cx, |this, cx| this.choose(mode, window, cx)).ok();
+        });
         v_flex()
             .id("code-file-area")
             .test_support()
             .size_full()
             .min_h_0()
-            .children(header(&page, &self.heard, &self.caller, &tokens))
+            .children(header(&page, &self.heard, &self.caller, &tokens, self.reading(&page).map(|mode| (mode, choose))))
             .child(div().flex_1().min_h_0().bg(tokens.bg_sunken).child(self.body(&page, &tokens)))
             .into_any_element()
     }

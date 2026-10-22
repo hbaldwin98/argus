@@ -7,10 +7,13 @@
 
 use argus_desktop_core::code::file::{facts, has_header, path_parts};
 use argus_desktop_core::code::stage::{CodeClick, CodeGesture, CodePage};
+use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::keys::keymap::Action;
 use gpui_kit::component::h_flex;
 use gpui_kit::{div, prelude::*, AnyElement, Entity, SharedString, TestSupportExt as _};
 
+use super::rendered::choice::{choice, Choose};
+use super::rendered::mode::Mode;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::button::{button, Look};
@@ -18,7 +21,6 @@ use crate::kit::keycap::keycap;
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
-use argus_desktop_core::connection::page::Call;
 
 /// What a button of the header does, sent as the gesture its key sends unless the daemon is gone.
 fn press(heard: &Entity<Heard>, caller: &Caller, gesture: CodeGesture) -> impl Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static {
@@ -32,7 +34,9 @@ fn press(heard: &Entity<Heard>, caller: &Caller, gesture: CodeGesture) -> impl F
 
 /// `.fhdr`: the chrome colour over a hairline, 12px about its parts. Nothing without a file or a way
 /// back.
-pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tokens) -> Option<AnyElement> {
+/// `reading` is how a markdown file is being read and what to call when the other way is chosen; it
+/// is none for any other file, which has only its text.
+pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tokens, reading: Option<(Mode, Choose)>) -> Option<AnyElement> {
     if !has_header(page) {
         return None;
     }
@@ -106,6 +110,7 @@ pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tok
             .children(version)
             .child(div().flex_1())
             .child(meta)
+            .children(reading.map(|(mode, choose)| choice(mode, &choose, tokens)))
             .children(page.back.as_ref().map(|back| {
                 button("code-back", format!("Back to {back}"), Look::Plain, true, tokens)
                     .child(SharedString::from(format!("Back to {back}")))

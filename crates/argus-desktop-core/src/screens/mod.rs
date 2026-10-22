@@ -2273,6 +2273,11 @@ fn main_scenes() -> Vec<Scene> {
                 .call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Line { line: 52, extend: false } } });
             w.s
         }),
+        scene("code-markdown", "Code — a markdown file read as a document", || {
+            let mut w = Window::showing(P_TRIM);
+            w.call(Call::ShowCode { open: true }).call(Call::Code { gesture: CodeGesture::Click { target: CodeClick::Tree { path: "README.md".into() } } });
+            w.s
+        }),
         scene("code-start", "Code — nothing open yet: what changed, and the one field", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::ShowCode { open: true });

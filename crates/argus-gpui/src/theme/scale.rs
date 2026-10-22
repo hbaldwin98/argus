@@ -483,6 +483,8 @@ pub struct Scale {
     pub code_mid_below: f32,
     pub code_low_below: f32,
     pub code_file_min_w: f32,
+    /// How wide a markdown file read as a document is let be: about seventy characters of body text, the measure a line stays comfortable at however wide the column.
+    pub read_max_w: f32,
     /// The file read whole: `.cline`'s number column, `.code-ruler`'s width and how far its marks stand in from its edges, the least a mark and the band are tall, and how wide a comment card on a line is let be.
     pub code_no_w: f32,
     pub ruler_w: f32,
@@ -900,6 +902,7 @@ impl Scale {
             code_mid_below: 1100.0,
             code_low_below: 640.0,
             code_file_min_w: 320.0,
+            read_max_w: 720.0,
             code_no_w: 52.0,
             ruler_w: 12.0,
             ruler_mark_inset: 2.0,

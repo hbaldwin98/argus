@@ -281,7 +281,7 @@ impl Render for CodeStage {
             v_flex()
                 .size_full()
                 .min_h_0()
-                .children(file::header(&page, &self.heard, &self.caller, &tokens))
+                .children(file::header(&page, &self.heard, &self.caller, &tokens, None))
                 .child(div().flex_1().min_h_0().child(body))
                 .into_any_element()
         } else {

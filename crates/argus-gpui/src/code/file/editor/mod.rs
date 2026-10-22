@@ -39,9 +39,9 @@ use argus_desktop_core::code::stage::CodePage;
 use argus_desktop_core::code::steps::marks;
 use argus_desktop_core::code::vim::Shared;
 use argus_desktop_core::connection::page::{Call, Connection};
-use gpui_kit::component::input::Editor;
+use gpui_kit::component::input::{Editor, EditorState};
 use gpui_kit::component::v_flex;
-use gpui_kit::{div, prelude::*, Context, Entity, Subscription, TestSupportExt as _, Window};
+use gpui_kit::{div, prelude::*, Context, Entity, Focusable as _, Subscription, TestSupportExt as _, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::{Edited, Heard};
@@ -166,6 +166,22 @@ impl CodeEditor {
     /// What the bar says of the file shown.
     pub fn status(&self) -> Option<Status> {
         self.shown.as_ref().and_then(|key| self.lives.get(key.0, &key.1)).map(|live| live.status().clone())
+    }
+
+    /// The editor's field is the window's focus: it holds the keys, whether or not it is drawn.
+    pub fn has_keys(&self, window: &Window, cx: &gpui_kit::App) -> bool {
+        self.shown_state().is_some_and(|state| state.focus_handle(cx).is_focused(window))
+    }
+
+    /// Gives the keys to the field, as opening the file does.
+    pub fn take_keys(&self, window: &mut Window, cx: &mut gpui_kit::App) {
+        if let Some(state) = self.shown_state() {
+            state.update(cx, |state, cx| state.focus(window, cx));
+        }
+    }
+
+    fn shown_state(&self) -> Option<Entity<EditorState>> {
+        self.sessions.get(self.shown.as_ref()?)?.state.clone()
     }
 
     /// The text of the file shown, as the editor holds it.

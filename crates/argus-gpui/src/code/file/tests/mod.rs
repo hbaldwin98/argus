@@ -12,6 +12,7 @@ use crate::keys::root::tests::Opened;
 mod comment;
 mod header;
 mod lines;
+mod rendered;
 mod ruler;
 
 pub(crate) fn line(no: u32) -> CodeRow {
