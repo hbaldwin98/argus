@@ -9,9 +9,10 @@
 //! the stage's own words and tools from `chrome/header/slots`.
 
 use argus_desktop_core::chrome::strip::{Says, StripPage};
-use argus_desktop_core::connection::page::{Side, Stage};
+use argus_desktop_core::connection::page::{Call, Side, Stage};
 use argus_desktop_core::panes::console::ConsolePlace;
 use argus_desktop_core::system::clock::Clock;
+use argus_desktop_core::views::head;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, Context, Entity, Subscription, Window};
 
@@ -44,6 +45,7 @@ use crate::review::stage::GitStage;
 use crate::settings::look;
 use crate::settings::preferences::PreferencesView;
 use crate::theme::Tokens;
+use crate::views;
 
 pub struct Shell {
     heard: Entity<Heard>,
@@ -78,6 +80,8 @@ impl Shell {
         Overlays::get(cx).watch_pane(stage.clone(), move |cx| on_screen.read(cx).rail.shown.is_some());
         let rail = cx.new(|cx| RailView::new(heard.clone(), caller.clone(), stage.clone(), window, cx));
         let console = cx.new(|cx| ConsoleView::new(heard.clone(), caller.clone(), stage, window, cx));
+        // The agents' views draw in their dock and as the page over the stage.
+        views::agent::install::install(&heard, &caller, cx);
         // The Workspace's pane is the stage the docks sit around.
         let git = cx.new(|cx| GitStage::new(heard.clone(), caller.clone(), window, cx));
         let checkouts = cx.new(|cx| CheckoutsStage::new(heard.clone(), caller.clone(), window, cx));
@@ -146,10 +150,11 @@ impl Shell {
         if heard.console.place == ConsolePlace::Fullscreen { Stage::Console } else { heard.rail.stage }
     }
 
-    /// How many views agents have shown. The window does not hear the agents' views yet (audit
-    /// item 80), so the launcher has none to count; a stub, named so it is found when they land.
-    fn views_waiting(_heard: &Heard) -> usize {
-        0
+    /// How many views agents have shown, whether a dock shows the panel, and what a press of the launcher asks.
+    fn views_waiting(heard: &Heard) -> (usize, bool, Option<Call>) {
+        let page = heard.views.as_deref();
+        let out = head::out(&heard.docks);
+        (page.map_or(0, |page| page.views.len()), out, page.and_then(|page| head::launch(page, out)))
     }
 }
 
@@ -171,7 +176,7 @@ impl Render for Shell {
             None if self.heard.read(cx).git_up() => None,
             None => slots.tools(stage, window, cx),
         };
-        let launcher = launcher(waiting, false, held, &self.caller, &tokens).map(IntoElement::into_any_element);
+        let launcher = launcher(waiting.0, waiting.1, waiting.2, held, &self.caller, &tokens).map(IntoElement::into_any_element);
         let scrimmed = !Overlays::get(cx).open_kinds().is_empty();
         h_flex()
             .relative()

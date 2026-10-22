@@ -28,6 +28,7 @@ pub mod section;
 pub mod selected;
 pub mod sequence;
 pub mod segment;
+pub mod spinner;
 pub mod split;
 pub mod spots;
 pub mod start;

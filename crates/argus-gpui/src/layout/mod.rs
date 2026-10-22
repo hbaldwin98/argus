@@ -1,5 +1,6 @@
 //! Where the stage and the docks sit around each other, and how a panel or a pane is carried between them.
 
+pub mod bodies;
 pub mod carry;
 pub mod dock;
 pub mod dock_menu;

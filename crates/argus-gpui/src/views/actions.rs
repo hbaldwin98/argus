@@ -12,13 +12,13 @@ use argus_desktop_core::connection::page::Call;
 use argus_protocol::{Answer, Tone, ViewAction, ViewPress};
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, Animation, AnimationExt as _, AnyElement, Role, SharedString, Transformation, percentage};
+use gpui_kit::{div, prelude::*, AnyElement, Role, SharedString};
 
 use super::blocks::pen::Pen;
 use super::ctx::{Kind, ViewCtx};
 use crate::kit::button::{button, inert, outlined, outlined_inert, Look};
 use crate::kit::icon_button::Node;
-use crate::kit::icons::Glyph;
+use crate::kit::spinner::spinner;
 use crate::kit::tip::tip;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
@@ -45,21 +45,6 @@ pub fn press_call(ctx: &ViewCtx, action: &ViewAction, with: PressWith) -> Call {
 
 /// Why a button cannot be pressed when the daemon cannot take presses.
 pub const CANNOT_PRESS: &str = "This Argus daemon cannot take button presses";
-
-/// `.vspin`: a ring turning, 10px, the accent on the quiet edge.
-fn spinner(key: &str, tokens: &Tokens) -> AnyElement {
-    div()
-        .relative()
-        .size(rem(tokens.spin_sm))
-        .flex_shrink_0()
-        .child(Glyph::Ring9.at(tokens.spin_sm).text_color(tokens.line_strong))
-        .child(div().absolute().top_0().left_0().child(Glyph::Arc.at(tokens.spin_sm).text_color(tokens.accent).with_animation(
-            SharedString::from(format!("{key}-spin")),
-            Animation::new(tokens.motion_spin_slow).repeat(),
-            |icon, delta| icon.transform(Transformation::rotate(percentage(delta))),
-        )))
-        .into_any_element()
-}
 
 /// `.btn.sm.vtone-*`: a good or an active action is the primary button; a bad, a warn and an info
 /// one keep the plain button's fill and take the tone for the edge and the words, which stay there

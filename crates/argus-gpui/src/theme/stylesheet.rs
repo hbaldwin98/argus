@@ -307,6 +307,7 @@ fn ledgers_scale_is_the_stylesheets() {
         ("dock-floor", t.dock_floor),
         ("dock-min-pane", t.dock_min_pane),
         ("dock-room", t.dock_room),
+        ("vtab-max", t.vtab_max),
     ] {
         assert_eq!(ours, px_of(name), "--{name}");
     }

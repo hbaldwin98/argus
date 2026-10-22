@@ -1,10 +1,9 @@
 //! What a docked panel's body draws.
 //!
-//! The console is drawn by `panes/console`; no other panel is drawn in the GPUI
-//! window yet (the views agents showed, an extension's view and a saved view are
-//! each their own later surface), so the body is the panel's name and a quiet line saying so. It
-//! is no stand-in for the panel: nothing in it can be mistaken for content.
-//! A panel ported later takes its place here by `PanelKind`.
+//! The console is drawn by `panes/console` and the views agents showed by `views/agent`; a panel with
+//! no view offered for it (`layout/bodies`) is not drawn in the GPUI window yet (an extension's view and a
+//! saved view are each their own later surface), so the body is the panel's name and a quiet line saying
+//! so. It is no stand-in for the panel: nothing in it can be mistaken for content.
 
 use gpui_kit::component::v_flex;
 use gpui_kit::{div, prelude::*, IntoElement, SharedString};

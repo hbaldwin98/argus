@@ -149,6 +149,11 @@ pub(crate) fn bounds(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Boun
     cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).bounds()).unwrap()
 }
 
+/// A side dock's size as Rust says it: the page's `.dock` is content-box, so its 1px border sits outside it.
+pub(crate) fn drawn_width(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Pixels {
+    bounds(cx, opened, id).size.width - px(1.0)
+}
+
 pub(crate) fn label(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Option<String> {
     cx.update_window(opened.handle, |_, window, _| {
         window.try_find(id.to_owned()).and_then(|found| found.label().map(str::to_owned))
@@ -206,7 +211,7 @@ fn a_docks_snapshot_draws_each_dock_with_the_right_panel_shown(cx: &mut TestAppC
     assert_eq!(label(cx, &opened, "dock-right-panel").as_deref(), Some("Views"));
     assert_eq!(selected(cx, &opened, VIEWS_TAB), Some(true));
     assert_eq!(selected(cx, &opened, IMAGES_TAB), Some(false));
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(400.0), "Rust's size, as the page draws it");
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(400.0), "Rust's size, as the page draws it");
 
     // The bottom dock holds one, the console, whose own strip is its head: neither here.
     assert!(!present_id(cx, &opened, "dock-bottom-head"));
@@ -224,7 +229,7 @@ fn the_stage_gets_what_the_docks_leave(cx: &mut TestAppContext) {
     // A window wide enough for the dock to have a column of its own.
     let opened = docked_wide(cx, docks(), WIDE);
     let stage = bounds(cx, &opened, "work-stage");
-    assert_eq!(stage.size.width, px(WIDE - 400.0));
+    assert_eq!(stage.size.width, px(WIDE - 400.0 - 1.0), "the dock's border is outside its size");
     assert_eq!(stage.size.height, px(HEIGHT - 200.0));
 }
 
@@ -258,17 +263,17 @@ fn a_sash_drag_sends_the_size_call_and_the_dock_does_not_resize_until_the_next_d
     drag_to(cx, &opened, by(grab, -100.0, 0.0));
 
     // Followed while held, as a gesture in progress.
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(500.0));
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(500.0));
     assert_eq!(taken(&opened), Vec::<String>::new(), "nothing is sent while the sash is held");
 
     up(cx, &opened, by(grab, -100.0, 0.0));
     assert_eq!(taken(&opened), ["Docks { gesture: Size { dock: Right, size: 500 } }"]);
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(400.0), "Rust's size until Rust answers");
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(400.0), "Rust's size until Rust answers");
 
     let mut page = docks();
     page.right.size = 500;
     hear(cx, &opened, vec![Event::Docks(Box::new(page))]);
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(500.0));
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(500.0));
 }
 
 #[gpui_kit::test]
@@ -282,7 +287,7 @@ fn a_sash_let_go_where_it_began_still_asks_and_the_dock_stays_rusts_size(cx: &mu
     drag_to(cx, &opened, grab);
     up(cx, &opened, grab);
     assert_eq!(taken(&opened), ["Docks { gesture: Size { dock: Right, size: 400 } }"]);
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(400.0));
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(400.0));
 }
 
 #[gpui_kit::test]
@@ -291,7 +296,7 @@ fn a_sash_dragged_past_rusts_bounds_is_sent_and_drawn_within_them(cx: &mut TestA
     let grab = centre(cx, &opened, "dock-right-sash");
     down(cx, &opened, grab);
     drag_to(cx, &opened, by(grab, 300.0, 0.0));
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(280.0), "no narrower than a side dock may be");
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(280.0), "no narrower than a side dock may be");
     up(cx, &opened, by(grab, 300.0, 0.0));
     assert_eq!(taken(&opened), ["Docks { gesture: Size { dock: Right, size: 280 } }"]);
 }
@@ -312,7 +317,7 @@ fn a_sash_press_that_stays_under_five_pixels_sends_nothing(cx: &mut TestAppConte
     let grab = centre(cx, &opened, "dock-right-sash");
     down(cx, &opened, grab);
     drag_to(cx, &opened, by(grab, -3.0, 0.0));
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(400.0), "not yet a drag");
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(400.0), "not yet a drag");
     up(cx, &opened, by(grab, -3.0, 0.0));
     assert!(taken(&opened).is_empty());
 }
@@ -323,10 +328,10 @@ fn escape_during_a_sash_drag_restores_rusts_size_and_sends_nothing(cx: &mut Test
     let grab = centre(cx, &opened, "dock-right-sash");
     down(cx, &opened, grab);
     drag_to(cx, &opened, by(grab, -100.0, 0.0));
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(500.0));
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(500.0));
     escape(cx, &opened);
     up(cx, &opened, by(grab, -100.0, 0.0));
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(400.0));
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(400.0));
     assert!(taken(&opened).is_empty());
 }
 
@@ -485,7 +490,7 @@ fn nothing_is_sent_while_the_daemon_is_gone(cx: &mut TestAppContext) {
     drag_to(cx, &opened, by(grab, -100.0, 0.0));
     up(cx, &opened, by(grab, -100.0, 0.0));
     assert!(taken(&opened).is_empty(), "a press while reconnecting reached no daemon: {:?}", taken(&opened));
-    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(400.0));
+    assert_eq!(drawn_width(cx, &opened, "dock-right"), px(400.0));
 }
 
 #[gpui_kit::test]
@@ -744,11 +749,11 @@ fn under_1200_px_the_right_dock_is_a_drawer_over_the_stage_and_wider_it_squeezes
     assert!(present_id(cx, &narrow, "drawer"));
     let (dock, stage) = (bounds(cx, &narrow, "dock-right"), bounds(cx, &narrow, "work-stage"));
     assert_eq!(dock.right(), px(1200.0), "it hangs from the work area's right edge");
-    assert_eq!(dock.size.width, px(400.0), "as wide as it was dragged");
+    assert_eq!(dock.size.width - px(1.0), px(400.0), "as wide as it was dragged, its border outside");
     assert_eq!(stage.size.width, px(1200.0), "the stage keeps all its width");
     let wide = docked_wide(cx, docks(), 1201.0);
     assert!(!present_id(cx, &wide, "drawer"));
-    assert_eq!(bounds(cx, &wide, "work-stage").size.width, px(1201.0 - 400.0), "a wide window gives the dock its own column");
+    assert_eq!(bounds(cx, &wide, "work-stage").size.width, px(1201.0 - 400.0 - 1.0), "a wide window gives the dock its own column, its border outside the size");
 }
 
 #[gpui_kit::test]
@@ -767,13 +772,13 @@ fn above_1200_px_the_right_dock_is_no_wider_than_the_min_pane_unless_the_window_
     let mut page = docks();
     page.right.size = 560;
     let tight = docked_wide(cx, page.clone(), 1240.0);
-    assert_eq!(bounds(cx, &tight, "dock-right").size.width, px(440.0), "1240 - 800 is under the min pane");
+    assert_eq!(drawn_width(cx, &tight, "dock-right"), px(440.0), "1240 - 800 is under the min pane");
     let roomy = docked_wide(cx, page.clone(), 1440.0);
-    assert_eq!(bounds(cx, &roomy, "dock-right").size.width, px(560.0), "1440 - 800 = 640 leaves room for the size dragged");
+    assert_eq!(drawn_width(cx, &roomy, "dock-right"), px(560.0), "1440 - 800 = 640 leaves room for the size dragged");
     let mut wide = page;
     wide.right.size = 5000;
     let capped = docked_wide(cx, wide, 1440.0);
-    assert_eq!(bounds(cx, &capped, "dock-right").size.width, px(640.0), "never past the room rule");
+    assert_eq!(drawn_width(cx, &capped, "dock-right"), px(640.0), "never past the room rule");
 }
 
 #[test]
@@ -785,4 +790,18 @@ fn a_side_dock_caps_against_the_floor_and_only_the_right_one_against_the_room() 
     assert_eq!(capped(Dock::Right, 900.0, 1400.0, 1440.0, &tokens), 600.0);
     assert_eq!(capped(Dock::Right, 900.0, 1100.0, 1100.0, &tokens), 900.0, "the drawer has its own maximum");
     assert_eq!(capped(Dock::Right, 900.0, 0.0, 1440.0, &tokens), 900.0, "an area not laid out caps nothing");
+}
+
+#[gpui_kit::test]
+fn a_dock_holding_only_the_views_panel_draws_the_panels_strip_and_no_head_over_it(cx: &mut TestAppContext) {
+    // The views' tabs carry the dock button and take the head's press, as the console's do.
+    let mut page = docks();
+    page.right.tabs = vec![tab(&Panel::Views, "Views")];
+    let opened = docked(cx, page);
+    assert!(!present_id(cx, &opened, "dock-menu-right"), "a second head over the panel's strip");
+    let mut with_images = docks();
+    with_images.right.tabs = vec![tab(&images(), "Images")];
+    with_images.right.shown = Some(images());
+    let other = docked(cx, with_images);
+    assert!(present_id(cx, &other, "dock-menu-right"), "any other single panel has the dock's head");
 }

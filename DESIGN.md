@@ -747,6 +747,7 @@ GPUI one both stand on it.
 | `views/blocks/timeline` | the lanes of a timeline in the order they first appear, and the lane each event is in |
 | `views/blocks/zoom` | where a drawing sits in its larger view: how it opens, fit, zoom about a point, the wheel's factor and the percent it says |
 | `views/changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
+| `views/head` | what the head of an agent's view says: the status pill's look for a tone, the meta line with the pane that read it and its age on the person's clock, a tab's tooltip, which view the panel and the page show, whether a dock shows the panel, and what the launcher's press asks |
 | `views/refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
 | `views/saved` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
 | `views/nav` | how the sidebar's Views fold lists the saved views: grouped by scope, filtered to here or all, nested under the view that links to them, lit while a panel in a dock shows them |
@@ -1125,6 +1126,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/split` | a resizable pair: a column at the width its sash gives it, the width reported once on release, a double-click giving the usual width back, and the drag held while it lasts |
 | `kit/selected` | how a list row in a dialog says it is selected: the fill and the theme's mark |
 | `kit/spots` | the places a carried pane can be dropped, published by the views that draw them (the grid's cells and stage, the rail's checkout rows), the checkout lit as a target, and whether a pane is carried |
+| `kit/spinner` | the ring that turns while something is asked and not yet answered: a button waiting on a press and a view's tab waiting on a refresh |
 | `kit/start` | a checkout's start menu as it is drawn wherever it opens, a shell then an agent per template with the session's cursor highlighted; the rail opens it under a row and the Checkouts stage above New pane |
 | `kit/status_dot` | what a pane's or console's status looks like with no word: a turning ring, a filled dot, a dash, a hollow ring |
 | `kit/strip` | the page's one tab strip, drawn once for the docks, the console and a split side: the bar, the tab chip with its selected and hover states, the close, the menu button |
@@ -1138,6 +1140,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `layout/carry/preview` | what shows a carried pane: its name following the pointer, the zone it would land on and the stage outlined when it would open there |
 | `layout/dock` | one dock drawn from Rust's `DocksPage`: its tab strip while it holds more than one panel, the shown panel under a head of its own while it holds one (the console's own strip is its head, and a press in the top of it carries the panel), its sash with the page's grip, and the press each of them makes; dimmed and not answering while the daemon is gone |
 | `layout/dock_menu` | what a panel's dock menu and a dock tab's context menu offer as the one menu model, the dock a panel is already in saying `here`, and the `Call` each sends |
+| `layout/bodies` | which view draws a panel's body and which a stage that is a page, offered once by the surface that owns the content and asked by a dock, a float frame and the stage |
 | `layout/drop_target` | where a panel dropped at a point would land (a dock, or the stage for a panel that has a page), the area to preview, and the call the drop sends |
 | `layout/float` | the dialogs over the work area, each in a frame of its own (head, the panel's body, a corner grip) that raises on any press, moves by its head and resizes by its corner through the work area's one drag, draws the box the pointer has made until it is let go and reports it once; dimmed and not answering while the daemon is gone |
 | `layout/holders` | who is holding a resize: each drag holds under its own name and the panes wait until all have let go |
@@ -1223,6 +1226,12 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `theme/themes/rose_pine` | Rose Pine as data: dusky violet surfaces and rose as the one warm accent |
 | `views` | the renderers an agent's view is drawn with, shared by every surface that draws agent content |
 | `views/actions` | the buttons an agent put in a view: a press tells the agent through its pane or, in a saved view, the daemon; a button waits with a spinner, is disabled with a reason when the daemon cannot take presses, and asks first when it has a confirm |
+| `views/agent` | the views agents showed, drawn: the panel with its tab strip and the page over the stage |
+| `views/agent/acts` | what a view's head offers to press: the agent's buttons, then the `...` menu of refresh, pop out or put back, and close, each a request |
+| `views/agent/head` | a view's header: title, status and buttons on one row, then the subject link and the meta line whose age the panel draws again on a timer |
+| `views/agent/install` | where the agents' views are drawn: the panel body, the page over the stage, and the page's title, status pill and buttons in the strip |
+| `views/agent/panel` | the one content element of the agents' views, as the panel with its tabs or as the page, keeping the reader's place in a view and drawing the age again every half minute |
+| `views/agent/tabs` | the views panel's tab strip: a tab per view newest first with its spinner and unseen dot, close and middle click, then the dock button and Hide |
 | `views/blocks` | what each kind of block an agent's view holds is drawn as |
 | `views/blocks/board` | a board block: columns of cards of a fixed width, scrolling sideways |
 | `views/blocks/callout` | a tinted note in a tone with the glyph the tone means |

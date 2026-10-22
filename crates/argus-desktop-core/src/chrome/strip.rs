@@ -32,6 +32,16 @@ pub struct Says {
     pub meta: Vec<Part>,
     /// What hovering the meta says.
     pub meta_tip: Option<&'static str>,
+    /// A status pill beside the title, drawn whatever the width: a popped view's.
+    pub pill: Option<Pill>,
+}
+
+/// A status pill the stage's view puts beside its title: the status it takes its look from, and
+/// the word it says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pill {
+    pub status: &'static str,
+    pub word: String,
 }
 
 /// The pane on screen, which the menu under the strip's `...` is of.
@@ -54,6 +64,8 @@ pub struct StripPage {
     /// What the stage's view says beside the title (`Says::meta`) and its tooltip.
     pub meta: Vec<Part>,
     pub meta_tip: Option<&'static str>,
+    /// The stage's view's own pill (`Says::pill`).
+    pub pill: Option<Pill>,
     /// The pane the `...` menu is of, with a pane on screen.
     pub pane: Option<Named>,
 }
@@ -84,7 +96,7 @@ impl StripPage {
             None => Vec::new(),
         };
         let title = says.title.clone().unwrap_or_else(|| if stage == Stage::Browsers { "Every agent" } else { name }.to_owned());
-        Self { crumb, title, meta: says.meta.clone(), meta_tip: says.meta_tip, ..Self::default() }
+        Self { crumb, title, meta: says.meta.clone(), meta_tip: says.meta_tip, pill: says.pill.clone(), ..Self::default() }
     }
 
     fn pane(rail: &Rail, clock: &Clock) -> Self {

@@ -2,10 +2,9 @@
 //! (`#views-tab`, `drawViews`).
 //!
 //! The page keeps it while the views panel is out, lit, so it is the way to close a drawer too;
-//! it is gone when no agent has shown a view. Its press is `toggle_views`. The window does not
-//! hear the agents' views yet (audit item 80), so the shell draws it with none until it does;
-//! where the launcher lives once the strip has no room is an open question (`audit.md` 5, 14),
-//! and it stays where the page has it.
+//! it is gone when no agent has shown a view. Its press is Rust's (`views::head::launch`): hide the
+//! panel while it is out, else open the newest view. Where the launcher lives once the strip has no
+//! room is an open question (`audit.md` 5, 14), and it stays where the page has it.
 
 use argus_desktop_core::connection::page::Call;
 use gpui_kit::{div, prelude::*, SharedString};
@@ -20,9 +19,9 @@ pub fn words(waiting: usize) -> Option<String> {
     (waiting > 0).then(|| format!("{waiting} {} agents showed", if waiting == 1 { "view" } else { "views" }))
 }
 
-/// The launcher for `waiting` views, `out` when the panel is out. Pressing it sends nothing while
-/// `held`: the daemon is gone.
-pub fn launcher(waiting: usize, out: bool, held: bool, caller: &Caller, tokens: &Tokens) -> Option<impl IntoElement> {
+/// The launcher for `waiting` views, `out` when the panel is out. Pressing it sends `press` (what
+/// Rust says it does), and nothing while `held`: the daemon is gone.
+pub fn launcher(waiting: usize, out: bool, press: Option<Call>, held: bool, caller: &Caller, tokens: &Tokens) -> Option<impl IntoElement> {
     let tip = words(waiting)?;
     let caller = caller.clone();
     let count = div()
@@ -36,16 +35,18 @@ pub fn launcher(waiting: usize, out: bool, held: bool, caller: &Caller, tokens: 
         .text_center()
         .child(SharedString::from(waiting.to_string()));
     Some(
-        button("views-tab", tip, Look::Plain, true, tokens)
+        button("views-tab", tip, Look::Plain, false, tokens)
             // The page says aria-pressed; the kit re-exports no toggled state, so it is the selected one.
             .aria_selected(out)
             .when(out, |button| button.bg(tokens.bg_selected).border_color(tokens.line_strong))
             .gap(rem(tokens.sp_6))
+            .border_1()
+            .border_color(tokens.line_strong)
             .child("Views")
             .child(count)
             .on_click(move |_, _, _| {
-                if !held {
-                    caller.call(Call::ToggleViews);
+                if let (false, Some(press)) = (held, press.clone()) {
+                    caller.call(press);
                 }
             }),
     )
