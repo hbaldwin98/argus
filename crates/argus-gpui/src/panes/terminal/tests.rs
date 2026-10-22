@@ -28,6 +28,7 @@ fn shown(pane: u64) -> Shown {
         checkout: "main".into(),
         branch: "main".into(),
         agent: false,
+        browser: false,
         title: "zsh".into(),
         status: "idle",
         resumed: None,

@@ -370,6 +370,7 @@ mod tests {
                 checkout: checkout.into(),
                 branch: "main".into(),
                 agent: false,
+                browser: false,
                 title: "zsh".into(),
                 status: "idle",
                 resumed: None,

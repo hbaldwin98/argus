@@ -69,6 +69,7 @@ fn rail(shown: Option<u64>) -> Rail {
             checkout: "main".into(),
             branch: "main".into(),
             agent: false,
+            browser: false,
             title: "zsh".into(),
             status: "idle",
             resumed: None,

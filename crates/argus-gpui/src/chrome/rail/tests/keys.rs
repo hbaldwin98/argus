@@ -49,6 +49,7 @@ fn showing(pane: u64, stage: Stage) -> Event {
         checkout: "main".into(),
         branch: "main".into(),
         agent: false,
+        browser: false,
         title: "zsh".into(),
         status: "idle",
         resumed: None,

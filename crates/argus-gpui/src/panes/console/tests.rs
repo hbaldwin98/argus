@@ -495,6 +495,7 @@ fn a_press_on_the_workspace_while_a_console_has_the_keys_asks_the_session_and_wa
         checkout: "main".into(),
         branch: "main".into(),
         agent: false,
+        browser: false,
         title: "shell".into(),
         status: "idle",
         resumed: None,

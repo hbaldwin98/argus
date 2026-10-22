@@ -208,6 +208,11 @@ impl SessionOwner for Owner {
         self.publish(vec![event]);
     }
 
+    fn browser_shot(&self, frame: argus_protocol::BrowserFrame) {
+        let event = lock(&self.session).browser_shot(frame);
+        self.publish(vec![event]);
+    }
+
     async fn reconnect_asked(&self) {
         self.reconnect.notified().await;
     }

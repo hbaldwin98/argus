@@ -7,7 +7,7 @@ repository.workspace = true
 
 [features]
 # The screenshot scenes (`screens`) outside this crate's tests.
-scenes = []
+scenes = ["dep:png"]
 
 [dependencies]
 argus-protocol = { workspace = true }
@@ -19,6 +19,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 # The version alacritty uses, so a cell's width here is the daemon's.
 unicode-width = "0.2"
+# The screens' browser pictures, for the scenes outside this crate's tests.
+png = { version = "0.18", optional = true }
 
 # The build, which says whether Mica and Acrylic are there to offer
 # (`settings::backdrop`).
@@ -32,5 +34,4 @@ windows-version = "0.1"
 ts-rs = "12.0.1"
 argus-protocol = { workspace = true, features = ["ts"] }
 tempfile = { workspace = true }
-# The screens' browser pictures, made in the test that writes the scenes.
 png = "0.18"

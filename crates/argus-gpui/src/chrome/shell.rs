@@ -104,6 +104,7 @@ mod tests {
             checkout: "main".into(),
             branch: "main".into(),
             agent: true,
+            browser: false,
             title: title.into(),
             status: "working",
             resumed: None,
