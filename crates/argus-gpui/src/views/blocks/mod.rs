@@ -1,0 +1,37 @@
+//! What each kind of block an agent's view holds is drawn as.
+
+pub mod board;
+pub mod callout;
+pub mod card;
+pub mod changed;
+pub mod chart;
+pub mod checklist;
+pub mod code;
+pub mod columns;
+pub mod details;
+pub mod diagram;
+pub mod dispatch;
+pub mod embed;
+pub mod fields;
+pub mod figure;
+pub mod form;
+pub mod graph;
+pub mod grid;
+pub mod kept;
+pub mod list;
+pub mod log;
+pub mod markdown;
+pub mod matrix;
+pub mod patch;
+pub mod pen;
+pub mod pending;
+pub mod pickers;
+pub mod progress;
+pub mod row;
+pub mod section;
+pub mod stats;
+pub mod table;
+pub mod tabs;
+pub mod timeline;
+pub mod tree;
+pub mod view;

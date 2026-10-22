@@ -21,6 +21,9 @@ tracing-subscriber = { workspace = true }
 unicode-width = "0.2"
 # Times said in the person's own zone (`system::clock`).
 jiff = "0.2"
+# What a link in an agent's Markdown is held to: the host of an http(s) URL, read as the WHATWG
+# parser does, which is how the page reads it.
+url = "2"
 # The screens' browser pictures, for the scenes outside this crate's tests.
 png = { version = "0.18", optional = true }
 

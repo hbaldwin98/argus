@@ -351,6 +351,7 @@ dependencies = [
  "tracing-subscriber",
  "ts-rs",
  "unicode-width",
+ "url",
  "windows-version",
 ]
 
@@ -362,6 +363,7 @@ dependencies = [
  "arboard",
  "argus-desktop-core",
  "argus-protocol",
+ "chrono",
  "gpui-kit",
  "image",
  "proptest",

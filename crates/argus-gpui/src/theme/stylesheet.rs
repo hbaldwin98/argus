@@ -364,9 +364,97 @@ fn the_shared_parts_sizes_are_the_rules_they_were_written_from() {
   width: 56px;
   height: var(--meter-h);");
     assert_eq!(t.meter_w, 56.0);
+    assert_eq!(t.meter_sm_w, 60.0, "`.vmeter-sm`");
     sheet_has(".ghost {
   height: 12px;");
     assert_eq!(t.ghost_h, 12.0);
+}
+
+#[test]
+fn the_drawn_blocks_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    sheet_has("  max-width: min(100%, 720px);
+  max-height: 360px;");
+    assert_eq!((t.chart_max_w, t.chart_max_h), (720.0, 360.0));
+    sheet_has(".vchart-line {
+  fill: none;
+  stroke: var(--t);
+  stroke-width: 2;");
+    sheet_has(".vchart-key {
+  stroke: var(--t);
+  stroke-width: 2;");
+    assert_eq!(t.chart_stroke, 2.0);
+    sheet_has(".vspark {
+  display: block;
+  width: 100%;
+  height: 32px;");
+    sheet_has(".vchart-spark .vspark {
+  max-width: 240px;");
+    sheet_has(".vstat .vspark {
+  margin-top: var(--sp-4);
+  height: 28px;");
+    assert_eq!((t.spark_h, t.spark_max_w, t.stat_spark_h), (32.0, 240.0, 28.0));
+    sheet_has(".vtable-table td {
+  height: 34px;");
+    sheet_has("  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;");
+    sheet_has(".vtable-filter {
+  min-width: 140px;");
+    assert_eq!((t.table_row_h, t.table_long_max_w, t.table_filter_min_w), (34.0, 280.0, 140.0));
+    sheet_has("  font-family: var(--font-ui);
+  font-size: 12px;");
+    sheet_has(".vd-num {
+  fill: var(--fg);
+  font-size: 10px;");
+    assert_eq!((t.vd_font, t.vd_num_font), (12.0, 10.0));
+    sheet_has(".vd-box {
+  fill: var(--bg-surface);
+  stroke: var(--line-strong);
+  stroke-width: 1;");
+    sheet_has(".vd-actor {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.5;");
+    sheet_has(".vd-life {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;");
+    sheet_has(".vd-msg {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.4;");
+    sheet_has(".vd-reply {
+  stroke-dasharray: 5 4;");
+    assert_eq!((t.vd_stroke, t.vd_msg_stroke, t.vd_actor_stroke), (1.0, 1.4, 1.5));
+    assert_eq!((t.vd_life_dash, t.vd_reply_on, t.vd_reply_off), (4.0, 5.0, 4.0));
+    sheet_has(".vg-box {
+  fill: var(--bg-surface);
+  stroke: var(--t, var(--fg-muted));
+  stroke-width: 1.5;");
+    sheet_has(".vg-edge {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.3;");
+    sheet_has("  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--bg-sunken);
+  stroke-width: 4px;");
+    assert_eq!((t.vg_stroke, t.vg_edge_stroke, t.vg_label_font, t.vg_halo), (1.5, 1.3, 11.0, 4.0));
+    sheet_has(".vg svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+  font-family: var(--font-ui);
+  font-size: 12px;");
+    assert_eq!(t.vg_node_font, 12.0);
+    let js = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../argus-desktop/page/src/views/blocks/diagram.ts")).unwrap();
+    assert!(js.contains("markerWidth: 9,") && js.contains("rx: 5 }, 'vd-box'") && js.contains("height: 22, rx: 3 }, 'vd-branch'"), "diagram.ts no longer draws what vd_head, vd_box_radius and vd_branch_radius say");
+    assert_eq!((t.vd_head, t.vd_box_radius, t.vd_branch_radius), (9.0, 5.0, 3.0));
+    let js = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../argus-desktop/page/src/views/blocks/graph.ts")).unwrap();
+    assert!(js.contains("markerWidth: 8,") && js.contains("rx: 6 }, 'vg-box'"), "graph.ts no longer draws what vg_head and vg_radius say");
+    assert_eq!((t.vg_head, t.vg_radius), (8.0, 6.0));
 }
 
 #[test]
@@ -405,6 +493,62 @@ fn the_empty_stages_blocks_and_the_stopped_card_are_the_rules_they_were_written_
   max-width: 760px;");
     assert_eq!((t.empty_w, t.empty_w_projects, t.empty_w_pane), (520.0, 460.0, 760.0));
     assert_eq!(t.stopped_icon, 28.0, "index.html draws the stopped icon at 28");
+}
+
+#[test]
+fn the_blocks_of_an_agents_view_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    sheet_has(".vcolumns {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));");
+    assert_eq!(t.col_min, 240.0);
+    sheet_has(".vgrid {\n  display: grid;\n  gap: var(--sp-12);\n  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));");
+    sheet_has(".vgrid.sm {\n  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));");
+    sheet_has(".vgrid.lg {\n  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));");
+    assert_eq!((t.grid_min_sm, t.grid_min_md, t.grid_min_lg), (160.0, 240.0, 360.0));
+    sheet_has(".vstat-value {\n  font: 650 22px/1.2 var(--font-ui);");
+    assert_eq!(t.type_stat, Type::new(650.0, 22.0, 1.2));
+    sheet_has(".vtl-event {\n  display: grid;\n  grid-template-columns: 84px 12px minmax(0, 1fr);");
+    sheet_has(".vtl-dot {\n  width: 12px;\n  height: 12px;");
+    sheet_has("  top: 14px;\n  bottom: -2px;\n  width: 2px;\n  background: var(--line);");
+    assert_eq!((t.tl_rule_top, t.tl_rule_bleed), (14.0, 2.0));
+    sheet_has("@media (max-width: 640px) {\n  .vtl-lanes {");
+    assert_eq!((t.tl_at_w, t.tl_dot, t.tl_rule_w, t.tl_stack_below), (84.0, 12.0, 2.0, 640.0));
+    sheet_has(".vlog {\n  max-height: 320px;");
+    sheet_has(".vcode-bd {\n  font-family: var(--font-mono);\n  font-size: var(--fs-sm);\n  line-height: 18px;");
+    sheet_has("  margin: 0;\n  max-height: 360px;");
+    assert_eq!((t.log_max_h, t.code_max_h, t.code_line_h), (320.0, 360.0, 18.0));
+    sheet_has(".vmatrix {\n  border-collapse: separate;\n  border-spacing: 2px;");
+    sheet_has(".vmatrix-cell {\n  min-width: 44px;\n  height: 32px;");
+    assert_eq!((t.matrix_gap, t.matrix_cell_w, t.matrix_cell_h), (2.0, 44.0, 32.0));
+    sheet_has(".vboard-col {\n  flex: 0 0 240px;");
+    assert_eq!(t.board_col_w, 240.0);
+    sheet_has(".vfields {\n  display: grid;\n  grid-template-columns: 132px minmax(0, 1fr);");
+    assert_eq!(t.fields_label_w, 132.0);
+    sheet_has(".vlist-item {\n  display: grid;\n  grid-template-columns: 20px minmax(0, 1fr);");
+    sheet_has(".vlist-item:not(.vlist-event) .vlist-body {\n  margin-left: 28px;");
+    assert_eq!((t.list_lead_w, t.list_indent), (20.0, 28.0));
+    sheet_has(".vspin {\n  width: 10px;\n  height: 10px;");
+    assert_eq!(t.spin_sm, 10.0);
+    sheet_has("  border: 1.5px solid var(--line-strong);\n  border-radius: var(--r-xs);\n  color: var(--fg-on-accent);");
+    assert_eq!(t.check_edge, 1.5);
+    sheet_has(".vcard.tinted {
+  border-color: color-mix(in srgb, var(--t) 55%, var(--line));");
+    assert_eq!(t.share_card_edge, 0.55);
+    sheet_has("  background: color-mix(in srgb, var(--t) 18%, transparent);");
+    sheet_has("  background: color-mix(in srgb, var(--t) 16%, transparent);");
+    sheet_has("  background: color-mix(in srgb, var(--t, var(--fg-muted)) 24%, var(--fill));");
+    assert_eq!((t.share_meter_track, t.share_chip, t.share_avatar), (0.18, 0.16, 0.24));
+    sheet_has(".vcallout {
+  display: flex;
+  gap: var(--sp-8);
+  align-items: flex-start;
+  border-radius: var(--r-md);
+  padding: var(--sp-8) var(--sp-12);
+  background: color-mix(in srgb, var(--t) 12%, transparent);");
+    assert_eq!(t.share_callout, 0.12, "the callout wash is the warn callout's");
+    sheet_has(".vact .btn[disabled] {
+  cursor: default;
+  opacity: 0.7;");
+    assert_eq!(t.opacity_wait, 0.7);
 }
 
 #[test]
@@ -486,4 +630,19 @@ fn the_settings_sheets_sizes_are_the_rules_they_were_written_from() {
   overflow-y: auto;
   z-index: var(--z-layer);");
     assert_eq!(t.font_list_max_h, 280.0);
+}
+
+#[test]
+fn the_larger_view_the_diff_block_the_form_and_the_changed_wash_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    sheet_has(".vfig-pct {\n  min-width: 56px;");
+    sheet_has(".vfig-source {\n  width: min(40%, 520px);");
+    assert_eq!((t.fig_pct_w, t.fig_source_share, t.fig_source_max_w), (56.0, 0.40, 520.0));
+    sheet_has(".vdiff-body {\n  flex: none;\n  max-height: 480px;");
+    assert_eq!(t.diff_max_h, 480.0);
+    sheet_has("grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));");
+    assert_eq!(t.form_col_min, 14.0 * 16.0);
+    sheet_has("background: color-mix(in srgb, var(--changed) 28%, transparent);");
+    sheet_has("animation: vchanged 2.4s ease-out 1;");
+    assert_eq!((t.share_changed, t.motion_flash), (0.28, std::time::Duration::from_millis(2400)));
 }

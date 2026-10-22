@@ -192,6 +192,12 @@ impl DiffView {
         cx.notify();
     }
 
+    /// How tall every row together is, in the page's pixels, for a host that gives the view only so
+    /// much height (a patch block) and so needs to know when the rows come to less.
+    pub fn content_height(&self) -> f32 {
+        self.heights.iter().sum()
+    }
+
     /// How many items the list holds: its rows and the slot.
     pub fn len(&self) -> usize {
         self.items.len()

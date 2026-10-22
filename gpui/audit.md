@@ -361,7 +361,7 @@ These are small, and nearly everything below leans on them.
 
 Build these before any surface that draws agent content.
 
-45. **Per-view state store and event intake** (missing, M). `Heard` fields
+45. **Per-view state store and event intake** (PARTIAL: built are the `Views` and `SavedViews` arms and the retained store, `views/memory`, never pruned as the page's maps are; still missing are the arms for `ExtDialogPage`, Features, Capture, Sessions, Link, Reconcile, Checkouts, Code and Browsers, and the calls; a later item that needs one adds its own field and arm) (missing, M). `Heard` fields
     and arms for `ViewsPage`, `SavedViewsPage`, `ExtensionsPage`,
     `ExtDialogPage`, Features, Capture, Sessions, Link, Reconcile,
     Checkouts, Code, Browsers (kept per pane, not through whole-model
@@ -400,42 +400,42 @@ Build these before any surface that draws agent content.
     verdict, lane assignment, matrix tint, progress clamp, checklist count.
     Risk: callout glyph differs if the kit icons are used. Check:
     BLOCKS-7..22.
-51. **Table block** (missing, L). Sort (asc, desc, agent's `sorted_by` marked),
+51. **Table block** (BUILT: sort, filter, pick, details, TSV in core `views::blocks::table`; the GPUI table is flex rows sized by estimated column widths, not auto-sized as the page's are; look gaps left: the header's `0.07em` letter-spacing (GPUI text has none), the scroll-cue edge shadows when it overflows sideways, and the estimated widths; extension `RowPicks` is not built) (was missing, L). Sort (asc, desc, agent's `sorted_by` marked),
     drop columns by width, filter over 8 rows, select one or many with
     tri-state all, TSV copy, row detail, hover actions, "Showing n of N".
     Extension tables reuse it. Needs: 47, 49. Core: sort, filter, TSV in
     Rust with an explicit ordering rule replacing `localeCompare`. Risk: kit
     `DataTable` fits neither selection nor dropping; custom grid, virtualised.
     Check: TABLE-1..8.
-52. **Chart and spark** (missing, M). Line, bar, area, spark; ticks, compact
+52. **Chart and spark** (BUILT: core `views::blocks::chart`, GPUI dashes proven through PathBuilder's dash array; stats sparks drawn) (was missing, M). Line, bar, area, spark; ticks, compact
     labels, dashes per series, gaps, tooltips, legend. Needs: tooltip. Core:
     `chart_layout` returning ticks and polylines, tested. Risk: dashed
     strokes were not proven in the spike. Check: CHART-1..9.
-53. **Sequence diagram painter** (missing, XL, shared by two items). One
+53. **Sequence diagram painter** (BUILT for the diagram block: core `views::blocks::diagram`, painter `kit/sequence`; the Flows lens's selection, drag guides, fit and nearest-target are left for it) (was missing, XL, shared by two items). One
     element serves the diagram block and the Flows lens: lifelines, call and
     reply arrows, self-call, frames, badges, selection, drag guides. Needs:
     spike on dashes and arrowheads. Core: `layout(&Sequence) -> Drawn` with
     constants and tests (none today); fit and nearest-target as pure
     functions. Risk: thin arrow hit-testing; the 7.2 px/char estimate
     (measure or keep). Check: DIAGRAM-1..5, BOARD-SEQ-1..20.
-54. **Graph block** (missing, L). Layered layout (348 lines of TS, node
+54. **Graph block** (BUILT: layout ported to core with the page's tests and a determinism check; Open larger waits for 55) (was missing, L). Layered layout (348 lines of TS, node
     tested); nodes, edges, loops, "opens" links. Needs: 55, 53's painter.
     Core: port `graph_layout` with its invariant tests and a determinism
     property. Check: GRAPH-1..4.
-55. **Figure: open larger** (missing, M). Modal with zoom about the pointer,
+55. **Figure: open larger** (BUILT: core `views::blocks::zoom`, `views/blocks/figure/`, held keys in `keys/layers/figure`; the graph and the diagram open larger; the 5 px threshold) (was missing, M). Modal with zoom about the pointer,
     pan, Fit, Source, keys. Needs: 4, `kit/drag.rs`. Core: port `zoom.ts`
     with its test. Risk: the figure treats under 4 px as a click; the shared
     helper says 5 px. Check: FIGURE-1..6.
-56. **Patch block** (missing, S). Unified diff string to the review's
+56. **Patch block** (BUILT: core `views::blocks::patch`, through `kit/diff`, height bounded at `--diff-max-h`) (was missing, S). Unified diff string to the review's
     `DiffRow`, through `kit/diff`. Needs: nothing. Core: `parse_patch` with
     tests for `-- x` vs `--- a/x`, no-newline notes, fallback. Risk: the
     diff view owns its scroll; needs a bounded height. Check: PATCH-1..3.
-57. **Form block** (missing, M). Fields, number bounds, choice, toggle,
+57. **Form block** (BUILT: core `views::blocks::form`; a choice is a Select, a date a DatePicker writing YYYY-MM-DD, a number a NumberInput whose arrows step by core) (was missing, M). Fields, number bounds, choice, toggle,
     date, submit action; typed values kept across redraws; answers capped
     at 4096 bytes. Needs: 5, 49. Core: optionally answer assembly. Risk:
     defaults must not be put back under the person's fingers. Check:
     FORM-1..4.
-58. **Changed-block marking** (missing, S). Flash once if looked at, else
+58. **Changed-block marking** (BUILT: the wash once per change in `views/blocks/changed`, and the `unseen` dot part; the tab that wears it is item 92's) (was missing, S). Flash once if looked at, else
     unseen dot on the tab and flash on bring-forward. Needs: 48, 92. Check:
     AGENTVIEWS-13, BLOCKS-2.
 

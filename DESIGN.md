@@ -709,10 +709,48 @@ GPUI one both stand on it.
 | `keys/sheet` | what the shortcuts sheet lists and opens on: a section per place and per extension with the pairs of bindings written once, the search over the rows, and the section for where the person is |
 | `views` | the views agents show and save |
 | `views/agent` | which views agents showed, as the window holds them, which one their panel shows, which name a feature, and which wait on a refresh |
+| `views/blocks` | the rules a view's blocks are laid out and read by, which both windows share |
+| `views/blocks/chart` | where a chart block's axes, bars, lines and dots go, and what is said of them |
+| `views/blocks/chart/layout` | everything of a line, bar or area chart in a box 480 by 160: the grid and its ticks, the thinned labels, each series as bars or runs of line with their dots, the dash and fill that tell series of one tone apart, and what hovering a mark reads |
+| `views/blocks/chart/scale` | a chart's y axis: round ticks from at most zero to at least the data's top, three to five of them, whatever the data, and the extent of a long array found in a loop |
+| `views/blocks/chart/spark` | a spark's points in a box 100 by 32, spread evenly, a flat series at mid height, and what a screen reader hears of it |
+| `views/blocks/chart/words` | what a chart says in words: the compact numbers on its axis, what a reader that cannot see is told it shows, and what hovering a bar or a dot reads |
+| `views/blocks/checklist` | a checklist's tally, "2 of 5 done", and what a reader that cannot see the box is told |
+| `views/blocks/diagram` | where a sequence diagram's lifelines, arrows, self-calls and branch bands go, from the participants and rows Rust read out of the source: lifelines spaced until the longest message between neighbours fits, an undeclared participant given a lifeline of its own |
+| `views/blocks/embed` | whether a saved view embedded in another is drawn, a cycle, too deep or missing, by the protocol's depth cap, and the line said instead |
+| `views/blocks/flow` | how many equal columns fit a width, as the page's auto-fit and auto-fill grids count them |
+| `views/blocks/form` | what a form block's field shows before it is touched, which typed text still stands (a choice no longer offered does not), the answers a press sends with a number that is not one left out, and the arrows' step within a number's bounds |
+| `views/blocks/graph` | where a graph block's boxes and arrows go, and what is said of it |
+| `views/blocks/graph/describe` | what a screen reader is told of a graph, its size and first six links, and the title its larger view carries |
+| `views/blocks/graph/layout` | a graph's layered layout as numbers: cycles broken by reversing the edges a walk finds going back, longest-path layers, stand-ins so a long edge can bend, barycenter sweeps that cut crossings with ties kept in the agent's order, right-angled routes and loops, and the drawing started at its padding on both axes |
+| `views/blocks/label` | how long an agent's label is let to be in a drawing and how wide it is taken to be, so a box is sized from its text before anything is measured |
+| `views/blocks/log` | where a log is read from: whether it is at its end, within four pixels |
+| `views/blocks/matrix` | how strongly a matrix cell is tinted, from a tenth to nine tenths, and its tooltip |
+| `views/blocks/patch` | an agent's unified diff read into the review viewer's own rows: counts in a hunk header say where it ends, so a removed line reading `-- x` is told from the next file's `--- a/x`; text with no hunk is not a diff |
+| `views/blocks/table` | the rules an agent's table block is sorted, filtered, picked from, copied, narrowed and sized by |
+| `views/blocks/table/columns` | which columns of a table give way as its box narrows: an optional one at 560, and an extension's last four one at a time |
+| `views/blocks/table/filter` | which rows a filter lets through, matched against the lowercased text of their cells, and the words a table says about how many it shows |
+| `views/blocks/table/pick` | picking rows of a table: the keys that name rows, what the select-all box shows, ticking it leaving the rows a filter hides as they were, and the count and the actions that follow the pick |
+| `views/blocks/table/sort` | how rows sort when a header is pressed: what each kind of cell sorts by, an explicit ordering in place of the browser's locale compare, unreadable dates last either way, ties kept in the order drawn, and which way a press turns a column |
+| `views/blocks/table/tsv` | a table as tab-separated text, a tab or newline in a cell made one space |
+| `views/blocks/table/width` | how wide each column is taken to be from what its cells say, a long text cell cut at 280 |
+| `views/blocks/timeline` | the lanes of a timeline in the order they first appear, and the lane each event is in |
+| `views/blocks/zoom` | where a drawing sits in its larger view: how it opens, fit, zoom about a point, the wheel's factor and the percent it says |
 | `views/changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
 | `views/refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
 | `views/saved` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
 | `views/nav` | how the sidebar's Views fold lists the saved views: grouped by scope, filtered to here or all, nested under the view that links to them, lit while a panel in a dock shows them |
+| `views/markdown` | the small Markdown a ticket or a CI log is written in, read into blocks both windows draw |
+| `views/markdown/blocks` | Markdown read into blocks, the one entry `parse`: line ends and tabs made plain, then each line read in priority (blank, fence, heading, rule, quote to a depth of five, list, table, paragraph) |
+| `views/markdown/inline` | the marks inside a run of text — code spans, emphasis, strikethrough, links, bare addresses — every string kept as text, every scan capped or remembered so it stays linear, nesting stopped at five |
+| `views/markdown/leaves` | the text of a document in reading order, one leaf for each paragraph, heading, item, code block and table cell, a place in it as a leaf and a byte, and the text between two places as a copy joins it |
+| `views/markdown/line` | what one line of Markdown is — blank, a fence, a heading, a rule, a quote, an item, a table separator — each the page's regular expression written out |
+| `views/markdown/link` | which links are links at all (an http or https address with a host, normalised, and nothing else), where `[label](url "title")` ends within its limits, and where a bare address ends |
+| `views/markdown/list` | a list one nested level deep: the kind a marker says, where a sub-item begins, what continues an item, and what ends the list |
+| `views/markdown/model` | what Markdown is read into — blocks and inline marks — and the limits (depth, label, address) that bound it |
+| `views/markdown/runs` | a run of inline marks flattened into one string and the stretches that are marked, the link a byte is in, and the cuts a selection splits it into |
+| `views/markdown/table` | a pipe table: the cells of a line (an escaped pipe kept), where one begins, and every row padded or cut to the header |
+| `views/values` | what a value in an agent's view says as words — a number's thousands, how long ago a time was, a duration in two units, initials and the tint a name keeps, how far along a meter is — the text a cell filters and copies by, and which references are drawn as buttons |
 | `extensions` | what the running extensions put in this window |
 | `extensions/dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |
 | `extensions/keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension, as the page draws them |
@@ -837,6 +875,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `keys/layers` | the layers whose state is the window's own rather than one surface's |
 | `keys/layers/menu` | a menu or a question over the stage: the kit's menu stepped before the dialogs under it hear anything, and a question answered no by Escape |
 | `keys/layers/own` | a dialog that answers its own keys (the settings, add-project, an extension's question): up while its overlay is, holding every key and running none, but for the settings chord, which puts the settings away |
+| `keys/layers/figure` | a drawing opened larger holding every key while it is up, ahead of the window's own keys and every layer: Escape closes it, `+` `-` `0` and `f` move it, any other key is held and does nothing |
 | `keys/layers/sheet` | the shortcuts sheet: `?` and Escape close it, every other key is held for its list and find field |
 | `keys/layers/stage` | the stage, always up and last: the Anywhere place's keys run as the page's `run` does, any other key held |
 | `keys/over` | opening the palette, the sheet or the settings over the stage for a key and for a `Run` from a pane, one of the three at a time, the settings chord putting them away: all three are surfaces the shell builds |
@@ -875,6 +914,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/hints` | the footer that names a tab's keys, as caps and what each does, shared by the Changes and History tabs |
 | `kit/icon_button` | what the page's `.icon` button looks like: 28px, muted, lifting to the fill and the text colour under the pointer, pressing to the fill with the text over it, and the lit one |
 | `kit/icons` | which glyphs the window draws that the kit's Lucide set lacks: the page's own icon set as SVG files, handed to the kit's `Icon` as bytes |
+| `kit/ink` | what the drawn blocks paint with: a drawing in its own units mapped to the window's pixels, and strokes, dashes, fills, dots, boxes, arrowheads and baseline-placed text painted in them |
 | `kit/keycap` | what one key's cap looks like wherever a key is named, in the sidebar, the hints, the menus and the comment buttons: the page's `.kbd`, and a row of them with alternatives apart by a slash |
 | `kit/menu` | menus: what a menu offers as one model, and how it is drawn and keyed |
 | `kit/menu/item` | what a menu offers as data: headings, rules and choices, a choice saying what it does, why it cannot be chosen now, its hint and whether it is dangerous |
@@ -882,6 +922,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/menu/popup` | a menu drawn once from the model into the kit's popup menu, anchored by the kit at a point or under a button, a choice run after the menu has gone and never while the daemon is gone |
 | `kit/menu/selection` | the menu a right-click on selected text opens: `Copy` under `Selection`, asked of Rust |
 | `kit/menu/stepping` | where Down, Up, `j` and `k` leave a menu's highlight: on a choice that can be chosen, the first press and the wrap never on a heading; the Menu layer of the key walk asks it for each key while a kit menu has the keys |
+| `kit/mixed` | a box to tick that can also read mixed, the select-all of a table, controlled like the rest of `kit/choice` |
 | `kit/overlay` | overlays over the window: which are open, what opening one closes, and who answers Escape |
 | `kit/overlay/host` | the window's overlays opened and closed in one place over the kit's dialog layer: the palette, sheet and settings exclusive, Escape and the scrim answered by the topmost that can be dismissed or by one kind (a question answered no), a dialog that does not take the focus, and a pane given the keys back when the dialog that took them closes |
 | `kit/overlay/kind` | which overlays the window has and the rules each is held to: exclusive of the others of its kind, taking the keys from a pane |
@@ -890,11 +931,13 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/progress` | a progress bar: a fill in a small track, and the whole percentage a share of tasks is |
 | `kit/section` | rows listed under headings: grouped in the order a heading was first met, and the heading with its count |
 | `kit/segment` | a choice of a few drawn as pills in one rounded track: the Git tabs, the side and the layout |
+| `kit/sequence` | a sequence diagram painted from core's layout: lifelines, boxes at head and foot, stick figures, arrows with heads, numbered dots, self-call loops and branch bands, one element for every place a diagram is drawn |
 | `kit/split` | a resizable pair: a column at the width its sash gives it, the width reported once on release, a double-click giving the usual width back, and the drag held while it lasts |
 | `kit/selected` | how a list row in a dialog says it is selected: the fill and the theme's mark |
 | `kit/spots` | the places a carried pane can be dropped, published by the views that draw them (the grid's cells and stage, the rail's checkout rows), the checkout lit as a target, and whether a pane is carried |
 | `kit/status_dot` | what a pane's or console's status looks like with no word: a turning ring, a filled dot, a dash, a hollow ring |
 | `kit/strip` | the page's one tab strip, drawn once for the docks, the console and a split side: the bar, the tab chip with its selected and hover states, the close, the menu button |
+| `kit/wheel` | which scroll box takes the wheel: one that can still move the way it turns, and none else, so a log or code block at its end hands the wheel to the page around it |
 | `kit/tip` | a hover tooltip for a control, built one way so no surface builds the kit's |
 | `kit/toggle` | the page's switch: 40 by 24, a pill and a knob, controlled, drawing the state it is given and asking for the opposite |
 | `layout` | where the stage and the docks sit around each other, and how a panel is moved between them |
@@ -984,6 +1027,67 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `theme/themes/nord` | Nord as data: Polar Night greys and Frost blue |
 | `theme/themes/radix` | Radix Colors' slate and blue as data |
 | `theme/themes/rose_pine` | Rose Pine as data: dusky violet surfaces and rose as the one warm accent |
+| `views` | the renderers an agent's view is drawn with, shared by every surface that draws agent content |
+| `views/actions` | the buttons an agent put in a view: a press tells the agent through its pane or, in a saved view, the daemon; a button waits with a spinner, is disabled with a reason when the daemon cannot take presses, and asks first when it has a confirm |
+| `views/blocks` | what each kind of block an agent's view holds is drawn as |
+| `views/blocks/board` | a board block: columns of cards of a fixed width, scrolling sideways |
+| `views/blocks/callout` | a tinted note in a tone with the glyph the tone means |
+| `views/blocks/card` | a card block: blocks in a bordered box with a heading, a chip and buttons, the tone only tinting the edge |
+| `views/blocks/changed` | how a block that changed since it was seen is marked: one wash in the changed colour that fades once per change, and the dot a tab wears while its view changed out of sight |
+| `views/blocks/chart` | a chart block: the chart in a box that stops at 720 wide with its bars and dots as elements that read their value, and a legend when there is more than one series |
+| `views/blocks/chart/legend` | a chart's legend: each series' line in its dash and tone, and its name |
+| `views/blocks/chart/paint` | the grid, labels, lines and areas of a chart painted from core's layout, a line keeping its width as it scales |
+| `views/blocks/chart/spark` | a spark: a small line with no axes as wide as what holds it, in a stat's tile or as a chart of its own |
+| `views/blocks/checklist` | a checklist block: what is done and what is not, read-only |
+| `views/blocks/code` | a code block with its language and a Copy button over scrolling monospace text |
+| `views/blocks/columns` | a columns block: side by side while the measured box has room, stacked when it has not |
+| `views/blocks/details` | a details block: a summary that opens to its blocks, open or closed as the person last left it |
+| `views/blocks/diagram` | a diagram block: a sequence diagram painted from core's layout in a scrolling box with its source folded under it, or the source as code when Rust could not read it |
+| `views/blocks/dispatch` | a view's blocks each handed to the module that draws its kind, by the path of the block under the view |
+| `views/blocks/embed` | a saved view drawn inside another in a frame, or the line that says why it is not |
+| `views/blocks/fields` | a label column beside a value column, the shape of a ticket's details |
+| `views/blocks/figure` | a drawing a block makes that opens larger: the corner button and the press on the drawing, and what a block hands over (a title, a size, a way to draw at any scale, a source) |
+| `views/blocks/figure/bar` | the larger view's bar: the title, the hint, the zoom group, Fit, Source and Close |
+| `views/blocks/figure/larger` | the larger view's state: where the drawing sits, whether its source is shown, and the drag that moves it after 5 px |
+| `views/blocks/figure/open` | putting a larger view up in place of the one up, and reaching it so the keys can move it |
+| `views/blocks/figure/stage` | the larger view's stage, measured each frame, zoomed by the wheel about the pointer and dragged, and the pane that shows the source |
+| `views/blocks/form` | a form block: fields in a grid of columns, what is typed kept by form path and field name, the answers read at the press, and the drafts and boxes dropped when it is sent |
+| `views/blocks/graph` | a graph block: core's layout in a framed box scaled down to its panel and never up, each box an element that is pressed where it opens a saved view, and the nodes that open one listed under it |
+| `views/blocks/graph/paint` | a graph's arrows painted from core's layout: right-angled routes with their heads, and each edge's label haloed in the box's colour |
+| `views/blocks/grid` | a grid block: equal columns as many as fit at a named minimum width |
+| `views/blocks/kept` | what the blocks of a view keep between draws that is not the person's: a Markdown with its selection, a Copy button, a log's scroll, the widths boxes were measured at |
+| `views/blocks/list` | a list block: comments and events, an item with no person an event on one muted line under a dot |
+| `views/blocks/log` | a log block: a tail of lines by level that follows the newest unless the person scrolled up |
+| `views/blocks/markdown` | Markdown drawn as a view: core's blocks as headings, paragraphs, lists, quotes, code and tables whose text can be selected and copied, a link asked of Rust, and the selection this view's own |
+| `views/blocks/markdown/draw` | what each kind of Markdown block is drawn as, its leaves numbered in the order core numbers them |
+| `views/blocks/markdown/hover` | which link of a Markdown the pointer is over: underlined, the hand, and its address beside the pointer |
+| `views/blocks/markdown/menu` | the menu a right-click on selected Markdown text opens: Copy under Selection, asked of Rust |
+| `views/blocks/markdown/runs` | a leaf's text as one wrapped run: marks as faces and colours, the selection as a wash, and the layout kept to read a pointer's place from |
+| `views/blocks/markdown/select` | which Markdown text is selected: where a press begins it, how a drag extends it across leaves and past the text, what a click on a link asks for, and what copies |
+| `views/blocks/matrix` | a matrix block: cells tinted by tone and weight under column names and beside row names |
+| `views/blocks/patch` | a diff block: core's rows of an agent's unified diff in the review's diff view, in a header with the path and counts, bounded in height; text with no hunk as a `diff` code block |
+| `views/blocks/pen` | what one draw of a view's blocks holds: the theme, the clock, where presses go, what the window remembers and keeps, and the app to make entities in |
+| `views/blocks/pending` | a block with no drawing: one a newer daemon sent, which says so quietly |
+| `views/blocks/pickers` | the form controls more than a text box, kept between draws: a select for a choice, a date picker and a number box whose arrows step by core's rule |
+| `views/blocks/progress` | a meter in the tone's colour, the compact one a progress value draws in a cell or a field with its percentage, and the progress block with its label and note |
+| `views/blocks/row` | a row block: values and buttons on one line, wrapping, spread or at the end |
+| `views/blocks/section` | a section block, a quiet heading and the saved view it opens over its blocks, and the divider between two |
+| `views/blocks/stats` | a stats block: tiles that share the width at as many a row as the measured box fits |
+| `views/blocks/table` | an agent's table block: the rows as a table that scrolls sideways, sorts by a header, picks rows, opens a row to blocks and copies as TSV, each part named under `<path>-table` |
+| `views/blocks/table/bar` | the bar over a table: the filter, the counts, the agent's actions on the ticked rows pressing with their keys in the order shown, and Copy as TSV |
+| `views/blocks/table/body` | a table's rows: a tick or a radio, the chevron that opens a row, the cells with a long text cut and its whole text for a tooltip, and the opened blocks in a full-width row under it |
+| `views/blocks/table/head` | a table's header: select-all, a blank over the chevrons and each title as a sort button, and the one place a column's width becomes a flex track |
+| `views/blocks/tabs` | a tabs block: the one tab strip over the blocks of the tab chosen, held to the tabs there are |
+| `views/blocks/timeline` | a timeline block: events on a rule their dots hang on, in lanes side by side or stacked narrow |
+| `views/blocks/tree` | a tree block: nested nodes that fold, each remembered by its place under the view |
+| `views/blocks/view` | the one element a surface holds to draw a view's blocks, handed the blocks and whose view it is whenever its model changes |
+| `views/chip` | a status pill an agent drew, in the theme's hue for its tone, and the quiet dotted form of it |
+| `views/ctx` | what every block of a view is drawn with: whose view it is, the block's path, what changed, and what a value is drawn against (tokens, clock, where presses go) |
+| `views/link` | a link in an agent's view: a press asks Rust to open its address, which is shown only as a tooltip |
+| `views/memory` | what the window alone remembers of a view's blocks (the tab read, a fold, ticked rows, a filter, a half-typed form, where a log was left) by block path, kept apart from the snapshot so a republish resets none of it and let go with the view |
+| `views/opens` | the small arrow beside an element of a view that opens a saved view: a press asks Rust to open it from the column it was in, and a view not held yet is dimmed and still pressed |
+| `views/refs` | the values that point into Argus (a path, a commit, a feature, a pane) as buttons that ask Rust to open them, and a duration and inline code |
+| `views/values` | one value as a field, a cell or a list item shows it, from core's words |
 | `window` | how the frameless main window opens around a view: the application with its assets, the window's options, and the stage put under the header |
 | `window/frame` | what the platform window itself is told about the look: the DWM border colour and the tint Mica takes |
 | `window/quit` | ending what ran for the window when the last one closes, and answering a close of the only window by quitting |

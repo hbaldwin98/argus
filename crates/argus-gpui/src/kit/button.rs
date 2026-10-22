@@ -9,7 +9,7 @@
 use gpui_kit::component::h_flex;
 use gpui_kit::component::Colorize as _;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{prelude::*, transparent_black, ElementId, Role, SharedString};
+use gpui_kit::{prelude::*, transparent_black, ElementId, Hsla, Role, SharedString};
 
 use crate::kit::icon_button::Node;
 use crate::style::Typed as _;
@@ -36,10 +36,54 @@ pub enum Look {
 /// it is muted and lifts to `--fill` and the text colour. The words and any
 /// cap are the caller's children.
 pub fn button(id: impl Into<ElementId>, words: impl Into<SharedString>, look: Look, small: bool, tokens: &Tokens) -> Node {
+    dressed(id, words, look, small, true, tokens)
+}
+
+/// A button as `look` dresses it that cannot be pressed now: its fill, edge and words stay (the
+/// page's `.btn[disabled]` loses to a tone's own rule), and the pointer does nothing to it.
+pub fn inert(id: impl Into<ElementId>, words: impl Into<SharedString>, look: Look, small: bool, tokens: &Tokens) -> Node {
+    dressed(id, words, look, small, false, tokens)
+}
+
+fn dressed(id: impl Into<ElementId>, words: impl Into<SharedString>, look: Look, small: bool, live: bool, tokens: &Tokens) -> Node {
     let (text, accent, fill) = (tokens.fg, tokens.accent, tokens.fill);
     let (hover, press) = (tokens.hover_fill, tokens.press_fill);
     let edge = tokens.line_strong.blend(accent.opacity(tokens.share_edge));
-    let base = h_flex()
+    let base = shell(id, words, small, live, tokens);
+    match look {
+        Look::Primary => {
+            let on_accent = tokens.fg_on_accent;
+            base.border_color(transparent_black())
+                .bg(accent)
+                .text_color(on_accent)
+                .when(live, |node| {
+                    node.hover(move |style| style.bg(accent.lighten(tokens.step_lift))).active(move |style| style.bg(accent.darken(tokens.step_lift)))
+                })
+        }
+        Look::Danger => {
+            let on_accent = tokens.fg_on_accent;
+            base.border_color(tokens.danger)
+                .bg(tokens.danger)
+                .text_color(on_accent)
+                .when(live, |node| {
+                    node.hover(move |style| style.bg(tokens.danger.lighten(tokens.step_lift))).active(move |style| style.bg(tokens.danger.darken(tokens.step_lift)))
+                })
+        }
+        Look::Plain => base
+            .border_color(tokens.line_strong)
+            .text_color(text)
+            .when(live, |node| node.hover(move |style| style.bg(hover).border_color(edge)).active(move |style| style.bg(press))),
+        Look::Quiet => base
+            .border_color(transparent_black())
+            .text_color(tokens.fg_muted)
+            .when(live, |node| node.hover(move |style| style.bg(fill).text_color(text)).active(move |style| style.bg(press).text_color(text))),
+    }
+}
+
+/// What every `.btn` is before its look: a pill `--control-h` tall (24 when `small`) with the words in
+/// 12px semibold, pressable.
+fn shell(id: impl Into<ElementId>, words: impl Into<SharedString>, small: bool, live: bool, tokens: &Tokens) -> Node {
+    h_flex()
         .id(id)
         .role(Role::Button)
         .test_support()
@@ -54,35 +98,26 @@ pub fn button(id: impl Into<ElementId>, words: impl Into<SharedString>, look: Lo
         .text_size(rem(tokens.fs_sm))
         .weighted(tokens.weight_semibold)
         .whitespace_nowrap()
-        .cursor_pointer();
-    match look {
-        Look::Primary => {
-            let on_accent = tokens.fg_on_accent;
-            base.border_color(transparent_black())
-                .bg(accent)
-                .text_color(on_accent)
-                .hover(move |style| style.bg(accent.lighten(tokens.step_lift)))
-                .active(move |style| style.bg(accent.darken(tokens.step_lift)))
-        }
-        Look::Danger => {
-            let on_accent = tokens.fg_on_accent;
-            base.border_color(tokens.danger)
-                .bg(tokens.danger)
-                .text_color(on_accent)
-                .hover(move |style| style.bg(tokens.danger.lighten(tokens.step_lift)))
-                .active(move |style| style.bg(tokens.danger.darken(tokens.step_lift)))
-        }
-        Look::Plain => base
-            .border_color(tokens.line_strong)
-            .text_color(text)
-            .hover(move |style| style.bg(hover).border_color(edge))
-            .active(move |style| style.bg(press)),
-        Look::Quiet => base
-            .border_color(transparent_black())
-            .text_color(tokens.fg_muted)
-            .hover(move |style| style.bg(fill).text_color(text))
-            .active(move |style| style.bg(press).text_color(text)),
-    }
+        .when(live, |node| node.cursor_pointer())
+}
+
+/// A plain button whose edge and words are `colour`, and stay it under the pointer, which only tints
+/// the fill: the page's `.btn.vtone-bad`, `-warn` and `-info`, the tones that are said and not shouted.
+pub fn outlined(id: impl Into<ElementId>, words: impl Into<SharedString>, colour: Hsla, small: bool, tokens: &Tokens) -> Node {
+    outlined_as(id, words, colour, small, true, tokens)
+}
+
+/// [`outlined`] that cannot be pressed now: the tone stays, the pointer does nothing.
+pub fn outlined_inert(id: impl Into<ElementId>, words: impl Into<SharedString>, colour: Hsla, small: bool, tokens: &Tokens) -> Node {
+    outlined_as(id, words, colour, small, false, tokens)
+}
+
+fn outlined_as(id: impl Into<ElementId>, words: impl Into<SharedString>, colour: Hsla, small: bool, live: bool, tokens: &Tokens) -> Node {
+    let (hover, press) = (tokens.hover_fill, tokens.press_fill);
+    shell(id, words, small, live, tokens)
+        .border_color(colour)
+        .text_color(colour)
+        .when(live, |node| node.hover(move |style| style.bg(hover).border_color(colour)).active(move |style| style.bg(press)))
 }
 
 /// `.btn[disabled]`: a button that cannot be pressed now: no fill, the quiet edge and the faint text,

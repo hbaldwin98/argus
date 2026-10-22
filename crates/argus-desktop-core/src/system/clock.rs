@@ -39,6 +39,17 @@ impl Clock {
         Some(stamp.to_zoned(self.zone.clone()))
     }
 
+    /// `at` as it falls in this clock's zone, for a vocabulary of times other than this module's
+    /// (`views::values`); none when it is not RFC 3339.
+    pub fn zoned(&self, at: &str) -> Option<Zoned> {
+        self.parsed(Some(at))
+    }
+
+    /// The moment this clock says it is, in its zone.
+    pub fn now_zoned(&self) -> Zoned {
+        self.now.to_zoned(self.zone.clone())
+    }
+
     fn time(at: &Zoned) -> String {
         format!("{:02}:{:02}", at.hour(), at.minute())
     }
@@ -100,7 +111,7 @@ impl Clock {
 }
 
 /// `Oct 12`.
-fn short(date: Date) -> String {
+pub fn short(date: Date) -> String {
     format!("{} {}", MONTHS[usize::from(date.month().unsigned_abs()) - 1], date.day())
 }
 

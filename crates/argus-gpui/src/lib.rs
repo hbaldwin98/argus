@@ -11,4 +11,5 @@ pub mod settings;
 pub mod style;
 pub mod system;
 pub mod theme;
+pub mod views;
 pub mod window;

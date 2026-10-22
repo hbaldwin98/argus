@@ -22,6 +22,8 @@ pub enum Overlay {
     Rename,
     /// The card over the window while the daemon is gone.
     Stopped,
+    /// A drawing of an agent's view opened larger, over the whole window.
+    Figure,
 }
 
 impl Overlay {

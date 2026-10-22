@@ -19,8 +19,8 @@ use gpui_kit::{App, Global, KeystrokeEvent, Subscription, Window};
 
 use super::field::Fields;
 use super::focus;
-use super::layer::{action_for, Layers, Press, Verdict};
-use super::layers::{menu::Menu, own::Own, sheet::Sheet, stage::Stage};
+use super::layer::{action_for, Handler as _, Layers, Press, Verdict};
+use super::layers::{figure::Figure, menu::Menu, own::Own, sheet::Sheet, stage::Stage};
 use super::page_key;
 use crate::kit::overlay::kind::Overlay;
 
@@ -51,6 +51,13 @@ impl Global for Intercepting {}
 fn intercept(event: &KeystrokeEvent, window: &mut Window, cx: &mut App) {
     let Some(page) = page_key::from_keystroke(&event.keystroke) else { return };
     let press = Press { keystroke: &event.keystroke, page: &page };
+    // A drawing opened larger holds every key, before the window's own and every layer.
+    if Figure.open(window, cx) {
+        if Figure.keys(&press, &[], window, cx) == Verdict::Taken {
+            cx.stop_propagation();
+        }
+        return;
+    }
     let layers = Layers::of(cx);
     // The window's keys come first: no field, dialog or pane hears them.
     if let Some(action) = action_for(&[Place::Window], &page) {

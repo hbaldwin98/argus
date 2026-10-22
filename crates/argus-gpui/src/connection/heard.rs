@@ -19,14 +19,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use argus_desktop_core::chrome::add_project::AddProjectPage;
-use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status};
+use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
 use argus_desktop_core::extensions::keys::{ExtCommandPage, ExtGroup};
 use argus_desktop_core::extensions::views::{ExtTab, ExtTable};
 use argus_desktop_core::keys::keymap::{Action, Command, Group};
 use argus_desktop_core::layout::docks::{DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
 use argus_desktop_core::views::nav::{self, NavView};
-use argus_desktop_core::views::saved::SavedPanel;
+use argus_desktop_core::views::saved::{SavedPanel, SavedViewsPage};
 use gpui_kit::{Context, EventEmitter, Task};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -34,6 +34,7 @@ use crate::layout::holders::{Holder, Holders};
 use crate::connection::screens::{Marked, Screens};
 use crate::panes::screen::Screen;
 use crate::review::entry::{Entry, Open};
+use crate::views::memory::{self, Memory};
 
 /// How the foot says the daemon is reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,9 +103,19 @@ pub struct Heard {
     pub extension_tables: Vec<ExtTable>,
     pub extensions_listed: bool,
     /// What the sidebar's Views fold lists, and the panels showing saved views (which say which are
-    /// lit). The views' bodies are not held: only a view's place in the list is drawn here.
+    /// lit), as the sidebar lists them. The views' bodies are `saved`'s.
     pub saved_views: Vec<NavView>,
     pub saved_panels: Vec<SavedPanel>,
+    /// The views agents showed, whole, as the last event said: newest first, which one the panel shows,
+    /// which is a page, and what changed in each. Shared, so a view that keeps them across unrelated
+    /// events does not copy them.
+    pub views: Option<Rc<ViewsPage>>,
+    /// The saved views with their bodies, whole, as the last event said.
+    pub saved: Option<Rc<SavedViewsPage>>,
+    /// What the window alone remembers of the blocks of those views (the tab being read, a fold, a
+    /// half-typed form), by block path. Kept apart from the pages above, which are replaced whenever
+    /// an agent shows a view again, so a republish never resets it, nor does a reconnect, which empties the list before the daemon replays it.
+    pub memory: memory::Shared,
     /// The review the session holds, while it is open: what the Git stage's
     /// Changes tab draws. Shared, so a view that keeps its rows across
     /// unrelated events does not copy them.
@@ -157,6 +168,9 @@ impl Heard {
             extensions_listed: false,
             saved_views: Vec::new(),
             saved_panels: Vec::new(),
+            views: None,
+            saved: None,
+            memory: Memory::shared(),
             review: None,
             history: None,
             git: Entry::default(),
@@ -227,7 +241,11 @@ impl Heard {
             }
             Event::SavedViews(page) => {
                 self.saved_views = nav::views_of(&page);
-                self.saved_panels = page.panels;
+                self.saved_panels = page.panels.clone();
+                self.saved = Some(Rc::new(*page));
+            }
+            Event::Views(page) => {
+                self.views = Some(Rc::new(*page));
             }
             // Said once and held by no one: the window opens what it names (`Ran`).
             Event::Run { action } => {
@@ -376,6 +394,7 @@ impl Default for Heard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::views::memory::Draft;
     use gpui_kit::{AppContext as _, TestAppContext};
 
     fn status(connection: Connection) -> Event {
@@ -527,6 +546,65 @@ mod tests {
             (Some(5), Some(6), None)
         );
         assert!(heard.keyed(Some(6)) && !heard.keyed(Some(5)) && !heard.keyed(None));
+    }
+
+    fn page_view(pane: u64, id: &str) -> argus_desktop_core::connection::page::PageView {
+        argus_desktop_core::connection::page::PageView {
+            pane,
+            from: "claude".into(),
+            at: 0,
+            refreshing: false,
+            pressed: Vec::new(),
+            subject: None,
+            view: argus_protocol::AgentView { id: id.into(), title: id.into(), ..Default::default() },
+            diagrams: Vec::new(),
+            changed: Vec::new(),
+            unseen: false,
+        }
+    }
+
+    fn views(shown: &[(u64, &str)]) -> Event {
+        Event::Views(Box::new(ViewsPage { views: shown.iter().map(|(pane, id)| page_view(*pane, id)).collect(), ..ViewsPage::default() }))
+    }
+
+    #[test]
+    fn the_views_agents_showed_are_held_whole_and_replaced_by_the_next_event() {
+        let mut heard = Heard::new();
+        assert!(heard.views.is_none());
+        assert!(heard.hear(views(&[(1, "ci"), (2, "trim")])));
+        assert_eq!(heard.views.as_ref().map(|page| page.views.len()), Some(2));
+        assert!(heard.hear(views(&[(1, "ci")])));
+        assert_eq!(heard.views.as_ref().map(|page| page.views.len()), Some(1), "whole each time, never merged");
+    }
+
+    #[test]
+    fn what_the_window_remembers_of_a_view_survives_the_agent_showing_it_again() {
+        let mut heard = Heard::new();
+        heard.hear(views(&[(1, "ci")]));
+        heard.memory.borrow_mut().choose_tab("1/ci.2", 3);
+        heard.memory.borrow_mut().set_draft("1/ci.4|title", Draft::Text("half typed".into()));
+        heard.hear(views(&[(1, "ci")]));
+        assert_eq!(heard.memory.borrow().tab("1/ci.2", 5), 3, "a republish must not put the tab back");
+        assert_eq!(heard.memory.borrow().draft("1/ci.4|title"), Some(&Draft::Text("half typed".into())));
+    }
+
+    #[test]
+    fn what_the_window_remembers_of_a_view_survives_a_reconnect_that_empties_the_list() {
+        let mut heard = Heard::new();
+        heard.hear(views(&[(1, "ci")]));
+        heard.memory.borrow_mut().set_draft("1/ci.4|title", Draft::Text("half typed".into()));
+        heard.hear(views(&[]));
+        heard.hear(views(&[(1, "ci")]));
+        assert_eq!(heard.memory.borrow().draft("1/ci.4|title"), Some(&Draft::Text("half typed".into())));
+    }
+
+    #[test]
+    fn the_saved_views_are_held_with_their_bodies_beside_the_sidebars_list_of_them() {
+        let mut heard = Heard::new();
+        assert!(heard.saved.is_none());
+        let page = SavedViewsPage { can_press: true, ..SavedViewsPage::default() };
+        assert!(heard.hear(Event::SavedViews(Box::new(page))));
+        assert_eq!(heard.saved.as_ref().map(|page| page.can_press), Some(true));
     }
 
     /// The loop is held by the model it fills, so it cannot outlive the

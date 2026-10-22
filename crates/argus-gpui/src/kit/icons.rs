@@ -73,6 +73,15 @@ pub enum Glyph {
     /// A tick (a chosen card, a saved dialog) and the two panes of a split (the Views settings).
     Check,
     Split,
+    /// The marks of a callout, a block of an agent's view in a tone: the page's own paths, which the shared set has no match for.
+    NoteWarn,
+    NoteBad,
+    NoteGood,
+    NoteInfo,
+    /// A checklist's tick, heavier than `Check`.
+    Tick,
+    /// The corner button that opens a drawing larger.
+    Expand,
 }
 
 impl Glyph {
@@ -127,6 +136,12 @@ impl Glyph {
             Glyph::Trash => include_bytes!("../../assets/icons/trash.svg"),
             Glyph::Check => include_bytes!("../../assets/icons/check.svg"),
             Glyph::Split => include_bytes!("../../assets/icons/split.svg"),
+            Glyph::NoteWarn => include_bytes!("../../assets/icons/note-warn.svg"),
+            Glyph::NoteBad => include_bytes!("../../assets/icons/note-bad.svg"),
+            Glyph::NoteGood => include_bytes!("../../assets/icons/note-good.svg"),
+            Glyph::NoteInfo => include_bytes!("../../assets/icons/note-info.svg"),
+            Glyph::Tick => include_bytes!("../../assets/icons/tick.svg"),
+            Glyph::Expand => include_bytes!("../../assets/icons/expand.svg"),
         }
     }
 
@@ -229,6 +244,12 @@ mod tests {
             Glyph::Trash,
             Glyph::Check,
             Glyph::Split,
+            Glyph::NoteWarn,
+            Glyph::NoteBad,
+            Glyph::NoteGood,
+            Glyph::NoteInfo,
+            Glyph::Tick,
+            Glyph::Expand,
         ] {
             let text = std::str::from_utf8(glyph.bytes()).expect("utf-8");
             assert!(text.starts_with("<svg"), "{glyph:?}");

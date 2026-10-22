@@ -29,6 +29,8 @@ unicode-width = "0.2"
 # The clipboard, for pasting a screenshot into a text control, as the Tauri
 # window does.
 arboard = { version = "3", default-features = false, features = ["image-data"] }
+# The day a date field holds, which the date picker is handed and hands back.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 # The window's own handle, which the DWM border colour and Mica's tint are set on (GPUI has no
 # call for either); the same version GPUI's `Window` implements `HasWindowHandle` for.
