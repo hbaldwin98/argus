@@ -1,13 +1,15 @@
 //! The text Vim edits, with its undo: every edit lands in the rope at once,
 //! is gathered into the unit that is open, and is told to the host as one
 //! change set per key. A unit is what `u` takes back — a command, or an
-//! insert from `i` to Escape.
+//! insert from `i` to Escape. The marks live here, since they follow every
+//! edit the text takes.
 
 use ropey::Rope;
 
 use crate::code::change::{Change, ChangeSet};
 use crate::code::history::History;
 
+use super::marks::Marks;
 use super::text::Text;
 
 struct Unit {
@@ -23,6 +25,7 @@ pub struct Buffer {
     /// Everything edited since the host last took it.
     step: Option<ChangeSet>,
     read_only: bool,
+    pub marks: Marks,
 }
 
 impl Buffer {
@@ -33,6 +36,7 @@ impl Buffer {
             unit: None,
             step: None,
             read_only: false,
+            marks: Marks::default(),
         }
     }
 
@@ -79,6 +83,7 @@ impl Buffer {
             None => set.clone(),
         });
         set.apply_in_place(&mut self.doc);
+        self.marks.follow(set);
     }
 
     /// Closes the open unit, so the next edit begins another.
@@ -110,6 +115,7 @@ impl Buffer {
     }
 
     fn told(&mut self, set: &ChangeSet) {
+        self.marks.follow(set);
         self.step = Some(match self.step.take() {
             Some(step) => step.compose(set),
             None => set.clone(),
@@ -130,6 +136,7 @@ impl Buffer {
         self.commit();
         self.history.past(remote);
         remote.apply_in_place(&mut self.doc);
+        self.marks.follow_remote(remote);
     }
 }
 

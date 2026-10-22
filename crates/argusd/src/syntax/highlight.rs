@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
+use argus_protocol::review::captures::CAPTURES;
 use argus_protocol::{HighlightKind, HighlightSpan};
 
 use crate::syntax::grammar::Grammar;
@@ -16,34 +17,6 @@ use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter}
 /// but a generated or minified file is megabytes on a handful of lines, and
 /// this runs while a review request is waiting on it.
 const MAX_HIGHLIGHT_BYTES: usize = 512 * 1024;
-
-/// The capture names we ask grammars for, paired with what the client is told.
-/// Tree-sitter resolves these as dotted prefixes, so `keyword` also claims
-/// `keyword.control.return` without our listing every dialect's spelling.
-///
-/// What is deliberately absent is `variable`, which is most identifiers in most
-/// files. Colouring those turns a diff into a wall of colour and buries the one
-/// signal review exists for, which is which lines changed.
-const CAPTURES: &[(&str, HighlightKind)] = &[
-    ("attribute", HighlightKind::Property),
-    ("boolean", HighlightKind::Constant),
-    ("comment", HighlightKind::Comment),
-    ("constant", HighlightKind::Constant),
-    ("constructor", HighlightKind::Type),
-    ("escape", HighlightKind::Str),
-    ("function", HighlightKind::Function),
-    ("keyword", HighlightKind::Keyword),
-    ("label", HighlightKind::Constant),
-    ("module", HighlightKind::Type),
-    ("namespace", HighlightKind::Type),
-    ("number", HighlightKind::Number),
-    ("operator", HighlightKind::Operator),
-    ("property", HighlightKind::Property),
-    ("punctuation", HighlightKind::Punctuation),
-    ("string", HighlightKind::Str),
-    ("tag", HighlightKind::Type),
-    ("type", HighlightKind::Type),
-];
 
 /// TypeScript's own query is only its additions to JavaScript's — types,
 /// generics, decorators. Without the base query underneath it, `const` and
@@ -141,7 +114,7 @@ pub fn line_spans(path: &str, source: &str) -> Option<Vec<Vec<HighlightSpan>>> {
 
     let mut spans: Vec<Vec<HighlightSpan>> = vec![Vec::new(); starts.len()];
     let mut highlighter = Highlighter::new();
-    let events = highlighter.highlight(config, bytes, None, None, |_| None).ok()?;
+    let events = highlighter.highlight(config, bytes, None, |_| None).ok()?;
 
     let mut stack: Vec<HighlightKind> = Vec::new();
     for event in events {

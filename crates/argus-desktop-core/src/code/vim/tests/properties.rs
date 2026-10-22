@@ -8,14 +8,17 @@ use crate::code::vim::key::Code;
 
 /// The keys Vim has a use for, with the odd one it has none for.
 fn a_key() -> impl Strategy<Value = Key> {
-    let chars = "hjklwWbBeE0^$|gGfFtT;,{}%dycg~uU<>xXDYCsSrJpPoOaAiIRvV.:\"_+ ()[]'`ab12éz\u{1F600}-";
+    let chars = "hjklwWbBeE0^$|gGfFtT;,{}%dycg~uU<>xXDYCsSrJpPoOaAiIRvV.:\"_+ ()[]'`ab12éz\u{1F600}-/?nN*#mq@zHML=&\\s";
     prop_oneof![
         12 => proptest::sample::select(chars.chars().collect::<Vec<_>>()).prop_map(Key::ch),
         2 => proptest::sample::select(vec![
             Code::Esc, Code::Enter, Code::Backspace, Code::Delete, Code::Left, Code::Right,
             Code::Up, Code::Down, Code::Home, Code::End, Code::Tab, Code::Insert,
+            Code::PageUp, Code::PageDown,
         ]).prop_map(Key::of),
-        1 => proptest::sample::select(vec!['r', 'w', 'u', 't', 'd', 'v', 's']).prop_map(Key::ctrl),
+        2 => proptest::sample::select(vec![
+            'r', 'w', 'u', 't', 'd', 'v', 's', 'f', 'b', 'e', 'y', 'o', 'i', 'a', 'x', 'n', 'p', 'q', 'c', ' ',
+        ]).prop_map(Key::ctrl),
     ]
 }
 
@@ -24,12 +27,12 @@ fn some_keys(most: usize) -> impl Strategy<Value = Vec<Key>> {
 }
 
 /// A text of short lines with brackets, quotes and wide characters.
-fn some_text() -> impl Strategy<Value = String> {
+pub fn some_text() -> impl Strategy<Value = String> {
     "[ab (){}\"'é😀.\n]{0,40}"
 }
 
 /// What must be true of the machine after any key.
-fn sound(ed: &Ed) -> Result<(), TestCaseError> {
+pub fn sound(ed: &Ed) -> Result<(), TestCaseError> {
     let doc = ed.vim.doc();
     let len = doc.len();
     let at = ed.vim.cursor();
@@ -39,7 +42,16 @@ fn sound(ed: &Ed) -> Result<(), TestCaseError> {
         prop_assert!(from <= to && to <= len, "the selection is in the text");
         prop_assert!(doc.is_char_boundary(from) && doc.is_char_boundary(to));
     }
-    if matches!(ed.mode(), Mode::Normal | Mode::Visual | Mode::VisualLine) && at < len {
+    for (from, to) in ed.vim.selections() {
+        prop_assert!(from <= to && to <= len, "a row of the selection is in the text");
+        prop_assert!(doc.is_char_boundary(from) && doc.is_char_boundary(to));
+    }
+    if let Some((from, to)) = ed.vim.confirming() {
+        prop_assert!(from <= to && to <= len, "the match asked about is in the text");
+    }
+    // Except while the one command of an insert's `Ctrl-o` runs, when the caret may stand past the last character.
+    let resting = ed.vim.one_command == crate::code::vim::OneCommand::No;
+    if resting && matches!(ed.mode(), Mode::Normal | Mode::Visual | Mode::VisualLine | Mode::VisualBlock) && at < len {
         let line = ed.vim.buf.text().line_of(at);
         let t = ed.vim.buf.text();
         prop_assert!(
@@ -76,10 +88,9 @@ proptest! {
         for k in &keys {
             ed.key(*k);
         }
-        ed.keys("<Esc><Esc>");
-        for _ in 0..keys.len() + 3 {
-            ed.keys("u");
-        }
+        ed.keys("<Esc><Esc><Esc>");
+        // Every unit of everything typed (a macro or `:g` makes many) and no more.
+        while ed.vim.buf.undo().is_some() {}
         prop_assert_eq!(ed.text(), text);
     }
 

@@ -77,10 +77,10 @@ fn p_over_a_selection_swaps_it_with_the_register() {
     table(&[("|abc def", "yiwwviwp", "abc |abc")]);
     let mut ed = Ed::new("|abc def");
     ed.keys("yiwwviwp");
-    assert_eq!(ed.regs.get(None).unwrap().text, "def", "p takes what it replaced");
+    assert_eq!(ed.sh.regs.get(None).unwrap().text, "def", "p takes what it replaced");
     let mut ed = Ed::new("|abc def");
     ed.keys("yiwwviwP");
-    assert_eq!(ed.regs.get(None).unwrap().text, "abc", "P keeps the register");
+    assert_eq!(ed.sh.regs.get(None).unwrap().text, "abc", "P keeps the register");
 }
 
 #[test]

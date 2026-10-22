@@ -1,13 +1,13 @@
 //! Insert and replace mode: the keys that type, the few that edit what was
-//! typed (`Ctrl-w`, `Ctrl-u`, `Ctrl-t`, `Ctrl-d`, `Ctrl-r`), and Escape,
-//! which repeats the text for a count, files it in `".`, and steps the
-//! cursor back onto the last character.
+//! typed (`Ctrl-w`, `Ctrl-u`, `Ctrl-t`, `Ctrl-d`, `Ctrl-r`), `Ctrl-o` for one
+//! normal command, and Escape, which repeats the text for a count, fills a
+//! block's rows, files the text in `".`, and steps the cursor back onto the
+//! last character.
 
 use super::key::{Code, Key};
 use super::operate::INDENT;
-use super::registers::Registers;
 use super::text::{Class, Text};
-use super::{Insert, Mode, Vim};
+use super::{Insert, Mode, OneCommand, Shared, Vim};
 
 /// The most a counted insert may add: a count is a typing aid, not a way to
 /// fill memory.
@@ -22,7 +22,9 @@ impl Vim {
             return;
         }
         self.mode = Mode::Insert;
-        self.insert = Some(Insert { count: count.max(1), lines, text: String::new(), register: false });
+        // A command that begins an insert is the `Ctrl-o` command done.
+        self.one_command = OneCommand::No;
+        self.insert = Some(Insert { count: count.max(1), lines, text: String::new(), register: false, block: None });
         self.recording = !self.replaying;
     }
 
@@ -56,16 +58,25 @@ impl Vim {
         self.typed_text(text);
     }
 
-    pub(super) fn insert_key(&mut self, regs: &mut Registers, key: Key) -> bool {
+    pub(super) fn insert_key(&mut self, sh: &mut Shared, key: Key) -> bool {
+        if self.remap {
+            if let Some(handled) = self.insert_mapped(sh, key) {
+                return handled;
+            }
+        }
+        self.insert_key_plain(sh, key)
+    }
+
+    pub(super) fn insert_key_plain(&mut self, sh: &mut Shared, key: Key) -> bool {
         if key.code == Code::Esc {
-            self.leave_insert(regs);
+            self.leave_insert(sh, false);
             return true;
         }
         if self.insert.as_ref().is_some_and(|i| i.register) {
             if let Some(i) = &mut self.insert {
                 i.register = false;
             }
-            if let Some(reg) = key.typed().and_then(|c| regs.get(Some(c))) {
+            if let Some(reg) = key.typed().and_then(|c| sh.regs.get(Some(c))) {
                 self.put(&reg.text);
             }
             self.record(key);
@@ -130,6 +141,13 @@ impl Vim {
                     i.register = true;
                 }
             }
+            (Code::Char('o'), true) => {
+                // The insert ends where the caret is, and one normal command
+                // runs before it begins again.
+                self.leave_insert(sh, true);
+                self.one_command = OneCommand::Armed;
+                return true;
+            }
             _ => return false,
         }
         self.record(key);
@@ -186,7 +204,12 @@ impl Vim {
         self.cursor = p;
     }
 
-    fn leave_insert(&mut self, regs: &mut Registers) {
+    /// Leaves insert mode: the text is repeated for a count and typed into
+    /// a block's rows, and filed in `".`. The cursor steps back onto the
+    /// last character, or, for `Ctrl-o`, stays.
+    pub(super) fn leave_insert(&mut self, sh: &mut Shared, keep_cursor: bool) {
+        self.imap.clear();
+        let mut block_start = None;
         if let Some(ins) = self.insert.take() {
             if ins.count > 1 && !ins.text.is_empty() {
                 let unit = if ins.lines { format!("\n{}", ins.text) } else { ins.text.clone() };
@@ -195,15 +218,25 @@ impl Vim {
                 self.buf.replace(self.cursor, self.cursor, &more);
                 self.cursor += more.len();
             }
+            if let Some(block) = ins.block {
+                self.fill_block(block, &ins.text);
+                // Where it began, unless what was typed took text from before it.
+                block_start = Some(block.start.min(self.cursor));
+            }
             if !ins.text.is_empty() {
-                regs.typed(ins.text);
+                sh.regs.typed(ins.text);
             }
         }
         self.recording = false;
-        self.last_insert_end = Some(self.cursor);
         self.mode = Mode::Normal;
+        if let Some(at) = block_start {
+            // A block's cursor ends where its insert began.
+            self.cursor = self.buf.doc().floor_char_boundary(at.min(self.buf.doc().len()));
+            self.want = self.buf.text().col(self.cursor);
+            return;
+        }
         let t: Text = self.buf.text();
-        if self.cursor > t.line_start(t.line_of(self.cursor)) {
+        if !keep_cursor && self.cursor > t.line_start(t.line_of(self.cursor)) {
             self.cursor = t.prev(self.cursor);
         }
         self.want = t.col(self.cursor);

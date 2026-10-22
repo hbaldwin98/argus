@@ -5,6 +5,13 @@
 [env]
 TS_RS_LARGE_INT = "number"
 TS_RS_EXPORT_DIR = { value = "crates/argus-desktop/page/src/bindings", relative = true }
+# tree-sitter's `wasm` feature (the Code editor's grammars, `argus-desktop-core`
+# `code/grammar/load`) compiles C against wasmtime's headers, which on Windows
+# declare every function `dllimport` unless told the library is static. It
+# is static here, and lld's stand-in for the missing import table crashes
+# the first call (an access violation in `ts_wasm_store_new`).
+CFLAGS_x86_64_pc_windows_msvc = "-DLIBWASM_STATIC"
+CFLAGS_aarch64_pc_windows_msvc = "-DLIBWASM_STATIC"
 
 # The LLD that ships with the toolchain links a one-line change to the
 # desktop window in about 3.1s against link.exe's 4.8s, and argusd's tests

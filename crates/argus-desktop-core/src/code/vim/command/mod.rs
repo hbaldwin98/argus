@@ -3,11 +3,14 @@
 //! typed command is just keys kept until the rest arrive, and a key that
 //! can begin nothing is known at once.
 
+pub mod table;
+
 use super::key::{Code, Key};
 use super::keymap::{char_of, motion, Moved};
 use super::motion::Motion;
 use super::object::Object;
 use super::registers::Registers;
+use super::screen::Place;
 
 /// The most a count counts to; a larger one would only repeat past the end
 /// of the text.
@@ -23,6 +26,16 @@ pub enum Operator {
     Swap,
     Lower,
     Upper,
+    /// `g?`
+    Rot13,
+    /// `gq`: wrap lines to the text width, the cursor on the last.
+    Wrap,
+    /// `gw`: the same, the cursor kept.
+    WrapKeep,
+    /// `gc`: toggle line comments.
+    Comment,
+    /// `=`
+    Reindent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +44,10 @@ pub enum Target {
     Object { object: Object, inner: bool },
     /// The operator doubled (`dd`): whole lines.
     Line,
+    /// `gn` and `gN`: the next match of the search.
+    Match { forward: bool },
+    /// `/` and `?`: up to where a pattern typed next is found.
+    Search { forward: bool },
 }
 
 /// Where an insert begins.
@@ -42,16 +59,21 @@ pub enum At {
     LineEnd,
     Below,
     Above,
-    /// `gi`: where the last insert ended.
+    /// `gi`: where the last edit ended.
     LastInsert,
     /// `gI`: column 0.
     Column0,
+    /// `I` in visual mode: before the selection, or each line of a block.
+    SelectionStart,
+    /// `A` in visual mode: after it.
+    SelectionEnd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Visual {
     Char,
     Line,
+    Block,
     /// `gv`
     Reselect,
 }
@@ -62,10 +84,14 @@ pub enum Action {
     Operate { op: Operator, target: Target },
     /// An operator on the visual selection; `lines` takes whole lines.
     OnSelection { op: Operator, lines: bool },
-    /// `o` in visual mode.
-    OtherEnd,
+    /// `o` in visual mode, and `O`, which keeps to the same line in a block.
+    OtherEnd { same_line: bool },
+    /// `S` and `R` on a selection: its whole lines are changed, a block too.
+    ChangeLines,
     /// `iw` and the like in visual mode.
     Select { object: Object, inner: bool },
+    /// `gn` and `gN`: the next match, taken into the selection.
+    SelectMatch { forward: bool },
     Insert(At),
     /// `R`
     Replace,
@@ -73,7 +99,8 @@ pub enum Action {
     /// `~` in normal mode.
     ToggleCase,
     Join { spaces: bool },
-    Paste { before: bool },
+    /// `p` and `P`; `]p` and `[p` fit the indent to the line.
+    Paste { before: bool, match_indent: bool },
     Undo,
     Redo,
     Repeat,
@@ -85,9 +112,24 @@ pub enum Action {
     Cancel,
     /// `Ctrl-a` and `Ctrl-x`: the number at or after the cursor, by the count.
     Increment { up: bool },
-    /// A chord Vim owns on main (EDITOR-VIM-21) whose work needs the window
-    /// (paging, scrolling, the jump list, a block selection) or that the
-    /// library leaves idle: taken, so the host's keymap never hears it.
+    /// `m<x>`
+    SetMark(char),
+    /// `q<x>`: record keys into a register.
+    Record(char),
+    /// `@<x>`: play a register, `@@` the last, `@:` the last ex command.
+    Play(char),
+    /// `Ctrl-o` and `Ctrl-i`.
+    Jump { forward: bool },
+    /// `Ctrl-e` and `Ctrl-y`: the view moves by lines, the cursor stays in it.
+    Scroll { forward: bool },
+    /// `zz`, `zt`, `zb`, and `z.`, `z<CR>`, `z-` which also go to the first
+    /// non-blank: the cursor's line put in the view.
+    Reveal { at: Place, first_nonblank: bool },
+    /// `/` and `?`.
+    Search { forward: bool },
+    /// A chord Vim owns on main (EDITOR-VIM-21) that does nothing here
+    /// (`Ctrl-w` in normal mode, `Ctrl-a` on a selection): taken, so the
+    /// host's keymap never hears it.
     Swallow,
 }
 
@@ -114,9 +156,14 @@ fn operator_of(first: char, second: Option<char>) -> Option<(Operator, char)> {
         ('c', _) => (Operator::Change, 'c'),
         ('>', _) => (Operator::Indent, '>'),
         ('<', _) => (Operator::Outdent, '<'),
+        ('=', _) => (Operator::Reindent, '='),
         ('g', Some('~')) => (Operator::Swap, '~'),
         ('g', Some('u')) => (Operator::Lower, 'u'),
         ('g', Some('U')) => (Operator::Upper, 'U'),
+        ('g', Some('?')) => (Operator::Rot13, '?'),
+        ('g', Some('q')) => (Operator::Wrap, 'q'),
+        ('g', Some('w')) => (Operator::WrapKeep, 'w'),
+        ('g', Some('c')) => (Operator::Comment, 'c'),
         _ => return None,
     })
 }
@@ -133,11 +180,14 @@ fn target(rest: &[Key], again: char, g: bool) -> Result<(Target, Option<usize>),
     let rest = &rest[i..];
     let Some(first) = rest.first() else { return Err(Parse::Need) };
     // `dd`, and `g~~` or `g~g~`.
-    if rest.len() == 1 && first.typed() == Some(again) {
+    if rest.len() == 1 && first.typed() == Some(again) && !first.ctrl {
         return Ok((Target::Line, count));
     }
     if g && rest.len() == 2 && first.typed() == Some('g') && rest[1].typed() == Some(again) {
         return Ok((Target::Line, count));
+    }
+    if matches!(first.typed(), Some('/' | '?')) && rest.len() == 1 {
+        return Ok((Target::Search { forward: first.typed() == Some('/') }, count));
     }
     if matches!(first.typed(), Some('i' | 'a')) && !first.ctrl {
         return match rest.get(1) {
@@ -152,6 +202,7 @@ fn target(rest: &[Key], again: char, g: bool) -> Result<(Target, Option<usize>),
     match motion(rest) {
         Moved::Need => Err(Parse::Need),
         Moved::Bad => Err(Parse::Bad),
+        Moved::Done(Motion::Match { forward }) => Ok((Target::Match { forward }, count)),
         Moved::Done(m) => Ok((Target::Motion(m), count)),
     }
 }
@@ -161,6 +212,44 @@ fn mul(a: Option<usize>, b: Option<usize>) -> Option<usize> {
         (None, None) => None,
         (a, b) => Some((a.unwrap_or(1) * b.unwrap_or(1)).min(MOST)),
     }
+}
+
+/// How many of the keys are a count and a register before the command: `3`,
+/// `"a`, `2"b`.
+pub fn prefix_len(keys: &[Key]) -> usize {
+    let mut i = 0;
+    let mut counting = false;
+    loop {
+        match char_of(keys.get(i)) {
+            Some('"') if keys.get(i + 1).is_some() => i += 2,
+            Some(d) if d.is_ascii_digit() && (d != '0' || counting) => {
+                counting = true;
+                i += 1;
+            }
+            _ => return i,
+        }
+    }
+}
+
+/// Whether the last of the keys comes after an operator that is waiting for
+/// its target: `d` then the key, `g~` then the key.
+pub fn operator_pending(keys: &[Key]) -> bool {
+    let rest = &keys[prefix_len(keys)..];
+    let Some(first) = char_of(rest.first()) else { return false };
+    match operator_of(first, char_of(rest.get(1))) {
+        Some(_) => rest.len() > if first == 'g' { 2 } else { 1 },
+        None => false,
+    }
+}
+
+/// Whether the next key is the character `f`, `F`, `t`, `T` or `r` waits
+/// for, which is its own whatever a `langmap` says.
+pub fn wants_literal(keys: &[Key], visual: bool) -> bool {
+    let Some((last, before)) = keys.split_last() else { return false };
+    matches!(last.typed(), Some('f' | 'F' | 't' | 'T' | 'r'))
+        && !last.ctrl
+        && (before.is_empty() || parse(before, visual) == Parse::Need)
+        && parse(keys, visual) == Parse::Need
 }
 
 /// Reads `keys`; `visual` is whether a selection is up.
@@ -191,7 +280,7 @@ pub fn parse(keys: &[Key], visual: bool) -> Parse {
     let Some(first) = rest.first() else { return Parse::Need };
     let done = |count, action| Parse::Done(Command { count, register, action });
 
-    if first.ctrl {
+    if first.ctrl && first.code != Code::Backspace {
         let alone = rest.len() == 1;
         match first.ctrl_char() {
             Some('r') if alone => return done(count, Action::Redo),
@@ -201,11 +290,16 @@ pub fn parse(keys: &[Key], visual: bool) -> Parse {
             Some('x') if alone => {
                 return done(count, if visual { Action::Swallow } else { Action::Increment { up: false } })
             }
-            Some('f' | 'b' | 'd' | 'u' | 'e' | 'y' | 'v' | 'q' | 'o' | 'i' | 'w') if alone => {
-                return done(count, Action::Swallow)
+            Some('e') if alone => return done(count, if visual { Action::Swallow } else { Action::Scroll { forward: true } }),
+            Some('y') if alone => {
+                return done(count, if visual { Action::Swallow } else { Action::Scroll { forward: false } })
             }
-            // Ctrl-p and Ctrl-n are motions, read below.
-            Some('p' | 'n') => {}
+            Some('v' | 'q') if alone => return done(count, Action::Visual(Visual::Block)),
+            Some('o') if alone => return done(count, if visual { Action::Swallow } else { Action::Jump { forward: false } }),
+            Some('i') if alone => return done(count, if visual { Action::Swallow } else { Action::Jump { forward: true } }),
+            Some('w') if alone && !visual => return done(count, Action::Swallow),
+            // These are motions, read below.
+            Some('p' | 'n' | 'f' | 'b' | 'd' | 'u' | ' ') => {}
             _ => return Parse::Bad,
         }
     }
@@ -222,7 +316,7 @@ pub fn parse(keys: &[Key], visual: bool) -> Parse {
             done(count, Action::Operate { op: Operator::Delete, target: Target::Motion(Motion::Right) })
         };
     }
-    let c = first.typed();
+    let c = if first.ctrl { None } else { first.typed() };
     let second = char_of(rest.get(1));
     if let Some((op, again)) = c.and_then(|c| operator_of(c, second)) {
         let g = c == Some('g');
@@ -243,111 +337,21 @@ pub fn parse(keys: &[Key], visual: bool) -> Parse {
     if c == Some('g') && rest.len() == 1 {
         return Parse::Need;
     }
+    if let Some(p) = table::common(rest, count, register) {
+        return p;
+    }
     if visual {
-        if let Some(p) = visual_command(rest, count, register) {
+        if let Some(p) = table::visual_command(rest, count, register) {
             return p;
         }
-    } else if let Some(p) = normal_command(rest, count, register) {
+    } else if let Some(p) = table::normal_command(rest, count, register) {
         return p;
     }
     match motion(rest) {
         Moved::Need => Parse::Need,
         Moved::Bad => Parse::Bad,
+        Moved::Done(Motion::Match { forward }) => done(count, Action::SelectMatch { forward }),
         Moved::Done(m) => done(count, Action::Move(m)),
-    }
-}
-
-/// A command that only normal mode has.
-fn normal_command(rest: &[Key], count: Option<usize>, register: Option<char>) -> Option<Parse> {
-    let c = char_of(rest.first())?;
-    let g = (c == 'g').then(|| char_of(rest.get(1))).flatten();
-    let done = |action| Some(Parse::Done(Command { count, register, action }));
-    let alone = rest.len() == 1;
-    let op = |op, motion| Action::Operate { op, target: Target::Motion(motion) };
-    let line = |op| Action::Operate { op, target: Target::Line };
-    match (c, g) {
-        ('x', _) if alone => done(op(Operator::Delete, Motion::Right)),
-        ('X', _) if alone => done(op(Operator::Delete, Motion::Left)),
-        ('D', _) if alone => done(op(Operator::Delete, Motion::LineEnd)),
-        ('C', _) if alone => done(op(Operator::Change, Motion::LineEnd)),
-        ('s', _) if alone => done(op(Operator::Change, Motion::Right)),
-        ('S', _) if alone => done(line(Operator::Change)),
-        ('Y', _) if alone => done(line(Operator::Yank)),
-        ('~', _) if alone => done(Action::ToggleCase),
-        ('J', _) if alone => done(Action::Join { spaces: true }),
-        ('p', _) if alone => done(Action::Paste { before: false }),
-        ('P', _) if alone => done(Action::Paste { before: true }),
-        ('i', _) if alone => done(Action::Insert(At::Cursor)),
-        ('a', _) if alone => done(Action::Insert(At::After)),
-        ('I', _) if alone => done(Action::Insert(At::LineStart)),
-        ('A', _) if alone => done(Action::Insert(At::LineEnd)),
-        ('o', _) if alone => done(Action::Insert(At::Below)),
-        ('O', _) if alone => done(Action::Insert(At::Above)),
-        ('R', _) if alone => done(Action::Replace),
-        ('u', _) if alone => done(Action::Undo),
-        ('.', _) if alone => done(Action::Repeat),
-        ('v', _) if alone => done(Action::Visual(Visual::Char)),
-        ('V', _) if alone => done(Action::Visual(Visual::Line)),
-        (':', _) if alone => done(Action::CommandLine),
-        ('r', _) => match rest {
-            [_] => Some(Parse::Need),
-            [_, k] => k.typed().map_or(Some(Parse::Bad), |ch| done(Action::ReplaceChar(ch))),
-            _ => Some(Parse::Bad),
-        },
-        (']' | '[', _) => match rest {
-            [_] => Some(Parse::Need),
-            [_, k] if k.typed() == Some('c') => {
-                done(if c == ']' { Action::NextChange } else { Action::PreviousChange })
-            }
-            _ => Some(Parse::Bad),
-        },
-        ('g', Some('J')) if rest.len() == 2 => done(Action::Join { spaces: false }),
-        ('g', Some('i')) if rest.len() == 2 => done(Action::Insert(At::LastInsert)),
-        ('g', Some('I')) if rest.len() == 2 => done(Action::Insert(At::Column0)),
-        ('g', Some('v')) if rest.len() == 2 => done(Action::Visual(Visual::Reselect)),
-        _ => None,
-    }
-}
-
-/// A command that only a selection has.
-fn visual_command(rest: &[Key], count: Option<usize>, register: Option<char>) -> Option<Parse> {
-    let c = char_of(rest.first())?;
-    let g = (c == 'g').then(|| char_of(rest.get(1))).flatten();
-    let done = |action| Some(Parse::Done(Command { count, register, action }));
-    let alone = rest.len() == 1;
-    let on = |op, lines| Action::OnSelection { op, lines };
-    match (c, g) {
-        ('x', _) if alone => done(on(Operator::Delete, false)),
-        ('X' | 'D', _) if alone => done(on(Operator::Delete, true)),
-        ('s', _) if alone => done(on(Operator::Change, false)),
-        ('C' | 'S' | 'R', _) if alone => done(on(Operator::Change, true)),
-        ('Y', _) if alone => done(on(Operator::Yank, true)),
-        ('~', _) if alone => done(on(Operator::Swap, false)),
-        ('u', _) if alone => done(on(Operator::Lower, false)),
-        ('U', _) if alone => done(on(Operator::Upper, false)),
-        ('J', _) if alone => done(Action::Join { spaces: true }),
-        ('p', _) if alone => done(Action::Paste { before: false }),
-        ('P', _) if alone => done(Action::Paste { before: true }),
-        ('o' | 'O', _) if alone => done(Action::OtherEnd),
-        ('v', _) if alone => done(Action::Visual(Visual::Char)),
-        ('V', _) if alone => done(Action::Visual(Visual::Line)),
-        (':', _) if alone => done(Action::CommandLine),
-        ('r', _) => match rest {
-            [_] => Some(Parse::Need),
-            [_, k] => k.typed().map_or(Some(Parse::Bad), |ch| done(Action::ReplaceChar(ch))),
-            _ => Some(Parse::Bad),
-        },
-        ('i' | 'a', _) => match rest {
-            [_] => Some(Parse::Need),
-            [_, k] => match k.typed().and_then(Object::named) {
-                Some(object) => done(Action::Select { object, inner: c == 'i' }),
-                None => Some(Parse::Bad),
-            },
-            _ => Some(Parse::Bad),
-        },
-        ('g', Some('J')) if rest.len() == 2 => done(Action::Join { spaces: false }),
-        ('g', Some('v')) if rest.len() == 2 => done(Action::Visual(Visual::Reselect)),
-        _ => None,
     }
 }
 

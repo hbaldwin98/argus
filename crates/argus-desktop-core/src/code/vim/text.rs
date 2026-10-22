@@ -129,6 +129,42 @@ impl<'a> Text<'a> {
         p.min(self.last_char(line).max(start))
     }
 
+    /// The line and the column, in characters, of `at`.
+    pub fn pos(self, at: usize) -> (usize, usize) {
+        (self.line_of(at), self.col(at))
+    }
+
+    /// The byte at a line and a column in characters; a column past the
+    /// line's end is the end of the line, which is not on a character.
+    pub fn at(self, line: usize, col: usize) -> usize {
+        let line = line.min(self.last_line());
+        let (start, end) = (self.line_start(line), self.line_end(line));
+        let mut p = start;
+        for _ in 0..col {
+            if p >= end {
+                break;
+            }
+            p = self.next(p);
+        }
+        p.min(end)
+    }
+
+    /// The line's text without its break.
+    pub fn line_text(self, line: usize) -> String {
+        if line > self.last_line() {
+            return String::new();
+        }
+        self.slice(self.line_start(line), self.line_end(line))
+    }
+
+    /// How many characters the line has.
+    pub fn line_len(self, line: usize) -> usize {
+        if line > self.last_line() {
+            return 0;
+        }
+        self.0.slice(self.line_start(line)..self.line_end(line)).chars().count()
+    }
+
     pub fn slice(self, from: usize, to: usize) -> String {
         self.0.slice(from..to).to_string()
     }

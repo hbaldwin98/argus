@@ -4,6 +4,7 @@
 //! views read `Tokens` for what is ours and `cx.theme()` for what a kit
 //! component also paints; both come from the same tokens, here.
 
+use gpui_kit::component::highlighter::HighlightTheme;
 use gpui_kit::component::{Colorize as _, Theme, ThemeColor, ThemeMode};
 use gpui_kit::{px, App, Hsla};
 
@@ -160,6 +161,24 @@ pub fn colors(t: &Tokens) -> ThemeColor {
     c
 }
 
+/// The kit's editor look for these tokens: the code area on `--bg-sunken` with the gutter on the
+/// same ground, the text `--fg`, line numbers `--fg-faint` and the active line `--fill` (the
+/// page's `.cm-editor` rules), and the syntax colours of the capture table (`theme/syntax`).
+pub fn highlight(t: &Tokens) -> HighlightTheme {
+    let mut theme = (*if t.dark { HighlightTheme::default_dark() } else { HighlightTheme::default_light() }).clone();
+    theme.name = t.name.to_owned();
+    let style = &mut theme.style;
+    style.editor_background = Some(t.bg_sunken);
+    style.editor_foreground = Some(t.fg);
+    style.editor_gutter_background = Some(t.bg_sunken);
+    style.editor_active_line = Some(t.fill);
+    style.editor_line_number = Some(t.fg_faint);
+    style.editor_active_line_number = Some(t.fg_muted);
+    style.syntax = super::syntax::colours(t);
+    theme
+}
+
+
 /// Puts `tokens` on gpui-kit's global theme (colours, faces, sizes, radii and
 /// motion) and registers them as the [`Tokens`] global beside it: installing
 /// another `Tokens` is how the theme switches. Call after `gpui_kit::init`
@@ -187,6 +206,7 @@ pub fn install(cx: &mut App, tokens: Tokens, zoom: u16) {
         theme.motion.duration_fast = tokens.t_fast;
         // Flat surfaces with hairlines: depth comes from the line, not a shadow.
         theme.shadow = false;
+        theme.highlight_theme = std::sync::Arc::new(highlight(&tokens));
     });
     cx.set_global(tokens);
 }

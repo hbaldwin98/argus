@@ -6,9 +6,10 @@
 //! it sends and sends a click on a line as the click it is, so a refused action leaves the file
 //! showing what is true. Each file is scrolled where it was last left, kept by path, since a hidden
 //! list forgets; and only a move of the cursor brings it into view, and then a third of the way down
-//! (`code::scroll`). The lines are the diff's rows in one view (`kit/diff`), so the editor that is
-//! to stand in for them takes this body's place and keeps the header, the ruler and the box.
+//! (`code::scroll`). The lines are the diff's rows in one view (`kit/diff`); while the stage edits the
+//! file, `editor` takes their place and the comment box is an in-flow block above it, with no ruler.
 
+pub mod editor;
 mod header;
 mod ruler;
 mod scroll;
@@ -28,8 +29,9 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::diff::{DiffEvent, DiffView, Slot};
 use crate::review::comment::{self, ways, CommentBox};
-use crate::theme::scale::zoom;
+use crate::theme::scale::{rem, zoom};
 use crate::theme::Tokens;
+use editor::CodeEditor;
 use ruler::Ruler;
 
 pub use header::bar as header;
@@ -40,6 +42,8 @@ pub struct CodeFile {
     diff: Entity<DiffView>,
     comment: Entity<CommentBox>,
     ruler: Entity<Ruler>,
+    /// The editor that stands in for the lines while the stage edits the file.
+    editor: Entity<CodeEditor>,
     /// Where each file was scrolled, by path: kept here, since a list that is not drawn forgets.
     scrolled: HashMap<String, f32>,
     /// The file whose lines the list is showing, once they are there: what its scroll is kept under.
@@ -58,6 +62,7 @@ impl CodeFile {
         let diff = cx.new(|cx| DiffView::new("code-lines", true, false, cx).reading(&tokens));
         let comment = cx.new(|cx| CommentBox::new(heard.clone(), caller.clone(), Rc::new(ways::Code), window, cx));
         let ruler = cx.new(|cx| Ruler::new(heard.clone(), caller.clone(), diff.clone(), cx));
+        let editor = cx.new(|cx| CodeEditor::new(heard.clone(), caller.clone(), window, cx));
         let pressed = cx.subscribe(&diff, |this, _, event: &DiffEvent, cx| match *event {
             // A click on a line moves the cursor to it, and Shift extends a range from where it was.
             DiffEvent::Row { row, extend } => this.ask(CodeGesture::Click { target: CodeClick::Line { line: row as u32, extend } }, cx),
@@ -71,7 +76,7 @@ impl CodeFile {
         });
         // The list's first layout says how tall it is, which the cursor's place on screen waits for.
         let laid_out = cx.observe(&diff, |_, _, cx| cx.notify());
-        Self { heard, caller, diff, comment, ruler, scrolled: HashMap::new(), shown: None, cursor: (None, 0), settle: false, _pressed: pressed, _laid_out: laid_out }
+        Self { heard, caller, diff, comment, ruler, editor, scrolled: HashMap::new(), shown: None, cursor: (None, 0), settle: false, _pressed: pressed, _laid_out: laid_out }
     }
 
     /// The list of lines, for the stage's sideways keys and a test.
@@ -90,12 +95,20 @@ impl CodeFile {
     /// was left; a cursor that moved asks to be brought into view.
     pub fn follow(&mut self, page: &CodePage, window: &mut Window, cx: &mut Context<Self>) {
         self.comment.update(cx, |comment, cx| comment.follow(page.comment.as_ref(), window, cx));
-        let lines = matches!(area(page), Area::Lines | Area::Editor);
+        let editing = area(page) == Area::Editor;
+        let lines = area(page) == Area::Lines;
         let slot = page.comment.as_ref().filter(|_| lines).map(|c| Slot { view: self.comment.clone().into(), height: comment::height(c, zoom(window.rem_size())) });
         let shown = if lines { rows(page) } else { Vec::new() };
         scroll::leave(self, page, cx);
         self.diff.update(cx, |diff, cx| diff.show(&shown, false, slot, cx));
         scroll::restore(self, page, cx);
+        // The editor stands in for the lines while the stage edits the file; the page's file, the
+        // marks and the line Rust moved to are what it follows.
+        if editing {
+            self.editor.update(cx, |editor, cx| editor.follow(page, cx));
+        } else {
+            self.editor.update(cx, |editor, cx| editor.leave(cx));
+        }
         self.ruler.update(cx, |ruler, cx| ruler.show(if lines { &page.ruler } else { &[] }, cx));
         let key = cursor_key(page.path.as_deref(), page.at);
         if key != self.cursor {
@@ -112,7 +125,16 @@ impl CodeFile {
             Area::Loading => states::loading(tokens),
             // The start panel and the match card are the stage's, which has the press to send.
             Area::Start => div().into_any_element(),
-            Area::Lines | Area::Editor => h_flex()
+            // In the editor the comment box is an in-flow block above it, not among the lines.
+            Area::Editor => v_flex()
+                .id("code-wrap")
+                .test_support()
+                .size_full()
+                .min_h_0()
+                .when(page.comment.is_some(), |wrap| wrap.child(div().id("code-comment").test_support().flex_shrink_0().px(rem(tokens.sp_12)).py(rem(tokens.sp_8)).border_b_1().border_color(tokens.line).bg(tokens.bg_sunken).child(self.comment.clone())))
+                .child(div().flex_1().min_h_0().child(self.editor.clone()))
+                .into_any_element(),
+            Area::Lines => h_flex()
                 .id("code-wrap")
                 .test_support()
                 .size_full()

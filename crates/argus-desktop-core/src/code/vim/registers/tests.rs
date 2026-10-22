@@ -84,7 +84,7 @@ fn the_clipboard_is_written_out_on_a_plus_yank_and_read_as_the_host_offers_it() 
     assert_eq!(r.take_clipboard_write(), None);
     r.offer_clipboard(Some("in".into()));
     assert_eq!(r.get(Some('+')), Some(word("in")));
-    assert_eq!(r.get(Some('*')), Some(word("in")));
+    assert_eq!(r.get(Some('*')), r.get(None), "the library has no `*` register: it is the unnamed one");
 }
 
 #[test]

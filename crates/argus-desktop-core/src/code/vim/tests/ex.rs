@@ -42,12 +42,32 @@ fn the_line_is_typed_and_can_be_left() {
 #[test]
 fn only_the_editors_own_commands_exist() {
     // EDITOR-VIM-4: no :q, :wq or :x.
-    for line in ["q", "wq", "x", "e other", "w file", "set number"] {
+    for line in ["q", "wq", "x", "e other"] {
         let mut ed = Ed::new("|abc");
         ed.keys(&format!(":{line}<CR>"));
         assert!(ed.effects.is_empty(), "{line}");
-        assert_eq!(ed.vim.message(), Some(format!("Not an editor command: {line}").as_str()));
+        assert_eq!(ed.vim.message(), Some(format!("Not an editor command \":{line}\"").as_str()));
         assert_eq!(ed.text(), "abc");
+    }
+}
+
+#[test]
+fn write_takes_no_notice_of_what_follows_it() {
+    // The page's own `write` callback ignores its arguments, and the library
+    // does not check them, so `:w file` writes this file.
+    let mut ed = Ed::new("|abc");
+    ed.keys(":w file<CR>");
+    assert_eq!(ed.effects, vec![Effect::Write]);
+}
+
+#[test]
+fn an_option_the_library_does_not_have_is_an_error() {
+    // EDITOR-VIM-14: no ignorecase, hlsearch, tabstop, number.
+    for name in ["number", "ignorecase", "tabstop=2", "hlsearch"] {
+        let mut ed = Ed::new("|abc");
+        ed.keys(&format!(":set {name}<CR>"));
+        let want = format!("Unknown option: {}", name.split('=').next().unwrap());
+        assert_eq!(ed.vim.message(), Some(want.as_str()), "{name}");
     }
 }
 

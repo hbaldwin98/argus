@@ -71,6 +71,6 @@ fn paragraphs() {
 fn yanking_an_object_does_not_leave_the_text() {
     let mut ed = Ed::new("a (b|c) d");
     ed.keys("yi(");
-    assert_eq!(ed.regs.get(None).unwrap().text, "bc");
+    assert_eq!(ed.sh.regs.get(None).unwrap().text, "bc");
     assert_eq!(ed.shows(), "a (|bc) d");
 }

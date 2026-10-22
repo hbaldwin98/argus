@@ -242,7 +242,6 @@ fn keys_that_begin_nothing_are_swallowed_and_chords_are_the_hosts() {
     assert!(ed.keys("Z").handled, "an unbound letter is taken");
     assert_eq!(ed.text(), "abc");
     assert!(!ed.key(Key::ctrl('s')).handled, "Ctrl-s is the host's");
-    assert!(ed.key(Key::ctrl('v')).handled, "Ctrl-v is Vim's block key (EDITOR-VIM-21), taken");
     assert!(!ed.key(Key::of(super::super::key::Code::Tab)).handled);
     assert!(ed.keys("d").handled, "a command half typed is taken");
     assert_eq!(ed.vim.pending().len(), 1);

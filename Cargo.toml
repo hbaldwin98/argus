@@ -8,6 +8,9 @@ members = [
     "crates/argus-desktop",
     "crates/argus-gpui",
 ]
+# The vendored gpui-base the GPUI window is patched onto: a patch, not a member, so `--workspace`
+# neither builds nor lints it as Argus's own code (`patches/gpui-base/README.md`).
+exclude = ["patches/gpui-base"]
 # The desktop window links WebKitGTK on Linux and brings ~250 crates of its
 # own, so a plain `cargo build` or `cargo test` leaves it out; `--workspace`
 # or `-p argus-desktop` builds it. `argus-gpui` is out for the same reason: it
@@ -51,8 +54,8 @@ insta = { version = "1", default-features = false }
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 similar = "2.7"
 rusqlite = { version = "0.40", features = ["bundled"] }
-tree-sitter = "0.27"
-tree-sitter-highlight = "0.27"
+tree-sitter = "0.26"
+tree-sitter-highlight = "0.26"
 tree-sitter-rust = "0.24"
 tree-sitter-typescript = "0.23"
 tree-sitter-javascript = "0.25"
@@ -63,6 +66,10 @@ tree-sitter-yaml = "0.7"
 tree-sitter-toml-ng = "0.7"
 tree-sitter-json = "0.24"
 tree-sitter-md = "0.5"
+# Downloads over HTTPS in this process, checked against the operating system's certificates: the
+# client's updates and the window's grammars.
+ureq = { version = "3.5.0", default-features = false, features = ["rustls", "platform-verifier"] }
+sha2 = "0.11.1"
 windows-sys = "0.61"
 libc = "0.2"
 
@@ -80,3 +87,9 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# gpui-kit pins gpui-base, whose editor has no way to apply an agent's edit without moving the
+# person's cursor or entering undo, and no gutter marks: `patches/gpui-base` is 0.8.0 plus those
+# two additions, small enough to offer upstream (`patches/gpui-base/README.md`, `GPUI.md`).
+[patch.crates-io]
+gpui-base = { path = "patches/gpui-base" }

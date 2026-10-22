@@ -78,10 +78,10 @@ pub fn of(path: &str, source: &str) -> Vec<CodeSymbol> {
         // A tag pattern pairs a `@name` with what kind of thing it names;
         // the `@reference.*` patterns name uses, which an outline leaves out.
         let kind = found
-            .captures()
+            .captures
             .iter()
             .find_map(|c| names[c.index as usize].strip_prefix("definition."));
-        let name = found.captures().iter().find(|c| names[c.index as usize] == "name");
+        let name = found.captures.iter().find(|c| names[c.index as usize] == "name");
         let (Some(kind), Some(name)) = (kind, name) else {
             continue;
         };

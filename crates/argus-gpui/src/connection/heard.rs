@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use argus_desktop_core::checkouts::table::Checkouts;
+use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::code::stage::CodePage;
 use argus_desktop_core::code::start::Opened;
 use argus_desktop_core::chrome::add_project::AddProjectPage;
@@ -71,6 +72,10 @@ pub struct Painted(pub Side);
 /// to open the palette, the sheet or the settings (SHELL-KEYS-9). The window opens it, since only
 /// a window can.
 pub struct Ran(pub Action);
+
+/// Emitted by [`Heard`] for each word of the daemon's about a file the editor has open, and for the
+/// connection going: the editor's buffer is its own, so these pass through and are held by no one.
+pub struct Edited(pub EditEvent);
 
 pub struct Heard {
     pub status: Option<Status>,
@@ -157,6 +162,8 @@ pub struct Heard {
     painted: Vec<Side>,
     /// The actions the session asked the window to run since [`Heard::listen`] last said so.
     ran: Vec<Action>,
+    /// The editor's events heard since [`Heard::listen`] last said so.
+    edited: Vec<EditEvent>,
     /// The loop that drains the channel; held so it runs as long as this does.
     listening: Option<Task<()>>,
 }
@@ -196,6 +203,7 @@ impl Heard {
             noticed: 0,
             painted: Vec::new(),
             ran: Vec::new(),
+            edited: Vec::new(),
             listening: None,
         }
     }
@@ -232,6 +240,9 @@ impl Heard {
         for action in std::mem::take(&mut self.ran) {
             cx.emit(Ran(action));
         }
+        for event in std::mem::take(&mut self.edited) {
+            cx.emit(Edited(event));
+        }
     }
 
     /// Takes in one event; whether it changed what is held.
@@ -266,6 +277,11 @@ impl Heard {
             // Said once and held by no one: the window opens what it names (`Ran`).
             Event::Run { action } => {
                 self.ran.push(action);
+                return false;
+            }
+            // The editor's, said once and held by no one (`Edited`).
+            Event::Edit(event) => {
+                self.edited.push(event);
                 return false;
             }
             // The newest replaces the one showing, even with the same words.
@@ -405,6 +421,7 @@ impl Heard {
 impl EventEmitter<Painted> for Heard {}
 
 impl EventEmitter<Ran> for Heard {}
+impl EventEmitter<Edited> for Heard {}
 
 impl Default for Heard {
     fn default() -> Self {

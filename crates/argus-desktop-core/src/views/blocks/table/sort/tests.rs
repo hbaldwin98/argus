@@ -72,6 +72,51 @@ fn the_first_click_sorts_up_a_second_turns_it_down_and_another_column_starts_up(
     assert_eq!(click(Some(2), true, 1), (1, Direction::Ascending));
 }
 
+#[test]
+fn text_orders_as_the_browsers_locale_compare_does() {
+    // The page's `localeCompare`: an accented letter sits beside its base letter, punctuation
+    // comes first, (code point order gave `\u{e4}` after `z`).
+    let names = ["zebra", "\u{e4}rger", "_hidden", "Apple", "apple", "10", "9"];
+    let words: Vec<Value> = names.iter().map(|n| text(n)).collect();
+    let by: Vec<_> = run(&words, Direction::Ascending).iter().map(|&i| names[i]).collect();
+    // The page lowercases before it compares, so `Apple` and `apple` tie and keep their order.
+    assert_eq!(by, ["_hidden", "10", "9", "Apple", "apple", "\u{e4}rger", "zebra"]);
+}
+
+#[test]
+fn a_figure_against_text_compares_as_the_text_javascript_writes_for_it() {
+    // `String(0.0000001)` is `1e-7`, which sorts after `0.5`; Rust's own `0.0000001` sorts before it.
+    let mixed = [number(0.000_000_1), text("0.5")];
+    assert_eq!(run(&mixed, Direction::Ascending), [1, 0]);
+}
+
+#[test]
+fn zero_and_negative_zero_are_one_figure_so_their_rows_keep_their_order() {
+    let zeros = [number(0.0), number(-0.0), number(0.0), number(-0.0)];
+    assert_eq!(run(&zeros, Direction::Ascending), [0, 1, 2, 3]);
+    assert_eq!(run(&zeros, Direction::Descending), [0, 1, 2, 3]);
+}
+
+#[test]
+fn a_time_with_no_offset_a_month_and_a_year_are_readable_dates() {
+    let at = |t: &str| key(&Value::DateTime { at: t.into() });
+    assert!(matches!(at("2025-01-01T10:00:00"), Key::Number(n) if !n.is_nan()), "local time");
+    assert!(matches!(at("2025-03"), Key::Number(n) if !n.is_nan()));
+    assert!(matches!(at("2025"), Key::Number(n) if !n.is_nan()));
+    for unreadable in ["", "soon", "2025-13", "2025-02-30", "12"] {
+        assert!(matches!(at(unreadable), Key::Number(n) if n.is_nan()), "{unreadable:?}");
+    }
+    let days = [date("2025"), date("2025-03"), date("2024-12-31")];
+    assert_eq!(run(&days, Direction::Ascending), [2, 0, 1]);
+}
+
+#[test]
+fn an_empty_or_unreadable_date_is_one_of_the_unreadable_dates_going_either_way() {
+    let dates = [date(""), date("2025-01-01"), date("soon"), date("2024-01-01")];
+    assert_eq!(run(&dates, Direction::Ascending), [3, 1, 0, 2]);
+    assert_eq!(run(&dates, Direction::Descending), [0, 2, 1, 3]);
+}
+
 mod properties {
     use proptest::prelude::*;
 

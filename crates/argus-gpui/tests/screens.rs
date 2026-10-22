@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
+use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::connection::page::Event;
 use argus_desktop_core::screens::{scenes, NOW};
 use argus_gpui::chrome::shell::Shell;
@@ -31,7 +32,7 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-start,code-search";
+const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search";
 
 /// The scenes the page finishes with a click on a control, and the control: the window is brought to the
 /// same place by pressing it, so the menu or dialog is open in the picture as it is in the page's.
@@ -46,6 +47,24 @@ fn out_dir() -> PathBuf {
     std::env::var_os("ARGUS_GPUI_SHOTS")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/argus-gpui-shots"))
+}
+
+/// What the daemon says to the editor in `name`'s scene, once the window has made the editor: the scene sends
+/// no edit events (the page's own harness delivers them by hand), so the file's text is the lines the page
+/// was sent, answered as the daemon answers an open.
+fn edits_in(name: &str, events: &[Event]) -> Vec<Event> {
+    if name != "code-edit" {
+        return Vec::new();
+    }
+    let Some(page) = events.iter().find_map(|event| match event {
+        Event::Code(page) => Some(page),
+        _ => None,
+    }) else {
+        return Vec::new();
+    };
+    let text: String = page.lines.iter().map(|row| row.parts.iter().map(|(text, _)| text.as_str()).collect::<String>() + "\n").collect();
+    let path = page.path.clone().unwrap_or_default();
+    vec![Event::Edit(EditEvent::Opened { checkout: page.checkout, path, version: 0, text })]
 }
 
 /// Everything a fresh page would hear in `name`'s scene, and the first frames apart: a frame for a cell
@@ -77,8 +96,9 @@ fn write_gpui_screens() {
         cx.spawn(async move |cx| {
             for name in names {
                 let (events, frames) = heard_in(&name);
+                let edits = edits_in(&name, &events);
                 let result = cx.update(|cx| open(cx, events));
-                let handle = match result {
+                let (handle, model) = match result {
                     Ok((handle, heard)) => {
                         // The window has made the cells the rail names, so their frames have a screen.
                         cx.update(|cx| {
@@ -91,7 +111,7 @@ fn write_gpui_screens() {
                                 heard.announce(cx);
                             })
                         });
-                        handle
+                        (handle, heard)
                     }
                     Err(error) => {
                         sink.borrow_mut().push(format!("{name}: {error}"));
@@ -105,6 +125,18 @@ fn write_gpui_screens() {
                 });
                 // Lets the observers lay the events out and the fonts settle.
                 cx.background_executor().timer(Duration::from_millis(500)).await;
+                // The editor asked for its file when it drew the page, so the daemon's answer has a file to land in.
+                if !edits.is_empty() {
+                    cx.update(|cx| {
+                        model.update(cx, |heard, cx| {
+                            for edit in edits {
+                                heard.hear(edit);
+                            }
+                            heard.announce(cx);
+                        })
+                    });
+                    cx.background_executor().timer(Duration::from_millis(500)).await;
+                }
                 if let Some(id) = click_for(&name) {
                     cx.update(|cx| press(cx, handle, id));
                     cx.background_executor().timer(Duration::from_millis(500)).await;

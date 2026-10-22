@@ -4,21 +4,34 @@
 use ropey::Rope;
 
 use super::key::{self, Key};
-use super::registers::Registers;
+use super::shared::Shared;
 use super::{Effect, Mode, Step, Vim};
 
+mod block;
 mod chords;
+mod dot;
 mod ex;
+mod excommands;
 mod insert;
+mod insertion;
+mod keys;
+mod macros;
+mod marks;
+mod motions;
 mod normal;
+mod numbers;
 mod objects;
+mod operators;
 mod properties;
 mod registers;
+mod scripts;
+mod scroll;
+mod search;
 mod visual;
 
 pub struct Ed {
     pub vim: Vim,
-    pub regs: Registers,
+    pub sh: Shared,
     /// Everything the effects asked of the host.
     pub effects: Vec<Effect>,
     /// The first text, and every change told to the host, so a test can
@@ -35,11 +48,11 @@ impl Ed {
         };
         let mut vim = Vim::new(&text);
         vim.place(at);
-        Ed { host: Rope::from_str(&text), vim, regs: Registers::default(), effects: Vec::new() }
+        Ed { host: Rope::from_str(&text), vim, sh: Shared::default(), effects: Vec::new() }
     }
 
-    pub fn with_regs(marked: &str, regs: Registers) -> Ed {
-        Ed { regs, ..Ed::new(marked) }
+    pub fn with_shared(marked: &str, sh: Shared) -> Ed {
+        Ed { sh, ..Ed::new(marked) }
     }
 
     /// Types `notation` (`key::parse`'s) key by key; the last step.
@@ -52,13 +65,18 @@ impl Ed {
     }
 
     pub fn key(&mut self, k: Key) -> Step {
-        let step = self.vim.key(&mut self.regs, k);
+        let step = self.vim.key(&mut self.sh, k);
         if let Some(change) = &step.change {
             change.apply_in_place(&mut self.host);
         }
         self.effects.extend(step.effects.iter().cloned());
         assert_eq!(self.host.to_string(), self.vim.doc().to_string(), "the changes told are the edits made, after {k:?}");
         step
+    }
+
+    /// The window shows lines `top` to `bottom`.
+    pub fn view(&mut self, top: usize, bottom: usize) {
+        self.vim.set_view(top, bottom);
     }
 
     pub fn text(&self) -> String {

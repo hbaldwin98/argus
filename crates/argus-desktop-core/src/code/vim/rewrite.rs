@@ -34,6 +34,14 @@ impl Vim {
         if self.buf.read_only() {
             return;
         }
+        if ch == '\n' {
+            self.break_line(n);
+            return;
+        }
+        if self.mode == Mode::VisualBlock {
+            self.replace_block(ch);
+            return;
+        }
         if self.is_visual() {
             let region = self.selection_region();
             let old = self.buf.text().slice(region.from, region.to);
@@ -52,6 +60,26 @@ impl Vim {
         let text: String = std::iter::repeat_n(ch, n).collect();
         self.buf.replace(self.cursor, end, &text);
         self.cursor += text.len() - ch.len_utf8();
+    }
+
+    /// `r<CR>`: the `n` characters from the cursor are one line break, and
+    /// the new line has the indent of this one. A selection is left as it is.
+    fn break_line(&mut self, n: usize) {
+        if self.is_visual() {
+            return;
+        }
+        let starts = self.chars_from(self.cursor, n);
+        if starts.len() < n || n == 0 {
+            return;
+        }
+        let t = self.buf.text();
+        let end = t.next(*starts.last().expect("n is above 0"));
+        let line = t.line_of(self.cursor);
+        let blanks = t.first_nonblank(line).min(self.cursor);
+        let indent = t.slice(t.line_start(line), blanks);
+        self.buf.replace(self.cursor, end, &format!("\n{indent}"));
+        self.cursor += 1 + indent.len();
+        self.want = self.buf.text().col(self.cursor);
     }
 
     /// `~`: the case of the next `n` characters, and the cursor past them.

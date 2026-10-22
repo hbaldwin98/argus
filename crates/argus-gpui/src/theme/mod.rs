@@ -14,6 +14,7 @@ pub mod derive;
 pub mod kit;
 pub mod scale;
 pub mod see;
+pub mod syntax;
 #[cfg(test)]
 mod stylesheet;
 pub mod themes;

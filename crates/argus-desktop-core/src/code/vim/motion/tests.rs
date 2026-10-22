@@ -1,11 +1,13 @@
 use ropey::Rope;
 
 use super::*;
+use crate::code::vim::marks::Marks;
+use aim::Aim;
 
 fn go(text: &str, from: usize, m: Motion, count: Option<usize>) -> Option<Reach> {
     let r = Rope::from_str(text);
-    let mut last = None;
-    let mut aim = Aim { want: 0, last_find: &mut last, operator: false };
+    let (mut last, marks, mut msg) = (None, Marks::default(), None);
+    let mut aim = Aim::new(0, &mut last, false, &marks, &mut msg);
     reach(m, Text(&r), from, count, &mut aim)
 }
 
@@ -36,16 +38,16 @@ fn a_motion_that_cannot_go_gives_nothing() {
 #[test]
 fn an_operator_may_take_the_last_character() {
     let r = Rope::from_str("ab");
-    let mut last = None;
-    let mut aim = Aim { want: 0, last_find: &mut last, operator: true };
+    let (mut last, marks, mut msg) = (None, Marks::default(), None);
+    let mut aim = Aim::new(0, &mut last, true, &marks, &mut msg);
     assert_eq!(reach(Motion::Right, Text(&r), 1, None, &mut aim).unwrap().to, 2);
 }
 
 #[test]
 fn a_find_is_remembered_for_the_repeat_keys() {
     let r = Rope::from_str("a-b-c-d");
-    let mut last = None;
-    let mut aim = Aim { want: 0, last_find: &mut last, operator: false };
+    let (mut last, marks, mut msg) = (None, Marks::default(), None);
+    let mut aim = Aim::new(0, &mut last, false, &marks, &mut msg);
     assert_eq!(reach(Motion::Find(Find::To, '-'), Text(&r), 0, None, &mut aim).unwrap().to, 1);
     assert_eq!(reach(Motion::RepeatFind { reverse: false }, Text(&r), 1, None, &mut aim).unwrap().to, 3);
     assert_eq!(reach(Motion::RepeatFind { reverse: true }, Text(&r), 3, None, &mut aim).unwrap().to, 1);
@@ -62,8 +64,8 @@ fn a_count_on_g_is_a_line_number() {
 #[test]
 fn up_and_down_aim_for_the_wanted_column() {
     let r = Rope::from_str("abcdef\nab\nabcdef");
-    let mut last = None;
-    let mut aim = Aim { want: 4, last_find: &mut last, operator: false };
+    let (mut last, marks, mut msg) = (None, Marks::default(), None);
+    let mut aim = Aim::new(4, &mut last, false, &marks, &mut msg);
     let down = reach(Motion::Down, Text(&r), 4, None, &mut aim).unwrap();
     assert_eq!(down.to, 8, "a short line gives its last character");
     let again = reach(Motion::Down, Text(&r), down.to, None, &mut aim).unwrap();
@@ -117,8 +119,8 @@ mod properties {
         ) {
             let r = Rope::from_str(&text);
             let from = r.floor_char_boundary(from.min(text.len()));
-            let mut last = Some((Find::To, 'a'));
-            let mut aim = Aim { want: 2, last_find: &mut last, operator };
+            let (mut last, marks, mut msg) = (Some((Find::To, 'a')), Marks::default(), None);
+            let mut aim = Aim::new(2, &mut last, operator, &marks, &mut msg);
             if let Some(reach) = super::reach(m, Text(&r), from, count, &mut aim) {
                 prop_assert!(reach.to <= text.len());
                 prop_assert!(r.is_char_boundary(reach.to));

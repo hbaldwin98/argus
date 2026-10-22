@@ -14,15 +14,18 @@ path = "src/main.rs"
 # Pinned exactly: gpui-kit pins gpui-pre, a weekly snapshot of Zed's main, so
 # any other 0.8.x could move the whole GPUI underneath the port. Default
 # features only (`component` and `assets`: the styled components and the
-# Lucide icons the window controls draw). The `tree-sitter*` features are
-# left off until the editor track picks its grammars; they pull the
-# `tree-sitter` native library, which the workspace already links once.
-gpui-kit = "=0.8.0"
+# Lucide icons the window controls draw), plus `tree-sitter` for the code
+# editor's highlighter: the workspace is on tree-sitter 0.26 (decision 71), so
+# this and argusd link one copy of the native library.
+gpui-kit = { version = "=0.8.0", features = ["tree-sitter"] }
 # The window's logic: the session, the events it publishes and the calls it
 # takes (`argus-desktop-core`), and the protocol types they are made of.
-argus-desktop-core = { path = "../argus-desktop-core" }
+argus-desktop-core = { path = "../argus-desktop-core", features = ["grammars"] }
 argus-protocol = { workspace = true }
 anyhow = { workspace = true }
+# The parser and language types a loaded grammar hands the kit's highlighter; the version the kit
+# links, which the workspace pins (decision 71).
+tree-sitter = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 # `Window::render_to_image` returns an `image::RgbaImage`; `png` writes it
@@ -36,6 +39,9 @@ unicode-width = "0.2"
 arboard = { version = "3", default-features = false, features = ["image-data"] }
 # The day a date field holds, which the date picker is handed and hands back.
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+# The editor's syntax colours, built from the capture table as the kit reads its theme files; and a
+# theme's name as the settings file keeps it, in the tests.
+serde_json = { workspace = true }
 
 # The window's own handle, which the DWM border colour and Mica's tint are set on (GPUI has no
 # call for either); the same version GPUI's `Window` implements `HasWindowHandle` for.
@@ -52,7 +58,9 @@ arboard = { version = "3", default-features = false, features = ["image-data", "
 # this feature, from the same pinned source as the normal dependency.
 gpui-kit = { version = "=0.8.0", features = ["test-support"] }
 proptest = { workspace = true }
-# A theme's name as the settings file keeps it, to hold the data to the stylesheet.
-serde_json = { workspace = true }
+# A grammar store of its own for a test that installs one, and the Rust grammar the editor's
+# colours are held to.
+tempfile = { workspace = true }
+tree-sitter-rust = { workspace = true }
 # The scenes the Tauri page is photographed in, for the side-by-side shots.
-argus-desktop-core = { path = "../argus-desktop-core", features = ["scenes"] }
+argus-desktop-core = { path = "../argus-desktop-core", features = ["grammars", "scenes"] }

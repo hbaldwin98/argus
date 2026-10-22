@@ -398,6 +398,7 @@ live in this crate and a contract written twice drifts in silence.
 | `review/view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
 | `review/session` | one review's exchange with the daemon, as both clients hold it: which sides were asked for and answered, the side on screen and when an empty one gives way, and the picked lines a comment from it is anchored to |
 | `review/agent_comment` | a comment on picked lines to an agent, from a review, a commit's review or the Code stage in either client: whether one may be written, which agent hears it as agents come and go, the words each refusal is said in, and the message that sends it |
+| `review/captures` | what a tree-sitter capture name means as a highlight kind, read by its first word: the one table the daemon's read view and the window's editor colour by, so a token is the same colour in a diff and under the cursor |
 | `review/history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
 | `code` | a checkout's code as the Code stage reads it: which version, a file's lines and the ones that version changed, what the file defines, and where text occurs across the checkout |
 | `code/edit` | a working file edited live: the changes the daemon and a client trade, positioned in UTF-16 units of the text with CRLF read as LF, and the version each is made on |
@@ -497,8 +498,8 @@ to the type or its locking.
 | `review`, `review/queue` | a review's diff, and when it is generated and which asks it answers: one at a time across the daemon, each client holding one place in that turn and read in the order it asked, an ask repeated while its twin waits answered by that one diff, asks for different checkouts, sides or commits each read on their own, and every ask answered |
 | `review/diff` | a review's stable snapshot and its diff, and a commit's |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
-| `pty/cd` | moving a shell to another directory by typing into it: which shell it is, whether it waits at its prompt with nothing of its own running, and the keys that clear its line and `cd` it in its own syntax |
 | `pty/pace` | when a busy pane's next frame may go, and the fine system timer on Windows that keeps it to the interval |
+| `pty/cd` | moving a shell to another directory by typing into it: which shell it is, whether it waits at its prompt with nothing of its own running, and the keys that clear its line and `cd` it in its own syntax |
 | `browser` | a browser run for an agent's pane: started, followed while it runs, and ended when its handle is dropped |
 | `browser/process` | a browser pane's process: what a terminal's keys, sizes and scrollback come to for a pane whose content is a browser, which is nothing |
 | `browser/chrome` | which browser runs, and starting it: headless, on a profile of its own that goes with it and that the next daemon clears if this one is killed, handed its pipe |
@@ -732,7 +733,8 @@ GPUI one both stand on it.
 | `views/blocks/table/columns` | which columns of a table give way as its box narrows: an optional one at 560, and an extension's last four one at a time |
 | `views/blocks/table/filter` | which rows a filter lets through, matched against the lowercased text of their cells, and the words a table says about how many it shows |
 | `views/blocks/table/pick` | picking rows of a table: the keys that name rows, what the select-all box shows, ticking it leaving the rows a filter hides as they were, and the count and the actions that follow the pick |
-| `views/blocks/table/sort` | how rows sort when a header is pressed: what each kind of cell sorts by, an explicit ordering in place of the browser's locale compare, unreadable dates last either way, ties kept in the order drawn, and which way a press turns a column |
+| `views/blocks/table/sort` | how rows sort when a header is pressed: what each kind of cell sorts by, an unreadable date last going up and first coming down as the page's does, ties kept in the order drawn, and which way a press turns a column |
+| `views/blocks/table/collate` | how a table's text orders as the page's `localeCompare` does, by the root collation with its data compiled in, and how a figure reads as text when it is compared against text, as `String(n)` writes it |
 | `views/blocks/table/tsv` | a table as tab-separated text, a tab or newline in a cell made one space |
 | `views/blocks/table/width` | how wide each column is taken to be from what its cells say, a long text cell cut at 280 |
 | `views/blocks/timeline` | the lanes of a timeline in the order they first appear, and the lane each event is in |
@@ -781,32 +783,84 @@ GPUI one both stand on it.
 | `code/clash` | whether a disk change and the person's touch the same text, and a set split into what clears the other and what does not |
 | `code/sync` | the editor's buffer kept in step with the file on disk: what is the person's and unwritten, what is in flight, how a write by anything else is folded in or held aside as a clash until the person says whose stands |
 | `code/live` | one file open for editing as the window holds it: its sync, what the bar says of it, what each word of the daemon's asks in answer, and every file the connection took opened again when it says it is back |
+| `code/typed` | what the person typed, found from the buffer before and after: the one change between two ropes by what they share at each end, on character boundaries |
+| `code/pace` | when what is typed is written, when the file is read again and how long a refused write waits: the editor's timing as numbers and a function of the clock reading |
+| `code/steps` | the change marks of the file and how `]c` and Alt-] step between them: the marked lines, and the first line of the next or previous run |
+| `code/bar` | what the bar over the editor says of the file and in what tone: one set of words for each status |
 | `code/history` | what an editor can take back: each unit of typing as the set that undoes it, and the disk's changes folded past them so an undo never reaches an agent's write |
-| `code/vim` | Vim as a state machine over the editor's rope: keys in, the changes they make and the effects the host must do out, the subset the page's editor offers and what it leaves out |
-| `code/vim/key` | what a key is to Vim, and the `<C-r>` notation that writes one down |
+| `code/vim` | Vim as a state machine over the editor's rope: keys in, the changes they make and the effects the host must do out, with what every editor shares passed in; the library's modes, motions, operators, objects, search, marks, macros and ex commands |
+| `code/vim/shared` | what every editor shares and the window holds: the registers, the last `f`, the search, the macros, the options, the mappings and the lines the prompts remember |
+| `code/vim/host` | what the host asks of Vim and tells it between keys: the text, cursor, selection and the line being typed to show, and the view, wrap width, comment token and read-only flag to set |
+| `code/vim/said` | what the editor's bar says of Vim: the mode named, the keys of a command not finished as Vim writes them, and the line being typed after `:`, `/` or `?`, or what the last key left, or a recording |
+| `code/vim/dispatch` | how a key in normal, visual or operator-pending state is read: `langmap` first, then a user mapping, then the command parser |
+| `code/vim/key` | what a key is to Vim, and the `<C-r>` notation that writes one down and reads it back |
+| `code/vim/page` | a key the page reports as Vim's key: the character with Shift in it, Ctrl chords by their unshifted character, Shift told only for Space and Backspace, and nothing for Alt, the command key, Ctrl-Shift and a letter, or a key Vim is never sent |
 | `code/vim/keymap` | which keys name a motion, read from exactly the keys given so a half typed motion is known as one |
-| `code/vim/text` | the questions Vim asks of the rope: which character is where, where a line starts and ends, a character's class |
+| `code/vim/text` | the questions Vim asks of the rope: which character is where, where a line starts and ends, a character's class, a line and column |
 | `code/vim/word` | where `w`, `e`, `b` and `ge` go, one step of each, with an empty line a word of its own |
+| `code/vim/sentence` | where `(` and `)` go and what `is` and `as` take, by the library's walk over sentences |
+| `code/vim/symbol` | where `]` and `[` with a symbol go: an unmatched bracket, a section, a comment's end, a method, a preprocessor line |
+| `code/vim/tag` | the element around a position, read from the text as markup, for `it` and `at` |
+| `code/vim/screen` | what the window shows as far as Vim needs it: the lines in view, which line `H M L` pick, how far a page goes, and the scroll asked of the window |
+| `code/vim/display` | rows of wrapped lines: where `gj`, `gk`, `g0`, `g^` and `g$` go when the window tells Vim how many characters a row holds |
 | `code/vim/motion` | where a motion goes from a position and how an operator takes it: charwise exclusive or inclusive, or whole lines; none when it cannot go |
-| `code/vim/object` | the span an `iw`, `a"`, `i(` or `ap` stands for around a position, a pair looked for ahead when none encloses |
+| `code/vim/motion/aim` | what a motion needs of the editor beyond the text: the column `j` and `k` aim for, the last find, the window, the marks and the search |
+| `code/vim/motion/find` | the searches of a motion over the text alone: the bracket `%` matches, the character `f` and `t` look for, where a paragraph ends, the first character `^` lands on |
+| `code/vim/object` | the span an `iw`, `a"`, `i(`, `ap`, `is` or `it` stands for around a position, a pair looked for ahead when none encloses |
 | `code/vim/command` | what the keys typed so far say: a register, a count, an operator and its target, or a command of its own; read purely so half a command is just keys kept |
+| `code/vim/command/table` | the commands that are not a motion or an operator with a target: `r`, `m`, `q`, `@`, the `z` family, the search and `:` lines, and those of normal and visual mode alone |
 | `code/vim/region` | the text an operator acts on, made from a motion's reach, an object or the selection as one span of the rope, characters or whole lines |
-| `code/vim/registers` | what yanks and deletes leave and a paste reads, shared by every editor; the clipboard register offered and written out by the host |
-| `code/vim/buffer` | the text Vim edits with its undo: each edit lands at once, is gathered into the open unit and told to the host as one change set per key |
-| `code/vim/operate` | what each operator does to a region: delete and yank into the registers, change into insert, indent, and the three cases, the cursor left where Vim leaves it |
+| `code/vim/registers` | what yanks and deletes leave and a paste reads, shared by every editor; the blocks, the last command and search, macros as text, the clipboard offered and written out by the host |
+| `code/vim/marks` | the places Vim remembers and keeps with the text: marks, the jump list as the library rings it, each following every edit |
+| `code/vim/jump` | what `m`, `Ctrl-o`, `Ctrl-i` and a selection's end do with the marks and the jump list |
+| `code/vim/buffer` | the text Vim edits with its undo and its marks: each edit lands at once, is gathered into the open unit and told to the host as one change set per key |
+| `code/vim/operate` | what each operator does to a region: delete and yank into the registers, change into insert, indent, the cases and `g?`, wrap, comment and `=`, the cursor left where Vim leaves it |
+| `code/vim/wrap` | `gq` and `gw`: lines wrapped to the text width by the library's hard wrap |
+| `code/vim/comment` | `gc`: line comments toggled with the token the file's language has |
 | `code/vim/normal` | running a command that has been read: a motion moves, an operator is given its target's text, the rest are commands of their own, a change kept for `.` |
-| `code/vim/number` | `Ctrl-a` and `Ctrl-x`: the decimal number at or after the cursor changed by the count |
-| `code/vim/insert` | insert and replace mode: the keys that type, the few that edit what was typed, and Escape repeating the text for a count |
-| `code/vim/visual` | what visual mode does with the selection beyond moving it: an operator on it and an object taken into it |
+| `code/vim/number` | `Ctrl-a` and `Ctrl-x`: the decimal, hex, binary or octal number at or after the cursor changed by the count |
+| `code/vim/insert` | insert and replace mode: the keys that type, the few that edit what was typed, `Ctrl-o` for one command, and Escape repeating the text for a count and into a block's rows |
+| `code/vim/visual` | what visual mode does with the selection beyond moving it: starting, switching and leaving it, `gv`, `o`, an operator on it and an object taken into it |
+| `code/vim/block` | visual block mode: the rectangle between the anchor and the cursor as rows, what an operator does to it, and what is typed after `I`, `A` and `c` going into every row |
 | `code/vim/rewrite` | the commands that rewrite text at the cursor without an operator's target: `r`, `~` and `J` |
-| `code/vim/paste` | `p` and `P`: a register put after or before the cursor, on lines of its own if it is lines, and over a selection |
-| `code/vim/range` | which lines an ex command names: `%`, `'<,'>`, and addresses `N`, `.`, `$` with an offset |
-| `code/vim/ex` | the `:` line typed key by key and run: write, undo and redo, a line number, and the library's own error for the rest |
+| `code/vim/paste` | `p`, `P`, `]p` and `[p`: a register put after or before the cursor, as lines or as a block, fitted to the indent, and over a selection |
+| `code/vim/seek` | what `/`, `?`, `*`, `n` and `gn` do to the cursor: the line typed run, the word under the cursor made the pattern, the next match taken into a selection or an operator |
+| `code/vim/search` | the search every editor shares: the pattern last searched for, which way it runs and what `:s` last put in |
+| `code/vim/search/pattern` | what a typed pattern is: made into a regular expression the way the library does, with a smart case and Vim's own syntax translated when `pcre` is off |
+| `code/vim/search/scan` | finding matches in the text: the library's search cursor, and `n`'s walk over it that passes the match the cursor is on and wraps round the ends |
+| `code/vim/prompt` | the line typed after `:`, `/` or `?`: a text with a caret that keys edit, Up and Down through its history, Enter and Escape |
+| `code/vim/recall` | what the `:` and `/` lines remember: each line run and the walk through those that begin with what is typed |
+| `code/vim/macros` | the macro state every editor shares: the register being recorded into, the last one played, how deep playing is and how many keys it may still run |
+| `code/vim/replay` | keys that stand for other keys: recording into a register, playing one, what a mapping and `:normal` type, and an insert mapping half typed |
+| `code/vim/maps` | the mappings `:map` makes: keys that stand for other keys in a mode, found by the keys typed |
+| `code/vim/options` | the options `:set` reads and writes, their short names, which are an editor's own, and `langmap` read |
+| `code/vim/ex` | the `:` line run: the range and the command name read off the front, the command found in the library's table and handed the rest, the line kept in the `:` register |
+| `code/vim/ex/range` | the front of an ex line: the lines it names (`%`, numbers, marks, patterns, offsets) and the command's name |
+| `code/vim/ex/table` | the ex commands there are and how a typed name is matched to one by its short name |
+| `code/vim/ex/editor` | the ex commands on the editor and not on lines: `:w`, `:startinsert`, a bare line number |
+| `code/vim/ex/lines` | the ex commands over lines: `:d`, `:y`, `:pu` and `:j` |
+| `code/vim/ex/keys` | `:normal`: keys typed as normal-mode commands on each line of a range |
+| `code/vim/ex/substitute` | `:s`: the matches in the lines named replaced, with groups, the flags `g`, `c` and `i` and a count, asking about each match with `c` |
+| `code/vim/ex/global` | `:g`, `:v` and `:g!`: a command run on each line with a match or none, the lines held as the commands edit the text |
+| `code/vim/ex/sort` | `:sort`: lines put in order, reversed, by number or by a pattern, with repeats dropped |
+| `code/vim/ex/set` | `:set`, `:setlocal` and `:setglobal`: an option read, written, flipped or turned off |
+| `code/vim/ex/show` | `:registers` and `:marks`: what the registers hold and where the marks are, as the message the editor shows |
+| `code/vim/ex/delmarks` | `:delmarks`: marks removed by letter and by range of letters |
+| `code/vim/ex/map` | the mapping commands: `:map` and its forms, `:unmap` and `:mapclear` |
 | `code/stage` | the Code stage as the window holds it once opened — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the comment being written, the go-to-file field, the search, and the review it was opened from — the daemon's answers it takes, what its gestures ask of the daemon and leave to the window, and the page and gestures it trades with the page, last sent while it is up |
 | `code/tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
 | `code/side` | what the Code stage's files column says and sends from its one field: the text the field shows for what Rust holds (a search as `#query`), whether typed text still means the open list, the search's options and its one summary line, the go-to list's empty line, and what a key in the field or the glob field comes to |
 | `code/start` | what the Code stage's file area says while no file is read: the changed files cut at ten and how many more, what stands in for none, the files opened lately kept by the window (eight a checkout), the hint, and the search match the cursor is on that the area offers to open |
 | `code/file` | what the Code stage's file area says for the file read: which state it is in (failed, none, loading, a note, the lines), the header's name, folder and facts, and the file's rows with the places lines were removed between them, as the diff's rows so one view draws them |
+| `code/grammar` | the tree-sitter grammars the Code stage's editor colours with: the ones Argus knows, finding and downloading one, keeping it, and running it |
+| `code/grammar/known` | the grammars Argus knows by extension or name: each an npm package's WebAssembly parser and highlight queries, pinned to a version and the SHA-256 and size of every file, found by whole name then by lower-cased extension |
+| `code/grammar/net` | how a grammar's bytes come from the network: HTTPS to the registry and the two jsDelivr hosts and no other address, a refusal said as `<url> answered <status>`, and a table of answers for the flows above it to be tested with |
+| `code/grammar/fetch` | what grammar to offer for a file and downloading it: the pinned one, or the first npm package found by searching that ships a top-level parser and a highlight query; each pinned file refused if its hash differs, a found one never vouched for |
+| `code/grammar/store` | the grammars installed, kept as `<name>.wasm`, `<name>.scm` and a `.json` in the instance's config directory, written whole or not at all and held in memory when the disk will not take them, under one key for a file that the store and the lookup share |
+| `code/grammar/load` | a grammar ready to parse with: the parser compiled by tree-sitter's WebAssembly runtime and its query accepted by it, once, and a parser of its own for each user; what is loaded held by name for a first paint |
+| `code/grammar/say` | what the editor's bar says of a grammar: the offer with where it comes from and what it costs, and what became of installing it |
+| `code/grammar/install` | finding a grammar when a file opens and installing it on request: the installed one colours, a pinned one installs unasked when Settings says so, every other is offered and waits; nothing is kept that did not load |
+| `code/grammar/slot` | what the editor's bar holds of a file's grammar: nothing, an offer waiting on a yes, an install under way or the sentence of how one failed, with the transitions, "Not now" remembered by name for the window, nothing offered while a clash holds the bar, and which files are of one kind for a grammar |
 | `code/outline` | what the outline column says: the badge of a definition's kind, the sentence for a file that defines nothing the outline knows, the heading over the changes |
 | `code/ruler` | where the change ruler puts a mark at its rows, the band of the file on screen, how far a press or a drag scrolls the file, and what a mark is titled, in the measures of whatever drew the rows |
 | `code/scroll` | where the file scrolls to when the cursor moves: only when the cursor is off screen, then a third of the way down, and what tells a move from a redraw |
@@ -932,11 +986,25 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `chrome/stage/stopped` | the card over the window while the daemon was stopped on purpose, on the overlay host where Escape and the scrim do not dismiss it: up exactly while the link is stopped, and its Reconnect asks the session to reconnect |
 | `chrome/window_controls` | the window's three controls: what each looks like, the red of the close, and what it asks of the window |
 | `code` | what the Code stage shows and does: its frame of three columns, the files column, the start panel and the file read |
-| `code/file` | the file read in the middle column: its header, the lines drawn read-only by the shared diff view with the places lines were removed between them, the change ruler beside them and the comment box under the line it is on; each file scrolled where it was left and only a moved cursor brought into view, so the editor that is to stand in for the lines takes the body and keeps the rest |
+| `code/file` | the file read in the middle column: its header, the lines drawn read-only by the shared diff view with the places lines were removed between them, the change ruler beside them and the comment box under the line it is on; each file scrolled where it was left and only a moved cursor brought into view; while the stage edits the file the editor takes the lines place, with no ruler, and the comment box is an in-flow block above it |
 | `code/file/header` | the file's header: the name first and the folder after it, the version when it is not the working tree, the facts and counts, and the buttons Back, Open in editor and Outline, each sending the gesture its key sends |
 | `code/file/ruler` | the change ruler, the file's scrollbar: a button for each change or hit at its rows' place, the band of the file on screen, and the press and the drag after the decided 5 px that scroll the file, placed from the list's own measures every frame |
 | `code/file/scroll` | where the file is scrolled: each file's offset kept by path and put back when its lines return, and a moved cursor brought into view by core's rule once the list knows how tall it is |
 | `code/file/states` | what stands where the lines would while there are none: why the read failed, the note on a binary or oversized file, and the five loading rows |
+| `code/file/editor` | the editor that stands in for the file's lines while the stage edits it: a session for each file opened, the kit's patched editor for the one on screen, the bar over it, and the previous file's editor kept up until the next file's text arrives so no frame is blank, Vim's keys, the grammar's colours and the clash drawn in the text |
+| `code/file/editor/session` | one file open in the editor: the kit's editor state once the daemon has sent the text, the rope it last held, the burst of typing, the timers, the marks it draws, Vim's state and what it draws, the clash marks and the grammar slot |
+| `code/file/editor/receive` | what the editor does with the daemon's words: the first text mounts the view, a change from the disk is shown without moving the cursor or entering undo, and what the sync asks of the daemon is sent |
+| `code/file/editor/typing` | what the person types and when it is written: the change found against the text last seen and told to the sync, the write after a pause, and a file no longer on screen written and let go |
+| `code/file/editor/marks` | what is drawn over the text: the change marks in the gutter, kept with the text as it is typed, and an agent's write lit for a moment |
+| `code/file/editor/moves` | where the cursor goes besides where a key puts it: to Rust's line, to the next or previous change, and to the lines a selection covers for a comment |
+| `code/file/editor/keys` | which chords are the editor's own while it has the keys (write now, go to a file, search, comment, step between changes) and the key hook that takes them from the kit's editor, after Vim, which hears every key first while it is on |
+| `code/file/editor/bar` | the bar over the editor: the file's status in its colour; at its right the grammar on offer with Install and Not now, or while a clash is held the two buttons that say whose text stands; and Vim's mode, the keys of a command begun and the line being typed |
+| `code/file/editor/clash` | a held clash drawn: the person's clashing text marked in the danger colour with a wavy underline wherever typing has carried it, and a strip under the bar of what the agent wrote at each, since the kit's editor has no inline widget |
+| `code/file/editor/grammar` | the colours of the file in the editor: the installed grammar colouring the first paint, otherwise one found, offered or installed off the draw, every open editor of the kind coloured when one loads, and "Not now" |
+| `code/file/editor/grammar/register` | a grammar that loaded put in the kit's registry: its query with the kit's capture names, and a parser factory that hands each parse a fresh parser without compiling the module again |
+| `code/file/editor/vim` | Vim in the editor: every key sent to core's state machine before the editor's own chords, each change it makes applied to the buffer as neither typed nor undoable by the kit and told to the sync as the person's, the registers shared by every file, and Vim switched on and off live |
+| `code/file/editor/vim/look` | what Vim draws over the text: the cursor as a block fill on its character, a visual selection filled, and the kit's caret put where Vim's cursor is |
+| `code/file/editor/vim/effects` | what Vim asks of the window beyond a change: write now, step to a change mark, scroll a line to a place in the view, and a selection to the clipboard |
 | `code/side` | the files column: the one field over it, and under it the tree with its scope row, the go-to matches or the search; which list and every sentence is core's, a press sends its gesture, and each list keeps where it was scrolled and follows the cursor's row || `code/side/find` | the one field: its edits sent as they stand to whichever list is open, reaching it opening the go-to list, the search's three options at its right, and the keys of the jump and filter places run before its own || `code/side/jump` | the go-to list: the matches core ranked, the lit one, a press reading a path, and the line when nothing matches || `code/side/search` | the search: the include globs, one summary line, and the hits grouped by file with the matched text lit, drawn only while they answer the query and options as they stand || `code/side/tree` | the scope row and the tree: the checkout's name, All or Changed, the rows core ordered and marked, the ignored top-level entries held in one fold that opens to names only || `code/stage` | the Code stage: the loading bars until a page is open, the three columns with their sashes reporting on release, the page kept after the stage goes, the strip's trail and keys button, and the keys it takes as it appears || `code/stage/keys` | the Code layer of the key walk: the stage's keys sent as the actions they are, the window's own run as anywhere, Escape answered by the stage and never leaving it || `code/stage/outline` | the right column while the outline is on and a file is read: its header with the button that puts it away, and its sash on the left edge || `code/stage/widths` | how wide the columns are from the stylesheet's rules in their order: the usual width, the stage's own ladder, the narrow window's cap, what the person dragged, the wider results while searching and the outline given up under 900 || `code/start` | what fills the file area with no file read: the changed files and those opened lately as rows that read them, the hint, or the card offering the match the cursor is on |
 | `code/side` | the files column: the one field over it, and under it the tree with its scope row, the go-to matches or the search; which list and every sentence is core's, a press sends its gesture, and each list keeps where it was scrolled and follows the cursor's row |
 | `code/side/find` | the one field: its edits sent as they stand to whichever list is open, reaching it opening the go-to list, the search's three options at its right, and the keys of the jump and filter places run before its own |
@@ -1113,6 +1181,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `theme/define` | what a theme is as data: its base palette, its sixteen ANSI colours and the overrides it lays over `:root`, each named for the variable it sets |
 | `theme/derive` | how a theme's palette and overrides become the whole token space by the page's formulas: the palette aliased to the semantic roles, the overrides laid over them and `:root`'s scale, the remaining roles mixed from the result |
 | `theme/kit` | how the token space becomes gpui-kit's theme, the one place the kit's roles are filled, and how installing another set of tokens switches the theme |
+| `theme/syntax` | the colours of a tree-sitter capture from the token space: each kind of `argus-protocol`'s capture table as a theme colour, the kit's syntax colours built from it, and a highlight query with the captures the kit would leave uncoloured renamed to the ones it colours the same |
 | `theme/scale` | the page's scale as plain numbers (type, spacing, radii, sizes, shadows, focus, motion, the mix shares) with `:root`'s values, and how a theme's overrides change them |
 | `theme/see` | what shows through the window: the background-opacity setting as the alpha of the three large fills and of nothing else |
 | `theme/stylesheet` | the check that holds Ledger's token space, and the reader every theme's check uses, to the stylesheet: its palette, ANSI colours, scale and derived roles read back from `style.css` |
@@ -2508,7 +2577,12 @@ an agent reading the comment needs no more than one.
 A working-tree file is shown in an editor rather than read: no key opens it. A commit's or the
 index's is read as above. Only a daemon that listed `code-edit` edits, and only a file the stage
 could read as text. Vim's keys are on unless Settings turns them off (`vim` in the window's
-settings); with them `:w` writes and `]c`/`[c` step between changes. The keys the stage needs with
+settings); with them `:w` writes and `]c`/`[c` step between changes. The Vim a window without the
+page's editor offers is core's `code/vim` state machine, which holds the whole of the page's
+`codemirror-vim` set (search, marks and the jump list, macros, visual block, the `z` and paging
+keys, sentence and tag objects, `g?` `gq` `gc`, the ex table with `:s :g :v :normal :sort :set
+:map`), with what every editor shares (registers, search, macros, mappings, options) in `Shared`.
+It never predicts what the window must do: scrolling, copying and writing are `Effect`s. The keys the stage needs with
 the editor holding them are the editor's own: Ctrl P, Ctrl Shift F (the checkout's search; Ctrl F
 is the file's), and Alt C, which makes the selection's lines the pick and opens the comment box over
 the editor. The gutter marks the lines the working tree changed as Rust last read the file, moved

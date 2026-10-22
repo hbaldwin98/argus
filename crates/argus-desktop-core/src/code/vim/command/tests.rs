@@ -90,7 +90,7 @@ fn half_a_command_wants_more_and_nonsense_is_bad() {
     for half in ["d", "2d", "\"", "\"a", "g", "dg", "dfx".trim_end_matches('x'), "r", "]", "di", "g~", "d2"] {
         assert_eq!(read(half, false), Parse::Need, "{half:?}");
     }
-    for bad in ["dZ", "dq", "\"!", "Z", "di!", "rx1", "]x", "<C-g>", "dd2"] {
+    for bad in ["dZ", "dq", "\"!", "Z", "di!", "rx1", "<C-g>", "dd2"] {
         assert_eq!(read(bad, false), Parse::Bad, "{bad:?}");
     }
 }
@@ -106,7 +106,9 @@ fn a_selection_takes_operators_at_once() {
     assert_eq!(v("x"), on(Operator::Delete, false));
     assert_eq!(v("D"), on(Operator::Delete, true));
     assert_eq!(v("c"), on(Operator::Change, false));
-    assert_eq!(v("S"), on(Operator::Change, true));
+    assert_eq!(v("C"), on(Operator::Change, true));
+    assert_eq!(v("S"), Action::ChangeLines);
+    assert_eq!(v("R"), Action::ChangeLines);
     assert_eq!(v("y"), on(Operator::Yank, false));
     assert_eq!(v("Y"), on(Operator::Yank, true));
     assert_eq!(v(">"), on(Operator::Indent, false));
@@ -114,7 +116,7 @@ fn a_selection_takes_operators_at_once() {
     assert_eq!(v("U"), on(Operator::Upper, false));
     assert_eq!(v("~"), on(Operator::Swap, false));
     assert_eq!(v("g~"), on(Operator::Swap, false));
-    assert_eq!(v("o"), Action::OtherEnd);
+    assert_eq!(v("o"), Action::OtherEnd { same_line: false });
     assert_eq!(v("iw"), Action::Select { object: Object::Word { big: false }, inner: true });
     assert_eq!(v("w"), Action::Move(Motion::WordForward { big: false }));
 }

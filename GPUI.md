@@ -235,6 +235,41 @@ Vim layer; the live sync with agents is built for GPUI too. It is its own
 track, inventoried and specced after the spike, and does not hold the
 spike up.
 
+
+### What the editor spike found
+
+`gpui/editor-plan.md` is the plan; this is what building the widget (`crates/argus-gpui/src/code/file/editor`)
+showed of `gpui-kit`'s `Editor` (`gpui-base` 0.8.0).
+
+- **A key hook for Vim exists, in GPUI.** `App::intercept_keystrokes` runs before bindings and
+  text, and the window's one interceptor (`keys/root`) walks the layers. The editor registers its
+  focus handle as a `Field` (`keys/field`): a key it takes is stopped for the kit's editor (so
+  neither its bindings nor, on Windows, its `WM_CHAR` hear it), and a key it holds is the kit's to
+  type. Tests send keystrokes through the window to prove both (`editor/tests/keys`). Not checked:
+  macOS and Linux text suppression, and IME in normal mode.
+- **No gutter marks, line backgrounds beyond fills, or external edits.** A fill or frame range
+  decoration covers text (a line's fill is its text's width, and nothing on an empty line), the
+  gutter had no hook, and no call applied an agent's write without moving the cursor, entering
+  undo and emitting `Change`. `patches/gpui-base` adds both of the last two, wired by
+  `[patch.crates-io]` and described in its README: `apply_external_edits`, which also rewrites the
+  undo entries it can and drops the ones it cannot, and `RangeDecorationStyle::GutterBar` and
+  `GutterTick`. A third, `set_caret_color`, gives the editor the page's accent caret without
+  recolouring text fields. All are written to be offered upstream.
+- **The styled `Editor` resets state each draw**: it sets `readonly` from its own builder flag, so a
+  closed file's read-only state is kept by the view and passed to `Editor::readonly` every time.
+  Its look comes from `Theme.highlight_theme`, which `theme::kit::highlight` builds from the tokens
+  (background, gutter, active line, line numbers); its syntax colours are the kit's until the
+  grammars are wired.
+- **One rope.** `gpui-base` and `argus-desktop-core` pin ropey `=2.0.0-beta.1`, so `EditorState::text()`
+  is core's `Rope` and the change sets of `code::change` apply to it with no copy.
+- **Local edits** reach the view as `InputEvent::Change` with no range; the view finds the change
+  against the rope it last saw (`code::typed`, on the rope, not a string), which is the plan's
+  option A. A multi-cursor edit is one wide change.
+- **Not yet built:** Vim over the key hook (core's state machine is ready), the block caret (a text
+  decoration can invert the character under the cursor, but nothing shows on an empty line or at
+  the end of a line without a patch to the caret), the grammars' colours, and the grammar offer in
+  the bar.
+
 ## Phases
 
 Each phase is a workflow. The coordinator reads its result before starting

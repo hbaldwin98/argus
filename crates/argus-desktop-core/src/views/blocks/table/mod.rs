@@ -1,5 +1,6 @@
 //! The rules an agent's table block is sorted, filtered, picked from, copied, narrowed and sized by.
 
+pub mod collate;
 pub mod columns;
 pub mod filter;
 pub mod pick;

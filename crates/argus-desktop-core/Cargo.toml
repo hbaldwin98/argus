@@ -8,6 +8,9 @@ repository.workspace = true
 [features]
 # The screenshot scenes (`screens`) outside this crate's tests.
 scenes = ["dep:png"]
+# The Code editor's grammars installed on request (`code/grammar`), which only the GPUI window
+# loads: wasmtime and the downloader stay out of a build of the Tauri window alone.
+grammars = ["dep:tree-sitter", "dep:ureq", "dep:sha2"]
 
 [dependencies]
 argus-protocol = { workspace = true }
@@ -17,6 +20,9 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+# How two strings order as the browser's `localeCompare` orders them, for a table's text columns
+# (`views/blocks/table/collate`): the root collation, with its data compiled in.
+icu_collator = "2"
 # The version alacritty uses, so a cell's width here is the daemon's.
 unicode-width = "0.2"
 # Times said in the person's own zone (`system::clock`).
@@ -28,6 +34,16 @@ url = "2"
 # editor holds, so the build has one. Bytes are its own unit; UTF-16 is converted at the wire
 # (`code/wire`).
 ropey = { version = "=2.0.0-beta.1", features = ["metric_chars", "metric_lines_lf", "metric_utf16"] }
+# The patterns of Vim's search and ex lines, which the page runs as JavaScript regular expressions:
+# `fancy-regex` has the look-around and back-references they may use, over `regex`, as
+# `argus-desktop-core/code/vim/search` reads them.
+fancy-regex = "0.11"
+# Grammars the window installs on request run as WebAssembly (`code/grammar/load`), which is
+# tree-sitter's `wasm` feature, so wasmtime is linked into whatever turns on `grammars`.
+tree-sitter = { workspace = true, features = ["wasm"], optional = true }
+# Where a grammar is downloaded from, and the hash a pinned one is held to.
+ureq = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 # The screens' browser pictures, for the scenes outside this crate's tests.
 png = { version = "0.18", optional = true }
 
@@ -37,6 +53,8 @@ png = { version = "0.18", optional = true }
 windows-version = "0.1"
 
 [dev-dependencies]
+# This crate's own tests cover the grammars whichever window is being built.
+argus-desktop-core = { path = ".", features = ["grammars"] }
 # Writes connection/page.rs's types as TypeScript for the page, in test
 # builds only; they land in crates/argus-desktop/page/src/bindings
 # (`TS_RS_EXPORT_DIR` in .cargo/config.toml).

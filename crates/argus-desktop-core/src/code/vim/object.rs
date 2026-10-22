@@ -1,8 +1,11 @@
 //! The text an `iw`, `a"`, `i(` or `ap` stands for around a position: a
 //! word, a quoted string, what a pair of brackets holds, a paragraph. The
 //! span is `from..to`, `to` excluded. A pair with nothing enclosing the
-//! position is looked for ahead, as the library does (EDITOR-VIM-11).
+//! position is looked for ahead, as the library does (EDITOR-VIM-11). A
+//! sentence is read as the library reads it, a tag as markup.
 
+use super::sentence;
+use super::tag;
 use super::text::{Class, Text};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,6 +14,8 @@ pub enum Object {
     Quote(char),
     Pair { open: char, close: char },
     Paragraph,
+    Sentence,
+    Tag,
 }
 
 impl Object {
@@ -25,6 +30,8 @@ impl Object {
             '[' | ']' => Object::Pair { open: '[', close: ']' },
             '<' | '>' => Object::Pair { open: '<', close: '>' },
             'p' => Object::Paragraph,
+            's' => Object::Sentence,
+            't' => Object::Tag,
             _ => return None,
         })
     }
@@ -50,6 +57,11 @@ pub fn span(object: Object, inner: bool, t: Text, at: usize, count: usize) -> Op
         Object::Quote(q) => quote(t, at, q, inner),
         Object::Pair { open, close } => pair(t, at, open, close, inner, count),
         Object::Paragraph => paragraph(t, at, inner, count),
+        Object::Sentence => {
+            let (from, to) = sentence::object(t, t.pos(at), count, !inner);
+            Some(chars(t.at(from.0, from.1), t.at(to.0, to.1)))
+        }
+        Object::Tag => tag::object(t, at, inner, count).map(|(from, to)| chars(from, to)),
     }
 }
 

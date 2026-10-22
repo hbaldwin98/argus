@@ -3,8 +3,17 @@
 //! cannot go (`fx` with no `x`) gives nothing, and the command it was part
 //! of is dropped.
 
+pub mod aim;
+pub mod find;
+
+use super::display;
+use super::search::scan;
+use super::sentence;
+use super::symbol;
 use super::text::Text;
 use super::word;
+use aim::Aim;
+use find::{find, first_or_last, matching, paragraph};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Find {
@@ -65,6 +74,56 @@ pub enum Motion {
     Plus,
     Minus,
     Underscore,
+    /// `(` and `)`
+    Sentence { forward: bool },
+    /// `]` and `[` with the symbol after them.
+    Symbol { forward: bool, ch: char },
+    /// `]'` and `['`, and the backtick pair: the next or last mark.
+    JumpMark { forward: bool, linewise: bool },
+    /// `'x` and `` `x ``
+    Mark { name: char, linewise: bool },
+    /// `H`, `M` and `L`
+    Top,
+    Middle,
+    Bottom,
+    /// `Ctrl-f` and `Ctrl-b`
+    Page { forward: bool },
+    /// `Ctrl-d` and `Ctrl-u`
+    HalfPage { forward: bool },
+    /// `gj` and `gk`
+    Display { forward: bool },
+    /// `g0` and `g^`
+    DisplayStart,
+    /// `g$`
+    DisplayEnd,
+    /// `n` (forward) and `N`
+    SearchNext { forward: bool },
+    /// `*`, `#`, `g*` and `g#`: search for the word under the cursor.
+    Star { forward: bool, whole: bool },
+    /// `gn` and `gN`, which a selection or an operator takes apart; not a
+    /// reach of its own.
+    Match { forward: bool },
+}
+
+impl Motion {
+    /// Whether the cursor's place before it is put in the jump list.
+    pub fn jumps(self) -> bool {
+        matches!(
+            self,
+            Motion::Top
+                | Motion::Middle
+                | Motion::Bottom
+                | Motion::FileStart
+                | Motion::FileEnd
+                | Motion::ParagraphBack
+                | Motion::ParagraphForward
+                | Motion::Matching
+                | Motion::Mark { .. }
+                | Motion::Symbol { .. }
+                | Motion::SearchNext { .. }
+                | Motion::Star { .. }
+        )
+    }
 }
 
 /// Where a motion lands and how an operator takes it.
@@ -93,125 +152,6 @@ impl Reach {
     fn lines(to: usize) -> Reach {
         Reach { linewise: true, inclusive: true, ..Reach::excl(to) }
     }
-}
-
-/// What a motion needs of the editor beyond the text.
-pub struct Aim<'a> {
-    /// The column `j` and `k` are aiming for.
-    pub want: usize,
-    /// The last `f`, `F`, `t` or `T`, which `;` and `,` repeat.
-    pub last_find: &'a mut Option<(Find, char)>,
-    /// An operator is waiting: `l` may then reach the line's end, which a
-    /// bare cursor cannot rest on.
-    pub operator: bool,
-}
-
-fn matching(t: Text, from: usize) -> Option<usize> {
-    let line = t.line_of(from);
-    let end = t.line_end(line);
-    let mut p = from;
-    let (open, dir, close) = loop {
-        let c = t.char_at(p).filter(|_| p < end)?;
-        match c {
-            '(' => break ('(', true, ')'),
-            '[' => break ('[', true, ']'),
-            '{' => break ('{', true, '}'),
-            ')' => break (')', false, '('),
-            ']' => break (']', false, '['),
-            '}' => break ('}', false, '{'),
-            _ => p = t.next(p),
-        }
-    };
-    let mut depth = 0usize;
-    let mut q = p;
-    loop {
-        let c = t.char_at(q)?;
-        if c == open {
-            depth += 1;
-        } else if c == close {
-            depth -= 1;
-            if depth == 0 {
-                return Some(q);
-            }
-        }
-        if dir {
-            q = t.next(q);
-            if q >= t.len() {
-                return None;
-            }
-        } else {
-            if q == 0 {
-                return None;
-            }
-            q = t.prev(q);
-        }
-    }
-}
-
-fn find(t: Text, from: usize, kind: Find, ch: char, count: usize, repeat: bool) -> Option<usize> {
-    let line = t.line_of(from);
-    let (start, end) = (t.line_start(line), t.line_end(line));
-    let forward = matches!(kind, Find::To | Find::Till);
-    let till = matches!(kind, Find::Till | Find::TillBack);
-    let mut p = from;
-    // `;` after `t` must not stop at the character it is already against.
-    let mut first = true;
-    for _ in 0..count {
-        loop {
-            if forward {
-                p = t.next(p);
-                if p >= end {
-                    return None;
-                }
-            } else {
-                if p <= start {
-                    return None;
-                }
-                p = t.prev(p);
-            }
-            let skip = till && repeat && first && {
-                let near = if forward { t.next(from) } else { t.prev(from) };
-                near == p
-            };
-            if t.char_at(p) == Some(ch) && !skip {
-                break;
-            }
-            first = false;
-        }
-        first = false;
-    }
-    Some(match (till, forward) {
-        (false, _) => p,
-        (true, true) => t.prev(p),
-        (true, false) => t.next(p),
-    })
-}
-
-fn paragraph(t: Text, from: usize, count: usize, forward: bool) -> usize {
-    let mut line = t.line_of(from);
-    for _ in 0..count {
-        // Past the blank lines the paragraph starts on, then to the next one.
-        while t.is_blank_line(line) && (if forward { line < t.last_line() } else { line > 0 }) {
-            line = if forward { line + 1 } else { line - 1 };
-        }
-        loop {
-            if forward {
-                if line >= t.last_line() {
-                    return t.len();
-                }
-                line += 1;
-            } else {
-                if line == 0 {
-                    return 0;
-                }
-                line -= 1;
-            }
-            if t.is_blank_line(line) {
-                break;
-            }
-        }
-    }
-    t.line_start(line)
 }
 
 /// Where `motion` takes a cursor at `from`, `count` times (`None` is no
@@ -323,6 +263,90 @@ pub fn reach(motion: Motion, t: Text, from: usize, count: Option<usize>, aim: &m
             let target = (line + n - 1).min(t.last_line());
             Some(Reach::lines(t.line_start(target)))
         }
+        Motion::Sentence { forward } => {
+            let to = sentence::find(t, t.pos(from), n, forward);
+            Some(Reach::excl(t.at(to.0, to.1)))
+        }
+        Motion::Symbol { forward, ch } => {
+            let to = symbol::find(t, t.pos(from), n, forward, ch);
+            Some(Reach::excl(t.at(to.0, to.1)))
+        }
+        Motion::Mark { name, linewise } => {
+            let at = aim.marks.get(name)?.min(t.len());
+            if linewise {
+                Some(Reach::lines(first_or_last(t, t.line_of(at))))
+            } else {
+                Some(Reach::excl(at))
+            }
+        }
+        Motion::JumpMark { forward, linewise } => {
+            let marks = aim.marks.lower();
+            let mut best = from;
+            for _ in 0..n {
+                let cursor = best;
+                for &mark in &marks {
+                    let wrong = if forward { mark < cursor } else { cursor < mark };
+                    if wrong || (linewise && t.line_of(mark) == t.line_of(cursor)) {
+                        continue;
+                    }
+                    let between = if forward { cursor < mark && mark < best } else { best < mark && mark < cursor };
+                    if cursor == best || between {
+                        best = mark;
+                    }
+                }
+            }
+            if linewise {
+                best = first_or_last(t, t.line_of(best.min(t.len())));
+            }
+            Some(Reach::excl(best.min(t.len())))
+        }
+        Motion::Top | Motion::Middle | Motion::Bottom => {
+            let view = aim.view.within(t.last_line());
+            let target = match motion {
+                Motion::Top => view.nth_from_top(n),
+                Motion::Middle => view.middle(),
+                _ => view.nth_from_bottom(n),
+            };
+            Some(Reach::lines(first_or_last(t, target)))
+        }
+        Motion::Page { forward } | Motion::HalfPage { forward } => {
+            let view = aim.view.within(t.last_line());
+            let target = if matches!(motion, Motion::Page { .. }) {
+                view.paged(line, n, forward, t.last_line())
+            } else {
+                view.halved(line, aim.explicit.then_some(n), forward, t.last_line())
+            };
+            if target == line {
+                return None;
+            }
+            Some(Reach { vertical: true, ..Reach::excl(t.at_col(target, aim.want)) })
+        }
+        Motion::Display { forward } => {
+            let mut p = from;
+            for _ in 0..n {
+                match display::vertical(t, p, forward, aim.wrap, aim.want) {
+                    Some(next) => p = next,
+                    None => break,
+                }
+            }
+            (p != from).then_some(Reach { vertical: true, ..Reach::excl(p) })
+        }
+        Motion::DisplayStart => Some(Reach::excl(display::row_start(t, from, aim.wrap))),
+        Motion::DisplayEnd => Some(Reach::excl(display::row_end(t, from, aim.wrap))),
+        Motion::SearchNext { forward } => {
+            let query = aim.search?;
+            let prev = if aim.reversed { forward } else { !forward };
+            let text = t.0.to_string();
+            match scan::find_next(query, &text, from, prev, n) {
+                Some(to) => Some(Reach::excl(to)),
+                None => {
+                    let hint = if aim.pcre { " (set nopcre to use Vim regexps)" } else { "" };
+                    *aim.message = Some(format!("No match found {query}{hint}"));
+                    None
+                }
+            }
+        }
+        Motion::Star { .. } | Motion::Match { .. } => None,
         Motion::Plus | Motion::Minus | Motion::Underscore => {
             let target = match motion {
                 Motion::Plus => line + n,
@@ -334,17 +358,6 @@ pub fn reach(motion: Motion, t: Text, from: usize, count: Option<usize>, aim: &m
             }
             Some(Reach::lines(first_or_last(t, target)))
         }
-    }
-}
-
-/// Where `^` and `gg` land: the first character that is not blank, or the
-/// last one on a line of blanks.
-fn first_or_last(t: Text, line: usize) -> usize {
-    let p = t.first_nonblank(line);
-    if p >= t.line_end(line) {
-        t.last_char(line)
-    } else {
-        p
     }
 }
 
