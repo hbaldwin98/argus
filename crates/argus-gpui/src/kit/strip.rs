@@ -9,7 +9,7 @@
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
 use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, transparent_black, App, Div, ElementId, Role, SharedString};
+use gpui_kit::{div, linear_color_stop, linear_gradient, prelude::*, transparent_black, App, Div, ElementId, Role, SharedString};
 
 use crate::kit::icon_button::{icon_button, Node};
 use crate::kit::icons::Glyph;
@@ -32,6 +32,23 @@ pub fn bar(tokens: &Tokens) -> Div {
         .bg(tokens.bg_chrome)
         .border_b_1()
         .border_color(tokens.line)
+}
+
+/// `.tabs-scroll`'s mask: the last `--sp-24` of a strip's scrolling box runs into the bar's colour,
+/// the cue that more lies beyond. It is always there, as the page's is, and a pointer goes through it.
+/// GPUI has no mask, so a gradient from the bar's own colour lies over the box's right edge; the
+/// caller puts it last in a relative box that holds the scroll.
+pub fn fade(id: impl Into<ElementId>, tokens: &Tokens) -> impl IntoElement {
+    let ground = tokens.bg_chrome;
+    div()
+        .id(id)
+        .test_support()
+        .absolute()
+        .top_0()
+        .right_0()
+        .bottom_0()
+        .w(rem(tokens.sp_24))
+        .bg(linear_gradient(90.0, linear_color_stop(ground.opacity(0.0), 0.0), linear_color_stop(ground, 1.0)))
 }
 
 /// `.dock-tab`, `.ctab`: a chip `--icon-btn` tall. The selected one is on the

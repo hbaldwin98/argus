@@ -32,7 +32,7 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog,features-list,features-board,capture,feature-work,feature-record,feature-flows,link,link-map,link-draft,link-typed,link-refused,reconcile,reconcile-ticked,reconcile-edited,reconcile-none,reconcile-asked,reconcile-carrying,reconcile-failed,palette-commands,palette-query,palette-features-found,palette-reading,palette-none,palette-moved,shortcuts-filtered,shortcuts-none,shortcuts-section,new,sessions,sessions-ended,transcript";
+const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,browser-driving,browser-long-tabs,browser@720,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog,features-list,features-board,capture,feature-work,feature-record,feature-flows,link,link-map,link-draft,link-typed,link-refused,reconcile,reconcile-ticked,reconcile-edited,reconcile-none,reconcile-asked,reconcile-carrying,reconcile-failed,palette-commands,palette-query,palette-features-found,palette-reading,palette-none,palette-moved,shortcuts-filtered,shortcuts-none,shortcuts-section,new,sessions,sessions-ended,transcript";
 
 /// The scenes the page finishes with a click on a control, and the control: the window is brought to the
 /// same place by pressing it, so the menu or dialog is open in the picture as it is in the page's.
@@ -82,7 +82,13 @@ fn variant(name: &str) -> Option<(&'static str, &'static [Act])> {
 
 /// The scene `name` is made from: its own, or the core scene its variant starts from.
 fn base_of(name: &str) -> &str {
+    let name = name.split('@').next().unwrap_or(name);
     variant(name).map_or(name, |(base, _)| base)
+}
+
+/// The window's width in CSS pixels: `@<width>` after a scene's name, else the page's.
+fn width_of(name: &str) -> f32 {
+    name.split_once('@').and_then(|(_, width)| width.parse().ok()).unwrap_or(WIDTH)
 }
 
 /// Types and presses `acts` into the window, a frame apart.
@@ -168,6 +174,8 @@ fn write_gpui_screens() {
             for name in names {
                 // `scene+control` is the scene with that control pressed, for what only the window holds (a diagram expanded).
                 let (scene, pressed) = name.split_once('+').map_or((name.as_str(), None), |(scene, id)| (scene, Some(id.to_owned())));
+                // `scene@<width>` is the scene in a window that many CSS pixels wide (the page's shots are all one size).
+                let width = width_of(scene);
                 let (events, frames) = heard_in(scene);
                 let edits = edits_in(scene, &events);
                 // Each scene is its own window: the overlays an earlier one left up are not this one's.
@@ -196,7 +204,7 @@ fn write_gpui_screens() {
                 // The platform does not honour the opening size, so ask again, and give
                 // the resize its message before the frame is read.
                 cx.update(|cx| {
-                    let _ = cx.update_window(handle, |_, window, _| window.resize(size(px(WIDTH), px(HEIGHT))));
+                    let _ = cx.update_window(handle, |_, window, _| window.resize(size(px(width), px(HEIGHT))));
                 });
                 // Lets the observers lay the events out and the fonts settle.
                 cx.background_executor().timer(Duration::from_millis(500)).await;
@@ -212,7 +220,7 @@ fn write_gpui_screens() {
                     });
                     cx.background_executor().timer(Duration::from_millis(500)).await;
                 }
-                if let Some((_, acts)) = variant(scene) {
+                if let Some((_, acts)) = variant(scene.split('@').next().unwrap_or(scene)) {
                     act(cx, handle, acts).await;
                     cx.background_executor().timer(Duration::from_millis(300)).await;
                 }
@@ -238,7 +246,7 @@ fn write_gpui_screens() {
                         // The page is shot at CSS 1440x900 and a device scale of 2; this
                         // machine's display scale is whatever it is, so bring the frame to
                         // the same pixels and the same logical size.
-                        let image = image::imageops::resize(&image, (WIDTH * 2.0) as u32, (HEIGHT * 2.0) as u32, image::imageops::FilterType::CatmullRom);
+                        let image = image::imageops::resize(&image, (width * 2.0) as u32, (HEIGHT * 2.0) as u32, image::imageops::FilterType::CatmullRom);
                         image.save(&path).unwrap();
                         println!("{name}: {}x{} px, scale {scale}, viewport {:?} -> {}", image.width(), image.height(), viewport, path.display());
                     }

@@ -60,7 +60,7 @@ impl BrowserPane {
         let reporter = Reporter::new(pane, caller.clone());
         let arming = reporter.clone();
         Self {
-            address: Address::new(pane, caller.clone(), focus.clone(), window, cx),
+            address: Address::new(pane, caller.clone(), window, cx),
             _observing: cx.observe(&heard, move |_, _, cx| {
                 arming.arm(cx);
                 cx.notify();

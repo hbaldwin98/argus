@@ -1358,6 +1358,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `theme/themes/rose_pine` | Rose Pine as data: dusky violet surfaces and rose as the one warm accent |
 | `views` | the renderers an agent's view is drawn with, shared by every surface that draws agent content |
 | `views/actions` | the buttons an agent put in a view: a press tells the agent through its pane or, in a saved view, the daemon; a button waits with a spinner, is disabled with a reason when the daemon cannot take presses, and asks first when it has a confirm |
+| `views/age` | the half-minute timer a view's age is said again on, so an agent's view and a saved view's `built <ago>` do not go stale between the daemon's events |
 | `views/agent` | the views agents showed, drawn: the panel with its tab strip and the page over the stage |
 | `views/agent/acts` | what a view's head offers to press: the agent's buttons, then the `...` menu of refresh, pop out or put back, and close, each a request |
 | `views/agent/head` | a view's header: title, status and buttons on one row, then the subject link and the meta line whose age the panel draws again on a timer |

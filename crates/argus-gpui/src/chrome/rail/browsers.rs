@@ -120,7 +120,9 @@ impl RailView {
                 }),
             )
             .child(div().flex().items_center().justify_center().size(rem(tokens.nav_icon_cell)).flex_none().child(dot(format!("nav-browser-{pane}-dot"), sub.status, tokens)))
-            .child(div().flex_1().min_w_0().truncate().child(sub.agent.clone()))
-            .child(div().min_w_0().max_w(gpui_kit::relative(0.5)).truncate().typed(tokens.type_small).text_color(tokens.fg_muted).child(sub.meta.clone()))
+            // `.nav-sub .ttl`: both cut with an ellipsis. The name is `.grow` (a basis of nothing) and the
+            // title keeps its words, so a narrow row loses the name first, to nothing, then the title.
+            .child(div().id(SharedString::from(format!("nav-browser-{pane}-name"))).test_support().flex_1().min_w_0().truncate().child(sub.agent.clone()))
+            .child(div().id(SharedString::from(format!("nav-browser-{pane}-meta"))).test_support().min_w_0().truncate().typed(tokens.type_small).text_color(tokens.fg_muted).child(sub.meta.clone()))
     }
 }

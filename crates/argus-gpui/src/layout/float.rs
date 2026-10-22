@@ -103,6 +103,8 @@ impl FloatsView {
         let pressed = panel.clone();
         let (gone, words) = (panel.clone(), if closes { format!("Close {}", float.title) } else { format!("Hide {}", float.title) });
         let saved_marks = crate::views::saved::head::marks(&panel, self.heard.read(cx).saved.as_deref(), tokens);
+        let middle = panel.clone();
+        let is_saved = matches!(panel, Panel::Saved(_));
         let gesture = move |panel: Panel| if closes { DockGesture::Close { panel } } else { DockGesture::Hide { panel } };
         // A press on a button of the head is the button's, not the frame's move.
         let keep = |button: gpui_kit::Div| button.flex_shrink_0().on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
@@ -120,6 +122,20 @@ impl FloatsView {
                     this.press(event.position, held, cx);
                 }),
             )
+            // A saved view's head closes on the middle button as the page's `.saved-head` does
+            // (`closesOnMiddle`): the press is the head's alone, the release both on it.
+            .when(is_saved, |head| {
+                head.on_mouse_down(MouseButton::Middle, |_, window, cx| {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                })
+                .on_aux_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                    if event.is_middle_click() {
+                        cx.stop_propagation();
+                        this.ask(Call::Docks { gesture: gesture(middle.clone()) }, cx)
+                    }
+                }))
+            })
             .child(div().min_w_0().truncate().child(float.title.clone()))
             .children(saved_marks)
             .child(div().flex_1())

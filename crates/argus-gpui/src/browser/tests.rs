@@ -218,3 +218,23 @@ fn a_sub_row_is_lit_only_on_the_workspace_and_only_for_a_pane_in_its_grid(cx: &m
     assert!(!lit(cx, &opened, "nav-browser-106"), "the Browsers stage lights none");
     assert!(!lit(cx, &opened, "nav-browser-105"));
 }
+
+/// SHELL-BROWSER-14 and the page's `.nav-sub .ttl`: the name is `.grow` and the title keeps its words,
+/// so a row too narrow for both loses the name first, and the title is cut at the row's edge.
+#[gpui_kit::test]
+fn a_narrow_sub_row_cuts_the_name_before_the_title_and_the_title_at_the_edge(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    let mut short = browser(105, "trim", true);
+    short.title = "Docs".into();
+    let mut long = browser(106, "screens", true);
+    long.title = "A page whose title is far too long to share the sidebar with anybody's name at all".into();
+    let mut events = on_stage(Connection::Connected);
+    events.push(Event::Browsers(Box::new(BrowsersPage { browsers: vec![short, long] })));
+    hear(cx, &opened, events);
+    let bounds = |cx: &mut TestAppContext, id: &str| cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).bounds()).unwrap();
+    let (row, name, meta) = (bounds(cx, "nav-browser-105"), bounds(cx, "nav-browser-105-name"), bounds(cx, "nav-browser-105-meta"));
+    assert!(name.size.width > gpui_kit::px(10.0) && meta.right() <= row.right(), "room for both: the name takes what the title leaves");
+    let (row, name, meta) = (bounds(cx, "nav-browser-106"), bounds(cx, "nav-browser-106-name"), bounds(cx, "nav-browser-106-meta"));
+    assert!(meta.right() <= row.right(), "the title is cut at the row's edge, not past it");
+    assert!(f32::from(name.size.width) < 1.0, "and the name went first, to nothing");
+}

@@ -129,14 +129,12 @@ pub fn strip(from: Strip, tokens: &Tokens, cx: &App) -> impl IntoElement {
         .test_support()
         .aria_label("Views")
         .child(
-            h_flex()
-                .id("views-tabs-scroll")
+            div()
+                .relative()
                 .flex_1()
                 .min_w_0()
-                .gap(rem(tokens.sp_4))
-                .overflow_x_scroll()
-                .track_scroll(scroll)
-                .children(tabs),
+                .child(h_flex().id("views-tabs-scroll").test_support().w_full().gap(rem(tokens.sp_4)).overflow_x_scroll().track_scroll(scroll).children(tabs))
+                .child(strip::fade("views-tabs-fade", tokens)),
         )
         .child(
             div()
