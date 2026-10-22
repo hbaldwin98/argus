@@ -44,6 +44,7 @@ pub fn build(outline: &Outline, cursor: Option<WorkRef>, changes: Option<&Change
                         key: task.task.external.clone(),
                         changed: changes.is_some_and(|c| c.tasks.contains(&task.task.id)),
                         on,
+                        subtasks: None,
                     }
                 }
                 WorkRef::Decision(_) => {
@@ -58,17 +59,41 @@ pub fn build(outline: &Outline, cursor: Option<WorkRef>, changes: Option<&Change
                         key: None,
                         changed: changes.is_some_and(|c| c.decisions.contains(&decision.decision.id)),
                         on,
+                        subtasks: None,
                     }
                 }
             }
         })
         .collect();
+    let rows = counted(rows);
     let (task, decision) = match cursor {
         Some(WorkRef::Task(id)) => (outline.task(id).map(|row| task_detail(row, outline)), None),
         Some(WorkRef::Decision(id)) => (None, outline.decision(id).map(|row| decision_detail(row, outline))),
         None => (None, None),
     };
     Work { rows, task, decision }
+}
+
+/// Each task row told how many of the tasks beneath it are done: the decisions in between do not
+/// count, but do not stop the walk down either. A leaf has none.
+fn counted(mut rows: Vec<WorkRow>) -> Vec<WorkRow> {
+    for at in 0..rows.len() {
+        if !matches!(rows[at].at, WorkAt::Task { .. }) {
+            continue;
+        }
+        let (mut done, mut total) = (0, 0);
+        for next in &rows[at + 1..] {
+            if next.depth <= rows[at].depth {
+                break;
+            }
+            if matches!(next.at, WorkAt::Task { .. }) {
+                total += 1;
+                done += usize::from(next.state == "done");
+            }
+        }
+        rows[at].subtasks = (total > 0).then_some((done, total));
+    }
+    rows
 }
 
 fn at(work: WorkRef) -> WorkAt {
@@ -152,6 +177,15 @@ mod tests {
             ]
         );
         assert!(open.rows[0].on, "the cursor starts on the first row");
+    }
+
+    // The page counted these itself (`subtasks` in `work.ts`): the tasks beneath a task, done of all,
+    // the decisions between them not counted and not in the way.
+    #[test]
+    fn a_task_row_counts_the_tasks_beneath_it_and_a_leaf_or_a_decision_counts_none() {
+        let open = work(None);
+        let counts: Vec<_> = open.rows.iter().map(|r| (r.label.as_str(), r.subtasks)).collect();
+        assert_eq!(counts, [("1", Some((1, 2))), ("1.1", None), ("1.2", None), ("D1", None), ("2", None), ("D2", None)]);
     }
 
     #[test]

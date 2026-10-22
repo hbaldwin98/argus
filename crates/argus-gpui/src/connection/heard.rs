@@ -18,6 +18,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use argus_desktop_core::board::capture_note::CapturePage;
 use argus_desktop_core::browser::BrowsersPage;
 use argus_desktop_core::checkouts::table::Checkouts;
 use argus_desktop_core::code::edit::EditEvent;
@@ -146,14 +147,17 @@ pub struct Heard {
     /// The Checkouts stage's table, whole, as the last event said: `None` until the first, which the
     /// stage draws as loading bars. Shared, so the stage keeps its rows across unrelated events.
     pub checkouts: Option<Rc<Checkouts>>,
-    /// The Feature stage's index, whole, as the last event said: `None` until the first, which the
-    /// stage draws as loading bars. Shared, so the stage keeps its rows across unrelated events.
+    /// The Feature stage's index, with the feature open in it (`open`), whole, as the last event said:
+    /// `None` until the first, which the stage draws as loading bars. Shared, so the stage keeps its rows across unrelated events.
     pub features: Option<Rc<Features>>,
     /// The Code stage, whole, as the last event said and kept after the stage goes: the session never
     /// takes it back, and the page keeps what it last drew for the person coming back to it. `open`
     /// false is the stage not being there (four loading bars). Shared, so the stage keeps its rows across
     /// unrelated events.
     pub code: Option<Rc<CodePage>>,
+    /// The note a new feature is being written as, while it is open: `open` false is the session's
+    /// word that none is.
+    pub capture: Option<Rc<CapturePage>>,
     /// The browsers agents run, as the Browsers stage lists them, whole as the last event said.
     pub browsers: Rc<BrowsersPage>,
     /// Their latest pictures, decoded off the UI thread and shared by every place that draws one.
@@ -235,6 +239,7 @@ impl Heard {
             checkouts: None,
             features: None,
             code: None,
+            capture: None,
             browsers: Rc::default(),
             pictures: Pictures::default(),
             opened: Opened::default(),
@@ -364,7 +369,8 @@ impl Heard {
                 return false;
             }
             Event::Checkouts(table) => self.checkouts = Some(Rc::new(*table)),
-            Event::Features(index) => self.features = Some(Rc::new(*index)),
+            Event::Features(page) => self.features = Some(Rc::new(*page)),
+            Event::Capture(page) => self.capture = page.open.then(|| Rc::new(*page)),
             Event::Code(page) => {
                 self.opened.remember(&page);
                 self.code = Some(Rc::new(*page));

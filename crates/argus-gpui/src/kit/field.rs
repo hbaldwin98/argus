@@ -53,6 +53,15 @@ impl Field {
         self.input.update(cx, |input, cx| input.set_value(text, window, cx));
     }
 
+    /// [`Field::put`] with the caret after the text, as a browser leaves a field whose value was set:
+    /// a form opened on a title is typed on at its end.
+    pub fn fill(&self, text: &str, window: &mut Window, cx: &mut App) {
+        self.input.update(cx, |input, cx| {
+            input.set_value(text, window, cx);
+            input.set_selected_range(text.len()..text.len(), cx);
+        });
+    }
+
     /// Says `text` while the field is empty: the name a project gets, which changes as the folder does.
     pub fn say_when_empty(&self, text: &str, window: &mut Window, cx: &mut App) {
         self.input.update(cx, |input, cx| input.set_placeholder(text.to_owned(), window, cx));
@@ -62,6 +71,14 @@ impl Field {
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.input.update(cx, |input, cx| input.focus(window, cx));
     }
+}
+
+/// A multi-line field's text set with the caret after it ([`Field::fill`]'s for a textarea).
+pub fn fill_area(area: &Entity<gpui_kit::component::input::TextareaState>, text: &str, window: &mut Window, cx: &mut App) {
+    area.update(cx, |area, cx| {
+        area.set_value(text, window, cx);
+        area.set_selected_range(text.len()..text.len(), cx);
+    });
 }
 
 #[cfg(test)]

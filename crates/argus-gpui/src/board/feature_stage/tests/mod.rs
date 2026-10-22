@@ -172,6 +172,8 @@ pub(crate) fn open_view() -> argus_desktop_core::connection::page::FeatureView {
         reconciled: None,
         changes: None,
         reconcile: None,
+        reconcile_entry: None,
+        tickets: None,
         tasks_done: 0,
         tasks_total: 0,
         decided: 0,
