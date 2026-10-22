@@ -14,7 +14,7 @@ use argus_desktop_core::connection::page::Call;
 use gpui_kit::component::input::{EditorState, InputEvent, Rope, TabSize};
 use gpui_kit::{AppContext as _, Context, Focusable as _, Window};
 
-use super::session::Key;
+use super::session::{Key, TAB};
 use super::CodeEditor;
 use crate::keys::field::Fields;
 use crate::theme::Tokens;
@@ -78,7 +78,7 @@ impl CodeEditor {
         let state = cx.new(|cx| {
             // No wrapping and the page's four-space indent; the guides, the auto-closed brackets
             // and the context menu are CodeMirror's, which the page's editor does not have.
-            let mut state = EditorState::new(window, cx).default_value(text.to_string()).soft_wrap(false).indent_guides(false).tab_size(TabSize { tab_size: 4, hard_tabs: false });
+            let mut state = EditorState::new(window, cx).default_value(text.to_string()).soft_wrap(false).indent_guides(false).tab_size(TabSize { tab_size: TAB, hard_tabs: false });
             if let Some(language) = language.clone() {
                 state = state.language(language);
             }
@@ -94,6 +94,12 @@ impl CodeEditor {
         }));
         let weak = cx.weak_entity();
         let handle = state.focus_handle(cx);
+        // Vim's block is an outline whenever the editor does not have the keys.
+        let (gained, lost) = (key.clone(), key.clone());
+        session.focus = vec![
+            cx.on_focus_in(&handle, window, move |this, _, cx| this.focus_moved(&gained, true, cx)),
+            cx.on_focus_out(&handle, window, move |this, _, _, cx| this.focus_moved(&lost, false, cx)),
+        ];
         session.keys = Some(Fields::of(cx).register(window, handle, move |press, window, cx| weak.update(cx, |this, cx| this.key(press, window, cx)).unwrap_or(crate::keys::layer::Verdict::Held)));
         session.snapshot = text;
         session.state = Some(state.clone());

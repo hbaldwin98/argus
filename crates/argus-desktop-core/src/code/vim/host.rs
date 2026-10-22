@@ -103,6 +103,12 @@ impl Vim {
         self.comment = token.map(str::to_owned);
     }
 
+    /// The width `=` indents each level of open brackets by, for a language
+    /// written in braces; none (the page's case) leaves `=` changing nothing.
+    pub fn set_indent_unit(&mut self, unit: Option<usize>) {
+        self.indent_unit = unit.filter(|u| *u > 0);
+    }
+
     /// The matches of the last search, for the window to mark, until a
     /// command that clears them (`:noh`, or any ex command run).
     pub fn highlight<'a>(&self, sh: &'a Shared) -> Option<&'a search::pattern::Query> {

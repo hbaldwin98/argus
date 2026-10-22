@@ -3,6 +3,7 @@
 //! and the timers that write, read again, retry and unlight. The sync, the status and what to ask
 //! of the daemon are core's `Live`, kept beside it in `Lives`.
 
+use argus_desktop_core::code::clash::Clash;
 use argus_desktop_core::code::grammar::slot::Slot;
 use argus_desktop_core::code::pace::Typing;
 use argus_desktop_core::code::steps::Mark;
@@ -27,10 +28,19 @@ pub(super) struct Marks {
     pub said: String,
 }
 
-/// What Vim draws over the text: the cursor's block and the selection.
+/// The page's four-space indent: what the editor indents by, and what `=` indents one level of
+/// brackets by.
+pub(super) const TAB: usize = 4;
+
+/// What Vim draws over the text: the cursor's block, or its outline while the editor is not
+/// focused, the character the block stands on drawn in the editor's own colour, the selection and
+/// the matches of the last search.
 pub(super) struct Look {
     pub block: RangeDecorationCollection,
+    pub outline: RangeDecorationCollection,
+    pub inverted: TextDecorationCollection,
     pub selected: RangeDecorationCollection,
+    pub matches: RangeDecorationCollection,
 }
 
 pub(super) struct Session {
@@ -62,10 +72,16 @@ pub(super) struct Session {
     /// Vim's text, cursor and undo for this file, made on its first key while Vim is on.
     pub vim: Option<Vim>,
     pub look: Option<Look>,
+    /// Whether the editor has the keys: Vim's block is an outline while it has not.
+    pub focused: bool,
+    pub focus: Vec<Subscription>,
     /// The person's clashing text, marked while the sync holds a clash.
     pub clashes: Option<TextDecorationCollection>,
-    /// What the agent wrote at each clash, with the line it is on.
-    pub theirs: Vec<(usize, String)>,
+    /// The clashes the sync holds, each with what the agent wrote there. The widgets stand at these
+    /// and not at the marks' ranges: the kit drops a mark that has gone empty (the person deleted
+    /// the clashing text), and zipping the survivors with the words would hand a later clash the
+    /// wrong ones. The sync maps them through every edit, and `clash` takes them again after each.
+    pub theirs: Vec<Clash>,
     /// What the bar says of this file's colours: an offer, an install, a failure.
     pub grammar: Slot,
     /// The language the editor was told to colour with.
@@ -92,6 +108,8 @@ impl Session {
             unlight: None,
             vim: None,
             look: None,
+            focused: true,
+            focus: Vec::new(),
             clashes: None,
             theirs: Vec::new(),
             grammar: Slot::None,
