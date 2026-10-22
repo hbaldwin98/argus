@@ -46,6 +46,8 @@ ureq = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 # The screens' browser pictures, for the scenes outside this crate's tests.
 png = { version = "0.18", optional = true }
+# A browser's picture as bytes, decoded once from the base64 the daemon sends (`browser/picture`).
+base64 = { workspace = true }
 
 # The build, which says whether Mica and Acrylic are there to offer
 # (`settings::backdrop`).

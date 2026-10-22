@@ -1873,8 +1873,23 @@ fn tree_with_browsers(owners: &[(u64, u64)]) -> Vec<ProjectInfo> {
 /// Three agents each with a browser open, and a picture of each. The
 /// window shows the first agent, so its browser opens beside it.
 fn browsing() -> Window {
+    browsing_beside(P_TRIM)
+}
+
+/// `browsing`, with the first agent's browser having no tab open: it is
+/// listed, and has no picture (SHELL-BROWSER-10).
+fn browsing_tabless() -> Window {
+    browsing_with(P_TRIM, true)
+}
+
+/// `browsing`, with the window on `agent`, whose browser opens beside it.
+fn browsing_beside(agent: u64) -> Window {
+    browsing_with(agent, false)
+}
+
+fn browsing_with(agent: u64, tabless: bool) -> Window {
     use argus_protocol::{BrowserDriver, BrowserFrame, BrowserPage, BrowserTab};
-    let mut w = Window::showing(P_TRIM);
+    let mut w = Window::showing(agent);
     w.receive(ServerMsg::Tree(tree_with_browsers(&[(B_TRIM, P_TRIM), (B_SCREENS, P_SCREENS), (B_FAULTS, P_FAULTS)])));
     let open = [
         (B_TRIM, P_TRIM, "http://localhost:5173/settings", "Argus — Settings", [64, 112, 224]),
@@ -1882,6 +1897,11 @@ fn browsing() -> Window {
         (B_FAULTS, P_FAULTS, "http://127.0.0.1:8080/login", "Sign in", [200, 90, 40]),
     ];
     for (pane, owner, url, title, accent) in open {
+        if tabless && pane == B_TRIM {
+            let page = BrowserPage { pane: PaneId(pane), owner: PaneId(owner), url: String::new(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None };
+            w.receive(ServerMsg::BrowserPage(page));
+            continue;
+        }
         let tabs = vec![
             BrowserTab { id: format!("{pane}-docs"), url: "https://docs.rs/".into(), title: "Docs.rs".into() },
             BrowserTab { id: format!("{pane}-work"), url: url.into(), title: title.into() },
@@ -2068,6 +2088,23 @@ pub fn scenes() -> Vec<Scene> {
         }),
         scene("browser", "Browser — an agent's browser, a pane beside it in the grid", || {
             let mut w = browsing();
+            w.call(Call::Resize { side: Side::Workspace, rows: ROWS, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(0), rows: ROWS, cols: COLS / 2 - 1 });
+            w.s
+        }),
+        scene("browsers-tabless", "Browsers — an agent's browser whose last tab closed has no picture", || {
+            let mut w = browsing_tabless();
+            w.call(Call::ShowBrowsers { pane: None });
+            w.s
+        }),
+        scene("browser-tabless", "Browser — a pane with no tab open says so and offers a new one", || {
+            let mut w = browsing_tabless();
+            w.call(Call::Resize { side: Side::Workspace, rows: ROWS, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(0), rows: ROWS, cols: COLS / 2 - 1 });
+            w.s
+        }),
+        scene("browser-held", "Browser — the person holds it: the agent's input is refused", || {
+            let mut w = browsing_beside(P_FAULTS);
             w.call(Call::Resize { side: Side::Workspace, rows: ROWS, cols: COLS / 2 - 1 })
                 .call(Call::Resize { side: Side::Beside(0), rows: ROWS, cols: COLS / 2 - 1 });
             w.s
@@ -2263,4 +2300,25 @@ fn write_screens() {
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../argus-desktop/page/test/screens");
     std::fs::create_dir_all(&out).unwrap();
     std::fs::write(out.join("scenes.json"), format!("[\n{}\n]\n", lines.join(",\n"))).unwrap();
+}
+
+#[test]
+fn the_browser_scenes_cover_a_tab_less_browser_and_a_held_one() {
+    use crate::browser::status::{status, Status};
+    use crate::connection::page::Event;
+    let heard = |name: &str| {
+        let scene = scenes().into_iter().find(|scene| scene.name == name).expect(name);
+        let events = (scene.build)().everything(NOW);
+        let page = events.iter().find_map(|e| if let Event::Browsers(page) = e { Some((**page).clone()) } else { None }).expect("the stage is sent");
+        let shots: Vec<u64> = events.iter().filter_map(|e| if let Event::BrowserShot(shot) = e { Some(shot.pane) } else { None }).collect();
+        (page, shots)
+    };
+    let (page, shots) = heard("browsers-tabless");
+    let tabless = page.browsers.iter().find(|b| b.pane == B_TRIM).unwrap();
+    assert!(tabless.shown.is_none() && tabless.tabs.is_empty());
+    assert!(!shots.contains(&B_TRIM), "a tab-less browser has no picture");
+    assert!(shots.contains(&B_SCREENS) && shots.contains(&B_FAULTS), "the others keep theirs");
+    let (page, _) = heard("browser-held");
+    let held = page.browsers.iter().find(|b| b.pane == B_FAULTS).unwrap();
+    assert_eq!(status(held), Some(Status::Held));
 }

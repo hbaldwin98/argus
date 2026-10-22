@@ -677,6 +677,13 @@ GPUI one both stand on it.
 | `settings/remembered` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
 | `chrome` | the rail and the status bar around the stage |
 | `browser` | the browsers agents' panes run, as this window holds them: where each is, its owner and latest picture, and which the window draws |
+| `browser/address` | what the address field turns typed text into: a bare host made `https://`, a server on this machine `http://`, a typed scheme kept, blank text none |
+| `browser/key_input` | a key on a browser's focused picture as the browser takes it: a named key or text typed, and none for a Ctrl or Meta chord, which stays the window's |
+| `browser/keys` | which pane has the keys and whether it is a browser, and the call that gives a cell the keys when a press lands in it |
+| `browser/picture` | a browser's latest picture as bytes a window draws, decoded from the daemon's base64 once and shared, newest by a serial |
+| `browser/status` | who has a browser, said once for a tile, a cell's strip and a nav sub-row: held, else the agent driving, else the person driving, else nothing |
+| `browser/viewport` | which of a cell's reports of its room are told to the daemon: nothing under 50 px, nothing already told, a fast run held to its newest, and what a reconnect tells again |
+| `browser/within` | a click's point in the box a picture is fitted into, as the page's own pixels, and none in the bands either side |
 | `chrome/add_outcome` | what the add-a-project dialog says of what adding would do and what its Add button reads: the folder list's states, the outcome beside it per kind of add, the footer, and the pause before typing is sent |
 | `chrome/add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
 | `chrome/empty` | what the stage says with no pane on screen: waiting on the daemon (and the one way out of a connection that does not answer), no project, or a project with nothing shown (the checkout a shell is offered on, the panes to go back to) |

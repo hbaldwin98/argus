@@ -341,6 +341,7 @@ dependencies = [
  "anyhow",
  "argus-desktop-core",
  "argus-protocol",
+ "base64 0.23.1",
  "fancy-regex",
  "icu_collator",
  "jiff",
