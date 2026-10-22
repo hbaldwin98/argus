@@ -1,5 +1,6 @@
 //! The tree-sitter grammars the Code stage's editor colours with: the ones Argus knows, finding and downloading one, keeping it, and running it.
 
+pub mod conventions;
 pub mod fetch;
 pub mod install;
 pub mod known;

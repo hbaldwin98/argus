@@ -10,13 +10,16 @@
 
 mod effects;
 mod look;
+mod matches;
+mod panel;
 
+use argus_desktop_core::code::grammar::conventions;
 use argus_desktop_core::code::vim::page::vim_key;
 use argus_desktop_core::code::vim::said::{said, Said};
 use argus_desktop_core::code::vim::{Step, Vim};
 use gpui_kit::{Context, Window};
 
-use super::session::Key;
+use super::session::{Key, TAB};
 use super::CodeEditor;
 use crate::keys::layer::{Press, Verdict};
 
@@ -37,6 +40,10 @@ impl CodeEditor {
             vim.place(caret);
         }
         vim.set_read_only(read_only);
+        // `gc` and `=` are the loaded grammar's language's, and nothing while there is none (EDITOR-VIM-24).
+        let language = session.language.as_deref();
+        vim.set_comment_token(language.and_then(conventions::comment_token));
+        vim.set_indent_unit(language.filter(|name| conventions::braced(name)).map(|_| TAB));
         if let Some(rows) = rows {
             vim.set_view(rows.start, rows.end.saturating_sub(1));
         }

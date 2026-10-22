@@ -176,7 +176,7 @@ impl CodeEditor {
 }
 
 impl Render for CodeEditor {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
         if let Some(key) = self.shown.clone() {
             self.settle(&key, cx);
@@ -190,8 +190,14 @@ impl Render for CodeEditor {
             .min_h_0()
             .bg(tokens.bg_sunken)
             .child(self.bar(&tokens, cx))
-            .children(self.theirs(&tokens))
-            .child(div().flex_1().min_h_0().children(state.map(|state| Editor::new(&state).readonly(read_only).appearance(false).bordered(false).size_full())))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .children(state.map(|state| Editor::new(&state).readonly(read_only).appearance(false).bordered(false).size_full()))
+                    .children(self.theirs(window, cx, &tokens)),
+            )
+            .children(self.vim_panel(&tokens))
     }
 }
 

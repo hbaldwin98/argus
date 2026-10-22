@@ -67,12 +67,99 @@ fn clashing_after(cx: &mut TestAppContext, before: &str, agent: &str) -> Opened 
     opened
 }
 
-/// EDITOR-CLASH-3: the person's clashing text is marked, and the strip says what the agent wrote.
+/// EDITOR-CLASH-3: the person's clashing text is marked, and the agent's words stand at it.
 #[gpui_kit::test]
 fn a_held_clash_marks_the_persons_text_and_says_what_the_agent_wrote(cx: &mut TestAppContext) {
     let opened = clashing(cx, "var");
     assert_eq!(marked(cx), vec![0..4], "the three letters with the person's X in them");
     assert_eq!(label(cx, &opened, ("theirs", 0usize)).as_deref(), Some("Line 1, the agent wrote var"));
+    assert!(!present(cx, &opened, "editor-theirs"), "the words are in the line, not in a strip under the bar");
+}
+
+/// Where the editor last drew the end of the clash, and where the agent's words are drawn.
+fn places(cx: &mut TestAppContext, opened: &Opened) -> (gpui_kit::Bounds<gpui_kit::Pixels>, gpui_kit::Bounds<gpui_kit::Pixels>) {
+    use gpui_kit::test::TestWindowExt as _;
+    let editing = state(cx);
+    let end = marked(cx)[0].end;
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    let editor = cx.update(|cx| editing.read(cx).range_to_bounds(&(end..end))).expect("the clash is in view");
+    let widget = cx.update_window(opened.handle, |_, window, _| window.find(("theirs", 0usize)).bounds()).unwrap();
+    (editor, widget)
+}
+
+/// EDITOR-CLASH-3: the agent's words stand on the clash's own line, just after the clash.
+#[gpui_kit::test]
+fn the_agents_words_stand_on_the_clashs_line_after_it(cx: &mut TestAppContext) {
+    let opened = clashing_after(cx, "a
+", "var");
+    let (clash, widget) = places(cx, &opened);
+    assert_eq!(widget.origin.y, clash.origin.y, "on the same line");
+    assert!(widget.origin.x > clash.origin.x, "after the clash, not before it");
+    assert!(widget.size.height <= clash.size.height, "no taller than the line");
+}
+
+/// EDITOR-CLASH-3: the marks move with typing, and so do the words that stand at them: a line
+/// typed above carries them down a line.
+#[gpui_kit::test]
+fn the_agents_words_move_with_the_text_they_stand_at(cx: &mut TestAppContext) {
+    let opened = clashing_after(cx, "a
+", "var");
+    let (_, before) = places(cx, &opened);
+    type_at(cx, &opened, 0, "new
+");
+    let (clash, after) = places(cx, &opened);
+    assert_eq!(after.origin.y, clash.origin.y);
+    assert!(after.origin.y > before.origin.y, "{:?} is not below {:?}", after.origin, before.origin);
+}
+
+/// EDITOR-CLASH-3: a clash whose text the person deleted has no range left for a mark to hold, and
+/// still says what the agent wrote at its place, without handing its words to the clash after it.
+#[gpui_kit::test]
+fn a_clash_with_nothing_left_of_the_persons_text_keeps_its_words_apart_from_the_next(cx: &mut TestAppContext) {
+    let opened = open_with(cx, "abc
+xyz
+");
+    let editing = state(cx);
+    cx.update_window(opened.handle, |_, window, cx| {
+        editing.update(cx, |state, cx| {
+            state.set_selected_range(0..2, cx);
+            state.replace(String::new(), window, cx);
+        })
+    })
+    .unwrap();
+    cx.run_until_parked();
+    type_at(cx, &opened, 3, "Q");
+    disk(cx, &opened, 0, 1, vec![TextChange { from: 1, to: 1, insert: "B".into() }, TextChange { from: 4, to: 7, insert: "XYZ".into() }]);
+    settle(cx, &opened);
+    assert_eq!(label(cx, &opened, ("theirs", 0usize)).as_deref(), Some("Line 1, the agent wrote B"));
+    assert_eq!(label(cx, &opened, ("theirs", 1usize)).as_deref(), Some("Line 2, the agent wrote XYZ"));
+}
+
+/// EDITOR-CLASH-3: the words follow the editor's scrolling by themselves: the editor's own redraw
+/// is not asked for, only the state of the editor changes.
+#[gpui_kit::test]
+fn the_agents_words_follow_the_editor_when_it_scrolls(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let opened = clashing_after(cx, &"a
+".repeat(40), "var");
+    let editing = state(cx);
+    let scroll = |lines: f32, cx: &mut TestAppContext| {
+        cx.update_window(opened.handle, |_, window, cx| {
+            editing.update(cx, |state, cx| {
+                let line = state.line_height().unwrap();
+                state.set_scroll_offset(gpui_kit::point(gpui_kit::px(0.), -line * lines), cx);
+            });
+            window.render_frame(cx);
+            // The offset is taken up as the editor paints; the editor then says it changed.
+            editing.update(cx, |_, cx| cx.notify());
+            window.render_frame(cx);
+        })
+        .unwrap();
+        cx.update_window(opened.handle, |_, window, _| window.find(("theirs", 0usize)).bounds()).unwrap()
+    };
+    let before = scroll(25., cx);
+    let after = scroll(26., cx);
+    assert!(after.origin.y < before.origin.y, "{:?} is not above {:?}", after.origin, before.origin);
 }
 
 /// EDITOR-CLASH-3: the marks move with typing, as the page's decorations are mapped through each change.
@@ -85,24 +172,24 @@ fn the_marks_move_with_what_is_typed(cx: &mut TestAppContext) {
     assert_eq!(bar(cx, &opened).as_deref(), Some("An agent changed what you were editing"));
 }
 
-/// EDITOR-CLASH-3: where the agent deleted, the strip says `removed`.
+/// EDITOR-CLASH-3: where the agent deleted, the words say `removed`.
 #[gpui_kit::test]
-fn where_the_agent_deleted_the_strip_says_removed(cx: &mut TestAppContext) {
+fn where_the_agent_deleted_the_words_say_removed(cx: &mut TestAppContext) {
     let opened = clashing(cx, "");
     assert_eq!(label(cx, &opened, ("theirs", 0usize)).as_deref(), Some("Line 1, the agent wrote removed"));
 }
 
-/// EDITOR-CLASH-5: once the person says whose text stands, nothing is marked and the strip is gone.
+/// EDITOR-CLASH-5: once the person says whose text stands, nothing is marked and the words are gone.
 #[gpui_kit::test]
-fn resolving_a_clash_takes_the_marks_and_the_strip_away(cx: &mut TestAppContext) {
+fn resolving_a_clash_takes_the_marks_and_the_words_away(cx: &mut TestAppContext) {
     let opened = clashing(cx, "var");
-    assert!(present(cx, &opened, "editor-theirs"));
+    assert!(present(cx, &opened, ("theirs", 0usize)));
     crate::checkouts::stage::tests::click_id(cx, &opened, "editor-keep-mine");
     assert_eq!(marked(cx), Vec::<Range<usize>>::new());
-    assert!(!present(cx, &opened, "editor-theirs"));
+    assert!(!present(cx, &opened, ("theirs", 0usize)));
 }
 
-/// No clash, no marks and no strip, and a change that does not touch the person's text is not one.
+/// No clash, no marks and no words, and a change that does not touch the person's text is not one.
 #[gpui_kit::test]
 fn a_change_clear_of_the_typing_marks_nothing(cx: &mut TestAppContext) {
     let opened = open_with(cx, "let a = 1;\nlet b = 2;\n");
@@ -110,7 +197,7 @@ fn a_change_clear_of_the_typing_marks_nothing(cx: &mut TestAppContext) {
     disk(cx, &opened, 0, 1, vec![TextChange { from: 15, to: 16, insert: "c".into() }]);
     settle(cx, &opened);
     assert_eq!(marked(cx), Vec::<Range<usize>>::new());
-    assert!(!present(cx, &opened, "editor-theirs"));
+    assert!(!present(cx, &opened, ("theirs", 0usize)));
 }
 
 /// EDITOR-RECONN-1, -2: typing while the connection is down stays in the buffer and is not sent

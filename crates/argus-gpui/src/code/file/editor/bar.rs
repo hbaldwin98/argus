@@ -1,7 +1,8 @@
 //! The bar over the editor (`.ed-bar`): one line of the file's status in its colour; at its right
 //! the grammar on offer with Install and Not now, or while a clash is held the two buttons that say
 //! whose text stands (EDITOR-STATE, EDITOR-CLASH-4, EDITOR-GRAM-7); and Vim's mode, the keys of a
-//! command begun and the line being typed, which the page draws in the library's own panel.
+//! command begun, which the page draws in the library's own panel. The line being typed and Vim's
+//! messages are that panel's (`vim/panel`).
 
 use argus_desktop_core::code::bar::{said, tone, Tone};
 use argus_desktop_core::code::grammar::slot::Shown;
@@ -44,9 +45,6 @@ impl CodeEditor {
             .typed(tokens.type_small)
             .text_size(rem(tokens.fs_xs))
             .child(div().id("editor-state").test_support().aria_label(SharedString::from(said(&status))).text_color(colour).child(SharedString::from(said(&status))))
-            .children(vim.as_ref().filter(|vim| !vim.line.is_empty()).map(|vim| {
-                div().id("vim-line").test_support().aria_label(SharedString::from(vim.line.clone())).font_family(SharedString::from(tokens.font_mono)).text_color(tokens.fg_muted).child(SharedString::from(vim.line.clone()))
-            }))
             .child(div().flex_1())
             .when(clash, |bar| {
                 bar.child(button("editor-keep-mine", "Keep mine", Look::Plain, true, tokens).child("Keep mine").on_click(cx.listener(|this, _, window, cx| this.resolve(Keep::Mine, window, cx))))

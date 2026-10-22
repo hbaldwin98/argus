@@ -30,7 +30,7 @@ fn kotlin() -> Table {
     Table(table)
 }
 
-fn rust() -> Loaded {
+pub(super) fn rust() -> Loaded {
     let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
     Loaded {
         name: "rust".into(),
@@ -41,7 +41,7 @@ fn rust() -> Loaded {
     }
 }
 
-fn loader() -> (tempfile::TempDir, Arc<Loader>) {
+pub(super) fn loader() -> (tempfile::TempDir, Arc<Loader>) {
     let dir = tempfile::tempdir().unwrap();
     let loader = Arc::new(Loader::new(Store::new(dir.path().join("grammars"))));
     (dir, loader)

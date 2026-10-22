@@ -47,6 +47,7 @@ pub mod prompt;
 pub mod recall;
 pub mod region;
 pub mod registers;
+pub mod reindent;
 pub mod replay;
 pub mod rewrite;
 pub mod said;
@@ -199,6 +200,8 @@ pub struct Vim {
     /// The editor's line comment token, for `gc`; none is the page's case,
     /// where no language is loaded.
     comment: Option<String>,
+    /// The width `=` indents one level of brackets by; none leaves lines as they are.
+    indent_unit: Option<usize>,
     /// Mappings are applied to the keys fed: false inside a `noremap`.
     remap: bool,
     /// The mappings being expanded, so one that maps to itself ends.
@@ -234,6 +237,7 @@ impl Vim {
             wrap: None,
             locals: Locals::default(),
             comment: None,
+            indent_unit: None,
             remap: true,
             stack: Vec::new(),
             imap: replay::InsertMap::default(),

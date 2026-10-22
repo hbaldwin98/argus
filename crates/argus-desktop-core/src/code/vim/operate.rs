@@ -188,16 +188,4 @@ impl Vim {
             self.want = t.col(self.cursor.min(t.len()));
         }
     }
-
-    /// `=`: the page's editor has no indent rules for it to apply, since no
-    /// language is loaded, so it changes nothing; the cursor goes to the
-    /// first non-blank of the first line, as the library leaves it.
-    fn reindent(&mut self, region: Region) {
-        let t = self.buf.text();
-        let (first, _) = region.lines(t);
-        let line = first.min(t.last_line());
-        let p = t.first_nonblank(line);
-        self.cursor = if p >= t.line_end(line) { t.last_char(line) } else { p };
-        self.want = t.col(self.cursor);
-    }
 }

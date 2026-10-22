@@ -1,19 +1,22 @@
 //! What is drawn of a clash while the sync holds one: the person's clashing text marked in the
-//! danger colour, with a wavy underline, wherever typing has carried it (`.cm-clash`), and a strip
-//! under the bar that says what the agent wrote at each (`.cm-theirs`, EDITOR-CLASH-3).
+//! danger colour, with a wavy underline, wherever typing has carried it (`.cm-clash`), and after
+//! each clash what the agent wrote there, in the line itself (`.cm-theirs`, EDITOR-CLASH-3).
 //!
-//! The page puts what the agent wrote inline after each clash. The kit's editor has no inline
-//! widget, and text put in the buffer would be the person's to type over, so the words stand in a
-//! strip of their own, one line for each clash and the line it is on.
+//! The page puts the agent's words in the line as a widget that moves the text after it along. The
+//! kit's editor has no inline widget, and text put in the buffer would be the person's to type
+//! over, so the words are a box laid over the editor at the end of the clash, on the place the
+//! editor last drew that offset. It is opaque, so it covers what follows the clash on its line
+//! rather than pushing it right. The window is redrawn whenever the editor's state changes, so
+//! scrolling and typing move it with no watch of its own (`the_agents_words_follow_the_editor_when_it_scrolls`).
 
 use gpui_kit::component::input::{RopeExt as _, TextDecoration};
-use gpui_kit::component::{h_flex, v_flex};
-use gpui_kit::{div, prelude::*, px, AnyElement, Context, HighlightStyle, SharedString, TestSupportExt as _, UnderlineStyle};
+use gpui_kit::{anchored, deferred, div, point, prelude::*, px, AnyElement, Context, HighlightStyle, SharedString, TestSupportExt as _, UnderlineStyle, Window};
 
 use super::session::Key;
 use super::CodeEditor;
+use crate::kit::tip::tip;
 use crate::style::Typed as _;
-use crate::theme::scale::rem;
+use crate::theme::scale::{pixels, rem};
 use crate::theme::Tokens;
 
 /// How much of the danger colour a clash is filled with (`--danger` at 16%) and its underline
@@ -22,6 +25,8 @@ const FILL: f32 = 0.16;
 const UNDERLINE: f32 = 0.70;
 /// How much of the blue what the agent wrote is washed with (`--blue` at 18%).
 const WASH: f32 = 0.18;
+/// What the widget says when it is hovered (`ts:code/editor.ts`).
+const TIP: &str = "What the agent wrote here";
 
 impl CodeEditor {
     /// Marks the clashes the sync holds for `key`, and takes the marks away once none is held.
@@ -31,55 +36,60 @@ impl CodeEditor {
         let Some(session) = self.sessions.get_mut(key) else { return };
         let Some(state) = session.state.clone() else { return };
         let marks = session.clashes.get_or_insert_with(|| state.update(cx, |state, cx| state.create_decorations_collection(Vec::new(), cx))).clone();
-        let text = state.read(cx).text().clone();
         let style = HighlightStyle {
             background_color: Some(tokens.danger.opacity(FILL)),
             underline: Some(UnderlineStyle { thickness: px(1.), color: Some(tokens.danger.opacity(UNDERLINE)), wavy: true }),
             ..HighlightStyle::default()
         };
-        session.theirs = clashes.iter().map(|clash| (text.offset_to_point(clash.from.min(text.len())).row + 1, clash.theirs.clone())).collect();
+        session.theirs = clashes.clone();
         marks.set(clashes.iter().map(|clash| TextDecoration::new(clash.from..clash.to, style)).collect(), cx);
         cx.notify();
     }
 
-    /// The strip of what the agent wrote at each clash, or nothing while none is held.
-    pub(super) fn theirs(&self, tokens: &Tokens) -> Option<AnyElement> {
-        let theirs = &self.shown.as_ref().and_then(|key| self.sessions.get(key))?.theirs;
-        if theirs.is_empty() {
-            return None;
-        }
-        Some(
-            v_flex()
-                .id("editor-theirs")
-                .test_support()
-                .flex_shrink_0()
-                .w_full()
-                .px(rem(tokens.sp_12))
-                .py(rem(tokens.sp_4))
-                .gap(rem(tokens.sp_2))
-                .border_b_1()
-                .border_color(tokens.line)
-                .typed(tokens.type_small)
-                .text_size(rem(tokens.fs_xs))
-                .children(theirs.iter().take(MOST).enumerate().map(|(at, (line, text))| {
-                    let said: SharedString = if text.is_empty() { "removed".into() } else { first_line(text).into() };
-                    h_flex()
-                        .id(("theirs", at))
-                        .test_support()
-                        .aria_label(SharedString::from(format!("Line {line}, the agent wrote {said}")))
-                        .gap(rem(tokens.sp_8))
-                        .child(div().text_color(tokens.fg_faint).child(SharedString::from(format!("Line {line}, the agent wrote"))))
-                        .child(div().italic().bg(tokens.blue.opacity(WASH)).px(rem(tokens.sp_4)).rounded(rem(tokens.r_sm)).text_color(tokens.fg).child(said))
-                }))
-                .into_any_element(),
-        )
+    /// What the agent wrote at each clash, as boxes over the editor at the end of each clash, or
+    /// nothing while none is held or the clash is out of view.
+    pub(super) fn theirs(&self, window: &Window, cx: &gpui_kit::App, tokens: &Tokens) -> Vec<AnyElement> {
+        let Some(session) = self.shown.as_ref().and_then(|key| self.sessions.get(key)) else { return Vec::new() };
+        let Some(state) = session.state.as_ref() else { return Vec::new() };
+        let state = state.read(cx);
+        let (Some(height), text) = (state.line_height(), state.text().clone()) else { return Vec::new() };
+        let ground = tokens.bg_sunken.blend(tokens.blue.opacity(WASH));
+        let gap = pixels(tokens.sp_6, window.rem_size());
+        session
+            .theirs
+            .iter()
+            .enumerate()
+            .filter_map(|(at, clash)| {
+                let theirs = &clash.theirs;
+                let end = clash.to.min(text.len());
+                let place = state.range_to_bounds(&(end..end))?;
+                let line = text.offset_to_point(end).row + 1;
+                let said: SharedString = if theirs.is_empty() { "removed".into() } else { first_line(theirs).into() };
+                let widget = div()
+                    .id(("theirs", at))
+                    .test_support()
+                    .aria_label(SharedString::from(format!("Line {line}, the agent wrote {said}")))
+                    .tooltip(tip(TIP))
+                    .h(height)
+                    .flex()
+                    .items_center()
+                    .px(rem(tokens.sp_4))
+                    .rounded(rem(tokens.r_xs))
+                    .bg(ground)
+                    .italic()
+                    .whitespace_nowrap()
+                    .font_family(SharedString::from(tokens.font_mono))
+                    .typed(tokens.type_small)
+                    .text_size(rem(tokens.fs_md))
+                    .text_color(tokens.fg_muted)
+                    .child(said);
+                Some(deferred(anchored().position(point(place.origin.x + gap, place.origin.y)).child(widget)).into_any_element())
+            })
+            .collect()
     }
 }
 
-/// The most clashes the strip lists; a file with more has them marked in the text.
-const MOST: usize = 4;
-
-/// What the agent wrote, cut to its first line and a length a strip holds.
+/// What the agent wrote, cut to its first line and a length a line holds.
 fn first_line(text: &str) -> String {
     const LONGEST: usize = 120;
     let line = text.lines().next().unwrap_or("");

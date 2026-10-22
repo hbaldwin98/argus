@@ -22,12 +22,14 @@ pub(super) use crate::checkouts::stage::tests::{label, present};
 pub(super) use crate::keys::root::tests::{hear, Opened};
 
 mod clash;
+mod conventions;
 mod grammar;
 mod gutter;
 mod keys;
 mod open;
 mod sync;
 mod vim;
+mod vim_look;
 
 type Net = Arc<dyn Http + Send + Sync>;
 
