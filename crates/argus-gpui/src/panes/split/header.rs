@@ -40,6 +40,8 @@ impl SplitView {
             .items_center()
             .gap(rem(tokens.sp_6))
             .pl(rem(tokens.sp_12))
+            // The card's overflow clip is square, so its round corners would show this fill behind them.
+            .rounded_t(rem(tokens.r_md))
             .bg(if keyed { tokens.bg_selected } else { tokens.bg_chrome })
             .border_b_1()
             .border_color(tokens.line)
