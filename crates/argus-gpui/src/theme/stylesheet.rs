@@ -358,6 +358,18 @@ fn the_ports_own_sizes_are_named_not_themed() {
 }
 
 #[test]
+fn a_saved_panels_sizes_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    sheet_has(".saved-col {
+  flex: 1 0 min(420px, 100%);");
+    assert_eq!(t.saved_col_min, 420.0);
+    sheet_has(".saved-meta dt {
+  flex: none;
+  width: 64px;");
+    assert_eq!(t.saved_label_w, 64.0);
+}
+
+#[test]
 fn the_shared_parts_sizes_are_the_rules_they_were_written_from() {
     let t = ledger::tokens();
     sheet_has(".pbar {

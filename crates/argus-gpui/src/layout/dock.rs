@@ -361,7 +361,7 @@ impl Render for DockView {
             Dock::Bottom => root.h(size).min_h_0().w_full().border_t_1(),
         };
         let strip = (page.tabs.len() > 1).then(|| self.strip(&page, &shown, &docks, &tokens, cx).into_any_element());
-        let head = (page.tabs.len() <= 1 && shown != Panel::Console)
+        let head = (page.tabs.len() <= 1 && shown != Panel::Console && !matches!(shown, Panel::Saved(_)))
             .then(|| self.head(&shown, &title, &docks, &tokens, cx).into_any_element());
         root.children(strip)
             .children(head)
@@ -392,7 +392,7 @@ impl Render for DockView {
                     .child(if shown == Panel::Console {
                         self.console.clone().into_any_element()
                     } else {
-                        panel::body(title, &tokens).into_any_element()
+                        panel::content(&shown, title, &self.heard, &self.caller, &tokens, cx)
                     }),
             )
             .child(self.sash(sizing, &tokens, cx))
