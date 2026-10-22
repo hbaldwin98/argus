@@ -319,7 +319,7 @@ impl DockView {
 /// Whether the panel's own strip is its head: the console's and the agents' views' tabs carry the
 /// dock button and take a press as a head does, so the dock draws no head over them.
 fn own_strip(panel: &Panel) -> bool {
-    matches!(panel, Panel::Console | Panel::Views)
+    matches!(panel, Panel::Console | Panel::Views | Panel::Saved(_))
 }
 
 pub fn name(dock: Dock) -> &'static str {
@@ -404,7 +404,7 @@ impl Render for DockView {
                     } else if let Some(body) = Contents::peek(cx).panel(&shown) {
                         body.into_any_element()
                     } else {
-                        panel::body(title, &tokens).into_any_element()
+                        panel::content(&shown, title, &self.heard, &self.caller, &tokens, cx)
                     }),
             )
             .child(self.sash(sizing, &tokens, cx))

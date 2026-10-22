@@ -218,6 +218,9 @@ pub struct Scale {
     pub search_h: f32,
     /// `.nav-saved-list`: the share of the window's height the Views fold's list may take before it scrolls (`40vh`).
     pub nav_saved_share: f32,
+    /// `.saved-col` and `.saved-meta dt`: the least a saved panel's column is wide before the panel scrolls sideways, and the width of a Details label.
+    pub saved_col_min: f32,
+    pub saved_label_w: f32,
     pub pane_indent: f32,
     pub pane_mark_w: f32,
     /// `inset 3px 0 0`: the bar a selected row carries under a theme whose `--mark-sel` is one.
@@ -591,6 +594,8 @@ impl Scale {
             nav_h: 32.0,
             search_h: 34.0,
             nav_saved_share: 0.40,
+            saved_col_min: 420.0,
+            saved_label_w: 64.0,
             pane_indent: 38.0,
             pane_mark_w: 2.0,
             mark_bar_w: 3.0,

@@ -11,7 +11,7 @@
 //!
 //! The frame is its own: the kit's dialog does not move. It is a head (the panel's title, the
 //! dock menu and a close or hide), the panel's body and the grip. Only a saved view floats, and
-//! its body is not drawn in the GPUI window yet (`layout/panel`).
+//! its body is `views/saved`, which `layout/panel` hands to the frame.
 
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{DockGesture, DocksPage, FloatBounds, FloatPage, Panel, PresentPanel};
@@ -101,6 +101,7 @@ impl FloatsView {
         let (caller, heard, menu_tokens) = (self.caller.clone(), self.heard.clone(), *tokens);
         let pressed = panel.clone();
         let (gone, words) = (panel.clone(), if closes { format!("Close {}", float.title) } else { format!("Hide {}", float.title) });
+        let saved_marks = crate::views::saved::head::marks(&panel, self.heard.read(cx).saved.as_deref(), tokens);
         let gesture = move |panel: Panel| if closes { DockGesture::Close { panel } } else { DockGesture::Hide { panel } };
         // A press on a button of the head is the button's, not the frame's move.
         let keep = |button: gpui_kit::Div| button.flex_shrink_0().on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
@@ -119,6 +120,7 @@ impl FloatsView {
                 }),
             )
             .child(div().min_w_0().truncate().child(float.title.clone()))
+            .children(saved_marks)
             .child(div().flex_1())
             .child(keep(div()).child(
                 strip::menu_button(SharedString::from(format!("float-menu-{panel}")), Glyph::Down, 15.0, tokens, cx)
@@ -227,7 +229,7 @@ impl Render for FloatsView {
                         .min_h_0()
                         .child(match Contents::peek(cx).panel(&float.panel) {
                             Some(body) => body.into_any_element(),
-                            None => panel::body(float.title.clone(), &tokens).into_any_element(),
+                            None => panel::content(&float.panel, float.title.clone(), &self.heard, &self.caller, &tokens, cx),
                         }),
                 )
                 .child(self.grip(float, bounds, &tokens, cx))

@@ -751,6 +751,8 @@ GPUI one both stand on it.
 | `views/refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
 | `views/saved` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
 | `views/nav` | how the sidebar's Views fold lists the saved views: grouped by scope, filtered to here or all, nested under the view that links to them, lit while a panel in a dock shows them |
+| `views/column` | what a saved column says of itself: `built <ago>` with the commit cut at 7 and the exact time, the Details rows with the commit cut at 12, and whether the panel has a head of its own (not a lone view under a dock's tabs) or floats |
+| `views/offered` | which saved views the Feature stage offers for its open feature: those scoped or attached to it |
 | `views/markdown` | the small Markdown a ticket or a CI log is written in, read into blocks both windows draw |
 | `views/markdown/blocks` | Markdown read into blocks, the one entry `parse`: line ends and tabs made plain, then each line read in priority (blank, fence, heading, rule, quote to a depth of five, list, table, paragraph) |
 | `views/markdown/inline` | the marks inside a run of text — code spans, emphasis, strikethrough, links, bare addresses — every string kept as text, every scan capped or remembered so it stays linear, nesting stopped at five |
@@ -1288,6 +1290,14 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `views/ctx` | what every block of a view is drawn with: whose view it is, the block's path, what changed, and what a value is drawn against (tokens, clock, where presses go) |
 | `views/link` | a link in an agent's view: a press asks Rust to open its address, which is shown only as a tooltip |
 | `views/memory` | what the window alone remembers of a view's blocks (the tab read, a fold, ticked rows, a filter, a half-typed form, where a log was left) by block path, kept apart from the snapshot so a republish resets none of it and let go with the view |
+| `views/saved` | a saved view in the GPUI window: its panel with the trail of columns, one element wherever it is shown |
+| `views/saved/column` | one column of a saved panel: its header over its scrolling body, and the stand-in for a view not held |
+| `views/saved/delete` | deleting a saved view: the `...` menu's one item and the question it opens in place, kept in the window's memory |
+| `views/saved/details` | the Details fold under a column's header: scope, built, features, recipe and sources |
+| `views/saved/head` | the strip across a saved panel that has a head of its own, and the marks a floating one's title bar wears |
+| `views/saved/header` | a saved column's own header: title row, meta row with its buttons, Refresh, Mark stale, Details |
+| `views/saved/panel` | a saved panel: the columns side by side, the scroll it keeps across and down, scrolling to a column added |
+| `views/saved/registry` | the one element each saved panel is, held so docking or floating it keeps its place |
 | `views/opens` | the small arrow beside an element of a view that opens a saved view: a press asks Rust to open it from the column it was in, and a view not held yet is dimmed and still pressed |
 | `views/refs` | the values that point into Argus (a path, a commit, a feature, a pane) as buttons that ask Rust to open them, and a duration and inline code |
 | `views/values` | one value as a field, a cell or a list item shows it, from core's words |
