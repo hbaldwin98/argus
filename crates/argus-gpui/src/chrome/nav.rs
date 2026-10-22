@@ -20,12 +20,14 @@ pub enum Nav {
     Features,
     Checkouts,
     Git,
-    Code,
     Console,
+    Code,
     Browsers,
 }
 
 impl Nav {
+    /// Console above Code so the stage keys read 1 to 6 down the nav, where the
+    /// page has Code first; the person asked for it in this window.
     pub const ALL: [Nav; 9] = [
         Nav::Search,
         Nav::New,
@@ -33,8 +35,8 @@ impl Nav {
         Nav::Features,
         Nav::Checkouts,
         Nav::Git,
-        Nav::Code,
         Nav::Console,
+        Nav::Code,
         Nav::Browsers,
     ];
 
@@ -194,7 +196,7 @@ mod tests {
     #[test]
     fn every_stage_item_leaves_git_and_search_and_git_do_not() {
         let leaving: Vec<Nav> = Nav::ALL.into_iter().filter(|nav| nav.leaves_git()).collect();
-        assert_eq!(leaving, [Nav::New, Nav::Workspace, Nav::Features, Nav::Checkouts, Nav::Code, Nav::Console, Nav::Browsers]);
+        assert_eq!(leaving, [Nav::New, Nav::Workspace, Nav::Features, Nav::Checkouts, Nav::Console, Nav::Code, Nav::Browsers]);
         for nav in leaving {
             assert!(nav.call().is_some(), "{nav:?} goes to a stage with a call");
         }
