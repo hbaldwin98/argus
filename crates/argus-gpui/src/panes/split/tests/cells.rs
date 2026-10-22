@@ -100,15 +100,14 @@ fn a_cell_that_goes_and_comes_back_reports_its_room_again(cx: &mut TestAppContex
 }
 
 #[gpui_kit::test]
-fn a_browser_pane_gets_a_cell_of_the_reserved_kind_not_a_terminal(cx: &mut TestAppContext) {
+fn a_browser_pane_gets_its_view_in_the_cell_not_a_terminal(cx: &mut TestAppContext) {
     let opened = opened(cx, three());
     let mut row = three();
     row.beside[0] = Some(Shown { browser: true, ..shown(2, "docs") });
     hear(cx, &opened, vec![rail(row)]);
-    assert!(has(cx, &opened, "cell-reserved-1"));
-    assert!(label(cx, &opened, "cell-reserved-1").unwrap().contains("browser"));
+    assert!(has(cx, &opened, "browser-2"), "the browser's own view fills the cell");
     assert!(has(cx, &opened, "cell-head-1"), "it keeps its header and its place in the grid");
-    assert!(!has(cx, &opened, "cell-reserved-2"), "the others stay terminals");
+    assert!(!has(cx, &opened, "browser-3"), "the others stay terminals");
 }
 
 #[gpui_kit::test]

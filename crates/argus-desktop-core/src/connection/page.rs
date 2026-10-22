@@ -132,6 +132,16 @@ pub enum Call {
     /// Closes a pane's browser for every client; its agent's next request
     /// opens another.
     CloseBrowser { pane: u64 },
+    /// A cell's box is `width` x `height` of the window's pixels at `scale`, `at` on the window's
+    /// clock (SHELL-BROWSER-11). Only the GPUI window sends it, so it never crosses to the page,
+    /// which tells the daemon its viewport itself.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    BrowserViewport { pane: u64, width: f64, height: f64, scale: f64, at: std::time::Duration },
+    /// The sizes held back that are due at `at`: asked again when `Session::next_browser_viewport` says.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    BrowserViewportsDue { at: std::time::Duration },
     /// `open` true shows the Code stage on the checkout on screen, false
     /// goes back to the Workspace.
     ShowCode { open: bool },

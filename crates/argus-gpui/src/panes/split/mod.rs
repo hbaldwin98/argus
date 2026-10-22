@@ -8,7 +8,8 @@
 //! until the session answers (`gutters`), and, while a pane is carried, the layout it drew when the
 //! carrying began (SHELL-GRID-17: Rust's redraws do not move the cells under a drag).
 //!
-//! The cell's body is [`cells::Kind`]: a terminal, or the place a browser will fill. Where the
+//! The cell's body is [`cells::Kind`]: a terminal, or a browser's view (`browser/pane`), made once for
+//! a browser and kept while it is in a cell or listed. Where the
 //! cells and the stage were drawn is published for the carried pane to land on (`kit/spots`); the
 //! carrying and the drop are the work area's (`layout/carry`).
 
@@ -24,6 +25,9 @@ use gpui_kit::component::v_flex;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, relative, Context, Entity, FocusHandle, SharedString, Subscription, Window};
 
+use std::collections::BTreeMap;
+
+use crate::browser::pane::BrowserPane;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::area;
@@ -42,6 +46,8 @@ pub struct SplitView {
     workspace: Entity<Terminal>,
     /// The screens of the cells beside it: `Beside(n)` is `beside[n]`.
     beside: Vec<Entity<Terminal>>,
+    /// The view of each browser a cell has held, kept while the browser lasts.
+    browsers: BTreeMap<u64, Entity<BrowserPane>>,
     /// The pane in the first cell, and the grid, as last drawn.
     drawn: (Option<Shown>, GridPage),
     gutters: Gutters,
@@ -63,6 +69,7 @@ impl SplitView {
             caller,
             workspace,
             beside: Vec::new(),
+            browsers: BTreeMap::new(),
             drawn,
             gutters: Gutters::new(cx),
             keys: focus::Keys::default(),
@@ -89,6 +96,11 @@ impl SplitView {
             0 => self.drawn.0.as_ref(),
             n => self.drawn.1.beside.get(usize::from(n) - 1).and_then(Option::as_ref),
         }
+    }
+
+    /// The view of the browser in cell `n`, if that cell holds one.
+    fn browser_in(&self, n: u8) -> Option<&Entity<BrowserPane>> {
+        self.pane_in(n).filter(|pane| pane.browser).and_then(|pane| self.browsers.get(&pane.pane))
     }
 
     /// The screen of cell `n`.
@@ -133,6 +145,21 @@ impl SplitView {
             let (heard, caller) = (self.heard.clone(), self.caller.clone());
             self.beside.push(cx.new(|cx| Terminal::new(heard, caller, side, window, cx)));
         }
+        self.sync_browsers(window, cx);
+    }
+
+    /// A view comes for each browser a cell holds and goes with its browser: one the page no longer
+    /// lists and no cell holds (a pane taken out of the grid keeps its view while the browser is there).
+    fn sync_browsers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let panes: Vec<u64> = (0..self.wanted() as u8).filter_map(|n| self.pane_in(n)).filter(|pane| pane.browser).map(|pane| pane.pane).collect();
+        for pane in &panes {
+            if !self.browsers.contains_key(pane) {
+                let (heard, caller, pane) = (self.heard.clone(), self.caller.clone(), *pane);
+                self.browsers.insert(pane, cx.new(|cx| BrowserPane::new(heard, caller, pane, window, cx)));
+            }
+        }
+        let listed = self.heard.read(cx).browsers.clone();
+        self.browsers.retain(|pane, _| panes.contains(pane) || listed.browsers.iter().any(|browser| browser.pane == *pane));
     }
 }
 
@@ -181,9 +208,10 @@ impl SplitView {
         let keyed = split && self.heard.read(cx).keyed_cell().unwrap_or(0) == n;
         let head = pane.filter(|_| split).map(|pane| self.head(n, pane, keyed, tokens, cx));
         let kind = Kind::of(pane);
-        let body = match (kind, self.screen_of(n)) {
-            (Kind::Terminal, Some(screen)) => div().size_full().child(screen.clone()).into_any_element(),
-            _ => cells::reserved(n, kind, tokens).into_any_element(),
+        let body = match (kind, self.screen_of(n), self.browser_in(n)) {
+            (Kind::Browser, _, Some(view)) => div().size_full().child(view.clone()).into_any_element(),
+            (Kind::Terminal, Some(screen), _) => div().size_full().child(screen.clone()).into_any_element(),
+            _ => cells::reserved(n, tokens).into_any_element(),
         };
         div()
             .id(SharedString::from(format!("cell-{n}")))
@@ -211,6 +239,9 @@ impl SplitView {
 
     /// The handle of the screen of cell `n`.
     pub(crate) fn handle_of(&self, n: u8, cx: &gpui_kit::App) -> Option<FocusHandle> {
+        if let Some(view) = self.browser_in(n) {
+            return Some(view.read(cx).focus_handle().clone());
+        }
         self.screen_of(n).map(|screen| screen.read(cx).focus_handle().clone())
     }
 }

@@ -751,6 +751,14 @@ impl Session {
                 self.browsers.close(PaneId(pane), &mut self.out);
                 self.finish()
             }
+            Call::BrowserViewport { pane, width, height, scale, at } => {
+                self.browsers.viewport(PaneId(pane), width, height, scale, at, &mut self.out);
+                self.finish()
+            }
+            Call::BrowserViewportsDue { at } => {
+                self.browsers.viewports_due(at, &mut self.out);
+                self.finish()
+            }
             Call::ShowCode { open } => self.show_code(open),
             Call::Code { gesture } => self.code_gesture(gesture),
             Call::ShowComposer { open } => self.show_composer(open),
@@ -2407,6 +2415,12 @@ impl Session {
             self.go(Stage::Workspace);
         }
         self.finish()
+    }
+
+    /// When a browser size held back may go, on the clock the window's `BrowserViewport` calls
+    /// read; `None` when none is held.
+    pub fn next_browser_viewport(&self) -> Option<std::time::Duration> {
+        self.browsers.next_viewport()
     }
 
     /// The Browsers stage with every browser, or `pane`'s browser put on
@@ -4594,6 +4608,25 @@ mod tests {
         s.receive(ServerMsg::BrowserClosed { pane: PaneId(30) });
         let sent = s.call(Call::BrowserInput { pane: 30, input: BrowserInput::Reload });
         assert!(sent.is_empty(), "a browser that went takes no input");
+    }
+
+    #[test]
+    fn a_cells_room_is_told_to_a_browser_that_is_there_throttled_and_due_when_the_session_says() {
+        use argus_protocol::BrowserInput;
+        use std::time::Duration;
+        let ms = Duration::from_millis;
+        let mut s = session(Hello::this_build());
+        let _ = s.events(0);
+        let told = |sent: &[ClientMsg]| sent.iter().filter(|m| matches!(m, ClientMsg::BrowserInput { input: BrowserInput::Viewport { .. }, .. })).count();
+        let at = |s: &mut Session, width: f64, now: u64| s.call(Call::BrowserViewport { pane: 30, width, height: 400.0, scale: 2.0, at: ms(now) });
+        assert_eq!(told(&at(&mut s, 600.0, 0)), 0, "a browser not there is told nothing");
+        s.receive(with_tree(tree_with_browser(30)));
+        s.receive(browser_page(30, 1));
+        assert_eq!(told(&s.call(Call::BrowserViewportsDue { at: ms(1) })), 1, "the size held for it goes when it opens");
+        assert_eq!(told(&at(&mut s, 700.0, 50)), 0, "a report 50 ms after the last is held");
+        assert_eq!(s.next_browser_viewport(), Some(ms(101)));
+        assert_eq!(told(&s.call(Call::BrowserViewportsDue { at: ms(101) })), 1, "and goes when it is due");
+        assert_eq!(s.next_browser_viewport(), None);
     }
 
     /// A dialog by name, how a session opens it, and how its event says it

@@ -66,7 +66,8 @@ fn main() {
         heard.update(cx, |heard, cx| heard.listen(events, cx));
         let fonts = calls.clone();
         let queued = calls.clone();
-        let caller = Caller::new(move |call| calls.call(call));
+        let asking = calls.clone();
+        let caller = Caller::new(move |call| calls.call(call)).asking_viewport(move || asking.next_browser_viewport());
         let probing = caller.clone();
         let options = window::options(cx);
         let shell = heard.clone();

@@ -127,6 +127,11 @@ impl Owner {
         }
     }
 
+    /// When a browser size the session held back may go, on the clock of the `BrowserViewport` calls.
+    pub fn next_browser_viewport(&self) -> Option<Duration> {
+        lock(&self.session).next_browser_viewport()
+    }
+
     /// Publishes the shown panes' changed rows, if any changed. The daemon
     /// loop's runtime calls it on a short interval; the views repaint when
     /// the frames arrive, not on that interval.

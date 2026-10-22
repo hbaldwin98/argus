@@ -921,10 +921,18 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | module | answers |
 | --- | --- |
 | `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, and the window; the unattended runs are `probe` and `report` |
-| `browser` | the browsers agents run as this window draws them: their pictures decoded and held once, a picture in a place, the Browsers stage of tiles and its words with none open |
+| `browser` | the browsers agents run as this window draws them: their pictures decoded and held once, a picture in a place, the Browsers stage of tiles, a browser's cell in the grid and the words with none open |
 | `browser/decode` | how a browser's picture becomes an image the window draws: base64 undone, JPEG or PNG sniffed from the bytes, the pixels decoded to BGRA premultiplied, with no window in it |
 | `browser/decoding` | where a picture is decoded: off the UI thread, ticketed when it starts and landed in `Heard`'s pictures only if it is still its pane's newest, a failure dropped and logged |
 | `browser/empty` | the Browsers stage with no browser open: `No agent has a browser open.` and the hint with `argus-hook browser` in the code face, the same for an old daemon |
+| `browser/pane` | a browser pane's cell in the grid, made once for a browser and kept: its strip, toolbar and screen from what `Heard` says of the browser, and a press anywhere in it giving it the keys with core's call |
+| `browser/pane/address` | the address field: the browser's url unless the person is typing in it, Enter navigating to what core makes of the text, Escape putting the url back, both giving the keys to the page |
+| `browser/pane/bar` | the cell's toolbar: Back, Forward, Reload, the address and Close, each sent and none predicted, and the text button every control of the cell is drawn with |
+| `browser/pane/chip` | who has a browser as a chip: core's word with a dot in the colour of whoever has it |
+| `browser/pane/keys` | the keys of a cell's page: core's key input to the browser, any other key to the session as a key, a Mac's command chords left to the window |
+| `browser/pane/screen` | the cell's screen: the picture letterboxed or the words for no tab with a New tab button, a press clicking in the page's pixels, the wheel scrolling the page, the keyed ring |
+| `browser/pane/tabs` | the cell's tab strip: a tab for each of the browser's, picked, closed by its mark or a middle click, a plus, the status chip, Follow agent and Take control or Hand back, its scroll kept across updates |
+| `browser/pane/viewport` | the room a cell tells the daemon: the screen's box as laid out and the display's density handed to core, and core asked again when it says a held size may go |
 | `browser/picture` | a browser's picture drawn in one place, kept in its page's shape, repainting only for its own pane's `Pictured` and handing the atlas the images that were replaced |
 | `browser/pictures` | the latest decoded picture of each browser, one shared image for every place that draws it: the newest decode wins, a browser with no tab or that closed has none, replaced images retired for the atlas |
 | `browser/stage` | the Browsers stage: a tile for each browser in Rust's order in as many columns of at least 360 px as the stage holds, measured as laid out, or the empty words; one picture view kept per browser |
@@ -1149,7 +1157,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `panes/selection` | the cells a drag across a screen covers in reading order, per row, as the page draws them |
 | `panes/size_label` | what the stage header says of the Workspace's grid: a parked view's place at rest, the size for a second after it changes, with time a value the caller reads |
 | `panes/split` | the Workspace's panes side by side: a card for each pane the rail's grid names, placed by its sizes, one screen for each cell beside the first, with a gutter on each seam and a header on each cell when there are two or more |
-| `panes/split/cells` | what fills a cell: a terminal, or the kind reserved for a browser that is not in the window yet |
+| `panes/split/cells` | what fills a cell: a terminal, or a browser's view; and the empty body of a pane the tree no longer names |
 | `panes/split/focus` | which cell's screen has GPUI's focus: the one the session says has the keys, and a focus that lands on the Workspace's screen sent on to it |
 | `panes/split/gutters` | the gutters between the cells and the drag that sizes the two panes either side: sent once on release, held until the session echoes it or 600 ms pass, a double-click evening the row or the rows |
 | `panes/split/header` | a cell's header: its title and status, the close that takes it out of the grid, the keys marked, and the press that carries the pane |
