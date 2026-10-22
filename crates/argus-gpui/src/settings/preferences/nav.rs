@@ -3,7 +3,8 @@
 //!
 //! A press on a name scrolls the body to its section; scrolling lights the last section whose top
 //! has reached the top of the body (`spy` of the page's `preferences.ts`), so a long page says
-//! where it is.
+//! where it is. A body scrolled to its foot lights its last section, whose top the short sections
+//! under the tall Appearance never let reach the top, so a press on it lights what it pressed.
 
 use std::rc::Rc;
 
@@ -31,9 +32,12 @@ pub const SECTIONS: [Section; 6] = [
     Section { name: "Connection", about: "The daemon this window reaches", icon: Glyph::Server },
 ];
 
-/// The section in view: the last whose top is within `reach` of the body's top; the first when the
-/// body has not been laid out.
-pub fn current(tops: &[Option<f32>], body_top: f32, reach: f32) -> usize {
+/// The section in view: the last whose top is within `reach` of the body's top, or the last of all
+/// when the body is at its foot; the first when the body has not been laid out.
+pub fn current(tops: &[Option<f32>], body_top: f32, reach: f32, at_foot: bool) -> usize {
+    if at_foot && tops.last().is_some_and(Option::is_some) {
+        return tops.len() - 1;
+    }
     let mut at = 0;
     for (index, top) in tops.iter().enumerate() {
         if top.is_some_and(|top| top - body_top <= reach) {
@@ -43,10 +47,13 @@ pub fn current(tops: &[Option<f32>], body_top: f32, reach: f32) -> usize {
     at
 }
 
-/// The section in view of `body`, which holds the sections as its children in order.
+/// The section in view of `body`, which holds the sections as its children in order. A child's bounds
+/// are where layout put it before the body scrolled, so the offset is added to find where it is drawn.
 pub fn in_view(body: &ScrollHandle, tokens: &Tokens) -> usize {
-    let tops: Vec<Option<f32>> = (0..SECTIONS.len()).map(|at| body.bounds_for_item(at).map(|bounds| f32::from(bounds.origin.y))).collect();
-    current(&tops, f32::from(body.bounds().origin.y), tokens.sp_24)
+    let scrolled = f32::from(body.offset().y);
+    let tops: Vec<Option<f32>> = (0..SECTIONS.len()).map(|at| body.bounds_for_item(at).map(|bounds| f32::from(bounds.origin.y) + scrolled)).collect();
+    let room = f32::from(body.max_offset().y);
+    current(&tops, f32::from(body.bounds().origin.y), tokens.sp_24, room > 0.0 && -scrolled >= room - 1.0)
 }
 
 /// `.settings-nav`: a row per section, the one in view lit, and the version at the foot.
@@ -100,15 +107,22 @@ mod tests {
     #[test]
     fn the_section_in_view_is_the_last_whose_top_has_reached_the_body() {
         let tops = [Some(100.0), Some(500.0), Some(900.0)];
-        assert_eq!(current(&tops, 100.0, 24.0), 0);
-        assert_eq!(current(&[Some(-450.0), Some(-50.0), Some(350.0)], 100.0, 24.0), 1);
-        assert_eq!(current(&[Some(-900.0), Some(-500.0), Some(120.0)], 100.0, 24.0), 2, "within reach counts");
-        assert_eq!(current(&[Some(-900.0), Some(-500.0), Some(125.0)], 100.0, 24.0), 1, "beyond it does not");
+        assert_eq!(current(&tops, 100.0, 24.0, false), 0);
+        assert_eq!(current(&[Some(-450.0), Some(-50.0), Some(350.0)], 100.0, 24.0, false), 1);
+        assert_eq!(current(&[Some(-900.0), Some(-500.0), Some(120.0)], 100.0, 24.0, false), 2, "within reach counts");
+        assert_eq!(current(&[Some(-900.0), Some(-500.0), Some(125.0)], 100.0, 24.0, false), 1, "beyond it does not");
+    }
+
+    #[test]
+    fn a_body_at_its_foot_has_its_last_section_in_view() {
+        assert_eq!(current(&[Some(-900.0), Some(-500.0), Some(300.0)], 100.0, 24.0, true), 2);
+        assert_eq!(current(&[None, None, None], 0.0, 24.0, true), 0, "not laid out is still the first");
     }
 
     #[test]
     fn a_body_not_yet_laid_out_has_the_first_section_in_view() {
-        assert_eq!(current(&[None, None, None], 0.0, 24.0), 0);
-        assert_eq!(current(&[], 0.0, 24.0), 0);
+        assert_eq!(current(&[None, None, None], 0.0, 24.0, false), 0);
+        assert_eq!(current(&[], 0.0, 24.0, false), 0);
+        assert_eq!(current(&[], 0.0, 24.0, true), 0);
     }
 }

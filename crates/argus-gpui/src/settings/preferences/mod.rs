@@ -247,6 +247,8 @@ impl Render for PreferencesView {
                         .min_h_0()
                         .overflow_y_scroll()
                         .track_scroll(&self.body)
+                        // The body scrolls itself; the sheet is drawn again so the nav lights the section now in view.
+                        .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
                         .gap(rem(tokens.sp_24))
                         .px(rem(tokens.sp_24))
                         .py(rem(tokens.sp_16))

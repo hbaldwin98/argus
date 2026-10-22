@@ -263,6 +263,36 @@ fn a_nav_press_scrolls_the_body_to_its_section(cx: &mut TestAppContext) {
     assert!(after < before, "Features moved up from {before} to {after}");
 }
 
+/// SHELL-SETTINGS-1: the wheel moves the lit name down the nav with the section in view, as the
+/// page's `spy` does on scroll.
+#[gpui_kit::test]
+fn the_wheel_lights_the_section_it_scrolls_to(cx: &mut TestAppContext) {
+    let opened = sheet(cx, Preferences::default());
+    let lit = |cx: &mut TestAppContext| {
+        cx.update_window(opened.handle, |_, window, _| (0..6usize).find(|at| window.find(("settings-nav-item", *at)).selected() == Some(true)))
+            .unwrap()
+    };
+    assert_eq!(lit(cx), Some(0));
+    let body = cx.update_window(opened.handle, |_, window, _| window.find("settings-body".to_owned()).bounds()).unwrap();
+    for _ in 0..40 {
+        cx.update_window(opened.handle, |_, window, cx| {
+            let wheel = gpui_kit::ScrollWheelEvent {
+                position: body.center(),
+                delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(gpui_kit::px(0.0), gpui_kit::px(-120.0))),
+                ..Default::default()
+            };
+            window.dispatch_event(gpui_kit::InputEvent::to_platform_input(wheel), cx);
+            window.render_frame(cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+    }
+    let view = cx.update(|cx| Surfaces::get(cx).expect("the shell built the surfaces").settings);
+    let scrolled = cx.update(|cx| view.read(cx).body.offset().y.as_f32());
+    assert!(scrolled < -100.0, "the wheel scrolled the body, to {scrolled}");
+    assert_eq!(lit(cx), Some(5), "the body is at its foot, on Connection");
+}
+
 /// SHELL-SETTINGS-1: before the first `settings` event the chord does nothing, as the page's does.
 #[gpui_kit::test]
 fn the_chord_does_nothing_before_the_session_has_sent_the_settings(cx: &mut TestAppContext) {
