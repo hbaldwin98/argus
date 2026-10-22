@@ -5,6 +5,7 @@ pub mod area;
 pub mod button;
 pub mod caption;
 pub mod copy;
+pub mod counts;
 pub mod crop;
 pub mod choice;
 pub mod chips;

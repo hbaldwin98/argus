@@ -235,7 +235,7 @@ impl Render for CommentBox {
                             .on_click(cx.listener(|this, _, _, cx| this.send(cx))),
                     ),
             );
-        let (left, right) = self.ways.margin(&tokens);
+        let (left, right) = self.ways.margin(&tokens, self.heard.read(cx));
         div().size_full().pl(rem(left)).pr(rem(right)).py(rem(tokens.sp_8)).child(card).into_any_element()
     }
 }

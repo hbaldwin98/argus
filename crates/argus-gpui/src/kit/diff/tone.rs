@@ -29,23 +29,35 @@ pub fn tone(kind: &str, tokens: &Tokens) -> Option<Tone> {
     Some(Tone { colour, italic })
 }
 
-/// The wash behind a side by what it is: added green, removed red, a
-/// context line none.
+/// The wash behind a side's code by what it is: added green, removed red, a context line none.
 pub fn wash(kind: &str, tokens: &Tokens) -> Option<Hsla> {
+    washed(kind, tokens.share_tone, tokens)
+}
+
+/// What a side's code is filled with: its wash, with the pick laid over it rather
+/// than in its place, so a picked line's side stays readable, or the cursor's
+/// lift to `--fill`, which the page lays over the wash whole.
+pub fn fill(kind: &str, picked: bool, cursor: bool, tokens: &Tokens) -> Option<Hsla> {
+    layered(wash(kind, tokens), picked, cursor, tokens)
+}
+
+/// What a side's numbers and marker are filled with: the same layers as its code, on the
+/// stronger gutter wash, so the side's kind is carried by a column and the code stays quiet.
+pub fn gutter_fill(kind: &str, picked: bool, cursor: bool, tokens: &Tokens) -> Option<Hsla> {
+    layered(washed(kind, tokens.share_tone_gutter, tokens), picked, cursor, tokens)
+}
+
+fn washed(kind: &str, share: f32, tokens: &Tokens) -> Option<Hsla> {
     match kind {
-        "added" => Some(tokens.ok.opacity(tokens.share_tone)),
-        "removed" => Some(tokens.danger.opacity(tokens.share_tone)),
+        "added" => Some(tokens.ok.opacity(share)),
+        "removed" => Some(tokens.danger.opacity(share)),
         _ => None,
     }
 }
 
-/// What a side is filled with: its wash, with the pick laid over it rather
-/// than in its place, so a picked line's side stays readable, or the cursor's
-/// lift to `--fill`, which the page lays over the wash whole. Composed over the window's background by hand: `Hsla::blend`
-/// keeps its receiver's alpha, so a see-through wash blended with a
-/// see-through pick would paint nothing.
-pub fn fill(kind: &str, picked: bool, cursor: bool, tokens: &Tokens) -> Option<Hsla> {
-    let wash = wash(kind, tokens);
+/// Composed over the window's background by hand: `Hsla::blend` keeps its receiver's alpha, so a
+/// see-through wash blended with a see-through pick would paint nothing.
+fn layered(wash: Option<Hsla>, picked: bool, cursor: bool, tokens: &Tokens) -> Option<Hsla> {
     let over = if picked {
         Some(tokens.accent.opacity(tokens.share_pick))
     } else if cursor {
@@ -92,5 +104,19 @@ mod tests {
         assert!(tone("zz", &tokens).is_none());
         assert!(tone("c", &tokens).unwrap().italic, "a comment is italic");
         assert!(wash("added", &tokens).is_some() && wash("removed", &tokens).is_some() && wash("context", &tokens).is_none());
+    }
+
+    /// A long run of added lines is a lit gutter beside quiet code, not one solid block: the
+    /// gutter's wash is stronger than the code's, and both still say which side they are.
+    #[test]
+    fn a_sides_gutter_is_washed_more_strongly_than_its_code() {
+        let tokens = crate::theme::themes::ledger::tokens();
+        assert!(tokens.share_tone_gutter > tokens.share_tone);
+        for kind in ["added", "removed"] {
+            assert_ne!(gutter_fill(kind, false, false, &tokens), fill(kind, false, false, &tokens), "{kind}");
+        }
+        assert_ne!(gutter_fill("added", false, false, &tokens), gutter_fill("removed", false, false, &tokens));
+        assert_eq!(gutter_fill("context", false, false, &tokens), None, "a context line's gutter is the background");
+        assert_eq!(gutter_fill("context", false, true, &tokens), fill("context", false, true, &tokens), "the cursor lifts the gutter with its code");
     }
 }

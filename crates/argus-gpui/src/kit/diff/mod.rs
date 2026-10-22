@@ -92,6 +92,8 @@ pub struct DiffView {
     reading: bool,
     /// How wide the number columns of a unified line are together, in the page's pixels.
     numbers_w: f32,
+    /// Which number columns a unified line shows: one a new or deleted file never uses is left out.
+    shown: gutter::Shown,
     scroll: VirtualListScrollHandle,
     built: Cell<usize>,
     /// Each row's left and right side as drawn (tabs stopped), made once per
@@ -155,6 +157,7 @@ impl DiffView {
             numbered: Default::default(),
             reading: false,
             numbers_w: gutter::NUMBER * 2.0,
+            shown: gutter::Shown::BOTH,
             scroll: VirtualListScrollHandle::new(),
             built: Cell::new(0),
             drawn: Vec::new(),
@@ -221,6 +224,11 @@ impl DiffView {
     /// much height (a patch block) and so needs to know when the rows come to less.
     pub fn content_height(&self) -> f32 {
         self.heights.iter().sum()
+    }
+
+    /// Which number columns a unified line shows, for what lines up with them (the comment box).
+    pub fn shown(&self) -> gutter::Shown {
+        self.shown
     }
 
     /// How many items the list holds: its rows and the slot.

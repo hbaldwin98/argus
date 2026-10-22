@@ -10,6 +10,7 @@ use gpui_kit::{div, prelude::*, ClickEvent, Context, SharedString};
 use super::History;
 use crate::kit::tip::tip;
 use crate::kit::button::{button, Look};
+use crate::kit::counts::counts;
 use crate::kit::ghosts::ghosts;
 use crate::kit::icon_button::Node;
 use crate::kit::icons::Glyph;
@@ -155,7 +156,7 @@ impl History {
                         file.child(
                             div()
                                 .flex_shrink_0()
-                                .font_family(mono.clone())
+                                .font_family(mono)
                                 .text_size(rem(tokens.fs_xs))
                                 .text_color(tokens.fg_faint)
                                 .child(SharedString::from(dir.to_owned())),
@@ -163,8 +164,7 @@ impl History {
                     })
                     .child(div().truncate().child(SharedString::from(name.to_owned()))),
             )
-            .child(div().flex_shrink_0().font_family(mono.clone()).text_color(tokens.ok).child(SharedString::from(format!("+{}", r.added))))
-            .child(div().flex_shrink_0().font_family(mono).text_color(tokens.danger).child(SharedString::from(format!("\u{2212}{}", r.removed))))
+            .child(counts(r.added, r.removed, tokens))
             .into_any_element()
     }
 

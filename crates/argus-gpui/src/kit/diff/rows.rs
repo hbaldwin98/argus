@@ -6,13 +6,13 @@
 
 use argus_desktop_core::connection::page::{DiffRow, DiffSide};
 use gpui_kit::component::h_flex;
-use gpui_kit::{prelude::*, AnyElement, App, ClickEvent, Context, ElementId, MouseButton, MouseDownEvent, SharedString, TestSupportExt as _, Window};
+use gpui_kit::{div, prelude::*, AnyElement, App, ClickEvent, Context, ElementId, Hsla, MouseButton, MouseDownEvent, SharedString, TestSupportExt as _, Window};
 
 use super::gutter::{gutter, Columns, Pin};
 use super::paint::{code, Ink};
 use super::shape::{self, Shape};
 use super::text::Code;
-use super::{tone, wrap, DiffEvent, DiffView};
+use super::{text, tone, wrap, DiffEvent, DiffView};
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
@@ -46,23 +46,32 @@ impl DiffView {
             .into_any_element()
     }
 
-    /// A hunk's `@@` line or a note: said, never picked.
+    /// A hunk's `@@` line or a note: said, never picked. A hunk is a band on the chrome with a
+    /// hairline above, as tall as a fold, so where each hunk starts reads at a glance down a long
+    /// diff without a colour that could be taken for an added or removed side. Its ranges are said
+    /// in the reference colour, as the fold's buttons that open more lines are, and the code it is
+    /// in, which is what is read, in the muted text.
     fn heading(&self, ix: usize, row: &DiffRow, tokens: &Tokens) -> AnyElement {
         if self.reading && shape::shape(row) == Shape::Note {
             return self.gone(ix, row, tokens);
         }
+        let (ranges, context) = text::hunk(&row.text);
         self.wide(h_flex())
             .id(Self::row_id(ix))
             .test_support()
             .flex_shrink_0()
             .h(rem(shape::HUNK))
             .px(rem(tokens.sp_12))
+            .gap(rem(tokens.sp_12))
             .items_center()
             .bg(tokens.bg_chrome)
-            .text_color(tokens.fg_faint)
+            .border_t_1()
+            .border_color(tokens.line)
+            .text_color(tokens.fg_muted)
             .overflow_hidden()
             .whitespace_nowrap()
-            .child(SharedString::from(row.text.clone()))
+            .when(!ranges.is_empty(), |band| band.child(div().flex_shrink_0().text_color(tokens.ref_).child(SharedString::from(ranges.to_owned()))))
+            .when(!context.is_empty(), |band| band.child(SharedString::from(context.to_owned())))
             .into_any_element()
     }
 
@@ -93,14 +102,17 @@ impl DiffView {
         let side = row.left.as_ref();
         let kind = side.map_or("context", |side| side.kind);
         let fill = tone::fill(kind, row.picked, row.cursor, tokens);
+        // A file read whole keeps one wash across its line, as the Code stage's `.cline` has it.
+        let numbers = if self.reading { fill } else { tone::gutter_fill(kind, row.picked, row.cursor, tokens) };
         // The gutter stays at the pane's left edge while the code scrolls
         // sideways under it: the row has moved by the offset, the gutter moves back.
-        let pin = Pin { shift: -self.scroll.offset().x, fill };
+        let pin = Pin { shift: -self.scroll.offset().x };
         let down = cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, 0, event.position));
+        let columns = if self.reading { Columns::Reading } else { Columns::Both(self.shown) };
         h_flex()
             .items_center()
             .when_some(fill, |row, fill| row.bg(fill))
-            .child(half(side, &self.drawn[ix][0], if self.reading { Columns::Reading } else { Columns::Both }, tokens, self.ink(ix, 0, &self.drawn[ix][0].text, cx), down, Some(pin)))
+            .child(half(side, &self.drawn[ix][0], (columns, numbers), tokens, self.ink(ix, 0, &self.drawn[ix][0].text, cx), down, Some(pin)))
             .overflow_hidden()
     }
 
@@ -123,7 +135,8 @@ impl DiffView {
                 .child({
                     let wrapped = wrap::wrap(&self.drawn[ix][usize::from(second)], self.per_line);
                     let ink = self.ink(ix, usize::from(second), &wrapped.text, cx);
-                    half(side, &wrapped, Columns::One, tokens, ink, cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, usize::from(second), event.position)), None)
+                    let numbers = side.and_then(|side| tone::gutter_fill(side.kind, row.picked, row.cursor, tokens));
+                    half(side, &wrapped, (Columns::One, numbers), tokens, ink, cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, usize::from(second), event.position)), None)
                 })
         };
         h_flex()
@@ -138,13 +151,13 @@ impl DiffView {
 fn half(
     side: Option<&DiffSide>,
     drawn: &Code,
-    columns: Columns,
+    (columns, numbers): (Columns, Option<Hsla>),
     tokens: &Tokens,
     ink: Ink,
     down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
     pin: Option<Pin>,
 ) -> impl IntoElement {
-    let gutter = gutter(side, columns, tokens);
+    let gutter = gutter(side, columns, numbers, tokens);
     let code = gpui_kit::div()
         .flex_1()
         .min_w_0()
@@ -152,7 +165,7 @@ fn half(
         .on_mouse_down(MouseButton::Left, down)
         .children(side.map(|_| code(drawn, tokens, ink)));
     let Some(pin) = pin else {
-        return gutter.flowing(h_flex().flex_1().min_w_0().items_center()).child(code);
+        return gutter.flowing(h_flex().flex_1().min_w_0().h_full().items_center()).child(code);
     };
     // Painted after the code so it lies over it: a spacer keeps the code's
     // place, and the gutter itself sits absolutely at the pane's edge.

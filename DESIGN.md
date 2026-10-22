@@ -1212,13 +1212,14 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/button` | what the page's text buttons look like: `.btn` with its primary and small forms, and the `.chipf` choice chip, as pills that tint, lift and press under the pointer |
 | `kit/caption` | the quiet type a page puts over a part of itself: the tracked capital label, what it says at its far end, the small muted line, and a note that can be found by what it says |
 | `kit/copy` | a button that hands its text to Rust to copy and says `Copied` for 1200 ms, a second press starting the moment again |
+| `kit/counts` | a change's size said as `+N −N` in the Git stage's strip, file rows and diff head, a count of nothing in the faint text rather than its tone |
 | `kit/choice` | a row with a box or a ring to tick, `--row-h` tall with the label in the press: controlled, so it asks for the opposite of what it is given and draws what it is given |
 | `kit/chips` | the small outlined words a row carries: a ticket key, a tag, the dot that says a row changed since the reconcile, and the bordered card of the surface colour |
 | `kit/dialog` | the parts a dialog is cut from: the head with its close button, the foot bar, the field labels and the `Esc` cap |
 | `kit/diff` | a diff in a virtual list so only the rows on screen are built: the view, its events and the slot under one row, the scroll kept across updates and the cursor brought into view; it reports a press and sends no call, and serves review, history, the patch block and the Code stage |
 | `kit/diff/fold` | the lines between hunks the diff did not carry, and the buttons that ask for them |
 | `kit/diff/geometry` | where the rows are and what is on screen in the window's pixels, for a ruler beside the list: a row found by its number, the content's height, how far the list is scrolled and a scroll to a place |
-| `kit/diff/gutter` | the columns before a line's code: the number each half carries, the marker, and a unified line's pinned to the pane's left edge while the code scrolls sideways under them |
+| `kit/diff/gutter` | the columns before a line's code: the number each half carries, which of a unified line's two columns a diff shows (one no line uses is left out), the marker, and a unified line's pinned to the pane's left edge while the code scrolls sideways under them |
 | `kit/diff/items` | what the list holds, in order: every row, and the comment box among them under the row it is about |
 | `kit/diff/menu` | the menu a right-click on selected text in the diff opens, `Copy` under `Selection`, and no menu with nothing selected |
 | `kit/diff/measure` | how wide and how tall the rows are: the cells of the widest line, the cells a split half wraps at in this pane, each row's height told to the list up front, and the width every row carries so a unified diff is one column as wide as its longest line |
@@ -1227,8 +1228,8 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/diff/rows` | what each kind of row draws: a hunk's heading, a unified line, a split pair of halves, and the border and click every row but a heading shares |
 | `kit/diff/selection` | which text is selected: where a press of a line's code begins it, how a drag extends it over rows and past the list's edge, what it reads as, what copies, and the drag that crossed rows told to a view that picks |
 | `kit/diff/shape` | what a row is, from the kind the session gave it, and how tall it is |
-| `kit/diff/text` | a line's text as it is drawn: tabs stopped by cells, control characters shown, highlight kinds cut into spans, how many cells a text takes, and the stretches a selection splits them into |
-| `kit/diff/tone` | which colour a highlight kind and a side get: the tone of a token, the wash of an added or removed side, and what the pick and the cursor lay over it |
+| `kit/diff/text` | a line's text as it is drawn: tabs stopped by cells, control characters shown, highlight kinds cut into spans, a hunk heading cut into its ranges and its code, how many cells a text takes, and the stretches a selection splits them into |
+| `kit/diff/tone` | which colour a highlight kind and a side get: the tone of a token, the wash of an added or removed side's code and the stronger one of its gutter, and what the pick and the cursor lay over it |
 | `kit/diff/wrap` | where a long line breaks in a split half (at the cell, never at a word), and how a place in the text maps between the line and its broken form |
 | `kit/drag` | the one drag helper: a press that becomes a drag at 5 px and a click before, Escape cancelling with nothing dropped, the pointer followed over the whole window and the keys taken for the drag and given back |
 | `kit/crop` | one line of text longer than its box, scrolled to its first mark and faded where it is cut: the page's `.hline .tx` and `cropHits` |

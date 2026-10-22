@@ -19,6 +19,7 @@ use gpui_kit::Focusable as _;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, Context, Entity, Role, ScrollHandle, SharedString, Subscription, Window};
 
+use crate::kit::counts::counts;
 use crate::kit::tip::tip;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
@@ -127,9 +128,20 @@ impl Files {
         }
     }
 
-    /// The side the review reads, or the commit it is of.
+    /// The side the review reads, or the commit it is of: the column's head, a band as tall as the
+    /// diff's head beside it and on the same chrome over the same hairline, so the two heads read
+    /// as one line across the stage.
     fn side(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let row = h_flex().flex_shrink_0().items_center().gap(rem(tokens.sp_8));
+        let row = h_flex()
+            .id("review-files-head")
+            .flex_shrink_0()
+            .h(rem(tokens.sp_44))
+            .px(rem(tokens.sp_12))
+            .items_center()
+            .gap(rem(tokens.sp_8))
+            .bg(tokens.bg_chrome)
+            .border_b_1()
+            .border_color(tokens.line);
         if page.base == "commit" {
             let words = SharedString::from(page.commit.clone().unwrap_or_default());
             return row
@@ -164,28 +176,15 @@ impl Files {
         .into_any_element()
     }
 
-    /// The label above the files, or the field that jumps among them.
-    fn head(&self, page: &ReviewPage, tokens: &Tokens, _cx: &mut Context<Self>) -> impl IntoElement {
-        let head = h_flex().flex_shrink_0().items_center();
-        if page.jump.is_none() {
-            // `.mlabel`: 600 at 12px, muted, 6px over and 2px under.
-            return head
-                .px(rem(tokens.sp_8))
-                .pt(rem(tokens.sp_6))
-                .pb(rem(tokens.sp_2))
-                .typed(Type { weight: tokens.weight_semibold, size: tokens.fs_sm, leading: 1.4 })
-                .text_color(tokens.fg_muted)
-                .child("Changed files")
-                .into_any_element();
-        }
-        head.child(
-            div()
-                .id("review-jump-field")
-                .flex_1()
-                .min_w_0()
-                .child(Input::new(&self.jump).id("review-jump").small().h(rem(tokens.control_h)).aria_label("Jump to a file")),
-        )
-        .into_any_element()
+    /// The field that jumps among the files, over them while it is open. The page's `Changed
+    /// files` label is not drawn over the list: the Changes tab and the side's head already say
+    /// what the list is.
+    fn jump(&self, tokens: &Tokens) -> impl IntoElement {
+        div()
+            .id("review-jump-field")
+            .flex_shrink_0()
+            .min_w_0()
+            .child(Input::new(&self.jump).id("review-jump").small().h(rem(tokens.control_h)).aria_label("Jump to a file"))
     }
 
     fn list(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
@@ -253,8 +252,8 @@ impl Files {
                                     .child(SharedString::from(folder(&file.dir).to_owned())),
                             ),
                     )
-                    .child(div().text_color(tokens.ok).child(SharedString::from(format!("+{}", file.added))))
-                    .child(div().text_color(tokens.danger).child(SharedString::from(format!("\u{2212}{}", file.removed))))
+                    // On the name's line, at its height, so the counts sit on its baseline.
+                    .child(counts(file.added, file.removed, tokens).line_height(rem(tokens.fs_md * 1.45)))
             }))
             .when_some(page.jump.as_ref().filter(|jump| jump.matches.is_empty()), |list, jump| {
                 list.child(
@@ -275,16 +274,21 @@ impl Render for Files {
         let Some(page) = self.heard.read(cx).review.clone() else {
             return div().into_any_element();
         };
-        // `.review-files`: 12px in from every edge, 8px between its parts.
+        // Under the head, `.review-files`: 12px in from every edge, 8px between its parts.
         v_flex()
             .id("review-files")
             .size_full()
             .min_w_0()
-            .p(rem(tokens.sp_12))
-            .gap(rem(tokens.sp_8))
-            .child(self.head(&page, &tokens, cx))
             .child(self.side(&page, &tokens, cx))
-            .child(self.list(&page, &tokens, cx))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .p(rem(tokens.sp_12))
+                    .gap(rem(tokens.sp_8))
+                    .when(page.jump.is_some(), |body| body.child(self.jump(&tokens)))
+                    .child(self.list(&page, &tokens, cx)),
+            )
             .into_any_element()
     }
 }
