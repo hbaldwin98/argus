@@ -32,6 +32,8 @@ pub enum Overlay {
     Stopped,
     /// A drawing of an agent's view opened larger, over the whole window.
     Figure,
+    /// The recent sessions of a repository, and the transcript read in its place.
+    Sessions,
 }
 
 impl Overlay {
@@ -45,6 +47,6 @@ impl Overlay {
     /// closes (SHELL-SEAM-10, `takesFromPane`). The page's list names more dialogs (link,
     /// reconcile, sessions and the readers); each joins when its surface does.
     pub fn takes_the_keys_from_a_pane(self) -> bool {
-        matches!(self, Overlay::AddProject)
+        matches!(self, Overlay::AddProject | Overlay::Sessions)
     }
 }

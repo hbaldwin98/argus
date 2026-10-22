@@ -2173,6 +2173,14 @@ pub fn scenes() -> Vec<Scene> {
                 .call(Call::SessionsAction { action: Action::Next, row: None });
             w.s
         }),
+        scene("transcript", "Transcript — a session read whole, on one of its turns, with a find", || {
+            let mut w = Window::showing(P_TRIM);
+            w.call(Call::OpenSessions { repository: ARGUS })
+                .call(Call::SessionsAction { action: Action::Transcript, row: None })
+                .call(Call::SessionsAction { action: Action::Next, row: None })
+                .call(Call::FindInTranscript { find: "brief".into() });
+            w.s
+        }),
         scene("add-project", "Add a project — browsing for a folder", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::OpenAddProject);

@@ -30,9 +30,10 @@ pub fn layer(layer: Layer) -> Hook {
         | Layer::Menu
         | Layer::Stage
         | Layer::Extension
-        | Layer::ExtensionPage => Hook::Hooked,
+        | Layer::ExtensionPage
+        | Layer::Sessions
+        | Layer::Transcript => Hook::Hooked,
         Layer::Link | Layer::Reconcile => Hook::Arrives("the tracker dialogs"),
-        Layer::Transcript | Layer::Sessions => Hook::Arrives("the sessions dialog"),
         Layer::Capture | Layer::Diagram | Layer::Outline | Layer::Features => Hook::Arrives("the Feature stage"),
         Layer::Checkouts | Layer::Files => Hook::Hooked,
         Layer::Code => Hook::Hooked,
@@ -50,8 +51,7 @@ pub fn place(place: Place) -> Hook {
         // The fields that answer them: the jump field, the history's filter, the comment box, the palette's search.
         Place::Jump | Place::Filter | Place::Writing | Place::Palette => Hook::Hooked,
         Place::Feature | Place::Card | Place::Outline | Place::Diagram => Hook::Arrives("the Feature stage"),
-        Place::Checkouts | Place::Files | Place::Extension => Hook::Hooked,
-        Place::Sessions | Place::Transcript => Hook::Arrives("the sessions dialog"),
+        Place::Checkouts | Place::Files | Place::Extension | Place::Sessions | Place::Transcript => Hook::Hooked,
         Place::Address => Hook::Arrives("the Browsers stage"),
         Place::Code => Hook::Hooked,
         Place::Link | Place::Reconcile => Hook::Arrives("the tracker dialogs"),

@@ -592,6 +592,29 @@ fn the_forms_palettes_and_sheets_sizes_are_the_rules_they_were_written_from() {
 }
 
 #[test]
+fn the_composer_and_sessions_sizes_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    assert_eq!((px_of("list-col-w"), px_of("list-col-w-narrow")), (t.list_col_w, t.list_col_w_narrow));
+    assert_eq!(px_of("area-min-h"), t.area_min_h);
+    assert_eq!(px_of("tick"), t.compose_rule_w);
+    sheet_has(".compose {\n  width: min(760px, 100%);");
+    assert_eq!(t.compose_w, 760.0);
+    sheet_has("gap: var(--sp-16);\n  margin-top: -60px;");
+    assert_eq!(t.compose_lift, 60.0);
+    sheet_has(".history-list {\n  width: 520px;");
+    sheet_has("@media (max-width: 1100px) {\n  .history-list,\n  .history-col {\n    width: 360px;");
+    assert_eq!((t.history_col_w, t.history_col_narrow_w, t.history_narrow_below), (520.0, 360.0, 1100.0));
+    sheet_has(".filter {\n  width: 220px;\n  min-width: 120px;");
+    assert_eq!((t.filter_field_w, t.filter_field_min_w), (220.0, 120.0));
+    sheet_has(".pick select {\n  max-width: 200px;");
+    assert_eq!(t.pick_max_w, 200.0);
+    sheet_has(".scheckout {\n  max-width: 120px;");
+    assert_eq!(t.scheckout_max_w, 120.0);
+    sheet_has(".scommand {\n  max-width: 420px;");
+    assert_eq!(t.scommand_max_w, 420.0);
+}
+
+#[test]
 fn the_questions_tile_and_callout_shares_are_the_rules_they_were_written_from() {
     let t = ledger::tokens();
     sheet_has("background: color-mix(in srgb, var(--danger) 14%, transparent);\n  color: var(--danger);");

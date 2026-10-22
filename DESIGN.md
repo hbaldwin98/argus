@@ -773,6 +773,8 @@ GPUI one both stand on it.
 | `extensions/row_actions` | which of a view's actions are drawn where: on the row while it is selected or pointed at, in the view's bar, in its menu with the keys beside them and the reason one is refused, and the width under which a row's actions are one button |
 | `extensions/views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, and the question an action waits on; what a gesture in one sends; and the page of them all, drawn where the window says each one is, with the commands `extensions/keys` lists beside them, and what the page last heard |
 | `agents` | the agents the window can start and the sessions they leave |
+| `agents/composer` | what the composer shows and does: which repository, checkout and agent are picked from the rail and the draft, the line saying where a start will be, the call a start sends, and when a start the daemon made ends the message |
+| `agents/said` | how the sessions dialog and the transcript reader put a session in words: a row's meta, the Ended group's summary, the filter menu's choices, the start time, the reader's span and match count, and the verb a tool call is told with |
 | `agents/sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, or why the daemon refused one, among them what each pane it resumed a session in was resumed from |
 | `agents/sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its full transcript is open in place of the list — and what each session offers: its pane, a resume by the exact command named, or only its transcript; the page it draws, last sent while open |
 | `agents/templates` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
@@ -928,6 +930,24 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | module | answers |
 | --- | --- |
 | `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, and the window; the unattended runs are `probe` and `report` |
+| `agents` | the agents the window starts and the sessions they leave: the composer, the recent-sessions dialog and the transcript reader in it |
+| `agents/ask` | how the agents' dialogs and the composer send a call: dropped while the daemon is gone |
+| `agents/compose` | the composer, the stage of New: the message with the keys as it comes up, the three pickers, Shell and Start agent, and the draft held until a pane the start made is shown |
+| `agents/compose/picker` | one picker of the composer: the kit's select written to only when its list or its pick changed, so an open list stays open |
+| `agents/compose/view` | how the composer is drawn: the place line between two rules, the question, the card, and the note and keys under it |
+| `agents/install` | what the window does once for the agents: the composer put where the stage draws it, the sessions dialog's two layers in the key walk, and the dialog brought up while the session holds it |
+| `agents/offer` | what the session under the cursor offers, drawn for the sessions footer and the reader's head: its pane, a resume by the command named, or only its transcript |
+| `agents/search` | the search field in the head of the sessions dialog and the reader: a plain field of the page's width |
+| `agents/sessions` | the recent-sessions dialog: up while the session holds it, never dismissed by itself, with its search text, scrolls and where the keys rest kept by the window |
+| `agents/sessions/filter` | the Filter button and the menu under it: core's choices, each sending the one filter changed and the other kept |
+| `agents/sessions/head` | the dialog's head: its title and what it lists, the search, the Filter button and the close button |
+| `agents/sessions/keys` | the dialog's two layers of the key walk, the list's and the reader's: the keymap's actions sent to the session, `/` to a field, and every key passed on while a menu is open |
+| `agents/sessions/list` | the list column: the Live heading and rows, the Ended group held under one folding row, and the loading and empty words |
+| `agents/sessions/preview` | the session under the cursor: its header, its transcript or the notice in its place, and the footer's keys beside what it offers |
+| `agents/transcript` | the full-transcript reader in place of the list: its scroll (the end when newly read, a move's entry at the top, else where it was), the find field and the jump list |
+| `agents/transcript/entry` | one line of a session, drawn alike in the preview and the reader: a turn or reply with its caption, or a tool call as a verb, its summary and whether it failed; a kind not known draws nothing |
+| `agents/transcript/head` | the reader's head, with its way back, title, meta line, find, count, copy and offer, and its footer of keys |
+| `agents/transcript/turns` | the reader's jump list: a row for each turn of the person's, the one it is on lit, and the note of the file it was read from |
 | `browser` | the browsers agents run as this window draws them: their pictures decoded and held once, a picture in a place, the Browsers stage of tiles, a browser's cell in the grid and the words with none open |
 | `browser/chip` | a browser's status drawn: the pill on a tile and the dot on a nav sub-row, coloured by core's class (agent accent, person ok, held attention), no chip when nobody has it |
 | `browser/source` | where a pane's picture bytes come from: core's `Browsers::picture` (base64 undone once, shared), the session's in the running window and a `Browsers` of its own for a model with no session |

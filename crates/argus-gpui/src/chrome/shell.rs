@@ -83,6 +83,8 @@ impl Shell {
         let console = cx.new(|cx| ConsoleView::new(heard.clone(), caller.clone(), stage, window, cx));
         // The agents' views draw in their dock and as the page over the stage.
         views::agent::install::install(&heard, &caller, cx);
+        // The composer is the stage of New, and the sessions dialog opens over the window while the session holds it.
+        crate::agents::install::install(&heard, &caller, window, cx);
         // The Workspace's pane is the stage the docks sit around.
         let git = cx.new(|cx| GitStage::new(heard.clone(), caller.clone(), window, cx));
         let checkouts = cx.new(|cx| CheckoutsStage::new(heard.clone(), caller.clone(), window, cx));
@@ -116,6 +118,8 @@ impl Shell {
             question::follow(removing.as_ref(), &stopping, window, cx);
             // An extension's two questions are up exactly while the session holds them.
             crate::extensions::install::follow(&heard, &stopping, window, cx);
+            // The recent-sessions dialog is up exactly while the session holds it.
+            crate::agents::install::follow(window, cx);
             cx.notify();
         });
         let running = cx.subscribe_in(&heard, window, |_, _, Ran(action): &Ran, window, cx| {

@@ -32,7 +32,7 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog";
+const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,new,sessions,sessions-ended,transcript,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog";
 
 /// The scenes the page finishes with a click on a control, and the control: the window is brought to the
 /// same place by pressing it, so the menu or dialog is open in the picture as it is in the page's.
@@ -97,6 +97,8 @@ fn write_gpui_screens() {
             for name in names {
                 let (events, frames) = heard_in(&name);
                 let edits = edits_in(&name, &events);
+                // Each scene is its own window: the overlays an earlier one left up are not this one's.
+                cx.update(argus_gpui::kit::overlay::host::Overlays::install);
                 let result = cx.update(|cx| open(cx, events));
                 let (handle, model) = match result {
                     Ok((handle, heard)) => {
