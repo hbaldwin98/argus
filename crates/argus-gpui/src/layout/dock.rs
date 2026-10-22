@@ -30,6 +30,7 @@ use crate::kit::strip;
 use crate::connection::caller::Caller;
 use crate::kit::area;
 use crate::connection::heard::Heard;
+use crate::extensions::bodies::Bodies;
 use crate::kit::icons::Glyph;
 use crate::layout::dock_menu;
 use crate::layout::panel;
@@ -342,6 +343,8 @@ impl Render for DockView {
             return div().into_any_element();
         };
         let title = page.tabs.iter().find(|tab| tab.panel == shown).map_or_else(|| shown.to_string(), |tab| tab.title.clone());
+        // An extension's view is one element wherever it is drawn (`extensions/bodies`).
+        let extension = Bodies::of(cx).view(&shown, &self.heard, &self.caller, window, cx);
         let size = rem(self.drawn(&page, window_width, cx) as f32);
         let sizing = self.work.upgrade().is_some_and(|work| work.read(cx).sizing(self.dock).is_some());
         let name = self.name();
@@ -391,6 +394,8 @@ impl Render for DockView {
                     })
                     .child(if shown == Panel::Console {
                         self.console.clone().into_any_element()
+                    } else if let Some(view) = extension {
+                        view.into_any_element()
                     } else {
                         panel::body(title, &tokens).into_any_element()
                     }),

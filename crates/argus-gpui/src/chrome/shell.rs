@@ -71,6 +71,7 @@ impl Shell {
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
         // The window's own keys ask the session as the page does.
         Layers::of(cx).serve(caller.clone());
+        crate::extensions::install::layers(&heard, cx);
         let terminal = cx.new(|cx| Terminal::new(heard.clone(), caller.clone(), Side::Workspace, window, cx));
         let stage = terminal.read(cx).focus_handle().clone();
         // The Workspace's pane takes the keys back from the dialogs that took them, while one is on screen.
@@ -109,6 +110,8 @@ impl Shell {
             // The removal question is up exactly while the rail holds one.
             let removing = heard.read(cx).rail.removing.clone();
             question::follow(removing.as_ref(), &stopping, window, cx);
+            // An extension's two questions are up exactly while the session holds them.
+            crate::extensions::install::follow(&heard, &stopping, window, cx);
             cx.notify();
         });
         let running = cx.subscribe_in(&heard, window, |_, _, Ran(action): &Ran, window, cx| {

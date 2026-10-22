@@ -129,6 +129,12 @@ pub struct ExtTable {
     pub console: Option<ExtTableConsole>,
 }
 
+/// The title the strip says while an extension's view is the stage's page: the view's own, and
+/// nothing when none is up, which leaves the stage's name.
+pub fn page_title(tables: &[ExtTable]) -> Option<&str> {
+    tables.iter().find(|table| table.page).map(|table| table.title.as_str())
+}
+
 /// A console view as the page draws it. What the daemon says of it is here
 /// as it said it; the screen and the keys are the window's.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -555,6 +561,15 @@ mod tests {
         let (mut views, here) = (defaulted(), Here::default());
         let sent = views.gesture(&containers(), &here, ExtensionGesture::Default { row: "db".into() }).unwrap();
         assert_eq!(sent_row(sent).as_deref(), Some("db"), "not the first row, selected until now");
+    }
+
+    #[test]
+    fn the_strip_names_the_page_by_its_views_title_and_nothing_when_none_is_up() {
+        let (views, here) = held();
+        let placed = Placed { on: vec![containers()], page: Some(containers()), ..at(here) };
+        let tables: Vec<ExtTable> = views.table(&containers(), &placed).into_iter().collect();
+        assert_eq!(page_title(&tables), Some("Containers"));
+        assert_eq!(page_title(&[]), None);
     }
 
     #[test]

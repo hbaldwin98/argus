@@ -8,6 +8,7 @@
 //! (it carries its way back on its own head). Choosing sends the call and changes nothing itself.
 
 use argus_desktop_core::connection::page::Call;
+use argus_desktop_core::extensions::row_actions;
 use argus_desktop_core::extensions::views::{ExtTable, ExtensionGesture};
 use argus_desktop_core::keys::keymap::{Action, Group, Place};
 use argus_desktop_core::layout::docks::Panel;
@@ -49,21 +50,22 @@ fn act(panel: &Panel, action: &str) -> Call {
 /// screen, and one that is a page has none.
 pub fn of(panel: &Panel, tables: &[ExtTable], keymap: &[Group]) -> Option<Tools> {
     let view = tables.iter().find(|table| &table.panel == panel).filter(|table| !table.page)?;
-    // An ended console's actions are in the strip beside how it ended.
-    let ended = view.console.as_ref().is_some_and(|console| console.ended.is_some());
-    let wide = view.actions.iter().filter(|action| action.view_wide && !ended);
-    let rows: Vec<_> = view.actions.iter().filter(|action| !action.view_wide && action.key.is_some()).collect();
-    let mut menu: Vec<MenuItem<Call>> = wide.map(|action| MenuItem::choice(action.label.clone(), act(panel, &action.id))).collect();
+    // Which actions are the view's and which answer to a key is core's; an ended console's are in
+    // the strip beside how it ended.
+    let wide = row_actions::wide(view, true);
+    let rows = row_actions::keyed(view);
+    let mut menu: Vec<MenuItem<Call>> = wide.into_iter().map(|action| MenuItem::choice(action.label.clone(), act(panel, &action.id))).collect();
     if !menu.is_empty() && !rows.is_empty() {
         menu.push(MenuItem::Rule);
     }
     if !rows.is_empty() {
         menu.push(MenuItem::heading("Keys, on the selected row"));
     }
+    let refused = row_actions::refused(view);
     menu.extend(rows.into_iter().map(|action| {
         MenuItem::choice(action.label.clone(), act(panel, &action.id))
             .keyed(action.key.iter().map(|key| vec![key.clone()]).collect())
-            .refused_when(view.selected.is_none(), "no row selected")
+            .refused_when(refused.is_some(), refused.unwrap_or_default())
     }));
     Some(Tools {
         panel: panel.clone(),
