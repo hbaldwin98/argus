@@ -45,10 +45,26 @@ impl Render {
 /// A message's variant and its fields, as serde's external tagging has
 /// them: a unit variant is a bare string, any other a one-key object.
 pub fn kind_and_body(msg: &impl serde::Serialize) -> (String, Value) {
-    match serde_json::to_value(msg).expect("a wire message serializes") {
+    match sorted(serde_json::to_value(msg).expect("a wire message serializes")) {
         Value::String(kind) => (kind, Value::Null),
         Value::Object(fields) if fields.len() == 1 => fields.into_iter().next().unwrap(),
         other => panic!("not an externally tagged message: {other}"),
+    }
+}
+
+/// `value` with every object's keys in order. A build that also holds the
+/// GPUI window (`--workspace`) turns on serde_json's `preserve_order`, which
+/// keeps a struct's fields in declaration order; without it they are sorted.
+/// Sorting here writes the same transcript either way.
+fn sorted(value: Value) -> Value {
+    match value {
+        Value::Object(fields) => {
+            let mut fields: Vec<(String, Value)> = fields.into_iter().collect();
+            fields.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(fields.into_iter().map(|(key, value)| (key, sorted(value))).collect())
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sorted).collect()),
+        other => other,
     }
 }
 
