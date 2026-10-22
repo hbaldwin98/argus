@@ -23,7 +23,7 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::keys::page_key;
 use crate::review::keys;
-use crate::review::segment;
+use crate::kit::segment;
 use crate::style::Typed as _;
 use crate::theme::scale::Type;
 use crate::theme::Tokens;

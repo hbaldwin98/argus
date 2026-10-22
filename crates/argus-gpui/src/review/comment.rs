@@ -25,11 +25,11 @@ use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, px, Context, Entity, KeyDownEvent, Pixels, SharedString, Window};
 
-use crate::chrome::button::{button, chip, Look};
-use crate::chrome::keycap::keycap;
+use crate::kit::button::{button, chip, Look};
+use crate::kit::keycap::keycap;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::diff::view::GUTTER;
+use crate::kit::diff::gutter::GUTTER;
 use crate::style::Typed as _;
 use crate::theme::Tokens;
 

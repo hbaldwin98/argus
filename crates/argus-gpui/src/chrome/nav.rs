@@ -10,7 +10,7 @@ use argus_desktop_core::connection::page::{Call, Stage};
 use argus_desktop_core::panes::console::ConsoleGesture;
 use argus_desktop_core::keys::keymap::Action;
 
-use crate::icons::Glyph;
+use crate::kit::icons::Glyph;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Nav {

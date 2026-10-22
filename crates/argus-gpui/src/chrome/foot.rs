@@ -15,8 +15,8 @@ use gpui_kit::{div, prelude::*, px, Role};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Link;
-use crate::chrome::icon_button::icon_button;
-use crate::icons::Glyph;
+use crate::kit::icon_button::icon_button;
+use crate::kit::icons::Glyph;
 use crate::style::Typed as _;
 use crate::theme::Tokens;
 

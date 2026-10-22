@@ -14,7 +14,8 @@
 #![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
 
 use argus_gpui::theme::Tokens;
-use argus_gpui::window::{self, Header};
+use argus_gpui::chrome::header::Header;
+use argus_gpui::window;
 use gpui_kit::test::TestSupportExt as _;
 use gpui_kit::component::resizable::{h_resizable, resizable_panel, v_resizable, ResizableState};
 use gpui_kit::component::sidebar::{Sidebar, SidebarGroup, SidebarMenu, SidebarMenuItem};

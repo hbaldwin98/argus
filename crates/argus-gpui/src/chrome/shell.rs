@@ -21,7 +21,7 @@ use crate::panes::console::ConsoleView;
 use crate::panes::terminal::Terminal;
 use crate::review::stage::GitStage;
 use crate::theme::Tokens;
-use crate::window::Header;
+use crate::chrome::header::Header;
 
 pub struct Shell {
     heard: Entity<Heard>,

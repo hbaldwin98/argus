@@ -13,7 +13,7 @@ use argus_desktop_core::connection::page::{
 };
 use argus_desktop_core::review::comment_box::{CommentPage, Recipient};
 use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
-use gpui_kit::{point, size, AnyWindowHandle, Bounds, ElementId, Modifiers, MouseButton, Pixels, Point, TestAppContext, WindowBounds, WindowOptions};
+use gpui_kit::{point, px, size, AnyWindowHandle, Bounds, ElementId, Modifiers, MouseButton, Pixels, Point, TestAppContext, WindowBounds, WindowOptions};
 
 type Calls = Rc<RefCell<Vec<Call>>>;
 
@@ -264,7 +264,7 @@ fn type_text(cx: &mut TestAppContext, opened: &Opened, text: &str) {
 /// How many items the review's virtual list has built, which is what a long diff must keep small:
 /// the elements of a window are only what the frame drew, and say nothing of what was built to get there.
 fn rows_built() -> usize {
-    crate::diff::view::built_by("review-diff")
+    crate::kit::diff::built_by("review-diff")
 }
 
 fn keys_typed(opened: &Opened) -> usize {

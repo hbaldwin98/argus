@@ -2,13 +2,10 @@
 
 pub mod chrome;
 pub mod connection;
-pub mod diff;
-pub mod fonts;
-pub mod icons;
 pub mod keys;
+pub mod kit;
 pub mod layout;
 pub mod panes;
-pub mod pointer;
 pub mod review;
 pub mod style;
 pub mod system;

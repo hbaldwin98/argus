@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use argus_gpui::fonts::SYMBOLS;
+use argus_gpui::kit::fonts::SYMBOLS;
 use argus_gpui::theme::ledger;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{font, px};

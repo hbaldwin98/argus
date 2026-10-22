@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use anyhow::{Context as _, Result};
 use argus_gpui::theme::Tokens;
-use argus_gpui::window::Header;
+use argus_gpui::chrome::header::Header;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{

@@ -4,7 +4,7 @@
 //!
 //! Everything it draws is `Heard`'s last `DocksPage`: which tabs, which one is
 //! shown, how big. A press only becomes a `Call` through `WorkView`, which owns
-//! the drag (`pointer::drag`): a tab picked is a click on release and a drag
+//! the drag (`kit::drag`): a tab picked is a click on release and a drag
 //! once it travels, a sash pressed is a size on release. The size drawn is
 //! Rust's except while the sash is held, so a refused or clamped size leaves
 //! the dock as Rust says it is.
@@ -22,14 +22,15 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{v_flex, Disableable as _};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    canvas, div, prelude::*, px, AnyElement, AnyView, App, Bounds, ClickEvent, Context, Entity, MouseButton, MouseDownEvent,
+    div, prelude::*, px, AnyElement, AnyView, App, Bounds, ClickEvent, Context, Entity, MouseButton, MouseDownEvent,
     Pixels, Role, SharedString, Subscription, WeakEntity, Window,
 };
 
-use crate::chrome::strip;
+use crate::kit::strip;
 use crate::connection::caller::Caller;
+use crate::kit::area;
 use crate::connection::heard::Heard;
-use crate::icons::Glyph;
+use crate::kit::icons::Glyph;
 use crate::layout::dock_menu;
 use crate::layout::panel;
 use crate::layout::work::{Held, WorkView};
@@ -268,11 +269,6 @@ impl DockView {
     }
 }
 
-/// Records the area its parent was laid out in.
-fn measure(into: Rc<Cell<Bounds<Pixels>>>) -> impl IntoElement {
-    canvas(move |bounds, _, _| into.set(bounds), |_, _, _, _| {}).absolute().size_full()
-}
-
 pub fn name(dock: Dock) -> &'static str {
     match dock {
         Dock::Left => "left",
@@ -330,7 +326,7 @@ impl Render for DockView {
                     .aria_label(title.clone())
                     .flex_1()
                     .min_h_0()
-                    .child(measure(self.panel.clone()))
+                    .child(area::measure(self.panel.clone()))
                     .when(shown == Panel::Console, |panel| {
                         let (carried, title) = (shown.clone(), title.clone());
                         let stage = present_of(&docks, &shown).is_some_and(|present| present.stage);

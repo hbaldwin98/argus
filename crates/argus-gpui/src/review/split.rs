@@ -2,7 +2,7 @@
 //! Changes, the commits beside it in History.
 //!
 //! The width is the window's own and is never sent anywhere. It follows the
-//! sash through the window's one drag helper (`pointer::drag`), so it moves
+//! sash through the window's one drag helper (`kit::drag`), so it moves
 //! only after the 5 px threshold and Escape puts it back to what it was at the
 //! press (`gpui/parity/cross-cutting.md`, Decided 6), as the docks' sashes do.
 //! A tab holds one [`Split`] entity for as long as it lives, so the width is
@@ -14,7 +14,7 @@ use gpui_kit::{
 };
 use gpui_kit::TestSupportExt as _;
 
-use crate::pointer::drag::{self, Drag, Dragger, Step};
+use crate::kit::drag::{self, Drag, Dragger, Step};
 use crate::theme::Tokens;
 
 /// The grab zone along the column's right edge, as wide as a dock's.

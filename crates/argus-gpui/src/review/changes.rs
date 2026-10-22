@@ -23,12 +23,12 @@ use gpui_kit::{div, prelude::*, px, Context, Entity, Role, SharedString, Subscri
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::diff::view::{DiffEvent, DiffView, Slot};
+use crate::kit::diff::{DiffEvent, DiffView, Slot};
 use crate::review::comment::{self, CommentBox};
 use crate::review::files::Files;
-use crate::review::ghosts::ghosts;
-use crate::review::hints;
-use crate::review::segment;
+use crate::kit::ghosts::ghosts;
+use crate::kit::hints;
+use crate::kit::segment;
 use crate::review::split::{self, Split};
 use crate::style::Typed as _;
 use crate::theme::Tokens;

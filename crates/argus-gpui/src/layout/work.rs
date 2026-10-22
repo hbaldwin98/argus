@@ -12,7 +12,7 @@
 //!
 //! Panels are dragged by a tab or a single panel's head, to a dock or the
 //! stage (`layout/drop_target`), through the window's one drag helper
-//! (`pointer::drag`) so the 5 px threshold and the cancel are not written here.
+//! (`kit::drag`) so the 5 px threshold and the cancel are not written here.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -23,16 +23,17 @@ use argus_desktop_core::panes::console::ConsolePlace;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    anchored, canvas, deferred, div, point, prelude::*, px, AnyView, Bounds, Context, Entity, FocusHandle, KeyDownEvent,
+    anchored, deferred, div, point, prelude::*, px, AnyView, Bounds, Context, Entity, FocusHandle, KeyDownEvent,
     MouseButton, Pixels, Point, SharedString, Subscription, Window,
 };
 
 use crate::connection::caller::Caller;
+use crate::kit::area;
 use crate::connection::heard::Heard;
 use crate::layout::dock::{self, DockView};
 use crate::layout::drop_target::{self, Target};
 use crate::layout::sash;
-use crate::pointer::drag::{self, Drag, Dragger, Step};
+use crate::kit::drag::{self, Drag, Dragger, Step};
 use crate::theme::Tokens;
 
 /// What is being pressed.
@@ -227,11 +228,6 @@ impl Dragger for WorkView {
     }
 }
 
-/// Records the area its parent was laid out in.
-fn measure(into: Rc<Cell<Bounds<Pixels>>>) -> impl IntoElement {
-    canvas(move |bounds, _, _| into.set(bounds), |_, _, _, _| {}).absolute().size_full()
-}
-
 impl Render for WorkView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
@@ -253,7 +249,7 @@ impl Render for WorkView {
             .relative()
             .size_full()
             .min_h_0()
-            .child(measure(self.work.clone()))
+            .child(area::measure(self.work.clone()))
             .child(drag::watch(cx.weak_entity()))
             .child(self.left.clone())
             .child(
@@ -263,7 +259,7 @@ impl Render for WorkView {
                     .flex_1()
                     .min_w(px(dock::FLOOR_WIDTH))
                     .h_full()
-                    .child(measure(self.center.clone()))
+                    .child(area::measure(self.center.clone()))
                     .child(div().id("work-stage").test_support().flex_1().min_h(px(dock::FLOOR_HEIGHT)).child(stage))
                     .child(self.bottom.clone()),
             )
