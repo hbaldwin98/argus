@@ -10,6 +10,11 @@ repository.workspace = true
 name = "argus-desktop-next"
 path = "src/main.rs"
 
+# The window's icon, the Tauri window's own: `build.rs` gives the executable it as resource 1,
+# which is where the GPUI platform looks for the taskbar's and a shortcut's icon.
+[build-dependencies]
+embed-resource = "3"
+
 [dependencies]
 # Pinned exactly: gpui-kit pins gpui-pre, a weekly snapshot of Zed's main, so
 # any other 0.8.x could move the whole GPUI underneath the port. Default
