@@ -1,4 +1,4 @@
-//! Which colours and faces the Ledger look uses, in gpui-kit's theme and beside it.
+//! Which colours the Ledger look uses, and how it and the page's tokens become gpui-kit's theme.
 //!
 //! gpui-kit's `Theme` has no role for `changed` or the `fainter` grey, so
 //! [`Ledger`] keeps the whole palette as a global of our own and [`install`]
@@ -6,7 +6,9 @@
 //! component also paints, and [`Ledger`] for the rest.
 
 use gpui_kit::component::{Colorize as _, Theme, ThemeColor, ThemeMode};
-use gpui_kit::{px, App, Global, Hsla, Rgba, SharedString};
+use gpui_kit::{px, App, Global, Hsla, Rgba};
+
+use crate::{fonts, tokens};
 
 /// The palette, named for what Argus uses each colour for.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -75,6 +77,41 @@ impl Ledger {
         cx.global::<Self>()
     }
 
+    /// `--bg-raised`: what sits on a surface (a selected segment, a chip's
+    /// card). Ledger leaves the page's mix, 55% of `--bg-surface` and 45% of
+    /// `--fill`, which is `0x1b1c1f` over its greys.
+    pub fn lifted(&self) -> Hsla {
+        hex(0x1b1c1f)
+    }
+
+    /// `--fill`: what a row or an icon button lifts to under the pointer. The
+    /// page's `--fill` is Ledger's `--surface0`, the hairline's own grey.
+    pub fn fill(&self) -> Hsla {
+        self.line
+    }
+
+    /// `.rfile.on:hover`: a lit row under the pointer, the selected colour
+    /// with 6% of the text colour over it.
+    pub fn selected_hover(&self) -> Hsla {
+        self.selected.blend(self.foreground.opacity(0.06))
+    }
+
+    /// `.btn:hover`: the text colour at 7% over whatever is behind, so a
+    /// hover reads on every surface the way the page's does.
+    pub fn hover_fill(&self) -> Hsla {
+        self.foreground.opacity(0.07)
+    }
+
+    /// `.btn:active`: 12%.
+    pub fn press_fill(&self) -> Hsla {
+        self.foreground.opacity(0.12)
+    }
+
+    /// `--ring-shadow`: the halo around a focused control.
+    pub fn ring_halo(&self) -> Hsla {
+        self.accent.opacity(tokens::focus::HALO_ALPHA)
+    }
+
     /// gpui-kit's roles for this palette, starting from its dark set so any
     /// role not named here (chart colours, the plain `red`...) stays legible.
     ///
@@ -110,9 +147,9 @@ impl Ledger {
         c.primary_hover = self.accent.lighten(0.06);
         c.primary_active = self.accent.darken(0.06);
         c.primary_foreground = on_fill;
-        c.secondary = self.raised;
-        c.secondary_hover = self.selected;
-        c.secondary_active = self.line;
+        c.secondary = transparent;
+        c.secondary_hover = self.hover_fill();
+        c.secondary_active = self.press_fill();
         c.secondary_foreground = self.foreground;
 
         c.danger = self.danger;
@@ -136,17 +173,17 @@ impl Ledger {
         c.link_hover = self.link.lighten(0.08);
         c.link_active = self.link.darken(0.08);
 
-        c.button = self.raised;
-        c.button_hover = self.selected;
-        c.button_active = self.line;
+        c.button = transparent;
+        c.button_hover = self.hover_fill();
+        c.button_active = self.press_fill();
         c.button_foreground = self.foreground;
         c.button_primary = c.primary;
         c.button_primary_hover = c.primary_hover;
         c.button_primary_active = c.primary_active;
         c.button_primary_foreground = on_fill;
-        c.button_secondary = self.raised;
-        c.button_secondary_hover = self.selected;
-        c.button_secondary_active = self.line;
+        c.button_secondary = transparent;
+        c.button_secondary_hover = self.hover_fill();
+        c.button_secondary_active = self.press_fill();
         c.button_secondary_foreground = self.foreground;
         c.button_danger = c.danger;
         c.button_danger_hover = c.danger_hover;
@@ -180,7 +217,7 @@ impl Ledger {
         c.list = self.background;
         c.list_even = self.background;
         c.list_head = self.chrome;
-        c.list_hover = self.raised;
+        c.list_hover = self.hover_fill();
         c.list_active = self.selected;
         c.list_active_border = self.accent;
         c.table = self.background;
@@ -189,7 +226,7 @@ impl Ledger {
         c.table_head_foreground = self.faint;
         c.table_foot = self.chrome;
         c.table_foot_foreground = self.faint;
-        c.table_hover = self.raised;
+        c.table_hover = self.hover_fill();
         c.table_active = self.selected;
         c.table_active_border = self.accent;
         c.table_row_border = self.line;
@@ -231,49 +268,41 @@ impl Ledger {
     }
 }
 
+/// `.winbtn.shut:hover`: Windows' own close red and white, which no theme
+/// recolours (the stylesheet writes them as literals), so they are not in the
+/// palette.
+pub fn window_close_hover() -> (Hsla, Hsla) {
+    (hex(0xc42b1c), hex(0xffffff))
+}
+
 impl Default for Ledger {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// The first of `wanted` the system has, else `fallback`: a family GPUI
-/// cannot find does not fail loudly, the text just shapes in whatever it
-/// substitutes, so the choice is made here where it can be tested.
-pub fn first_installed(installed: &[String], wanted: &[&str], fallback: &str) -> SharedString {
-    let name = wanted
-        .iter()
-        .copied()
-        .find(|name| installed.iter().any(|have| have == name))
-        .unwrap_or(fallback);
-    SharedString::from(name.to_owned())
-}
-
-/// Puts the Ledger palette, fonts and radii on gpui-kit's global theme and
-/// registers [`Ledger`] beside it. Call after `gpui_kit::init`.
+/// Registers the bundled fonts, puts the Ledger palette and the page's type,
+/// radii and motion on gpui-kit's global theme, and registers [`Ledger`]
+/// beside it. Call after `gpui_kit::init`.
 ///
 /// The mode is set first and the colours in a second `Theme::update`: a mode
 /// change reloads that mode's registered theme over any colour edited in the
 /// same closure.
 pub fn install(cx: &mut App) {
+    fonts::install(cx);
     let ledger = Ledger::new();
-    let installed = cx.text_system().all_font_names();
-    let ui = first_installed(&installed, &["Inter", "Inter Variable"], "Segoe UI");
-    let mono = first_installed(
-        &installed,
-        &["JetBrains Mono", "JetBrainsMono Nerd Font"],
-        "Consolas",
-    );
 
     Theme::change(ThemeMode::Dark, None, cx);
     Theme::update(cx, |theme| {
         theme.colors = ledger.colors();
-        theme.font_family = ui;
-        theme.mono_font_family = mono;
-        theme.font_size = px(13.0);
-        theme.mono_font_size = px(13.0);
-        theme.radius = px(4.0);
-        theme.radius_lg = px(6.0);
+        theme.font_family = fonts::UI.into();
+        theme.mono_font_family = fonts::MONO.into();
+        theme.font_size = px(tokens::fs::MD);
+        theme.mono_font_size = px(tokens::ty::MONO.size);
+        // `--r-sm` for a control, `--r-lg` for a dialog or a notice.
+        theme.radius = px(tokens::radius::SM);
+        theme.radius_lg = px(tokens::radius::LG);
+        theme.motion.duration_fast = tokens::motion::FAST;
         // Flat surfaces with hairlines: depth comes from the line, not a shadow.
         theme.shadow = false;
     });
@@ -304,11 +333,11 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_family_falls_back() {
-        let installed = vec!["Segoe UI".to_owned()];
-        assert_eq!(first_installed(&installed, &["Inter"], "Segoe UI"), "Segoe UI");
-        let installed = vec!["Inter".to_owned()];
-        assert_eq!(first_installed(&installed, &["Inter"], "Segoe UI"), "Inter");
+    fn hover_and_press_are_the_pages_foreground_mixes() {
+        let ledger = Ledger::new();
+        assert!((ledger.hover_fill().a - 0.07).abs() < 1e-6);
+        assert!((ledger.press_fill().a - 0.12).abs() < 1e-6);
+        assert_eq!(ledger.colors().button_hover, ledger.hover_fill());
     }
 
     #[gpui_kit::test]
@@ -318,6 +347,11 @@ mod tests {
             install(cx);
             assert_eq!(cx.theme().background, Ledger::global(cx).background);
             assert!(cx.theme().is_dark());
+            assert_eq!(cx.theme().font_family, fonts::UI);
+            assert_eq!(cx.theme().mono_font_family, fonts::MONO);
+            assert_eq!(cx.theme().font_size, px(13.0));
+            assert_eq!(cx.theme().radius, px(6.0));
+            assert_eq!(cx.theme().radius_lg, px(12.0));
         });
     }
 }

@@ -12,33 +12,35 @@
 //! While the daemon is gone the dock is dimmed and answers no press, as the
 //! sidebar does (`Heard::held`).
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{Dock, DockGesture, DockPage, DockTab, DocksPage, Panel, PresentPanel};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{h_flex, v_flex, Disableable as _, Icon, IconName, Sizable as _};
+use gpui_kit::component::{v_flex, Disableable as _};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, prelude::*, px, AnyElement, AnyView, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Role,
-    SharedString, Subscription, WeakEntity, Window,
+    canvas, div, prelude::*, px, AnyElement, AnyView, App, Bounds, ClickEvent, Context, Entity, MouseButton, MouseDownEvent,
+    Pixels, Role, SharedString, Subscription, WeakEntity, Window,
 };
 
+use crate::chrome::strip;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::icons::Glyph;
 use crate::layout::dock_menu;
 use crate::layout::panel;
 use crate::layout::work::{Held, WorkView};
+use crate::style::Typed as _;
 use crate::theme::Ledger;
+use crate::tokens::{radius, size, sp, ty, weight};
 
-/// The height of a tab strip or a single panel's head.
-pub const STRIP: f32 = 34.0;
 /// What a side dock leaves the stage of the width at least: `--dock-floor` in the page.
 pub const FLOOR_WIDTH: f32 = 240.0;
 /// What the bottom dock leaves the stage of the height at least: the page's `100% - 120px`.
 pub const FLOOR_HEIGHT: f32 = 120.0;
-/// How thick the sash's grab zone is, inside the dock's own edge.
-const SASH: f32 = 6.0;
 
 pub struct DockView {
     dock: Dock,
@@ -47,6 +49,9 @@ pub struct DockView {
     work: WeakEntity<WorkView>,
     /// What the console panel draws, which is one view wherever it is docked.
     console: AnyView,
+    /// Where the panel was last laid out: the console's strip is its head, and
+    /// a press in the top of it carries the panel as a head does.
+    panel: Rc<Cell<Bounds<Pixels>>>,
     _observing: Subscription,
 }
 
@@ -60,7 +65,7 @@ impl DockView {
         cx: &mut Context<Self>,
     ) -> Self {
         let observing = cx.observe(&heard, |_, _, cx| cx.notify());
-        Self { dock, heard, caller, work, console, _observing: observing }
+        Self { dock, heard, caller, work, console, panel: Rc::default(), _observing: observing }
     }
 
     fn name(&self) -> &'static str {
@@ -104,37 +109,15 @@ impl DockView {
         let stage = present.as_ref().is_some_and(|present| present.stage);
         let entries = dock_menu::tab(&panel, &tab.title, docks, present.as_ref());
         let (caller, heard) = (self.caller.clone(), self.heard.clone());
-        let (hover, selected, line, muted, foreground, faint) =
-            (ledger.raised, ledger.selected, ledger.line_strong, ledger.muted, ledger.foreground, ledger.faint);
         let (held_panel, held_title) = (panel.clone(), tab.title.clone());
         let (closing, middle) = (panel.clone(), panel.clone());
         let close_label = format!("Close {}", tab.title);
-        h_flex()
-            .id(SharedString::from(format!("dock-tab-{panel}")))
-            .role(Role::Tab)
-            .test_support()
-            .aria_selected(on)
-            .aria_label(tab.title.clone())
-            .flex_shrink_0()
-            .h(px(26.0))
-            .pl_3()
-            .pr_1()
-            .gap_1()
-            .items_center()
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(if on { line } else { gpui_kit::transparent_black() })
-            .text_sm()
-            .text_color(if on { foreground } else { muted })
-            .when(on, |tab| tab.bg(selected))
-            .when(!on, |tab| tab.hover(move |style| style.bg(hover)))
-            .cursor_pointer()
+        strip::tab(SharedString::from(format!("dock-tab-{panel}")), on, closes, tab.title.clone(), ledger)
             // A title truncates at the tab's width; the tooltip has all of it (SHELL-DOCK-3).
             .tooltip({
                 let title = tab.title.clone();
                 move |window, cx| Tooltip::new(title.clone()).build(window, cx)
             })
-            .when(!closes, |tab| tab.pr_3())
             // A tab picked is a click on release and a drag once it travels.
             .on_mouse_down(
                 MouseButton::Left,
@@ -158,27 +141,15 @@ impl DockView {
                     }
                 }))
             })
-            .child(div().max_w(px(180.0)).overflow_hidden().whitespace_nowrap().child(tab.title.clone()))
+            .child(strip::title(tab.title.clone()))
             .when(closes, |tab| {
                 tab.child(
-                    div()
-                        .id(SharedString::from(format!("dock-tab-close-{closing}")))
-                        .role(Role::Button)
-                        .test_support()
-                        .aria_label(close_label)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .size(px(18.0))
-                        .rounded(px(3.0))
-                        .text_color(faint)
-                        .hover(move |style| style.text_color(foreground))
+                    strip::close_x(SharedString::from(format!("dock-tab-close-{closing}")), close_label, ledger)
                         // The tab's own press, which would begin a drag.
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.ask(Call::Docks { gesture: DockGesture::Close { panel: closing.clone() } }, cx)
-                        }))
-                        .child(Icon::new(IconName::Close).xsmall()),
+                        })),
                 )
             })
             .context_menu(move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, cx))
@@ -186,24 +157,21 @@ impl DockView {
 
     /// The "Move to another dock" button: the dock the panel sits in, which
     /// opens the menu of docks.
-    fn menu_button(&self, panel: &Panel, docks: &DocksPage, held: bool) -> impl IntoElement {
+    fn menu_button(&self, panel: &Panel, docks: &DocksPage, held: bool, ledger: &Ledger, cx: &App) -> impl IntoElement {
         let present = present_of(docks, panel);
         let entries = dock_menu::moves(panel, true, docks, present.as_ref());
         let (caller, heard) = (self.caller.clone(), self.heard.clone());
-        let icon = match self.dock {
-            Dock::Left => IconName::PanelLeft,
-            Dock::Right => IconName::PanelRight,
-            Dock::Bottom => IconName::PanelBottom,
+        let glyph = match self.dock {
+            Dock::Left => Glyph::DockLeft,
+            Dock::Right => Glyph::DockRight,
+            Dock::Bottom => Glyph::DockBottom,
         };
         div()
             .flex_shrink_0()
             // The head's press, which would begin a drag of the panel.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
-                Button::new(SharedString::from(format!("dock-menu-{}", self.name())))
-                    .ghost()
-                    .xsmall()
-                    .icon(icon)
+                strip::menu_button(SharedString::from(format!("dock-menu-{}", self.name())), glyph, 15.0, ledger, cx)
                     .tooltip("Move to another dock")
                     .disabled(held)
                     .dropdown_menu(move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, cx)),
@@ -213,40 +181,28 @@ impl DockView {
     fn strip(&self, page: &DockPage, shown: &Panel, docks: &DocksPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
         let tabs: Vec<AnyElement> =
             page.tabs.iter().map(|tab| self.tab(tab, &tab.panel == shown, docks, ledger, cx).into_any_element()).collect();
-        h_flex()
+        let held = self.heard.read(cx).held();
+        strip::bar(ledger)
             .id(SharedString::from(format!("dock-{}-tabs", self.name())))
             .role(Role::TabList)
             .test_support()
-            .flex_shrink_0()
-            .h(px(STRIP))
-            .px_2()
-            .gap_1()
-            .items_center()
-            .bg(ledger.chrome)
-            .border_b_1()
-            .border_color(ledger.line)
             .children(tabs)
             .child(div().flex_1())
-            .child(self.menu_button(shown, docks, self.heard.read(cx).held()))
+            .child(self.menu_button(shown, docks, held, ledger, cx))
     }
 
     /// A single panel's head: its name, which drags it, and its dock button.
+    /// The console has none: its own strip is its head, with the dock menu in it.
     fn head(&self, shown: &Panel, title: &str, docks: &DocksPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
         let stage = present_of(docks, shown).is_some_and(|present| present.stage);
         let (panel, held_title) = (shown.clone(), title.to_owned());
-        h_flex()
+        let held = self.heard.read(cx).held();
+        strip::bar(ledger)
             .id(SharedString::from(format!("dock-{}-head", self.name())))
             .test_support()
-            .flex_shrink_0()
-            .h(px(STRIP))
-            .pl_3()
-            .pr_2()
-            .gap_2()
-            .items_center()
-            .bg(ledger.chrome)
-            .border_b_1()
-            .border_color(ledger.line)
-            .text_sm()
+            .pl(px(sp::S12))
+            .typed(ty::SMALL)
+            .weighted(weight::MEDIUM)
             .text_color(ledger.muted)
             .on_mouse_down(
                 MouseButton::Left,
@@ -256,20 +212,38 @@ impl DockView {
                     this.press(event.position, held, cx);
                 }),
             )
-            .child(div().flex_1().overflow_hidden().whitespace_nowrap().child(title.to_owned()))
-            .child(self.menu_button(shown, docks, self.heard.read(cx).held()))
+            .child(div().flex_1().truncate().child(title.to_owned()))
+            .child(self.menu_button(shown, docks, held, ledger, cx))
     }
 
-    /// The grab zone along the edge the dock is sized by.
+    /// The grab zone along the edge the dock is sized by, with the page's
+    /// grip (`.dock-sash::after`) in it: a pill in the accent colour, hidden
+    /// until the pointer is on the zone or the sash is held.
+    ///
+    /// The page's zone is 24px wide about the hairline; here it is the 12px
+    /// inside the dock's edge, since the stage beside it is drawn over what
+    /// reaches past.
     fn sash(&self, held: bool, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
         let (accent, dock) = (ledger.accent, self.dock);
+        let name = SharedString::from(format!("dock-{}-sash", self.name()));
+        let (across, along) = (px(sp::S4), px(sp::S32));
+        let grip = div()
+            .absolute()
+            .rounded(px(radius::PILL))
+            .bg(accent)
+            .opacity(if held { 1.0 } else { 0.0 })
+            .group_hover(name.clone(), |style| style.opacity(1.0));
+        let grip = match dock {
+            Dock::Left => grip.right_0().top_1_2().mt(-along / 2.0).w(across).h(along),
+            Dock::Right => grip.left_0().top_1_2().mt(-along / 2.0).w(across).h(along),
+            Dock::Bottom => grip.top_0().left_1_2().ml(-along / 2.0).w(along).h(across),
+        };
         let zone = div()
-            .id(SharedString::from(format!("dock-{}-sash", self.name())))
+            .id(name.clone())
+            .group(name)
             .role(Role::Splitter)
             .test_support()
             .absolute()
-            .when(held, |zone| zone.bg(accent))
-            .hover(move |style| style.bg(accent.opacity(0.4)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -284,13 +258,20 @@ impl DockView {
                     };
                     this.work.update(cx, |work, cx| work.press_sash(dock, drawn, event.position, cx)).ok();
                 }),
-            );
+            )
+            .child(grip);
+        let reach = px(sp::S12);
         match self.dock {
-            Dock::Left => zone.top_0().bottom_0().right_0().w(px(SASH)).cursor_col_resize(),
-            Dock::Right => zone.top_0().bottom_0().left_0().w(px(SASH)).cursor_col_resize(),
-            Dock::Bottom => zone.left_0().right_0().top_0().h(px(SASH)).cursor_row_resize(),
+            Dock::Left => zone.top_0().bottom_0().right_0().w(reach).cursor_col_resize(),
+            Dock::Right => zone.top_0().bottom_0().left_0().w(reach).cursor_col_resize(),
+            Dock::Bottom => zone.left_0().right_0().top_0().h(reach).cursor_row_resize(),
         }
     }
+}
+
+/// Records the area its parent was laid out in.
+fn measure(into: Rc<Cell<Bounds<Pixels>>>) -> impl IntoElement {
+    canvas(move |bounds, _, _| into.set(bounds), |_, _, _, _| {}).absolute().size_full()
 }
 
 pub fn name(dock: Dock) -> &'static str {
@@ -338,16 +319,34 @@ impl Render for DockView {
             Dock::Bottom => root.h(size).min_h_0().w_full().border_t_1(),
         };
         let strip = (page.tabs.len() > 1).then(|| self.strip(&page, &shown, &docks, &ledger, cx).into_any_element());
-        let head = (page.tabs.len() <= 1).then(|| self.head(&shown, &title, &docks, &ledger, cx).into_any_element());
+        let head = (page.tabs.len() <= 1 && shown != Panel::Console)
+            .then(|| self.head(&shown, &title, &docks, &ledger, cx).into_any_element());
         root.children(strip)
             .children(head)
             .child(
                 div()
                     .id(SharedString::from(format!("dock-{name}-panel")))
                     .test_support()
+                    .relative()
                     .aria_label(title.clone())
                     .flex_1()
                     .min_h_0()
+                    .child(measure(self.panel.clone()))
+                    .when(shown == Panel::Console, |panel| {
+                        let (carried, title) = (shown.clone(), title.clone());
+                        let stage = present_of(&docks, &shown).is_some_and(|present| present.stage);
+                        // The console's strip is its head. Its tabs and buttons take their own
+                        // presses; one that reaches here and is in the strip's height is the head's.
+                        panel.on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                                if event.position.y - this.panel.get().origin.y < px(size::STRIP_H) {
+                                    let held = Held::Panel { panel: carried.clone(), title: title.clone(), stage, click: false };
+                                    this.press(event.position, held, cx);
+                                }
+                            }),
+                        )
+                    })
                     .child(if shown == Panel::Console {
                         self.console.clone().into_any_element()
                     } else {

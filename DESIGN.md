@@ -761,11 +761,16 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | --- | --- |
 | `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, the window, and the unattended report of what was heard |
 | `chrome` | the window's frame around the stage: the sidebar and its foot |
+| `chrome/button` | what the page's text buttons look like: `.btn` with its primary and small forms, and the `.chipf` choice chip, as pills that tint, lift and press under the pointer |
 | `chrome/foot` | the sidebar's foot: the tallies that need a look, a daemon's alarm, and the connection in one shape in every state |
+| `chrome/icon_button` | what the page's `.icon` button looks like: 28px, muted, lifting to the fill and the text colour under the pointer, pressing to the fill with the text over it, and the lit one |
+| `chrome/keycap` | what one key's cap looks like wherever a key is named, in the sidebar, the hints and the comment buttons: the page's `.kbd` |
 | `chrome/nav` | the sidebar's way between stages: which items there are, which one the stage on screen lights, and the call each press makes |
-| `chrome/rail` | the sidebar: the nav, the projects, the picked project's repositories with their checkouts and panes, the picked row and where it goes when a fold or a close takes its row away, and the foot; dimmed while the daemon is gone, and neither calling nor picking on a press |
+| `chrome/rail` | the sidebar: the nav, the projects, the picked project's repositories with their checkouts and panes, the picked row and where it goes when a fold or a close takes its row away, the brand row, and the foot with its console chip and chime switch; the tree dimmed while the daemon is gone, and neither calling nor picking on a press |
 | `chrome/shell` | which regions the window is made of and how they sit: the sidebar at full height, and beside it the work area under the stage's header |
 | `chrome/stage` | which view fills the stage while the Workspace would: the Git stage while the session has a review or history open, else the Workspace's live pane |
+| `chrome/status_dot` | what a pane's or console's status looks like with no word: a turning ring, a filled dot, a dash, a hollow ring |
+| `chrome/strip` | the page's one tab strip, drawn once for the docks, the console and a split side: the bar, the tab chip with its selected and hover states, the close, the menu button |
 | `connection` | how the window trades with the daemon and its own views |
 | `connection/caller` | how a view hands a `Call` on without knowing who answers it |
 | `connection/heard` | what the window has heard from its session: the latest of each kind of event a view draws (the tree, the docks, the console's tabs and sides, the screens of the Workspace and of the console's two sides, the review, the history and the window-local Git entry state), in one model every view observes, whether the sidebar is held, and whether a dock's sash is held (set by the work area for the pane to wait on) |
@@ -773,12 +778,14 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `diff` | how a diff is drawn: what each row shows, and the virtual list that holds them |
 | `diff/lines` | what one diff row shows as plain data: its height, the number each half carries, a line's text with tabs stopped by cells and highlight kinds cut into spans, the wash and fill by side, how many cells a text takes and the lines it wraps to at a width (cut at the cell, never at a word), and where a comment box sits among the rows |
 | `diff/view` | a diff in a virtual list so only the rows on screen are built: unified lines or split pairs, folds with their buttons, a slot under one row, the scroll kept across updates and the cursor brought into view; a unified diff is one column as wide as its longest line, scrolling sideways, and a split half wraps with its row's height told to the list up front; it reports a press and sends no call, and serves review, history, the patch block and the Code stage |
+| `fonts` | which typefaces the window ships (Inter, JetBrains Mono and the Nerd Font symbols, converted from the page's woff2 files, with their licences) and their registration with GPUI's text system |
+| `icons` | which glyphs the window draws that the kit's Lucide set lacks: the page's own icon set as SVG files, handed to the kit's `Icon` as bytes |
 | `keys` | how a key or committed text reaches the session |
 | `keys/caps` | how a chord of the session's keymap is written for a menu or a tooltip: the leader's press first when the chord follows it, modifiers before the key |
 | `keys/page_key` | which `PageKey` a GPUI keystroke is: the DOM's names for the keys, the character typed rather than the key printed, AltGr as a character and not a chord |
 | `keys/text` | the text an input method commits into the pane: GPUI's input handler for the terminal view, which holds no text and draws no preedit |
 | `layout` | where the stage and the docks sit around each other, and how a panel is moved between them |
-| `layout/dock` | one dock drawn from Rust's `DocksPage`: its tab strip while it holds more than one panel, the shown panel under a head of its own while it holds one, its sash, and the press each of them makes; dimmed and not answering while the daemon is gone |
+| `layout/dock` | one dock drawn from Rust's `DocksPage`: its tab strip while it holds more than one panel, the shown panel under a head of its own while it holds one (the console's own strip is its head, and a press in the top of it carries the panel), its sash with the page's grip, and the press each of them makes; dimmed and not answering while the daemon is gone |
 | `layout/dock_menu` | what a panel's dock menu and a dock tab's context menu offer, which item is where the panel already is, and the `Call` each sends |
 | `layout/drop_target` | where a panel dropped at a point would land (a dock, or the stage for a panel that has a page), the area to preview, and the call the drop sends |
 | `layout/panel` | what a docked panel's body draws while it is not ported: its name and a quiet line that it is not in the GPUI window yet (the console is drawn by `panes/console`) |
@@ -802,16 +809,19 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `review/entry` | how the window enters and leaves the Git stage and the calls each way sends: Git opens the review of the checkout the window is on, a tab closes the other and opens its own, any other way out closes what is open; the stage is the session's to say |
 | `review/filter` | the history's filter field in the stage's strip: each edit sent as it stands with no debounce, its text its own until the history shuts, Enter and Escape giving the list its keys back without closing the history |
 | `review/files` | the changed-files column: the side read, the files or the jump field's matches, the lit file brought into view, and the jump field whose own keys step, choose and close ahead of the input's |
+| `review/ghosts` | what a list or a diff looks like while it loads: the page's shimmering `.ghost` bars, each a share of the width |
 | `review/hints` | the footer that names a tab's keys, as caps and what each does, shared by the Changes and History tabs |
 | `review/history` | the History tab: a checkout's commits unfolding to their files beside the diff of the file under the cursor as a full stage, every field of the session's `HistoryPage` drawn, the diff only once an event carries it, and each press sending the page's call and changing nothing until the event |
 | `review/keys` | which gesture a key is while a tab holds the keys, read from the session's own bindings: the review's, the history's (`/` unsent) or the jump field's |
 | `review/segment` | a choice of a few drawn as pills in one rounded track: the Git tabs, the side and the layout |
 | `review/split` | how wide the left column of a Git tab is, the files beside the diff or the commits beside it: the window's own width, followed by its sash through the one drag helper so it moves after 5 px and Escape puts it back, kept across the tabs and never sent |
 | `review/stage` | the Git stage under its header: the branch, the Changes and History tabs, the count, refresh and close, the keys held and each tab's heard, taking the keys as it appears and giving a closed field's or a closed history's back |
+| `style` | how a page token lands on an element: its type (weight, size and line height) as one call |
 | `system` | what the GPUI window asks of the machine it runs on |
 | `system/clipboard` | the system clipboard through arboard, as `effects::Clipboard`: text, a picture encoded as a PNG, and the files a file manager copied |
-| `theme` | which colours and faces the Ledger look uses: the palette as `gpui-kit` theme roles, and the roles it lacks (changed, fainter) kept beside it |
-| `window` | how a frameless main window opens around an example's own view, what its header strip holds (the drag region and the window controls), and ending what ran for the window when the last one closes |
+| `theme` | which colours the Ledger look uses: the palette as `gpui-kit` theme roles with the page's hover and press fills, the roles it lacks (changed, fainter) kept beside it, and the page's type, radii and motion put on the kit's theme |
+| `tokens` | the page's design tokens under Ledger as plain numbers: type scale, weights, spacing, radii, control and row sizes, shadows, focus ring and motion timings, held to the stylesheet's values |
+| `window` | how a frameless main window opens around an example's own view, what its header strip holds (the stage's breadcrumb and title, the drag region and the window controls), and ending what ran for the window when the last one closes |
 
 ## Views
 

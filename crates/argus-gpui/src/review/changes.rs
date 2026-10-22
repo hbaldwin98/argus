@@ -19,22 +19,24 @@ use argus_desktop_core::connection::page::{Call, ReviewClick, ReviewPage};
 use argus_desktop_core::keys::keymap::Action;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{
-    div, prelude::*, px, relative, Context, Entity, FontWeight, Role, SharedString, Subscription, Window,
-};
+use gpui_kit::{div, prelude::*, px, Context, Entity, Role, SharedString, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::diff::view::{DiffEvent, DiffView, Slot};
 use crate::review::comment::{self, CommentBox};
 use crate::review::files::Files;
+use crate::review::ghosts::ghosts;
 use crate::review::hints;
 use crate::review::segment;
 use crate::review::split::{self, Split};
+use crate::style::Typed as _;
 use crate::theme::Ledger;
+use crate::tokens::{radius, sp, ty, weight};
 
-/// The width the list of files opens at, and how far the person may drag it.
-const FILES: f32 = 320.0;
+/// The width the list of files opens at (`--list-col-w`), and how far the
+/// person may drag it.
+const FILES: f32 = 300.0;
 const FILES_MIN: f32 = 200.0;
 const FILES_MAX: f32 = 520.0;
 
@@ -99,7 +101,7 @@ impl Changes {
     pub fn follow(&mut self, page: &ReviewPage, window: &mut Window, cx: &mut Context<Self>) {
         self.comment.update(cx, |comment, cx| comment.follow(page.comment.as_ref(), window, cx));
         self.files.update(cx, |files, cx| files.follow(page, window, cx));
-        let slot = page.comment.as_ref().map(|_| Slot { view: self.comment.clone().into(), height: comment::HEIGHT });
+        let slot = page.comment.as_ref().map(|c| Slot { view: self.comment.clone().into(), height: comment::height(c) });
         self.diff.update(cx, |diff, cx| diff.show(&page.rows, page.split, slot, cx));
     }
 
@@ -125,38 +127,47 @@ impl Changes {
                 }
             }))
         };
+        // `.fhdr`: on the chrome colour over a hairline, 12px about its parts.
         h_flex()
             .id("review-diff-head")
             .flex_shrink_0()
-            .h(px(44.0))
-            .px_4()
-            .gap_3()
+            .h(px(sp::S44))
+            .px(px(sp::S12))
+            .gap(px(sp::S12))
             .items_center()
+            .bg(ledger.chrome)
             .border_b_1()
             .border_color(ledger.line)
             .when_some(file, |head, file| {
-                head.child(div().flex_shrink_0().font_weight(FontWeight::SEMIBOLD).child(SharedString::from(file.name.clone())))
+                head.child(div().flex_shrink_0().weighted(weight::BOLD).child(SharedString::from(file.name.clone())))
                     .child(
                         div()
                             .min_w_0()
                             .truncate()
-                            .text_xs()
+                            .typed(ty::SMALL)
                             .font_family(cx.theme().mono_font_family.clone())
-                            .text_color(ledger.faint)
+                            .text_color(ledger.muted)
                             .child(SharedString::from(file.dir.trim_end_matches('/').to_owned())),
                     )
-                    .child(div().text_xs().text_color(ledger.success).child(SharedString::from(format!("+{}", file.added))))
-                    .child(div().text_xs().text_color(ledger.danger).child(SharedString::from(format!("\u{2212}{}", file.removed))))
+                    .child(div().text_color(ledger.success).child(SharedString::from(format!("+{}", file.added))))
+                    .child(div().text_color(ledger.danger).child(SharedString::from(format!("\u{2212}{}", file.removed))))
             })
             .child(div().flex_1())
+            // `.ktag`: what is picked, as a pill.
             .when_some(page.pick.clone(), |head, pick| {
                 head.child(
                     div()
                         .id("review-pick")
                         .test_support()
                         .aria_label(SharedString::from(format!("{pick} picked")))
-                        .text_xs()
+                        .flex_shrink_0()
+                        .px(px(sp::S8))
+                        .rounded(px(radius::PILL))
+                        .border_1()
+                        .border_color(ledger.line_strong)
+                        .typed(ty::SMALL)
                         .text_color(ledger.muted)
+                        .whitespace_nowrap()
                         .child(SharedString::from(format!("{pick} picked"))),
                 )
             })
@@ -170,24 +181,18 @@ impl Changes {
     /// Loading bars, or why there is no diff, or the diff.
     fn body(&self, page: &ReviewPage, ledger: &Ledger) -> gpui_kit::AnyElement {
         if page.loading {
-            return v_flex()
-                .id("review-loading")
-                .test_support()
-                .size_full()
-                .p_4()
-                .gap_3()
-                .bg(ledger.background)
-                .children(BARS.map(|width| div().h(px(12.0)).w(relative(width)).rounded(px(3.0)).bg(ledger.raised)))
-                .into_any_element();
+            return div().size_full().bg(ledger.background).child(ghosts("review-loading", &BARS, ledger)).into_any_element();
         }
         if let Some(why) = &page.empty {
+            // `.review-empty`: 24px about a line in the body type.
             return div()
                 .id("review-empty")
                 .test_support()
                 .aria_label(SharedString::from(why.clone()))
                 .size_full()
-                .p_6()
+                .p(px(sp::S24))
                 .bg(ledger.background)
+                .typed(ty::BODY)
                 .text_color(ledger.muted)
                 .child(SharedString::from(why.clone()))
                 .into_any_element();
@@ -214,7 +219,6 @@ impl Render for Changes {
             .id("review")
             .test_support()
             .size_full()
-            .bg(ledger.background)
             .child(
                 h_flex()
                     .flex_1()

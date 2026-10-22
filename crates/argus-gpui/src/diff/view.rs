@@ -59,13 +59,15 @@ use gpui_kit::size;
 
 use crate::diff::lines::{self, Code, Item, Shape};
 use crate::pointer::drag::{self, Drag, Dragger, Step};
+use crate::fonts;
 use crate::theme::Ledger;
+use crate::tokens::{fs, radius, size, sp};
 
 /// The width of a line-number column, and of the marker's.
 const NUMBER: f32 = 44.0;
 const MARKER: f32 = 16.0;
-/// What a comment box's left edge clears: both number columns and the marker.
-pub const GUTTER: f32 = NUMBER * 2.0 + MARKER + 4.0;
+/// What a comment box's left edge clears: both number columns and the marker (`.comment-card`'s 104px).
+pub const GUTTER: f32 = NUMBER * 2.0 + MARKER;
 /// Room after the last cell of a line, so its end is not flush with the edge
 /// of its colour.
 const TAIL: f32 = 8.0;
@@ -389,12 +391,10 @@ impl DiffView {
             .test_support()
             .flex_shrink_0()
             .h(px(lines::HUNK))
-            .px_3()
+            .px(px(sp::S12))
             .items_center()
             .bg(ledger.chrome)
             .text_color(ledger.faint)
-            .border_b_1()
-            .border_color(ledger.line)
             .overflow_hidden()
             .whitespace_nowrap()
             .child(SharedString::from(row.text.clone()))
@@ -410,16 +410,19 @@ impl DiffView {
                 .id((id, ix))
                 .test_support()
                 .aria_label(SharedString::from(label.clone()))
-                .px_1()
-                .h(px(22.0))
+                // `.fbtn`: the reference colour in the interface face, lifting to `--fill`.
+                .px(px(sp::S4))
+                .h(px(size::FOLD_BTN_H))
                 .flex()
                 .items_center()
-                .rounded(px(3.0))
+                .rounded(px(radius::XS))
+                .font_family(SharedString::from(fonts::UI))
+                .text_size(px(fs::SM))
                 .text_color(ledger.link)
                 .cursor_pointer()
                 .hover({
-                    let raised = ledger.raised;
-                    move |style| style.bg(raised)
+                    let fill = ledger.fill();
+                    move |style| style.bg(fill)
                 })
                 .on_click(cx.listener(move |_, _, _, cx| {
                     // The row under it would take the click as a move first.
@@ -433,12 +436,13 @@ impl DiffView {
             .test_support()
             .flex_shrink_0()
             .h(px(lines::FOLD))
-            .px_3()
-            .gap_2()
+            .px(px(sp::S12))
+            .gap(px(sp::S8))
             .items_center()
             .bg(ledger.chrome)
             .text_color(ledger.muted)
-            .text_sm()
+            .font_family(SharedString::from(fonts::UI))
+            .text_size(px(fs::SM))
             .border_t_1()
             .border_b_1()
             .border_dashed()
@@ -723,8 +727,8 @@ fn half(
     down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
     pin: Option<Pin>,
 ) -> impl IntoElement {
-    let changed = side.is_some_and(|side| side.kind != "context");
-    let number_colour = if changed { ledger.faint } else { ledger.fainter };
+    // `.dno`: `--fg-faint` on every line, changed or not.
+    let number_colour = ledger.faint;
     let marker_colour = match side.map(|side| side.kind) {
         Some("added") => ledger.success,
         Some("removed") => ledger.danger,
@@ -797,7 +801,8 @@ fn code(drawn: &Code, ledger: &Ledger, ink: Ink) -> impl IntoElement {
 impl Render for DiffView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let (family, text_size) = (theme.mono_font_family.clone(), theme.mono_font_size);
+        // `.dbody`: the mono face at `--fs-sm`, which is smaller than the terminal's.
+        let (family, text_size) = (theme.mono_font_family.clone(), px(fs::SM));
         let ledger = *Ledger::global(cx);
         // One cell is the advance of `M`, as the terminal panes measure it.
         let text = window.text_system();

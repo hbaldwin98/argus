@@ -49,6 +49,17 @@ impl Shell {
         &self.rail
     }
 
+    /// The repository and branch under the title, while a pane is on screen
+    /// (`.head-stack .crumbs`): Git is named by its title alone.
+    pub fn crumb(heard: &Heard) -> Option<(String, String)> {
+        if heard.git_up() {
+            return None;
+        }
+        heard.rail.shown.as_ref().map(|shown| {
+            (shown.repository.clone(), if shown.branch.is_empty() { shown.checkout.clone() } else { shown.branch.clone() })
+        })
+    }
+
     /// What the header says: Git while its stage is up, else the pane on screen.
     pub fn title(heard: &Heard) -> String {
         if heard.git_up() {
@@ -61,7 +72,10 @@ impl Shell {
 impl Render for Shell {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let ledger = *Ledger::global(cx);
-        let title = Shell::title(self.heard.read(cx));
+        let (title, crumb) = {
+            let heard = self.heard.read(cx);
+            (Shell::title(heard), Shell::crumb(heard))
+        };
         h_flex()
             .size_full()
             .bg(ledger.background)
@@ -72,7 +86,7 @@ impl Render for Shell {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .child(Header::new().title(title))
+                    .child(Header::new().title(title).crumb(crumb))
                     .child(div().id("stage").flex_1().min_h_0().child(self.work.clone())),
             )
     }

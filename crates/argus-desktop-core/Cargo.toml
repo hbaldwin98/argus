@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+# The screenshot scenes (`screens`) outside this crate's tests.
+scenes = []
+
 [dependencies]
 argus-protocol = { workspace = true }
 tokio = { workspace = true }

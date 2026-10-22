@@ -3,16 +3,23 @@
 //!
 //! One shape, so the foot does not rearrange while the daemon comes and
 //! goes: only the dot and the words change. A remote daemon is named, so
-//! what the rail lists is never taken for this machine's. The console chip,
-//! chime switch and settings gear (SHELL-FOOT-4 to 6) are a later step's.
+//! what the rail lists is never taken for this machine's. Beside it are the
+//! console chip and the chime switch, which send the page's calls; the settings
+//! gear waits for a Settings dialog in this window.
 
-use argus_desktop_core::connection::page::Rail;
+use argus_desktop_core::connection::page::{Call, Rail};
+use argus_desktop_core::panes::console::ConsoleGesture;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Hsla, Role};
+use gpui_kit::{div, prelude::*, px, Role};
 
+use crate::connection::caller::Caller;
 use crate::connection::heard::Link;
+use crate::chrome::icon_button::icon_button;
+use crate::icons::Glyph;
+use crate::style::Typed as _;
 use crate::theme::Ledger;
+use crate::tokens::{fs, size, sp, ty, weight};
 
 /// What the status row shows (SHELL-FOOT-3): the dot says connecting and
 /// stopped on its own, so only a daemon that was there and is being reached
@@ -35,11 +42,38 @@ pub fn label(link: &Link) -> String {
     }
 }
 
-pub fn foot(link: &Link, rail: &Rail, alarm: Option<&str>, ledger: &Ledger) -> impl IntoElement {
+/// What the console chip needs of the console: whether it is up, and how
+/// many consoles the daemon holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Console {
+    pub shown: bool,
+    pub count: usize,
+}
+
+/// `.bar`: 8px over 16px of padding, 4px between rows, and the page's small type.
+#[allow(clippy::too_many_arguments)]
+pub fn foot(
+    link: &Link,
+    rail: &Rail,
+    alarm: Option<&str>,
+    chime: bool,
+    console: Console,
+    caller: &Caller,
+    held: bool,
+    ledger: &Ledger,
+) -> impl IntoElement {
     let connected = matches!(link, Link::Connected { .. });
-    let mut rows = v_flex().flex_shrink_0().gap_1().px_3().py_2().border_t_1().border_color(ledger.line).text_xs();
+    let mut rows = v_flex()
+        .flex_shrink_0()
+        .gap(px(sp::S4))
+        .px(px(sp::S16))
+        .py(px(sp::S8))
+        .border_t_1()
+        .border_color(ledger.line)
+        .typed(ty::SMALL)
+        .text_color(ledger.muted);
     if connected && (rail.needs_you > 0 || rail.working > 0) {
-        let mut tallies = h_flex().gap_3();
+        let mut tallies = h_flex().min_h(px(size::CONTROL_H_SM)).gap(px(sp::S8)).items_center();
         if rail.needs_you > 0 {
             let text = format!("▲ {} need you", rail.needs_you);
             tallies = tallies.child(
@@ -48,6 +82,7 @@ pub fn foot(link: &Link, rail: &Rail, alarm: Option<&str>, ledger: &Ledger) -> i
                     .role(Role::Status)
                     .test_support()
                     .aria_label(text.clone())
+                    .weighted(weight::SEMIBOLD)
                     .text_color(ledger.warning)
                     .child(text),
             );
@@ -79,36 +114,66 @@ pub fn foot(link: &Link, rail: &Rail, alarm: Option<&str>, ledger: &Ledger) -> i
     }
     let said = words(link);
     let named = label(link);
+    let console_chip = {
+        let caller = caller.clone();
+        let words = if console.shown { "Hide the console" } else { "Show the console" };
+        icon_button("foot-console", words, console.shown, ledger)
+            .px(px(sp::S8))
+            .w_auto()
+            .gap(px(sp::S4))
+            .on_click(move |_, _, _| {
+                if !held {
+                    caller.call(Call::Console { gesture: ConsoleGesture::Toggle });
+                }
+            })
+            .child(Glyph::Console.at(size::ICON_SM))
+            .when(console.count > 0, |chip| {
+                chip.child(div().text_size(px(fs::XS)).child(console.count.to_string()))
+            })
+    };
+    let chime_button = {
+        let caller = caller.clone();
+        let words =
+            if chime { "Mute the chime when an agent needs you" } else { "Chime when an agent needs you" };
+        icon_button("foot-chime", words, false, ledger)
+            .on_click(move |_, _, _| {
+                if !held {
+                    caller.call(Call::SetChime { on: !chime });
+                }
+            })
+            .child(if chime { Glyph::Bell } else { Glyph::BellOff }.at(size::ICON_SM))
+    };
     rows.child(
         h_flex()
-            .id("foot-status")
-            .role(Role::Status)
-            .test_support()
-            .aria_label(named.clone())
-            .gap_2()
+            .min_h(px(size::CONTROL_H_SM))
+            .gap(px(sp::S8))
             .items_center()
-            .text_color(ledger.faint)
-            .child(dot(link, named, ledger))
-            .child(div().flex_1().min_w_0().truncate().child(said)),
+            .child(
+                h_flex()
+                    .id("foot-status")
+                    .role(Role::Status)
+                    .test_support()
+                    .aria_label(named.clone())
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(sp::S8))
+                    .items_center()
+                    .child(dot(link, named, ledger))
+                    .child(div().flex_1().min_w_0().truncate().child(said)),
+            )
+            .child(console_chip)
+            .child(chime_button),
     )
 }
 
 /// Green while connected, the attention colour while it tries, hollow once
-/// stopped.
+/// stopped: `.dot`, 8px.
 fn dot(link: &Link, named: String, ledger: &Ledger) -> impl IntoElement {
-    let (fill, ring): (Option<Hsla>, Hsla) = match link {
-        Link::Connected { .. } => (Some(ledger.success), ledger.success),
-        Link::Connecting | Link::Reconnecting => (Some(ledger.warning), ledger.warning),
-        Link::Stopped => (None, ledger.faint),
-    };
-    let dot = div()
-        .id("foot-dot")
-        .test_support()
-        .aria_label(named)
-        .size(px(7.0)).flex_shrink_0().rounded_full().border_1().border_color(ring);
-    match fill {
-        Some(fill) => dot.bg(fill),
-        None => dot,
+    let dot = div().id("foot-dot").test_support().aria_label(named).flex_shrink_0().size(px(size::DOT_LG));
+    match link {
+        Link::Connected { .. } => dot.rounded_full().bg(ledger.success).into_any_element(),
+        Link::Connecting | Link::Reconnecting => dot.rounded_full().bg(ledger.warning).into_any_element(),
+        Link::Stopped => dot.child(Glyph::Ring8.at(size::DOT_LG).text_color(ledger.faint)).into_any_element(),
     }
 }
 

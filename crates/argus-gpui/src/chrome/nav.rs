@@ -8,7 +8,9 @@
 
 use argus_desktop_core::connection::page::{Call, Stage};
 use argus_desktop_core::panes::console::ConsoleGesture;
-use gpui_kit::component::IconName;
+use argus_desktop_core::keys::keymap::Action;
+
+use crate::icons::Glyph;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Nav {
@@ -61,18 +63,33 @@ impl Nav {
         }
     }
 
-    /// The bundled Lucide set has no git or code glyph; the nearest one stands in.
-    pub fn icon(self) -> IconName {
+    /// The page's glyph for the item. The page has no Git item (its history and
+    /// review are dialogs over a checkout), so Git gets a commit mark in the same hand.
+    pub fn glyph(self) -> Glyph {
         match self {
-            Nav::Search => IconName::Search,
-            Nav::New => IconName::Plus,
-            Nav::Workspace => IconName::LayoutDashboard,
-            Nav::Features => IconName::Star,
-            Nav::Checkouts => IconName::HardDrive,
-            Nav::Git => IconName::Network,
-            Nav::Code => IconName::FileText,
-            Nav::Console => IconName::SquareTerminal,
+            Nav::Search => Glyph::Search,
+            Nav::New => Glyph::Plus,
+            Nav::Workspace => Glyph::Workspace,
+            Nav::Features => Glyph::Features,
+            Nav::Checkouts => Glyph::Branch,
+            Nav::Git => Glyph::Commit,
+            Nav::Code => Glyph::Code,
+            Nav::Console => Glyph::Console,
         }
+    }
+
+    /// The keymap action whose keys the page writes beside the item (`drawNav`).
+    pub fn action(self) -> Option<Action> {
+        Some(match self {
+            Nav::Search => Action::Palette,
+            Nav::New => Action::Compose,
+            Nav::Workspace => Action::Workspace,
+            Nav::Features => Action::Feature,
+            Nav::Checkouts => Action::Checkouts,
+            Nav::Git => return None,
+            Nav::Code => Action::Code,
+            Nav::Console => Action::Console,
+        })
     }
 
     /// The call a press sends, for every item but Git, whose call names a

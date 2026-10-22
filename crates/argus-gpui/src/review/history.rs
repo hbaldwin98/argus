@@ -17,23 +17,27 @@
 //! loading bars (SHARED-3). The split between the commits and the diff is the
 //! window's own, never sent anywhere. The filter field is in the stage's strip
 //! (`review/filter`); its keys and the history's are heard by the stage.
-
 use argus_desktop_core::connection::page::{Call, HistoryPage, HistoryRowView};
 use argus_desktop_core::keys::keymap::Action;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Icon, IconName, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{
-    div, prelude::*, px, relative, ClickEvent, Context, Entity, FontWeight, ScrollHandle, SharedString, Subscription, Window,
-};
+use gpui_kit::{div, prelude::*, px, ClickEvent, Context, Entity, ScrollHandle, SharedString, Subscription, Window};
 
+use crate::chrome::button::{button, Look};
+use crate::chrome::icon_button::Node;
+use crate::chrome::keycap::keycap;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::diff::view::DiffView;
+use crate::fonts;
+use crate::icons::Glyph;
+use crate::review::ghosts::ghosts;
 use crate::review::hints;
 use crate::review::split::{self, Split};
+use crate::style::Typed as _;
 use crate::theme::Ledger;
+use crate::tokens::{fs, radius, size, sp, ty, weight};
 
 /// The width the commits open at, and how far the person may drag it.
 const COMMITS: f32 = 520.0;
@@ -108,27 +112,58 @@ impl History {
     }
 
     /// The small header over the commits: what the list is, and the way to
-    /// fold it all by mouse.
+    /// fold it all by mouse. `.history-head`, with `.btn.sm.quiet` for the button.
     fn head(&self, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .id("history-head")
             .flex_shrink_0()
-            .h(px(36.0))
-            .pl_5()
-            .pr_3()
-            .gap_2()
+            .pt(px(sp::S6))
+            .pr(px(sp::S8))
+            .pl(px(sp::S16))
+            .gap(px(sp::S8))
             .items_center()
-            .child(div().flex_1().text_xs().font_weight(FontWeight::MEDIUM).text_color(ledger.faint).child("Newest 100 on HEAD"))
             .child(
-                Button::new("history-fold-all")
-                    .ghost()
-                    .small()
-                    .label("Fold all")
-                    .tooltip("Fold every commit")
+                div()
+                    .flex_1()
+                    .text_size(px(fs::XS))
+                    .weighted(weight::SEMIBOLD)
+                    .text_color(ledger.muted)
+                    .child("Commits"),
+            )
+            .child(
+                button("history-fold-all", "Fold all", Look::Quiet, true, ledger)
+                    .tooltip(|window, cx| Tooltip::new("Fold every commit").build(window, cx))
+                    .child(Glyph::FoldAll.at(12.0))
+                    .child("Fold all")
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.ask(Call::HistoryAction { action: Action::FoldAll, row: None }, cx)
                     })),
             )
+    }
+
+    /// `.hrow`: a row of the list, 6px over 8px of padding less the edge the
+    /// lit one draws as its mark, the text colour, `--fill` under the
+    /// pointer and the selected colour, lifted a step, on the lit one.
+    fn row(id: impl Into<gpui_kit::ElementId>, on: bool, ledger: &Ledger) -> Node {
+        let (fill, selected_hover) = (ledger.fill(), ledger.selected_hover());
+        h_flex()
+            .id(id)
+            .test_support()
+            .aria_selected(on)
+            .flex_shrink_0()
+            .gap(px(sp::S8))
+            .items_center()
+            .min_w_0()
+            .py(px(sp::S6 - 1.0))
+            .px(px(sp::S8 - 1.0))
+            .rounded(px(radius::SM))
+            .border_1()
+            .border_color(if on { ledger.line_strong } else { gpui_kit::transparent_black() })
+            .text_size(px(fs::SM))
+            .text_color(ledger.foreground)
+            .cursor_pointer()
+            .when(on, |row| row.bg(ledger.selected).hover(move |style| style.bg(selected_hover)))
+            .when(!on, |row| row.hover(move |style| style.bg(fill)))
     }
 
     /// A commit: its chevron, short hash, subject and age. A click toggles it,
@@ -136,7 +171,6 @@ impl History {
     /// what it leaves open (HISTORY-4).
     fn commit(&self, r: &HistoryRowView, ledger: &Ledger, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let (row, expanded) = (r.row, r.expanded);
-        let hover = ledger.raised;
         let meta = if r.loading {
             Some("loading\u{2026}".to_owned())
         } else if r.expanded {
@@ -144,40 +178,26 @@ impl History {
         } else {
             None
         };
-        h_flex()
-            .id(("history-row", row))
-            .test_support()
-            .aria_selected(r.on)
+        // `.chev`: faint, and the muted of an open commit; the page turns the one
+        // glyph a quarter and a GPUI icon swaps for the one already drawn down.
+        let chevron = if expanded { Glyph::Down.at(size::ICON_SM).text_color(ledger.muted) } else { Glyph::Right.at(size::ICON_SM).text_color(ledger.faint) };
+        Self::row(("history-row", row), r.on, ledger)
             .aria_expanded(expanded)
             .aria_label(SharedString::from(format!("{} {}", r.short, r.text)))
-            .flex_shrink_0()
-            .h(px(32.0))
-            .pl_2()
-            .pr_3()
-            .gap_2()
-            .items_center()
-            .rounded(px(6.0))
-            .border_1()
-            .border_color(if r.on { ledger.line_strong } else { gpui_kit::transparent_black() })
-            .text_color(if r.on { ledger.foreground } else { ledger.muted })
-            .cursor_pointer()
-            .when(r.on, |row| row.bg(ledger.selected))
-            .when(!r.on, |row| row.hover(move |style| style.bg(hover)))
             .on_click(cx.listener(move |this, _, _, cx| {
                 let action = if expanded { Action::Fold } else { Action::Unfold };
                 this.ask(Call::HistoryAction { action, row: Some(row) }, cx);
             }))
-            .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).xsmall().text_color(ledger.faint))
+            .child(div().flex_shrink_0().child(chevron))
+            .child(div().flex_shrink_0().font_family(cx.theme().mono_font_family.clone()).text_color(ledger.faint).child(SharedString::from(r.short.clone())))
             .child(
                 div()
-                    .w(px(60.0))
-                    .flex_shrink_0()
-                    .font_family(cx.theme().mono_font_family.clone())
-                    .text_xs()
-                    .text_color(ledger.faint)
-                    .child(SharedString::from(r.short.clone())),
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .when(expanded, |subject| subject.weighted(weight::SEMIBOLD))
+                    .child(SharedString::from(r.text.clone())),
             )
-            .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::MEDIUM).child(SharedString::from(r.text.clone())))
             .when_some(meta, |line, meta| {
                 let meta = SharedString::from(meta);
                 line.child(
@@ -186,112 +206,67 @@ impl History {
                         .test_support()
                         .aria_label(meta.clone())
                         .flex_shrink_0()
-                        .text_xs()
-                        .text_color(ledger.faint)
+                        .typed(ty::SMALL)
+                        .text_color(ledger.muted)
                         .child(meta),
                 )
             })
-            .child(div().w(px(40.0)).flex_shrink_0().text_right().text_xs().text_color(ledger.faint).child(SharedString::from(r.ago.clone())))
+            .child(div().flex_shrink_0().typed(ty::SMALL).text_color(ledger.muted).child(SharedString::from(r.ago.clone())))
             .into_any_element()
     }
 
     /// A file of an unfolded commit: the folder dim before its name, and its
     /// counts. A click puts the cursor there and shows its diff; a second one
     /// opens the commit as a review on it, after the first has been sent as
-    /// the page's does (HISTORY-5).
+    /// the page's does (HISTORY-5). `.hrow.file` is 32px in, and `--row-h` tall.
     fn file(&self, r: &HistoryRowView, ledger: &Ledger, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let row = r.row;
         let cut = r.text.rfind('/').map_or(0, |at| at + 1);
         let (dir, name) = r.text.split_at(cut);
         let tooltip = SharedString::from(r.text.clone());
-        let hover = ledger.raised;
         let mono = cx.theme().mono_font_family.clone();
-        div()
-            .flex_shrink_0()
-            .ml(px(18.0))
-            .pl_2()
-            .border_l_1()
-            .border_color(ledger.line)
+        Self::row(("history-row", row), r.on, ledger)
+            .aria_label(tooltip.clone())
+            .min_h(px(size::ROW_H))
+            .pl(px(sp::S32 - 1.0))
+            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                this.ask(Call::HistoryAction { action: Action::Next, row: Some(row) }, cx);
+                if event.click_count() >= 2 {
+                    this.ask(Call::HistoryAction { action: Action::Choose, row: None }, cx);
+                }
+            }))
             .child(
                 h_flex()
-                    .id(("history-row", row))
-                    .test_support()
-                    .aria_selected(r.on)
-                    .aria_label(tooltip.clone())
-                    .h(px(28.0))
-                    .px_2()
-                    .gap_2()
-                    .items_center()
-                    .rounded(px(6.0))
-                    .border_1()
-                    .border_color(if r.on { ledger.line_strong } else { gpui_kit::transparent_black() })
-                    .text_color(if r.on { ledger.foreground } else { ledger.muted })
-                    .cursor_pointer()
-                    .when(r.on, |row| row.bg(ledger.selected))
-                    .when(!r.on, |row| row.hover(move |style| style.bg(hover)))
-                    .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
-                    .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                        this.ask(Call::HistoryAction { action: Action::Next, row: Some(row) }, cx);
-                        if event.click_count() >= 2 {
-                            this.ask(Call::HistoryAction { action: Action::Choose, row: None }, cx);
-                        }
-                    }))
-                    .child(
-                        h_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .text_sm()
-                            .when(r.on, |name| name.font_weight(FontWeight::MEDIUM))
-                            .when(!dir.is_empty(), |file| {
-                                file.child(
-                                    div()
-                                        .flex_shrink_0()
-                                        .font_family(mono.clone())
-                                        .text_xs()
-                                        .text_color(ledger.faint)
-                                        .child(SharedString::from(dir.to_owned())),
-                                )
-                            })
-                            .child(div().truncate().child(SharedString::from(name.to_owned()))),
-                    )
-                    .child(
-                        div()
-                            .w(px(32.0))
-                            .text_right()
-                            .text_xs()
-                            .font_family(mono.clone())
-                            .text_color(ledger.success)
-                            .child(SharedString::from(format!("+{}", r.added))),
-                    )
-                    .child(
-                        div()
-                            .w(px(32.0))
-                            .text_right()
-                            .text_xs()
-                            .font_family(mono)
-                            .text_color(ledger.danger)
-                            .child(SharedString::from(format!("\u{2212}{}", r.removed))),
-                    ),
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .when(!dir.is_empty(), |file| {
+                        file.child(
+                            div()
+                                .flex_shrink_0()
+                                .font_family(mono.clone())
+                                .text_size(px(fs::XS))
+                                .text_color(ledger.faint)
+                                .child(SharedString::from(dir.to_owned())),
+                        )
+                    })
+                    .child(div().truncate().child(SharedString::from(name.to_owned()))),
             )
+            .child(div().flex_shrink_0().font_family(mono.clone()).text_color(ledger.success).child(SharedString::from(format!("+{}", r.added))))
+            .child(div().flex_shrink_0().font_family(mono).text_color(ledger.danger).child(SharedString::from(format!("\u{2212}{}", r.removed))))
             .into_any_element()
     }
 
     /// Loading bars, or why there are no commits, or the commits.
     fn list(&self, page: &HistoryPage, ledger: &Ledger, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         if page.loading {
-            return v_flex()
-                .id("history-loading")
-                .test_support()
-                .size_full()
-                .p_4()
-                .gap_3()
-                .children(LIST_BARS.map(|width| div().h(px(12.0)).w(relative(width)).rounded(px(3.0)).bg(ledger.raised)))
-                .into_any_element();
+            return ghosts("history-loading", &LIST_BARS, ledger).into_any_element();
         }
         if let Some(why) = &page.empty {
             return Self::said("history-empty", why, ledger).into_any_element();
         }
+        // `.history-list`: 8px in from every edge, 2px between rows.
         v_flex()
             .id("history-list")
             .test_support()
@@ -299,26 +274,28 @@ impl History {
             .size_full()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .px_2()
-            .pb_2()
-            .gap_px()
+            .p(px(sp::S8))
+            .gap(px(sp::S2))
             .children(page.rows.iter().map(|r| if r.kind == "file" { self.file(r, ledger, cx) } else { self.commit(r, ledger, cx) }))
             .into_any_element()
     }
 
     /// A quiet line standing where a pane is not drawn: the reason there is nothing to show.
+    /// `.review-empty.fg-muted`: 24px about a line in the body type.
     fn said(id: &'static str, words: &str, ledger: &Ledger) -> impl IntoElement {
         div()
             .id(id)
             .test_support()
             .aria_label(SharedString::from(words.to_owned()))
             .size_full()
-            .p_6()
+            .p(px(sp::S24))
+            .typed(ty::BODY)
             .text_color(ledger.muted)
             .child(SharedString::from(words.to_owned()))
     }
 
-    /// The file under the cursor and its commit, with the way to open it as a review.
+    /// The file under the cursor and its commit, with the way to open it as a
+    /// review. `.fhdr`: the chrome colour over a hairline.
     fn diff_head(&self, page: &HistoryPage, path: &str, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
         let cut = path.rfind('/');
         let name = SharedString::from(path[cut.map_or(0, |at| at + 1)..].to_owned());
@@ -331,10 +308,11 @@ impl History {
             .test_support()
             .aria_label(full)
             .flex_shrink_0()
-            .h(px(44.0))
-            .px_4()
-            .gap_3()
+            .h(px(sp::S44))
+            .px(px(sp::S12))
+            .gap(px(sp::S12))
             .items_center()
+            .bg(ledger.chrome)
             .border_b_1()
             .border_color(ledger.line)
             .child(
@@ -344,7 +322,6 @@ impl History {
                     .aria_label(commit.clone())
                     .flex_shrink_0()
                     .font_family(mono.clone())
-                    .text_xs()
                     .text_color(ledger.faint)
                     .tooltip(|window, cx| Tooltip::new("Diffed against its first parent").build(window, cx))
                     .child(commit),
@@ -354,30 +331,17 @@ impl History {
             .child(
                 h_flex()
                     .min_w_0()
-                    .gap_2()
+                    .gap(px(sp::S8))
                     .overflow_hidden()
-                    .child(div().flex_shrink_0().font_weight(FontWeight::SEMIBOLD).child(name))
-                    .when_some(dir, |head, dir| {
-                        head.child(div().min_w_0().truncate().text_xs().font_family(mono).text_color(ledger.faint).child(dir))
-                    }),
+                    .font_family(mono)
+                    .child(div().flex_shrink_0().weighted(weight::SEMIBOLD).text_color(ledger.foreground).child(name))
+                    .when_some(dir, |head, dir| head.child(div().min_w_0().truncate().text_color(ledger.faint).child(dir))),
             )
             .child(div().flex_1())
             .child(
-                Button::new("history-as-review")
-                    .small()
-                    .outline()
-                    .child(
-                        h_flex().gap_2().items_center().child("Open as a review").child(
-                            div()
-                                .px_1()
-                                .rounded(px(3.0))
-                                .border_1()
-                                .border_color(ledger.line)
-                                .text_xs()
-                                .text_color(ledger.faint)
-                                .child("O"),
-                        ),
-                    )
+                button("history-as-review", "Open as a review", Look::Plain, true, ledger)
+                    .child("Open as a review")
+                    .child(keycap("O", SharedString::from(fonts::MONO), ledger))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.ask(Call::HistoryAction { action: Action::AsReview, row: None }, cx)
                     })),
@@ -393,14 +357,7 @@ impl History {
             return Self::said("history-diff-empty", why, ledger).into_any_element();
         }
         if page.diff_loading {
-            return v_flex()
-                .id("history-diff-loading")
-                .test_support()
-                .size_full()
-                .p_4()
-                .gap_3()
-                .children(DIFF_BARS.map(|width| div().h(px(12.0)).w(relative(width)).rounded(px(3.0)).bg(ledger.raised)))
-                .into_any_element();
+            return div().size_full().bg(ledger.background).child(ghosts("history-diff-loading", &DIFF_BARS, ledger)).into_any_element();
         }
         div().id("history-rows").test_support().size_full().min_h_0().child(self.diff.clone()).into_any_element()
     }
@@ -423,12 +380,11 @@ impl Render for History {
             .size_full()
             .min_w_0()
             .when_some(page.path.clone(), |pane, path| pane.child(self.diff_head(&page, &path, &ledger, cx)))
-            .child(div().flex_1().min_h_0().child(self.diff_body(&page, &ledger)));
+            .child(div().flex_1().min_h_0().bg(ledger.background).child(self.diff_body(&page, &ledger)));
         v_flex()
             .id("history")
             .test_support()
             .size_full()
-            .bg(ledger.background)
             .child(
                 h_flex()
                     .flex_1()

@@ -201,8 +201,8 @@ fn a_docks_snapshot_draws_each_dock_with_the_right_panel_shown(cx: &mut TestAppC
     assert_eq!(selected(cx, &opened, IMAGES_TAB), Some(false));
     assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(400.0), "Rust's size, as the page draws it");
 
-    // The bottom dock holds one: a head, no strip.
-    assert!(present_id(cx, &opened, "dock-bottom-head"));
+    // The bottom dock holds one, the console, whose own strip is its head: neither here.
+    assert!(!present_id(cx, &opened, "dock-bottom-head"));
     assert!(!present_id(cx, &opened, "dock-bottom-tabs"));
     assert_eq!(label(cx, &opened, "dock-bottom-panel").as_deref(), Some("Console"));
     assert_eq!(bounds(cx, &opened, "dock-bottom").size.height, px(200.0));
@@ -387,10 +387,12 @@ fn a_drop_on_the_stage_sends_the_stage_call(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn a_single_panels_head_is_dragged_but_never_clicked(cx: &mut TestAppContext) {
+fn the_consoles_strip_is_dragged_but_never_clicked(cx: &mut TestAppContext) {
     let opened = docked(cx, docks());
-    let at = centre(cx, &opened, "dock-bottom-head");
-    let at = by(at, -150.0, 0.0);
+    // The strip is the console's own, in the top of its panel: a press there that no tab or
+    // button took is the head's.
+    let panel = bounds(cx, &opened, "dock-bottom-panel");
+    let at = point(panel.origin.x + px(100.0), panel.origin.y + px(20.0));
     down(cx, &opened, at);
     up(cx, &opened, at);
     assert!(taken(&opened).is_empty(), "a click on a head does nothing");

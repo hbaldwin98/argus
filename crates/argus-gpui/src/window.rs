@@ -6,16 +6,20 @@
 //! header strip is the stage's, as in the Tauri window.
 
 use anyhow::Result;
-use gpui_kit::component::{h_flex, v_flex, Icon, IconName, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
 use gpui_kit::{
     div, prelude::*, px, size, AnyView, AnyWindowHandle, App, Application, Bounds, Context, Entity,
     Hsla, MouseButton, Pixels, Render, SharedString, Subscription, TitlebarOptions, Window, WindowBounds,
     WindowControlArea, WindowOptions,
 };
 
+use crate::icons::Glyph;
+use crate::style::Typed as _;
 use crate::theme::{self, Ledger};
+use crate::tokens::{fs, size, sp, ty};
 
-pub const HEADER_HEIGHT: Pixels = px(34.0);
+/// `--header-h`.
+pub const HEADER_HEIGHT: Pixels = px(size::HEADER_H);
 /// Below this the sidebar, stage and docks no longer fit side by side.
 pub const MIN_SIZE: gpui_kit::Size<Pixels> = size(px(900.0), px(560.0));
 
@@ -89,21 +93,31 @@ impl Render for Shell {
     }
 }
 
-/// The strip across the top: a drag region that grows, and the three window controls.
+/// The strip across the top of the stage: a drag region that grows, holding
+/// the breadcrumb over the title as the page's `.head-stack` does, and the
+/// three window controls.
 #[derive(IntoElement)]
 pub struct Header {
     title: SharedString,
+    crumb: Option<(SharedString, SharedString)>,
 }
 
 impl Header {
     pub fn new() -> Self {
         Self {
             title: SharedString::from("argus"),
+            crumb: None,
         }
     }
 
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = title.into();
+        self
+    }
+
+    /// The repository and branch the title's pane lives in, written small above it.
+    pub fn crumb(mut self, crumb: Option<(String, String)>) -> Self {
+        self.crumb = crumb.map(|(repository, branch)| (repository.into(), branch.into()));
         self
     }
 }
@@ -117,28 +131,26 @@ impl Default for Header {
 impl RenderOnce for Header {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let ledger = *Ledger::global(cx);
-        let maximize_icon = if window.is_maximized() {
-            IconName::WindowRestore
-        } else {
-            IconName::WindowMaximize
-        };
+        let mono = cx.theme().mono_font_family.clone();
+        let maximize = if window.is_maximized() { Glyph::WinRestore } else { Glyph::WinMax };
+        // `.strip`: on the surface colour, a hairline under it.
         h_flex()
             .id("header")
-            .h(HEADER_HEIGHT)
+            .h(px(size::HEADER_H))
             .flex_shrink_0()
-            .items_center()
-            .bg(ledger.chrome)
+            .items_stretch()
+            .bg(ledger.raised)
             .border_b_1()
             .border_color(ledger.line)
             .child(
-                h_flex()
+                v_flex()
                     .id("drag")
                     .flex_1()
-                    .h_full()
-                    .px_3()
-                    .items_center()
-                    .text_color(ledger.faint)
-                    .text_xs()
+                    .min_w_0()
+                    .justify_center()
+                    .gap(px(sp::S2))
+                    .pl(px(sp::S20))
+                    .pr(px(sp::S16))
                     // Windows answers a hit test over this area with HTCAPTION,
                     // which gives drag, double-click to maximize and Win11's
                     // snap layouts for free; elsewhere the move starts here.
@@ -148,11 +160,32 @@ impl RenderOnce for Header {
                             window.start_window_move()
                         })
                     })
-                    .child(self.title),
+                    .when_some(self.crumb, |this, (repository, branch)| {
+                        this.child(
+                            h_flex()
+                                .h(px(sp::S16))
+                                .gap(px(sp::S4))
+                                .items_center()
+                                .text_size(px(fs::XS))
+                                .text_color(ledger.faint)
+                                .whitespace_nowrap()
+                                .overflow_hidden()
+                                .child(repository)
+                                .child("/")
+                                .child(div().font_family(mono).child(branch)),
+                        )
+                    })
+                    .child(
+                        div()
+                            .typed(ty::HEADING)
+                            .text_color(ledger.foreground)
+                            .truncate()
+                            .child(self.title),
+                    ),
             )
-            .child(control("minimize", IconName::WindowMinimize, Control::Minimize, ledger))
-            .child(control("maximize", maximize_icon, Control::Maximize, ledger))
-            .child(control("close", IconName::WindowClose, Control::Close, ledger))
+            .child(control("minimize", Glyph::WinMin, Control::Minimize, ledger))
+            .child(control("maximize", maximize, Control::Maximize, ledger))
+            .child(control("close", Glyph::WinClose, Control::Close, ledger))
     }
 }
 
@@ -172,23 +205,24 @@ impl Control {
         }
     }
 
-    /// Close warns in red; the others only lift to the selected grey.
+    /// `.winbtn:hover` lifts to `--fill`; `.winbtn.shut:hover` is Windows' red.
     fn hover(self, ledger: Ledger) -> (Hsla, Hsla) {
         match self {
-            Control::Close => (ledger.danger, ledger.background),
-            _ => (ledger.selected, ledger.foreground),
+            Control::Close => theme::window_close_hover(),
+            _ => (ledger.fill(), ledger.foreground),
         }
     }
 }
 
-fn control(id: &'static str, icon: IconName, which: Control, ledger: Ledger) -> impl IntoElement {
+/// `.winbtn`: 46 wide and as tall as the strip, so the corner is the button's to the edge.
+fn control(id: &'static str, glyph: Glyph, which: Control, ledger: Ledger) -> impl IntoElement {
     let (hover_bg, hover_fg) = which.hover(ledger);
     div()
         .id(id)
         .flex()
         .items_center()
         .justify_center()
-        .w(HEADER_HEIGHT + px(10.0))
+        .w(px(size::WINDOW_CONTROL_W))
         .h_full()
         .flex_shrink_0()
         .text_color(ledger.muted)
@@ -203,7 +237,7 @@ fn control(id: &'static str, icon: IconName, which: Control, ledger: Ledger) -> 
                 Control::Close => window.remove_window(),
             })
         })
-        .child(Icon::new(icon).small())
+        .child(glyph.at(10.0))
 }
 
 /// Runs `stop` and quits once the last window has closed, so what was kept

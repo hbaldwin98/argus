@@ -21,26 +21,29 @@ use argus_desktop_core::connection::page::{Call, Side};
 use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_desktop_core::layout::docks::DocksPage;
 use argus_desktop_core::panes::console::{ConsoleGesture, ConsolePage, ConsoleTab};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{h_flex, v_flex, Icon, IconName, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, prelude::*, px, Anchor, App, ClickEvent, Context, Entity, FocusHandle, Hsla, MouseButton, Role, SharedString,
+    div, prelude::*, px, Anchor, App, ClickEvent, Context, Entity, FocusHandle, MouseButton, Role, SharedString,
     Subscription, Window,
 };
 
+use crate::chrome::keycap::keycap;
+use crate::chrome::status_dot::status_dot;
+use crate::chrome::strip as chrome_strip;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::icons::Glyph;
 use crate::keys::caps;
 use crate::panes::terminal::Terminal;
+use crate::style::Typed as _;
 use crate::theme::Ledger;
+use crate::tokens::{size, sp, ty, weight};
 
 use strip::{Does, Offer};
-
-/// The height of the console's head and of a split side's.
-pub const HEAD: f32 = 34.0;
 
 pub struct ConsoleView {
     heard: Entity<Heard>,
@@ -111,30 +114,12 @@ impl ConsoleView {
 
     fn tab(&self, tab: &ConsoleTab, page: &ConsolePage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = tab.pane;
-        let live = Some(pane) == page.showing || Some(pane) == page.beside;
         let offers = strip::tab_offers(tab, false, &page.tabs);
         let (caller, heard) = (self.caller.clone(), self.heard.clone());
         let ledger = *ledger;
-        let (hover, selected, line, muted, foreground, faint) =
-            (ledger.raised, ledger.selected, ledger.line_strong, ledger.muted, ledger.foreground, ledger.faint);
         let status = tab.status;
         let title = SharedString::from(tab.title.clone());
-        h_flex()
-            .id(SharedString::from(format!("console-tab-{pane}")))
-            .role(Role::Tab)
-            .test_support()
-            .aria_selected(tab.on)
-            .aria_label(title.clone())
-            .flex_shrink_0()
-            .h(px(26.0))
-            .items_center()
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(if tab.on { line } else { gpui_kit::transparent_black() })
-            .text_sm()
-            .text_color(if tab.on || live { foreground } else { muted })
-            .when(tab.on, |tab| tab.bg(selected))
-            .when(!tab.on, |tab| tab.hover(move |style| style.bg(hover)))
+        chrome_strip::tab(SharedString::from(format!("console-tab-{pane}")), tab.on, true, title.clone(), &ledger)
             // The press is the tab's alone, as the page's `closesOnMiddle`
             // keeps it from autoscrolling or reaching what is under it.
             .on_mouse_down(MouseButton::Middle, |_, window, cx| {
@@ -149,38 +134,30 @@ impl ConsoleView {
                 }
             }))
             .child(
+                // `.ctab-pick`: the tab's own button, 6px between the title and the dot.
                 h_flex()
                     .id(SharedString::from(format!("console-tab-pick-{pane}")))
                     .role(Role::Button)
                     .test_support()
                     .aria_label(title.clone())
+                    .min_w_0()
                     .h_full()
-                    .pl_3()
-                    .pr_1()
-                    .gap_1p5()
+                    .gap(px(sp::S6))
                     .items_center()
                     .cursor_pointer()
                     .tooltip(move |window, cx| Tooltip::new(format!("shell, {status}")).build(window, cx))
+                    // The dock's drag begins on a press in the strip; a tab's is a pick.
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Select { pane }, cx)))
-                    .child(div().max_w(px(180.0)).overflow_hidden().whitespace_nowrap().child(title.clone()))
-                    .when(strip::wears_dot(status), |pick| pick.child(dot(format!("console-tab-dot-{pane}"), status, &ledger))),
+                    .child(chrome_strip::title(title.clone()))
+                    .when(strip::wears_dot(status), |pick| {
+                        pick.child(dot(format!("console-tab-dot-{pane}"), status, &ledger))
+                    }),
             )
             .child(
-                div()
-                    .id(SharedString::from(format!("console-tab-close-{pane}")))
-                    .role(Role::Button)
-                    .test_support()
-                    .aria_label(format!("Close {}", tab.title))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(px(18.0))
-                    .mr_1()
-                    .rounded(px(3.0))
-                    .text_color(faint)
-                    .hover(move |style| style.text_color(foreground))
-                    .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Close { pane }, cx)))
-                    .child(Icon::new(IconName::Close).xsmall()),
+                chrome_strip::close_x(SharedString::from(format!("console-tab-close-{pane}")), format!("Close {}", tab.title), &ledger)
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Close { pane }, cx))),
             )
             .context_menu(move |menu, _, cx| build(menu, &offers, &caller, &heard, ledger, cx))
     }
@@ -195,79 +172,78 @@ impl ConsoleView {
             )
         };
         let (caller, heard, ledger_copy) = (self.caller.clone(), self.heard.clone(), *ledger);
-        h_flex()
+        chrome_strip::bar(ledger)
             .id("console-head")
             .test_support()
-            .flex_shrink_0()
-            .h(px(HEAD))
-            .pl_3()
-            .pr_2()
-            .gap_1()
-            .items_center()
-            .bg(ledger.chrome)
-            .border_b_1()
-            .border_color(ledger.line)
-            .child(h_flex().id("console-tabs").role(Role::TabList).min_w_0().gap_1().overflow_hidden().children(tabs))
+            // `.chead`: a little more room before the first tab.
+            .pl(px(sp::S12))
+            .child(
+                h_flex()
+                    .id("console-tabs")
+                    .role(Role::TabList)
+                    .min_w_0()
+                    .ml(px(sp::S4))
+                    .gap(px(sp::S4))
+                    .overflow_hidden()
+                    .children(tabs),
+            )
             .when(page.can_spawn, |head| {
-                head.child(
-                    Button::new("console-new")
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Plus)
+                head.child(keep(
+                    chrome_strip::menu_button("console-new", Glyph::Plus, 14.0, ledger, cx)
                         .tooltip("New console")
                         .on_click(cx.listener(|this, _, _, cx| this.gesture(ConsoleGesture::Spawn, cx))),
-                )
+                ))
             })
             .child(div().flex_1())
             .child(
                 // The kit's button has no accessible label of its own, so the wrapper carries it.
-                div().id("console-menu-label").role(Role::Button).test_support().aria_label("Console menu").child(
-                    Button::new("console-menu")
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Ellipsis)
+                div().id("console-menu-label").role(Role::Button).test_support().aria_label("Console menu").child(keep(
+                    chrome_strip::menu_button("console-menu", Glyph::More, 14.0, ledger, cx)
                         .tooltip("Split, move, fill the window")
                         .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, cx| build(menu, &offers, &caller, &heard, ledger_copy, cx)),
-                ),
+                )),
             )
             .child(
                 // The tooltip's words are the button's name too, which the kit's button lacks.
-                div().id("console-hide-label").role(Role::Button).test_support().aria_label(hide.clone()).child(
-                    Button::new("console-hide")
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Close)
+                div().id("console-hide-label").role(Role::Button).test_support().aria_label(hide.clone()).child(keep(
+                    chrome_strip::menu_button("console-hide", Glyph::Close, 12.0, ledger, cx)
                         .tooltip(hide)
                         .on_click(cx.listener(|this, _, _, cx| this.gesture(ConsoleGesture::Hide, cx))),
-                ),
+                )),
             )
     }
 
     /// A split side's header: its console's title and dot, the whole of it a
     /// button that gives that side the keys, and a close that takes it out of
-    /// the split and leaves its console a tab. The side with the keys is marked.
+    /// the split and leaves its console a tab. The side with the keys is marked
+    /// by the selected colour and an accent edge under it (`.thead.on`).
     fn side_head(&self, tab: &ConsoleTab, page: &ConsolePage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = tab.pane;
         let typing = page.typing == Some(pane);
         let offers = strip::tab_offers(tab, true, &page.tabs);
         let (caller, heard, ledger) = (self.caller.clone(), self.heard.clone(), *ledger);
         let status = tab.status;
-        let (hover, foreground, muted, faint) = (ledger.raised, ledger.foreground, ledger.muted, ledger.faint);
+        let (fill, foreground, muted, selected) = (ledger.fill(), ledger.foreground, ledger.muted, ledger.selected);
         let title = SharedString::from(tab.title.clone());
         let tip = if typing { tab.title.clone() } else { format!("Type in {}", tab.title) };
         h_flex()
             .id(SharedString::from(format!("console-side-head-{pane}")))
             .test_support()
             .aria_selected(typing)
+            .relative()
             .flex_shrink_0()
-            .h(px(HEAD))
+            .h(px(size::PANE_HEAD_H))
             .items_center()
-            .bg(if typing { ledger.selected } else { ledger.chrome })
+            .bg(if typing { selected } else { ledger.chrome })
             .border_b_1()
-            .border_color(if typing { ledger.accent } else { ledger.line })
-            .text_sm()
+            .border_color(ledger.line)
+            .typed(ty::SMALL)
+            .weighted(weight::MEDIUM)
             .text_color(if typing { foreground } else { muted })
-            .when(!typing, |head| head.hover(move |style| style.bg(hover).text_color(foreground)))
+            // `.thead:not(.on):hover`: the fill and the title lit; `.thead.on:hover`: the
+            // selected colour with 15% of the fill over it.
+            .when(!typing, |head| head.hover(move |style| style.bg(fill).text_color(foreground)))
+            .when(typing, |head| head.hover(move |style| style.bg(selected.blend(fill.opacity(0.15)))))
             .child(
                 h_flex()
                     .id(SharedString::from(format!("console-side-pick-{pane}")))
@@ -277,33 +253,27 @@ impl ConsoleView {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .px_3()
-                    .gap_1p5()
+                    .px(px(sp::S12))
+                    .gap(px(sp::S6))
                     .items_center()
                     .cursor_pointer()
                     .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
                     .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Select { pane }, cx)))
-                    .child(div().overflow_hidden().whitespace_nowrap().child(title))
-                    .when(strip::wears_dot(status), |pick| pick.child(dot(format!("console-side-dot-{pane}"), status, &ledger))),
+                    .child(chrome_strip::title(title))
+                    .when(strip::wears_dot(status), |pick| {
+                        pick.child(dot(format!("console-side-dot-{pane}"), status, &ledger))
+                    }),
             )
             .child(
-                div()
-                    .id(SharedString::from(format!("console-side-close-{pane}")))
-                    .role(Role::Button)
-                    .test_support()
-                    .aria_label(format!("Take {} out of the split", tab.title))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(px(18.0))
-                    .mr_1()
-                    .rounded(px(3.0))
-                    .text_color(faint)
-                    .hover(move |style| style.text_color(foreground))
-                    .tooltip(|window, cx| Tooltip::new("Take out of the split").build(window, cx))
-                    .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::CloseSide { pane }, cx)))
-                    .child(Icon::new(IconName::Close).xsmall()),
+                chrome_strip::close_x(
+                    SharedString::from(format!("console-side-close-{pane}")),
+                    format!("Take {} out of the split", tab.title),
+                    &ledger,
+                )
+                .tooltip(|window, cx| Tooltip::new("Take out of the split").build(window, cx))
+                .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::CloseSide { pane }, cx))),
             )
+            .when(typing, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).bg(ledger.accent)))
             .context_menu(move |menu, _, cx| build(menu, &offers, &caller, &heard, ledger, cx))
     }
 
@@ -351,28 +321,26 @@ impl ConsoleView {
     }
 }
 
-/// The dot a console wears: what it is doing, in the colour the page gives it.
+/// The dot a console wears, named so a reader can find it.
 fn dot(id: String, status: &str, ledger: &Ledger) -> impl IntoElement {
-    let colour: Hsla = match status {
-        "working" => ledger.accent,
-        "waiting" | "needs-review" => ledger.warning,
-        "failed" => ledger.danger,
-        "done" => ledger.success,
-        _ => ledger.faint,
-    };
-    div().id(SharedString::from(id)).test_support().size(px(8.0)).flex_shrink_0().rounded_full().bg(colour)
+    div().id(SharedString::from(id.clone())).test_support().flex_shrink_0().child(status_dot(id, status, ledger))
+}
+
+/// A strip button that keeps the press: the kit's button does not stop the one the dock reads as a drag.
+fn keep(button: impl IntoElement) -> gpui_kit::Div {
+    div().flex_shrink_0().on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()).child(button)
 }
 
 /// The keys an item names, each press a cap, the alternatives apart by a slash.
 fn keycaps(keys: &[Vec<String>], ledger: &Ledger) -> impl IntoElement {
-    let (line, muted) = (ledger.line_strong, ledger.muted);
-    let mut caps = h_flex().gap_1().items_center().text_xs().text_color(muted);
+    let mut caps = h_flex().gap_1().items_center().text_xs().text_color(ledger.muted);
+    let mono = SharedString::from(crate::fonts::MONO);
     for (n, presses) in keys.iter().enumerate() {
         if n > 0 {
             caps = caps.child("/");
         }
         for press in presses {
-            caps = caps.child(div().px_1().rounded(px(3.0)).border_1().border_color(line).child(SharedString::from(press.clone())));
+            caps = caps.child(keycap(press.clone(), mono.clone(), ledger));
         }
     }
     caps

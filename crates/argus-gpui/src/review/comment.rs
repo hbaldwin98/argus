@@ -20,21 +20,36 @@
 
 use argus_desktop_core::connection::page::{Call, ReviewClick};
 use argus_desktop_core::review::comment_box::CommentPage;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Enter, Escape, Textarea, TextareaState};
-use gpui_kit::component::kbd::Kbd;
-use gpui_kit::component::{h_flex, v_flex, Selectable as _, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Entity, KeyDownEvent, Keystroke, Pixels, SharedString, Window};
+use gpui_kit::{div, prelude::*, px, Context, Entity, KeyDownEvent, Pixels, SharedString, Window};
 
+use crate::chrome::button::{button, chip, Look};
+use crate::chrome::keycap::keycap;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::diff::view::GUTTER;
+use crate::fonts;
+use crate::style::Typed as _;
 use crate::theme::Ledger;
+use crate::tokens::{fs, radius, sp, ty, weight};
 
 /// The room the box takes among the diff's rows: its card, and the margin
-/// around it.
-pub const HEIGHT: Pixels = px(188.0);
+/// around it. Several agents to choose among are a row of chips of their own
+/// above the buttons, which adds `CHIPS`.
+pub const HEIGHT: Pixels = px(180.0);
+const CHIPS: f32 = 36.0;
+
+/// Whether the box says its one lit agent in the buttons' row instead of offering a chip each.
+fn said_alone(page: &CommentPage) -> bool {
+    page.recipients.len() == 1 && page.recipients.iter().any(|r| Some(r.pane) == page.to)
+}
+
+/// How tall the box is for `page`.
+pub fn height(page: &CommentPage) -> Pixels {
+    if said_alone(page) { HEIGHT } else { HEIGHT + px(CHIPS) }
+}
 const ROWS: usize = 3;
 
 pub struct CommentBox {
@@ -92,39 +107,42 @@ impl CommentBox {
     }
 
     /// Who it goes to: one agent that is lit is said, not offered; several, or
-    /// none lit because the one chosen has gone, are each a button.
+    /// none lit because the one chosen has gone, are each a chip.
     fn recipients(&self, page: &CommentPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
         let lit = page.recipients.iter().find(|r| Some(r.pane) == page.to);
-        let label = div().text_xs().text_color(ledger.faint).child("Send to");
+        let label = div().typed(ty::SMALL).text_color(ledger.muted).child("Send to");
+        // `.glyph`: the diamond that marks an agent, in the accent.
+        let diamond = |ledger: &Ledger| div().flex_shrink_0().text_color(ledger.accent).child("\u{25c6}");
         match lit {
             Some(lit) if page.recipients.len() == 1 => h_flex()
-                .gap_2()
+                .gap(px(sp::S8))
                 .items_center()
                 .child(label)
                 .child(
-                    div()
+                    h_flex()
                         .id("comment-recipient")
                         .test_support()
                         .aria_label(SharedString::from(lit.title.clone()))
-                        .text_sm()
-                        .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                        .child(SharedString::from(format!("\u{25c6} {}", lit.title))),
+                        .gap(px(sp::S4))
+                        .text_color(ledger.foreground)
+                        .weighted(weight::SEMIBOLD)
+                        .child(diamond(ledger))
+                        .child(SharedString::from(lit.title.clone())),
                 )
                 .into_any_element(),
-            // A row that scrolls sideways rather than wrapping, which would grow the card.
+            // A row of chips of its own, wrapping as the page's `.actions` do.
             _ => h_flex()
                 .id("comment-recipients")
-                .gap_2()
+                .flex_wrap()
+                .gap(px(sp::S8))
                 .items_center()
                 .min_w_0()
-                .overflow_x_scroll()
                 .child(label)
                 .children(page.recipients.iter().map(|recipient| {
                     let pane = recipient.pane;
-                    Button::new(SharedString::from(format!("comment-recipient-{pane}")))
-                        .small()
-                        .selected(Some(pane) == page.to)
-                        .label(SharedString::from(format!("\u{25c6} {}", recipient.title)))
+                    chip(SharedString::from(format!("comment-recipient-{pane}")), recipient.title.clone(), Some(pane) == page.to, ledger)
+                        .child(diamond(ledger))
+                        .child(SharedString::from(recipient.title.clone()))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.ask(Call::ReviewClick { target: ReviewClick::Recipient { pane } }, cx)
                         }))
@@ -140,16 +158,24 @@ impl Render for CommentBox {
         let Some(page) = self.page.clone() else {
             return div().into_any_element();
         };
+        let mono = SharedString::from(fonts::MONO);
+        // The kit's secondary key is Cmd on macOS and Ctrl elsewhere; the page
+        // says Ctrl, as it cannot tell.
+        let chord = if cfg!(target_os = "macos") { "Cmd Enter" } else { "Ctrl Enter" };
+        // `.comment-card`: 12px inside, 8px between its rows, on the surface with the ring for an edge.
         let card = v_flex()
             .id("review-comment")
             .test_support()
             .size_full()
-            .gap_2()
-            .p_3()
-            .rounded(px(8.0))
+            .gap(px(sp::S8))
+            .p(px(sp::S12))
+            .rounded(px(radius::MD))
             .border_1()
-            .border_color(ledger.line_strong)
-            .bg(ledger.chrome)
+            .border_color(ledger.accent)
+            // The diff under it is mono; the card is the interface face (`font-family: var(--font-ui)`).
+            .font_family(SharedString::from(fonts::UI))
+            .text_size(px(fs::MD))
+            .bg(ledger.raised)
             // Ahead of the textarea's own Enter, which would put a newline in
             // before it said anything was pressed, and ahead of its Escape.
             .capture_action(cx.listener(|this, action: &Enter, _, cx| {
@@ -174,48 +200,42 @@ impl Render for CommentBox {
             }))
             .child(
                 h_flex()
-                    .gap_2()
-                    .items_baseline()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                            .text_color(ledger.accent)
-                            .child("Comment"),
-                    )
+                    .gap(px(sp::S8))
+                    .items_center()
+                    .child(div().text_color(ledger.accent).weighted(weight::SEMIBOLD).child("Comment"))
                     .child(
                         div()
                             .min_w_0()
                             .truncate()
-                            .text_xs()
-                            .text_color(ledger.faint)
+                            .typed(ty::SMALL)
+                            .text_color(ledger.muted)
                             .child(SharedString::from(page.about.clone())),
                     ),
             )
             .child(Textarea::new(&self.text).w_full().aria_label("Comment"))
+            .when(!said_alone(&page), |card| card.child(self.recipients(&page, &ledger, cx)))
             .child(
                 h_flex()
-                    .gap_2()
+                    .gap(px(sp::S8))
                     .items_center()
-                    .child(div().flex_1().min_w_0().child(self.recipients(&page, &ledger, cx)))
+                    .child(div().flex_1().min_w_0().when(said_alone(&page), |slot| slot.child(self.recipients(&page, &ledger, cx))))
                     .child(
-                        Button::new("comment-cancel")
-                            .small()
-                            .label("Cancel")
+                        button("comment-cancel", "Cancel", Look::Plain, false, &ledger)
+                            .child("Cancel")
                             .on_click(cx.listener(|this, _, _, cx| this.cancel(cx))),
                     )
                     .child(
-                        Button::new("comment-send")
-                            .small()
-                            .primary()
+                        button("comment-send", "Comment", Look::Primary, false, &ledger)
+                            .child("Comment")
+                            // `.btn.primary .kbd`: the cap in the on-accent colour, its edge at 45%.
                             .child(
-                                h_flex().gap_2().items_center().child("Comment").child(Kbd::new(
-                                    Keystroke::parse("secondary-enter").expect("a key"),
-                                )),
+                                keycap(chord, mono, &ledger)
+                                    .text_color(ledger.background)
+                                    .border_color(ledger.background.opacity(0.45)),
                             )
                             .on_click(cx.listener(|this, _, _, cx| this.send(cx))),
                     ),
             );
-        div().size_full().pl(px(GUTTER)).pr_3().py_2().child(card).into_any_element()
+        div().size_full().pl(px(GUTTER)).pr(px(sp::S12)).py(px(sp::S8)).child(card).into_any_element()
     }
 }

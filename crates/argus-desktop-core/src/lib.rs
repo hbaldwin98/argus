@@ -18,14 +18,18 @@ pub mod chrome;
 pub mod code;
 pub mod connection;
 pub mod extensions;
-#[cfg(test)]
+#[cfg(any(test, feature = "scenes"))]
+#[cfg_attr(not(test), allow(dead_code))]
 mod fixtures;
 pub mod keys;
 pub mod layout;
 pub mod panes;
 pub mod review;
-#[cfg(test)]
-mod screens;
+// Public under the `scenes` feature so a window other than the Tauri page can
+// draw the same scenes, as `argus-gpui`'s screenshot test does.
+#[cfg(any(test, feature = "scenes"))]
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod screens;
 pub mod session;
 pub mod settings;
 pub mod system;

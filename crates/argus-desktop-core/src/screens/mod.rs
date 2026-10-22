@@ -6,7 +6,8 @@
 //! of the Argus project at work. `page/test/screens` replays each scene's
 //! events into the page and photographs it.
 
-pub mod live;
+#[cfg(test)]
+mod live;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};

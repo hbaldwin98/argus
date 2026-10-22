@@ -5,6 +5,7 @@ pub mod comment;
 pub mod entry;
 pub mod files;
 pub mod filter;
+pub mod ghosts;
 pub mod hints;
 pub mod history;
 pub mod keys;

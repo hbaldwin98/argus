@@ -18,12 +18,12 @@ use crate::theme::Ledger;
 /// Where a tab stops. The page leaves the browser's 8; 4 keeps an indented
 /// line inside a row a half of a split view holds.
 pub const TAB: usize = 4;
-/// A line, and the mono text in it.
-pub const LINE: f32 = 22.0;
-/// A hunk header or a note: a little more air, on the chrome grey.
-pub const HUNK: f32 = 26.0;
-/// A fold: its words and two buttons between dashed rules.
-pub const FOLD: f32 = 30.0;
+/// A line, and the mono text in it: `.dbody`'s `line-height: 20px`.
+pub const LINE: f32 = 20.0;
+/// A hunk header or a note: a line on the chrome grey.
+pub const HUNK: f32 = 20.0;
+/// A fold: its words and two buttons between dashed rules, `--row-h-sm`.
+pub const FOLD: f32 = 26.0;
 
 /// What a row is, as `DiffRow::kind` says.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -265,7 +265,7 @@ pub fn wash(kind: &str, ledger: &Ledger) -> Option<Hsla> {
 
 /// What a side is filled with: its wash, with the pick laid over it rather
 /// than in its place, so a picked line's side stays readable, or the cursor's
-/// faint lift. Composed over the window's background by hand: `Hsla::blend`
+/// lift to `--fill`, which the page lays over the wash whole. Composed over the window's background by hand: `Hsla::blend`
 /// keeps its receiver's alpha, so a see-through wash blended with a
 /// see-through pick would paint nothing.
 pub fn fill(kind: &str, picked: bool, cursor: bool, ledger: &Ledger) -> Option<Hsla> {
@@ -273,7 +273,7 @@ pub fn fill(kind: &str, picked: bool, cursor: bool, ledger: &Ledger) -> Option<H
     let over = if picked {
         Some(ledger.accent.opacity(0.24))
     } else if cursor {
-        Some(ledger.foreground.opacity(0.07))
+        Some(ledger.fill())
     } else {
         None
     };

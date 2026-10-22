@@ -13,13 +13,16 @@
 
 use argus_desktop_core::connection::page::Call;
 use gpui_kit::component::input::{Enter, Escape, Input, InputEvent, InputState};
-use gpui_kit::component::{h_flex, Icon, IconName, Sizable as _};
+use gpui_kit::component::Sizable as _;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, px, Context, Entity, FocusHandle, SharedString, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::theme::Ledger;
+use crate::tokens::size;
+
+/// `.filter`: the field's width.
+const FIELD_W: f32 = 220.0;
 
 pub struct Filter {
     heard: Entity<Heard>,
@@ -85,15 +88,16 @@ impl Filter {
 
 impl Render for Filter {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
         let leave = |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
             cx.stop_propagation();
             window.focus(&this.stage, cx);
         };
+        // `.field.filter`: a plain field, 220px wide and `--control-h` tall,
+        // with no mark in it: the `/` that takes it is in the footer's hints.
         div()
             .id("history-filter")
             .test_support()
-            .w(px(240.0))
+            .w(px(FIELD_W))
             .flex_shrink_0()
             .capture_action(cx.listener(move |this, _: &Enter, window, cx| leave(this, window, cx)))
             .capture_action(cx.listener(move |this, _: &Escape, window, cx| leave(this, window, cx)))
@@ -101,9 +105,8 @@ impl Render for Filter {
                 Input::new(&self.field)
                     .id("history-filter-field")
                     .small()
-                    .aria_label("Filter commits by subject, hash or author")
-                    .prefix(Icon::new(IconName::Search).xsmall().text_color(ledger.faint))
-                    .suffix(h_flex().text_xs().text_color(ledger.faint).child("/")),
+                    .h(px(size::CONTROL_H))
+                    .aria_label("Filter commits by subject, hash or author"),
             )
     }
 }

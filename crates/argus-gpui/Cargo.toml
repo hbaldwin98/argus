@@ -40,3 +40,5 @@ arboard = { version = "3", default-features = false, features = ["image-data", "
 # this feature, from the same pinned source as the normal dependency.
 gpui-kit = { version = "=0.8.0", features = ["test-support"] }
 proptest = { workspace = true }
+# The scenes the Tauri page is photographed in, for the side-by-side shots.
+argus-desktop-core = { path = "../argus-desktop-core", features = ["scenes"] }
