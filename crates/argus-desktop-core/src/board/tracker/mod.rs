@@ -3,3 +3,4 @@
 pub mod dialogs;
 pub mod link_dialog;
 pub mod reconcile_dialog;
+pub mod tickets;

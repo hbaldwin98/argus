@@ -24,6 +24,10 @@ pub enum Overlay {
     /// The question an extension view's action asks before it is sent; apart from the extension's own
     /// dialog, so neither's follow closes the other's.
     ExtensionConfirm,
+    /// The tracker link dialog: the URL of a ticket, the tickets linked, the tracker map.
+    Link,
+    /// The reconcile dialog: an agent's proposal to bring a feature and its tickets in line.
+    Reconcile,
     /// Naming a pane.
     Rename,
     /// Naming the branch of a new worktree.
@@ -44,9 +48,26 @@ impl Overlay {
     }
 
     /// Takes the keys from a pane when it opens and gives them back when the last of its kind
-    /// closes (SHELL-SEAM-10, `takesFromPane`). The page's list names more dialogs (link,
-    /// reconcile, sessions and the readers); each joins when its surface does.
+    /// closes (SHELL-SEAM-10, `takesFromPane`). The page's list names more dialogs (sessions and
+    /// the readers); each joins when its surface does.
     pub fn takes_the_keys_from_a_pane(self) -> bool {
-        matches!(self, Overlay::AddProject)
+        matches!(self, Overlay::AddProject | Overlay::Link | Overlay::Reconcile)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Overlay;
+
+    /// SHELL-SEAM-10, BOARD-LINK-15: the tracker's dialogs take the keys from a pane, so the host
+    /// hands them back when the last closes; the settings and the palette do not.
+    #[test]
+    fn the_add_project_link_and_reconcile_dialogs_take_the_keys_from_a_pane() {
+        for kind in [Overlay::AddProject, Overlay::Link, Overlay::Reconcile] {
+            assert!(kind.takes_the_keys_from_a_pane(), "{kind:?}");
+        }
+        for kind in [Overlay::Palette, Overlay::Sheet, Overlay::Settings, Overlay::Question] {
+            assert!(!kind.takes_the_keys_from_a_pane(), "{kind:?}");
+        }
     }
 }

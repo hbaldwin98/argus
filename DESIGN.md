@@ -903,6 +903,7 @@ GPUI one both stand on it.
 | `board/tracker/dialogs` | the link and reconcile dialogs as the window holds them: which of the two is open and on which feature, closing it when the board loses that feature, a refusal of the link the link dialog sent, and what the page last heard of each |
 | `board/tracker/link_dialog` | what the link dialog holds — the URL and role being typed and what the URL reads as, the linked ticket under the cursor, the tracker map being edited, a link sent and not yet on the board — what its gestures ask of the daemon, and the page and gestures it trades with the page |
 | `board/tracker/reconcile_dialog` | what the reconcile dialog holds — the line under the cursor, the lines ticked and the words each was rewritten in, the agent an ask goes to — what its gestures ask of the daemon, and the page and gestures it trades with the page |
+| `board/tracker/tickets` | which view an agent showed of a linked ticket, and the words and call a press on the ticket's chip carries: the match is by the ticket's URL or by its tracker and key, the newest view winning |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 | `screens` | the scenes the screenshot harness draws: a session brought to each screen the window shows, and the events a fresh page hears there, with a stand-in daemon answering what each scene asks |
 | `screens/live` | a scene served live to a page in a browser: its calls reach a real session, the stand-in daemon answers them, and what the page hears goes back |
@@ -998,6 +999,20 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `board/lenses/work/row` | one row of the outline: mark, label, words, ticket key, changed dot and what stands at its end |
 | `board/lenses/work/task` | the task under the cursor in full: description, criteria as checkboxes, what binds it, its notes and its foot, or its form |
 | `board/snapshots` | the snapshots a test reads: what the session sends in the scenes the Tauri page is photographed in, and a window that has heard one |
+| `board/tracker` | the dialogs that tie a feature to its tracker's tickets, and the chip each ticket is |
+| `board/tracker/install` | what the window does once for the tracker dialogs: makes both, which open themselves while the session holds them, and puts their layers in the key walk |
+| `board/tracker/keys` | a tracker dialog's layer of the key walk: `?` opens the sheet, the stage switches and the window's commands are held and ignored, every other key it binds goes to the dialog's sink |
+| `board/tracker/link` | the link dialog: up while the session holds it, its two fields and the map's box kept as the person types, each keystroke sent with both fields' text, the fields emptied once the board holds the link |
+| `board/tracker/link/body` | what the link dialog draws: the head, the URL and role fields with the reading beneath the URL, and the foot with Cancel and Link |
+| `board/tracker/link/map` | the tracker map in the link dialog: its summary with the draft pill and Edit, or the editor with its ways out |
+| `board/tracker/link/rows` | the tickets already linked, as the link dialog lists them, with Open and Unlink on each and the cursor row lit |
+| `board/tracker/reconcile` | the reconcile dialog: up while the session holds it, the ask and the words of the line open kept as the person types, the lines list's scroll kept across a push and the cursor line brought into view |
+| `board/tracker/reconcile/ask` | the ask a reconcile starts with: what to reconcile, the agent to ask, and Send the ask |
+| `board/tracker/reconcile/body` | the reconcile dialog's frame and its body by stage: the ask, the waiting line over it, or the lines beside the line open |
+| `board/tracker/reconcile/detail` | the line under the cursor in full: its words word for word, the call the agent will make, and what happens afterwards |
+| `board/tracker/reconcile/head` | the reconcile dialog's head and foot: what was asked, who proposed it, the count ticked and the ways out |
+| `board/tracker/reconcile/lines` | the proposed lines under their headings with their ticks, the `failed` pill and what was noticed, flat in one scroll so the cursor line has a child index |
+| `board/tracker/tickets` | a ticket as a chip: the tracker and key, the dot when an agent showed a view of it, and a press that opens that view or else the ticket |
 | `browser` | the browsers agents run as this window draws them: their pictures decoded and held once, a picture in a place, the Browsers stage of tiles, a browser's cell in the grid and the words with none open |
 | `browser/chip` | a browser's status drawn: the pill on a tile and the dot on a nav sub-row, coloured by core's class (agent accent, person ok, held attention), no chip when nobody has it |
 | `browser/source` | where a pane's picture bytes come from: core's `Browsers::picture` (base64 undone once, shared), the session's in the running window and a `Browsers` of its own for a model with no session |
@@ -1215,6 +1230,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/overlay/stack` | the overlays that are up, bottom to top, and the rules that decide what opening, closing and Escape do to them, with no window in it |
 | `kit/pill` | the one status pill: a dot and a word on a tint of how loud the status is, the words a status is said in, and a feature's standing in an agent's vocabulary |
 | `kit/progress` | a progress bar: a fill in a small track, and the whole percentage a share of tasks is |
+| `kit/scroll` | bringing a child of a scrolling list into view by the least movement, from the bounds the last frame left |
 | `kit/section` | rows listed under headings: grouped in the order a heading was first met, and the heading with its count |
 | `kit/segment` | a choice of a few drawn as pills in one rounded track: the Git tabs, the side and the layout |
 | `kit/sequence` | a sequence diagram painted from core's layout: lifelines, boxes at head and foot, stick figures, arrows with heads, numbered dots, self-call loops and branch bands, one element for every place a diagram is drawn |
@@ -1225,6 +1241,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/start` | a checkout's start menu as it is drawn wherever it opens, a shell then an agent per template with the session's cursor highlighted; the rail opens it under a row and the Checkouts stage above New pane |
 | `kit/status_dot` | what a pane's or console's status looks like with no word: a turning ring, a filled dot, a dash, a hollow ring |
 | `kit/strip` | the page's one tab strip, drawn once for the docks, the console and a split side: the bar, the tab chip with its selected and hover states, the close, the menu button |
+| `kit/textarea` | a box of several lines that Rust also writes to and that never loses what is being typed: written only while it has not the keys, the caret put after its last character |
 | `kit/wheel` | which scroll box takes the wheel: one that can still move the way it turns, and none else, so a log or code block at its end hands the wheel to the page around it |
 | `kit/tip` | a hover tooltip for a control, built one way so no surface builds the kit's |
 | `kit/toggle` | the page's switch: 40 by 24, a pill and a knob, controlled, drawing the state it is given and asking for the opposite |

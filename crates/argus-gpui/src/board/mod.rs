@@ -15,3 +15,4 @@ pub mod menus;
 pub mod peek;
 #[cfg(test)]
 pub(crate) mod snapshots;
+pub mod tracker;

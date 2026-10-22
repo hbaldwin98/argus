@@ -87,3 +87,9 @@ pub fn label(words: impl Into<SharedString>, tokens: &Tokens) -> impl IntoElemen
 pub fn field_label(words: impl Into<SharedString>, tokens: &Tokens) -> impl IntoElement {
     div().typed(crate::theme::scale::Type::new(tokens.weight_medium, tokens.fs_md, 1.4)).text_color(tokens.fg).child(words.into())
 }
+
+/// `.meta`: a line of the small muted type, named by its words so a test or a screen reader finds it.
+pub fn meta(words: impl Into<SharedString>, tokens: &Tokens) -> crate::kit::icon_button::Node {
+    let words = words.into();
+    div().id(words.clone()).test_support().aria_label(words.clone()).typed(tokens.type_small).text_color(tokens.fg_muted).child(words)
+}

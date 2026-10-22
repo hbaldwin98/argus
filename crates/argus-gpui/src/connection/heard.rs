@@ -26,6 +26,8 @@ use argus_desktop_core::code::stage::CodePage;
 use argus_desktop_core::code::start::Opened;
 use argus_desktop_core::chrome::add_project::AddProjectPage;
 use argus_desktop_core::connection::page::{Connection, Event, Features, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
+use argus_desktop_core::board::tracker::link_dialog::LinkPage;
+use argus_desktop_core::board::tracker::reconcile_dialog::ReconcilePage;
 use argus_desktop_core::extensions::keys::{ExtCommandPage, ExtGroup};
 use argus_desktop_core::extensions::dialog::ExtDialogPage;
 use argus_desktop_core::extensions::views::{ExtConfirm, ExtTab, ExtTable, ExtTableConsole};
@@ -106,6 +108,9 @@ pub struct Heard {
     pub palette: Option<Palette>,
     /// The add-a-project dialog, while the session holds it open.
     pub add_project: Option<AddProjectPage>,
+    /// The tracker dialogs, while the session holds one open: the link dialog, and the reconcile dialog.
+    pub link: Option<LinkPage>,
+    pub reconcile: Option<ReconcilePage>,
     /// The choices of the Settings dialog, sent whenever one changes, whether the dialog is open
     /// or not: the look of the whole window is drawn from them (`settings/look`). Shared, so the
     /// dialog and the look keep them without copying the installed fonts.
@@ -221,6 +226,8 @@ impl Heard {
             commands: Vec::new(),
             palette: None,
             add_project: None,
+            link: None,
+            reconcile: None,
             settings: None,
             extension_groups: Vec::new(),
             extension_commands: Vec::new(),
@@ -315,6 +322,8 @@ impl Heard {
             }
             Event::Palette(page) => self.palette = page.open.then_some(*page),
             Event::AddProject(page) => self.add_project = page.open.then_some(*page),
+            Event::Link(page) => self.link = page.open.then_some(*page),
+            Event::Reconcile(page) => self.reconcile = page.open.then_some(*page),
             Event::Settings(page) => self.settings = Some(Rc::new(*page)),
             Event::Extensions(page) => {
                 self.extension_groups = page.groups;

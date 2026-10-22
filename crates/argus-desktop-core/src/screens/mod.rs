@@ -1922,6 +1922,28 @@ fn on_feature(w: &mut Window, slug: &str) {
     w.call(Call::ShowFeatures { open: true }).call(Call::OpenFeature { slug: Some(slug.into()) });
 }
 
+/// The tracker dialogs after the daemon pushes the board again with `change` made to the open feature
+/// and to the repository's map: the states a fixture board does not start in.
+fn tracking(open: Call, change: impl FnOnce(&mut Feature, &mut argus_protocol::TrackerMap)) -> Window {
+    let mut w = Window::showing(P_TRIM);
+    on_feature(&mut w, "trim");
+    w.call(open);
+    let mut pushed = board();
+    if let Some(feature) = pushed.features.iter_mut().find(|f| f.slug == "trim") {
+        change(feature, &mut pushed.tracker_map);
+    }
+    w.receive(ServerMsg::Decisions(Box::new(pushed)));
+    w
+}
+
+fn reconciling(change: impl FnOnce(&mut Feature)) -> Window {
+    tracking(Call::OpenReconcile, |feature, _| change(feature))
+}
+
+fn linking(map: bool, change: impl FnOnce(&mut argus_protocol::TrackerMap)) -> Window {
+    tracking(Call::OpenLink { map }, |_, tracker_map| change(tracker_map))
+}
+
 fn key(key: &str, code: &str, ctrl: bool) -> Call {
     Call::Key { key: PageKey { key: key.into(), code: code.into(), ctrl, ..PageKey::default() } }
 }
@@ -2064,6 +2086,74 @@ pub fn scenes() -> Vec<Scene> {
             w.call(Call::OpenReconcile);
             w.s
         }),
+        scene("link-map", "Link — the tracker map's editor", || linking(true, |_| {}).s),
+        scene("link-draft", "Link — an agent's draft of the tracker map waits", || {
+            linking(false, |map| {
+                map.body = "Linear: a feature is an issue, a task a sub-issue\nGitHub: a feature is a milestone".into();
+                map.draft = Some(argus_protocol::MapDraft { body: "Linear: a feature is a project".into(), by: "pane #32".into(), at: NOW as i64 - 600 });
+            })
+            .s
+        }),
+        scene("link-typed", "Link — a URL typed, read as its tracker and key", || {
+            let mut w = Window::showing(P_TRIM);
+            on_feature(&mut w, "trim");
+            w.call(Call::OpenLink { map: false }).call(Call::Link {
+                gesture: crate::board::tracker::link_dialog::LinkGesture::Fields { url: "https://acme.atlassian.net/browse/ARG-142".into(), role: "the PM's ticket".into() },
+            });
+            w.s
+        }),
+        scene("link-refused", "Link — a URL that names no ticket is said, not sent", || {
+            let mut w = Window::showing(P_TRIM);
+            on_feature(&mut w, "trim");
+            w.call(Call::OpenLink { map: false }).call(Call::Link {
+                gesture: crate::board::tracker::link_dialog::LinkGesture::Fields { url: "ENG-88".into(), role: String::new() },
+            });
+            w.s
+        }),
+        scene("reconcile-ticked", "Reconcile — two lines ticked, the third open", || {
+            use crate::board::tracker::reconcile_dialog::ReconcileGesture as G;
+            let mut w = Window::showing(P_TRIM);
+            on_feature(&mut w, "trim");
+            w.call(Call::OpenReconcile)
+                .call(Call::Reconcile { gesture: G::Tick { line: 0 } })
+                .call(Call::Reconcile { gesture: G::Tick { line: 2 } })
+                .call(Call::Reconcile { gesture: G::Select { line: 2 } });
+            w.s
+        }),
+        scene("reconcile-edited", "Reconcile — a line's words rewritten before ticking", || {
+            use crate::board::tracker::reconcile_dialog::ReconcileGesture as G;
+            let mut w = Window::showing(P_TRIM);
+            on_feature(&mut w, "trim");
+            w.call(Call::OpenReconcile).call(Call::Reconcile { gesture: G::Text { line: 0, text: "The brief route is in; the hook reads it next.".into() } });
+            w.s
+        }),
+        scene("reconcile-none", "Reconcile — nothing under way: the ask", || reconciling(|feature| feature.reconcile = None).s),
+        scene("reconcile-asked", "Reconcile — asked, the agent still reading", || {
+            reconciling(|feature| {
+                if let Some(r) = &mut feature.reconcile {
+                    r.proposed = false;
+                    r.lines.clear();
+                    r.noticed.clear();
+                }
+            })
+            .s
+        }),
+        scene("reconcile-carrying", "Reconcile — the agent carrying out the ticked lines", || {
+            reconciling(|feature| {
+                if let Some(r) = &mut feature.reconcile {
+                    r.carrying = vec![argus_protocol::Ticked { line: 0, text: r.lines[0].text.clone() }];
+                }
+            })
+            .s
+        }),
+        scene("reconcile-failed", "Reconcile — a line that failed to carry out", || {
+            reconciling(|feature| {
+                if let Some(r) = &mut feature.reconcile {
+                    r.lines[1].failed = Some("GitHub answered 404: no issue 214".into());
+                }
+            })
+            .s
+        }),
         scene("checkouts", "Checkouts — a repository's worktrees and branches", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::ShowCheckouts { open: true }).call(Call::SelectCheckoutRow { key: format!("c{DESKTOP}") });
@@ -2182,6 +2272,12 @@ pub fn scenes() -> Vec<Scene> {
         // lists beyond the commands comes once the page says it is open.
         scene("palette", "Palette — searching commands, panes and features", || {
             let mut w = Window::showing(P_TRIM);
+            w.call(key(" ", "Space", true)).call(key("k", "KeyK", true));
+            w.s
+        }),
+        scene("palette-features", "Palette — over the Feature stage, whose board has arrived", || {
+            let mut w = Window::showing(P_TRIM);
+            on_feature(&mut w, "trim");
             w.call(key(" ", "Space", true)).call(key("k", "KeyK", true));
             w.s
         }),
