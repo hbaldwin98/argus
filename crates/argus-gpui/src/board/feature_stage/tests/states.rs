@@ -94,5 +94,5 @@ fn an_opened_feature_replaces_the_index(cx: &mut TestAppContext) {
     let mut open = list();
     open.open = Some(open_view());
     hear(cx, &opened, vec![heard(open)]);
-    assert!(!present(cx, &opened, "feature-index") && !present(cx, &opened, "feature-head"));
+    assert!(!present(cx, &opened, "feature-index") && !present(cx, &opened, "index-head"));
 }

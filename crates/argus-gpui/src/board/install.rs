@@ -2,17 +2,16 @@
 //! while the Feature stage has one of them up, and the strip carries an open feature's title, its trail
 //! and its lenses and menu.
 //!
-//! Called once by the shell. The Feature stage's index, which fills the stage when neither is up, is
-//! drawn by whoever offers the stage's page last; this offers one that shows the note and an open
-//! feature and nothing otherwise, and says how to ask whether it has anything to show (`Surface::up`).
-//! The strip's words and tools for an open feature are `strip_says` and `strip_tools`, for the stage that
-//! also offers the index's to ask first.
+//! Called once by the shell. The stage is the note while one is up, else an open feature, else the
+//! index; the strip carries an open feature's words and tools, else the index's, which the page also
+//! shows over a note.
 
 use argus_desktop_core::chrome::strip::{Part, Says};
 use argus_desktop_core::connection::page::Stage;
 use gpui_kit::{div, prelude::*, AnyElement, App, Context, Entity, Window};
 
 use super::capture::CaptureNote;
+use super::feature_stage::{self, strip, FeatureStage};
 use super::feature_view::OpenFeature;
 use super::lenses::head::tools::tools;
 use crate::chrome::header::slots::{Offer, Slots};
@@ -20,11 +19,12 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::layout::bodies::Contents;
 
-/// What the Feature stage draws of the board while a note or an open feature is up.
+/// What the Feature stage draws: the note, an open feature or the index.
 pub struct Surface {
     heard: Entity<Heard>,
     note: Entity<CaptureNote>,
     open: Entity<OpenFeature>,
+    index: Entity<FeatureStage>,
 }
 
 impl Surface {
@@ -43,7 +43,7 @@ impl Render for Surface {
         if heard.features.as_ref().is_some_and(|features| features.open.is_some()) {
             return div().size_full().child(self.open.clone()).into_any_element();
         }
-        div().size_full().into_any_element()
+        div().size_full().child(self.index.clone()).into_any_element()
     }
 }
 
@@ -62,15 +62,28 @@ pub fn strip_tools(open: &Entity<OpenFeature>, cx: &App) -> AnyElement {
 pub fn install(heard: &Entity<Heard>, caller: &Caller, window: &mut Window, cx: &mut App) {
     let note = cx.new(|cx| CaptureNote::new(heard.clone(), caller.clone(), window, cx));
     let open = cx.new(|cx| OpenFeature::new(heard.clone(), caller.clone(), window, cx));
+    let index = feature_stage::build(heard, caller, window, cx);
+    let index_tools = index.read(cx).strip_tools();
     let surface = cx.new(|cx| {
         cx.observe(heard, |_, _, cx| cx.notify()).detach();
-        Surface { heard: heard.clone(), note, open: open.clone() }
+        Surface { heard: heard.clone(), note, open: open.clone(), index }
     });
     Contents::of(cx).offer_stage(Stage::Feature, surface.into());
-    let (saying, offered) = (heard.clone(), open);
+    let (saying, offered, showing) = (heard.clone(), open.clone(), heard.clone());
     Slots::of(cx).offer(
         Stage::Feature,
-        Offer::default().says(move |cx| strip_says(saying.read(cx)).unwrap_or_default()).tools(move |_, cx| strip_tools(&offered, cx)),
+        Offer::default()
+            .says(move |cx| {
+                let heard = saying.read(cx);
+                strip_says(heard).unwrap_or_else(|| strip::says(heard.features.as_deref()))
+            })
+            .tools(move |_, cx| {
+                if strip_says(showing.read(cx)).is_some() {
+                    strip_tools(&offered, cx)
+                } else {
+                    index_tools.clone().into_any_element()
+                }
+            }),
     );
 }
 

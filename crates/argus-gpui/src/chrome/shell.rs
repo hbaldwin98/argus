@@ -85,6 +85,7 @@ impl Shell {
         let console = cx.new(|cx| ConsoleView::new(heard.clone(), caller.clone(), stage, window, cx));
         // The agents' views draw in their dock and as the page over the stage.
         views::agent::install::install(&heard, &caller, cx);
+        // The Feature stage: the note, an open feature or the index, and the strip each carries.
         crate::board::install::install(&heard, &caller, window, cx);
         // The composer is the stage of New, and the sessions dialog opens over the window while the session holds it.
         crate::agents::install::install(&heard, &caller, window, cx);
@@ -93,8 +94,6 @@ impl Shell {
         let checkouts = cx.new(|cx| CheckoutsStage::new(heard.clone(), caller.clone(), window, cx));
         let code = cx.new(|cx| CodeStage::new(heard.clone(), caller.clone(), window, cx));
         let browsers = cx.new(|cx| BrowsersStage::new(heard.clone(), caller.clone(), cx));
-        // The Feature stage's index is the page of its stage, found where the stage looks for one.
-        crate::board::feature_stage::install(&heard, &caller, window, cx);
         let split = cx.new(|cx| SplitView::new(heard.clone(), caller.clone(), terminal.clone(), window, cx));
         let stage = cx.new(|cx| StageView::new(heard.clone(), caller.clone(), Bodies { pane: split.clone().into(), git: git.into(), checkouts: checkouts.into(), code: code.into(), browsers: browsers.into() }, cx));
         let work = cx.new(|cx| WorkView::new(heard.clone(), caller.clone(), stage.into(), console.into(), cx));

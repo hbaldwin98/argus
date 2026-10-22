@@ -29,7 +29,7 @@ impl FeatureStage {
         let on_board = features.layout == "board";
         let ctx = self.ctx.clone();
         h_flex()
-            .id("feature-head")
+            .id("index-head")
             .test_support()
             .flex_shrink_0()
             .items_center()

@@ -32,14 +32,12 @@ use super::columns::Lanes;
 use super::ctx::Ctx;
 use super::list::IndexList;
 use super::menus::Menu;
-use crate::chrome::header::slots::{Offer, Slots};
 use crate::chrome::stage::route::narrow;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::keys::field::{Fields, Registered};
 use crate::keys::layer::Layers;
 use crate::kit::field::Field;
-use crate::layout::bodies::Contents;
 use crate::theme::scale::css;
 use crate::theme::Tokens;
 use strip::StripTools;
@@ -67,13 +65,19 @@ pub struct FeatureStage {
     _field: Registered,
 }
 
-/// Builds the stage, and puts its strip, its keys and its body where the window looks for them.
-pub fn install(heard: &Entity<Heard>, caller: &Caller, window: &mut Window, cx: &mut App) {
-    let stage = cx.new(|cx| FeatureStage::new(heard.clone(), caller.clone(), window, cx));
-    Contents::of(cx).offer_stage(Stage::Feature, stage.into());
+/// Builds the index with its keys; `board::install` draws it when no note or open feature is up, and
+/// puts its strip where the window looks for one.
+pub fn build(heard: &Entity<Heard>, caller: &Caller, window: &mut Window, cx: &mut App) -> Entity<FeatureStage> {
+    cx.new(|cx| FeatureStage::new(heard.clone(), caller.clone(), window, cx))
 }
 
 impl FeatureStage {
+    /// What the strip carries for the index: the counts, the List and Board radio, the filter button
+    /// and New feature.
+    pub fn strip_tools(&self) -> Entity<StripTools> {
+        self.tools.clone()
+    }
+
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let ctx = Ctx { heard: heard.clone(), caller };
         let focus = cx.focus_handle();
@@ -84,12 +88,6 @@ impl FeatureStage {
         let lanes = cx.new(|cx| Lanes::new(ctx.clone(), menu.clone(), anchor.clone(), cx));
         let this = cx.entity();
         let tools = cx.new(|_| StripTools::new(ctx.clone(), &this));
-        let saying = heard.clone();
-        let offered = tools.clone();
-        Slots::of(cx).offer(
-            Stage::Feature,
-            Offer::default().says(move |cx| strip::says(saying.read(cx).features.as_deref())).tools(move |_, _| offered.clone().into_any_element()),
-        );
         Layers::of(cx).register(Layer::Features, std::rc::Rc::new(keys::StageKeys { stage: cx.weak_entity() }));
         let typing = cx.subscribe(filter.input(), |this, input, event: &InputEvent, cx| match event {
             InputEvent::Change => {
@@ -107,7 +105,8 @@ impl FeatureStage {
             _ => {}
         });
         let following = cx.observe_in(&heard, window, |this, heard, window, cx| {
-            let up = heard.read(cx).rail.stage == Stage::Feature;
+            // The index is up only while the stage shows it: a note or an open feature has the stage instead.
+            let up = heard.read(cx).rail.stage == Stage::Feature && !crate::board::install::Surface::up(heard.read(cx));
             if let Some(said) = heard.read(cx).features.as_ref().map(|features| features.filter.clone()) {
                 // Known first, so putting what the index says into the field is not an edit to send; a
                 // field being typed in is left alone, and what was known stays.
