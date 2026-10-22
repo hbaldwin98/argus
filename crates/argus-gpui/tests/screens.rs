@@ -32,7 +32,7 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,agent-views,agent-view-page,saved-view";
+const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog";
 
 /// The scenes the page finishes with a click on a control, and the control: the window is brought to the
 /// same place by pressing it, so the menu or dialog is open in the picture as it is in the page's.
@@ -143,6 +143,8 @@ fn write_gpui_screens() {
                 }
                 let shot = cx.update(|cx| {
                     cx.update_window(handle, |_, window, cx| {
+                        // A box measured as it is laid out asks to be drawn again at its width, and a
+                        // view's own deferred layout asks again: enough frames for both to settle.
                         for _ in 0..6 {
                             window.render_frame(cx);
                         }

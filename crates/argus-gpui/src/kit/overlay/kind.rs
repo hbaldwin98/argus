@@ -21,6 +21,9 @@ pub enum Overlay {
     Removal,
     /// A dialog an extension asks.
     Extension,
+    /// The question an extension view's action asks before it is sent; apart from the extension's own
+    /// dialog, so neither's follow closes the other's.
+    ExtensionConfirm,
     /// Naming a pane.
     Rename,
     /// Naming the branch of a new worktree.

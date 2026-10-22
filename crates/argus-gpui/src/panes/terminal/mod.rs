@@ -227,7 +227,7 @@ impl Terminal {
         match self.side {
             Side::Workspace | Side::Beside(_) => heard.cell_has_keys(self.side),
             Side::First | Side::Second => heard.keyed(pane),
-            Side::View(_) => false,
+            Side::View(_) => heard.view_console(self.side).is_some_and(|console| console.keyed),
         }
     }
 

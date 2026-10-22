@@ -25,6 +25,7 @@ use gpui_kit::{div, prelude::*, AnyElement, AnyView, Context, Entity, Subscripti
 use super::ended;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::extensions::bodies::Bodies as ExtensionBodies;
 use crate::keys::caps;
 use crate::layout::bodies::Contents;
 use crate::layout::panel;
@@ -60,8 +61,10 @@ impl StageView {
 }
 
 impl Render for StageView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
+        // An extension's page is its own element, which a dock would draw as well (`extensions/bodies`).
+        let extension = ExtensionBodies::of(cx).page(&self.heard, &self.caller, window, cx);
         let heard = self.heard.read(cx);
         let held = heard.held();
         let body: AnyElement = match surface(&heard.rail, heard.console.place, heard.git_up()) {
@@ -69,6 +72,7 @@ impl Render for StageView {
             Surface::Checkouts => self.checkouts.clone().into_any_element(),
             Surface::Code => self.code.clone().into_any_element(),
             Surface::Browsers => self.browsers.clone().into_any_element(),
+            Surface::Extension => extension.map_or_else(|| div().into_any_element(), IntoElement::into_any_element),
             Surface::Pane => div()
                 .relative()
                 .size_full()

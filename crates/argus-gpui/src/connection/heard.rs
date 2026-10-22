@@ -26,7 +26,8 @@ use argus_desktop_core::code::start::Opened;
 use argus_desktop_core::chrome::add_project::AddProjectPage;
 use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
 use argus_desktop_core::extensions::keys::{ExtCommandPage, ExtGroup};
-use argus_desktop_core::extensions::views::{ExtTab, ExtTable};
+use argus_desktop_core::extensions::dialog::ExtDialogPage;
+use argus_desktop_core::extensions::views::{ExtConfirm, ExtTab, ExtTable, ExtTableConsole};
 use argus_desktop_core::keys::keymap::{Action, Command, Group};
 use argus_desktop_core::layout::docks::{DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
@@ -118,6 +119,10 @@ pub struct Heard {
     /// The extension views on screen, each as its table says (their tools ride a dock's strip).
     pub extension_tables: Vec<ExtTable>,
     pub extensions_listed: bool,
+    /// The question an extension view's action asks before it is sent, while one waits on a yes.
+    pub extension_confirm: Option<ExtConfirm>,
+    /// The question an extension put to this window, the oldest, while one is open.
+    pub extension_dialog: Option<ExtDialogPage>,
     /// What the sidebar's Views fold lists, and the panels showing saved views (which say which are
     /// lit), as the sidebar lists them. The views' bodies are `saved`'s.
     pub saved_views: Vec<NavView>,
@@ -215,6 +220,8 @@ impl Heard {
             extension_views: Vec::new(),
             extension_tables: Vec::new(),
             extensions_listed: false,
+            extension_confirm: None,
+            extension_dialog: None,
             saved_views: Vec::new(),
             saved_panels: Vec::new(),
             views: None,
@@ -306,7 +313,10 @@ impl Heard {
                 self.extension_views = page.views;
                 self.extension_tables = page.tables;
                 self.extensions_listed = page.listed;
+                self.extension_confirm = page.confirm;
             }
+            // Held only while it is open: `open` false is the session's word that none is.
+            Event::ExtensionDialog(page) => self.extension_dialog = page.open.then_some(*page),
             Event::SavedViews(page) => {
                 self.saved_views = nav::views_of(&page);
                 self.saved_panels = page.panels.clone();
@@ -437,8 +447,14 @@ impl Heard {
             Side::First => self.console.showing,
             Side::Second => self.console.beside,
             Side::Beside(n) => self.rail.row.beside.get(usize::from(n)).and_then(Option::as_ref).map(|shown| shown.pane),
+            Side::View(_) => self.view_console(side).and_then(|console| console.pane),
             _ => self.rail.shown.as_ref().map(|shown| shown.pane),
         }
+    }
+
+    /// The console an extension view on screen draws on `side`, as its table says.
+    pub fn view_console(&self, side: Side) -> Option<&ExtTableConsole> {
+        self.extension_tables.iter().filter_map(|table| table.console.as_ref()).find(|console| console.side == Some(side))
     }
 
     /// Whether the console says its keys are in `pane`.

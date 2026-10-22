@@ -9,6 +9,7 @@
 use argus_protocol::{CommandScope, ExtCommand, ExtKey, ExtView};
 use serde::Serialize;
 
+use super::views::{ExtTable, ExtTableAction};
 use crate::keys::page_key::PageKey;
 
 /// A command an extension added: what the palette calls it, its key, and
@@ -77,6 +78,35 @@ pub fn matches(press: &ExtKey, page: &PageKey) -> bool {
         && page.alt == press.alt
         && !page.meta
         && (press.is_character() || page.shift == press.shift)
+}
+
+/// Whether `page` is `chord`, the owned form `ExtCommandPage` lists: the rule of [`matches`].
+pub fn chord_matches(chord: &ExtChord, page: &PageKey) -> bool {
+    page.key == chord.key
+        && (chord.key.chars().count() == 1 || page.shift == chord.shift)
+        && page.ctrl == chord.ctrl
+        && page.alt == chord.alt
+        && page.meta == chord.meta
+}
+
+/// The first of `commands` heard in one of `scopes` whose key is `page`. A command scoped to a
+/// view is heard only in the view named `view`. The daemon refused any key the keymap holds, so a
+/// layer asks this only after its own bindings found nothing.
+pub fn command_in<'a>(commands: &'a [ExtCommandPage], scopes: &[&str], view: Option<&str>, page: &PageKey) -> Option<&'a ExtCommandPage> {
+    commands.iter().find(|c| {
+        scopes.contains(&c.scope)
+            && (c.scope != "view" || (view.is_some() && c.view.as_deref() == view))
+            && c.chords.iter().any(|chord| chord_matches(chord, page))
+    })
+}
+
+/// The action of `view` whose key is `page`: one character typed with no modifier but its own
+/// shift, matched as typed so case matters.
+pub fn action_for<'a>(view: &'a ExtTable, page: &PageKey) -> Option<&'a ExtTableAction> {
+    if page.ctrl || page.alt || page.meta {
+        return None;
+    }
+    view.actions.iter().find(|action| action.key.as_deref() == Some(page.key.as_str()))
 }
 
 impl ExtensionKeys {
@@ -179,6 +209,45 @@ mod tests {
 
     fn page(key: &str) -> PageKey {
         PageKey { key: key.into(), ..PageKey::default() }
+    }
+
+    #[test]
+    fn a_view_scoped_command_is_heard_only_in_its_own_view() {
+        let page_of = keys().page();
+        let heard = |scopes: &[&str], view: Option<&str>, key: PageKey| command_in(&page_of, scopes, view, &key).map(|c| c.command.clone());
+        let shifted = PageKey { shift: true, ..page("I") };
+        assert_eq!(heard(&["view", "anywhere"], Some("containers"), shifted.clone()).as_deref(), Some("prune"));
+        assert_eq!(heard(&["view", "anywhere"], Some("images"), shifted.clone()), None, "another view's");
+        assert_eq!(heard(&["view", "anywhere"], None, shifted.clone()), None, "no view up");
+        assert_eq!(heard(&["anywhere"], Some("containers"), shifted), None, "the scope is not asked");
+        let up = PageKey { ctrl: true, ..page("u") };
+        assert_eq!(heard(&["anywhere"], None, up).as_deref(), Some("up"));
+    }
+
+    #[test]
+    fn a_chord_is_its_key_with_its_modifiers_and_a_characters_shift_is_its_own() {
+        let chord = |key: &str, shift: bool| ExtChord { key: key.into(), ctrl: false, alt: false, shift, meta: false, leader: false };
+        assert!(chord_matches(&chord("y", false), &page("y")));
+        assert!(chord_matches(&chord("?", false), &PageKey { shift: true, ..page("?") }), "a character carries its own shift");
+        assert!(!chord_matches(&chord("ArrowUp", false), &PageKey { shift: true, ..page("ArrowUp") }));
+        assert!(chord_matches(&chord("ArrowUp", true), &PageKey { shift: true, ..page("ArrowUp") }));
+        assert!(!chord_matches(&chord("y", false), &PageKey { meta: true, ..page("y") }));
+        assert!(!chord_matches(&chord("y", false), &PageKey { alt: true, ..page("y") }));
+    }
+
+    #[test]
+    fn a_views_action_key_is_one_character_with_no_modifier_but_its_own_shift_and_case_matters() {
+        let actions = |keys: &[(&str, &str)]| -> Vec<ExtTableAction> {
+            keys.iter().map(|(id, key)| ExtTableAction { id: (*id).into(), label: (*id).into(), key: Some((*key).into()), view_wide: false }).collect()
+        };
+        let mut view = ExtTable { panel: crate::layout::docks::Panel::extension("docker", "containers"), extension: "docker".into(), view: "containers".into(), title: "Containers".into(), page: false, columns: Vec::new(), rows: Vec::new(), actions: Vec::new(), selected: None, default: None, console: None };
+        view.actions = actions(&[("restart", "r"), ("rebuild", "R")]);
+        assert_eq!(action_for(&view, &page("r")).unwrap().id, "restart");
+        assert_eq!(action_for(&view, &PageKey { shift: true, ..page("R") }).unwrap().id, "rebuild");
+        assert!(action_for(&view, &PageKey { ctrl: true, ..page("r") }).is_none());
+        assert!(action_for(&view, &PageKey { alt: true, ..page("r") }).is_none());
+        assert!(action_for(&view, &PageKey { meta: true, ..page("r") }).is_none());
+        assert!(action_for(&view, &page("x")).is_none());
     }
 
     #[test]

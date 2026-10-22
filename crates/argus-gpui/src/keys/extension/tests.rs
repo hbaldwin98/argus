@@ -2,6 +2,7 @@ use argus_desktop_core::connection::page::Event;
 use argus_desktop_core::extensions::views::ExtensionsPage;
 use gpui_kit::TestAppContext;
 
+use argus_desktop_core::extensions::keys::{chord_matches, ExtChord};
 use super::*;
 use crate::keys::root::tests::{asked, blur, open, press};
 
@@ -39,14 +40,14 @@ fn key(name: &str) -> PageKey {
 /// its own shift (`?` is typed with Shift), a named key does not.
 #[test]
 fn a_chord_is_its_key_with_its_modifiers_and_a_characters_shift_is_its_own() {
-    assert!(matches(&chord("y"), &key("y")));
-    assert!(!matches(&chord("y"), &key("u")));
-    assert!(!matches(&chord("y"), &PageKey { ctrl: true, ..key("y") }), "a modifier the chord does not name");
-    assert!(!matches(&ExtChord { alt: true, ..chord("y") }, &key("y")), "a modifier the key lacks");
-    assert!(!matches(&chord("y"), &PageKey { meta: true, ..key("y") }));
-    assert!(matches(&chord("?"), &PageKey { shift: true, ..key("?") }));
-    assert!(!matches(&chord("ArrowUp"), &PageKey { shift: true, ..key("ArrowUp") }));
-    assert!(matches(&ExtChord { shift: true, ..chord("ArrowUp") }, &PageKey { shift: true, ..key("ArrowUp") }));
+    assert!(chord_matches(&chord("y"), &key("y")));
+    assert!(!chord_matches(&chord("y"), &key("u")));
+    assert!(!chord_matches(&chord("y"), &PageKey { ctrl: true, ..key("y") }), "a modifier the chord does not name");
+    assert!(!chord_matches(&ExtChord { alt: true, ..chord("y") }, &key("y")), "a modifier the key lacks");
+    assert!(!chord_matches(&chord("y"), &PageKey { meta: true, ..key("y") }));
+    assert!(chord_matches(&chord("?"), &PageKey { shift: true, ..key("?") }));
+    assert!(!chord_matches(&chord("ArrowUp"), &PageKey { shift: true, ..key("ArrowUp") }));
+    assert!(chord_matches(&ExtChord { shift: true, ..chord("ArrowUp") }, &PageKey { shift: true, ..key("ArrowUp") }));
 }
 
 /// SHELL-KEYS-21: the first command heard in the scopes asked is the key's; one in another scope is not.
