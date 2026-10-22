@@ -145,3 +145,38 @@ fn the_views_launcher_is_lit_while_a_dock_shows_the_views_panel(cx: &mut TestApp
     hear(cx, &opened, vec![Event::Docks(Box::new(crate::layout::work::tests::docks()))]);
     assert_eq!(lit(cx), Some(true), "a dock shows the views");
 }
+
+/// Events as the session makes them from what `argus-hook view show` sends: the daemon's
+/// `ViewShown` for `id` at `pane`, read by the same session the window runs on.
+fn shown_by_agent(session: &mut argus_desktop_core::session::Session, pane: u64, id: &str, title: &str, note: &str) -> Vec<Event> {
+    use argus_protocol::{AgentView, Block, PaneId, ServerMsg, ShownView, Tone};
+    let view = AgentView { id: id.into(), title: title.into(), blocks: vec![Block::Callout { tone: Tone::Info, text: note.into() }], ..Default::default() };
+    session.receive(ServerMsg::ViewShown(Box::new(ShownView { pane: PaneId(pane), at: 5, subject: None, view })));
+    session.events(0)
+}
+
+/// AGENTVIEWS-1, -2: a view an agent showed reaches the window as the session says it, the Views panel
+/// draws its blocks, the launcher counts it, and the same id shown again replaces it, not adds one.
+#[gpui_kit::test]
+fn a_view_an_agent_showed_is_drawn_counted_and_replaced_by_its_id(cx: &mut TestAppContext) {
+    use argus_desktop_core::session::Session;
+    use argus_protocol::Hello;
+    let opened = open(cx);
+    let mut session = Session::default();
+    session.connected(Some(Hello::this_build()), None, Vec::new());
+    session.events(0);
+    let counted = |cx: &mut TestAppContext| cx.update_window(opened.handle, |_, window, _| window.try_find("views-tab".to_owned()).and_then(|found| found.label().map(str::to_owned))).unwrap();
+    let mut events = shown_by_agent(&mut session, 1, "plan", "Plan the trim", "step one is cutting the context");
+    events.push(Event::Docks(Box::new(crate::layout::work::tests::docks())));
+    hear(cx, &opened, events);
+    assert_eq!(counted(cx).as_deref(), Some("1 view agents showed"));
+    assert!(crate::keys::root::tests::has_label(cx, &opened, "step one is cutting the context"), "the block is drawn in the panel");
+
+    hear(cx, &opened, shown_by_agent(&mut session, 1, "plan", "Plan the trim", "step two is the tests"));
+    assert_eq!(counted(cx).as_deref(), Some("1 view agents showed"), "the same id is the same view");
+    assert!(crate::keys::root::tests::has_label(cx, &opened, "step two is the tests"));
+    assert!(!crate::keys::root::tests::has_label(cx, &opened, "step one is cutting the context"), "and it replaced the old blocks");
+
+    hear(cx, &opened, shown_by_agent(&mut session, 1, "ci", "CI", "green"));
+    assert_eq!(counted(cx).as_deref(), Some("2 views agents showed"), "another id is another view");
+}

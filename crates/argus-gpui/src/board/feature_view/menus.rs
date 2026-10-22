@@ -26,7 +26,7 @@ impl OpenFeature {
         let lit = if expanded { self.big.read(cx).lit_arrow() } else { self.lit_row.get() };
         let place = at.unwrap_or_else(|| {
             if lit.size.width > Pixels::ZERO {
-                let (across, down) = if expanded { (20.0, 4.0) } else { (40.0, 0.0) };
+                let (across, down) = if expanded { (tokens.bind_arrow_across, tokens.bind_arrow_down) } else { (tokens.bind_row_across, 0.0) };
                 point(lit.origin.x + crate::theme::scale::pixels(across, window.rem_size()), lit.origin.y + lit.size.height + crate::theme::scale::pixels(down, window.rem_size()))
             } else {
                 At::centred(window, &tokens)

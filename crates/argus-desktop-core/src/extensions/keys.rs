@@ -80,13 +80,11 @@ pub fn matches(press: &ExtKey, page: &PageKey) -> bool {
         && (press.is_character() || page.shift == press.shift)
 }
 
-/// Whether `page` is `chord`, the owned form `ExtCommandPage` lists: the rule of [`matches`].
+/// Whether `page` is `chord`, the owned form `ExtCommandPage` lists: [`matches`] on the key it was
+/// made from. A chord is only ever made from an `ExtKey`, which has no meta, so one that says
+/// meta is a key no extension can ask for and matches nothing.
 pub fn chord_matches(chord: &ExtChord, page: &PageKey) -> bool {
-    page.key == chord.key
-        && (chord.key.chars().count() == 1 || page.shift == chord.shift)
-        && page.ctrl == chord.ctrl
-        && page.alt == chord.alt
-        && page.meta == chord.meta
+    !chord.meta && matches(&ExtKey { key: chord.key.clone(), ctrl: chord.ctrl, alt: chord.alt, shift: chord.shift }, page)
 }
 
 /// The first of `commands` heard in one of `scopes` whose key is `page`. A command scoped to a

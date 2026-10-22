@@ -90,9 +90,9 @@ pub fn chip(cue: &Cue, scroll: ScrollHandle, view: Bounds<Pixels>, tokens: &Toke
             .shadow(tokens.shadow_pop())
             .cursor_pointer()
             .hover(move |style| style.bg(hover))
-            .on_click(move |_, window, cx| {
+            .on_click(move |_, _, cx| {
                 this.update(cx, |lanes, cx| {
-                    lanes.reveal(first, &scroll, &bounds, window.rem_size());
+                    lanes.reveal(first, &scroll, &bounds);
                     cx.notify();
                 });
             })

@@ -34,11 +34,13 @@ pub fn head(id: &'static str, title: impl IntoElement, close: impl Fn(&mut Windo
 
 /// `.sheet-dialog > .dhead`: a sheet's head is a toolbar one row tall like a stage's, under a rule:
 /// the title, what the sheet says of itself (`aside`, the quiet words with their mark) and the close
-/// button, with the same `focus` as [`head`].
+/// button, with the same `focus` as [`head`]. The ✕ is named `close_label`, since a sheet says what it
+/// closes (the sessions dialog's is "Close the recent sessions").
 pub fn sheet_head(
     id: &'static str,
     title: impl IntoElement,
     aside: impl IntoElement,
+    close_label: impl Into<SharedString>,
     close: impl Fn(&mut Window, &mut App) + 'static,
     focus: Option<&FocusHandle>,
     tokens: &Tokens,
@@ -55,7 +57,7 @@ pub fn sheet_head(
         .child(div().flex_1().min_w_0().typed(tokens.type_title).text_color(tokens.fg).child(title))
         .child(aside)
         .child(
-            icon_button(ElementId::Name(format!("{id}-close").into()), "Close", false, tokens)
+            icon_button(ElementId::Name(format!("{id}-close").into()), close_label, false, tokens)
                 .on_click(move |_, window, cx| close(window, cx))
                 .when_some(focus.cloned(), |button, focus| button.track_focus(&focus).focus_visible(|style| style))
                 .child(Glyph::Close.at(tokens.icon_sm)),

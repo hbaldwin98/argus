@@ -37,7 +37,7 @@ impl FeatureStage {
             .px(rem(tokens.sp_20))
             .py(rem(tokens.sp_12))
             .when(field, |head| {
-                head.child(div().id("feature-filter").test_support().w(rem(if on_board { tokens.fx_filter_board_w } else { tokens.fx_filter_w })).flex_shrink(1.0).min_w(rem(120.0)).child(
+                head.child(div().id("feature-filter").test_support().w(rem(if on_board { tokens.fx_filter_board_w } else { tokens.fx_filter_w })).flex_shrink(1.0).min_w(rem(tokens.fx_filter_min_w)).child(
                     Input::new(self.filter.input()).id("feature-filter-field").h(rem(tokens.control_h)).aria_label("Filter features"),
                 ))
             })

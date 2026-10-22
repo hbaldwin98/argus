@@ -6,7 +6,6 @@
 //! card is in is its `group`, as Rust says it, and the count is the number of cards except in a
 //! folded Archived, which counts what it folds (`Features::folded`).
 
-
 use argus_desktop_core::board::index_words::{self, FeatureColumn};
 use argus_desktop_core::connection::page::{Call, FeatureRow, Features};
 use argus_desktop_core::keys::keymap::Action;
@@ -58,7 +57,7 @@ fn dot(column: FeatureColumn, tokens: &Tokens) -> impl IntoElement {
 
 /// `.kcount`: the number in a small pill.
 fn count(words: String, tokens: &Tokens) -> impl IntoElement {
-    div().min_w(rem(18.0)).px(rem(tokens.sp_6)).rounded(rem(tokens.r_pill)).bg(tokens.fill).typed(tokens.type_small).text_color(tokens.fg_muted).text_center().child(words)
+    div().min_w(rem(tokens.kcount_min_w)).px(rem(tokens.sp_6)).rounded(rem(tokens.r_pill)).bg(tokens.fill).typed(tokens.type_small).text_color(tokens.fg_muted).text_center().child(words)
 }
 
 /// `.khead`: the dot, the name and the count.
@@ -94,7 +93,7 @@ fn empty(column: FeatureColumn, tokens: &Tokens) -> impl IntoElement {
         .text_center()
         .typed(tokens.type_small)
         .text_color(tokens.fg_faint)
-        .when(column == FeatureColumn::Done, |box_| box_.child(div().mb(rem(tokens.sp_8)).text_color(tokens.ok).child(Glyph::Settled.at(40.0))))
+        .when(column == FeatureColumn::Done, |box_| box_.child(div().mb(rem(tokens.sp_8)).text_color(tokens.ok).child(Glyph::Settled.at(tokens.kempty_icon))))
         .child(div().typed(tokens.type_body).text_color(tokens.fg).child(title))
         .child(why)
 }

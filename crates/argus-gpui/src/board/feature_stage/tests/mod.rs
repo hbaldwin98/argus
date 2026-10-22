@@ -18,6 +18,7 @@ mod keys;
 mod list;
 mod menus;
 mod states;
+mod tickets;
 
 /// A row in `group`, with the moves Rust would offer it.
 pub(crate) fn row(number: i64, slug: &str, title: &str, group: &'static str) -> FeatureRow {

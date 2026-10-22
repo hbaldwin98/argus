@@ -21,6 +21,8 @@ use crate::keys::layer::{action_for, Handler, Press, Verdict};
 use crate::keys::run;
 use crate::kit::overlay::host::Overlays;
 use crate::kit::overlay::kind::Overlay;
+use crate::theme::scale::pixels;
+use crate::theme::Tokens;
 
 pub struct StageKeys {
     pub stage: WeakEntity<FeatureStage>,
@@ -113,7 +115,9 @@ impl FeatureStage {
                 // Beside the row: its left edge and 40 px in, and its bottom; (200, 200) when it was
                 // not measured.
                 let at = self.anchor.get();
-                let at = if at.size.width > px(0.0) { point(at.left() + px(40.0), at.bottom()) } else { point(px(200.0), px(200.0)) };
+                let (tokens, rem_size) = (*Tokens::global(cx), window.rem_size());
+                let fallback = pixels(tokens.fx_menu_fallback, rem_size);
+                let at = if at.size.width > px(0.0) { point(at.left() + pixels(tokens.fx_menu_across, rem_size), at.bottom()) } else { point(fallback, fallback) };
                 self.menu.update(cx, |menu, cx| menu.open_move(&row.slug, at, true, window, cx));
             }
             Action::Hold if row.moves.iter().any(|m| m.to == "unhold") => self.ctx.send(Call::FeatureAction { action: Action::Hold }, cx),

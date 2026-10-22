@@ -124,7 +124,6 @@ impl LinkView {
         Rc::new(move |action: Action, _: &mut Window, cx: &mut App| view.update(cx, |this, _| this.send(LinkGesture::Action { action })).is_ok())
     }
 
-
     /// What the session says the dialog is.
     pub fn page(&self, cx: &App) -> Option<LinkPage> {
         self.heard.read(cx).link.clone()

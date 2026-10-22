@@ -141,6 +141,3 @@ fn answer(form: &gpui_kit::WeakEntity<Form>, action: Action, one_line: bool, win
     })
     .unwrap_or(false)
 }
-
-#[cfg(test)]
-mod tests;

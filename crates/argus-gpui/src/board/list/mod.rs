@@ -103,6 +103,8 @@ impl Render for IndexList {
         let checkout = wide <= 0.0 || wide > tokens.fx_list_hides_checkout_below;
         let setting = Setting { checkout, anchor: self.anchor.clone() };
         let stage = css(self.stage.get(), window.rem_size());
+        let page = self.ctx.heard.read(cx).views.clone();
+        let views = page.as_deref().map_or(&[][..], |page| page.views.as_slice());
         let (measured, this) = (self.width.clone(), cx.entity());
         let (stage_cell, stage_this) = (self.stage.clone(), cx.entity());
         let section = v_flex()
@@ -169,7 +171,7 @@ impl Render for IndexList {
                 .size_full(),
             )
             .child(section)
-            .child(peek::panel(&features, &self.ctx, &self.menu, &self.peek, self.more.clone(), stage, &tokens))
+            .child(peek::panel(&features, views, &self.ctx, &self.menu, &self.peek, self.more.clone(), stage, &tokens))
             .into_any_element()
     }
 }

@@ -108,7 +108,7 @@ pub fn row_more(view: &ExtTable, actions: &[&ExtTableAction], row: &str, caller:
         .aria_label("Row actions")
         .on_click(|_, _, cx| cx.stop_propagation())
         .child(
-            strip::menu_button(SharedString::from(format!("ext-row-more-{}-{row}", view.panel)), Glyph::More, 14.0, tokens, cx)
+            strip::menu_button(SharedString::from(format!("ext-row-more-{}-{row}", view.panel)), Glyph::More, tokens.icon_sm, tokens, cx)
                 .tooltip("Actions")
                 .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
                     let (caller, held) = (caller.clone(), held.clone());

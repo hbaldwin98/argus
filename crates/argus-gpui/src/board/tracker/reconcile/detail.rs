@@ -22,7 +22,6 @@ fn label(words: &str, tokens: &Tokens) -> gpui_kit::Div {
     div().typed(Type::new(tokens.weight_medium, tokens.fs_md, 1.4)).text_color(tokens.fg).child(SharedString::from(words.to_owned()))
 }
 
-
 impl ReconcileView {
     fn words(&self, page: &ReconcilePage, line: &SelectedLine, tokens: &Tokens) -> impl IntoElement {
         let editable = page.stage == "proposed";

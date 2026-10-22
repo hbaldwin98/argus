@@ -109,7 +109,7 @@ pub fn strip(of: &Strip, heard: &Entity<Heard>, caller: &Caller, tokens: &Tokens
         .child(div().flex_1())
         .child(
             div().flex_shrink_0().on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()).child(
-                strip::menu_button(SharedString::from(format!("saved-dock-{panel}")), glyph(of.docks, &panel), 15.0, tokens, cx)
+                strip::menu_button(SharedString::from(format!("saved-dock-{panel}")), glyph(of.docks, &panel), tokens.icon_menu, tokens, cx)
                     .tooltip("Dock the view")
                     .disabled(held)
                     .dropdown_menu(move |menu, window, cx| dock_menu::build(menu, &entries, &menu_caller, &menu_heard, menu_tokens, window, cx)),

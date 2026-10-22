@@ -26,7 +26,6 @@ const HINT: &str = "Linear, Jira and GitHub URLs name their ticket; any other is
 const NOTHING_WRITTEN: &str = "Nothing is written to a tracker by linking.";
 const KEYS: &str = "J and K move through the tickets; O opens one, X unlinks it.";
 
-
 impl LinkView {
     /// How tall the dialog is estimated to be, in the page's pixels: the page centres it, and the kit's
     /// dialog sits near the top unless told how far down to go.

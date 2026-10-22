@@ -18,9 +18,6 @@ use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
-/// The most a list of choices grows before it scrolls.
-const PICK_MAX: f32 = 280.0;
-
 impl AskView {
     /// The card's width, and how tall it is estimated to be, in the page's pixels: the page centres its
     /// dialogs, and the kit's sits near the top unless told how far down to go. A form is the wider
@@ -32,7 +29,7 @@ impl AskView {
         let (wide, inside) = match &self.dialog.kind {
             ExtDialogKind::Confirm { .. } => (false, line),
             ExtDialogKind::Prompt { .. } => (false, line + tokens.sp_12 + tokens.control_h),
-            ExtDialogKind::Pick { items, .. } => (false, line + tokens.sp_12 + (items.len() as f32 * tokens.row_h).min(PICK_MAX)),
+            ExtDialogKind::Pick { items, .. } => (false, line + tokens.sp_12 + (items.len() as f32 * tokens.row_h).min(tokens.ext_pick_max_h)),
             ExtDialogKind::Form { fields } => (true, fields.len() as f32 * (line + tokens.control_h + tokens.sp_12)),
         };
         (if wide { tokens.dialog_w } else { tokens.dialog_w_sm }, head + inside + tokens.sp_24 + foot)
@@ -111,7 +108,7 @@ impl AskView {
             .id("ext-dialog-pick")
             .role(Role::ListBox)
             .test_support()
-            .max_h(rem(PICK_MAX))
+            .max_h(rem(tokens.ext_pick_max_h))
             .overflow_y_scroll()
             .p(rem(tokens.sp_4))
             .rounded(rem(tokens.r_md))

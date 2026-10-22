@@ -569,6 +569,33 @@ pub struct Scale {
     pub note_inset: f32,
     pub nrow_mark_w: f32,
     pub nrow_label_w: f32,
+    /// `.pause`: the two bars of a held card's pause glyph, each a border this wide, in a box this wide and tall.
+    pub pause_bar_w: f32,
+    pub pause_w: f32,
+    pub pause_h: f32,
+    /// `.kcount`'s `min-width`.
+    pub kcount_min_w: f32,
+    /// `.kempty .empty-icon` (the settled glyph of an empty Done column, an svg 40 wide).
+    pub kempty_icon: f32,
+    /// `.filter`'s `min-width`.
+    pub fx_filter_min_w: f32,
+    /// A row's move menu opens at its left edge plus this and at its bottom, or at `fx_menu_fallback` on both axes when the row was not measured (`feature_stage.ts`'s `moveMenu(row, box.left + 40 : 200, ...)`).
+    pub fx_menu_across: f32,
+    pub fx_menu_fallback: f32,
+    /// How near the window's edge a menu may sit (`kit/menu.ts`'s `placeMenu` clamps to 8).
+    pub menu_margin: f32,
+    /// Where the bind menu opens against the lit row (this far across) and against the lit arrow of the expanded diagram (across and down).
+    pub bind_row_across: f32,
+    pub bind_arrow_across: f32,
+    pub bind_arrow_down: f32,
+    /// `.cmark`'s tint: the mark's colour at this share behind it (`color-mix(in srgb, var(--ok) 16%, transparent)`).
+    pub share_cmark: f32,
+    /// What a character of 12px mono takes, which `sequence.ts` measures a loop's label by (`text.length * 7.2`).
+    pub seq_char_w: f32,
+    /// The glyph a panel strip's dock and menu buttons draw at, a size the page's 12 to 14px icon set has no variable for.
+    pub icon_menu: f32,
+    /// `.ext-pick`'s `max-height`.
+    pub ext_pick_max_h: f32,
     /// The chevron's turn, a spinner's turn (and the slow one), the placeholder
     /// shimmer and the changed-file flash. There are no custom easings:
     /// transitions use `ease`, the flash `ease-out`, the shimmer `ease-in-out`
@@ -938,6 +965,22 @@ impl Scale {
             note_inset: 10.0,
             nrow_mark_w: 18.0,
             nrow_label_w: 36.0,
+            pause_bar_w: 2.5,
+            pause_w: 8.0,
+            pause_h: 10.0,
+            kcount_min_w: 18.0,
+            kempty_icon: 40.0,
+            fx_filter_min_w: 120.0,
+            fx_menu_across: 40.0,
+            fx_menu_fallback: 200.0,
+            menu_margin: 8.0,
+            bind_row_across: 40.0,
+            bind_arrow_across: 20.0,
+            bind_arrow_down: 4.0,
+            share_cmark: 0.16,
+            seq_char_w: 7.2,
+            icon_menu: 15.0,
+            ext_pick_max_h: 280.0,
             motion_turn: Duration::from_millis(150),
             motion_spin: Duration::from_millis(900),
             motion_spin_slow: Duration::from_millis(1000),

@@ -51,8 +51,8 @@ fn work(row: &FeatureRow, tokens: &Tokens) -> gpui_kit::AnyElement {
 
 /// The two bars that are a pause, in the text colour.
 fn pause(tokens: &Tokens) -> impl IntoElement {
-    let bar = || div().w(rem(2.5)).h_full().bg(tokens.fg_muted);
-    h_flex().flex_shrink_0().w(rem(8.0)).h(rem(10.0)).justify_between().child(bar()).child(bar())
+    let bar = || div().w(rem(tokens.pause_bar_w)).h_full().bg(tokens.fg_muted);
+    h_flex().flex_shrink_0().w(rem(tokens.pause_w)).h(rem(tokens.pause_h)).justify_between().child(bar()).child(bar())
 }
 
 /// The footer on one line: the account is cut short and the time keeps its own span.

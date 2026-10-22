@@ -9,6 +9,7 @@ use crate::keys::root::tests::{hear, Opened};
 
 mod keys;
 mod list;
+mod head;
 mod menu;
 
 pub(crate) fn row(n: usize, title: &str, live: bool, on: bool) -> SessionRowView {

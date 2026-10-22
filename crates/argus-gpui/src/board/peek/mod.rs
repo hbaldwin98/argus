@@ -4,14 +4,16 @@
 //! Rust builds every line (`Peek`), so this draws what it says and sends what is pressed. With
 //! nothing peeked it says so. `Open` opens the feature, `Go to its pane` goes to its agent's, and
 //! the `...` opens the Move menu under it, with the `Comes after...` item only this opening
-//! offers. The linked tickets (`ticketLinks`) are the tracker step's, and are wired after it.
+//! offers. The linked tickets are chips under the title (`ticketLinks`), each opening the view an
+//! agent showed of it or else the ticket.
 
 pub mod lines;
 
 use std::cell::Cell;
 use std::rc::Rc;
 
-use argus_desktop_core::connection::page::{Call, Features};
+use argus_desktop_core::board::tracker::tickets::chips;
+use argus_desktop_core::connection::page::{Call, Features, PageView};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, Bounds, Entity, Pixels, ScrollHandle, SharedString, TestSupportExt as _};
 use lines::{section, Tone};
@@ -19,6 +21,7 @@ use lines::{section, Tone};
 use super::cells::meta;
 use super::ctx::Ctx;
 use super::menus::Menu;
+use crate::board::tracker::tickets::ticket_chip;
 use crate::kit::area;
 use crate::kit::button::{button, off, Look};
 use crate::kit::icon_button::{icon_button, Node};
@@ -53,7 +56,8 @@ fn frame(scroll: &ScrollHandle, stage: f32, tokens: &Tokens) -> Node {
         .py(rem(tokens.sp_16))
 }
 
-pub fn panel(features: &Features, ctx: &Ctx, menu: &Entity<Menu>, scroll: &ScrollHandle, more: Rc<Cell<Bounds<Pixels>>>, stage: f32, tokens: &Tokens) -> impl IntoElement {
+#[allow(clippy::too_many_arguments)]
+pub fn panel(features: &Features, views: &[PageView], ctx: &Ctx, menu: &Entity<Menu>, scroll: &ScrollHandle, more: Rc<Cell<Bounds<Pixels>>>, stage: f32, tokens: &Tokens) -> impl IntoElement {
     let Some(peek) = &features.peek else {
         return frame(scroll, stage, tokens).aria_label("Peek").child(meta("Choose a feature to peek at it.", tokens)).into_any_element();
     };
@@ -80,6 +84,10 @@ pub fn panel(features: &Features, ctx: &Ctx, menu: &Entity<Menu>, scroll: &Scrol
                 .children(peek.held.clone().map(|reason| div().text_color(tokens.attention).child(SharedString::from(format!("held: \u{201c}{reason}\u{201d}")))))
                 .when(!peek.brief.is_empty(), |head| head.child(div().mt(rem(tokens.sp_6)).text_color(tokens.fg_muted).child(SharedString::from(peek.brief.clone())))),
         )
+        .when(!peek.links.is_empty(), |panel| {
+            let chips = chips(&peek.links, views).into_iter().enumerate();
+            panel.child(h_flex().id("peek-tickets").test_support().flex_wrap().gap(rem(tokens.sp_8)).children(chips.map(|(at, chip)| ticket_chip(("peek-ticket", at), &chip, &ctx.caller, tokens))))
+        })
         .children(section("Needs you", &peek.needs_you, "?", &Tone::needs_you(tokens), tokens))
         .children(section("In flight", &peek.in_flight, "\u{25d0}", &Tone::in_flight(tokens), tokens))
         .children(section("Next up", peek.next_up.as_slice(), "\u{25cb}", &Tone::next_up(tokens), tokens))

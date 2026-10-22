@@ -6,16 +6,12 @@
 //! sentences are Rust's, tested once. A drop is judged by [`drop_verdict`] for both the view, which
 //! lights a column only when it takes the card, and the session, which acts on `Call::DropFeature`.
 
-use serde::Deserialize;
-
 use crate::board::features::Layout;
 use crate::chrome::strip::Part;
 use crate::connection::page::{Agent, FeatureRow, Features, Move};
 
 /// A column of the board, as a card is dropped on one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureColumn {
     Queued,
     Active,

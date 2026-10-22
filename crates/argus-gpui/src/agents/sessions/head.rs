@@ -31,6 +31,7 @@ impl SessionsView {
             "sessions",
             title,
             aside,
+            "Close the recent sessions",
             move |_, cx| ask(&heard, &caller, Call::SessionsAction { action: Action::CloseLayer, row: None }, cx),
             None,
             tokens,

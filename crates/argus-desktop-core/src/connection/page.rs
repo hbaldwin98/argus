@@ -231,6 +231,8 @@ pub enum Call {
     /// A card dropped on a board column. Rust judges it (`index_words::drop_verdict`): an archive is
     /// sent, a column that follows the work is told why in a notice. Only the GPUI window sends it; a
     /// hold needs a reason, so the window asks that itself.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
     DropFeature { slug: String, on: crate::board::index_words::FeatureColumn },
     /// A gesture in the note a new feature is written as.
     Capture { gesture: CaptureGesture },

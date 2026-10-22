@@ -47,7 +47,7 @@ fn mark(gain: bool, tokens: &Tokens) -> AnyElement {
         .text_size(rem(tokens.fs_sm))
         .weighted(tokens.weight_bold)
         .text_color(colour)
-        .bg(colour.opacity(0.16))
+        .bg(colour.opacity(tokens.share_cmark))
         .when(gain, |mark| mark.rounded_full())
         .when(!gain, |mark| mark.rounded(rem(tokens.r_xs)))
         .child(if gain { "+" } else { "\u{2212}" })

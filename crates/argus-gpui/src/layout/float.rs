@@ -124,13 +124,13 @@ impl FloatsView {
             .children(saved_marks)
             .child(div().flex_1())
             .child(keep(div()).child(
-                strip::menu_button(SharedString::from(format!("float-menu-{panel}")), Glyph::Down, 15.0, tokens, cx)
+                strip::menu_button(SharedString::from(format!("float-menu-{panel}")), Glyph::Down, tokens.icon_menu, tokens, cx)
                     .tooltip("Move to another dock")
                     .disabled(held)
                     .dropdown_menu(move |menu, window, cx| dock_menu::build(menu, &entries, &caller, &heard, menu_tokens, window, cx)),
             ))
             .child(keep(div()).child(
-                strip::menu_button(SharedString::from(format!("float-close-{gone}")), Glyph::Close, 12.0, tokens, cx)
+                strip::menu_button(SharedString::from(format!("float-close-{gone}")), Glyph::Close, tokens.icon_xs, tokens, cx)
                     .tooltip(words.clone())
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.ask(Call::Docks { gesture: gesture(gone.clone()) }, cx)

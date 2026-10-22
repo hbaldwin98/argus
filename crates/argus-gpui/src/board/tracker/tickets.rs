@@ -2,8 +2,8 @@
 //! agent showed a view of the ticket, and a press that opens that view or else the ticket in the
 //! browser (BOARD-TICKETS-1, -2).
 //!
-//! The chip is an element the feature index's peek and the open feature's header both place:
-//! `ticket_chip(id, &chip, &caller, &tokens)`. Which view is of the ticket, what a hover says and
+//! The page places it in the feature index's peek alone (`ticketLinks`); an open feature's header has
+//! a Tickets button instead, which is not a chip. `ticket_chip(id, &chip, &caller, &tokens)`. Which view is of the ticket, what a hover says and
 //! what a press asks for are core's (`board/tracker/tickets`); this draws them. A press does not
 //! reach the row under the chip, which would peek it.
 
@@ -17,7 +17,7 @@ use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
-/// The chip for `chip`, named `id`; its accessible name is the ticket, and the dot says
+/// `.track`: the chip for `chip`, named `id`; its accessible name is the ticket, and the dot says
 /// `a view of it waits`.
 pub fn ticket_chip(id: impl Into<ElementId>, chip: &TicketChip, caller: &Caller, tokens: &Tokens) -> impl IntoElement {
     let (fill, text) = (tokens.fill, tokens.fg);
@@ -30,13 +30,13 @@ pub fn ticket_chip(id: impl Into<ElementId>, chip: &TicketChip, caller: &Caller,
         .test_support()
         .aria_label(name)
         .flex_shrink_0()
-        .h(rem(tokens.control_h))
+        .h(rem(tokens.icon_btn))
         .px(rem(tokens.sp_8))
         .gap(rem(tokens.sp_6))
         .items_center()
         .border_1()
         .border_color(tokens.line_strong)
-        .rounded(rem(tokens.r_pill))
+        .rounded(rem(tokens.r_sm))
         .text_size(rem(tokens.fs_sm))
         .text_color(if viewed { tokens.fg } else { tokens.fg_muted })
         .cursor_pointer()

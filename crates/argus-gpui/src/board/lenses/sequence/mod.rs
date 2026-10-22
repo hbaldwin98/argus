@@ -200,7 +200,7 @@ impl Render for SequenceView {
             let number = arrow.step;
             let (x, y, w, h) = match arrow.line {
                 argus_desktop_core::board::lenses::picture::Line::Across { from, to, y } => (from.min(to), y - 22.0, (to - from).abs(), 34.0),
-                argus_desktop_core::board::lenses::picture::Line::Loop { x, y } => (x - 10.0, y - 4.0, LOOP_OUT + 48.0 + arrow.text.chars().count() as f32 * 7.2 + 8.0, LOOP_DROP + 10.0),
+                argus_desktop_core::board::lenses::picture::Line::Loop { x, y } => (x - 10.0, y - 4.0, LOOP_OUT + 48.0 + arrow.text.chars().count() as f32 * tokens.seq_char_w + 8.0, LOOP_DROP + 10.0),
             };
             let (hovering, pressing, lit) = (weak.clone(), weak.clone(), self.lit_arrow.clone());
             hit(ElementId::NamedInteger(SharedString::from(format!("{}-step", self.id)), number as u64), SharedString::from(arrow.label.clone()), x, y, w, h)

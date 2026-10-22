@@ -13,7 +13,7 @@ pub mod items;
 pub mod run;
 
 use argus_desktop_core::connection::page::{AfterChoice, Call, FeatureRow};
-use gpui_kit::{anchored, deferred, div, prelude::*, px, Context, Pixels, Point, SharedString, Window};
+use gpui_kit::{anchored, deferred, div, prelude::*, Context, Pixels, Point, SharedString, Window};
 
 use super::ctx::Ctx;
 use items::{comes_after, enabled, moves, stepped, Does, Entry};
@@ -119,7 +119,7 @@ fn entries(open: &Open, row: &FeatureRow, after: &[AfterChoice]) -> Vec<Entry> {
 }
 
 impl Render for Menu {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(open) = &self.open else { return div().into_any_element() };
         // A snapshot that took the feature away takes the menu with it.
         let Some((row, after)) = self.row(&open.slug, cx) else {
@@ -138,7 +138,7 @@ impl Render for Menu {
             open.at,
         );
         let out = cx.entity();
-        deferred(anchored().position(at).snap_to_window_with_margin(px(8.0)).child(card.on_mouse_down_out(move |_, _, cx| out.update(cx, |menu, cx| menu.close(cx))))).into_any_element()
+        deferred(anchored().position(at).snap_to_window_with_margin(crate::theme::scale::pixels(tokens.menu_margin, window.rem_size())).child(card.on_mouse_down_out(move |_, _, cx| out.update(cx, |menu, cx| menu.close(cx))))).into_any_element()
     }
 }
 

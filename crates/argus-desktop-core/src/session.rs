@@ -5984,7 +5984,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 156] = [
+    const CALLS: [&str; 155] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -6057,7 +6057,6 @@ mod tests {
         r#"{"call":"set_layout","layout":"board"}"#,
         r##"{"call":"filter_features","filter":"#7"}"##,
         r#"{"call":"feature_action","action":"next"}"#,
-        r#"{"call":"drop_feature","slug":"trim","on":"held"}"#,
         r#"{"call":"set_chime","on":false}"#,
         r#"{"call":"setting","change":{"set":"opacity","percent":80}}"#,
         r#"{"call":"hold","slug":"trim","reason":"waiting"}"#,

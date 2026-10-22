@@ -86,8 +86,7 @@ impl Lanes {
     }
 
     /// Scrolls the lanes so `column` clears the fade, as the chip does.
-    pub fn reveal(&mut self, column: FeatureColumn, scroll: &ScrollHandle, view: &Bounds<Pixels>, rem_size: Pixels) {
-        let _ = rem_size;
+    pub fn reveal(&mut self, column: FeatureColumn, scroll: &ScrollHandle, view: &Bounds<Pixels>) {
         let Some(next) = self.boxes.borrow().iter().find(|(held, _)| *held == column).map(|(_, bounds)| *bounds) else { return };
         let at = scroll.offset();
         scroll.set_offset(gpui_kit::point(at.x - cue::clear(next.right(), view.right(), view.size.width), at.y));

@@ -66,7 +66,9 @@ fn decision(at: usize, decision: &NoteDecision, tokens: &Tokens) -> AnyElement {
         .child(
             nrow(tokens)
                 .child(div().flex_shrink_0().w(rem(tokens.nrow_mark_w)).text_color(tone).child(mark))
-                .child(locator(decision.label.clone(), tokens.nrow_label_w, if decision.open { tokens.attention } else { tokens.ref_ }, tokens))
+                // The page classes it `n fg-attention` or `n fg-ref`, but `.n` is written after both, so
+                // its faint grey wins and the label is no more coloured than a task's.
+                .child(locator(decision.label.clone(), tokens.nrow_label_w, tokens.fg_faint, tokens))
                 .child(div().flex_1().min_w_0().child(SharedString::from(decision.text.clone())))
                 .child(if decision.open {
                     status_pill(("capture-state", at), "open", "waiting", tokens).into_any_element()

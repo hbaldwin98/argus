@@ -229,6 +229,7 @@ impl Render for PreferencesView {
                 "settings",
                 "Settings",
                 saved,
+                "Close",
                 |window, cx| {
                     Overlays::get(cx).close(Overlay::Settings, window, cx);
                 },
