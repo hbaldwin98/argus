@@ -20,7 +20,7 @@ use crate::layout::work::WorkView;
 use crate::panes::console::ConsoleView;
 use crate::panes::terminal::Terminal;
 use crate::review::stage::GitStage;
-use crate::theme::Ledger;
+use crate::theme::Tokens;
 use crate::window::Header;
 
 pub struct Shell {
@@ -71,15 +71,15 @@ impl Shell {
 
 impl Render for Shell {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let (title, crumb) = {
             let heard = self.heard.read(cx);
             (Shell::title(heard), Shell::crumb(heard))
         };
         h_flex()
             .size_full()
-            .bg(ledger.background)
-            .text_color(ledger.foreground)
+            .bg(tokens.bg_sunken)
+            .text_color(tokens.fg)
             .child(self.rail.clone())
             .child(
                 v_flex()

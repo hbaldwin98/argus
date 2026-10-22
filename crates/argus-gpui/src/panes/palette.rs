@@ -1,12 +1,14 @@
 //! Which colour a packed wire colour is in the terminal's palette, and which
 //! text colour stays readable on a background a program chose.
 //!
-//! The sixteen ANSI slots are the theme's: `page`'s `--ansi-N` tokens, read
-//! from the Ledger block of `crates/argus-desktop/assets/style.css`, so a
-//! program's red is the same red in both windows. The 256-colour cube and the
+//! The sixteen ANSI slots are the theme's `--ansi-N` tokens, so a program's
+//! red is the red the page draws (`theme::stylesheet` holds them to the
+//! stylesheet). The 256-colour cube and the
 //! greys are not themed. The contrast floor is `panes/contrast.ts` again.
 
 use gpui_kit::{rgb, Hsla};
+
+use crate::theme::Tokens;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgb(pub u8, pub u8, pub u8);
@@ -14,6 +16,13 @@ pub struct Rgb(pub u8, pub u8, pub u8);
 impl Rgb {
     pub const fn hex(hex: u32) -> Self {
         Rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
+    }
+
+    /// The 8-bit colour a token shows as.
+    pub fn of(colour: Hsla) -> Self {
+        let c = colour.to_rgb();
+        let byte = |v: f32| (v * 255.0).round() as u8;
+        Rgb(byte(c.r), byte(c.g), byte(c.b))
     }
 
     pub fn hsla(self) -> Hsla {
@@ -32,31 +41,9 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// `--fg`, `--bg-sunken` and `--ansi-0..15` of the Ledger theme.
-    pub fn ledger() -> Self {
-        let c = Rgb::hex;
-        Self {
-            fg: c(0xf7f8f8),
-            bg: c(0x08090a),
-            ansi: [
-                c(0x23252a),
-                c(0xeb5757),
-                c(0x4cb782),
-                c(0xf2c94c),
-                c(0x4ea7fc),
-                c(0x828fff),
-                c(0x26b5ce),
-                c(0xd0d6e0),
-                c(0x62666d),
-                c(0xf28b8b),
-                c(0x7fd1a6),
-                c(0xf7d774),
-                c(0x7ab8ff),
-                c(0xa3acff),
-                c(0x5fd0e3),
-                c(0xf7f8f8),
-            ],
-        }
+    /// `--fg`, `--bg-sunken` and `--ansi-0..15` of a theme.
+    pub fn of(tokens: &Tokens) -> Self {
+        Self { fg: Rgb::of(tokens.fg), bg: Rgb::of(tokens.bg_sunken), ansi: tokens.ansi.map(Rgb::of) }
     }
 
     /// A packed wire colour: `0` the default (`None`, which the caller
@@ -138,6 +125,7 @@ pub fn readable(fore: Rgb, back: Rgb) -> Rgb {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::ledger;
 
     const fn ansi(i: u32) -> u32 {
         1 << 24 | i
@@ -145,7 +133,7 @@ mod tests {
 
     #[test]
     fn packed_colours_resolve_as_the_page_resolves_them() {
-        let palette = Palette::ledger();
+        let palette = Palette::of(&ledger::tokens());
         assert_eq!(palette.resolve(0), None);
         assert_eq!(palette.resolve(ansi(1)), Some(Rgb::hex(0xeb5757)));
         assert_eq!(palette.resolve(2 << 24 | 0x010203), Some(Rgb(1, 2, 3)));
@@ -156,29 +144,17 @@ mod tests {
     }
 
     #[test]
-    fn the_ledger_slots_are_the_stylesheets() {
-        let css = include_str!("../../../argus-desktop/assets/style.css");
-        let block = css.split(":root[data-theme='ledger'] {").nth(1).expect("the Ledger ansi block");
-        let block = &block[..block.find('}').unwrap()];
-        let palette = Palette::ledger();
-        for (slot, ours) in palette.ansi.iter().enumerate() {
-            let line = block.lines().find_map(|line| line.trim().strip_prefix(&format!("--ansi-{slot}: #")));
-            let hex = u32::from_str_radix(line.expect("every slot is set").trim_end_matches(';'), 16).unwrap();
-            assert_eq!(*ours, Rgb::hex(hex), "--ansi-{slot}");
-        }
-        // The terminal's default text and ground are the theme's --text and --crust.
-        let theme = css.split(".themecard [data-theme='ledger'] {").nth(1).expect("the Ledger theme block");
-        let theme = &theme[..theme.find('}').unwrap()];
-        let token = |name: &str| {
-            let line = theme.lines().find_map(|line| line.trim().strip_prefix(&format!("--{name}: #")));
-            Rgb::hex(u32::from_str_radix(line.expect("the token is set").trim_end_matches(';'), 16).unwrap())
-        };
-        assert_eq!((palette.fg, palette.bg), (token("text"), token("crust")));
+    fn the_terminal_takes_the_themes_text_ground_and_sixteen() {
+        let tokens = ledger::tokens();
+        let palette = Palette::of(&tokens);
+        assert_eq!((palette.fg, palette.bg), (Rgb::hex(0xf7f8f8), Rgb::hex(0x08090a)));
+        assert_eq!(palette.ansi[1], Rgb::hex(0xeb5757));
+        assert_eq!(palette.ansi[15], Rgb::of(tokens.ansi[15]));
     }
 
     #[test]
     fn text_the_background_would_swallow_is_moved_to_the_floor() {
-        let palette = Palette::ledger();
+        let palette = Palette::of(&ledger::tokens());
         let (fore, back) = (palette.ansi[0], palette.ansi[8]);
         let moved = readable(fore, back);
         assert!(contrast(moved, back) >= MINIMUM_CONTRAST);
@@ -187,7 +163,7 @@ mod tests {
 
     #[test]
     fn readable_text_is_left_alone() {
-        let palette = Palette::ledger();
+        let palette = Palette::of(&ledger::tokens());
         assert_eq!(readable(palette.ansi[15], palette.ansi[0]), palette.ansi[15]);
     }
 }

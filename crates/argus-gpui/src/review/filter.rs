@@ -19,7 +19,7 @@ use gpui_kit::{div, prelude::*, px, Context, Entity, FocusHandle, SharedString, 
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::tokens::size;
+use crate::theme::Tokens;
 
 /// `.filter`: the field's width.
 const FIELD_W: f32 = 220.0;
@@ -88,6 +88,7 @@ impl Filter {
 
 impl Render for Filter {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let tokens = *Tokens::global(cx);
         let leave = |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
             cx.stop_propagation();
             window.focus(&this.stage, cx);
@@ -105,7 +106,7 @@ impl Render for Filter {
                 Input::new(&self.field)
                     .id("history-filter-field")
                     .small()
-                    .h(px(size::CONTROL_H))
+                    .h(px(tokens.control_h))
                     .aria_label("Filter commits by subject, hash or author"),
             )
     }

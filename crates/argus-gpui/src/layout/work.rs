@@ -33,7 +33,7 @@ use crate::layout::dock::{self, DockView};
 use crate::layout::drop_target::{self, Target};
 use crate::layout::sash;
 use crate::pointer::drag::{self, Drag, Dragger, Step};
-use crate::theme::Ledger;
+use crate::theme::Tokens;
 
 /// What is being pressed.
 #[derive(Debug, Clone, PartialEq)]
@@ -129,7 +129,7 @@ impl WorkView {
 
     /// The area a panel dropped here would fill, said in words, and the
     /// panel's name under the pointer.
-    fn carrying(&self, ledger: &Ledger) -> Option<impl IntoElement> {
+    fn carrying(&self, tokens: &Tokens) -> Option<impl IntoElement> {
         let Some(Held::Panel { title, stage, .. }) = self.drag.payload() else { return None };
         if !self.drag.is_dragging() {
             return None;
@@ -153,9 +153,9 @@ impl WorkView {
                 .justify_center()
                 .rounded(px(4.0))
                 .border_2()
-                .border_color(ledger.accent)
-                .bg(ledger.accent.opacity(0.14))
-                .child(div().px_2().py_1().rounded(px(4.0)).bg(ledger.raised).text_sm().text_color(ledger.foreground).child(words))
+                .border_color(tokens.accent)
+                .bg(tokens.accent.opacity(tokens.share_landing))
+                .child(div().px_2().py_1().rounded(px(4.0)).bg(tokens.bg_surface).text_sm().text_color(tokens.fg).child(words))
         });
         let ghost = deferred(
             anchored().position(at + point(px(12.0), px(12.0))).snap_to_window().child(
@@ -167,10 +167,10 @@ impl WorkView {
                     .py_1()
                     .rounded(px(4.0))
                     .border_1()
-                    .border_color(ledger.line_strong)
-                    .bg(ledger.raised)
+                    .border_color(tokens.line_strong)
+                    .bg(tokens.bg_surface)
                     .text_sm()
-                    .text_color(ledger.foreground)
+                    .text_color(tokens.fg)
                     .child(SharedString::from(title.clone())),
             ),
         );
@@ -234,7 +234,7 @@ fn measure(into: Rc<Cell<Bounds<Pixels>>>) -> impl IntoElement {
 
 impl Render for WorkView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         // The Console stage and fullscreen give the console the stage: the
         // Workspace's pane has none then (`ConsolePage::showing`).
         // Git takes the stage from the console too, while its stage is up.
@@ -268,7 +268,7 @@ impl Render for WorkView {
                     .child(self.bottom.clone()),
             )
             .child(self.right.clone())
-            .children(self.carrying(&ledger))
+            .children(self.carrying(&tokens))
     }
 }
 

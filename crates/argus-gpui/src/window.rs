@@ -13,13 +13,11 @@ use gpui_kit::{
     WindowControlArea, WindowOptions,
 };
 
+use crate::fonts;
 use crate::icons::Glyph;
 use crate::style::Typed as _;
-use crate::theme::{self, Ledger};
-use crate::tokens::{fs, size, sp, ty};
+use crate::theme::{self, Tokens};
 
-/// `--header-h`.
-pub const HEADER_HEIGHT: Pixels = px(size::HEADER_H);
 /// Below this the sidebar, stage and docks no longer fit side by side.
 pub const MIN_SIZE: gpui_kit::Size<Pixels> = size(px(900.0), px(560.0));
 
@@ -32,7 +30,8 @@ pub fn application() -> Application {
 /// own init, then the Ledger theme over it.
 pub fn init(cx: &mut App) {
     gpui_kit::init(cx);
-    theme::install(cx);
+    fonts::install(cx);
+    theme::kit::install(cx, theme::ledger::tokens());
 }
 
 /// A frameless window: `appears_transparent` is what makes gpui-pre-windows
@@ -83,11 +82,11 @@ struct Shell {
 
 impl Render for Shell {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         v_flex()
             .size_full()
-            .bg(ledger.background)
-            .text_color(ledger.foreground)
+            .bg(tokens.bg_sunken)
+            .text_color(tokens.fg)
             .child(Header::new())
             .child(div().flex_1().min_h_0().child(self.stage.clone()))
     }
@@ -130,27 +129,27 @@ impl Default for Header {
 
 impl RenderOnce for Header {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let mono = cx.theme().mono_font_family.clone();
         let maximize = if window.is_maximized() { Glyph::WinRestore } else { Glyph::WinMax };
         // `.strip`: on the surface colour, a hairline under it.
         h_flex()
             .id("header")
-            .h(px(size::HEADER_H))
+            .h(px(tokens.header_h))
             .flex_shrink_0()
             .items_stretch()
-            .bg(ledger.raised)
+            .bg(tokens.bg_surface)
             .border_b_1()
-            .border_color(ledger.line)
+            .border_color(tokens.line)
             .child(
                 v_flex()
                     .id("drag")
                     .flex_1()
                     .min_w_0()
                     .justify_center()
-                    .gap(px(sp::S2))
-                    .pl(px(sp::S20))
-                    .pr(px(sp::S16))
+                    .gap(px(tokens.sp_2))
+                    .pl(px(tokens.sp_20))
+                    .pr(px(tokens.sp_16))
                     // Windows answers a hit test over this area with HTCAPTION,
                     // which gives drag, double-click to maximize and Win11's
                     // snap layouts for free; elsewhere the move starts here.
@@ -163,11 +162,11 @@ impl RenderOnce for Header {
                     .when_some(self.crumb, |this, (repository, branch)| {
                         this.child(
                             h_flex()
-                                .h(px(sp::S16))
-                                .gap(px(sp::S4))
+                                .h(px(tokens.sp_16))
+                                .gap(px(tokens.sp_4))
                                 .items_center()
-                                .text_size(px(fs::XS))
-                                .text_color(ledger.faint)
+                                .text_size(px(tokens.fs_xs))
+                                .text_color(tokens.fg_faint)
                                 .whitespace_nowrap()
                                 .overflow_hidden()
                                 .child(repository)
@@ -177,15 +176,15 @@ impl RenderOnce for Header {
                     })
                     .child(
                         div()
-                            .typed(ty::HEADING)
-                            .text_color(ledger.foreground)
+                            .typed(tokens.type_heading)
+                            .text_color(tokens.fg)
                             .truncate()
                             .child(self.title),
                     ),
             )
-            .child(control("minimize", Glyph::WinMin, Control::Minimize, ledger))
-            .child(control("maximize", maximize, Control::Maximize, ledger))
-            .child(control("close", Glyph::WinClose, Control::Close, ledger))
+            .child(control("minimize", Glyph::WinMin, Control::Minimize, tokens))
+            .child(control("maximize", maximize, Control::Maximize, tokens))
+            .child(control("close", Glyph::WinClose, Control::Close, tokens))
     }
 }
 
@@ -206,26 +205,26 @@ impl Control {
     }
 
     /// `.winbtn:hover` lifts to `--fill`; `.winbtn.shut:hover` is Windows' red.
-    fn hover(self, ledger: Ledger) -> (Hsla, Hsla) {
+    fn hover(self, tokens: Tokens) -> (Hsla, Hsla) {
         match self {
-            Control::Close => theme::window_close_hover(),
-            _ => (ledger.fill(), ledger.foreground),
+            Control::Close => (tokens.win_close_bg, tokens.win_close_fg),
+            _ => (tokens.fill, tokens.fg),
         }
     }
 }
 
 /// `.winbtn`: 46 wide and as tall as the strip, so the corner is the button's to the edge.
-fn control(id: &'static str, glyph: Glyph, which: Control, ledger: Ledger) -> impl IntoElement {
-    let (hover_bg, hover_fg) = which.hover(ledger);
+fn control(id: &'static str, glyph: Glyph, which: Control, tokens: Tokens) -> impl IntoElement {
+    let (hover_bg, hover_fg) = which.hover(tokens);
     div()
         .id(id)
         .flex()
         .items_center()
         .justify_center()
-        .w(px(size::WINDOW_CONTROL_W))
+        .w(px(tokens.window_control_w))
         .h_full()
         .flex_shrink_0()
-        .text_color(ledger.muted)
+        .text_color(tokens.fg_muted)
         .hover(|style| style.bg(hover_bg).text_color(hover_fg))
         // Windows draws and handles the click through the hit test, so the
         // press never reaches an `on_click` there; other platforms need one.

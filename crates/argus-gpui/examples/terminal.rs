@@ -20,7 +20,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use argus_gpui::theme::Ledger;
+use argus_gpui::theme::Tokens;
 use argus_gpui::window;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
@@ -868,11 +868,11 @@ fn print_report(stats: &PaintStats, grid: (u16, u16), ticks: u32) {
 
 impl Render for TerminalStage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let family = cx.theme().mono_font_family.clone();
         div()
             .size_full()
-            .bg(ledger.background)
+            .bg(tokens.bg_sunken)
             .p(px(8.0))
             .child(TerminalElement {
                 screen: self.screen.clone(),

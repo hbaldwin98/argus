@@ -42,7 +42,7 @@ use crate::keys::page_key;
 use crate::panes::element::TerminalElement;
 use crate::panes::palette::Palette;
 use crate::panes::screen::{Cursor, Screen};
-use crate::theme::Ledger;
+use crate::theme::Tokens;
 
 /// How long a size stays unreported after it last changed: a window being
 /// dragged would otherwise reflow the pane at every step.
@@ -108,7 +108,7 @@ impl Terminal {
             heard,
             caller,
             focus,
-            palette: Palette::ledger(),
+            palette: Palette::of(Tokens::global(cx)),
             blank: Arc::new(Screen::new()),
             seen: Rc::default(),
             cell: Rc::new(Cell::new((px(0.0), px(0.0)))),
@@ -240,7 +240,7 @@ fn id(side: Side) -> &'static str {
 
 impl Render for Terminal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let screen = drawn(self.heard.read(cx), self.side, &self.blank);
         let focused = self.focus.is_focused(window) && window.is_window_active();
         let element = TerminalElement {
@@ -260,7 +260,7 @@ impl Render for Terminal {
             .key_context("Terminal")
             .track_focus(&self.focus)
             .size_full()
-            .bg(ledger.background)
+            .bg(tokens.bg_sunken)
             .p(px(8.0))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| this.press(event, cx)))
             // A press with any button on the pane gives it the keys, or asks for them

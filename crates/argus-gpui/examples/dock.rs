@@ -13,7 +13,7 @@
 // A console window behind the GUI is noise outside a debug build.
 #![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
 
-use argus_gpui::theme::Ledger;
+use argus_gpui::theme::Tokens;
 use argus_gpui::window::{self, Header};
 use gpui_kit::test::TestSupportExt as _;
 use gpui_kit::component::resizable::{h_resizable, resizable_panel, v_resizable, ResizableState};
@@ -125,7 +125,7 @@ impl Dock {
         }
     }
 
-    fn sidebar(&self, ledger: Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn sidebar(&self, tokens: Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let nav = SidebarMenu::new().children(Nav::ALL.map(|item| {
             SidebarMenuItem::new(item.label())
                 .icon(item.icon())
@@ -150,10 +150,10 @@ impl Dock {
             .w(SIDEBAR_WIDTH)
             .child(SidebarGroup::new("Argus").child(nav))
             .child(SidebarGroup::new("Projects").child(projects))
-            .footer(foot(ledger))
+            .footer(foot(tokens))
     }
 
-    fn stage(&self, ledger: Ledger) -> impl IntoElement {
+    fn stage(&self, tokens: Tokens) -> impl IntoElement {
         let pane = |id: &'static str, title: &'static str| {
             v_flex()
                 .id(id)
@@ -161,12 +161,12 @@ impl Dock {
                 .size_full()
                 .gap_1()
                 .p_3()
-                .bg(ledger.background)
-                .child(div().text_xs().text_color(ledger.faint).child(title))
+                .bg(tokens.bg_sunken)
+                .child(div().text_xs().text_color(tokens.fg_faint).child(title))
                 .child(
                     div()
                         .text_sm()
-                        .text_color(ledger.muted)
+                        .text_color(tokens.fg_muted)
                         .child("placeholder pane body"),
                 )
         };
@@ -185,7 +185,7 @@ impl Dock {
             )
     }
 
-    fn bottom(&self, ledger: Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn bottom(&self, tokens: Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let tabs = TabBar::new("dock-tabs")
             .underline()
             .small()
@@ -205,25 +205,25 @@ impl Dock {
                 .test_support()
                 .font_family(cx_mono(cx))
                 .text_sm()
-                .text_color(ledger.muted)
+                .text_color(tokens.fg_muted)
                 .child("$ argus server status"),
             Panel::AgentView => div()
                 .id("panel-agent")
                 .test_support()
                 .text_sm()
-                .text_color(ledger.muted)
+                .text_color(tokens.fg_muted)
                 .child("3 agents working, 3 need you"),
         };
         v_flex()
             .id("dock")
             .size_full()
-            .bg(ledger.background)
+            .bg(tokens.bg_sunken)
             .child(
                 h_flex()
                     .flex_shrink_0()
-                    .bg(ledger.chrome)
+                    .bg(tokens.bg_chrome)
                     .border_b_1()
-                    .border_color(ledger.line)
+                    .border_color(tokens.line)
                     .child(tabs),
             )
             .child(div().flex_1().min_h_0().p_3().child(body))
@@ -237,43 +237,43 @@ fn cx_mono<T>(cx: &mut Context<T>) -> SharedString {
 }
 
 /// The sidebar foot: what needs the user and where the daemon is.
-fn foot(ledger: Ledger) -> impl IntoElement {
+fn foot(tokens: Tokens) -> impl IntoElement {
     let dot = |colour| div().size(px(6.0)).rounded_full().bg(colour).flex_shrink_0();
     v_flex()
         .w_full()
         .gap_1()
         .pt_2()
         .border_t_1()
-        .border_color(ledger.line)
+        .border_color(tokens.line)
         .text_xs()
         .child(
             h_flex()
                 .gap_2()
                 .items_center()
-                .text_color(ledger.muted)
-                .child(dot(ledger.warning))
+                .text_color(tokens.fg_muted)
+                .child(dot(tokens.attention))
                 .child("3 need you · 3 working"),
         )
         .child(
             h_flex()
                 .gap_2()
                 .items_center()
-                .text_color(ledger.faint)
-                .child(dot(ledger.success))
+                .text_color(tokens.fg_faint)
+                .child(dot(tokens.ok))
                 .child("argusd · local"),
         )
 }
 
 impl Render for Dock {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
-        let sidebar = self.sidebar(ledger, cx);
-        let stage = self.stage(ledger);
-        let bottom = self.bottom(ledger, cx);
+        let tokens = *Tokens::global(cx);
+        let sidebar = self.sidebar(tokens, cx);
+        let stage = self.stage(tokens);
+        let bottom = self.bottom(tokens, cx);
         h_flex()
             .size_full()
-            .bg(ledger.background)
-            .text_color(ledger.foreground)
+            .bg(tokens.bg_sunken)
+            .text_color(tokens.fg)
             .child(sidebar)
             .child(
                 v_flex()

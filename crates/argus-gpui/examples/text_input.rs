@@ -7,7 +7,7 @@
 //! stdout. `--probe-clipboard` skips the window and reports what GPUI and
 //! arboard each read back from the real system clipboard.
 
-use argus_gpui::theme::Ledger;
+use argus_gpui::theme::Tokens;
 use argus_gpui::window;
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::{h_flex, v_flex};
@@ -129,7 +129,7 @@ impl Compose {
 
 impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let needle = self.filter.read(cx).value().to_lowercase();
         let shown: Vec<_> = self
             .items
@@ -146,7 +146,7 @@ impl Render for Compose {
             .gap_3()
             .child(Input::new(&self.filter).id("filter").cleanable(true).w(px(280.0)))
             .child(
-                v_flex().gap_1().flex_1().min_h_0().text_sm().text_color(ledger.muted).children(
+                v_flex().gap_1().flex_1().min_h_0().text_sm().text_color(tokens.fg_muted).children(
                     shown.into_iter().map(|item| {
                         div()
                             .id(SharedString::from(format!("item-{item}")))
@@ -170,14 +170,14 @@ impl Render for Compose {
                         h_flex()
                             .justify_between()
                             .text_xs()
-                            .text_color(ledger.faint)
+                            .text_color(tokens.fg_faint)
                             .child(match attachment {
                                 Some(label) => div()
                                     .id("attached")
                                     .role(gpui_kit::Role::Status)
                                     .test_support()
                                     .aria_label(label.clone())
-                                    .text_color(ledger.info)
+                                    .text_color(tokens.info)
                                     .child(label)
                                     .into_any_element(),
                                 None => div().into_any_element(),

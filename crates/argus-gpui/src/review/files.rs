@@ -25,8 +25,8 @@ use crate::keys::page_key;
 use crate::review::keys;
 use crate::review::segment;
 use crate::style::Typed as _;
-use crate::theme::Ledger;
-use crate::tokens::{fs, radius, size, sp, ty, weight, Type};
+use crate::theme::scale::Type;
+use crate::theme::Tokens;
 
 pub struct Files {
     heard: Entity<Heard>,
@@ -116,8 +116,8 @@ impl Files {
     }
 
     /// The side the review reads, or the commit it is of.
-    fn side(&self, page: &ReviewPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
-        let row = h_flex().flex_shrink_0().items_center().gap(px(sp::S8));
+    fn side(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let row = h_flex().flex_shrink_0().items_center().gap(px(tokens.sp_8));
         if page.base == "commit" {
             return row
                 .child(
@@ -128,22 +128,22 @@ impl Files {
                         .truncate()
                         .font_family(cx.theme().mono_font_family.clone())
                         .text_xs()
-                        .text_color(ledger.muted)
+                        .text_color(tokens.fg_muted)
                         .child(SharedString::from(page.commit.clone().unwrap_or_default())),
                 )
                 .into_any_element();
         }
         let count = |n: Option<usize>| n.map_or_else(|| "\u{2026}".to_owned(), |n| n.to_string());
         let pill = |id: &'static str, label: &'static str, n: Option<usize>, staged: bool, cx: &mut Context<Self>| {
-            segment::pill(id, Role::RadioButton, (page.base == "staged") == staged, ledger)
+            segment::pill(id, Role::RadioButton, (page.base == "staged") == staged, tokens)
                 .child(label)
-                .child(segment::count(count(n), ledger))
+                .child(segment::count(count(n), tokens))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.ask(Call::ReviewClick { target: ReviewClick::Side { staged } }, cx)
                 }))
         };
         row.child(
-            segment::track("review-side", "Side", Role::RadioGroup, ledger)
+            segment::track("review-side", "Side", Role::RadioGroup, tokens)
                 .child(pill("review-side-unstaged", "Unstaged", page.unstaged, false, cx))
                 .child(pill("review-side-staged", "Staged", page.staged, true, cx)),
         )
@@ -151,16 +151,16 @@ impl Files {
     }
 
     /// The label above the files, or the field that jumps among them.
-    fn head(&self, page: &ReviewPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn head(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let head = h_flex().flex_shrink_0().items_center();
         if page.jump.is_none() {
             // `.mlabel`: 600 at 12px, muted, 6px over and 2px under.
             return head
-                .px(px(sp::S8))
-                .pt(px(sp::S6))
-                .pb(px(sp::S2))
-                .typed(Type { weight: weight::SEMIBOLD, size: fs::SM, leading: 1.4 })
-                .text_color(ledger.muted)
+                .px(px(tokens.sp_8))
+                .pt(px(tokens.sp_6))
+                .pb(px(tokens.sp_2))
+                .typed(Type { weight: tokens.weight_semibold, size: tokens.fs_sm, leading: 1.4 })
+                .text_color(tokens.fg_muted)
                 .child("Changed files")
                 .into_any_element();
         }
@@ -191,15 +191,15 @@ impl Files {
                         this.ask(Call::ReviewJump { gesture }, cx);
                     }
                 }))
-                .child(Input::new(&self.jump).id("review-jump").small().h(px(size::CONTROL_H)).aria_label("Jump to a file")),
+                .child(Input::new(&self.jump).id("review-jump").small().h(px(tokens.control_h)).aria_label("Jump to a file")),
         )
         .into_any_element()
     }
 
-    fn list(&self, page: &ReviewPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn list(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let lit = lit(page);
         let rows: Vec<_> = order(page).into_iter().filter_map(|i| page.files.get(i).map(|file| (i, file))).collect();
-        let (fill, selected_hover) = (ledger.fill(), ledger.selected_hover());
+        let (fill, selected_hover) = (tokens.fill, tokens.selected_hover);
         v_flex()
             .id("review-files-list")
             .test_support()
@@ -207,7 +207,7 @@ impl Files {
             .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .gap(px(sp::S2))
+            .gap(px(tokens.sp_2))
             .children(rows.into_iter().map(|(i, file)| {
                 let on = Some(i) == lit;
                 let tooltip = SharedString::from(file.path.clone());
@@ -220,17 +220,17 @@ impl Files {
                     .aria_label(tooltip.clone())
                     .flex_shrink_0()
                     .items_start()
-                    .gap(px(sp::S6))
-                    .py(px(sp::S4 - 1.0))
-                    .px(px(sp::S8 - 1.0))
-                    .rounded(px(radius::SM))
+                    .gap(px(tokens.sp_6))
+                    .py(px(tokens.sp_4 - 1.0))
+                    .px(px(tokens.sp_8 - 1.0))
+                    .rounded(px(tokens.r_sm))
                     .border_1()
-                    .border_color(if on { ledger.line_strong } else { gpui_kit::transparent_black() })
-                    .text_size(px(fs::SM))
-                    .line_height(px(fs::SM * 1.45))
-                    .text_color(ledger.foreground)
+                    .border_color(if on { tokens.line_strong } else { gpui_kit::transparent_black() })
+                    .text_size(px(tokens.fs_sm))
+                    .line_height(px(tokens.fs_sm * 1.45))
+                    .text_color(tokens.fg)
                     .cursor_pointer()
-                    .when(on, |row| row.bg(ledger.selected).hover(move |style| style.bg(selected_hover)))
+                    .when(on, |row| row.bg(tokens.bg_selected).hover(move |style| style.bg(selected_hover)))
                     .when(!on, |row| row.hover(move |style| style.bg(fill)))
                     .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -242,35 +242,35 @@ impl Files {
                         v_flex()
                             .flex_1()
                             .min_w_0()
-                            .gap(px(sp::S2))
+                            .gap(px(tokens.sp_2))
                             .child(
                                 div()
                                     .truncate()
-                                    .typed(Type { weight: weight::SEMIBOLD, size: fs::MD, leading: 1.45 })
+                                    .typed(Type { weight: tokens.weight_semibold, size: tokens.fs_md, leading: 1.45 })
                                     .child(SharedString::from(file.name.clone())),
                             )
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(fs::XS))
-                                    .line_height(px(fs::XS * 1.45))
-                                    .text_color(ledger.faint)
+                                    .text_size(px(tokens.fs_xs))
+                                    .line_height(px(tokens.fs_xs * 1.45))
+                                    .text_color(tokens.fg_faint)
                                     .when(!file.dir.trim_end_matches('/').is_empty(), |dir| {
                                         dir.font_family(cx.theme().mono_font_family.clone())
                                     })
                                     .child(SharedString::from(folder(&file.dir).to_owned())),
                             ),
                     )
-                    .child(div().text_color(ledger.success).child(SharedString::from(format!("+{}", file.added))))
-                    .child(div().text_color(ledger.danger).child(SharedString::from(format!("\u{2212}{}", file.removed))))
+                    .child(div().text_color(tokens.ok).child(SharedString::from(format!("+{}", file.added))))
+                    .child(div().text_color(tokens.danger).child(SharedString::from(format!("\u{2212}{}", file.removed))))
             }))
             .when_some(page.jump.as_ref().filter(|jump| jump.matches.is_empty()), |list, jump| {
                 list.child(
                     div()
                         .id("review-jump-none")
                         .test_support()
-                        .typed(ty::SMALL)
-                        .text_color(ledger.muted)
+                        .typed(tokens.type_small)
+                        .text_color(tokens.fg_muted)
                         .child(SharedString::from(format!("No file matches \u{201c}{}\u{201d}.", jump.query))),
                 )
             })
@@ -279,7 +279,7 @@ impl Files {
 
 impl Render for Files {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let Some(page) = self.heard.read(cx).review.clone() else {
             return div().into_any_element();
         };
@@ -288,11 +288,11 @@ impl Render for Files {
             .id("review-files")
             .size_full()
             .min_w_0()
-            .p(px(sp::S12))
-            .gap(px(sp::S8))
-            .child(self.head(&page, &ledger, cx))
-            .child(self.side(&page, &ledger, cx))
-            .child(self.list(&page, &ledger, cx))
+            .p(px(tokens.sp_12))
+            .gap(px(tokens.sp_8))
+            .child(self.head(&page, &tokens, cx))
+            .child(self.side(&page, &tokens, cx))
+            .child(self.list(&page, &tokens, cx))
             .into_any_element()
     }
 }

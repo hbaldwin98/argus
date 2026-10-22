@@ -9,16 +9,16 @@
 use gpui_kit::component::v_flex;
 use gpui_kit::{div, prelude::*, IntoElement, SharedString};
 
-use crate::theme::Ledger;
+use crate::theme::Tokens;
 
 pub const NOT_YET: &str = "Not in the GPUI window yet.";
 
-pub fn body(title: impl Into<SharedString>, ledger: &Ledger) -> impl IntoElement {
+pub fn body(title: impl Into<SharedString>, tokens: &Tokens) -> impl IntoElement {
     v_flex()
         .size_full()
         .items_center()
         .justify_center()
         .gap_1()
-        .child(div().text_sm().text_color(ledger.muted).child(title.into()))
-        .child(div().text_xs().text_color(ledger.fainter).child(NOT_YET))
+        .child(div().text_sm().text_color(tokens.fg_muted).child(title.into()))
+        .child(div().text_xs().text_color(tokens.fg_fainter).child(NOT_YET))
 }

@@ -43,11 +43,8 @@ use crate::icons::Glyph;
 use crate::keys::caps;
 use crate::review::entry::checkout_here;
 use crate::style::Typed as _;
-use crate::theme::Ledger;
-use crate::tokens::{fs, radius, size, sp, weight, Type, OPACITY_DIM};
-
-/// `--rail-w`.
-pub const WIDTH: f32 = size::RAIL_W;
+use crate::theme::scale::Type;
+use crate::theme::Tokens;
 
 /// The row that holds the keys: a checkout, or a pane and the checkout it is
 /// under.
@@ -206,15 +203,15 @@ impl RailView {
     /// The brand row: the logo and the project the rail lists, as the page's
     /// `.brand` with its switcher button. The projects themselves are rows
     /// under it (`projects`), so no press is lost to a menu that is not here.
-    fn brand(&self, rail: &Rail, ledger: &Ledger) -> impl IntoElement {
+    fn brand(&self, rail: &Rail, tokens: &Tokens) -> impl IntoElement {
         let name = rail.project.as_ref().map_or_else(|| "Argus".to_owned(), |project| project.name.clone());
         let switchable = rail.projects.len() > 1;
         h_flex()
             .id("rail-brand")
             .flex_shrink_0()
-            .h(px(size::HEADER_H))
-            .px(px(sp::S16))
-            .gap(px(sp::S8))
+            .h(px(tokens.header_h))
+            .px(px(tokens.sp_16))
+            .gap(px(tokens.sp_8))
             .items_center()
             // The sidebar runs to the window's top edge: its brand row is the
             // title bar's left end (`.rail .brand`), so it moves the window.
@@ -222,16 +219,16 @@ impl RailView {
             .when(!cfg!(windows), |this| {
                 this.on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
             })
-            .child(Glyph::Logo.at(16.0).text_color(ledger.accent))
+            .child(Glyph::Logo.at(16.0).text_color(tokens.accent))
             .child(
                 div()
                     .min_w_0()
                     .truncate()
-                    .typed(Type { weight: weight::SEMIBOLD, size: fs::MD, leading: 1.3 })
-                    .text_color(ledger.foreground)
+                    .typed(Type { weight: tokens.weight_semibold, size: tokens.fs_md, leading: 1.3 })
+                    .text_color(tokens.fg)
                     .child(name),
             )
-            .when(switchable, |row| row.child(Glyph::Down.at(12.0).text_color(ledger.faint)))
+            .when(switchable, |row| row.child(Glyph::Down.at(12.0).text_color(tokens.fg_faint)))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -242,41 +239,41 @@ impl RailView {
         held: bool,
         keys: &[Vec<String>],
         mono: &SharedString,
-        ledger: &Ledger,
+        tokens: &Tokens,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let fill = ledger.fill();
+        let fill = tokens.fill;
         // `.navs`: the keycaps show while the pointer is anywhere over the group.
         v_flex()
             .group("navs")
             .flex_shrink_0()
-            .px(px(sp::S8))
-            .pb(px(sp::S8))
-            .gap(px(sp::S2))
+            .px(px(tokens.sp_8))
+            .pb(px(tokens.sp_8))
+            .gap(px(tokens.sp_2))
             .border_b_1()
-            .border_color(ledger.line)
+            .border_color(tokens.line)
             .children(Nav::ALL.into_iter().enumerate().map(|(at, nav)| {
                 let lit = nav.lit(rail.stage, git_up);
                 let search = nav == Nav::Search;
                 let caps = h_flex()
-                    .gap(px(sp::S4))
-                    .children(keys.get(at).cloned().unwrap_or_default().into_iter().map(|key| keycap(key, mono.clone(), ledger)));
+                    .gap(px(tokens.sp_4))
+                    .children(keys.get(at).cloned().unwrap_or_default().into_iter().map(|key| keycap(key, mono.clone(), tokens)));
                 let caps = if search { caps } else { caps.opacity(0.0).group_hover("navs", |style| style.opacity(1.0)) };
-                let base = line(nav.id(), if search { 34.0 } else { 32.0 }).text_size(px(fs::MD)).px(px(sp::S8));
+                let base = line(nav.id(), if search { 34.0 } else { 32.0 }, tokens).text_size(px(tokens.fs_md)).px(px(tokens.sp_8));
                 let base = if search {
                     // `.search`: a field's outline, not a row's fill.
-                    base.mb(px(sp::S6))
-                        .pl(px(sp::S12))
-                        .gap(px(sp::S8))
+                    base.mb(px(tokens.sp_6))
+                        .pl(px(tokens.sp_12))
+                        .gap(px(tokens.sp_8))
                         .border_1()
-                        .border_color(ledger.line_strong)
-                        .rounded(px(radius::MD))
-                        .text_color(ledger.faint)
-                        .hover(|style| style.text_color(ledger.muted))
+                        .border_color(tokens.line_strong)
+                        .rounded(px(tokens.r_md))
+                        .text_color(tokens.fg_faint)
+                        .hover(|style| style.text_color(tokens.fg_muted))
                 } else {
-                    base.gap(px(sp::S12))
-                        .text_color(ledger.foreground)
-                        .when(lit, |row| row.bg(ledger.selected))
+                    base.gap(px(tokens.sp_12))
+                        .text_color(tokens.fg)
+                        .when(lit, |row| row.bg(tokens.bg_selected))
                         .when(!lit, |row| row.hover(move |style| style.bg(fill)))
                 };
                 let glyph = nav.glyph().at(16.0);
@@ -287,11 +284,11 @@ impl RailView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .size(px(size::NAV_ICON_CELL))
+                        .size(px(tokens.nav_icon_cell))
                         .flex_shrink_0()
-                        .text_color(if lit { ledger.accent } else { ledger.muted });
+                        .text_color(if lit { tokens.accent } else { tokens.fg_muted });
                     // `.nav .ic.new`: the one item whose mark is a filled disc.
-                    let mark = if nav == Nav::New { mark.bg(fill).text_color(ledger.foreground).rounded_full() } else { mark };
+                    let mark = if nav == Nav::New { mark.bg(fill).text_color(tokens.fg).rounded_full() } else { mark };
                     mark.child(glyph).into_any_element()
                 };
                 base.aria_selected(lit)
@@ -305,35 +302,35 @@ impl RailView {
 
     /// The projects to choose among, once there is more than one: the
     /// page's project menu, laid out as rows under the brand.
-    fn projects(&self, rail: &Rail, held: bool, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn projects(&self, rail: &Rail, held: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let current = rail.project.as_ref().map(|p| p.id);
-        let fill = ledger.fill();
+        let fill = tokens.fill;
         v_flex()
             .flex_shrink_0()
-            .px(px(sp::S8))
-            .pb(px(sp::S8))
-            .gap(px(sp::S2))
+            .px(px(tokens.sp_8))
+            .pb(px(tokens.sp_8))
+            .gap(px(tokens.sp_2))
             .border_b_1()
-            .border_color(ledger.line)
+            .border_color(tokens.line)
             .children(rail.projects.iter().map(|choice: &ProjectChoice| {
                 let id = choice.id;
                 let chosen = Some(id) == current;
-                line(format!("project-{id}"), size::ROW_H)
-                    .px(px(sp::S8))
-                    .gap(px(sp::S8))
-                    .text_size(px(fs::MD))
-                    .text_color(if chosen { ledger.foreground } else { ledger.muted })
+                line(format!("project-{id}"), tokens.row_h, tokens)
+                    .px(px(tokens.sp_8))
+                    .gap(px(tokens.sp_8))
+                    .text_size(px(tokens.fs_md))
+                    .text_color(if chosen { tokens.fg } else { tokens.fg_muted })
                     .aria_selected(chosen)
                     .aria_label(choice.name.clone())
-                    .when(chosen, |row| row.bg(ledger.selected))
-                    .when(!chosen, |row| row.hover(move |style| style.bg(fill).text_color(ledger.foreground)))
+                    .when(chosen, |row| row.bg(tokens.bg_selected))
+                    .when(!chosen, |row| row.hover(move |style| style.bg(fill).text_color(tokens.fg)))
                     .on_click(cx.listener(move |this, _, _, _| this.ask(held, Call::SelectProject { project: id })))
                     .child(div().flex_1().min_w_0().truncate().child(choice.name.clone()))
                     .when(choice.needs_you > 0, |row| {
                         row.child(
                             div()
-                                .text_size(px(fs::XS))
-                                .text_color(ledger.warning)
+                                .text_size(px(tokens.fs_xs))
+                                .text_color(tokens.attention)
                                 .child(format!("▲ {}", choice.needs_you)),
                         )
                     })
@@ -348,33 +345,33 @@ impl RailView {
         first: bool,
         offstage: bool,
         held: bool,
-        ledger: &Ledger,
+        tokens: &Tokens,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let id = repo.id;
         let chosen = rail.repository == Some(id);
         let count = repo.used.clone().or_else(|| (repo.panes > 0).then(|| repo.panes.to_string()));
-        let dot = repo.status.and_then(|word| status_colour(word, ledger));
-        let fill = ledger.fill();
+        let dot = repo.status.and_then(|word| status_colour(word, tokens));
+        let fill = tokens.fill;
         // `.repobtn`: muted and semibold, the chosen one in the text colour with an
         // accent chevron, a quiet one faint and regular.
-        let colour = if chosen { ledger.foreground } else if repo.quiet { ledger.faint } else { ledger.muted };
+        let colour = if chosen { tokens.fg } else if repo.quiet { tokens.fg_faint } else { tokens.fg_muted };
         v_flex()
             // `repo.divider` is not drawn: the page never draws it (SHELL-RAIL-2).
             // `.repo` is 2px under the nav, and 8 after another repository's rows.
             .child(
-                div().px(px(sp::S8)).mt(px(if first { sp::S2 } else { sp::S8 })).child(
-                    line(format!("repo-{id}"), size::ROW_H)
+                div().px(px(tokens.sp_8)).mt(px(if first { tokens.sp_2 } else { tokens.sp_8 })).child(
+                    line(format!("repo-{id}"), tokens.row_h, tokens)
                         .w_full()
-                        .px(px(sp::S4))
-                        .gap(px(sp::S6))
-                        .text_size(px(fs::SM))
-                        .weighted(if repo.quiet { weight::REGULAR } else { weight::SEMIBOLD })
+                        .px(px(tokens.sp_4))
+                        .gap(px(tokens.sp_6))
+                        .text_size(px(tokens.fs_sm))
+                        .weighted(if repo.quiet { tokens.weight_regular } else { tokens.weight_semibold })
                         .text_color(colour)
                         .aria_selected(chosen)
                         .aria_expanded(repo.open)
                         .aria_label(repo.name.clone())
-                        .hover(move |style| style.bg(fill).text_color(ledger.foreground))
+                        .hover(move |style| style.bg(fill).text_color(tokens.fg))
                         .on_click(cx.listener(move |this, _, _, _| {
                             this.ask(held, Call::ChooseRepository { repository: id })
                         }))
@@ -383,20 +380,20 @@ impl RailView {
                         .child(chevron(
                             format!("repo-{id}-chevron"),
                             repo.open,
-                            size::ICON_SM,
-                            if chosen { ledger.accent } else { ledger.faint },
+                            tokens.icon_sm,
+                            if chosen { tokens.accent } else { tokens.fg_faint },
                         ))
                         .child(div().flex_1().min_w_0().truncate().child(repo.name.clone()))
-                        .when_some(dot, |row, colour| row.child(dot_of(colour)))
+                        .when_some(dot, |row, colour| row.child(dot_of(colour, tokens)))
                         .when_some(count, |row, count| {
                             row.child(
                                 div()
                                     .id(format!("repo-{id}-count"))
                                     .test_support()
                                     .aria_label(count.clone())
-                                    .text_size(px(fs::XS))
-                                    .weighted(weight::REGULAR)
-                                    .text_color(ledger.faint)
+                                    .text_size(px(tokens.fs_xs))
+                                    .weighted(tokens.weight_regular)
+                                    .text_color(tokens.fg_faint)
                                     .child(count),
                             )
                         }),
@@ -404,7 +401,7 @@ impl RailView {
             )
             // A shut repository draws none of what is under it.
             .when(repo.open, |col| {
-                col.children(repo.checkouts.iter().map(|checkout| self.checkout(checkout, offstage, held, ledger, cx)))
+                col.children(repo.checkouts.iter().map(|checkout| self.checkout(checkout, offstage, held, tokens, cx)))
             })
     }
 
@@ -413,7 +410,7 @@ impl RailView {
         checkout: &Checkout,
         offstage: bool,
         held: bool,
-        ledger: &Ledger,
+        tokens: &Tokens,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let id = checkout.id;
@@ -424,27 +421,27 @@ impl RailView {
         } else {
             format!("{where_} on {}", checkout.branch)
         };
-        let hidden_dot = if checkout.open { None } else { checkout.status.and_then(|word| status_colour(word, ledger)) };
+        let hidden_dot = if checkout.open { None } else { checkout.status.and_then(|word| status_colour(word, tokens)) };
         let git = checkout.git.clone().filter(|_| !checkout.clean);
-        let fill = ledger.fill();
+        let fill = tokens.fill;
         let mono = cx.theme().mono_font_family.clone();
         v_flex()
             .child(
                 // `.co`: a margin of 8 each side, the fold chevron in its 12px of left padding.
-                div().mx(px(sp::S8)).child(
-                    line(format!("checkout-{id}"), size::CONTROL_H_SM)
+                div().mx(px(tokens.sp_8)).child(
+                    line(format!("checkout-{id}"), tokens.control_h_sm, tokens)
                         .w_full()
-                        .pl(px(sp::S12 - 1.0))
-                        .pr(px(sp::S4 - 1.0))
-                        .gap(px(sp::S6))
-                        .text_size(px(fs::XS))
-                        .text_color(ledger.faint)
+                        .pl(px(tokens.sp_12 - 1.0))
+                        .pr(px(tokens.sp_4 - 1.0))
+                        .gap(px(tokens.sp_6))
+                        .text_size(px(tokens.fs_xs))
+                        .text_color(tokens.fg_faint)
                         .border_1()
                         // `.co.picked`: the ring that says which row holds the keys.
-                        .border_color(if picked { ledger.accent } else { Hsla::transparent_black() })
+                        .border_color(if picked { tokens.accent } else { Hsla::transparent_black() })
                         .aria_selected(picked)
                         .aria_label(tooltip)
-                        .hover(move |style| style.bg(fill).text_color(ledger.muted))
+                        .hover(move |style| style.bg(fill).text_color(tokens.fg_muted))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.pick(held, Picked { checkout: id, pane: None });
                             cx.notify();
@@ -452,11 +449,11 @@ impl RailView {
                         // The fold's box is 24 wide and sits in the row's padding, so a
                         // checkout's branch does not shift when it folds.
                         .child(if checkout.count > 0 {
-                            chevron(format!("checkout-{id}-fold"), checkout.open, sp::S24, ledger.faint)
+                            chevron(format!("checkout-{id}-fold"), checkout.open, tokens.sp_24, tokens.fg_faint)
                                 .role(Role::Button)
-                                .rounded(px(radius::SM))
+                                .rounded(px(tokens.r_sm))
                                 .aria_label(if checkout.open { "Fold its panes away" } else { "Show its panes" })
-                                .hover(move |style| style.bg(fill).text_color(ledger.foreground))
+                                .hover(move |style| style.bg(fill).text_color(tokens.fg))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
                                     // The pick leaves a pane that is about to be folded away first.
@@ -468,9 +465,9 @@ impl RailView {
                                 }))
                                 .into_any_element()
                         } else {
-                            div().w(px(sp::S24)).h_full().flex_shrink_0().into_any_element()
+                            div().w(px(tokens.sp_24)).h_full().flex_shrink_0().into_any_element()
                         })
-                        .child(div().ml(px(-sp::S6)).child(Glyph::Branch.at(12.0)))
+                        .child(div().ml(px(-tokens.sp_6)).child(Glyph::Branch.at(12.0)))
                         .child(div().flex_1().min_w_0().truncate().font_family(mono.clone()).child(checkout.name.clone()))
                         .when_some(checkout.shared, |row, n| {
                             row.child(
@@ -482,10 +479,10 @@ impl RailView {
                             )
                         })
                         .when_some(git, |row, git| {
-                            row.child(div().font_family(mono.clone()).text_color(ledger.changed).child(git))
+                            row.child(div().font_family(mono.clone()).text_color(tokens.changed).child(git))
                         })
                         .when(!checkout.open, |row| {
-                            row.when_some(hidden_dot, |row, colour| row.child(dot_of(colour))).child(
+                            row.when_some(hidden_dot, |row, colour| row.child(dot_of(colour, tokens))).child(
                                 div()
                                     .id(format!("checkout-{id}-folded"))
                                     .test_support()
@@ -505,13 +502,13 @@ impl RailView {
             .when(checkout.open, |col| {
                 col.child(
                     v_flex()
-                        .ml(px(size::PANE_INDENT))
-                        .mr(px(sp::S8))
-                        .mb(px(sp::S4))
-                        .pl(px(sp::S4))
+                        .ml(px(tokens.pane_indent))
+                        .mr(px(tokens.sp_8))
+                        .mb(px(tokens.sp_4))
+                        .pl(px(tokens.sp_4))
                         .border_l_1()
-                        .border_color(ledger.line)
-                        .children(checkout.panes.iter().map(|pane| self.pane(id, pane, offstage, held, ledger, cx))),
+                        .border_color(tokens.line)
+                        .children(checkout.panes.iter().map(|pane| self.pane(id, pane, offstage, held, tokens, cx))),
                 )
             })
     }
@@ -522,7 +519,7 @@ impl RailView {
         pane: &Pane,
         offstage: bool,
         held: bool,
-        ledger: &Ledger,
+        tokens: &Tokens,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let id = pane.id;
@@ -533,37 +530,37 @@ impl RailView {
             pane.title,
             pane.note.clone().unwrap_or_else(|| format!("{}, {}", if pane.agent { "agent" } else { "shell" }, pane.status))
         );
-        let fill = ledger.fill();
+        let fill = tokens.fill;
         // Off the Workspace the pane on screen is not the selection, the stage's own
         // nav item is: it keeps an edge and its text, not the box (`.offstage`).
         let boxed = pane.on && !offstage;
         let group = SharedString::from(format!("pane-row-{id}"));
         let ring = if picked {
-            ledger.accent
+            tokens.accent
         } else if boxed {
             // `--mark-sel` under Ledger: a hairline on the selection fill.
-            ledger.line_strong
+            tokens.line_strong
         } else {
             Hsla::transparent_black()
         };
-        line(format!("pane-{id}"), 32.0)
+        line(format!("pane-{id}"), 32.0, tokens)
             .group(group.clone())
             .relative()
             .w_full()
             // One pixel less each side: the ring is a border here, an outline in the page.
-            .pl(px(sp::S12 - 1.0))
-            .pr(px(sp::S8 - 1.0))
-            .gap(px(sp::S12))
-            .text_size(px(fs::MD))
-            .text_color(if pane.on || pane.agent { ledger.foreground } else { ledger.muted })
+            .pl(px(tokens.sp_12 - 1.0))
+            .pr(px(tokens.sp_8 - 1.0))
+            .gap(px(tokens.sp_12))
+            .text_size(px(tokens.fs_md))
+            .text_color(if pane.on || pane.agent { tokens.fg } else { tokens.fg_muted })
             .border_1()
             .border_color(ring)
             .aria_selected(pane.on)
             .aria_label(tooltip)
-            .when(boxed, |row| row.bg(ledger.selected))
+            .when(boxed, |row| row.bg(tokens.bg_selected))
             .when(!boxed, |row| row.hover(move |style| style.bg(fill)))
             .when(pane.on && offstage, |row| {
-                row.child(div().absolute().left_0().top_0().bottom_0().w(px(size::PANE_MARK_W)).bg(ledger.line_strong))
+                row.child(div().absolute().left_0().top_0().bottom_0().w(px(tokens.pane_mark_w)).bg(tokens.line_strong))
             })
             .on_click(cx.listener(move |this, _, _, cx| {
                 // The pane comes on screen and the keys stay on the rail until
@@ -586,7 +583,7 @@ impl RailView {
                 cx.listener(move |this, _: &MouseUpEvent, _, _| this.ask(held, Call::Close { pane: id })),
             )
             // One status encoding per row: the pill when it has a word, else the dot.
-            .when(word.is_none(), |row| row.child(status_dot(format!("pane-{id}"), pane.status, ledger)))
+            .when(word.is_none(), |row| row.child(status_dot(format!("pane-{id}"), pane.status, tokens)))
             .child(div().flex_1().min_w_0().truncate().child(pane.title.clone()))
             .when_some(word, |row, word| {
                 // `.pane-end`: gives way to the close button while the row is pointed at.
@@ -594,7 +591,7 @@ impl RailView {
                     id,
                     word,
                     pane.status,
-                    ledger,
+                    tokens,
                 )))
             })
             // `.pane-row .close`: over the status word, only under the pointer.
@@ -605,18 +602,18 @@ impl RailView {
                     .role(Role::Button)
                     .aria_label(format!("Close {}", pane.title))
                     .absolute()
-                    .right(px(sp::S8))
-                    .top(px((32.0 - size::ICON_BOX) / 2.0 - 1.0))
-                    .size(px(size::ICON_BOX))
+                    .right(px(tokens.sp_8))
+                    .top(px((32.0 - tokens.icon_box) / 2.0 - 1.0))
+                    .size(px(tokens.icon_box))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(radius::SM))
-                    .text_color(ledger.muted)
+                    .rounded(px(tokens.r_sm))
+                    .text_color(tokens.fg_muted)
                     .cursor_pointer()
                     .invisible()
                     .group_hover(group, |style| style.visible())
-                    .hover(move |style| style.bg(fill).text_color(ledger.foreground))
+                    .hover(move |style| style.bg(fill).text_color(tokens.fg))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.ask(held, Call::Close { pane: id });
@@ -625,15 +622,15 @@ impl RailView {
             )
     }
 
-    fn listing(&self, rail: &Rail, held: bool, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn listing(&self, rail: &Rail, held: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         // `.rail-list.held`: the tree is dimmed while the daemon is gone.
         let mut list = v_flex()
             .id("rail-list")
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .pb(px(sp::S12))
-            .when(held, |list| list.opacity(OPACITY_DIM));
+            .pb(px(tokens.sp_12))
+            .when(held, |list| list.opacity(tokens.opacity_dim));
         let offstage = rail.stage != Stage::Workspace || self.heard.read(cx).git_up();
         match &rail.project {
             // The stage is the one loading surface; the rail only waits.
@@ -643,8 +640,8 @@ impl RailView {
                     div()
                         .id("rail-empty")
                         .test_support()
-                        .p(px(sp::S16))
-                        .text_color(ledger.faint)
+                        .p(px(tokens.sp_16))
+                        .text_color(tokens.fg_faint)
                         .child("No projects yet."),
                 )
             }
@@ -652,7 +649,7 @@ impl RailView {
             // The project's name is the brand row's, so the list opens on its first repository.
             Some(project) => {
                 list = list.children(project.repositories.iter().enumerate().map(|(at, repo)| {
-                    self.repository(rail, repo, at == 0, offstage, held, ledger, cx)
+                    self.repository(rail, repo, at == 0, offstage, held, tokens, cx)
                 }));
             }
         }
@@ -662,7 +659,7 @@ impl RailView {
 
 impl Render for RailView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let mono = cx.theme().mono_font_family.clone();
         let (rail, git_up, held, link, alarm, keys, chime, console) = {
             let heard = self.heard.read(cx);
@@ -688,26 +685,26 @@ impl Render for RailView {
         let body = v_flex()
             .flex_1()
             .min_h_0()
-            .child(self.nav(&rail, git_up, held, &keys, &mono, &ledger, cx))
-            .when(rail.projects.len() > 1, |body| body.child(self.projects(&rail, held, &ledger, cx)))
-            .child(self.listing(&rail, held, &ledger, cx));
+            .child(self.nav(&rail, git_up, held, &keys, &mono, &tokens, cx))
+            .when(rail.projects.len() > 1, |body| body.child(self.projects(&rail, held, &tokens, cx)))
+            .child(self.listing(&rail, held, &tokens, cx));
         v_flex()
             .id("rail")
             .key_context("Rail")
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| this.press(event, window, cx)))
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.release(window, cx)))
-            .w(px(WIDTH))
+            .w(px(tokens.rail_w))
             .flex_shrink_0()
             .h_full()
-            .bg(ledger.chrome)
+            .bg(tokens.bg_chrome)
             .border_r_1()
-            .border_color(ledger.line)
-            .text_color(ledger.muted)
-            .text_size(px(fs::MD))
-            .child(self.brand(&rail, &ledger))
+            .border_color(tokens.line)
+            .text_color(tokens.fg_muted)
+            .text_size(px(tokens.fs_md))
+            .child(self.brand(&rail, &tokens))
             .child(body)
-            .child(foot(&link, &rail, alarm.as_deref(), chime, console, &self.caller, held, &ledger))
+            .child(foot(&link, &rail, alarm.as_deref(), chime, console, &self.caller, held, &tokens))
     }
 }
 
@@ -715,7 +712,7 @@ impl Render for RailView {
 /// to the kind of row, since the page gives each its own.
 type Line = gpui_kit::base::ObservedElement<gpui_kit::Stateful<gpui_kit::Div>>;
 
-fn line(id: impl Into<gpui_kit::ElementId>, height: f32) -> Line {
+fn line(id: impl Into<gpui_kit::ElementId>, height: f32, tokens: &Tokens) -> Line {
     h_flex()
         .id(id)
         .role(Role::Button)
@@ -723,7 +720,7 @@ fn line(id: impl Into<gpui_kit::ElementId>, height: f32) -> Line {
         .h(px(height))
         .flex_shrink_0()
         .items_center()
-        .rounded(px(radius::SM))
+        .rounded(px(tokens.r_sm))
         .cursor_pointer()
 }
 
@@ -742,41 +739,41 @@ fn chevron(id: String, open: bool, width: f32, colour: Hsla) -> Line {
         .child(if open { Glyph::Down } else { Glyph::Right }.at(12.0))
 }
 
-fn dot_of(colour: Hsla) -> impl IntoElement {
-    div().size(px(size::DOT_MD)).flex_shrink_0().rounded_full().bg(colour)
+fn dot_of(colour: Hsla, tokens: &Tokens) -> impl IntoElement {
+    div().size(px(tokens.dot_md)).flex_shrink_0().rounded_full().bg(colour)
 }
 
 /// `.spill`: the one status pill, a dot and a word on a tint of the status's
 /// colour. What blocks on a person is louder than what does not.
-fn spill(id: u64, word: &'static str, status: &str, ledger: &Ledger) -> impl IntoElement {
+fn spill(id: u64, word: &'static str, status: &str, tokens: &Tokens) -> impl IntoElement {
     let (tone, loud, hollow) = match status {
-        "waiting" | "needs-review" => (ledger.warning, true, false),
-        "failed" => (ledger.danger, true, false),
-        "done" => (ledger.success, false, false),
-        "working" => (ledger.accent, false, false),
-        _ => (ledger.faint, false, true),
+        "waiting" | "needs-review" => (tokens.attention, true, false),
+        "failed" => (tokens.danger, true, false),
+        "done" => (tokens.ok, false, false),
+        "working" => (tokens.accent, false, false),
+        _ => (tokens.fg_faint, false, true),
     };
     let (fill, edge) = if loud { (0.22, 0.60) } else { (0.12, 0.40) };
     h_flex()
         .id(format!("pane-{id}-word"))
         .test_support()
         .aria_label(word)
-        .h(px(size::CHIP_H))
-        .px(px(sp::S8))
-        .gap(px(sp::S6))
+        .h(px(tokens.chip_h))
+        .px(px(tokens.sp_8))
+        .gap(px(tokens.sp_6))
         .items_center()
         .border_1()
         .border_color(tone.opacity(edge))
-        .rounded(px(radius::PILL))
+        .rounded(px(tokens.r_pill))
         .bg(tone.opacity(fill))
         // Faint on faint fails 4.5:1 at 11px, so an ended or idle word is the muted one.
-        .text_color(if hollow { ledger.muted } else { tone })
-        .text_size(px(fs::XS))
-        .weighted(weight::SEMIBOLD)
+        .text_color(if hollow { tokens.fg_muted } else { tone })
+        .text_size(px(tokens.fs_xs))
+        .weighted(tokens.weight_semibold)
         .child(if hollow {
-            Glyph::Ring6.at(size::DOT_SM).text_color(tone).into_any_element()
+            Glyph::Ring6.at(tokens.dot_sm).text_color(tone).into_any_element()
         } else {
-            div().size(px(size::DOT_SM)).flex_shrink_0().rounded_full().bg(tone).into_any_element()
+            div().size(px(tokens.dot_sm)).flex_shrink_0().rounded_full().bg(tone).into_any_element()
         })
         .child(word)
 }
@@ -801,10 +798,10 @@ fn settled(picked: Option<Picked>, rail: &Rail) -> Option<Picked> {
 
 /// The dot a status earns: the attention colour for what asks for a look,
 /// the accent for work under way, none otherwise.
-fn status_colour(word: &str, ledger: &Ledger) -> Option<Hsla> {
+fn status_colour(word: &str, tokens: &Tokens) -> Option<Hsla> {
     match word {
-        "waiting" | "needs-review" | "failed" => Some(ledger.warning),
-        "working" => Some(ledger.accent),
+        "waiting" | "needs-review" | "failed" => Some(tokens.attention),
+        "working" => Some(tokens.accent),
         _ => None,
     }
 }
@@ -941,7 +938,7 @@ mod tests {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                         Default::default(),
-                        size(px(WIDTH), px(700.0)),
+                        size(px(crate::theme::ledger::tokens().rail_w), px(700.0)),
                     ))),
                     ..Default::default()
                 },

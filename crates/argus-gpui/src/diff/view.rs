@@ -59,9 +59,7 @@ use gpui_kit::size;
 
 use crate::diff::lines::{self, Code, Item, Shape};
 use crate::pointer::drag::{self, Drag, Dragger, Step};
-use crate::fonts;
-use crate::theme::Ledger;
-use crate::tokens::{fs, radius, size, sp};
+use crate::theme::Tokens;
 
 /// The width of a line-number column, and of the marker's.
 const NUMBER: f32 = 44.0;
@@ -360,13 +358,13 @@ impl DiffView {
     }
 
     /// One row, `ix` of the rows.
-    fn row(&self, ix: usize, ledger: &Ledger, cx: &mut Context<Self>) -> AnyElement {
+    fn row(&self, ix: usize, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
         let row = &self.rows[ix];
         let base = match lines::shape(row) {
-            Shape::Hunk | Shape::Note => return self.heading(ix, row, ledger),
-            Shape::Fold => return self.fold(ix, row, ledger, cx),
-            Shape::Line => self.line(ix, row, ledger, cx),
-            Shape::Pair => self.pair(ix, row, ledger, cx),
+            Shape::Hunk | Shape::Note => return self.heading(ix, row, tokens),
+            Shape::Fold => return self.fold(ix, row, tokens, cx),
+            Shape::Line => self.line(ix, row, tokens, cx),
+            Shape::Pair => self.pair(ix, row, tokens, cx),
         };
         let (number, interactive) = (row.row, self.interactive);
         self.wide(base)
@@ -375,7 +373,7 @@ impl DiffView {
             .flex_shrink_0()
             .h(px(self.heights[ix]))
             .border_1()
-            .border_color(if row.cursor || row.picked { ledger.line_strong } else { gpui_kit::transparent_black() })
+            .border_color(if row.cursor || row.picked { tokens.line_strong } else { gpui_kit::transparent_black() })
             .when(interactive, |row| {
                 row.cursor_text().on_click(cx.listener(move |_, event: &ClickEvent, _, cx| {
                     cx.emit(DiffEvent::Row { row: number, extend: event.modifiers().shift });
@@ -385,16 +383,16 @@ impl DiffView {
     }
 
     /// A hunk's `@@` line or a note: said, never picked.
-    fn heading(&self, ix: usize, row: &DiffRow, ledger: &Ledger) -> AnyElement {
+    fn heading(&self, ix: usize, row: &DiffRow, tokens: &Tokens) -> AnyElement {
         self.wide(h_flex())
             .id(Self::row_id(ix))
             .test_support()
             .flex_shrink_0()
             .h(px(lines::HUNK))
-            .px(px(sp::S12))
+            .px(px(tokens.sp_12))
             .items_center()
-            .bg(ledger.chrome)
-            .text_color(ledger.faint)
+            .bg(tokens.bg_chrome)
+            .text_color(tokens.fg_faint)
             .overflow_hidden()
             .whitespace_nowrap()
             .child(SharedString::from(row.text.clone()))
@@ -403,7 +401,7 @@ impl DiffView {
 
     /// The lines between hunks the diff did not carry, and the buttons that
     /// ask for them. The cursor may rest on one, so it takes a click too.
-    fn fold(&self, ix: usize, row: &DiffRow, ledger: &Ledger, cx: &mut Context<Self>) -> AnyElement {
+    fn fold(&self, ix: usize, row: &DiffRow, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
         let number = row.row;
         let button = |id: &'static str, label: String, all: bool, cx: &mut Context<Self>| {
             div()
@@ -411,17 +409,17 @@ impl DiffView {
                 .test_support()
                 .aria_label(SharedString::from(label.clone()))
                 // `.fbtn`: the reference colour in the interface face, lifting to `--fill`.
-                .px(px(sp::S4))
-                .h(px(size::FOLD_BTN_H))
+                .px(px(tokens.sp_4))
+                .h(px(tokens.fold_btn_h))
                 .flex()
                 .items_center()
-                .rounded(px(radius::XS))
-                .font_family(SharedString::from(fonts::UI))
-                .text_size(px(fs::SM))
-                .text_color(ledger.link)
+                .rounded(px(tokens.r_xs))
+                .font_family(SharedString::from(tokens.font_ui))
+                .text_size(px(tokens.fs_sm))
+                .text_color(tokens.ref_)
                 .cursor_pointer()
                 .hover({
-                    let fill = ledger.fill();
+                    let fill = tokens.fill;
                     move |style| style.bg(fill)
                 })
                 .on_click(cx.listener(move |_, _, _, cx| {
@@ -436,17 +434,17 @@ impl DiffView {
             .test_support()
             .flex_shrink_0()
             .h(px(lines::FOLD))
-            .px(px(sp::S12))
-            .gap(px(sp::S8))
+            .px(px(tokens.sp_12))
+            .gap(px(tokens.sp_8))
             .items_center()
-            .bg(ledger.chrome)
-            .text_color(ledger.muted)
-            .font_family(SharedString::from(fonts::UI))
-            .text_size(px(fs::SM))
+            .bg(tokens.bg_chrome)
+            .text_color(tokens.fg_muted)
+            .font_family(SharedString::from(tokens.font_ui))
+            .text_size(px(tokens.fs_sm))
             .border_t_1()
             .border_b_1()
             .border_dashed()
-            .border_color(if row.cursor { ledger.line_strong } else { ledger.line })
+            .border_color(if row.cursor { tokens.line_strong } else { tokens.line })
             .child(SharedString::from(format!("\u{22ef} {}", row.text)))
             .when(self.interactive, |fold| {
                 fold.children(match row.step {
@@ -467,10 +465,10 @@ impl DiffView {
     }
 
     /// A unified line: two numbers, a marker, then code.
-    fn line(&self, ix: usize, row: &DiffRow, ledger: &Ledger, cx: &mut Context<Self>) -> gpui_kit::Div {
+    fn line(&self, ix: usize, row: &DiffRow, tokens: &Tokens, cx: &mut Context<Self>) -> gpui_kit::Div {
         let side = row.left.as_ref();
         let kind = side.map_or("context", |side| side.kind);
-        let fill = lines::fill(kind, row.picked, row.cursor, ledger);
+        let fill = lines::fill(kind, row.picked, row.cursor, tokens);
         // The gutter stays at the pane's left edge while the code scrolls
         // sideways under it: the row has moved by the offset, the gutter moves back.
         let pin = Pin { shift: -self.scroll.offset().x, fill };
@@ -478,17 +476,17 @@ impl DiffView {
         h_flex()
             .items_center()
             .when_some(fill, |row, fill| row.bg(fill))
-            .child(half(side, &self.drawn[ix][0], true, ledger, self.ink(ix, 0, &self.drawn[ix][0].text, cx), down, Some(pin)))
+            .child(half(side, &self.drawn[ix][0], true, tokens, self.ink(ix, 0, &self.drawn[ix][0].text, cx), down, Some(pin)))
             .overflow_hidden()
     }
 
     /// A split pair: its two halves, each with its own number, marker and
     /// code, cut at its own half. A missing half is blank and recessed.
-    fn pair(&self, ix: usize, row: &DiffRow, ledger: &Ledger, cx: &mut Context<Self>) -> gpui_kit::Div {
+    fn pair(&self, ix: usize, row: &DiffRow, tokens: &Tokens, cx: &mut Context<Self>) -> gpui_kit::Div {
         let side = |side: Option<&DiffSide>, second: bool| {
             let fill = match side {
-                Some(side) => lines::fill(side.kind, row.picked, row.cursor, ledger),
-                None => Some(ledger.chrome),
+                Some(side) => lines::fill(side.kind, row.picked, row.cursor, tokens),
+                None => Some(tokens.bg_chrome),
             };
             h_flex()
                 .flex_1()
@@ -496,12 +494,12 @@ impl DiffView {
                 .h_full()
                 .items_center()
                 .overflow_hidden()
-                .when(second, |half| half.border_l_1().border_color(ledger.line))
+                .when(second, |half| half.border_l_1().border_color(tokens.line))
                 .when_some(fill, |half, fill| half.bg(fill))
                 .child({
                     let wrapped = lines::wrap(&self.drawn[ix][usize::from(second)], self.per_line);
                     let ink = self.ink(ix, usize::from(second), &wrapped.text, cx);
-                    half(side, &wrapped, false, ledger, ink, cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, usize::from(second), event.position)), None)
+                    half(side, &wrapped, false, tokens, ink, cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, usize::from(second), event.position)), None)
                 })
         };
         h_flex()
@@ -511,12 +509,12 @@ impl DiffView {
             .child(side(row.right.as_ref(), true))
     }
 
-    fn item(&self, ix: usize, ledger: &Ledger, cx: &mut Context<Self>) -> AnyElement {
+    fn item(&self, ix: usize, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
         self.built.set(self.built.get() + 1);
         #[cfg(test)]
         BUILT.with(|built| *built.borrow_mut().entry(self.id.to_string()).or_default() += 1);
         match self.items.get(ix) {
-            Some(Item::Row(row)) => self.row(*row, ledger, cx),
+            Some(Item::Row(row)) => self.row(*row, tokens, cx),
             Some(Item::Comment) => match &self.slot {
                 Some(slot) => div()
                     .id(("diff-slot", 0usize))
@@ -722,17 +720,17 @@ fn half(
     side: Option<&DiffSide>,
     drawn: &Code,
     both: bool,
-    ledger: &Ledger,
+    tokens: &Tokens,
     ink: Ink,
     down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
     pin: Option<Pin>,
 ) -> impl IntoElement {
     // `.dno`: `--fg-faint` on every line, changed or not.
-    let number_colour = ledger.faint;
+    let number_colour = tokens.fg_faint;
     let marker_colour = match side.map(|side| side.kind) {
-        Some("added") => ledger.success,
-        Some("removed") => ledger.danger,
-        _ => ledger.faint,
+        Some("added") => tokens.ok,
+        Some("removed") => tokens.danger,
+        _ => tokens.fg_faint,
     };
     let numbers = lines::numbers(side, both).into_iter().map(move |n| {
         div()
@@ -754,7 +752,7 @@ fn half(
         .min_w_0()
         .whitespace_nowrap()
         .on_mouse_down(MouseButton::Left, down)
-        .children(side.map(|_| code(drawn, ledger, ink)));
+        .children(side.map(|_| code(drawn, tokens, ink)));
     let Some(pin) = pin else {
         return h_flex().flex_1().min_w_0().items_center().children(numbers).child(marker).child(code);
     };
@@ -767,7 +765,7 @@ fn half(
         .bottom_0()
         .left(pin.shift)
         .w(width)
-        .bg(ledger.background)
+        .bg(tokens.bg_sunken)
         .child(h_flex().size_full().items_center().when_some(pin.fill, |gutter, fill| gutter.bg(fill)).children(numbers).child(marker));
     h_flex()
         .relative()
@@ -781,9 +779,9 @@ fn half(
 }
 
 /// The side's text with its highlight kinds as colours.
-fn code(drawn: &Code, ledger: &Ledger, ink: Ink) -> impl IntoElement {
+fn code(drawn: &Code, tokens: &Tokens, ink: Ink) -> impl IntoElement {
     let highlights = lines::runs(drawn, ink.selected.clone()).into_iter().map(|(range, kind, selected)| {
-        let tone = kind.and_then(|kind| lines::tone(kind, ledger));
+        let tone = kind.and_then(|kind| lines::tone(kind, tokens));
         let style = HighlightStyle {
             color: tone.map(|tone| tone.colour),
             font_style: tone.and_then(|tone| tone.italic.then_some(FontStyle::Italic)),
@@ -802,8 +800,8 @@ impl Render for DiffView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         // `.dbody`: the mono face at `--fs-sm`, which is smaller than the terminal's.
-        let (family, text_size) = (theme.mono_font_family.clone(), px(fs::SM));
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
+        let (family, text_size) = (theme.mono_font_family.clone(), px(tokens.fs_sm));
         // One cell is the advance of `M`, as the terminal panes measure it.
         let text = window.text_system();
         let font_id = text.resolve_font(&Font { family: family.clone(), ..Font::default() });
@@ -818,10 +816,10 @@ impl Render for DiffView {
             .relative()
             .size_full()
             .min_h_0()
-            .bg(ledger.background)
+            .bg(tokens.bg_sunken)
             .font_family(family)
             .text_size(text_size)
-            .text_color(ledger.muted)
+            .text_color(tokens.fg_muted)
             .child(
                 // Where the list ends up is only known once it is laid out; a
                 // change asks for one more render that reads it.
@@ -846,7 +844,7 @@ impl Render for DiffView {
                     move |this, range, _, cx| {
                         // Only what this build draws is on screen to be read.
                         this.layouts.borrow_mut().clear();
-                        range.map(|ix| this.item(ix, &ledger, cx)).collect::<Vec<_>>()
+                        range.map(|ix| this.item(ix, &tokens, cx)).collect::<Vec<_>>()
                     },
                 )
                 .track_scroll(&self.scroll),

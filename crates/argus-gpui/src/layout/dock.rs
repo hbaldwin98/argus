@@ -34,8 +34,7 @@ use crate::layout::dock_menu;
 use crate::layout::panel;
 use crate::layout::work::{Held, WorkView};
 use crate::style::Typed as _;
-use crate::theme::Ledger;
-use crate::tokens::{radius, size, sp, ty, weight};
+use crate::theme::Tokens;
 
 /// What a side dock leaves the stage of the width at least: `--dock-floor` in the page.
 pub const FLOOR_WIDTH: f32 = 240.0;
@@ -100,7 +99,7 @@ impl DockView {
         tab: &DockTab,
         on: bool,
         docks: &DocksPage,
-        ledger: &Ledger,
+        tokens: &Tokens,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let panel = tab.panel.clone();
@@ -112,7 +111,7 @@ impl DockView {
         let (held_panel, held_title) = (panel.clone(), tab.title.clone());
         let (closing, middle) = (panel.clone(), panel.clone());
         let close_label = format!("Close {}", tab.title);
-        strip::tab(SharedString::from(format!("dock-tab-{panel}")), on, closes, tab.title.clone(), ledger)
+        strip::tab(SharedString::from(format!("dock-tab-{panel}")), on, closes, tab.title.clone(), tokens)
             // A title truncates at the tab's width; the tooltip has all of it (SHELL-DOCK-3).
             .tooltip({
                 let title = tab.title.clone();
@@ -144,7 +143,7 @@ impl DockView {
             .child(strip::title(tab.title.clone()))
             .when(closes, |tab| {
                 tab.child(
-                    strip::close_x(SharedString::from(format!("dock-tab-close-{closing}")), close_label, ledger)
+                    strip::close_x(SharedString::from(format!("dock-tab-close-{closing}")), close_label, tokens)
                         // The tab's own press, which would begin a drag.
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -157,7 +156,7 @@ impl DockView {
 
     /// The "Move to another dock" button: the dock the panel sits in, which
     /// opens the menu of docks.
-    fn menu_button(&self, panel: &Panel, docks: &DocksPage, held: bool, ledger: &Ledger, cx: &App) -> impl IntoElement {
+    fn menu_button(&self, panel: &Panel, docks: &DocksPage, held: bool, tokens: &Tokens, cx: &App) -> impl IntoElement {
         let present = present_of(docks, panel);
         let entries = dock_menu::moves(panel, true, docks, present.as_ref());
         let (caller, heard) = (self.caller.clone(), self.heard.clone());
@@ -171,39 +170,39 @@ impl DockView {
             // The head's press, which would begin a drag of the panel.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
-                strip::menu_button(SharedString::from(format!("dock-menu-{}", self.name())), glyph, 15.0, ledger, cx)
+                strip::menu_button(SharedString::from(format!("dock-menu-{}", self.name())), glyph, 15.0, tokens, cx)
                     .tooltip("Move to another dock")
                     .disabled(held)
                     .dropdown_menu(move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, cx)),
             )
     }
 
-    fn strip(&self, page: &DockPage, shown: &Panel, docks: &DocksPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn strip(&self, page: &DockPage, shown: &Panel, docks: &DocksPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let tabs: Vec<AnyElement> =
-            page.tabs.iter().map(|tab| self.tab(tab, &tab.panel == shown, docks, ledger, cx).into_any_element()).collect();
+            page.tabs.iter().map(|tab| self.tab(tab, &tab.panel == shown, docks, tokens, cx).into_any_element()).collect();
         let held = self.heard.read(cx).held();
-        strip::bar(ledger)
+        strip::bar(tokens)
             .id(SharedString::from(format!("dock-{}-tabs", self.name())))
             .role(Role::TabList)
             .test_support()
             .children(tabs)
             .child(div().flex_1())
-            .child(self.menu_button(shown, docks, held, ledger, cx))
+            .child(self.menu_button(shown, docks, held, tokens, cx))
     }
 
     /// A single panel's head: its name, which drags it, and its dock button.
     /// The console has none: its own strip is its head, with the dock menu in it.
-    fn head(&self, shown: &Panel, title: &str, docks: &DocksPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn head(&self, shown: &Panel, title: &str, docks: &DocksPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let stage = present_of(docks, shown).is_some_and(|present| present.stage);
         let (panel, held_title) = (shown.clone(), title.to_owned());
         let held = self.heard.read(cx).held();
-        strip::bar(ledger)
+        strip::bar(tokens)
             .id(SharedString::from(format!("dock-{}-head", self.name())))
             .test_support()
-            .pl(px(sp::S12))
-            .typed(ty::SMALL)
-            .weighted(weight::MEDIUM)
-            .text_color(ledger.muted)
+            .pl(px(tokens.sp_12))
+            .typed(tokens.type_small)
+            .weighted(tokens.weight_medium)
+            .text_color(tokens.fg_muted)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -213,7 +212,7 @@ impl DockView {
                 }),
             )
             .child(div().flex_1().truncate().child(title.to_owned()))
-            .child(self.menu_button(shown, docks, held, ledger, cx))
+            .child(self.menu_button(shown, docks, held, tokens, cx))
     }
 
     /// The grab zone along the edge the dock is sized by, with the page's
@@ -223,13 +222,13 @@ impl DockView {
     /// The page's zone is 24px wide about the hairline; here it is the 12px
     /// inside the dock's edge, since the stage beside it is drawn over what
     /// reaches past.
-    fn sash(&self, held: bool, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
-        let (accent, dock) = (ledger.accent, self.dock);
+    fn sash(&self, held: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let (accent, dock) = (tokens.accent, self.dock);
         let name = SharedString::from(format!("dock-{}-sash", self.name()));
-        let (across, along) = (px(sp::S4), px(sp::S32));
+        let (across, along) = (px(tokens.sp_4), px(tokens.sp_32));
         let grip = div()
             .absolute()
-            .rounded(px(radius::PILL))
+            .rounded(px(tokens.r_pill))
             .bg(accent)
             .opacity(if held { 1.0 } else { 0.0 })
             .group_hover(name.clone(), |style| style.opacity(1.0));
@@ -260,7 +259,7 @@ impl DockView {
                 }),
             )
             .child(grip);
-        let reach = px(sp::S12);
+        let reach = px(tokens.sp_12);
         match self.dock {
             Dock::Left => zone.top_0().bottom_0().right_0().w(reach).cursor_col_resize(),
             Dock::Right => zone.top_0().bottom_0().left_0().w(reach).cursor_col_resize(),
@@ -288,7 +287,7 @@ fn present_of(docks: &DocksPage, panel: &Panel) -> Option<PresentPanel> {
 
 impl Render for DockView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let (docks, held) = {
             let heard = self.heard.read(cx);
             (heard.docks.clone(), heard.held())
@@ -310,17 +309,17 @@ impl Render for DockView {
             // It gives way to the stage's floor (`work`), as the page's
             // `max-width: calc(100% - var(--dock-floor))` caps it.
             .flex_shrink(1.0)
-            .bg(ledger.background)
-            .border_color(ledger.line)
-            .when(held, |dock| dock.opacity(0.5));
+            .bg(tokens.bg_sunken)
+            .border_color(tokens.line)
+            .when(held, |dock| dock.opacity(tokens.opacity_held));
         let root = match self.dock {
             Dock::Left => root.w(size).min_w_0().h_full().border_r_1(),
             Dock::Right => root.w(size).min_w_0().h_full().border_l_1(),
             Dock::Bottom => root.h(size).min_h_0().w_full().border_t_1(),
         };
-        let strip = (page.tabs.len() > 1).then(|| self.strip(&page, &shown, &docks, &ledger, cx).into_any_element());
+        let strip = (page.tabs.len() > 1).then(|| self.strip(&page, &shown, &docks, &tokens, cx).into_any_element());
         let head = (page.tabs.len() <= 1 && shown != Panel::Console)
-            .then(|| self.head(&shown, &title, &docks, &ledger, cx).into_any_element());
+            .then(|| self.head(&shown, &title, &docks, &tokens, cx).into_any_element());
         root.children(strip)
             .children(head)
             .child(
@@ -340,7 +339,7 @@ impl Render for DockView {
                         panel.on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                                if event.position.y - this.panel.get().origin.y < px(size::STRIP_H) {
+                                if event.position.y - this.panel.get().origin.y < px(tokens.strip_h) {
                                     let held = Held::Panel { panel: carried.clone(), title: title.clone(), stage, click: false };
                                     this.press(event.position, held, cx);
                                 }
@@ -350,10 +349,10 @@ impl Render for DockView {
                     .child(if shown == Panel::Console {
                         self.console.clone().into_any_element()
                     } else {
-                        panel::body(title, &ledger).into_any_element()
+                        panel::body(title, &tokens).into_any_element()
                     }),
             )
-            .child(self.sash(sizing, &ledger, cx))
+            .child(self.sash(sizing, &tokens, cx))
             .into_any_element()
     }
 }

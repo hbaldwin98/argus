@@ -9,8 +9,8 @@
 
 use std::time::Duration;
 
-use argus_gpui::theme::Ledger;
-use argus_gpui::window::{self, HEADER_HEIGHT};
+use argus_gpui::theme::Tokens;
+use argus_gpui::window;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::component::{h_flex, v_flex, Icon, IconName, Selectable as _, Sizable as _};
@@ -110,7 +110,7 @@ mod dwm {
     }
 }
 
-const LINE_RGB: u32 = 0x23252a;
+const LINE_RGB: u32 = argus_gpui::theme::ledger::THEME.palette.surface0.rgb;
 
 struct Stage {
     appearance: WindowBackgroundAppearance,
@@ -185,21 +185,21 @@ fn control(
     id: &'static str,
     icon: IconName,
     area: WindowControlArea,
-    ledger: Ledger,
+    tokens: Tokens,
 ) -> impl IntoElement {
     let (hover_bg, hover_fg) = match area {
-        WindowControlArea::Close => (ledger.danger, ledger.background),
-        _ => (ledger.selected, ledger.foreground),
+        WindowControlArea::Close => (tokens.danger, tokens.bg_sunken),
+        _ => (tokens.bg_selected, tokens.fg),
     };
     div()
         .id(id)
         .flex()
         .items_center()
         .justify_center()
-        .w(HEADER_HEIGHT + px(10.0))
+        .w(px(tokens.header_h + 10.0))
         .h_full()
         .flex_shrink_0()
-        .text_color(ledger.muted)
+        .text_color(tokens.fg_muted)
         .hover(|style| style.bg(hover_bg).text_color(hover_fg))
         // Windows hit-tests this area as HTMAXBUTTON, HTMINBUTTON or HTCLOSE
         // and performs the click itself, which is what raises the Win11 snap
@@ -218,7 +218,7 @@ fn control(
 impl Render for Stage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_border();
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let alpha = fill_alpha(self.appearance, self.percent);
         let maximize = if window.is_maximized() {
             IconName::WindowRestore
@@ -228,12 +228,12 @@ impl Render for Stage {
 
         let header = h_flex()
             .id("header")
-            .h(HEADER_HEIGHT)
+            .h(px(tokens.header_h))
             .flex_shrink_0()
             .items_center()
-            .bg(surface(ledger.chrome, alpha))
+            .bg(surface(tokens.bg_chrome, alpha))
             .border_b_1()
-            .border_color(ledger.line)
+            .border_color(tokens.line)
             .child(
                 h_flex()
                     .id("drag")
@@ -241,7 +241,7 @@ impl Render for Stage {
                     .h_full()
                     .px_3()
                     .items_center()
-                    .text_color(ledger.faint)
+                    .text_color(tokens.fg_faint)
                     .text_xs()
                     .window_control_area(WindowControlArea::Drag)
                     .when(!cfg!(windows), |this| {
@@ -255,9 +255,9 @@ impl Render for Stage {
                         self.percent
                     ))),
             )
-            .child(control("minimize", IconName::WindowMinimize, WindowControlArea::Min, ledger))
-            .child(control("maximize", maximize, WindowControlArea::Max, ledger))
-            .child(control("close", IconName::WindowClose, WindowControlArea::Close, ledger));
+            .child(control("minimize", IconName::WindowMinimize, WindowControlArea::Min, tokens))
+            .child(control("maximize", maximize, WindowControlArea::Max, tokens))
+            .child(control("close", IconName::WindowClose, WindowControlArea::Close, tokens));
 
         let buttons = h_flex().gap_2().children(APPEARANCES.iter().map(|&(name, appearance)| {
             Button::new(name)
@@ -271,9 +271,9 @@ impl Render for Stage {
         // whether the alpha stacks as it does in the webview.
         let swatches = h_flex().gap_3().children(
             [
-                ("background", ledger.background),
-                ("raised", ledger.raised),
-                ("selected", ledger.selected),
+                ("background", tokens.bg_sunken),
+                ("raised", tokens.bg_surface),
+                ("selected", tokens.bg_selected),
             ]
             .map(|(name, color)| {
                 div()
@@ -282,19 +282,19 @@ impl Render for Stage {
                     .p_2()
                     .bg(surface(color, alpha))
                     .border_1()
-                    .border_color(ledger.line_strong)
+                    .border_color(tokens.line_strong)
                     .text_xs()
-                    .text_color(ledger.muted)
+                    .text_color(tokens.fg_muted)
                     .child(name)
             }),
         );
 
-        let note = |text: &'static str| div().text_xs().text_color(ledger.faint).child(text);
+        let note = |text: &'static str| div().text_xs().text_color(tokens.fg_faint).child(text);
 
         v_flex()
             .size_full()
-            .bg(surface(ledger.background, alpha))
-            .text_color(ledger.foreground)
+            .bg(surface(tokens.bg_sunken, alpha))
+            .text_color(tokens.fg)
             .child(header)
             .child(
                 v_flex()
@@ -363,10 +363,10 @@ mod tests {
 
     #[test]
     fn a_surface_keeps_its_colour_and_takes_only_the_alpha() {
-        let ledger = Ledger::new();
-        let faded = surface(ledger.chrome, 0.5);
+        let tokens = argus_gpui::theme::ledger::tokens();
+        let faded = surface(tokens.bg_chrome, 0.5);
         assert_eq!(faded.a, 0.5);
-        assert_eq!((faded.h, faded.s, faded.l), (ledger.chrome.h, ledger.chrome.s, ledger.chrome.l));
+        assert_eq!((faded.h, faded.s, faded.l), (tokens.bg_chrome.h, tokens.bg_chrome.s, tokens.bg_chrome.l));
     }
 
     #[test]

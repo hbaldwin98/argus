@@ -40,8 +40,7 @@ use crate::icons::Glyph;
 use crate::keys::caps;
 use crate::panes::terminal::Terminal;
 use crate::style::Typed as _;
-use crate::theme::Ledger;
-use crate::tokens::{size, sp, ty, weight};
+use crate::theme::Tokens;
 
 use strip::{Does, Offer};
 
@@ -112,14 +111,14 @@ impl ConsoleView {
         }
     }
 
-    fn tab(&self, tab: &ConsoleTab, page: &ConsolePage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn tab(&self, tab: &ConsoleTab, page: &ConsolePage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = tab.pane;
         let offers = strip::tab_offers(tab, false, &page.tabs);
         let (caller, heard) = (self.caller.clone(), self.heard.clone());
-        let ledger = *ledger;
+        let tokens = *tokens;
         let status = tab.status;
         let title = SharedString::from(tab.title.clone());
-        chrome_strip::tab(SharedString::from(format!("console-tab-{pane}")), tab.on, true, title.clone(), &ledger)
+        chrome_strip::tab(SharedString::from(format!("console-tab-{pane}")), tab.on, true, title.clone(), &tokens)
             // The press is the tab's alone, as the page's `closesOnMiddle`
             // keeps it from autoscrolling or reaching what is under it.
             .on_mouse_down(MouseButton::Middle, |_, window, cx| {
@@ -142,7 +141,7 @@ impl ConsoleView {
                     .aria_label(title.clone())
                     .min_w_0()
                     .h_full()
-                    .gap(px(sp::S6))
+                    .gap(px(tokens.sp_6))
                     .items_center()
                     .cursor_pointer()
                     .tooltip(move |window, cx| Tooltip::new(format!("shell, {status}")).build(window, cx))
@@ -151,19 +150,19 @@ impl ConsoleView {
                     .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Select { pane }, cx)))
                     .child(chrome_strip::title(title.clone()))
                     .when(strip::wears_dot(status), |pick| {
-                        pick.child(dot(format!("console-tab-dot-{pane}"), status, &ledger))
+                        pick.child(dot(format!("console-tab-dot-{pane}"), status, &tokens))
                     }),
             )
             .child(
-                chrome_strip::close_x(SharedString::from(format!("console-tab-close-{pane}")), format!("Close {}", tab.title), &ledger)
+                chrome_strip::close_x(SharedString::from(format!("console-tab-close-{pane}")), format!("Close {}", tab.title), &tokens)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Close { pane }, cx))),
             )
-            .context_menu(move |menu, _, cx| build(menu, &offers, &caller, &heard, ledger, cx))
+            .context_menu(move |menu, _, cx| build(menu, &offers, &caller, &heard, tokens, cx))
     }
 
-    fn head(&self, page: &ConsolePage, docks: &DocksPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
-        let tabs: Vec<_> = page.tabs.iter().map(|tab| self.tab(tab, page, ledger, cx).into_any_element()).collect();
+    fn head(&self, page: &ConsolePage, docks: &DocksPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let tabs: Vec<_> = page.tabs.iter().map(|tab| self.tab(tab, page, tokens, cx).into_any_element()).collect();
         let (offers, hide) = {
             let keymap = &self.heard.read(cx).keymap;
             (
@@ -171,25 +170,25 @@ impl ConsoleView {
                 caps::titled("Hide the console", keymap, Action::ToggleConsole, Place::Anywhere),
             )
         };
-        let (caller, heard, ledger_copy) = (self.caller.clone(), self.heard.clone(), *ledger);
-        chrome_strip::bar(ledger)
+        let (caller, heard, ledger_copy) = (self.caller.clone(), self.heard.clone(), *tokens);
+        chrome_strip::bar(tokens)
             .id("console-head")
             .test_support()
             // `.chead`: a little more room before the first tab.
-            .pl(px(sp::S12))
+            .pl(px(tokens.sp_12))
             .child(
                 h_flex()
                     .id("console-tabs")
                     .role(Role::TabList)
                     .min_w_0()
-                    .ml(px(sp::S4))
-                    .gap(px(sp::S4))
+                    .ml(px(tokens.sp_4))
+                    .gap(px(tokens.sp_4))
                     .overflow_hidden()
                     .children(tabs),
             )
             .when(page.can_spawn, |head| {
                 head.child(keep(
-                    chrome_strip::menu_button("console-new", Glyph::Plus, 14.0, ledger, cx)
+                    chrome_strip::menu_button("console-new", Glyph::Plus, 14.0, tokens, cx)
                         .tooltip("New console")
                         .on_click(cx.listener(|this, _, _, cx| this.gesture(ConsoleGesture::Spawn, cx))),
                 ))
@@ -198,7 +197,7 @@ impl ConsoleView {
             .child(
                 // The kit's button has no accessible label of its own, so the wrapper carries it.
                 div().id("console-menu-label").role(Role::Button).test_support().aria_label("Console menu").child(keep(
-                    chrome_strip::menu_button("console-menu", Glyph::More, 14.0, ledger, cx)
+                    chrome_strip::menu_button("console-menu", Glyph::More, 14.0, tokens, cx)
                         .tooltip("Split, move, fill the window")
                         .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, cx| build(menu, &offers, &caller, &heard, ledger_copy, cx)),
                 )),
@@ -206,7 +205,7 @@ impl ConsoleView {
             .child(
                 // The tooltip's words are the button's name too, which the kit's button lacks.
                 div().id("console-hide-label").role(Role::Button).test_support().aria_label(hide.clone()).child(keep(
-                    chrome_strip::menu_button("console-hide", Glyph::Close, 12.0, ledger, cx)
+                    chrome_strip::menu_button("console-hide", Glyph::Close, 12.0, tokens, cx)
                         .tooltip(hide)
                         .on_click(cx.listener(|this, _, _, cx| this.gesture(ConsoleGesture::Hide, cx))),
                 )),
@@ -217,13 +216,13 @@ impl ConsoleView {
     /// button that gives that side the keys, and a close that takes it out of
     /// the split and leaves its console a tab. The side with the keys is marked
     /// by the selected colour and an accent edge under it (`.thead.on`).
-    fn side_head(&self, tab: &ConsoleTab, page: &ConsolePage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn side_head(&self, tab: &ConsoleTab, page: &ConsolePage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = tab.pane;
         let typing = page.typing == Some(pane);
         let offers = strip::tab_offers(tab, true, &page.tabs);
-        let (caller, heard, ledger) = (self.caller.clone(), self.heard.clone(), *ledger);
+        let (caller, heard, tokens) = (self.caller.clone(), self.heard.clone(), *tokens);
         let status = tab.status;
-        let (fill, foreground, muted, selected) = (ledger.fill(), ledger.foreground, ledger.muted, ledger.selected);
+        let (fill, foreground, muted, selected) = (tokens.fill, tokens.fg, tokens.fg_muted, tokens.bg_selected);
         let title = SharedString::from(tab.title.clone());
         let tip = if typing { tab.title.clone() } else { format!("Type in {}", tab.title) };
         h_flex()
@@ -232,18 +231,18 @@ impl ConsoleView {
             .aria_selected(typing)
             .relative()
             .flex_shrink_0()
-            .h(px(size::PANE_HEAD_H))
+            .h(px(tokens.pane_head_h))
             .items_center()
-            .bg(if typing { selected } else { ledger.chrome })
+            .bg(if typing { selected } else { tokens.bg_chrome })
             .border_b_1()
-            .border_color(ledger.line)
-            .typed(ty::SMALL)
-            .weighted(weight::MEDIUM)
+            .border_color(tokens.line)
+            .typed(tokens.type_small)
+            .weighted(tokens.weight_medium)
             .text_color(if typing { foreground } else { muted })
             // `.thead:not(.on):hover`: the fill and the title lit; `.thead.on:hover`: the
             // selected colour with 15% of the fill over it.
             .when(!typing, |head| head.hover(move |style| style.bg(fill).text_color(foreground)))
-            .when(typing, |head| head.hover(move |style| style.bg(selected.blend(fill.opacity(0.15)))))
+            .when(typing, |head| head.hover(move |style| style.bg(selected.blend(fill.opacity(tokens.share_press_icon)))))
             .child(
                 h_flex()
                     .id(SharedString::from(format!("console-side-pick-{pane}")))
@@ -253,36 +252,36 @@ impl ConsoleView {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .px(px(sp::S12))
-                    .gap(px(sp::S6))
+                    .px(px(tokens.sp_12))
+                    .gap(px(tokens.sp_6))
                     .items_center()
                     .cursor_pointer()
                     .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
                     .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Select { pane }, cx)))
                     .child(chrome_strip::title(title))
                     .when(strip::wears_dot(status), |pick| {
-                        pick.child(dot(format!("console-side-dot-{pane}"), status, &ledger))
+                        pick.child(dot(format!("console-side-dot-{pane}"), status, &tokens))
                     }),
             )
             .child(
                 chrome_strip::close_x(
                     SharedString::from(format!("console-side-close-{pane}")),
                     format!("Take {} out of the split", tab.title),
-                    &ledger,
+                    &tokens,
                 )
                 .tooltip(|window, cx| Tooltip::new("Take out of the split").build(window, cx))
                 .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::CloseSide { pane }, cx))),
             )
-            .when(typing, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).bg(ledger.accent)))
-            .context_menu(move |menu, _, cx| build(menu, &offers, &caller, &heard, ledger, cx))
+            .when(typing, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).bg(tokens.accent)))
+            .context_menu(move |menu, _, cx| build(menu, &offers, &caller, &heard, tokens, cx))
     }
 
     /// One side of the console: its screen, under its header while split.
-    fn side(&self, id: &'static str, pane: u64, screen: Entity<Terminal>, page: &ConsolePage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn side(&self, id: &'static str, pane: u64, screen: Entity<Terminal>, page: &ConsolePage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let head = page
             .beside
             .and_then(|_| page.tabs.iter().find(|tab| tab.pane == pane))
-            .map(|tab| self.side_head(tab, page, ledger, cx).into_any_element());
+            .map(|tab| self.side_head(tab, page, tokens, cx).into_any_element());
         v_flex()
             .id(id)
             .test_support()
@@ -294,7 +293,7 @@ impl ConsoleView {
     }
 
     /// With no console on screen: what to press to get one.
-    fn empty(&self, page: &ConsolePage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn empty(&self, page: &ConsolePage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let chosen = page.tabs.iter().find(|tab| tab.on).or(page.tabs.first()).map(|tab| tab.pane);
         let body = v_flex().id("console-empty").test_support().flex_1().min_h_0().items_center().justify_center().gap_2();
         match chosen {
@@ -302,7 +301,7 @@ impl ConsoleView {
                 .child(
                     div()
                         .text_sm()
-                        .text_color(ledger.muted)
+                        .text_color(tokens.fg_muted)
                         .child("No consoles yet: a shell in your home directory, in no checkout."),
                 )
                 .when(page.can_spawn, |body| {
@@ -322,8 +321,8 @@ impl ConsoleView {
 }
 
 /// The dot a console wears, named so a reader can find it.
-fn dot(id: String, status: &str, ledger: &Ledger) -> impl IntoElement {
-    div().id(SharedString::from(id.clone())).test_support().flex_shrink_0().child(status_dot(id, status, ledger))
+fn dot(id: String, status: &str, tokens: &Tokens) -> impl IntoElement {
+    div().id(SharedString::from(id.clone())).test_support().flex_shrink_0().child(status_dot(id, status, tokens))
 }
 
 /// A strip button that keeps the press: the kit's button does not stop the one the dock reads as a drag.
@@ -332,15 +331,15 @@ fn keep(button: impl IntoElement) -> gpui_kit::Div {
 }
 
 /// The keys an item names, each press a cap, the alternatives apart by a slash.
-fn keycaps(keys: &[Vec<String>], ledger: &Ledger) -> impl IntoElement {
-    let mut caps = h_flex().gap_1().items_center().text_xs().text_color(ledger.muted);
-    let mono = SharedString::from(crate::fonts::MONO);
+fn keycaps(keys: &[Vec<String>], tokens: &Tokens) -> impl IntoElement {
+    let mut caps = h_flex().gap_1().items_center().text_xs().text_color(tokens.fg_muted);
+    let mono = SharedString::from(tokens.font_mono);
     for (n, presses) in keys.iter().enumerate() {
         if n > 0 {
             caps = caps.child("/");
         }
         for press in presses {
-            caps = caps.child(keycap(press.clone(), mono.clone(), ledger));
+            caps = caps.child(keycap(press.clone(), mono.clone(), tokens));
         }
     }
     caps
@@ -351,7 +350,7 @@ fn keycaps(keys: &[Vec<String>], ledger: &Ledger) -> impl IntoElement {
 /// the dialog gives them back to what had them before the menu. While the
 /// daemon is gone every item is disabled, and a click that still arrives
 /// sends nothing.
-fn build(mut menu: PopupMenu, offers: &[Offer], caller: &Caller, heard: &Entity<Heard>, ledger: Ledger, cx: &App) -> PopupMenu {
+fn build(mut menu: PopupMenu, offers: &[Offer], caller: &Caller, heard: &Entity<Heard>, tokens: Tokens, cx: &App) -> PopupMenu {
     let held = heard.read(cx).held();
     for offer in offers {
         menu = match offer {
@@ -362,7 +361,7 @@ fn build(mut menu: PopupMenu, offers: &[Offer], caller: &Caller, heard: &Entity<
                 let label = SharedString::from(label.clone());
                 let item = if *danger || !keys.is_empty() {
                     let (shown, keys) = (label.clone(), keys.clone());
-                    let colour = if *danger { ledger.danger } else { ledger.foreground };
+                    let colour = if *danger { tokens.danger } else { tokens.fg };
                     PopupMenuItem::element(move |_, _| {
                         h_flex()
                             .w_full()
@@ -370,7 +369,7 @@ fn build(mut menu: PopupMenu, offers: &[Offer], caller: &Caller, heard: &Entity<
                             .justify_between()
                             .text_color(colour)
                             .child(shown.clone())
-                            .child(keycaps(&keys, &ledger))
+                            .child(keycaps(&keys, &tokens))
                     })
                 } else {
                     PopupMenuItem::new(label)
@@ -395,17 +394,17 @@ fn build(mut menu: PopupMenu, offers: &[Offer], caller: &Caller, heard: &Entity<
 
 impl Render for ConsoleView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let (page, docks, held) = {
             let heard = self.heard.read(cx);
             (heard.console.clone(), heard.docks.clone(), heard.held())
         };
-        let head = self.head(&page, &docks, &ledger, cx);
+        let head = self.head(&page, &docks, &tokens, cx);
         let body = match (page.showing, page.beside) {
             (Some(first), second) => {
-                let first = self.side("console-first", first, self.first.clone(), &page, &ledger, cx);
+                let first = self.side("console-first", first, self.first.clone(), &page, &tokens, cx);
                 let second = second.map(|pane| {
-                    self.side("console-second", pane, self.second.clone(), &page, &ledger, cx)
+                    self.side("console-second", pane, self.second.clone(), &page, &tokens, cx)
                 });
                 h_flex()
                     .id("console-sides")
@@ -413,11 +412,11 @@ impl Render for ConsoleView {
                     .min_h_0()
                     .child(first)
                     .when_some(second, |sides, second| {
-                        sides.child(div().w(px(1.0)).h_full().flex_shrink_0().bg(ledger.line)).child(second)
+                        sides.child(div().w(px(1.0)).h_full().flex_shrink_0().bg(tokens.line)).child(second)
                     })
                     .into_any_element()
             }
-            (None, _) => self.empty(&page, &ledger, cx).into_any_element(),
+            (None, _) => self.empty(&page, &tokens, cx).into_any_element(),
         };
         v_flex()
             .id("console")
@@ -425,8 +424,8 @@ impl Render for ConsoleView {
             .aria_label("Console")
             .size_full()
             .min_h_0()
-            .bg(ledger.background)
-            .when(held, |console| console.opacity(0.5))
+            .bg(tokens.bg_sunken)
+            .when(held, |console| console.opacity(tokens.opacity_held))
             .child(head)
             .child(body)
     }

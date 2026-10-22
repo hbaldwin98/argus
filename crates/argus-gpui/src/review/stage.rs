@@ -24,7 +24,6 @@ use crate::chrome::icon_button::icon_button;
 use crate::connection::caller::Caller;
 use crate::icons::Glyph;
 use crate::style::Typed as _;
-use crate::tokens::{fs, radius, size, sp, ty};
 use crate::connection::heard::Heard;
 use crate::keys::page_key;
 use crate::review::changes::Changes;
@@ -33,7 +32,7 @@ use crate::review::history::History;
 use crate::review::entry::{checkout_here, Tab};
 use crate::review::keys::{self, Press};
 use crate::review::segment;
-use crate::theme::Ledger;
+use crate::theme::Tokens;
 
 pub struct GitStage {
     heard: Entity<Heard>,
@@ -209,10 +208,10 @@ impl GitStage {
     }
 
     fn tab(&self, id: &'static str, label: &'static str, count: Option<usize>, tab: Tab, on: bool, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
-        segment::pill(id, Role::Tab, on, &ledger)
+        let tokens = *Tokens::global(cx);
+        segment::pill(id, Role::Tab, on, &tokens)
             .child(label)
-            .when_some(count, |pill, n| pill.child(segment::count(n.to_string(), &ledger)))
+            .when_some(count, |pill, n| pill.child(segment::count(n.to_string(), &tokens)))
             .on_click(cx.listener(move |this, _, window, cx| {
                 // A pill takes focus when clicked, and the tab's keys are heard
                 // only on the stage itself.
@@ -223,7 +222,7 @@ impl GitStage {
 
     /// The strip above the tab: the branch, the tabs, the files' count and the
     /// two buttons.
-    fn strip(&self, tab: Tab, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn strip(&self, tab: Tab, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let heard = self.heard.read(cx);
         let (review, history) = (heard.review.clone(), heard.history.clone());
         let branch = match tab {
@@ -237,12 +236,12 @@ impl GitStage {
         h_flex()
             .id("git-strip")
             .flex_shrink_0()
-            .h(px(sp::S44))
-            .px(px(sp::S24))
-            .gap(px(sp::S12))
+            .h(px(tokens.sp_44))
+            .px(px(tokens.sp_24))
+            .gap(px(tokens.sp_12))
             .items_center()
             .border_b_1()
-            .border_color(ledger.line)
+            .border_color(tokens.line)
             // `.chip-branch`: the branch once, as a pill, in the reference colour.
             .when_some(branch, |strip, (branch, name)| {
                 strip.child(
@@ -252,28 +251,28 @@ impl GitStage {
                         .aria_label(SharedString::from(name.clone()))
                         .tooltip(move |window, cx| Tooltip::new(name.clone()).build(window, cx))
                         .flex_shrink_0()
-                        .h(px(size::ICON_BTN))
-                        .px(px(sp::S8))
-                        .gap(px(sp::S6))
+                        .h(px(tokens.icon_btn))
+                        .px(px(tokens.sp_8))
+                        .gap(px(tokens.sp_6))
                         .items_center()
-                        .rounded(px(radius::PILL))
+                        .rounded(px(tokens.r_pill))
                         .border_1()
-                        .border_color(ledger.line_strong)
-                        .text_color(ledger.link)
+                        .border_color(tokens.line_strong)
+                        .text_color(tokens.ref_)
                         .font_family(mono)
-                        .text_size(px(fs::MD))
+                        .text_size(px(tokens.fs_md))
                         .child(Glyph::Branch.at(14.0))
                         .child(SharedString::from(branch)),
                 )
             })
             .child(
-                segment::track("git-tabs", "Git view", Role::TabList, ledger)
+                segment::track("git-tabs", "Git view", Role::TabList, tokens)
                     .child(self.tab("git-tab-changes", "Changes", files, Tab::Changes, changes_on, cx))
                     .child(self.tab("git-tab-history", "History", None, Tab::History, !changes_on, cx)),
             )
             // `.meta`: what the history lists, beside the tabs as the page's head says it.
             .when(!changes_on && history.is_some(), |strip| {
-                strip.child(div().typed(ty::SMALL).text_color(ledger.muted).child("newest 100 on HEAD"))
+                strip.child(div().typed(tokens.type_small).text_color(tokens.fg_muted).child("newest 100 on HEAD"))
             })
             .child(div().flex_1())
             .when(!changes_on && history.is_some(), |strip| strip.child(self.filter.clone()))
@@ -289,17 +288,17 @@ impl GitStage {
                             page.added,
                             page.removed
                         )))
-                        .gap(px(sp::S4))
-                        .typed(ty::SMALL)
-                        .text_color(ledger.muted)
+                        .gap(px(tokens.sp_4))
+                        .typed(tokens.type_small)
+                        .text_color(tokens.fg_muted)
                         .child(SharedString::from(format!("{} file{plural} \u{b7}", page.files.len())))
-                        .child(div().text_color(ledger.success).child(SharedString::from(format!("+{}", page.added))))
-                        .child(div().text_color(ledger.danger).child(SharedString::from(format!("\u{2212}{}", page.removed)))),
+                        .child(div().text_color(tokens.ok).child(SharedString::from(format!("+{}", page.added))))
+                        .child(div().text_color(tokens.danger).child(SharedString::from(format!("\u{2212}{}", page.removed)))),
                 )
             })
             .when(changes_on && review.is_some(), |strip| {
                 strip.child(
-                    icon_button("review-refresh", "Refresh", false, ledger)
+                    icon_button("review-refresh", "Refresh", false, tokens)
                         .tooltip(|window, cx| Tooltip::new("Refresh").build(window, cx))
                         .child(Glyph::Refresh.at(14.0))
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -311,7 +310,7 @@ impl GitStage {
                 )
             })
             .child(
-                icon_button("git-close", close_label, false, ledger)
+                icon_button("git-close", close_label, false, tokens)
                     .tooltip(move |window, cx| Tooltip::new(close_label).build(window, cx))
                     .child(Glyph::Close.at(14.0))
                     .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
@@ -319,7 +318,7 @@ impl GitStage {
     }
 
     /// A quiet line standing where a body is not drawn.
-    fn said(id: &'static str, words: &'static str, ledger: &Ledger) -> gpui_kit::AnyElement {
+    fn said(id: &'static str, words: &'static str, tokens: &Tokens) -> gpui_kit::AnyElement {
         div()
             .id(id)
             .test_support()
@@ -328,7 +327,7 @@ impl GitStage {
             .flex()
             .items_center()
             .justify_center()
-            .text_color(ledger.faint)
+            .text_color(tokens.fg_faint)
             .child(words)
             .into_any_element()
     }
@@ -336,7 +335,7 @@ impl GitStage {
 
 impl Render for GitStage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let (tab, reviewing, historical, held) = {
             let heard = self.heard.read(cx);
             (heard.git.tab(heard.open()), heard.review.is_some(), heard.history.is_some(), heard.held())
@@ -346,7 +345,7 @@ impl Render for GitStage {
         let body = match tab {
             Tab::Changes if reviewing => self.changes.clone().into_any_element(),
             Tab::History if historical => self.history.clone().into_any_element(),
-            _ => Self::said("git-pick", "Pick a checkout in the sidebar, then press Git.", &ledger),
+            _ => Self::said("git-pick", "Pick a checkout in the sidebar, then press Git.", &tokens),
         };
         v_flex()
             .id("git")
@@ -357,10 +356,10 @@ impl Render for GitStage {
             .size_full()
             // The dialog's surface: the files and the commits sit on it, the diff
             // is sunk below it.
-            .bg(ledger.raised)
-            .text_color(ledger.muted)
+            .bg(tokens.bg_surface)
+            .text_color(tokens.fg_muted)
             .when(held,|stage| stage.opacity(0.5))
-            .child(self.strip(tab, &ledger, cx))
+            .child(self.strip(tab, &tokens, cx))
             .child(div().id("git-body").flex_1().min_h_0().child(body))
     }
 }

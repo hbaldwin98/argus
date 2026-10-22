@@ -7,7 +7,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use argus_gpui::fonts::{MONO, SYMBOLS, UI};
+use argus_gpui::fonts::SYMBOLS;
+use argus_gpui::theme::ledger;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{font, px};
 
@@ -30,7 +31,9 @@ fn check(cx: &gpui_kit::App) -> Result<(), String> {
     // An unknown family resolves to a substitute, so a face counts as found
     // only if it is listed and does not resolve to that substitute.
     let substitute = text.resolve_font(&font("No Such Family 7f3a"));
-    for family in [UI, MONO, SYMBOLS] {
+    let tokens = ledger::tokens();
+    let (ui, mono) = (tokens.font_ui, tokens.font_mono);
+    for family in [ui, mono, SYMBOLS] {
         if !names.iter().any(|name| name == family) {
             return Err(format!("{family} is not registered"));
         }
@@ -39,7 +42,7 @@ fn check(cx: &gpui_kit::App) -> Result<(), String> {
         }
     }
     let theme = cx.theme();
-    if theme.font_family != UI || theme.mono_font_family != MONO {
+    if theme.font_family != ui || theme.mono_font_family != mono {
         return Err(format!("the theme names {} and {}", theme.font_family, theme.mono_font_family));
     }
     if theme.font_size != px(13.0) || theme.radius != px(6.0) || theme.radius_lg != px(12.0) {

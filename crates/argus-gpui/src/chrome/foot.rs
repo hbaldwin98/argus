@@ -18,8 +18,7 @@ use crate::connection::heard::Link;
 use crate::chrome::icon_button::icon_button;
 use crate::icons::Glyph;
 use crate::style::Typed as _;
-use crate::theme::Ledger;
-use crate::tokens::{fs, size, sp, ty, weight};
+use crate::theme::Tokens;
 
 /// What the status row shows (SHELL-FOOT-3): the dot says connecting and
 /// stopped on its own, so only a daemon that was there and is being reached
@@ -60,20 +59,20 @@ pub fn foot(
     console: Console,
     caller: &Caller,
     held: bool,
-    ledger: &Ledger,
+    tokens: &Tokens,
 ) -> impl IntoElement {
     let connected = matches!(link, Link::Connected { .. });
     let mut rows = v_flex()
         .flex_shrink_0()
-        .gap(px(sp::S4))
-        .px(px(sp::S16))
-        .py(px(sp::S8))
+        .gap(px(tokens.sp_4))
+        .px(px(tokens.sp_16))
+        .py(px(tokens.sp_8))
         .border_t_1()
-        .border_color(ledger.line)
-        .typed(ty::SMALL)
-        .text_color(ledger.muted);
+        .border_color(tokens.line)
+        .typed(tokens.type_small)
+        .text_color(tokens.fg_muted);
     if connected && (rail.needs_you > 0 || rail.working > 0) {
-        let mut tallies = h_flex().min_h(px(size::CONTROL_H_SM)).gap(px(sp::S8)).items_center();
+        let mut tallies = h_flex().min_h(px(tokens.control_h_sm)).gap(px(tokens.sp_8)).items_center();
         if rail.needs_you > 0 {
             let text = format!("▲ {} need you", rail.needs_you);
             tallies = tallies.child(
@@ -82,8 +81,8 @@ pub fn foot(
                     .role(Role::Status)
                     .test_support()
                     .aria_label(text.clone())
-                    .weighted(weight::SEMIBOLD)
-                    .text_color(ledger.warning)
+                    .weighted(tokens.weight_semibold)
+                    .text_color(tokens.attention)
                     .child(text),
             );
         }
@@ -95,7 +94,7 @@ pub fn foot(
                     .role(Role::Status)
                     .test_support()
                     .aria_label(text.clone())
-                    .text_color(ledger.accent)
+                    .text_color(tokens.accent)
                     .child(text),
             );
         }
@@ -108,7 +107,7 @@ pub fn foot(
                 .role(Role::Alert)
                 .test_support()
                 .aria_label(alarm.to_owned())
-                .text_color(ledger.warning)
+                .text_color(tokens.attention)
                 .child(alarm.to_owned()),
         );
     }
@@ -117,36 +116,36 @@ pub fn foot(
     let console_chip = {
         let caller = caller.clone();
         let words = if console.shown { "Hide the console" } else { "Show the console" };
-        icon_button("foot-console", words, console.shown, ledger)
-            .px(px(sp::S8))
+        icon_button("foot-console", words, console.shown, tokens)
+            .px(px(tokens.sp_8))
             .w_auto()
-            .gap(px(sp::S4))
+            .gap(px(tokens.sp_4))
             .on_click(move |_, _, _| {
                 if !held {
                     caller.call(Call::Console { gesture: ConsoleGesture::Toggle });
                 }
             })
-            .child(Glyph::Console.at(size::ICON_SM))
+            .child(Glyph::Console.at(tokens.icon_sm))
             .when(console.count > 0, |chip| {
-                chip.child(div().text_size(px(fs::XS)).child(console.count.to_string()))
+                chip.child(div().text_size(px(tokens.fs_xs)).child(console.count.to_string()))
             })
     };
     let chime_button = {
         let caller = caller.clone();
         let words =
             if chime { "Mute the chime when an agent needs you" } else { "Chime when an agent needs you" };
-        icon_button("foot-chime", words, false, ledger)
+        icon_button("foot-chime", words, false, tokens)
             .on_click(move |_, _, _| {
                 if !held {
                     caller.call(Call::SetChime { on: !chime });
                 }
             })
-            .child(if chime { Glyph::Bell } else { Glyph::BellOff }.at(size::ICON_SM))
+            .child(if chime { Glyph::Bell } else { Glyph::BellOff }.at(tokens.icon_sm))
     };
     rows.child(
         h_flex()
-            .min_h(px(size::CONTROL_H_SM))
-            .gap(px(sp::S8))
+            .min_h(px(tokens.control_h_sm))
+            .gap(px(tokens.sp_8))
             .items_center()
             .child(
                 h_flex()
@@ -156,9 +155,9 @@ pub fn foot(
                     .aria_label(named.clone())
                     .flex_1()
                     .min_w_0()
-                    .gap(px(sp::S8))
+                    .gap(px(tokens.sp_8))
                     .items_center()
-                    .child(dot(link, named, ledger))
+                    .child(dot(link, named, tokens))
                     .child(div().flex_1().min_w_0().truncate().child(said)),
             )
             .child(console_chip)
@@ -168,12 +167,12 @@ pub fn foot(
 
 /// Green while connected, the attention colour while it tries, hollow once
 /// stopped: `.dot`, 8px.
-fn dot(link: &Link, named: String, ledger: &Ledger) -> impl IntoElement {
-    let dot = div().id("foot-dot").test_support().aria_label(named).flex_shrink_0().size(px(size::DOT_LG));
+fn dot(link: &Link, named: String, tokens: &Tokens) -> impl IntoElement {
+    let dot = div().id("foot-dot").test_support().aria_label(named).flex_shrink_0().size(px(tokens.dot_lg));
     match link {
-        Link::Connected { .. } => dot.rounded_full().bg(ledger.success).into_any_element(),
-        Link::Connecting | Link::Reconnecting => dot.rounded_full().bg(ledger.warning).into_any_element(),
-        Link::Stopped => dot.child(Glyph::Ring8.at(size::DOT_LG).text_color(ledger.faint)).into_any_element(),
+        Link::Connected { .. } => dot.rounded_full().bg(tokens.ok).into_any_element(),
+        Link::Connecting | Link::Reconnecting => dot.rounded_full().bg(tokens.attention).into_any_element(),
+        Link::Stopped => dot.child(Glyph::Ring8.at(tokens.dot_lg).text_color(tokens.fg_faint)).into_any_element(),
     }
 }
 

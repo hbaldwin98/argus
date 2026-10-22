@@ -30,10 +30,8 @@ use crate::chrome::keycap::keycap;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::diff::view::GUTTER;
-use crate::fonts;
 use crate::style::Typed as _;
-use crate::theme::Ledger;
-use crate::tokens::{fs, radius, sp, ty, weight};
+use crate::theme::Tokens;
 
 /// The room the box takes among the diff's rows: its card, and the margin
 /// around it. Several agents to choose among are a row of chips of their own
@@ -108,14 +106,14 @@ impl CommentBox {
 
     /// Who it goes to: one agent that is lit is said, not offered; several, or
     /// none lit because the one chosen has gone, are each a chip.
-    fn recipients(&self, page: &CommentPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn recipients(&self, page: &CommentPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let lit = page.recipients.iter().find(|r| Some(r.pane) == page.to);
-        let label = div().typed(ty::SMALL).text_color(ledger.muted).child("Send to");
+        let label = div().typed(tokens.type_small).text_color(tokens.fg_muted).child("Send to");
         // `.glyph`: the diamond that marks an agent, in the accent.
-        let diamond = |ledger: &Ledger| div().flex_shrink_0().text_color(ledger.accent).child("\u{25c6}");
+        let diamond = |tokens: &Tokens| div().flex_shrink_0().text_color(tokens.accent).child("\u{25c6}");
         match lit {
             Some(lit) if page.recipients.len() == 1 => h_flex()
-                .gap(px(sp::S8))
+                .gap(px(tokens.sp_8))
                 .items_center()
                 .child(label)
                 .child(
@@ -123,10 +121,10 @@ impl CommentBox {
                         .id("comment-recipient")
                         .test_support()
                         .aria_label(SharedString::from(lit.title.clone()))
-                        .gap(px(sp::S4))
-                        .text_color(ledger.foreground)
-                        .weighted(weight::SEMIBOLD)
-                        .child(diamond(ledger))
+                        .gap(px(tokens.sp_4))
+                        .text_color(tokens.fg)
+                        .weighted(tokens.weight_semibold)
+                        .child(diamond(tokens))
                         .child(SharedString::from(lit.title.clone())),
                 )
                 .into_any_element(),
@@ -134,14 +132,14 @@ impl CommentBox {
             _ => h_flex()
                 .id("comment-recipients")
                 .flex_wrap()
-                .gap(px(sp::S8))
+                .gap(px(tokens.sp_8))
                 .items_center()
                 .min_w_0()
                 .child(label)
                 .children(page.recipients.iter().map(|recipient| {
                     let pane = recipient.pane;
-                    chip(SharedString::from(format!("comment-recipient-{pane}")), recipient.title.clone(), Some(pane) == page.to, ledger)
-                        .child(diamond(ledger))
+                    chip(SharedString::from(format!("comment-recipient-{pane}")), recipient.title.clone(), Some(pane) == page.to, tokens)
+                        .child(diamond(tokens))
                         .child(SharedString::from(recipient.title.clone()))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.ask(Call::ReviewClick { target: ReviewClick::Recipient { pane } }, cx)
@@ -154,11 +152,11 @@ impl CommentBox {
 
 impl Render for CommentBox {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let Some(page) = self.page.clone() else {
             return div().into_any_element();
         };
-        let mono = SharedString::from(fonts::MONO);
+        let mono = SharedString::from(tokens.font_mono);
         // The kit's secondary key is Cmd on macOS and Ctrl elsewhere; the page
         // says Ctrl, as it cannot tell.
         let chord = if cfg!(target_os = "macos") { "Cmd Enter" } else { "Ctrl Enter" };
@@ -167,15 +165,15 @@ impl Render for CommentBox {
             .id("review-comment")
             .test_support()
             .size_full()
-            .gap(px(sp::S8))
-            .p(px(sp::S12))
-            .rounded(px(radius::MD))
+            .gap(px(tokens.sp_8))
+            .p(px(tokens.sp_12))
+            .rounded(px(tokens.r_md))
             .border_1()
-            .border_color(ledger.accent)
+            .border_color(tokens.accent)
             // The diff under it is mono; the card is the interface face (`font-family: var(--font-ui)`).
-            .font_family(SharedString::from(fonts::UI))
-            .text_size(px(fs::MD))
-            .bg(ledger.raised)
+            .font_family(SharedString::from(tokens.font_ui))
+            .text_size(px(tokens.fs_md))
+            .bg(tokens.bg_surface)
             // Ahead of the textarea's own Enter, which would put a newline in
             // before it said anything was pressed, and ahead of its Escape.
             .capture_action(cx.listener(|this, action: &Enter, _, cx| {
@@ -200,42 +198,42 @@ impl Render for CommentBox {
             }))
             .child(
                 h_flex()
-                    .gap(px(sp::S8))
+                    .gap(px(tokens.sp_8))
                     .items_center()
-                    .child(div().text_color(ledger.accent).weighted(weight::SEMIBOLD).child("Comment"))
+                    .child(div().text_color(tokens.accent).weighted(tokens.weight_semibold).child("Comment"))
                     .child(
                         div()
                             .min_w_0()
                             .truncate()
-                            .typed(ty::SMALL)
-                            .text_color(ledger.muted)
+                            .typed(tokens.type_small)
+                            .text_color(tokens.fg_muted)
                             .child(SharedString::from(page.about.clone())),
                     ),
             )
             .child(Textarea::new(&self.text).w_full().aria_label("Comment"))
-            .when(!said_alone(&page), |card| card.child(self.recipients(&page, &ledger, cx)))
+            .when(!said_alone(&page), |card| card.child(self.recipients(&page, &tokens, cx)))
             .child(
                 h_flex()
-                    .gap(px(sp::S8))
+                    .gap(px(tokens.sp_8))
                     .items_center()
-                    .child(div().flex_1().min_w_0().when(said_alone(&page), |slot| slot.child(self.recipients(&page, &ledger, cx))))
+                    .child(div().flex_1().min_w_0().when(said_alone(&page), |slot| slot.child(self.recipients(&page, &tokens, cx))))
                     .child(
-                        button("comment-cancel", "Cancel", Look::Plain, false, &ledger)
+                        button("comment-cancel", "Cancel", Look::Plain, false, &tokens)
                             .child("Cancel")
                             .on_click(cx.listener(|this, _, _, cx| this.cancel(cx))),
                     )
                     .child(
-                        button("comment-send", "Comment", Look::Primary, false, &ledger)
+                        button("comment-send", "Comment", Look::Primary, false, &tokens)
                             .child("Comment")
                             // `.btn.primary .kbd`: the cap in the on-accent colour, its edge at 45%.
                             .child(
-                                keycap(chord, mono, &ledger)
-                                    .text_color(ledger.background)
-                                    .border_color(ledger.background.opacity(0.45)),
+                                keycap(chord, mono, &tokens)
+                                    .text_color(tokens.fg_on_accent)
+                                    .border_color(tokens.fg_on_accent.opacity(tokens.share_edge)),
                             )
                             .on_click(cx.listener(|this, _, _, cx| this.send(cx))),
                     ),
             );
-        div().size_full().pl(px(GUTTER)).pr(px(sp::S12)).py(px(sp::S8)).child(card).into_any_element()
+        div().size_full().pl(px(GUTTER)).pr(px(tokens.sp_12)).py(px(tokens.sp_8)).child(card).into_any_element()
     }
 }

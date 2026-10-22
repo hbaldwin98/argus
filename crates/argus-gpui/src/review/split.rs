@@ -15,7 +15,7 @@ use gpui_kit::{
 use gpui_kit::TestSupportExt as _;
 
 use crate::pointer::drag::{self, Drag, Dragger, Step};
-use crate::theme::Ledger;
+use crate::theme::Tokens;
 
 /// The grab zone along the column's right edge, as wide as a dock's.
 const SASH: f32 = 6.0;
@@ -85,7 +85,7 @@ impl Dragger for Split {
 
 impl Render for Split {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let accent = Ledger::global(cx).accent;
+        let accent = Tokens::global(cx).accent;
         div()
             .id(self.id)
             .role(Role::Splitter)
@@ -117,7 +117,7 @@ impl Render for Split {
 
 /// The left column at the width `split` holds, with its sash along the right
 /// edge. `id` names the column, for the test that measures it.
-pub fn side(split: &Entity<Split>, id: &'static str, content: impl IntoElement, ledger: &Ledger, cx: &App) -> AnyElement {
+pub fn side(split: &Entity<Split>, id: &'static str, content: impl IntoElement, tokens: &Tokens, cx: &App) -> AnyElement {
     div()
         .id(id)
         .test_support()
@@ -126,7 +126,7 @@ pub fn side(split: &Entity<Split>, id: &'static str, content: impl IntoElement, 
         .h_full()
         .w(px(split.read(cx).width()))
         .border_r_1()
-        .border_color(ledger.line)
+        .border_color(tokens.line)
         .child(content)
         .child(div().absolute().top_0().bottom_0().right_0().w(px(SASH)).child(split.clone()))
         .into_any_element()

@@ -798,7 +798,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `panes/element` | the element that paints a pane's screen: one measured cell, shaped text runs and merged background quads, the cursor, and the room it holds said once per size |
 | `panes/grid` | how many rows and columns a size in pixels holds: whole cells, never fewer than one |
 | `panes/layout` | how the rows a screen holds become runs of same-styled text and rectangles of background, for the cells that fit |
-| `panes/palette` | which colour a packed wire colour is in the terminal's palette (the Ledger's sixteen, the cube and the greys), and which text stays readable on a background a program chose |
+| `panes/palette` | which colour a packed wire colour is in the terminal's palette (the theme's sixteen, the cube and the greys), and which text stays readable on a background a program chose |
 | `panes/screen` | what the window holds of the Workspace pane's screen: every row's segments, the cursor and the parked view, and how a full, partial or resized frame is applied to them |
 | `panes/terminal` | a live pane's screen, the Workspace's on the stage or one of the console's two sides: what it draws of the pane its side shows, who has the keys, the keys it sends as the page does, and the room it reports once it holds still |
 | `pointer` | how the pointer's gestures over the window are told apart and followed |
@@ -819,8 +819,14 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `style` | how a page token lands on an element: its type (weight, size and line height) as one call |
 | `system` | what the GPUI window asks of the machine it runs on |
 | `system/clipboard` | the system clipboard through arboard, as `effects::Clipboard`: text, a picture encoded as a PNG, and the files a file manager copied |
-| `theme` | which colours the Ledger look uses: the palette as `gpui-kit` theme roles with the page's hover and press fills, the roles it lacks (changed, fainter) kept beside it, and the page's type, radii and motion put on the kit's theme |
-| `tokens` | the page's design tokens under Ledger as plain numbers: type scale, weights, spacing, radii, control and row sizes, shadows, focus ring and motion timings, held to the stylesheet's values |
+| `theme` | the one design token space the window draws with: every colour (the palette layer, the sixteen ANSI colours and the semantic roles) and every number (type, spacing, radii, sizes, shadows, focus, motion, faces) under the stylesheet's own names, the active one a global that every view reads |
+| `theme/colour` | what a colour is in a theme's data (`#rrggbb` or `rgba()`) and the two mixes the page's `color-mix` formulas are made of |
+| `theme/define` | what a theme is as data: its base palette, its sixteen ANSI colours and the overrides it lays over `:root`, each named for the variable it sets |
+| `theme/derive` | how a theme's palette and overrides become the whole token space by the page's formulas: the palette aliased to the semantic roles, the overrides laid over them and `:root`'s scale, the remaining roles mixed from the result |
+| `theme/kit` | how the token space becomes gpui-kit's theme, the one place the kit's roles are filled, and how installing another set of tokens switches the theme |
+| `theme/ledger` | the Ledger theme as data, the one defined so far: `:root[data-theme='ledger']`'s palette, ANSI colours and shape |
+| `theme/scale` | the page's scale as plain numbers (type, spacing, radii, sizes, shadows, focus, motion, the mix shares) with `:root`'s values, and how a theme's overrides change them |
+| `theme/stylesheet` | the check that holds Ledger's token space to the stylesheet: its palette, ANSI colours, scale and derived roles read back from `style.css` |
 | `window` | how a frameless main window opens around an example's own view, what its header strip holds (the stage's breadcrumb and title, the drag region and the window controls), and ending what ran for the window when the last one closes |
 
 ## Views

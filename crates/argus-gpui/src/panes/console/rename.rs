@@ -21,7 +21,7 @@ use gpui_kit::{div, prelude::*, App, Entity, Keystroke, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::theme::Ledger;
+use crate::theme::Tokens;
 
 /// The call a name typed asks for: none for a blank name or the old one.
 pub fn asked(pane: u64, old: &str, typed: &str) -> Option<Call> {
@@ -68,7 +68,7 @@ pub fn open(pane: u64, title: String, caller: Caller, heard: Entity<Heard>, wind
                         div()
                             .flex_1()
                             .text_xs()
-                            .text_color(Ledger::global(cx).muted)
+                            .text_color(Tokens::global(cx).fg_muted)
                             .child("An agent may rename its own pane later."),
                     )
                     .child(

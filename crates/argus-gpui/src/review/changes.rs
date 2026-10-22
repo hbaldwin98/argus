@@ -31,8 +31,7 @@ use crate::review::hints;
 use crate::review::segment;
 use crate::review::split::{self, Split};
 use crate::style::Typed as _;
-use crate::theme::Ledger;
-use crate::tokens::{radius, sp, ty, weight};
+use crate::theme::Tokens;
 
 /// The width the list of files opens at (`--list-col-w`), and how far the
 /// person may drag it.
@@ -117,10 +116,10 @@ impl Changes {
     }
 
     /// The file on screen, and the layout the diff is read in.
-    fn head(&self, page: &ReviewPage, ledger: &Ledger, cx: &mut Context<Self>) -> impl IntoElement {
+    fn head(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let file = page.file.and_then(|i| page.files.get(i));
         let layout = |id: &'static str, label: &'static str, on: bool, split: bool, cx: &mut Context<Self>| {
-            segment::pill(id, Role::RadioButton, on, ledger).child(label).on_click(cx.listener(move |this, _, _, cx| {
+            segment::pill(id, Role::RadioButton, on, tokens).child(label).on_click(cx.listener(move |this, _, _, cx| {
                 // The one already on sends nothing.
                 if page_split(&this.heard, cx) != split {
                     this.ask(Call::ReviewAction { action: Action::Split }, cx);
@@ -131,26 +130,26 @@ impl Changes {
         h_flex()
             .id("review-diff-head")
             .flex_shrink_0()
-            .h(px(sp::S44))
-            .px(px(sp::S12))
-            .gap(px(sp::S12))
+            .h(px(tokens.sp_44))
+            .px(px(tokens.sp_12))
+            .gap(px(tokens.sp_12))
             .items_center()
-            .bg(ledger.chrome)
+            .bg(tokens.bg_chrome)
             .border_b_1()
-            .border_color(ledger.line)
+            .border_color(tokens.line)
             .when_some(file, |head, file| {
-                head.child(div().flex_shrink_0().weighted(weight::BOLD).child(SharedString::from(file.name.clone())))
+                head.child(div().flex_shrink_0().weighted(tokens.weight_bold).child(SharedString::from(file.name.clone())))
                     .child(
                         div()
                             .min_w_0()
                             .truncate()
-                            .typed(ty::SMALL)
+                            .typed(tokens.type_small)
                             .font_family(cx.theme().mono_font_family.clone())
-                            .text_color(ledger.muted)
+                            .text_color(tokens.fg_muted)
                             .child(SharedString::from(file.dir.trim_end_matches('/').to_owned())),
                     )
-                    .child(div().text_color(ledger.success).child(SharedString::from(format!("+{}", file.added))))
-                    .child(div().text_color(ledger.danger).child(SharedString::from(format!("\u{2212}{}", file.removed))))
+                    .child(div().text_color(tokens.ok).child(SharedString::from(format!("+{}", file.added))))
+                    .child(div().text_color(tokens.danger).child(SharedString::from(format!("\u{2212}{}", file.removed))))
             })
             .child(div().flex_1())
             // `.ktag`: what is picked, as a pill.
@@ -161,27 +160,27 @@ impl Changes {
                         .test_support()
                         .aria_label(SharedString::from(format!("{pick} picked")))
                         .flex_shrink_0()
-                        .px(px(sp::S8))
-                        .rounded(px(radius::PILL))
+                        .px(px(tokens.sp_8))
+                        .rounded(px(tokens.r_pill))
                         .border_1()
-                        .border_color(ledger.line_strong)
-                        .typed(ty::SMALL)
-                        .text_color(ledger.muted)
+                        .border_color(tokens.line_strong)
+                        .typed(tokens.type_small)
+                        .text_color(tokens.fg_muted)
                         .whitespace_nowrap()
                         .child(SharedString::from(format!("{pick} picked"))),
                 )
             })
             .child(
-                segment::track("review-view", "Layout", Role::RadioGroup, ledger)
+                segment::track("review-view", "Layout", Role::RadioGroup, tokens)
                     .child(layout("review-view-unified", "Unified", !page.split, false, cx))
                     .child(layout("review-view-split", "Split", page.split, true, cx)),
             )
     }
 
     /// Loading bars, or why there is no diff, or the diff.
-    fn body(&self, page: &ReviewPage, ledger: &Ledger) -> gpui_kit::AnyElement {
+    fn body(&self, page: &ReviewPage, tokens: &Tokens) -> gpui_kit::AnyElement {
         if page.loading {
-            return div().size_full().bg(ledger.background).child(ghosts("review-loading", &BARS, ledger)).into_any_element();
+            return div().size_full().bg(tokens.bg_sunken).child(ghosts("review-loading", &BARS, tokens)).into_any_element();
         }
         if let Some(why) = &page.empty {
             // `.review-empty`: 24px about a line in the body type.
@@ -190,10 +189,10 @@ impl Changes {
                 .test_support()
                 .aria_label(SharedString::from(why.clone()))
                 .size_full()
-                .p(px(sp::S24))
-                .bg(ledger.background)
-                .typed(ty::BODY)
-                .text_color(ledger.muted)
+                .p(px(tokens.sp_24))
+                .bg(tokens.bg_sunken)
+                .typed(tokens.type_body)
+                .text_color(tokens.fg_muted)
                 .child(SharedString::from(why.clone()))
                 .into_any_element();
         }
@@ -208,12 +207,12 @@ fn page_split(heard: &Entity<Heard>, cx: &Context<Changes>) -> bool {
 
 impl Render for Changes {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         let Some(page) = self.heard.read(cx).review.clone() else {
             return div().into_any_element();
         };
-        let diff = v_flex().id("review-diff-pane").size_full().min_w_0().child(self.head(&page, &ledger, cx)).child(
-            div().flex_1().min_h_0().child(self.body(&page, &ledger)),
+        let diff = v_flex().id("review-diff-pane").size_full().min_w_0().child(self.head(&page, &tokens, cx)).child(
+            div().flex_1().min_h_0().child(self.body(&page, &tokens)),
         );
         v_flex()
             .id("review")
@@ -223,10 +222,10 @@ impl Render for Changes {
                 h_flex()
                     .flex_1()
                     .min_h_0()
-                    .child(split::side(&self.split, "review-column", self.files.clone(), &ledger, cx))
+                    .child(split::side(&self.split, "review-column", self.files.clone(), &tokens, cx))
                     .child(div().flex_1().min_w_0().h_full().child(diff)),
             )
-            .child(hints::bar("review-hints", &HINTS, &ledger))
+            .child(hints::bar("review-hints", &HINTS, &tokens))
             .into_any_element()
     }
 }

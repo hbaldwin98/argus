@@ -17,7 +17,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use anyhow::{Context as _, Result};
-use argus_gpui::theme::Ledger;
+use argus_gpui::theme::Tokens;
 use argus_gpui::window::Header;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::test::TestWindowExt as _;
@@ -37,19 +37,19 @@ struct Sample;
 
 impl Render for Sample {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ledger = *Ledger::global(cx);
+        let tokens = *Tokens::global(cx);
         h_flex()
             .size_full()
-            .bg(ledger.background)
-            .text_color(ledger.foreground)
+            .bg(tokens.bg_sunken)
+            .text_color(tokens.fg)
             .child(
                 v_flex()
                     .w(px(SIDEBAR))
                     .h_full()
                     .flex_shrink_0()
-                    .bg(ledger.chrome)
+                    .bg(tokens.bg_chrome)
                     .border_r_1()
-                    .border_color(ledger.line)
+                    .border_color(tokens.line)
                     .p_2()
                     .child(
                         h_flex()
@@ -57,8 +57,8 @@ impl Render for Sample {
                             .px_2()
                             .items_center()
                             .rounded(px(4.0))
-                            .bg(ledger.selected)
-                            .text_color(ledger.foreground)
+                            .bg(tokens.bg_selected)
+                            .text_color(tokens.fg)
                             .text_sm()
                             .child("gpui-migration"),
                     ),
@@ -180,7 +180,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argus_gpui::window::HEADER_HEIGHT;
+    use argus_gpui::theme::ledger;
 
     /// The pixel at logical `(x, y)`, scaled to the image's device pixels.
     fn at(shot: &Shot, x: f32, y: f32) -> [u8; 3] {
@@ -190,15 +190,17 @@ mod tests {
         [p[0], p[1], p[2]]
     }
 
-    fn rgb(hex: u32) -> [u8; 3] {
-        [(hex >> 16) as u8, (hex >> 8) as u8, hex as u8]
+    fn rgb(colour: gpui_kit::Hsla) -> [u8; 3] {
+        let c = colour.to_rgb();
+        [c.r, c.g, c.b].map(|v| (v * 255.0).round() as u8)
     }
 
     // GPUI.md: "a headless render_to_image has to work before the port
     // starts". The Ledger surfaces are the contract a shot has to honour:
-    // the stage is #08090a and the chrome #0f1011, exactly.
+    // the stage is Ledger's `bg_sunken` and the chrome its `bg_chrome`, exactly.
     #[test]
     fn renders_the_ledger_surfaces_to_a_png() {
+        let t = ledger::tokens();
         let shot = capture().expect("a real window renders off-screen on this machine");
         let path = save(&shot.image, "sample").unwrap();
         assert!(path.exists());
@@ -210,12 +212,12 @@ mod tests {
             "the image is the viewport in device pixels"
         );
         // The stage body, well clear of the header, the sidebar and any text.
-        assert_eq!(at(&shot, w / 2.0, h / 2.0), rgb(0x08090a), "stage background");
+        assert_eq!(at(&shot, w / 2.0, h / 2.0), rgb(t.bg_sunken), "stage background");
         // The sidebar's empty lower part.
-        assert_eq!(at(&shot, 40.0, h - 40.0), rgb(0x0f1011), "sidebar chrome");
+        assert_eq!(at(&shot, 40.0, h - 40.0), rgb(t.bg_chrome), "sidebar chrome");
         // The header strip, between its title and the window controls.
-        assert_eq!(at(&shot, w / 2.0, HEADER_HEIGHT.as_f32() / 2.0), rgb(0x0f1011), "header chrome");
+        assert_eq!(at(&shot, w / 2.0, t.header_h / 2.0), rgb(t.bg_chrome), "header chrome");
         // The selected sidebar row, right of its label.
-        assert_eq!(at(&shot, 140.0, 8.0 + 14.0), rgb(0x1e1f25), "selected row");
+        assert_eq!(at(&shot, 140.0, 8.0 + 14.0), rgb(t.bg_selected), "selected row");
     }
 }

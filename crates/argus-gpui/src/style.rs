@@ -1,12 +1,13 @@
 //! How a page token lands on an element: its type, weight and line height.
 //!
-//! The numbers are `tokens`'; this is the one place they become style calls,
-//! so a view says `.typed(ty::HEADING)` as the stylesheet says
+//! The numbers are the token space's (`theme`); this is the one place they become style calls,
+//! so a view says `.typed(tokens.type_heading)` as the stylesheet says
 //! `font: var(--type-heading)` and no view repeats the three calls.
 
 use gpui_kit::{prelude::*, FontWeight};
 
-use crate::tokens::Type;
+use crate::theme::scale::Type;
+
 
 pub trait Typed: Styled + Sized {
     /// `font: var(--type-*)`: weight, size and line height together.

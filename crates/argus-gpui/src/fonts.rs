@@ -3,7 +3,8 @@
 //! The page bundles its faces so every machine draws the same window
 //! (`argus-desktop/assets/fonts`); GPUI's `add_fonts` wants TTF or OTF, so the
 //! same families sit here converted from those woff2 files with their licences
-//! beside them. Ledger's interface face is Inter and the code face JetBrains
+//! beside them. Which family a theme names for the interface and the code is
+//! its token (`font_ui`, `font_mono`); Ledger's are Inter and JetBrains
 //! Mono, with the Nerd Font symbols behind it for the private-use icons the
 //! mono face lacks, as in the page's `--font-mono-bundled`. That they load
 //! and resolve is `tests/fonts.rs`: GPUI's test platform has no text system.
@@ -12,10 +13,6 @@ use std::borrow::Cow;
 
 use gpui_kit::App;
 
-/// The interface face (the page's `--font-ui-bundled` under Ledger).
-pub const UI: &str = "Inter";
-/// The code and terminal face (`--font-mono-bundled`).
-pub const MONO: &str = "JetBrains Mono";
 /// Icon glyphs in the private-use area, drawn only where [`MONO`] has none.
 pub const SYMBOLS: &str = "Symbols Nerd Font Mono";
 

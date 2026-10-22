@@ -154,6 +154,7 @@ fn paints(batch: &TextBatch) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::ledger;
     use crate::panes::palette::contrast;
     use crate::panes::palette::MINIMUM_CONTRAST;
     use crate::panes::screen::width;
@@ -173,7 +174,7 @@ mod tests {
     }
 
     fn laid(rows: Vec<Vec<Segment>>) -> Layout {
-        layout(&rows, &Palette::ledger(), FIT)
+        layout(&rows, &Palette::of(&ledger::tokens()), FIT)
     }
 
     #[test]
@@ -234,7 +235,7 @@ mod tests {
     #[test]
     fn a_wide_cell_background_covers_both_columns() {
         let out = laid(vec![vec![wide(0, "日", ansi(1))]]);
-        assert_eq!(out.fills, [Fill { row: 0, col: 0, cols: 2, rows: 1, color: Palette::ledger().ansi[1] }]);
+        assert_eq!(out.fills, [Fill { row: 0, col: 0, cols: 2, rows: 1, color: Palette::of(&ledger::tokens()).ansi[1] }]);
     }
 
     #[test]
@@ -264,7 +265,7 @@ mod tests {
 
     #[test]
     fn reverse_swaps_text_and_background_and_defaults_to_the_theme() {
-        let palette = Palette::ledger();
+        let palette = Palette::of(&ledger::tokens());
         let out = laid(vec![vec![seg(0, "ab", 0, 0, REVERSE)]]);
         assert_eq!(out.fills[0].color, palette.fg);
         assert_eq!(out.batches[0].style.fg, palette.bg);
@@ -272,7 +273,7 @@ mod tests {
 
     #[test]
     fn text_the_background_would_swallow_is_moved_to_the_contrast_floor() {
-        let palette = Palette::ledger();
+        let palette = Palette::of(&ledger::tokens());
         let (fore, back) = colours(&seg(0, "x", ansi(0), ansi(8), 0), &palette);
         assert!(contrast(fore, back.expect("a background was set")) >= MINIMUM_CONTRAST);
         assert_ne!(fore, palette.ansi[0]);
@@ -287,7 +288,7 @@ mod tests {
             vec![seg(0, "b", 0, ansi(1), 0)],
             vec![seg(0, "c", 0, ansi(1), 0)],
         ];
-        let out = layout(&rows, &Palette::ledger(), (2, 10));
+        let out = layout(&rows, &Palette::of(&ledger::tokens()), (2, 10));
         let drawn: Vec<_> = out.batches.iter().map(|b| b.text.as_str()).collect();
         assert_eq!(drawn, ["a", "b"]);
         assert_eq!(out.fills.iter().map(|f| f.rows).sum::<u16>(), 2);
@@ -296,7 +297,7 @@ mod tests {
     #[test]
     fn only_the_columns_that_fit_are_laid_out() {
         let rows = vec![vec![seg(0, "abcdef", 0, ansi(1), 0), seg(8, "zz", 0, 0, 0)]];
-        let out = layout(&rows, &Palette::ledger(), (1, 4));
+        let out = layout(&rows, &Palette::of(&ledger::tokens()), (1, 4));
         assert_eq!(out.batches.len(), 1);
         assert_eq!(out.batches[0].text, "abcd");
         assert_eq!(out.fills[0].cols, 4);
@@ -305,10 +306,10 @@ mod tests {
     #[test]
     fn a_wide_cell_that_would_overhang_the_edge_is_not_drawn_half() {
         let rows = vec![vec![seg(0, "ab", 0, 0, 0), wide(2, "日", 0)]];
-        let out = layout(&rows, &Palette::ledger(), (1, 3));
+        let out = layout(&rows, &Palette::of(&ledger::tokens()), (1, 3));
         assert_eq!(out.batches.len(), 1);
         assert_eq!(out.batches[0].text, "ab");
-        let out = layout(&rows, &Palette::ledger(), (1, 4));
+        let out = layout(&rows, &Palette::of(&ledger::tokens()), (1, 4));
         assert_eq!(out.batches.len(), 2);
     }
 

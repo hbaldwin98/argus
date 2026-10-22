@@ -13,8 +13,7 @@ use gpui_kit::{prelude::*, px, transparent_black, ElementId, Role, SharedString}
 
 use crate::chrome::icon_button::Node;
 use crate::style::Typed as _;
-use crate::theme::Ledger;
-use crate::tokens::{fs, radius, size, sp, weight};
+use crate::theme::Tokens;
 
 /// Which `.btn` it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,52 +32,53 @@ pub enum Look {
 /// window colour on it, lifting a step on hover and sinking on press; quiet,
 /// it is muted and lifts to `--fill` and the text colour. The words and any
 /// cap are the caller's children.
-pub fn button(id: impl Into<ElementId>, words: impl Into<SharedString>, look: Look, small: bool, ledger: &Ledger) -> Node {
-    let (text, accent, fill) = (ledger.foreground, ledger.accent, ledger.fill());
-    let edge = ledger.line_strong.blend(accent.opacity(0.45));
+pub fn button(id: impl Into<ElementId>, words: impl Into<SharedString>, look: Look, small: bool, tokens: &Tokens) -> Node {
+    let (text, accent, fill) = (tokens.fg, tokens.accent, tokens.fill);
+    let (hover, press) = (tokens.hover_fill, tokens.press_fill);
+    let edge = tokens.line_strong.blend(accent.opacity(tokens.share_edge));
     let base = h_flex()
         .id(id)
         .role(Role::Button)
         .test_support()
         .aria_label(words)
         .flex_shrink_0()
-        .h(px(if small { size::CONTROL_H_SM } else { size::CONTROL_H }))
-        .px(px(if small { sp::S8 } else { sp::S12 }))
-        .gap(px(sp::S6))
+        .h(px(if small { tokens.control_h_sm } else { tokens.control_h }))
+        .px(px(if small { tokens.sp_8 } else { tokens.sp_12 }))
+        .gap(px(tokens.sp_6))
         .items_center()
-        .rounded(px(radius::PILL))
+        .rounded(px(tokens.r_pill))
         .border_1()
-        .text_size(px(fs::SM))
-        .weighted(weight::SEMIBOLD)
+        .text_size(px(tokens.fs_sm))
+        .weighted(tokens.weight_semibold)
         .whitespace_nowrap()
         .cursor_pointer();
     match look {
         Look::Primary => {
-            let on_accent = ledger.background;
+            let on_accent = tokens.fg_on_accent;
             base.border_color(transparent_black())
                 .bg(accent)
                 .text_color(on_accent)
-                .hover(move |style| style.bg(accent.lighten(0.06)))
-                .active(move |style| style.bg(accent.darken(0.06)))
+                .hover(move |style| style.bg(accent.lighten(tokens.step_lift)))
+                .active(move |style| style.bg(accent.darken(tokens.step_lift)))
         }
         Look::Plain => base
-            .border_color(ledger.line_strong)
+            .border_color(tokens.line_strong)
             .text_color(text)
-            .hover(move |style| style.bg(text.opacity(0.07)).border_color(edge))
-            .active(move |style| style.bg(text.opacity(0.12))),
+            .hover(move |style| style.bg(hover).border_color(edge))
+            .active(move |style| style.bg(press)),
         Look::Quiet => base
             .border_color(transparent_black())
-            .text_color(ledger.muted)
+            .text_color(tokens.fg_muted)
             .hover(move |style| style.bg(fill).text_color(text))
-            .active(move |style| style.bg(text.opacity(0.12)).text_color(text)),
+            .active(move |style| style.bg(press).text_color(text)),
     }
 }
 
 /// `.chipf`: a choice among a few, a pill `--icon-btn` tall in the muted
 /// colour that lifts to `--fill` and the text colour, and stays lifted, its
 /// edge gone into the fill, while it is the one chosen.
-pub fn chip(id: impl Into<ElementId>, words: impl Into<SharedString>, on: bool, ledger: &Ledger) -> Node {
-    let (fill, text) = (ledger.fill(), ledger.foreground);
+pub fn chip(id: impl Into<ElementId>, words: impl Into<SharedString>, on: bool, tokens: &Tokens) -> Node {
+    let (fill, text) = (tokens.fill, tokens.fg);
     let base = h_flex()
         .id(id)
         .role(Role::RadioButton)
@@ -86,19 +86,19 @@ pub fn chip(id: impl Into<ElementId>, words: impl Into<SharedString>, on: bool, 
         .aria_selected(on)
         .aria_label(words)
         .flex_shrink_0()
-        .h(px(size::ICON_BTN))
-        .px(px(sp::S8))
-        .gap(px(sp::S4))
+        .h(px(tokens.icon_btn))
+        .px(px(tokens.sp_8))
+        .gap(px(tokens.sp_4))
         .items_center()
-        .rounded(px(radius::PILL))
+        .rounded(px(tokens.r_pill))
         .border_1()
-        .text_size(px(fs::SM))
+        .text_size(px(tokens.fs_sm))
         .whitespace_nowrap()
         .cursor_pointer();
     if on {
         return base.border_color(fill).bg(fill).text_color(text);
     }
-    base.border_color(ledger.line_strong)
-        .text_color(ledger.muted)
+    base.border_color(tokens.line_strong)
+        .text_color(tokens.fg_muted)
         .hover(move |style| style.bg(fill).text_color(text))
 }
