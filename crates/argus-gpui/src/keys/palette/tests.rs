@@ -45,6 +45,18 @@ fn the_palette_opens_from_its_key_tells_the_session_and_opens_once(cx: &mut Test
     assert_eq!(overlays(cx), [Overlay::Palette]);
 }
 
+/// SHELL-PALETTE-1, SHELL-STAGE-17: a click on the nav's Search opens the palette as its key does, and
+/// tells the session once.
+#[gpui_kit::test]
+fn a_click_on_search_opens_the_palette(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    hear(cx, &opened, vec![keymap()]);
+    drain(&opened);
+    click_label(cx, &opened, "Search");
+    assert_eq!(overlays(cx), [Overlay::Palette]);
+    assert_eq!(drain(&opened), ["Palette { open: true }"]);
+}
+
 /// SHELL-PALETTE-4, 5: with no query a group shows its first six commands, under its heading.
 #[gpui_kit::test]
 fn with_no_query_the_commands_show_six_under_their_heading(cx: &mut TestAppContext) {

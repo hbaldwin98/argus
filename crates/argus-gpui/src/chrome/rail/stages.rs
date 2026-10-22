@@ -16,7 +16,9 @@ use gpui_kit::{div, prelude::*, Context, SharedString};
 use super::row::{line, Ctx};
 use super::slice::Slice;
 use super::RailView;
+use argus_desktop_core::keys::keymap::Action;
 use crate::chrome::nav::Nav;
+use crate::keys::over::run_over;
 use crate::kit::keycap::keycap;
 use crate::kit::tip::tip;
 use crate::review::entry::checkout_here;
@@ -116,7 +118,17 @@ impl RailView {
                 let row = base
                     .aria_selected(lit)
                     .aria_label(nav.label())
-                    .on_click(cx.listener(move |this, _, _, cx| this.go(nav, held, cx)))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        // Search is the palette, the window's own as Ctrl K is: it opens it and the palette tells the
+                        // session, which never opens it on the window's behalf.
+                        if nav == Nav::Search {
+                            if !held {
+                                run_over(Action::Palette, window, cx);
+                            }
+                            return;
+                        }
+                        this.go(nav, held, cx)
+                    }))
                     .child(icon)
                     .when(!ctx.icons, |row| row.child(div().flex_1().min_w_0().truncate().child(nav.label())))
                     .when(browsers, |row| row.child(self.browsers_tail(slice, tokens, cx)))
