@@ -15,13 +15,15 @@ use tracing_subscriber::fmt::writer::MakeWriterExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-/// Starts logging. `RUST_LOG` sets the filter, `info` if it says nothing.
+/// Starts logging to `<stem>.log` and `<stem>.log.1`, a stem per window so
+/// two windows open at once do not overwrite one another's log.
+/// `RUST_LOG` sets the filter, `info` if it says nothing.
 /// Nothing here can stop the window starting: an unwritable directory
 /// costs the log and nothing else.
-pub fn init() {
+pub fn init(stem: &str) {
     let dir = argus_protocol::config_dir();
-    let current = dir.join("argus-desktop.log");
-    let previous = dir.join("argus-desktop.log.1");
+    let current = dir.join(format!("{stem}.log"));
+    let previous = dir.join(format!("{stem}.log.1"));
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let fmt = tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false);
     let _ = match open_log(&current, &previous) {

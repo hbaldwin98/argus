@@ -8,7 +8,7 @@
 use std::io::{Cursor, Read};
 
 /// What a release archive holds that an update replaces.
-pub const EXECUTABLES: [&str; 4] = ["argus", "argusd", "argus-hook", "argus-desktop"];
+pub const EXECUTABLES: [&str; 5] = ["argus", "argusd", "argus-hook", "argus-desktop", "argus-desktop-next"];
 
 /// One executable as the archive held it: its file name on this platform,
 /// and its bytes.
@@ -117,12 +117,12 @@ mod tests {
     }
 
     #[test]
-    fn a_tar_release_yields_its_four_executables_and_nothing_else() {
+    fn a_tar_release_yields_its_five_executables_and_nothing_else() {
         let archive = tar_gz(&borrowed(&release(PACKAGE, "")));
         let found = executables(&archive, false, PACKAGE, "").unwrap();
         let mut files: Vec<&str> = found.iter().map(|e| e.file.as_str()).collect();
         files.sort();
-        assert_eq!(files, ["argus", "argus-desktop", "argus-hook", "argusd"]);
+        assert_eq!(files, ["argus", "argus-desktop", "argus-desktop-next", "argus-hook", "argusd"]);
         assert!(found.iter().all(|e| e.bytes == e.file.as_bytes()));
     }
 
@@ -130,11 +130,11 @@ mod tests {
     fn a_zip_release_is_read_whichever_slash_its_paths_use() {
         let package = "argus-0.38.1-x86_64-pc-windows-msvc";
         let forward = zip_of(&borrowed(&release(package, ".exe")));
-        assert_eq!(executables(&forward, true, package, ".exe").unwrap().len(), 4);
+        assert_eq!(executables(&forward, true, package, ".exe").unwrap().len(), 5);
         let back: Vec<(String, Vec<u8>)> =
             release(package, ".exe").into_iter().map(|(path, bytes)| (path.replace('/', "\\"), bytes)).collect();
         let backslashed = zip_of(&borrowed(&back));
-        assert_eq!(executables(&backslashed, true, package, ".exe").unwrap().len(), 4);
+        assert_eq!(executables(&backslashed, true, package, ".exe").unwrap().len(), 5);
     }
 
     #[test]

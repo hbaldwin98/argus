@@ -6,12 +6,13 @@ Argus is a terminal workspace for running shells and AI command-line agents acro
 One persistent daemon owns the processes and PTYs; the TUI can detach and reconnect without stopping
 them.
 
-The workspace builds four executables and one library:
+The workspace builds five executables and one library:
 
 - `argus`: the terminal client.
 - `argusd`: the daemon that owns panes, Git state, and session restore.
 - `argus-hook`: a helper that lets agent harnesses report status and pane titles.
 - `argus-desktop`: a desktop window onto the same daemon, opened with `argus desktop`.
+- `argus-gpui`: the GPUI port of that window, built as `argus-desktop-next` and opened with `argus desktop-next`.
 - `argus-desktop-core`: the library the desktop builds on, holding what that window holds and says with no window in it.
 
 ## Features
@@ -90,6 +91,11 @@ sudo apt install libwebkit2gtk-4.1-0                   # to run
 macOS and Windows need nothing extra; Windows uses the WebView2 runtime it ships with. A plain
 `cargo build` or `cargo test` leaves the desktop crate out, so the terminal client and the daemon
 build without WebKitGTK; `--workspace` or `-p argus-desktop` builds it (`argus-desktop-core`, which has no webview, is built by default).
+`argus-gpui` is left out the same way (`--workspace` or `-p argus-gpui`); on Linux it needs fontconfig, xkbcommon, xcb and wayland development files:
+
+```sh
+sudo apt install libfontconfig-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev libxcb1-dev
+```
 
 libgit2 is built from vendored source, and Argus reads repositories only locally — fetching and
 pulling go through the `git` on `PATH` — so neither OpenSSL nor a system libgit2 is required.
@@ -189,6 +195,11 @@ To open the desktop window beside the terminal client, run:
 ```sh
 argus desktop
 ```
+
+`argus desktop-next` opens `argus-desktop-next` the same way: the GPUI window, run beside the Tauri
+one while the port is finished. They share the daemon and `desktop.json`, so run one at a time
+unless you are comparing them; each writes its own log (`argus-desktop.log` and
+`argus-desktop-next.log`).
 
 It starts `argus-desktop` from beside `argus`, or from `PATH`, detached so closing the terminal
 leaves the window open, and returns at once. The window reaches the same daemon through
@@ -305,8 +316,8 @@ argus update            # or `argus update --check` to only ask whether there is
 ```
 
 It downloads this platform's archive from GitHub Releases in its own process, checks it against
-the release's published SHA-256, and replaces `argus`, `argusd`, `argus-hook` and `argus-desktop`
-beside the running `argus` — whether they came from an archive or `cargo install` — all of them or
+the release's published SHA-256, and replaces `argus`, `argusd`, `argus-hook`, `argus-desktop` and
+`argus-desktop-next` beside the running `argus` — whether they came from an archive or `cargo install` — all of them or
 none. It then restarts a running daemon onto them, its panes restored; run inside an Argus pane,
 where a restart would end that pane's shell, it says to run `argus server restart` from outside
 instead. On Windows the old executables are renamed aside, since a running `.exe` cannot be
@@ -330,6 +341,7 @@ Install the packages so the executables share Cargo's binary directory:
 cargo install --locked --path crates/argusd
 cargo install --locked --path crates/argus-client
 cargo install --locked --path crates/argus-desktop   # optional: the desktop window
+cargo install --locked --path crates/argus-gpui      # optional: the GPUI desktop window
 argus
 ```
 
@@ -630,6 +642,8 @@ For the desktop window, build it too and open it the same way:
 cargo build -q -p argus -p argusd -p argus-desktop
 ARGUS_INSTANCE=dev target/debug/argus desktop
 ```
+
+The GPUI window is `-p argus-gpui` and `argus desktop-next`.
 
 `scripts/reload.sh` installs only the daemon and the terminal client.
 

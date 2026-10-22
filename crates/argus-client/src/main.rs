@@ -55,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Init(dir) => return launch::init(dir).await,
         Command::Bridge => return bridge::run().await,
         Command::Desktop => return desktop::run(),
+        Command::DesktopNext => return desktop::run_next(),
         Command::Focus { watch } => return focus::run(watch).await,
         Command::Extension { ask, host } => return extension::run(ask, host).await,
         Command::Tui => None,
@@ -89,6 +90,8 @@ enum Command {
     Bridge,
     /// Open the desktop window, detached from this terminal.
     Desktop,
+    /// Open the GPUI desktop window, detached from this terminal.
+    DesktopNext,
     /// The client, with the daemon on this ssh host connected beside this
     /// machine's and on screen.
     Host(String),
@@ -115,6 +118,7 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [update] if update == "update" => Ok(Command::Update { check: false }),
         [update, check] if update == "update" && check == "--check" => Ok(Command::Update { check: true }),
         [desktop] if desktop == "desktop" => Ok(Command::Desktop),
+        [desktop] if desktop == "desktop-next" => Ok(Command::DesktopNext),
         [focus] if focus == "focus" => Ok(Command::Focus { watch: false }),
         [focus, watch] if focus == "focus" && watch == "--watch" => {
             Ok(Command::Focus { watch: true })
@@ -126,7 +130,7 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         }
         _ => Err(anyhow::anyhow!(
             "usage: argus [--host HOST | init [DIR] | server (restart | stop) | focus [--watch] \
-             | desktop | update [--check] | bridge | [--host HOST] extension (guide | list | show NAME)]"
+             | desktop | desktop-next | update [--check] | bridge | [--host HOST] extension (guide | list | show NAME)]"
         )),
     }
 }
@@ -680,6 +684,15 @@ mod tests {
             Command::Desktop
         );
         assert!(parse_command(&["desktop".to_string(), "x".to_string()]).is_err());
+    }
+
+    #[test]
+    fn desktop_next_opens_the_gpui_window_and_takes_no_arguments() {
+        assert_eq!(
+            parse_command(&["desktop-next".to_string()]).unwrap(),
+            Command::DesktopNext
+        );
+        assert!(parse_command(&["desktop-next".to_string(), "x".to_string()]).is_err());
     }
 
     #[test]

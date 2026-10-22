@@ -33,7 +33,7 @@ use argus_gpui::window;
 use gpui_kit::{App, AppContext as _};
 
 fn main() {
-    logging::init();
+    logging::init("argus-desktop-next");
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(err) => {

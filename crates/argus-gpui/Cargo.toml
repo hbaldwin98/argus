@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+# Named for what `argus desktop-next` opens; the package stays `argus-gpui`.
+[[bin]]
+name = "argus-desktop-next"
+path = "src/main.rs"
+
 [dependencies]
 # Pinned exactly: gpui-kit pins gpui-pre, a weekly snapshot of Zed's main, so
 # any other 0.8.x could move the whole GPUI underneath the port. Default

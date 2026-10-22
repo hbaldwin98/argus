@@ -14,7 +14,7 @@ Tests live beside the code they cover, in a `#[cfg(test)] mod tests` block for a
 
 ## Build, Test, and Development Commands
 
-- Package names for `-p` are `argus` (`crates/argus-client`), `argusd`, `argus-desktop-core`, `argus-desktop`, `argus-gpui` and `argus-protocol`.
+- Package names for `-p` are `argus` (`crates/argus-client`), `argusd`, `argus-desktop-core`, `argus-desktop`, `argus-gpui` (binary `argus-desktop-next`) and `argus-protocol`.
 - The desktop page is TypeScript in `crates/argus-desktop/page` (`npm ci` once there). After editing `page/src`, `npm run build` and commit `assets/js` with it; `npm run check` is CI's compile, oxlint and oxfmt check. After changing `crates/argus-desktop-core/src/connection/page.rs`, `cargo test -p argus-desktop-core` rewrites `page/src/bindings`, and `page/test/contract/sent.ts`, the events a page is sent, which `npm run check` holds to those types; commit both.
 - `argus-desktop` is not a default member: plain `cargo build`/`cargo test` skip it, `--workspace` builds it. On Linux `argus-desktop` needs `libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config`. Under a headless X server, start it inside `dbus-run-session` or it stalls before opening its window. `argus-desktop-core` has no webview and is a default member.
 - `rustup update stable` before a batch of work: CI lints with the newest stable, so an older local clippy passes what CI rejects.

@@ -92,8 +92,8 @@ argus_bin="$bin_dir/argus$exe"
 names="argus argusd argus-hook"
 crates="argusd argus-client"
 if [ "$(uname -s)" != Linux ] || pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
-    names="$names argus-desktop"
-    crates="$crates argus-desktop"
+    names="$names argus-desktop argus-desktop-next"
+    crates="$crates argus-desktop argus-gpui"
 else
     echo "reload: no WebKitGTK development files, so the desktop window is left as it is"
 fi

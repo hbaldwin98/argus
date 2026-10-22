@@ -51,13 +51,16 @@ jobs:
           rustup default stable
           rustup component add clippy
 
-      # The desktop crate links WebKitGTK on Linux; nothing else needs it,
-      # and macOS and Windows bring their own webview.
-      - name: Install WebKitGTK
+      # The desktop crate links WebKitGTK on Linux, and the GPUI window
+      # (argus-gpui) links fontconfig, xkbcommon, xcb and wayland; nothing else
+      # needs them, and macOS and Windows bring their own webview and text.
+      - name: Install desktop libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config \
+            libfontconfig-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-xcb-dev libxcb1-dev
 
       # Nearly all of a run is compiling dependencies that did not change,
       # most of them vendored C: libgit2, SQLite, the tree-sitter grammars.

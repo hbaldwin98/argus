@@ -36,7 +36,7 @@ use crate::system::window_frame;
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
 fn main() {
-    logging::init();
+    logging::init("argus-desktop");
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(err) => {
