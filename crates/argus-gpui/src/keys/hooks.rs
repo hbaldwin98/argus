@@ -25,13 +25,14 @@ pub fn layer(layer: Layer) -> Hook {
         | Layer::AddProject
         | Layer::Review
         | Layer::History
+        | Layer::Link
+        | Layer::Reconcile
         | Layer::Rail
         | Layer::Start
         | Layer::Menu
         | Layer::Stage
         | Layer::Extension
         | Layer::ExtensionPage => Hook::Hooked,
-        Layer::Link | Layer::Reconcile => Hook::Arrives("the tracker dialogs"),
         Layer::Transcript | Layer::Sessions => Hook::Arrives("the sessions dialog"),
         Layer::Capture | Layer::Diagram | Layer::Outline | Layer::Features => Hook::Arrives("the Feature stage"),
         Layer::Checkouts | Layer::Files => Hook::Hooked,
@@ -54,7 +55,7 @@ pub fn place(place: Place) -> Hook {
         Place::Sessions | Place::Transcript => Hook::Arrives("the sessions dialog"),
         Place::Address => Hook::Arrives("the Browsers stage"),
         Place::Code => Hook::Hooked,
-        Place::Link | Place::Reconcile => Hook::Arrives("the tracker dialogs"),
+        Place::Link | Place::Reconcile => Hook::Hooked,
     }
 }
 

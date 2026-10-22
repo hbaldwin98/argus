@@ -32,7 +32,7 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog";
+const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog,link,link-map,link-draft,link-typed,link-refused,reconcile,reconcile-ticked,reconcile-edited,reconcile-none,reconcile-asked,reconcile-carrying,reconcile-failed,palette-commands,palette-query,palette-features-found,palette-reading,palette-none,palette-moved,shortcuts-filtered,shortcuts-none,shortcuts-section";
 
 /// The scenes the page finishes with a click on a control, and the control: the window is brought to the
 /// same place by pressing it, so the menu or dialog is open in the picture as it is in the page's.
@@ -40,6 +40,71 @@ fn click_for(scene: &str) -> Option<&'static str> {
     match scene {
         "switcher" => Some("rail-projects"),
         _ => None,
+    }
+}
+
+/// What a window does after a scene is brought to its screen: the page's palette and sheet keep what is
+/// typed in them, so those states are made in the window, as a person makes them.
+#[derive(Clone, Copy)]
+enum Act {
+    Type(&'static str),
+    Press(&'static str),
+    /// A press on the element with this id, to put the keys in a field.
+    Click(&'static str),
+}
+
+/// The scenes that are a core scene and what is typed or pressed once it is open: every state of the
+/// palette (SHELL-PALETTE-4..11) and the shortcuts sheet (SHELL-SHEET-2..9) the specs list that no core
+/// scene reaches.
+fn variant(name: &str) -> Option<(&'static str, &'static [Act])> {
+    use Act::{Click, Press, Type};
+    Some(match name {
+        // A leading `>` limits the search to commands, with the whole list under the first rows (-5).
+        "palette-commands" => ("palette", &[Type(">")]),
+        // Searched, the groups are ranked by how well they match and the matched letters marked (-6, -7).
+        "palette-query" => ("palette-features", &[Type("trim")]),
+        // `#` limits it to the features of the board that has arrived (-5).
+        "palette-features-found" => ("palette-features", &[Type("#")]),
+        // Before the board has arrived `#` says so (-11).
+        "palette-reading" => ("palette", &[Type("#")]),
+        // Nothing matches (-11).
+        "palette-none" => ("palette", &[Type("zzzzq")]),
+        // The highlight moved down, and the row says what Enter does (-9, -10).
+        "palette-moved" => ("palette", &[Press("down"), Press("down"), Press("down")]),
+        // Searching the sheet narrows it to the sections with a match (SHEET-7).
+        "shortcuts-filtered" => ("shortcuts", &[Click("sheet-find"), Type("palette")]),
+        "shortcuts-none" => ("shortcuts", &[Click("sheet-find"), Type("zzzzq")]),
+        // Down changes section (SHEET-9).
+        "shortcuts-section" => ("shortcuts", &[Press("down"), Press("down"), Press("down")]),
+        _ => return None,
+    })
+}
+
+/// The scene `name` is made from: its own, or the core scene its variant starts from.
+fn base_of(name: &str) -> &str {
+    variant(name).map_or(name, |(base, _)| base)
+}
+
+/// Types and presses `acts` into the window, a frame apart.
+async fn act(cx: &mut gpui_kit::AsyncApp, handle: AnyWindowHandle, acts: &[Act]) {
+    use gpui_kit::{Keystroke, Modifiers};
+    for act in acts {
+        if let Act::Click(id) = act {
+            cx.update(|cx| press(cx, handle, id));
+            cx.background_executor().timer(Duration::from_millis(200)).await;
+            continue;
+        }
+        let strokes: Vec<Keystroke> = match act {
+            Act::Type(text) => text.chars().map(|ch| Keystroke { modifiers: Modifiers::none(), key: ch.to_string(), key_char: Some(ch.to_string()) }).collect(),
+            Act::Press(key) => vec![Keystroke::parse(key).unwrap()],
+            Act::Click(_) => Vec::new(),
+        };
+        for stroke in strokes {
+            cx.update(|cx| {
+                let _ = cx.update_window(handle, |_, window, cx| window.dispatch_keystroke(stroke, cx));
+            });
+            cx.background_executor().timer(Duration::from_millis(60)).await;
+        }
     }
 }
 
@@ -71,9 +136,15 @@ fn edits_in(name: &str, events: &[Event]) -> Vec<Event> {
 /// that has no screen yet is dropped, so they are heard once the window has drawn the cells the
 /// rail names.
 fn heard_in(name: &str) -> (Vec<Event>, Vec<Event>) {
-    let scene = scenes().into_iter().find(|scene| scene.name == name).unwrap_or_else(|| panic!("no scene {name}"));
+    let scene = scenes().into_iter().find(|scene| scene.name == base_of(name)).unwrap_or_else(|| panic!("no scene {name}"));
     let mut session = (scene.build)();
     let mut events = session.everything(NOW);
+    // The window asks the session for the palette's lists as it opens (`Call::Palette`), and the harness's calls go
+    // nowhere, so the session is asked here: a scene that opens the palette shows what a real one lists.
+    if base_of(name).starts_with("palette") {
+        session.call(argus_desktop_core::connection::page::Call::Palette { open: true });
+        events.extend(session.events(NOW));
+    }
     events.extend(session.take_frames());
     let (frames, rest): (Vec<Event>, Vec<Event>) = events.into_iter().partition(|event| matches!(event, Event::Frame(_)));
     (rest, frames)
@@ -137,6 +208,10 @@ fn write_gpui_screens() {
                     });
                     cx.background_executor().timer(Duration::from_millis(500)).await;
                 }
+                if let Some((_, acts)) = variant(&name) {
+                    act(cx, handle, acts).await;
+                    cx.background_executor().timer(Duration::from_millis(300)).await;
+                }
                 if let Some(id) = click_for(&name) {
                     cx.update(|cx| press(cx, handle, id));
                     cx.background_executor().timer(Duration::from_millis(500)).await;
@@ -176,6 +251,9 @@ fn write_gpui_screens() {
 
 /// A window parked off-screen at the page's size, hearing `events`.
 fn open(cx: &mut App, events: Vec<Event>) -> anyhow::Result<(AnyWindowHandle, Entity<Heard>)> {
+    // Windows are left open, and the overlay host is the app's: a dialog still up in an earlier scene's window
+    // would keep this one's from opening, so each scene starts with a host that holds nothing.
+    argus_gpui::kit::overlay::host::Overlays::install(cx);
     let heard = cx.new(|_| Heard::new());
     heard.update(cx, |heard, _| {
         for event in events {
@@ -209,4 +287,19 @@ fn press(cx: &mut App, handle: AnyWindowHandle, id: &str) {
         }
         window.render_frame(cx);
     });
+}
+
+/// Every scene the harness photographs is a core scene or a variant of one, so a scene the window is
+/// held to cannot name a screen core no longer builds. The test needs no window.
+#[test]
+fn every_default_scene_is_a_core_scene_or_a_variant_of_one() {
+    let known: Vec<&str> = scenes().into_iter().map(|scene| scene.name).collect();
+    let mut seen = std::collections::HashSet::new();
+    for name in DEFAULT.split(',') {
+        assert!(seen.insert(name), "{name} is listed twice");
+        assert!(known.contains(&base_of(name)), "{name} is made from {}, which core has no scene for", base_of(name));
+    }
+    for name in ["palette-commands", "palette-reading", "palette-none", "palette-moved", "shortcuts-filtered", "shortcuts-none", "shortcuts-section", "reconcile-none", "reconcile-asked", "reconcile-carrying", "link-map"] {
+        assert!(seen.contains(name), "{name} is a state the specs list and the harness no longer photographs");
+    }
 }

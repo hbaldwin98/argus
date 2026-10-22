@@ -74,6 +74,8 @@ impl Shell {
         // The window's own keys ask the session as the page does.
         Layers::of(cx).serve(caller.clone());
         crate::extensions::install::layers(&heard, cx);
+        // The tracker dialogs open themselves over the window while the session holds them.
+        crate::board::tracker::install::install(&heard, &caller, window, cx);
         let terminal = cx.new(|cx| Terminal::new(heard.clone(), caller.clone(), Side::Workspace, window, cx));
         let stage = terminal.read(cx).focus_handle().clone();
         // The Workspace's pane takes the keys back from the dialogs that took them, while one is on screen.
