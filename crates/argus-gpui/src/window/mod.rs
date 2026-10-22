@@ -1,6 +1,7 @@
 //! How the main window opens: the application with its assets, the frameless window's options, and
 //! `open`, which puts a stage's view under the header.
 
+pub mod drag;
 pub mod frame;
 pub mod quit;
 

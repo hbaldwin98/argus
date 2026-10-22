@@ -49,6 +49,7 @@ fn surface(color: Hsla, alpha: f32) -> Hsla {
 }
 
 /// `0xRRGGBB` as the `0x00BBGGRR` COLORREF the DWM border attribute takes.
+#[cfg(windows)]
 fn colorref(rgb: u32) -> u32 {
     ((rgb & 0xff) << 16) | (rgb & 0xff00) | ((rgb >> 16) & 0xff)
 }
@@ -369,6 +370,7 @@ mod tests {
         assert_eq!((faded.h, faded.s, faded.l), (tokens.bg_chrome.h, tokens.bg_chrome.s, tokens.bg_chrome.l));
     }
 
+    #[cfg(windows)]
     #[test]
     fn colorref_swaps_red_and_blue() {
         assert_eq!(colorref(0x23252a), 0x2a2523);

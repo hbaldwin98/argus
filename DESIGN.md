@@ -1448,6 +1448,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `views/refs` | the values that point into Argus (a path, a commit, a feature, a pane) as buttons that ask Rust to open them, and a duration and inline code |
 | `views/values` | one value as a field, a cell or a list item shows it, from core's words |
 | `window` | how the frameless main window opens around a view: the application with its assets, the window's options, and the stage put under the header |
+| `window/drag` | what a press on the title bar does outside Windows: it starts moving the window, except under test |
 | `window/frame` | what the platform window itself is told about the look: the DWM border colour and the tint Mica takes |
 | `window/quit` | ending what ran for the window when the last one closes, and answering a close of the only window by quitting |
 

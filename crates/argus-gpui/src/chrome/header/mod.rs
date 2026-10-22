@@ -122,7 +122,7 @@ impl RenderOnce for Header {
                     // snap layouts for free; elsewhere the move starts here.
                     .window_control_area(WindowControlArea::Drag)
                     .when(!cfg!(windows), |this| {
-                        this.on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
+                        this.on_mouse_down(MouseButton::Left, |_, window, _| crate::window::drag::start_move(window))
                     })
                     .child(
                         v_flex()

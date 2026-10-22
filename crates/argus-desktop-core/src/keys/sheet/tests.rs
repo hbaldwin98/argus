@@ -139,7 +139,10 @@ fn the_filter_finds_a_row_by_its_action_or_its_key_grouped_by_section() {
 #[test]
 fn every_word_of_the_query_has_to_be_in_the_row() {
     let sections = the_sections();
-    let both = matching(&sections, "paste ctrl");
+    // The chord's own first word: Ctrl here, Cmd on macOS.
+    let paste = sections.iter().flat_map(rows).find(|row| row.label.to_lowercase().contains("paste")).expect("a paste row");
+    let modifier = paste.keys[0][0].split_whitespace().next().expect("a chord").to_lowercase();
+    let both = matching(&sections, &format!("paste {modifier}"));
     let neither = matching(&sections, "paste zzzz");
     assert!(!both.is_empty());
     assert!(neither.is_empty());

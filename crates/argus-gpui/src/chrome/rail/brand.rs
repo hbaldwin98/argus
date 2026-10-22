@@ -30,7 +30,7 @@ impl RailView {
         // (`.rail .brand`), so it moves the window.
         let drag = |area: gpui_kit::Div| {
             area.window_control_area(WindowControlArea::Drag)
-                .when(!cfg!(windows), |this| this.on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move()))
+                .when(!cfg!(windows), |this| this.on_mouse_down(MouseButton::Left, |_, window, _| crate::window::drag::start_move(window)))
         };
         let logo = drag(h_flex().h_full().items_center().pl(rem(if ctx.icons { 0.0 } else { tokens.sp_16 })).pr(rem(tokens.sp_8)).when(ctx.icons, |logo| logo.flex_1().justify_center()))
             .child(Glyph::Logo.at(tokens.icon_glyph).text_color(tokens.accent));
