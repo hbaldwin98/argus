@@ -506,6 +506,8 @@ pub struct InputBaseState<M: InputModeKind> {
     /// The unwrapped width of the longest line and what it was measured for.
     pub(super) longest_line_width: Cell<Option<(LongestLineKey, Pixels)>>,
     pub(super) editor_paddings: Edges<Pixels>,
+    /// Room kept right of the text and under it for the scrollbars, which are drawn in the padding.
+    scrollbar_gutter: Pixels,
     /// The style this state paints with: what was projected onto it, with
     /// every colour left unset resolved from the palette that is current. It
     /// is rebuilt at the top of every render, which is what keeps it current
@@ -920,6 +922,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             editor_scrollbar_snapshot: Cell::new(None),
             longest_line_width: Cell::new(None),
             editor_paddings: Edges::default(),
+            scrollbar_gutter: px(0.),
             deferred_scroll_offset: None,
             placeholder: SharedString::default(),
             mask_pattern: MaskPattern::default(),
@@ -1032,6 +1035,21 @@ impl<M: InputModeKind> InputBaseState<M> {
     #[doc(hidden)]
     pub fn set_editor_paddings(&mut self, paddings: Edges<Pixels>) {
         self.editor_paddings = paddings;
+    }
+
+    /// Keeps `width` right of a multi-line editor's text and under it, where its scrollbars are
+    /// drawn, so they never lie over the text. It is added to the paddings `Input` projects on
+    /// every render, which would overwrite a padding set any other way.
+    pub fn set_scrollbar_gutter(&mut self, width: Pixels) {
+        self.scrollbar_gutter = width;
+    }
+
+    /// The projected paddings with the scrollbar gutter added.
+    pub(super) fn paddings(&self) -> Edges<Pixels> {
+        let mut paddings = self.editor_paddings;
+        paddings.right += self.scrollbar_gutter;
+        paddings.bottom += self.scrollbar_gutter;
+        paddings
     }
 
     pub fn apply_highlighter_fold_candidates(
@@ -5069,10 +5087,8 @@ impl<M: InputModeKind> Render for InputBaseState<M> {
             .flex_grow_1()
             .overflow_x_hidden()
             .when(self.is_multi_line(), |this| {
-                this.pt(self.editor_paddings.top)
-                    .pr(self.editor_paddings.right)
-                    .pb(self.editor_paddings.bottom)
-                    .pl(self.editor_paddings.left)
+                let paddings = self.paddings();
+                this.pt(paddings.top).pr(paddings.right).pb(paddings.bottom).pl(paddings.left)
             })
             .child(TextElement::new(entity.clone()).placeholder(self.placeholder.clone()))
             .when(self.shows_scrollbar(), |this| {

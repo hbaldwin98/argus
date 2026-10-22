@@ -84,3 +84,18 @@ fn stepping_goes_to_the_first_line_of_the_next_run_and_back_to_the_runs_first_li
     });
     assert!(step(cx, false) && at(cx) == 4);
 }
+
+/// The bars have a gutter of their own, as the diff view's do (the person asked for the Code view to
+/// match Git's): the text stops a bar's width short of the editor's right edge and its foot.
+#[gpui_kit::test]
+fn the_text_stops_short_of_the_scrollbars(cx: &mut TestAppContext) {
+    let opened = with(cx, changed(200, &[], &[]));
+    hear(cx, &opened, vec![opened_with("src/lib.rs", &text_of(200))]);
+    settle(cx, &opened);
+    let outer = crate::code::file::tests::bounds_of(cx, &opened, "code-editor");
+    let state = state(cx);
+    let text = cx.update(|cx| state.read(cx).input_bounds());
+    let bar = gpui_kit::component::scroll::Scrollbar::width();
+    assert!(text.right() <= outer.right() - bar, "the text reaches {:?}, the bar starts at {:?}", text.right(), outer.right() - bar);
+    assert!(text.bottom() <= outer.bottom() - bar, "the text reaches {:?}, the bar starts at {:?}", text.bottom(), outer.bottom() - bar);
+}

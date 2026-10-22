@@ -1,6 +1,6 @@
 # gpui-base 0.8.0, patched for Argus
 
-This is `gpui-base` 0.8.0 from crates.io (Apache-2.0, `LICENSE-APACHE`) with three additions to its
+This is `gpui-base` 0.8.0 from crates.io (Apache-2.0, `LICENSE-APACHE`) with four additions to its
 code editor, wired in by `[patch.crates-io]` in the workspace `Cargo.toml`. `gpui-kit` pins
 `gpui-base`, so the patch applies to the whole GPUI build and to nothing else. The manifest is the
 published one with the `[[test]]` and `[[bench]]` targets removed, since their files are not
@@ -73,8 +73,16 @@ field. The setter keeps a colour on the state that is applied after that project
 the projected one). Argus draws the code editor's caret in the accent, as the page's `.cm-cursor`
 does, and its text fields in the foreground.
 
+### 4. `InputBaseState::set_scrollbar_gutter`
+
+`src/input/base/state.rs`, read where `editor_paddings` was in `src/input/base/element.rs`. The
+editor draws its scrollbars inside its padding, over the text's right end and its last line, and
+`Input` overwrites the padding from its size on every render. The gutter is added to the projected
+padding, so the bars sit in room of their own, as a native scroll box's do; Argus's code editor
+keeps one bar's width, as its diff view does.
+
 ## Bumping `gpui-kit`
 
 The pin in `crates/argus-gpui/Cargo.toml` is `=0.8.0` on purpose. A newer `gpui-base` means
-re-applying these three diffs to it (`git diff --no-index` the published crate against this folder),
+re-applying these four diffs to it (`git diff --no-index` the published crate against this folder),
 dropping whichever upstream has taken.

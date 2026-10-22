@@ -12,6 +12,7 @@ use argus_desktop_core::code::change::ChangeSet;
 use argus_desktop_core::code::stage::CodeGesture;
 use argus_desktop_core::connection::page::Call;
 use gpui_kit::component::input::{EditorState, InputEvent, Rope, TabSize};
+use gpui_kit::component::scroll::Scrollbar;
 use gpui_kit::{AppContext as _, Context, Focusable as _, Window};
 
 use super::session::{Key, TAB};
@@ -84,6 +85,9 @@ impl CodeEditor {
             }
             // The page's `.cm-cursor` is an accent bar; its text fields keep the foreground.
             state.set_caret_color(Some(accent));
+            // The bars have a gutter of their own, as the diff's do: the kit draws them in the
+            // padding, so they never lie over the last line or the end of a long one.
+            state.set_scrollbar_gutter(Scrollbar::width());
             state
         });
         let owner = key.clone();
