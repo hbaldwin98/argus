@@ -27,6 +27,7 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::icons::Glyph;
 use crate::kit::strip;
+use crate::layout::bodies::Contents;
 use crate::layout::dock_menu;
 use crate::layout::panel;
 use crate::layout::work::{Held, WorkView};
@@ -224,7 +225,10 @@ impl Render for FloatsView {
                         .id(SharedString::from(format!("float-body-{panel}")))
                         .flex_1()
                         .min_h_0()
-                        .child(panel::body(float.title.clone(), &tokens)),
+                        .child(match Contents::peek(cx).panel(&float.panel) {
+                            Some(body) => body.into_any_element(),
+                            None => panel::body(float.title.clone(), &tokens).into_any_element(),
+                        }),
                 )
                 .child(self.grip(float, bounds, &tokens, cx))
         }))

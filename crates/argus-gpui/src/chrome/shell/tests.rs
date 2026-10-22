@@ -114,3 +114,34 @@ fn the_ended_bar_is_over_the_stage_while_the_shown_pane_has_ended(cx: &mut TestA
     hear(cx, &opened, vec![ended("exited")]);
     assert!(up(cx));
 }
+
+fn one_view() -> Event {
+    use argus_desktop_core::connection::page::{PageView, ViewsPage};
+    let view = PageView {
+        pane: 1,
+        from: "claude".into(),
+        at: 0,
+        refreshing: false,
+        pressed: Vec::new(),
+        subject: None,
+        view: argus_protocol::AgentView { id: "trim".into(), title: "Trim".into(), ..Default::default() },
+        diagrams: Vec::new(),
+        changed: Vec::new(),
+        unseen: false,
+    };
+    Event::Views(Box::new(ViewsPage { views: vec![view], open: None, popped: None, can_press: true }))
+}
+
+#[gpui_kit::test]
+fn the_views_launcher_is_lit_while_a_dock_shows_the_views_panel(cx: &mut TestAppContext) {
+    // AGENTVIEWS-2: aria-pressed follows whether the panel is out, as Rust's `head::out` says.
+    let opened = open(cx);
+    let status = Event::Status(Status { connection: Connection::Connected, detail: None, alarm: None, chime: true, host: None });
+    let lit = |cx: &mut TestAppContext| cx.update_window(opened.handle, |_, window, _| window.find("views-tab".to_owned()).selected()).unwrap();
+    let mut docks = crate::layout::work::tests::docks();
+    docks.right.shown = None;
+    hear(cx, &opened, vec![status, one_view(), Event::Docks(Box::new(docks))]);
+    assert_eq!(lit(cx), Some(false), "the panel is not out");
+    hear(cx, &opened, vec![Event::Docks(Box::new(crate::layout::work::tests::docks()))]);
+    assert_eq!(lit(cx), Some(true), "a dock shows the views");
+}

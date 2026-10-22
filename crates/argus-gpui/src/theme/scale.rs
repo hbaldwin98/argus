@@ -200,6 +200,8 @@ pub struct Scale {
     pub dock_floor: f32,
     pub dock_min_pane: f32,
     pub dock_room: f32,
+    /// `--vtab-max`: the widest a tab of the agents' views panel grows before its title is cut.
+    pub vtab_max: f32,
 
     pub t_fast: Duration,
 
@@ -578,6 +580,7 @@ impl Scale {
             dock_floor: 240.0,
             dock_min_pane: 440.0,
             dock_room: 800.0,
+            vtab_max: 200.0,
 
             t_fast: Duration::from_millis(120),
 

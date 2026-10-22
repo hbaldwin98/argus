@@ -31,6 +31,7 @@ use crate::connection::caller::Caller;
 use crate::kit::area;
 use crate::connection::heard::Heard;
 use crate::kit::icons::Glyph;
+use crate::layout::bodies::Contents;
 use crate::layout::dock_menu;
 use crate::layout::panel;
 use crate::layout::tools;
@@ -315,6 +316,12 @@ impl DockView {
     }
 }
 
+/// Whether the panel's own strip is its head: the console's and the agents' views' tabs carry the
+/// dock button and take a press as a head does, so the dock draws no head over them.
+fn own_strip(panel: &Panel) -> bool {
+    matches!(panel, Panel::Console | Panel::Views)
+}
+
 pub fn name(dock: Dock) -> &'static str {
     match dock {
         Dock::Left => "left",
@@ -343,6 +350,7 @@ impl Render for DockView {
         };
         let title = page.tabs.iter().find(|tab| tab.panel == shown).map_or_else(|| shown.to_string(), |tab| tab.title.clone());
         let size = rem(self.drawn(&page, window_width, cx) as f32);
+        let outside = size.to_pixels(window.rem_size()) + gpui_kit::px(1.0);
         let sizing = self.work.upgrade().is_some_and(|work| work.read(cx).sizing(self.dock).is_some());
         let name = self.name();
         let root = v_flex()
@@ -356,12 +364,14 @@ impl Render for DockView {
             .border_color(tokens.line)
             .when(held, |dock| dock.opacity(tokens.opacity_held));
         let root = match self.dock {
-            Dock::Left => root.w(size).min_w_0().h_full().border_r_1(),
-            Dock::Right => root.w(size).min_w_0().h_full().border_l_1(),
+            // The page's `.dock` is content-box: its 1px side border is outside the size Rust says, so the
+            // panel keeps all of it (an auto-fit grid of two 200px tiles needs the 440, not 439).
+            Dock::Left => root.w(outside).min_w_0().h_full().border_r_1(),
+            Dock::Right => root.w(outside).min_w_0().h_full().border_l_1(),
             Dock::Bottom => root.h(size).min_h_0().w_full().border_t_1(),
         };
         let strip = (page.tabs.len() > 1).then(|| self.strip(&page, &shown, &docks, &tokens, cx).into_any_element());
-        let head = (page.tabs.len() <= 1 && shown != Panel::Console)
+        let head = (page.tabs.len() <= 1 && !own_strip(&shown))
             .then(|| self.head(&shown, &title, &docks, &tokens, cx).into_any_element());
         root.children(strip)
             .children(head)
@@ -374,7 +384,7 @@ impl Render for DockView {
                     .flex_1()
                     .min_h_0()
                     .child(area::measure(self.panel.clone()))
-                    .when(shown == Panel::Console, |panel| {
+                    .when(own_strip(&shown), |panel| {
                         let (carried, title) = (shown.clone(), title.clone());
                         let stage = present_of(&docks, &shown).is_some_and(|present| present.stage);
                         // The console's strip is its head. Its tabs and buttons take their own
@@ -391,6 +401,8 @@ impl Render for DockView {
                     })
                     .child(if shown == Panel::Console {
                         self.console.clone().into_any_element()
+                    } else if let Some(body) = Contents::peek(cx).panel(&shown) {
+                        body.into_any_element()
                     } else {
                         panel::body(title, &tokens).into_any_element()
                     }),

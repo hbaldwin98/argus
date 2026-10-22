@@ -26,6 +26,7 @@ use super::ended;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::keys::caps;
+use crate::layout::bodies::Contents;
 use crate::layout::panel;
 use crate::theme::Tokens;
 use route::{surface, Surface};
@@ -84,7 +85,10 @@ impl Render for StageView {
                 };
                 div().relative().size_full().child(self.pane.clone()).children(said.map(|said| empty::stage(said, &ways, &tokens))).into_any_element()
             }
-            Surface::Pending(stage) => panel::body(stage_name(stage), &tokens).into_any_element(),
+            Surface::Pending(stage) => match Contents::peek(cx).stage(stage) {
+                Some(page) => page.into_any_element(),
+                None => panel::body(stage_name(stage), &tokens).into_any_element(),
+            },
             // The work area puts the console here itself.
             Surface::Console => div().into_any_element(),
         };

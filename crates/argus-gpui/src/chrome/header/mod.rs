@@ -91,7 +91,7 @@ impl RenderOnce for Header {
         let mono = SharedString::from(tokens.font_mono);
         let width = css(window.viewport_size().width, window.rem_size());
         let maximize = if window.is_maximized() { Glyph::WinRestore } else { Glyph::WinMax };
-        let StripPage { crumb, title, status, resumed, meta, meta_tip, .. } = self.strip;
+        let StripPage { crumb, title, status, resumed, meta, meta_tip, pill, .. } = self.strip;
         // `.head-status` is drawn for the folded rail alone, where the row is not seen.
         let chip = status.filter(|_| narrow(width, tokens.narrow_below));
         let tools = self.launcher.is_some() || self.tools.is_some();
@@ -138,6 +138,7 @@ impl RenderOnce for Header {
                                     .items_center()
                                     .child(div().typed(tokens.type_heading).text_color(tokens.fg).truncate().child(SharedString::from(title)))
                                     .children(chip.map(|status| status_pill("head-status", status_word(status).to_owned(), status, &tokens)))
+                                    .children(pill.map(|pill| status_pill("head-pill", pill.word, pill.status, &tokens)))
                                     .when(!meta.is_empty(), |row| row.child(self::meta::meta(&meta, meta_tip, &tokens)))
                                     .children(resumed.map(|resumed| {
                                         // `.meta.ellipsis`

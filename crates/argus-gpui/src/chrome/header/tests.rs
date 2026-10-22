@@ -180,12 +180,12 @@ struct Launching {
 impl Render for Launching {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *crate::theme::Tokens::global(cx);
-        div().children(launcher::launcher(3, true, self.held, &self.caller, &tokens))
+        div().children(launcher::launcher(3, true, Some(argus_desktop_core::connection::page::Call::HideViews), self.held, &self.caller, &tokens))
     }
 }
 
 #[gpui_kit::test]
-fn the_views_launcher_toggles_the_panel_unless_the_daemon_is_gone(cx: &mut TestAppContext) {
+fn the_views_launcher_sends_what_rust_says_unless_the_daemon_is_gone(cx: &mut TestAppContext) {
     use std::cell::RefCell;
     use std::rc::Rc;
     cx.update(crate::window::init);
@@ -200,6 +200,6 @@ fn the_views_launcher_toggles_the_panel_unless_the_daemon_is_gone(cx: &mut TestA
         cx.update_window(handle, |_, window, cx| window.render_frame(cx)).unwrap();
         cx.update_window(handle, |_, window, cx| window.click("views-tab", cx)).unwrap();
         cx.run_until_parked();
-        assert_eq!(*calls.borrow(), if held { Vec::<String>::new() } else { vec!["ToggleViews".to_owned()] }, "held: {held}");
+        assert_eq!(*calls.borrow(), if held { Vec::<String>::new() } else { vec!["HideViews".to_owned()] }, "held: {held}");
     }
 }
