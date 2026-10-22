@@ -3,12 +3,12 @@
 
 use argus_desktop_core::connection::page::{Call, HistoryPage};
 use argus_desktop_core::keys::keymap::Action;
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, px, Context, SharedString};
 
 use super::History;
+use crate::kit::tip::tip;
 use crate::kit::button::{button, Look};
 use crate::kit::ghosts::ghosts;
 use crate::kit::keycap::keycap;
@@ -48,7 +48,7 @@ impl History {
                     .flex_shrink_0()
                     .font_family(mono.clone())
                     .text_color(tokens.fg_faint)
-                    .tooltip(|window, cx| Tooltip::new("Diffed against its first parent").build(window, cx))
+                    .tooltip(tip("Diffed against its first parent"))
                     .child(commit),
             )
             // The name leads and the folder after it is what gives way: a path

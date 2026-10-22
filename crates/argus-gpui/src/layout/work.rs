@@ -32,6 +32,7 @@ use crate::kit::area;
 use crate::connection::heard::Heard;
 use crate::layout::dock::{self, DockView};
 use crate::layout::drop_target::{self, Target};
+use crate::layout::holders::Holder;
 use crate::layout::sash;
 use crate::kit::drag::{self, Drag, Dragger, Step};
 use crate::theme::Tokens;
@@ -218,13 +219,19 @@ impl Dragger for WorkView {
         }
         // The page marks the body `resizing` while a sash is held, so a pane
         // waits for the size the gesture settles on (SHELL-EDGE-1).
-        let sizing = self.sizing.is_some();
-        if self.heard.read(cx).resizing != sizing {
-            self.heard.update(cx, |heard, cx| {
-                heard.resizing = sizing;
+        // Each dock holds under its own name, and only these are this area's
+        // to lift: another drag's hold stays.
+        let sizing = self.sizing.map(|(dock, _)| Holder::Dock(dock));
+        self.heard.update(cx, |heard, cx| {
+            let mut changed = false;
+            for dock in [Dock::Left, Dock::Right, Dock::Bottom] {
+                let holder = Holder::Dock(dock);
+                changed |= if sizing == Some(holder) { heard.hold_resize(holder) } else { heard.release_resize(holder) };
+            }
+            if changed {
                 cx.notify();
-            });
-        }
+            }
+        });
     }
 }
 

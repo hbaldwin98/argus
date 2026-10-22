@@ -29,7 +29,7 @@ use crate::review::files::Files;
 use crate::kit::ghosts::ghosts;
 use crate::kit::hints;
 use crate::kit::segment;
-use crate::review::split::{self, Split};
+use crate::kit::split::{self, Split};
 use crate::style::Typed as _;
 use crate::theme::Tokens;
 

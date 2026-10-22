@@ -10,8 +10,10 @@
 //! here, and a key that is not there is typed or ignored, never invented.
 
 use argus_desktop_core::connection::page::{Call, ReviewJumpGesture};
-use argus_desktop_core::keys::keymap::{Action, Place, BINDINGS};
+use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_desktop_core::keys::page_key::PageKey;
+
+use crate::keys::layer::action_for;
 
 /// What a key does in the review.
 #[derive(Debug, Clone)]
@@ -26,34 +28,26 @@ pub enum Press {
     Field,
 }
 
-/// The action `page` is bound to in `place`, leader-less.
-fn bound(place: Place, page: &PageKey) -> Option<Action> {
-    BINDINGS
-        .iter()
-        .filter(|binding| binding.place == place)
-        .find(|binding| binding.chords.iter().any(|chord| !chord.leader && chord.matches(page)))
-        .map(|binding| binding.action)
-}
 
 /// A key pressed in the review with no field holding it: its own action, or
 /// Escape from `Anywhere`'s bindings. Any other is held, so it is not typed
 /// into the pane under the stage.
 pub fn review(page: &PageKey) -> Option<Press> {
-    if let Some(action) = bound(Place::Review, page) {
+    if let Some(action) = action_for(&[Place::Review], page) {
         return Some(Press::Ask(Call::ReviewAction { action }));
     }
-    (bound(Place::Anywhere, page) == Some(Action::CloseLayer)).then_some(Press::Close)
+    (action_for(&[Place::Anywhere], page) == Some(Action::CloseLayer)).then_some(Press::Close)
 }
 
 /// A key pressed in the history with no field holding it: the history's own,
 /// `/` for its filter field, or Escape. Any other is held, as in the review.
 pub fn history(page: &PageKey) -> Option<Press> {
-    match bound(Place::History, page) {
+    match action_for(&[Place::History], page) {
         Some(Action::Filter) => return Some(Press::Field),
         Some(action) => return Some(Press::Ask(Call::HistoryAction { action, row: None })),
         None => {}
     }
-    (bound(Place::Anywhere, page) == Some(Action::CloseLayer)).then_some(Press::Close)
+    (action_for(&[Place::Anywhere], page) == Some(Action::CloseLayer)).then_some(Press::Close)
 }
 
 /// What the jump field's key does: its step, its choice or its close.
@@ -70,7 +64,7 @@ pub fn jump_gesture(action: Action) -> Option<ReviewJumpGesture> {
 /// A key in the jump field the field's own text handling would not take:
 /// Ctrl-N and Ctrl-P step as in fzf, and must not reach the pane.
 pub fn jump(page: &PageKey) -> Option<ReviewJumpGesture> {
-    bound(Place::Jump, page).and_then(jump_gesture)
+    action_for(&[Place::Jump], page).and_then(jump_gesture)
 }
 
 #[cfg(test)]

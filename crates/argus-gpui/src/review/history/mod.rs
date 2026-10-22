@@ -31,7 +31,7 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::diff::DiffView;
 use crate::kit::hints;
-use crate::review::split::{self, Split};
+use crate::kit::split::{self, Split};
 use crate::style::Typed as _;
 use crate::theme::Tokens;
 

@@ -11,11 +11,15 @@
 //! (SHELL-KEYS-16).
 
 use argus_desktop_core::connection::page::{Call, Stage};
-use gpui_kit::{Context, Entity, KeyDownEvent, Window};
+use argus_desktop_core::keys::keymap::{Action, Place};
+use gpui_kit::{App, Context, Entity, WeakEntity, Window};
 
 use super::picked::{settled, Picked};
 use super::RailView;
 use crate::connection::heard::Heard;
+use crate::keys::extension::{self, ANYWHERE, CHECKOUT, PANE};
+use crate::keys::layer::{action_for, Handler, Press, Verdict};
+use crate::keys::run;
 
 impl RailView {
     /// The tree changed: the pick follows it, and the keys go to the pane on screen when it is the
@@ -53,23 +57,33 @@ impl RailView {
         cx.notify();
     }
 
-    /// A key while the rail has the keys: only a picked row answers one, and
-    /// every key is held (SHELL-KEYS-16) so none is typed into the shell.
-    pub(super) fn press(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        cx.stop_propagation();
+    /// A key while a row is picked: its action in the places the rail hears, `Anywhere` then
+    /// `Rail` (SHELL-KEYS-16). Escape, or Enter on a pane, hands the keys back; `x` closes a picked
+    /// pane; an action of the window's is run after (the stage switches). A key it has no action
+    /// for is held, so none is typed into the shell.
+    fn answer(&mut self, press: &Press, places: &[Place], window: &mut Window, cx: &mut Context<Self>) -> Answer {
         let held = self.heard.read(cx).held();
-        let Some(picked) = self.picked else { return };
-        match event.keystroke.key.as_str() {
-            "escape" => self.give_back(window, cx),
-            "enter" if picked.pane.is_some() => self.give_back(window, cx),
-            "x" if picked.pane.is_some() && !held => {
+        let Some(picked) = self.picked else { return Answer::Held };
+        match action_for(places, press.page) {
+            Some(Action::CloseLayer) => self.give_back(window, cx),
+            Some(Action::Choose) if picked.pane.is_some() => self.give_back(window, cx),
+            Some(Action::Close) if picked.pane.is_some() && !held => {
                 let pane = picked.pane.expect("checked");
                 self.caller.call(Call::Close { pane });
                 self.picked = Some(Picked { checkout: picked.checkout, pane: None });
                 cx.notify();
             }
-            _ => {}
+            Some(action) => return Answer::Run(action),
+            // A key the window binds nothing to may be an extension command's, heard on the
+            // picked row: a pane's too when a pane is picked (SHELL-KEYS-21).
+            None => {
+                let scopes: &[&str] = if picked.pane.is_some() { &[ANYWHERE, CHECKOUT, PANE] } else { &[ANYWHERE, CHECKOUT] };
+                if !extension::run(scopes, press.page, Some(picked.checkout), picked.pane, cx) {
+                    return Answer::Held;
+                }
+            }
         }
+        Answer::Taken
     }
 
     /// Unpicks and gives the stage the keys (SHELL-RAIL-24, 27).
@@ -77,5 +91,42 @@ impl RailView {
         self.picked = None;
         window.focus(&self.stage, cx);
         cx.notify();
+    }
+}
+
+/// What the picked row made of a key.
+enum Answer {
+    Held,
+    Taken,
+    /// An action of the window's, for the root to run once the rail is let go of.
+    Run(Action),
+}
+
+/// The rail's layer of the key walk: up while a row is picked and the rail has the keys.
+pub struct RailKeys {
+    pub rail: WeakEntity<RailView>,
+}
+
+impl Handler for RailKeys {
+    fn open(&self, window: &Window, cx: &App) -> bool {
+        self.rail.upgrade().is_some_and(|rail| {
+            let rail = rail.read(cx);
+            rail.picked.is_some() && rail.focus.contains_focused(window, cx)
+        })
+    }
+
+    fn keys(&self, press: &Press, places: &[Place], window: &mut Window, cx: &mut App) -> Verdict {
+        let Some(rail) = self.rail.upgrade() else { return Verdict::Pass };
+        match rail.update(cx, |rail, cx| rail.answer(press, places, window, cx)) {
+            Answer::Held => Verdict::Held,
+            Answer::Taken => Verdict::Taken,
+            Answer::Run(action) => {
+                if run::run(action, window, cx) {
+                    Verdict::Taken
+                } else {
+                    Verdict::Held
+                }
+            }
+        }
     }
 }

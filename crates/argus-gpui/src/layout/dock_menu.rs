@@ -8,23 +8,17 @@
 
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{Dock, DockGesture, DocksPage, Panel, PresentPanel};
-use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::{App, Entity};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::kit::menu::item::MenuItem;
+use crate::kit::menu::popup;
+use crate::theme::Tokens;
 
-#[derive(Debug, Clone)]
-pub enum Entry {
-    Heading(String),
-    Item {
-        label: &'static str,
-        call: Call,
-        /// The panel is already there: shown disabled, as the place it is.
-        here: bool,
-    },
-    Separator,
-}
+/// Said in place of a hint by the dock a panel is already in (`layout/docks.ts`, `moveItems`).
+const HERE: &str = "here";
 
 fn gesture(gesture: DockGesture) -> Call {
     Call::Docks { gesture }
@@ -50,73 +44,52 @@ pub fn dock_of(docks: &DocksPage, panel: &Panel) -> Option<Dock> {
 /// The moves to each dock, the one the panel is shown in marked, and for a
 /// panel that floats, floating it as a dialog. `docked` is whether the panel
 /// is on screen in a dock now; a panel on the stage or floating is in none.
-pub fn moves(panel: &Panel, docked: bool, docks: &DocksPage, present: Option<&PresentPanel>) -> Vec<Entry> {
+pub fn moves(panel: &Panel, docked: bool, docks: &DocksPage, present: Option<&PresentPanel>) -> Vec<MenuItem<Call>> {
     let own = dock_of(docks, panel);
-    let mut items: Vec<Entry> = [Dock::Left, Dock::Right, Dock::Bottom]
+    let mut items: Vec<MenuItem<Call>> = [Dock::Left, Dock::Right, Dock::Bottom]
         .into_iter()
-        .map(|dock| Entry::Item {
-            label: words(dock),
-            call: gesture(DockGesture::Move { panel: panel.clone(), dock }),
-            here: docked && own == Some(dock),
+        .map(|dock| {
+            MenuItem::choice(words(dock), gesture(DockGesture::Move { panel: panel.clone(), dock }))
+                .refused_when(docked && own == Some(dock), HERE)
         })
         .collect();
     if present.is_some_and(|present| present.floats) {
         let floating = docks.floating.iter().any(|float| &float.panel == panel);
-        items.push(Entry::Separator);
-        items.push(Entry::Item {
-            label: "Float as a dialog",
-            call: gesture(DockGesture::Float { panel: panel.clone() }),
-            here: floating,
-        });
+        items.push(MenuItem::Rule);
+        items.push(
+            MenuItem::choice("Float as a dialog", gesture(DockGesture::Float { panel: panel.clone() })).refused_when(floating, HERE),
+        );
     }
     items
 }
 
 /// A dock tab's context menu: its name, the moves, and its close, which only a
 /// panel that `closes` has, else the hide that puts its dock away.
-pub fn tab(panel: &Panel, title: &str, docks: &DocksPage, present: Option<&PresentPanel>) -> Vec<Entry> {
-    let mut items = vec![Entry::Heading(title.to_owned())];
+pub fn tab(panel: &Panel, title: &str, docks: &DocksPage, present: Option<&PresentPanel>) -> Vec<MenuItem<Call>> {
+    let mut items = vec![MenuItem::heading(title)];
     items.extend(moves(panel, true, docks, present));
-    items.push(Entry::Separator);
+    items.push(MenuItem::Rule);
     if present.is_some_and(|present| present.closes) {
-        items.push(Entry::Item { label: "Close", call: gesture(DockGesture::Close { panel: panel.clone() }), here: false });
+        items.push(MenuItem::choice("Close", gesture(DockGesture::Close { panel: panel.clone() })));
     } else {
-        items.push(Entry::Item { label: "Hide", call: gesture(DockGesture::Hide { panel: panel.clone() }), here: false });
+        items.push(MenuItem::choice("Hide", gesture(DockGesture::Hide { panel: panel.clone() })));
     }
     items
 }
 
-/// The kit's menu for `entries`: each item sends its call through `caller`.
-/// While the daemon is gone every item is disabled, and a click that still
+/// The kit's menu for `items`: each choice sends its call through `caller`.
+/// While the daemon is gone every choice is disabled, and a click that still
 /// arrives (a menu opened before the link dropped) sends nothing: a menu is
 /// held like the tabs and the sash (`Heard::held`).
-pub fn build(mut menu: PopupMenu, entries: &[Entry], caller: &Caller, heard: &Entity<Heard>, cx: &App) -> PopupMenu {
-    let held = heard.read(cx).held();
-    for entry in entries {
-        menu = match entry {
-            Entry::Heading(text) => menu.label(text.clone()),
-            Entry::Separator => menu.separator(),
-            Entry::Item { label, call, here } => {
-                let (caller, heard, call) = (caller.clone(), heard.clone(), call.clone());
-                menu.item(
-                    PopupMenuItem::new(*label)
-                        .checked(*here)
-                        .disabled(*here || held)
-                        .on_click(move |_, _, cx| {
-                            if !heard.read(cx).held() {
-                                caller.call(call.clone());
-                            }
-                        }),
-                )
-            }
-        };
-    }
-    menu
+pub fn build(menu: PopupMenu, items: &[MenuItem<Call>], caller: &Caller, heard: &Entity<Heard>, tokens: Tokens, cx: &App) -> PopupMenu {
+    let (heard, caller) = (heard.clone(), caller.clone());
+    popup::fill(menu, items, tokens, move |cx| heard.read(cx).held(), move |call, _, _| caller.call(call.clone()), cx)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kit::menu::item::lines;
     use argus_desktop_core::layout::docks::{DockPage, DockTab, FloatBounds, FloatPage, PanelKind};
 
     fn present(panel: &Panel, floats: bool, closes: bool) -> PresentPanel {
@@ -133,15 +106,8 @@ mod tests {
         docks
     }
 
-    fn shown(entries: &[Entry]) -> Vec<String> {
-        entries
-            .iter()
-            .map(|entry| match entry {
-                Entry::Heading(text) => format!("# {text}"),
-                Entry::Separator => "---".to_owned(),
-                Entry::Item { label, here, .. } => format!("{label}{}", if *here { " (here)" } else { "" }),
-            })
-            .collect()
+    fn shown(entries: &[MenuItem<Call>]) -> Vec<String> {
+        lines(entries)
     }
 
     #[test]
@@ -150,7 +116,7 @@ mod tests {
         let docks = docks_with(&views, true);
         let entries = moves(&views, true, &docks, Some(&present(&views, false, false)));
         assert_eq!(shown(&entries), ["Dock on the left", "Dock on the right (here)", "Dock at the bottom"]);
-        let Entry::Item { call, .. } = &entries[0] else { panic!("an item") };
+        let call = &entries[0].as_choice().expect("a choice").does;
         assert_eq!(format!("{call:?}"), "Docks { gesture: Move { panel: Views, dock: Left } }");
     }
 
@@ -189,7 +155,7 @@ mod tests {
         let lines = shown(&hide);
         assert_eq!(lines[0], "# Views");
         assert_eq!(lines[lines.len() - 2..], ["---", "Hide"]);
-        let Some(Entry::Item { call, .. }) = hide.last() else { panic!("an item") };
+        let call = &hide.last().and_then(MenuItem::as_choice).expect("a choice").does;
         assert_eq!(format!("{call:?}"), "Docks { gesture: Hide { panel: Views } }");
 
         let close = tab(&views, "Views", &docks, Some(&present(&views, false, true)));

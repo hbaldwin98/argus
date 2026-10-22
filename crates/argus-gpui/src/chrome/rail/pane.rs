@@ -8,8 +8,9 @@ use gpui_kit::{div, prelude::*, px, Context, Hsla, MouseButton, MouseUpEvent, Ro
 use super::picked::Picked;
 use super::RailView;
 use super::row::line;
-use super::status::{pane_word, spill};
+use super::status::pane_word;
 use crate::kit::icons::Glyph;
+use crate::kit::pill::status_pill;
 use crate::kit::status_dot::status_dot;
 use crate::theme::Tokens;
 
@@ -88,12 +89,7 @@ impl RailView {
             .child(div().flex_1().min_w_0().truncate().child(pane.title.clone()))
             .when_some(word, |row, word| {
                 // `.pane-end`: gives way to the close button while the row is pointed at.
-                row.child(div().flex_shrink_0().group_hover(group.clone(), |style| style.invisible()).child(spill(
-                    id,
-                    word,
-                    pane.status,
-                    tokens,
-                )))
+                row.child(div().flex_shrink_0().group_hover(group.clone(), |style| style.invisible()).child(status_pill(format!("pane-{id}-word"), word, pane.status, tokens)))
             })
             // `.pane-row .close`: over the status word, only under the pointer.
             .child(

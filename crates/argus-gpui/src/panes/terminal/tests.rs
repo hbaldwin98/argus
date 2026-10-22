@@ -311,7 +311,11 @@ fn no_room_is_reported_while_a_dock_sash_is_held_and_the_last_is_when_it_is_let_
     let resizing = |cx: &mut TestAppContext, on: bool| {
         cx.update(|cx| {
             opened.heard.update(cx, |heard, cx| {
-                heard.resizing = on;
+                if on {
+                    heard.hold_resize(crate::layout::holders::Holder::Rail);
+                } else {
+                    heard.release_resize(crate::layout::holders::Holder::Rail);
+                }
                 cx.notify();
             })
         });

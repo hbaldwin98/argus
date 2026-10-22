@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::connection::daemon::SessionOwner;
-use argus_desktop_core::connection::effects::{self, Outlets};
+use argus_desktop_core::connection::effects::{self, Clipboard as _, Outlets};
 use argus_desktop_core::connection::page::{Call, Event};
 use argus_desktop_core::session::Session;
 use argus_desktop_core::settings::remembered::{self, Settings};
@@ -95,6 +95,12 @@ impl Owner {
                 }
             }
             Call::Edit { gesture } => self.send(vec![gesture.message()]),
+            // Written here, so the window's views are never granted the clipboard (SHELL-SYSTEM-3).
+            Call::CopyText { text } => {
+                if let Err(why) = clipboard::System.write(&text) {
+                    self.act(|s| s.note(format!("could not copy: {why}")));
+                }
+            }
             // The window's own frame answers these natively.
             Call::Minimize | Call::ToggleMaximize | Call::CloseWindow | Call::DragWindow | Call::SnapLayouts => {
                 tracing::debug!("a window call reached the owner");

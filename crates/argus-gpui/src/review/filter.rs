@@ -8,17 +8,19 @@
 //! is emptied when it shuts (SHARED-4).
 //!
 //! Enter and Escape in the field give the keys back to the stage, filtered, and
-//! Escape does not close the history from here (HISTORY-13): both are caught
-//! ahead of the input's own handling of them.
+//! Escape does not close the history from here (HISTORY-13): the `Filter` place's `Leave`, run in
+//! the key walk (`keys/field`) ahead of the input's own handling of them.
 
 use argus_desktop_core::connection::page::Call;
-use gpui_kit::component::input::{Enter, Escape, Input, InputEvent, InputState};
+use argus_desktop_core::keys::keymap::{Action, Place};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::Sizable as _;
-use gpui_kit::TestSupportExt as _;
+use gpui_kit::{Focusable as _, TestSupportExt as _};
 use gpui_kit::{div, prelude::*, px, Context, Entity, FocusHandle, SharedString, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::keys::field::{Fields, Registered};
 use crate::theme::Tokens;
 
 /// `.filter`: the field's width.
@@ -28,13 +30,13 @@ pub struct Filter {
     heard: Entity<Heard>,
     caller: Caller,
     field: Entity<InputState>,
-    /// The stage's focus, which the keys go back to when the field lets go.
-    stage: FocusHandle,
     /// What the field held when the session was last told, so the empty it is
     /// put back to when the history shuts says nothing.
     known: SharedString,
     open: bool,
     _subscriptions: [Subscription; 1],
+    /// The field's place in the key walk.
+    _field: Registered,
 }
 
 impl Filter {
@@ -51,7 +53,16 @@ impl Filter {
                 }
             }
         });
-        Self { heard, caller, field, stage, known: SharedString::default(), open: false, _subscriptions: [typing] }
+        // Enter and Escape give the stage the keys back, filtered; Escape closes nothing from here.
+        let back = stage;
+        let keys = Fields::of(cx).register_place(window, field.focus_handle(cx), Place::Filter, move |action, window, cx| {
+            if action != Action::Leave {
+                return false;
+            }
+            window.focus(&back, cx);
+            true
+        });
+        Self { heard, caller, field, known: SharedString::default(), open: false, _subscriptions: [typing], _field: keys }
     }
 
     /// Follows the session: a history that shuts lets the text go, and one that
@@ -89,10 +100,6 @@ impl Filter {
 impl Render for Filter {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
-        let leave = |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
-            cx.stop_propagation();
-            window.focus(&this.stage, cx);
-        };
         // `.field.filter`: a plain field, 220px wide and `--control-h` tall,
         // with no mark in it: the `/` that takes it is in the footer's hints.
         div()
@@ -100,8 +107,6 @@ impl Render for Filter {
             .test_support()
             .w(px(FIELD_W))
             .flex_shrink_0()
-            .capture_action(cx.listener(move |this, _: &Enter, window, cx| leave(this, window, cx)))
-            .capture_action(cx.listener(move |this, _: &Escape, window, cx| leave(this, window, cx)))
             .child(
                 Input::new(&self.field)
                     .id("history-filter-field")

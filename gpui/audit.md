@@ -740,12 +740,15 @@ the page is weak, the port should not copy it.
 1. **Window size.** Keep 1280x800 with a 900x560 minimum, or return to
    1200x800 and 720x480? Below 900 the folded rail and drawer cannot be
    reached.
+   Answered (#65): 1200x800 and 720x480, applied.
 2. **Mica threshold.** Build 22000 (core) or 22621 (the spike)? If the
    latter, say so in Settings or hide the choice below it.
 3. **Zoom scheme.** A multiplier in every size accessor, or rem size? Is a
    ban on raw `px()` literals acceptable?
+   Answered (#66): rem size.
 4. **Per-theme fonts.** Ship the other families (about 8, with licences),
    or fall every theme back to Inter and JetBrains Mono?
+   Answered (#68): each theme's own fonts ship when the theme is imported.
 5. **Grammars.** Wasm with install on request, or bundled native grammars
    and no install? Which Vim subset is promised?
 6. **Ctrl-P in the editor.** The stage's go-to, or Vim's k?
@@ -757,6 +760,7 @@ the page is weak, the port should not copy it.
 11. **Dimming on reconnect.** GPUI dims on Reconnecting, the page only on
     Stopped. Keep decision 49?
 12. **Drag threshold.** Page 4/6 px, helper 5 px. Take 5 everywhere?
+    Answered (#67): 5 px everywhere.
 13. **Time text and locale.** "4m" or "4 min ago"? English only, or the
     system locale for dates and numbers?
 14. **Where the Views launcher lives** with no title strip: stage header or
@@ -770,6 +774,7 @@ the page is weak, the port should not copy it.
     Keep? Back and Forward show no state; add a flag to the protocol?
     Treat `host:port` as a host, not a scheme?
 19. **Links from a view or the terminal**: system browser or a Browser pane?
+    Answered (#69): the system browser.
 20. **Logging.** Both windows write `argus-desktop.log` during the port.
     Rename the GPUI one?
 21. **Quit on close.** Keep it after Tauri goes, or fix teardown?
@@ -779,3 +784,4 @@ the page is weak, the port should not copy it.
 24. **Order.** Do Browsers (79-90) before or after Checkouts and Code?
     The plan puts them after because Code gates the Git hop and the editor
     is the longest pole.
+    Answered (#70): after Checkouts and Code.

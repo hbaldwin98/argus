@@ -499,7 +499,7 @@ fn a_press_on_a_tab_or_a_dock_leaves_the_keys_with_the_pane(cx: &mut TestAppCont
 #[gpui_kit::test]
 fn a_held_sash_says_so_until_it_is_let_go_or_cancelled(cx: &mut TestAppContext) {
     let opened = docked(cx, docks());
-    let resizing = |cx: &mut TestAppContext| cx.update(|cx| opened.heard.read(cx).resizing);
+    let resizing = |cx: &mut TestAppContext| cx.update(|cx| opened.heard.read(cx).resizing());
     let grab = centre(cx, &opened, "dock-right-sash");
     down(cx, &opened, grab);
     assert!(!resizing(cx), "a press that has not travelled is not a resize");
@@ -513,6 +513,30 @@ fn a_held_sash_says_so_until_it_is_let_go_or_cancelled(cx: &mut TestAppContext) 
     assert!(resizing(cx));
     escape(cx, &opened);
     assert!(!resizing(cx), "a cancelled drag is not a resize either");
+}
+
+/// SHELL-EDGE-1, CROSS-20: the hold is one set. A sash let go lifts only its
+/// own; a gutter still held keeps the panes from reporting.
+#[gpui_kit::test]
+fn a_sash_let_go_does_not_lift_another_drags_hold(cx: &mut TestAppContext) {
+    use crate::layout::holders::Holder;
+    let opened = docked(cx, docks());
+    let resizing = |cx: &mut TestAppContext| cx.update(|cx| opened.heard.read(cx).resizing());
+    cx.update(|cx| opened.heard.update(cx, |heard, _| heard.hold_resize(Holder::Grid)));
+
+    let grab = centre(cx, &opened, "dock-right-sash");
+    down(cx, &opened, grab);
+    drag_to(cx, &opened, by(grab, -100.0, 0.0));
+    up(cx, &opened, by(grab, -100.0, 0.0));
+    assert!(resizing(cx), "the sash's release lifted the grid's hold");
+
+    down(cx, &opened, grab);
+    drag_to(cx, &opened, by(grab, -100.0, 0.0));
+    escape(cx, &opened);
+    assert!(resizing(cx), "a cancelled sash lifted the grid's hold");
+
+    cx.update(|cx| opened.heard.update(cx, |heard, _| heard.release_resize(Holder::Grid)));
+    assert!(!resizing(cx));
 }
 
 #[gpui_kit::test]
@@ -545,8 +569,8 @@ fn pick_first_in_context_menu(cx: &mut TestAppContext, opened: &Opened, id: &str
     if let Some(link) = link.filter(|_| after) {
         hear(cx, opened, vec![link]);
     }
-    // The first press lands on the menu's name, the second on its first item.
-    for key in ["down", "down", "enter"] {
+    // The first press lands on the first item, not on the menu's name (SHELL-MENU-4).
+    for key in ["down", "enter"] {
         cx.update_window(opened.handle, |_, window, cx| window.press(key, cx)).unwrap();
         cx.run_until_parked();
     }

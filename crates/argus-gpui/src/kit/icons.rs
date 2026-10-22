@@ -42,6 +42,8 @@ pub enum Glyph {
     WinClose,
     Refresh,
     FoldAll,
+    /// A circle with an i: a notice.
+    Info,
 }
 
 impl Glyph {
@@ -75,6 +77,7 @@ impl Glyph {
             Glyph::WinClose => include_bytes!("../../assets/icons/win-close.svg"),
             Glyph::Refresh => include_bytes!("../../assets/icons/refresh.svg"),
             Glyph::FoldAll => include_bytes!("../../assets/icons/fold-all.svg"),
+            Glyph::Info => include_bytes!("../../assets/icons/info.svg"),
         }
     }
 
@@ -120,6 +123,7 @@ mod tests {
             Glyph::WinClose,
             Glyph::Refresh,
             Glyph::FoldAll,
+            Glyph::Info,
         ] {
             let text = std::str::from_utf8(glyph.bytes()).expect("utf-8");
             assert!(text.starts_with("<svg"), "{glyph:?}");

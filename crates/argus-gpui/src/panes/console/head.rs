@@ -5,7 +5,6 @@ use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_desktop_core::layout::docks::DocksPage;
 use argus_desktop_core::panes::console::{ConsoleGesture, ConsolePage, ConsoleTab};
 use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _};
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, px, Anchor, ClickEvent, Context, MouseButton, Role, SharedString};
@@ -13,6 +12,7 @@ use gpui_kit::{div, prelude::*, px, Anchor, ClickEvent, Context, MouseButton, Ro
 use super::ConsoleView;
 use super::menu::build;
 use super::strip::{self};
+use crate::kit::tip::tip;
 use crate::keys::caps;
 use crate::kit::icons::Glyph;
 use crate::kit::status_dot::status_dot;
@@ -53,7 +53,7 @@ impl ConsoleView {
                     .gap(px(tokens.sp_6))
                     .items_center()
                     .cursor_pointer()
-                    .tooltip(move |window, cx| Tooltip::new(format!("shell, {status}")).build(window, cx))
+                    .tooltip(tip(format!("shell, {status}")))
                     // The dock's drag begins on a press in the strip; a tab's is a pick.
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Select { pane }, cx)))

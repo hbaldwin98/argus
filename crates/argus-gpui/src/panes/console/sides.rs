@@ -4,7 +4,6 @@
 use argus_desktop_core::panes::console::{ConsoleGesture, ConsolePage, ConsoleTab};
 use gpui_kit::component::button::Button;
 use gpui_kit::component::menu::ContextMenuExt as _;
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, px, Context, Entity, Role, SharedString};
@@ -13,6 +12,7 @@ use super::ConsoleView;
 use super::head::dot;
 use super::menu::build;
 use super::strip::{self};
+use crate::kit::tip::tip;
 use crate::kit::strip as chrome_strip;
 use crate::panes::terminal::Terminal;
 use crate::style::Typed as _;
@@ -31,7 +31,7 @@ impl ConsoleView {
         let status = tab.status;
         let (fill, foreground, muted, selected) = (tokens.fill, tokens.fg, tokens.fg_muted, tokens.bg_selected);
         let title = SharedString::from(tab.title.clone());
-        let tip = if typing { tab.title.clone() } else { format!("Type in {}", tab.title) };
+        let words = if typing { tab.title.clone() } else { format!("Type in {}", tab.title) };
         h_flex()
             .id(SharedString::from(format!("console-side-head-{pane}")))
             .test_support()
@@ -55,7 +55,7 @@ impl ConsoleView {
                     .id(SharedString::from(format!("console-side-pick-{pane}")))
                     .role(Role::Button)
                     .test_support()
-                    .aria_label(SharedString::from(tip.clone()))
+                    .aria_label(SharedString::from(words.clone()))
                     .flex_1()
                     .min_w_0()
                     .h_full()
@@ -63,7 +63,7 @@ impl ConsoleView {
                     .gap(px(tokens.sp_6))
                     .items_center()
                     .cursor_pointer()
-                    .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
+                    .tooltip(tip(words.clone()))
                     .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Select { pane }, cx)))
                     .child(chrome_strip::title(title))
                     .when(strip::wears_dot(status), |pick| {
@@ -76,7 +76,7 @@ impl ConsoleView {
                     format!("Take {} out of the split", tab.title),
                     &tokens,
                 )
-                .tooltip(|window, cx| Tooltip::new("Take out of the split").build(window, cx))
+                .tooltip(tip("Take out of the split"))
                 .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::CloseSide { pane }, cx))),
             )
             .when(typing, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).bg(tokens.accent)))

@@ -7,21 +7,22 @@
 //! one thing held here is the field's own text: once it is open the text is
 //! the field's, and the session's echo of a letter can land after the next is
 //! typed, so a page never sets the text of an open field, only empties it when
-//! it shuts (SHARED-4). The field's keys are its own: Up and Down (or Ctrl N
-//! and Ctrl P) step, Enter chooses and Escape shuts the field and not the
-//! stage, caught ahead of the input's own handling of them.
+//! it shuts (SHARED-4). The field's keys are the `Jump` place's, answered in the key walk
+//! (`keys/field`): Up and Down (or Ctrl N and Ctrl P) step, Enter chooses and Escape shuts the
+//! field and not the stage, run ahead of the input's own handling of them.
 
 use argus_desktop_core::connection::page::{Call, ReviewClick, ReviewJumpGesture, ReviewPage};
-use argus_desktop_core::keys::keymap::Action;
-use gpui_kit::component::input::{Enter, Input, InputEvent, InputState, MoveDown, MoveUp};
-use gpui_kit::component::tooltip::Tooltip;
+use argus_desktop_core::keys::keymap::Place;
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _};
+use gpui_kit::Focusable as _;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Entity, KeyDownEvent, Role, ScrollHandle, SharedString, Subscription, Window};
+use gpui_kit::{div, prelude::*, px, Context, Entity, Role, ScrollHandle, SharedString, Subscription, Window};
 
+use crate::kit::tip::tip;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::keys::page_key;
+use crate::keys::field::{Fields, Registered};
 use crate::review::keys;
 use crate::kit::segment;
 use crate::style::Typed as _;
@@ -40,6 +41,8 @@ pub struct Files {
     /// The file lit when the list last scrolled to it.
     lit: Option<usize>,
     _subscriptions: [Subscription; 1],
+    /// The field's place in the key walk: the `Jump` place's keys are run before its own.
+    _field: Registered,
 }
 
 /// The files shown, as indices into `files`: the jump field's matches while
@@ -79,7 +82,22 @@ impl Files {
                 }
             }
         });
-        Self { heard, caller, jump, scroll: ScrollHandle::new(), known: SharedString::default(), open: false, lit: None, _subscriptions: [typing] }
+        let asking = cx.weak_entity();
+        let field = Fields::of(cx).register_place(window, jump.focus_handle(cx), Place::Jump, move |action, _, cx| {
+            let Some(gesture) = keys::jump_gesture(action) else { return false };
+            asking.update(cx, |files, cx| files.ask(Call::ReviewJump { gesture }, cx)).is_ok()
+        });
+        Self {
+            heard,
+            caller,
+            jump,
+            scroll: ScrollHandle::new(),
+            known: SharedString::default(),
+            open: false,
+            lit: None,
+            _subscriptions: [typing],
+            _field: field,
+        }
     }
 
     /// Follows the session: an open field keeps the keys, a shut one lets its
@@ -106,12 +124,6 @@ impl Files {
     fn ask(&self, call: Call, cx: &Context<Self>) {
         if !self.heard.read(cx).held() {
             self.caller.call(call);
-        }
-    }
-
-    fn gesture(&self, action: Action, cx: &Context<Self>) {
-        if let Some(gesture) = keys::jump_gesture(action) {
-            self.ask(Call::ReviewJump { gesture }, cx);
         }
     }
 
@@ -151,7 +163,7 @@ impl Files {
     }
 
     /// The label above the files, or the field that jumps among them.
-    fn head(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+    fn head(&self, page: &ReviewPage, tokens: &Tokens, _cx: &mut Context<Self>) -> impl IntoElement {
         let head = h_flex().flex_shrink_0().items_center();
         if page.jump.is_none() {
             // `.mlabel`: 600 at 12px, muted, 6px over and 2px under.
@@ -169,28 +181,6 @@ impl Files {
                 .id("review-jump-field")
                 .flex_1()
                 .min_w_0()
-                // Ahead of the input's own handling of each, which would move
-                // its caret, or leave the field to the stage under it.
-                .capture_action(cx.listener(|this, _: &MoveDown, _, cx| {
-                    cx.stop_propagation();
-                    this.gesture(Action::Next, cx);
-                }))
-                .capture_action(cx.listener(|this, _: &MoveUp, _, cx| {
-                    cx.stop_propagation();
-                    this.gesture(Action::Previous, cx);
-                }))
-                .capture_action(cx.listener(|this, _: &Enter, _, cx| {
-                    cx.stop_propagation();
-                    this.gesture(Action::Choose, cx);
-                }))
-                // Ctrl N and Ctrl P step as in fzf, and must not reach the pane.
-                .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                    let Some(page) = page_key::from_keystroke(&event.keystroke) else { return };
-                    if let Some(gesture) = keys::jump(&page) {
-                        cx.stop_propagation();
-                        this.ask(Call::ReviewJump { gesture }, cx);
-                    }
-                }))
                 .child(Input::new(&self.jump).id("review-jump").small().h(px(tokens.control_h)).aria_label("Jump to a file")),
         )
         .into_any_element()
@@ -232,7 +222,7 @@ impl Files {
                     .cursor_pointer()
                     .when(on, |row| row.bg(tokens.bg_selected).hover(move |style| style.bg(selected_hover)))
                     .when(!on, |row| row.hover(move |style| style.bg(fill)))
-                    .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+                    .tooltip(tip(tooltip.clone()))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.ask(Call::ReviewClick { target: ReviewClick::File { file: i } }, cx)
                     }))

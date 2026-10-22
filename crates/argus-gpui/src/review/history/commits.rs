@@ -3,12 +3,12 @@
 
 use argus_desktop_core::connection::page::{Call, HistoryPage, HistoryRowView};
 use argus_desktop_core::keys::keymap::Action;
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, px, ClickEvent, Context, SharedString};
 
 use super::History;
+use crate::kit::tip::tip;
 use crate::kit::button::{button, Look};
 use crate::kit::ghosts::ghosts;
 use crate::kit::icon_button::Node;
@@ -41,7 +41,7 @@ impl History {
             )
             .child(
                 button("history-fold-all", "Fold all", Look::Quiet, true, tokens)
-                    .tooltip(|window, cx| Tooltip::new("Fold every commit").build(window, cx))
+                    .tooltip(tip("Fold every commit"))
                     .child(Glyph::FoldAll.at(12.0))
                     .child("Fold all")
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -138,7 +138,7 @@ impl History {
             .aria_label(tooltip.clone())
             .min_h(px(tokens.row_h))
             .pl(px(tokens.sp_32 - 1.0))
-            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+            .tooltip(tip(tooltip.clone()))
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                 this.ask(Call::HistoryAction { action: Action::Next, row: Some(row) }, cx);
                 if event.click_count() >= 2 {

@@ -340,7 +340,9 @@ version = "0.38.2"
 dependencies = [
  "anyhow",
  "argus-protocol",
+ "jiff",
  "png 0.18.1",
+ "proptest",
  "serde",
  "serde_json",
  "tempfile",

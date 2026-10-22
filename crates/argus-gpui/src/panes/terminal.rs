@@ -15,12 +15,12 @@
 //! on a console screen that is not typed in asks for the keys
 //! (`console{select}`) and waits for the answer, as the page's does.
 //!
-//! Keys go to the session as the page sends them: every keystroke it can
-//! name is a `Call::Key`, and what the leader, the paste chord and the
-//! child's keyboard mode make of it is the session's. A key it does not
-//! take (a bare modifier, an input method's) goes on to GPUI's input
-//! handler (`keys/text`), which sends the committed text. Mouse reports,
-//! selection and the wheel are not here yet.
+//! Keys go to the session as the page sends them: the screen is a field of the key walk
+//! (`keys/field`), and while it has the keys every keystroke the page can name is a `Call::Key`.
+//! What the leader, the paste chord and the child's keyboard mode make of it is the session's. A
+//! key the walk does not take (a bare modifier, an input method's) goes on to GPUI's input handler
+//! (`keys/text`), which sends the committed text. Mouse reports, selection and the wheel are not
+//! here yet.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -32,13 +32,13 @@ use argus_desktop_core::panes::console::ConsoleGesture;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, prelude::*, px, App, Context, Entity, FocusHandle, KeyDownEvent, MouseButton, Pixels, Subscription, Task,
-    Window,
+    div, prelude::*, px, App, Context, Entity, FocusHandle, MouseButton, Pixels, Subscription, Task, Window,
 };
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::{Heard, Painted};
-use crate::keys::page_key;
+use crate::keys::field::{Fields, Registered};
+use crate::keys::layer::Verdict;
 use crate::panes::element::TerminalElement;
 use crate::panes::palette::Palette;
 use crate::panes::screen::{Cursor, Screen};
@@ -68,6 +68,8 @@ pub struct Terminal {
     waiting: bool,
     settling: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
+    /// The screen's place in the key walk, ended with the view.
+    _field: Registered,
 }
 
 impl Terminal {
@@ -103,6 +105,12 @@ impl Terminal {
         if workspace {
             window.focus(&focus, cx);
         }
+        // Every key the walk gives a focused screen goes to the session as the page sends it.
+        let keys = caller.clone();
+        let field = Fields::of(cx).register(window, focus.clone(), move |press, _, _| {
+            keys.call(Call::Key { key: press.page.clone() });
+            Verdict::Taken
+        });
         Self {
             side,
             heard,
@@ -118,6 +126,7 @@ impl Terminal {
             waiting: false,
             settling: None,
             _subscriptions: subscriptions,
+            _field: field,
         }
     }
 
@@ -144,7 +153,7 @@ impl Terminal {
     /// Sends the settled room, unless a sash is held: the stage is then being
     /// resized by a gesture and reports when it is let go (see `observe` in `new`).
     fn settle(&mut self, cx: &Context<Self>) {
-        if self.heard.read(cx).resizing {
+        if self.heard.read(cx).resizing() {
             self.waiting = true;
             return;
         }
@@ -182,16 +191,6 @@ impl Terminal {
                 Call::Console { gesture: ConsoleGesture::Select { pane } }
             });
         }
-    }
-
-    /// A key in the pane, to the session as the page sends it.
-    fn press(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
-        let Some(key) = page_key::from_keystroke(&event.keystroke) else {
-            return;
-        };
-        self.caller.call(Call::Key { key });
-        // Handled here, so the platform does not type it again as text.
-        cx.stop_propagation();
     }
 
     /// Text an input method committed.
@@ -262,7 +261,6 @@ impl Render for Terminal {
             .size_full()
             .bg(tokens.bg_sunken)
             .p(px(8.0))
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| this.press(event, cx)))
             // A press with any button on the pane gives it the keys, or asks for them
             // (SHELL-INPUT-5, -9); only the start of a selection is the left button's.
             .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.pressed(window, cx)))

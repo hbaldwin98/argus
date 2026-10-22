@@ -326,4 +326,17 @@ fn the_ports_own_sizes_are_named_not_themed() {
     let t = ledger::tokens();
     assert_eq!(t.window_control_w, 46.0);
     assert_eq!(t.status_box, 9.0);
+    assert_eq!(t.dialog_w, 420.0);
+}
+
+#[test]
+fn the_shared_parts_sizes_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    sheet_has(".pbar {
+  width: 56px;
+  height: var(--meter-h);");
+    assert_eq!(t.meter_w, 56.0);
+    sheet_has(".ghost {
+  height: 12px;");
+    assert_eq!(t.ghost_h, 12.0);
 }

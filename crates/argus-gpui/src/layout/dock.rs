@@ -18,7 +18,6 @@ use std::rc::Rc;
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{Dock, DockGesture, DockPage, DockTab, DocksPage, Panel, PresentPanel};
 use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _};
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{v_flex, Disableable as _};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
@@ -26,6 +25,7 @@ use gpui_kit::{
     Pixels, Role, SharedString, Subscription, WeakEntity, Window,
 };
 
+use crate::kit::tip::tip;
 use crate::kit::strip;
 use crate::connection::caller::Caller;
 use crate::kit::area;
@@ -114,10 +114,7 @@ impl DockView {
         let close_label = format!("Close {}", tab.title);
         strip::tab(SharedString::from(format!("dock-tab-{panel}")), on, closes, tab.title.clone(), tokens)
             // A title truncates at the tab's width; the tooltip has all of it (SHELL-DOCK-3).
-            .tooltip({
-                let title = tab.title.clone();
-                move |window, cx| Tooltip::new(title.clone()).build(window, cx)
-            })
+            .tooltip(tip(tab.title.clone()))
             // A tab picked is a click on release and a drag once it travels.
             .on_mouse_down(
                 MouseButton::Left,
@@ -152,7 +149,10 @@ impl DockView {
                         })),
                 )
             })
-            .context_menu(move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, cx))
+            .context_menu({
+                let tokens = *tokens;
+                move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, tokens, cx)
+            })
     }
 
     /// The "Move to another dock" button: the dock the panel sits in, which
@@ -174,7 +174,10 @@ impl DockView {
                 strip::menu_button(SharedString::from(format!("dock-menu-{}", self.name())), glyph, 15.0, tokens, cx)
                     .tooltip("Move to another dock")
                     .disabled(held)
-                    .dropdown_menu(move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, cx)),
+                    .dropdown_menu({
+                        let tokens = *tokens;
+                        move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, tokens, cx)
+                    }),
             )
     }
 

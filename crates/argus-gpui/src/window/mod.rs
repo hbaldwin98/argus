@@ -11,11 +11,14 @@ use gpui_kit::{
 };
 
 use crate::chrome::header::Header;
+use crate::keys;
 use crate::kit::fonts;
+use crate::kit::menu;
+use crate::kit::overlay::host::Overlays;
 use crate::theme::{self, Tokens};
 
-/// Below this the sidebar, stage and docks no longer fit side by side.
-pub const MIN_SIZE: gpui_kit::Size<Pixels> = size(px(900.0), px(560.0));
+/// The Tauri window's floor, so the two open and shrink alike (decision #65).
+pub const MIN_SIZE: gpui_kit::Size<Pixels> = size(px(720.0), px(480.0));
 
 /// The application with gpui-kit's bundled icons, which the window controls draw.
 pub fn application() -> Application {
@@ -27,6 +30,9 @@ pub fn application() -> Application {
 pub fn init(cx: &mut App) {
     gpui_kit::init(cx);
     fonts::install(cx);
+    menu::keys::install(cx);
+    Overlays::install(cx);
+    keys::root::install(cx);
     theme::kit::install(cx, theme::ledger::tokens());
 }
 
@@ -34,7 +40,7 @@ pub fn init(cx: &mut App) {
 /// hide the non-client area, so the header's control areas are all that
 /// moves and closes it.
 pub fn options(cx: &App) -> WindowOptions {
-    let bounds = Bounds::centered(None, size(px(1280.0), px(800.0)), cx);
+    let bounds = Bounds::centered(None, size(px(1200.0), px(800.0)), cx);
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {

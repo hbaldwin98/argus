@@ -12,6 +12,7 @@ use argus_desktop_core::layout::docks::{Dock, DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsoleGesture, ConsolePage, ConsolePlace, ConsoleTab};
 
 use crate::keys::caps;
+use crate::kit::menu::item::MenuItem;
 use crate::layout::dock_menu;
 
 /// An idle shell is the ordinary case, so it wears nothing; a dot is for a
@@ -29,28 +30,15 @@ pub enum Does {
     Rename { pane: u64, title: String },
 }
 
-#[derive(Debug, Clone)]
-pub enum Offer {
-    Heading(String),
-    Item {
-        label: String,
-        does: Does,
-        /// Ends a console: drawn in the danger colour.
-        danger: bool,
-        /// The console is already there: shown disabled, as the place it is.
-        here: bool,
-        /// The keys that do the same, one list of presses per alternative.
-        keys: Vec<Vec<String>>,
-    },
-    Separator,
+/// A console menu's items: choices that send calls, or open the rename dialog.
+pub type Offers = Vec<MenuItem<Does>>;
+
+fn item(label: impl Into<String>, call: Call) -> MenuItem<Does> {
+    MenuItem::choice(label, Does::Calls(vec![call]))
 }
 
-fn item(label: impl Into<String>, call: Call) -> Offer {
-    Offer::Item { label: label.into(), does: Does::Calls(vec![call]), danger: false, here: false, keys: Vec::new() }
-}
-
-fn keyed(label: impl Into<String>, call: Call, keys: Vec<Vec<String>>) -> Offer {
-    Offer::Item { label: label.into(), does: Does::Calls(vec![call]), danger: false, here: false, keys }
+fn keyed(label: impl Into<String>, call: Call, keys: Vec<Vec<String>>) -> MenuItem<Does> {
+    item(label, call).keyed(keys)
 }
 
 fn console(gesture: ConsoleGesture) -> Call {
@@ -60,32 +48,20 @@ fn console(gesture: ConsoleGesture) -> Call {
 /// A tab's (or a split side's) menu: its name, `Rename...`, on a split side
 /// taking it out of the split, then closing it and, when there are others,
 /// closing the others one `close` each.
-pub fn tab_offers(tab: &ConsoleTab, side: bool, tabs: &[ConsoleTab]) -> Vec<Offer> {
+pub fn tab_offers(tab: &ConsoleTab, side: bool, tabs: &[ConsoleTab]) -> Offers {
     let mut offers = vec![
-        Offer::Heading(tab.title.clone()),
-        Offer::Item {
-            label: "Rename\u{2026}".into(),
-            does: Does::Rename { pane: tab.pane, title: tab.title.clone() },
-            danger: false,
-            here: false,
-            keys: Vec::new(),
-        },
+        MenuItem::heading(tab.title.clone()),
+        MenuItem::choice("Rename\u{2026}",Does::Rename { pane: tab.pane, title: tab.title.clone() }),
     ];
     if side {
         offers.push(item("Take out of the split", console(ConsoleGesture::CloseSide { pane: tab.pane })));
     }
-    offers.push(Offer::Separator);
-    offers.push(Offer::Item {
-        label: "Close".into(),
-        does: Does::Calls(vec![console(ConsoleGesture::Close { pane: tab.pane })]),
-        danger: true,
-        here: false,
-        keys: Vec::new(),
-    });
+    offers.push(MenuItem::Rule);
+    offers.push(item("Close", console(ConsoleGesture::Close { pane: tab.pane })).danger());
     let others: Vec<Call> =
         tabs.iter().filter(|other| other.pane != tab.pane).map(|other| console(ConsoleGesture::Close { pane: other.pane })).collect();
     if !others.is_empty() {
-        offers.push(Offer::Item { label: "Close the others".into(), does: Does::Calls(others), danger: true, here: false, keys: Vec::new() });
+        offers.push(MenuItem::choice("Close the others", Does::Calls(others)).danger());
     }
     offers
 }
@@ -93,7 +69,7 @@ pub fn tab_offers(tab: &ConsoleTab, side: bool, tabs: &[ConsoleTab]) -> Vec<Offe
 /// The strip's more menu for the console as it stands: split or put the
 /// split away, move between the Console stage and its dock, fill the window
 /// or leave it, then the docks it can be moved to (never floated).
-pub fn strip_offers(page: &ConsolePage, docks: &DocksPage, keymap: &[Group]) -> Vec<Offer> {
+pub fn strip_offers(page: &ConsolePage, docks: &DocksPage, keymap: &[Group]) -> Offers {
     let docked = page.place == ConsolePlace::Docked;
     let dock = dock_menu::dock_of(docks, &Panel::Console).unwrap_or(Dock::Bottom);
     let split = page.beside.is_some();
@@ -117,43 +93,29 @@ pub fn strip_offers(page: &ConsolePage, docks: &DocksPage, keymap: &[Group]) -> 
             console(ConsoleGesture::Fullscreen),
             caps::presses(keymap, Action::ConsoleFullscreen, Place::Pane),
         ),
-        Offer::Separator,
+        MenuItem::Rule,
     ];
-    for entry in dock_menu::moves(&Panel::Console, docked, docks, None) {
-        offers.push(match entry {
-            dock_menu::Entry::Item { label, call, here } => {
-                Offer::Item { label: label.into(), does: Does::Calls(vec![call]), danger: false, here, keys: Vec::new() }
-            }
-            dock_menu::Entry::Heading(text) => Offer::Heading(text),
-            dock_menu::Entry::Separator => Offer::Separator,
-        });
-    }
+    offers.extend(dock_menu::moves(&Panel::Console, docked, docks, None).into_iter().map(|entry| entry.map(|call| Does::Calls(vec![call]))));
     offers
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kit::menu::item::{lines, Choice, Hint};
     use argus_desktop_core::layout::docks::{DockPage, DockTab};
 
     fn tab(pane: u64, title: &str) -> ConsoleTab {
         ConsoleTab { pane, title: title.into(), status: "idle", on: false }
     }
 
-    fn labels(offers: &[Offer]) -> Vec<String> {
-        offers
-            .iter()
-            .map(|offer| match offer {
-                Offer::Heading(text) => format!("# {text}"),
-                Offer::Separator => "---".into(),
-                Offer::Item { label, here, .. } => format!("{label}{}", if *here { " (here)" } else { "" }),
-            })
-            .collect()
+    fn labels(offers: &[MenuItem<Does>]) -> Vec<String> {
+        lines(offers)
     }
 
-    fn calls(offer: &Offer) -> Vec<String> {
-        match offer {
-            Offer::Item { does: Does::Calls(calls), .. } => calls.iter().map(|call| format!("{call:?}")).collect(),
+    fn calls(offer: &MenuItem<Does>) -> Vec<String> {
+        match offer.as_choice() {
+            Some(Choice { does: Does::Calls(calls), .. }) => calls.iter().map(|call| format!("{call:?}")).collect(),
             other => panic!("not an item that calls: {other:?}"),
         }
     }
@@ -189,8 +151,8 @@ mod tests {
     fn a_tabs_menu_renames_closes_and_closes_the_others_one_close_each() {
         let tabs = [tab(5, "pwsh"), tab(6, "cargo"), tab(7, "node")];
         let offers = tab_offers(&tabs[1], false, &tabs);
-        assert_eq!(labels(&offers), ["# cargo", "Rename\u{2026}", "---", "Close", "Close the others"]);
-        assert!(matches!(&offers[1], Offer::Item { does: Does::Rename { pane: 6, title }, .. } if title == "cargo"));
+        assert_eq!(labels(&offers), ["# cargo", "Rename\u{2026}", "---", "!Close", "!Close the others"]);
+        assert!(matches!(&offers[1].as_choice().unwrap().does, Does::Rename { pane: 6, title } if title == "cargo"));
         assert_eq!(calls(&offers[3]), ["Console { gesture: Close { pane: 6 } }"]);
         assert_eq!(calls(&offers[4]), ["Console { gesture: Close { pane: 5 } }", "Console { gesture: Close { pane: 7 } }"]);
     }
@@ -198,7 +160,7 @@ mod tests {
     #[test]
     fn a_lone_tab_has_no_others_to_close_and_only_a_split_side_leaves_the_split() {
         let tabs = [tab(5, "pwsh")];
-        assert_eq!(labels(&tab_offers(&tabs[0], false, &tabs)), ["# pwsh", "Rename\u{2026}", "---", "Close"]);
+        assert_eq!(labels(&tab_offers(&tabs[0], false, &tabs)), ["# pwsh", "Rename\u{2026}", "---", "!Close"]);
         let side = tab_offers(&tabs[0], true, &tabs);
         assert_eq!(labels(&side)[2], "Take out of the split");
         assert_eq!(calls(&side[2]), ["Console { gesture: CloseSide { pane: 5 } }"]);
@@ -233,9 +195,10 @@ mod tests {
         // SHELL-CONSOLE-8: split is leader `\`, the stage `4`, fullscreen leader `z`.
         let keymap = argus_desktop_core::keys::keymap::groups();
         let offers = strip_offers(&page(ConsolePlace::Docked, None), &docked_at(Dock::Bottom), &keymap);
-        let keys = |offer: &Offer| match offer {
-            Offer::Item { keys, .. } => keys.iter().map(|presses| presses.join(" ")).collect::<Vec<_>>(),
-            other => panic!("not an item: {other:?}"),
+        let keys = |offer: &MenuItem<Does>| match offer.as_choice().map(|choice| &choice.hint) {
+            Some(Hint::Keys(keys)) => keys.iter().map(|presses| presses.join(" ")).collect::<Vec<_>>(),
+            Some(Hint::None) => Vec::new(),
+            other => panic!("not an item with keys: {other:?}"),
         };
         assert_eq!(keys(&offers[0]), ["Ctrl Space \\"]);
         assert!(keys(&offers[1]).iter().any(|k| k == "4"), "{:?}", keys(&offers[1]));

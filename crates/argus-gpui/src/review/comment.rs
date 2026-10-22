@@ -19,12 +19,14 @@
 //! review's here until that stage is ported and gives it its own.
 
 use argus_desktop_core::connection::page::{Call, ReviewClick};
+use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_desktop_core::review::comment_box::CommentPage;
-use gpui_kit::component::input::{Enter, Escape, Textarea, TextareaState};
+use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Entity, KeyDownEvent, Pixels, SharedString, Window};
+use gpui_kit::{div, prelude::*, px, Context, Entity, Focusable as _, Pixels, SharedString, Window};
 
+use crate::keys::field::{Fields, Registered};
 use crate::kit::button::{button, chip, Look};
 use crate::kit::keycap::keycap;
 use crate::connection::caller::Caller;
@@ -55,12 +57,25 @@ pub struct CommentBox {
     caller: Caller,
     text: Entity<TextareaState>,
     page: Option<CommentPage>,
+    /// The box's place in the key walk: the `Writing` place's keys are run before the textarea's.
+    _field: Registered,
 }
 
 impl CommentBox {
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let text = cx.new(|cx| TextareaState::new(window, cx).rows(ROWS).placeholder("Comment"));
-        Self { heard, caller, text, page: None }
+        // Ctrl Enter and Meta Enter send and Escape puts the box away, ahead of the textarea's own
+        // Enter and Escape (COMMENT-6, 7); a bare Enter is a newline, so the walk leaves it.
+        let asking = cx.weak_entity();
+        let field = Fields::of(cx).register_place(window, text.focus_handle(cx), Place::Writing, move |action, _, cx| {
+            let sent = match action {
+                Action::Save => asking.update(cx, |comment, cx| comment.send(cx)),
+                Action::CloseLayer => asking.update(cx, |comment, cx| comment.cancel(cx)),
+                _ => return false,
+            };
+            sent.is_ok()
+        });
+        Self { heard, caller, text, page: None, _field: field }
     }
 
     /// Follows the session: the page of the box while it is open. An open box
@@ -174,28 +189,6 @@ impl Render for CommentBox {
             .font_family(SharedString::from(tokens.font_ui))
             .text_size(px(tokens.fs_md))
             .bg(tokens.bg_surface)
-            // Ahead of the textarea's own Enter, which would put a newline in
-            // before it said anything was pressed, and ahead of its Escape.
-            .capture_action(cx.listener(|this, action: &Enter, _, cx| {
-                if action.secondary {
-                    cx.stop_propagation();
-                    this.send(cx);
-                }
-            }))
-            // The engine binds only its own secondary key (Cmd on macOS, Ctrl
-            // elsewhere); the other of Ctrl and Meta is no binding at all, so
-            // it is caught here as a key, still ahead of the textarea (COMMENT-6).
-            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                let keys = &event.keystroke;
-                if keys.key == "enter" && (keys.modifiers.control || keys.modifiers.platform) {
-                    cx.stop_propagation();
-                    this.send(cx);
-                }
-            }))
-            .capture_action(cx.listener(|this, _: &Escape, _, cx| {
-                cx.stop_propagation();
-                this.cancel(cx);
-            }))
             .child(
                 h_flex()
                     .gap(px(tokens.sp_8))

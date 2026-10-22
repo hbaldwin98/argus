@@ -16,6 +16,11 @@ use argus_protocol::{ago,
 use crate::connection::page::{self, Rail};
 use crate::panes::shown::workspace_grid::GridPage;
 
+/// What the window says when an agent is asked for and the daemon offers
+/// none. The session says it for a command; a view that starts an agent on
+/// a row of its own says this same line, so the words are written once.
+pub const NO_AGENT: &str = "argusd offers no agent to start";
+
 /// What the rail is drawn from besides the tree.
 pub struct Choices<'a> {
     pub project: Option<ProjectId>,

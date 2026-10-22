@@ -21,18 +21,22 @@ pub mod row;
 pub mod stages;
 pub mod status;
 
+use std::rc::Rc;
+
 use argus_desktop_core::connection::page::Stage;
-use argus_desktop_core::keys::keymap::Place;
+use argus_desktop_core::keys::keymap::{Layer, Place};
 use argus_desktop_core::panes::console::ConsolePlace;
 use gpui_kit::component::{v_flex, ActiveTheme as _};
-use gpui_kit::{prelude::*, px, Context, Entity, FocusHandle, KeyDownEvent, Subscription, Window};
+use gpui_kit::{prelude::*, px, Context, Entity, FocusHandle, Subscription, Window};
 
 use crate::chrome::foot::{foot, Console};
 use crate::chrome::nav::Nav;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::keys::caps;
+use crate::keys::layer::Layers;
 use crate::theme::Tokens;
+use keys::RailKeys;
 use picked::Picked;
 
 pub struct RailView {
@@ -62,6 +66,8 @@ impl RailView {
                 cx.notify();
             }),
         ];
+        // The rail's layer of the key walk: it holds the keys while a row is picked.
+        Layers::of(cx).register(Layer::Rail, Rc::new(RailKeys { rail: cx.weak_entity() }));
         let (shown, last_stage, last_git) = {
             let heard = heard.read(cx);
             (heard.rail.shown.as_ref().map(|shown| shown.pane), heard.rail.stage, heard.git_up())
@@ -105,7 +111,6 @@ impl Render for RailView {
             .id("rail")
             .key_context("Rail")
             .track_focus(&self.focus)
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| this.press(event, window, cx)))
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.release(window, cx)))
             .w(px(tokens.rail_w))
             .flex_shrink_0()

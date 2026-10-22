@@ -19,3 +19,19 @@ pub fn keycap(text: impl Into<SharedString>, mono: SharedString, tokens: &Tokens
         .text_color(tokens.fg_faint)
         .child(text.into())
 }
+
+/// The keys an item or tooltip names, each press a cap, the alternatives apart by a slash:
+/// one list of presses per alternative, as `keys::caps::presses` gives them.
+pub fn keycaps(keys: &[Vec<String>], tokens: &Tokens) -> gpui_kit::Div {
+    let mono = SharedString::from(tokens.font_mono);
+    let mut caps = gpui_kit::div().flex().items_center().gap(px(tokens.sp_4)).text_size(px(tokens.fs_xs)).text_color(tokens.fg_muted);
+    for (n, presses) in keys.iter().enumerate() {
+        if n > 0 {
+            caps = caps.child("/");
+        }
+        for press in presses {
+            caps = caps.child(keycap(press.clone(), mono.clone(), tokens));
+        }
+    }
+    caps
+}

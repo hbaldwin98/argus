@@ -1448,3 +1448,17 @@ fn left_and_right_scroll_the_diff_sideways_and_send_nothing(cx: &mut TestAppCont
     assert_eq!(x(cx), before, "left brings it back");
     assert!(taken(&opened).is_empty(), "the arrows are the window's own: {:?}", taken(&opened));
 }
+
+/// SHELL-KEYS-14: the dialog hears `Anywhere`'s `?` and no other key of it, as the page's `hear`
+/// does: the sheet opens over the review and nothing is sent or typed.
+#[gpui_kit::test]
+fn a_question_mark_in_the_review_opens_the_shortcuts_sheet_and_sends_nothing(cx: &mut TestAppContext) {
+    let opened = reviewed(cx);
+    let shift = Modifiers { shift: true, ..Modifiers::none() };
+    let question = gpui_kit::Keystroke { modifiers: shift, key: "/".into(), key_char: Some("?".into()) };
+    cx.update_window(opened.handle, |_, window, cx| window.dispatch_keystroke(question, cx)).unwrap();
+    cx.run_until_parked();
+    let up = cx.update(|cx| crate::kit::overlay::host::Overlays::get(cx).open_kinds());
+    assert_eq!(up, [crate::kit::overlay::kind::Overlay::Sheet]);
+    assert!(taken(&opened).is_empty(), "{:?}", taken(&opened));
+}

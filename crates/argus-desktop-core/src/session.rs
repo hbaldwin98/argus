@@ -876,20 +876,27 @@ impl Session {
                 self.rail_sent.forget();
                 self.finish()
             }
+            // Each of these is sent back like the rail's: a size let go past
+            // its bound, at the bound it already holds, would change
+            // nothing and so send nothing (CROSS-28).
             Call::OutlineWidth { width } => {
                 self.outline_width.set(width);
+                self.rail_sent.forget();
                 self.finish()
             }
             Call::BriefHeight { height } => {
                 self.brief_height.set(height);
+                self.rail_sent.forget();
                 self.finish()
             }
             Call::CodeTreeWidth { width } => {
                 self.code_tree_width.set(width);
+                self.rail_sent.forget();
                 self.finish()
             }
             Call::CodeOutlineWidth { width } => {
                 self.code_outline_width.set(width);
+                self.rail_sent.forget();
                 self.finish()
             }
             Call::RefreshView { pane, id } => {
@@ -2681,7 +2688,7 @@ impl Session {
         match (action, self.agents.first()) {
             (Action::StartShell, _) => self.spawn_shell(checkout),
             (_, Some(agent)) => self.spawn_agent(checkout, agent),
-            (_, None) => self.note("argusd offers no agent to start"),
+            (_, None) => self.note(rail::NO_AGENT),
         }
     }
 
@@ -6674,6 +6681,50 @@ mod tests {
         assert_eq!(rail_width(&mut s), Some(Some(dragged_width::RAIL.min)), "the page is told to undo its 150");
         s.call(Call::RailWidth { width: Some(90) });
         assert_eq!(rail_width(&mut s), Some(Some(dragged_width::RAIL_FOLDED)));
+    }
+
+    /// CROSS-28: the outline, brief and code sizes travel in the rail's
+    /// event, and a release at the bound a size already holds is answered
+    /// all the same, as the rail's is.
+    #[test]
+    fn a_size_let_go_past_the_bound_it_already_holds_is_sent_back() {
+        let mut s = session(without_focus());
+        s.events(0);
+        let rail = |s: &mut Session| {
+            s.events(0).into_iter().find_map(|e| match e {
+                Event::Rail(rail) => Some(rail),
+                _ => None,
+            })
+        };
+        let (outline, brief, tree, code_outline) = (
+            dragged_width::OUTLINE.max,
+            dragged_width::BRIEF.max,
+            dragged_width::CODE_TREE.max,
+            dragged_width::CODE_OUTLINE.max,
+        );
+        s.call(Call::OutlineWidth { width: Some(outline) });
+        s.call(Call::BriefHeight { height: Some(brief) });
+        s.call(Call::CodeTreeWidth { width: Some(tree) });
+        s.call(Call::CodeOutlineWidth { width: Some(code_outline) });
+        rail(&mut s).expect("the sizes are told");
+
+        s.call(Call::OutlineWidth { width: Some(outline + 400) });
+        assert_eq!(rail(&mut s).expect("the outline is told again").outline_width, Some(outline));
+        s.call(Call::BriefHeight { height: Some(brief + 400) });
+        assert_eq!(rail(&mut s).expect("the brief is told again").brief_height, Some(brief));
+        s.call(Call::CodeTreeWidth { width: Some(tree + 400) });
+        assert_eq!(rail(&mut s).expect("the tree is told again").code_tree_width, Some(tree));
+        s.call(Call::CodeOutlineWidth { width: Some(code_outline + 400) });
+        assert_eq!(rail(&mut s).expect("the outline is told again").code_outline_width, Some(code_outline));
+    }
+
+    #[test]
+    fn a_command_to_start_an_agent_with_none_offered_says_so() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.events(0);
+        s.command(Action::StartAgent);
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == rail::NO_AGENT)));
     }
 
     #[test]

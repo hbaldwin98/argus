@@ -3,6 +3,7 @@
 
 pub mod foot;
 pub mod header;
+pub mod notice;
 pub mod nav;
 pub mod rail;
 pub mod shell;

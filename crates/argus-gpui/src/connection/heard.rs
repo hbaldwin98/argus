@@ -16,14 +16,17 @@
 
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Rail, ReviewPage, Side, Status};
-use argus_desktop_core::keys::keymap::Group;
+use argus_desktop_core::extensions::keys::ExtCommandPage;
+use argus_desktop_core::keys::keymap::{Action, Group};
 use argus_desktop_core::layout::docks::{DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
 use gpui_kit::{Context, EventEmitter, Task};
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use crate::layout::holders::{Holder, Holders};
 use crate::panes::screen::Screen;
 use crate::review::entry::{Entry, Open};
 
@@ -39,8 +42,26 @@ pub enum Link {
     Stopped,
 }
 
+/// How long a notice stays: the page's timer (`chrome.ts`, `notice`), where
+/// the kit's own default is 5 s.
+pub const NOTICE_FOR: Duration = Duration::from_secs(6);
+
+/// One line the window says along its bottom (SHELL-NOTICE-1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub text: String,
+    /// Which notice it is, counted from the first; a replacement with the
+    /// same words has another, so its timer starts over.
+    pub serial: u64,
+}
+
 /// Emitted by [`Heard`] when a batch of events changed the screen of a side.
 pub struct Painted(pub Side);
+
+/// Emitted by [`Heard`] for each `Run` the session sent: a key it heard in a pane asked the window
+/// to open the palette, the sheet or the settings (SHELL-KEYS-9). The window opens it, since only
+/// a window can.
+pub struct Ran(pub Action);
 
 pub struct Heard {
     pub status: Option<Status>,
@@ -54,6 +75,8 @@ pub struct Heard {
     pub console: ConsolePage,
     /// Every binding the session sent, for a menu to show the keys beside what it does.
     pub keymap: Vec<Group>,
+    /// Every extension command the session listed, for the keys that run them (`keys/extension`).
+    pub extension_commands: Vec<ExtCommandPage>,
     /// The review the session holds, while it is open: what the Git stage's
     /// Changes tab draws. Shared, so a view that keeps its rows across
     /// unrelated events does not copy them.
@@ -62,7 +85,7 @@ pub struct Heard {
     pub history: Option<Rc<HistoryPage>>,
     /// What only the window knows of the Git stage (`review::entry`): that Git
     /// was pressed with no checkout to open, and the tab pressed last. Set by
-    /// the rail and the stage, as `resizing` is by the work area.
+    /// the rail and the stage, as a resize is held by the work area.
     pub git: Entry,
     /// The Workspace pane's rows. Shared with the element drawing them, which
     /// holds the last one while the next is applied (copy on write).
@@ -70,12 +93,20 @@ pub struct Heard {
     /// The console's first side's rows, and its second's while it is split.
     pub first: Arc<Screen>,
     pub second: Arc<Screen>,
-    /// A dock's sash is held: the stage is being resized by a gesture, and a
-    /// pane waits for it to end before reporting its size (SHELL-EDGE-1), as the
-    /// page marks the body `resizing`. Set by the work area, read by the pane.
-    pub resizing: bool,
+    /// The line along the bottom of the window, while one is showing. The
+    /// view that draws it ends it after [`NOTICE_FOR`]; a new one replaces it.
+    pub notice: Option<Notice>,
+    /// The drags holding a resize: a pane waits for them all to end before
+    /// reporting its size (SHELL-EDGE-1), as the page marks the body
+    /// `resizing`. Held by whoever drags, read by the pane through
+    /// [`Heard::resizing`].
+    holding: Holders,
+    /// How many notices have been heard, to tell one from the next with the same words.
+    noticed: u64,
     /// The sides whose screen a frame changed since [`Heard::listen`] last said so.
     painted: Vec<Side>,
+    /// The actions the session asked the window to run since [`Heard::listen`] last said so.
+    ran: Vec<Action>,
     /// The loop that drains the channel; held so it runs as long as this does.
     listening: Option<Task<()>>,
 }
@@ -89,14 +120,18 @@ impl Heard {
             docks: DocksPage::default(),
             console: ConsolePage::default(),
             keymap: Vec::new(),
+            extension_commands: Vec::new(),
             review: None,
             history: None,
             git: Entry::default(),
             screen: Arc::new(Screen::new()),
             first: Arc::new(Screen::new()),
             second: Arc::new(Screen::new()),
-            resizing: false,
+            notice: None,
+            holding: Holders::default(),
+            noticed: 0,
             painted: Vec::new(),
+            ran: Vec::new(),
             listening: None,
         }
     }
@@ -117,6 +152,9 @@ impl Heard {
                     for side in std::mem::take(&mut heard.painted) {
                         cx.emit(Painted(side));
                     }
+                    for action in std::mem::take(&mut heard.ran) {
+                        cx.emit(Ran(action));
+                    }
                 });
                 if alive.is_err() {
                     break;
@@ -133,6 +171,17 @@ impl Heard {
             Event::Docks(docks) => self.docks = *docks,
             Event::Console(console) => self.console = *console,
             Event::Keymap { groups, .. } => self.keymap = groups,
+            Event::Extensions(page) => self.extension_commands = page.commands,
+            // Said once and held by no one: the window opens what it names (`Ran`).
+            Event::Run { action } => {
+                self.ran.push(action);
+                return false;
+            }
+            // The newest replaces the one showing, even with the same words.
+            Event::Notice { text } => {
+                self.noticed += 1;
+                self.notice = Some(Notice { text, serial: self.noticed });
+            }
             // A dialog is held only while it is open: `open` false is the session's word that it is not.
             Event::Review(page) => {
                 if page.open {
@@ -165,6 +214,32 @@ impl Heard {
             _ => return false,
         }
         true
+    }
+
+    /// Puts the notice away, if it is still the one `serial` named: a timer
+    /// set for an earlier notice must not take down the one that replaced it.
+    /// Whether it did.
+    pub fn dismiss_notice(&mut self, serial: u64) -> bool {
+        let same = self.notice.as_ref().is_some_and(|notice| notice.serial == serial);
+        if same {
+            self.notice = None;
+        }
+        same
+    }
+
+    /// Whether any drag holds a resize: a pane reports its size when none does.
+    pub fn resizing(&self) -> bool {
+        self.holding.any()
+    }
+
+    /// Holds a resize for `holder`; whether anything changed.
+    pub fn hold_resize(&mut self, holder: Holder) -> bool {
+        self.holding.hold(holder)
+    }
+
+    /// Lets `holder`'s hold go, leaving the others'; whether anything changed.
+    pub fn release_resize(&mut self, holder: Holder) -> bool {
+        self.holding.release(holder)
     }
 
     /// Whether a dock showing `panel` has its element on screen: the console
@@ -234,6 +309,8 @@ impl Heard {
 
 impl EventEmitter<Painted> for Heard {}
 
+impl EventEmitter<Ran> for Heard {}
+
 impl Default for Heard {
     fn default() -> Self {
         Self::new()
@@ -281,10 +358,56 @@ mod tests {
     }
 
     #[test]
+    fn a_run_is_kept_for_the_window_to_open_and_changes_nothing_a_view_draws() {
+        let mut heard = Heard::new();
+        assert!(!heard.hear(Event::Run { action: Action::Shortcuts }));
+        assert!(!heard.hear(Event::Run { action: Action::Palette }));
+        assert_eq!(heard.ran, [Action::Shortcuts, Action::Palette]);
+    }
+
+    #[test]
     fn an_event_no_view_draws_yet_changes_nothing() {
         let mut heard = Heard::new();
         assert!(!heard.hear(Event::Chime));
-        assert!(!heard.hear(Event::Notice { text: "x".into() }), "a notice is held once a view draws one");
+    }
+
+    #[test]
+    fn a_notice_is_held_and_the_next_replaces_it_even_with_the_same_words() {
+        let mut heard = Heard::new();
+        assert!(heard.hear(Event::Notice { text: "no pane is on screen".into() }));
+        let first = heard.notice.clone().expect("held");
+        assert_eq!(first.text, "no pane is on screen");
+        assert!(heard.hear(Event::Notice { text: "no pane is on screen".into() }));
+        let second = heard.notice.clone().expect("held");
+        assert_ne!(first.serial, second.serial, "the same words are a notice of their own");
+        heard.hear(Event::Notice { text: "could not copy".into() });
+        assert_eq!(heard.notice.as_ref().map(|n| n.text.as_str()), Some("could not copy"));
+    }
+
+    #[test]
+    fn a_timer_for_an_earlier_notice_leaves_the_one_that_replaced_it() {
+        let mut heard = Heard::new();
+        heard.hear(Event::Notice { text: "one".into() });
+        let earlier = heard.notice.as_ref().unwrap().serial;
+        heard.hear(Event::Notice { text: "two".into() });
+        assert!(!heard.dismiss_notice(earlier));
+        assert_eq!(heard.notice.as_ref().map(|n| n.text.as_str()), Some("two"));
+        let current = heard.notice.as_ref().unwrap().serial;
+        assert!(heard.dismiss_notice(current));
+        assert!(heard.notice.is_none());
+        assert!(!heard.dismiss_notice(current), "nothing left to put away");
+    }
+
+    #[test]
+    fn a_resize_is_held_until_every_holder_has_let_go() {
+        let mut heard = Heard::new();
+        assert!(!heard.resizing());
+        heard.hold_resize(Holder::Rail);
+        heard.hold_resize(Holder::Grid);
+        heard.release_resize(Holder::Rail);
+        assert!(heard.resizing(), "the grid's drag still holds it");
+        heard.release_resize(Holder::Grid);
+        assert!(!heard.resizing());
     }
 
     fn frame(side: argus_desktop_core::connection::page::Side) -> Event {

@@ -16,17 +16,22 @@
 pub mod keys;
 pub mod strip;
 
+use std::rc::Rc;
+
 use argus_desktop_core::connection::page::Call;
+use argus_desktop_core::keys::keymap::Layer;
 use gpui_kit::component::v_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, Context, Entity, FocusHandle, KeyDownEvent, SharedString, Subscription, Window};
+use gpui_kit::{div, prelude::*, Context, Entity, FocusHandle, SharedString, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::keys::layer::Layers;
 use crate::review::changes::Changes;
 use crate::review::entry::{checkout_here, Tab};
 use crate::review::filter::Filter;
 use crate::review::history::History;
+use keys::StageKeys;
 use crate::theme::Tokens;
 
 pub struct GitStage {
@@ -55,6 +60,11 @@ impl GitStage {
         let focus = cx.focus_handle();
         let filter = cx.new(|cx| Filter::new(heard.clone(), caller.clone(), focus.clone(), window, cx));
         let following = cx.observe_in(&heard, window, |this, _, window, cx| this.follow(window, cx));
+        // The two tabs are two layers of the key walk, up while the stage has the keys.
+        let layers = Layers::of(cx);
+        for layer in [Layer::Review, Layer::History] {
+            layers.register(layer, Rc::new(StageKeys { stage: cx.weak_entity(), layer }));
+        }
         let mut stage = Self {
             heard,
             caller,
@@ -182,7 +192,6 @@ impl Render for GitStage {
             .test_support()
             .key_context("Git")
             .track_focus(&self.focus)
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| this.press(event, window, cx)))
             .size_full()
             // The dialog's surface: the files and the commits sit on it, the diff
             // is sunk below it.

@@ -7,5 +7,4 @@ pub mod files;
 pub mod filter;
 pub mod history;
 pub mod keys;
-pub mod split;
 pub mod stage;

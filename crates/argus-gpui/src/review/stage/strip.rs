@@ -2,12 +2,12 @@
 //! buttons, and the filter field while History is the tab.
 
 use argus_desktop_core::connection::page::Call;
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, px, Context, Role, SharedString};
 
 use super::GitStage;
+use crate::kit::tip::tip;
 use crate::kit::icon_button::icon_button;
 use crate::kit::icons::Glyph;
 use crate::kit::segment;
@@ -58,7 +58,7 @@ impl GitStage {
                         .id("git-branch")
                         .test_support()
                         .aria_label(SharedString::from(name.clone()))
-                        .tooltip(move |window, cx| Tooltip::new(name.clone()).build(window, cx))
+                        .tooltip(tip(name.clone()))
                         .flex_shrink_0()
                         .h(px(tokens.icon_btn))
                         .px(px(tokens.sp_8))
@@ -108,7 +108,7 @@ impl GitStage {
             .when(changes_on && review.is_some(), |strip| {
                 strip.child(
                     icon_button("review-refresh", "Refresh", false, tokens)
-                        .tooltip(|window, cx| Tooltip::new("Refresh").build(window, cx))
+                        .tooltip(tip("Refresh"))
                         .child(Glyph::Refresh.at(14.0))
                         .on_click(cx.listener(|this, _, window, cx| {
                             // A button takes focus when clicked, and the review's keys
@@ -120,7 +120,7 @@ impl GitStage {
             })
             .child(
                 icon_button("git-close", close_label, false, tokens)
-                    .tooltip(move |window, cx| Tooltip::new(close_label).build(window, cx))
+                    .tooltip(tip(close_label))
                     .child(Glyph::Close.at(14.0))
                     .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
             )

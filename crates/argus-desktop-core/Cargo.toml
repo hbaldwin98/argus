@@ -19,6 +19,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 # The version alacritty uses, so a cell's width here is the daemon's.
 unicode-width = "0.2"
+# Times said in the person's own zone (`system::clock`).
+jiff = "0.2"
 # The screens' browser pictures, for the scenes outside this crate's tests.
 png = { version = "0.18", optional = true }
 
@@ -34,4 +36,5 @@ windows-version = "0.1"
 ts-rs = "12.0.1"
 argus-protocol = { workspace = true, features = ["ts"] }
 tempfile = { workspace = true }
+proptest = { workspace = true }
 png = "0.18"

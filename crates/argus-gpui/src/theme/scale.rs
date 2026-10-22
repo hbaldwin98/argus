@@ -166,6 +166,11 @@ pub struct Scale {
     pub pane_mark_w: f32,
     /// A window control (minimise, maximise, close) is this wide.
     pub window_control_w: f32,
+    /// A dialog the window opens without a surface of its own (a rename, a stand-in) is this wide.
+    pub dialog_w: f32,
+    /// `.pbar`'s width, and `.ghost`'s height.
+    pub meter_w: f32,
+    pub ghost_h: f32,
     /// `.kbd`'s line height and `.fbtn`'s height.
     pub key_leading: f32,
     pub fold_btn_h: f32,
@@ -188,6 +193,8 @@ pub struct Scale {
     /// A diff side's added or removed wash, and the picked lines laid over it.
     pub share_tone: f32,
     pub share_pick: f32,
+    /// A sash's grab zone under the pointer: the accent at this share. The port's own; the page's review has no sash.
+    pub share_sash: f32,
     /// The accent a dock's drop landing is washed with, and the kit's drop target.
     pub share_landing: f32,
     pub share_drop_target: f32,
@@ -303,6 +310,9 @@ impl Scale {
             pane_indent: 38.0,
             pane_mark_w: 2.0,
             window_control_w: 46.0,
+            dialog_w: 420.0,
+            meter_w: 56.0,
+            ghost_h: 12.0,
             key_leading: 14.0,
             fold_btn_h: 22.0,
             ring_outline: 2.0,
@@ -315,6 +325,7 @@ impl Scale {
             share_edge: 0.45,
             share_tone: 0.12,
             share_pick: 0.24,
+            share_sash: 0.4,
             share_landing: 0.14,
             share_drop_target: 0.18,
             share_selected_hover: 0.06,

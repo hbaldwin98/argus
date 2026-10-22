@@ -191,3 +191,77 @@ fn the_composer_and_the_feature_stage_keep_the_keys_from_the_terminal(cx: &mut T
         assert_eq!(typed(&opened), 1, "{stage:?} handed the Terminal the keys");
     }
 }
+
+#[gpui_kit::test]
+fn a_capital_x_closes_a_picked_pane_as_the_table_binds_it(cx: &mut TestAppContext) {
+    // SHELL-KEYS-16: the rail's bindings are the table's `Rail` place, which binds `X` as well as `x`.
+    let opened = open_showing(cx);
+    click(cx, &opened, "pane-2");
+    type_key(cx, &opened, "shift-x");
+    assert!(taken(&opened).contains(&"Close { pane: 2 }".to_owned()), "{:?}", taken(&opened));
+}
+
+#[gpui_kit::test]
+fn a_stage_key_runs_while_a_row_is_picked_and_the_row_keeps_the_keys(cx: &mut TestAppContext) {
+    // SHELL-KEYS-16: a key with an action the rail does not answer is the stage's `run`.
+    let opened = open_showing(cx);
+    click(cx, &opened, "checkout-110");
+    type_key(cx, &opened, "3");
+    assert!(taken(&opened).contains(&"ShowCheckouts { open: true }".to_owned()), "{:?}", taken(&opened));
+    assert_eq!(picked(cx, &opened), Some(Picked { checkout: 110, pane: None }), "running it did not let the pick go");
+    assert_eq!(typed(&opened), 1, "and nothing was typed into the shell");
+}
+
+#[gpui_kit::test]
+fn escape_hands_the_keys_back_through_the_tables_close_layer(cx: &mut TestAppContext) {
+    // SHELL-RAIL-24, 27.
+    let opened = open_showing(cx);
+    click(cx, &opened, "checkout-110");
+    type_key(cx, &opened, "escape");
+    assert_eq!(picked(cx, &opened), None);
+    type_key(cx, &opened, "a");
+    assert_eq!(typed(&opened), 2, "the Terminal has the keys again");
+}
+
+fn extensions(cx: &mut TestAppContext, opened: &Opened) {
+    hear(cx, opened, vec![crate::keys::extension::tests::listed()]);
+}
+
+/// SHELL-KEYS-16, 21: a key the picked pane's rail binds nothing to runs the extension command it
+/// is, in every scope there is: anywhere, the checkout's, and the pane's, with the row picked.
+#[gpui_kit::test]
+fn a_picked_pane_runs_the_commands_of_every_scope_with_its_row(cx: &mut TestAppContext) {
+    let opened = open_shell(cx);
+    extensions(cx, &opened);
+    click(cx, &opened, "pane-2");
+    for (key, command) in [("y", "up"), ("u", "down"), ("w", "logs")] {
+        type_key(cx, &opened, key);
+        let sent = format!("ExtensionCommand {{ extension: \"docker\", command: \"{command}\", checkout: Some(110), pane: Some(2) }}");
+        assert_eq!(taken(&opened).last(), Some(&sent), "{key}");
+    }
+    assert_eq!(keys_sent(&opened), 0, "none was typed into the shell");
+}
+
+/// A picked checkout has no pane, so a pane's command is not heard.
+#[gpui_kit::test]
+fn a_picked_checkout_hears_no_panes_command(cx: &mut TestAppContext) {
+    let opened = open_shell(cx);
+    extensions(cx, &opened);
+    click(cx, &opened, "checkout-110");
+    cx.update(|cx| assert_eq!(opened.rail.read(cx).picked(), Some(Picked { checkout: 110, pane: None })));
+    let before = taken(&opened).len();
+    type_key(cx, &opened, "w");
+    type_key(cx, &opened, "u");
+    let sent: Vec<_> = taken(&opened).split_off(before);
+    assert_eq!(sent, ["ExtensionCommand { extension: \"docker\", command: \"down\", checkout: Some(110), pane: None }"]);
+}
+
+/// A key the rail binds is its action, not a command that asks for the same key.
+#[gpui_kit::test]
+fn a_key_the_picked_rail_binds_is_not_an_extension_command(cx: &mut TestAppContext) {
+    let opened = open_shell(cx);
+    extensions(cx, &opened);
+    click(cx, &opened, "pane-2");
+    type_key(cx, &opened, "3");
+    assert!(taken(&opened).iter().all(|call| !call.starts_with("ExtensionCommand")), "{:?}", taken(&opened));
+}
