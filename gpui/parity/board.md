@@ -44,6 +44,7 @@ Sources: ts:feature_stage.ts:144-338; rs:board/features.rs; rs:board/feature_sta
 - **BOARD-INDEX-18** Leaving the Feature stage (`state.rail.stage != feature`) closes the expanded diagram (ts:feature_stage.ts:145-148). Showing the index also clears any form being written (`state.editing = null`, ts:feature_stage.ts:159).
 - **BOARD-INDEX-19** The layout is remembered per repository under the primary checkout's path in `desktop.json` (`Settings::layouts`), and a repository with none opens as `Settings` says (`opens_as`) (rs:board/feature_stage.rs:297-312; tests `a_layout_is_remembered_per_repository_and_asks_to_be_saved`, `a_repository_that_remembers_no_layout_opens_as_the_settings_say`, `a_board_pushed_while_another_repository_is_chosen_settles_on_its_own_layout`). Changing the layout moves the cursor off a feature the new layout folds (test `changing_the_layout_moves_the_cursor_off_a_feature_the_new_one_folds`).
 - **BOARD-INDEX-20** Scenes: `features-list`, `features-board`. No scene covers no-repository, loading, empty-repository, filter-with-no-matches, or the narrow filter toggle.
+- **BOARD-INDEX-21** `Call::GoToFeature { slug }` (a `#` result chosen in the palette, ts:keys/palette.ts:227; rs:connection/page.rs:227; rs:session.rs:2922-2928) takes the Feature stage to that feature: it goes to the stage (the index, whatever feature was open is left), then **reveals** the slug: if the fold hides it the fold is turned on (`show_folded`), if the filter hides it **the filter is cleared** (the field's text is replaced, BOARD-INDEX-10), and the cursor lands on it as a peek and is remembered as the feature chosen (rs:board/feature_stage.rs:279-296). It does **not** open the feature (that is Enter, BOARD-KEYS-8). A slug the board does not hold peeks nothing and the cursor settles on a listed feature (BOARD-PEEK-11). It is the only way into the stage that changes the fold and the filter for the person. Tests `an_archived_feature_gone_to_on_the_board_unfolds_its_column`, `an_archived_feature_revealed_is_listed_and_stays_peeked_past_the_next_board`, `going_to_a_feature_the_filter_hides_clears_the_filter` (rs:board/feature_stage.rs:866,671,958). The palette's own `#` rule is SHELL-PALETTE; `Call::GoToPane` (BOARD-PEEK-7) is the other go-to.
 
 ## LIST: the list layout
 
@@ -97,6 +98,7 @@ Sources: ts:feature_stage.ts:749-876; DESKTOP "Feature index"; DESIGN "What a fe
 - **BOARD-DRAG-10** Every drag has a keyboard path: `M` (Move to menu), `H` (hold) and `Shift+A` (archive); see BOARD-KEYS (DESKTOP "Feature index").
 - **BOARD-DRAG-11** Dropping outside any column cancels with no notice (group is null; ts:feature_stage.ts:863).
 - **BOARD-DRAG-12** In GPUI, `ListItem` supports `on_drag`/`on_drop`/`drag_over` (gpui-kit list.md "Drag and Drop Reordering"), which gives the ghost preview and drop-target highlight, but the 6px threshold, the click-suppression and the column hit test need custom code. No test or scene covers any drag today (the audit/shoot scripts do not drag).
+- **BOARD-DRAG-13** **Threshold and Escape (decided).** BOARD-DRAG-2's 6 px becomes **5 px**, the one threshold of every drag (cross-cutting CROSS-34, board decision #67), and **Escape cancels** a card's drag (the page has no Escape here): the ghost goes, the board is redrawn from the last snapshot and nothing is sent, as for a drop outside any column (BOARD-DRAG-11).
 
 ## PEEK: the panel beside the list
 
@@ -112,6 +114,7 @@ Sources: ts:feature_stage.ts:401-541; rs:board/features.rs:294-376.
 - **BOARD-PEEK-8** Peek is fed by the board, which may not list the feature (folded); `peek` is built from all rows, not the listed ones (rs:board/features.rs:156-162). So a peek can show a feature the list hides (after `reveal` unfolds it; test `an_archived_feature_revealed_is_listed_and_stays_peeked_past_the_next_board`).
 - **BOARD-PEEK-9** Peeking a feature asks the daemon for its tasks and flows, clears the lens cursors if it is a different feature, and marks it as the chosen one (rs:board/feature_stage.rs:199-208; tests `peeking_asks_for_that_features_tasks_and_keeps_only_them`, `a_cursor_moved_by_a_push_starts_the_lenses_afresh`).
 - **BOARD-PEEK-10** Scenes: `features-list` and `features-board` show a peek of `store-faults` and `trim`. Not shown: a held peek, a peek with no branch, with linked tickets, or an agent line.
+- **BOARD-PEEK-11** **When what is peeked is hidden by a fold, filter or layout change**, the cursor is not left on a row the index no longer draws: after the fold is toggled (`Folded`, BOARD-INDEX-12), the layout changes (BOARD-INDEX-19) or a board push removes the row from the listing, Rust **settles**: the cursor stays on the feature while it is still listed, else lands on the feature that took its place in the old list (the same position, or the last when the list got shorter), else the first listed; with nothing listed nothing is peeked and the panel says BOARD-PEEK-1 (rs:board/feature_stage.rs:316-346, crates/argus-protocol/src/board/follower.rs:165-182). A cursor moved this way becomes the feature chosen from now on, and a lens cursor or opened feature on the old one is dropped and the feature closes (BOARD-INDEX-16, `settled`). The **filter is the exception**: while it is being typed the choice is remembered, and widening it again returns to the feature last chosen (BOARD-INDEX-7). A reveal (BOARD-INDEX-21) is the only action that opens the fold or clears the filter to keep a feature listed. The peek panel is therefore never about a feature the list hides, except for the moment of a go-to (BOARD-PEEK-8).
 
 ## MENU: Move to, Comes after, Hold dialog, Go to pane
 
@@ -130,6 +133,7 @@ Sources: ts:feature_stage.ts:514-541, 878-1011; page/src/kit/menu.ts.
 - **BOARD-MENU-11** `j` and `k` do what ArrowDown and ArrowUp do in every page menu: next and previous enabled item, wrapping at either end. The spec named only Up/Down. Sources: rs:keys/keymap.rs:662-663 (Menu binds j/ArrowDown, k/ArrowUp); page/src/kit/menu.ts:115-127.
 - **BOARD-MENU-12** Every overflow `...` menu (task detail, decision foot, step detail) opens at (button.right - 200, button.top - 120), above and to the left, then is clamped into the window (ts:lenses/work.ts:50-64; page/src/kit/menu.ts:28-39).
 - **BOARD-MENU-13** In the hold field Ctrl+Enter does nothing: the handler acts only on `choose` (plain Enter) and `closeLayer`, and Ctrl+Enter maps to `save`, which the hold dialog does not handle. A click outside the dialog does close it, but through the scrim's own click handler (closes only when `e.target === e.currentTarget`, ts:feature_stage.ts:967-970), not the menu mousedown rule, which acts only when a `.menu` is in the layer (page/src/kit/menu.ts:108-113). Source: ts:feature_stage.ts:959-963; rs:keys/keymap.rs:626-627.
+- **BOARD-MENU-14** **Focus (Decided 3).** The hold dialog is modal and traps Tab and Shift+Tab among its field, the close button, Cancel and Hold, in that order (BOARD-LINK-15); the field has the keys on open (BOARD-MENU-7) and they go back to what had them on close.
 
 ## KEYS: index keys
 
@@ -149,6 +153,7 @@ Layer order for a key outside a pane (rs:keys/keymap.rs:848-876): a focused text
 - **BOARD-KEYS-10** While the filter field is not focused, "Escape" on the index does nothing (discovery 2). Escape does close a menu, the hold dialog, or the capture note.
 - **BOARD-KEYS-11** The digits `1`-`5` go to stages (`Anywhere`); inside an open feature `1`/`2`/`3` are lenses instead (BOARD-HEAD-6).
 - **BOARD-KEYS-12** The keymap itself (`BINDINGS`, `LAYERS`) is Rust and already shared; the port reads `keymap.rs` and does not copy it. Test `inside_an_open_feature_the_digits_are_its_lenses` (keymap.rs:1229).
+- **BOARD-KEYS-13** `Escape` on the bare index (no field, menu, dialog or capture note up, no feature open) **does nothing** and falls through to no stage change: `features` has no escape hook (ts:keys/keymap.ts:356), unlike `outline` and `capture`. DESIGN.md says Escape climbs to the Workspace. Which wins is open: `gpui/audit.md` §5 7. A port builds the page's behaviour until a person decides, with a test that pins "Escape on the bare index sends no call".
 
 ## CAPTURE: a new feature written as one note
 
@@ -216,6 +221,7 @@ Sources: ts:lenses/work.ts; rs:board/lenses/work.rs; DESIGN "The feature view" (
 - **BOARD-WORK-24** Shared lens keys: `b/B` brief, `g/G` go to the agent's pane, `T` link, `t` open ticket, `R` reconcile, `M` tracker map, and `1`/`2`/`3` lenses are handled by `workAction` before it dispatches by lens, so they work on every lens (Work, Record, Flows) and inside the expanded diagram, not only on the Work lens (ts:lenses/work.ts:1048-1081). BOARD-WORK-10 lists them for the Work lens only as one instance of this.
 - **BOARD-WORK-25** Outline/detail sash: only the left mouse button grabs it. While held, the outline column follows the pointer at most once per animation frame and keeps the grab offset. The width is reported once, on mouseup, and the column holds that width until Rust echoes it back (page/src/layout/edge.ts:23-56).
 - **BOARD-WORK-26** While the criterion form is open, the "Done when" section hides its "Nothing says when it is done yet." line and its "+ Add criterion" button (ts:lenses/work.ts:681-695).
+- **BOARD-WORK-27** **The brief has a stored height and no sash.** Rust keeps a height for an open feature's brief, bounded `40..900` (`dragged_width::BRIEF`), saved in `desktop.json` and sent in the `rail` event as `briefHeight` (`Call::BriefHeight { height }` sets it, `null` gives the usual back; rs:session.rs:887-889, rs:layout/dragged_width.rs:16, rs:connection/page.rs:266,650). The page sets it as a style variable (`--brief-h`, ts:lenses/work.ts:311-316) that **no rule reads** and no gesture sends: the header's brief is one line (BOARD-HEAD-3) and the form's field is the form's own (BOARD-HEAD-4). So on main the brief has no sash and cannot be resized; the outline/detail sash (BOARD-WORK-25) is the only one. A port draws no brief sash. If a taller brief is wanted, the call and bounds already exist (SHELL-EDGE-3); that is a feature to add, not a gap to copy.
 
 ## FORM: in-place forms shared by the lenses
 
@@ -315,6 +321,7 @@ Sources: ts:tracker/link.ts; rs:board/tracker/link_dialog.rs, dialogs.rs; DESIGN
 - **BOARD-LINK-12** Scenes: `link` (trim, map editor off). Uncovered: the map editor, a typed URL (read and refused), pending, a draft pill, and every key.
 - **BOARD-LINK-13** The Open and Unlink buttons do not stop propagation, so each click also sends `Select {index}` for its row. Clicking the scrim does not close the dialog (ts:tracker/link.ts:88-116, 228-231).
 - **BOARD-LINK-14** While the link dialog or the reconcile dialog is open, the stage digits, compose, console, views, palette and settings keys are held and ignored (NOT_THEIRS). `?` opens the shortcuts sheet (page/src/keys/keymap.ts:218-230, 395-406).
+- **BOARD-LINK-15** **Focus (Decided 3, cross-cutting).** The link dialog is modal and **traps Tab**: Tab and Shift+Tab cycle among the dialog's own controls in their reading order (top to bottom, left to right: the typed field, the rows' Open and Unlink buttons, the Link button, Close) and never reach the stage under the scrim; the page has no trap (CROSS-13). On open the typed field has the keys; on close they return to what had them (CROSS-11). The reconcile dialog (BOARD-RECONCILE-21) and the hold dialog (BOARD-MENU-14) follow the same rule.
 
 ## RECONCILE: the reconcile dialog
 
@@ -340,6 +347,7 @@ Sources: ts:tracker/reconcile.ts; rs:board/tracker/reconcile_dialog.rs; DESIGN t
 - **BOARD-RECONCILE-18** Scenes: `reconcile` (the fixture proposal for `trim`). Uncovered: stages `none`, `asked`, `carrying`, a failed line, edited text, noticed section, no agents.
 - **BOARD-RECONCILE-19** Shift+D or Discard with no reconcile under way raises the notice "no reconcile is under way to discard" (rs:board/tracker/reconcile_dialog.rs:269-272).
 - **BOARD-RECONCILE-20** The "Noticed, not proposed" section carries the right-hand aside "outside what you asked". The "text, word for word" block shows only when the text is non-empty or the stage is `proposed`; "What the agent will do" shows only when `call` is non-empty. Group headings are ref-coloured for "Into Argus" and attention-coloured otherwise (page/src/board/tracker/reconcile.ts:61, 101, 154-173).
+- **BOARD-RECONCILE-21** **Focus (Decided 3).** The reconcile dialog is modal and traps Tab and Shift+Tab among its own controls in reading order (the tick boxes and edit fields of its lines, then its buttons), as BOARD-LINK-15 says; on close the keys go back to what had them. A focused edit field keeps its focus and caret across a redraw (BOARD-RECONCILE-16).
 
 ## TICKETS: ticket chips and view dots
 
@@ -453,7 +461,7 @@ Behaviours no scene or test covers today (a port should add scenes and tests):
 ## Open questions for a human
 
 1. Held/Archived order on the board (discovery 1).
-2. Should `Escape` on the bare index return to the Workspace (DESIGN) or do nothing (today)?
+2. Should `Escape` on the bare index return to the Workspace (DESIGN) or do nothing (today)? (`gpui/audit.md` §5 7; BOARD-KEYS-13.)
 3. Should an empty hold reason be refused in the dialog rather than treated as lifting the hold (BOARD-MENU-8)?
 4. Should the board and reconcile lists keep their scroll position across pushes (BOARD-COLS-14, BOARD-RECONCILE-16)?
 5. Does the Capture note use `Textarea` plus a custom gutter or `Editor` with `line_number(true)` (spike).

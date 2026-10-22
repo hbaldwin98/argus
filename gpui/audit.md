@@ -641,51 +641,92 @@ otherwise flag them or miss them.
    and leader 6, the cell, tabs, toolbar, address, status, viewport,
    frames, input, auto-open-beside, `Place::Address`, scenes). Items 22,
    79-90.
+   Spec: SHELL-BROWSER-1..22 (shell.md BROWSER), SHELL-STAGE-16, SHELL-STAGE-17, SHELL-KEYS-24. Open: §5 18 (Close, Back and Forward state, `host:port`), §5 15 (fold state).
+
 2. **Move a pane to another checkout** (commit 88dcce24): drop-target
    highlight, `move_to_checkout`, capability gate, browsers excluded,
    daemon-side `cd`. Item 14.
+   Spec: SHELL-RAIL-35..37, SHELL-GRID-18, CROSS-34, SHELL-BROWSER-20.
+
 3. **Settings: Vim keys and Install grammars** (Editor section). The spec
    says six sections and older rows.
+   Spec: SHELL-SETTINGS-14..16 (the Editor section holds four rows; the setting list is thirteen).
+
 4. **GPUI-only decisions already shipped**: the Git nav item replacing the
    review and history dialogs, held rail on reconnect (decision 49),
    `Link::Reconnecting`, quit instead of close.
+   Spec: SHELL-STAGE-19 (Git nav item and stage), SHELL-STAGE-20 (held rail, decision 49), SHELL-FOOT-8 (`Link::Reconnecting`), SHELL-TITLE-8 (quit instead of close), REVIEW-AGENTS-REVIEW-44. Open: §5 21 (keep quit on close).
+
 5. **Window size and Mica threshold**: 1200x800/720x480 against
    1280x800/900x560, and build 22000 against 22621. The spec has no rule
    for which wins.
+   Spec: SHELL-TITLE-7 (window size, decided #65). Open: §5 2 (Mica threshold; SHELL-LOOK-9 says core's 22000 until decided).
+
 6. **Extension and saved nav entries** and their dock mark: the nav needs a
    dynamic-tail rule.
+   Spec: SHELL-STAGE-17, SHELL-STAGE-18 (the dynamic tail), CHECKOUTS-CODE-VIEWS-EXTNAV-8, SHELL-PDRAG-6.
+
 7. **Per-theme bundled fonts**: the specs treat fonts as one list.
+   Spec: SHELL-FONT-7 (each theme ships its own fonts when imported, decided #68).
+
 8. **Hover**: key caps always shown in the page, on hover in GPUI; hover-only
    close buttons and `title` tooltips have no entry.
+   Spec: SHELL-RAIL-38 (hover-only controls on main; key caps are never hover-only there). Open: §5 10 (key caps on the nav), §5 16 (tooltips).
+
 9. **System appearance**: how "system" re-resolves in GPUI.
+   Spec: SHELL-LOOK-7 (`system` follows the OS live), CROSS-22.
+
 10. **`Call::GoToFeature`** is in core and palette code; board.md has no id.
+   Spec: BOARD-INDEX-21.
+
 11. **Board**: what to do when the peeked feature is hidden by a fold; the
     brief height has no sash; Escape on the bare index; no focus-trap rule
     for Link, Reconcile, Sessions, hold.
+   Spec: BOARD-PEEK-11 (peek hidden by a fold), BOARD-WORK-27 (the brief has a stored height and no sash on main), BOARD-LINK-15, BOARD-RECONCILE-21, BOARD-MENU-14, REVIEW-AGENTS-SESSIONS-25 (Tab traps, Decided 3). Open: §5 7 (BOARD-KEYS-13, Escape on the bare index).
+
 12. **Notices** have no surface entry of their own, yet ~30 rules lean on
     them.
+   Spec: SHELL-NOTICE-3..5.
+
 13. **Parked dialogs**: how the window shows Git again after Code, and
     what is under it meanwhile.
+   Spec: REVIEW-AGENTS-REVIEW-44, REVIEW-AGENTS-HISTORY-21. One point is left undecided with no §5 number: a Code exit by any route but Back leaves the dialog parked (stated as a Gap in REVIEW-AGENTS-REVIEW-44).
+
 14. **Editor**: no scene for clash, offline, failed save, closed file,
     installing; Vim untested on main; `gc` and `=` with no language;
     `Synced` starts at version 0; reconnect depends on a redraw; Ctrl-P
     against Vim's normal mode.
+   Spec: EDITOR-STATE-11 (scenes), EDITOR-VIM-22 and EDITOR-VIM-24 (Vim untested; `gc` and `=`), EDITOR-OPEN-14 (`Synced` version), EDITOR-RECONN-11 (reopen on the connection), EDITOR-KEYS-8 (Ctrl-P). Open: §5 5 (Vim subset, grammars), §5 6 (Ctrl-P).
+
 15. **Terminal find and links**: neither exists on main. Nothing to port.
+   Spec: SHELL-SCREEN-18 (nothing to port).
+
 16. **Extension console sides** need a side beyond Workspace, First and
     Second; no ids for panel placement or `focus_view` routing.
+   Spec: CHECKOUTS-CODE-VIEWS-EXTVIEW-34..36 (the `Side::View(n)` side, panel names, `focus_view` routing).
+
 17. **Views**: text selection and copy from rendered content, tooltip and
     Tab reach, nested scroll and wheel owner, where the Views launcher
     lives, what an http link from a view should do now that browser panes
     exist, "ago" freshness, responsive layout mechanism, scenes for most
     blocks.
+   Spec: CHECKOUTS-CODE-VIEWS-BLOCKS-27..32, AGENTVIEWS-18, AGENTVIEWS-19, CROSS-36, SHELL-SYSTEM-7. Open: §5 17 (selection in blocks beyond Decided 4), §5 16 (tooltips), §5 14 (Views launcher).
+
 18. **Drag**: threshold mismatch (page 0/4/6 px, helper and cross-cutting
     5 px, figure 4 px); payloads for saved-view and extension rows dragged
     to a dock.
+   Spec: CROSS-34 (one 5 px threshold, Escape cancels), SHELL-PDRAG-6 and SHELL-PDRAG-7 (payloads), SHELL-GRID-18, BOARD-DRAG-13, CHECKOUTS-CODE-VIEWS-FIGURE-7.
+
 19. **Remote daemons**: how a nav entry shows a daemon too old for its
     surface (a notice only).
+   Spec: CROSS-35 (a nav entry is never hidden; a press says its notice, or an empty surface), SHELL-BROWSER-19.
+
 20. **Clipboard**: Rust (`CopyText`) or the platform, and the Vim `+`
     register.
+   Spec: SHELL-SYSTEM-8, CROSS-30 (one writer, Rust's path), EDITOR-VIM-23 (the `+` register).
+
 21. **GoToPane and the peek line** for a browser pane: what they show.
+   Spec: SHELL-BROWSER-21 (`go_to_pane` shows the cell; a browser pane has no note, so no peek line).
 
 ## 4. Structure
 
