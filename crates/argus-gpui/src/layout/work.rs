@@ -20,7 +20,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use argus_desktop_core::connection::page::Call;
-use argus_desktop_core::layout::docks::{Dock, DockGesture, Panel};
+use argus_desktop_core::layout::docks::{Dock, DockGesture, FloatBounds, Panel};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
@@ -38,6 +38,7 @@ use crate::layout::carry::preview;
 use crate::layout::carry::{Carrier, Carried};
 use crate::layout::dock::{self, DockView};
 use crate::layout::drop_target::{self, Target};
+use crate::layout::float::{self, FloatsView, Grip};
 use crate::layout::holders::Holder;
 use crate::layout::sash;
 use crate::kit::drag::{self, Drag, Dragger, Step};
@@ -54,6 +55,9 @@ pub enum Held {
     /// A pane carried by a cell's header or from the rail, to a cell, the stage or a checkout
     /// (`layout/carry`). A press that never travels is the row's own click.
     Pane(Carried),
+    /// A floating panel's head or corner, pressed at `from` with the frame at `start`
+    /// (`layout/float`).
+    Float { panel: Panel, grip: Grip, start: FloatBounds, from: Point<Pixels> },
 }
 
 pub struct WorkView {
@@ -65,6 +69,8 @@ pub struct WorkView {
     left: Entity<DockView>,
     right: Entity<DockView>,
     bottom: Entity<DockView>,
+    /// The dialogs over everything the area holds.
+    floats: Entity<FloatsView>,
     drag: Drag<Held>,
     /// The handle the drag takes the keys with, so Escape reaches it.
     keys: FocusHandle,
@@ -73,6 +79,8 @@ pub struct WorkView {
     center: Rc<Cell<Bounds<Pixels>>>,
     /// The size a held sash draws, until it is let go.
     sizing: Option<(Dock, u32)>,
+    /// The box a held dialog draws, until it is let go.
+    floating: Option<(Panel, FloatBounds)>,
     _observing: Subscription,
 }
 
@@ -84,6 +92,10 @@ impl WorkView {
             cx.new(|cx| DockView::new(dock, heard, caller, work, console, cx))
         };
         let (left, right, bottom) = (dock(Dock::Left, cx), dock(Dock::Right, cx), dock(Dock::Bottom, cx));
+        let floats = {
+            let (heard, caller, work) = (heard.clone(), caller.clone(), work.clone());
+            cx.new(|cx| FloatsView::new(heard, caller, work, cx))
+        };
         let observing = cx.observe(&heard, |_, _, cx| cx.notify());
         // The cell headers and the rail's rows press panes into this drag.
         Carrier::of(cx).serve(cx.weak_entity());
@@ -95,11 +107,13 @@ impl WorkView {
             left,
             right,
             bottom,
+            floats,
             drag: Drag::new(),
             keys: cx.focus_handle(),
             work: Rc::default(),
             center: Rc::default(),
             sizing: None,
+            floating: None,
             _observing: observing,
         }
     }
@@ -107,6 +121,22 @@ impl WorkView {
     /// The size the sash of `dock` draws while it is held.
     pub fn sizing(&self, dock: Dock) -> Option<u32> {
         self.sizing.filter(|(held, _)| *held == dock).map(|(_, size)| size)
+    }
+
+    /// The box a dialog held by the pointer draws, if it is the one held.
+    pub fn floated(&self, panel: &Panel) -> Option<FloatBounds> {
+        self.floating.as_ref().filter(|(held, _)| held == panel).map(|(_, bounds)| *bounds)
+    }
+
+    /// The work area as last laid out, which a dialog is kept inside.
+    pub fn area(&self) -> Bounds<Pixels> {
+        self.work.get()
+    }
+
+    /// The area as whole pixels, for the core's rules of a dialog's box.
+    fn room(&self) -> (u32, u32) {
+        let size = self.work.get().size;
+        (size.width.as_f32().max(0.0) as u32, size.height.as_f32().max(0.0) as u32)
     }
 
     /// Follows a press of a tab or head, unless the daemon is gone and a
@@ -141,6 +171,9 @@ impl WorkView {
         if let Held::Pane(carried) = held {
             self.carry(Some(carried), cx);
         }
+        if let (Held::Float { panel, grip, start, from }, Some(at)) = (held, self.drag.at()) {
+            self.floating = Some((panel.clone(), float::held(*grip, *start, *from, at, self.room())));
+        }
     }
 
     /// Where a pane carried to the pointer would land.
@@ -165,6 +198,24 @@ impl WorkView {
         if spots.carry(carried.is_some()) | spots.light(lit) {
             cx.defer(|cx| cx.refresh_windows());
         }
+    }
+
+    /// The right dock as a drawer: over the stage's right edge, as wide as it was dragged up to what
+    /// leaves the stage a sliver to click back to, with the pop-up's shadow.
+    fn drawer(&self, window_width: f32, tokens: &Tokens) -> impl IntoElement {
+        let room = self.work.get().size.width.as_f32();
+        let room = if room > 0.0 { room } else { window_width };
+        div()
+            .id("drawer")
+            .test_support()
+            .absolute()
+            .top_0()
+            .right_0()
+            .bottom_0()
+            .max_w(px(tokens.drawer_max.min(room - tokens.sp_44)))
+            .overflow_hidden()
+            .shadow(tokens.shadow_pop())
+            .child(self.right.clone())
     }
 
     /// The area a panel or a pane dropped here would fill, said in words, and the name of what is
@@ -206,7 +257,7 @@ impl WorkView {
                 let landed = self.landed(carried, at, cx);
                 (carried.title(), preview::lit(landed, work.origin, &Spots::peek(cx), tokens))
             }
-            Held::Sash { .. } => return None,
+            Held::Sash { .. } | Held::Float { .. } => return None,
         };
         // Over the whole area, so the preview's own offsets are from its corner.
         Some(div().absolute().top_0().left_0().size_full().children(lit).child(preview::ghost(title, at, tokens)))
@@ -255,8 +306,16 @@ impl Dragger for WorkView {
                     self.ask(call, cx);
                 }
             }
+            Step::Dropped(Held::Float { panel, grip, start, from }, at) => {
+                self.floating = None;
+                let now = float::held(grip, start, from, at, self.room());
+                if let Some(call) = float::released(panel, start, now) {
+                    self.ask(call, cx);
+                }
+            }
             Step::Cancelled(held) => {
                 self.sizing = None;
+                self.floating = None;
                 if matches!(held, Held::Pane(_)) {
                     self.carry(None, cx);
                 }
@@ -281,8 +340,10 @@ impl Dragger for WorkView {
 }
 
 impl Render for WorkView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
+        let width = f32::from(window.viewport_size().width);
+        let narrow = crate::chrome::stage::route::narrow(width, tokens.narrow_below);
         // The Console stage and fullscreen give the console the stage: the Workspace's pane has
         // none then (`ConsolePage::showing`). Which one fills it is the router's to say, and a
         // fullscreen console puts the docks away (`chrome/stage/route`).
@@ -311,16 +372,20 @@ impl Render for WorkView {
                     .id("center")
                     .relative()
                     .flex_1()
-                    .min_w(px(dock::FLOOR_WIDTH))
+                    .min_w(px(tokens.dock_floor))
                     .h_full()
                     .child(area::measure(self.center.clone()))
                     .child(div().id("work-stage").test_support().flex_1().min_h(px(dock::FLOOR_HEIGHT)).child(stage))
                     .when(furniture, |center| center.child(self.bottom.clone())),
             )
-            .when(furniture, |work| work.child(self.right.clone()))
+            // Under 1200px the right dock opens over the stage as a drawer instead of squeezing it: the
+            // terminal keeps its columns (`@media (max-width: 1200px) .dock-right`).
+            .when(furniture && !narrow, |work| work.child(self.right.clone()))
+            .when(furniture && narrow, |work| work.child(self.drawer(width, &tokens)))
+            .child(self.floats.clone())
             .children(self.carrying(&tokens, cx))
     }
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

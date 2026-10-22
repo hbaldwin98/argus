@@ -69,6 +69,26 @@ impl DraggedWidth {
     }
 }
 
+
+/// The widest a rail is that draws icons: the page's `@container rail (max-width: 120px)`. Wider,
+/// it draws words.
+pub const RAIL_ICONS_AT: f32 = 120.0;
+
+/// The width the rail is drawn at. A window at or under `narrow_below` folds it whatever it was
+/// dragged to; else the person's width stands, or the `usual` one when they never dragged it.
+pub fn rail_drawn(dragged: Option<u32>, usual: f32, window: f32, narrow_below: f32) -> f32 {
+    if window <= narrow_below {
+        RAIL_FOLDED as f32
+    } else {
+        dragged.map_or(usual, |width| width as f32)
+    }
+}
+
+/// Whether a rail `width` wide draws its stages and panes as icons, and its rows as tiles.
+pub fn rail_icons(width: f32) -> bool {
+    width <= RAIL_ICONS_AT
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,6 +116,20 @@ mod tests {
         rail.set(Some(150));
         assert_eq!(rail.get(), Some(RAIL.min), "nearer the minimum, it opens to it");
         assert_eq!(DraggedWidth::folding(RAIL, Some(RAIL_FOLDED), Some(RAIL_FOLDED)).get(), Some(RAIL_FOLDED));
+    }
+
+    #[test]
+    fn a_narrow_window_folds_the_rail_whatever_it_was_dragged_to() {
+        // SHELL-STAGE-15.
+        assert_eq!(rail_drawn(Some(400), 288.0, 1200.0, 1200.0), RAIL_FOLDED as f32, "the media query is inclusive");
+        assert_eq!(rail_drawn(Some(400), 288.0, 1201.0, 1200.0), 400.0);
+        assert_eq!(rail_drawn(None, 288.0, 1600.0, 1200.0), 288.0);
+    }
+
+    #[test]
+    fn a_rail_of_120_or_less_draws_icons() {
+        assert!(rail_icons(56.0) && rail_icons(120.0));
+        assert!(!rail_icons(121.0) && !rail_icons(200.0));
     }
 
     #[test]

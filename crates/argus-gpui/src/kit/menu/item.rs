@@ -25,6 +25,9 @@ pub struct Choice<A> {
     pub hint: Hint,
     /// Ends something that cannot be got back: drawn in the danger colour.
     pub danger: bool,
+    /// A check column before the label: `Some(true)` draws the check, `Some(false)` keeps the room
+    /// for it, so a list of choices that may be ticked lines up (the project list).
+    pub checked: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,12 +43,17 @@ impl<A> MenuItem<A> {
     }
 
     pub fn choice(label: impl Into<String>, does: A) -> Self {
-        Self::Choice(Choice { label: label.into(), does, reason: None, hint: Hint::None, danger: false })
+        Self::Choice(Choice { label: label.into(), does, reason: None, hint: Hint::None, danger: false, checked: None })
     }
 
     /// Drawn in the danger colour. A heading or a rule is not one to change.
     pub fn danger(self) -> Self {
         self.with(|choice| choice.danger = true)
+    }
+
+    /// Gives the choice a check column, ticked or not.
+    pub fn marked(self, checked: bool) -> Self {
+        self.with(|choice| choice.checked = Some(checked))
     }
 
     /// Names the keys that do the same.
@@ -85,8 +93,8 @@ impl<A> MenuItem<A> {
         match self {
             Self::Heading(text) => MenuItem::Heading(text),
             Self::Rule => MenuItem::Rule,
-            Self::Choice(Choice { label, does, reason, hint, danger }) => {
-                MenuItem::Choice(Choice { label, does: change(does), reason, hint, danger })
+            Self::Choice(Choice { label, does, reason, hint, danger, checked }) => {
+                MenuItem::Choice(Choice { label, does: change(does), reason, hint, danger, checked })
             }
         }
     }

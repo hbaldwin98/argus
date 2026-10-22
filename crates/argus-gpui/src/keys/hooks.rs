@@ -26,11 +26,11 @@ pub fn layer(layer: Layer) -> Hook {
         | Layer::Review
         | Layer::History
         | Layer::Rail
+        | Layer::Start
         | Layer::Menu
         | Layer::Stage => Hook::Hooked,
         Layer::Link | Layer::Reconcile => Hook::Arrives("the tracker dialogs"),
         Layer::Transcript | Layer::Sessions => Hook::Arrives("the sessions dialog"),
-        Layer::Start => Hook::Arrives("the checkout's + menu (audit 20)"),
         Layer::Extension | Layer::ExtensionPage => Hook::Arrives("extension views"),
         Layer::Capture | Layer::Diagram | Layer::Outline | Layer::Features => Hook::Arrives("the Feature stage"),
         Layer::Files | Layer::Checkouts => Hook::Arrives("the Checkouts stage (audit 59 to 64)"),
@@ -45,12 +45,11 @@ pub fn place(place: Place) -> Hook {
         // The root, before any layer.
         Place::Window => Hook::Hooked,
         // The layers above.
-        Place::Rail | Place::Menu | Place::Review | Place::History | Place::Sheet => Hook::Hooked,
+        Place::Rail | Place::Start | Place::Menu | Place::Review | Place::History | Place::Sheet => Hook::Hooked,
         // The fields that answer them: the jump field, the history's filter, the comment box.
         Place::Jump | Place::Filter | Place::Writing => Hook::Hooked,
         Place::Feature | Place::Card | Place::Outline | Place::Diagram => Hook::Arrives("the Feature stage"),
         Place::Checkouts | Place::Files => Hook::Arrives("the Checkouts stage (audit 59 to 64)"),
-        Place::Start => Hook::Arrives("the checkout's + menu (audit 20)"),
         Place::Sessions | Place::Transcript => Hook::Arrives("the sessions dialog"),
         Place::Address => Hook::Arrives("the Browsers stage"),
         Place::Palette => Hook::Arrives("the command palette (audit 33)"),

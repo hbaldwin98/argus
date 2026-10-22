@@ -33,14 +33,34 @@ use crate::connection::heard::Heard;
 use crate::kit::icons::Glyph;
 use crate::layout::dock_menu;
 use crate::layout::panel;
+use crate::layout::tools;
 use crate::layout::work::{Held, WorkView};
 use crate::style::Typed as _;
 use crate::theme::Tokens;
 
-/// What a side dock leaves the stage of the width at least: `--dock-floor` in the page.
-pub const FLOOR_WIDTH: f32 = 240.0;
 /// What the bottom dock leaves the stage of the height at least: the page's `100% - 120px`.
 pub const FLOOR_HEIGHT: f32 = 120.0;
+
+/// A side dock's width held to the work area as the page's CSS does: the stage keeps
+/// `--dock-floor` of it (`.dock { max-width: calc(100% - var(--dock-floor)) }`), and above the
+/// narrow breakpoint the right dock is no wider than `--dock-min-pane` unless the window has the
+/// room besides (`min(100% - floor, max(min-pane, 100% - room))`). An area not yet laid out (no
+/// width) caps nothing.
+pub fn capped(dock: Dock, size: f32, area: f32, window: f32, tokens: &Tokens) -> f32 {
+    if area <= 0.0 {
+        return size;
+    }
+    let mut most = area - tokens.dock_floor;
+    if dock == Dock::Right {
+        // In a narrow window the right dock is the drawer, whose own `max-width` replaces this
+        // rule's (`work::drawer`).
+        if window <= tokens.narrow_below {
+            return size;
+        }
+        most = most.min(tokens.dock_min_pane.max(area - tokens.dock_room));
+    }
+    size.min(most.max(0.0))
+}
 
 pub struct DockView {
     dock: Dock,
@@ -81,8 +101,19 @@ impl DockView {
     }
 
     /// The size the dock draws: Rust's, or the sash's while it is held.
-    fn drawn(&self, page: &DockPage, cx: &Context<Self>) -> u32 {
-        self.work.upgrade().and_then(|work| work.read(cx).sizing(self.dock)).unwrap_or(page.size)
+    /// The size the dock is drawn at: Rust's, or the sash's while it is held, held to the page's
+    /// caps against the work area (`capped`).
+    fn drawn(&self, page: &DockPage, window: f32, cx: &Context<Self>) -> u32 {
+        let Some(work) = self.work.upgrade() else { return page.size };
+        let (sizing, area) = {
+            let work = work.read(cx);
+            (work.sizing(self.dock), work.area().size.width.as_f32())
+        };
+        let size = sizing.unwrap_or(page.size);
+        match self.dock {
+            Dock::Bottom => size,
+            dock => capped(dock, size as f32, area, window, Tokens::global(cx)).round() as u32,
+        }
     }
 
     fn press(&self, at: gpui_kit::Point<gpui_kit::Pixels>, held: Held, cx: &mut Context<Self>) {
@@ -181,6 +212,15 @@ impl DockView {
             )
     }
 
+    /// The shown panel's own tools, which only an extension's docked view has.
+    fn tools(&self, shown: &Panel, cx: &App) -> Vec<AnyElement> {
+        let heard = self.heard.read(cx);
+        let tokens = *Tokens::global(cx);
+        tools::of(shown, &heard.extension_tables, &heard.keymap)
+            .map(|tools| tools::buttons(&tools, &self.caller, &self.heard, &tokens, cx))
+            .unwrap_or_default()
+    }
+
     fn strip(&self, page: &DockPage, shown: &Panel, docks: &DocksPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let tabs: Vec<AnyElement> =
             page.tabs.iter().map(|tab| self.tab(tab, &tab.panel == shown, docks, tokens, cx).into_any_element()).collect();
@@ -191,6 +231,7 @@ impl DockView {
             .test_support()
             .children(tabs)
             .child(div().flex_1())
+            .children(self.tools(shown, cx))
             .child(self.menu_button(shown, docks, held, tokens, cx))
     }
 
@@ -216,6 +257,7 @@ impl DockView {
                 }),
             )
             .child(div().flex_1().truncate().child(title.to_owned()))
+            .children(self.tools(shown, cx))
             .child(self.menu_button(shown, docks, held, tokens, cx))
     }
 
@@ -249,7 +291,7 @@ impl DockView {
             .absolute()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                     // The head or tab under the sash's zone must not take the press too.
                     cx.stop_propagation();
                     if this.heard.read(cx).held() {
@@ -257,7 +299,7 @@ impl DockView {
                     }
                     let drawn = {
                         let docks = &this.heard.read(cx).docks;
-                        this.drawn(this.page(docks), cx) as f32
+                        this.drawn(this.page(docks), f32::from(window.viewport_size().width), cx) as f32
                     };
                     this.work.update(cx, |work, cx| work.press_sash(dock, drawn, event.position, cx)).ok();
                 }),
@@ -285,8 +327,9 @@ fn present_of(docks: &DocksPage, panel: &Panel) -> Option<PresentPanel> {
 }
 
 impl Render for DockView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
+        let window_width = f32::from(window.viewport_size().width);
         let (docks, held) = {
             let heard = self.heard.read(cx);
             (heard.docks.clone(), heard.held())
@@ -298,7 +341,7 @@ impl Render for DockView {
             return div().into_any_element();
         };
         let title = page.tabs.iter().find(|tab| tab.panel == shown).map_or_else(|| shown.to_string(), |tab| tab.title.clone());
-        let size = px(self.drawn(&page, cx) as f32);
+        let size = px(self.drawn(&page, window_width, cx) as f32);
         let sizing = self.work.upgrade().is_some_and(|work| work.read(cx).sizing(self.dock).is_some());
         let name = self.name();
         let root = v_flex()

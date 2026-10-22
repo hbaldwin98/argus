@@ -12,6 +12,7 @@ pub mod preview;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use argus_desktop_core::layout::docks::Panel;
 use gpui_kit::{App, Global, Pixels, Point, WeakEntity};
 
 use super::work::{Held, WorkView};
@@ -61,5 +62,13 @@ impl Carrier {
     pub fn press(&self, at: Point<Pixels>, carried: Carried, cx: &mut App) {
         let Some(work) = self.0.borrow().clone() else { return };
         work.update(cx, |work, cx| work.press(at, Held::Pane(carried), cx)).ok();
+    }
+
+    /// Follows a press of the panel `panel` named `title` at `at`: carried to a dock it docks, over the
+    /// stage it lands as its kind does when `stage` says it can. A press that never travels is the
+    /// row's own click.
+    pub fn press_panel(&self, at: Point<Pixels>, panel: Panel, title: String, stage: bool, cx: &mut App) {
+        let Some(work) = self.0.borrow().clone() else { return };
+        work.update(cx, |work, cx| work.press(at, Held::Panel { panel, title, stage, click: false }, cx)).ok();
     }
 }

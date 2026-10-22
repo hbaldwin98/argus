@@ -79,7 +79,7 @@ pub fn close_x(id: impl Into<ElementId>, words: impl Into<SharedString>, tokens:
         .h(px(tokens.control_h_sm))
         .mr(px(tokens.sp_4))
         .text_color(tokens.fg_faint)
-        .child(Glyph::Close.at(12.0))
+        .child(Glyph::Close.at(tokens.icon_xs))
 }
 
 /// `.icon`, as the kit's button, for the ones that open a menu (the kit's

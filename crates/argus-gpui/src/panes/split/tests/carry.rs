@@ -135,7 +135,7 @@ fn a_click_on_a_rail_pane_is_still_its_click(cx: &mut TestAppContext) {
     let opened = opened(cx, three());
     cx.update_window(opened.handle, |_, window, cx| window.click("pane-2", cx)).unwrap();
     cx.run_until_parked();
-    assert_eq!(asked(&opened), ["Select { pane: 2 }"]);
+    assert_eq!(asked(&opened), ["RailPick { checkout: 110, pane: Some(2) }", "Select { pane: 2 }"]);
 }
 
 #[gpui_kit::test]

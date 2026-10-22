@@ -20,9 +20,12 @@ use std::time::Duration;
 
 use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Rail, ReviewPage, Side, Status};
 use argus_desktop_core::extensions::keys::ExtCommandPage;
+use argus_desktop_core::extensions::views::{ExtTab, ExtTable};
 use argus_desktop_core::keys::keymap::{Action, Group};
 use argus_desktop_core::layout::docks::{DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
+use argus_desktop_core::views::nav::{self, NavView};
+use argus_desktop_core::views::saved::SavedPanel;
 use gpui_kit::{Context, EventEmitter, Task};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -78,6 +81,16 @@ pub struct Heard {
     pub keymap: Vec<Group>,
     /// Every extension command the session listed, for the keys that run them (`keys/extension`).
     pub extension_commands: Vec<ExtCommandPage>,
+    /// What the sidebar's Extensions fold lists: every view of an extension listed where the person
+    /// is, and whether the fold is open (Rust's, `toggle_extensions`).
+    pub extension_views: Vec<ExtTab>,
+    /// The extension views on screen, each as its table says (their tools ride a dock's strip).
+    pub extension_tables: Vec<ExtTable>,
+    pub extensions_listed: bool,
+    /// What the sidebar's Views fold lists, and the panels showing saved views (which say which are
+    /// lit). The views' bodies are not held: only a view's place in the list is drawn here.
+    pub saved_views: Vec<NavView>,
+    pub saved_panels: Vec<SavedPanel>,
     /// The review the session holds, while it is open: what the Git stage's
     /// Changes tab draws. Shared, so a view that keeps its rows across
     /// unrelated events does not copy them.
@@ -120,6 +133,11 @@ impl Heard {
             console: ConsolePage::default(),
             keymap: Vec::new(),
             extension_commands: Vec::new(),
+            extension_views: Vec::new(),
+            extension_tables: Vec::new(),
+            extensions_listed: false,
+            saved_views: Vec::new(),
+            saved_panels: Vec::new(),
             review: None,
             history: None,
             git: Entry::default(),
@@ -168,7 +186,16 @@ impl Heard {
             Event::Docks(docks) => self.docks = *docks,
             Event::Console(console) => self.console = *console,
             Event::Keymap { groups, .. } => self.keymap = groups,
-            Event::Extensions(page) => self.extension_commands = page.commands,
+            Event::Extensions(page) => {
+                self.extension_commands = page.commands;
+                self.extension_views = page.views;
+                self.extension_tables = page.tables;
+                self.extensions_listed = page.listed;
+            }
+            Event::SavedViews(page) => {
+                self.saved_views = nav::views_of(&page);
+                self.saved_panels = page.panels;
+            }
             // Said once and held by no one: the window opens what it names (`Ran`).
             Event::Run { action } => {
                 self.ran.push(action);

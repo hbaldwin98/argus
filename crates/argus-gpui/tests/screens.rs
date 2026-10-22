@@ -31,7 +31,7 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,docks,review,review-comment,history";
+const DEFAULT: &str = "workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,docks,float,review,review-comment,history";
 
 fn out_dir() -> PathBuf {
     std::env::var_os("ARGUS_GPUI_SHOTS")

@@ -34,21 +34,30 @@ pub(crate) struct Opened {
 /// The shell in a window whose calls are collected, and whose events are the test's to send. Its
 /// Workspace pane has the keys.
 pub(crate) fn open(cx: &mut TestAppContext) -> Opened {
+    open_sized(cx, 1400.0)
+}
+
+/// The shell in a window `width` wide: a window of 1200 or less folds the sidebar to icons.
+pub(crate) fn open_sized(cx: &mut TestAppContext, width: f32) -> Opened {
     let calls: Calls = Rc::default();
     let sink = calls.clone();
     let (events, listening) = tokio::sync::mpsc::unbounded_channel();
-    let (handle, heard, shell) = open_on(cx, Caller::new(move |call| sink.borrow_mut().push(call)), listening);
+    let (handle, heard, shell) = open_on_sized(cx, Caller::new(move |call| sink.borrow_mut().push(call)), listening, width);
     Opened { handle, heard, shell, calls, events }
 }
 
 /// The shell in a window over `caller`, hearing `listening`.
 pub(crate) fn open_on(cx: &mut TestAppContext, caller: Caller, listening: UnboundedReceiver<Vec<Event>>) -> (AnyWindowHandle, Entity<Heard>, Entity<Shell>) {
+    open_on_sized(cx, caller, listening, 1400.0)
+}
+
+fn open_on_sized(cx: &mut TestAppContext, caller: Caller, listening: UnboundedReceiver<Vec<Event>>, width: f32) -> (AnyWindowHandle, Entity<Heard>, Entity<Shell>) {
     cx.update(crate::window::init);
     let mut built = None;
     let (handle, _) = cx.update(|cx| {
         gpui_kit::open_window(
             WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::new(Default::default(), size(px(1000.0), px(700.0))))),
+                window_bounds: Some(WindowBounds::Windowed(Bounds::new(Default::default(), size(px(width), px(700.0))))),
                 ..Default::default()
             },
             cx,

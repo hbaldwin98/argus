@@ -106,6 +106,8 @@ impl RenderOnce for Header {
             .child(
                 h_flex()
                     .id("drag")
+                    .test_support()
+                    .aria_label(if self.held { "Strip, as last heard" } else { "Strip" })
                     .flex_1()
                     .min_w_0()
                     .items_center()

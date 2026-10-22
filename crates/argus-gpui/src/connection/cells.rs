@@ -6,6 +6,7 @@
 //! themselves.
 
 use argus_desktop_core::connection::page::Side;
+use argus_desktop_core::panes::console::ConsolePlace;
 
 use super::heard::Heard;
 
@@ -19,7 +20,10 @@ impl Heard {
     /// Whether the grid is drawn: the Workspace's stage is up, no console covers it, and the Git
     /// stage is not standing in its place.
     pub fn grid_up(&self) -> bool {
-        self.rail.workspace_shown && !self.git_up()
+        // The session's rail says the console covers the Workspace too, but its `Console` event and
+        // its `Rail` event arrive apart: until both have, a cell must not be a target under it.
+        let covered = matches!(self.console.place, ConsolePlace::Tab | ConsolePlace::Fullscreen);
+        self.rail.workspace_shown && !covered && !self.git_up()
     }
 
     /// The cell that has the session's keys, if one does.
@@ -85,6 +89,23 @@ mod tests {
         rail.workspace_shown = false;
         heard.hear(Event::Rail(Box::new(rail)));
         assert!(!heard.grid_up());
+    }
+
+    #[test]
+    fn a_console_over_the_workspace_makes_its_cells_no_drop_targets_whatever_the_rail_last_said() {
+        use argus_desktop_core::panes::console::ConsolePage;
+        for place in [ConsolePlace::Tab, ConsolePlace::Fullscreen] {
+            let mut heard = heard_with(Some(1), vec![Some(5)], None);
+            assert!(heard.grid_up());
+            heard.hear(Event::Console(Box::new(ConsolePage { place, ..ConsolePage::default() })));
+            assert!(heard.rail.workspace_shown, "the rail has not caught up");
+            assert!(!heard.grid_up(), "{place:?}");
+        }
+        let mut heard = heard_with(Some(1), vec![], None);
+        for place in [ConsolePlace::Docked, ConsolePlace::Hidden] {
+            heard.hear(Event::Console(Box::new(ConsolePage { place, ..ConsolePage::default() })));
+            assert!(heard.grid_up(), "a docked or hidden console is beside the grid, not over it");
+        }
     }
 
     #[test]

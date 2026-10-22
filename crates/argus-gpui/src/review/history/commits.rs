@@ -42,7 +42,7 @@ impl History {
             .child(
                 button("history-fold-all", "Fold all", Look::Quiet, true, tokens)
                     .tooltip(tip("Fold every commit"))
-                    .child(Glyph::FoldAll.at(12.0))
+                    .child(Glyph::FoldAll.at(tokens.icon_xs))
                     .child("Fold all")
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.ask(Call::HistoryAction { action: Action::FoldAll, row: None }, cx)

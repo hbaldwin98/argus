@@ -4,12 +4,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use argus_desktop_core::chrome::cursor::{Pick, StartFrom, StartMenu};
 use argus_desktop_core::connection::page::{Call, Checkout, Connection, Event, Pane, Project, ProjectChoice, Rail, Repository, Shown, Stage, Status};
 use argus_desktop_core::panes::console::ConsolePlace;
-use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
+use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{point, prelude::*, px, size, AnyWindowHandle, Bounds, Entity, MouseButton, TestAppContext, WindowBounds, WindowOptions};
 
-use super::picked::Picked;
 use super::RailView;
 use crate::chrome::nav::Nav;
 use crate::connection::caller::Caller;
@@ -17,9 +17,13 @@ use crate::connection::heard::Heard;
 
 mod calls;
 mod foot;
+mod nav;
 mod keys;
-mod picked;
+mod menus;
 mod rows;
+mod scroll;
+mod start;
+mod width;
 
 pub(super) fn pane(id: u64, agent: bool, title: &str, status: &'static str, on: bool) -> Pane {
     Pane { id, agent, title: title.into(), status, note: None, on, views: 0 }
@@ -120,6 +124,11 @@ pub(super) struct Opened {
 }
 
 pub(super) fn open(cx: &mut TestAppContext, events: Vec<Event>) -> Opened {
+    open_wide(cx, events, 1400.0)
+}
+
+/// The rail in a window `width` wide: a window of 1200 or less folds it.
+pub(super) fn open_wide(cx: &mut TestAppContext, events: Vec<Event>, width: f32) -> Opened {
     cx.update(crate::window::init);
     let calls: Calls = Rc::default();
     let sink = calls.clone();
@@ -130,7 +139,7 @@ pub(super) fn open(cx: &mut TestAppContext, events: Vec<Event>) -> Opened {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                     Default::default(),
-                    size(px(crate::theme::ledger::tokens().rail_w), px(700.0)),
+                    size(px(width), px(700.0)),
                 ))),
                 ..Default::default()
             },
@@ -216,7 +225,7 @@ pub(super) fn open_shell(cx: &mut TestAppContext) -> Opened {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                     Default::default(),
-                    size(px(1000.0), px(700.0)),
+                    size(px(1400.0), px(700.0)),
                 ))),
                 ..Default::default()
             },
@@ -247,6 +256,35 @@ pub(super) fn type_key(cx: &mut TestAppContext, opened: &Opened, key: &str) {
     cx.run_until_parked();
 }
 
-pub(super) fn picked(cx: &mut TestAppContext, opened: &Opened) -> Option<Picked> {
-    cx.update(|cx| opened.rail.read(cx).picked())
+/// The row the session says holds the keys, as `(checkout, pane)`.
+pub(super) fn picked(cx: &mut TestAppContext, opened: &Opened) -> Option<(u64, Option<u64>)> {
+    cx.update(|cx| opened.rail.read(cx).picked().map(|pick| (pick.checkout, pick.pane)))
+}
+
+/// What the session says once a row is picked: the busy rail with the cursor on it.
+pub(super) fn picking(checkout: u64, pane: Option<u64>) -> Event {
+    let mut rail = busy();
+    rail.cursor.pick = Some(Pick { checkout, pane });
+    Event::Rail(Box::new(rail))
+}
+
+/// The busy rail with checkout `checkout`'s + menu open on its second item.
+pub(super) fn starting(checkout: u64, at: usize) -> Event {
+    let mut rail = busy();
+    rail.templates = vec!["claude".into(), "codex".into()];
+    rail.cursor.start = Some(StartMenu { checkout, from: StartFrom::Rail, at });
+    Event::Rail(Box::new(rail))
+}
+
+/// The calls sent so far, forgotten.
+pub(super) fn forget(opened: &Opened) {
+    opened.calls.borrow_mut().clear();
+}
+
+/// Puts the pointer over `id`, where a button drawn only under it appears.
+pub(super) fn hover(cx: &mut TestAppContext, opened: &Opened, id: &str) {
+    let at = cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).bounds().center()).unwrap();
+    cx.update_window(opened.handle, |_, window, cx| window.pointer_move(at, None, cx)).unwrap();
+    cx.run_until_parked();
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
 }

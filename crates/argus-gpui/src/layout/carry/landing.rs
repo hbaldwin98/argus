@@ -62,8 +62,9 @@ pub fn landing(carried: &Carried, at: Point<Pixels>, grid: Grid, spots: &Spots) 
             return Landing::Cell { slot: slot as u8, onto, zone, bounds };
         }
     }
-    // Only a pane from the rail opens on the stage; a header let go on no cell goes nowhere.
-    let on_stage = matches!(carried, Carried::Rail { .. }) && spots.get(Spot::Stage).is_some_and(|stage| stage.contains(&at));
+    // The stage is outlined for either kind (SHELL-GRID-11), though only a pane from the rail opens
+    // on it: `call` sends nothing for a header let go there.
+    let on_stage = spots.get(Spot::Stage).is_some_and(|stage| stage.contains(&at));
     if on_stage {
         Landing::Stage
     } else {
@@ -136,15 +137,20 @@ mod tests {
     }
 
     #[test]
-    fn a_header_is_never_dropped_on_its_own_cell() {
-        assert_eq!(landing(&header(), at(150.0, 50.0), grid(), &spots()), Landing::Nowhere);
+    fn a_header_is_never_dropped_on_its_own_cell_which_is_the_stage_under_it() {
+        let landed = landing(&header(), at(150.0, 50.0), grid(), &spots());
+        assert_eq!(landed, Landing::Stage);
+        assert!(call(&header(), landed).is_none());
     }
 
     #[test]
-    fn a_header_let_go_on_no_cell_goes_nowhere_even_over_the_stage() {
+    fn a_header_over_the_stage_on_no_cell_outlines_it_but_asks_for_nothing() {
         let spots = spots();
         spots.set(Spot::Stage, area(100.0, 0.0, 200.0, 300.0));
-        assert_eq!(landing(&header(), at(150.0, 200.0), grid(), &spots), Landing::Nowhere);
+        let landed = landing(&header(), at(150.0, 200.0), grid(), &spots);
+        assert_eq!(landed, Landing::Stage, "SHELL-GRID-11: the body is marked as a stage drop");
+        assert!(call(&header(), landed).is_none(), "and letting go there sends nothing");
+        assert_eq!(landing(&header(), at(500.0, 200.0), grid(), &spots), Landing::Nowhere, "off the stage there is no outline");
     }
 
     #[test]
@@ -201,7 +207,7 @@ mod tests {
         let grid = Grid { up: true, panes: &gone };
         let carried = row(9, Some(7));
         assert_eq!(landing(&carried, at(250.0, 50.0), grid, &spots()), Landing::Stage);
-        assert_eq!(landing(&header(), at(250.0, 50.0), grid, &spots()), Landing::Nowhere);
+        assert_eq!(landing(&header(), at(250.0, 50.0), grid, &spots()), Landing::Stage);
     }
 
     #[test]

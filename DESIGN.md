@@ -673,6 +673,7 @@ GPUI one both stand on it.
 | `browser` | the browsers agents' panes run, as this window holds them: where each is, its owner and latest picture, and which the window draws |
 | `chrome/add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
 | `chrome/empty` | what the stage says with no pane on screen: waiting on the daemon (and the one way out of a connection that does not answer), no project, or a project with nothing shown (the checkout a shell is offered on, the panes to go back to) |
+| `chrome/cursor` | which rail row holds the keys and which checkout's + menu is open: the keys of a picked row and of the menu answered once for both windows, the pick following the tree, the menu's items |
 | `chrome/rail` | what the rail lists from the tree, and what a row says |
 | `chrome/status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
 | `chrome/strip` | what the strip across the top of the stage says, as data: the crumb over the title, the status chip, the resumed note, whether the pane's menu is there, and the words each stage names itself by, with the words a stage's own view adds |
@@ -680,6 +681,7 @@ GPUI one both stand on it.
 | `layout` | where each surface sits in the window |
 | `layout/docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, whether it is a page, or a dialog floating over the stage with where it sits, how big, and which is in front; which tab each dock shows of the panels that exist, whether it is open and how big, whether that changed since it was saved; what each panel that exists can do — float, take the stage, close for good — and which kind it is, told to the page so it never reads them from a panel's name; the page and gestures of the docks, and what the page last heard |
 | `layout/dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline, the Code stage's tree and outline — held to its bounds, and whether that changed since it was saved |
+| `layout/floats` | where a dialog may sit and how small it may get while a pointer holds it: the box moved or resized by the pointer's travel, no smaller than 280 by 160, kept with 120 px of its width and 40 px of its header in reach of the work area, so what a window draws live is what it reports on release |
 | `layout/stage` | what fills the stage — one of the stages, or a page (an agent's view or an extension's) opened over one — where closing, docking, Escape or its view going takes the person back to, the Code stage's way back included, and whether the Workspace's panes are drawn under it |
 | `panes` | the panes on screen and how each is drawn |
 | `panes/console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, the page it draws and the gestures it takes, and what the page last heard |
@@ -700,6 +702,7 @@ GPUI one both stand on it.
 | `views/changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
 | `views/refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
 | `views/saved` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
+| `views/nav` | how the sidebar's Views fold lists the saved views: grouped by scope, filtered to here or all, nested under the view that links to them, lit while a panel in a dock shows them |
 | `extensions` | what the running extensions put in this window |
 | `extensions/dialog` | the questions extensions put to this window: the one open, those waiting behind it, the answer or cancellation each sends back, and the page last sent of them |
 | `extensions/keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension, as the page draws them |
@@ -777,19 +780,23 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `chrome/header/slots` | what a stage's own view hands the strip, once, when it is made: the words it says (title and trail) and the tools it puts at the strip's end, so adding a stage adds no arm to the strip |
 | `chrome/nav` | the sidebar's way between stages: which items there are, which one the stage on screen lights, and the call each press makes |
 | `chrome/notice` | the line along the bottom of the stage: the newest notice with an info mark, its words and a dismiss, ended after six seconds counted from when it arrived, and replaced by the next |
-| `chrome/rail` | the sidebar: what it is made of (the brand row, the nav, the projects, the list under them and the foot with its console chip and chime switch) over the latest `Rail`; the tree dimmed while the daemon is gone, and neither calling nor picking on a press |
-| `chrome/rail/brand` | the brand row: the logo and the project the rail lists, the title bar's left end that moves the window, with the switcher mark when there are several projects |
-| `chrome/rail/calls` | what the rail asks of the daemon: a call unless the sidebar is held, and the close of Git that goes before a pane or another stage comes up |
-| `chrome/rail/checkout` | a checkout's row: the fold, branch, shared and git marks, the dot and count while folded, the pick's ring, and the panes hanging from it while open |
-| `chrome/rail/keys` | the rail's layer of the key walk: up while a row is picked and the rail has the keys, the table's `Rail` place answering them (`x` or `X` closing a picked pane, Enter and Escape giving them back, any other action of the window run as the stage's), every other key held, and a press outside, a pane newly shown or a stage change handing the keys to the stage |
+| `chrome/rail` | the sidebar: what it is made of (the brand row, the nav, the list of repositories under it and the foot) as wide as the person made it and folded to icons when narrow, over a slice of the latest `Rail`; the tree dimmed while the daemon is gone, and neither calling nor picking on a press |
+| `chrome/rail/brand` | the brand row: the logo and the project the rail lists, the title bar's left end that moves the window, with the name a button opening the list of projects when there are several; the logo alone in a narrow rail |
+| `chrome/rail/calls` | what the rail asks of the daemon: a call unless the sidebar is held, the close of Git that goes before a pane or another stage comes up, a pane shown as a click shows it, and what a choice of a menu does |
+| `chrome/rail/checkout` | a checkout's row: the fold, branch, shared (the people mark) and git marks, the dot and count while folded, the + that starts something, the pick's ring, its right-click menu, and the panes hanging from it while open; only the panes in a narrow rail |
+| `chrome/rail/keys` | the rail's layers of the key walk: the picked row's, up while a row is picked and the rail has the keys, and the + menu's, up while the session says it is open; each sends the action the table binds to the session as it is (`RailKey`, `StartKey`) and holds every other key, and a press outside, a pane newly shown or a stage change hands the keys to the stage |
 | `chrome/rail/listing` | the list under the nav: the project's repositories, or the quiet wait and the empty line when there is no project, dimmed while the daemon is gone |
-| `chrome/rail/pane` | a pane's row: its status as a dot or a word, its title, the close that appears under the pointer, and a middle click closing it |
-| `chrome/rail/picked` | which row is picked, and where the pick goes when a fold or a close takes its row away |
-| `chrome/rail/projects` | the projects to choose among, once there is more than one, as rows under the brand |
-| `chrome/rail/repository` | a repository's row: its chevron, name, status dot and count, and the checkouts under it while it is open |
-| `chrome/rail/row` | the box every selectable line of the rail is made of, and the mark that says a line is open or shut |
-| `chrome/rail/stages` | the nav rows: which stage each lights, the keys named beside them, and the press that goes there |
+| `chrome/rail/menus` | what the rail's right-click menus offer, and the brand's list of projects: a repository's, a checkout's and a pane's as menu items naming the calls they send |
+| `chrome/rail/popup` | a rail menu drawn: its items as the kit's popup, each choice handed back to the rail to do once the menu has let go of the keys, and off while the daemon is gone |
+| `chrome/rail/pane` | a pane's row: its status as a dot or a word, its title, the close that appears under the pointer, its right-click menu, a middle click closing it, and the press that carries it; a tile of the task's initials with the status on its corner in a narrow rail |
+| `chrome/rail/repository` | a repository's row: its chevron, name, status dot and count, the clock that opens its recent sessions, its right-click menu, and the checkouts under it while it is open; a hairline in a narrow rail |
+| `chrome/rail/row` | the box every selectable line of the rail is made of, what a drawing of the rail is made against, and the quiet button a row shows under the pointer |
+| `chrome/rail/scroll` | bringing the pane on screen into view once per pane, on the frame after its row says where it is |
+| `chrome/rail/slice` | the part of what was heard that the rail draws, kept to compare: the rail redraws when it changes and not for every event |
+| `chrome/rail/start` | a checkout's + menu drawn open in its row, the highlight the session's, a press outside shutting it |
+| `chrome/rail/stages` | the nav rows: which stage each lights, the keys named beside them, the press that goes there, and the icon tiles of a narrow rail |
 | `chrome/rail/status` | how a status looks on the rail's rows: the dot a status earns, and the words a few statuses say (the pill they are said in is `kit/pill`) |
+| `chrome/rail/tail` | the nav's dynamic tail: the Extensions and Views folds, each drawing nothing while it holds nothing, their rows lit while on screen and handles that dock the view |
 | `chrome/shell` | which regions the window is made of and how they sit: the sidebar at full height, and beside it the work area under the stage's header |
 | `chrome/stage` | what fills the stage under the header by the one choice `route` makes: the Git stage, the Workspace's live pane with the bar of an ended pane over its foot, the empty stage in its place with no pane, or a line saying a stage is not in the window yet; dimmed while the daemon is gone |
 | `chrome/stage/empty` | the card on the stage when no pane is on screen: connecting (a spinner, where, the last failure, one way out), no projects (add one), or no pane (an agent, a shell on the first checkout, the panes to go back to), from core's `chrome/empty` |
@@ -872,9 +879,11 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `layout/dock` | one dock drawn from Rust's `DocksPage`: its tab strip while it holds more than one panel, the shown panel under a head of its own while it holds one (the console's own strip is its head, and a press in the top of it carries the panel), its sash with the page's grip, and the press each of them makes; dimmed and not answering while the daemon is gone |
 | `layout/dock_menu` | what a panel's dock menu and a dock tab's context menu offer as the one menu model, the dock a panel is already in saying `here`, and the `Call` each sends |
 | `layout/drop_target` | where a panel dropped at a point would land (a dock, or the stage for a panel that has a page), the area to preview, and the call the drop sends |
+| `layout/float` | the dialogs over the work area, each in a frame of its own (head, the panel's body, a corner grip) that raises on any press, moves by its head and resizes by its corner through the work area's one drag, draws the box the pointer has made until it is let go and reports it once; dimmed and not answering while the daemon is gone |
 | `layout/holders` | who is holding a resize: each drag holds under its own name and the panes wait until all have let go |
 | `layout/panel` | what a docked panel's body draws while it is not ported: its name and a quiet line that it is not in the GPUI window yet (the console is drawn by `panes/console`) |
 | `layout/sash` | what size a dock has with its sash under the pointer: measured from the dock's own edge, the grab offset kept, held to Rust's bounds |
+| `layout/tools` | what a docked extension view carries in its dock's tab strip: a button that opens it as a page and a `...` menu of its view-wide actions and the keyed ones run on the selected row |
 | `layout/work` | the work area under the header: the stage between a left, right and bottom dock, and the one drag that carries a panel or a pane or sizes a dock, sending its `Call` only when it ends |
 | `panes` | the panes on screen and how each is drawn |
 | `panes/console` | the console: a tab per console the daemon holds with its dot, the strip's buttons and menus, and its first and second side each drawn with a terminal of their own under a header while split; every gesture is the page's `Call`, nothing on screen changes before the `Console` event |

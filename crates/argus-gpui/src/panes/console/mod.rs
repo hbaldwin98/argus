@@ -17,11 +17,13 @@ pub mod rename;
 pub mod sides;
 pub mod strip;
 
+use std::cell::Cell;
+
 use argus_desktop_core::connection::page::{Call, Side};
 use argus_desktop_core::panes::console::ConsoleGesture;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, App, Context, Entity, FocusHandle, Subscription, Window};
+use gpui_kit::{div, prelude::*, px, App, Context, Entity, FocusHandle, ScrollHandle, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
@@ -39,6 +41,9 @@ pub struct ConsoleView {
     /// pane id: an unsplit or a trade of sides moves the keys between screens
     /// with the same pane typed.
     typed: Option<FocusHandle>,
+    /// The strip's scroll, and the tab it was last scrolled to, so only a newly chosen one moves it.
+    tabs: ScrollHandle,
+    scrolled_to: Cell<Option<u64>>,
     _observing: Subscription,
 }
 
@@ -54,7 +59,7 @@ impl ConsoleView {
             this.follow_keys(window, cx);
             cx.notify();
         });
-        let mut view = Self { heard, caller, first, second, stage, typed: None, _observing: observing };
+        let mut view = Self { heard, caller, first, second, stage, typed: None, tabs: ScrollHandle::new(), scrolled_to: Cell::default(), _observing: observing };
         view.typed = view.keyed_handle(cx);
         view
     }

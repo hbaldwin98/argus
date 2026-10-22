@@ -149,6 +149,11 @@ impl Console {
         self.panes.iter().any(|p| p.id == pane)
     }
 
+    /// The name a console tab carries now, so a rename that changes nothing asks nothing.
+    pub fn title(&self, pane: PaneId) -> Option<&str> {
+        self.panes.iter().find(|p| p.id == pane).map(|p| p.title.as_str())
+    }
+
     pub fn chosen(&self) -> Option<PaneId> {
         self.chosen
     }

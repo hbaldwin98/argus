@@ -25,7 +25,7 @@ fn the_foot_says_reconnecting_and_the_rail_goes_on_showing_the_last_tree_held(cx
     // Back, it answers again.
     hear(cx, &opened, vec![status(Connection::Connected)]);
     click(cx, &opened, "pane-2");
-    assert_eq!(taken(&opened), ["Select { pane: 2 }"]);
+    assert_eq!(taken(&opened), ["RailPick { checkout: 110, pane: Some(2) }", "Select { pane: 2 }"]);
 }
 
 #[gpui_kit::test]
@@ -111,4 +111,33 @@ fn the_foot_buttons_send_nothing_while_the_daemon_is_not_there(cx: &mut TestAppC
     click(cx, &opened, "foot-console");
     click(cx, &opened, "foot-chime");
     assert!(taken(&opened).is_empty(), "a held foot sent {:?}", taken(&opened));
+}
+
+#[gpui_kit::test]
+fn the_settings_gear_opens_the_settings_whether_or_not_the_daemon_is_there(cx: &mut TestAppContext) {
+    // SHELL-FOOT-6: the gear is the window's own, so it is not held with the daemon.
+    use crate::kit::overlay::host::Overlays;
+    use crate::kit::overlay::kind::Overlay;
+    let opened = open(cx, connected_and_busy());
+    assert_eq!(label(cx, &opened, "foot-settings").as_deref(), Some("Settings"));
+    hear(cx, &opened, vec![status(Connection::Stopped)]);
+    click(cx, &opened, "foot-settings");
+    assert!(cx.update(|cx| Overlays::get(cx).is_open(Overlay::Settings)), "the settings did not open");
+    assert!(taken(&opened).is_empty(), "the gear asked the daemon something: {:?}", taken(&opened));
+}
+
+#[test]
+fn the_footers_hover_text_names_the_keys_the_keymap_gives_each_button() {
+    // SHELL-FOOT-4, 6: `Hide the console (\`)`, `Settings (Ctrl ,)`; the keys are the keymap's, so none are
+    // named before it has been heard.
+    use argus_desktop_core::keys::keymap::{commands, groups, LAYERS};
+    let mut heard = Heard::new();
+    heard.hear(status(Connection::Connected));
+    heard.hear(Event::Rail(Box::new(busy())));
+    let before = super::super::slice::Slice::of(&heard, None).foot;
+    assert_eq!((before.console_title.as_str(), before.settings_title.as_str()), ("Show the console", "Settings"));
+    heard.hear(Event::Keymap { groups: groups(), commands: commands(), layers: LAYERS });
+    let after = super::super::slice::Slice::of(&heard, Some(&super::super::slice::Slice::of(&heard, None))).foot;
+    assert_eq!(after.console_title, "Show the console (`)");
+    assert!(after.settings_title.starts_with("Settings (") && after.settings_title.contains("Ctrl"), "{}", after.settings_title);
 }

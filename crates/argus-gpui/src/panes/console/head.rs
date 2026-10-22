@@ -72,6 +72,16 @@ impl ConsoleView {
 
     pub(super) fn head(&self, page: &ConsolePage, docks: &DocksPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let tabs: Vec<_> = page.tabs.iter().map(|tab| self.tab(tab, page, tokens, cx).into_any_element()).collect();
+        // The tab chosen is kept in view when it newly is one, so picking from the keys or the rail
+        // never leaves it past the edge of a strip that scrolls (`.chead`, `overflow-x: auto`).
+        let chosen = page.tabs.iter().position(|tab| tab.on);
+        let chosen_pane = chosen.map(|at| page.tabs[at].pane);
+        if self.scrolled_to.get() != chosen_pane {
+            self.scrolled_to.set(chosen_pane);
+            if let Some(at) = chosen {
+                self.tabs.scroll_to_item(at);
+            }
+        }
         let (offers, hide) = {
             let keymap = &self.heard.read(cx).keymap;
             (
@@ -89,10 +99,14 @@ impl ConsoleView {
                 h_flex()
                     .id("console-tabs")
                     .role(Role::TabList)
+                    .test_support()
                     .min_w_0()
                     .ml(px(tokens.sp_4))
                     .gap(px(tokens.sp_4))
-                    .overflow_hidden()
+                    // Tabs past the strip's room scroll sideways, so the buttons after them are never
+                    // pushed off the edge.
+                    .overflow_x_scroll()
+                    .track_scroll(&self.tabs)
                     .children(tabs),
             )
             .when(page.can_spawn, |head| {

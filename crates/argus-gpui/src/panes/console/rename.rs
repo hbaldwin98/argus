@@ -5,8 +5,8 @@
 //! refused rename leaves it showing what is true (`rename.ts`). The dialog is
 //! the overlay host's (`kit/overlay`): it takes the keys, traps Tab, closes on
 //! Escape and gives the keys back to what had them when it opened, so this is
-//! only the field and the one call. Nothing is sent for an empty name or the
-//! old one.
+//! only the field and the one call. What is typed is sent as it stands: the session trims it and
+//! asks nothing for an empty name or the old one (`Session::rename`, SHELL-RENAME-2).
 
 use argus_desktop_core::connection::page::Call;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -22,12 +22,6 @@ use crate::connection::heard::Heard;
 use crate::kit::overlay::host::{Overlays, Spec};
 use crate::kit::overlay::kind::Overlay;
 use crate::theme::Tokens;
-
-/// The call a name typed asks for: none for a blank name or the old one.
-pub fn asked(pane: u64, old: &str, typed: &str) -> Option<Call> {
-    let next = typed.trim();
-    (!next.is_empty() && next != old).then(|| Call::RenamePane { pane, title: next.to_owned() })
-}
 
 /// Opens the dialog over the window, naming `pane`, called `title` now.
 pub fn open(pane: u64, title: String, caller: Caller, heard: Entity<Heard>, window: &mut Window, cx: &mut App) {
@@ -45,13 +39,11 @@ pub fn open(pane: u64, title: String, caller: Caller, heard: Entity<Heard>, wind
                 });
             }
             let ask = {
-                let (input, caller, heard, title) = (input.clone(), caller.clone(), heard.clone(), title.clone());
+                let (input, caller, heard) = (input.clone(), caller.clone(), heard.clone());
                 move |cx: &mut App| {
-                    let typed = input.read(cx).value();
-                    if let Some(call) = asked(pane, &title, &typed) {
-                        if !heard.read(cx).held() {
-                            caller.call(call);
-                        }
+                    let typed = input.read(cx).value().to_string();
+                    if !heard.read(cx).held() {
+                        caller.call(Call::RenamePane { pane, title: typed });
                     }
                 }
             };
@@ -91,23 +83,4 @@ pub fn open(pane: u64, title: String, caller: Caller, heard: Entity<Heard>, wind
         window,
         cx,
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_blank_or_unchanged_name_asks_for_nothing() {
-        assert!(asked(5, "pwsh", "").is_none());
-        assert!(asked(5, "pwsh", "   ").is_none());
-        assert!(asked(5, "pwsh", "pwsh").is_none());
-        assert!(asked(5, "pwsh", " pwsh ").is_none(), "trimmed before it is compared");
-    }
-
-    #[test]
-    fn a_new_name_is_asked_of_the_daemon_trimmed() {
-        let call = asked(5, "pwsh", "  build  ").expect("a rename");
-        assert_eq!(format!("{call:?}"), "RenamePane { pane: 5, title: \"build\" }");
-    }
 }

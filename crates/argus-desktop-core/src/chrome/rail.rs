@@ -68,6 +68,7 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         brief_height: None,
         code_tree_width: None,
         code_outline_width: None,
+        cursor: Default::default(),
         row: GridPage::default(),
     }
 }
@@ -188,6 +189,22 @@ pub fn branch(checkout: &CheckoutInfo) -> String {
     }
 }
 
+/// The folded rail's tile for a pane: the initials of its task, the text after the first ` · ` (else
+/// the whole title) with every run of non-letters turned to a space, the first letter of the first
+/// two words or the first two letters of one word, lower-cased (`claude · trim context` is `tc`).
+/// The agent's name before the dot is the same on most rows, so it would make the tiles alike.
+pub fn pane_mark(title: &str) -> String {
+    let task = title.split_once(" \u{b7} ").map_or(title, |(_, task)| task);
+    let spaced: String = task.chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
+    let mut words = spaced.split_whitespace();
+    let (first, second) = (words.next().unwrap_or(""), words.next());
+    let mark: String = match second {
+        Some(second) => first.chars().take(1).chain(second.chars().take(1)).collect(),
+        None => first.chars().take(2).collect(),
+    };
+    mark.to_lowercase()
+}
+
 pub fn shown(tree: &[ProjectInfo], pane: PaneId) -> Option<page::Shown> {
     let (lineage, info) = tree.lineage_of_pane(pane)?;
     Some(page::Shown {
@@ -221,6 +238,20 @@ mod tests {
     use super::*;
     use crate::fixtures::{checkout, pane, project, repository};
     use argus_protocol::GitStatus;
+
+    #[test]
+    fn a_folded_tile_is_the_initials_of_the_task_after_the_agents_name() {
+        // SHELL-RAIL-16.
+        assert_eq!(pane_mark("claude \u{b7} trim context"), "tc");
+        assert_eq!(pane_mark("claude \u{b7} store faults"), "sf");
+        assert_eq!(pane_mark("pwsh"), "pw", "one word gives its first two letters");
+        assert_eq!(pane_mark("codex \u{b7} ratatui 0.30"), "r0", "punctuation is a space, numbers count");
+        assert_eq!(pane_mark("a \u{b7} Long-running   job"), "lr");
+        assert_eq!(pane_mark("x"), "x");
+        assert_eq!(pane_mark(""), "");
+        assert_eq!(pane_mark("\u{b7}  \u{b7} \u{201c}!\u{201d}"), "", "nothing to take initials of");
+        assert_eq!(pane_mark("claude \u{b7} \u{c9}cole normale"), "\u{e9}n", "letters beyond ASCII, lower-cased");
+    }
 
     fn choices(toggled: &HashSet<RepositoryId>) -> Choices<'_> {
         static NONE_FOLDED: std::sync::LazyLock<HashSet<CheckoutId>> = std::sync::LazyLock::new(HashSet::new);

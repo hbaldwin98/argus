@@ -52,6 +52,19 @@ pub enum Glyph {
     Spinner,
     /// Two stacked units with a light each: the daemon.
     Server,
+    /// Two heads: how many agents share a checkout.
+    People,
+    /// A clock face: recent sessions.
+    Clock,
+    /// The marks an extension may name for its view (`ExtTab::icon`), and the puzzle piece it gets when it names none.
+    Box,
+    Database,
+    Globe,
+    List,
+    Rocket,
+    Puzzle,
+    /// An arrow out of a box: open as a page.
+    External,
 }
 
 impl Glyph {
@@ -91,6 +104,15 @@ impl Glyph {
             Glyph::Terminal => include_bytes!("../../assets/icons/terminal.svg"),
             Glyph::Spinner => include_bytes!("../../assets/icons/spinner.svg"),
             Glyph::Server => include_bytes!("../../assets/icons/server.svg"),
+            Glyph::People => include_bytes!("../../assets/icons/people.svg"),
+            Glyph::Clock => include_bytes!("../../assets/icons/clock.svg"),
+            Glyph::Box => include_bytes!("../../assets/icons/box.svg"),
+            Glyph::Database => include_bytes!("../../assets/icons/database.svg"),
+            Glyph::Globe => include_bytes!("../../assets/icons/globe.svg"),
+            Glyph::List => include_bytes!("../../assets/icons/list.svg"),
+            Glyph::Rocket => include_bytes!("../../assets/icons/rocket.svg"),
+            Glyph::Puzzle => include_bytes!("../../assets/icons/puzzle.svg"),
+            Glyph::External => include_bytes!("../../assets/icons/external.svg"),
         }
     }
 
@@ -99,11 +121,47 @@ impl Glyph {
         use gpui_kit::prelude::*;
         Icon::default().data(self.bytes()).size(px(size))
     }
+
+    /// The mark an extension's view names (`ExtTab::icon`); a name the window does not draw, and an
+    /// extension that names none, get the puzzle piece, since an extension never sends an image.
+    pub fn of_extension(name: Option<&str>) -> Glyph {
+        match name {
+            Some("box") => Glyph::Box,
+            Some("server") => Glyph::Server,
+            Some("database") => Glyph::Database,
+            Some("globe") => Glyph::Globe,
+            Some("list") => Glyph::List,
+            Some("rocket") => Glyph::Rocket,
+            Some("terminal") => Glyph::Console,
+            Some("gear") => Glyph::Gear,
+            _ => Glyph::Puzzle,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn an_extension_names_one_of_eight_marks_and_gets_the_puzzle_piece_for_any_other() {
+        for (name, glyph) in [
+            ("box", Glyph::Box),
+            ("server", Glyph::Server),
+            ("database", Glyph::Database),
+            ("globe", Glyph::Globe),
+            ("list", Glyph::List),
+            ("rocket", Glyph::Rocket),
+            ("terminal", Glyph::Console),
+            ("gear", Glyph::Gear),
+        ] {
+            assert_eq!(Glyph::of_extension(Some(name)), glyph, "{name}");
+        }
+        // `constructor` is a name the protocol lets through; inherited it is no icon at all.
+        for other in [Some("constructor"), Some(""), Some("Box"), None] {
+            assert_eq!(Glyph::of_extension(other), Glyph::Puzzle, "{other:?}");
+        }
+    }
+
 
     #[test]
     fn every_glyph_is_an_svg_with_a_stroke_or_a_fill_to_draw() {
@@ -120,6 +178,7 @@ mod tests {
             Glyph::Down,
             Glyph::Right,
             Glyph::Close,
+            Glyph::External,
             Glyph::More,
             Glyph::DockLeft,
             Glyph::DockRight,
@@ -142,6 +201,14 @@ mod tests {
             Glyph::Terminal,
             Glyph::Spinner,
             Glyph::Server,
+            Glyph::People,
+            Glyph::Clock,
+            Glyph::Box,
+            Glyph::Database,
+            Glyph::Globe,
+            Glyph::List,
+            Glyph::Rocket,
+            Glyph::Puzzle,
         ] {
             let text = std::str::from_utf8(glyph.bytes()).expect("utf-8");
             assert!(text.starts_with("<svg"), "{glyph:?}");

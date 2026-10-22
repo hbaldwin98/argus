@@ -168,6 +168,9 @@ fn the_stopped_card_is_up_while_stopped_and_reconnect_asks_without_closing_it(cx
     // Neither Escape nor the press that asked dismisses it: the daemon's word does.
     press(cx, &opened, "escape");
     assert_eq!(overlays(cx), [Overlay::Stopped]);
+    // The card slides in over 0.25s of wall-clock time (gpui-component's dialog); a press whose
+    // down and up straddle a frame mid-slide lands on two places and is no click.
+    std::thread::sleep(std::time::Duration::from_millis(300));
     click(cx, &opened, "reconnect");
     assert_eq!(asked(&opened), ["Reconnect"]);
     assert_eq!(overlays(cx), [Overlay::Stopped]);
@@ -227,4 +230,25 @@ fn the_narrow_window_is_no_reason_to_lose_the_empty_stage(cx: &mut TestAppContex
     cx.simulate_window_resize(opened.handle, size(px(720.0), px(480.0)));
     hear(cx, &opened, vec![status(Connection::Connected, None, None), Event::Rail(Box::new(project_rail()))]);
     assert!(has(cx, &opened, "start-agent"));
+}
+
+fn label_of(cx: &mut TestAppContext, opened: &Opened, id: &'static str) -> Option<String> {
+    cx.update_window(opened.handle, |_, window, _| window.try_find(id.to_owned()).and_then(|e| e.label().map(str::to_owned))).unwrap()
+}
+
+#[gpui_kit::test]
+fn the_strip_and_the_stage_body_are_held_while_stopped_or_reconnecting_and_not_before_a_tree(cx: &mut TestAppContext) {
+    // SHELL-STAGE-14 and -20: dimmed with the rail, since they show what was last heard.
+    let opened = open(cx);
+    let held = |cx: &mut TestAppContext| (label_of(cx, &opened, "drag").unwrap(), label_of(cx, &opened, "stage-body").unwrap());
+    hear(cx, &opened, vec![status(Connection::Connecting, None, None)]);
+    assert_eq!(held(cx), ("Strip".into(), "Stage".into()), "before any tree there is nothing shown to dim");
+    hear(cx, &opened, vec![status(Connection::Connected, None, None), Event::Rail(Box::new(project_rail()))]);
+    assert_eq!(held(cx), ("Strip".into(), "Stage".into()));
+    hear(cx, &opened, vec![status(Connection::Connecting, None, None)]);
+    assert_eq!(held(cx), ("Strip, as last heard".into(), "Stage, as last heard".into()), "reconnecting after a tree");
+    hear(cx, &opened, vec![status(Connection::Connected, None, None)]);
+    assert_eq!(held(cx), ("Strip".into(), "Stage".into()));
+    hear(cx, &opened, vec![status(Connection::Stopped, None, None)]);
+    assert_eq!(held(cx), ("Strip, as last heard".into(), "Stage, as last heard".into()), "stopped");
 }

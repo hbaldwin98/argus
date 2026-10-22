@@ -8,8 +8,6 @@ fn the_rail_lists_the_rows_of_the_rail_it_was_given(cx: &mut TestAppContext) {
     for nav in Nav::ALL {
         assert_eq!(label(cx, &opened, nav.id()).as_deref(), Some(nav.label()));
     }
-    assert_eq!(label(cx, &opened, "project-1").as_deref(), Some("src"));
-    assert_eq!(label(cx, &opened, "project-2").as_deref(), Some("other"));
     assert_eq!(label(cx, &opened, "repo-11").as_deref(), Some("argus"));
     assert_eq!(label(cx, &opened, "repo-11-count").as_deref(), Some("3"));
     // A quiet repository says how long since it was used, and draws nothing under it while shut.
@@ -30,12 +28,37 @@ fn the_rail_lists_the_rows_of_the_rail_it_was_given(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_rail_draws_no_list_of_projects_the_brand_row_is_where_they_are_chosen(cx: &mut TestAppContext) {
+    // The page lists no project under its brand: a button opens them (`switcher.png`).
+    let opened = open(cx, connected_and_busy());
+    assert!(!present(cx, &opened, "project-1"));
+    assert!(!present(cx, &opened, "project-2"));
+    assert!(present(cx, &opened, "rail-projects"), "two projects: the name is a button");
+    let mut single = busy();
+    single.projects.truncate(1);
+    hear(cx, &opened, vec![Event::Rail(Box::new(single))]);
+    assert!(!present(cx, &opened, "rail-projects"), "one project: the name is only a name");
+}
+
+#[gpui_kit::test]
+fn the_brand_button_opens_the_projects_and_choosing_one_sends_the_pages_call(cx: &mut TestAppContext) {
+    let opened = open(cx, connected_and_busy());
+    click(cx, &opened, "rail-projects");
+    let at = cx.update_window(opened.handle, |_, window, _| window.find_by_label("other").bounds().center()).unwrap();
+    press(cx, &opened, at, MouseButton::Left);
+    assert_eq!(taken(&opened), ["SelectProject { project: 2 }"]);
+    // The open project is ticked.
+    click(cx, &opened, "rail-projects");
+    let ticked = cx.update_window(opened.handle, |_, window, _| window.try_find_by_label("checked").is_some()).unwrap();
+    assert!(ticked, "the open project's check is drawn");
+}
+
+#[gpui_kit::test]
 fn the_pane_on_screen_and_the_chosen_repository_are_marked(cx: &mut TestAppContext) {
     let opened = open(cx, connected_and_busy());
     assert_eq!(selected(cx, &opened, "pane-1"), Some(true));
     assert_eq!(selected(cx, &opened, "pane-2"), Some(false));
     assert_eq!(selected(cx, &opened, "repo-11"), Some(true));
-    assert_eq!(selected(cx, &opened, "project-1"), Some(true));
     assert_eq!(selected(cx, &opened, "nav-workspace"), Some(true));
     assert_eq!(selected(cx, &opened, "nav-code"), Some(false));
 }
@@ -53,16 +76,25 @@ fn a_rail_not_yet_loaded_lists_nothing_and_an_empty_one_says_so(cx: &mut TestApp
 }
 
 #[gpui_kit::test]
-fn a_click_on_a_pane_row_selects_that_pane_and_picks_the_row(cx: &mut TestAppContext) {
+fn a_click_on_a_pane_row_asks_for_the_pick_and_the_pane_and_marks_nothing_itself(cx: &mut TestAppContext) {
+    // SHELL-RAIL-13: the pick is the session's, and the mark on screen is the daemon's to move.
     let opened = open(cx, connected_and_busy());
     click(cx, &opened, "pane-2");
-    assert_eq!(taken(&opened), ["Select { pane: 2 }"]);
-    cx.update(|cx| {
-        assert_eq!(opened.rail.read(cx).picked(), Some(Picked { checkout: 110, pane: Some(2) }));
-    });
-    // The mark on screen is the daemon's to move, not the click's.
+    assert_eq!(taken(&opened), ["RailPick { checkout: 110, pane: Some(2) }", "Select { pane: 2 }"]);
+    assert_eq!(picked(cx, &opened), None, "the row is picked when the session says so");
     assert_eq!(selected(cx, &opened, "pane-1"), Some(true));
     assert_eq!(selected(cx, &opened, "pane-2"), Some(false));
+    hear(cx, &opened, vec![picking(110, Some(2))]);
+    assert_eq!(picked(cx, &opened), Some((110, Some(2))));
+}
+
+#[gpui_kit::test]
+fn the_row_the_session_says_is_picked_is_ringed(cx: &mut TestAppContext) {
+    let opened = open(cx, connected_and_busy());
+    assert!(!present(cx, &opened, "checkout-110-ring"));
+    hear(cx, &opened, vec![picking(110, None)]);
+    assert!(present(cx, &opened, "checkout-110-ring"));
+    assert!(!present(cx, &opened, "checkout-112-ring"));
 }
 
 #[gpui_kit::test]
@@ -88,4 +120,48 @@ fn a_row_a_carried_pane_would_move_to_is_drawn_as_the_target(cx: &mut TestAppCon
     cx.update(|cx| opened.rail.update(cx, |_, cx| cx.notify()));
     cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
     assert!(!present(cx, &opened, "checkout-112-target"));
+}
+
+#[gpui_kit::test]
+fn a_repository_has_a_clock_that_opens_its_recent_sessions_without_choosing_it(cx: &mut TestAppContext) {
+    // SHELL-RAIL-5.
+    let opened = open(cx, connected_and_busy());
+    assert_eq!(label(cx, &opened, "repo-10-sessions").as_deref(), Some("Recent agent sessions in dotfiles"));
+    // Drawn only while the row is pointed at.
+    hover(cx, &opened, "repo-10");
+    click(cx, &opened, "repo-10-sessions");
+    assert_eq!(taken(&opened), ["OpenSessions { repository: 10 }"]);
+}
+
+#[gpui_kit::test]
+fn a_shared_checkout_says_how_many_agents_share_it_by_the_people_mark(cx: &mut TestAppContext) {
+    // SHELL-RAIL-7: `people <n>` titled `shared by <n> agents`; a checkout nobody shares has none.
+    let opened = open(cx, connected_and_busy());
+    assert!(present(cx, &opened, "checkout-112-shared"));
+    assert!(!present(cx, &opened, "checkout-110-shared"));
+}
+
+#[gpui_kit::test]
+fn every_row_carries_the_words_the_page_gives_its_title(cx: &mut TestAppContext) {
+    // The page's `title` is hover text here: the same words, as the label a test reads.
+    let opened = open(cx, connected_and_busy());
+    assert_eq!(label(cx, &opened, "repo-11").as_deref(), Some("argus"));
+    assert_eq!(label(cx, &opened, "checkout-110-fold").as_deref(), Some("Fold argus main"));
+    assert_eq!(label(cx, &opened, "checkout-110-start").as_deref(), Some("Start a shell or an agent on argus main"));
+    assert_eq!(label(cx, &opened, "pane-4").as_deref(), Some("Tracker · agent, needs-review"));
+}
+
+#[gpui_kit::test]
+fn an_unrelated_event_does_not_redraw_the_rail_and_a_change_of_what_it_draws_does(cx: &mut TestAppContext) {
+    // The rail reads a slice of what was heard, so a notice or a dialog's page is none of its business.
+    let opened = open(cx, connected_and_busy());
+    let changes = |cx: &mut TestAppContext| cx.update(|cx| opened.rail.read(cx).changes());
+    let before = changes(cx);
+    hear(cx, &opened, vec![Event::Notice { text: "something passed".into() }]);
+    hear(cx, &opened, vec![Event::Rail(Box::new(busy()))]);
+    assert_eq!(changes(cx), before, "nothing the rail draws changed");
+    let mut changed = busy();
+    changed.working = 7;
+    hear(cx, &opened, vec![Event::Rail(Box::new(changed))]);
+    assert_eq!(changes(cx), before + 1, "what the foot says changed");
 }

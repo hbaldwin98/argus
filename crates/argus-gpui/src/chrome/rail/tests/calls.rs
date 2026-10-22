@@ -5,27 +5,11 @@ use super::*;
 /// What a view draws of the tree: marks, rows and the pick.
 fn drawn(cx: &mut TestAppContext, opened: &Opened) -> Vec<String> {
     let mut ids: Vec<String> = Nav::ALL.iter().map(|nav| nav.id().to_owned()).collect();
-    ids.extend(
-        [
-            "project-1",
-            "project-2",
-            "repo-10",
-            "repo-11",
-            "checkout-110",
-            "checkout-112",
-            "pane-1",
-            "pane-2",
-            "pane-4",
-            "pane-5",
-        ]
-        .map(String::from),
-    );
+    ids.extend(["repo-10", "repo-11", "checkout-110", "checkout-112", "pane-1", "pane-2", "pane-4", "pane-5"].map(String::from));
     let mut seen: Vec<String> = ids
         .into_iter()
         .map(|id| {
-            let found = cx
-                .update_window(opened.handle, |_, window, _| window.try_find(id.clone()).map(|f| f.selected()))
-                .unwrap();
+            let found = cx.update_window(opened.handle, |_, window, _| window.try_find(id.clone()).map(|f| f.selected())).unwrap();
             format!("{id} {found:?}")
         })
         .collect();
@@ -47,8 +31,10 @@ fn a_call_the_daemon_refuses_leaves_the_rail_as_it_was(cx: &mut TestAppContext) 
     refused(cx, "ToggleCheckout");
     click(cx, &opened, "repo-10");
     refused(cx, "ChooseRepository");
-    click(cx, &opened, "project-2");
-    refused(cx, "SelectProject");
+    click(cx, &opened, "checkout-110");
+    refused(cx, "RailPick");
+    click(cx, &opened, "pane-2");
+    refused(cx, "Select");
     // Git is the window's as much as the session's: pressed with no checkout it puts its
     // stage up on the window's word alone, and `review/stage` has its own refusal test.
     for nav in Nav::ALL.into_iter().filter(|nav| *nav != Nav::Git) {
@@ -62,7 +48,7 @@ fn a_call_the_daemon_refuses_leaves_the_rail_as_it_was(cx: &mut TestAppContext) 
     for call in [
         "ToggleCheckout { checkout: 110 }",
         "ChooseRepository { repository: 10 }",
-        "SelectProject { project: 2 }",
+        "RailPick { checkout: 110, pane: None }",
         "Close { pane: 2 }",
     ] {
         assert!(asked.contains(&call.to_owned()), "{call} was never asked: {asked:?}");
@@ -71,12 +57,13 @@ fn a_call_the_daemon_refuses_leaves_the_rail_as_it_was(cx: &mut TestAppContext) 
 
 #[gpui_kit::test]
 fn a_closed_pane_stays_on_the_rail_until_the_tree_drops_it(cx: &mut TestAppContext) {
-    // CROSS-27 for the `x` key: the pick falls back at once (it is the
-    // window's), the row only when the daemon's tree says.
+    // CROSS-27 for the `x` key: the session moves the pick back at once, the row only when the
+    // daemon's tree says.
     let opened = open_shell(cx);
     click(cx, &opened, "pane-2");
+    hear(cx, &opened, vec![picking(110, Some(2))]);
     type_key(cx, &opened, "x");
-    assert!(taken(&opened).contains(&"Close { pane: 2 }".to_owned()));
+    assert!(taken(&opened).contains(&"RailKey { action: Close }".to_owned()));
     hear(cx, &opened, vec![Event::Notice { text: "refused".into() }]);
     assert!(present(cx, &opened, "pane-2"), "a refused close drew the pane gone");
     let mut without = busy();
@@ -115,27 +102,21 @@ fn a_middle_click_on_a_pane_row_closes_that_pane(cx: &mut TestAppContext) {
 fn the_rows_above_the_panes_send_the_pages_calls(cx: &mut TestAppContext) {
     let opened = open(cx, connected_and_busy());
     click(cx, &opened, "repo-11");
-    click(cx, &opened, "project-2");
     click(cx, &opened, "nav-checkouts");
     click(cx, &opened, "nav-workspace");
     assert_eq!(
         taken(&opened),
-        [
-            "ChooseRepository { repository: 11 }",
-            "SelectProject { project: 2 }",
-            "ShowCheckouts { open: true }",
-            "ShowFeatures { open: false }",
-        ]
+        ["ChooseRepository { repository: 11 }", "ShowCheckouts { open: true }", "ShowFeatures { open: false }"]
     );
 }
 
 #[gpui_kit::test]
-fn a_chevron_folds_without_picking_and_a_checkout_row_picks_without_a_call(cx: &mut TestAppContext) {
+fn a_chevron_folds_without_picking_and_a_checkout_row_asks_to_be_picked(cx: &mut TestAppContext) {
     let opened = open(cx, connected_and_busy());
-    assert_eq!(label(cx, &opened, "checkout-110-fold").as_deref(), Some("Fold its panes away"));
+    assert_eq!(label(cx, &opened, "checkout-110-fold").as_deref(), Some("Fold argus main"));
     click(cx, &opened, "checkout-110-fold");
     assert_eq!(taken(&opened), ["ToggleCheckout { checkout: 110 }"]);
-    cx.update(|cx| assert_eq!(opened.rail.read(cx).picked(), None));
+    assert_eq!(picked(cx, &opened), None);
     let at = cx
         .update_window(opened.handle, |_, window, _| {
             let found = window.find("checkout-110");
@@ -143,10 +124,9 @@ fn a_chevron_folds_without_picking_and_a_checkout_row_picks_without_a_call(cx: &
         })
         .unwrap();
     press(cx, &opened, at, MouseButton::Left);
-    assert_eq!(taken(&opened).len(), 1);
-    cx.update(|cx| {
-        assert_eq!(opened.rail.read(cx).picked(), Some(Picked { checkout: 110, pane: None }));
-    });
+    assert_eq!(taken(&opened), ["ToggleCheckout { checkout: 110 }", "RailPick { checkout: 110, pane: None }"]);
+    hear(cx, &opened, vec![picking(110, None)]);
+    assert_eq!(picked(cx, &opened), Some((110, None)));
 }
 
 #[gpui_kit::test]

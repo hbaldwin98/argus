@@ -193,6 +193,19 @@ pub enum Call {
     /// lists: on the index its features, on a feature opened from it the lens read.
     FeatureAction { action: Action },
     SetChime { on: bool },
+    /// A row of the rail picked, as a click on it does: it holds the keys until Escape or a press
+    /// outside. Only the GPUI window sends it; the page keeps its own pick.
+    RailPick { checkout: u64, pane: Option<u64> },
+    /// The pick let go.
+    RailUnpick,
+    /// A key of the `Rail` place while a row is picked, answered by `chrome::cursor::answers`.
+    RailKey { action: Action },
+    /// A checkout's + menu opened where it was pressed, or shut if that same one is open.
+    ToggleStart { checkout: u64, from: crate::chrome::cursor::StartFrom },
+    /// A key of the `Start` place while a + menu is open, answered by `chrome::cursor::answers_start`.
+    StartKey { action: Action },
+    /// A choice of a + menu: a shell, or an agent from `template`. The menu shuts and the pick is let go.
+    StartOn { checkout: u64, template: Option<String> },
     /// One choice in the Settings dialog, saved as it is made.
     Setting { change: SettingChange },
     /// Holds a feature for `reason`, or lifts its hold when there is none.
@@ -653,6 +666,11 @@ pub struct Rail {
     pub code_outline_width: Option<u32>,
     /// The Workspace's grid of panes.
     pub row: GridPage,
+    /// Which row holds the keys and which checkout's + menu is open. The page keeps its own, so
+    /// this never crosses to it: only the GPUI window reads the cursor from the event.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub cursor: crate::chrome::cursor::RailCursorPage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1928,6 +1946,7 @@ mod tests {
             code_tree_width: None,
             code_outline_width: None,
             row: GridPage::default(),
+            cursor: Default::default(),
         };
         let value = as_json(Event::Rail(Box::new(rail)));
         assert_eq!(value["type"], "rail");

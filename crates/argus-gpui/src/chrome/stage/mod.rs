@@ -17,6 +17,7 @@ pub mod stopped;
 use argus_desktop_core::chrome::empty as core_empty;
 use argus_desktop_core::chrome::strip::stage_name;
 use argus_desktop_core::keys::keymap::{Action, Place};
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, AnyElement, AnyView, Context, Entity, Subscription, Window};
 
 use super::ended;
@@ -69,7 +70,15 @@ impl Render for StageView {
             // The work area puts the console here itself.
             Surface::Console => div().into_any_element(),
         };
-        div().relative().size_full().when(held, |stage| stage.opacity(tokens.opacity_dim)).child(body)
+        // Named by what it shows, so a held body says it is the last heard (and a test can tell).
+        div()
+            .id("stage-body")
+            .test_support()
+            .aria_label(if held { "Stage, as last heard" } else { "Stage" })
+            .relative()
+            .size_full()
+            .when(held, |stage| stage.opacity(tokens.opacity_dim))
+            .child(body)
     }
 }
 

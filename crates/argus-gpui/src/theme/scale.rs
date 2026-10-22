@@ -141,6 +141,7 @@ pub struct Scale {
     pub row_h_sm: f32,
     pub chip_h: f32,
     pub icon_box: f32,
+    pub icon_xs: f32,
     pub icon_sm: f32,
     pub icon_lg: f32,
     pub icon_btn: f32,
@@ -156,6 +157,16 @@ pub struct Scale {
     pub rail_w: f32,
     pub rail_folded: f32,
     pub rail_tile: f32,
+    /// `--icon-glyph`: the glyph of a folded rail's button; `--drawer-max`: the widest the right dock opens over the stage in a narrow window.
+    pub icon_glyph: f32,
+    /// `.menu`: the width of a menu drawn in a row, and how far under the row's top it opens.
+    pub menu_w: f32,
+    pub menu_top: f32,
+    pub drawer_max: f32,
+    /// `--dock-floor`, `--dock-min-pane`, `--dock-room`: what a side dock leaves of the work area at least; the right dock's width past which it needs the room; and the room it leaves the pane above `narrow_below`.
+    pub dock_floor: f32,
+    pub dock_min_pane: f32,
+    pub dock_room: f32,
 
     pub t_fast: Duration,
 
@@ -166,8 +177,16 @@ pub struct Scale {
     pub status_dash_h: f32,
     /// A nav row's icon cell, the indent of a checkout's panes under its branch, and the open pane's edge mark.
     pub nav_icon_cell: f32,
+    /// `.pane`, `.nav` and `.search`: the height of a pane row, a nav row and the search field.
+    pub pane_row_h: f32,
+    pub nav_h: f32,
+    pub search_h: f32,
+    /// `.nav-saved-list`: the share of the window's height the Views fold's list may take before it scrolls (`40vh`).
+    pub nav_saved_share: f32,
     pub pane_indent: f32,
     pub pane_mark_w: f32,
+    /// `inset 3px 0 0`: the bar a selected row carries under a theme whose `--mark-sel` is one.
+    pub mark_bar_w: f32,
     /// A window control (minimise, maximise, close) is this wide.
     pub window_control_w: f32,
     /// A dialog the window opens without a surface of its own (a rename, a stand-in) is this wide.
@@ -313,6 +332,7 @@ impl Scale {
             row_h_sm: 26.0,
             chip_h: 20.0,
             icon_box: 20.0,
+            icon_xs: 12.0,
             icon_sm: 14.0,
             icon_lg: 24.0,
             icon_btn: 28.0,
@@ -327,14 +347,26 @@ impl Scale {
             rail_w: 288.0,
             rail_folded: 56.0,
             rail_tile: 40.0,
+            icon_glyph: 16.0,
+            menu_w: 210.0,
+            menu_top: 28.0,
+            drawer_max: 560.0,
+            dock_floor: 240.0,
+            dock_min_pane: 440.0,
+            dock_room: 800.0,
 
             t_fast: Duration::from_millis(120),
 
             status_box: 9.0,
             status_dash_h: 1.5,
             nav_icon_cell: 22.0,
+            pane_row_h: 32.0,
+            nav_h: 32.0,
+            search_h: 34.0,
+            nav_saved_share: 0.40,
             pane_indent: 38.0,
             pane_mark_w: 2.0,
+            mark_bar_w: 3.0,
             window_control_w: 46.0,
             dialog_w: 420.0,
             meter_w: 56.0,

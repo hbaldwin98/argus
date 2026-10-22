@@ -80,6 +80,13 @@ fn rail(shown: Option<u64>) -> Rail {
     }
 }
 
+/// The rail with checkout 110 picked, as the session says once a row is clicked.
+fn rail_picking(checkout: u64) -> Event {
+    let mut rail = rail(None);
+    rail.cursor.pick = Some(argus_desktop_core::chrome::cursor::Pick { checkout, pane: None });
+    Event::Rail(Box::new(rail))
+}
+
 fn status(connection: Connection) -> Event {
     Event::Status(Status { connection, detail: None, alarm: None, chime: true, host: None })
 }
@@ -166,7 +173,7 @@ fn open(cx: &mut TestAppContext, events: Vec<Event>) -> Opened {
     let (handle, _) = cx.update(|cx| {
         gpui_kit::open_window(
             WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::new(Default::default(), size(px(1100.0), px(720.0))))),
+                window_bounds: Some(WindowBounds::Windowed(Bounds::new(Default::default(), size(px(1400.0), px(720.0))))),
                 ..Default::default()
             },
             cx,
@@ -292,8 +299,9 @@ fn git_asks_for_the_review_of_the_pane_on_screens_checkout_and_draws_none_of_it_
 fn git_with_no_pane_shown_asks_for_the_checkout_picked_in_the_rail(cx: &mut TestAppContext) {
     let opened = open(cx, vec![status(Connection::Connected), Event::Rail(Box::new(rail(None)))]);
     click(cx, &opened, "checkout-110");
+    hear(cx, &opened, vec![rail_picking(110)]);
     click(cx, &opened, "nav-git");
-    assert_eq!(taken(&opened), ["OpenReview { checkout: 110 }"]);
+    assert_eq!(taken(&opened), ["RailPick { checkout: 110, pane: None }", "OpenReview { checkout: 110 }"]);
 }
 
 #[gpui_kit::test]
@@ -305,8 +313,9 @@ fn git_with_no_checkout_says_to_pick_one_and_asks_for_nothing(cx: &mut TestAppCo
     assert_eq!(selected(cx, &opened, "nav-git"), Some(true), "the stage is up on the window's word");
     // A checkout picked and Git pressed again: now it opens.
     click(cx, &opened, "checkout-110");
+    hear(cx, &opened, vec![rail_picking(110)]);
     click(cx, &opened, "nav-git");
-    assert_eq!(taken(&opened), ["OpenReview { checkout: 110 }"]);
+    assert_eq!(taken(&opened), ["RailPick { checkout: 110, pane: None }", "OpenReview { checkout: 110 }"]);
 }
 
 #[gpui_kit::test]
@@ -370,8 +379,7 @@ fn the_pick_a_commit_and_the_loading_and_empty_states_are_drawn_in_the_pages_ord
     page.commit = Some("a1b2c3d  Trim context".into());
     hear(cx, &opened, vec![reviewing(page)]);
     assert!(!present(cx, &opened, "review-side"));
-    assert_eq!(label(cx, &opened, "review-commit"), None);
-    assert!(present(cx, &opened, "review-commit"));
+    assert_eq!(label(cx, &opened, "review-commit").as_deref(), Some("a1b2c3d  Trim context"), "REVIEW-2: short hash and summary");
 }
 
 #[gpui_kit::test]
@@ -762,7 +770,7 @@ fn every_stage_item_closes_what_is_open_and_search_does_not(cx: &mut TestAppCont
 fn a_pane_row_clicked_while_git_is_up_closes_git_first(cx: &mut TestAppContext) {
     let opened = reviewed(cx);
     click(cx, &opened, "pane-1");
-    assert_eq!(taken(&opened), ["ReviewAction { action: CloseLayer }", "Select { pane: 1 }"]);
+    assert_eq!(taken(&opened), ["RailPick { checkout: 100, pane: Some(1) }", "ReviewAction { action: CloseLayer }", "Select { pane: 1 }"]);
 }
 
 #[gpui_kit::test]

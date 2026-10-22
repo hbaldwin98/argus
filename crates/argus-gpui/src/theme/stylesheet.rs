@@ -279,6 +279,11 @@ fn ledgers_scale_is_the_stylesheets() {
         ("pane-head-h", t.pane_head_h),
         ("rail-folded", t.rail_folded),
         ("rail-tile", t.rail_tile),
+        ("icon-glyph", t.icon_glyph),
+        ("drawer-max", t.drawer_max),
+        ("dock-floor", t.dock_floor),
+        ("dock-min-pane", t.dock_min_pane),
+        ("dock-room", t.dock_room),
     ] {
         assert_eq!(ours, px_of(name), "--{name}");
     }

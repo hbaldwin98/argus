@@ -2,4 +2,5 @@
 
 pub mod docks;
 pub mod dragged_width;
+pub mod floats;
 pub mod stage;

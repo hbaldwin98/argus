@@ -5,7 +5,12 @@ use gpui_kit::{div, px, size, Context, ElementId, MouseButton, TestAppContext, W
 
 use super::slots::{Offer, Slots};
 use super::*;
-use crate::keys::root::tests::{asked, open, Opened};
+use crate::keys::root::tests::{asked, open_sized, Opened};
+
+/// The strip is tested in a window narrow enough to draw its status chip.
+fn open(cx: &mut TestAppContext) -> Opened {
+    open_sized(cx, 1000.0)
+}
 
 fn shown(status: &'static str, agent: bool) -> Shown {
     Shown {

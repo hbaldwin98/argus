@@ -45,6 +45,7 @@ use argus_protocol::{
 };
 
 use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
+use crate::chrome::cursor::{RailCursor, Then};
 use crate::browser::Browsers;
 use crate::views::agent::AgentViews;
 use crate::extensions::dialog::ExtensionDialogs;
@@ -190,6 +191,8 @@ pub struct Session {
     /// The rail draws from nearly everything here, so it is built each
     /// time the page is told and sent only when it differs.
     rail_sent: Sent<page::Rail>,
+    /// Which rail row holds the keys, and the + menu open under one.
+    cursor: RailCursor,
     passing: Vec<Event>,
     out: Vec<ClientMsg>,
 }
@@ -254,6 +257,7 @@ impl Session {
             alerts: Vec::new(),
             reported: None,
             rail_sent: Sent::default(),
+            cursor: RailCursor::default(),
             passing: Vec::new(),
             out: Vec::new(),
         }
@@ -709,6 +713,32 @@ impl Session {
             Call::AddProject { gesture } => self.add_project(gesture),
             Call::ToggleRepository { repository } => self.toggle_repository(RepositoryId(repository)),
             Call::ToggleCheckout { checkout } => self.toggle_checkout(CheckoutId(checkout)),
+            Call::RailPick { checkout, pane } => {
+                self.cursor.pick(checkout, pane);
+                self.finish()
+            }
+            Call::RailUnpick => {
+                self.cursor.unpick();
+                self.finish()
+            }
+            Call::RailKey { action } => {
+                let rail = self.rail(0);
+                let then = self.cursor.key(action, &rail);
+                self.then(then)
+            }
+            Call::ToggleStart { checkout, from } => {
+                self.cursor.toggle_start(checkout, from);
+                self.finish()
+            }
+            Call::StartKey { action } => {
+                let rail = self.rail(0);
+                let then = self.cursor.start_key(action, &rail);
+                self.then(then)
+            }
+            Call::StartOn { checkout, template } => {
+                let then = self.cursor.start_on(checkout, template);
+                self.then(then)
+            }
             Call::ChooseRepository { repository } => self.choose_repository(RepositoryId(repository)),
             Call::ShowFeatures { open } => self.show_features(open),
             Call::ShowCheckouts { open } => self.show_checkouts(open),
@@ -1044,10 +1074,10 @@ impl Session {
 
     fn resize(&mut self, side: Side, rows: u16, cols: u16) -> Vec<ClientMsg> {
         self.shown.resize(side, rows, cols, &mut self.out);
-        // A view's screen is made by the page when it hears of the view, and
+        // A view's screen, or a split cell's, is made by the page when it hears of it, and
         // reports its room once it exists: it has none of the rows yet, and
         // may have been sent a frame before it was there to draw it.
-        if matches!(side, Side::View(_)) {
+        if matches!(side, Side::View(_) | Side::Beside(_)) {
             self.shown.refresh_side(side);
         }
         self.finish()
@@ -1419,15 +1449,37 @@ impl Session {
     }
 
     /// Names a pane; like a close, the panel shows the name once a tree
-    /// carrying it comes back.
+    /// carrying it comes back. The name is trimmed, and a blank one or the
+    /// one the pane has asks nothing (and says nothing): the window shows a
+    /// dialog and leaves what a rename is to this.
     fn rename(&mut self, pane: PaneId, title: String) -> Vec<ClientMsg> {
+        let title = title.trim();
+        let old = self.tree.panes().find(|p| p.id == pane).map(|p| p.title.as_str()).or_else(|| self.console.title(pane));
+        if title.is_empty() || old.is_none_or(|old| old == title) {
+            return self.finish();
+        }
         if !self.status.daemon_can(RENAME_PANE) {
             return self.note("argusd is too old to rename panes: run `argus server restart`");
         }
-        if self.project_of(pane).is_some() || self.console.holds(pane) {
-            self.out.push(ClientMsg::RenamePane { pane, title });
-        }
+        let title = title.to_owned();
+        self.out.push(ClientMsg::RenamePane { pane, title });
         self.finish()
+    }
+
+    /// What the rail's cursor made of a key or a choice, done.
+    fn then(&mut self, then: Then) -> Vec<ClientMsg> {
+        match then {
+            Then::Nothing => self.finish(),
+            Then::Show(pane) => self.select(PaneId(pane)),
+            Then::Start { checkout, agent: None } => self.spawn_shell(CheckoutId(checkout)),
+            Then::Start { checkout, agent: Some(template) } => self.spawn_agent(CheckoutId(checkout), template),
+            Then::NoAgent => self.note(rail::NO_AGENT),
+            Then::Review(checkout) => self.open_review(CheckoutId(checkout)),
+            Then::History(checkout) => self.open_history(CheckoutId(checkout)),
+            Then::Fold(checkout) => self.toggle_checkout(CheckoutId(checkout)),
+            Then::Remove(checkout) => self.remove_checkout(CheckoutId(checkout)),
+            Then::Close(pane) => self.close(PaneId(pane)),
+        }
     }
 
     /// Asks the daemon to move a pane to another checkout; the rail shows
@@ -1539,6 +1591,7 @@ impl Session {
     }
 
     fn toggle_checkout(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
+        self.cursor.folding(checkout.0);
         if !self.folded.remove(&checkout) {
             self.folded.insert(checkout);
         }
@@ -3263,7 +3316,12 @@ impl Session {
             Panel::Saved(id) => saved.title(id),
         }));
         events.extend(self.console.take(self.console_place(), self.console_sides(), self.status.daemon_can(CONSOLES)));
-        if let Some(rail) = self.rail_sent.take(Some(self.rail(now))) {
+        let mut rail = self.rail(now);
+        // A pane the tree dropped takes the pick back to its checkout before the rail is said.
+        if self.cursor.settle(&rail) {
+            rail.cursor = self.cursor.page();
+        }
+        if let Some(rail) = self.rail_sent.take(Some(rail)) {
             events.push(Event::Rail(Box::new(rail)));
         }
         self.sync_feature_views();
@@ -3408,6 +3466,7 @@ impl Session {
         }
         rail.row = self.shown.grid().page(self.shown.keys(), |pane| rail::shown(&self.tree, pane));
         rail.workspace_shown = self.stages.shows_workspace(self.console.fullscreen());
+        rail.cursor = self.cursor.page();
         rail
     }
 
@@ -3419,6 +3478,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chrome::cursor::StartFrom;
     use crate::layout::docks::FloatBounds;
     use crate::extensions::views::ExtensionsPage;
     use crate::fixtures::{checkout, pane, project, repository};
@@ -3564,6 +3624,120 @@ mod tests {
             [ClientMsg::RenamePane { pane: PaneId(1), title }] if title == "the pty deadlock"
         ));
         assert!(s.rename(PaneId(99), "nowhere".into()).is_empty());
+    }
+
+    #[test]
+    fn a_blank_or_unchanged_name_asks_nothing_and_says_nothing_even_of_an_old_daemon() {
+        // SHELL-RENAME-2: the window sends the dialog's text as it stands; Rust is what trims and compares.
+        let mut s = session(without_focus());
+        for typed in ["", "   ", "zsh", "  zsh  "] {
+            assert!(s.rename(PaneId(2), typed.into()).is_empty(), "{typed:?}");
+        }
+        assert!(!s.events(0).iter().any(|e| matches!(e, Event::Notice { .. })), "no notice for a rename that was not sent");
+        let sent = s.rename(PaneId(2), "build".into());
+        assert!(sent.is_empty(), "a daemon that cannot rename is not asked");
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old to rename"))));
+    }
+
+    #[test]
+    fn a_name_is_trimmed_before_it_is_asked() {
+        let mut s = session(Hello::this_build());
+        let sent = s.rename(PaneId(2), "  build  ".into());
+        assert!(matches!(sent.as_slice(), [ClientMsg::RenamePane { pane: PaneId(2), title }] if title == "build"));
+    }
+
+    fn rail_of(s: &mut Session) -> page::Rail {
+        s.events(0)
+            .into_iter()
+            .find_map(|event| match event {
+                Event::Rail(rail) => Some(*rail),
+                _ => None,
+            })
+            .expect("the rail changed")
+    }
+
+    #[test]
+    fn the_rail_cursor_is_the_sessions_and_a_change_of_it_is_said_in_the_rail() {
+        let mut s = session(Hello::this_build());
+        rail_of(&mut s);
+        s.call(Call::RailPick { checkout: 100, pane: Some(2) });
+        assert_eq!(rail_of(&mut s).cursor.pick.map(|p| (p.checkout, p.pane)), Some((100, Some(2))));
+        s.call(Call::RailUnpick);
+        assert_eq!(rail_of(&mut s).cursor.pick, None);
+    }
+
+    #[test]
+    fn j_on_a_picked_checkout_shows_the_next_pane_as_a_click_would() {
+        // SHELL-RAIL-20.
+        let mut s = session(Hello::this_build());
+        s.call(Call::RailPick { checkout: 100, pane: None });
+        s.call(Call::RailKey { action: Action::Next });
+        let rail = rail_of(&mut s);
+        assert_eq!(rail.cursor.pick.map(|p| p.pane), Some(Some(1)));
+        assert_eq!(rail.shown.map(|shown| shown.pane), Some(1), "the pane came on screen");
+    }
+
+    #[test]
+    fn x_on_a_picked_pane_kills_it_and_the_pick_falls_back_to_its_checkout() {
+        // SHELL-RAIL-23.
+        let mut s = session(Hello::this_build());
+        s.call(Call::RailPick { checkout: 100, pane: Some(2) });
+        let sent = s.call(Call::RailKey { action: Action::Close });
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::Kill { pane: PaneId(2) })), "{sent:?}");
+        let rail = rail_of(&mut s);
+        assert_eq!(rail.cursor.pick.map(|p| (p.checkout, p.pane)), Some((100, None)));
+        assert!(rail.project.unwrap().repositories[0].checkouts[0].panes.iter().any(|p| p.id == 2), "the row stays until the tree drops it");
+    }
+
+    #[test]
+    fn a_pick_on_a_pane_the_next_tree_drops_goes_to_its_checkout() {
+        // SHELL-RAIL-19.
+        let mut s = session(Hello::this_build());
+        s.call(Call::RailPick { checkout: 100, pane: Some(2) });
+        rail_of(&mut s);
+        let mut gone = tree();
+        gone[0].repositories[0].checkouts[0].panes.retain(|p| p.id != PaneId(2));
+        s.receive(ServerMsg::Tree(gone));
+        assert_eq!(rail_of(&mut s).cursor.pick.map(|p| (p.checkout, p.pane)), Some((100, None)));
+    }
+
+    #[test]
+    fn folding_a_checkout_takes_the_pick_off_a_pane_under_it() {
+        // SHELL-RAIL-8.
+        let mut s = session(Hello::this_build());
+        s.call(Call::RailPick { checkout: 100, pane: Some(1) });
+        s.call(Call::ToggleCheckout { checkout: 100 });
+        assert_eq!(rail_of(&mut s).cursor.pick.map(|p| (p.checkout, p.pane)), Some((100, None)));
+    }
+
+    #[test]
+    fn the_plus_menu_steps_with_wrap_and_enter_starts_the_highlighted_item_and_lets_the_pick_go() {
+        // SHELL-RAIL-30, 31.
+        let mut s = session(Hello::this_build());
+        s.receive(ServerMsg::Templates(vec!["claude".into(), "codex".into()]));
+        s.call(Call::RailPick { checkout: 100, pane: None });
+        s.call(Call::ToggleStart { checkout: 100, from: StartFrom::Rail });
+        assert_eq!(rail_of(&mut s).cursor.start.map(|m| m.at), Some(0));
+        s.call(Call::StartKey { action: Action::Previous });
+        assert_eq!(rail_of(&mut s).cursor.start.map(|m| m.at), Some(last_start_item(&mut s)), "up from the first wraps to the last");
+        s.call(Call::StartKey { action: Action::Next });
+        let sent = s.call(Call::StartKey { action: Action::Choose });
+        assert!(matches!(sent.as_slice(), [ClientMsg::SpawnShell { checkout: CheckoutId(100), .. }]), "{sent:?}");
+        let rail = rail_of(&mut s);
+        assert!(rail.cursor.start.is_none() && rail.cursor.pick.is_none());
+    }
+
+    /// The last index of the + menu: a shell and each template.
+    fn last_start_item(s: &mut Session) -> usize {
+        s.agents.offered().len()
+    }
+
+    #[test]
+    fn a_start_from_the_menu_of_an_agent_the_daemon_has_not_is_refused_with_its_words() {
+        let mut s = session(Hello::this_build());
+        let sent = s.call(Call::StartOn { checkout: 100, template: Some("nope".into()) });
+        assert!(sent.is_empty());
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("no agent template called nope"))));
     }
 
     #[test]
@@ -5695,7 +5869,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 149] = [
+    const CALLS: [&str; 155] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5842,6 +6016,12 @@ mod tests {
         r#"{"call":"open_url","url":"https://example.com"}"#,
         r#"{"call":"copy_text","text":"ab"}"#,
         r#"{"call":"rename_pane","pane":1,"title":"the pty deadlock"}"#,
+        r#"{"call":"rail_pick","checkout":1,"pane":null}"#,
+        r#"{"call":"rail_unpick"}"#,
+        r#"{"call":"rail_key","action":"next"}"#,
+        r#"{"call":"toggle_start","checkout":1,"from":"rail"}"#,
+        r#"{"call":"start_key","action":"choose"}"#,
+        r#"{"call":"start_on","checkout":1,"template":null}"#,
         r#"{"call":"move_to_checkout","pane":1,"checkout":1}"#,
         r#"{"call":"reveal_checkout","checkout":1}"#,
         r#"{"call":"edit","gesture":{"on":"change","checkout":1,"path":"a.rs","base":0,"changes":[{"from":0,"to":1,"insert":"x"}]}}"#,
@@ -6650,6 +6830,24 @@ mod tests {
     }
 
     #[test]
+    fn a_dock_sash_released_out_of_bounds_is_answered_with_the_size_it_was_held_to() {
+        // SHELL-DOCK-10, -13: the window reports whatever the pointer made, and Rust's answer is
+        // the size drawn, held to `bottom 120..1200` and `side 280..1600`.
+        let mut s = with_consoles();
+        console(&mut s, ConsoleGesture::Toggle);
+        s.events(0);
+        for (dock, asked, held) in [(Dock::Bottom, 5, 120), (Dock::Bottom, 90_000, 1200), (Dock::Right, 10, 280), (Dock::Right, 90_000, 1600)] {
+            docks(&mut s, DockGesture::Size { dock, size: asked });
+            let page = docks_page(&mut s).unwrap_or_else(|| panic!("{dock:?} {asked}: Rust gave no answer"));
+            let size = match dock {
+                Dock::Bottom => page.bottom.size,
+                _ => page.right.size,
+            };
+            assert_eq!(size, held, "{dock:?} released at {asked}");
+        }
+    }
+
+    #[test]
     fn the_console_moved_to_the_right_is_shown_there_with_the_keys_and_stays_there() {
         let mut s = with_consoles();
         s.events(0);
@@ -6899,6 +7097,34 @@ mod tests {
         assert_eq!(names(&s.resize(Side::Second, 40, 60)), ["resize 9 40x60"]);
         assert_eq!(names(&s.resize(Side::First, 40, 61)), ["resize 8 40x61"]);
         assert!(s.resize(Side::First, 40, 61).is_empty(), "unchanged");
+    }
+
+    #[test]
+    fn a_split_cell_reporting_its_room_is_sent_its_whole_screen_again() {
+        let mut s = session(without_focus());
+        s.select(PaneId(2));
+        s.call(Call::OpenBeside { pane: 1 });
+        s.receive(ServerMsg::PaneRows {
+            pane: PaneId(1),
+            rows: 5,
+            cols: 10,
+            runs: Vec::new(),
+            cursor: argus_protocol::Cursor::default(),
+            mouse: argus_protocol::MouseTracking::default(),
+            alternate_screen: false,
+            keyboard: Default::default(),
+        });
+        let beside = |s: &mut Session| {
+            s.take_frames().into_iter().find_map(|e| match e {
+                Event::Frame(frame) if frame.side == Side::Beside(0) => Some(frame),
+                _ => None,
+            })
+        };
+        assert!(beside(&mut s).is_some_and(|frame| frame.full), "the first frame is whole");
+        assert!(beside(&mut s).is_none(), "and nothing changed since");
+        // The cell is bound after its first frame: it has nothing of it, so its size report is the ask.
+        s.resize(Side::Beside(0), 5, 10);
+        assert!(beside(&mut s).is_some_and(|frame| frame.full), "a cell that reports its room is sent every row");
     }
 
     #[test]

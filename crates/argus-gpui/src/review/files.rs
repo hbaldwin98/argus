@@ -131,17 +131,19 @@ impl Files {
     fn side(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let row = h_flex().flex_shrink_0().items_center().gap(px(tokens.sp_8));
         if page.base == "commit" {
+            let words = SharedString::from(page.commit.clone().unwrap_or_default());
             return row
                 .child(
                     div()
                         .id("review-commit")
                         .test_support()
+                        .aria_label(words.clone())
                         .min_w_0()
                         .truncate()
                         .font_family(cx.theme().mono_font_family.clone())
                         .text_xs()
                         .text_color(tokens.fg_muted)
-                        .child(SharedString::from(page.commit.clone().unwrap_or_default())),
+                        .child(words),
                 )
                 .into_any_element();
         }

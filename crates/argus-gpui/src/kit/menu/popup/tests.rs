@@ -4,6 +4,7 @@ use std::rc::Rc;
 use super::*;
 use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
+use gpui_kit::ElementId;
 use gpui_kit::{
     size, AnyWindowHandle, Bounds, MouseButton, Render, TestAppContext, WindowBounds, WindowOptions,
 };
@@ -182,4 +183,19 @@ fn a_leading_heading_is_stepped_over_on_the_first_press_and_on_the_wrap(cx: &mut
     assert_eq!(after(cx, &["j", "j"]), Some("close"));
     assert_eq!(after(cx, &["j", "j", "j"]), Some("open"), "the wrap");
     assert_eq!(after(cx, &["j", "k"]), Some("close"), "up from the first wraps");
+}
+
+// A list of choices that may be ticked (the project list): the ticked one says so.
+#[gpui_kit::test]
+fn a_ticked_choice_draws_its_check_and_an_unticked_one_does_not(cx: &mut TestAppContext) {
+    let opened = open(cx, vec![MenuItem::choice("orion", "a").marked(true), MenuItem::choice("work", "b").marked(false)]);
+    menu_opened(cx, &opened);
+    let ticked = cx.update_window(opened.handle, |_, window, _| window.elements().into_iter().filter(|element| element.label() == Some("checked")).count()).unwrap();
+    assert_eq!(ticked, 1, "one check, on the ticked choice");
+    let columns = cx
+        .update_window(opened.handle, |_, window, _| {
+            window.elements().into_iter().filter(|element| element.path().iter().any(|id| matches!(id, ElementId::NamedInteger(name, _) if name.as_ref() == "menu-check"))).count()
+        })
+        .unwrap();
+    assert_eq!(columns, 2, "both keep the column");
 }

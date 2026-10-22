@@ -4,10 +4,11 @@
 //! One shape, so the foot does not rearrange while the daemon comes and
 //! goes: only the dot and the words change. A remote daemon is named, so
 //! what the rail lists is never taken for this machine's. Beside it are the
-//! console chip and the chime switch, which send the page's calls; the settings
-//! gear waits for a Settings dialog in this window.
+//! console chip, the chime switch and the settings gear, each with its words (and keys) as hover
+//! text. A narrow rail keeps the dot and the three buttons, stacked.
 
-use argus_desktop_core::connection::page::{Call, Rail};
+use argus_desktop_core::connection::page::Call;
+use argus_desktop_core::keys::keymap::Action;
 use argus_desktop_core::panes::console::ConsoleGesture;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
@@ -15,8 +16,10 @@ use gpui_kit::{div, prelude::*, px, Role};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Link;
+use crate::keys::over::run_over;
 use crate::kit::icon_button::icon_button;
 use crate::kit::icons::Glyph;
+use crate::kit::tip::tip;
 use crate::style::Typed as _;
 use crate::theme::Tokens;
 
@@ -49,32 +52,41 @@ pub struct Console {
     pub count: usize,
 }
 
+/// Everything the foot says: what the rail and the status hold of it, and the hover text of its
+/// buttons with the keys the keymap names for them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Foot {
+    pub link: Link,
+    pub needs_you: usize,
+    pub working: usize,
+    pub alarm: Option<String>,
+    pub chime: bool,
+    pub console: Console,
+    /// `Hide the console (\`)`: the chip's words, and its keys when the keymap has been heard.
+    pub console_title: String,
+    pub settings_title: String,
+}
+
 /// `.bar`: 8px over 16px of padding, 4px between rows, and the page's small type.
-#[allow(clippy::too_many_arguments)]
-pub fn foot(
-    link: &Link,
-    rail: &Rail,
-    alarm: Option<&str>,
-    chime: bool,
-    console: Console,
-    caller: &Caller,
-    held: bool,
-    tokens: &Tokens,
-) -> impl IntoElement {
+pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Tokens) -> impl IntoElement {
+    let Foot { link, needs_you, working, alarm, chime, console, .. } = foot;
+    let (needs_you, working, chime) = (*needs_you, *working, *chime);
     let connected = matches!(link, Link::Connected { .. });
     let mut rows = v_flex()
         .flex_shrink_0()
         .gap(px(tokens.sp_4))
-        .px(px(tokens.sp_16))
+        .px(px(if icons { 0.0 } else { tokens.sp_16 }))
         .py(px(tokens.sp_8))
+        .when(icons, |rows| rows.items_center())
         .border_t_1()
         .border_color(tokens.line)
         .typed(tokens.type_small)
         .text_color(tokens.fg_muted);
-    if connected && (rail.needs_you > 0 || rail.working > 0) {
+    // A narrow rail has no room for words: the tallies and the alarm are put away.
+    if !icons && connected && (needs_you > 0 || working > 0) {
         let mut tallies = h_flex().min_h(px(tokens.control_h_sm)).gap(px(tokens.sp_8)).items_center();
-        if rail.needs_you > 0 {
-            let text = format!("▲ {} need you", rail.needs_you);
+        if needs_you > 0 {
+            let text = format!("▲ {needs_you} need you");
             tallies = tallies.child(
                 div()
                     .id("foot-need-you")
@@ -86,8 +98,8 @@ pub fn foot(
                     .child(text),
             );
         }
-        if rail.working > 0 {
-            let text = format!("⋮ {} working", rail.working);
+        if working > 0 {
+            let text = format!("⋮ {working} working");
             tallies = tallies.child(
                 div()
                     .id("foot-working")
@@ -100,7 +112,7 @@ pub fn foot(
         }
         rows = rows.child(tallies);
     }
-    if let Some(alarm) = alarm.filter(|_| connected) {
+    if let Some(alarm) = alarm.as_deref().filter(|_| connected && !icons) {
         rows = rows.child(
             div()
                 .id("foot-alarm")
@@ -113,21 +125,44 @@ pub fn foot(
     }
     let said = words(link);
     let named = label(link);
+    let glyph = if icons { tokens.icon_glyph } else { tokens.icon_sm };
     let console_chip = {
         let caller = caller.clone();
         let words = if console.shown { "Hide the console" } else { "Show the console" };
         icon_button("foot-console", words, console.shown, tokens)
-            .px(px(tokens.sp_8))
-            .w_auto()
-            .gap(px(tokens.sp_4))
+            .tooltip(tip(foot.console_title.clone()))
+            .when(!icons, |chip| chip.px(px(tokens.sp_8)).w_auto().gap(px(tokens.sp_4)))
+            .relative()
             .on_click(move |_, _, _| {
                 if !held {
                     caller.call(Call::Console { gesture: ConsoleGesture::Toggle });
                 }
             })
-            .child(Glyph::Console.at(tokens.icon_sm))
-            .when(console.count > 0, |chip| {
+            .child(Glyph::Console.at(glyph))
+            .when(console.count > 0 && !icons, |chip| {
                 chip.child(div().text_size(px(tokens.fs_xs)).child(console.count.to_string()))
+            })
+            // `.bar .icount`: a badge on the corner of the tile.
+            .when(console.count > 0 && icons, |chip| {
+                chip.child(
+                    div()
+                        .id("foot-console-count")
+                        .test_support()
+                        .absolute()
+                        .top(px(-tokens.sp_4))
+                        .right(px(-tokens.sp_4))
+                        .min_w(px(tokens.sp_16))
+                        .px(px(tokens.sp_4))
+                        .border_1()
+                        .border_color(tokens.line)
+                        .rounded(px(tokens.r_pill))
+                        .bg(tokens.bg_raised)
+                        .text_color(tokens.fg_muted)
+                        .text_size(px(tokens.fs_xs))
+                        .line_height(px(tokens.sp_16))
+                        .text_center()
+                        .child(console.count.to_string()),
+                )
             })
     };
     let chime_button = {
@@ -135,33 +170,39 @@ pub fn foot(
         let words =
             if chime { "Mute the chime when an agent needs you" } else { "Chime when an agent needs you" };
         icon_button("foot-chime", words, false, tokens)
+            .tooltip(tip(words))
             .on_click(move |_, _, _| {
                 if !held {
                     caller.call(Call::SetChime { on: !chime });
                 }
             })
-            .child(if chime { Glyph::Bell } else { Glyph::BellOff }.at(tokens.icon_sm))
+            .child(if chime { Glyph::Bell } else { Glyph::BellOff }.at(glyph))
     };
+    // Settings is the window's, not the daemon's: it opens while the daemon is gone.
+    let settings = icon_button("foot-settings", "Settings", false, tokens)
+        .tooltip(tip(foot.settings_title.clone()))
+        .on_click(|_, window, cx| {
+            run_over(Action::Settings, window, cx);
+        })
+        .child(Glyph::Gear.at(glyph));
+    let status = h_flex()
+        .id("foot-status")
+        .role(Role::Status)
+        .test_support()
+        .aria_label(named.clone())
+        .gap(px(tokens.sp_8))
+        .items_center()
+        .child(dot(link, named, tokens))
+        .when(!icons, |status| status.flex_1().min_w_0().child(div().flex_1().min_w_0().truncate().child(said)));
     rows.child(
-        h_flex()
-            .min_h(px(tokens.control_h_sm))
-            .gap(px(tokens.sp_8))
-            .items_center()
-            .child(
-                h_flex()
-                    .id("foot-status")
-                    .role(Role::Status)
-                    .test_support()
-                    .aria_label(named.clone())
-                    .flex_1()
-                    .min_w_0()
-                    .gap(px(tokens.sp_8))
-                    .items_center()
-                    .child(dot(link, named, tokens))
-                    .child(div().flex_1().min_w_0().truncate().child(said)),
-            )
+        div()
+            .flex()
+            .when(icons, |row| row.flex_col().items_center().gap(px(tokens.sp_4)))
+            .when(!icons, |row| row.min_h(px(tokens.control_h_sm)).gap(px(tokens.sp_8)).items_center())
+            .child(status)
             .child(console_chip)
-            .child(chime_button),
+            .child(chime_button)
+            .child(settings),
     )
 }
 

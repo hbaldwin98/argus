@@ -49,7 +49,17 @@ fn row<A>(ix: usize, choice: &Choice<A>, held: bool, tokens: &Tokens) -> impl In
         .items_center()
         .justify_between()
         .text_color(colour)
-        .child(div().min_w_0().truncate().child(SharedString::from(choice.label.clone())))
+        .child(
+            h_flex()
+                .min_w_0()
+                .gap(px(tokens.sp_8))
+                .items_center()
+                // The check column keeps its room when it is not ticked, so the labels line up.
+                .when_some(choice.checked, |row, on| {
+                    row.child(div().id(("menu-check", ix)).test_support().aria_label(if on { "checked" } else { "" }).w(px(tokens.icon_sm)).flex_shrink_0().text_color(tokens.accent).child(if on { "\u{2713}" } else { "" }))
+                })
+                .child(div().min_w_0().truncate().child(SharedString::from(choice.label.clone()))),
+        )
         .children(side)
 }
 

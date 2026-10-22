@@ -1,9 +1,11 @@
-//! The sidebar: the nav, the projects, the picked project's repositories with their checkouts and
-//! panes, and the foot.
+//! The sidebar: the nav, the picked project's repositories with their checkouts and panes, and the
+//! foot, as wide as the person made it and folded to icons when it is narrow.
 //!
 //! Our own list rather than `gpui-kit`'s `Sidebar`, whose selection a test cannot observe
-//! (`GPUI.md`, what the spike found). Everything it draws is the latest `Rail` event, and a press
-//! only sends the `Call` the page sends: the rail changes when the daemon's tree says it did.
+//! (`GPUI.md`, what the spike found). Everything it draws is the latest `Rail` event, read through a
+//! slice it compares (`slice`), and a press only sends the `Call` the page sends: the rail changes
+//! when the daemon's tree says it did. Which row is picked and which + menu is open are the
+//! session's (`chrome::cursor`), so a press asks and the row is marked when the event comes back.
 //!
 //! While the daemon is gone the list is dimmed and answers no press (`Heard::held`): no call, and
 //! no pick either.
@@ -13,38 +15,45 @@ pub mod calls;
 pub mod checkout;
 pub mod keys;
 pub mod listing;
+pub mod menus;
 pub mod pane;
-pub mod picked;
-pub mod projects;
+pub mod popup;
 pub mod repository;
 pub mod row;
+pub mod scroll;
+pub mod slice;
 pub mod stages;
+pub mod start;
 pub mod status;
+pub mod tail;
 
+use std::cell::Cell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use argus_desktop_core::connection::page::Stage;
-use argus_desktop_core::keys::keymap::{Layer, Place};
-use argus_desktop_core::panes::console::ConsolePlace;
+use argus_desktop_core::keys::keymap::Layer;
+use argus_desktop_core::layout::dragged_width::{rail_drawn, rail_icons, RAIL, RAIL_FOLDED};
 use gpui_kit::component::{v_flex, ActiveTheme as _};
-use gpui_kit::{prelude::*, px, Context, Entity, FocusHandle, Subscription, TestSupportExt as _, Window};
+use gpui_kit::{prelude::*, px, Bounds, Context, Entity, FocusHandle, Pixels, ScrollHandle, Subscription, TestSupportExt as _, Window};
 
-use crate::chrome::foot::{foot, Console};
-use crate::chrome::stage::route::frame;
-use crate::chrome::nav::Nav;
+use crate::chrome::foot::foot;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::keys::caps;
+use crate::kit::split::Split;
 use crate::keys::layer::Layers;
-use crate::kit::spots::{Spot, Spots};
+use crate::layout::holders::Holder;
 use crate::theme::Tokens;
-use keys::RailKeys;
-use picked::Picked;
+use keys::{RailKeys, StartKeys};
+use row::Ctx;
+use slice::Slice;
+use tail::ViewsFold;
 
 pub struct RailView {
     heard: Entity<Heard>,
     caller: Caller,
-    picked: Option<Picked>,
+    /// What the rail draws of what was heard, compared on every event so only a change redraws.
+    slice: Slice,
     focus: FocusHandle,
     /// The stage's keys, which the rail hands back.
     stage: FocusHandle,
@@ -54,6 +63,23 @@ pub struct RailView {
     last_stage: Stage,
     /// Whether the Git stage was up when the tree last changed.
     last_git: bool,
+    /// Whether a row was picked when the tree last changed.
+    last_pick: Option<argus_desktop_core::chrome::cursor::Pick>,
+    /// The pane last scrolled to, so it is scrolled to once.
+    scrolled_to: Option<u64>,
+    pending_scroll: bool,
+    scroll: ScrollHandle,
+    /// Where the row of the pane on screen was drawn.
+    shown_row: Rc<Cell<Bounds<Pixels>>>,
+    /// Whether the pointer is on a + button: a press on the one that opened a menu toggles it, and
+    /// must not also be a press outside it.
+    plus_hover: Rc<Cell<bool>>,
+    /// What only the window knows of the Views fold.
+    views: ViewsFold,
+    /// The edge the rail is dragged by, which holds the width until Rust says what it kept.
+    split: Entity<Split>,
+    #[cfg(test)]
+    changes: Cell<usize>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -63,62 +89,98 @@ impl RailView {
         let subscriptions = vec![
             cx.observe_in(&heard, window, |this, heard, window, cx| this.follow(&heard, window, cx)),
             // A press outside the rail lets the pick go (SHELL-RAIL-19).
-            cx.on_focus_out(&focus, window, |this, _, _, cx| {
-                this.picked = None;
-                cx.notify();
-            }),
+            cx.on_focus_out(&focus, window, |this, _, _, _| this.let_go()),
         ];
-        // The rail's layer of the key walk: it holds the keys while a row is picked.
-        Layers::of(cx).register(Layer::Rail, Rc::new(RailKeys { rail: cx.weak_entity() }));
-        let (shown, last_stage, last_git) = {
-            let heard = heard.read(cx);
-            (heard.rail.shown.as_ref().map(|shown| shown.pane), heard.rail.stage, heard.git_up())
-        };
-        Self { heard, caller, picked: None, focus, stage, shown, last_stage, last_git, _subscriptions: subscriptions }
+        // The rail's layers of the key walk: the + menu while it is open, and the rail while a row is
+        // picked and it has the keys.
+        let layers = Layers::of(cx);
+        layers.register(Layer::Rail, std::rc::Rc::new(RailKeys { rail: cx.weak_entity() }));
+        layers.register(Layer::Start, std::rc::Rc::new(StartKeys { rail: cx.weak_entity() }));
+        let slice = Slice::of(heard.read(cx), None);
+        let (shown, last_stage, last_git, last_pick) =
+            (slice.rail.shown.as_ref().map(|shown| shown.pane), slice.rail.stage, slice.git_up, slice.rail.cursor.pick);
+        let tokens = *Tokens::global(cx);
+        let (holding, rail) = (heard.clone(), cx.weak_entity());
+        let report = caller.clone();
+        let split = cx.new(|cx| {
+            Split::new("rail-sash", "Resize the sidebar", tokens.rail_w, RAIL_FOLDED as f32, RAIL.max as f32, cx)
+                .reporting(move |width, _, _| report.call(argus_desktop_core::connection::page::Call::RailWidth { width }))
+                .holding(move |on, cx| {
+                    holding.update(cx, |heard, cx| {
+                        let changed = if on { heard.hold_resize(Holder::Rail) } else { heard.release_resize(Holder::Rail) };
+                        if changed {
+                            cx.notify();
+                        }
+                    });
+                    rail.update(cx, |_, cx| cx.notify()).ok();
+                })
+        });
+        Self {
+            heard,
+            caller,
+            slice,
+            focus,
+            stage,
+            shown,
+            last_stage,
+            last_git,
+            last_pick,
+            scrolled_to: shown,
+            pending_scroll: shown.is_some(),
+            scroll: ScrollHandle::new(),
+            shown_row: Rc::default(),
+            plus_hover: Rc::default(),
+            views: ViewsFold { listed: false, all: false, unfolded: HashSet::new() },
+            split,
+            #[cfg(test)]
+            changes: Cell::new(0),
+            _subscriptions: subscriptions,
+        }
+    }
+
+    /// How often what the rail draws has changed, for a test that says an unrelated event does not.
+    #[cfg(test)]
+    pub(crate) fn changes(&self) -> usize {
+        self.changes.get()
+    }
+
+    /// The row that holds the keys, as the session last said.
+    pub fn picked(&self) -> Option<argus_desktop_core::chrome::cursor::Pick> {
+        self.slice.rail.cursor.pick
     }
 }
 
 impl Render for RailView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
-        // A row folded away or gone is no place to drop on: each says where it is again as it paints.
-        Spots::of(cx).forget(|spot| matches!(spot, Spot::Checkout(_)));
-        let mono = cx.theme().mono_font_family.clone();
-        let (rail, git_up, held, link, alarm, keys, chime, console, furniture) = {
-            let heard = self.heard.read(cx);
-            let keys: Vec<Vec<String>> = Nav::ALL
-                .iter()
-                .map(|nav| {
-                    nav.action()
-                        .and_then(|action| caps::presses(&heard.keymap, action, Place::Anywhere).into_iter().next())
-                        .unwrap_or_default()
-                })
-                .collect();
-            (
-                heard.rail.clone(),
-                heard.git_up(),
-                heard.held(),
-                heard.link(),
-                heard.status.as_ref().and_then(|s| s.alarm.clone()),
-                keys,
-                heard.status.as_ref().is_none_or(|s| s.chime),
-                Console { shown: heard.console.place != ConsolePlace::Hidden, count: heard.console.tabs.len() },
-                frame(&heard.rail, heard.console.place).furniture,
-            )
+        let slice = self.slice.clone();
+        let viewport = window.viewport_size();
+        let narrow = crate::chrome::stage::route::narrow(f32::from(viewport.width), tokens.narrow_below);
+        // A window this narrow folds the rail whatever it was dragged to, and its sash goes with its words.
+        let width = rail_drawn(Some(self.split.read(cx).width().round() as u32), tokens.rail_w, f32::from(viewport.width), tokens.narrow_below);
+        let icons = rail_icons(width);
+        let ctx = Ctx {
+            held: slice.held,
+            offstage: slice.rail.stage != Stage::Workspace || slice.git_up,
+            icons,
+            height: f32::from(viewport.height),
         };
+        let mono = cx.theme().mono_font_family.clone();
+        self.schedule_scroll(window, cx);
+        let rail = slice.rail.clone();
         let body = v_flex()
             .flex_1()
             .min_h_0()
-            .when(furniture, |body| body.child(self.nav(&rail, git_up, held, &keys, &mono, &tokens, cx)))
-            .when(rail.projects.len() > 1, |body| body.child(self.projects(&rail, held, &tokens, cx)))
-            .child(self.listing(&rail, held, &tokens, cx));
+            .when(slice.furniture, |body| body.child(self.nav(&slice, ctx, &mono, &tokens, cx)))
+            .child(self.listing(&rail, ctx, &tokens, cx));
         v_flex()
             .id("rail")
             .test_support()
             .key_context("Rail")
             .track_focus(&self.focus)
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.release(window, cx)))
-            .w(px(tokens.rail_w))
+            .relative()
+            .w(px(width))
             .flex_shrink_0()
             .h_full()
             .bg(tokens.bg_chrome)
@@ -126,10 +188,15 @@ impl Render for RailView {
             .border_color(tokens.line)
             .text_color(tokens.fg_muted)
             .text_size(px(tokens.fs_md))
-            .child(self.brand(&rail, &tokens))
+            .child(self.brand(&rail, ctx, &tokens, cx))
             .child(body)
             // A fullscreen console puts the nav and the foot away and keeps the projects.
-            .when(furniture, |column| column.child(foot(&link, &rail, alarm.as_deref(), chime, console, &self.caller, held, &tokens)))
+            .when(slice.furniture, |column| column.child(foot(&slice.foot, &self.caller, slice.held, icons, &tokens)))
+            // The edge: dragged to size the rail, a double-click gives back the usual width. A narrow
+            // window has no room to size it.
+            .when(!narrow, |column| {
+                column.child(gpui_kit::div().absolute().top_0().bottom_0().right_0().w(px(tokens.sp_6)).child(self.split.clone()))
+            })
     }
 }
 

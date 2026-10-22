@@ -12,11 +12,12 @@ use gpui_kit::{
 
 const WIDTH: f32 = 1000.0;
 const HEIGHT: f32 = 700.0;
+const WIDE: f32 = 1400.0;
 
-type Calls = Rc<RefCell<Vec<Call>>>;
+pub(crate) type Calls = Rc<RefCell<Vec<Call>>>;
 
 /// A stage with keys of its own, standing for the pane.
-struct Stub {
+pub(crate) struct Stub {
     focus: FocusHandle,
     /// The releases that reached the stage, as they would reach a button on the pane.
     ups: Rc<Cell<u32>>,
@@ -29,30 +30,30 @@ impl Render for Stub {
     }
 }
 
-struct Opened {
-    handle: AnyWindowHandle,
-    heard: Entity<Heard>,
-    stub: Entity<Stub>,
-    ups: Rc<Cell<u32>>,
-    calls: Calls,
+pub(crate) struct Opened {
+    pub(crate) handle: AnyWindowHandle,
+    pub(crate) heard: Entity<Heard>,
+    pub(crate) stub: Entity<Stub>,
+    pub(crate) ups: Rc<Cell<u32>>,
+    pub(crate) calls: Calls,
 }
 
-fn tab(panel: &Panel, title: &str) -> DockTab {
+pub(crate) fn tab(panel: &Panel, title: &str) -> DockTab {
     DockTab { panel: panel.clone(), title: title.into() }
 }
 
-fn present(panel: &Panel, kind: PanelKind, stage: bool) -> PresentPanel {
+pub(crate) fn present(panel: &Panel, kind: PanelKind, stage: bool) -> PresentPanel {
     PresentPanel { panel: panel.clone(), kind, floats: false, stage, closes: false }
 }
 
-fn images() -> Panel {
+pub(crate) fn images() -> Panel {
     Panel::extension("docker", "images")
 }
 
 /// The views panel and an extension's view share the right dock, 400 wide,
 /// with the views shown; the console is alone in the bottom dock, 200 tall;
 /// the left dock holds nothing and is closed.
-fn docks() -> DocksPage {
+pub(crate) fn docks() -> DocksPage {
     let (console, views, images) = (Panel::Console, Panel::Views, images());
     DocksPage {
         left: DockPage::default(),
@@ -71,15 +72,20 @@ fn docks() -> DocksPage {
     }
 }
 
-fn status(connection: Connection) -> Event {
+pub(crate) fn status(connection: Connection) -> Event {
     Event::Status(Status { connection, detail: None, alarm: None, chime: true, host: None })
 }
 
-fn console(place: ConsolePlace) -> Event {
+pub(crate) fn console(place: ConsolePlace) -> Event {
     Event::Console(Box::new(ConsolePage { place, ..ConsolePage::default() }))
 }
 
-fn open(cx: &mut TestAppContext, events: Vec<Event>) -> Opened {
+pub(crate) fn open(cx: &mut TestAppContext, events: Vec<Event>) -> Opened {
+    open_wide(cx, events, WIDTH)
+}
+
+/// The work area in a window `width` wide: 1200 and under is narrow.
+pub(crate) fn open_wide(cx: &mut TestAppContext, events: Vec<Event>, width: f32) -> Opened {
     cx.update(crate::window::init);
     let calls: Calls = Rc::default();
     let sink = calls.clone();
@@ -90,7 +96,7 @@ fn open(cx: &mut TestAppContext, events: Vec<Event>) -> Opened {
     let (handle, _) = cx.update(|cx| {
         gpui_kit::open_window(
             WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::new(Default::default(), size(px(WIDTH), px(HEIGHT))))),
+                window_bounds: Some(WindowBounds::Windowed(Bounds::new(Default::default(), size(px(width), px(HEIGHT))))),
                 ..Default::default()
             },
             cx,
@@ -113,7 +119,7 @@ fn open(cx: &mut TestAppContext, events: Vec<Event>) -> Opened {
     opened
 }
 
-fn hear(cx: &mut TestAppContext, opened: &Opened, events: Vec<Event>) {
+pub(crate) fn hear(cx: &mut TestAppContext, opened: &Opened, events: Vec<Event>) {
     cx.update(|cx| {
         opened.heard.update(cx, |heard, cx| {
             for event in events {
@@ -126,58 +132,58 @@ fn hear(cx: &mut TestAppContext, opened: &Opened, events: Vec<Event>) {
     cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
 }
 
-fn docked(cx: &mut TestAppContext, page: DocksPage) -> Opened {
+pub(crate) fn docked(cx: &mut TestAppContext, page: DocksPage) -> Opened {
     open(cx, vec![status(Connection::Connected), console(ConsolePlace::Docked), Event::Docks(Box::new(page))])
 }
 
-fn taken(opened: &Opened) -> Vec<String> {
+pub(crate) fn taken(opened: &Opened) -> Vec<String> {
     opened.calls.borrow().iter().map(|call| format!("{call:?}")).collect()
 }
 
-fn centre(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Point<Pixels> {
+pub(crate) fn centre(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Point<Pixels> {
     cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).bounds().center()).unwrap()
 }
 
-fn bounds(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Bounds<Pixels> {
+pub(crate) fn bounds(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Bounds<Pixels> {
     cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).bounds()).unwrap()
 }
 
-fn label(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Option<String> {
+pub(crate) fn label(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Option<String> {
     cx.update_window(opened.handle, |_, window, _| {
         window.try_find(id.to_owned()).and_then(|found| found.label().map(str::to_owned))
     })
     .unwrap()
 }
 
-fn present_id(cx: &mut TestAppContext, opened: &Opened, id: &str) -> bool {
+pub(crate) fn present_id(cx: &mut TestAppContext, opened: &Opened, id: &str) -> bool {
     cx.update_window(opened.handle, |_, window, _| window.try_find(id.to_owned()).is_some()).unwrap()
 }
 
-fn selected(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Option<bool> {
+pub(crate) fn selected(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Option<bool> {
     cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).selected()).unwrap()
 }
 
-fn by(at: Point<Pixels>, dx: f32, dy: f32) -> Point<Pixels> {
+pub(crate) fn by(at: Point<Pixels>, dx: f32, dy: f32) -> Point<Pixels> {
     point(at.x + px(dx), at.y + px(dy))
 }
 
-fn down(cx: &mut TestAppContext, opened: &Opened, at: Point<Pixels>) {
+pub(crate) fn down(cx: &mut TestAppContext, opened: &Opened, at: Point<Pixels>) {
     cx.update_window(opened.handle, |_, window, cx| window.pointer_down(at, MouseButton::Left, cx)).unwrap();
     cx.run_until_parked();
 }
 
-fn drag_to(cx: &mut TestAppContext, opened: &Opened, at: Point<Pixels>) {
+pub(crate) fn drag_to(cx: &mut TestAppContext, opened: &Opened, at: Point<Pixels>) {
     cx.update_window(opened.handle, |_, window, cx| window.pointer_move(at, Some(MouseButton::Left), cx)).unwrap();
     cx.run_until_parked();
 }
 
-fn up(cx: &mut TestAppContext, opened: &Opened, at: Point<Pixels>) {
+pub(crate) fn up(cx: &mut TestAppContext, opened: &Opened, at: Point<Pixels>) {
     cx.update_window(opened.handle, |_, window, cx| window.pointer_up(at, MouseButton::Left, cx)).unwrap();
     cx.run_until_parked();
     cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
 }
 
-fn escape(cx: &mut TestAppContext, opened: &Opened) {
+pub(crate) fn escape(cx: &mut TestAppContext, opened: &Opened) {
     cx.update_window(opened.handle, |_, window, cx| window.press("escape", cx)).unwrap();
     cx.run_until_parked();
     cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
@@ -214,9 +220,10 @@ fn a_docks_snapshot_draws_each_dock_with_the_right_panel_shown(cx: &mut TestAppC
 
 #[gpui_kit::test]
 fn the_stage_gets_what_the_docks_leave(cx: &mut TestAppContext) {
-    let opened = docked(cx, docks());
+    // A window wide enough for the dock to have a column of its own.
+    let opened = docked_wide(cx, docks(), WIDE);
     let stage = bounds(cx, &opened, "work-stage");
-    assert_eq!(stage.size.width, px(WIDTH - 400.0));
+    assert_eq!(stage.size.width, px(WIDE - 400.0));
     assert_eq!(stage.size.height, px(HEIGHT - 200.0));
 }
 
@@ -261,6 +268,20 @@ fn a_sash_drag_sends_the_size_call_and_the_dock_does_not_resize_until_the_next_d
     page.right.size = 500;
     hear(cx, &opened, vec![Event::Docks(Box::new(page))]);
     assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(500.0));
+}
+
+#[gpui_kit::test]
+fn a_sash_let_go_where_it_began_still_asks_and_the_dock_stays_rusts_size(cx: &mut TestAppContext) {
+    // SHELL-DOCK-13: every release of a dock sash that was dragged reports its size, so Rust
+    // always has the word; the dock is as big as Rust says whether or not it answers.
+    let opened = docked(cx, docks());
+    let grab = centre(cx, &opened, "dock-right-sash");
+    down(cx, &opened, grab);
+    drag_to(cx, &opened, by(grab, -80.0, 0.0));
+    drag_to(cx, &opened, grab);
+    up(cx, &opened, grab);
+    assert_eq!(taken(&opened), ["Docks { gesture: Size { dock: Right, size: 400 } }"]);
+    assert_eq!(bounds(cx, &opened, "dock-right").size.width, px(400.0));
 }
 
 #[gpui_kit::test]
@@ -709,4 +730,58 @@ fn a_dock_sized_past_the_window_leaves_the_stage_its_floor(cx: &mut TestAppConte
     let stage = bounds(cx, &opened, "work-stage");
     assert_eq!(stage.size.height, px(120.0));
     assert!(stage.size.width >= px(240.0), "{:?}", stage.size);
+}
+
+fn docked_wide(cx: &mut TestAppContext, page: DocksPage, width: f32) -> Opened {
+    open_wide(cx, vec![status(Connection::Connected), console(ConsolePlace::Docked), Event::Docks(Box::new(page))], width)
+}
+
+#[gpui_kit::test]
+fn under_1200_px_the_right_dock_is_a_drawer_over_the_stage_and_wider_it_squeezes_the_stage(cx: &mut TestAppContext) {
+    // SHELL-STAGE-15, SHELL-DOCK-10: the terminal keeps its columns in a small window.
+    let narrow = docked_wide(cx, docks(), 1200.0);
+    assert!(present_id(cx, &narrow, "drawer"));
+    let (dock, stage) = (bounds(cx, &narrow, "dock-right"), bounds(cx, &narrow, "work-stage"));
+    assert_eq!(dock.right(), px(1200.0), "it hangs from the work area's right edge");
+    assert_eq!(dock.size.width, px(400.0), "as wide as it was dragged");
+    assert_eq!(stage.size.width, px(1200.0), "the stage keeps all its width");
+    let wide = docked_wide(cx, docks(), 1201.0);
+    assert!(!present_id(cx, &wide, "drawer"));
+    assert_eq!(bounds(cx, &wide, "work-stage").size.width, px(1201.0 - 400.0), "a wide window gives the dock its own column");
+}
+
+#[gpui_kit::test]
+fn the_drawer_is_no_wider_than_the_drawer_maximum_or_what_leaves_the_stage_a_sliver(cx: &mut TestAppContext) {
+    let mut page = docks();
+    page.right.size = 900;
+    let opened = docked_wide(cx, page.clone(), 1000.0);
+    assert_eq!(bounds(cx, &opened, "drawer").size.width, px(560.0), "`--drawer-max`");
+    let small = docked_wide(cx, page, 500.0);
+    assert_eq!(bounds(cx, &small, "drawer").size.width, px(500.0 - 44.0), "a sliver of 44px is left to click back to");
+}
+
+#[gpui_kit::test]
+fn above_1200_px_the_right_dock_is_no_wider_than_the_min_pane_unless_the_window_has_the_room(cx: &mut TestAppContext) {
+    // style.css `.dock-right { max-width: min(100% - floor, max(440px, 100% - 800px)) }` above 1200px.
+    let mut page = docks();
+    page.right.size = 560;
+    let tight = docked_wide(cx, page.clone(), 1240.0);
+    assert_eq!(bounds(cx, &tight, "dock-right").size.width, px(440.0), "1240 - 800 is under the min pane");
+    let roomy = docked_wide(cx, page.clone(), 1440.0);
+    assert_eq!(bounds(cx, &roomy, "dock-right").size.width, px(560.0), "1440 - 800 = 640 leaves room for the size dragged");
+    let mut wide = page;
+    wide.right.size = 5000;
+    let capped = docked_wide(cx, wide, 1440.0);
+    assert_eq!(bounds(cx, &capped, "dock-right").size.width, px(640.0), "never past the room rule");
+}
+
+#[test]
+fn a_side_dock_caps_against_the_floor_and_only_the_right_one_against_the_room() {
+    let tokens = crate::theme::ledger::tokens();
+    use crate::layout::dock::capped;
+    assert_eq!(capped(Dock::Left, 900.0, 1000.0, 1000.0, &tokens), 760.0);
+    assert_eq!(capped(Dock::Left, 900.0, 1400.0, 1440.0, &tokens), 900.0, "the room rule is the right dock's");
+    assert_eq!(capped(Dock::Right, 900.0, 1400.0, 1440.0, &tokens), 600.0);
+    assert_eq!(capped(Dock::Right, 900.0, 1100.0, 1100.0, &tokens), 900.0, "the drawer has its own maximum");
+    assert_eq!(capped(Dock::Right, 900.0, 0.0, 1440.0, &tokens), 900.0, "an area not laid out caps nothing");
 }

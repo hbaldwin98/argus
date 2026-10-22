@@ -4,15 +4,20 @@
 //! goes to another stage first closes what the session has open of Git, in the same breath
 //! (`review::entry`), so the stage is the session's to say and is never left standing under
 //! another.
+//!
+//! The built-in items are a fixed list (`Nav::ALL`); the Browsers item joins it after Console with
+//! the Browsers stage (audit items 79 to 90), and the Extensions and Views folds that follow are
+//! `tail`'s. A narrow rail draws each item as a tile of its icon, and the folds not at all.
 
-use argus_desktop_core::connection::page::Rail;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, px, Context, SharedString};
 
+use super::row::{line, Ctx};
+use super::slice::Slice;
 use super::RailView;
-use super::row::line;
 use crate::chrome::nav::Nav;
 use crate::kit::keycap::keycap;
+use crate::kit::tip::tip;
 use crate::review::entry::checkout_here;
 use crate::theme::Tokens;
 
@@ -26,7 +31,7 @@ impl RailView {
         if held {
             return;
         }
-        let picked = self.picked.map(|picked| picked.checkout);
+        let picked = self.slice.rail.cursor.pick.map(|pick| pick.checkout);
         let calls = match nav {
             Nav::Git => self.heard.update(cx, |heard, cx| {
                 let (open, here) = (heard.open(), checkout_here(&heard.rail, picked));
@@ -43,18 +48,9 @@ impl RailView {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn nav(
-        &self,
-        rail: &Rail,
-        git_up: bool,
-        held: bool,
-        keys: &[Vec<String>],
-        mono: &SharedString,
-        tokens: &Tokens,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let fill = tokens.fill;
+    pub(super) fn nav(&self, slice: &Slice, ctx: Ctx, mono: &SharedString, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let (fill, held) = (tokens.fill, ctx.held);
+        let rail = &slice.rail;
         // `.navs`: the keycaps show while the pointer is anywhere over the group.
         v_flex()
             .group("navs")
@@ -62,33 +58,44 @@ impl RailView {
             .px(px(tokens.sp_8))
             .pb(px(tokens.sp_8))
             .gap(px(tokens.sp_2))
+            .when(ctx.icons, |navs| navs.items_center())
             .border_b_1()
             .border_color(tokens.line)
             .children(Nav::ALL.into_iter().enumerate().map(|(at, nav)| {
-                let lit = nav.lit(rail.stage, git_up);
+                let lit = nav.lit(rail.stage, slice.git_up);
                 let search = nav == Nav::Search;
                 let caps = h_flex()
                     .gap(px(tokens.sp_4))
-                    .children(keys.get(at).cloned().unwrap_or_default().into_iter().map(|key| keycap(key, mono.clone(), tokens)));
+                    .children(slice.keys.get(at).cloned().unwrap_or_default().into_iter().map(|key| keycap(key, mono.clone(), tokens)));
                 let caps = if search { caps } else { caps.opacity(0.0).group_hover("navs", |style| style.opacity(1.0)) };
-                let base = line(nav.id(), if search { 34.0 } else { 32.0 }, tokens).text_size(px(tokens.fs_md)).px(px(tokens.sp_8));
+                let base = line(nav.id(), if search { tokens.search_h } else { tokens.nav_h }, tokens).text_size(px(tokens.fs_md));
+                // A narrow rail: a tile of the icon, the words in the tooltip.
+                let base = if ctx.icons {
+                    base.w(px(tokens.rail_tile)).h(px(tokens.rail_tile)).justify_center().tooltip(tip(nav.label()))
+                } else {
+                    base.px(px(tokens.sp_8))
+                };
                 let base = if search {
                     // `.search`: a field's outline, not a row's fill.
-                    base.mb(px(tokens.sp_6))
-                        .pl(px(tokens.sp_12))
-                        .gap(px(tokens.sp_8))
-                        .border_1()
-                        .border_color(tokens.line_strong)
-                        .rounded(px(tokens.r_md))
-                        .text_color(tokens.fg_faint)
-                        .hover(|style| style.text_color(tokens.fg_muted))
+                    let base = base.text_color(tokens.fg_faint);
+                    if ctx.icons {
+                        base.hover(move |style| style.bg(fill).text_color(tokens.fg))
+                    } else {
+                        base.mb(px(tokens.sp_6))
+                            .pl(px(tokens.sp_12))
+                            .gap(px(tokens.sp_8))
+                            .border_1()
+                            .border_color(tokens.line_strong)
+                            .rounded(px(tokens.r_md))
+                            .hover(|style| style.text_color(tokens.fg_muted))
+                    }
                 } else {
-                    base.gap(px(tokens.sp_12))
+                    base.when(!ctx.icons, |row| row.gap(px(tokens.sp_12)))
                         .text_color(tokens.fg)
                         .when(lit, |row| row.bg(tokens.bg_selected))
                         .when(!lit, |row| row.hover(move |style| style.bg(fill)))
                 };
-                let glyph = nav.glyph().at(16.0);
+                let glyph = nav.glyph().at(tokens.icon_glyph);
                 let icon = if search {
                     glyph.into_any_element()
                 } else {
@@ -107,8 +114,9 @@ impl RailView {
                     .aria_label(nav.label())
                     .on_click(cx.listener(move |this, _, _, cx| this.go(nav, held, cx)))
                     .child(icon)
-                    .child(div().flex_1().min_w_0().truncate().child(nav.label()))
-                    .child(caps)
+                    .when(!ctx.icons, |row| row.child(div().flex_1().min_w_0().truncate().child(nav.label())).child(caps))
             }))
+            // The Extensions and Views folds, where they have anything to list.
+            .children((!ctx.icons).then(|| self.tail(slice, ctx, tokens, cx)))
     }
 }
