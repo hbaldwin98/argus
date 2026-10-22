@@ -52,6 +52,8 @@ fn a_digit_with_no_field_switches_the_stage_by_the_call_the_page_sends(cx: &mut 
         ("2", "ShowFeatures { open: true }"),
         ("3", "ShowCheckouts { open: true }"),
         ("5", "ShowCode { open: true }"),
+        // SHELL-KEYS-24: the Browsers stage is the session's command.
+        ("6", "Command { action: Browsers }"),
         ("`", "Console { gesture: Toggle }"),
         ("ctrl-n", "ShowComposer { open: true }"),
     ] {

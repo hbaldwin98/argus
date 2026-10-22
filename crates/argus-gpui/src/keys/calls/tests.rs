@@ -19,6 +19,7 @@ fn each_stage_and_console_key_sends_the_call_the_page_sends() {
         (Action::ConsoleFullscreen, "Console { gesture: Fullscreen }"),
         (Action::NewConsole, "Console { gesture: Spawn }"),
         (Action::Views, "ToggleViews"),
+        (Action::Browsers, "Command { action: Browsers }"),
     ] {
         assert_eq!(said(action).as_deref(), Some(call), "{action:?}");
     }

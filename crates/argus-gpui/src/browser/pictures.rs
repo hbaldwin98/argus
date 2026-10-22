@@ -122,6 +122,13 @@ impl Pictures {
         }
     }
 
+    /// How many pictures have been set decoding, which a test reads to see that a batch of pictures
+    /// of one pane started one.
+    #[cfg(test)]
+    pub fn started(&self) -> u64 {
+        self.tickets
+    }
+
     pub fn of(&self, pane: u64) -> Option<&Picture> {
         self.held.get(&pane)?.picture.as_ref()
     }

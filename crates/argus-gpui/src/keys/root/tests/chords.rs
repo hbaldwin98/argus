@@ -94,3 +94,14 @@ fn the_leader_then_a_digit_changes_the_stage_the_rail_lights(cx: &mut TestAppCon
     let stage = cx.update(|cx| opened.heard.read(cx).rail.stage);
     assert_eq!(stage, Stage::Checkouts);
 }
+
+/// SHELL-KEYS-24: the leader then `6` is the Browsers stage, from a pane that has the keys.
+#[gpui_kit::test]
+fn the_leader_then_six_goes_to_the_browsers_stage(cx: &mut TestAppContext) {
+    let (opened, _owner) = open_session(cx);
+    press(cx, &opened, "ctrl-space");
+    press(cx, &opened, "6");
+    cx.run_until_parked();
+    let stage = cx.update(|cx| opened.heard.read(cx).rail.stage);
+    assert_eq!(stage, Stage::Browsers);
+}

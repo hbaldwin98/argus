@@ -11,6 +11,7 @@
 //! no pick either.
 
 pub mod brand;
+pub mod browsers;
 pub mod calls;
 pub mod checkout;
 pub mod keys;
@@ -78,6 +79,8 @@ pub struct RailView {
     plus_hover: Rc<Cell<bool>>,
     /// What only the window knows of the Views fold.
     views: ViewsFold,
+    /// Whether the Browsers item lists its open browsers; starts unfolded.
+    browsers_listed: bool,
     /// The edge the rail is dragged by, which holds the width until Rust says what it kept.
     split: Entity<Split>,
     #[cfg(test)]
@@ -133,6 +136,7 @@ impl RailView {
             shown_row: Rc::default(),
             plus_hover: Rc::default(),
             views: ViewsFold { listed: false, all: false, unfolded: HashSet::new() },
+            browsers_listed: true,
             split,
             #[cfg(test)]
             changes: Cell::new(0),

@@ -18,7 +18,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use argus_desktop_core::browser::{BrowserShot, BrowsersPage};
+use argus_desktop_core::browser::BrowsersPage;
 use argus_desktop_core::checkouts::table::Checkouts;
 use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::code::stage::CodePage;
@@ -37,6 +37,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::browser::decoding;
 use crate::browser::pictures::Pictures;
+use crate::browser::source::{Source, Standalone};
 use crate::layout::holders::{Holder, Holders};
 use crate::connection::screens::{Marked, Screens};
 use crate::panes::screen::Screen;
@@ -171,8 +172,11 @@ pub struct Heard {
     noticed: u64,
     /// The sides whose screen a frame changed since [`Heard::listen`] last said so.
     painted: Vec<Side>,
-    /// The pictures heard since [`Heard::announce`] last set them decoding, the newest of each pane.
-    shots: Vec<BrowserShot>,
+    /// The panes a picture was heard of since [`Heard::announce`] last set them decoding, once each.
+    shots: Vec<u64>,
+    /// Where a pane's decoded bytes come from, and the store behind it when no session is.
+    source: Source,
+    standalone: Option<Standalone>,
     /// The panes whose picture went when the stage was told, which their places are to hear of.
     blanked: Vec<u64>,
     /// The actions the session asked the window to run since [`Heard::listen`] last said so.
@@ -186,6 +190,16 @@ pub struct Heard {
 impl Heard {
     /// Hears nothing until [`Heard::listen`] is given a channel.
     pub fn new() -> Self {
+        let standalone = Standalone::default();
+        Self::with(standalone.source(), Some(standalone))
+    }
+
+    /// A model whose pictures come from the session's bytes (`Source`), not from the shots it hears.
+    pub fn fed_by(source: Source) -> Self {
+        Self::with(source, None)
+    }
+
+    fn with(source: Source, standalone: Option<Standalone>) -> Self {
         Self {
             status: None,
             rail: Rail::default(),
@@ -220,6 +234,8 @@ impl Heard {
             noticed: 0,
             painted: Vec::new(),
             shots: Vec::new(),
+            source,
+            standalone,
             blanked: Vec::new(),
             ran: Vec::new(),
             edited: Vec::new(),
@@ -259,8 +275,8 @@ impl Heard {
         for pane in std::mem::take(&mut self.blanked) {
             cx.emit(Pictured(pane));
         }
-        for shot in std::mem::take(&mut self.shots) {
-            decoding::begin(self, shot, cx);
+        for pane in std::mem::take(&mut self.shots) {
+            decoding::begin(self, pane, cx);
         }
         for action in std::mem::take(&mut self.ran) {
             cx.emit(Ran(action));
@@ -315,13 +331,22 @@ impl Heard {
                 self.notice = Some(Notice { text, serial: self.noticed });
             }
             Event::Browsers(page) => {
-                self.blanked.extend(self.pictures.page(&page));
+                for pane in self.pictures.page(&page) {
+                    self.blanked.push(pane);
+                    if let Some(held) = &self.standalone {
+                        held.closed(pane);
+                    }
+                }
                 self.browsers = Rc::new(*page);
             }
             // Decoded once the batch is over (`announce`), and only the newest of a pane's.
             Event::BrowserShot(shot) => {
-                self.shots.retain(|held| held.pane != shot.pane);
-                self.shots.push(shot);
+                if let Some(held) = &self.standalone {
+                    held.feed(&shot);
+                }
+                if !self.shots.contains(&shot.pane) {
+                    self.shots.push(shot.pane);
+                }
                 return false;
             }
             Event::Checkouts(table) => self.checkouts = Some(Rc::new(*table)),
@@ -454,6 +479,13 @@ impl Heard {
 }
 
 impl EventEmitter<Painted> for Heard {}
+
+impl Heard {
+    /// The source of decoded picture bytes, for a decode that runs off the UI thread.
+    pub fn source(&self) -> Source {
+        self.source.clone()
+    }
+}
 
 impl EventEmitter<Pictured> for Heard {}
 impl EventEmitter<Ran> for Heard {}

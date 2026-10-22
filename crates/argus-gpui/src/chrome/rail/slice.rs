@@ -16,6 +16,7 @@ use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_desktop_core::panes::console::ConsolePlace;
 use argus_desktop_core::views::nav::{self, NavView};
 
+use super::browsers::Sub;
 use crate::chrome::foot::{Console, Foot};
 use crate::chrome::nav::Nav;
 use crate::chrome::stage::route::frame;
@@ -41,6 +42,8 @@ pub(super) struct Slice {
     /// The panes that are browsers, which the tree's rows do not say: their rows wear a globe and
     /// are told apart from a shell.
     pub browsers: Vec<u64>,
+    /// The Browsers item's sub-rows, in the stage's order.
+    pub subs: Vec<Sub>,
 }
 
 impl Slice {
@@ -82,6 +85,7 @@ impl Slice {
             saved: heard.saved_views.clone(),
             lit: nav::lit(&heard.saved_panels, &heard.docks),
             browsers: heard.browsers.browsers.iter().map(|browser| browser.pane).collect(),
+            subs: heard.browsers.browsers.iter().map(|browser| Sub::of(browser, &rail)).collect(),
             rail,
         }
     }

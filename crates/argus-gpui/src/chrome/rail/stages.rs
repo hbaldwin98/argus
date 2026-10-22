@@ -7,7 +7,7 @@
 //!
 //! The built-in items are a fixed list (`Nav::ALL`), the Browsers item last of them; the
 //! Extensions and Views folds that follow are `tail`'s. The Browsers item's count, fold and sub-rows
-//! (SHELL-BROWSER-14) are not drawn yet. A narrow rail draws each item as a tile of its icon, and the
+//! (SHELL-BROWSER-14) are `browsers`'. A narrow rail draws each item as a tile of its icon, and the
 //! folds not at all.
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -112,11 +112,21 @@ impl RailView {
                     let mark = if nav == Nav::New { mark.bg(fill).text_color(tokens.fg).rounded_full() } else { mark };
                     mark.child(glyph).into_any_element()
                 };
-                base.aria_selected(lit)
+                let browsers = nav == Nav::Browsers && !ctx.icons;
+                let row = base
+                    .aria_selected(lit)
                     .aria_label(nav.label())
                     .on_click(cx.listener(move |this, _, _, cx| this.go(nav, held, cx)))
                     .child(icon)
-                    .when(!ctx.icons, |row| row.child(div().flex_1().min_w_0().truncate().child(nav.label())).child(caps))
+                    .when(!ctx.icons, |row| row.child(div().flex_1().min_w_0().truncate().child(nav.label())))
+                    .when(browsers, |row| row.child(self.browsers_tail(slice, tokens, cx)))
+                    .when(!ctx.icons, |row| row.child(caps));
+                // `.nav-nest`: the open browsers, under the item while it is unfolded.
+                if browsers && self.browsers_listed && !slice.subs.is_empty() {
+                    v_flex().gap(rem(tokens.sp_2)).child(row).child(self.browsers_list(slice, ctx, tokens, cx)).into_any_element()
+                } else {
+                    row.into_any_element()
+                }
             }))
             // The Extensions and Views folds, where they have anything to list.
             .children((!ctx.icons).then(|| self.tail(slice, ctx, tokens, cx)))
