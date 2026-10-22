@@ -1,5 +1,6 @@
 //! How wide and how tall the rows are, and what sideways scrolling is left to a long line.
 
+use gpui_kit::component::scroll::Scrollbar;
 use gpui_kit::{point, px, size, TestAppContext};
 
 use super::*;
@@ -39,7 +40,7 @@ fn a_diff_of_short_lines_has_no_sideways_range_and_fills_the_pane(cx: &mut TestA
     let scroll = cx.update(|cx| opened.view.read(cx).scroll().clone());
     assert_eq!(scroll.max_offset().x, px(0.0));
     let width = cx.update_window(opened.handle, |_, window, _| window.find(("diff-row", 1usize)).bounds().size.width).unwrap();
-    assert_eq!(width, px(600.0), "a row is stretched to the pane");
+    assert_eq!(width, px(600.0) - Scrollbar::width(), "a row is stretched to the pane, short of the bar's gutter");
 }
 
 #[gpui_kit::test]

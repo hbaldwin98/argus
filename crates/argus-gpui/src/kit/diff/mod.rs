@@ -280,6 +280,8 @@ impl Render for DiffView {
             self.size();
         }
         let (pane, area, diff) = (self.pane.clone(), self.area.clone(), cx.entity());
+        // The vertical bar's gutter is not the lines' to fill; a file read whole has the ruler instead.
+        let gutter = if self.reading { px(0.) } else { Scrollbar::width() };
         let body = div()
             .id(SharedString::from(format!("{}-body", self.id)))
             .test_support()
@@ -296,8 +298,9 @@ impl Render for DiffView {
                 canvas(
                     move |bounds, _, cx| {
                         area.set(bounds);
-                        if pane.get() != bounds.size.width {
-                            pane.set(bounds.size.width);
+                        let width = bounds.size.width - gutter;
+                        if pane.get() != width {
+                            pane.set(width);
                             cx.defer(move |cx| diff.update(cx, |_, cx| cx.notify()));
                         }
                     },
@@ -307,17 +310,25 @@ impl Render for DiffView {
                 .size_full(),
             )
             .child(
-                v_virtual_list(
-                    cx.entity(),
-                    SharedString::from(format!("{}-list", self.id)),
-                    self.sizes.clone(),
-                    move |this, range, _, cx| {
-                        // Only what this build draws is on screen to be read.
-                        this.layouts.borrow_mut().clear();
-                        range.map(|ix| this.item(ix, &tokens, cx)).collect::<Vec<_>>()
-                    },
-                )
-                .track_scroll(&self.scroll),
+                // The bars have a gutter of their own, as the page's native box gives them, so they
+                // never lie over the last line or the end of a long one.
+                div()
+                    .size_full()
+                    .pb(Scrollbar::width())
+                    .pr(gutter)
+                    .child(
+                        v_virtual_list(
+                            cx.entity(),
+                            SharedString::from(format!("{}-list", self.id)),
+                            self.sizes.clone(),
+                            move |this, range, _, cx| {
+                                // Only what this build draws is on screen to be read.
+                                this.layouts.borrow_mut().clear();
+                                range.map(|ix| this.item(ix, &tokens, cx)).collect::<Vec<_>>()
+                            },
+                        )
+                        .track_scroll(&self.scroll),
+                    ),
             )
             // The page's diff scrolls in a native box with both bars; without
             // them a mouse with no sideways wheel cannot reach a long line.
