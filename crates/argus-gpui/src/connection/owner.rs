@@ -18,11 +18,12 @@ use argus_desktop_core::connection::effects::{self, Clipboard as _, Outlets};
 use argus_desktop_core::connection::page::{Call, Event};
 use argus_desktop_core::session::Session;
 use argus_desktop_core::settings::remembered::{self, Settings};
+use argus_desktop_core::system::notifications::Alert;
 use argus_desktop_core::system::opener;
 use argus_protocol::{ClientMsg, Hello, ServerMsg};
 use tokio::sync::{mpsc, watch, Notify};
 
-use crate::system::clipboard;
+use crate::system::{chime, clipboard};
 
 pub struct Owner {
     session: Mutex<Session>,
@@ -34,20 +35,35 @@ pub struct Owner {
     reconnect: Notify,
     /// The host the daemon loop should be reaching, which it follows.
     host: watch::Sender<Option<String>>,
+    /// The alerts to raise, queued for the UI thread: the platform's notification centre is its,
+    /// and a change is made on whichever thread asked for it.
+    alerting: mpsc::UnboundedSender<Alert>,
+    alerts: Mutex<Option<mpsc::UnboundedReceiver<Alert>>>,
+    /// What plays the chime when the session sends one.
+    chime: Box<dyn Fn() + Send + Sync>,
 }
 
 impl Owner {
     /// The owner, and the receiver the UI thread drains. What a fresh page
     /// would be sent, everything, is already waiting in it.
     pub fn new(settings: Settings) -> (Arc<Owner>, mpsc::UnboundedReceiver<Vec<Event>>) {
+        Self::sounding(settings, chime::ring)
+    }
+
+    /// An owner whose chime is `chime`, for a test that must not make a sound.
+    pub fn sounding(settings: Settings, chime: impl Fn() + Send + Sync + 'static) -> (Arc<Owner>, mpsc::UnboundedReceiver<Vec<Event>>) {
         let host = settings.host.clone();
         let (heard, listening) = mpsc::unbounded_channel();
+        let (alerting, alerts) = mpsc::unbounded_channel();
         let owner = Owner {
             session: Mutex::new(Session::new(settings)),
             out: Mutex::new(None),
             heard,
             reconnect: Notify::new(),
             host: watch::channel(host).0,
+            alerting,
+            alerts: Mutex::new(Some(alerts)),
+            chime: Box::new(chime),
         };
         {
             let mut session = lock(&owner.session);
@@ -68,8 +84,10 @@ impl Owner {
             &mut Outlets {
                 send: &mut |msgs| self.send(msgs),
                 publish: &mut |events| self.publish(events),
-                // System notifications are a later step's.
-                alert: &mut |alert| tracing::debug!("alert not raised: {}", alert.title),
+                alert: &mut |alert| {
+                    // A closed queue is a window that is gone.
+                    let _ = self.alerting.send(alert.clone());
+                },
                 open: &mut |url| opener::open(url),
                 save: &mut |settings| remembered::save(settings),
                 clipboard: &clipboard::System,
@@ -177,8 +195,18 @@ impl Owner {
         if events.is_empty() {
             return;
         }
+        // Heard here and not by a view: a sound is the machine's, and the window drops the event
+        // as one nothing draws.
+        if events.iter().any(|event| matches!(event, Event::Chime)) {
+            (self.chime)();
+        }
         // A closed receiver is a window that is gone.
         let _ = self.heard.send(events);
+    }
+
+    /// The queue of alerts to raise, for the one window that raises them: `None` once taken.
+    pub fn alerts(&self) -> Option<mpsc::UnboundedReceiver<Alert>> {
+        lock(&self.alerts).take()
     }
 }
 
@@ -294,5 +322,92 @@ mod tests {
         assert!(!owner.listening());
         let ended = tokio::time::timeout(Duration::from_millis(500), ticking).await;
         assert!(ended.is_ok(), "the tick went on after the window's receiver was dropped");
+    }
+}
+
+#[cfg(test)]
+mod sounds {
+    //! A tree in which an agent comes to need the person: the chime and the notification it raises
+    //! (SHELL-SYSTEM-1, SHELL-SYSTEM-2).
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use argus_protocol::{
+        AgentTelemetry, CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo, RepositoryId,
+        RepositoryInfo,
+    };
+
+    use super::*;
+
+    fn tree(status: PaneStatus) -> ServerMsg {
+        let pane = PaneInfo {
+            id: PaneId(7),
+            kind: PaneKind::Agent,
+            title: "Trim context".into(),
+            status,
+            note: None,
+            template: None,
+            children: Vec::new(),
+            background: false,
+            telemetry: AgentTelemetry::default(),
+            since: None,
+            live: false,
+        };
+        let checkout = CheckoutInfo { id: CheckoutId(100), name: "main".into(), path: "/src/main".into(), panes: vec![pane], git: None, primary: true };
+        let repository = RepositoryInfo {
+            id: RepositoryId(10),
+            name: "argus".into(),
+            checkouts: vec![checkout],
+            branches: Vec::new(),
+            default_branch: None,
+            remote_branches: Vec::new(),
+            unmerged: Default::default(),
+            last_used: None,
+        };
+        ServerMsg::Tree(vec![ProjectInfo { id: ProjectId(1), name: "src".into(), root: None, repositories: vec![repository] }])
+    }
+
+    fn counted() -> (Arc<AtomicUsize>, impl Fn() + Send + Sync + 'static) {
+        let rang = Arc::new(AtomicUsize::new(0));
+        let counting = rang.clone();
+        (rang, move || {
+            counting.fetch_add(1, Ordering::SeqCst);
+        })
+    }
+
+    #[test]
+    fn an_agent_coming_to_need_the_person_rings_the_chime_once_and_queues_its_alert() {
+        let (rang, chime) = counted();
+        let (owner, _heard) = Owner::sounding(Settings::default(), chime);
+        let mut alerts = owner.alerts().expect("the queue, once");
+        owner.call(Call::Focus { focused: false });
+        owner.act(|s| s.receive(tree(PaneStatus::Working)));
+        assert_eq!(rang.load(Ordering::SeqCst), 0, "working is not worth a sound");
+        assert!(alerts.try_recv().is_err());
+        owner.act(|s| s.receive(tree(PaneStatus::Waiting)));
+        assert_eq!(rang.load(Ordering::SeqCst), 1);
+        let alert = alerts.try_recv().expect("an alert is queued for the UI thread");
+        assert_eq!((alert.title.as_str(), alert.body.as_str()), ("Trim context", "Is waiting for you · argus / main"));
+        assert!(alerts.try_recv().is_err(), "once");
+    }
+
+    #[test]
+    fn a_muted_chime_still_notifies() {
+        let (rang, chime) = counted();
+        let (owner, _heard) = Owner::sounding(Settings::default(), chime);
+        let mut alerts = owner.alerts().unwrap();
+        owner.call(Call::Focus { focused: false });
+        owner.act(|s| s.receive(tree(PaneStatus::Working)));
+        owner.call(Call::SetChime { on: false });
+        owner.act(|s| s.receive(tree(PaneStatus::Failed)));
+        assert_eq!(rang.load(Ordering::SeqCst), 0);
+        assert_eq!(alerts.try_recv().map(|a| a.body), Ok("Failed · argus / main".to_owned()));
+    }
+
+    #[test]
+    fn the_alert_queue_is_for_one_window() {
+        let (owner, _heard) = Owner::sounding(Settings::default(), || {});
+        assert!(owner.alerts().is_some());
+        assert!(owner.alerts().is_none());
     }
 }

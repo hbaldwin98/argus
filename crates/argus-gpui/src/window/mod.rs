@@ -1,13 +1,14 @@
 //! How the main window opens: the application with its assets, the frameless window's options, and
 //! `open`, which puts a stage's view under the header.
 
+pub mod frame;
 pub mod quit;
 
 use anyhow::Result;
 use gpui_kit::component::v_flex;
 use gpui_kit::{
     div, prelude::*, px, size, AnyView, AnyWindowHandle, App, Application, Bounds, Context, Entity, Pixels, Render,
-    SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions,
+    SharedString, TitlebarOptions, Window, WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowOptions,
 };
 
 use crate::chrome::header::Header;
@@ -15,7 +16,8 @@ use crate::keys;
 use crate::kit::fonts;
 use crate::kit::menu;
 use crate::kit::overlay::host::Overlays;
-use crate::theme::{self, Tokens};
+use crate::settings;
+use crate::theme::Tokens;
 
 /// The Tauri window's floor, so the two open and shrink alike (decision #65).
 pub const MIN_SIZE: gpui_kit::Size<Pixels> = size(px(720.0), px(480.0));
@@ -28,12 +30,16 @@ pub fn application() -> Application {
 /// Everything an example does first, in the order it must happen: gpui-kit's
 /// own init, then the Ledger theme over it.
 pub fn init(cx: &mut App) {
+    // Before any notification is posted: Windows drops a toast from a process with no identity.
+    // The Tauri window's identifier, so the two are one application to the system.
+    cx.set_app_identity("com.github.hbaldwin98.argus", "Argus");
     gpui_kit::init(cx);
     fonts::install(cx);
     menu::keys::install(cx);
     Overlays::install(cx);
     keys::root::install(cx);
-    theme::kit::install(cx, theme::ledger::tokens());
+    // The page's default: the system's theme, Mocha while it is dark, until the session sends the choice.
+    settings::look::start(matches!(cx.window_appearance(), WindowAppearance::Dark | WindowAppearance::VibrantDark), cx);
 }
 
 /// A frameless window: `appears_transparent` is what makes gpui-pre-windows
@@ -50,6 +56,9 @@ pub fn options(cx: &App) -> WindowOptions {
         }),
         // The header moves the window itself on macOS, rather than AppKit.
         app_owns_titlebar_drag: true,
+        // Always Transparent: it can only be set when the window is made, and what shows through
+        // is the alpha of the fills and the platform's blur, set live (`settings/look`).
+        window_background: WindowBackgroundAppearance::Transparent,
         window_min_size: Some(MIN_SIZE),
         ..Default::default()
     }
@@ -87,7 +96,7 @@ impl Render for Shell {
         let tokens = *Tokens::global(cx);
         v_flex()
             .size_full()
-            .bg(tokens.bg_sunken)
+            .bg(tokens.see_sunken)
             .text_color(tokens.fg)
             .child(Header::new())
             .child(div().flex_1().min_h_0().child(self.stage.clone()))

@@ -494,13 +494,11 @@ fn dragging_across_rows_sends_the_click_on_the_first_and_the_shift_click_on_the_
     assert!(!present(cx, &opened, "review-pick"), "nothing is picked until the Review event says so");
     // The text it passed over is selected, and Ctrl+C copies it.
     press(cx, &opened, "ctrl-c");
-    assert_eq!(
-        cx.read_from_clipboard().and_then(|item| item.text()).as_deref(),
-        Some("fn main() {
-    old();
-    new();")
-    );
-    assert_eq!(taken(&opened).len(), 2, "the copy sent nothing");
+    // Rust writes the clipboard (SHELL-SYSTEM-8), so the copy is a call, not a write by the view.
+    let calls = taken(&opened);
+    assert_eq!(calls.len(), 3, "{calls:?}");
+    assert_eq!(calls[2], "CopyText { text: \"fn main() {\\n    old();\\n    new();\" }");
+    assert!(cx.read_from_clipboard().is_none(), "the view never wrote the platform clipboard");
 }
 
 #[gpui_kit::test]
@@ -1088,18 +1086,48 @@ fn picking_a_file_asks_and_draws_its_diff_only_when_the_event_carries_it(cx: &mu
 }
 
 #[gpui_kit::test]
-fn dragging_across_a_historys_diff_selects_text_and_sends_nothing(cx: &mut TestAppContext) {
+fn dragging_across_a_historys_diff_selects_text_and_sends_nothing_until_it_is_copied(cx: &mut TestAppContext) {
     let opened = historied(cx);
     forget(&opened);
     drag_rows(cx, &opened, 1, 3);
     assert!(taken(&opened).is_empty(), "{:?}", taken(&opened));
     press(cx, &opened, "ctrl-c");
-    assert_eq!(
-        cx.read_from_clipboard().and_then(|item| item.text()).as_deref(),
-        Some("fn main() {
-    old();
-    new();")
-    );
+    assert_eq!(taken(&opened), ["CopyText { text: \"fn main() {\\n    old();\\n    new();\" }"]);
+    assert!(cx.read_from_clipboard().is_none(), "the view never wrote the platform clipboard");
+}
+
+// SHELL-MENU-5: the menu a right-click on selected text opens writes through Rust, as Ctrl+C does.
+#[gpui_kit::test]
+fn a_right_click_on_a_historys_selected_text_offers_copy_which_sends_it_to_rust(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestQueryExt as _;
+    let opened = historied(cx);
+    drag_rows(cx, &opened, 1, 3);
+    forget(&opened);
+    cx.update_window(opened.handle, |_, window, cx| window.right_click("history-diff-body".to_owned(), cx)).unwrap();
+    for _ in 0..2 {
+        cx.run_until_parked();
+        cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    }
+    let copy = cx
+        .update_window(opened.handle, |_, window, _| {
+            let items = window.elements().into_iter();
+            let found = items.filter(|e| e.label() == Some("Copy") && e.path().iter().any(|id| matches!(id, ElementId::Name(name) if name.as_ref() == "popup-menu")));
+            found.map(|e| e.bounds().center()).next()
+        })
+        .unwrap()
+        .expect("the menu offers Copy");
+    press_at(cx, &opened, copy);
+    assert_eq!(taken(&opened), ["CopyText { text: \"fn main() {\\n    old();\\n    new();\" }"]);
+}
+
+/// A left press and release at `at`, as on a menu's item.
+fn press_at(cx: &mut TestAppContext, opened: &Opened, at: Point<Pixels>) {
+    cx.update_window(opened.handle, |_, window, cx| {
+        window.pointer_down(at, MouseButton::Left, cx);
+        window.pointer_up(at, MouseButton::Left, cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
 }
 
 #[gpui_kit::test]

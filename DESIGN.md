@@ -660,19 +660,25 @@ GPUI one both stand on it.
 | `connection/page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call`; a surface that keeps what it last sent defines its own page and gestures, which these name |
 | `connection/sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once, or of something always on screen, so it hears only what differs |
 | `system` | what the window asks of the machine it runs on |
+| `system/chime` | the chime as numbers: two sine notes, 660 Hz then 880 Hz 0.12 s later, a 10 ms rise and an exponential fall, as samples and as a WAV, for any window to play |
 | `system/clock` | times the daemon sends said in the person's own clock: the time and its day, how long ago, a time alone and a span, with the moment and the zone given rather than read so a test pins both |
 | `system/logging` | where the window's own diagnostics go |
 | `system/notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, and what it says |
 | `system/opener` | handing something to the system's opener: a link in a view, only an `http` or `https` one, and a file or folder of a checkout the file manager shows, only one inside it |
 | `settings` | what the person chose for this window, what it remembers between runs, and what this machine offers to choose from |
 | `settings/backdrop` | which backdrops this machine can draw behind a see-through window, and whether one may be chosen |
-| `settings/fonts` | which font families to offer in the Settings dialog from the faces a machine has: each once, by every name the webview might know it by, monospaced if any of its faces is |
+| `settings/flavours` | the themes the Settings cards offer, in order and by name, and what "follow the system" asks for when pressed and draws when it is on |
+| `settings/font_picker` | what a font field's list does with no widget in it: the rows, the narrowing as it is typed, the active row, and when a name is chosen (picked, on Enter, or when the field is left) |
+| `settings/fonts` | which font families to offer in the Settings dialog from the faces a machine has: each once, by every name the webview might know it by, monospaced if any of its faces is, and the note a name nothing is called gets |
+| `settings/frame_border` | the colour of the border Windows 11 draws round a frameless window, per theme: the sidebar's rule as an opaque colour |
 | `settings/preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
 | `settings/remembered` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
 | `chrome` | the rail and the status bar around the stage |
 | `browser` | the browsers agents' panes run, as this window holds them: where each is, its owner and latest picture, and which the window draws |
+| `chrome/add_outcome` | what the add-a-project dialog says of what adding would do and what its Add button reads: the folder list's states, the outcome beside it per kind of add, the footer, and the pause before typing is sent |
 | `chrome/add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
 | `chrome/empty` | what the stage says with no pane on screen: waiting on the daemon (and the one way out of a connection that does not answer), no project, or a project with nothing shown (the checkout a shell is offered on, the panes to go back to) |
+| `chrome/projects` | what the project switcher says: the entries of the menu under the brand (projects with their tallies, add, workspaces, hosts, remove), what choosing a workspace or a host asks, and the words of the question before a project is removed |
 | `chrome/cursor` | which rail row holds the keys and which checkout's + menu is open: the keys of a picked row and of the menu answered once for both windows, the pick following the tree, the menu's items |
 | `chrome/rail` | what the rail lists from the tree, and what a row says |
 | `chrome/status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
@@ -694,9 +700,13 @@ GPUI one both stand on it.
 | `panes/shown/workspace_grid/split_grid` | where the Workspace's panes sit in relation to each other — rows, column fractions, row heights — and what adding, closing, swapping and moving a pane does to them, as arithmetic |
 | `panes/shown/workspace_grid/zones` | which zone of which cell a carried pane would be dropped on: the nearest edge within a quarter of the cell, else the centre, the area each zone lights, and the cell under a point that is never the pane's own |
 | `keys` | the window's keys and the command palette they open |
+| `keys/chords` | how a key is written for a sheet, a palette row or a menu: the press with its modifiers, the leader's presses before a chorded key, a label in sentence case |
 | `keys/keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, the commands the palette runs, and the order of the layers that hold the keys outside a pane |
 | `keys/page_key` | a key the page reports, as the protocol's key |
 | `keys/palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
+| `keys/rank` | how the command palette searches: the scope a leading `>` or `#` gives, the subsequence score, the rows a query keeps in each group and the characters to mark |
+| `keys/results` | what the command palette lists: a row for each command, extension command and view, pane, feature and checkout with its mark, detail, aside and what choosing it asks, and where the highlight goes when the lists change |
+| `keys/sheet` | what the shortcuts sheet lists and opens on: a section per place and per extension with the pairs of bindings written once, the search over the rows, and the section for where the person is |
 | `views` | the views agents show and save |
 | `views/agent` | which views agents showed, as the window holds them, which one their panel shows, which name a feature, and which wait on a refresh |
 | `views/changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
@@ -780,13 +790,19 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `chrome/header/slots` | what a stage's own view hands the strip, once, when it is made: the words it says (title and trail) and the tools it puts at the strip's end, so adding a stage adds no arm to the strip |
 | `chrome/nav` | the sidebar's way between stages: which items there are, which one the stage on screen lights, and the call each press makes |
 | `chrome/notice` | the line along the bottom of the stage: the newest notice with an info mark, its words and a dismiss, ended after six seconds counted from when it arrived, and replaced by the next |
+| `chrome/projects` | the dialogs the project switcher opens |
+| `chrome/projects/add` | the add-a-project dialog: up while the session holds it, drawing its page and sending its gestures, keeping what is typed over what was sent and sending typing after a pause |
+| `chrome/projects/add/browse` | the top of the add dialog: the kind of add, the folder's path and the folders in it |
+| `chrome/projects/add/outcome` | what adding would do per kind, and the name and skip fields |
+| `chrome/projects/question` | the question before a project is removed: an alert up while the rail holds it, `Keep it` having the keys, answering through the page's call |
 | `chrome/rail` | the sidebar: what it is made of (the brand row, the nav, the list of repositories under it and the foot) as wide as the person made it and folded to icons when narrow, over a slice of the latest `Rail`; the tree dimmed while the daemon is gone, and neither calling nor picking on a press |
 | `chrome/rail/brand` | the brand row: the logo and the project the rail lists, the title bar's left end that moves the window, with the name a button opening the list of projects when there are several; the logo alone in a narrow rail |
 | `chrome/rail/calls` | what the rail asks of the daemon: a call unless the sidebar is held, the close of Git that goes before a pane or another stage comes up, a pane shown as a click shows it, and what a choice of a menu does |
 | `chrome/rail/checkout` | a checkout's row: the fold, branch, shared (the people mark) and git marks, the dot and count while folded, the + that starts something, the pick's ring, its right-click menu, and the panes hanging from it while open; only the panes in a narrow rail |
 | `chrome/rail/keys` | the rail's layers of the key walk: the picked row's, up while a row is picked and the rail has the keys, and the + menu's, up while the session says it is open; each sends the action the table binds to the session as it is (`RailKey`, `StartKey`) and holds every other key, and a press outside, a pane newly shown or a stage change hands the keys to the stage |
 | `chrome/rail/listing` | the list under the nav: the project's repositories, or the quiet wait and the empty line when there is no project, dimmed while the daemon is gone |
-| `chrome/rail/menus` | what the rail's right-click menus offer, and the brand's list of projects: a repository's, a checkout's and a pane's as menu items naming the calls they send |
+| `chrome/rail/menus` | what the rail's right-click menus offer: a repository's, a checkout's and a pane's as menu items naming the calls they send |
+| `chrome/rail/switcher` | the brand's menu, the project switcher: core's entries (projects with their tallies, add, workspaces, hosts, remove) as menu items naming the calls they send, the two lists that unfold in the page opening beside it |
 | `chrome/rail/popup` | a rail menu drawn: its items as the kit's popup, each choice handed back to the rail to do once the menu has let go of the keys, and off while the daemon is gone |
 | `chrome/rail/pane` | a pane's row: its status as a dot or a word, its title, the close that appears under the pointer, its right-click menu, a middle click closing it, and the press that carries it; a tile of the task's initials with the status on its corner in a narrow rail |
 | `chrome/rail/repository` | a repository's row: its chevron, name, status dot and count, the clock that opens its recent sessions, its right-click menu, and the checkouts under it while it is open; a hairline in a narrow rail |
@@ -820,10 +836,14 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `keys/layer` | what a layer is to the walk (is it up, what does it do with a key, what does Escape put away in it), the registry surfaces put themselves in, the places a key is looked up in, and the way the window's commands reach the session |
 | `keys/layers` | the layers whose state is the window's own rather than one surface's |
 | `keys/layers/menu` | a menu or a question over the stage: the kit's menu stepped before the dialogs under it hear anything, and a question answered no by Escape |
-| `keys/layers/own` | a dialog that answers its own keys (the settings, add-project, an extension's question): up while its overlay is, holding every key and running none |
+| `keys/layers/own` | a dialog that answers its own keys (the settings, add-project, an extension's question): up while its overlay is, holding every key and running none, but for the settings chord, which puts the settings away |
 | `keys/layers/sheet` | the shortcuts sheet: `?` and Escape close it, every other key is held for its list and find field |
 | `keys/layers/stage` | the stage, always up and last: the Anywhere place's keys run as the page's `run` does, any other key held |
-| `keys/over` | opening the palette, the sheet or the settings over the stage for a key and for a `Run` from a pane, one of the three at a time, each a stand-in dialog until its surface lands |
+| `keys/over` | opening the palette, the sheet or the settings over the stage for a key and for a `Run` from a pane, one of the three at a time, the settings chord putting them away: all three are surfaces the shell builds |
+| `keys/palette` | the command palette: a search field over core's ranked rows, highlighted by a row's key, run by Enter or a press, telling the session when it opens and closes |
+| `keys/palette/rows` | a palette row drawn: its mark, its text with the matched characters marked, its detail and what it says at its end |
+| `keys/sheet` | the shortcuts sheet: core's sections beside a find field, opened on the section for where the person is, its keys on the close button |
+| `keys/sheet/body` | a section of the sheet drawn: its rows as an action and its caps, the pane's note and the keys it keeps without its leader |
 | `keys/page_key` | which `PageKey` a GPUI keystroke is: the DOM's names for the keys, the character typed rather than the key printed, AltGr as a character and not a chord |
 | `keys/root` | the one interceptor ahead of every focused child: a keystroke translated to the page's key, the window's zoom keys first, then the layers that are up asked in order until one holds or runs it |
 | `keys/run` | what an action of the Anywhere place does (open one of the three over the stage, or ask the session), refused while a menu or question is up, and the Escape ladder |
@@ -831,11 +851,14 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit` | widgets and machinery that more than one surface draws or follows |
 | `kit/area` | the area an element was laid out in, recorded for whoever turns a pointer's place into a place in it |
 | `kit/button` | what the page's text buttons look like: `.btn` with its primary and small forms, and the `.chipf` choice chip, as pills that tint, lift and press under the pointer |
+| `kit/copy` | a button that hands its text to Rust to copy and says `Copied` for 1200 ms, a second press starting the moment again |
 | `kit/choice` | a row with a box or a ring to tick, `--row-h` tall with the label in the press: controlled, so it asks for the opposite of what it is given and draws what it is given |
+| `kit/dialog` | the parts a dialog is cut from: the head with its close button, the foot bar, the field labels and the `Esc` cap |
 | `kit/diff` | a diff in a virtual list so only the rows on screen are built: the view, its events and the slot under one row, the scroll kept across updates and the cursor brought into view; it reports a press and sends no call, and serves review, history, the patch block and the Code stage |
 | `kit/diff/fold` | the lines between hunks the diff did not carry, and the buttons that ask for them |
 | `kit/diff/gutter` | the columns before a line's code: the number each half carries, the marker, and a unified line's pinned to the pane's left edge while the code scrolls sideways under them |
 | `kit/diff/items` | what the list holds, in order: every row, and the comment box among them under the row it is about |
+| `kit/diff/menu` | the menu a right-click on selected text in the diff opens, `Copy` under `Selection`, and no menu with nothing selected |
 | `kit/diff/measure` | how wide and how tall the rows are: the cells of the widest line, the cells a split half wraps at in this pane, each row's height told to the list up front, and the width every row carries so a unified diff is one column as wide as its longest line |
 | `kit/diff/paint` | a side's text painted with its highlight colours and its selection, and kept so a pointer's place can be read back from what is on screen |
 | `kit/diff/pan` | moving the diff sideways without the scrollbar: the arrow keys' nudge and a held middle button |
@@ -868,10 +891,12 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/section` | rows listed under headings: grouped in the order a heading was first met, and the heading with its count |
 | `kit/segment` | a choice of a few drawn as pills in one rounded track: the Git tabs, the side and the layout |
 | `kit/split` | a resizable pair: a column at the width its sash gives it, the width reported once on release, a double-click giving the usual width back, and the drag held while it lasts |
+| `kit/selected` | how a list row in a dialog says it is selected: the fill and the theme's mark |
 | `kit/spots` | the places a carried pane can be dropped, published by the views that draw them (the grid's cells and stage, the rail's checkout rows), the checkout lit as a target, and whether a pane is carried |
 | `kit/status_dot` | what a pane's or console's status looks like with no word: a turning ring, a filled dot, a dash, a hollow ring |
 | `kit/strip` | the page's one tab strip, drawn once for the docks, the console and a split side: the bar, the tab chip with its selected and hover states, the close, the menu button |
 | `kit/tip` | a hover tooltip for a control, built one way so no surface builds the kit's |
+| `kit/toggle` | the page's switch: 40 by 24, a pill and a knob, controlled, drawing the state it is given and asking for the opposite |
 | `layout` | where the stage and the docks sit around each other, and how a panel is moved between them |
 | `layout/carry` | a pane carried by its header or from the rail: what is carried, and the handle any view presses it through into the work area's one drag |
 | `layout/carry/landing` | where a carried pane would land if let go at a point (another checkout's row, a cell's zone, the stage with no cell under it, or nowhere) and the call that makes it so |
@@ -927,16 +952,40 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `review/stage/strip` | the strip above the tab: the branch, the tabs, the files' count, the refresh and close buttons, and the filter field while History is the tab |
 | `style` | how a page token lands on an element: its type (weight, size and line height) as one call |
 | `system` | what the GPUI window asks of the machine it runs on |
+| `settings` | what the person chose for the window: the look it puts on, the dialog that changes it, and the fonts the machine offers |
+| `settings/font_picker` | a font field: a family typed or picked from the installed ones, drawn over core's list, each row in its own face, the keys of the palette answered while it is up |
+| `settings/installed_fonts` | which families this machine has, read off the UI thread from the text system by every name, monospaced when a narrow and a wide letter are one advance wide, the window's own faces left out |
+| `settings/look` | the look put on the window as the session sends it, whether the dialog is open or not: the theme and fonts in the token space, the backdrop, the zoom as the rem size, the frame's border; and the system going dark or light |
+| `settings/preferences` | the Settings sheet: six sections down one scrolling page with a nav, every control sending its choice at once and drawing what the session says back |
+| `settings/preferences/appearance` | the Appearance section: the theme cards, following the system, the opacity slider, what shows through, the two fonts and the notes under them |
+| `settings/preferences/cards` | the theme cards: a picture of each theme in its own colours, its name, the one drawn lit with a tick |
+| `settings/preferences/nav` | the six sections and the column that names them, the one in view lit |
+| `settings/preferences/plain` | the five sections after Appearance, and the segment and the switch every choice of a few is drawn as |
+| `settings/preferences/rows` | what a row of the sheet and a section of rows are made of |
+| `system/alerts` | the alerts a session raised handed to the operating system's notifications from the window, each its own, a click activating the window |
+| `system/chime` | the chime out of the platform's own player (`PlaySoundW`, `afplay`, `pw-play`/`paplay`/`aplay`), with no audio crate, best effort |
 | `system/clipboard` | the system clipboard through arboard, as `effects::Clipboard`: text, a picture encoded as a PNG, and the files a file manager copied |
 | `theme` | the one design token space the window draws with: every colour (the palette layer, the sixteen ANSI colours and the semantic roles) and every number (type, spacing, radii, sizes, shadows, focus, motion, faces) under the stylesheet's own names, the active one a global that every view reads |
+| `theme/choice` | which theme a choice draws, Mocha or Latte following the system, and the token space of it at the opacity chosen; every theme held to the stylesheet it was written from |
 | `theme/colour` | what a colour is in a theme's data (`#rrggbb` or `rgba()`) and the two mixes the page's `color-mix` formulas are made of |
 | `theme/define` | what a theme is as data: its base palette, its sixteen ANSI colours and the overrides it lays over `:root`, each named for the variable it sets |
 | `theme/derive` | how a theme's palette and overrides become the whole token space by the page's formulas: the palette aliased to the semantic roles, the overrides laid over them and `:root`'s scale, the remaining roles mixed from the result |
 | `theme/kit` | how the token space becomes gpui-kit's theme, the one place the kit's roles are filled, and how installing another set of tokens switches the theme |
-| `theme/ledger` | the Ledger theme as data, the one defined so far: `:root[data-theme='ledger']`'s palette, ANSI colours and shape |
 | `theme/scale` | the page's scale as plain numbers (type, spacing, radii, sizes, shadows, focus, motion, the mix shares) with `:root`'s values, and how a theme's overrides change them |
-| `theme/stylesheet` | the check that holds Ledger's token space to the stylesheet: its palette, ANSI colours, scale and derived roles read back from `style.css` |
+| `theme/see` | what shows through the window: the background-opacity setting as the alpha of the three large fills and of nothing else |
+| `theme/stylesheet` | the check that holds Ledger's token space, and the reader every theme's check uses, to the stylesheet: its palette, ANSI colours, scale and derived roles read back from `style.css` |
+| `theme/themes` | every theme the window ships, as data in the one token space |
+| `theme/themes/carbon` | IBM Carbon's Gray 100 as data: neutral greys, Carbon blue, square and sober |
+| `theme/themes/catppuccin` | the four Catppuccin flavours as data, Mocha the default, Latte the one light theme: the palette layer alone over `:root`'s shape |
+| `theme/themes/flexoki` | Flexoki's dark as data: warm ink on black paper |
+| `theme/themes/kanagawa` | Kanagawa Wave as data: sumi ink greys and a wave-blue selection |
+| `theme/themes/ledger` | Ledger as data: near-black greys, one indigo, hairlines at a single step |
+| `theme/themes/night` | Argus Night as data: a cool navy ground, translucent lines and one periwinkle accent |
+| `theme/themes/nord` | Nord as data: Polar Night greys and Frost blue |
+| `theme/themes/radix` | Radix Colors' slate and blue as data |
+| `theme/themes/rose_pine` | Rose Pine as data: dusky violet surfaces and rose as the one warm accent |
 | `window` | how the frameless main window opens around a view: the application with its assets, the window's options, and the stage put under the header |
+| `window/frame` | what the platform window itself is told about the look: the DWM border colour and the tint Mica takes |
 | `window/quit` | ending what ran for the window when the last one closes, and answering a close of the only window by quitting |
 
 ## Views

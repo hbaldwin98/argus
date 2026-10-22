@@ -12,7 +12,7 @@ use argus_desktop_core::keys::keymap::Action;
 use argus_desktop_core::panes::console::ConsoleGesture;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Role};
+use gpui_kit::{div, prelude::*, Role};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Link;
@@ -21,6 +21,7 @@ use crate::kit::icon_button::icon_button;
 use crate::kit::icons::Glyph;
 use crate::kit::tip::tip;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// What the status row shows (SHELL-FOOT-3): the dot says connecting and
@@ -74,9 +75,9 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
     let connected = matches!(link, Link::Connected { .. });
     let mut rows = v_flex()
         .flex_shrink_0()
-        .gap(px(tokens.sp_4))
-        .px(px(if icons { 0.0 } else { tokens.sp_16 }))
-        .py(px(tokens.sp_8))
+        .gap(rem(tokens.sp_4))
+        .px(rem(if icons { 0.0 } else { tokens.sp_16 }))
+        .py(rem(tokens.sp_8))
         .when(icons, |rows| rows.items_center())
         .border_t_1()
         .border_color(tokens.line)
@@ -84,7 +85,7 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
         .text_color(tokens.fg_muted);
     // A narrow rail has no room for words: the tallies and the alarm are put away.
     if !icons && connected && (needs_you > 0 || working > 0) {
-        let mut tallies = h_flex().min_h(px(tokens.control_h_sm)).gap(px(tokens.sp_8)).items_center();
+        let mut tallies = h_flex().min_h(rem(tokens.control_h_sm)).gap(rem(tokens.sp_8)).items_center();
         if needs_you > 0 {
             let text = format!("▲ {needs_you} need you");
             tallies = tallies.child(
@@ -131,7 +132,7 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
         let words = if console.shown { "Hide the console" } else { "Show the console" };
         icon_button("foot-console", words, console.shown, tokens)
             .tooltip(tip(foot.console_title.clone()))
-            .when(!icons, |chip| chip.px(px(tokens.sp_8)).w_auto().gap(px(tokens.sp_4)))
+            .when(!icons, |chip| chip.px(rem(tokens.sp_8)).w_auto().gap(rem(tokens.sp_4)))
             .relative()
             .on_click(move |_, _, _| {
                 if !held {
@@ -140,7 +141,7 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
             })
             .child(Glyph::Console.at(glyph))
             .when(console.count > 0 && !icons, |chip| {
-                chip.child(div().text_size(px(tokens.fs_xs)).child(console.count.to_string()))
+                chip.child(div().text_size(rem(tokens.fs_xs)).child(console.count.to_string()))
             })
             // `.bar .icount`: a badge on the corner of the tile.
             .when(console.count > 0 && icons, |chip| {
@@ -149,17 +150,17 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
                         .id("foot-console-count")
                         .test_support()
                         .absolute()
-                        .top(px(-tokens.sp_4))
-                        .right(px(-tokens.sp_4))
-                        .min_w(px(tokens.sp_16))
-                        .px(px(tokens.sp_4))
+                        .top(rem(-tokens.sp_4))
+                        .right(rem(-tokens.sp_4))
+                        .min_w(rem(tokens.sp_16))
+                        .px(rem(tokens.sp_4))
                         .border_1()
                         .border_color(tokens.line)
-                        .rounded(px(tokens.r_pill))
+                        .rounded(rem(tokens.r_pill))
                         .bg(tokens.bg_raised)
                         .text_color(tokens.fg_muted)
-                        .text_size(px(tokens.fs_xs))
-                        .line_height(px(tokens.sp_16))
+                        .text_size(rem(tokens.fs_xs))
+                        .line_height(rem(tokens.sp_16))
                         .text_center()
                         .child(console.count.to_string()),
                 )
@@ -190,15 +191,15 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
         .role(Role::Status)
         .test_support()
         .aria_label(named.clone())
-        .gap(px(tokens.sp_8))
+        .gap(rem(tokens.sp_8))
         .items_center()
         .child(dot(link, named, tokens))
         .when(!icons, |status| status.flex_1().min_w_0().child(div().flex_1().min_w_0().truncate().child(said)));
     rows.child(
         div()
             .flex()
-            .when(icons, |row| row.flex_col().items_center().gap(px(tokens.sp_4)))
-            .when(!icons, |row| row.min_h(px(tokens.control_h_sm)).gap(px(tokens.sp_8)).items_center())
+            .when(icons, |row| row.flex_col().items_center().gap(rem(tokens.sp_4)))
+            .when(!icons, |row| row.min_h(rem(tokens.control_h_sm)).gap(rem(tokens.sp_8)).items_center())
             .child(status)
             .child(console_chip)
             .child(chime_button)
@@ -209,7 +210,7 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
 /// Green while connected, the attention colour while it tries, hollow once
 /// stopped: `.dot`, 8px.
 fn dot(link: &Link, named: String, tokens: &Tokens) -> impl IntoElement {
-    let dot = div().id("foot-dot").test_support().aria_label(named).flex_shrink_0().size(px(tokens.dot_lg));
+    let dot = div().id("foot-dot").test_support().aria_label(named).flex_shrink_0().size(rem(tokens.dot_lg));
     match link {
         Link::Connected { .. } => dot.rounded_full().bg(tokens.ok).into_any_element(),
         Link::Connecting | Link::Reconnecting => dot.rounded_full().bg(tokens.attention).into_any_element(),

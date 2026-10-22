@@ -24,6 +24,7 @@ use crate::kit::segment;
 use crate::kit::tip::tip;
 use crate::layout::carry::Carrier;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// What only the window knows of the Views fold: whether it is unfolded, whether it lists the views
@@ -48,7 +49,7 @@ impl RailView {
     pub(super) fn tail(&self, slice: &Slice, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let extensions = (!slice.extensions.is_empty()).then(|| self.extensions(slice, ctx, tokens, cx));
         let saved = (!slice.saved.is_empty()).then(|| self.saved(slice, ctx, tokens, cx));
-        v_flex().gap(px(tokens.sp_2)).children(extensions).children(saved)
+        v_flex().gap(rem(tokens.sp_2)).children(extensions).children(saved)
     }
 
     /// `.nav.nav-fold`: the icon cell holding the chevron, the label, the count.
@@ -56,9 +57,9 @@ impl RailView {
         let fill = tokens.fill;
         line(id, tokens.nav_h, tokens)
             .w_full()
-            .px(px(tokens.sp_8))
-            .gap(px(tokens.sp_12))
-            .text_size(px(tokens.fs_md))
+            .px(rem(tokens.sp_8))
+            .gap(rem(tokens.sp_12))
+            .text_size(rem(tokens.fs_md))
             .text_color(tokens.fg)
             .aria_expanded(listed)
             .aria_label(label)
@@ -69,7 +70,7 @@ impl RailView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .size(px(tokens.nav_icon_cell))
+                    .size(rem(tokens.nav_icon_cell))
                     .flex_shrink_0()
                     .text_color(tokens.fg_muted)
                     .child(if listed { Glyph::Down } else { Glyph::Right }.at(tokens.icon_xs)),
@@ -89,7 +90,7 @@ impl RailView {
         v_flex()
             .child(self.fold("nav-extensions", "Extensions", slice.extensions.len(), listed, ctx, tokens).on_click(cx.listener(move |this, _, _, _| this.ask(held, Call::ToggleExtensions))))
             // `.nav-nest`: the views, 12px in.
-            .when(listed, |col| col.child(v_flex().id("nav-extensions-list").role(Role::Group).aria_label("Extensions").pl(px(tokens.sp_12)).gap(px(tokens.sp_2)).children(views)))
+            .when(listed, |col| col.child(v_flex().id("nav-extensions-list").role(Role::Group).aria_label("Extensions").pl(rem(tokens.sp_12)).gap(rem(tokens.sp_2)).children(views)))
     }
 
     /// An extension's view: its mark, title and the extension it is from, lit while it is on screen.
@@ -100,9 +101,9 @@ impl RailView {
         let (panel, title) = (view.panel.clone(), view.title.clone());
         let row = line(format!("ext-view-{}-{}", view.extension, view.view), tokens.nav_h, tokens)
             .w_full()
-            .px(px(tokens.sp_8))
-            .gap(px(tokens.sp_12))
-            .text_size(px(tokens.fs_md))
+            .px(rem(tokens.sp_8))
+            .gap(rem(tokens.sp_12))
+            .text_size(rem(tokens.fs_md))
             .text_color(tokens.fg)
             .aria_selected(view.on)
             .aria_label(tooltip.clone())
@@ -119,7 +120,7 @@ impl RailView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .size(px(tokens.nav_icon_cell))
+                .size(rem(tokens.nav_icon_cell))
                 .flex_shrink_0()
                 .text_color(if view.on { tokens.accent } else { tokens.fg_muted })
                 .child(Glyph::of_extension(view.icon.as_deref()).at(tokens.icon_glyph)),
@@ -156,9 +157,9 @@ impl RailView {
         let list = rows(&slice.saved, !all, &self.views.unfolded);
         let filter = segment::track("nav-filter", "Which saved views", Role::Group, tokens)
             .self_start()
-            .mx(px(tokens.sp_8))
-            .mt(px(tokens.sp_2))
-            .mb(px(tokens.sp_4))
+            .mx(rem(tokens.sp_8))
+            .mt(rem(tokens.sp_2))
+            .mb(rem(tokens.sp_4))
             .child(self.filter_button("views-here", "Here", !all, tokens, cx))
             .child(self.filter_button("views-all", "All", all, tokens, cx));
         let rows: Vec<AnyElement> = list.iter().map(|row| self.saved_row(row, slice, ctx, tokens, cx)).collect();
@@ -167,7 +168,7 @@ impl RailView {
             .role(Role::Group)
             .aria_label("Saved views")
             // Its rows have no icon, so they start where the fold's label does.
-            .pl(px(tokens.nav_icon_cell + tokens.sp_12))
+            .pl(rem(tokens.nav_icon_cell + tokens.sp_12))
             .max_h(px(ctx.height * tokens.nav_saved_share))
             .overflow_y_scroll()
             .child(filter)
@@ -177,9 +178,9 @@ impl RailView {
     fn filter_button(&self, id: &'static str, label: &'static str, on: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let here = label == "Here";
         segment::pill(id, Role::Button, on, tokens)
-            .h(px(tokens.chip_h))
-            .px(px(tokens.sp_8))
-            .text_size(px(tokens.fs_xs))
+            .h(rem(tokens.chip_h))
+            .px(rem(tokens.sp_8))
+            .text_size(rem(tokens.fs_xs))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.views.all = !here;
                 cx.notify();
@@ -189,13 +190,13 @@ impl RailView {
 
     fn saved_row(&self, row: &Row, slice: &Slice, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
         match row {
-            Row::None => div().id("nav-empty").test_support().aria_label("None about here").px(px(tokens.sp_8)).py(px(tokens.sp_4)).typed(tokens.type_small).text_color(tokens.fg_muted).child("None about here").into_any_element(),
+            Row::None => div().id("nav-empty").test_support().aria_label("None about here").px(rem(tokens.sp_8)).py(rem(tokens.sp_4)).typed(tokens.type_small).text_color(tokens.fg_muted).child("None about here").into_any_element(),
             Row::Group(label) => div()
-                .px(px(tokens.sp_8))
-                .pt(px(tokens.sp_8))
-                .pb(px(tokens.sp_2))
+                .px(rem(tokens.sp_8))
+                .pt(rem(tokens.sp_8))
+                .pb(rem(tokens.sp_2))
                 .text_color(tokens.fg_faint)
-                .text_size(px(tokens.fs_xs))
+                .text_size(rem(tokens.fs_xs))
                 .weighted(tokens.weight_semibold)
                 .child(label.to_uppercase())
                 .into_any_element(),
@@ -217,9 +218,9 @@ impl RailView {
             let words = format!("{} the {inner} {} listed under it", if folded { "Show" } else { "Hide" }, if inner == 1 { "view" } else { "views" });
             line(format!("saved-{id}-twist"), tokens.control_h_sm, tokens)
                 .flex_shrink_0()
-                .px(px(tokens.sp_4))
-                .gap(px(tokens.sp_2))
-                .text_size(px(tokens.fs_xs))
+                .px(rem(tokens.sp_4))
+                .gap(rem(tokens.sp_2))
+                .text_size(rem(tokens.fs_xs))
                 .text_color(tokens.fg_muted)
                 .aria_expanded(!folded)
                 .aria_label(words.clone())
@@ -235,14 +236,14 @@ impl RailView {
         h_flex()
             .items_center()
             .min_w_0()
-            .pl(px(tokens.sp_12 * depth as f32))
+            .pl(rem(tokens.sp_12 * depth as f32))
             .child(
                 line(format!("saved-{}", view.id), tokens.nav_h, tokens)
                     .flex_1()
                     .min_w_0()
-                    .px(px(tokens.sp_8))
-                    .gap(px(tokens.sp_12))
-                    .text_size(px(tokens.fs_md))
+                    .px(rem(tokens.sp_8))
+                    .gap(rem(tokens.sp_12))
+                    .text_size(rem(tokens.fs_md))
                     .text_color(tokens.fg)
                     .aria_selected(lit)
                     .aria_label(tooltip.clone())
@@ -256,7 +257,7 @@ impl RailView {
                     )
                     .child(div().flex_1().min_w_0().truncate().child(label.to_owned()))
                     .children(view.stale.then(|| {
-                        div().id(format!("saved-{id}-stale")).test_support().role(Role::Image).aria_label("stale").size(px(tokens.dot_md)).flex_shrink_0().rounded_full().bg(tokens.attention)
+                        div().id(format!("saved-{id}-stale")).test_support().role(Role::Image).aria_label("stale").size(rem(tokens.dot_md)).flex_shrink_0().rounded_full().bg(tokens.attention)
                     })),
             )
             .children(twist)

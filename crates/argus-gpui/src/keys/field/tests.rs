@@ -59,7 +59,7 @@ fn a_field_that_is_dropped_no_longer_hears_keys(cx: &mut TestAppContext) {
     assert_eq!(asked(&opened), ["ShowComposer { open: true }"], "ctrl-n is the stage's Compose again");
 }
 
-/// SHELL-KEYS-14: the palette's stand-in holds the keys while it is open, so a stage digit pressed
+/// SHELL-KEYS-14: the palette's search field holds the keys while it is open, so a stage digit pressed
 /// to search is not the stage switch under it.
 #[gpui_kit::test]
 fn a_digit_pressed_while_the_palette_is_open_does_not_switch_the_stage(cx: &mut TestAppContext) {
@@ -68,6 +68,6 @@ fn a_digit_pressed_while_the_palette_is_open_does_not_switch_the_stage(cx: &mut 
     press(cx, &opened, "ctrl-k");
     assert_eq!(overlays(cx), [Overlay::Palette]);
     press(cx, &opened, "3");
-    assert!(asked(&opened).is_empty(), "the digit reached the stage: {:?}", asked(&opened));
+    assert_eq!(asked(&opened), ["Palette { open: true }"], "the digit reached the stage, or the session was told something else");
     assert_eq!(overlays(cx), [Overlay::Palette], "the palette is still the only overlay");
 }

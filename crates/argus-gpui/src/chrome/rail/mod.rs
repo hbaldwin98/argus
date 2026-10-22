@@ -23,6 +23,7 @@ pub mod row;
 pub mod scroll;
 pub mod slice;
 pub mod stages;
+pub mod switcher;
 pub mod start;
 pub mod status;
 pub mod tail;
@@ -35,7 +36,7 @@ use argus_desktop_core::connection::page::Stage;
 use argus_desktop_core::keys::keymap::Layer;
 use argus_desktop_core::layout::dragged_width::{rail_drawn, rail_icons, RAIL, RAIL_FOLDED};
 use gpui_kit::component::{v_flex, ActiveTheme as _};
-use gpui_kit::{prelude::*, px, Bounds, Context, Entity, FocusHandle, Pixels, ScrollHandle, Subscription, TestSupportExt as _, Window};
+use gpui_kit::{prelude::*, Bounds, Context, Entity, FocusHandle, Pixels, ScrollHandle, Subscription, TestSupportExt as _, Window};
 
 use crate::chrome::foot::foot;
 use crate::connection::caller::Caller;
@@ -43,6 +44,7 @@ use crate::connection::heard::Heard;
 use crate::kit::split::Split;
 use crate::keys::layer::Layers;
 use crate::layout::holders::Holder;
+use crate::theme::scale::{css, rem};
 use crate::theme::Tokens;
 use keys::{RailKeys, StartKeys};
 use row::Ctx;
@@ -155,9 +157,11 @@ impl Render for RailView {
         let tokens = *Tokens::global(cx);
         let slice = self.slice.clone();
         let viewport = window.viewport_size();
-        let narrow = crate::chrome::stage::route::narrow(f32::from(viewport.width), tokens.narrow_below);
+        // The page's pixels: a window zoomed in is narrower than it is wide.
+        let wide = css(viewport.width, window.rem_size());
+        let narrow = crate::chrome::stage::route::narrow(wide, tokens.narrow_below);
         // A window this narrow folds the rail whatever it was dragged to, and its sash goes with its words.
-        let width = rail_drawn(Some(self.split.read(cx).width().round() as u32), tokens.rail_w, f32::from(viewport.width), tokens.narrow_below);
+        let width = rail_drawn(Some(self.split.read(cx).width().round() as u32), tokens.rail_w, wide, tokens.narrow_below);
         let icons = rail_icons(width);
         let ctx = Ctx {
             held: slice.held,
@@ -180,14 +184,14 @@ impl Render for RailView {
             .track_focus(&self.focus)
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.release(window, cx)))
             .relative()
-            .w(px(width))
+            .w(rem(width))
             .flex_shrink_0()
             .h_full()
-            .bg(tokens.bg_chrome)
+            .bg(tokens.see_chrome)
             .border_r_1()
             .border_color(tokens.line)
             .text_color(tokens.fg_muted)
-            .text_size(px(tokens.fs_md))
+            .text_size(rem(tokens.fs_md))
             .child(self.brand(&rail, ctx, &tokens, cx))
             .child(body)
             // A fullscreen console puts the nav and the foot away and keeps the projects.
@@ -195,7 +199,7 @@ impl Render for RailView {
             // The edge: dragged to size the rail, a double-click gives back the usual width. A narrow
             // window has no room to size it.
             .when(!narrow, |column| {
-                column.child(gpui_kit::div().absolute().top_0().bottom_0().right_0().w(px(tokens.sp_6)).child(self.split.clone()))
+                column.child(gpui_kit::div().absolute().top_0().bottom_0().right_0().w(rem(tokens.sp_6)).child(self.split.clone()))
             })
     }
 }

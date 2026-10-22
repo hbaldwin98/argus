@@ -7,7 +7,7 @@
 //! asset source has to know them.
 
 use gpui_kit::component::Icon;
-use gpui_kit::px;
+use crate::theme::scale::rem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Glyph {
@@ -65,6 +65,14 @@ pub enum Glyph {
     Puzzle,
     /// An arrow out of a box: open as a page.
     External,
+    /// The palette's mark for the shortcuts, an arrow up for the folder list, the warning triangle and the bin.
+    Keyboard,
+    Up,
+    Warn,
+    Trash,
+    /// A tick (a chosen card, a saved dialog) and the two panes of a split (the Views settings).
+    Check,
+    Split,
 }
 
 impl Glyph {
@@ -113,13 +121,19 @@ impl Glyph {
             Glyph::Rocket => include_bytes!("../../assets/icons/rocket.svg"),
             Glyph::Puzzle => include_bytes!("../../assets/icons/puzzle.svg"),
             Glyph::External => include_bytes!("../../assets/icons/external.svg"),
+            Glyph::Keyboard => include_bytes!("../../assets/icons/keyboard.svg"),
+            Glyph::Up => include_bytes!("../../assets/icons/up.svg"),
+            Glyph::Warn => include_bytes!("../../assets/icons/warn.svg"),
+            Glyph::Trash => include_bytes!("../../assets/icons/trash.svg"),
+            Glyph::Check => include_bytes!("../../assets/icons/check.svg"),
+            Glyph::Split => include_bytes!("../../assets/icons/split.svg"),
         }
     }
 
     /// The glyph at `size` CSS pixels, in the text colour it is put under.
     pub fn at(self, size: f32) -> Icon {
         use gpui_kit::prelude::*;
-        Icon::default().data(self.bytes()).size(px(size))
+        Icon::default().data(self.bytes()).size(rem(size))
     }
 
     /// The mark an extension's view names (`ExtTab::icon`); a name the window does not draw, and an
@@ -209,6 +223,12 @@ mod tests {
             Glyph::List,
             Glyph::Rocket,
             Glyph::Puzzle,
+            Glyph::Keyboard,
+            Glyph::Up,
+            Glyph::Warn,
+            Glyph::Trash,
+            Glyph::Check,
+            Glyph::Split,
         ] {
             let text = std::str::from_utf8(glyph.bytes()).expect("utf-8");
             assert!(text.starts_with("<svg"), "{glyph:?}");

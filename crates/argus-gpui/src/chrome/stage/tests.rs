@@ -1,6 +1,7 @@
 use argus_desktop_core::connection::page::{
     Checkout, Connection, Event, Project, Rail, Repository, RunningPane, Shown, Stage, Status,
 };
+use argus_desktop_core::chrome::add_project::AddProjectPage;
 use argus_desktop_core::layout::docks::{DockPage, DockTab, DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
 use gpui_kit::test::TestWindowExt as _;
@@ -90,6 +91,7 @@ fn click(cx: &mut TestAppContext, opened: &Opened, id: impl Into<gpui_kit::Eleme
 #[gpui_kit::test]
 fn waiting_on_the_daemon_offers_the_settings_for_this_machine(cx: &mut TestAppContext) {
     let opened = open(cx);
+    hear(cx, &opened, vec![crate::keys::root::tests::settings_event()]);
     hear(cx, &opened, vec![status(Connection::Connecting, None, Some("spawn failed"))]);
     assert!(has(cx, &opened, "empty"));
     assert!(has(cx, &opened, "connecting-detail"), "the last failed try's words are shown");
@@ -109,13 +111,15 @@ fn waiting_on_a_remote_daemon_offers_the_way_back_to_this_machine(cx: &mut TestA
 }
 
 #[gpui_kit::test]
-fn a_tree_with_no_project_offers_to_add_one_with_the_stand_in_and_asks_nothing(cx: &mut TestAppContext) {
+fn a_tree_with_no_project_offers_to_add_one_by_asking_the_session_for_the_dialog(cx: &mut TestAppContext) {
     let opened = open(cx);
     hear(cx, &opened, vec![status(Connection::Connected, None, None), Event::Rail(Box::new(Rail { loaded: true, ..Rail::default() }))]);
     assert!(!has(cx, &opened, "connecting-settings"));
     click(cx, &opened, "add-project");
+    assert_eq!(asked(&opened), ["OpenAddProject"]);
+    assert!(overlays(cx).is_empty(), "the dialog comes when the session says it is open, not on the press");
+    hear(cx, &opened, vec![Event::AddProject(Box::new(AddProjectPage { open: true, ..AddProjectPage::default() }))]);
     assert_eq!(overlays(cx), [Overlay::AddProject]);
-    assert!(asked(&opened).is_empty(), "{:?}", asked(&opened));
 }
 
 #[gpui_kit::test]

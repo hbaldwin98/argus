@@ -1,4 +1,4 @@
-//! The Ledger theme as data: the one theme defined so far, `:root[data-theme='ledger']` of the stylesheet.
+//! Ledger as data: `:root[data-theme='ledger']` of the stylesheet.
 //!
 //! Near-black greys, one indigo, hairlines at a single step (after Linear).
 //! Its palette and `--ansi-N` are the blocks of the same name; its sets are
@@ -6,11 +6,11 @@
 //! (Ledger sits between the stock weights, 590 and 510, which the variable
 //! Inter draws as itself), `--shadow-pop` and the hairline selection mark.
 
-use super::colour::Colour;
-use super::define::{Mode, Palette, Set, Theme};
-use super::derive;
-use super::scale::{Layer, Mark, Type};
-use super::Tokens;
+use crate::theme::colour::Colour;
+use crate::theme::define::{Mode, Palette, Set, Theme};
+use crate::theme::derive;
+use crate::theme::scale::{Layer, Mark, Type};
+use crate::theme::Tokens;
 
 const fn hex(rgb: u32) -> Colour {
     Colour::hex(rgb)
@@ -78,7 +78,7 @@ pub const THEME: Theme = Theme {
     ],
 };
 
-/// Ledger's token space.
+/// Ledger's token space: the fixed theme the tests of a view's look are written in.
 pub fn tokens() -> Tokens {
     derive::tokens(&THEME)
 }

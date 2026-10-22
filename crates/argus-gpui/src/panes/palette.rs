@@ -125,7 +125,7 @@ pub fn readable(fore: Rgb, back: Rgb) -> Rgb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::ledger;
+    use crate::theme::themes::ledger;
 
     const fn ansi(i: u32) -> u32 {
         1 << 24 | i

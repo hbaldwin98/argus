@@ -31,6 +31,7 @@ use crate::layout::dock_menu;
 use crate::layout::panel;
 use crate::layout::work::{Held, WorkView};
 use crate::style::Typed as _;
+use crate::theme::scale::{pixels, rem, zoom};
 use crate::theme::Tokens;
 
 /// What a press on a frame holds.
@@ -43,9 +44,10 @@ pub enum Grip {
 }
 
 /// The box a pointer holding `grip` since `from` has made of `start`, as it is drawn in an area
-/// `area` big: the travel in whole pixels (the box is Rust's whole pixels), then the core's rules.
-pub fn held(grip: Grip, start: FloatBounds, from: Point<Pixels>, at: Point<Pixels>, area: (u32, u32)) -> FloatBounds {
-    let (dx, dy) = ((at.x - from.x).as_f32().round() as i32, (at.y - from.y).as_f32().round() as i32);
+/// `area` big (in the page's pixels, as the box is): the travel in whole pixels, which is the pointer's
+/// divided by the `zoom`, then the core's rules.
+pub fn held(grip: Grip, start: FloatBounds, from: Point<Pixels>, at: Point<Pixels>, area: (u32, u32), zoom: f32) -> FloatBounds {
+    let (dx, dy) = (((at.x - from.x).as_f32() / zoom).round() as i32, ((at.y - from.y).as_f32() / zoom).round() as i32);
     let made = match grip {
         Grip::Move => start.moved(dx, dy),
         Grip::Size => start.resized(dx, dy),
@@ -81,7 +83,8 @@ impl FloatsView {
     fn area(&self, window: &Window, cx: &Context<Self>) -> (u32, u32) {
         let measured = self.work.upgrade().map(|work| work.read(cx).area().size).filter(|size| size.width > px(0.0));
         let size = measured.unwrap_or_else(|| window.viewport_size());
-        (size.width.as_f32().max(0.0) as u32, size.height.as_f32().max(0.0) as u32)
+        let zoom = zoom(window.rem_size());
+        ((size.width.as_f32() / zoom).max(0.0) as u32, (size.height.as_f32() / zoom).max(0.0) as u32)
     }
 
     fn press(&self, at: Point<Pixels>, held: Held, cx: &mut Context<Self>) {
@@ -103,7 +106,7 @@ impl FloatsView {
         strip::bar(tokens)
             .id(SharedString::from(format!("float-head-{panel}")))
             .test_support()
-            .pl(px(tokens.sp_12))
+            .pl(rem(tokens.sp_12))
             .typed(tokens.type_small)
             .weighted(tokens.weight_semibold)
             .text_color(tokens.fg)
@@ -120,7 +123,7 @@ impl FloatsView {
                 strip::menu_button(SharedString::from(format!("float-menu-{panel}")), Glyph::Down, 15.0, tokens, cx)
                     .tooltip("Move to another dock")
                     .disabled(held)
-                    .dropdown_menu(move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, menu_tokens, cx)),
+                    .dropdown_menu(move |menu, window, cx| dock_menu::build(menu, &entries, &caller, &heard, menu_tokens, window, cx)),
             ))
             .child(keep(div()).child(
                 strip::menu_button(SharedString::from(format!("float-close-{gone}")), Glyph::Close, 12.0, tokens, cx)
@@ -141,8 +144,8 @@ impl FloatsView {
             .absolute()
             .right_0()
             .bottom_0()
-            .w(px(size))
-            .h(px(size))
+            .w(rem(size))
+            .h(rem(size))
             .cursor(CursorStyle::ResizeUpLeftDownRight)
             .on_mouse_down(
                 MouseButton::Left,
@@ -155,10 +158,12 @@ impl FloatsView {
                 canvas(
                     |_, _, _| (),
                     move |area: Bounds<Pixels>, _, window, _| {
+                        let (rem_size, edge) = (window.rem_size(), pixels(1.0, window.rem_size()));
                         for inset in [4.0, 8.0] {
-                            let mut stroke = PathBuilder::stroke(px(1.0));
-                            stroke.move_to(point(area.right() - px(1.0), area.bottom() - px(inset)));
-                            stroke.line_to(point(area.right() - px(inset), area.bottom() - px(1.0)));
+                            let inset = pixels(inset, rem_size);
+                            let mut stroke = PathBuilder::stroke(edge);
+                            stroke.move_to(point(area.right() - edge, area.bottom() - inset));
+                            stroke.line_to(point(area.right() - inset, area.bottom() - edge));
                             if let Ok(path) = stroke.build() {
                                 window.paint_path(path, line);
                             }
@@ -195,15 +200,15 @@ impl Render for FloatsView {
                 .aria_label(SharedString::from(float.title.clone()))
                 .occlude()
                 .absolute()
-                .left(px(bounds.x as f32))
-                .top(px(bounds.y as f32))
-                .w(px(bounds.width as f32))
-                .h(px(bounds.height as f32))
+                .left(rem(bounds.x as f32))
+                .top(rem(bounds.y as f32))
+                .w(rem(bounds.width as f32))
+                .h(rem(bounds.height as f32))
                 .overflow_hidden()
-                .rounded(px(tokens.r_md))
+                .rounded(rem(tokens.r_md))
                 .border_1()
                 .border_color(tokens.line_strong)
-                .bg(tokens.bg_surface)
+                .bg(tokens.see_surface)
                 .shadow(tokens.shadow_pop())
                 .when(held, |frame| frame.opacity(tokens.opacity_held))
                 // Any press on the frame brings it in front, buttons and body included, before what

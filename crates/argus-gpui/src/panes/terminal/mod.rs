@@ -46,9 +46,11 @@ use crate::kit::ghosts::ghosts;
 use crate::keys::field::{Fields, Registered};
 use crate::keys::layer::Verdict;
 use crate::panes::element::TerminalElement;
+use crate::kit::fonts;
 use crate::panes::palette::Palette;
 use crate::panes::screen::{Cursor, Screen};
 use crate::panes::size_label::SizeLabel;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 use skeleton::Skeleton;
 
@@ -314,6 +316,7 @@ impl Render for Terminal {
             screen,
             palette: self.palette.clone(),
             family: cx.theme().mono_font_family.clone(),
+            behind: fonts::mono_behind(tokens.font_mono_bundled),
             focused,
             selection,
             share: tokens.share_term_selection,
@@ -331,8 +334,8 @@ impl Render for Terminal {
             .track_focus(&self.focus)
             .relative()
             .size_full()
-            .bg(tokens.bg_sunken)
-            .p(px(tokens.sp_8))
+            .bg(tokens.see_sunken)
+            .p(rem(tokens.sp_8))
             // A press with any button on the pane gives it the keys, or asks for them
             // (SHELL-INPUT-5, -9); only the start of a selection is the left button's.
             .on_any_mouse_down(cx.listener(|this, event, window, cx| this.pressed(event, window, cx)))
@@ -342,7 +345,7 @@ impl Render for Terminal {
             .child(element)
             // Bars stand in for a pane until its first screen arrives.
             .when(self.skeleton.shown(), |this| {
-                this.child(div().absolute().inset_0().pt(px(tokens.sp_4)).child(ghosts(
+                this.child(div().absolute().inset_0().pt(rem(tokens.sp_4)).child(ghosts(
                     "terminal-skeleton",
                     skeleton::BARS,
                     &tokens,

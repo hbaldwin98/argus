@@ -8,13 +8,14 @@
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::radio::Radio;
 use gpui_kit::component::{h_flex, Disableable as _};
-use gpui_kit::{prelude::*, px, App, ElementId, SharedString, Window};
+use gpui_kit::{prelude::*, App, ElementId, SharedString, Window};
 
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The row around a control, `--row-h` tall at least.
 fn row(tokens: &Tokens) -> gpui_kit::Div {
-    h_flex().min_h(px(tokens.row_h)).items_center().gap(px(tokens.sp_8))
+    h_flex().min_h(rem(tokens.row_h)).items_center().gap(rem(tokens.sp_8))
 }
 
 /// `.check`: a box and its label. `off` is a row that cannot be ticked now. `asked` is told the

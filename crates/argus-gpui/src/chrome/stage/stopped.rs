@@ -10,7 +10,7 @@
 use argus_desktop_core::connection::page::Call;
 use gpui_kit::component::dialog::Dialog;
 use gpui_kit::component::{h_flex, v_flex};
-use gpui_kit::{div, prelude::*, px, App, SharedString, Window};
+use gpui_kit::{div, prelude::*, App, SharedString, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Link;
@@ -19,6 +19,7 @@ use crate::kit::icons::Glyph;
 use crate::kit::overlay::host::{Dismiss, Overlays, Spec};
 use crate::kit::overlay::kind::Overlay;
 use crate::style::Typed as _;
+use crate::theme::scale::{pixels, rem};
 use crate::theme::Tokens;
 
 /// Whether the card is up for `link`: only a stopped daemon has it.
@@ -35,15 +36,15 @@ pub fn follow(link: &Link, caller: &Caller, window: &mut Window, cx: &mut App) {
         let caller = caller.clone();
         host.open(
             Spec::new(Overlay::Stopped).dismissed(Dismiss::Never),
-            move |dialog: Dialog, _, cx, _| {
+            move |dialog: Dialog, window, cx, _| {
                 let tokens = *Tokens::global(cx);
                 let caller = caller.clone();
-                dialog.w(px(tokens.dialog_w_sm)).child(
+                dialog.w(pixels(tokens.dialog_w_sm, window.rem_size())).child(
                     v_flex()
                         .id("stopped")
                         .items_center()
-                        .gap(px(tokens.sp_12))
-                        .pt(px(tokens.sp_16))
+                        .gap(rem(tokens.sp_12))
+                        .pt(rem(tokens.sp_16))
                         .text_center()
                         .child(div().text_color(tokens.fg_muted).child(Glyph::Server.at(tokens.stopped_icon)))
                         .child(div().typed(tokens.type_title).child("argusd was stopped"))
@@ -58,7 +59,7 @@ pub fn follow(link: &Link, caller: &Caller, window: &mut Window, cx: &mut App) {
                         )
                         .child(
                             button("reconnect", "Reconnect", Look::Primary, false, &tokens)
-                                .mt(px(tokens.sp_8))
+                                .mt(rem(tokens.sp_8))
                                 .child("Reconnect")
                                 .on_click(move |_, _, _| caller.call(Call::Reconnect)),
                         ),

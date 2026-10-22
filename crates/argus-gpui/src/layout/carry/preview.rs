@@ -8,10 +8,11 @@
 use argus_desktop_core::panes::shown::workspace_grid::zones::zone_rect;
 use argus_desktop_core::panes::shown::workspace_grid::Zone;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{anchored, deferred, div, point, prelude::*, px, AnyElement, Bounds, Pixels, Point, SharedString};
+use gpui_kit::{anchored, deferred, div, point, prelude::*, AnyElement, Bounds, Pixels, Point, SharedString};
 
 use super::landing::Landing;
 use crate::kit::spots::{Spot, Spots};
+use crate::theme::scale::{pixels, rem};
 use crate::theme::Tokens;
 
 /// How far the name sits from the pointer, so it does not hide what is dropped on.
@@ -29,17 +30,17 @@ pub fn zone_words(zone: Zone) -> &'static str {
 }
 
 /// The pane's name beside the pointer.
-pub fn ghost(title: &str, at: Point<Pixels>, tokens: &Tokens) -> AnyElement {
+pub fn ghost(title: &str, at: Point<Pixels>, rem_size: Pixels, tokens: &Tokens) -> AnyElement {
     let title = SharedString::from(title.to_owned());
     deferred(
-        anchored().position(at + point(px(OFFSET), px(OFFSET))).snap_to_window().child(
+        anchored().position(at + point(pixels(OFFSET, rem_size), pixels(OFFSET, rem_size))).snap_to_window().child(
             div()
                 .id("drag-ghost")
                 .test_support()
                 .aria_label(title.clone())
                 .px_2()
                 .py_1()
-                .rounded(px(tokens.r_sm))
+                .rounded(rem(tokens.r_sm))
                 .border_1()
                 .border_color(tokens.line_strong)
                 .bg(tokens.bg_surface)

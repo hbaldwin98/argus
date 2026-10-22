@@ -80,13 +80,32 @@ pub fn act(
         let msgs = session.note(said);
         (outlets.send)(msgs);
     }
-    let events = session.events(now);
+    let mut events = session.events(now);
+    write_osc52(&mut events, outlets.clipboard);
     (outlets.publish)(events);
     if let Some(settings) = session.take_settings() {
         (outlets.save)(&settings);
     }
     for alert in session.take_alerts() {
         (outlets.alert)(&alert);
+    }
+}
+
+/// Writes what a pane's child put on the clipboard (OSC 52) through the owner's clipboard, the one
+/// writer every copy goes through, and takes the events out: a page that wrote it too would copy
+/// twice, and through a grant the page is never given. A refusal says the same words as any other
+/// copy's, after the events that were already heard.
+fn write_osc52(events: &mut Vec<Event>, clipboard: &dyn Clipboard) {
+    let mut refused = None;
+    events.retain(|event| {
+        let Event::Clipboard { text } = event else { return true };
+        if let Err(why) = clipboard.write(text) {
+            refused = Some(why);
+        }
+        false
+    });
+    if let Some(why) = refused {
+        events.push(Event::Notice { text: format!("could not copy: {why}") });
     }
 }
 
@@ -139,7 +158,9 @@ pub fn paste(session: &mut Session, pasting: Pasting) -> Vec<ClientMsg> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argus_protocol::PaneId;
+    use crate::connection::page::Call;
+    use crate::fixtures::{checkout, pane, project, repository};
+    use argus_protocol::{Hello, PaneId, PaneKind, PaneStatus, ServerMsg};
     use std::cell::RefCell;
 
     /// Records what it is asked and holds what it is told to.
@@ -312,5 +333,80 @@ mod tests {
         let mut session = Session::new(Settings::default());
         assert!(paste(&mut session, Pasting::Text("hello".into())).is_empty());
         assert!(paste(&mut session, Pasting::File { name: "a.png".into(), bytes: vec![1] }).is_empty());
+    }
+
+    // SHELL-SEAM-11, SHELL-SYSTEM-8: the one clipboard writer takes a pane child's OSC 52 too.
+    #[test]
+    fn what_a_pane_child_put_on_the_clipboard_is_written_by_the_owner_and_not_heard_again() {
+        let clipboard = Fake::default();
+        let mut events = vec![
+            Event::Notice { text: "kept".into() },
+            Event::Clipboard { text: "from the child".into() },
+            Event::Chime,
+        ];
+        write_osc52(&mut events, &clipboard);
+        assert_eq!(*clipboard.calls.borrow(), ["write from the child"]);
+        assert!(matches!(events.as_slice(), [Event::Notice { .. }, Event::Chime]), "{events:?}");
+    }
+
+    /// Runs `act` with a session that has heard `text` copied by the shown pane's child, and
+    /// returns what `publish` was given.
+    fn act_on_osc_52(clipboard: &Fake, text: &str) -> Vec<Event> {
+        let heard = RefCell::new(Vec::new());
+        let mut send = |_: Vec<ClientMsg>| {};
+        let mut publish = |events: Vec<Event>| heard.borrow_mut().extend(events);
+        let mut alert = |_: &Alert| {};
+        let mut open = |_: &str| Ok(());
+        let mut save = |_: &Settings| {};
+        let mut session = Session::new(Settings::default());
+        let tree = vec![project(1, "src", vec![repository(10, "argus", None, vec![checkout(
+            100,
+            "main",
+            true,
+            vec![pane(1, PaneKind::Shell, "zsh", PaneStatus::Idle)],
+        )])])];
+        session.connected(Some(Hello::this_build()), None, vec![ServerMsg::Tree(tree)]);
+        session.call(Call::Select { pane: 1 });
+        session.events(0);
+        act(
+            &mut session,
+            0,
+            |s| {
+                s.receive(ServerMsg::Clipboard { pane: PaneId(1), text: text.into() });
+                Vec::new()
+            },
+            &mut Outlets { send: &mut send, publish: &mut publish, alert: &mut alert, open: &mut open, save: &mut save, clipboard },
+        );
+        heard.into_inner()
+    }
+
+    // SHELL-SYSTEM-8, CROSS-30: `act` is what takes a pane child's OSC 52 to the owner's clipboard.
+    #[test]
+    fn act_writes_what_the_shown_pane_copied_and_publishes_no_clipboard_event() {
+        let clipboard = Fake::default();
+        let heard = act_on_osc_52(&clipboard, "from the child");
+        assert_eq!(*clipboard.calls.borrow(), ["write from the child"]);
+        assert!(!heard.iter().any(|e| matches!(e, Event::Clipboard { .. })), "{heard:?}");
+    }
+
+    #[test]
+    fn act_says_so_when_the_clipboard_refuses_an_osc_52_write() {
+        let clipboard = Fake { refuses_write: true, ..Fake::default() };
+        let heard = act_on_osc_52(&clipboard, "from the child");
+        assert_eq!(noticed(&heard), ["could not copy: locked"]);
+        assert!(!heard.iter().any(|e| matches!(e, Event::Clipboard { .. })), "{heard:?}");
+    }
+
+    #[test]
+    fn a_refused_osc_52_write_says_so_once_after_what_was_heard() {
+        let clipboard = Fake { refuses_write: true, ..Fake::default() };
+        let mut events = vec![
+            Event::Clipboard { text: "a".into() },
+            Event::Notice { text: "kept".into() },
+            Event::Clipboard { text: "b".into() },
+        ];
+        write_osc52(&mut events, &clipboard);
+        assert_eq!(noticed(&events), ["kept", "could not copy: locked"]);
+        assert_eq!(events.len(), 2);
     }
 }

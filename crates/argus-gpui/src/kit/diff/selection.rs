@@ -6,7 +6,7 @@
 //! within the half the press began in, and the selection is the window's own (a row index and a
 //! byte of its drawn text at each end), gone when the rows change. The columns are the text
 //! layouts the rows were drawn with, kept for the frame, so a position is read from what is on
-//! screen. The owner copies it (`copy`); a view that `picks` also tells it a drag that crossed
+//! screen. What copies it is the owner's (`selection_text`, sent to Rust); a view that `picks` also tells it a drag that crossed
 //! rows, for it to send what a click then a shift-click would. A press that never goes 5 px stays
 //! the row's click. Past the top or bottom edge the list scrolls with each move of the pointer; it
 //! does not keep scrolling while the pointer is still.
@@ -14,7 +14,7 @@
 use std::ops::Range;
 
 use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::{px, App, ClipboardItem, Context, FocusHandle, Pixels, Point, Window};
+use gpui_kit::{px, Context, FocusHandle, Pixels, Point, Window};
 
 use super::paint::Ink;
 use super::shape::{self, Shape};
@@ -73,8 +73,10 @@ impl DiffView {
         (range.start < range.end).then_some(range)
     }
 
-    /// The selected text, a line to a row, or `None` when nothing is selected.
-    fn selected_text(&self) -> Option<String> {
+    /// The selected text, a line to a row, or `None` when nothing is selected. What copies it is
+    /// the owner's, through Rust's one clipboard writer (SHELL-SYSTEM-8): a view that wrote the
+    /// platform clipboard itself would say nothing when it failed.
+    pub fn selection_text(&self) -> Option<String> {
         let (a, b) = self.ordered()?;
         let mut out = Vec::new();
         for row in a.row..=b.row {
@@ -92,13 +94,6 @@ impl DiffView {
         }
         (!out.is_empty()).then(|| out.join("
 "))
-    }
-
-    /// Puts the selected text on the clipboard; whether there was any.
-    pub fn copy(&self, cx: &mut App) -> bool {
-        let Some(text) = self.selected_text() else { return false };
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
-        true
     }
 
     /// The place at `index` of a layout, in the text before any wrapping.

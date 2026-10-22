@@ -9,7 +9,7 @@
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{Dock, DockGesture, DocksPage, Panel, PresentPanel};
 use gpui_kit::component::menu::PopupMenu;
-use gpui_kit::{App, Entity};
+use gpui_kit::{Context, Entity, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
@@ -81,9 +81,9 @@ pub fn tab(panel: &Panel, title: &str, docks: &DocksPage, present: Option<&Prese
 /// While the daemon is gone every choice is disabled, and a click that still
 /// arrives (a menu opened before the link dropped) sends nothing: a menu is
 /// held like the tabs and the sash (`Heard::held`).
-pub fn build(menu: PopupMenu, items: &[MenuItem<Call>], caller: &Caller, heard: &Entity<Heard>, tokens: Tokens, cx: &App) -> PopupMenu {
+pub fn build(menu: PopupMenu, items: &[MenuItem<Call>], caller: &Caller, heard: &Entity<Heard>, tokens: Tokens, window: &mut Window, cx: &mut Context<PopupMenu>) -> PopupMenu {
     let (heard, caller) = (heard.clone(), caller.clone());
-    popup::fill(menu, items, tokens, move |cx| heard.read(cx).held(), move |call, _, _| caller.call(call.clone()), cx)
+    popup::fill(menu, items, tokens, move |cx| heard.read(cx).held(), move |call, _, _| caller.call(call.clone()), window, cx)
 }
 
 #[cfg(test)]

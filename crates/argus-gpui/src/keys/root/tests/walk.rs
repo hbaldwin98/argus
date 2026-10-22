@@ -73,8 +73,10 @@ fn a_key_the_stage_does_not_bind_does_nothing(cx: &mut TestAppContext) {
 /// SHELL-KEYS-13: the palette, the sheet and the settings open from their keys. Each has the keys
 /// while it is up, so its own key is how it goes (the page's `Escape`).
 #[gpui_kit::test]
-fn the_palette_the_sheet_and_the_settings_open_by_key_and_the_window_asks_the_session_nothing(cx: &mut TestAppContext) {
+fn the_palette_the_sheet_and_the_settings_open_by_key_and_the_session_is_told_only_of_the_palette(cx: &mut TestAppContext) {
     let opened = open(cx);
+    hear(cx, &opened, vec![super::settings_event()]);
+    drain(&opened);
     for (key, kind) in [("ctrl-k", Overlay::Palette), ("ctrl-,", Overlay::Settings)] {
         blur(cx, &opened);
         press(cx, &opened, key);
@@ -85,13 +87,15 @@ fn the_palette_the_sheet_and_the_settings_open_by_key_and_the_window_asks_the_se
     blur(cx, &opened);
     question_mark(cx, &opened);
     assert_eq!(overlays(cx), [Overlay::Sheet]);
-    assert!(asked(&opened).is_empty(), "the window opened them itself; the session was not asked");
+    assert_eq!(asked(&opened), ["Palette { open: true }", "Palette { open: false }"], "the window opened them itself; the session is told only when the palette opens and closes, so it sends what it can go to");
 }
 
 /// SHELL-KEYS-14: a dialog holds the keys that would open another: the palette key does nothing in the settings.
 #[gpui_kit::test]
 fn a_dialog_that_is_up_does_not_hand_its_keys_to_the_window(cx: &mut TestAppContext) {
     let opened = open(cx);
+    hear(cx, &opened, vec![super::settings_event()]);
+    drain(&opened);
     blur(cx, &opened);
     press(cx, &opened, "ctrl-,");
     press(cx, &opened, "ctrl-k");
@@ -119,6 +123,8 @@ fn the_sheet_closes_on_its_own_key_and_on_escape(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn an_open_settings_holds_the_keys_the_stage_would_run(cx: &mut TestAppContext) {
     let opened = open(cx);
+    hear(cx, &opened, vec![super::settings_event()]);
+    drain(&opened);
     blur(cx, &opened);
     press(cx, &opened, "ctrl-,");
     press(cx, &opened, "3");
@@ -147,6 +153,8 @@ fn a_question_holds_the_stage_keys_and_escape_answers_it_no(cx: &mut TestAppCont
 #[gpui_kit::test]
 fn a_run_the_session_sends_opens_what_it_names_and_closes_the_others(cx: &mut TestAppContext) {
     let opened = open(cx);
+    hear(cx, &opened, vec![super::settings_event()]);
+    drain(&opened);
     for (action, kind) in [(Action::Shortcuts, Overlay::Sheet), (Action::Palette, Overlay::Palette), (Action::Settings, Overlay::Settings)] {
         opened.events.send(vec![Event::Run { action }]).unwrap();
         cx.run_until_parked();

@@ -7,8 +7,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use argus_desktop_core::settings::flavours::FLAVOURS;
 use argus_gpui::kit::fonts::SYMBOLS;
-use argus_gpui::theme::ledger;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{font, px};
 
@@ -31,9 +31,16 @@ fn check(cx: &gpui_kit::App) -> Result<(), String> {
     // An unknown family resolves to a substitute, so a face counts as found
     // only if it is listed and does not resolve to that substitute.
     let substitute = text.resolve_font(&font("No Such Family 7f3a"));
-    let tokens = ledger::tokens();
+    // The app starts in the page's default theme.
+    let tokens = *argus_gpui::theme::Tokens::global(cx);
     let (ui, mono) = (tokens.font_ui, tokens.font_mono);
-    for family in [ui, mono, SYMBOLS] {
+    // Every theme's own faces ship with it (decision #68): none may fall to the substitute.
+    let mut wanted = vec![ui, mono, SYMBOLS];
+    for (chosen, _) in FLAVOURS {
+        let own = argus_gpui::theme::derive::tokens(argus_gpui::theme::choice::theme(chosen, true));
+        wanted.extend([own.font_ui, own.font_mono]);
+    }
+    for family in wanted {
         if !names.iter().any(|name| name == family) {
             return Err(format!("{family} is not registered"));
         }
@@ -41,11 +48,17 @@ fn check(cx: &gpui_kit::App) -> Result<(), String> {
             return Err(format!("{family} resolves to the substitute"));
         }
     }
+    // The families the machine is offered leave the window's own out.
+    for own in argus_gpui::kit::fonts::BUNDLED {
+        if !names.iter().any(|name| name == own) {
+            return Err(format!("the bundled {own} is not in the text system"));
+        }
+    }
     let theme = cx.theme();
     if theme.font_family != ui || theme.mono_font_family != mono {
         return Err(format!("the theme names {} and {}", theme.font_family, theme.mono_font_family));
     }
-    if theme.font_size != px(13.0) || theme.radius != px(6.0) || theme.radius_lg != px(12.0) {
+    if theme.font_size != px(tokens.fs_md) || theme.radius != px(tokens.r_sm) || theme.radius_lg != px(tokens.r_lg) {
         return Err("the theme's size and radii are not the page's".to_owned());
     }
     Ok(())

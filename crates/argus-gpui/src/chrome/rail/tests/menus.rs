@@ -134,3 +134,41 @@ fn a_held_rails_menus_send_nothing(cx: &mut TestAppContext) {
     choose(cx, &opened, "Close");
     assert!(taken(&opened).is_empty(), "{:?}", taken(&opened));
 }
+
+/// SHELL-SWITCH-2, 3: the brand's menu adds a project by asking the session for the dialog.
+#[gpui_kit::test]
+fn the_switcher_asks_the_session_for_the_add_dialog_and_draws_none_itself(cx: &mut TestAppContext) {
+    let opened = open(cx, connected_and_busy());
+    click(cx, &opened, "rail-projects");
+    choose(cx, &opened, "Add a project\u{2026}");
+    assert_eq!(taken(&opened), ["OpenAddProject"]);
+}
+
+/// SHELL-SWITCH-3, 6: Remove asks the session, which asks the person.
+#[gpui_kit::test]
+fn the_switcher_asks_to_remove_the_open_project_and_removes_nothing_itself(cx: &mut TestAppContext) {
+    let opened = open(cx, connected_and_busy());
+    click(cx, &opened, "rail-projects");
+    choose(cx, &opened, "Remove src\u{2026}");
+    assert_eq!(taken(&opened), ["RemoveProject { project: 1 }"]);
+}
+
+/// SHELL-SWITCH-2: Switch workspace is there only when the daemon lists workspaces, and Connect to a
+/// host always is.
+#[gpui_kit::test]
+fn the_switcher_offers_workspaces_only_when_listed_and_hosts_always(cx: &mut TestAppContext) {
+    use argus_desktop_core::connection::page::WorkspaceChoice;
+    let opened = open(cx, connected_and_busy());
+    click(cx, &opened, "rail-projects");
+    let has = |cx: &mut TestAppContext, label: &str| {
+        cx.update_window(opened.handle, |_, window, _| window.try_find_by_label(label).is_some()).unwrap()
+    };
+    assert!(has(cx, "Connect to a host\u{2026}"));
+    assert!(!has(cx, "Switch workspace\u{2026}"));
+    let mut rail = busy();
+    rail.workspaces = vec![WorkspaceChoice { id: 1, name: "default".into(), open: true, projects: 2, panes: 0 }];
+    hear(cx, &opened, vec![Event::Rail(Box::new(rail))]);
+    click(cx, &opened, "rail-projects");
+    click(cx, &opened, "rail-projects");
+    assert!(has(cx, "Switch workspace\u{2026}"), "the kit's submenu row takes a plain label, so no note is glued onto it");
+}

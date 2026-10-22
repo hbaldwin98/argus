@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn a_pick_is_laid_over_a_sides_wash_and_each_side_stays_distinct() {
-        let tokens = crate::theme::ledger::tokens();
+        let tokens = crate::theme::themes::ledger::tokens();
         assert_eq!(fill("context", false, false, &tokens), None);
         let added = fill("added", false, false, &tokens).unwrap();
         let removed = fill("removed", false, false, &tokens).unwrap();
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn each_highlight_kind_has_a_tone_and_an_unknown_one_none() {
-        let tokens = crate::theme::ledger::tokens();
+        let tokens = crate::theme::themes::ledger::tokens();
         for kind in ["k", "s", "c", "n", "t", "f", "p", "o"] {
             assert!(tone(kind, &tokens).is_some(), "{kind}");
         }

@@ -16,11 +16,12 @@ use argus_desktop_core::keys::keymap::{Action, Place};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::Sizable as _;
 use gpui_kit::{Focusable as _, TestSupportExt as _};
-use gpui_kit::{div, prelude::*, px, Context, Entity, FocusHandle, SharedString, Subscription, Window};
+use gpui_kit::{div, prelude::*, Context, Entity, FocusHandle, SharedString, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::keys::field::{Fields, Registered};
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// `.filter`: the field's width.
@@ -105,13 +106,13 @@ impl Render for Filter {
         div()
             .id("history-filter")
             .test_support()
-            .w(px(FIELD_W))
+            .w(rem(FIELD_W))
             .flex_shrink_0()
             .child(
                 Input::new(&self.field)
                     .id("history-filter-field")
                     .small()
-                    .h(px(tokens.control_h))
+                    .h(rem(tokens.control_h))
                     .aria_label("Filter commits by subject, hash or author"),
             )
     }

@@ -10,7 +10,7 @@
 //! `tail`'s. A narrow rail draws each item as a tile of its icon, and the folds not at all.
 
 use gpui_kit::component::{h_flex, v_flex};
-use gpui_kit::{div, prelude::*, px, Context, SharedString};
+use gpui_kit::{div, prelude::*, Context, SharedString};
 
 use super::row::{line, Ctx};
 use super::slice::Slice;
@@ -19,6 +19,7 @@ use crate::chrome::nav::Nav;
 use crate::kit::keycap::keycap;
 use crate::kit::tip::tip;
 use crate::review::entry::checkout_here;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl RailView {
@@ -55,9 +56,9 @@ impl RailView {
         v_flex()
             .group("navs")
             .flex_shrink_0()
-            .px(px(tokens.sp_8))
-            .pb(px(tokens.sp_8))
-            .gap(px(tokens.sp_2))
+            .px(rem(tokens.sp_8))
+            .pb(rem(tokens.sp_8))
+            .gap(rem(tokens.sp_2))
             .when(ctx.icons, |navs| navs.items_center())
             .border_b_1()
             .border_color(tokens.line)
@@ -65,15 +66,15 @@ impl RailView {
                 let lit = nav.lit(rail.stage, slice.git_up);
                 let search = nav == Nav::Search;
                 let caps = h_flex()
-                    .gap(px(tokens.sp_4))
+                    .gap(rem(tokens.sp_4))
                     .children(slice.keys.get(at).cloned().unwrap_or_default().into_iter().map(|key| keycap(key, mono.clone(), tokens)));
                 let caps = if search { caps } else { caps.opacity(0.0).group_hover("navs", |style| style.opacity(1.0)) };
-                let base = line(nav.id(), if search { tokens.search_h } else { tokens.nav_h }, tokens).text_size(px(tokens.fs_md));
+                let base = line(nav.id(), if search { tokens.search_h } else { tokens.nav_h }, tokens).text_size(rem(tokens.fs_md));
                 // A narrow rail: a tile of the icon, the words in the tooltip.
                 let base = if ctx.icons {
-                    base.w(px(tokens.rail_tile)).h(px(tokens.rail_tile)).justify_center().tooltip(tip(nav.label()))
+                    base.w(rem(tokens.rail_tile)).h(rem(tokens.rail_tile)).justify_center().tooltip(tip(nav.label()))
                 } else {
-                    base.px(px(tokens.sp_8))
+                    base.px(rem(tokens.sp_8))
                 };
                 let base = if search {
                     // `.search`: a field's outline, not a row's fill.
@@ -81,16 +82,16 @@ impl RailView {
                     if ctx.icons {
                         base.hover(move |style| style.bg(fill).text_color(tokens.fg))
                     } else {
-                        base.mb(px(tokens.sp_6))
-                            .pl(px(tokens.sp_12))
-                            .gap(px(tokens.sp_8))
+                        base.mb(rem(tokens.sp_6))
+                            .pl(rem(tokens.sp_12))
+                            .gap(rem(tokens.sp_8))
                             .border_1()
                             .border_color(tokens.line_strong)
-                            .rounded(px(tokens.r_md))
+                            .rounded(rem(tokens.r_md))
                             .hover(|style| style.text_color(tokens.fg_muted))
                     }
                 } else {
-                    base.when(!ctx.icons, |row| row.gap(px(tokens.sp_12)))
+                    base.when(!ctx.icons, |row| row.gap(rem(tokens.sp_12)))
                         .text_color(tokens.fg)
                         .when(lit, |row| row.bg(tokens.bg_selected))
                         .when(!lit, |row| row.hover(move |style| style.bg(fill)))
@@ -103,7 +104,7 @@ impl RailView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .size(px(tokens.nav_icon_cell))
+                        .size(rem(tokens.nav_icon_cell))
                         .flex_shrink_0()
                         .text_color(if lit { tokens.accent } else { tokens.fg_muted });
                     // `.nav .ic.new`: the one item whose mark is a filled disc.

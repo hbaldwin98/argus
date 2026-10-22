@@ -4,7 +4,7 @@
 use argus_desktop_core::connection::page::Call;
 use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Role, SharedString};
+use gpui_kit::{div, prelude::*, Context, Role, SharedString};
 
 use super::GitStage;
 use crate::kit::tip::tip;
@@ -13,6 +13,7 @@ use crate::kit::icons::Glyph;
 use crate::kit::segment;
 use crate::review::entry::Tab;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl GitStage {
@@ -45,9 +46,9 @@ impl GitStage {
         h_flex()
             .id("git-strip")
             .flex_shrink_0()
-            .h(px(tokens.sp_44))
-            .px(px(tokens.sp_24))
-            .gap(px(tokens.sp_12))
+            .h(rem(tokens.sp_44))
+            .px(rem(tokens.sp_24))
+            .gap(rem(tokens.sp_12))
             .items_center()
             .border_b_1()
             .border_color(tokens.line)
@@ -60,16 +61,16 @@ impl GitStage {
                         .aria_label(SharedString::from(name.clone()))
                         .tooltip(tip(name.clone()))
                         .flex_shrink_0()
-                        .h(px(tokens.icon_btn))
-                        .px(px(tokens.sp_8))
-                        .gap(px(tokens.sp_6))
+                        .h(rem(tokens.icon_btn))
+                        .px(rem(tokens.sp_8))
+                        .gap(rem(tokens.sp_6))
                         .items_center()
-                        .rounded(px(tokens.r_pill))
+                        .rounded(rem(tokens.r_pill))
                         .border_1()
                         .border_color(tokens.line_strong)
                         .text_color(tokens.ref_)
                         .font_family(mono)
-                        .text_size(px(tokens.fs_md))
+                        .text_size(rem(tokens.fs_md))
                         .child(Glyph::Branch.at(14.0))
                         .child(SharedString::from(branch)),
                 )
@@ -97,7 +98,7 @@ impl GitStage {
                             page.added,
                             page.removed
                         )))
-                        .gap(px(tokens.sp_4))
+                        .gap(rem(tokens.sp_4))
                         .typed(tokens.type_small)
                         .text_color(tokens.fg_muted)
                         .child(SharedString::from(format!("{} file{plural} \u{b7}", page.files.len())))

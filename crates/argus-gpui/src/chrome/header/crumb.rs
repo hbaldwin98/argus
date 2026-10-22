@@ -3,8 +3,9 @@
 
 use argus_desktop_core::chrome::strip::Part;
 use gpui_kit::component::h_flex;
-use gpui_kit::{div, prelude::*, px, SharedString};
+use gpui_kit::{div, prelude::*, SharedString};
 
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The crumb of `parts`; nothing for an empty one. Every stage that has a crumb has one the same
@@ -12,10 +13,10 @@ use crate::theme::Tokens;
 pub fn crumb(parts: &[Part], tokens: &Tokens) -> impl IntoElement {
     let mono = SharedString::from(tokens.font_mono);
     let mut line = h_flex()
-        .h(px(tokens.sp_16))
-        .gap(px(tokens.sp_4))
+        .h(rem(tokens.sp_16))
+        .gap(rem(tokens.sp_4))
         .items_center()
-        .text_size(px(tokens.fs_xs))
+        .text_size(rem(tokens.fs_xs))
         .text_color(tokens.fg_faint)
         .whitespace_nowrap()
         .overflow_hidden();

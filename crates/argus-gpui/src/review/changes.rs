@@ -19,7 +19,7 @@ use argus_desktop_core::connection::page::{Call, ReviewClick, ReviewPage};
 use argus_desktop_core::keys::keymap::Action;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Entity, Role, SharedString, Subscription, Window};
+use gpui_kit::{div, prelude::*, Context, Entity, Role, SharedString, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
@@ -31,6 +31,7 @@ use crate::kit::hints;
 use crate::kit::segment;
 use crate::kit::split::{self, Split};
 use crate::style::Typed as _;
+use crate::theme::scale::{rem, zoom};
 use crate::theme::Tokens;
 
 /// The width the list of files opens at (`--list-col-w`), and how far the
@@ -80,6 +81,10 @@ impl Changes {
         let resized = cx.observe(&split, |_, _, cx| cx.notify());
         let pressed = cx.subscribe(&diff, |this, _, event: &DiffEvent, cx| {
             let target = match *event {
+                DiffEvent::CopySelection => {
+                    this.copy(cx);
+                    return;
+                }
                 DiffEvent::Row { row, extend } => ReviewClick::Row { row, extend },
                 DiffEvent::Fold { row, all } => ReviewClick::Fold { row, all },
                 // A drag across rows is the click on its first and the shift-click
@@ -100,13 +105,16 @@ impl Changes {
     pub fn follow(&mut self, page: &ReviewPage, window: &mut Window, cx: &mut Context<Self>) {
         self.comment.update(cx, |comment, cx| comment.follow(page.comment.as_ref(), window, cx));
         self.files.update(cx, |files, cx| files.follow(page, window, cx));
-        let slot = page.comment.as_ref().map(|c| Slot { view: self.comment.clone().into(), height: comment::height(c) });
+        let slot = page.comment.as_ref().map(|c| Slot { view: self.comment.clone().into(), height: comment::height(c, zoom(window.rem_size())) });
         self.diff.update(cx, |diff, cx| diff.show(&page.rows, page.split, slot, cx));
     }
 
-    /// Copies the diff's selected text; whether there was any.
+    /// Sends the diff's selected text to Rust to copy; whether there was any.
     pub fn copy(&self, cx: &mut Context<Self>) -> bool {
-        self.diff.update(cx, |diff, cx| diff.copy(cx))
+        let Some(text) = self.diff.read(cx).selection_text() else { return false };
+        // Not through `ask`: a copy needs no daemon, so a lost link does not hold it.
+        self.caller.call(Call::CopyText { text });
+        true
     }
 
     fn ask(&self, call: Call, cx: &Context<Self>) {
@@ -130,9 +138,9 @@ impl Changes {
         h_flex()
             .id("review-diff-head")
             .flex_shrink_0()
-            .h(px(tokens.sp_44))
-            .px(px(tokens.sp_12))
-            .gap(px(tokens.sp_12))
+            .h(rem(tokens.sp_44))
+            .px(rem(tokens.sp_12))
+            .gap(rem(tokens.sp_12))
             .items_center()
             .bg(tokens.bg_chrome)
             .border_b_1()
@@ -160,8 +168,8 @@ impl Changes {
                         .test_support()
                         .aria_label(SharedString::from(format!("{pick} picked")))
                         .flex_shrink_0()
-                        .px(px(tokens.sp_8))
-                        .rounded(px(tokens.r_pill))
+                        .px(rem(tokens.sp_8))
+                        .rounded(rem(tokens.r_pill))
                         .border_1()
                         .border_color(tokens.line_strong)
                         .typed(tokens.type_small)
@@ -189,7 +197,7 @@ impl Changes {
                 .test_support()
                 .aria_label(SharedString::from(why.clone()))
                 .size_full()
-                .p(px(tokens.sp_24))
+                .p(rem(tokens.sp_24))
                 .bg(tokens.bg_sunken)
                 .typed(tokens.type_body)
                 .text_color(tokens.fg_muted)

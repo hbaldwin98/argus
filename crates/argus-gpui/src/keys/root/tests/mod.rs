@@ -120,3 +120,68 @@ pub(crate) fn overlays(cx: &mut TestAppContext) -> Vec<Overlay> {
 pub(crate) fn zoom(key: &str) -> String {
     format!("{}-{key}", if cfg!(target_os = "macos") { "cmd" } else { "ctrl" })
 }
+
+/// Sends `events` to the window as the session would, and lets it draw them.
+pub(crate) fn hear(cx: &mut TestAppContext, opened: &Opened, events: Vec<Event>) {
+    opened.events.send(events).unwrap();
+    cx.run_until_parked();
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    cx.run_until_parked();
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    cx.run_until_parked();
+}
+
+/// Whether the window draws an element with the accessible name `label` (and one only).
+pub(crate) fn has_label(cx: &mut TestAppContext, opened: &Opened, label: &str) -> bool {
+    use gpui_kit::test::TestQueryExt as _;
+    cx.update_window(opened.handle, |_, window, _| window.try_find_by_label(label).is_some()).unwrap()
+}
+
+/// Clicks the element with the accessible name `label`.
+pub(crate) fn click_label(cx: &mut TestAppContext, opened: &Opened, label: &str) {
+    use gpui_kit::test::{TestEventExt as _, TestQueryExt as _};
+    let find = |cx: &mut TestAppContext| cx.update_window(opened.handle, |_, window, _| window.find_by_label(label).bounds().center()).unwrap();
+    // A dialog slides in over its first frames, on the clock of the machine and not the test's: the
+    // pointer goes where the element is once a frame the move draws has left it where it was.
+    let mut at = find(cx);
+    for _ in 0..60 {
+        cx.update_window(opened.handle, |_, window, cx| window.pointer_move(at, None, cx)).unwrap();
+        let next = find(cx);
+        if next == at {
+            break;
+        }
+        at = next;
+        std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+    cx.update_window(opened.handle, |_, window, cx| {
+        window.pointer_move(at, None, cx);
+        window.pointer_down(at, gpui_kit::MouseButton::Left, cx);
+        window.pointer_up(at, gpui_kit::MouseButton::Left, cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    cx.run_until_parked();
+}
+
+/// Types text into whatever has the keys.
+pub(crate) fn type_text(cx: &mut TestAppContext, opened: &Opened, text: &str) {
+    for ch in text.chars() {
+        stroke(cx, opened, Keystroke { modifiers: Modifiers::none(), key: ch.to_string(), key_char: Some(ch.to_string()) });
+    }
+}
+
+/// The calls so far, cleared.
+pub(crate) fn drain(opened: &Opened) -> Vec<String> {
+    let said: Vec<String> = asked(opened).into_iter().filter(|call| !call.starts_with("Resize")).collect();
+    opened.calls.borrow_mut().clear();
+    said
+}
+
+/// The `settings` event a session sends once it is up: the Settings sheet opens on nothing else
+/// (SHELL-SETTINGS-1), so a test that opens it hears this first.
+pub(crate) fn settings_event() -> Event {
+    use argus_desktop_core::connection::page::SettingsPage;
+    use argus_desktop_core::settings::remembered::Preferences;
+    Event::Settings(Box::new(SettingsPage { chosen: Preferences::default(), min_opacity: 30, backdrops: Vec::new(), fonts: Vec::new(), version: "9.9.9".into() }))
+}

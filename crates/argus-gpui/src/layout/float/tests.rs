@@ -54,10 +54,10 @@ fn relative(cx: &mut TestAppContext, opened: &Opened, name: &str) -> (f32, f32, 
 fn a_box_held_is_the_box_the_pointer_made_inside_the_cores_rules() {
     let (from, to) = (gpui_kit::point(px(10.0), px(10.0)), gpui_kit::point(px(50.4), px(-30.0)));
     let start = at(96, 64, 560, 420);
-    assert_eq!(held(Grip::Move, start, from, to, (1000, 700)), at(136, 24, 560, 420), "whole pixels, moved by the travel");
-    assert_eq!(held(Grip::Size, start, from, to, (1000, 700)), at(96, 64, 600, 380));
-    assert_eq!(held(Grip::Size, start, from, gpui_kit::point(px(-900.0), px(-900.0)), (1000, 700)).width, 280, "SHELL-FLOAT-4: least 280 wide");
-    assert_eq!(held(Grip::Size, start, from, gpui_kit::point(px(-900.0), px(-900.0)), (1000, 700)).height, 160, "and 160 tall");
+    assert_eq!(held(Grip::Move, start, from, to, (1000, 700), 1.0), at(136, 24, 560, 420), "whole pixels, moved by the travel");
+    assert_eq!(held(Grip::Size, start, from, to, (1000, 700), 1.0), at(96, 64, 600, 380));
+    assert_eq!(held(Grip::Size, start, from, gpui_kit::point(px(-900.0), px(-900.0)), (1000, 700), 1.0).width, 280, "SHELL-FLOAT-4: least 280 wide");
+    assert_eq!(held(Grip::Size, start, from, gpui_kit::point(px(-900.0), px(-900.0)), (1000, 700), 1.0).height, 160, "and 160 tall");
 }
 
 #[test]

@@ -9,7 +9,7 @@
 use argus_desktop_core::connection::page::{Call, Shown, Side};
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, MouseButton, MouseDownEvent, SharedString};
+use gpui_kit::{div, prelude::*, Context, MouseButton, MouseDownEvent, SharedString};
 
 use super::SplitView;
 use crate::kit::status_dot::status_dot;
@@ -17,6 +17,7 @@ use crate::kit::strip;
 use crate::kit::tip::tip;
 use crate::layout::carry::{Carried, Carrier};
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The words on a header's close.
@@ -35,10 +36,10 @@ impl SplitView {
             .aria_selected(keyed)
             .relative()
             .flex_shrink_0()
-            .h(px(tokens.pane_head_h))
+            .h(rem(tokens.pane_head_h))
             .items_center()
-            .gap(px(tokens.sp_6))
-            .pl(px(tokens.sp_12))
+            .gap(rem(tokens.sp_6))
+            .pl(rem(tokens.sp_12))
             .bg(if keyed { tokens.bg_selected } else { tokens.bg_chrome })
             .border_b_1()
             .border_color(tokens.line)
@@ -60,7 +61,7 @@ impl SplitView {
             .child(strip::title(title.clone()).flex_1())
             .child(status_dot(format!("cell-{n}"), pane.status, &tokens))
             .child(if n == 0 {
-                div().w(px(tokens.control_h_sm)).flex_shrink_0().into_any_element()
+                div().w(rem(tokens.control_h_sm)).flex_shrink_0().into_any_element()
             } else {
                 strip::close_x(SharedString::from(format!("cell-close-{n}")), format!("Take {title} out of the grid"), &tokens)
                     .tooltip(tip(TAKE_OUT))
@@ -74,6 +75,6 @@ impl SplitView {
                     }))
                     .into_any_element()
             })
-            .when(keyed, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(px(tokens.rule)).bg(tokens.accent)))
+            .when(keyed, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(rem(tokens.rule)).bg(tokens.accent)))
     }
 }

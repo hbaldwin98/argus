@@ -6,10 +6,11 @@
 
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, ElementId, Hsla, SharedString};
+use gpui_kit::{div, prelude::*, ElementId, Hsla, SharedString};
 
 use super::icons::Glyph;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// How a status is said, everywhere one is said: the two the daemon words as a person would not.
@@ -61,24 +62,24 @@ pub fn status_pill(id: impl Into<ElementId>, word: impl Into<SharedString>, stat
         .id(id)
         .test_support()
         .aria_label(word.clone())
-        .h(px(tokens.chip_h))
-        .px(px(tokens.sp_8))
-        .gap(px(tokens.sp_6))
+        .h(rem(tokens.chip_h))
+        .px(rem(tokens.sp_8))
+        .gap(rem(tokens.sp_6))
         .items_center()
         .flex_shrink_0()
         .border_1()
         .border_color(colour.opacity(edge))
-        .rounded(px(tokens.r_pill))
+        .rounded(rem(tokens.r_pill))
         .bg(colour.opacity(fill))
         // Faint on faint fails 4.5:1 at 11px, so an ended or idle word is the muted one.
         .text_color(if hollow { tokens.fg_muted } else { colour })
-        .text_size(px(tokens.fs_xs))
+        .text_size(rem(tokens.fs_xs))
         .weighted(tokens.weight_semibold)
         .whitespace_nowrap()
         .child(if hollow {
             Glyph::Ring6.at(tokens.dot_sm).text_color(colour).into_any_element()
         } else {
-            div().size(px(tokens.dot_sm)).flex_shrink_0().rounded_full().bg(colour).into_any_element()
+            div().size(rem(tokens.dot_sm)).flex_shrink_0().rounded_full().bg(colour).into_any_element()
         })
         .child(word)
 }
@@ -106,7 +107,7 @@ mod tests {
 
     #[test]
     fn what_waits_on_a_person_or_failed_is_louder_than_what_does_not() {
-        let tokens = crate::theme::ledger::tokens();
+        let tokens = crate::theme::themes::ledger::tokens();
         for (status, loud) in [("waiting", true), ("needs-review", true), ("failed", true), ("working", false), ("done", false), ("idle", false)] {
             assert_eq!(tone(status, &tokens).loud, loud, "{status}");
         }
@@ -114,7 +115,7 @@ mod tests {
 
     #[test]
     fn only_a_status_that_is_not_doing_anything_has_a_ring_for_a_dot() {
-        let tokens = crate::theme::ledger::tokens();
+        let tokens = crate::theme::themes::ledger::tokens();
         for (status, hollow) in [("idle", true), ("exited", true), ("anything else", true), ("working", false), ("failed", false)] {
             assert_eq!(tone(status, &tokens).hollow, hollow, "{status}");
         }

@@ -28,6 +28,13 @@ pub fn families(faces: Vec<(Vec<String>, bool)>) -> Vec<FontFamily> {
     unique.into_values().collect()
 }
 
+/// What a font field says under it when nothing is called what it holds: `None` while it is empty
+/// or `drawn` (whether the window finds a face by that name), else the note naming the family that
+/// draws instead. Which names a window finds is its own to answer.
+pub fn missing_note(family: &str, drawn: bool, instead: &str) -> Option<String> {
+    (!family.is_empty() && !drawn).then(|| format!("No font here is called that, so {instead} draws"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,6 +71,13 @@ mod tests {
     fn a_family_is_monospaced_when_any_of_its_faces_is() {
         let found = families(vec![face(&["Mixed"], false), face(&["Mixed"], true)]);
         assert_eq!(listed(found), [("Mixed".to_string(), true)]);
+    }
+
+    #[test]
+    fn a_name_nothing_is_called_is_said_and_an_empty_one_or_a_found_one_is_not() {
+        assert_eq!(missing_note("Nope", false, "Geist").as_deref(), Some("No font here is called that, so Geist draws"));
+        assert_eq!(missing_note("", false, "Geist"), None, "empty draws the bundled face, which is no fault");
+        assert_eq!(missing_note("Cascadia Mono", true, "JetBrains Mono"), None);
     }
 
     #[test]

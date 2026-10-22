@@ -8,12 +8,13 @@
 
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Entity, Role, SharedString, Subscription, Task, Window};
+use gpui_kit::{div, prelude::*, Context, Entity, Role, SharedString, Subscription, Task, Window};
 
 use crate::connection::heard::{Heard, NOTICE_FOR};
 use crate::kit::icon_button::icon_button;
 use crate::kit::icons::Glyph;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The share of the stage a notice may take before its words wrap.
@@ -71,7 +72,7 @@ impl Render for NoticeView {
         // lifts it over its own command band; this window has none.
         div()
             .absolute()
-            .bottom(px(tokens.sp_24))
+            .bottom(rem(tokens.sp_24))
             .left_0()
             .w_full()
             .flex()
@@ -83,20 +84,20 @@ impl Render for NoticeView {
                     .test_support()
                     .aria_label(SharedString::from(notice.text.clone()))
                     .max_w(gpui_kit::relative(WIDEST))
-                    .gap(px(tokens.sp_8))
+                    .gap(rem(tokens.sp_8))
                     .items_center()
-                    .py(px(tokens.sp_4))
-                    .pl(px(tokens.sp_12))
-                    .pr(px(tokens.sp_4))
+                    .py(rem(tokens.sp_4))
+                    .pl(rem(tokens.sp_12))
+                    .pr(rem(tokens.sp_4))
                     .bg(tokens.bg_raised)
                     .border_1()
                     .border_color(tokens.line_strong)
-                    .rounded(px(tokens.r_md))
+                    .rounded(rem(tokens.r_md))
                     .shadow(tokens.shadow_pop())
                     .typed(tokens.type_body)
                     .text_color(tokens.fg)
                     .child(div().flex_shrink_0().text_color(tokens.attention).child(Glyph::Info.at(tokens.icon_sm)))
-                    .child(div().min_w_0().py(px(tokens.sp_4)).child(SharedString::from(notice.text)))
+                    .child(div().min_w_0().py(rem(tokens.sp_4)).child(SharedString::from(notice.text)))
                     .child(icon_button("notice-dismiss", "Dismiss", false, &tokens).child(Glyph::Close.at(tokens.icon_sm)).on_click(
                         move |_, _, cx| {
                             heard.update(cx, |heard, cx| {

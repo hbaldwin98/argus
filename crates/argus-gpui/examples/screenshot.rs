@@ -180,7 +180,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argus_gpui::theme::ledger;
+    use argus_gpui::theme::themes::ledger;
 
     /// The pixel at logical `(x, y)`, scaled to the image's device pixels.
     fn at(shot: &Shot, x: f32, y: f32) -> [u8; 3] {

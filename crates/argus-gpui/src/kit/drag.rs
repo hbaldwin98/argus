@@ -18,13 +18,14 @@
 //! duration (the host's `keys` handle) so Escape reaches the host first, and
 //! handed back to what had them when it ends.
 
+use crate::theme::scale::pixels;
 use gpui_kit::{
-    canvas, px, App, Context, DispatchPhase, FocusHandle, IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent,
+    canvas, App, Context, DispatchPhase, FocusHandle, IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent,
     MouseUpEvent, Pixels, Point, WeakEntity, Window,
 };
 
-/// How far the pointer goes before a press is a drag.
-pub const THRESHOLD: Pixels = px(5.0);
+/// How far the pointer goes before a press is a drag, in the page's pixels: it follows the zoom (SHELL-LOOK-8).
+pub const THRESHOLD: f32 = 5.0;
 
 /// What a drag tells its host.
 #[derive(Debug, Clone, PartialEq)]
@@ -87,14 +88,14 @@ impl<T: Clone> Drag<T> {
     /// The pointer went to `at`. The first move that reaches the threshold
     /// begins the drag; a press that has not is no drag however it wanders
     /// short of it.
-    pub fn moved(&mut self, at: Point<Pixels>) -> Option<Step<T>> {
+    pub fn moved(&mut self, at: Point<Pixels>, rem_size: Pixels) -> Option<Step<T>> {
         let held = self.held.as_mut()?;
         held.at = at;
         if held.dragging {
             return Some(Step::Moved(held.payload.clone()));
         }
         let (dx, dy) = ((at.x - held.origin.x).as_f32(), (at.y - held.origin.y).as_f32());
-        if dx.hypot(dy) < THRESHOLD.as_f32() {
+        if dx.hypot(dy) < pixels(THRESHOLD, rem_size).as_f32() {
             return None;
         }
         held.dragging = true;
@@ -200,7 +201,7 @@ pub fn watch<V: Dragger>(host: WeakEntity<V>) -> impl IntoElement {
                             return;
                         }
                         if left {
-                            let moved = host.drag_mut().moved(event.position);
+                            let moved = host.drag_mut().moved(event.position, window.rem_size());
                             tell(host, moved, None, window, cx);
                         } else {
                             let back = restore(host);

@@ -2,17 +2,26 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::*;
+use gpui_kit::px;
 use gpui_kit::component::h_flex;
 use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
 use gpui_kit::{point, size, AnyWindowHandle, Bounds, Pixels, Point, TestAppContext, WindowBounds, WindowOptions};
 
-const HELD: Held = Held { from: 400.0, start: 320.0 };
+const HELD: Held = Held { from: 400.0, start: 320.0, zoom: 1.0 };
 
 #[test]
 fn the_column_keeps_its_offset_from_the_pointer_and_does_not_jump() {
     assert_eq!(width_at(HELD, 400.0, 200.0, 520.0), 320.0);
     assert_eq!(width_at(HELD, 450.0, 200.0, 520.0), 370.0);
     assert_eq!(width_at(HELD, 380.0, 200.0, 520.0), 300.0);
+}
+
+/// The width is the page's pixels and the pointer the window's: at 200% the same travel is half the width.
+#[test]
+fn a_zoomed_press_moves_the_column_by_the_travel_over_the_zoom() {
+    let zoomed = Held { zoom: 2.0, ..HELD };
+    assert_eq!(width_at(zoomed, 450.0, 200.0, 520.0), 345.0);
+    assert_eq!(width_at(zoomed, 360.0, 200.0, 520.0), 300.0);
 }
 
 #[test]

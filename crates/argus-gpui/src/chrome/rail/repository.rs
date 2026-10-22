@@ -8,7 +8,7 @@ use argus_desktop_core::connection::page::{Call, Rail, Repository};
 use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, SharedString};
+use gpui_kit::{div, prelude::*, Context, SharedString};
 
 use super::menus;
 use super::popup;
@@ -18,6 +18,7 @@ use super::RailView;
 use crate::kit::icons::Glyph;
 use crate::kit::tip::tip;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl RailView {
@@ -55,16 +56,16 @@ impl RailView {
             .id(SharedString::from(format!("repo-row-{id}")))
             .test_support()
             .group(group.clone())
-            .px(px(tokens.sp_8))
-            .mt(px(if first { tokens.sp_2 } else { tokens.sp_8 }))
+            .px(rem(tokens.sp_8))
+            .mt(rem(if first { tokens.sp_2 } else { tokens.sp_8 }))
             .items_center()
             .child(
                 line(format!("repo-{id}"), tokens.row_h, &tokens)
                     .flex_1()
                     .min_w_0()
-                    .px(px(tokens.sp_4))
-                    .gap(px(tokens.sp_6))
-                    .text_size(px(tokens.fs_sm))
+                    .px(rem(tokens.sp_4))
+                    .gap(rem(tokens.sp_6))
+                    .text_size(rem(tokens.fs_sm))
                     .weighted(if repo.quiet { tokens.weight_regular } else { tokens.weight_semibold })
                     .text_color(colour)
                     .aria_selected(chosen)
@@ -84,7 +85,7 @@ impl RailView {
                                 .id(format!("repo-{id}-count"))
                                 .test_support()
                                 .aria_label(count.clone())
-                                .text_size(px(tokens.fs_xs))
+                                .text_size(rem(tokens.fs_xs))
                                 .weighted(tokens.weight_regular)
                                 .text_color(tokens.fg_faint)
                                 .child(count),
@@ -99,7 +100,7 @@ impl RailView {
                     .on_click(cx.listener(move |this, _, _, _| this.ask(held, Call::OpenSessions { repository: id })))
                     .child(Glyph::Clock.at(tokens.icon_sm)),
             )
-            .context_menu(move |menu, _, cx| popup::fill(menu, &items, &rail, &heard, tokens, cx))
+            .context_menu(move |menu, window, cx| popup::fill(menu, &items, &rail, &heard, tokens, window, cx))
     }
 
     /// `.repo` in a folded rail: a hairline, 12px high, between this repository's agents and the
@@ -110,13 +111,13 @@ impl RailView {
             .test_support()
             .aria_label(repo.name.clone())
             .tooltip(tip(repo.name.clone()))
-            .h(px(tokens.sp_12))
+            .h(rem(tokens.sp_12))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_center()
             .when(first, |row| row.hidden())
-            .px(px(tokens.sp_12))
-            .child(div().w_full().h(px(tokens.hairline)).bg(tokens.line))
+            .px(rem(tokens.sp_12))
+            .child(div().w_full().h(rem(tokens.hairline)).bg(tokens.line))
     }
 }

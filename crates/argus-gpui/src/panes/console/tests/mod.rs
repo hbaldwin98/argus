@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::*;
+use gpui_kit::px;
 use argus_desktop_core::connection::page::{Connection, Event, Frame, FrameCursor, Rail, Segment, Shown, Status};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace, ConsoleTab};
 use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};

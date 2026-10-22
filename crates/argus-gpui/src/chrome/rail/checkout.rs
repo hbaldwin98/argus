@@ -8,7 +8,7 @@ use argus_desktop_core::connection::page::{Call, Checkout, Rail};
 use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Hsla, Role, SharedString};
+use gpui_kit::{div, prelude::*, Context, Hsla, Role, SharedString};
 
 use super::menus;
 use super::popup;
@@ -18,6 +18,7 @@ use super::RailView;
 use crate::kit::icons::Glyph;
 use crate::kit::spots::{publish, Spot, Spots};
 use crate::kit::tip::tip;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// A zero-size marker a test finds by id; it paints nothing.
@@ -38,10 +39,10 @@ impl RailView {
                 col.child(
                     v_flex()
                         .when(!ctx.icons, |nest| {
-                            nest.ml(px(tokens.pane_indent))
-                                .mr(px(tokens.sp_8))
-                                .mb(px(tokens.sp_4))
-                                .pl(px(tokens.sp_4))
+                            nest.ml(rem(tokens.pane_indent))
+                                .mr(rem(tokens.sp_8))
+                                .mb(rem(tokens.sp_4))
+                                .pl(rem(tokens.sp_4))
                                 .border_l_1()
                                 .border_color(tokens.line)
                         })
@@ -73,15 +74,15 @@ impl RailView {
             .id(format!("checkout-row-{id}"))
             .relative()
             // `.co`: a margin of 8 each side, the fold chevron in its 12px of left padding.
-            .mx(px(tokens.sp_8))
+            .mx(rem(tokens.sp_8))
             .child(
                 line(format!("checkout-{id}"), tokens.control_h_sm, &tokens)
                     .group(group.clone())
                     .w_full()
-                    .pl(px(tokens.sp_12 - 1.0))
-                    .pr(px(tokens.sp_4 - 1.0))
-                    .gap(px(tokens.sp_6))
-                    .text_size(px(tokens.fs_xs))
+                    .pl(rem(tokens.sp_12 - 1.0))
+                    .pr(rem(tokens.sp_4 - 1.0))
+                    .gap(rem(tokens.sp_6))
+                    .text_size(rem(tokens.fs_xs))
                     .text_color(tokens.fg_faint)
                     .border_1()
                     // `.co.picked`: the ring that says which row holds the keys.
@@ -103,7 +104,7 @@ impl RailView {
                         let label = format!("{} {repository} {}", if checkout.open { "Fold" } else { "Unfold" }, checkout.name);
                         chevron(format!("checkout-{id}-fold"), checkout.open, tokens.sp_24, tokens.fg_faint, tokens.icon_xs)
                             .role(Role::Button)
-                            .rounded(px(tokens.r_sm))
+                            .rounded(rem(tokens.r_sm))
                             .aria_label(label)
                             .tooltip(tip(words))
                             .hover(move |style| style.bg(fill).text_color(tokens.fg))
@@ -114,9 +115,9 @@ impl RailView {
                             }))
                             .into_any_element()
                     } else {
-                        div().w(px(tokens.sp_24)).h_full().flex_shrink_0().into_any_element()
+                        div().w(rem(tokens.sp_24)).h_full().flex_shrink_0().into_any_element()
                     })
-                    .child(div().ml(px(-tokens.sp_6)).child(Glyph::Branch.at(tokens.icon_xs)))
+                    .child(div().ml(rem(-tokens.sp_6)).child(Glyph::Branch.at(tokens.icon_xs)))
                     .child(div().flex_1().min_w_0().truncate().font_family(mono.clone()).child(checkout.name.clone()))
                     // `.shared`: several agents in one checkout, never found out later.
                     .when_some(checkout.shared, |row, n| {
@@ -126,7 +127,7 @@ impl RailView {
                                 .test_support()
                                 .aria_label(format!("shared by {n} agents"))
                                 .tooltip(tip(format!("shared by {n} agents")))
-                                .gap(px(tokens.sp_2))
+                                .gap(rem(tokens.sp_2))
                                 .items_center()
                                 .font_family(mono.clone())
                                 .text_color(tokens.attention)
@@ -143,7 +144,7 @@ impl RailView {
                                 .test_support()
                                 .aria_label(words.clone())
                                 .tooltip(tip(words))
-                                .gap(px(tokens.sp_4))
+                                .gap(rem(tokens.sp_4))
                                 .items_center()
                                 .font_family(mono)
                                 .children(hidden_dot.map(|colour| dot_of(colour, &tokens)))
@@ -165,7 +166,7 @@ impl RailView {
                             }))
                             .child(Glyph::Plus.at(tokens.icon_sm)),
                     )
-                    .context_menu(move |menu, _, cx| popup::fill(menu, &items, &weak, &heard, tokens, cx)),
+                    .context_menu(move |menu, window, cx| popup::fill(menu, &items, &weak, &heard, tokens, window, cx)),
             )
             .children(menu)
     }

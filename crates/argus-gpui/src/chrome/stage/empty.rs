@@ -4,8 +4,8 @@
 //! Which of them it is, the way out of a connection that does not answer and the checkout a shell
 //! is offered on are core's (`chrome::empty`); this draws the card and sends the page's calls. A
 //! press changes nothing here: the stage is empty until the daemon's tree puts a pane on it.
-//! `Add a project...` opens the stand-in dialog and sends nothing, since the dialog is audit item
-//! 31 and the session would otherwise hold one open that nothing draws.
+//! `Add a project...` asks the session for the dialog (`Call::OpenAddProject`), which `chrome/projects/add`
+//! draws once the session says it is open.
 
 use argus_desktop_core::chrome::empty::{Empty, NoPane, ShellHere, WayOut};
 use argus_desktop_core::connection::page::Call;
@@ -17,11 +17,12 @@ use gpui_kit::{
 
 use super::running::running;
 use crate::connection::caller::Caller;
-use crate::keys::over::{add_project, run_over};
+use crate::keys::over::run_over;
 use crate::kit::button::{button, Look};
 use crate::kit::icons::Glyph;
 use crate::kit::keycap::keycaps;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// What the card needs from the session besides the empty stage itself.
@@ -39,11 +40,11 @@ fn tile(glyph: Glyph, tokens: &Tokens) -> impl IntoElement {
         .flex()
         .items_center()
         .justify_center()
-        .size(px(tokens.tile))
+        .size(rem(tokens.tile))
         .flex_shrink_0()
         .border_1()
         .border_color(tokens.line_strong)
-        .rounded(px(tokens.r_md))
+        .rounded(rem(tokens.r_md))
         .bg(tokens.bg_raised)
         .text_color(tokens.accent)
         .child(glyph.at(tokens.icon_lg))
@@ -71,7 +72,7 @@ fn connecting(host: Option<String>, detail: Option<String>, way_out: WayOut, way
             })
             .into_any_element(),
         WayOut::Settings => button("connecting-settings", "Settings", Look::Plain, false, tokens)
-            .gap(px(tokens.sp_6))
+            .gap(rem(tokens.sp_6))
             .child(Glyph::Gear.at(tokens.icon_sm))
             .child("Settings")
             .on_click(|_, window, cx| {
@@ -89,16 +90,21 @@ fn connecting(host: Option<String>, detail: Option<String>, way_out: WayOut, way
     parts
 }
 
-fn no_projects(tokens: &Tokens) -> Vec<AnyElement> {
+fn no_projects(ways: &Ways, tokens: &Tokens) -> Vec<AnyElement> {
+    let (caller, held) = (ways.caller.clone(), ways.held);
     vec![
         tile(Glyph::Folder, tokens).into_any_element(),
         title("No projects", tokens).into_any_element(),
         div().text_color(tokens.fg_muted).child("Add a folder of repositories, or run argus init in one.").into_any_element(),
         button("add-project", "Add a project\u{2026}", Look::Primary, false, tokens)
-            .gap(px(tokens.sp_6))
+            .gap(rem(tokens.sp_6))
             .child(Glyph::Plus.at(tokens.icon_sm))
             .child("Add a project\u{2026}")
-            .on_click(|_, window, cx| add_project(window, cx))
+            .on_click(move |_, _, _| {
+                if !held {
+                    caller.call(Call::OpenAddProject);
+                }
+            })
             .into_any_element(),
     ]
 }
@@ -106,7 +112,7 @@ fn no_projects(tokens: &Tokens) -> Vec<AnyElement> {
 fn shell_button(shell: &ShellHere, ways: &Ways, tokens: &Tokens) -> impl IntoElement {
     let (caller, held, checkout) = (ways.caller.clone(), ways.held, shell.checkout);
     button("open-shell", shell.words.clone(), Look::Plain, false, tokens)
-        .gap(px(tokens.sp_6))
+        .gap(rem(tokens.sp_6))
         .child(Glyph::Console.at(tokens.icon_sm))
         .child(SharedString::from(shell.words.clone()))
         .on_click(move |_, _, _| {
@@ -119,7 +125,7 @@ fn shell_button(shell: &ShellHere, ways: &Ways, tokens: &Tokens) -> impl IntoEle
 fn no_pane(page: NoPane, ways: &Ways, tokens: &Tokens) -> Vec<AnyElement> {
     let (caller, held) = (ways.caller.clone(), ways.held);
     let start = button("start-agent", "Start an agent", Look::Primary, false, tokens)
-        .gap(px(tokens.sp_6))
+        .gap(rem(tokens.sp_6))
         .child(Glyph::Plus.at(tokens.icon_sm))
         .child("Start an agent")
         .children(ways.compose.clone().map(|chord| keycaps(&[chord], tokens)))
@@ -146,7 +152,7 @@ fn no_pane(page: NoPane, ways: &Ways, tokens: &Tokens) -> Vec<AnyElement> {
         h_flex()
             .flex_wrap()
             .justify_center()
-            .gap(px(tokens.sp_12))
+            .gap(rem(tokens.sp_12))
             .child(start)
             .children(page.shell.as_ref().map(|shell| shell_button(shell, ways, tokens)))
             .into_any_element(),
@@ -160,7 +166,7 @@ fn no_pane(page: NoPane, ways: &Ways, tokens: &Tokens) -> Vec<AnyElement> {
 pub fn stage(empty: Empty, ways: &Ways, tokens: &Tokens) -> impl IntoElement {
     let (width, parts, top) = match empty {
         Empty::Connecting { host, detail, way_out } => (tokens.empty_w, connecting(host, detail, way_out, ways, tokens), false),
-        Empty::NoProjects => (tokens.empty_w_projects, no_projects(tokens), false),
+        Empty::NoProjects => (tokens.empty_w_projects, no_projects(ways, tokens), false),
         Empty::NoPane(page) => (tokens.empty_w_pane, no_pane(page, ways, tokens), true),
     };
     // `.empty`: centred; with panes to go back to the block sits near the top, and a long list scrolls.
@@ -173,8 +179,8 @@ pub fn stage(empty: Empty, ways: &Ways, tokens: &Tokens) -> impl IntoElement {
         .left_0()
         .size_full()
         .items_center()
-        .when(top, |stage| stage.pt(px(tokens.sp_44)).overflow_y_scroll())
+        .when(top, |stage| stage.pt(rem(tokens.sp_44)).overflow_y_scroll())
         .when(!top, |stage| stage.justify_center())
-        .bg(tokens.bg_surface)
-        .child(v_flex().id("empty-body").items_center().gap(px(tokens.sp_16)).max_w(px(width)).p(px(tokens.sp_24)).text_center().children(parts))
+        .bg(tokens.see_surface)
+        .child(v_flex().id("empty-body").items_center().gap(rem(tokens.sp_16)).max_w(px(width)).p(rem(tokens.sp_24)).text_center().children(parts))
 }

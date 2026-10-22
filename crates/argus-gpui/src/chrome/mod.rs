@@ -5,6 +5,7 @@ pub mod ended;
 pub mod foot;
 pub mod header;
 pub mod notice;
+pub mod projects;
 pub mod nav;
 pub mod rail;
 pub mod shell;

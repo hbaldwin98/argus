@@ -2,7 +2,9 @@
 
 pub mod area;
 pub mod button;
+pub mod copy;
 pub mod choice;
+pub mod dialog;
 pub mod diff;
 pub mod drag;
 pub mod field;
@@ -17,9 +19,11 @@ pub mod overlay;
 pub mod pill;
 pub mod progress;
 pub mod section;
+pub mod selected;
 pub mod segment;
 pub mod split;
 pub mod spots;
 pub mod status_dot;
 pub mod strip;
 pub mod tip;
+pub mod toggle;

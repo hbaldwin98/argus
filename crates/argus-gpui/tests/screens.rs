@@ -31,7 +31,16 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,docks,float,review,review-comment,history";
+const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher";
+
+/// The scenes the page finishes with a click on a control, and the control: the window is brought to the
+/// same place by pressing it, so the menu or dialog is open in the picture as it is in the page's.
+fn click_for(scene: &str) -> Option<&'static str> {
+    match scene {
+        "switcher" => Some("rail-projects"),
+        _ => None,
+    }
+}
 
 fn out_dir() -> PathBuf {
     std::env::var_os("ARGUS_GPUI_SHOTS")
@@ -62,6 +71,9 @@ fn write_gpui_screens() {
     let sink = failures.clone();
     window::application().run(move |cx: &mut App| {
         window::init(cx);
+        // The page's shots are taken with a dark system, so its default theme draws as Mocha; this machine's
+        // own light or dark must not decide which theme the photographs are of.
+        cx.set_global(argus_gpui::settings::look::Forced(true));
         cx.spawn(async move |cx| {
             for name in names {
                 let (events, frames) = heard_in(&name);
@@ -75,6 +87,8 @@ fn write_gpui_screens() {
                                     heard.hear(frame);
                                 }
                                 cx.notify();
+                                // What the session asked the window to open (the palette, the sheet) is said now that it can.
+                                heard.announce(cx);
                             })
                         });
                         handle
@@ -91,6 +105,10 @@ fn write_gpui_screens() {
                 });
                 // Lets the observers lay the events out and the fonts settle.
                 cx.background_executor().timer(Duration::from_millis(500)).await;
+                if let Some(id) = click_for(&name) {
+                    cx.update(|cx| press(cx, handle, id));
+                    cx.background_executor().timer(Duration::from_millis(500)).await;
+                }
                 let shot = cx.update(|cx| {
                     cx.update_window(handle, |_, window, cx| {
                         window.render_frame(cx);
@@ -142,4 +160,18 @@ fn open(cx: &mut App, events: Vec<Event>) -> anyhow::Result<(AnyWindowHandle, En
     let model = heard.clone();
     let handle = gpui_kit::open_window(options, cx, move |window, cx| cx.new(|cx| Shell::new(heard, caller, window, cx)))?;
     Ok((handle.0, model))
+}
+
+/// Presses the control named `id`, as the page's scene presses it.
+fn press(cx: &mut App, handle: AnyWindowHandle, id: &str) {
+    use gpui_kit::test::TestEventExt as _;
+    let _ = cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        if let Some(found) = window.try_find(id.to_owned()) {
+            let at = found.bounds().center();
+            window.pointer_down(at, gpui_kit::MouseButton::Left, cx);
+            window.pointer_up(at, gpui_kit::MouseButton::Left, cx);
+        }
+        window.render_frame(cx);
+    });
 }

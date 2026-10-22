@@ -29,7 +29,7 @@ fn the_rail_lists_the_rows_of_the_rail_it_was_given(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 fn the_rail_draws_no_list_of_projects_the_brand_row_is_where_they_are_chosen(cx: &mut TestAppContext) {
-    // The page lists no project under its brand: a button opens them (`switcher.png`).
+    // The page lists no project under its brand: a button opens them (`switcher.png`), once the tree has loaded.
     let opened = open(cx, connected_and_busy());
     assert!(!present(cx, &opened, "project-1"));
     assert!(!present(cx, &opened, "project-2"));
@@ -37,7 +37,9 @@ fn the_rail_draws_no_list_of_projects_the_brand_row_is_where_they_are_chosen(cx:
     let mut single = busy();
     single.projects.truncate(1);
     hear(cx, &opened, vec![Event::Rail(Box::new(single))]);
-    assert!(!present(cx, &opened, "rail-projects"), "one project: the name is only a name");
+    assert!(present(cx, &opened, "rail-projects"), "one project: the menu is still there, since it is how another is added");
+    hear(cx, &opened, vec![Event::Rail(Box::new(Rail { loaded: false, ..Rail::default() }))]);
+    assert!(!present(cx, &opened, "rail-projects"), "until the tree has loaded the heading is empty");
 }
 
 #[gpui_kit::test]

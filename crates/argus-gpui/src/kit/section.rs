@@ -6,9 +6,10 @@
 
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, ElementId, SharedString};
+use gpui_kit::{div, prelude::*, ElementId, SharedString};
 
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The rows with the same heading, in the order they came, under the heading in the order it was
@@ -33,9 +34,9 @@ pub fn heading(id: impl Into<ElementId>, words: impl Into<SharedString>, count: 
         .id(id)
         .test_support()
         .aria_label(words.clone())
-        .px(px(tokens.sp_12))
-        .py(px(tokens.sp_6))
-        .gap(px(tokens.sp_8))
+        .px(rem(tokens.sp_12))
+        .py(rem(tokens.sp_6))
+        .gap(rem(tokens.sp_8))
         .items_center()
         .justify_between()
         .typed(tokens.type_label)

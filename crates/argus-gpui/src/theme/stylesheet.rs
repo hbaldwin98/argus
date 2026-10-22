@@ -9,41 +9,56 @@
 use std::time::Duration;
 
 use super::colour::Colour;
-use super::ledger;
+use super::themes::ledger;
 use super::scale::{Layer, Mark, Type};
 
 const CSS: &str = include_str!("../../../argus-desktop/assets/style.css");
 
-/// The text of each `:root[data-theme='ledger']` block, in file order: the
-/// palette, the sixteen ANSI colours and the shape.
-fn ledger_blocks() -> Vec<&'static str> {
-    CSS.match_indices(":root[data-theme='ledger']")
-        .map(|(from, _)| {
-            let open = from + CSS[from..].find('{').expect("the block opens");
+/// The text of each `:root[data-theme='<theme>']` block, in file order: the palette, the sixteen
+/// ANSI colours and (for the themes that have one) the shape.
+pub(super) fn blocks(theme: &str) -> Vec<&'static str> {
+    let mut opens = Vec::new();
+    for (from, _) in CSS.match_indices(&format!(":root[data-theme='{theme}']")) {
+        let open = from + CSS[from..].find('{').expect("the block opens");
+        if !opens.contains(&open) {
+            opens.push(open);
+        }
+    }
+    opens
+        .into_iter()
+        .map(|open| {
             let close = open + CSS[open..].find("\n}").expect("the block closes");
             &CSS[open..close]
         })
         .collect()
 }
 
+fn ledger_blocks() -> Vec<&'static str> {
+    blocks("ledger")
+}
+
 /// The `:root` block holding the scale (it opens with the bundled interface face).
-fn root_block() -> &'static str {
+pub(super) fn root_block() -> &'static str {
     let from = CSS.find("\n:root {\n  --font-ui-bundled").expect("the scale's :root block");
     &CSS[from..from + CSS[from..].find("\n}").expect("the block's end")]
 }
 
 /// A `--name: value;` declaration in `block`; the value may span lines.
-fn decl(block: &str, name: &str) -> Option<String> {
+pub(super) fn decl(block: &str, name: &str) -> Option<String> {
     let at = block.find(&format!("\n  --{name}:"))? + name.len() + 6;
     let rest = &block[at..];
     let value = &rest[..rest.find(';')?];
     Some(value.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
+/// `theme`'s value for `name`: the last of its blocks that sets one, else `:root`'s.
+pub(super) fn value_in(theme: &str, name: &str) -> Option<String> {
+    blocks(theme).into_iter().rev().find_map(|block| decl(block, name)).or_else(|| decl(root_block(), name))
+}
+
 /// Ledger's value for `name`: its own block if it sets one, else `:root`'s.
 fn value(name: &str) -> String {
-    let blocks = ledger_blocks();
-    decl(blocks[2], name).or_else(|| decl(root_block(), name)).unwrap_or_else(|| panic!("--{name} is in neither block"))
+    value_in("ledger", name).unwrap_or_else(|| panic!("--{name} is in neither block"))
 }
 
 fn px_of(name: &str) -> f32 {
@@ -51,14 +66,17 @@ fn px_of(name: &str) -> f32 {
     v.strip_suffix("px").unwrap_or(&v).parse().unwrap_or_else(|_| panic!("--{name} is `{v}`, not a length"))
 }
 
-fn colour_of(block: &str, name: &str) -> Colour {
+pub(super) fn colour_of(block: &str, name: &str) -> Colour {
     let v = decl(block, name).unwrap_or_else(|| panic!("--{name} is not set"));
     Colour::hex(u32::from_str_radix(v.trim_start_matches('#'), 16).unwrap_or_else(|_| panic!("--{name} is `{v}`")))
 }
 
 /// `weight size/leading` of a `--type-*` shorthand; a leading in px is a ratio of the size.
 fn type_of(name: &str) -> Type {
-    let v = value(name);
+    type_in(&value(name))
+}
+
+pub(super) fn type_in(v: &str) -> Type {
     let mut words = v.split(' ');
     let weight: f32 = words.next().unwrap().parse().unwrap();
     let (size, leading) = words.next().unwrap().split_once('/').unwrap();
@@ -72,7 +90,10 @@ fn type_of(name: &str) -> Type {
 
 /// The layers of a `--shadow-*`: `<dx>px <dy>px <blur>px [<spread>px] rgba(r, g, b, a)`, comma-separated.
 fn layers_of(name: &str) -> Vec<Layer> {
-    let v = value(name);
+    layers_in(&value(name), name)
+}
+
+pub(super) fn layers_in(v: &str, name: &str) -> Vec<Layer> {
     // Split on the commas outside parentheses.
     let (mut parts, mut depth, mut from) = (Vec::new(), 0, 0);
     for (at, ch) in v.char_indices() {
@@ -91,27 +112,29 @@ fn layers_of(name: &str) -> Vec<Layer> {
         .into_iter()
         .map(|part| {
             let part = part.trim();
-            let at = part.find("rgba(").unwrap_or_else(|| panic!("--{name}: no rgba in `{part}`"));
+            let (at, colour) = match part.find("rgba(") {
+                Some(at) => {
+                    let c: Vec<f32> = part[at + 5..].trim_end_matches(')').split(',').map(|n| n.trim().parse().unwrap()).collect();
+                    (at, Colour::rgba(c[0] as u8, c[1] as u8, c[2] as u8, c[3]))
+                }
+                None => {
+                    let at = part.find('#').unwrap_or_else(|| panic!("--{name}: no colour in `{part}`"));
+                    (at, Colour::hex(u32::from_str_radix(&part[at + 1..], 16).unwrap()))
+                }
+            };
             let lengths: Vec<f32> = part[..at].split_whitespace().map(|n| n.trim_end_matches("px").parse().unwrap()).collect();
-            let channels: Vec<f32> = part[at + 5..].trim_end_matches(')').split(',').map(|n| n.trim().parse().unwrap()).collect();
-            Layer {
-                dx: lengths[0],
-                dy: lengths[1],
-                blur: lengths[2],
-                spread: lengths.get(3).copied().unwrap_or(0.0),
-                colour: Colour::rgba(channels[0] as u8, channels[1] as u8, channels[2] as u8, channels[3]),
-            }
+            Layer { dx: lengths[0], dy: lengths[1], blur: lengths[2], spread: lengths.get(3).copied().unwrap_or(0.0), colour }
         })
         .collect()
 }
 
 /// A hsla colour as the 8-bit `[r, g, b]` a screen shows.
-fn bytes(c: gpui_kit::Hsla) -> [u8; 3] {
+pub(super) fn bytes(c: gpui_kit::Hsla) -> [u8; 3] {
     let c = c.to_rgb();
     [c.r, c.g, c.b].map(|v| (v * 255.0).round() as u8)
 }
 
-fn hex_bytes(c: Colour) -> [u8; 3] {
+pub(super) fn hex_bytes(c: Colour) -> [u8; 3] {
     [(c.rgb >> 16) as u8, (c.rgb >> 8) as u8, c.rgb as u8]
 }
 
@@ -394,4 +417,73 @@ fn a_card_of_a_pane_to_go_back_to_is_the_rules_it_was_written_from() {
     sheet_has(".rcard:active {
   background: color-mix(in srgb, var(--bg-raised) 80%, var(--fg) 10%);");
     assert_eq!((t.share_card_hover, t.share_card_press), (0.06, 0.10));
+}
+
+#[test]
+fn the_forms_palettes_and_sheets_sizes_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    assert_eq!(value("dialog-w"), "min(560px, 94vw)");
+    assert_eq!(t.form_w, 560.0);
+    sheet_has(".palette {\n  width: min(620px, 92vw);");
+    assert_eq!(t.palette_w, 620.0);
+    sheet_has(".dialog.sheet-dialog.keys-sheet {\n  width: min(960px, 94vw);\n  height: min(660px, 90vh);");
+    assert_eq!((t.sheet_w, t.sheet_h), (960.0, 660.0));
+    sheet_has(".ks-side {\n  flex: none;\n  width: 224px;");
+    assert_eq!(t.sheet_side_w, 224.0);
+    sheet_has(".ap-folders {\n  flex: none;\n  max-height: 180px;");
+    assert_eq!(t.folders_max_h, 180.0);
+}
+
+#[test]
+fn the_questions_tile_and_callout_shares_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    sheet_has("background: color-mix(in srgb, var(--danger) 14%, transparent);\n  color: var(--danger);");
+    assert_eq!(t.share_danger_tile, 0.14);
+    sheet_has("background: color-mix(in srgb, var(--attention) 12%, transparent);\n  color: var(--fg);");
+    assert_eq!(t.share_callout, 0.12);
+}
+
+#[test]
+fn the_add_dialogs_height_is_the_rule_it_was_written_from() {
+    sheet_has(".add-dialog {\n  max-height: min(720px, 90vh);");
+    assert_eq!(ledger::tokens().add_max_h, 720.0);
+}
+
+#[test]
+fn the_settings_sheets_sizes_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    sheet_has(".dialog.sheet-dialog {
+  width: min(1120px, 94vw);
+  height: min(760px, 90vh);");
+    assert_eq!((t.settings_w, t.settings_h, t.settings_max_w_share), (1120.0, 760.0, 0.94));
+    sheet_has(".settings-nav {
+  width: 200px;");
+    assert_eq!(t.settings_nav_w, 200.0);
+    sheet_has("grid-template-columns: repeat(5, minmax(0, 1fr));");
+    assert_eq!(t.theme_cards_per_row, 5);
+    sheet_has(".themecard .pv {
+  background: var(--base);
+  height: 56px;
+  border-radius: var(--pv-r);");
+    sheet_has(".pv .side {
+  background: var(--mantle);
+  width: 24px;
+  border-radius: 3px;");
+    sheet_has(".pv .lines span {
+  height: 6px;
+  border-radius: 3px;");
+    assert_eq!((t.preview_h, t.preview_side_w, t.preview_line_h, t.preview_rounding), (56.0, 24.0, 6.0, 3.0));
+    sheet_has(".toggle {
+  width: 40px;");
+    assert_eq!(t.toggle_w, 40.0);
+    sheet_has(".opacity input {
+  width: 200px;");
+    assert_eq!(t.opacity_slider_w, 200.0);
+    sheet_has(".settings .setrow .field {
+  width: 260px;");
+    assert_eq!(t.setting_field_w, 260.0);
+    sheet_has("  max-height: 280px;
+  overflow-y: auto;
+  z-index: var(--z-layer);");
+    assert_eq!(t.font_list_max_h, 280.0);
 }

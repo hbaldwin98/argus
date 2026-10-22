@@ -9,9 +9,10 @@
 
 use gpui_kit::base::ObservedElement;
 use gpui_kit::component::h_flex;
-use gpui_kit::{div, prelude::*, px, transparent_black, ElementId, Role, SharedString, Stateful, TestSupportExt as _};
+use gpui_kit::{div, prelude::*, transparent_black, ElementId, Role, SharedString, Stateful, TestSupportExt as _};
 
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// `.seg`: the track a group of pills sits in, named for a screen reader and
@@ -23,10 +24,10 @@ pub fn track(id: &'static str, label: &'static str, role: Role, tokens: &Tokens)
         .test_support()
         .aria_label(SharedString::from(label))
         .flex_shrink_0()
-        .p(px(tokens.sp_2))
-        .gap(px(tokens.sp_2))
+        .p(rem(tokens.sp_2))
+        .gap(rem(tokens.sp_2))
         .items_center()
-        .rounded(px(tokens.r_sm))
+        .rounded(rem(tokens.r_sm))
         .border_1()
         .border_color(tokens.line_strong)
 }
@@ -46,13 +47,13 @@ pub fn pill(id: impl Into<ElementId>, role: Role, on: bool, tokens: &Tokens) -> 
         .role(role)
         .test_support()
         .aria_selected(on)
-        .h(px(tokens.control_h_sm))
-        .px(px(tokens.sp_12))
-        .gap(px(tokens.sp_4))
+        .h(rem(tokens.control_h_sm))
+        .px(rem(tokens.sp_12))
+        .gap(rem(tokens.sp_4))
         .items_center()
-        .rounded(px(tokens.r_xs))
+        .rounded(rem(tokens.r_xs))
         .border_1()
-        .text_size(px(tokens.fs_sm))
+        .text_size(rem(tokens.fs_sm))
         .weighted(tokens.weight_semibold)
         .whitespace_nowrap()
         .cursor_pointer()

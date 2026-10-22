@@ -9,7 +9,7 @@
 use argus_desktop_core::chrome::strip::Named;
 use argus_desktop_core::connection::page::Call;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu};
-use gpui_kit::{div, prelude::*, Anchor, App, Entity, MouseButton, Role, SharedString, TestSupportExt as _};
+use gpui_kit::{div, prelude::*, Anchor, App, Context, Entity, MouseButton, Role, SharedString, TestSupportExt as _, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
@@ -37,7 +37,7 @@ pub fn menu(pane: &Named) -> Vec<MenuItem<Does>> {
     ]
 }
 
-fn build(menu: PopupMenu, items: &[MenuItem<Does>], caller: &Caller, heard: &Entity<Heard>, tokens: Tokens, cx: &App) -> PopupMenu {
+fn build(menu: PopupMenu, items: &[MenuItem<Does>], caller: &Caller, heard: &Entity<Heard>, tokens: Tokens, window: &mut Window, cx: &mut Context<PopupMenu>) -> PopupMenu {
     let (caller, asking, opening) = (caller.clone(), heard.clone(), heard.clone());
     popup::fill(
         menu,
@@ -48,6 +48,7 @@ fn build(menu: PopupMenu, items: &[MenuItem<Does>], caller: &Caller, heard: &Ent
             Does::Close { pane } => caller.call(Call::Close { pane: *pane }),
             Does::Rename { pane, title } => rename::open(*pane, title.clone(), caller.clone(), opening.clone(), window, cx),
         },
+        window,
         cx,
     )
 }
@@ -60,7 +61,7 @@ pub fn button(pane: &Named, caller: &Caller, heard: &Entity<Heard>, tokens: &Tok
     div().id("head-more").role(Role::Button).test_support().aria_label(words).flex_shrink_0().on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()).child(
         menu_button("head-more-button", Glyph::More, tokens.icon_sm, &tokens, cx)
             .tooltip("More: rename or close this pane")
-            .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, cx| build(menu, &items, &caller, &heard, tokens, cx)),
+            .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| build(menu, &items, &caller, &heard, tokens, window, cx)),
     )
 }
 

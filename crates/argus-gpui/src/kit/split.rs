@@ -17,19 +17,22 @@ use std::rc::Rc;
 
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, prelude::*, px, AnyElement, App, Context, Entity, FocusHandle, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, Role,
+    div, prelude::*, AnyElement, App, Context, Entity, FocusHandle, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, Role,
     Window,
 };
 
 use crate::kit::drag::{self, Drag, Dragger, Step};
+use crate::theme::scale::{rem, zoom};
 use crate::theme::Tokens;
 
 /// What a press of the sash holds: where the pointer was, and how wide the
-/// column was, so the column does not jump to put its edge under the pointer.
+/// column was, so the column does not jump to put its edge under the pointer. The pointer is the
+/// window's pixels and the width the page's, so the zoom of the press is held too.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Held {
     from: f32,
     start: f32,
+    zoom: f32,
 }
 
 /// Where a release is reported: the width in whole pixels, or `None` for the usual one.
@@ -55,7 +58,7 @@ pub struct Split {
 
 /// The width with the pointer at `x`, within the bounds the column is kept to.
 fn width_at(held: Held, x: f32, min: f32, max: f32) -> f32 {
-    (held.start + x - held.from).clamp(min, max)
+    (held.start + (x - held.from) / held.zoom).clamp(min, max)
 }
 
 impl Split {
@@ -170,7 +173,7 @@ impl Render for Split {
                         cx.notify();
                         return;
                     }
-                    let held = Held { from: event.position.x.as_f32(), start: this.width };
+                    let held = Held { from: event.position.x.as_f32(), start: this.width, zoom: zoom(window.rem_size()) };
                     this.drag.press(event.position, held);
                 }),
             )
@@ -194,12 +197,12 @@ pub fn side(split: &Entity<Split>, id: &'static str, content: impl IntoElement, 
         .relative()
         .flex_shrink_0()
         .h_full()
-        .w(px(split.read(cx).width()))
+        .w(rem(split.read(cx).width()))
         .border_r_1()
         .border_color(tokens.line)
         .child(content)
         // The grab zone along the column's right edge, as wide as a dock's.
-        .child(div().absolute().top_0().bottom_0().right_0().w(px(tokens.sp_6)).child(split.clone()))
+        .child(div().absolute().top_0().bottom_0().right_0().w(rem(tokens.sp_6)).child(split.clone()))
         .into_any_element()
 }
 

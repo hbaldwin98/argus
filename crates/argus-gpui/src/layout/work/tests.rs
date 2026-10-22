@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use super::*;
+use gpui_kit::px;
 use argus_desktop_core::connection::page::{Connection, Event, Status};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
 use argus_desktop_core::layout::docks::{DockPage, DockTab, DocksPage, PanelKind, PresentPanel};
@@ -777,7 +778,7 @@ fn above_1200_px_the_right_dock_is_no_wider_than_the_min_pane_unless_the_window_
 
 #[test]
 fn a_side_dock_caps_against_the_floor_and_only_the_right_one_against_the_room() {
-    let tokens = crate::theme::ledger::tokens();
+    let tokens = crate::theme::themes::ledger::tokens();
     use crate::layout::dock::capped;
     assert_eq!(capped(Dock::Left, 900.0, 1000.0, 1000.0, &tokens), 760.0);
     assert_eq!(capped(Dock::Left, 900.0, 1400.0, 1440.0, &tokens), 900.0, "the room rule is the right dock's");

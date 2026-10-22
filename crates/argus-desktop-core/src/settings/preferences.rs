@@ -96,10 +96,13 @@ impl Chosen {
         self.set_zoom(100);
     }
 
-    /// Unheard by the page, which never draws the zoom: the window does.
+    /// Heard as well as kept: the Tauri page ignores the zoom it is sent (its webview does the
+    /// zooming), but the GPUI window has no other way to hear it, and the dialog's choices
+    /// already carry it.
     fn set_zoom(&mut self, percent: u16) {
         if percent != self.now.zoom {
             self.now.zoom = percent;
+            self.unheard = true;
             self.unsaved = true;
         }
     }
@@ -192,9 +195,17 @@ mod tests {
     #[test]
     fn the_zoom_steps_as_a_browser_does_and_stops_at_either_end() {
         let mut choices = Chosen::new(Preferences::default());
+        choices.take();
         choices.zoom_in();
         assert_eq!(choices.get().zoom, 110);
         assert!(choices.take_unsaved(), "kept for the next run");
+        assert_eq!(choices.take().map(|page| page.chosen.zoom), Some(110), "heard, for the window that draws it");
+        choices.zoom_in();
+        choices.take();
+        choices.zoom_out();
+        choices.zoom_out();
+        assert_eq!(choices.get().zoom, 100);
+        choices.take_unsaved();
         for _ in 0..20 {
             choices.zoom_in();
         }

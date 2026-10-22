@@ -3,8 +3,9 @@
 
 use argus_desktop_core::connection::page::DiffSide;
 use gpui_kit::component::h_flex;
-use gpui_kit::{div, prelude::*, px, Div, Hsla, Pixels, SharedString};
+use gpui_kit::{div, prelude::*, Div, Hsla, Pixels, SharedString};
 
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The width of a line-number column, and of the marker's.
@@ -37,7 +38,7 @@ pub(super) struct Pin {
 pub(super) struct Gutter {
     numbers: Vec<Div>,
     marker: Div,
-    width: Pixels,
+    width: gpui_kit::Rems,
 }
 
 pub(super) fn gutter(side: Option<&DiffSide>, both: bool, tokens: &Tokens) -> Gutter {
@@ -49,13 +50,13 @@ pub(super) fn gutter(side: Option<&DiffSide>, both: bool, tokens: &Tokens) -> Gu
         _ => tokens.fg_faint,
     };
     let figures = numbers(side, both);
-    let width = px(figures.len() as f32 * NUMBER + MARKER);
+    let width = rem(figures.len() as f32 * NUMBER + MARKER);
     let numbers = figures
         .into_iter()
         .map(move |n| {
             div()
                 .flex_shrink_0()
-                .w(px(NUMBER))
+                .w(rem(NUMBER))
                 .pr_2()
                 .text_right()
                 .text_color(number_colour)
@@ -64,7 +65,7 @@ pub(super) fn gutter(side: Option<&DiffSide>, both: bool, tokens: &Tokens) -> Gu
         .collect();
     let marker = div()
         .flex_shrink_0()
-        .w(px(MARKER))
+        .w(rem(MARKER))
         .text_center()
         .text_color(marker_colour)
         .child(SharedString::from(side.map_or("", |side| side.marker)));

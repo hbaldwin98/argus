@@ -23,11 +23,12 @@ use argus_desktop_core::connection::page::{Call, Side};
 use argus_desktop_core::panes::console::ConsoleGesture;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, App, Context, Entity, FocusHandle, ScrollHandle, Subscription, Window};
+use gpui_kit::{div, prelude::*, App, Context, Entity, FocusHandle, ScrollHandle, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::panes::terminal::Terminal;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 pub struct ConsoleView {
@@ -92,7 +93,7 @@ impl Render for ConsoleView {
                     .min_h_0()
                     .child(first)
                     .when_some(second, |sides, second| {
-                        sides.child(div().w(px(1.0)).h_full().flex_shrink_0().bg(tokens.line)).child(second)
+                        sides.child(div().w(rem(tokens.hairline)).h_full().flex_shrink_0().bg(tokens.line)).child(second)
                     })
                     .into_any_element()
             }
@@ -104,7 +105,7 @@ impl Render for ConsoleView {
             .aria_label("Console")
             .size_full()
             .min_h_0()
-            .bg(tokens.bg_sunken)
+            .bg(tokens.see_sunken)
             .when(held, |console| console.opacity(tokens.opacity_held))
             .child(head)
             .child(body)

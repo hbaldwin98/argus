@@ -9,10 +9,11 @@
 use gpui_kit::component::h_flex;
 use gpui_kit::component::Colorize as _;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{prelude::*, px, transparent_black, ElementId, Role, SharedString};
+use gpui_kit::{prelude::*, transparent_black, ElementId, Role, SharedString};
 
 use crate::kit::icon_button::Node;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// Which `.btn` it is.
@@ -21,6 +22,8 @@ pub enum Look {
     Plain,
     /// `.btn.primary`.
     Primary,
+    /// `.btn.danger`: the danger colour filled, for what cannot be got back.
+    Danger,
     /// `.btn.quiet`: no edge and no fill until the pointer is on it.
     Quiet,
 }
@@ -42,13 +45,13 @@ pub fn button(id: impl Into<ElementId>, words: impl Into<SharedString>, look: Lo
         .test_support()
         .aria_label(words)
         .flex_shrink_0()
-        .h(px(if small { tokens.control_h_sm } else { tokens.control_h }))
-        .px(px(if small { tokens.sp_8 } else { tokens.sp_12 }))
-        .gap(px(tokens.sp_6))
+        .h(rem(if small { tokens.control_h_sm } else { tokens.control_h }))
+        .px(rem(if small { tokens.sp_8 } else { tokens.sp_12 }))
+        .gap(rem(tokens.sp_6))
         .items_center()
-        .rounded(px(tokens.r_pill))
+        .rounded(rem(tokens.r_pill))
         .border_1()
-        .text_size(px(tokens.fs_sm))
+        .text_size(rem(tokens.fs_sm))
         .weighted(tokens.weight_semibold)
         .whitespace_nowrap()
         .cursor_pointer();
@@ -60,6 +63,14 @@ pub fn button(id: impl Into<ElementId>, words: impl Into<SharedString>, look: Lo
                 .text_color(on_accent)
                 .hover(move |style| style.bg(accent.lighten(tokens.step_lift)))
                 .active(move |style| style.bg(accent.darken(tokens.step_lift)))
+        }
+        Look::Danger => {
+            let on_accent = tokens.fg_on_accent;
+            base.border_color(tokens.danger)
+                .bg(tokens.danger)
+                .text_color(on_accent)
+                .hover(move |style| style.bg(tokens.danger.lighten(tokens.step_lift)))
+                .active(move |style| style.bg(tokens.danger.darken(tokens.step_lift)))
         }
         Look::Plain => base
             .border_color(tokens.line_strong)
@@ -74,6 +85,28 @@ pub fn button(id: impl Into<ElementId>, words: impl Into<SharedString>, look: Lo
     }
 }
 
+/// `.btn[disabled]`: a button that cannot be pressed now: no fill, the quiet edge and the faint text,
+/// and no hover. `words` is what it says, which a caller that has a reason gives as its tooltip.
+pub fn off(id: impl Into<ElementId>, words: impl Into<SharedString>, small: bool, tokens: &Tokens) -> Node {
+    h_flex()
+        .id(id)
+        .role(Role::Button)
+        .test_support()
+        .aria_label(words)
+        .flex_shrink_0()
+        .h(rem(if small { tokens.control_h_sm } else { tokens.control_h }))
+        .px(rem(if small { tokens.sp_8 } else { tokens.sp_12 }))
+        .gap(rem(tokens.sp_6))
+        .items_center()
+        .rounded(rem(tokens.r_pill))
+        .border_1()
+        .border_color(tokens.line)
+        .text_color(tokens.fg_faint)
+        .text_size(rem(tokens.fs_sm))
+        .weighted(tokens.weight_semibold)
+        .whitespace_nowrap()
+}
+
 /// `.chipf`: a choice among a few, a pill `--icon-btn` tall in the muted
 /// colour that lifts to `--fill` and the text colour, and stays lifted, its
 /// edge gone into the fill, while it is the one chosen.
@@ -86,13 +119,13 @@ pub fn chip(id: impl Into<ElementId>, words: impl Into<SharedString>, on: bool, 
         .aria_selected(on)
         .aria_label(words)
         .flex_shrink_0()
-        .h(px(tokens.icon_btn))
-        .px(px(tokens.sp_8))
-        .gap(px(tokens.sp_4))
+        .h(rem(tokens.icon_btn))
+        .px(rem(tokens.sp_8))
+        .gap(rem(tokens.sp_4))
         .items_center()
-        .rounded(px(tokens.r_pill))
+        .rounded(rem(tokens.r_pill))
         .border_1()
-        .text_size(px(tokens.fs_sm))
+        .text_size(rem(tokens.fs_sm))
         .whitespace_nowrap()
         .cursor_pointer();
     if on {

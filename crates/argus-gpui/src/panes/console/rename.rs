@@ -21,6 +21,7 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::overlay::host::{Overlays, Spec};
 use crate::kit::overlay::kind::Overlay;
+use crate::theme::scale::pixels;
 use crate::theme::Tokens;
 
 /// Opens the dialog over the window, naming `pane`, called `title` now.
@@ -51,7 +52,7 @@ pub fn open(pane: u64, title: String, caller: Caller, heard: Entity<Heard>, wind
             let (cancelling, asking) = (closing.clone(), closing.clone());
             dialog
                 .title(format!("Rename {title}"))
-                .w(gpui_kit::px(Tokens::global(cx).dialog_w))
+                .w(pixels(Tokens::global(cx).dialog_w, window.rem_size()))
                 .child(v_flex().gap_1().child(Label::new("Name")).child(Input::new(&input)))
                 // Enter in the field is the dialog's confirm, as the page's Enter is.
                 .on_ok(move |_, _, cx| {

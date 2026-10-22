@@ -25,14 +25,15 @@ pub mod diff;
 use argus_desktop_core::connection::page::{Call, HistoryPage};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Entity, ScrollHandle, SharedString, Subscription, Window};
+use gpui_kit::{div, prelude::*, Context, Entity, ScrollHandle, SharedString, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::kit::diff::DiffView;
+use crate::kit::diff::{DiffEvent, DiffView};
 use crate::kit::hints;
 use crate::kit::split::{self, Split};
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The width the commits open at, and how far the person may drag it.
@@ -58,13 +59,16 @@ pub struct History {
     scroll: ScrollHandle,
     /// The row lit when the list last scrolled to it, and where in the list it stood.
     lit: Option<(usize, usize)>,
-    _resized: Subscription,
+    _subscriptions: [Subscription; 2],
 }
 
 impl History {
-    /// Copies the diff's selected text; whether there was any.
+    /// Sends the diff's selected text to Rust to copy; whether there was any.
     pub fn copy(&self, cx: &mut Context<Self>) -> bool {
-        self.diff.update(cx, |diff, cx| diff.copy(cx))
+        let Some(text) = self.diff.read(cx).selection_text() else { return false };
+        // Not through `ask`: a copy needs no daemon, so a lost link does not hold it.
+        self.caller.call(Call::CopyText { text });
+        true
     }
 
     /// The diff on screen, for the stage's sideways keys.
@@ -76,7 +80,12 @@ impl History {
         let diff = cx.new(|cx| DiffView::new("history-diff", false, false, cx));
         let split = cx.new(|cx| Split::new("history-split", "Resize the commits", COMMITS, COMMITS_MIN, COMMITS_MAX, cx));
         let resized = cx.observe(&split, |_, _, cx| cx.notify());
-        Self { heard, caller, diff, split, scroll: ScrollHandle::new(), lit: None, _resized: resized }
+        let copying = cx.subscribe(&diff, |this, _, event: &DiffEvent, cx| {
+            if matches!(event, DiffEvent::CopySelection) {
+                this.copy(cx);
+            }
+        });
+        Self { heard, caller, diff, split, scroll: ScrollHandle::new(), lit: None, _subscriptions: [resized, copying] }
     }
 
     /// Follows the session: the diff's rows, and the lit row brought into view
@@ -111,7 +120,7 @@ impl History {
             .test_support()
             .aria_label(SharedString::from(words.to_owned()))
             .size_full()
-            .p(px(tokens.sp_24))
+            .p(rem(tokens.sp_24))
             .typed(tokens.type_body)
             .text_color(tokens.fg_muted)
             .child(SharedString::from(words.to_owned()))

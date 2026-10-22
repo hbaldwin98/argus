@@ -154,7 +154,7 @@ fn paints(batch: &TextBatch) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::ledger;
+    use crate::theme::themes::ledger;
     use crate::panes::palette::contrast;
     use crate::panes::palette::MINIMUM_CONTRAST;
     use crate::panes::screen::width;

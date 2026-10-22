@@ -14,13 +14,14 @@ pub mod slots;
 use argus_desktop_core::chrome::strip::StripPage;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, AnyElement, App, MouseButton, SharedString, Window, WindowControlArea};
+use gpui_kit::{div, prelude::*, AnyElement, App, MouseButton, SharedString, Window, WindowControlArea};
 
 use super::stage::route::narrow;
 use super::window_controls::{control, Control};
 use crate::kit::icons::Glyph;
 use crate::kit::pill::{status_pill, status_word};
 use crate::style::Typed as _;
+use crate::theme::scale::{css, rem};
 use crate::theme::Tokens;
 
 /// The strip: a drag region that grows, holding the crumb over the title as the page's
@@ -87,7 +88,7 @@ impl RenderOnce for Header {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
         let mono = SharedString::from(tokens.font_mono);
-        let width = f32::from(window.viewport_size().width);
+        let width = css(window.viewport_size().width, window.rem_size());
         let maximize = if window.is_maximized() { Glyph::WinRestore } else { Glyph::WinMax };
         let StripPage { crumb, title, status, resumed, .. } = self.strip;
         // `.head-status` is drawn for the folded rail alone, where the row is not seen.
@@ -97,10 +98,10 @@ impl RenderOnce for Header {
         h_flex()
             .id("header")
             .test_support()
-            .h(px(tokens.header_h))
+            .h(rem(tokens.header_h))
             .flex_shrink_0()
             .items_stretch()
-            .bg(tokens.bg_surface)
+            .bg(tokens.see_surface)
             .border_b_1()
             .border_color(tokens.line)
             .child(
@@ -111,9 +112,9 @@ impl RenderOnce for Header {
                     .flex_1()
                     .min_w_0()
                     .items_center()
-                    .gap(px(tokens.sp_12))
-                    .pl(px(tokens.sp_20))
-                    .pr(px(tokens.sp_16))
+                    .gap(rem(tokens.sp_12))
+                    .pl(rem(tokens.sp_20))
+                    .pr(rem(tokens.sp_16))
                     .when(self.held, |head| head.opacity(tokens.opacity_dim))
                     // Windows answers a hit test over this area with HTCAPTION,
                     // which gives drag, double-click to maximize and Win11's
@@ -127,12 +128,12 @@ impl RenderOnce for Header {
                             .flex_1()
                             .min_w_0()
                             .justify_center()
-                            .gap(px(tokens.sp_2))
+                            .gap(rem(tokens.sp_2))
                             .when(!crumb.is_empty(), |this| this.child(crumb::crumb(&crumb, &tokens)))
                             .child(
                                 h_flex()
                                     .min_w_0()
-                                    .gap(px(tokens.sp_8))
+                                    .gap(rem(tokens.sp_8))
                                     .items_center()
                                     .child(div().typed(tokens.type_heading).text_color(tokens.fg).truncate().child(SharedString::from(title)))
                                     .children(chip.map(|status| status_pill("head-status", status_word(status).to_owned(), status, &tokens)))
@@ -151,7 +152,7 @@ impl RenderOnce for Header {
                                 .aria_label(self.size.clone())
                                 .flex_none()
                                 .font_family(mono)
-                                .text_size(px(tokens.fs_xs))
+                                .text_size(rem(tokens.fs_xs))
                                 .text_color(tokens.fg_faint)
                                 .whitespace_nowrap()
                                 .child(self.size),
@@ -165,11 +166,11 @@ impl RenderOnce for Header {
                         .id("strip-tools")
                         .flex_none()
                         .items_center()
-                        .gap(px(tokens.sp_8))
-                        .pr(px(tokens.sp_8))
+                        .gap(rem(tokens.sp_8))
+                        .pr(rem(tokens.sp_8))
                         .children(self.launcher)
                         .children(self.tools)
-                        .child(div().ml(px(tokens.sp_4)).w(px(tokens.hairline)).h(px(tokens.sp_20)).bg(tokens.line)),
+                        .child(div().ml(rem(tokens.sp_4)).w(rem(tokens.hairline)).h(rem(tokens.sp_20)).bg(tokens.line)),
                 )
             })
             .child(control("minimize", Glyph::WinMin, Control::Minimize, tokens))

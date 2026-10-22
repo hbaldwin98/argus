@@ -2,8 +2,9 @@
 
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{prelude::*, px, ElementId, Role, SharedString};
+use gpui_kit::{prelude::*, ElementId, Role, SharedString};
 
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// A box with an id, the shape every button here is built on.
@@ -21,12 +22,12 @@ pub fn icon_button(id: impl Into<ElementId>, words: impl Into<SharedString>, hot
         .role(Role::Button)
         .test_support()
         .aria_label(words)
-        .h(px(tokens.icon_btn))
-        .w(px(tokens.icon_btn))
+        .h(rem(tokens.icon_btn))
+        .w(rem(tokens.icon_btn))
         .flex_shrink_0()
         .items_center()
         .justify_center()
-        .rounded(px(tokens.r_sm))
+        .rounded(rem(tokens.r_sm))
         .cursor_pointer()
         .text_color(rest)
         .when(hot, |button| button.bg(fill))

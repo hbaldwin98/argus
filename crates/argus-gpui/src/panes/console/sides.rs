@@ -6,7 +6,7 @@ use gpui_kit::component::button::Button;
 use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Entity, Role, SharedString};
+use gpui_kit::{div, prelude::*, Context, Entity, Role, SharedString};
 
 use super::ConsoleView;
 use super::head::dot;
@@ -16,6 +16,7 @@ use crate::kit::tip::tip;
 use crate::kit::strip as chrome_strip;
 use crate::panes::terminal::Terminal;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl ConsoleView {
@@ -38,7 +39,7 @@ impl ConsoleView {
             .aria_selected(typing)
             .relative()
             .flex_shrink_0()
-            .h(px(tokens.pane_head_h))
+            .h(rem(tokens.pane_head_h))
             .items_center()
             .bg(if typing { selected } else { tokens.bg_chrome })
             .border_b_1()
@@ -59,8 +60,8 @@ impl ConsoleView {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .px(px(tokens.sp_12))
-                    .gap(px(tokens.sp_6))
+                    .px(rem(tokens.sp_12))
+                    .gap(rem(tokens.sp_6))
                     .items_center()
                     .cursor_pointer()
                     .tooltip(tip(words.clone()))
@@ -79,8 +80,8 @@ impl ConsoleView {
                 .tooltip(tip("Take out of the split"))
                 .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::CloseSide { pane }, cx))),
             )
-            .when(typing, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(px(tokens.rule)).bg(tokens.accent)))
-            .context_menu(move |menu, _, cx| build(menu, &offers, &caller, &heard, tokens, cx))
+            .when(typing, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(rem(tokens.rule)).bg(tokens.accent)))
+            .context_menu(move |menu, window, cx| build(menu, &offers, &caller, &heard, tokens, window, cx))
     }
 
     /// One side of the console: its screen, under its header while split.

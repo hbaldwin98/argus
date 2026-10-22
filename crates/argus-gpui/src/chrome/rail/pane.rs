@@ -10,7 +10,7 @@ use argus_desktop_core::connection::page::{Call, Pane, Rail};
 use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::v_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Hsla, MouseButton, MouseDownEvent, MouseUpEvent, Role, SharedString};
+use gpui_kit::{div, prelude::*, Context, Hsla, MouseButton, MouseDownEvent, MouseUpEvent, Role, SharedString};
 
 use super::menus;
 use super::popup;
@@ -23,7 +23,7 @@ use crate::kit::pill::status_pill;
 use crate::kit::status_dot::status_dot;
 use crate::kit::tip::tip;
 use crate::layout::carry::{Carried, Carrier};
-use crate::theme::scale::Mark;
+use crate::theme::scale::{rem, Mark};
 use crate::theme::Tokens;
 
 /// The tooltip a pane's row says: its title, then its note or what it is.
@@ -38,7 +38,7 @@ impl RailView {
         let (weak, heard) = (cx.weak_entity(), self.heard.clone());
         let tokens = *tokens;
         let row = if ctx.icons { self.tile(checkout, pane, picked, ctx, &tokens, cx).into_any_element() } else { self.row(checkout, pane, picked, ctx, &tokens, cx).into_any_element() };
-        div().id(format!("pane-row-{}", pane.id)).test_support().child(row).context_menu(move |menu, _, cx| popup::fill(menu, &items, &weak, &heard, tokens, cx))
+        div().id(format!("pane-row-{}", pane.id)).test_support().child(row).context_menu(move |menu, window, cx| popup::fill(menu, &items, &weak, &heard, tokens, window, cx))
     }
 
     /// What every pane row does with a press: it is carried onto the stage or another checkout's row
@@ -87,10 +87,10 @@ impl RailView {
             .relative()
             .w_full()
             // One pixel less each side: the ring is a border here, an outline in the page.
-            .pl(px(tokens.sp_12 - 1.0))
-            .pr(px(tokens.sp_8 - 1.0))
-            .gap(px(tokens.sp_12))
-            .text_size(px(tokens.fs_md))
+            .pl(rem(tokens.sp_12 - 1.0))
+            .pr(rem(tokens.sp_8 - 1.0))
+            .gap(rem(tokens.sp_12))
+            .text_size(rem(tokens.fs_md))
             .text_color(if pane.on || pane.agent { tokens.fg } else { tokens.fg_muted })
             .border_1()
             .border_color(ring)
@@ -99,7 +99,7 @@ impl RailView {
             .tooltip(tip(tooltip(pane)))
             .when(boxed, |row| row.bg(tokens.bg_selected))
             .when(!boxed, |row| row.hover(move |style| style.bg(fill)))
-            .when_some(edge, |row, width| row.child(div().absolute().left_0().top_0().bottom_0().w(px(width)).bg(tokens.mark_sel_edge)))
+            .when_some(edge, |row, width| row.child(div().absolute().left_0().top_0().bottom_0().w(rem(width)).bg(tokens.mark_sel_edge)))
             .children(shown);
         self.presses(row, checkout, pane, held, cx)
             // One status encoding per row: the pill when it has a word, else the dot.
@@ -117,13 +117,13 @@ impl RailView {
                     .role(Role::Button)
                     .aria_label(format!("Close {}", pane.title))
                     .absolute()
-                    .right(px(tokens.sp_8))
-                    .top(px((tokens.pane_row_h - tokens.icon_box) / 2.0 - 1.0))
-                    .size(px(tokens.icon_box))
+                    .right(rem(tokens.sp_8))
+                    .top(rem((tokens.pane_row_h - tokens.icon_box) / 2.0 - 1.0))
+                    .size(rem(tokens.icon_box))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(tokens.r_sm))
+                    .rounded(rem(tokens.r_sm))
                     .text_color(tokens.fg_muted)
                     .cursor_pointer()
                     .invisible()
@@ -156,13 +156,13 @@ impl RailView {
         let tile = line(format!("pane-{id}"), tokens.rail_tile, tokens)
             .group(SharedString::from(format!("pane-row-{id}")))
             .relative()
-            .w(px(tokens.rail_tile))
+            .w(rem(tokens.rail_tile))
             .justify_center()
-            .rounded(px(tokens.r_md))
+            .rounded(rem(tokens.r_md))
             .border_1()
             .border_color(if picked { tokens.ring } else { tokens.line })
             .font_family(SharedString::from(tokens.font_mono))
-            .text_size(px(tokens.fs_sm))
+            .text_size(rem(tokens.fs_sm))
             .text_color(if pane.on || pane.agent { tokens.fg } else { tokens.fg_muted })
             .aria_selected(pane.on)
             .aria_label(tooltip(pane))
@@ -174,14 +174,14 @@ impl RailView {
             .id(format!("pane-{id}-dot"))
             .test_support()
             .absolute()
-            .top(px(-tokens.sp_2))
-            .right(px(-tokens.sp_2))
-            .size(px(tokens.sp_12))
+            .top(rem(-tokens.sp_2))
+            .right(rem(-tokens.sp_2))
+            .size(rem(tokens.sp_12))
             .rounded_full()
             .border_2()
             .border_color(ring)
             .bg(dot);
-        v_flex().items_center().mb(px(tokens.sp_4)).child(self.presses(tile, checkout, pane, held, cx).child(pane_mark(&pane.title)).child(dot))
+        v_flex().items_center().mb(rem(tokens.sp_4)).child(self.presses(tile, checkout, pane, held, cx).child(pane_mark(&pane.title)).child(dot))
     }
 }
 

@@ -365,6 +365,8 @@ dependencies = [
  "gpui-kit",
  "image",
  "proptest",
+ "raw-window-handle",
+ "serde_json",
  "tokio",
  "tracing",
  "unicode-width",

@@ -30,6 +30,11 @@ unicode-width = "0.2"
 # window does.
 arboard = { version = "3", default-features = false, features = ["image-data"] }
 
+# The window's own handle, which the DWM border colour and Mica's tint are set on (GPUI has no
+# call for either); the same version GPUI's `Window` implements `HasWindowHandle` for.
+[target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
+
 # A Linux desktop is as likely Wayland as X11 now, as the terminal client
 # found.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -40,5 +45,7 @@ arboard = { version = "3", default-features = false, features = ["image-data", "
 # this feature, from the same pinned source as the normal dependency.
 gpui-kit = { version = "=0.8.0", features = ["test-support"] }
 proptest = { workspace = true }
+# A theme's name as the settings file keeps it, to hold the data to the stylesheet.
+serde_json = { workspace = true }
 # The scenes the Tauri page is photographed in, for the side-by-side shots.
 argus-desktop-core = { path = "../argus-desktop-core", features = ["scenes"] }

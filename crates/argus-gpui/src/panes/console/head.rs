@@ -7,7 +7,7 @@ use argus_desktop_core::panes::console::{ConsoleGesture, ConsolePage, ConsoleTab
 use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Anchor, ClickEvent, Context, MouseButton, Role, SharedString};
+use gpui_kit::{div, prelude::*, Anchor, ClickEvent, Context, MouseButton, Role, SharedString};
 
 use super::ConsoleView;
 use super::menu::build;
@@ -17,6 +17,7 @@ use crate::keys::caps;
 use crate::kit::icons::Glyph;
 use crate::kit::status_dot::status_dot;
 use crate::kit::strip as chrome_strip;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl ConsoleView {
@@ -50,7 +51,7 @@ impl ConsoleView {
                     .aria_label(title.clone())
                     .min_w_0()
                     .h_full()
-                    .gap(px(tokens.sp_6))
+                    .gap(rem(tokens.sp_6))
                     .items_center()
                     .cursor_pointer()
                     .tooltip(tip(format!("shell, {status}")))
@@ -67,7 +68,7 @@ impl ConsoleView {
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::Close { pane }, cx))),
             )
-            .context_menu(move |menu, _, cx| build(menu, &offers, &caller, &heard, tokens, cx))
+            .context_menu(move |menu, window, cx| build(menu, &offers, &caller, &heard, tokens, window, cx))
     }
 
     pub(super) fn head(&self, page: &ConsolePage, docks: &DocksPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
@@ -94,15 +95,15 @@ impl ConsoleView {
             .id("console-head")
             .test_support()
             // `.chead`: a little more room before the first tab.
-            .pl(px(tokens.sp_12))
+            .pl(rem(tokens.sp_12))
             .child(
                 h_flex()
                     .id("console-tabs")
                     .role(Role::TabList)
                     .test_support()
                     .min_w_0()
-                    .ml(px(tokens.sp_4))
-                    .gap(px(tokens.sp_4))
+                    .ml(rem(tokens.sp_4))
+                    .gap(rem(tokens.sp_4))
                     // Tabs past the strip's room scroll sideways, so the buttons after them are never
                     // pushed off the edge.
                     .overflow_x_scroll()
@@ -122,7 +123,7 @@ impl ConsoleView {
                 div().id("console-menu-label").role(Role::Button).test_support().aria_label("Console menu").child(keep(
                     chrome_strip::menu_button("console-menu", Glyph::More, 14.0, tokens, cx)
                         .tooltip("Split, move, fill the window")
-                        .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, cx| build(menu, &offers, &caller, &heard, ledger_copy, cx)),
+                        .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| build(menu, &offers, &caller, &heard, ledger_copy, window, cx)),
                 )),
             )
             .child(

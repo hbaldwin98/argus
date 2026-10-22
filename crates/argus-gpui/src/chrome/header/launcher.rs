@@ -8,10 +8,11 @@
 //! and it stays where the page has it.
 
 use argus_desktop_core::connection::page::Call;
-use gpui_kit::{div, prelude::*, px, SharedString};
+use gpui_kit::{div, prelude::*, SharedString};
 
 use crate::connection::caller::Caller;
 use crate::kit::button::{button, Look};
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// What the launcher says: nothing at all with no view to open.
@@ -25,13 +26,13 @@ pub fn launcher(waiting: usize, out: bool, held: bool, caller: &Caller, tokens: 
     let tip = words(waiting)?;
     let caller = caller.clone();
     let count = div()
-        .min_w(px(tokens.sp_20))
-        .px(px(tokens.sp_6))
-        .rounded(px(tokens.r_pill))
+        .min_w(rem(tokens.sp_20))
+        .px(rem(tokens.sp_6))
+        .rounded(rem(tokens.r_pill))
         .bg(tokens.fill)
         .text_color(tokens.fg_muted)
-        .text_size(px(tokens.fs_xs))
-        .line_height(px(tokens.sp_20))
+        .text_size(rem(tokens.fs_xs))
+        .line_height(rem(tokens.sp_20))
         .text_center()
         .child(SharedString::from(waiting.to_string()));
     Some(
@@ -39,7 +40,7 @@ pub fn launcher(waiting: usize, out: bool, held: bool, caller: &Caller, tokens: 
             // The page says aria-pressed; the kit re-exports no toggled state, so it is the selected one.
             .aria_selected(out)
             .when(out, |button| button.bg(tokens.bg_selected).border_color(tokens.line_strong))
-            .gap(px(tokens.sp_6))
+            .gap(rem(tokens.sp_6))
             .child("Views")
             .child(count)
             .on_click(move |_, _, _| {

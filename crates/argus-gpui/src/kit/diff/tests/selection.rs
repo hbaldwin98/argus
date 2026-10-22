@@ -18,14 +18,14 @@ fn dragged(cx: &mut TestAppContext, opened: &Opened, from: gpui_kit::Point<Pixel
     cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
 }
 
+/// What the selection reads as, which is what the owner sends to Rust to copy.
 fn copied(cx: &mut TestAppContext, opened: &Opened) -> (bool, Option<String>) {
-    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(String::new()));
-    let had = cx.update(|cx| opened.view.update(cx, |view, cx| view.copy(cx)));
-    (had, cx.read_from_clipboard().and_then(|item| item.text()))
+    let text = cx.update(|cx| opened.view.read(cx).selection_text());
+    (text.is_some(), text)
 }
 
 #[gpui_kit::test]
-fn a_drag_across_three_rows_selects_their_text_and_copy_puts_it_on_the_clipboard(cx: &mut TestAppContext) {
+fn a_drag_across_three_rows_selects_their_text_and_the_selection_reads_as_it(cx: &mut TestAppContext) {
     let opened = open_picking(cx, true, true);
     show(cx, &opened, &[text_line(0, "alpha"), text_line(1, "beta"), text_line(2, "gamma delta")]);
     let (from, to) = (in_code(cx, &opened, 0, 0.0), in_code(cx, &opened, 2, 5.2));
@@ -96,4 +96,64 @@ fn a_split_pair_selects_within_the_half_the_press_began_in(cx: &mut TestAppConte
     dragged(cx, &opened, start, end);
     assert_eq!(copied(cx, &opened), (true, Some("left one
 left two".to_owned())));
+}
+
+fn right_click(cx: &mut TestAppContext, opened: &Opened) {
+    cx.update_window(opened.handle, |_, window, cx| window.right_click("diff-body".to_owned(), cx)).unwrap();
+    for _ in 0..2 {
+        cx.run_until_parked();
+        cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    }
+}
+
+/// The centre of the item named `label` in the open menu, if there is one.
+fn in_menu(cx: &mut TestAppContext, opened: &Opened, label: &str) -> Option<gpui_kit::Point<Pixels>> {
+    use gpui_kit::test::TestQueryExt as _;
+    cx.update_window(opened.handle, |_, window, _| {
+        window
+            .elements()
+            .into_iter()
+            .find(|element| {
+                element.label() == Some(label)
+                    && element.path().iter().any(|id| matches!(id, gpui_kit::ElementId::Name(name) if name.as_ref() == "popup-menu"))
+            })
+            .map(|element| element.bounds().center())
+    })
+    .unwrap()
+}
+
+// SHELL-MENU-5.
+#[gpui_kit::test]
+fn a_right_click_with_text_selected_offers_copy_which_asks_the_owner_to_copy(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestEventExt as _;
+    let opened = open_picking(cx, true, true);
+    show(cx, &opened, &[text_line(0, "alpha"), text_line(1, "beta")]);
+    let (from, to) = (in_code(cx, &opened, 0, 0.0), in_code(cx, &opened, 1, 4.2));
+    dragged(cx, &opened, from, to);
+    opened.pressed.borrow_mut().clear();
+    right_click(cx, &opened);
+    let copy = in_menu(cx, &opened, "Copy").expect("a Copy item in the menu");
+    assert!(in_menu(cx, &opened, "Selection").is_some(), "under the heading Selection");
+    cx.update_window(opened.handle, |_, window, cx| {
+        window.pointer_down(copy, gpui_kit::MouseButton::Left, cx);
+        window.pointer_up(copy, gpui_kit::MouseButton::Left, cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert_eq!(*opened.pressed.borrow(), [DiffEvent::CopySelection]);
+}
+
+#[gpui_kit::test]
+fn a_right_click_with_nothing_selected_opens_no_menu(cx: &mut TestAppContext) {
+    let opened = open_picking(cx, true, true);
+    show(cx, &opened, &[text_line(0, "alpha"), text_line(1, "beta")]);
+    right_click(cx, &opened);
+    use gpui_kit::test::TestQueryExt as _;
+    let popped = cx
+        .update_window(opened.handle, |_, window, _| {
+            window.elements().into_iter().any(|e| e.path().iter().any(|id| matches!(id, gpui_kit::ElementId::Name(name) if name.as_ref() == "popup-menu")))
+        })
+        .unwrap();
+    assert!(!popped, "not even an empty menu opened");
+    assert!(opened.pressed.borrow().is_empty());
 }

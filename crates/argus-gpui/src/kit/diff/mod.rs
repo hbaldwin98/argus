@@ -21,6 +21,7 @@ pub mod fold;
 pub mod gutter;
 pub mod items;
 pub mod measure;
+pub mod menu;
 pub mod paint;
 pub mod pan;
 pub mod rows;
@@ -42,6 +43,7 @@ use gpui_kit::{
 };
 
 use crate::kit::drag::{self, Drag};
+use crate::theme::scale::{pixels, zoom};
 use crate::theme::Tokens;
 use items::Item;
 use paint::Layouts;
@@ -58,6 +60,9 @@ pub enum DiffEvent {
     /// A drag that began on one row and ended on another, in a view that
     /// picks: the rows it began and ended on, for a click then a shift-click.
     Range { first: usize, last: usize },
+    /// `Copy` chosen from the menu a right-click on selected text opens: the owner sends the
+    /// selected text (`selection_text`) to Rust.
+    CopySelection,
 }
 
 /// A thing drawn under a row, among the rows.
@@ -90,6 +95,10 @@ pub struct DiffView {
     /// mono cell in the diff's font, once rendered.
     pane: Rc<Cell<Pixels>>,
     advance: Pixels,
+    /// How far the window is zoomed, which the rows' sizes (the page's pixels) are measured at, and
+    /// the zoom `heights` was made at, so a zoom remeasures them.
+    zoom: f32,
+    sized_at: f32,
     /// The cells a split half's code is wrapped at when `heights` was made.
     per_line: usize,
     /// Where a middle-button pan was pressed and the scroll offset then.
@@ -139,6 +148,8 @@ impl DiffView {
             widest: (0, 0),
             pane: Rc::default(),
             advance: px(0.0),
+            zoom: 1.0,
+            sized_at: 1.0,
             per_line: 0,
             panning: None,
             drag: Drag::new(),
@@ -226,18 +237,20 @@ impl Render for DiffView {
         let theme = cx.theme();
         // `.dbody`: the mono face at `--fs-sm`, which is smaller than the terminal's.
         let tokens = *Tokens::global(cx);
-        let (family, text_size) = (theme.mono_font_family.clone(), px(tokens.fs_sm));
+        let (family, text_size) = (theme.mono_font_family.clone(), pixels(tokens.fs_sm, window.rem_size()));
         // One cell is the advance of `M`, as the terminal panes measure it.
         let text = window.text_system();
         let font_id = text.resolve_font(&Font { family: family.clone(), ..Font::default() });
         self.advance = text.advance(font_id, text_size, 'M').map_or(text_size * 0.6, |advance| advance.width);
-        if self.wrap_at() != self.per_line {
+        self.zoom = zoom(window.rem_size());
+        if self.wrap_at() != self.per_line || self.sized_at != self.zoom {
             self.per_line = self.wrap_at();
             self.size();
         }
         let (pane, area, diff) = (self.pane.clone(), self.area.clone(), cx.entity());
-        div()
+        let body = div()
             .id(SharedString::from(format!("{}-body", self.id)))
+            .test_support()
             .relative()
             .size_full()
             .min_h_0()
@@ -301,7 +314,8 @@ impl Render for DiffView {
                     .track_focus(&self.keys)
                     .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| drag::escape(this, event, window, cx))),
             )
-            .child(drag::watch(cx.weak_entity()))
+            .child(drag::watch(cx.weak_entity()));
+        self.offer_copy(body, cx)
     }
 }
 

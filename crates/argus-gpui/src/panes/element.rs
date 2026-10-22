@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use gpui_kit::{
     fill, outline, point, px, relative, size, App, Bounds, BorderStyle, ContentMask, Element, ElementId,
-    ElementInputHandler, Entity, FocusHandle, Font, FontStyle, FontWeight, GlobalElementId, Hsla,
+    ElementInputHandler, Entity, FocusHandle, Font, FontFallbacks, FontStyle, FontWeight, GlobalElementId, Hsla,
     InspectorElementId, IntoElement, LayoutId, Pixels, Point, SharedString, Style, TextAlign, TextRun,
     UnderlineStyle, Window,
 };
@@ -25,8 +25,10 @@ use crate::panes::palette::Palette;
 use crate::panes::screen::{Screen, Shape};
 use crate::panes::selection::Selection;
 use crate::panes::terminal::Terminal;
+use crate::theme::scale::zoom;
 
-/// The terminal's type as the page sets it: 13px on a 20px line.
+/// The terminal's type as the page sets it: 13px on a 20px line, at 100%. The zoom scales both, so
+/// a cell is as many window pixels as the zoom makes it and the grid is fitted to that.
 pub const FONT_SIZE: f32 = 13.0;
 pub const LINE_HEIGHT: f32 = 20.0;
 
@@ -34,6 +36,8 @@ pub struct TerminalElement {
     pub screen: Arc<Screen>,
     pub palette: Palette,
     pub family: SharedString,
+    /// What draws the glyphs the family lacks: the theme's own code face, then the Nerd Font symbols.
+    pub behind: FontFallbacks,
     /// Whether this pane has the keys and the window is the person's: a
     /// block cursor is filled, else hollow.
     pub focused: bool,
@@ -57,6 +61,9 @@ pub struct TerminalElement {
 
 pub struct Prepainted {
     font: Font,
+    /// The type's size and a one-pixel stroke at the zoom the window is drawn at.
+    font_size: Pixels,
+    stroke: Pixels,
     cell_w: Pixels,
     cell_h: Pixels,
     fit: (u16, u16),
@@ -93,16 +100,18 @@ impl Element for TerminalElement {
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         _state: &mut (),
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> Prepainted {
-        let font = Font { family: self.family.clone(), ..Font::default() };
+        let font = self.font();
+        let zoom = zoom(window.rem_size());
+        let (font_size, stroke) = (px(FONT_SIZE * zoom), px(zoom));
         let text = cx.text_system();
         let font_id = text.resolve_font(&font);
         // The advance of `M`, as the page measures: one cell is one advance,
         // and the row height is the type's own line height, not the font's.
-        let advance = text.advance(font_id, px(FONT_SIZE), 'M').map_or(px(FONT_SIZE * 0.6), |s| s.width);
-        let (cell_w, cell_h) = (advance, px(LINE_HEIGHT));
+        let advance = text.advance(font_id, font_size, 'M').map_or(font_size * 0.6, |s| s.width);
+        let (cell_w, cell_h) = (advance, px(LINE_HEIGHT * zoom));
         let fit = grid_for(
             f32::from(bounds.size.width),
             f32::from(bounds.size.height),
@@ -122,7 +131,7 @@ impl Element for TerminalElement {
                 terminal.update(cx, |terminal, cx| terminal.room(fit.0, fit.1, cx));
             });
         }
-        Prepainted { font, cell_w, cell_h, fit }
+        Prepainted { font, font_size, stroke, cell_w, cell_h, fit }
     }
 
     fn paint(
@@ -161,6 +170,11 @@ impl Element for TerminalElement {
 }
 
 impl TerminalElement {
+    /// The face the screen is drawn in: the family, with the faces that draw what it lacks behind it.
+    fn font(&self) -> Font {
+        Font { family: self.family.clone(), fallbacks: Some(self.behind.clone()), ..Font::default() }
+    }
+
     fn paint_batch(&self, batch: &TextBatch, at: Point<Pixels>, metrics: &Prepainted, window: &mut Window, cx: &mut App) {
         let style = batch.style;
         let mut font = metrics.font.clone();
@@ -171,7 +185,7 @@ impl TerminalElement {
             font.style = FontStyle::Italic;
         }
         let color = style.fg.hsla();
-        let underline = style.underline.then(|| UnderlineStyle { thickness: px(1.0), color: Some(color), wavy: false });
+        let underline = style.underline.then_some(UnderlineStyle { thickness: metrics.stroke, color: Some(color), wavy: false });
         self.paint_glyphs(&batch.text, font, color, underline, batch.wide, at, metrics, window, cx);
     }
 
@@ -200,7 +214,7 @@ impl TerminalElement {
             strikethrough: None,
         };
         let force = (!wide).then_some(metrics.cell_w);
-        let line = window.text_system().shape_line(SharedString::from(text.to_owned()), px(FONT_SIZE), &[run], force);
+        let line = window.text_system().shape_line(SharedString::from(text.to_owned()), metrics.font_size, &[run], force);
         let at = if wide {
             point(at.x + px(centred(f32::from(metrics.cell_w) * 2.0, f32::from(line.width()))), at.y)
         } else {
@@ -240,11 +254,11 @@ impl TerminalElement {
         let color = self.palette.fg.hsla();
         match cursor.shape {
             Shape::Bar => {
-                window.paint_quad(fill(Bounds { origin: top_left, size: size(px(2.0), cell_h) }, color));
+                window.paint_quad(fill(Bounds { origin: top_left, size: size(metrics.stroke * 2.0, cell_h) }, color));
             }
             Shape::Underline => {
-                let origin = point(top_left.x, top_left.y + cell_h - px(2.0));
-                window.paint_quad(fill(Bounds { origin, size: size(cell_w, px(2.0)) }, color));
+                let origin = point(top_left.x, top_left.y + cell_h - metrics.stroke * 2.0);
+                window.paint_quad(fill(Bounds { origin, size: size(cell_w, metrics.stroke * 2.0) }, color));
             }
             Shape::Block if !self.focused => {
                 let cell = Bounds { origin: top_left, size: size(cell_w, cell_h) };
@@ -255,7 +269,7 @@ impl TerminalElement {
                 let cells = if wide { 2.0 } else { 1.0 };
                 window.paint_quad(fill(Bounds { origin: top_left, size: size(cell_w * cells, cell_h) }, color));
                 if glyph != " " {
-                    let font = Font { family: self.family.clone(), ..Font::default() };
+                    let font = self.font();
                     self.paint_glyphs(glyph, font, self.palette.bg.hsla(), None, wide, top_left, metrics, window, cx);
                 }
             }

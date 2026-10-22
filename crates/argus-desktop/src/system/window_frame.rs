@@ -24,37 +24,17 @@ pub fn frameless<'a>(
 /// the sidebar's colour in `theme`, as drawn (`system_dark` resolves
 /// following the system); called again when either changes.
 pub fn paint(window: &WebviewWindow, theme: Theme) {
-    let drawn = theme.resolve(system_dark(window));
     #[cfg(windows)]
     if let Ok(hwnd) = window.hwnd() {
-        dwm::border(hwnd.0, border(drawn));
+        let rgb = argus_desktop_core::settings::frame_border::frame_border(theme, system_dark(window));
+        dwm::border(hwnd.0, rgb);
     }
     #[cfg(not(windows))]
-    let _ = drawn;
+    let _ = (window, theme);
 }
 
 pub fn system_dark(window: &WebviewWindow) -> bool {
     window.theme().map_or(true, |theme| theme != tauri::Theme::Light)
-}
-
-/// `--line` from `assets/style.css`, per flavour: the rule beside the
-/// sidebar.
-#[cfg_attr(not(windows), allow(dead_code))]
-fn border(theme: Theme) -> u32 {
-    match theme {
-        Theme::Latte => 0xccd0da,
-        Theme::Macchiato => 0x363a4f,
-        Theme::Frappe => 0x414559,
-        Theme::Night => 0x161a2e,
-        Theme::Ledger => 0x23252a,
-        Theme::Carbon => 0x393939,
-        Theme::Flexoki => 0x282726,
-        Theme::Kanagawa => 0x2a2a37,
-        Theme::RosePine => 0x26233a,
-        Theme::Nord => 0x434c5e,
-        Theme::Radix => 0x363a3f,
-        Theme::Mocha | Theme::System => 0x313244,
-    }
 }
 
 pub fn minimize(window: &WebviewWindow) -> Result<(), String> {
@@ -146,27 +126,6 @@ mod tests {
     #[test]
     fn a_colorref_reverses_the_stylesheets_byte_order() {
         assert_eq!(colorref(0x313244), 0x443231);
-    }
-
-    #[test]
-    fn the_border_takes_the_line_colour_the_stylesheet_names() {
-        let css = include_str!("../../assets/style.css");
-        for theme in [
-            Theme::Mocha,
-            Theme::Macchiato,
-            Theme::Frappe,
-            Theme::Latte,
-            Theme::Night,
-            Theme::Ledger,
-            Theme::Carbon,
-            Theme::Flexoki,
-            Theme::Kanagawa,
-            Theme::RosePine,
-            Theme::Nord,
-            Theme::Radix,
-        ] {
-            assert!(css.contains(&format!("--surface0: #{:06x};", border(theme))), "{theme:?}");
-        }
     }
 
     #[test]

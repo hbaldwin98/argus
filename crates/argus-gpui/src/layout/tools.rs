@@ -105,7 +105,7 @@ pub fn buttons(tools: &Tools, caller: &Caller, heard: &Entity<Heard>, tokens: &T
             .child(
                 strip::menu_button(SharedString::from(format!("dock-tools-menu-{key}")), Glyph::More, 14.0, tokens, cx)
                     .tooltip("More")
-                    .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, menu_tokens, cx)),
+                    .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| dock_menu::build(menu, &entries, &caller, &heard, menu_tokens, window, cx)),
             ),
     );
     vec![open.into_any_element(), more.into_any_element()]

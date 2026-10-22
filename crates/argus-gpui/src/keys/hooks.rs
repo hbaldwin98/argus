@@ -46,13 +46,12 @@ pub fn place(place: Place) -> Hook {
         Place::Window => Hook::Hooked,
         // The layers above.
         Place::Rail | Place::Start | Place::Menu | Place::Review | Place::History | Place::Sheet => Hook::Hooked,
-        // The fields that answer them: the jump field, the history's filter, the comment box.
-        Place::Jump | Place::Filter | Place::Writing => Hook::Hooked,
+        // The fields that answer them: the jump field, the history's filter, the comment box, the palette's search.
+        Place::Jump | Place::Filter | Place::Writing | Place::Palette => Hook::Hooked,
         Place::Feature | Place::Card | Place::Outline | Place::Diagram => Hook::Arrives("the Feature stage"),
         Place::Checkouts | Place::Files => Hook::Arrives("the Checkouts stage (audit 59 to 64)"),
         Place::Sessions | Place::Transcript => Hook::Arrives("the sessions dialog"),
         Place::Address => Hook::Arrives("the Browsers stage"),
-        Place::Palette => Hook::Arrives("the command palette (audit 33)"),
         Place::Extension => Hook::Arrives("extension views"),
         Place::Code => Hook::Arrives("the Code stage (audit 65 to 71)"),
         Place::Link | Place::Reconcile => Hook::Arrives("the tracker dialogs"),

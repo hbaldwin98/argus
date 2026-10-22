@@ -12,8 +12,20 @@ pub enum Hint {
     None,
     /// Words, `here`.
     Text(String),
+    /// Words in a voice of their own: a project's tally says who needs you louder than who is quiet.
+    Toned(String, Tone),
     /// The keys that do the same, one list of presses per alternative.
     Keys(Vec<Vec<String>>),
+}
+
+/// How loudly a hint's words say it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    /// Somebody is needed: the waiting colour.
+    Loud,
+    /// Work is under way.
+    Active,
+    Muted,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,6 +40,19 @@ pub struct Choice<A> {
     /// A check column before the label: `Some(true)` draws the check, `Some(false)` keeps the room
     /// for it, so a list of choices that may be ticked lines up (the project list).
     pub checked: Option<bool>,
+    /// A mark in the column before the label: the `+` of Add a project.
+    pub lead: Option<&'static str>,
+}
+
+/// A choice that opens a list beside it instead of doing anything: Switch workspace and Connect to a
+/// host. The page unfolds such a list in place; the kit's menu opens it as a flyout, since its items
+/// all close the menu they are chosen in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fold<A> {
+    pub label: String,
+    /// Said at the right edge: the workspace or host in use.
+    pub note: Option<String>,
+    pub items: Vec<MenuItem<A>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,6 +60,7 @@ pub enum MenuItem<A> {
     Heading(String),
     Rule,
     Choice(Choice<A>),
+    Fold(Fold<A>),
 }
 
 impl<A> MenuItem<A> {
@@ -43,7 +69,7 @@ impl<A> MenuItem<A> {
     }
 
     pub fn choice(label: impl Into<String>, does: A) -> Self {
-        Self::Choice(Choice { label: label.into(), does, reason: None, hint: Hint::None, danger: false, checked: None })
+        Self::Choice(Choice { label: label.into(), does, reason: None, hint: Hint::None, danger: false, checked: None, lead: None })
     }
 
     /// Drawn in the danger colour. A heading or a rule is not one to change.
@@ -89,14 +115,36 @@ impl<A> MenuItem<A> {
 
     /// The same item doing something else: the surface that built a list for one kind of choice
     /// hands it to a menu of another.
-    pub fn map<B>(self, change: impl FnOnce(A) -> B) -> MenuItem<B> {
+    pub fn map<B>(self, mut change: impl FnMut(A) -> B) -> MenuItem<B> {
+        self.mapped(&mut change)
+    }
+
+    fn mapped<B>(self, change: &mut impl FnMut(A) -> B) -> MenuItem<B> {
         match self {
             Self::Heading(text) => MenuItem::Heading(text),
             Self::Rule => MenuItem::Rule,
-            Self::Choice(Choice { label, does, reason, hint, danger, checked }) => {
-                MenuItem::Choice(Choice { label, does: change(does), reason, hint, danger, checked })
+            Self::Choice(Choice { label, does, reason, hint, danger, checked, lead }) => {
+                MenuItem::Choice(Choice { label, does: change(does), reason, hint, danger, checked, lead })
+            }
+            Self::Fold(Fold { label, note, items }) => {
+                MenuItem::Fold(Fold { label, note, items: items.into_iter().map(|item| item.mapped(change)).collect() })
             }
         }
+    }
+
+    /// A choice that opens `items` beside it.
+    pub fn fold(label: impl Into<String>, note: Option<String>, items: Vec<MenuItem<A>>) -> Self {
+        Self::Fold(Fold { label: label.into(), note, items })
+    }
+
+    /// Says `words` at the right edge in the voice `tone` gives them.
+    pub fn toned(self, words: impl Into<String>, tone: Tone) -> Self {
+        self.with(|choice| choice.hint = Hint::Toned(words.into(), tone))
+    }
+
+    /// Puts `mark` in the column before the label.
+    pub fn led(self, mark: &'static str) -> Self {
+        self.with(|choice| choice.lead = Some(mark))
     }
 
     /// The choice, if this is one.
@@ -128,6 +176,7 @@ pub(crate) fn lines<A>(items: &[MenuItem<A>]) -> Vec<String> {
                 choice.label,
                 choice.reason.as_ref().map_or(String::new(), |reason| format!(" ({reason})"))
             ),
+            MenuItem::Fold(fold) => format!("{} >", fold.label),
         })
         .collect()
 }
@@ -172,6 +221,24 @@ mod tests {
         assert!(matches!(keyed.as_choice().map(|c| &c.hint), Some(Hint::Keys(keys)) if keys.len() == 1));
         let bare = MenuItem::choice("Split", 1).keyed(Vec::new());
         assert_eq!(bare.as_choice().map(|c| &c.hint), Some(&Hint::None), "no chords is no hint");
+    }
+
+    #[test]
+    fn a_fold_maps_every_choice_inside_it_and_keeps_its_note() {
+        let fold = MenuItem::fold("Switch workspace", Some("default".into()), vec![MenuItem::choice("work", 1), MenuItem::Rule, MenuItem::choice("home", 2)]);
+        let MenuItem::Fold(mapped) = fold.map(|n| n * 10) else { panic!("a fold stays a fold") };
+        assert_eq!(mapped.note.as_deref(), Some("default"));
+        let does: Vec<_> = mapped.items.iter().filter_map(|item| item.as_choice()).map(|choice| choice.does).collect();
+        assert_eq!(does, [10, 20]);
+        assert!(!MenuItem::<u8>::fold("x", None, Vec::new()).enabled(), "a fold is opened, not chosen");
+    }
+
+    #[test]
+    fn a_toned_hint_and_a_lead_mark_ride_on_a_choice_only() {
+        let item = MenuItem::choice("Add", 1).toned("3 need you", Tone::Loud).led("+");
+        let choice = item.as_choice().unwrap();
+        assert_eq!((&choice.hint, choice.lead), (&Hint::Toned("3 need you".into(), Tone::Loud), Some("+")));
+        assert_eq!(MenuItem::<u8>::Rule.toned("x", Tone::Muted).led("+"), MenuItem::Rule);
     }
 
     #[test]

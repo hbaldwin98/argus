@@ -22,13 +22,14 @@ use argus_desktop_core::panes::shown::workspace_grid::rects::rects;
 use argus_desktop_core::panes::shown::workspace_grid::GridPage;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, prelude::*, px, relative, AnyElement, Bounds, Context, FocusHandle, KeyDownEvent, MouseButton, MouseDownEvent, Pixels, Point, Role,
+    div, prelude::*, relative, AnyElement, Bounds, Context, FocusHandle, KeyDownEvent, MouseButton, MouseDownEvent, Pixels, Point, Role,
     SharedString, Task, Window,
 };
 
 use super::SplitView;
 use crate::kit::drag::{self, Drag, Dragger, Step};
 use crate::layout::holders::Holder;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// How long sizes let go of wait for the session to say the same, before the session's are drawn.
@@ -154,10 +155,10 @@ impl SplitView {
                 let element = div()
                     .absolute()
                     .left(relative(rect.x + rect.w))
-                    .ml(px(-tokens.sp_12))
+                    .ml(rem(-tokens.sp_12))
                     .top(relative(rect.y))
                     .h(relative(rect.h))
-                    .w(px(tokens.sp_24))
+                    .w(rem(tokens.sp_24))
                     .cursor_col_resize();
                 out.push(self.gutter(format!("gutter-across-{r}-{c}"), Axis::Across, r, c, held, element, tokens, cx));
             }
@@ -168,8 +169,8 @@ impl SplitView {
                     .left_0()
                     .right_0()
                     .top(relative(next.y))
-                    .mt(px(-tokens.sp_12))
-                    .h(px(tokens.sp_24))
+                    .mt(rem(-tokens.sp_12))
+                    .h(rem(tokens.sp_24))
                     .cursor_row_resize();
                 out.push(self.gutter(format!("gutter-down-{r}"), Axis::Down, r, r, held, element, tokens, cx));
             }
@@ -223,8 +224,8 @@ impl SplitView {
             .child({
                 let line = div().absolute().rounded_full().bg(accent).opacity(if held { 1.0 } else { 0.0 });
                 match axis {
-                    Axis::Across => line.top(px(inset)).bottom(px(inset)).left(px(edge)).w(px(rule)),
-                    Axis::Down => line.left(px(inset)).right(px(inset)).top(px(edge)).h(px(rule)),
+                    Axis::Across => line.top(rem(inset)).bottom(rem(inset)).left(rem(edge)).w(rem(rule)),
+                    Axis::Down => line.left(rem(inset)).right(rem(inset)).top(rem(edge)).h(rem(rule)),
                 }
                 .group_hover(group, |style| style.opacity(1.0))
             })

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::*;
+use gpui_kit::px;
 use argus_desktop_core::connection::page::Event;
 use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
 use gpui_kit::{size, AnyWindowHandle, Bounds, MouseButton, TestAppContext, WindowBounds, WindowOptions};

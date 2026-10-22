@@ -118,7 +118,9 @@ fn the_settings_gear_opens_the_settings_whether_or_not_the_daemon_is_there(cx: &
     // SHELL-FOOT-6: the gear is the window's own, so it is not held with the daemon.
     use crate::kit::overlay::host::Overlays;
     use crate::kit::overlay::kind::Overlay;
-    let opened = open(cx, connected_and_busy());
+    let mut events = connected_and_busy();
+    events.push(crate::keys::root::tests::settings_event());
+    let opened = open(cx, events);
     assert_eq!(label(cx, &opened, "foot-settings").as_deref(), Some("Settings"));
     hear(cx, &opened, vec![status(Connection::Stopped)]);
     click(cx, &opened, "foot-settings");

@@ -24,7 +24,7 @@ use argus_desktop_core::layout::docks::{Dock, DockGesture, FloatBounds, Panel};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, prelude::*, px, AnyView, App, Bounds, Context, Entity, FocusHandle, KeyDownEvent,
+    div, prelude::*, AnyView, App, Bounds, Context, Entity, FocusHandle, KeyDownEvent,
     MouseButton, Pixels, Point, SharedString, Subscription, Window,
 };
 
@@ -42,6 +42,7 @@ use crate::layout::float::{self, FloatsView, Grip};
 use crate::layout::holders::Holder;
 use crate::layout::sash;
 use crate::kit::drag::{self, Drag, Dragger, Step};
+use crate::theme::scale::{css, rem, zoom};
 use crate::theme::Tokens;
 
 /// What is being pressed.
@@ -77,6 +78,8 @@ pub struct WorkView {
     /// The areas as last laid out, for where a pointer is within them.
     work: Rc<Cell<Bounds<Pixels>>>,
     center: Rc<Cell<Bounds<Pixels>>>,
+    /// How far the window was zoomed when it was last drawn, which a gesture's pointer is measured by.
+    zoom: Cell<f32>,
     /// The size a held sash draws, until it is let go.
     sizing: Option<(Dock, u32)>,
     /// The box a held dialog draws, until it is let go.
@@ -112,10 +115,16 @@ impl WorkView {
             keys: cx.focus_handle(),
             work: Rc::default(),
             center: Rc::default(),
+            zoom: Cell::new(1.0),
             sizing: None,
             floating: None,
             _observing: observing,
         }
+    }
+
+    /// How far the window was zoomed when it was last drawn, 1.0 at 100%.
+    pub fn zoom(&self) -> f32 {
+        self.zoom.get()
     }
 
     /// The size the sash of `dock` draws while it is held.
@@ -133,10 +142,11 @@ impl WorkView {
         self.work.get()
     }
 
-    /// The area as whole pixels, for the core's rules of a dialog's box.
+    /// The area as whole pixels of the page's, for the core's rules of a dialog's box.
     fn room(&self) -> (u32, u32) {
         let size = self.work.get().size;
-        (size.width.as_f32().max(0.0) as u32, size.height.as_f32().max(0.0) as u32)
+        let zoom = self.zoom.get();
+        ((size.width.as_f32() / zoom).max(0.0) as u32, (size.height.as_f32() / zoom).max(0.0) as u32)
     }
 
     /// Follows a press of a tab or head, unless the daemon is gone and a
@@ -149,7 +159,7 @@ impl WorkView {
 
     /// Follows a press of `dock`'s sash, `drawn` pixels big now.
     pub fn press_sash(&mut self, dock: Dock, drawn: f32, at: Point<Pixels>, cx: &mut Context<Self>) {
-        let grab = sash::grab(dock, drawn, at, self.work.get(), self.center.get());
+        let grab = sash::grab(dock, drawn, at, self.work.get(), self.center.get(), self.zoom.get());
         self.press(at, Held::Sash { dock, grab }, cx);
     }
 
@@ -166,13 +176,13 @@ impl WorkView {
 
     fn follow(&mut self, held: &Held, cx: &mut Context<Self>) {
         if let (Held::Sash { dock, grab }, Some(at)) = (held, self.drag.at()) {
-            self.sizing = Some((*dock, sash::held(*dock, *grab, at, self.work.get(), self.center.get())));
+            self.sizing = Some((*dock, sash::held(*dock, *grab, at, self.work.get(), self.center.get(), self.zoom.get())));
         }
         if let Held::Pane(carried) = held {
             self.carry(Some(carried), cx);
         }
         if let (Held::Float { panel, grip, start, from }, Some(at)) = (held, self.drag.at()) {
-            self.floating = Some((panel.clone(), float::held(*grip, *start, *from, at, self.room())));
+            self.floating = Some((panel.clone(), float::held(*grip, *start, *from, at, self.room(), self.zoom.get())));
         }
     }
 
@@ -203,7 +213,7 @@ impl WorkView {
     /// The right dock as a drawer: over the stage's right edge, as wide as it was dragged up to what
     /// leaves the stage a sliver to click back to, with the pop-up's shadow.
     fn drawer(&self, window_width: f32, tokens: &Tokens) -> impl IntoElement {
-        let room = self.work.get().size.width.as_f32();
+        let room = self.work.get().size.width.as_f32() / self.zoom.get();
         let room = if room > 0.0 { room } else { window_width };
         div()
             .id("drawer")
@@ -212,7 +222,7 @@ impl WorkView {
             .top_0()
             .right_0()
             .bottom_0()
-            .max_w(px(tokens.drawer_max.min(room - tokens.sp_44)))
+            .max_w(rem(tokens.drawer_max.min(room - tokens.sp_44)))
             .overflow_hidden()
             .shadow(tokens.shadow_pop())
             .child(self.right.clone())
@@ -220,7 +230,7 @@ impl WorkView {
 
     /// The area a panel or a pane dropped here would fill, said in words, and the name of what is
     /// carried under the pointer.
-    fn carrying(&self, tokens: &Tokens, cx: &App) -> Option<impl IntoElement> {
+    fn carrying(&self, tokens: &Tokens, rem_size: Pixels, cx: &App) -> Option<impl IntoElement> {
         let held = self.drag.payload()?;
         if !self.drag.is_dragging() {
             return None;
@@ -244,11 +254,11 @@ impl WorkView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded(px(tokens.r_sm))
+                        .rounded(rem(tokens.r_sm))
                         .border_2()
                         .border_color(tokens.accent)
                         .bg(tokens.accent.opacity(tokens.share_landing))
-                        .child(div().px_2().py_1().rounded(px(tokens.r_sm)).bg(tokens.bg_surface).text_sm().text_color(tokens.fg).child(words))
+                        .child(div().px_2().py_1().rounded(rem(tokens.r_sm)).bg(tokens.bg_surface).text_sm().text_color(tokens.fg).child(words))
                         .into_any_element()
                 });
                 (title.as_str(), lit)
@@ -260,7 +270,7 @@ impl WorkView {
             Held::Sash { .. } | Held::Float { .. } => return None,
         };
         // Over the whole area, so the preview's own offsets are from its corner.
-        Some(div().absolute().top_0().left_0().size_full().children(lit).child(preview::ghost(title, at, tokens)))
+        Some(div().absolute().top_0().left_0().size_full().children(lit).child(preview::ghost(title, at, rem_size, tokens)))
     }
 }
 
@@ -295,7 +305,7 @@ impl Dragger for WorkView {
                 // What was drawn is let go: the dock is Rust's size again,
                 // until the `Docks` event that answers this call.
                 self.sizing = None;
-                let size = sash::held(dock, grab, at, self.work.get(), self.center.get());
+                let size = sash::held(dock, grab, at, self.work.get(), self.center.get(), self.zoom.get());
                 self.ask(Call::Docks { gesture: DockGesture::Size { dock, size } }, cx);
             }
             Step::Dropped(Held::Pane(carried), at) => {
@@ -308,7 +318,7 @@ impl Dragger for WorkView {
             }
             Step::Dropped(Held::Float { panel, grip, start, from }, at) => {
                 self.floating = None;
-                let now = float::held(grip, start, from, at, self.room());
+                let now = float::held(grip, start, from, at, self.room(), self.zoom.get());
                 if let Some(call) = float::released(panel, start, now) {
                     self.ask(call, cx);
                 }
@@ -342,7 +352,8 @@ impl Dragger for WorkView {
 impl Render for WorkView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
-        let width = f32::from(window.viewport_size().width);
+        self.zoom.set(zoom(window.rem_size()));
+        let width = css(window.viewport_size().width, window.rem_size());
         let narrow = crate::chrome::stage::route::narrow(width, tokens.narrow_below);
         // The Console stage and fullscreen give the console the stage: the Workspace's pane has
         // none then (`ConsolePage::showing`). Which one fills it is the router's to say, and a
@@ -372,10 +383,10 @@ impl Render for WorkView {
                     .id("center")
                     .relative()
                     .flex_1()
-                    .min_w(px(tokens.dock_floor))
+                    .min_w(rem(tokens.dock_floor))
                     .h_full()
                     .child(area::measure(self.center.clone()))
-                    .child(div().id("work-stage").test_support().flex_1().min_h(px(dock::FLOOR_HEIGHT)).child(stage))
+                    .child(div().id("work-stage").test_support().flex_1().min_h(rem(dock::FLOOR_HEIGHT)).child(stage))
                     .when(furniture, |center| center.child(self.bottom.clone())),
             )
             // Under 1200px the right dock opens over the stage as a drawer instead of squeezing it: the
@@ -383,7 +394,7 @@ impl Render for WorkView {
             .when(furniture && !narrow, |work| work.child(self.right.clone()))
             .when(furniture && narrow, |work| work.child(self.drawer(width, &tokens)))
             .child(self.floats.clone())
-            .children(self.carrying(&tokens, cx))
+            .children(self.carrying(&tokens, window.rem_size(), cx))
     }
 }
 

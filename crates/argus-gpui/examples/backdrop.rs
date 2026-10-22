@@ -110,7 +110,7 @@ mod dwm {
     }
 }
 
-const LINE_RGB: u32 = argus_gpui::theme::ledger::THEME.palette.surface0.rgb;
+const LINE_RGB: u32 = argus_gpui::theme::themes::ledger::THEME.palette.surface0.rgb;
 
 struct Stage {
     appearance: WindowBackgroundAppearance,
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn a_surface_keeps_its_colour_and_takes_only_the_alpha() {
-        let tokens = argus_gpui::theme::ledger::tokens();
+        let tokens = argus_gpui::theme::themes::ledger::tokens();
         let faded = surface(tokens.bg_chrome, 0.5);
         assert_eq!(faded.a, 0.5);
         assert_eq!((faded.h, faded.s, faded.l), (tokens.bg_chrome.h, tokens.bg_chrome.s, tokens.bg_chrome.l));

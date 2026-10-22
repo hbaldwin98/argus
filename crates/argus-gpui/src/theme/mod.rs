@@ -7,14 +7,16 @@
 //! time. A view reads a `Tokens` and nothing else; the active one is a GPUI
 //! global, and installing another changes what every view reads.
 
+pub mod choice;
 pub mod colour;
 pub mod define;
 pub mod derive;
 pub mod kit;
-pub mod ledger;
 pub mod scale;
+pub mod see;
 #[cfg(test)]
 mod stylesheet;
+pub mod themes;
 
 use std::ops::Deref;
 
@@ -83,6 +85,13 @@ pub struct Tokens {
     pub ring_halo: Hsla,
     /// `--mark-sel-edge`: the colour a selected row's mark is drawn in.
     pub mark_sel_edge: Hsla,
+
+    /// `--see-chrome`, `--see-surface`, `--see-sunken`: the three large fills at the alpha of the
+    /// background-opacity setting, which a region's own fill reads and nothing else does. A dialog,
+    /// a menu, a border and the text stay solid, so they read `bg_*` and `line` and `fg`.
+    pub see_chrome: Hsla,
+    pub see_surface: Hsla,
+    pub see_sunken: Hsla,
 
     // Derived by the page's component rules rather than named by a variable.
     /// `.btn:hover`: the text colour at 7% over whatever is behind, so a hover

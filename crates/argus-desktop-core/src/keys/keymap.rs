@@ -453,7 +453,7 @@ impl Chord {
 }
 
 impl Place {
-    fn title(self) -> &'static str {
+    pub fn title(self) -> &'static str {
         match self {
             Place::Anywhere => "Anywhere",
             Place::Pane => "In a pane",

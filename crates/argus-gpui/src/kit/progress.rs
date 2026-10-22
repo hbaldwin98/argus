@@ -5,8 +5,9 @@
 //! held to the track.
 
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, relative, ElementId, SharedString};
+use gpui_kit::{div, prelude::*, relative, ElementId, SharedString};
 
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// `round(done / total * 100)`, held to 0..=100; none when there is nothing to be done (a total
@@ -22,11 +23,11 @@ pub fn bar(id: impl Into<ElementId>, percent: u8, label: impl Into<SharedString>
         .id(id)
         .test_support()
         .aria_label(label)
-        .w(px(tokens.meter_w))
-        .h(px(tokens.meter_h))
+        .w(rem(tokens.meter_w))
+        .h(rem(tokens.meter_h))
         .flex_shrink_0()
         .overflow_hidden()
-        .rounded(px(tokens.r_pill))
+        .rounded(rem(tokens.r_pill))
         .bg(tokens.fill)
         .child(div().h_full().w(relative(f32::from(percent.min(100)) / 100.0)).bg(tokens.ok))
 }

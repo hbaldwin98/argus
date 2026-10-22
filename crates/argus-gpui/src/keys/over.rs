@@ -2,19 +2,37 @@
 //! the session heard in a pane (`Event::Run`, SHELL-KEYS-9): only one of the three is ever open,
 //! `?` while the sheet is up closes it, and the other two open once (SHELL-KEYS-13).
 //!
-//! The host (`kit/overlay`) closes the others; what is here is which overlay an action is and
-//! what it opens as. None of the three surfaces is in the GPUI window yet, so each opens as a
-//! dialog that says so, a stand-in that is a real overlay with the real rules, replaced where its
-//! surface lands (audit items 33 to 35).
+//! The host (`kit/overlay`) closes the others; what is here is which overlay an action is and what
+//! it opens. The palette, the sheet and the settings are surfaces the shell builds and puts here
+//! (`Surfaces`); the settings chord opens the sheet and, while it is up, puts it away (SHELL-SETTINGS-1).
 
 use argus_desktop_core::keys::keymap::Action;
-use gpui_kit::component::dialog::Dialog;
-use gpui_kit::{prelude::*, px, App, Window};
+use gpui_kit::{App, Entity, Global, Window};
 
-use crate::kit::overlay::host::{Overlays, Spec};
+use super::palette::PaletteView;
+use super::sheet::SheetView;
 use crate::kit::overlay::kind::Overlay;
-use crate::layout::panel::NOT_YET;
-use crate::theme::Tokens;
+use crate::settings::preferences::PreferencesView;
+
+/// The surfaces an action opens over the stage, built once by the shell.
+#[derive(Clone)]
+pub struct Surfaces {
+    pub palette: Entity<PaletteView>,
+    pub sheet: Entity<SheetView>,
+    pub settings: Entity<PreferencesView>,
+}
+
+impl Global for Surfaces {}
+
+impl Surfaces {
+    pub fn install(self, cx: &mut App) {
+        cx.set_global(self);
+    }
+
+    pub fn get(cx: &App) -> Option<Self> {
+        cx.try_global::<Surfaces>().cloned()
+    }
+}
 
 /// The overlay an action opens.
 pub fn overlay_of(action: Action) -> Option<Overlay> {
@@ -26,37 +44,16 @@ pub fn overlay_of(action: Action) -> Option<Overlay> {
     }
 }
 
-fn title(overlay: Overlay) -> &'static str {
-    match overlay {
-        Overlay::Palette => "Search everything",
-        Overlay::Sheet => "Shortcuts",
-        Overlay::AddProject => "Add a project",
-        _ => "Settings",
-    }
-}
-
 /// Opens what `action` names over the window; whether it names one.
 pub fn run_over(action: Action, window: &mut Window, cx: &mut App) -> bool {
     let Some(overlay) = overlay_of(action) else { return false };
-    stand_in(overlay, window, cx);
-    true
-}
-
-/// The dialog of Add a project, which the empty stage's button and `open_add_project` ask for.
-/// Only the stand-in is here (audit item 31): the call is not sent, since the session would then
-/// hold a dialog open that nothing draws or closes.
-pub fn add_project(window: &mut Window, cx: &mut App) {
-    stand_in(Overlay::AddProject, window, cx);
-}
-
-fn stand_in(overlay: Overlay, window: &mut Window, cx: &mut App) {
-    let host = Overlays::get(cx);
-    let build = move |dialog: Dialog, _: &mut Window, cx: &mut App, _: bool| dialog.title(title(overlay)).w(px(Tokens::global(cx).dialog_w)).child(NOT_YET);
-    if overlay == Overlay::Sheet {
-        host.toggle(Spec::new(overlay), build, window, cx);
-    } else {
-        host.open(Spec::new(overlay), build, window, cx);
+    match (overlay, Surfaces::get(cx)) {
+        (Overlay::Palette, Some(surfaces)) => surfaces.palette.update(cx, |palette, cx| palette.open(window, cx)),
+        (Overlay::Sheet, Some(surfaces)) => surfaces.sheet.update(cx, |sheet, cx| sheet.toggle(window, cx)),
+        (Overlay::Settings, Some(surfaces)) => surfaces.settings.update(cx, |settings, cx| settings.toggle(window, cx)),
+        _ => {}
     }
+    true
 }
 
 #[cfg(test)]

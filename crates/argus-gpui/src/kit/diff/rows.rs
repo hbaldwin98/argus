@@ -6,13 +6,14 @@
 
 use argus_desktop_core::connection::page::{DiffRow, DiffSide};
 use gpui_kit::component::h_flex;
-use gpui_kit::{prelude::*, px, AnyElement, App, ClickEvent, Context, ElementId, MouseButton, MouseDownEvent, SharedString, TestSupportExt as _, Window};
+use gpui_kit::{prelude::*, AnyElement, App, ClickEvent, Context, ElementId, MouseButton, MouseDownEvent, SharedString, TestSupportExt as _, Window};
 
 use super::gutter::{gutter, Pin};
 use super::paint::{code, Ink};
 use super::shape::{self, Shape};
 use super::text::Code;
 use super::{tone, wrap, DiffEvent, DiffView};
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl DiffView {
@@ -34,7 +35,7 @@ impl DiffView {
             .id(Self::row_id(ix))
             .test_support()
             .flex_shrink_0()
-            .h(px(self.heights[ix]))
+            .h(rem(self.heights[ix]))
             .border_1()
             .border_color(if row.cursor || row.picked { tokens.line_strong } else { gpui_kit::transparent_black() })
             .when(interactive, |row| {
@@ -51,8 +52,8 @@ impl DiffView {
             .id(Self::row_id(ix))
             .test_support()
             .flex_shrink_0()
-            .h(px(shape::HUNK))
-            .px(px(tokens.sp_12))
+            .h(rem(shape::HUNK))
+            .px(rem(tokens.sp_12))
             .items_center()
             .bg(tokens.bg_chrome)
             .text_color(tokens.fg_faint)
@@ -102,7 +103,7 @@ impl DiffView {
         };
         h_flex()
             .items_center()
-            .when(self.heights[ix] > shape::LINE, |pair| pair.line_height(px(shape::LINE)))
+            .when(self.heights[ix] > shape::LINE, |pair| pair.line_height(rem(shape::LINE)))
             .child(side(row.left.as_ref(), false))
             .child(side(row.right.as_ref(), true))
     }

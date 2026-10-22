@@ -14,6 +14,10 @@ use super::RailView;
 use crate::chrome::nav::Nav;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::keys::over::Surfaces;
+use crate::keys::palette::PaletteView;
+use crate::keys::sheet::SheetView;
+use crate::settings::preferences::PreferencesView;
 
 mod calls;
 mod foot;
@@ -146,6 +150,13 @@ pub(super) fn open_wide(cx: &mut TestAppContext, events: Vec<Event>, width: f32)
             cx,
             |window, cx| {
                 let heard = cx.new(|_| Heard::new());
+                // What the foot's gear and the palette button open is the shell's to build.
+                Surfaces {
+                    palette: cx.new(|cx| PaletteView::new(heard.clone(), caller.clone(), window, cx)),
+                    sheet: cx.new(|cx| SheetView::new(heard.clone(), window, cx)),
+                    settings: cx.new(|cx| PreferencesView::new(heard.clone(), caller.clone(), window, cx)),
+                }
+                .install(cx);
                 let stage = cx.focus_handle();
                 let rail = cx.new(|cx| RailView::new(heard.clone(), caller, stage, window, cx));
                 built = Some((heard, rail.clone()));

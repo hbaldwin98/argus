@@ -1,8 +1,9 @@
 //! The window's three controls: what each looks like, and what it asks of the window.
 
-use gpui_kit::{div, prelude::*, px, Hsla, WindowControlArea};
+use gpui_kit::{div, prelude::*, Hsla, WindowControlArea};
 
 use crate::kit::icons::Glyph;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -38,7 +39,7 @@ pub fn control(id: &'static str, glyph: Glyph, which: Control, tokens: Tokens) -
         .flex()
         .items_center()
         .justify_center()
-        .w(px(tokens.window_control_w))
+        .w(rem(tokens.window_control_w))
         .h_full()
         .flex_shrink_0()
         .text_color(tokens.fg_muted)

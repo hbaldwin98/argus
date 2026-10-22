@@ -11,12 +11,13 @@ use argus_desktop_core::connection::page::{Call, Checkout, Rail};
 use argus_desktop_core::keys::keymap::{Action, Place};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{deferred, div, prelude::*, px, Context, Role, SharedString};
+use gpui_kit::{deferred, div, prelude::*, Context, Role, SharedString};
 
 use super::row::line;
 use super::RailView;
 use crate::keys::caps;
 use crate::kit::keycap::keycap;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 
@@ -36,17 +37,17 @@ impl RailView {
             .role(Role::Menu)
             .aria_label(format!("Start on {repository} {}", checkout.name))
             .absolute()
-            .top(px(tokens.menu_top))
-            .right(px(tokens.sp_8))
-            .w(px(tokens.menu_w))
+            .top(rem(tokens.menu_top))
+            .right(rem(tokens.sp_8))
+            .w(rem(tokens.menu_w))
             .occlude()
-            .p(px(tokens.sp_4))
+            .p(rem(tokens.sp_4))
             .bg(tokens.bg_surface)
             .border_1()
             .border_color(tokens.line_strong)
-            .rounded(px(tokens.r_md))
+            .rounded(rem(tokens.r_md))
             .shadow(tokens.shadow_pop())
-            .text_size(px(tokens.fs_md))
+            .text_size(rem(tokens.fs_md))
             .text_color(tokens.fg)
             // A press anywhere else shuts it; the + that opened it toggles it itself.
             .on_mouse_down_out(cx.listener(move |this, _, _, _| {
@@ -62,12 +63,12 @@ impl RailView {
                     1 => agent_keys.clone(),
                     _ => Vec::new(),
                 };
-                let rule = (i == 1).then(|| div().h(px(tokens.hairline)).mx(px(tokens.sp_2)).my(px(tokens.sp_4)).bg(tokens.line).into_any_element());
+                let rule = (i == 1).then(|| div().h(rem(tokens.hairline)).mx(rem(tokens.sp_2)).my(rem(tokens.sp_4)).bg(tokens.line).into_any_element());
                 let row = line(format!("start-{id}-{i}"), tokens.control_h, &tokens)
                     .role(Role::MenuItem)
                     .w_full()
-                    .px(px(tokens.sp_8))
-                    .gap(px(tokens.sp_8))
+                    .px(rem(tokens.sp_8))
+                    .gap(rem(tokens.sp_8))
                     .aria_selected(on)
                     .when(on, |row| row.bg(tokens.bg_selected))
                     .hover(move |style| style.bg(fill))
@@ -77,14 +78,14 @@ impl RailView {
                     }))
                     .child(
                         div()
-                            .w(px(tokens.fs_sm))
+                            .w(rem(tokens.fs_sm))
                             .flex_shrink_0()
                             .font_family(mono.clone())
                             .text_color(if item.agent.is_some() { tokens.accent } else { tokens.fg_faint })
                             .child(if item.agent.is_some() { "\u{25c6}" } else { "\u{203a}" }),
                     )
                     .child(div().flex_1().min_w_0().truncate().child(item.label))
-                    .child(h_flex().gap(px(tokens.sp_4)).children(keys.into_iter().map(|key| keycap(key, mono.clone(), &tokens))))
+                    .child(h_flex().gap(rem(tokens.sp_4)).children(keys.into_iter().map(|key| keycap(key, mono.clone(), &tokens))))
                     .into_any_element();
                 rule.into_iter().chain([row])
             }));

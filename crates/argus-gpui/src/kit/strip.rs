@@ -7,12 +7,13 @@
 //! the press it makes, is the strip's own.
 
 use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
-use gpui_kit::component::h_flex;
+use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, transparent_black, App, Div, ElementId, Role, SharedString};
+use gpui_kit::{div, prelude::*, transparent_black, App, Div, ElementId, Role, SharedString};
 
 use crate::kit::icon_button::{icon_button, Node};
 use crate::kit::icons::Glyph;
+use crate::theme::scale::{pixels, rem};
 use crate::theme::Tokens;
 use crate::style::Typed as _;
 
@@ -24,9 +25,9 @@ pub const TAB_MAX: f32 = 220.0;
 pub fn bar(tokens: &Tokens) -> Div {
     h_flex()
         .flex_shrink_0()
-        .h(px(tokens.strip_h))
-        .px(px(tokens.sp_8))
-        .gap(px(tokens.sp_4))
+        .h(rem(tokens.strip_h))
+        .px(rem(tokens.sp_8))
+        .gap(rem(tokens.sp_4))
         .items_center()
         .bg(tokens.bg_chrome)
         .border_b_1()
@@ -50,20 +51,20 @@ pub fn tab(id: impl Into<ElementId>, on: bool, closes: bool, label: impl Into<Sh
         .aria_label(label)
         .flex_shrink_0()
         .min_w_0()
-        .max_w(px(TAB_MAX))
-        .h(px(tokens.icon_btn))
+        .max_w(rem(TAB_MAX))
+        .h(rem(tokens.icon_btn))
         .items_center()
-        .rounded(px(tokens.r_sm))
+        .rounded(rem(tokens.r_sm))
         .border_1()
         .border_color(if on { tokens.line_strong } else { transparent_black() })
-        .text_size(px(tokens.fs_sm))
+        .text_size(rem(tokens.fs_sm))
         .weighted(tokens.weight_medium)
         .text_color(if on { tokens.fg } else { tokens.fg_muted })
         .when(on, |tab| tab.bg(tokens.bg_selected).hover(move |style| style.border_color(ring)))
         .when(!on, |tab| tab.hover(move |style| style.bg(fill)))
         // The pick's padding: 12px before the title, 4px before a close, else 12px.
-        .pl(px(tokens.sp_12))
-        .pr(px(if closes { tokens.sp_4 } else { tokens.sp_12 }))
+        .pl(rem(tokens.sp_12))
+        .pr(rem(if closes { tokens.sp_4 } else { tokens.sp_12 }))
         .cursor_pointer()
 }
 
@@ -75,9 +76,9 @@ pub fn title(text: impl Into<SharedString>) -> Div {
 /// `.x`: a tab's close, 24px, faint until the pointer is on it.
 pub fn close_x(id: impl Into<ElementId>, words: impl Into<SharedString>, tokens: &Tokens) -> Node {
     icon_button(id, words, false, tokens)
-        .w(px(tokens.control_h_sm))
-        .h(px(tokens.control_h_sm))
-        .mr(px(tokens.sp_4))
+        .w(rem(tokens.control_h_sm))
+        .h(rem(tokens.control_h_sm))
+        .mr(rem(tokens.sp_4))
         .text_color(tokens.fg_faint)
         .child(Glyph::Close.at(tokens.icon_xs))
 }
@@ -93,9 +94,9 @@ pub fn menu_button(id: impl Into<ElementId>, glyph: Glyph, at: f32, tokens: &Tok
         .active(tokens.fill.blend(text.opacity(tokens.share_press_icon)));
     Button::new(id)
         .custom(variant)
-        .w(px(tokens.icon_btn))
-        .h(px(tokens.icon_btn))
+        .w(rem(tokens.icon_btn))
+        .h(rem(tokens.icon_btn))
         .p_0()
-        .rounded(px(tokens.r_sm))
+        .rounded(pixels(tokens.r_sm, cx.theme().font_size))
         .child(glyph.at(at))
 }

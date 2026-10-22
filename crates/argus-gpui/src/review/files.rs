@@ -17,7 +17,7 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _};
 use gpui_kit::Focusable as _;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Entity, Role, ScrollHandle, SharedString, Subscription, Window};
+use gpui_kit::{div, prelude::*, Context, Entity, Role, ScrollHandle, SharedString, Subscription, Window};
 
 use crate::kit::tip::tip;
 use crate::connection::caller::Caller;
@@ -26,7 +26,7 @@ use crate::keys::field::{Fields, Registered};
 use crate::review::keys;
 use crate::kit::segment;
 use crate::style::Typed as _;
-use crate::theme::scale::Type;
+use crate::theme::scale::{rem, Type};
 use crate::theme::Tokens;
 
 pub struct Files {
@@ -129,7 +129,7 @@ impl Files {
 
     /// The side the review reads, or the commit it is of.
     fn side(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let row = h_flex().flex_shrink_0().items_center().gap(px(tokens.sp_8));
+        let row = h_flex().flex_shrink_0().items_center().gap(rem(tokens.sp_8));
         if page.base == "commit" {
             let words = SharedString::from(page.commit.clone().unwrap_or_default());
             return row
@@ -170,9 +170,9 @@ impl Files {
         if page.jump.is_none() {
             // `.mlabel`: 600 at 12px, muted, 6px over and 2px under.
             return head
-                .px(px(tokens.sp_8))
-                .pt(px(tokens.sp_6))
-                .pb(px(tokens.sp_2))
+                .px(rem(tokens.sp_8))
+                .pt(rem(tokens.sp_6))
+                .pb(rem(tokens.sp_2))
                 .typed(Type { weight: tokens.weight_semibold, size: tokens.fs_sm, leading: 1.4 })
                 .text_color(tokens.fg_muted)
                 .child("Changed files")
@@ -183,7 +183,7 @@ impl Files {
                 .id("review-jump-field")
                 .flex_1()
                 .min_w_0()
-                .child(Input::new(&self.jump).id("review-jump").small().h(px(tokens.control_h)).aria_label("Jump to a file")),
+                .child(Input::new(&self.jump).id("review-jump").small().h(rem(tokens.control_h)).aria_label("Jump to a file")),
         )
         .into_any_element()
     }
@@ -199,7 +199,7 @@ impl Files {
             .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .gap(px(tokens.sp_2))
+            .gap(rem(tokens.sp_2))
             .children(rows.into_iter().map(|(i, file)| {
                 let on = Some(i) == lit;
                 let tooltip = SharedString::from(file.path.clone());
@@ -212,14 +212,14 @@ impl Files {
                     .aria_label(tooltip.clone())
                     .flex_shrink_0()
                     .items_start()
-                    .gap(px(tokens.sp_6))
-                    .py(px(tokens.sp_4 - 1.0))
-                    .px(px(tokens.sp_8 - 1.0))
-                    .rounded(px(tokens.r_sm))
+                    .gap(rem(tokens.sp_6))
+                    .py(rem(tokens.sp_4 - 1.0))
+                    .px(rem(tokens.sp_8 - 1.0))
+                    .rounded(rem(tokens.r_sm))
                     .border_1()
                     .border_color(if on { tokens.line_strong } else { gpui_kit::transparent_black() })
-                    .text_size(px(tokens.fs_sm))
-                    .line_height(px(tokens.fs_sm * 1.45))
+                    .text_size(rem(tokens.fs_sm))
+                    .line_height(rem(tokens.fs_sm * 1.45))
                     .text_color(tokens.fg)
                     .cursor_pointer()
                     .when(on, |row| row.bg(tokens.bg_selected).hover(move |style| style.bg(selected_hover)))
@@ -234,7 +234,7 @@ impl Files {
                         v_flex()
                             .flex_1()
                             .min_w_0()
-                            .gap(px(tokens.sp_2))
+                            .gap(rem(tokens.sp_2))
                             .child(
                                 div()
                                     .truncate()
@@ -244,8 +244,8 @@ impl Files {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(tokens.fs_xs))
-                                    .line_height(px(tokens.fs_xs * 1.45))
+                                    .text_size(rem(tokens.fs_xs))
+                                    .line_height(rem(tokens.fs_xs * 1.45))
                                     .text_color(tokens.fg_faint)
                                     .when(!file.dir.trim_end_matches('/').is_empty(), |dir| {
                                         dir.font_family(cx.theme().mono_font_family.clone())
@@ -280,8 +280,8 @@ impl Render for Files {
             .id("review-files")
             .size_full()
             .min_w_0()
-            .p(px(tokens.sp_12))
-            .gap(px(tokens.sp_8))
+            .p(rem(tokens.sp_12))
+            .gap(rem(tokens.sp_8))
             .child(self.head(&page, &tokens, cx))
             .child(self.side(&page, &tokens, cx))
             .child(self.list(&page, &tokens, cx))

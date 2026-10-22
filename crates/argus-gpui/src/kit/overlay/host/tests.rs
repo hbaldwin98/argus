@@ -4,7 +4,7 @@ use std::rc::Rc;
 use super::*;
 use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
 use gpui_kit::{
-    div, point, prelude::*, px, size, AnyWindowHandle, Bounds, Context, Entity, MouseButton, Render, TestAppContext, WindowBounds,
+    div, point, px, size, AnyWindowHandle, Bounds, Context, Entity, MouseButton, Render, TestAppContext, WindowBounds,
     WindowOptions,
 };
 

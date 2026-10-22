@@ -18,10 +18,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Rail, ReviewPage, Side, Status};
-use argus_desktop_core::extensions::keys::ExtCommandPage;
+use argus_desktop_core::chrome::add_project::AddProjectPage;
+use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status};
+use argus_desktop_core::extensions::keys::{ExtCommandPage, ExtGroup};
 use argus_desktop_core::extensions::views::{ExtTab, ExtTable};
-use argus_desktop_core::keys::keymap::{Action, Group};
+use argus_desktop_core::keys::keymap::{Action, Command, Group};
 use argus_desktop_core::layout::docks::{DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
 use argus_desktop_core::views::nav::{self, NavView};
@@ -79,6 +80,19 @@ pub struct Heard {
     pub console: ConsolePage,
     /// Every binding the session sent, for a menu to show the keys beside what it does.
     pub keymap: Vec<Group>,
+    /// The commands the palette runs, sent with the keymap.
+    pub commands: Vec<Command>,
+    /// What the palette can go to, while it is open: the session sends it only then, and `open`
+    /// false is its word that none is.
+    pub palette: Option<Palette>,
+    /// The add-a-project dialog, while the session holds it open.
+    pub add_project: Option<AddProjectPage>,
+    /// The choices of the Settings dialog, sent whenever one changes, whether the dialog is open
+    /// or not: the look of the whole window is drawn from them (`settings/look`). Shared, so the
+    /// dialog and the look keep them without copying the installed fonts.
+    pub settings: Option<Rc<SettingsPage>>,
+    /// The sheet's heading of each extension.
+    pub extension_groups: Vec<ExtGroup>,
     /// Every extension command the session listed, for the keys that run them (`keys/extension`).
     pub extension_commands: Vec<ExtCommandPage>,
     /// What the sidebar's Extensions fold lists: every view of an extension listed where the person
@@ -132,6 +146,11 @@ impl Heard {
             docks: DocksPage::default(),
             console: ConsolePage::default(),
             keymap: Vec::new(),
+            commands: Vec::new(),
+            palette: None,
+            add_project: None,
+            settings: None,
+            extension_groups: Vec::new(),
             extension_commands: Vec::new(),
             extension_views: Vec::new(),
             extension_tables: Vec::new(),
@@ -164,18 +183,25 @@ impl Heard {
                     if changed {
                         cx.notify();
                     }
-                    for side in std::mem::take(&mut heard.painted) {
-                        cx.emit(Painted(side));
-                    }
-                    for action in std::mem::take(&mut heard.ran) {
-                        cx.emit(Ran(action));
-                    }
+                    heard.announce(cx);
                 });
                 if alive.is_err() {
                     break;
                 }
             }
         }));
+    }
+
+    /// Says what a batch left for the views to be told apart from a redraw: the sides whose screen
+    /// changed, and the actions the session asked the window to run. [`Heard::listen`] does it after
+    /// each batch; a harness that hears events directly does it once it has built its window.
+    pub fn announce(&mut self, cx: &mut Context<Self>) {
+        for side in std::mem::take(&mut self.painted) {
+            cx.emit(Painted(side));
+        }
+        for action in std::mem::take(&mut self.ran) {
+            cx.emit(Ran(action));
+        }
     }
 
     /// Takes in one event; whether it changed what is held.
@@ -185,8 +211,15 @@ impl Heard {
             Event::Rail(rail) => self.rail = *rail,
             Event::Docks(docks) => self.docks = *docks,
             Event::Console(console) => self.console = *console,
-            Event::Keymap { groups, .. } => self.keymap = groups,
+            Event::Keymap { groups, commands, .. } => {
+                self.keymap = groups;
+                self.commands = commands;
+            }
+            Event::Palette(page) => self.palette = page.open.then_some(*page),
+            Event::AddProject(page) => self.add_project = page.open.then_some(*page),
+            Event::Settings(page) => self.settings = Some(Rc::new(*page)),
             Event::Extensions(page) => {
+                self.extension_groups = page.groups;
                 self.extension_commands = page.commands;
                 self.extension_views = page.views;
                 self.extension_tables = page.tables;

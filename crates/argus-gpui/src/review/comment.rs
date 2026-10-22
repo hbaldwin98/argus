@@ -33,12 +33,13 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::diff::gutter::GUTTER;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The room the box takes among the diff's rows: its card, and the margin
 /// around it. Several agents to choose among are a row of chips of their own
 /// above the buttons, which adds `CHIPS`.
-pub const HEIGHT: Pixels = px(180.0);
+pub const HEIGHT: f32 = 180.0;
 const CHIPS: f32 = 36.0;
 
 /// Whether the box says its one lit agent in the buttons' row instead of offering a chip each.
@@ -46,9 +47,10 @@ fn said_alone(page: &CommentPage) -> bool {
     page.recipients.len() == 1 && page.recipients.iter().any(|r| Some(r.pane) == page.to)
 }
 
-/// How tall the box is for `page`.
-pub fn height(page: &CommentPage) -> Pixels {
-    if said_alone(page) { HEIGHT } else { HEIGHT + px(CHIPS) }
+/// How tall the box is for `page`, in the window's pixels at `zoom` (1.0 at 100%): the diff's list
+/// is told in them.
+pub fn height(page: &CommentPage, zoom: f32) -> Pixels {
+    px((if said_alone(page) { HEIGHT } else { HEIGHT + CHIPS }) * zoom)
 }
 const ROWS: usize = 3;
 
@@ -128,7 +130,7 @@ impl CommentBox {
         let diamond = |tokens: &Tokens| div().flex_shrink_0().text_color(tokens.accent).child("\u{25c6}");
         match lit {
             Some(lit) if page.recipients.len() == 1 => h_flex()
-                .gap(px(tokens.sp_8))
+                .gap(rem(tokens.sp_8))
                 .items_center()
                 .child(label)
                 .child(
@@ -136,7 +138,7 @@ impl CommentBox {
                         .id("comment-recipient")
                         .test_support()
                         .aria_label(SharedString::from(lit.title.clone()))
-                        .gap(px(tokens.sp_4))
+                        .gap(rem(tokens.sp_4))
                         .text_color(tokens.fg)
                         .weighted(tokens.weight_semibold)
                         .child(diamond(tokens))
@@ -147,7 +149,7 @@ impl CommentBox {
             _ => h_flex()
                 .id("comment-recipients")
                 .flex_wrap()
-                .gap(px(tokens.sp_8))
+                .gap(rem(tokens.sp_8))
                 .items_center()
                 .min_w_0()
                 .child(label)
@@ -180,18 +182,18 @@ impl Render for CommentBox {
             .id("review-comment")
             .test_support()
             .size_full()
-            .gap(px(tokens.sp_8))
-            .p(px(tokens.sp_12))
-            .rounded(px(tokens.r_md))
+            .gap(rem(tokens.sp_8))
+            .p(rem(tokens.sp_12))
+            .rounded(rem(tokens.r_md))
             .border_1()
             .border_color(tokens.accent)
             // The diff under it is mono; the card is the interface face (`font-family: var(--font-ui)`).
             .font_family(SharedString::from(tokens.font_ui))
-            .text_size(px(tokens.fs_md))
+            .text_size(rem(tokens.fs_md))
             .bg(tokens.bg_surface)
             .child(
                 h_flex()
-                    .gap(px(tokens.sp_8))
+                    .gap(rem(tokens.sp_8))
                     .items_center()
                     .child(div().text_color(tokens.accent).weighted(tokens.weight_semibold).child("Comment"))
                     .child(
@@ -207,7 +209,7 @@ impl Render for CommentBox {
             .when(!said_alone(&page), |card| card.child(self.recipients(&page, &tokens, cx)))
             .child(
                 h_flex()
-                    .gap(px(tokens.sp_8))
+                    .gap(rem(tokens.sp_8))
                     .items_center()
                     .child(div().flex_1().min_w_0().when(said_alone(&page), |slot| slot.child(self.recipients(&page, &tokens, cx))))
                     .child(
@@ -227,6 +229,6 @@ impl Render for CommentBox {
                             .on_click(cx.listener(|this, _, _, cx| this.send(cx))),
                     ),
             );
-        div().size_full().pl(px(GUTTER)).pr(px(tokens.sp_12)).py(px(tokens.sp_8)).child(card).into_any_element()
+        div().size_full().pl(rem(GUTTER)).pr(rem(tokens.sp_12)).py(rem(tokens.sp_8)).child(card).into_any_element()
     }
 }

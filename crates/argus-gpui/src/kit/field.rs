@@ -53,6 +53,11 @@ impl Field {
         self.input.update(cx, |input, cx| input.set_value(text, window, cx));
     }
 
+    /// Says `text` while the field is empty: the name a project gets, which changes as the folder does.
+    pub fn say_when_empty(&self, text: &str, window: &mut Window, cx: &mut App) {
+        self.input.update(cx, |input, cx| input.set_placeholder(text.to_owned(), window, cx));
+    }
+
     /// The field takes the keys.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.input.update(cx, |input, cx| input.focus(window, cx));

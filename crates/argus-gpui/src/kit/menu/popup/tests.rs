@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use super::*;
+use gpui_kit::px;
 use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::ElementId;
@@ -24,9 +25,9 @@ impl Render for Host {
     fn render(&mut self, _: &mut Window, cx: &mut gpui_kit::Context<Self>) -> impl IntoElement {
         let (items, held, done) = (self.items.clone(), self.held.clone(), self.done.clone());
         let tokens = *Tokens::global(cx);
-        div().id("target").test_support().size_full().context_menu(move |menu, _, cx| {
+        div().id("target").test_support().size_full().context_menu(move |menu, window, cx| {
             let (asking, done) = (held.clone(), done.clone());
-            fill(menu, &items, tokens, move |_| asking.get(), move |does, _, _| done.borrow_mut().push(*does), cx)
+            fill(menu, &items, tokens, move |_| asking.get(), move |does, _, _| done.borrow_mut().push(*does), window, cx)
         })
     }
 }

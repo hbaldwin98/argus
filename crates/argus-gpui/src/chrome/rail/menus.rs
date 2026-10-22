@@ -1,12 +1,12 @@
-//! What the rail's right-click menus offer: a repository's, a checkout's and a pane's, and the
-//! brand's list of projects (`chrome.ts`, `repoRow`, `checkoutMenu`, `paneMenu`).
+//! What the rail's right-click menus offer: a repository's, a checkout's and a pane's
+//! (`chrome.ts`, `repoRow`, `checkoutMenu`, `paneMenu`); the brand's is `switcher`.
 //!
 //! Each is a list of `MenuItem<Does>` that `kit/menu` draws once. A choice only names the calls it
 //! sends; the rail changes when the daemon's tree says it did. A choice that goes to another stage
 //! first closes what the session has open of Git, as a nav item does.
 
 use argus_desktop_core::chrome::cursor::starts;
-use argus_desktop_core::connection::page::{Call, Checkout, Pane, ProjectChoice, Repository};
+use argus_desktop_core::connection::page::{Call, Checkout, Pane, Repository};
 
 use crate::kit::menu::item::MenuItem;
 
@@ -86,22 +86,6 @@ pub fn pane(checkout: u64, pane: &Pane) -> Vec<MenuItem<Does>> {
         MenuItem::Rule,
         MenuItem::choice("Close", Does::Send(vec![Call::Close { pane: pane.id }])).danger(),
     ]
-}
-
-/// The projects under the brand: a heading, then each project with what needs a person in it, the
-/// open one marked. The rest of the page's menu (Add a project, workspaces, hosts, Remove) arrives
-/// with the project switcher (audit items 30 to 32).
-pub fn projects(choices: &[ProjectChoice], current: Option<u64>) -> Vec<MenuItem<Does>> {
-    std::iter::once(MenuItem::heading("Projects"))
-        .chain(choices.iter().map(|choice| {
-            let item = MenuItem::choice(choice.name.clone(), Does::Go(vec![Call::SelectProject { project: choice.id }])).marked(Some(choice.id) == current);
-            match (choice.needs_you, choice.working) {
-                (0, 0) => item,
-                (0, working) => item.noted(format!("{working} working")),
-                (needs, _) => item.noted(format!("{needs} need you")),
-            }
-        }))
-        .collect()
 }
 
 #[cfg(test)]
@@ -217,28 +201,5 @@ mod tests {
         assert_eq!(calls(&items[2]), ["OpenBeside { pane: 2 }"]);
         assert!(matches!(&items[3].as_choice().unwrap().does, Does::Rename { pane: 2, title } if title == "zsh"));
         assert_eq!(calls(&items[5]), ["Close { pane: 2 }"]);
-    }
-
-    #[test]
-    fn the_project_list_marks_the_open_one_and_says_what_needs_a_person() {
-        let choices = [
-            ProjectChoice { id: 1, name: "orion".into(), needs_you: 3, working: 1 },
-            ProjectChoice { id: 2, name: "work".into(), needs_you: 0, working: 1 },
-            ProjectChoice { id: 3, name: "idle".into(), needs_you: 0, working: 0 },
-        ];
-        let items = projects(&choices, Some(1));
-        assert_eq!(lines(&items)[..3], ["# Projects", "orion", "work"]);
-        let ticks: Vec<_> = items.iter().filter_map(|item| item.as_choice()).map(|choice| choice.checked).collect();
-        assert_eq!(ticks, [Some(true), Some(false), Some(false)], "the open one ticked, the others keep the room");
-        let hints: Vec<_> = items
-            .iter()
-            .filter_map(|item| item.as_choice())
-            .map(|choice| match &choice.hint {
-                crate::kit::menu::item::Hint::Text(words) => words.clone(),
-                _ => String::new(),
-            })
-            .collect();
-        assert_eq!(hints, ["3 need you", "1 working", ""], "a person needed outranks work under way");
-        assert_eq!(calls(&items[2]), ["SelectProject { project: 2 }"]);
     }
 }

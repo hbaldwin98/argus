@@ -7,6 +7,7 @@ pub mod kit;
 pub mod layout;
 pub mod panes;
 pub mod review;
+pub mod settings;
 pub mod style;
 pub mod system;
 pub mod theme;

@@ -3,10 +3,11 @@
 
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{prelude::*, px, Hsla, Role, SharedString};
+use gpui_kit::{prelude::*, Hsla, Role, SharedString};
 
 use crate::kit::icons::Glyph;
 use crate::kit::tip::tip;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// What every row of one drawing of the rail is drawn against.
@@ -31,10 +32,10 @@ pub(super) fn line(id: impl Into<gpui_kit::ElementId>, height: f32, tokens: &Tok
         .id(id)
         .role(Role::Button)
         .test_support()
-        .h(px(height))
+        .h(rem(height))
         .flex_shrink_0()
         .items_center()
-        .rounded(px(tokens.r_sm))
+        .rounded(rem(tokens.r_sm))
         .cursor_pointer()
 }
 
@@ -47,7 +48,7 @@ pub(super) fn chevron(id: String, open: bool, width: f32, colour: Hsla, size: f3
         .aria_expanded(open)
         .items_center()
         .justify_center()
-        .w(px(width))
+        .w(rem(width))
         .flex_shrink_0()
         .text_color(colour)
         .child(if open { Glyph::Down } else { Glyph::Right }.at(size))
@@ -61,7 +62,7 @@ pub(super) fn quiet_button(id: impl Into<gpui_kit::ElementId>, label: impl Into<
     line(id, tokens.icon_box, tokens)
         .aria_label(label)
         .tooltip(tip(words))
-        .w(px(tokens.icon_box))
+        .w(rem(tokens.icon_box))
         .justify_center()
         .text_color(tokens.fg_muted)
         .hover(move |style| style.bg(fill).text_color(text))

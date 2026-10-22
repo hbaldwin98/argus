@@ -7,10 +7,11 @@
 use argus_desktop_core::connection::page::Rail;
 use gpui_kit::component::v_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context};
+use gpui_kit::{div, prelude::*, Context};
 
 use super::row::Ctx;
 use super::RailView;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl RailView {
@@ -23,9 +24,9 @@ impl RailView {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .pb(px(tokens.sp_12))
+            .pb(rem(tokens.sp_12))
             // A folded rail starts its tiles a little lower.
-            .when(ctx.icons, |list| list.pt(px(tokens.sp_8)))
+            .when(ctx.icons, |list| list.pt(rem(tokens.sp_8)))
             .when(ctx.held, |list| list.opacity(tokens.opacity_dim));
         match &rail.project {
             // The stage is the one loading surface; the rail only waits.
@@ -36,7 +37,7 @@ impl RailView {
                     div()
                         .id("rail-empty")
                         .test_support()
-                        .p(px(tokens.sp_16))
+                        .p(rem(tokens.sp_16))
                         .text_color(tokens.fg_faint)
                         .child("No projects yet."),
                 )

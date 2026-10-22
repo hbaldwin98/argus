@@ -1,12 +1,13 @@
 //! How a status looks on the rail's rows: the dot a status earns, and the words a few statuses
 //! say (the pill they are said in is `kit/pill`).
 
-use gpui_kit::{div, prelude::*, px, Hsla};
+use gpui_kit::{div, prelude::*, Hsla};
 
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 pub(super) fn dot_of(colour: Hsla, tokens: &Tokens) -> impl IntoElement {
-    div().size(px(tokens.dot_md)).flex_shrink_0().rounded_full().bg(colour)
+    div().size(rem(tokens.dot_md)).flex_shrink_0().rounded_full().bg(colour)
 }
 
 /// The dot a status earns: the attention colour for what asks for a look,

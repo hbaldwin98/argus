@@ -18,7 +18,7 @@ pub fn colors(t: &Tokens) -> ThemeColor {
     let on_fill = t.fg_on_accent;
     let (step, link_step) = (t.step_lift, t.step_link);
 
-    c.background = t.bg_sunken;
+    c.background = transparent;
     c.foreground = t.fg;
     c.border = t.line;
     c.input = t.line_strong;
@@ -165,20 +165,25 @@ pub fn colors(t: &Tokens) -> ThemeColor {
 /// another `Tokens` is how the theme switches. Call after `gpui_kit::init`
 /// and, once, `fonts::install`.
 ///
+/// `zoom` is the percent the whole window is drawn at. The kit's root sets the window's rem size
+/// to the theme's font size on every frame, so the font size is where the zoom goes: a rem is
+/// `fs_md` at 100% (`scale::REM`) and every view's size is a rem of its token.
+///
 /// The mode is set first and the colours in a second `Theme::update`: a mode
 /// change reloads that mode's registered theme over any colour edited in the
 /// same closure.
-pub fn install(cx: &mut App, tokens: Tokens) {
+pub fn install(cx: &mut App, tokens: Tokens, zoom: u16) {
+    let zoom = f32::from(zoom) / 100.0;
     Theme::change(if tokens.dark { ThemeMode::Dark } else { ThemeMode::Light }, None, cx);
     Theme::update(cx, |theme| {
         theme.colors = colors(&tokens);
         theme.font_family = tokens.font_ui.into();
         theme.mono_font_family = tokens.font_mono.into();
-        theme.font_size = px(tokens.fs_md);
-        theme.mono_font_size = px(tokens.type_mono.size);
+        theme.font_size = px(tokens.fs_md * zoom);
+        theme.mono_font_size = px(tokens.type_mono.size * zoom);
         // `--r-sm` for a control, `--r-lg` for a dialog or a notice.
-        theme.radius = px(tokens.r_sm);
-        theme.radius_lg = px(tokens.r_lg);
+        theme.radius = px(tokens.r_sm * zoom);
+        theme.radius_lg = px(tokens.r_lg * zoom);
         theme.motion.duration_fast = tokens.t_fast;
         // Flat surfaces with hairlines: depth comes from the line, not a shadow.
         theme.shadow = false;
@@ -191,7 +196,8 @@ mod tests {
     use super::*;
     use crate::theme::colour::Colour;
     use crate::theme::define::{Mode, Set, Theme};
-    use crate::theme::{derive, ledger};
+    use crate::theme::derive;
+    use crate::theme::themes::ledger;
     use gpui_kit::component::ActiveTheme as _;
 
     /// A light theme that is not Ledger in any palette entry, to see what an install changes.
@@ -225,7 +231,7 @@ mod tests {
     fn kit_roles_carry_the_ledger_surfaces() {
         let t = ledger::tokens();
         let colors = colors(&t);
-        assert_eq!(colors.background, t.bg_sunken);
+        assert_eq!(colors.background, Hsla::transparent_black());
         assert_eq!(colors.sidebar, t.bg_chrome);
         assert_eq!(colors.border, t.line);
         assert_eq!(colors.primary, t.accent);
@@ -244,8 +250,8 @@ mod tests {
     fn install_sets_the_global_theme(cx: &mut gpui_kit::TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
-            install(cx, ledger::tokens());
-            assert_eq!(cx.theme().background, Tokens::global(cx).bg_sunken);
+            install(cx, ledger::tokens(), 100);
+            assert_eq!(cx.theme().background, Hsla::transparent_black());
             assert!(cx.theme().is_dark());
             assert_eq!(cx.theme().font_family, "Inter");
             assert_eq!(cx.theme().mono_font_family, "JetBrains Mono");
@@ -259,9 +265,9 @@ mod tests {
     fn installing_another_theme_changes_what_a_view_reads(cx: &mut gpui_kit::TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
-            install(cx, ledger::tokens());
+            install(cx, ledger::tokens(), 100);
             let before = *Tokens::global(cx);
-            install(cx, derive::tokens(&OTHER));
+            install(cx, derive::tokens(&OTHER), 100);
             let after = *Tokens::global(cx);
             assert_ne!(before.bg_sunken, after.bg_sunken);
             assert_ne!(before.fg, after.fg);
@@ -271,7 +277,7 @@ mod tests {
             // What the theme leaves alone is `:root`'s, not Ledger's.
             assert_eq!(after.r_md, 10.0);
             // The kit's roles and sizes follow the same tokens.
-            assert_eq!(cx.theme().background, after.bg_sunken);
+            assert_eq!(cx.theme().background, Hsla::transparent_black());
             assert_eq!(cx.theme().radius, px(2.0));
             assert_eq!(cx.theme().radius_lg, px(3.0));
             assert_eq!(cx.theme().font_family, "Other Sans");

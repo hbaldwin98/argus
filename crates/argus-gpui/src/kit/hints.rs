@@ -6,10 +6,11 @@
 
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{prelude::*, px, SharedString};
+use gpui_kit::{prelude::*, SharedString};
 
 use crate::kit::keycap::keycap;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The caps of one hint, then its words.
@@ -24,9 +25,9 @@ pub fn bar(id: &'static str, hints: &'static [Hint], tokens: &Tokens) -> impl In
         .test_support()
         .aria_label(SharedString::from(said.join(", ")))
         .flex_shrink_0()
-        .px(px(tokens.sp_24))
-        .py(px(tokens.sp_16))
-        .gap(px(tokens.sp_8))
+        .px(rem(tokens.sp_24))
+        .py(rem(tokens.sp_16))
+        .gap(rem(tokens.sp_8))
         .items_center()
         .border_t_1()
         .border_color(tokens.line)
@@ -34,7 +35,7 @@ pub fn bar(id: &'static str, hints: &'static [Hint], tokens: &Tokens) -> impl In
         .text_color(tokens.fg_muted)
         .children(hints.iter().map(|(keys, words)| {
             h_flex()
-                .gap(px(tokens.sp_6))
+                .gap(rem(tokens.sp_6))
                 .items_center()
                 .whitespace_nowrap()
                 .children(keys.iter().map(|key| keycap(SharedString::from((*key).to_owned()), mono.clone(), tokens)))

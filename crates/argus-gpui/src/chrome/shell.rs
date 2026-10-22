@@ -20,6 +20,8 @@ use crate::chrome::header::more;
 use crate::chrome::header::slots::Slots;
 use crate::chrome::header::Header;
 use crate::chrome::notice::NoticeView;
+use crate::chrome::projects::add::AddView;
+use crate::chrome::projects::question;
 use crate::chrome::rail::RailView;
 use crate::chrome::stage::route::frame;
 use crate::chrome::stage::{stopped, StageView};
@@ -27,13 +29,17 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::{Heard, Ran};
 use crate::keys::extension::Commands;
 use crate::keys::layer::Layers;
-use crate::keys::over::run_over;
+use crate::keys::over::{run_over, Surfaces};
+use crate::keys::palette::PaletteView;
+use crate::keys::sheet::SheetView;
 use crate::kit::overlay::host::Overlays;
 use crate::layout::work::WorkView;
 use crate::panes::console::ConsoleView;
 use crate::panes::split::SplitView;
 use crate::panes::terminal::{Labelled, Terminal};
 use crate::review::stage::GitStage;
+use crate::settings::look;
+use crate::settings::preferences::PreferencesView;
 use crate::theme::Tokens;
 
 pub struct Shell {
@@ -48,8 +54,12 @@ pub struct Shell {
     #[cfg(test)]
     split: Entity<SplitView>,
     _observing: Subscription,
+    /// The add-a-project dialog, which opens itself over the window while the session holds it.
+    _add: Entity<AddView>,
     /// The words of the pane's size changed.
     _labelled: Subscription,
+    /// The system's light or dark changed.
+    _appearance: Subscription,
     /// A key the session heard in a pane that opens the palette, the sheet or the settings.
     _running: Subscription,
 }
@@ -71,19 +81,39 @@ impl Shell {
         let stage = cx.new(|cx| StageView::new(heard.clone(), caller.clone(), split.clone().into(), git.into(), cx));
         let work = cx.new(|cx| WorkView::new(heard.clone(), caller.clone(), stage.into(), console.into(), cx));
         let notice = cx.new(|cx| NoticeView::new(heard.clone(), cx));
+        let add = cx.new(|cx| AddView::new(heard.clone(), caller.clone(), window, cx));
+        Surfaces {
+            palette: cx.new(|cx| PaletteView::new(heard.clone(), caller.clone(), window, cx)),
+            sheet: cx.new(|cx| SheetView::new(heard.clone(), window, cx)),
+            settings: cx.new(|cx| PreferencesView::new(heard.clone(), caller.clone(), window, cx)),
+        }
+        .install(cx);
+        // The window takes the look the app is in: the backdrop, the zoom and the border are its own.
+        look::dress_new(window, cx);
         let stopping = caller.clone();
         let observing = cx.observe_in(&heard, window, move |_, heard, window, cx| {
+            // The look follows every choice the session sends, whether the dialog is open or not.
+            if let Some(page) = heard.read(cx).settings.clone() {
+                look::follow(&page, window, cx);
+            }
             let commands = heard.read(cx).extension_commands.clone();
             Commands::of(cx).set(commands);
             // The Stopped card is up exactly while the daemon is stopped.
             stopped::follow(&heard.read(cx).link(), &stopping, window, cx);
+            // The removal question is up exactly while the rail holds one.
+            let removing = heard.read(cx).rail.removing.clone();
+            question::follow(removing.as_ref(), &stopping, window, cx);
             cx.notify();
         });
         let running = cx.subscribe_in(&heard, window, |_, _, Ran(action): &Ran, window, cx| {
             run_over(*action, window, cx);
         });
         let labelled = cx.subscribe(&terminal, |_, _, _: &Labelled, cx| cx.notify());
-        Self { heard, caller, rail, work, notice, terminal, #[cfg(test)] split, _observing: observing, _labelled: labelled, _running: running }
+        // A theme that follows the system draws the other when the system goes dark or light.
+        let appearance = window.observe_window_appearance(|window, cx| {
+            look::system_changed(window, cx);
+        });
+        Self { heard, caller, rail, work, notice, terminal, #[cfg(test)] split, _observing: observing, _add: add, _labelled: labelled, _appearance: appearance, _running: running }
     }
 
     #[cfg(test)]
@@ -136,9 +166,10 @@ impl Render for Shell {
             None => slots.tools(stage, window, cx),
         };
         let launcher = launcher(waiting, false, held, &self.caller, &tokens).map(IntoElement::into_any_element);
+        let scrimmed = !Overlays::get(cx).open_kinds().is_empty();
         h_flex()
+            .relative()
             .size_full()
-            .bg(tokens.bg_sunken)
             .text_color(tokens.fg)
             // Filling the window puts the sidebar away; the strip stays, since it holds the window's buttons.
             .when(frame.rail, |window| window.child(self.rail.clone()))
@@ -149,10 +180,12 @@ impl Render for Shell {
                     .min_w_0()
                     .h_full()
                     .child(Header::new().strip(strip).size(size).held(held).launcher(launcher).tools(tools))
-                    .child(div().id("stage").flex_1().min_h_0().child(self.work.clone()))
+                    .child(div().id("stage").flex_1().min_h_0().bg(tokens.see_sunken).child(self.work.clone()))
                     // Over the stage, under nothing: a notice is the last thing drawn.
                     .child(self.notice.clone()),
             )
+            // The page's `.scrim`: the kit paints none of its own, so a dialog that is up dims the window here, under the dialog layer.
+            .when(scrimmed, |shell| shell.child(div().absolute().top_0().left_0().size_full().bg(tokens.scrim)))
     }
 }
 

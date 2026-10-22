@@ -56,11 +56,11 @@ impl DiffView {
         }
         // Row border both sides, the second half's left rule, and a few
         // pixels of slack against a rounding that would push a full line over.
-        let half = (pane - ROW_BORDER - 1.0) / 2.0;
-        (((half - NUMBER - MARKER - TAIL) / advance).floor() as usize).max(1)
+        let half = (pane - (ROW_BORDER + 1.0) * self.zoom) / 2.0;
+        (((half - (NUMBER + MARKER + TAIL) * self.zoom) / advance).floor() as usize).max(1)
     }
 
-    /// `heights` and `sizes` for the rows at `per_line`.
+    /// `heights` (the page's pixels) and `sizes` (the window's, at the zoom) for the rows at `per_line`.
     pub(super) fn size(&mut self) {
         self.heights = self
             .rows
@@ -74,12 +74,13 @@ impl DiffView {
                 _ => shape::height(row),
             })
             .collect();
+        self.sized_at = self.zoom;
         let slot_height = self.slot.as_ref().map_or(px(0.0), |slot| slot.height);
         self.sizes = Rc::new(
             self.items
                 .iter()
                 .map(|item| match item {
-                    Item::Row(i) => size(px(0.0), px(self.heights[*i])),
+                    Item::Row(i) => size(px(0.0), px(self.heights[*i] * self.zoom)),
                     Item::Comment => size(px(0.0), slot_height),
                 })
                 .collect(),
@@ -95,8 +96,8 @@ impl DiffView {
             return (pane > px(0.0)).then_some(pane);
         }
         let advance = f32::from(self.advance);
-        let line = NUMBER * 2.0 + MARKER + self.widest.0 as f32 * advance + TAIL + ROW_BORDER;
-        let heading = HEADING_PAD + self.widest.1 as f32 * advance;
+        let line = (NUMBER * 2.0 + MARKER + TAIL + ROW_BORDER) * self.zoom + self.widest.0 as f32 * advance;
+        let heading = HEADING_PAD * self.zoom + self.widest.1 as f32 * advance;
         Some(pane.max(px(line.max(heading).ceil())))
     }
 

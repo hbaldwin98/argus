@@ -5,7 +5,7 @@ use argus_desktop_core::connection::page::{Call, HistoryPage, HistoryRowView};
 use argus_desktop_core::keys::keymap::Action;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, ClickEvent, Context, SharedString};
+use gpui_kit::{div, prelude::*, ClickEvent, Context, SharedString};
 
 use super::History;
 use crate::kit::tip::tip;
@@ -14,6 +14,7 @@ use crate::kit::ghosts::ghosts;
 use crate::kit::icon_button::Node;
 use crate::kit::icons::Glyph;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The widths of the loading bars of the commit list, as the page draws them.
@@ -26,15 +27,15 @@ impl History {
         h_flex()
             .id("history-head")
             .flex_shrink_0()
-            .pt(px(tokens.sp_6))
-            .pr(px(tokens.sp_8))
-            .pl(px(tokens.sp_16))
-            .gap(px(tokens.sp_8))
+            .pt(rem(tokens.sp_6))
+            .pr(rem(tokens.sp_8))
+            .pl(rem(tokens.sp_16))
+            .gap(rem(tokens.sp_8))
             .items_center()
             .child(
                 div()
                     .flex_1()
-                    .text_size(px(tokens.fs_xs))
+                    .text_size(rem(tokens.fs_xs))
                     .weighted(tokens.weight_semibold)
                     .text_color(tokens.fg_muted)
                     .child("Commits"),
@@ -60,15 +61,15 @@ impl History {
             .test_support()
             .aria_selected(on)
             .flex_shrink_0()
-            .gap(px(tokens.sp_8))
+            .gap(rem(tokens.sp_8))
             .items_center()
             .min_w_0()
-            .py(px(tokens.sp_6 - 1.0))
-            .px(px(tokens.sp_8 - 1.0))
-            .rounded(px(tokens.r_sm))
+            .py(rem(tokens.sp_6 - 1.0))
+            .px(rem(tokens.sp_8 - 1.0))
+            .rounded(rem(tokens.r_sm))
             .border_1()
             .border_color(if on { tokens.line_strong } else { gpui_kit::transparent_black() })
-            .text_size(px(tokens.fs_sm))
+            .text_size(rem(tokens.fs_sm))
             .text_color(tokens.fg)
             .cursor_pointer()
             .when(on, |row| row.bg(tokens.bg_selected).hover(move |style| style.bg(selected_hover)))
@@ -136,8 +137,8 @@ impl History {
         let mono = cx.theme().mono_font_family.clone();
         Self::row(("history-row", row), r.on, tokens)
             .aria_label(tooltip.clone())
-            .min_h(px(tokens.row_h))
-            .pl(px(tokens.sp_32 - 1.0))
+            .min_h(rem(tokens.row_h))
+            .pl(rem(tokens.sp_32 - 1.0))
             .tooltip(tip(tooltip.clone()))
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                 this.ask(Call::HistoryAction { action: Action::Next, row: Some(row) }, cx);
@@ -155,7 +156,7 @@ impl History {
                             div()
                                 .flex_shrink_0()
                                 .font_family(mono.clone())
-                                .text_size(px(tokens.fs_xs))
+                                .text_size(rem(tokens.fs_xs))
                                 .text_color(tokens.fg_faint)
                                 .child(SharedString::from(dir.to_owned())),
                         )
@@ -183,8 +184,8 @@ impl History {
             .size_full()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .p(px(tokens.sp_8))
-            .gap(px(tokens.sp_2))
+            .p(rem(tokens.sp_8))
+            .gap(rem(tokens.sp_2))
             .children(page.rows.iter().map(|r| if r.kind == "file" { self.file(r, tokens, cx) } else { self.commit(r, tokens, cx) }))
             .into_any_element()
     }

@@ -351,3 +351,24 @@ fn no_room_is_reported_while_a_dock_sash_is_held_and_the_last_is_when_it_is_let_
     assert_eq!(sent.len(), 2, "the size the gesture settled on is reported once it ends: {sent:?}");
     assert_eq!(sent[1].1, (((HEIGHT / 2.0) - 16.0) / 20.0).floor() as u16);
 }
+
+/// SHELL-SYSTEM-2: the notifications and the chime leave out the pane watched in a focused window,
+/// which the session can only know if the window says so as it is left and returned to.
+#[gpui_kit::test]
+fn the_workspace_reports_the_window_losing_and_regaining_focus(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    cx.update_window(opened.handle, |_, window, _| window.activate_window()).unwrap();
+    cx.run_until_parked();
+    opened.calls.borrow_mut().clear();
+    gpui_kit::VisualTestContext::from_window(opened.handle, cx).deactivate_window();
+    cx.run_until_parked();
+    cx.update_window(opened.handle, |_, window, _| window.activate_window()).unwrap();
+    cx.run_until_parked();
+    let focus: Vec<bool> = opened
+        .calls
+        .borrow()
+        .iter()
+        .filter_map(|call| if let Call::Focus { focused } = call { Some(*focused) } else { None })
+        .collect();
+    assert_eq!(focus, [false, true]);
+}

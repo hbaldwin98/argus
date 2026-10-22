@@ -6,7 +6,8 @@ use std::cell::RefCell;
 use super::skeleton::DELAY;
 use super::*;
 use crate::panes::size_label::SHOWN_FOR;
-use crate::theme::{kit, ledger};
+use crate::theme::themes::ledger;
+use crate::theme::kit;
 use argus_desktop_core::connection::page::Parked;
 
 const BARS: &str = "terminal-skeleton";
@@ -76,7 +77,7 @@ fn a_theme_installed_over_the_screen_changes_its_palette_and_asks_for_no_new_roo
         other.fg = other.ansi[1];
         other.bg_sunken = other.ansi[2];
         other.ansi[1] = other.ansi[4];
-        kit::install(cx, other);
+        kit::install(cx, other, 100);
     });
     settle(cx, &opened);
     let after = cx.update(|cx| opened.terminal.read(cx).palette().clone());

@@ -2,10 +2,11 @@
 
 use argus_desktop_core::connection::page::DiffRow;
 use gpui_kit::component::h_flex;
-use gpui_kit::{div, prelude::*, px, AnyElement, ClickEvent, Context, SharedString, TestSupportExt as _};
+use gpui_kit::{div, prelude::*, AnyElement, ClickEvent, Context, SharedString, TestSupportExt as _};
 
 use super::shape;
 use super::{DiffEvent, DiffView};
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl DiffView {
@@ -19,13 +20,13 @@ impl DiffView {
                 .test_support()
                 .aria_label(SharedString::from(label.clone()))
                 // `.fbtn`: the reference colour in the interface face, lifting to `--fill`.
-                .px(px(tokens.sp_4))
-                .h(px(tokens.fold_btn_h))
+                .px(rem(tokens.sp_4))
+                .h(rem(tokens.fold_btn_h))
                 .flex()
                 .items_center()
-                .rounded(px(tokens.r_xs))
+                .rounded(rem(tokens.r_xs))
                 .font_family(SharedString::from(tokens.font_ui))
-                .text_size(px(tokens.fs_sm))
+                .text_size(rem(tokens.fs_sm))
                 .text_color(tokens.ref_)
                 .cursor_pointer()
                 .hover({
@@ -43,14 +44,14 @@ impl DiffView {
             .id(Self::row_id(ix))
             .test_support()
             .flex_shrink_0()
-            .h(px(shape::FOLD))
-            .px(px(tokens.sp_12))
-            .gap(px(tokens.sp_8))
+            .h(rem(shape::FOLD))
+            .px(rem(tokens.sp_12))
+            .gap(rem(tokens.sp_8))
             .items_center()
             .bg(tokens.bg_chrome)
             .text_color(tokens.fg_muted)
             .font_family(SharedString::from(tokens.font_ui))
-            .text_size(px(tokens.fs_sm))
+            .text_size(rem(tokens.fs_sm))
             .border_t_1()
             .border_b_1()
             .border_dashed()

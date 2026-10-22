@@ -5,7 +5,7 @@ use argus_desktop_core::connection::page::{Call, HistoryPage};
 use argus_desktop_core::keys::keymap::Action;
 use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, SharedString};
+use gpui_kit::{div, prelude::*, Context, SharedString};
 
 use super::History;
 use crate::kit::tip::tip;
@@ -13,6 +13,7 @@ use crate::kit::button::{button, Look};
 use crate::kit::ghosts::ghosts;
 use crate::kit::keycap::keycap;
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The widths of the loading bars of a diff, as the page draws them.
@@ -33,9 +34,9 @@ impl History {
             .test_support()
             .aria_label(full)
             .flex_shrink_0()
-            .h(px(tokens.sp_44))
-            .px(px(tokens.sp_12))
-            .gap(px(tokens.sp_12))
+            .h(rem(tokens.sp_44))
+            .px(rem(tokens.sp_12))
+            .gap(rem(tokens.sp_12))
             .items_center()
             .bg(tokens.bg_chrome)
             .border_b_1()
@@ -56,7 +57,7 @@ impl History {
             .child(
                 h_flex()
                     .min_w_0()
-                    .gap(px(tokens.sp_8))
+                    .gap(rem(tokens.sp_8))
                     .overflow_hidden()
                     .font_family(mono)
                     .child(div().flex_shrink_0().weighted(tokens.weight_semibold).text_color(tokens.fg).child(name))

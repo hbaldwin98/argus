@@ -22,7 +22,7 @@ use argus_desktop_core::panes::shown::workspace_grid::rects::cells as placed;
 use argus_desktop_core::panes::shown::workspace_grid::GridPage;
 use gpui_kit::component::v_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, relative, Context, Entity, FocusHandle, SharedString, Subscription, Window};
+use gpui_kit::{div, prelude::*, relative, Context, Entity, FocusHandle, SharedString, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
@@ -30,6 +30,7 @@ use crate::kit::area;
 use crate::kit::drag;
 use crate::kit::spots::{publish, Spot, Spots};
 use crate::panes::terminal::Terminal;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 use cells::Kind;
 use gutters::Gutters;
@@ -164,7 +165,7 @@ impl Render for SplitView {
             .relative()
             .size_full()
             // `#split` leaves half the gap a card keeps to its neighbour at the stage's edge.
-            .p(px(tokens.sp_4))
+            .p(rem(tokens.sp_4))
             .child(publish(Spot::Stage))
             .child(
                 v_flex().relative().size_full().child(area::measure(self.gutters.area())).children(cells).children(gutters).child(self.escape_keys(cx)).child(drag::watch(cx.weak_entity())),
@@ -193,13 +194,13 @@ impl SplitView {
             .w(relative(rect.w))
             .h(relative(rect.h))
             // Cells abut at their seam; each keeps half the gap as the stage showing through.
-            .p(px(tokens.sp_4))
+            .p(rem(tokens.sp_4))
             .child(publish(Spot::Cell(n)))
             .child(
                 v_flex()
                     .size_full()
                     .overflow_hidden()
-                    .rounded(px(tokens.r_md))
+                    .rounded(rem(tokens.r_md))
                     .border_1()
                     .border_color(tokens.line)
                     .bg(tokens.bg_surface)

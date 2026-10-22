@@ -8,11 +8,12 @@
 use argus_desktop_core::connection::page::{Call, RunningPane};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, SharedString};
+use gpui_kit::{div, prelude::*, SharedString};
 
 use crate::connection::caller::Caller;
 use crate::kit::pill::{status_pill, status_word};
 use crate::style::Typed as _;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// What a card says under the pane's title: its note, else what kind of pane it is, then how long
@@ -36,12 +37,12 @@ fn card(pane: &RunningPane, held: bool, caller: &Caller, tokens: &Tokens) -> imp
         .test_support()
         .aria_label(title.clone())
         .flex_1()
-        .min_w(px(tokens.card_min))
-        .gap(px(tokens.sp_6))
-        .p(px(tokens.sp_12))
+        .min_w(rem(tokens.card_min))
+        .gap(rem(tokens.sp_6))
+        .p(rem(tokens.sp_12))
         .border_1()
         .border_color(tokens.line)
-        .rounded(px(tokens.r_md))
+        .rounded(rem(tokens.r_md))
         .bg(raised)
         .text_color(tokens.fg)
         .text_left()
@@ -55,11 +56,11 @@ fn card(pane: &RunningPane, held: bool, caller: &Caller, tokens: &Tokens) -> imp
         })
         .child(
             h_flex()
-                .gap(px(tokens.sp_8))
+                .gap(rem(tokens.sp_8))
                 .justify_between()
                 .items_center()
                 .min_w_0()
-                .text_size(px(tokens.fs_xs))
+                .text_size(rem(tokens.fs_xs))
                 .text_color(tokens.fg_muted)
                 .child(
                     h_flex()
@@ -70,7 +71,7 @@ fn card(pane: &RunningPane, held: bool, caller: &Caller, tokens: &Tokens) -> imp
                 .child(status_pill(("running-status", pane.id), status_word(pane.status).to_owned(), pane.status, tokens)),
         )
         .child(div().truncate().weighted(tokens.weight_semibold).child(title))
-        .child(div().truncate().text_size(px(tokens.fs_xs)).text_color(tokens.fg_muted).child(SharedString::from(note(pane))))
+        .child(div().truncate().text_size(rem(tokens.fs_xs)).text_color(tokens.fg_muted).child(SharedString::from(note(pane))))
 }
 
 /// The strip of cards for `panes`, or nothing with none to go back to.
@@ -86,19 +87,19 @@ pub fn running(project: &str, panes: &[RunningPane], held: bool, caller: &Caller
             .test_support()
             .aria_label(SharedString::from(head.clone()))
             .self_stretch()
-            .mt(px(tokens.sp_32))
+            .mt(rem(tokens.sp_32))
             .text_left()
             .child(
                 h_flex()
                     .items_center()
-                    .gap(px(tokens.sp_12))
-                    .mb(px(tokens.sp_12))
+                    .gap(rem(tokens.sp_12))
+                    .mb(rem(tokens.sp_12))
                     .typed(tokens.type_small)
                     .text_color(tokens.fg_muted)
                     .child(SharedString::from(head))
-                    .child(div().flex_1().h(px(tokens.hairline)).bg(tokens.line)),
+                    .child(div().flex_1().h(rem(tokens.hairline)).bg(tokens.line)),
             )
-            .child(h_flex().flex_wrap().gap(px(tokens.sp_12)).children(panes.iter().map(|pane| card(pane, held, caller, tokens)))),
+            .child(h_flex().flex_wrap().gap(rem(tokens.sp_12)).children(panes.iter().map(|pane| card(pane, held, caller, tokens)))),
     )
 }
 

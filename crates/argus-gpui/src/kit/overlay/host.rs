@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 use gpui_kit::component::dialog::Dialog;
 use gpui_kit::component::WindowExt as _;
-use gpui_kit::{App, FocusHandle, Global, Window};
+use gpui_kit::{prelude::*, App, FocusHandle, Global, Window};
 
 use super::kind::Overlay;
 use super::stack::{pane_regains_the_keys, Opening, Stack, Up};
@@ -107,6 +107,19 @@ impl Overlays {
     /// pane is on screen to type in.
     pub fn watch_pane(&self, focus: FocusHandle, shown: impl Fn(&App) -> bool + 'static) {
         self.0.borrow_mut().pane = Some(Pane { focus, shown: Rc::new(shown) });
+    }
+
+    /// Gives the pane the keys, if one is on screen: choosing a pane in the palette goes to it and types in it.
+    pub fn focus_pane(&self, window: &mut Window, cx: &mut App) {
+        let pane = self.0.borrow().pane.clone();
+        if let Some(pane) = pane.filter(|pane| (pane.shown)(cx)) {
+            window.focus(&pane.focus, cx);
+        }
+    }
+
+    /// Whether the pane has the keys now: where the shortcuts sheet opens (`Where::pane`).
+    pub fn pane_has_keys(&self, window: &Window, cx: &App) -> bool {
+        self.pane_keys(window, cx)
     }
 
     pub fn is_open(&self, kind: Overlay) -> bool {
@@ -246,7 +259,9 @@ impl Overlays {
             let kind = entry.spec.kind;
             let dismissable = !matches!(entry.spec.dismiss, Dismiss::Never);
             let (cancelled, closed) = (host.clone(), host.clone());
-            (entry.build)(dialog, window, cx, fresh.replace(false))
+            // The kit root paints nothing so the desktop shows through (`theme/see`); a dialog is the page's `.dialog` surface, solid.
+            let surface = crate::theme::Tokens::global(cx).bg_surface;
+            (entry.build)(dialog.bg(surface), window, cx, fresh.replace(false))
                 .keyboard(true)
                 .overlay_closable(dismissable)
                 .close_button(false)

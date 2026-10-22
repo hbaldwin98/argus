@@ -21,7 +21,7 @@ use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_kit::component::{v_flex, Disableable as _};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, prelude::*, px, AnyElement, AnyView, App, Bounds, ClickEvent, Context, Entity, MouseButton, MouseDownEvent,
+    div, prelude::*, AnyElement, AnyView, App, Bounds, ClickEvent, Context, Entity, MouseButton, MouseDownEvent,
     Pixels, Role, SharedString, Subscription, WeakEntity, Window,
 };
 
@@ -36,6 +36,7 @@ use crate::layout::panel;
 use crate::layout::tools;
 use crate::layout::work::{Held, WorkView};
 use crate::style::Typed as _;
+use crate::theme::scale::{css, pixels, rem};
 use crate::theme::Tokens;
 
 /// What the bottom dock leaves the stage of the height at least: the page's `100% - 120px`.
@@ -107,7 +108,7 @@ impl DockView {
         let Some(work) = self.work.upgrade() else { return page.size };
         let (sizing, area) = {
             let work = work.read(cx);
-            (work.sizing(self.dock), work.area().size.width.as_f32())
+            (work.sizing(self.dock), work.area().size.width.as_f32() / work.zoom())
         };
         let size = sizing.unwrap_or(page.size);
         match self.dock {
@@ -182,7 +183,7 @@ impl DockView {
             })
             .context_menu({
                 let tokens = *tokens;
-                move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, tokens, cx)
+                move |menu, window, cx| dock_menu::build(menu, &entries, &caller, &heard, tokens, window, cx)
             })
     }
 
@@ -207,7 +208,7 @@ impl DockView {
                     .disabled(held)
                     .dropdown_menu({
                         let tokens = *tokens;
-                        move |menu, _, cx| dock_menu::build(menu, &entries, &caller, &heard, tokens, cx)
+                        move |menu, window, cx| dock_menu::build(menu, &entries, &caller, &heard, tokens, window, cx)
                     }),
             )
     }
@@ -244,7 +245,7 @@ impl DockView {
         strip::bar(tokens)
             .id(SharedString::from(format!("dock-{}-head", self.name())))
             .test_support()
-            .pl(px(tokens.sp_12))
+            .pl(rem(tokens.sp_12))
             .typed(tokens.type_small)
             .weighted(tokens.weight_medium)
             .text_color(tokens.fg_muted)
@@ -271,10 +272,10 @@ impl DockView {
     fn sash(&self, held: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let (accent, dock) = (tokens.accent, self.dock);
         let name = SharedString::from(format!("dock-{}-sash", self.name()));
-        let (across, along) = (px(tokens.sp_4), px(tokens.sp_32));
+        let (across, along) = (rem(tokens.sp_4), rem(tokens.sp_32));
         let grip = div()
             .absolute()
-            .rounded(px(tokens.r_pill))
+            .rounded(rem(tokens.r_pill))
             .bg(accent)
             .opacity(if held { 1.0 } else { 0.0 })
             .group_hover(name.clone(), |style| style.opacity(1.0));
@@ -299,13 +300,13 @@ impl DockView {
                     }
                     let drawn = {
                         let docks = &this.heard.read(cx).docks;
-                        this.drawn(this.page(docks), f32::from(window.viewport_size().width), cx) as f32
+                        this.drawn(this.page(docks), css(window.viewport_size().width, window.rem_size()), cx) as f32
                     };
                     this.work.update(cx, |work, cx| work.press_sash(dock, drawn, event.position, cx)).ok();
                 }),
             )
             .child(grip);
-        let reach = px(tokens.sp_12);
+        let reach = rem(tokens.sp_12);
         match self.dock {
             Dock::Left => zone.top_0().bottom_0().right_0().w(reach).cursor_col_resize(),
             Dock::Right => zone.top_0().bottom_0().left_0().w(reach).cursor_col_resize(),
@@ -329,7 +330,7 @@ fn present_of(docks: &DocksPage, panel: &Panel) -> Option<PresentPanel> {
 impl Render for DockView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
-        let window_width = f32::from(window.viewport_size().width);
+        let window_width = css(window.viewport_size().width, window.rem_size());
         let (docks, held) = {
             let heard = self.heard.read(cx);
             (heard.docks.clone(), heard.held())
@@ -341,7 +342,7 @@ impl Render for DockView {
             return div().into_any_element();
         };
         let title = page.tabs.iter().find(|tab| tab.panel == shown).map_or_else(|| shown.to_string(), |tab| tab.title.clone());
-        let size = px(self.drawn(&page, window_width, cx) as f32);
+        let size = rem(self.drawn(&page, window_width, cx) as f32);
         let sizing = self.work.upgrade().is_some_and(|work| work.read(cx).sizing(self.dock).is_some());
         let name = self.name();
         let root = v_flex()
@@ -351,7 +352,7 @@ impl Render for DockView {
             // It gives way to the stage's floor (`work`), as the page's
             // `max-width: calc(100% - var(--dock-floor))` caps it.
             .flex_shrink(1.0)
-            .bg(tokens.bg_sunken)
+            .bg(tokens.see_sunken)
             .border_color(tokens.line)
             .when(held, |dock| dock.opacity(tokens.opacity_held));
         let root = match self.dock {
@@ -380,8 +381,8 @@ impl Render for DockView {
                         // presses; one that reaches here and is in the strip's height is the head's.
                         panel.on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                                if event.position.y - this.panel.get().origin.y < px(tokens.strip_h) {
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                if event.position.y - this.panel.get().origin.y < pixels(tokens.strip_h, window.rem_size()) {
                                     let held = Held::Panel { panel: carried.clone(), title: title.clone(), stage, click: false };
                                     this.press(event.position, held, cx);
                                 }

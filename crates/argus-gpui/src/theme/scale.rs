@@ -8,10 +8,36 @@
 
 use std::time::Duration;
 
-use gpui_kit::{point, px, BoxShadow, FontWeight, Pixels};
+use gpui_kit::{point, px, BoxShadow, FontWeight, Rems};
 
 use super::colour::Colour;
 use super::define::Set;
+
+/// What one rem is at 100%: `--fs-md`, which is the kit's own base (its root sets the window's rem size to the theme's font
+/// size on every frame). A view's size is `rem(token)`, so the zoom, which is that font size, scales it.
+pub const REM: f32 = 13.0;
+
+/// A token as a length that follows the zoom: `v` pixels at 100%.
+pub fn rem(v: f32) -> gpui_kit::Rems {
+    gpui_kit::rems(v / REM)
+}
+
+/// A token as pixels at the window's zoom, for where a length must be `Pixels`: a dialog's width, a
+/// hit test, the kit's own `rounded`. `rem_size` is the window's (`window.rem_size()`).
+pub fn pixels(v: f32, rem_size: gpui_kit::Pixels) -> gpui_kit::Pixels {
+    rem(v).to_pixels(rem_size)
+}
+
+/// How far the window is zoomed, 1.0 at 100%: its rem size over what a rem is at 100%.
+pub fn zoom(rem_size: gpui_kit::Pixels) -> f32 {
+    f32::from(rem_size) / REM
+}
+
+/// What a length of the window's real pixels is in the page's: the unit the session's sizes (a
+/// dock's, the rail's, a floating panel's), the breakpoints and the drags are in.
+pub fn css(real: gpui_kit::Pixels, rem_size: gpui_kit::Pixels) -> f32 {
+    f32::from(real) / zoom(rem_size)
+}
 
 /// One of the page's `--type-*` shorthands: weight, size and line height.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,12 +58,13 @@ impl Type {
         FontWeight(self.weight)
     }
 
-    pub fn size(&self) -> Pixels {
-        px(self.size)
+    /// The size and the line height are rems of the scale, so the zoom scales type with the rest.
+    pub fn size(&self) -> Rems {
+        rem(self.size)
     }
 
-    pub fn line_height(&self) -> Pixels {
-        px(self.size * self.leading)
+    pub fn line_height(&self) -> Rems {
+        rem(self.size * self.leading)
     }
 }
 
@@ -84,6 +111,10 @@ pub struct Scale {
     /// `--font-ui-bundled`'s first family, and `--font-mono-bundled`'s.
     pub font_ui: &'static str,
     pub font_mono: &'static str,
+    /// The theme's own faces, which a family the person chose goes in front of: what draws the
+    /// glyphs the chosen one lacks, and what an empty font field says it draws.
+    pub font_ui_bundled: &'static str,
+    pub font_mono_bundled: &'static str,
 
     pub fs_2xs: f32,
     pub fs_xs: f32,
@@ -203,6 +234,34 @@ pub struct Scale {
     /// `--tile`, and `--dialog-w-sm`: the empty stage's icon tile and the Stopped card's width.
     pub tile: f32,
     pub dialog_w_sm: f32,
+    /// `--dialog-w` (a form such as Add a project), the palette's width, the shortcuts sheet's width and height and its side column, and how tall the add dialog's folder list may grow before it scrolls (`.palette`, `.keys-sheet`, `.ks-side`, `.ap-folders`).
+    pub form_w: f32,
+    pub palette_w: f32,
+    pub sheet_w: f32,
+    pub sheet_h: f32,
+    /// How tall the palette and the sheet may grow, and the palette's top gap, as shares of the window (`.palette`, `.scrim.top`, `.keys-sheet`).
+    pub palette_max_share: f32,
+    pub palette_top_share: f32,
+    pub sheet_max_share: f32,
+    pub sheet_side_w: f32,
+    pub folders_max_h: f32,
+    /// `.dialog.sheet-dialog` (the Settings sheet: its width and height, the share of the window each may take, which the shortcuts sheet's own height share is also), `.settings-nav`, `.themecards` and `.themecard .pv` (the cards per row, the preview's height, its sidebar's width, a line's height and the rounding of both), `.toggle`, `.opacity input` and the percent beside it, `.settings .setrow .field` and `.fontpick-list`.
+    pub settings_w: f32,
+    pub settings_h: f32,
+    pub settings_max_w_share: f32,
+    pub settings_nav_w: f32,
+    pub theme_cards_per_row: usize,
+    pub preview_h: f32,
+    pub preview_side_w: f32,
+    pub preview_line_h: f32,
+    pub preview_rounding: f32,
+    pub toggle_w: f32,
+    pub opacity_slider_w: f32,
+    pub percent_w: f32,
+    pub setting_field_w: f32,
+    pub font_list_max_h: f32,
+    /// `.add-dialog`: how tall the add dialog may grow before its body scrolls.
+    pub add_max_h: f32,
     /// `.empty-body` and its `no-projects` and `no-pane` forms: how wide each empty stage's block is, and the Stopped card's icon.
     pub empty_w: f32,
     pub empty_w_projects: f32,
@@ -235,6 +294,9 @@ pub struct Scale {
     pub share_edge: f32,
     /// A diff side's added or removed wash, and the picked lines laid over it.
     pub share_tone: f32,
+    /// The bin tile of a destructive question (`.danger-tile`) and the callout under it (`.warn-callout`): the danger and the attention colour at these shares.
+    pub share_danger_tile: f32,
+    pub share_callout: f32,
     pub share_pick: f32,
     /// A sash's grab zone under the pointer: the accent at this share. The port's own; the page's review has no sash.
     pub share_sash: f32,
@@ -276,6 +338,8 @@ impl Scale {
         Self {
             font_ui: "Geist",
             font_mono: "JetBrains Mono",
+            font_ui_bundled: "Geist",
+            font_mono_bundled: "JetBrains Mono",
 
             fs_2xs: 10.0,
             fs_xs: 11.0,
@@ -376,6 +440,30 @@ impl Scale {
             narrow_below: 1200.0,
             tile: 56.0,
             dialog_w_sm: 440.0,
+            form_w: 560.0,
+            palette_w: 620.0,
+            sheet_w: 960.0,
+            sheet_h: 660.0,
+            palette_max_share: 0.70,
+            palette_top_share: 0.12,
+            sheet_max_share: 0.90,
+            sheet_side_w: 224.0,
+            folders_max_h: 180.0,
+            settings_w: 1120.0,
+            settings_h: 760.0,
+            settings_max_w_share: 0.94,
+            settings_nav_w: 200.0,
+            theme_cards_per_row: 5,
+            preview_h: 56.0,
+            preview_side_w: 24.0,
+            preview_line_h: 6.0,
+            preview_rounding: 3.0,
+            toggle_w: 40.0,
+            opacity_slider_w: 200.0,
+            percent_w: 36.0,
+            setting_field_w: 260.0,
+            font_list_max_h: 280.0,
+            add_max_h: 720.0,
             empty_w: 520.0,
             empty_w_projects: 460.0,
             empty_w_pane: 760.0,
@@ -395,6 +483,8 @@ impl Scale {
             share_press_icon: 0.15,
             share_edge: 0.45,
             share_tone: 0.12,
+            share_danger_tile: 0.14,
+            share_callout: 0.12,
             share_pick: 0.24,
             share_sash: 0.4,
             share_landing: 0.14,
@@ -418,8 +508,8 @@ impl Scale {
     /// module's, since they apply to roles derived from the palette.
     pub fn set(&mut self, set: &Set) {
         match *set {
-            Set::FontUi(family) => self.font_ui = family,
-            Set::FontMono(family) => self.font_mono = family,
+            Set::FontUi(family) => (self.font_ui, self.font_ui_bundled) = (family, family),
+            Set::FontMono(family) => (self.font_mono, self.font_mono_bundled) = (family, family),
             Set::RXs(v) => self.r_xs = v,
             Set::RSm(v) => self.r_sm = v,
             Set::RMd(v) => self.r_md = v,

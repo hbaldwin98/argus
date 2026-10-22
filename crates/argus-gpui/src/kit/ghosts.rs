@@ -6,8 +6,9 @@
 
 use gpui_kit::component::v_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, relative, Animation, AnimationExt as _, SharedString};
+use gpui_kit::{div, prelude::*, relative, Animation, AnimationExt as _, SharedString};
 
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// What a bar keeps of its colour at the middle of the shimmer.
@@ -66,18 +67,18 @@ pub fn ghosts(id: &'static str, bars: &'static [f32], tokens: &Tokens) -> impl I
 /// The same column with bars that can be a fixed width or indented.
 pub fn column(id: &'static str, bars: &[Bar], tokens: &Tokens) -> impl IntoElement {
     let fill = tokens.fill;
-    v_flex().id(id).test_support().size_full().px(px(tokens.sp_16)).children(bars.iter().copied().enumerate().map(move |(at, bar)| {
+    v_flex().id(id).test_support().size_full().px(rem(tokens.sp_16)).children(bars.iter().copied().enumerate().map(move |(at, bar)| {
         div()
             .id((id, at))
-            .mt(px(tokens.sp_8))
-            .ml(px(bar.indent))
+            .mt(rem(tokens.sp_8))
+            .ml(rem(bar.indent))
             .flex_shrink_0()
-            .h(px(tokens.ghost_h))
+            .h(rem(tokens.ghost_h))
             .map(|row| match bar.width {
                 Width::Share(share) => row.w(relative(share)),
-                Width::Fixed(width) => row.w(px(width)),
+                Width::Fixed(width) => row.w(rem(width)),
             })
-            .rounded(px(tokens.r_xs))
+            .rounded(rem(tokens.r_xs))
             .bg(fill)
             .with_animation(
                 SharedString::from(format!("{id}-{at}-shimmer")),

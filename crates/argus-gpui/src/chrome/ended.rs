@@ -11,11 +11,12 @@
 use argus_desktop_core::connection::page::{Call, Rail};
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Role, SharedString};
+use gpui_kit::{div, prelude::*, Role, SharedString};
 
 use crate::connection::caller::Caller;
 use crate::kit::button::{button, Look};
 use crate::kit::icons::Glyph;
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// What the bar offers for the pane on screen.
@@ -94,19 +95,19 @@ pub fn bar(ended: Ended, held: bool, caller: &Caller, tokens: &Tokens) -> impl I
         .role(Role::Status)
         .test_support()
         .absolute()
-        .left(px(tokens.sp_16))
-        .right(px(tokens.sp_16))
-        .bottom(px(tokens.sp_16))
-        .gap(px(tokens.sp_12))
+        .left(rem(tokens.sp_16))
+        .right(rem(tokens.sp_16))
+        .bottom(rem(tokens.sp_16))
+        .gap(rem(tokens.sp_12))
         .items_center()
-        .px(px(tokens.sp_12))
-        .py(px(tokens.sp_8))
+        .px(rem(tokens.sp_12))
+        .py(rem(tokens.sp_8))
         .border_1()
         .border_color(tokens.line_strong)
-        .rounded(px(tokens.r_md))
+        .rounded(rem(tokens.r_md))
         .bg(tokens.bg_surface)
         .shadow(tokens.shadow_pop())
-        .text_size(px(tokens.fs_sm))
+        .text_size(rem(tokens.fs_sm))
         .text_color(tokens.fg)
         .child(div().flex_shrink_0().text_color(tokens.fg_muted).child(Glyph::Info.at(tokens.icon_sm)))
         .child(
