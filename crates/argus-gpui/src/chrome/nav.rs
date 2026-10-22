@@ -22,10 +22,11 @@ pub enum Nav {
     Git,
     Code,
     Console,
+    Browsers,
 }
 
 impl Nav {
-    pub const ALL: [Nav; 8] = [
+    pub const ALL: [Nav; 9] = [
         Nav::Search,
         Nav::New,
         Nav::Workspace,
@@ -34,6 +35,7 @@ impl Nav {
         Nav::Git,
         Nav::Code,
         Nav::Console,
+        Nav::Browsers,
     ];
 
     pub fn label(self) -> &'static str {
@@ -46,6 +48,7 @@ impl Nav {
             Nav::Git => "Git",
             Nav::Code => "Code",
             Nav::Console => "Console",
+            Nav::Browsers => "Browsers",
         }
     }
 
@@ -60,6 +63,7 @@ impl Nav {
             Nav::Git => "nav-git",
             Nav::Code => "nav-code",
             Nav::Console => "nav-console",
+            Nav::Browsers => "nav-browsers",
         }
     }
 
@@ -75,6 +79,7 @@ impl Nav {
             Nav::Git => Glyph::Commit,
             Nav::Code => Glyph::Code,
             Nav::Console => Glyph::Console,
+            Nav::Browsers => Glyph::Globe,
         }
     }
 
@@ -89,6 +94,7 @@ impl Nav {
             Nav::Git => return None,
             Nav::Code => Action::Code,
             Nav::Console => Action::Console,
+            Nav::Browsers => Action::Browsers,
         })
     }
 
@@ -104,6 +110,7 @@ impl Nav {
             Nav::Git => return None,
             Nav::Code => Call::ShowCode { open: true },
             Nav::Console => Call::Console { gesture: ConsoleGesture::Tab },
+            Nav::Browsers => Call::ShowBrowsers { pane: None },
         })
     }
 
@@ -134,6 +141,7 @@ impl Nav {
                 | (Nav::Checkouts, Stage::Checkouts)
                 | (Nav::Code, Stage::Code)
                 | (Nav::Console, Stage::Console)
+                | (Nav::Browsers, Stage::Browsers)
         )
     }
 }
@@ -153,6 +161,7 @@ mod tests {
             Stage::Extension,
             Stage::View,
             Stage::Code,
+            Stage::Browsers,
         ] {
             let lit = Nav::ALL.iter().filter(|nav| nav.lit_by(stage)).count();
             assert!(lit <= 1, "{stage:?} lit {lit} items");
@@ -168,6 +177,7 @@ mod tests {
         assert_eq!(lit(Stage::Composer), Some(Nav::New));
         assert_eq!(lit(Stage::Code), Some(Nav::Code));
         assert_eq!(lit(Stage::Console), Some(Nav::Console));
+        assert_eq!(lit(Stage::Browsers), Some(Nav::Browsers));
         assert_eq!(lit(Stage::View), None, "a page over a stage lights nothing");
     }
 
@@ -184,7 +194,7 @@ mod tests {
     #[test]
     fn every_stage_item_leaves_git_and_search_and_git_do_not() {
         let leaving: Vec<Nav> = Nav::ALL.into_iter().filter(|nav| nav.leaves_git()).collect();
-        assert_eq!(leaving, [Nav::New, Nav::Workspace, Nav::Features, Nav::Checkouts, Nav::Code, Nav::Console]);
+        assert_eq!(leaving, [Nav::New, Nav::Workspace, Nav::Features, Nav::Checkouts, Nav::Code, Nav::Console, Nav::Browsers]);
         for nav in leaving {
             assert!(nav.call().is_some(), "{nav:?} goes to a stage with a call");
         }

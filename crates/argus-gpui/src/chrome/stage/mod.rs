@@ -4,6 +4,8 @@
 //! window yet, a line that says so. The console is drawn by the work area (`layout/work`), which
 //! asks the same router.
 //!
+//! The Browsers stage is `browser/stage`, drawn here like the Checkouts and Code stages.
+//!
 //! The session has no Git stage (`review::entry`), so the choice is the window's, made from what
 //! the session says is open. The pane is kept, not dropped, under the empty stage: its screen and
 //! its subscription are the session's, and the keys still go through it. While the daemon is gone
@@ -28,6 +30,15 @@ use crate::layout::panel;
 use crate::theme::Tokens;
 use route::{surface, Surface};
 
+/// The views the stage swaps between, one for each surface that is a view of its own.
+pub struct Bodies {
+    pub pane: AnyView,
+    pub git: AnyView,
+    pub checkouts: AnyView,
+    pub code: AnyView,
+    pub browsers: AnyView,
+}
+
 pub struct StageView {
     heard: Entity<Heard>,
     caller: Caller,
@@ -35,13 +46,15 @@ pub struct StageView {
     git: AnyView,
     checkouts: AnyView,
     code: AnyView,
+    browsers: AnyView,
     _observing: Subscription,
 }
 
 impl StageView {
-    pub fn new(heard: Entity<Heard>, caller: Caller, pane: AnyView, git: AnyView, checkouts: AnyView, code: AnyView, cx: &mut Context<Self>) -> Self {
+    pub fn new(heard: Entity<Heard>, caller: Caller, bodies: Bodies, cx: &mut Context<Self>) -> Self {
+        let Bodies { pane, git, checkouts, code, browsers } = bodies;
         let observing = cx.observe(&heard, |_, _, cx| cx.notify());
-        Self { heard, caller, pane, git, checkouts, code, _observing: observing }
+        Self { heard, caller, pane, git, checkouts, code, browsers, _observing: observing }
     }
 }
 
@@ -54,6 +67,7 @@ impl Render for StageView {
             Surface::Git => self.git.clone().into_any_element(),
             Surface::Checkouts => self.checkouts.clone().into_any_element(),
             Surface::Code => self.code.clone().into_any_element(),
+            Surface::Browsers => self.browsers.clone().into_any_element(),
             Surface::Pane => div()
                 .relative()
                 .size_full()

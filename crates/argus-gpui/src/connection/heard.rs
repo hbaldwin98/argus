@@ -18,6 +18,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use argus_desktop_core::browser::{BrowserShot, BrowsersPage};
 use argus_desktop_core::checkouts::table::Checkouts;
 use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::code::stage::CodePage;
@@ -34,6 +35,8 @@ use argus_desktop_core::views::saved::{SavedPanel, SavedViewsPage};
 use gpui_kit::{Context, EventEmitter, Task};
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use crate::browser::decoding;
+use crate::browser::pictures::Pictures;
 use crate::layout::holders::{Holder, Holders};
 use crate::connection::screens::{Marked, Screens};
 use crate::panes::screen::Screen;
@@ -67,6 +70,10 @@ pub struct Notice {
 
 /// Emitted by [`Heard`] when a batch of events changed the screen of a side.
 pub struct Painted(pub Side);
+
+/// Emitted by [`Heard`] when the picture of a browser's pane changed or went: the places that draw
+/// that pane repaint for it and for nothing else, as a terminal does for [`Painted`].
+pub struct Pictured(pub u64);
 
 /// Emitted by [`Heard`] for each `Run` the session sent: a key it heard in a pane asked the window
 /// to open the palette, the sheet or the settings (SHELL-KEYS-9). The window opens it, since only
@@ -138,6 +145,10 @@ pub struct Heard {
     /// false is the stage not being there (four loading bars). Shared, so the stage keeps its rows across
     /// unrelated events.
     pub code: Option<Rc<CodePage>>,
+    /// The browsers agents run, as the Browsers stage lists them, whole as the last event said.
+    pub browsers: Rc<BrowsersPage>,
+    /// Their latest pictures, decoded off the UI thread and shared by every place that draws one.
+    pub pictures: Pictures,
     /// The files read in each checkout while this window has been open, for the start panel.
     pub opened: Opened,
     /// What only the window knows of the Git stage (`review::entry`): that Git
@@ -160,6 +171,10 @@ pub struct Heard {
     noticed: u64,
     /// The sides whose screen a frame changed since [`Heard::listen`] last said so.
     painted: Vec<Side>,
+    /// The pictures heard since [`Heard::announce`] last set them decoding, the newest of each pane.
+    shots: Vec<BrowserShot>,
+    /// The panes whose picture went when the stage was told, which their places are to hear of.
+    blanked: Vec<u64>,
     /// The actions the session asked the window to run since [`Heard::listen`] last said so.
     ran: Vec<Action>,
     /// The editor's events heard since [`Heard::listen`] last said so.
@@ -195,6 +210,8 @@ impl Heard {
             history: None,
             checkouts: None,
             code: None,
+            browsers: Rc::default(),
+            pictures: Pictures::default(),
             opened: Opened::default(),
             git: Entry::default(),
             screens: Screens::new(),
@@ -202,6 +219,8 @@ impl Heard {
             holding: Holders::default(),
             noticed: 0,
             painted: Vec::new(),
+            shots: Vec::new(),
+            blanked: Vec::new(),
             ran: Vec::new(),
             edited: Vec::new(),
             listening: None,
@@ -236,6 +255,12 @@ impl Heard {
     pub fn announce(&mut self, cx: &mut Context<Self>) {
         for side in std::mem::take(&mut self.painted) {
             cx.emit(Painted(side));
+        }
+        for pane in std::mem::take(&mut self.blanked) {
+            cx.emit(Pictured(pane));
+        }
+        for shot in std::mem::take(&mut self.shots) {
+            decoding::begin(self, shot, cx);
         }
         for action in std::mem::take(&mut self.ran) {
             cx.emit(Ran(action));
@@ -288,6 +313,16 @@ impl Heard {
             Event::Notice { text } => {
                 self.noticed += 1;
                 self.notice = Some(Notice { text, serial: self.noticed });
+            }
+            Event::Browsers(page) => {
+                self.blanked.extend(self.pictures.page(&page));
+                self.browsers = Rc::new(*page);
+            }
+            // Decoded once the batch is over (`announce`), and only the newest of a pane's.
+            Event::BrowserShot(shot) => {
+                self.shots.retain(|held| held.pane != shot.pane);
+                self.shots.push(shot);
+                return false;
             }
             Event::Checkouts(table) => self.checkouts = Some(Rc::new(*table)),
             Event::Code(page) => {
@@ -420,6 +455,7 @@ impl Heard {
 
 impl EventEmitter<Painted> for Heard {}
 
+impl EventEmitter<Pictured> for Heard {}
 impl EventEmitter<Ran> for Heard {}
 impl EventEmitter<Edited> for Heard {}
 

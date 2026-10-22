@@ -167,3 +167,40 @@ fn an_unrelated_event_does_not_redraw_the_rail_and_a_change_of_what_it_draws_doe
     hear(cx, &opened, vec![Event::Rail(Box::new(changed))]);
     assert_eq!(changes(cx), before + 1, "what the foot says changed");
 }
+
+#[gpui_kit::test]
+fn a_browsers_row_wears_a_globe_and_says_browser_not_shell_and_a_press_shows_its_pane(cx: &mut TestAppContext) {
+    // SHELL-BROWSER-20: the page drew a browser as a shell; the port tells them apart, and a press
+    // is the ordinary one, since the cell the pane is shown as is the grid's to choose.
+    use argus_desktop_core::browser::{BrowsersPage, PageBrowser};
+    let opened = open(cx, connected_and_busy());
+    assert!(!present(cx, &opened, "pane-2-browser"));
+    let page = BrowsersPage {
+        browsers: vec![PageBrowser {
+            pane: 2,
+            owner: 1,
+            agent: "Trim context".into(),
+            url: String::new(),
+            title: String::new(),
+            tabs: Vec::new(),
+            shown: None,
+            following: true,
+            held: false,
+            driver: None,
+        }],
+    };
+    hear(cx, &opened, vec![Event::Browsers(Box::new(page))]);
+    assert!(present(cx, &opened, "pane-2-browser"));
+    assert!(!present(cx, &opened, "pane-1-browser"), "only the browsers' rows");
+    assert_eq!(label(cx, &opened, "pane-2").as_deref(), Some("zsh \u{b7} browser, idle"));
+    click(cx, &opened, "pane-2");
+    assert_eq!(taken(&opened), ["RailPick { checkout: 110, pane: Some(2) }", "Select { pane: 2 }"]);
+}
+
+#[gpui_kit::test]
+fn the_browsers_item_goes_to_the_stage_of_every_agents_browsers(cx: &mut TestAppContext) {
+    let opened = open(cx, connected_and_busy());
+    assert_eq!(label(cx, &opened, "nav-browsers").as_deref(), Some("Browsers"));
+    click(cx, &opened, "nav-browsers");
+    assert_eq!(taken(&opened), ["ShowBrowsers { pane: None }"]);
+}

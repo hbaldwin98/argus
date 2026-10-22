@@ -914,6 +914,14 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | module | answers |
 | --- | --- |
 | `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, and the window; the unattended runs are `probe` and `report` |
+| `browser` | the browsers agents run as this window draws them: their pictures decoded and held once, a picture in a place, the Browsers stage of tiles and its words with none open |
+| `browser/decode` | how a browser's picture becomes an image the window draws: base64 undone, JPEG or PNG sniffed from the bytes, the pixels decoded to BGRA premultiplied, with no window in it |
+| `browser/decoding` | where a picture is decoded: off the UI thread, ticketed when it starts and landed in `Heard`'s pictures only if it is still its pane's newest, a failure dropped and logged |
+| `browser/empty` | the Browsers stage with no browser open: `No agent has a browser open.` and the hint with `argus-hook browser` in the code face, the same for an old daemon |
+| `browser/picture` | a browser's picture drawn in one place, kept in its page's shape, repainting only for its own pane's `Pictured` and handing the atlas the images that were replaced |
+| `browser/pictures` | the latest decoded picture of each browser, one shared image for every place that draws it: the newest decode wins, a browser with no tab or that closed has none, replaced images retired for the atlas |
+| `browser/stage` | the Browsers stage: a tile for each browser in Rust's order in as many columns of at least 360 px as the stage holds, measured as laid out, or the empty words; one picture view kept per browser |
+| `browser/tile` | one browser's tile: the agent, the page's title and address, and its picture at 16 by 10; a press asks the session to show that browser's pane and nothing else |
 | `checkouts` | what the Checkouts stage shows and does: its table, its side column, its strip, its menus and its dialogs |
 | `checkouts/act` | what a gesture on the stage does in the window: the calls it comes to are sent (a held window sends none), and a new worktree that wants a name opens the name dialog first; a way on a row is asked of the table as it is when the gesture lands |
 | `checkouts/bar` | the keys the table answers to, quietly under it, as core's key bar lists them |
@@ -969,7 +977,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `chrome/rail/menus` | what the rail's right-click menus offer: a repository's, a checkout's and a pane's as menu items naming the calls they send |
 | `chrome/rail/switcher` | the brand's menu, the project switcher: core's entries (projects with their tallies, add, workspaces, hosts, remove) as menu items naming the calls they send, the two lists that unfold in the page opening beside it |
 | `chrome/rail/popup` | a rail menu drawn: its items as the kit's popup, each choice handed back to the rail to do once the menu has let go of the keys, and off while the daemon is gone |
-| `chrome/rail/pane` | a pane's row: its status as a dot or a word, its title, the close that appears under the pointer, its right-click menu, a middle click closing it, and the press that carries it; a tile of the task's initials with the status on its corner in a narrow rail |
+| `chrome/rail/pane` | a pane's row (a browser's wearing a globe): its status as a dot or a word, its title, the close that appears under the pointer, its right-click menu, a middle click closing it, and the press that carries it; a tile of the task's initials with the status on its corner in a narrow rail |
 | `chrome/rail/repository` | a repository's row: its chevron, name, status dot and count, the clock that opens its recent sessions, its right-click menu, and the checkouts under it while it is open; a hairline in a narrow rail |
 | `chrome/rail/row` | the box every selectable line of the rail is made of, what a drawing of the rail is made against, and the quiet button a row shows under the pointer |
 | `chrome/rail/scroll` | bringing the pane on screen into view once per pane, on the frame after its row says where it is |
@@ -979,9 +987,9 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `chrome/rail/status` | how a status looks on the rail's rows: the dot a status earns, and the words a few statuses say (the pill they are said in is `kit/pill`) |
 | `chrome/rail/tail` | the nav's dynamic tail: the Extensions and Views folds, each drawing nothing while it holds nothing, their rows lit while on screen and handles that dock the view |
 | `chrome/shell` | which regions the window is made of and how they sit: the sidebar at full height, and beside it the work area under the stage's header |
-| `chrome/stage` | what fills the stage under the header by the one choice `route` makes: the Git stage, the Workspace's live pane with the bar of an ended pane over its foot, the empty stage in its place with no pane, or a line saying a stage is not in the window yet; dimmed while the daemon is gone |
+| `chrome/stage` | what fills the stage under the header by the one choice `route` makes: the Git stage, the Checkouts, Code and Browsers stages, the Workspace's live pane with the bar of an ended pane over its foot, the empty stage in its place with no pane, or a line saying a stage is not in the window yet; dimmed while the daemon is gone |
 | `chrome/stage/empty` | the card on the stage when no pane is on screen: connecting (a spinner, where, the last failure, one way out), no projects (add one), or no pane (an agent, a shell on the first checkout, the panes to go back to), from core's `chrome/empty` |
-| `chrome/stage/route` | which surface fills the stage (Git, the console, the pane, the empty stage, or a stage not built yet) read from the session's stage, the window's Git and the console's place together, which parts of the frame are put away around it (the sidebar while the pane fills the window; the nav, foot and docks under a fullscreen console), and the 1200 px breakpoint |
+| `chrome/stage/route` | which surface fills the stage (Git, the console, the pane, the empty stage, the Checkouts, Code or Browsers stage, or a stage not built yet) read from the session's stage, the window's Git and the console's place together, which parts of the frame are put away around it (the sidebar while the pane fills the window; the nav, foot and docks under a fullscreen console), and the 1200 px breakpoint |
 | `chrome/stage/running` | the `Panes in <project>` strip under the empty stage's buttons: a card for each pane of the project, the status, the title, the note and how long since it changed, each selecting its pane |
 | `chrome/stage/stopped` | the card over the window while the daemon was stopped on purpose, on the overlay host where Escape and the scrim do not dismiss it: up exactly while the link is stopped, and its Reconnect asks the session to reconnect |
 | `chrome/window_controls` | the window's three controls: what each looks like, the red of the close, and what it asks of the window |

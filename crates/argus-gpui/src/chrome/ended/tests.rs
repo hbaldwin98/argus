@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::*;
-use crate::chrome::stage::StageView;
+use crate::chrome::stage::{Bodies, StageView};
 use crate::connection::heard::Heard;
 use argus_desktop_core::connection::page::{Checkout, Connection, Event, Status, Pane, Project, Repository, Shown};
 use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
@@ -135,8 +135,8 @@ fn open(cx: &mut TestAppContext) -> Opened {
             |_, cx| {
                 let heard = cx.new(|_| Heard::new());
                 heard_out = Some(heard.clone());
-                let (pane, git, checkouts, code) = (cx.new(|_| Blank), cx.new(|_| Blank), cx.new(|_| Blank), cx.new(|_| Blank));
-                cx.new(|cx| StageView::new(heard, caller, pane.into(), git.into(), checkouts.into(), code.into(), cx))
+                let (pane, git, checkouts, code, browsers) = (cx.new(|_| Blank), cx.new(|_| Blank), cx.new(|_| Blank), cx.new(|_| Blank), cx.new(|_| Blank));
+                cx.new(|cx| StageView::new(heard, caller, Bodies { pane: pane.into(), git: git.into(), checkouts: checkouts.into(), code: code.into(), browsers: browsers.into() }, cx))
             },
         )
         .expect("open test window")
