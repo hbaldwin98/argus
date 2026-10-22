@@ -96,6 +96,16 @@ pub struct FilesPage {
     pub truncated: bool,
 }
 
+impl FilesPage {
+    /// The path of `relative` as the daemon's host spells it: the root without its trailing
+    /// separators, then each folder after a separator of the host's own, so a path copied
+    /// opens where it was copied from.
+    pub fn path_of(&self, relative: &str) -> String {
+        let tail = relative.replace('/', &self.separator);
+        format!("{}{}{tail}", self.root.trim_end_matches(['/', '\\']), self.separator)
+    }
+}
+
 pub const REVEAL_LABEL: &str = if cfg!(windows) {
     "Show in Explorer"
 } else if cfg!(target_os = "macos") {
@@ -313,6 +323,14 @@ mod tests {
         let f = footer(&entry("a.rs", false, None), 100 + 240);
         assert_eq!(f.detail, "2 KB · changed 4m ago");
         assert_eq!(footer(&entry("src", true, None), 100 + 7200).detail, "changed 2h ago");
+    }
+
+    #[test]
+    fn a_path_is_spelled_as_the_daemons_host_spells_it() {
+        let windows = FilesPage { root: "C:\\src\\night\\\\".into(), separator: "\\".into(), ..FilesPage::default() };
+        assert_eq!(windows.path_of("crates/argusd/main.rs"), "C:\\src\\night\\crates\\argusd\\main.rs");
+        let unix = FilesPage { root: "/home/me/night/".into(), separator: "/".into(), ..FilesPage::default() };
+        assert_eq!(unix.path_of("README.md"), "/home/me/night/README.md");
     }
 
     #[test]

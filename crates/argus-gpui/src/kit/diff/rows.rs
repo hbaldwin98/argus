@@ -8,7 +8,7 @@ use argus_desktop_core::connection::page::{DiffRow, DiffSide};
 use gpui_kit::component::h_flex;
 use gpui_kit::{prelude::*, AnyElement, App, ClickEvent, Context, ElementId, MouseButton, MouseDownEvent, SharedString, TestSupportExt as _, Window};
 
-use super::gutter::{gutter, Pin};
+use super::gutter::{gutter, Columns, Pin};
 use super::paint::{code, Ink};
 use super::shape::{self, Shape};
 use super::text::Code;
@@ -48,6 +48,9 @@ impl DiffView {
 
     /// A hunk's `@@` line or a note: said, never picked.
     fn heading(&self, ix: usize, row: &DiffRow, tokens: &Tokens) -> AnyElement {
+        if self.reading && shape::shape(row) == Shape::Note {
+            return self.gone(ix, row, tokens);
+        }
         self.wide(h_flex())
             .id(Self::row_id(ix))
             .test_support()
@@ -57,6 +60,28 @@ impl DiffView {
             .items_center()
             .bg(tokens.bg_chrome)
             .text_color(tokens.fg_faint)
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .child(SharedString::from(row.text.clone()))
+            .into_any_element()
+    }
+
+    /// Where a file read whole lost lines, said under the gutter in the danger colour, on a wash of it
+    /// with a rule above (`.cgone`).
+    fn gone(&self, ix: usize, row: &DiffRow, tokens: &Tokens) -> AnyElement {
+        self.wide(h_flex())
+            .id(Self::row_id(ix))
+            .test_support()
+            .flex_shrink_0()
+            .h(rem(shape::GONE))
+            .pl(rem(super::gutter::reading_gutter(tokens)))
+            .items_center()
+            .font_family(SharedString::from(tokens.font_ui))
+            .text_size(rem(tokens.fs_xs))
+            .text_color(tokens.danger)
+            .bg(tokens.bg_sunken.blend(tokens.danger.opacity(tokens.share_gone)))
+            .border_t_1()
+            .border_color(tokens.danger.opacity(tokens.share_gone_edge))
             .overflow_hidden()
             .whitespace_nowrap()
             .child(SharedString::from(row.text.clone()))
@@ -75,7 +100,7 @@ impl DiffView {
         h_flex()
             .items_center()
             .when_some(fill, |row, fill| row.bg(fill))
-            .child(half(side, &self.drawn[ix][0], true, tokens, self.ink(ix, 0, &self.drawn[ix][0].text, cx), down, Some(pin)))
+            .child(half(side, &self.drawn[ix][0], if self.reading { Columns::Reading } else { Columns::Both }, tokens, self.ink(ix, 0, &self.drawn[ix][0].text, cx), down, Some(pin)))
             .overflow_hidden()
     }
 
@@ -98,7 +123,7 @@ impl DiffView {
                 .child({
                     let wrapped = wrap::wrap(&self.drawn[ix][usize::from(second)], self.per_line);
                     let ink = self.ink(ix, usize::from(second), &wrapped.text, cx);
-                    half(side, &wrapped, false, tokens, ink, cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, usize::from(second), event.position)), None)
+                    half(side, &wrapped, Columns::One, tokens, ink, cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, usize::from(second), event.position)), None)
                 })
         };
         h_flex()
@@ -113,13 +138,13 @@ impl DiffView {
 fn half(
     side: Option<&DiffSide>,
     drawn: &Code,
-    both: bool,
+    columns: Columns,
     tokens: &Tokens,
     ink: Ink,
     down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
     pin: Option<Pin>,
 ) -> impl IntoElement {
-    let gutter = gutter(side, both, tokens);
+    let gutter = gutter(side, columns, tokens);
     let code = gpui_kit::div()
         .flex_1()
         .min_w_0()

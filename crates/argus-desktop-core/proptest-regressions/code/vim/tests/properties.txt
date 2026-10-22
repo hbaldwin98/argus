@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 803b15e261e34c2dd265f1042430e23e84112dc479ae4e6474d3d9671c3ed53a # shrinks to text = " a", at = 1
+cc a044368106bd26982c7564a1e55eb33430662622190ee5bfc9cd5e34764fd30c # shrinks to keys = [Key { code: Esc, ctrl: false }, Key { code: Char('h'), ctrl: false }], visual = false
+cc 8087e20de908ca058c86580c25bfa210f12a093d646ad82e9303cd4cca985a14 # shrinks to text = "\n' é.}.\"😀\"{ ", keys = [Key { code: Char('+'), ctrl: false }, Key { code: Char('1'), ctrl: false }, Key { code: Char('1'), ctrl: false }, Key { code: Char('r'), ctrl: false }, Key { code: Char('h'), ctrl: false }]

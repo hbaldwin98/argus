@@ -33,6 +33,8 @@ pub struct Held {
     from: f32,
     start: f32,
     zoom: f32,
+    /// A column on the right, whose edge is on its left: moving the pointer left widens it.
+    mirror: bool,
 }
 
 /// Where a release is reported: the width in whole pixels, or `None` for the usual one.
@@ -53,17 +55,20 @@ pub struct Split {
     /// The handle the drag takes the keys with, so Escape reaches it.
     keys: FocusHandle,
     report: Option<Report>,
+    /// Whether the column sits at the right of what it is beside, its sash on its left edge.
+    mirror: bool,
     hold: Option<Hold>,
 }
 
 /// The width with the pointer at `x`, within the bounds the column is kept to.
 fn width_at(held: Held, x: f32, min: f32, max: f32) -> f32 {
-    (held.start + (x - held.from) / held.zoom).clamp(min, max)
+    let travel = (x - held.from) / held.zoom;
+    (if held.mirror { held.start - travel } else { held.start + travel }).clamp(min, max)
 }
 
 impl Split {
     pub fn new(id: &'static str, label: &'static str, open: f32, min: f32, max: f32, cx: &mut Context<Self>) -> Self {
-        Self { id, label, usual: open, width: open, min, max, drag: Drag::new(), keys: cx.focus_handle(), report: None, hold: None }
+        Self { id, label, usual: open, width: open, min, max, drag: Drag::new(), keys: cx.focus_handle(), report: None, mirror: false, hold: None }
     }
 
     /// Reports the width on release, and `None` on a double-click, which also gives the usual
@@ -77,6 +82,17 @@ impl Split {
     pub fn holding(mut self, hold: impl Fn(bool, &mut App) + 'static) -> Self {
         self.hold = Some(Rc::new(hold));
         self
+    }
+
+    /// The column is at the right: its sash is on its left edge and dragging it left widens it.
+    pub fn mirrored(mut self) -> Self {
+        self.mirror = true;
+        self
+    }
+
+    /// Whether the sash is held now: the width drawn is the pointer's, not the page's.
+    pub fn dragging(&self) -> bool {
+        self.drag.is_dragging()
     }
 
     pub fn width(&self) -> f32 {
@@ -173,7 +189,7 @@ impl Render for Split {
                         cx.notify();
                         return;
                     }
-                    let held = Held { from: event.position.x.as_f32(), start: this.width, zoom: zoom(window.rem_size()) };
+                    let held = Held { from: event.position.x.as_f32(), start: this.width, zoom: zoom(window.rem_size()), mirror: this.mirror };
                     this.drag.press(event.position, held);
                 }),
             )

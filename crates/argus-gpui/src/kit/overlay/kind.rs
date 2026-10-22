@@ -14,12 +14,17 @@ pub enum Overlay {
     Settings,
     /// Add a project.
     AddProject,
-    /// A question to answer yes or no: removing a project, deleting a branch.
+    /// A question to answer yes or no: removing a project.
     Question,
+    /// The Checkouts stage's question before a worktree is removed or a branch forced out; apart from
+    /// the project's so neither stage's follow closes the other's.
+    Removal,
     /// A dialog an extension asks.
     Extension,
     /// Naming a pane.
     Rename,
+    /// Naming the branch of a new worktree.
+    Worktree,
     /// The card over the window while the daemon is gone.
     Stopped,
     /// A drawing of an agent's view opened larger, over the whole window.

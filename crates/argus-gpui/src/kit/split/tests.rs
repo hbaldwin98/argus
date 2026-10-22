@@ -7,7 +7,7 @@ use gpui_kit::component::h_flex;
 use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
 use gpui_kit::{point, size, AnyWindowHandle, Bounds, Pixels, Point, TestAppContext, WindowBounds, WindowOptions};
 
-const HELD: Held = Held { from: 400.0, start: 320.0, zoom: 1.0 };
+const HELD: Held = Held { from: 400.0, start: 320.0, zoom: 1.0, mirror: false };
 
 #[test]
 fn the_column_keeps_its_offset_from_the_pointer_and_does_not_jump() {
@@ -28,6 +28,16 @@ fn a_zoomed_press_moves_the_column_by_the_travel_over_the_zoom() {
 fn the_column_stays_within_its_bounds() {
     assert_eq!(width_at(HELD, 0.0, 200.0, 520.0), 200.0);
     assert_eq!(width_at(HELD, 9000.0, 200.0, 520.0), 520.0);
+}
+
+/// A column at the right has its edge on its left: the pointer moving left widens it.
+#[test]
+fn a_mirrored_column_grows_as_the_pointer_goes_left() {
+    let held = Held { mirror: true, ..HELD };
+    assert_eq!(width_at(held, 400.0, 200.0, 520.0), 320.0);
+    assert_eq!(width_at(held, 350.0, 200.0, 520.0), 370.0);
+    assert_eq!(width_at(held, 450.0, 200.0, 520.0), 270.0);
+    assert_eq!(width_at(held, 9000.0, 200.0, 520.0), 200.0);
 }
 
 /// What a split told whoever listens, in order.

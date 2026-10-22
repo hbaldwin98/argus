@@ -163,7 +163,7 @@ fn a_stage_puts_its_own_tools_in_the_strip_and_no_other_stage_shows_them(cx: &mu
 fn a_stage_that_offers_nothing_has_the_name_it_is_given_and_no_tools(cx: &mut TestAppContext) {
     cx.update(|cx| {
         let slots = Slots::of(cx);
-        slots.offer(Stage::Feature, Offer::default().says(|_| Says { title: Some("Add retries".into()), trail: vec![Part::Mono("#12".into())] }));
+        slots.offer(Stage::Feature, Offer::default().says(|_| Says { title: Some("Add retries".into()), trail: vec![Part::Mono("#12".into())], ..Says::default() }));
         assert_eq!(slots.says(Stage::Feature, cx).title.as_deref(), Some("Add retries"));
         assert_eq!(slots.says(Stage::Checkouts, cx), Says::default());
         // A second offer replaces the first.

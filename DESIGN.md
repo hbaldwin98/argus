@@ -765,10 +765,51 @@ GPUI one both stand on it.
 | `checkouts/files` | the files panel beside the Checkouts table as the window holds it — which checkout's folder it reads, the folders open, what each listing said, the selection, mode and filter — what its keys and clicks ask of the daemon and leave to the window, and the listings it takes, dropping a stale one |
 | `checkouts/files_page` | what that panel draws from the folders read: the tree's rows in order with each entry's mark, the breadcrumb, and the footer's size and age |
 | `checkouts/table` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail, as the table the page draws |
+| `checkouts/says` | what a Checkouts row says about itself in words: a checkout's State cell in its fixed order (a clean, in-step, idle one says nothing), a branch row's cell, the branch set beside a name only when the folder does not say it, and a pane count |
+| `checkouts/partition` | how the table's rows fall into its blocks: the checkouts, the fold row for the branches without one (present while any exist, even when the filter hides every branch row), then the branches; and the row the selection key names |
+| `checkouts/words` | the sentences the stage says around its table: loading, no repository, nothing to list and why, the strip's unfiltered counts, and the key bar with Files left out until the daemon offers them |
+| `checkouts/ways` | what the stage's gestures come to: the items of the strip's and a row's menu per row kind, and for a button, a menu choice or a key the calls it sends (picking the row first when it is not the selected one) or the branch name it asks for before a new worktree |
+| `checkouts/side` | what the column beside the table says of the selected row: its name, the path cut at the first `/.argus/`, the buttons, the facts, the running panes' heading and the foot |
+| `checkouts/fold` | which rows of a file tree fold into the one "N ignored" row at its foot — an ignored top-level entry and what is opened under it — and what that row says, for the Files panel and the Code stage alike |
+| `checkouts/marks` | the mark a file tree's row carries and says on hover: `M` for changed, `?` for untracked, and on a Code folder how many changed files are under it |
+| `checkouts/query` | what the one field over a checkout's files means by its text: a name, or after a leading `#` a search of the text, which filters no names and is run on Enter |
 | `code` | the Code stage and the files it reads in a checkout |
 | `code/edit` | the page's editor and the daemon joined: its asks put to the daemon and the answers handed back as they are, past the session, which keeps none of it |
+| `code/change` | what an edit to a text is, as a value: a set of changes positioned in the text before it, in the rope's bytes, applied, composed, mapped over another set made on the same text, inverted, and a position carried through it |
+| `code/wire` | the edge where the rope's bytes meet the protocol's UTF-16 units: a change set leaving as the daemon counts it and arriving the same way, a position inside a surrogate pair or past the text refused |
+| `code/clash` | whether a disk change and the person's touch the same text, and a set split into what clears the other and what does not |
+| `code/sync` | the editor's buffer kept in step with the file on disk: what is the person's and unwritten, what is in flight, how a write by anything else is folded in or held aside as a clash until the person says whose stands |
+| `code/live` | one file open for editing as the window holds it: its sync, what the bar says of it, what each word of the daemon's asks in answer, and every file the connection took opened again when it says it is back |
+| `code/history` | what an editor can take back: each unit of typing as the set that undoes it, and the disk's changes folded past them so an undo never reaches an agent's write |
+| `code/vim` | Vim as a state machine over the editor's rope: keys in, the changes they make and the effects the host must do out, the subset the page's editor offers and what it leaves out |
+| `code/vim/key` | what a key is to Vim, and the `<C-r>` notation that writes one down |
+| `code/vim/keymap` | which keys name a motion, read from exactly the keys given so a half typed motion is known as one |
+| `code/vim/text` | the questions Vim asks of the rope: which character is where, where a line starts and ends, a character's class |
+| `code/vim/word` | where `w`, `e`, `b` and `ge` go, one step of each, with an empty line a word of its own |
+| `code/vim/motion` | where a motion goes from a position and how an operator takes it: charwise exclusive or inclusive, or whole lines; none when it cannot go |
+| `code/vim/object` | the span an `iw`, `a"`, `i(` or `ap` stands for around a position, a pair looked for ahead when none encloses |
+| `code/vim/command` | what the keys typed so far say: a register, a count, an operator and its target, or a command of its own; read purely so half a command is just keys kept |
+| `code/vim/region` | the text an operator acts on, made from a motion's reach, an object or the selection as one span of the rope, characters or whole lines |
+| `code/vim/registers` | what yanks and deletes leave and a paste reads, shared by every editor; the clipboard register offered and written out by the host |
+| `code/vim/buffer` | the text Vim edits with its undo: each edit lands at once, is gathered into the open unit and told to the host as one change set per key |
+| `code/vim/operate` | what each operator does to a region: delete and yank into the registers, change into insert, indent, and the three cases, the cursor left where Vim leaves it |
+| `code/vim/normal` | running a command that has been read: a motion moves, an operator is given its target's text, the rest are commands of their own, a change kept for `.` |
+| `code/vim/number` | `Ctrl-a` and `Ctrl-x`: the decimal number at or after the cursor changed by the count |
+| `code/vim/insert` | insert and replace mode: the keys that type, the few that edit what was typed, and Escape repeating the text for a count |
+| `code/vim/visual` | what visual mode does with the selection beyond moving it: an operator on it and an object taken into it |
+| `code/vim/rewrite` | the commands that rewrite text at the cursor without an operator's target: `r`, `~` and `J` |
+| `code/vim/paste` | `p` and `P`: a register put after or before the cursor, on lines of its own if it is lines, and over a selection |
+| `code/vim/range` | which lines an ex command names: `%`, `'<,'>`, and addresses `N`, `.`, `$` with an offset |
+| `code/vim/ex` | the `:` line typed key by key and run: write, undo and redo, a line number, and the library's own error for the rest |
 | `code/stage` | the Code stage as the window holds it once opened — the checkout it reads, the version, that version's files and changes, the folders open, the file read and its cursor, the comment being written, the go-to-file field, the search, and the review it was opened from — the daemon's answers it takes, what its gestures ask of the daemon and leave to the window, and the page and gestures it trades with the page, last sent while it is up |
 | `code/tree` | a version's flat file list as the tree the Code stage draws: the rows that show given the folders open, and which folders and files changed |
+| `code/side` | what the Code stage's files column says and sends from its one field: the text the field shows for what Rust holds (a search as `#query`), whether typed text still means the open list, the search's options and its one summary line, the go-to list's empty line, and what a key in the field or the glob field comes to |
+| `code/start` | what the Code stage's file area says while no file is read: the changed files cut at ten and how many more, what stands in for none, the files opened lately kept by the window (eight a checkout), the hint, and the search match the cursor is on that the area offers to open |
+| `code/file` | what the Code stage's file area says for the file read: which state it is in (failed, none, loading, a note, the lines), the header's name, folder and facts, and the file's rows with the places lines were removed between them, as the diff's rows so one view draws them |
+| `code/outline` | what the outline column says: the badge of a definition's kind, the sentence for a file that defines nothing the outline knows, the heading over the changes |
+| `code/ruler` | where the change ruler puts a mark at its rows, the band of the file on screen, how far a press or a drag scrolls the file, and what a mark is titled, in the measures of whatever drew the rows |
+| `code/scroll` | where the file scrolls to when the cursor moves: only when the cursor is off screen, then a third of the way down, and what tells a move from a redraw |
+| `code/strip` | what the strip says on the Code stage: the checkout and, when it is another word, its branch, nothing until the stage is open |
 | `review` | the review and history dialogs as the window holds them: which is open or parked, the daemon's answers and refusals routed to the one that asked whether open or parked, the layout the next review opens on, and what the page last heard of each |
 | `review/comment_box` | the comment box the review and the Code stage share: whether it is open, the agent it is lit on, the comment it sent and waits on the daemon to save or refuse, by its id, and what the page draws of it |
 | `review/dialog` | what the review dialog holds beyond its `review::session` — the side and layout chosen, its comment box, its go-to-file field — and the page it draws |
@@ -818,12 +859,43 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | module | answers |
 | --- | --- |
 | `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, and the window; the unattended runs are `probe` and `report` |
+| `checkouts` | what the Checkouts stage shows and does: its table, its side column, its strip, its menus and its dialogs |
+| `checkouts/act` | what a gesture on the stage does in the window: the calls it comes to are sent (a held window sends none), and a new worktree that wants a name opens the name dialog first; a way on a row is asked of the table as it is when the gesture lands |
+| `checkouts/bar` | the keys the table answers to, quietly under it, as core's key bar lists them |
+| `checkouts/dialogs` | the dialogs the stage opens: the name of a new worktree and the question before a removal |
+| `checkouts/dialogs/name` | naming the branch of a new worktree: one mono field with `Off <branch>` in the foot, held by the window, Create or Enter sending the text as it stands and every other way out sending nothing |
+| `checkouts/dialogs/question` | the question before a worktree is removed or a branch forced out, up while the table holds one: Keep it with the keys, one answer sent once, no second dialog until the table has cleared the first, and centred as the page's confirm dialogs are |
+| `checkouts/empty` | what fills the stage before there is a table: five loading bars, the no-repository card, and the line saying why a repository lists nothing |
+| `checkouts/files` | the Files panel beside the table: one checkout's folder as core lists it, drawn from the page it is sent, taking the keys when it opens on another checkout and keeping them across the tables its own keys bring back, the filter field and the ignored fold the window's memory || `checkouts/files/body` | what fills the panel between its crumb and foot: why a folder could not be read, loading bars, the reason there is nothing to list, else the tree with its rows, the two buttons on the selected file, and a click, a second click and a right-click each sent as core's gesture || `checkouts/files/crumb` | the folder the selection is in, core's crumb, and the All or Changed choice with how many paths changed || `checkouts/files/foot` | the selected entry's name, size and age, and Open in Code for a file; a line asking for a file when nothing is selected || `checkouts/files/head` | the panel's kicker and checkout, and its buttons: the file manager (only for a local daemon), a shell, read again and close || `checkouts/files/keys` | the Files layer of the key walk: up while the tree has the keys, hearing the panel's own place, sending its keys as the session's, `/` taking the filter and Escape closing through the window's ladder; any other key goes on to the table || `checkouts/files/menu` | what a right-click on a row offers and what a choice sends: open in Code or the editor, the file manager on the row's path, both copies spelled by the daemon's host, and a shell || `checkouts/files/tools` | the filter field: its edits sent as the filter except a `#`, Enter on a search sending it, Enter or Escape handing the keys back to the tree |
+| `checkouts/files/body` | what fills the panel between its crumb and foot: why a folder could not be read, loading bars, the reason there is nothing to list, else the tree with its rows, the two buttons on the selected file, and a click, a second click and a right-click each sent as core's gesture |
+| `checkouts/files/crumb` | the folder the selection is in, core's crumb, and the All or Changed choice with how many paths changed |
+| `checkouts/files/foot` | the selected entry's name, size and age, and Open in Code for a file; a line asking for a file when nothing is selected |
+| `checkouts/files/head` | the panel's kicker and checkout, and its buttons: the file manager (only for a local daemon), a shell, read again and close |
+| `checkouts/files/keys` | the Files layer of the key walk: up while the tree has the keys, hearing the panel's own place, sending its keys as the session's, `/` taking the filter and Escape closing through the window's ladder; any other key goes on to the table |
+| `checkouts/files/menu` | what a right-click on a row offers and what a choice sends: open in Code or the editor, the file manager on the row's path, both copies spelled by the daemon's host, and a shell |
+| `checkouts/files/tools` | the filter field: its edits sent as the filter except a `#`, Enter on a search sending it, Enter or Escape handing the keys back to the tree |
+| `checkouts/menus` | the strip's `⋯` menu and a row's, drawn from core's lists by the kit's popup and acted on when the menu has gone |
+| `checkouts/side` | the column beside the table about the selected row: its name and path, buttons, facts, the panes running there and the foot, giving way to the Files panel and to a narrow window |
+| `checkouts/side/facts` | the facts list of the side column: a faint label and what Rust says, the feature's title flowing on after its number |
+| `checkouts/side/foot` | the foot of the side column: Files, the folder, New pane with its start menu opening upward, and the removal in danger |
+| `checkouts/side/running` | the panes running on the selected checkout, a button each that goes to the pane |
+| `checkouts/stage` | the Checkouts stage: the loading bars, the no-repository card, the table with its key bar and the side column; its strip offer, its question, taking the keys as it appears |
+| `checkouts/stage/keys` | the Checkouts layer of the key walk: the table's keys through core's `ways::key`, the window's own, the extension commands of the `anywhere` and `checkout` scopes, and every other key held |
+| `checkouts/strip` | what the stage puts in the strip: the counts beside the title, the filter field sending its text on every edit and never overwritten while typed in, New worktree and the `⋯` |
+| `checkouts/table` | the table as one flat virtual list (the kit's table has no spanning row): its head, the checkouts, the fold row and the branches, following the selection into view |
+| `checkouts/table/actions` | a row's trailing buttons, Open or Check out and the `⋯`, laid out always and seen while the row is pointed at or selected |
+| `checkouts/table/columns` | how wide the three content columns are, estimated from their text since the page's automatic layout gives each column what its content needs |
+| `checkouts/table/fold` | the row standing for the branches without a checkout, a press on it being the `B` key |
+| `checkouts/table/row` | one row: the name with its tag and branch beside it, the State, what was last committed, the buttons, the selected mark, a click picking it and a second opening it |
+| `checkouts/table/state` | the State cell: what a checkout says in core's order with a status dot per running pane, or a branch's git string, note and feature |
+| `checkouts/tag` | the small `primary` pill beside a checkout's name |
 | `chrome` | the window's frame around the stage: the sidebar and its foot, and the header over the stage |
 | `chrome/foot` | the sidebar's foot: the tallies that need a look, a daemon's alarm, and the connection in one shape in every state |
 | `chrome/ended` | what a pane whose program has ended offers over the foot of the stage: its note, a button that starts another where it was (the first template for an agent, a shell otherwise) while the pane is in the tree, and one that closes it |
 | `chrome/header` | the strip across the top of the stage: the crumb over the title with the pane's status chip (where the rail is folded) and resumed note, the pane's size or parked place, the drag region that moves the window, the stage's tools and the Views launcher, and its three controls, dimmed while the daemon is gone |
 | `chrome/header/crumb` | the small line over the title: the repository, then the branch or the stage's trail, between faint slashes |
 | `chrome/header/launcher` | the Views launcher at the strip's end: its count of the views agents showed, gone with none, lit while the panel is out, toggling it |
+| `chrome/header/meta` | what a stage says beside its title, muted and small: the Checkouts stage's counts, its branch in mono in the reference colour, with a tooltip |
 | `chrome/header/more` | the pane's `...` button at the strip's end and the menu under it: its name, Rename, and Close in the danger colour |
 | `chrome/header/slots` | what a stage's own view hands the strip, once, when it is made: the words it says (title and trail) and the tools it puts at the strip's end, so adding a stage adds no arm to the strip |
 | `chrome/nav` | the sidebar's way between stages: which items there are, which one the stage on screen lights, and the call each press makes |
@@ -858,6 +930,23 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `chrome/stage/running` | the `Panes in <project>` strip under the empty stage's buttons: a card for each pane of the project, the status, the title, the note and how long since it changed, each selecting its pane |
 | `chrome/stage/stopped` | the card over the window while the daemon was stopped on purpose, on the overlay host where Escape and the scrim do not dismiss it: up exactly while the link is stopped, and its Reconnect asks the session to reconnect |
 | `chrome/window_controls` | the window's three controls: what each looks like, the red of the close, and what it asks of the window |
+| `code` | what the Code stage shows and does: its frame of three columns, the files column, the start panel and the file read |
+| `code/file` | the file read in the middle column: its header, the lines drawn read-only by the shared diff view with the places lines were removed between them, the change ruler beside them and the comment box under the line it is on; each file scrolled where it was left and only a moved cursor brought into view, so the editor that is to stand in for the lines takes the body and keeps the rest |
+| `code/file/header` | the file's header: the name first and the folder after it, the version when it is not the working tree, the facts and counts, and the buttons Back, Open in editor and Outline, each sending the gesture its key sends |
+| `code/file/ruler` | the change ruler, the file's scrollbar: a button for each change or hit at its rows' place, the band of the file on screen, and the press and the drag after the decided 5 px that scroll the file, placed from the list's own measures every frame |
+| `code/file/scroll` | where the file is scrolled: each file's offset kept by path and put back when its lines return, and a moved cursor brought into view by core's rule once the list knows how tall it is |
+| `code/file/states` | what stands where the lines would while there are none: why the read failed, the note on a binary or oversized file, and the five loading rows |
+| `code/side` | the files column: the one field over it, and under it the tree with its scope row, the go-to matches or the search; which list and every sentence is core's, a press sends its gesture, and each list keeps where it was scrolled and follows the cursor's row || `code/side/find` | the one field: its edits sent as they stand to whichever list is open, reaching it opening the go-to list, the search's three options at its right, and the keys of the jump and filter places run before its own || `code/side/jump` | the go-to list: the matches core ranked, the lit one, a press reading a path, and the line when nothing matches || `code/side/search` | the search: the include globs, one summary line, and the hits grouped by file with the matched text lit, drawn only while they answer the query and options as they stand || `code/side/tree` | the scope row and the tree: the checkout's name, All or Changed, the rows core ordered and marked, the ignored top-level entries held in one fold that opens to names only || `code/stage` | the Code stage: the loading bars until a page is open, the three columns with their sashes reporting on release, the page kept after the stage goes, the strip's trail and keys button, and the keys it takes as it appears || `code/stage/keys` | the Code layer of the key walk: the stage's keys sent as the actions they are, the window's own run as anywhere, Escape answered by the stage and never leaving it || `code/stage/outline` | the right column while the outline is on and a file is read: its header with the button that puts it away, and its sash on the left edge || `code/stage/widths` | how wide the columns are from the stylesheet's rules in their order: the usual width, the stage's own ladder, the narrow window's cap, what the person dragged, the wider results while searching and the outline given up under 900 || `code/start` | what fills the file area with no file read: the changed files and those opened lately as rows that read them, the hint, or the card offering the match the cursor is on |
+| `code/side` | the files column: the one field over it, and under it the tree with its scope row, the go-to matches or the search; which list and every sentence is core's, a press sends its gesture, and each list keeps where it was scrolled and follows the cursor's row |
+| `code/side/find` | the one field: its edits sent as they stand to whichever list is open, reaching it opening the go-to list, the search's three options at its right, and the keys of the jump and filter places run before its own |
+| `code/side/jump` | the go-to list: the matches core ranked, the lit one, a press reading a path, and the line when nothing matches |
+| `code/side/search` | the search: the include globs, one summary line, and the hits grouped by file with the matched text lit, drawn only while they answer the query and options as they stand |
+| `code/side/tree` | the scope row and the tree: the checkout's name, All or Changed, the rows core ordered and marked, the ignored top-level entries held in one fold that opens to names only |
+| `code/stage` | the Code stage: the loading bars until a page is open, the three columns with their sashes reporting on release, the page kept after the stage goes, the strip's trail and keys button, and the keys it takes as it appears |
+| `code/stage/keys` | the Code layer of the key walk: the stage's keys sent as the actions they are, the window's own run as anywhere, Escape answered by the stage and never leaving it |
+| `code/stage/outline` | the right column while the outline is on and a file is read: its header with the button that puts it away, a row for each definition with its kind's badge and a dot where it changed, the changes in the file, each sending the line it stands for, and its sash on the left edge |
+| `code/stage/widths` | how wide the columns are from the stylesheet's rules in their order: the usual width, the stage's own ladder, the narrow window's cap, what the person dragged, the wider results while searching and the outline given up under 900 |
+| `code/start` | what fills the file area with no file read: the changed files and those opened lately as rows that read them, the hint, or the card offering the match the cursor is on |
 | `connection` | how the window trades with the daemon and its own views |
 | `connection/caller` | how a view hands a `Call` on without knowing who answers it |
 | `connection/cells` | what the Workspace's grid is as the rail last said it: the pane in each cell by its number, whether the grid is on screen, and whether a cell has the keys |
@@ -881,6 +970,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `keys/over` | opening the palette, the sheet or the settings over the stage for a key and for a `Run` from a pane, one of the three at a time, the settings chord putting them away: all three are surfaces the shell builds |
 | `keys/palette` | the command palette: a search field over core's ranked rows, highlighted by a row's key, run by Enter or a press, telling the session when it opens and closes |
 | `keys/palette/rows` | a palette row drawn: its mark, its text with the matched characters marked, its detail and what it says at its end |
+| `keys/place` | what a key is in a stage's own place: its action, one beyond it (Anywhere's), or held; the one lookup the Git tabs and the Checkouts table share, and Files and Code will |
 | `keys/sheet` | the shortcuts sheet: core's sections beside a find field, opened on the section for where the person is, its keys on the close button |
 | `keys/sheet/body` | a section of the sheet drawn: its rows as an action and its caps, the pane's note and the keys it keeps without its leader |
 | `keys/page_key` | which `PageKey` a GPUI keystroke is: the DOM's names for the keys, the character typed rather than the key printed, AltGr as a character and not a chord |
@@ -888,6 +978,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `keys/run` | what an action of the Anywhere place does (open one of the three over the stage, or ask the session), refused while a menu or question is up, and the Escape ladder |
 | `keys/text` | the text an input method commits into the pane: GPUI's input handler for the terminal view, which holds no text and draws no preedit |
 | `kit` | widgets and machinery that more than one surface draws or follows |
+| `kit/alert` | the parts of a question before something cannot be taken back: the danger tile, the warning callout and the foot whose Keep it has the keys; the project's removal question and the Checkouts stage's draw from them |
 | `kit/area` | the area an element was laid out in, recorded for whoever turns a pointer's place into a place in it |
 | `kit/button` | what the page's text buttons look like: `.btn` with its primary and small forms, and the `.chipf` choice chip, as pills that tint, lift and press under the pointer |
 | `kit/copy` | a button that hands its text to Rust to copy and says `Copied` for 1200 ms, a second press starting the moment again |
@@ -895,6 +986,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/dialog` | the parts a dialog is cut from: the head with its close button, the foot bar, the field labels and the `Esc` cap |
 | `kit/diff` | a diff in a virtual list so only the rows on screen are built: the view, its events and the slot under one row, the scroll kept across updates and the cursor brought into view; it reports a press and sends no call, and serves review, history, the patch block and the Code stage |
 | `kit/diff/fold` | the lines between hunks the diff did not carry, and the buttons that ask for them |
+| `kit/diff/geometry` | where the rows are and what is on screen in the window's pixels, for a ruler beside the list: a row found by its number, the content's height, how far the list is scrolled and a scroll to a place |
 | `kit/diff/gutter` | the columns before a line's code: the number each half carries, the marker, and a unified line's pinned to the pane's left edge while the code scrolls sideways under them |
 | `kit/diff/items` | what the list holds, in order: every row, and the comment box among them under the row it is about |
 | `kit/diff/menu` | the menu a right-click on selected text in the diff opens, `Copy` under `Selection`, and no menu with nothing selected |
@@ -908,7 +1000,10 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/diff/tone` | which colour a highlight kind and a side get: the tone of a token, the wash of an added or removed side, and what the pick and the cursor lay over it |
 | `kit/diff/wrap` | where a long line breaks in a split half (at the cell, never at a word), and how a place in the text maps between the line and its broken form |
 | `kit/drag` | the one drag helper: a press that becomes a drag at 5 px and a click before, Escape cancelling with nothing dropped, the pointer followed over the whole window and the keys taken for the drag and given back |
+| `kit/crop` | one line of text longer than its box, scrolled to its first mark and faded where it is cut: the page's `.hline .tx` and `cropHits` |
 | `kit/field` | a text field that Rust also writes to: what Rust says is written only when nobody is typing in it and it says something else, so an echo never lands over the person's own edit |
+| `kit/finder` | the field over a list of files: a lens at its left and at its right the key that takes it or whatever the surface puts there |
+| `kit/flow` | a sentence with a cap or a name in it, wrapped word by word as the page's inline text wraps, since GPUI has no inline elements |
 | `kit/fonts` | which typefaces the window ships (Inter, JetBrains Mono and the Nerd Font symbols, converted from the page's woff2 files, with their licences) and their registration with GPUI's text system |
 | `kit/ghosts` | what a list or a diff looks like while it loads: the page's shimmering `.ghost` bars, each a share of the width or a fixed width, indented or not |
 | `kit/hints` | the footer that names a tab's keys, as caps and what each does, shared by the Changes and History tabs |
@@ -935,11 +1030,13 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/split` | a resizable pair: a column at the width its sash gives it, the width reported once on release, a double-click giving the usual width back, and the drag held while it lasts |
 | `kit/selected` | how a list row in a dialog says it is selected: the fill and the theme's mark |
 | `kit/spots` | the places a carried pane can be dropped, published by the views that draw them (the grid's cells and stage, the rail's checkout rows), the checkout lit as a target, and whether a pane is carried |
+| `kit/start` | a checkout's start menu as it is drawn wherever it opens, a shell then an agent per template with the session's cursor highlighted; the rail opens it under a row and the Checkouts stage above New pane |
 | `kit/status_dot` | what a pane's or console's status looks like with no word: a turning ring, a filled dot, a dash, a hollow ring |
 | `kit/strip` | the page's one tab strip, drawn once for the docks, the console and a split side: the bar, the tab chip with its selected and hover states, the close, the menu button |
 | `kit/wheel` | which scroll box takes the wheel: one that can still move the way it turns, and none else, so a log or code block at its end hands the wheel to the page around it |
 | `kit/tip` | a hover tooltip for a control, built one way so no surface builds the kit's |
 | `kit/toggle` | the page's switch: 40 by 24, a pill and a knob, controlled, drawing the state it is given and asking for the opposite |
+| `kit/tree` | a checkout's file tree as one widget for the Files panel and the Code stage: a row with its chevron, glyph, name, controls and mark, the fold row for the ignored top-level entries, and the rows with the held ones dimmed under it |
 | `layout` | where the stage and the docks sit around each other, and how a panel is moved between them |
 | `layout/carry` | a pane carried by its header or from the rail: what is carried, and the handle any view presses it through into the work area's one drag |
 | `layout/carry/landing` | where a carried pane would land if let go at a point (another checkout's row, a cell's zone, the stage with no cell under it, or nowhere) and the call that makes it so |
@@ -983,6 +1080,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `review` | the Git stage: how it is entered and left, and the Changes and History tabs it holds |
 | `review/changes` | the Changes tab: the review of a checkout's working changes or of one commit as a full stage, its files beside its diff, every field of the session's `ReviewPage` drawn, and each press sending the page's call and changing nothing until the event |
 | `review/comment` | the comment box under the picked lines: what it is about, the agent it goes to, the words kept until the session shuts the box, and the `Writing` place's keys run in the key walk ahead of the textarea's (Ctrl Enter and Meta Enter sending, Escape putting it away, a bare Enter left to type a newline) |
+| `review/comment/ways` | what the comment box says to the session and how it sits among its rows, the one thing the review's box and the Code stage's differ in: the call that sends or puts it away, the call that chooses an agent, and the room round the card |
 | `review/entry` | how the window enters and leaves the Git stage and the calls each way sends: Git opens the review of the checkout the window is on, a tab closes the other and opens its own, any other way out closes what is open; the stage is the session's to say |
 | `review/files` | the changed-files column: the side read, the files or the jump field's matches, the lit file brought into view, and the jump field, a field of the key walk whose `Jump` place steps, chooses and closes ahead of the input's |
 | `review/filter` | the history's filter field in the stage's strip: each edit sent as it stands with no debounce, its text its own until the history shuts, and the `Filter` place's `Leave` (Enter and Escape) run in the key walk, giving the list its keys back without closing the history |

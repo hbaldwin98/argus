@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 argus-protocol = { path = "../crates/argus-protocol" }
+argus-desktop-core = { path = "../crates/argus-desktop-core" }
 rmp-serde = "1"
 serde_json = "1"
 
@@ -42,6 +43,13 @@ bench = false
 [[bin]]
 name = "agent_view"
 path = "fuzz_targets/agent_view.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "markdown"
+path = "fuzz_targets/markdown.rs"
 test = false
 doc = false
 bench = false

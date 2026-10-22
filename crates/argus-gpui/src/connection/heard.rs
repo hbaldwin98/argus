@@ -18,6 +18,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use argus_desktop_core::checkouts::table::Checkouts;
+use argus_desktop_core::code::stage::CodePage;
+use argus_desktop_core::code::start::Opened;
 use argus_desktop_core::chrome::add_project::AddProjectPage;
 use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
 use argus_desktop_core::extensions::keys::{ExtCommandPage, ExtGroup};
@@ -122,6 +125,16 @@ pub struct Heard {
     pub review: Option<Rc<ReviewPage>>,
     /// The history the session holds, while it is open.
     pub history: Option<Rc<HistoryPage>>,
+    /// The Checkouts stage's table, whole, as the last event said: `None` until the first, which the
+    /// stage draws as loading bars. Shared, so the stage keeps its rows across unrelated events.
+    pub checkouts: Option<Rc<Checkouts>>,
+    /// The Code stage, whole, as the last event said and kept after the stage goes: the session never
+    /// takes it back, and the page keeps what it last drew for the person coming back to it. `open`
+    /// false is the stage not being there (four loading bars). Shared, so the stage keeps its rows across
+    /// unrelated events.
+    pub code: Option<Rc<CodePage>>,
+    /// The files read in each checkout while this window has been open, for the start panel.
+    pub opened: Opened,
     /// What only the window knows of the Git stage (`review::entry`): that Git
     /// was pressed with no checkout to open, and the tab pressed last. Set by
     /// the rail and the stage, as a resize is held by the work area.
@@ -173,6 +186,9 @@ impl Heard {
             memory: Memory::shared(),
             review: None,
             history: None,
+            checkouts: None,
+            code: None,
+            opened: Opened::default(),
             git: Entry::default(),
             screens: Screens::new(),
             notice: None,
@@ -256,6 +272,11 @@ impl Heard {
             Event::Notice { text } => {
                 self.noticed += 1;
                 self.notice = Some(Notice { text, serial: self.noticed });
+            }
+            Event::Checkouts(table) => self.checkouts = Some(Rc::new(*table)),
+            Event::Code(page) => {
+                self.opened.remember(&page);
+                self.code = Some(Rc::new(*page));
             }
             // A dialog is held only while it is open: `open` false is the session's word that it is not.
             Event::Review(page) => {

@@ -27,6 +27,11 @@ pub struct Says {
     pub title: Option<String>,
     /// After the repository: Code's crumb, or `Features / #12` for an open feature.
     pub trail: Vec<Part>,
+    /// Beside the title, muted and small: the Checkouts stage's counts, whose last part is the main
+    /// branch in mono. Empty for a stage that says nothing there.
+    pub meta: Vec<Part>,
+    /// What hovering the meta says.
+    pub meta_tip: Option<&'static str>,
 }
 
 /// The pane on screen, which the menu under the strip's `...` is of.
@@ -46,6 +51,9 @@ pub struct StripPage {
     pub status: Option<&'static str>,
     /// The muted note of a pane this window resumed.
     pub resumed: Option<String>,
+    /// What the stage's view says beside the title (`Says::meta`) and its tooltip.
+    pub meta: Vec<Part>,
+    pub meta_tip: Option<&'static str>,
     /// The pane the `...` menu is of, with a pane on screen.
     pub pane: Option<Named>,
 }
@@ -76,7 +84,7 @@ impl StripPage {
             None => Vec::new(),
         };
         let title = says.title.clone().unwrap_or_else(|| if stage == Stage::Browsers { "Every agent" } else { name }.to_owned());
-        Self { crumb, title, ..Self::default() }
+        Self { crumb, title, meta: says.meta.clone(), meta_tip: says.meta_tip, ..Self::default() }
     }
 
     fn pane(rail: &Rail, clock: &Clock) -> Self {
@@ -88,6 +96,7 @@ impl StripPage {
             status: (shown.agent || PANE_SAYS.contains(&shown.status)).then_some(shown.status),
             resumed: shown.resumed.as_ref().map(|resumed| resumed_from(resumed, clock)),
             pane: Some(Named { pane: shown.pane, title: shown.title.clone() }),
+            ..Self::default()
         }
     }
 }
@@ -251,12 +260,20 @@ mod tests {
 
     #[test]
     fn what_the_stages_view_says_takes_the_names_place_and_follows_the_repository() {
-        let says = Says { title: Some("Add retries".into()), trail: vec![text("Features"), Part::Mono("#12".into())] };
+        let says = Says { title: Some("Add retries".into()), trail: vec![text("Features"), Part::Mono("#12".into())], ..Says::default() };
         let strip = StripPage::of(&rail(Stage::Feature), false, &says, &clock());
         assert_eq!(strip.title, "Add retries");
         assert_eq!(strip.crumb, [text("argus"), text("Features"), Part::Mono("#12".into())]);
         // Without a repository the trail is not drawn, as in the page.
         let strip = StripPage::of(&rail(Stage::Console), false, &says, &clock());
         assert!(strip.crumb.is_empty());
+    }
+
+    #[test]
+    fn a_stages_meta_and_its_tooltip_ride_beside_the_title() {
+        let says = Says { meta: vec![text("4 checkouts"), Part::Mono("main".into())], meta_tip: Some("Enter open"), ..Says::default() };
+        let strip = StripPage::of(&rail(Stage::Checkouts), false, &says, &clock());
+        assert_eq!((strip.meta, strip.meta_tip), (vec![text("4 checkouts"), Part::Mono("main".into())], Some("Enter open")));
+        assert!(StripPage::of(&rail(Stage::Checkouts), false, &Says::default(), &clock()).meta.is_empty());
     }
 }

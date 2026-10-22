@@ -343,6 +343,7 @@ dependencies = [
  "jiff",
  "png 0.18.1",
  "proptest",
+ "ropey",
  "serde",
  "serde_json",
  "tempfile",

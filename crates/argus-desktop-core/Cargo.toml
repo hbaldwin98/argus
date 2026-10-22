@@ -24,6 +24,10 @@ jiff = "0.2"
 # What a link in an agent's Markdown is held to: the host of an http(s) URL, read as the WHATWG
 # parser does, which is how the page reads it.
 url = "2"
+# The editor's text, the one rope the live sync and the Vim layer share; the same pin gpui-kit's
+# editor holds, so the build has one. Bytes are its own unit; UTF-16 is converted at the wire
+# (`code/wire`).
+ropey = { version = "=2.0.0-beta.1", features = ["metric_chars", "metric_lines_lf", "metric_utf16"] }
 # The screens' browser pictures, for the scenes outside this crate's tests.
 png = { version = "0.18", optional = true }
 

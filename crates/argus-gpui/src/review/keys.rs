@@ -14,6 +14,7 @@ use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_desktop_core::keys::page_key::PageKey;
 
 use crate::keys::layer::action_for;
+use crate::keys::place::{look_up, Looked};
 
 /// What a key does in the review.
 #[derive(Debug, Clone)]
@@ -29,25 +30,25 @@ pub enum Press {
 }
 
 
-/// A key pressed in the review with no field holding it: its own action, or
-/// Escape from `Anywhere`'s bindings. Any other is held, so it is not typed
-/// into the pane under the stage.
+/// A key pressed in the review with no field holding it: its own action, or Escape from
+/// `Anywhere`'s bindings. Any other is held, so it is not typed into the pane under the stage.
 pub fn review(page: &PageKey) -> Option<Press> {
-    if let Some(action) = action_for(&[Place::Review], page) {
-        return Some(Press::Ask(Call::ReviewAction { action }));
+    match look_up(Place::Review, &[Place::Anywhere], page) {
+        Looked::Own(action) => Some(Press::Ask(Call::ReviewAction { action })),
+        Looked::Beyond(Action::CloseLayer) => Some(Press::Close),
+        Looked::Beyond(_) | Looked::Held => None,
     }
-    (action_for(&[Place::Anywhere], page) == Some(Action::CloseLayer)).then_some(Press::Close)
 }
 
 /// A key pressed in the history with no field holding it: the history's own,
 /// `/` for its filter field, or Escape. Any other is held, as in the review.
 pub fn history(page: &PageKey) -> Option<Press> {
-    match action_for(&[Place::History], page) {
-        Some(Action::Filter) => return Some(Press::Field),
-        Some(action) => return Some(Press::Ask(Call::HistoryAction { action, row: None })),
-        None => {}
+    match look_up(Place::History, &[Place::Anywhere], page) {
+        Looked::Own(Action::Filter) => Some(Press::Field),
+        Looked::Own(action) => Some(Press::Ask(Call::HistoryAction { action, row: None })),
+        Looked::Beyond(Action::CloseLayer) => Some(Press::Close),
+        Looked::Beyond(_) | Looked::Held => None,
     }
-    (action_for(&[Place::Anywhere], page) == Some(Action::CloseLayer)).then_some(Press::Close)
 }
 
 /// What the jump field's key does: its step, its choice or its close.
@@ -105,6 +106,9 @@ mod tests {
         assert_eq!(asks(&key("Enter")).as_deref(), Some("ReviewAction { action: Unfold }"));
         assert_eq!(asks(&key("z")).as_deref(), Some("ReviewAction { action: UnfoldAll }"));
         assert_eq!(asks(&ctrl("p")).as_deref(), Some("ReviewAction { action: Filter }"));
+        // REVIEW-32: `o` reads the cursor's file in Code, which parks the review (REVIEW-44).
+        assert_eq!(asks(&key("o")).as_deref(), Some("ReviewAction { action: OpenCode }"));
+        assert_eq!(asks(&key("O")).as_deref(), Some("ReviewAction { action: OpenCode }"));
     }
 
     #[test]

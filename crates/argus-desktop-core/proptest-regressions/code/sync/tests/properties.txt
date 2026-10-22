@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 75ebccfc89b23aff34749848ae0d417d546864cec6069876c3e1f99091d8cee4 # shrinks to steps = [Agent(21, 6, 2), Hear, Agent(54, 12, 0), Type(53, 40, 4), Type(42, 14, 0), Agent(27, 60, 0), Agent(0, 0, 0), Hear]
+cc f200f309debfd065e9db532a4843a5f9a116c2f9eedf30c4e4867fde15fb8140 # shrinks to steps = [Agent(15, 10, 1), Agent(45, 15, 2), Hear, Type(6, 13, 2), Agent(39, 32, 2), Take, Agent(3, 4, 2), Type(24, 42, 2), Type(44, 37, 0)]
+cc 554fb87d3637a39143eeb7a031bc24f28b7ba18e4b1207693fd2c865541e38cc # shrinks to steps = [Type(0, 1, 4), Agent(1, 21, 0), Hear, Take, Take]

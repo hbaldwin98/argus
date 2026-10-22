@@ -20,7 +20,7 @@ impl Handler for Stage {
         match action_for(places, press.page) {
             Some(action) if run::run(action, window, cx) => Verdict::Taken,
             // A key the window binds nothing to may be an extension command's (SHELL-KEYS-21). The
-            // Checkouts stage's `checkout` scope arrives with that stage.
+            // Checkouts stage hears its `checkout` scope itself (`checkouts/stage/keys`), above this layer.
             None if extension::run(&[ANYWHERE], press.page, None, None, cx) => Verdict::Taken,
             _ => Verdict::Held,
         }

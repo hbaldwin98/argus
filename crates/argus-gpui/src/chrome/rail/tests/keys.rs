@@ -223,7 +223,8 @@ fn a_stage_change_with_a_pane_shown_takes_the_keys_only_when_no_row_is_picked(cx
     // SHELL-SEAM-9 g, f: the same pane, a different stage.
     let opened = open_showing(cx);
     blur(cx, &opened);
-    hear(cx, &opened, vec![showing(1, Stage::Checkouts)]);
+    // The Browsers stage, which has no surface of its own yet: the Checkouts and Code stages take the keys themselves.
+    hear(cx, &opened, vec![showing(1, Stage::Browsers)]);
     type_key(cx, &opened, "a");
     assert_eq!(typed(&opened), 2, "nothing picked: a stage change hands the Terminal the keys");
 

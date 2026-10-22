@@ -21,6 +21,10 @@ pub enum Surface {
     Pane,
     /// The Workspace with no pane on screen: connecting, no project, or no pane.
     Empty,
+    /// The Checkouts stage.
+    Checkouts,
+    /// The Code stage.
+    Code,
     /// A stage whose surface is not in the window yet.
     Pending(Stage),
 }
@@ -35,6 +39,8 @@ pub fn surface(rail: &Rail, console: ConsolePlace, git_up: bool) -> Surface {
     match rail.stage {
         Stage::Workspace if rail.shown.is_some() => Surface::Pane,
         Stage::Workspace => Surface::Empty,
+        Stage::Checkouts => Surface::Checkouts,
+        Stage::Code => Surface::Code,
         stage => Surface::Pending(stage),
     }
 }
@@ -98,6 +104,14 @@ mod tests {
     }
 
     #[test]
+    fn the_checkouts_stage_is_its_own_surface_with_or_without_a_pane_on_screen() {
+        for pane in [true, false] {
+            assert_eq!(surface(&rail(Stage::Checkouts, pane), ConsolePlace::Hidden, false), Surface::Checkouts);
+        }
+        assert_eq!(surface(&rail(Stage::Checkouts, true), ConsolePlace::Tab, false), Surface::Console, "the console tab is over it");
+    }
+
+    #[test]
     fn git_takes_the_stage_from_everything() {
         for place in [ConsolePlace::Hidden, ConsolePlace::Tab, ConsolePlace::Fullscreen] {
             assert_eq!(surface(&rail(Stage::Workspace, true), place, true), Surface::Git);
@@ -107,7 +121,7 @@ mod tests {
 
     #[test]
     fn a_stage_without_a_surface_yet_is_pending_by_name() {
-        for stage in [Stage::Feature, Stage::Checkouts, Stage::Composer, Stage::Extension, Stage::View, Stage::Code, Stage::Browsers] {
+        for stage in [Stage::Feature, Stage::Composer, Stage::Extension, Stage::View, Stage::Browsers] {
             assert_eq!(surface(&rail(stage, true), ConsolePlace::Hidden, false), Surface::Pending(stage));
         }
     }

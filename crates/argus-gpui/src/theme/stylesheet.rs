@@ -646,3 +646,111 @@ fn the_larger_view_the_diff_block_the_form_and_the_changed_wash_are_the_rules_th
     sheet_has("animation: vchanged 2.4s ease-out 1;");
     assert_eq!((t.share_changed, t.motion_flash), (0.28, std::time::Duration::from_millis(2400)));
 }
+
+#[test]
+fn the_checkouts_stage_is_the_rules_it_was_written_from() {
+    let t = ledger::tokens();
+    sheet_has(".ctable td {\n  height: 40px;");
+    sheet_has(".ctable tr.fold td {\n  height: 36px;");
+    sheet_has(".fold-btn {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--sp-8);\n  height: 36px;");
+    assert_eq!((t.ck_row_h, t.ck_fold_h), (40.0, 36.0));
+    sheet_has(".ctable th.col-name {\n  width: 240px;");
+    assert_eq!(t.ck_name_w, 240.0);
+    sheet_has(".cside {\n  flex: none;\n  width: 344px;");
+    sheet_has("@media (max-width: 1060px) {\n  .cside {\n    display: none;");
+    assert_eq!((t.ck_side_w, t.ck_side_hides_below), (344.0, 1060.0));
+    sheet_has(".kbar {\n  display: flex;\n  align-items: center;\n  gap: var(--sp-16);\n  flex: none;\n  min-height: 36px;");
+    assert_eq!(t.ck_bar_h, 36.0);
+    sheet_has(".head-filter {\n  width: 240px;");
+    assert_eq!(t.ck_filter_w, 240.0);
+    sheet_has(".cs-pane {\n  width: 100%;\n  height: 32px;");
+    sheet_has("grid-template-columns: 84px minmax(0, 1fr);");
+    assert_eq!((t.ck_pane_h, t.ck_facts_label_w), (32.0, 84.0));
+    sheet_has("@container (max-width: 620px) {\n  .ctable .col-last {\n    display: none;");
+    assert_eq!(t.ck_last_hides_below, 620.0);
+    sheet_has(".commits {\n  font-size: var(--fs-sm);\n  background: var(--bg-surface);\n  border: 1px solid var(--line-strong);\n  border-radius: var(--r-sm);\n  padding: var(--sp-8) var(--sp-12);\n  max-height: 200px;");
+    assert_eq!(t.ck_commits_max_h, 200.0);
+}
+
+#[test]
+fn the_files_panel_and_the_code_stage_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    sheet_has(".cfiles {\n  flex: none;\n  width: min(440px, 42%);");
+    sheet_has("@container (max-width: 900px) {\n  .cfiles {\n    position: absolute;");
+    assert_eq!((t.files_w, t.files_share, t.files_overlay_below), (440.0, 0.42, 900.0));
+    sheet_has(".cf-foot {\n  display: flex;\n  align-items: center;\n  gap: var(--sp-8);\n  flex: none;\n  min-height: 52px;");
+    assert_eq!(t.files_foot_h, 52.0);
+    sheet_has("padding: 0 var(--sp-8) 0 calc(var(--sp-4) + var(--d, 0) * 16px);");
+    assert_eq!(t.tree_indent, 16.0);
+    sheet_has(".cf-mark {
+  flex: none;
+  min-width: 14px;");
+    sheet_has(".ft-held .cf-row {
+  opacity: 0.7;");
+    assert_eq!((t.tree_mark_w, t.tree_held_opacity), (14.0, 0.7));
+    sheet_has(".cf-note.warn {
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--attention) 12%, transparent);");
+    sheet_has(".code-tree {\n  width: var(--code-tree-w, 288px);\n  max-width: 45%;");
+    sheet_has(".code-tree.searching {\n  width: var(--code-tree-w, 400px);\n  max-width: 55%;");
+    sheet_has(".code-tree.searching.alone {\n  width: auto;\n  flex: 1 1 auto;\n  max-width: 720px;");
+    assert_eq!((t.code_tree_w, t.code_tree_search_w, t.code_tree_share, t.code_tree_search_share, t.code_search_alone_max), (288.0, 400.0, 0.45, 0.55, 720.0));
+    sheet_has("--code-tree-narrow: 240px;");
+    sheet_has("--code-outline-narrow: 184px;");
+    assert_eq!((t.code_tree_narrow, t.code_outline_narrow), (240.0, 184.0));
+    sheet_has(".code-outline {\n  width: var(--code-outline-w, 232px);\n  max-width: 40%;");
+    assert_eq!((t.code_outline_w, t.code_outline_share), (232.0, 0.4));
+    sheet_has("@container (max-width: 1100px) {\n  .code-tree {\n    width: var(--code-tree-w, 240px);\n  }\n  .code-outline {\n    width: var(--code-outline-w, 200px);");
+    assert_eq!((t.code_mid_below, t.code_tree_mid, t.code_outline_mid), (1100.0, 240.0, 200.0));
+    sheet_has("@container (max-width: 900px) {\n  .code-outline,\n  .code-sash-outline,");
+    assert_eq!(t.code_outline_hides_below, 900.0);
+    sheet_has("@container (max-width: 640px) {\n  .code-tree {\n    width: var(--code-tree-w, 180px);");
+    assert_eq!((t.code_low_below, t.code_tree_low), (640.0, 180.0));
+    sheet_has(".code-file {\n  flex: 1;\n  min-width: 320px;");
+    assert_eq!(t.code_file_min_w, 320.0);
+    sheet_has(".cline {
+  display: grid;
+  grid-template-columns: 52px 16px max-content;");
+    sheet_has(".code-ruler {
+  position: relative;
+  width: 12px;");
+    sheet_has(".code-ruler .m {
+  position: absolute;
+  left: 2px;
+  right: 2px;");
+    sheet_has(".code-ruler .view {
+  position: absolute;
+  left: 0;
+  right: 0;
+  min-height: 12px;");
+    sheet_has("margin: var(--sp-8) var(--sp-16) var(--sp-8) 68px;
+  font-family: var(--font-ui);
+  max-width: 720px;");
+    assert_eq!((t.code_no_w, t.ruler_w, t.ruler_mark_inset, t.ruler_view_min_h, t.code_comment_max_w), (52.0, 12.0, 2.0, 12.0, 720.0));
+    sheet_has("background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);");
+    assert_eq!((t.share_gone, t.share_gone_edge), (0.08, 0.40));
+    sheet_has("  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  border-top: 1px solid var(--line-strong);");
+    sheet_has(".code-ruler:hover .view,
+.code-ruler.dragging .view {
+  background: color-mix(in srgb, var(--fg) 20%, transparent);");
+    assert_eq!((t.share_ruler_view, t.share_ruler_view_on), (0.12, 0.20));
+    sheet_has(".okind {
+  width: 18px;
+  height: 18px;");
+    assert_eq!(t.code_badge, 18.0);
+    assert_eq!(t.ruler_mark_min_h, 3.0, "placeMarks: `Math.max(3, ...)`");
+    sheet_has(".cs-row {\n  display: flex;\n  align-items: center;\n  gap: var(--sp-12);\n  height: 34px;");
+    sheet_has(".cs-sec {\n  max-width: 640px;");
+    sheet_has(".cs-hint {\n  margin: 0;\n  max-width: 520px;");
+    assert_eq!((t.cs_row_h, t.cs_sec_max_w, t.cs_hint_max_w), (34.0, 640.0, 520.0));
+    sheet_has("grid-template-columns: 36px minmax(0, 1fr);");
+    sheet_has("padding: var(--sp-4) var(--sp-8) var(--sp-4) 26px;");
+    assert_eq!((t.hline_no_w, t.hline_indent), (36.0, 26.0));
+    sheet_has("mask-image: linear-gradient(to right, transparent, #000 24px);");
+    assert_eq!((t.hline_lead, t.hline_fade), (48.0, 24.0));
+    sheet_has(".hline mark {
+  background: color-mix(in srgb, var(--attention) 32%, transparent);");
+    assert_eq!(t.share_hit, 0.32);
+}

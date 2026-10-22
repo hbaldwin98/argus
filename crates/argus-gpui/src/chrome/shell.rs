@@ -15,6 +15,8 @@ use argus_desktop_core::system::clock::Clock;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, Context, Entity, Subscription, Window};
 
+use crate::checkouts::stage::CheckoutsStage;
+use crate::code::stage::CodeStage;
 use crate::chrome::header::launcher::launcher;
 use crate::chrome::header::more;
 use crate::chrome::header::slots::Slots;
@@ -77,8 +79,10 @@ impl Shell {
         let console = cx.new(|cx| ConsoleView::new(heard.clone(), caller.clone(), stage, window, cx));
         // The Workspace's pane is the stage the docks sit around.
         let git = cx.new(|cx| GitStage::new(heard.clone(), caller.clone(), window, cx));
+        let checkouts = cx.new(|cx| CheckoutsStage::new(heard.clone(), caller.clone(), window, cx));
+        let code = cx.new(|cx| CodeStage::new(heard.clone(), caller.clone(), window, cx));
         let split = cx.new(|cx| SplitView::new(heard.clone(), caller.clone(), terminal.clone(), window, cx));
-        let stage = cx.new(|cx| StageView::new(heard.clone(), caller.clone(), split.clone().into(), git.into(), cx));
+        let stage = cx.new(|cx| StageView::new(heard.clone(), caller.clone(), split.clone().into(), git.into(), checkouts.into(), code.into(), cx));
         let work = cx.new(|cx| WorkView::new(heard.clone(), caller.clone(), stage.into(), console.into(), cx));
         let notice = cx.new(|cx| NoticeView::new(heard.clone(), cx));
         let add = cx.new(|cx| AddView::new(heard.clone(), caller.clone(), window, cx));

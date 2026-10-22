@@ -17,9 +17,8 @@ use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, App, FocusHandle, Global, SharedString, TestSupportExt as _, Window};
 
 use crate::connection::caller::Caller;
-use crate::kit::button::{button, Look};
-use crate::kit::dialog::{esc, foot, head};
-use crate::kit::icons::Glyph;
+use crate::kit::alert;
+use crate::kit::dialog::head;
 use crate::kit::overlay::host::{Dismiss, Overlays, Spec};
 use crate::kit::overlay::kind::Overlay;
 use crate::style::Typed as _;
@@ -86,32 +85,12 @@ fn body(
     close: impl Fn(&mut Window, &mut App) + 'static,
     tokens: &Tokens,
 ) -> impl IntoElement {
-    let tile = div()
-        .flex()
+    let title = h_flex()
+        .gap(rem(tokens.sp_12))
         .items_center()
-        .justify_center()
-        .flex_shrink_0()
-        .size(rem(tokens.sp_32))
-        .rounded(rem(tokens.r_md))
-        .bg(tokens.danger.opacity(tokens.share_danger_tile))
-        .text_color(tokens.danger)
-        .child(Glyph::Trash.at(tokens.icon_box));
-    let title = h_flex().gap(rem(tokens.sp_12)).items_center().child(tile).child(div().id("remove-title").test_support().aria_label(SharedString::from(words.title.clone())).min_w_0().child(SharedString::from(words.title.clone())));
-    let callout = words.warning.as_ref().map(|warning| {
-        h_flex()
-            .id("remove-warning")
-            .test_support()
-            .aria_label(SharedString::from(warning.clone()))
-            .gap(rem(tokens.sp_8))
-            .items_start()
-            .rounded(rem(tokens.r_md))
-            .px(rem(tokens.sp_12))
-            .py(rem(tokens.sp_8))
-            .bg(tokens.attention.opacity(tokens.share_callout))
-            .text_color(tokens.fg)
-            .child(div().mt(rem(tokens.sp_2)).flex_shrink_0().text_color(tokens.attention).child(Glyph::Warn.at(tokens.icon_sm)))
-            .child(div().min_w_0().child(SharedString::from(warning.clone())))
-    });
+        .child(alert::tile(tokens))
+        .child(div().id("remove-title").test_support().aria_label(SharedString::from(words.title.clone())).min_w_0().child(SharedString::from(words.title.clone())));
+    let callout = words.warning.as_ref().map(|warning| alert::callout("remove-warning", warning.clone(), tokens));
     v_flex()
         .id("project-remove")
         .child(head("remove", title, close, None, tokens))
@@ -125,19 +104,7 @@ fn body(
                 .child(div().id("remove-body").test_support().aria_label(SharedString::from(words.body.clone())).child(SharedString::from(words.body.clone())))
                 .children(callout),
         )
-        .child(
-            foot(tokens)
-                .justify_end()
-                .child(
-                    button("remove-keep", "Keep it", Look::Plain, false, tokens)
-                        .track_focus(keep)
-                        .focus_visible(|style| style)
-                        .child("Keep it")
-                        .child(esc(tokens))
-                        .on_click(move |_, window, cx| keep_it(window, cx)),
-                )
-                .child(button("remove-yes", "Remove", Look::Danger, false, tokens).child("Remove").on_click(move |_, window, cx| remove(window, cx))),
-        )
+        .child(alert::answers("remove", "Keep it", "Remove", keep, keep_it, remove, tokens))
 }
 
 #[cfg(test)]

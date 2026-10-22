@@ -17,6 +17,7 @@ use argus_protocol::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::checkouts::query::Query;
 use crate::code;
 use crate::code::tree::folders_of;
 use crate::review::comment_box::{CommentBox, CommentPage};
@@ -192,7 +193,7 @@ pub struct CodeJump {
 }
 
 /// The search across the checkout.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct CodeSearch {
@@ -980,7 +981,7 @@ impl CodeStage {
         // One field serves both: a leading `#` hands what follows to the
         // search, as the search field's own text is shown with it.
         if let ReviewJumpGesture::Query { text } = &gesture {
-            if let Some(query) = text.strip_prefix('#') {
+            if let Query::Text(query) = Query::of(text) {
                 let query = query.to_owned();
                 self.open_search();
                 if let Some(search) = &mut self.search {
@@ -1019,10 +1020,10 @@ impl CodeStage {
         };
         let found = search.found.as_ref().map_or(0, |f| f.matches.len());
         match gesture {
-            ReviewJumpGesture::Query { text } => match text.strip_prefix('#') {
-                Some(query) => search.query = query.to_owned(),
+            ReviewJumpGesture::Query { text } => match Query::of(&text) {
+                Query::Text(query) => search.query = query.to_owned(),
                 // The `#` was deleted: the field is the go-to-file one again.
-                None => {
+                Query::Name(_) => {
                     self.open_jump();
                     if let Some(jump) = &mut self.jump {
                         jump.gesture(ReviewJumpGesture::Query { text }, &self.files);

@@ -15,6 +15,8 @@
 //! then the muted reason there is no diff, then the rows. The split between
 //! the files and the diff is the window's own, never sent anywhere.
 
+use std::rc::Rc;
+
 use argus_desktop_core::connection::page::{Call, ReviewClick, ReviewPage};
 use argus_desktop_core::keys::keymap::Action;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
@@ -24,7 +26,7 @@ use gpui_kit::{div, prelude::*, Context, Entity, Role, SharedString, Subscriptio
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::diff::{DiffEvent, DiffView, Slot};
-use crate::review::comment::{self, CommentBox};
+use crate::review::comment::{self, ways, CommentBox};
 use crate::review::files::Files;
 use crate::kit::ghosts::ghosts;
 use crate::kit::hints;
@@ -75,7 +77,7 @@ impl Changes {
 
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let files = cx.new(|cx| Files::new(heard.clone(), caller.clone(), window, cx));
-        let comment = cx.new(|cx| CommentBox::new(heard.clone(), caller.clone(), window, cx));
+        let comment = cx.new(|cx| CommentBox::new(heard.clone(), caller.clone(), Rc::new(ways::Review), window, cx));
         let diff = cx.new(|cx| DiffView::new("review-diff", true, true, cx));
         let split = cx.new(|cx| Split::new("review-split", "Resize the files", FILES, FILES_MIN, FILES_MAX, cx));
         let resized = cx.observe(&split, |_, _, cx| cx.notify());

@@ -135,8 +135,8 @@ fn open(cx: &mut TestAppContext) -> Opened {
             |_, cx| {
                 let heard = cx.new(|_| Heard::new());
                 heard_out = Some(heard.clone());
-                let (pane, git) = (cx.new(|_| Blank), cx.new(|_| Blank));
-                cx.new(|cx| StageView::new(heard, caller, pane.into(), git.into(), cx))
+                let (pane, git, checkouts, code) = (cx.new(|_| Blank), cx.new(|_| Blank), cx.new(|_| Blank), cx.new(|_| Blank));
+                cx.new(|cx| StageView::new(heard, caller, pane.into(), git.into(), checkouts.into(), code.into(), cx))
             },
         )
         .expect("open test window")

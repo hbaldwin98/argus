@@ -18,6 +18,7 @@
 //! does; a held middle button drags the diff, and the stage's Left and Right nudge it.
 
 pub mod fold;
+pub mod geometry;
 pub mod gutter;
 pub mod items;
 pub mod measure;
@@ -82,6 +83,15 @@ pub struct DiffView {
     slot: Option<Slot>,
     items: Rc<Vec<Item>>,
     sizes: Rc<Vec<Size<Pixels>>>,
+    /// Where each item starts, in the window's pixels, and the total after the last (`geometry`).
+    tops: Vec<f32>,
+    /// The item of each line or pair, by the number its row carries.
+    numbered: std::collections::HashMap<usize, usize>,
+    /// A file read whole rather than a diff: one number column, the page's `.cline` face, the
+    /// places lines were removed said in red, and no scrolling of its own to the cursor.
+    reading: bool,
+    /// How wide the number columns of a unified line are together, in the page's pixels.
+    numbers_w: f32,
     scroll: VirtualListScrollHandle,
     built: Cell<usize>,
     /// Each row's left and right side as drawn (tabs stopped), made once per
@@ -141,6 +151,10 @@ impl DiffView {
             slot: None,
             items: Rc::default(),
             sizes: Rc::default(),
+            tops: vec![0.0],
+            numbered: Default::default(),
+            reading: false,
+            numbers_w: gutter::NUMBER * 2.0,
             scroll: VirtualListScrollHandle::new(),
             built: Cell::new(0),
             drawn: Vec::new(),
@@ -158,6 +172,16 @@ impl DiffView {
             layouts: Rc::default(),
             area: Rc::default(),
         }
+    }
+
+    /// A view of a file read whole, as the Code stage draws it (`.code-body`): each line has its own
+    /// number in the one column `.cline` gives it, the text is the body face, and the scroll is the
+    /// owner's. The cursor's row is not brought into view here, since where the cursor goes on screen
+    /// is the stage's rule (`argus_desktop_core::code::scroll`), which only a move of the cursor invokes.
+    pub fn reading(mut self, tokens: &Tokens) -> Self {
+        self.reading = true;
+        self.numbers_w = tokens.code_no_w;
+        self
     }
 
     /// Draws `rows`, as split pairs or unified lines, with `slot` under the
@@ -182,9 +206,10 @@ impl DiffView {
         self.split = split;
         self.slot = slot;
         self.items = Rc::new(items::items(&self.rows, self.slot.is_some()));
+        self.number_rows();
         self.per_line = self.wrap_at();
         self.size();
-        if !same_rows {
+        if !same_rows && !self.reading {
             if let Some(at) = items::cursor_item(&self.rows, &self.items) {
                 self.scroll.scroll_to_item(at, ScrollStrategy::Top);
             }
@@ -243,7 +268,8 @@ impl Render for DiffView {
         let theme = cx.theme();
         // `.dbody`: the mono face at `--fs-sm`, which is smaller than the terminal's.
         let tokens = *Tokens::global(cx);
-        let (family, text_size) = (theme.mono_font_family.clone(), pixels(tokens.fs_sm, window.rem_size()));
+        let face = if self.reading { tokens.fs_md } else { tokens.fs_sm };
+        let (family, text_size) = (theme.mono_font_family.clone(), pixels(face, window.rem_size()));
         // One cell is the advance of `M`, as the terminal panes measure it.
         let text = window.text_system();
         let font_id = text.resolve_font(&Font { family: family.clone(), ..Font::default() });
@@ -263,7 +289,7 @@ impl Render for DiffView {
             .bg(tokens.bg_sunken)
             .font_family(family)
             .text_size(text_size)
-            .text_color(tokens.fg_muted)
+            .text_color(if self.reading { tokens.fg } else { tokens.fg_muted })
             .child(
                 // Where the list ends up is only known once it is laid out; a
                 // change asks for one more render that reads it.
@@ -303,7 +329,13 @@ impl Render for DiffView {
                     .top_0()
                     .left_0()
                     .size_full()
-                    .child(Scrollbar::new(&self.scroll).viewport_from_layout().mode(ScrollbarMode::Always)),
+                    .child(
+                        // A file read whole has the ruler for its scrollbar; a second one beside it would say the
+                        // same at another scale (`.code-body::-webkit-scrollbar:vertical`).
+                        if self.reading { Scrollbar::horizontal(&self.scroll) } else { Scrollbar::new(&self.scroll) }
+                            .viewport_from_layout()
+                            .mode(ScrollbarMode::Always),
+                    ),
             )
             // A held middle button drags the diff under the pointer, both ways.
             .on_mouse_down(MouseButton::Middle, cx.listener(|this, event: &MouseDownEvent, _, cx| {

@@ -11,6 +11,7 @@ pub mod layers;
 pub mod over;
 pub mod page_key;
 pub mod palette;
+pub mod place;
 pub mod root;
 pub mod run;
 pub mod sheet;

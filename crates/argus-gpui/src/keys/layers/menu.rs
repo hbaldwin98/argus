@@ -19,7 +19,7 @@ pub struct Menu;
 
 impl Handler for Menu {
     fn open(&self, window: &Window, cx: &App) -> bool {
-        stepping::is_open(window) || Overlays::get(cx).is_open(Overlay::Question)
+        stepping::is_open(window) || Overlays::get(cx).is_open(Overlay::Question) || Overlays::get(cx).is_open(Overlay::Removal)
     }
 
     fn keys(&self, press: &Press, places: &[Place], window: &mut Window, cx: &mut App) -> Verdict {
@@ -35,6 +35,7 @@ impl Handler for Menu {
 
     /// A question the stage asked is answered no, not only put away.
     fn escape(&self, window: &mut Window, cx: &mut App) -> bool {
-        Overlays::get(cx).escape_of(Overlay::Question, window, cx)
+        let overlays = Overlays::get(cx);
+        overlays.escape_of(Overlay::Question, window, cx) || overlays.escape_of(Overlay::Removal, window, cx)
     }
 }

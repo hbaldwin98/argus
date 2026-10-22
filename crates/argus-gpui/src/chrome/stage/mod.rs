@@ -33,13 +33,15 @@ pub struct StageView {
     caller: Caller,
     pane: AnyView,
     git: AnyView,
+    checkouts: AnyView,
+    code: AnyView,
     _observing: Subscription,
 }
 
 impl StageView {
-    pub fn new(heard: Entity<Heard>, caller: Caller, pane: AnyView, git: AnyView, cx: &mut Context<Self>) -> Self {
+    pub fn new(heard: Entity<Heard>, caller: Caller, pane: AnyView, git: AnyView, checkouts: AnyView, code: AnyView, cx: &mut Context<Self>) -> Self {
         let observing = cx.observe(&heard, |_, _, cx| cx.notify());
-        Self { heard, caller, pane, git, _observing: observing }
+        Self { heard, caller, pane, git, checkouts, code, _observing: observing }
     }
 }
 
@@ -50,6 +52,8 @@ impl Render for StageView {
         let held = heard.held();
         let body: AnyElement = match surface(&heard.rail, heard.console.place, heard.git_up()) {
             Surface::Git => self.git.clone().into_any_element(),
+            Surface::Checkouts => self.checkouts.clone().into_any_element(),
+            Surface::Code => self.code.clone().into_any_element(),
             Surface::Pane => div()
                 .relative()
                 .size_full()

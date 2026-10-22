@@ -82,6 +82,12 @@ pub enum Glyph {
     Tick,
     /// The corner button that opens a drawing larger.
     Expand,
+    /// The file tree's marks at the page's small size, a folder and a file; the large file is an
+    /// empty stage's tile; and the help circle.
+    FolderSm,
+    FileSm,
+    File,
+    Help,
 }
 
 impl Glyph {
@@ -142,6 +148,10 @@ impl Glyph {
             Glyph::NoteInfo => include_bytes!("../../assets/icons/note-info.svg"),
             Glyph::Tick => include_bytes!("../../assets/icons/tick.svg"),
             Glyph::Expand => include_bytes!("../../assets/icons/expand.svg"),
+            Glyph::FolderSm => include_bytes!("../../assets/icons/folder-sm.svg"),
+            Glyph::FileSm => include_bytes!("../../assets/icons/file-sm.svg"),
+            Glyph::File => include_bytes!("../../assets/icons/file.svg"),
+            Glyph::Help => include_bytes!("../../assets/icons/help.svg"),
         }
     }
 

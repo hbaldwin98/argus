@@ -14,6 +14,7 @@ use super::{DiffEvent, DiffView};
 
 mod measure;
 mod pan;
+mod reading;
 mod rows;
 mod selection;
 
@@ -52,6 +53,15 @@ pub(super) fn open(cx: &mut TestAppContext, interactive: bool) -> Opened {
 }
 
 pub(super) fn open_picking(cx: &mut TestAppContext, interactive: bool, picks: bool) -> Opened {
+    open_as(cx, interactive, picks, false)
+}
+
+/// A view of a file read whole (`DiffView::reading`).
+pub(super) fn open_reading(cx: &mut TestAppContext) -> Opened {
+    open_as(cx, true, false, true)
+}
+
+fn open_as(cx: &mut TestAppContext, interactive: bool, picks: bool, reading: bool) -> Opened {
     cx.update(crate::window::init);
     let pressed: Rc<RefCell<Vec<DiffEvent>>> = Rc::default();
     let notified: Rc<Cell<u32>> = Rc::default();
@@ -64,7 +74,11 @@ pub(super) fn open_picking(cx: &mut TestAppContext, interactive: bool, picks: bo
             },
             cx,
             |_, cx| {
-                let view = cx.new(|cx| DiffView::new("diff", interactive, picks, cx));
+                let tokens = *crate::theme::Tokens::global(cx);
+                let view = cx.new(|cx| {
+                    let view = DiffView::new("diff", interactive, picks, cx);
+                    if reading { view.reading(&tokens) } else { view }
+                });
                 let sink = pressed.clone();
                 cx.subscribe(&view, move |_, event: &DiffEvent, _| sink.borrow_mut().push(*event)).detach();
                 let count = notified.clone();

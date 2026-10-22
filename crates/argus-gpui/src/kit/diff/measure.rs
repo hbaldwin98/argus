@@ -71,6 +71,7 @@ impl DiffView {
                     let most = drawn.iter().map(|side| wrap::wrapped_lines(&side.text, self.per_line)).max().unwrap_or(1);
                     shape::pair_height(most)
                 }
+                Shape::Note if self.reading => shape::GONE,
                 _ => shape::height(row),
             })
             .collect();
@@ -85,6 +86,13 @@ impl DiffView {
                 })
                 .collect(),
         );
+        let mut at = 0.0;
+        self.tops = std::iter::once(0.0)
+            .chain(self.sizes.iter().map(|size| {
+                at += f32::from(size.height);
+                at
+            }))
+            .collect();
     }
 
     /// A row's width: unified, the longest line's or the pane's if wider, so
@@ -96,7 +104,7 @@ impl DiffView {
             return (pane > px(0.0)).then_some(pane);
         }
         let advance = f32::from(self.advance);
-        let line = (NUMBER * 2.0 + MARKER + TAIL + ROW_BORDER) * self.zoom + self.widest.0 as f32 * advance;
+        let line = (self.numbers_w + MARKER + TAIL + ROW_BORDER) * self.zoom + self.widest.0 as f32 * advance;
         let heading = HEADING_PAD * self.zoom + self.widest.1 as f32 * advance;
         Some(pane.max(px(line.max(heading).ceil())))
     }

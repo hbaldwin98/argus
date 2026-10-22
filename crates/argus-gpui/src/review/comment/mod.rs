@@ -15,10 +15,14 @@
 //! (REVIEW-37): the Field layer holds every key, so the review's own keys
 //! are not heard while one is written.
 //!
-//! The Code stage will share this box (`code-comment`); its calls are the
-//! review's here until that stage is ported and gives it its own.
+//! The Code stage shares this box (`code-comment`): what differs between the two is the calls it sends
+//! and the room round the card, which is the box's `Ways`.
 
-use argus_desktop_core::connection::page::{Call, ReviewClick};
+pub mod ways;
+
+use std::rc::Rc;
+
+use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_desktop_core::review::comment_box::CommentPage;
 use gpui_kit::component::input::{Textarea, TextareaState};
@@ -31,7 +35,7 @@ use crate::kit::button::{button, chip, Look};
 use crate::kit::keycap::keycap;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::kit::diff::gutter::GUTTER;
+use ways::Ways;
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
@@ -57,6 +61,7 @@ const ROWS: usize = 3;
 pub struct CommentBox {
     heard: Entity<Heard>,
     caller: Caller,
+    ways: Rc<dyn Ways>,
     text: Entity<TextareaState>,
     page: Option<CommentPage>,
     /// The box's place in the key walk: the `Writing` place's keys are run before the textarea's.
@@ -64,7 +69,7 @@ pub struct CommentBox {
 }
 
 impl CommentBox {
-    pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(heard: Entity<Heard>, caller: Caller, ways: Rc<dyn Ways>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let text = cx.new(|cx| TextareaState::new(window, cx).rows(ROWS).placeholder("Comment"));
         // Ctrl Enter and Meta Enter send and Escape puts the box away, ahead of the textarea's own
         // Enter and Escape (COMMENT-6, 7); a bare Enter is a newline, so the walk leaves it.
@@ -77,7 +82,7 @@ impl CommentBox {
             };
             sent.is_ok()
         });
-        Self { heard, caller, text, page: None, _field: field }
+        Self { heard, caller, ways, text, page: None, _field: field }
     }
 
     /// Follows the session: the page of the box while it is open. An open box
@@ -114,11 +119,11 @@ impl CommentBox {
 
     /// The words as typed: the session trims, and refuses an empty one in a notice.
     fn send(&self, cx: &Context<Self>) {
-        self.ask(Call::ReviewComment { body: Some(self.words(cx).to_string()) }, cx);
+        self.ask(self.ways.send(Some(self.words(cx).to_string())), cx);
     }
 
     fn cancel(&self, cx: &Context<Self>) {
-        self.ask(Call::ReviewComment { body: None }, cx);
+        self.ask(self.ways.send(None), cx);
     }
 
     /// Who it goes to: one agent that is lit is said, not offered; several, or
@@ -159,7 +164,7 @@ impl CommentBox {
                         .child(diamond(tokens))
                         .child(SharedString::from(recipient.title.clone()))
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.ask(Call::ReviewClick { target: ReviewClick::Recipient { pane } }, cx)
+                            this.ask(this.ways.recipient(pane), cx)
                         }))
                 }))
                 .into_any_element(),
@@ -187,6 +192,7 @@ impl Render for CommentBox {
             .rounded(rem(tokens.r_md))
             .border_1()
             .border_color(tokens.accent)
+            .when_some(self.ways.widest(&tokens), |card, widest| card.max_w(rem(widest)))
             // The diff under it is mono; the card is the interface face (`font-family: var(--font-ui)`).
             .font_family(SharedString::from(tokens.font_ui))
             .text_size(rem(tokens.fs_md))
@@ -229,6 +235,7 @@ impl Render for CommentBox {
                             .on_click(cx.listener(|this, _, _, cx| this.send(cx))),
                     ),
             );
-        div().size_full().pl(rem(GUTTER)).pr(rem(tokens.sp_12)).py(rem(tokens.sp_8)).child(card).into_any_element()
+        let (left, right) = self.ways.margin(&tokens);
+        div().size_full().pl(rem(left)).pr(rem(right)).py(rem(tokens.sp_8)).child(card).into_any_element()
     }
 }

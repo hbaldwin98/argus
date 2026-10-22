@@ -14,6 +14,12 @@ pub(super) const MARKER: f32 = 16.0;
 /// What a comment box's left edge clears: both number columns and the marker (`.comment-card`'s 104px).
 pub const GUTTER: f32 = NUMBER * 2.0 + MARKER;
 
+/// What a file read whole puts before its code: the one number column and the marker, which a
+/// comment card and a removal marker clear (`.cgone`'s and `.comment-card`'s 68px).
+pub fn reading_gutter(tokens: &Tokens) -> f32 {
+    tokens.code_no_w + MARKER
+}
+
 /// The numbers a side carries: both columns of a unified line, or the one a
 /// half of a split pair shows (the new for an added line, else the old, else
 /// the new).
@@ -23,6 +29,17 @@ pub fn numbers(side: Option<&DiffSide>, both: bool) -> Vec<Option<u32>> {
     } else {
         vec![side.and_then(|s| if s.kind == "added" { s.new } else { s.old.or(s.new) })]
     }
+}
+
+/// Which number columns a line carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Columns {
+    /// The old number and the new, of a unified line.
+    Both,
+    /// The one a half of a split pair shows.
+    One,
+    /// A file read whole: the line's own number, in the wider column `.cline` gives it.
+    Reading,
 }
 
 /// A unified line's gutter held at the pane's left edge: how far right it
@@ -41,7 +58,7 @@ pub(super) struct Gutter {
     width: gpui_kit::Rems,
 }
 
-pub(super) fn gutter(side: Option<&DiffSide>, both: bool, tokens: &Tokens) -> Gutter {
+pub(super) fn gutter(side: Option<&DiffSide>, columns: Columns, tokens: &Tokens) -> Gutter {
     // `.dno`: `--fg-faint` on every line, changed or not.
     let number_colour = tokens.fg_faint;
     let marker_colour = match side.map(|side| side.kind) {
@@ -49,14 +66,19 @@ pub(super) fn gutter(side: Option<&DiffSide>, both: bool, tokens: &Tokens) -> Gu
         Some("removed") => tokens.danger,
         _ => tokens.fg_faint,
     };
-    let figures = numbers(side, both);
-    let width = rem(figures.len() as f32 * NUMBER + MARKER);
+    let figures = match columns {
+        Columns::Both => numbers(side, true),
+        Columns::One => numbers(side, false),
+        Columns::Reading => vec![side.and_then(|side| side.new)],
+    };
+    let each = if columns == Columns::Reading { tokens.code_no_w } else { NUMBER };
+    let width = rem(figures.len() as f32 * each + MARKER);
     let numbers = figures
         .into_iter()
         .map(move |n| {
             div()
                 .flex_shrink_0()
-                .w(rem(NUMBER))
+                .w(rem(each))
                 .pr_2()
                 .text_right()
                 .text_color(number_colour)

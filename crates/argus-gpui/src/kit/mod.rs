@@ -1,13 +1,17 @@
 //! Widgets and machinery that more than one surface draws or follows.
 
+pub mod alert;
 pub mod area;
 pub mod button;
 pub mod copy;
+pub mod crop;
 pub mod choice;
 pub mod dialog;
 pub mod diff;
 pub mod drag;
 pub mod field;
+pub mod finder;
+pub mod flow;
 pub mod fonts;
 pub mod ghosts;
 pub mod hints;
@@ -26,8 +30,10 @@ pub mod sequence;
 pub mod segment;
 pub mod split;
 pub mod spots;
+pub mod start;
 pub mod status_dot;
 pub mod strip;
 pub mod tip;
 pub mod toggle;
+pub mod tree;
 pub mod wheel;
