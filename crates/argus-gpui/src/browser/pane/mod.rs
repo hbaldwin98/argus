@@ -9,11 +9,12 @@
 //! A press anywhere in the cell gives it the keys, as a press on a terminal does, with the call
 //! core's `key_pane` names (SHELL-BROWSER-15). The questions are apart: the strip is `tabs`, the
 //! toolbar `bar`, the address `address`, who has the browser `chip`, the screen `screen`, its
-//! keys `keys` and the room it reports `viewport`.
+//! keys `keys`, an input method's text `ime` and the room it reports `viewport`.
 
 pub mod address;
 pub mod bar;
 pub mod chip;
+pub mod ime;
 pub mod keys;
 pub mod screen;
 pub mod tabs;
@@ -48,6 +49,8 @@ pub struct BrowserPane {
     /// The area the screen was laid out in, in the window's pixels.
     area: Rc<Cell<Bounds<Pixels>>>,
     reporter: Reporter,
+    /// The input method's preedit, sent when it ends (`ime`).
+    marked: ime::Marked,
     _observing: Subscription,
     _keys: Registered,
 }
@@ -67,6 +70,7 @@ impl BrowserPane {
             }),
             _keys: keys::register(pane, caller.clone(), focus.clone(), window, cx),
             reporter,
+            marked: ime::Marked::default(),
             heard,
             caller,
             pane,
