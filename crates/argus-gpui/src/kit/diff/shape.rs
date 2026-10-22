@@ -8,8 +8,8 @@ use argus_desktop_core::connection::page::DiffRow;
 
 /// A line, and the mono text in it: `.dbody`'s `line-height: 20px`.
 pub const LINE: f32 = 20.0;
-/// A hunk header or a note: a line on the chrome grey.
-pub const HUNK: f32 = 20.0;
+/// A hunk header or a note: a band as tall as a fold, so the rows between hunks share one height.
+pub const HUNK: f32 = FOLD;
 /// The marker where a file read whole lost lines: a line and the rule above it (`.cgone`).
 pub const GONE: f32 = 21.0;
 /// A fold: its words and two buttons between dashed rules, `--row-h-sm`.

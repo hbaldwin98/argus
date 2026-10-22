@@ -7,6 +7,7 @@ use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, Context, Role, SharedString};
 
 use super::GitStage;
+use crate::kit::counts::counts;
 use crate::kit::tip::tip;
 use crate::kit::icon_button::icon_button;
 use crate::kit::icons::Glyph;
@@ -102,8 +103,7 @@ impl GitStage {
                         .typed(tokens.type_small)
                         .text_color(tokens.fg_muted)
                         .child(SharedString::from(format!("{} file{plural} \u{b7}", page.files.len())))
-                        .child(div().text_color(tokens.ok).child(SharedString::from(format!("+{}", page.added))))
-                        .child(div().text_color(tokens.danger).child(SharedString::from(format!("\u{2212}{}", page.removed)))),
+                        .child(counts(page.added, page.removed, tokens)),
                 )
             })
             .when(changes_on && review.is_some(), |strip| {

@@ -59,6 +59,16 @@ pub fn cells(text: &str) -> usize {
     text.width()
 }
 
+/// A hunk's heading cut into its line ranges (`@@ -52,14 +52,11 @@`) and the code it is in, which
+/// git puts after them; a heading with no ranges is all said as the second part.
+pub fn hunk(text: &str) -> (&str, &str) {
+    let ranges = text.strip_prefix("@@").and_then(|rest| rest.find("@@")).map(|end| end + 4);
+    match ranges {
+        Some(end) => (&text[..end], text[end..].trim_start()),
+        None => ("", text),
+    }
+}
+
 /// A stretch of a side's text: its highlight kind, and whether it is selected.
 pub type Run = (Range<usize>, Option<&'static str>, bool);
 
@@ -114,6 +124,14 @@ mod tests {
         for (range, _) in &drawn.spans {
             assert!(drawn.text.is_char_boundary(range.start) && drawn.text.is_char_boundary(range.end));
         }
+    }
+
+    #[test]
+    fn a_hunk_heading_is_cut_into_its_ranges_and_the_code_it_is_in() {
+        assert_eq!(hunk("@@ -52,14 +52,11 @@ pub async fn f() {"), ("@@ -52,14 +52,11 @@", "pub async fn f() {"));
+        assert_eq!(hunk("@@ -0,0 +1,60 @@"), ("@@ -0,0 +1,60 @@", ""));
+        assert_eq!(hunk("Binary files differ"), ("", "Binary files differ"), "a note has no ranges");
+        assert_eq!(hunk("@@ unterminated"), ("", "@@ unterminated"));
     }
 
     #[test]

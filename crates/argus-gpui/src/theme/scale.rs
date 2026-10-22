@@ -390,8 +390,11 @@ pub struct Scale {
     pub share_press_icon: f32,
     /// `.btn` hover's edge: `--line-strong` this far toward the accent; a cap on a primary button, its edge in the on-accent colour.
     pub share_edge: f32,
-    /// A diff side's added or removed wash, and the picked lines laid over it.
+    /// A diff side's added or removed wash behind its code, and the picked lines laid over it.
     pub share_tone: f32,
+    /// The same wash behind a line's numbers and marker, a step stronger than the code's, so a long
+    /// run of added or removed lines reads as a lit gutter beside quiet code rather than one block.
+    pub share_tone_gutter: f32,
     /// `.cgone`, the marker where lines were removed from a file read: the danger colour behind it and in its top edge.
     pub share_gone: f32,
     pub share_gone_edge: f32,
@@ -838,7 +841,8 @@ impl Scale {
             share_hover_icon: 0.10,
             share_press_icon: 0.15,
             share_edge: 0.45,
-            share_tone: 0.12,
+            share_tone: 0.08,
+            share_tone_gutter: 0.20,
             share_gone: 0.08,
             share_gone_edge: 0.40,
             share_ruler_view: 0.12,

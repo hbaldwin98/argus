@@ -25,6 +25,7 @@ use gpui_kit::{div, prelude::*, Context, Entity, Role, SharedString, Subscriptio
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::kit::counts::counts;
 use crate::kit::diff::{DiffEvent, DiffView, Slot};
 use crate::review::comment::{self, ways, CommentBox};
 use crate::review::files::Files;
@@ -158,8 +159,7 @@ impl Changes {
                             .text_color(tokens.fg_muted)
                             .child(SharedString::from(file.dir.trim_end_matches('/').to_owned())),
                     )
-                    .child(div().text_color(tokens.ok).child(SharedString::from(format!("+{}", file.added))))
-                    .child(div().text_color(tokens.danger).child(SharedString::from(format!("\u{2212}{}", file.removed))))
+                    .child(counts(file.added, file.removed, tokens).typed(tokens.type_small))
             })
             .child(div().flex_1())
             // `.ktag`: what is picked, as a pill.

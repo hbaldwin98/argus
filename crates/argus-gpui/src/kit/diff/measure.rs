@@ -20,8 +20,8 @@ use super::{text, wrap, DiffView};
 /// Room after the last cell of a line, so its end is not flush with the edge
 /// of its colour.
 const TAIL: f32 = 8.0;
-/// A hunk header's or note's side padding, both sides.
-const HEADING_PAD: f32 = 24.0;
+/// A hunk header's or note's side padding, both sides, and the gap between its ranges and its code.
+const HEADING_PAD: f32 = 36.0;
 /// What a row's own border takes of its width, both sides.
 const ROW_BORDER: f32 = 2.0;
 
@@ -45,6 +45,10 @@ impl DiffView {
             }
         }
         self.widest = widest;
+        if !self.reading {
+            self.shown = super::gutter::shown(&self.rows);
+            self.numbers_w = self.shown.count() as f32 * NUMBER;
+        }
     }
 
     /// The cells a split half's code wraps at in this pane: 0, no wrapping,

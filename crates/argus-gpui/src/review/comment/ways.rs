@@ -8,7 +8,8 @@
 use argus_desktop_core::code::stage::{CodeClick, CodeGesture};
 use argus_desktop_core::connection::page::{Call, ReviewClick};
 
-use crate::kit::diff::gutter::{reading_gutter, GUTTER};
+use crate::connection::heard::Heard;
+use crate::kit::diff::gutter::{reading_gutter, shown, GUTTER};
 use crate::theme::Tokens;
 
 /// How a stage's comment box talks to the session and sits among its rows.
@@ -21,7 +22,7 @@ pub trait Ways {
 
     /// How far the card stands in from the left and from the right, so its words begin where the
     /// rows' code does.
-    fn margin(&self, tokens: &Tokens) -> (f32, f32);
+    fn margin(&self, tokens: &Tokens, heard: &Heard) -> (f32, f32);
 
     /// The widest the card goes, when it is held to one.
     fn widest(&self, tokens: &Tokens) -> Option<f32>;
@@ -39,8 +40,11 @@ impl Ways for Review {
         Call::ReviewClick { target: ReviewClick::Recipient { pane } }
     }
 
-    fn margin(&self, tokens: &Tokens) -> (f32, f32) {
-        (GUTTER, tokens.sp_12)
+    /// A unified diff of a new or deleted file draws one number column, so the card follows its
+    /// code in; a split diff's halves keep the card at both columns, as the page does.
+    fn margin(&self, tokens: &Tokens, heard: &Heard) -> (f32, f32) {
+        let left = heard.review.as_ref().filter(|page| !page.split).map_or(GUTTER, |page| shown(&page.rows).width());
+        (left, tokens.sp_12)
     }
 
     fn widest(&self, _: &Tokens) -> Option<f32> {
@@ -61,7 +65,7 @@ impl Ways for Code {
         Call::Code { gesture: CodeGesture::Click { target: CodeClick::Recipient { pane } } }
     }
 
-    fn margin(&self, tokens: &Tokens) -> (f32, f32) {
+    fn margin(&self, tokens: &Tokens, _: &Heard) -> (f32, f32) {
         (reading_gutter(tokens), tokens.sp_16)
     }
 
@@ -89,8 +93,24 @@ mod tests {
     #[test]
     fn the_codes_card_clears_one_number_column_and_the_reviews_two() {
         let tokens = crate::theme::themes::ledger::tokens();
-        assert_eq!(Code.margin(&tokens), (68.0, 16.0));
-        assert_eq!(Review.margin(&tokens), (104.0, 12.0));
+        let heard = Heard::default();
+        assert_eq!(Code.margin(&tokens, &heard), (68.0, 16.0));
+        assert_eq!(Review.margin(&tokens, &heard), (104.0, 12.0));
         assert_eq!((Code.widest(&tokens), Review.widest(&tokens)), (Some(720.0), None));
+    }
+
+    /// The review's card begins where the code does: a new file's diff has no old-number column,
+    /// so its card is one column further left; split, it stays clear of both.
+    #[test]
+    fn the_reviews_card_follows_the_number_columns_the_diff_shows() {
+        use argus_desktop_core::connection::page::{DiffRow, DiffSide, ReviewPage};
+        let tokens = crate::theme::themes::ledger::tokens();
+        let side = DiffSide { old: None, new: Some(1), marker: "+", kind: "added", parts: Vec::new() };
+        let added = DiffRow { row: 0, kind: "line", text: String::new(), hidden: None, step: None, left: Some(side), right: None, cursor: false, picked: false };
+        let mut heard = Heard::default();
+        heard.review = Some(std::rc::Rc::new(ReviewPage { rows: vec![added.clone()], ..ReviewPage::default() }));
+        assert_eq!(Review.margin(&tokens, &heard), (GUTTER - 44.0, 12.0));
+        heard.review = Some(std::rc::Rc::new(ReviewPage { rows: vec![added], split: true, ..ReviewPage::default() }));
+        assert_eq!(Review.margin(&tokens, &heard), (GUTTER, 12.0));
     }
 }
