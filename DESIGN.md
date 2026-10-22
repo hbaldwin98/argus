@@ -922,7 +922,9 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | --- | --- |
 | `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, and the window; the unattended runs are `probe` and `report` |
 | `browser` | the browsers agents run as this window draws them: their pictures decoded and held once, a picture in a place, the Browsers stage of tiles, a browser's cell in the grid and the words with none open |
-| `browser/decode` | how a browser's picture becomes an image the window draws: base64 undone, JPEG or PNG sniffed from the bytes, the pixels decoded to BGRA premultiplied, with no window in it |
+| `browser/chip` | a browser's status drawn: the pill on a tile and the dot on a nav sub-row, coloured by core's class (agent accent, person ok, held attention), no chip when nobody has it |
+| `browser/source` | where a pane's picture bytes come from: core's `Browsers::picture` (base64 undone once, shared), the session's in the running window and a `Browsers` of its own for a model with no session |
+| `browser/decode` | how a browser's picture becomes an image the window draws: JPEG or PNG sniffed from core's bytes, the pixels decoded to BGRA premultiplied, with no window in it |
 | `browser/decoding` | where a picture is decoded: off the UI thread, ticketed when it starts and landed in `Heard`'s pictures only if it is still its pane's newest, a failure dropped and logged |
 | `browser/empty` | the Browsers stage with no browser open: `No agent has a browser open.` and the hint with `argus-hook browser` in the code face, the same for an old daemon |
 | `browser/pane` | a browser pane's cell in the grid, made once for a browser and kept: its strip, toolbar and screen from what `Heard` says of the browser, and a press anywhere in it giving it the keys with core's call |
@@ -1000,6 +1002,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `chrome/rail/start` | a checkout's + menu drawn open in its row, the highlight the session's, a press outside shutting it |
 | `chrome/rail/stages` | the nav rows: which stage each lights, the keys named beside them, the press that goes there, and the icon tiles of a narrow rail |
 | `chrome/rail/status` | how a status looks on the rail's rows: the dot a status earns, and the words a few statuses say (the pill they are said in is `kit/pill`) |
+| `chrome/rail/browsers` | the Browsers item's own parts in the nav: the count, the chevron that folds the list, and a sub-row for each browser in the stage's order, lit while its pane is in the grid, a press that shows it or drags it with no checkout |
 | `chrome/rail/tail` | the nav's dynamic tail: the Extensions and Views folds, each drawing nothing while it holds nothing, their rows lit while on screen and handles that dock the view |
 | `chrome/shell` | which regions the window is made of and how they sit: the sidebar at full height, and beside it the work area under the stage's header |
 | `chrome/stage` | what fills the stage under the header by the one choice `route` makes: the Git stage, the Checkouts, Code and Browsers stages, the Workspace's live pane with the bar of an ended pane over its foot, the empty stage in its place with no pane, or a line saying a stage is not in the window yet; dimmed while the daemon is gone |

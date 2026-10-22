@@ -3,25 +3,32 @@
 //!
 //! A screencast sends many pictures a second and a decode takes longer than a frame, so each is
 //! given a ticket when it starts (`Pictures::start`) and `Pictures::land` keeps only the one that
-//! holds the pane's latest. A picture that does not decode is dropped and logged: the browser
-//! keeps the last it had, as the page's does.
+//! holds the pane's latest. The bytes come from the model's `Source` (core's, base64 undone once),
+//! fetched on the same thread as the decode. A picture that does not decode is dropped and logged:
+//! the browser keeps the last it had, as the page's does.
 
-use argus_desktop_core::browser::BrowserShot;
 use gpui_kit::Context;
 
 use super::decode::decode;
 use super::pictures::Picture;
 use crate::connection::heard::{Heard, Pictured};
 
-/// Sets `shot` decoding; the places that draw its pane are told with a [`Pictured`] when it lands.
-pub fn begin(heard: &mut Heard, shot: BrowserShot, cx: &mut Context<Heard>) {
-    let BrowserShot { pane, jpeg, width, height } = shot;
+/// Sets `pane`'s latest picture decoding; the places that draw it are told with a [`Pictured`] when
+/// it lands.
+pub fn begin(heard: &mut Heard, pane: u64, cx: &mut Context<Heard>) {
     let ticket = heard.pictures.start(pane);
+    let source = heard.source();
     cx.spawn(async move |this, cx| {
-        let decoded = cx.background_executor().spawn(async move { decode(&jpeg) }).await;
+        let decoded = cx
+            .background_executor()
+            .spawn(async move {
+                let picture = source(pane).ok_or("there is no picture to decode".to_owned())?;
+                let image = decode(&picture.bytes).map_err(|why| why.to_string())?;
+                Ok::<_, String>(Picture { image: std::sync::Arc::new(image), width: picture.width, height: picture.height })
+            })
+            .await;
         match decoded {
-            Ok(image) => {
-                let picture = Picture { image: std::sync::Arc::new(image), width, height };
+            Ok(picture) => {
                 let _ = this.update(cx, |heard, cx| {
                     if heard.pictures.land(pane, ticket, picture) {
                         cx.emit(Pictured(pane));
@@ -39,6 +46,7 @@ mod tests {
     use super::*;
     use argus_desktop_core::connection::page::Event;
     use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use argus_desktop_core::browser::BrowserShot;
     use gpui_kit::{AppContext as _, TestAppContext};
     use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder as _};
 
@@ -75,8 +83,9 @@ mod tests {
             heard.announce(cx);
         });
         cx.run_until_parked();
-        let wide = heard.read_with(cx, |heard, _| heard.pictures.of(7).map(|picture| picture.image.size(0).width.0));
+        let (wide, started) = heard.read_with(cx, |heard, _| (heard.pictures.of(7).map(|picture| picture.image.size(0).width.0), heard.pictures.started()));
         assert_eq!(wide, Some(5));
+        assert_eq!(started, 1, "the older picture of the batch was never set decoding");
     }
 
     #[gpui_kit::test]

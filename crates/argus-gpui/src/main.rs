@@ -62,7 +62,8 @@ fn main() {
             frames.abort();
         })
         .detach();
-        let heard = cx.new(|_| Heard::new());
+        let pictures = owner.clone();
+        let heard = cx.new(|_| Heard::fed_by(std::sync::Arc::new(move |pane| pictures.picture(pane))));
         heard.update(cx, |heard, cx| heard.listen(events, cx));
         let fonts = calls.clone();
         let queued = calls.clone();

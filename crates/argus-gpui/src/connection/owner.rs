@@ -95,6 +95,12 @@ impl Owner {
         );
     }
 
+    /// `pane`'s latest picture as bytes, decoded from base64 once by core and shared, for a window's
+    /// decode off the UI thread.
+    pub fn picture(&self, pane: u64) -> Option<Arc<argus_desktop_core::browser::picture::Picture>> {
+        lock(&self.session).browser_picture(pane)
+    }
+
     /// What a view asks, as the Tauri window's `call` command answers it:
     /// the calls that are the window's or the daemon loop's here, the rest
     /// the session's.

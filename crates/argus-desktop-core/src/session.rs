@@ -2441,6 +2441,12 @@ impl Session {
         Event::BrowserShot(self.browsers.shot(frame))
     }
 
+    /// `pane`'s latest picture as bytes, for a window that draws it natively: the base64 is undone
+    /// once, here, and the bytes shared by every place that draws the browser.
+    pub fn browser_picture(&mut self, pane: u64) -> Option<std::sync::Arc<crate::browser::picture::Picture>> {
+        self.browsers.picture(PaneId(pane))
+    }
+
     fn peek(&mut self, slug: &str) -> Vec<ClientMsg> {
         self.features.peek(slug, &mut self.out);
         self.finish()

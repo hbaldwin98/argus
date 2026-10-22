@@ -3,14 +3,16 @@
 //!
 //! A tile says nothing to the daemon but where the person looked: its press asks the session to
 //! put that browser's pane on screen in the Workspace, exactly as a click on its rail row does,
-//! and it changes nothing here until the session's tree says it did (SHELL-BROWSER-4). The status
-//! words in its head are not drawn yet.
+//! and it changes nothing here until the session's tree says it did (SHELL-BROWSER-4). The chip in
+//! its head says who has the browser, in core's words (SHELL-BROWSER-9).
 
+use argus_desktop_core::browser::status::status;
 use argus_desktop_core::browser::PageBrowser;
 use argus_desktop_core::connection::page::Call;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, relative, AnyView, Role, SharedString, TestSupportExt as _};
 
+use super::chip::chip;
 use crate::connection::caller::Caller;
 use crate::kit::tip::tip;
 use crate::style::Typed as _;
@@ -43,7 +45,7 @@ pub fn tile(browser: &PageBrowser, picture: AnyView, caller: &Caller, held: bool
         .rounded(rem(tokens.r_md))
         .bg(fill)
         .text_color(tokens.fg)
-        .text_size(rem(tokens.fs_md))
+        .typed(tokens.type_body)
         .cursor_pointer()
         .hover(move |style| style.border_color(strong))
         .on_click(move |_, _, _| {
@@ -59,7 +61,14 @@ pub fn tile(browser: &PageBrowser, picture: AnyView, caller: &Caller, held: bool
                 .py(rem(tokens.sp_8))
                 .border_b_1()
                 .border_color(line)
-                .child(div().min_w_0().truncate().weighted(tokens.weight_semibold).child(SharedString::from(browser.agent.clone())))
+                .child(
+                    h_flex()
+                        .min_w_0()
+                        .items_center()
+                        .gap(rem(tokens.sp_8))
+                        .child(div().min_w_0().truncate().weighted(tokens.weight_semibold).child(SharedString::from(browser.agent.clone())))
+                        .children(chip(format!("browser-tile-{pane}-status"), status(browser), tokens)),
+                )
                 .child(
                     h_flex()
                         .min_w_0()

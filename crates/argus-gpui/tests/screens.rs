@@ -32,7 +32,7 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless";
+const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless";
 
 /// The scenes the page finishes with a click on a control, and the control: the window is brought to the
 /// same place by pressing it, so the menu or dialog is open in the picture as it is in the page's.
