@@ -25,8 +25,8 @@ pub fn crumb(parts: &[Part], tokens: &Tokens) -> impl IntoElement {
             line = line.child("/");
         }
         line = match part {
-            Part::Text(text) => line.child(SharedString::from(text.clone())),
             Part::Mono(text) => line.child(div().font_family(mono.clone()).child(SharedString::from(text.clone()))),
+            other => line.child(SharedString::from(other.words().to_owned())),
         };
     }
     line

@@ -80,6 +80,9 @@ pub enum Glyph {
     NoteInfo,
     /// A checklist's tick, heavier than `Check`.
     Tick,
+    /// The Feature board's archive box, and the ring and tick of a column with nothing left to do.
+    Archive,
+    Settled,
     /// The corner button that opens a drawing larger.
     Expand,
     /// The file tree's marks at the page's small size, a folder and a file; the large file is an
@@ -148,6 +151,8 @@ impl Glyph {
             Glyph::NoteInfo => include_bytes!("../../assets/icons/note-info.svg"),
             Glyph::Tick => include_bytes!("../../assets/icons/tick.svg"),
             Glyph::Expand => include_bytes!("../../assets/icons/expand.svg"),
+            Glyph::Archive => include_bytes!("../../assets/icons/archive.svg"),
+            Glyph::Settled => include_bytes!("../../assets/icons/settled.svg"),
             Glyph::FolderSm => include_bytes!("../../assets/icons/folder-sm.svg"),
             Glyph::FileSm => include_bytes!("../../assets/icons/file-sm.svg"),
             Glyph::File => include_bytes!("../../assets/icons/file.svg"),

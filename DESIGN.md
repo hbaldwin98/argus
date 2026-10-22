@@ -886,10 +886,12 @@ GPUI one both stand on it.
 | `review/history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff or why it could not be read — and what its gestures ask of the daemon |
 | `board` | the Feature stage and a feature opened from it |
 | `board/capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, whether the board holds the feature it was sent as yet, and the page and gestures it trades with the page, last sent while open |
+| `board/feature_cards` | what a gesture on a feature's card asks of the daemon: a card dropped on a column, and the `H` and `Shift A` keys on the one under the cursor |
 | `board/feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it — a drag on a flow as its source rewritten — checked against the protocol's bounds; a new row saved blank sends nothing |
 | `board/feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout, the filter and the fold — and what its messages and gestures change, and where each cursor steps, never onto a row the page does not draw |
 | `board/feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress, tickets, when it was last reconciled and how much changed since — and the lens it is read through, and the rows each lens's cursor steps over |
 | `board/features` | what the Feature stage's index shows from a board: which features it lists and in what order — the filter, the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
+| `board/index_words` | what the Feature index says in words for a window that draws it natively: a row's cells and note, a card's corner and work line, an empty column's lines, the strip's counts, the key bar, and what a card dropped on a column asks or is told |
 | `board/lenses` | the lenses an opened feature is read through |
 | `board/lenses/flows` | the Flows lens: a feature's flows, the one under the cursor as steps, and the step under the cursor with what binds it and what carries it out |
 | `board/lenses/record` | the Record lens: every decision in the order it was made, and a decision read as its record — what replaced it, what was turned down, and the ADR it copies as |
@@ -928,6 +930,29 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | module | answers |
 | --- | --- |
 | `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, and the window; the unattended runs are `probe` and `report` |
+| `board` | the Feature stage's index as this window draws it: a repository's features as a list beside a peek or as a board |
+| `board/cells` | the small pieces a row, a card and the peek share: the tasks cell, the questions cell, the agent's pill and the numbers a feature comes after, worded by core's `index_words` |
+| `board/columns` | the board layout: Queued, Active and Done as lanes and Held over Archived beside them, each column of cards, the lanes' own scroll kept across pushes |
+| `board/columns/card` | one card: number, branch and corner tag, title, work line, the reason it is held and how it came to stand there; also lifted as the ghost and as the placeholder left behind |
+| `board/columns/cue` | what says a column is cut off to the right: the fade, the chip naming the columns, how far the chip scrolls, and the redraw when what was measured is not what was drawn |
+| `board/columns/drag` | a card dragged to a column by the kit's one drag helper: Escape cancels, only a column that takes the card lights up, and a drop is judged by core's verdict |
+| `board/columns/lane` | one column: its head and count, its cards or the two lines it says when empty, the folded Archived row that still takes a drop, and the card's press, click and menu wiring |
+| `board/ctx` | what every part of the index sends through and reads from: the window's model and the way out, nothing sent while the window is held |
+| `board/feature_stage` | the Feature stage's index as the stage: the no-repository card, the loading bars, the empty repository, then head, list or board and key bar; its focus, filter field and width |
+| `board/feature_stage/bar` | the keys under the index, a cap and what it does, and on the board how a card is set aside |
+| `board/feature_stage/empty` | what fills the index before there are features: the no-repository card, six loading bars, and the card for a repository with none |
+| `board/feature_stage/head` | the index's head: the filter field, folded into the strip's button in a narrow window, and the list's fold toggle |
+| `board/feature_stage/keys` | the Feature layer of the key walk: the index and card keys sent as the action they are, the filter field taken by `/`, the menu's keys while one is open, and every other key held |
+| `board/feature_stage/strip` | what the stage puts in the strip: the counts, the List and Board radio, the narrow window's filter button and New feature |
+| `board/list` | the list layout: rows under group labels beside the peek, in Rust's order, the list's scroll kept across pushes |
+| `board/list/row` | one row: number, title, tasks, questions, checkout and the note under them; a click peeks, a double click opens, a right click opens the Move menu |
+| `board/menus` | the Move menu and the Comes-after menu, opened at the pointer, under the peek's button or beside the row, closed by a snapshot that takes the feature away |
+| `board/menus/card` | the menu as it is drawn: labels, rules and choices, the highlighted one lit |
+| `board/menus/hold` | the dialog that asks why a feature is held, with the field holding the keys |
+| `board/menus/items` | what each menu lists as plain data, each choice with what it does, which can be chosen, and where the highlight steps, wrapping |
+| `board/menus/run` | running one of a row's moves that a person sets, wherever it was chosen: a hold asks why, the rest are calls |
+| `board/peek` | the peek panel beside the list: the feature under the cursor in a few lines, with Open, Go to its pane and the menu button |
+| `board/peek/lines` | a section of the peek: a label over lines of what needs you, what is in flight, what is next and what was last decided |
 | `browser` | the browsers agents run as this window draws them: their pictures decoded and held once, a picture in a place, the Browsers stage of tiles, a browser's cell in the grid and the words with none open |
 | `browser/chip` | a browser's status drawn: the pill on a tile and the dot on a nav sub-row, coloured by core's class (agent accent, person ok, held attention), no chip when nobody has it |
 | `browser/source` | where a pane's picture bytes come from: core's `Browsers::picture` (base64 undone once, shared), the session's in the running window and a `Browsers` of its own for a model with no session |

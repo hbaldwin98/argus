@@ -222,6 +222,10 @@ pub enum Call {
     Hold { slug: String, reason: Option<String> },
     /// Archives a feature, accepting it, or reopens it with `archived` false.
     Archive { slug: String, archived: bool },
+    /// A card dropped on a board column. Rust judges it (`index_words::drop_verdict`): an archive is
+    /// sent, a column that follows the work is told why in a notice. Only the GPUI window sends it; a
+    /// hold needs a reason, so the window asks that itself.
+    DropFeature { slug: String, on: crate::board::index_words::FeatureColumn },
     /// A gesture in the note a new feature is written as.
     Capture { gesture: CaptureGesture },
     /// Opens a feature from the index to read and edit, or with no `slug`

@@ -18,6 +18,18 @@ pub enum Part {
     Text(String),
     /// A branch or a number, in the mono face.
     Mono(String),
+    /// A count of what is being worked, in the attention colour: the Feature stage's `3 active`.
+    Attention(String),
+    /// A count of what is settled, in the ok colour: `2 done`.
+    Ok(String),
+}
+
+impl Part {
+    pub fn words(&self) -> &str {
+        match self {
+            Part::Text(text) | Part::Mono(text) | Part::Attention(text) | Part::Ok(text) => text,
+        }
+    }
 }
 
 /// What a stage's own view says of itself.

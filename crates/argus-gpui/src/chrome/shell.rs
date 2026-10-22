@@ -88,6 +88,8 @@ impl Shell {
         let checkouts = cx.new(|cx| CheckoutsStage::new(heard.clone(), caller.clone(), window, cx));
         let code = cx.new(|cx| CodeStage::new(heard.clone(), caller.clone(), window, cx));
         let browsers = cx.new(|cx| BrowsersStage::new(heard.clone(), caller.clone(), cx));
+        // The Feature stage's index is the page of its stage, found where the stage looks for one.
+        crate::board::feature_stage::install(&heard, &caller, window, cx);
         let split = cx.new(|cx| SplitView::new(heard.clone(), caller.clone(), terminal.clone(), window, cx));
         let stage = cx.new(|cx| StageView::new(heard.clone(), caller.clone(), Bodies { pane: split.clone().into(), git: git.into(), checkouts: checkouts.into(), code: code.into(), browsers: browsers.into() }, cx));
         let work = cx.new(|cx| WorkView::new(heard.clone(), caller.clone(), stage.into(), console.into(), cx));

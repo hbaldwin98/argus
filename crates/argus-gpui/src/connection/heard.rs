@@ -24,7 +24,7 @@ use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::code::stage::CodePage;
 use argus_desktop_core::code::start::Opened;
 use argus_desktop_core::chrome::add_project::AddProjectPage;
-use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
+use argus_desktop_core::connection::page::{Connection, Event, Features, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
 use argus_desktop_core::extensions::keys::{ExtCommandPage, ExtGroup};
 use argus_desktop_core::extensions::dialog::ExtDialogPage;
 use argus_desktop_core::extensions::views::{ExtConfirm, ExtTab, ExtTable, ExtTableConsole};
@@ -146,6 +146,9 @@ pub struct Heard {
     /// The Checkouts stage's table, whole, as the last event said: `None` until the first, which the
     /// stage draws as loading bars. Shared, so the stage keeps its rows across unrelated events.
     pub checkouts: Option<Rc<Checkouts>>,
+    /// The Feature stage's index, whole, as the last event said: `None` until the first, which the
+    /// stage draws as loading bars. Shared, so the stage keeps its rows across unrelated events.
+    pub features: Option<Rc<Features>>,
     /// The Code stage, whole, as the last event said and kept after the stage goes: the session never
     /// takes it back, and the page keeps what it last drew for the person coming back to it. `open`
     /// false is the stage not being there (four loading bars). Shared, so the stage keeps its rows across
@@ -230,6 +233,7 @@ impl Heard {
             review: None,
             history: None,
             checkouts: None,
+            features: None,
             code: None,
             browsers: Rc::default(),
             pictures: Pictures::default(),
@@ -360,6 +364,7 @@ impl Heard {
                 return false;
             }
             Event::Checkouts(table) => self.checkouts = Some(Rc::new(*table)),
+            Event::Features(index) => self.features = Some(Rc::new(*index)),
             Event::Code(page) => {
                 self.opened.remember(&page);
                 self.code = Some(Rc::new(*page));

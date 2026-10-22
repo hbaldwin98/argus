@@ -58,7 +58,9 @@ use crate::checkouts::stage::{CheckoutsStage, Opened};
 use crate::panes::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
 use crate::layout::docks::{Dock, DockGesture, Docks, Panel, Place};
 use crate::review::Dialogs;
+use crate::board::feature_cards;
 use crate::board::feature_stage::{FeatureStage, Scope};
+use crate::board::index_words::FeatureColumn;
 use crate::board::features::Layout;
 use crate::keys::keymap::{self, Action};
 use crate::system::notifications::{self, Alert, Looking};
@@ -796,6 +798,7 @@ impl Session {
             Call::Setting { change } => self.set(change),
             Call::Hold { slug, reason } => self.hold(&slug, reason),
             Call::Archive { slug, archived } => self.archive(&slug, archived),
+            Call::DropFeature { slug, on } => self.drop_feature(&slug, on),
             Call::Capture { gesture } => self.capture_gesture(gesture),
             Call::OpenFeature { slug } => self.open_feature(slug.as_deref()),
             Call::SelectWork { at } => {
@@ -2480,10 +2483,25 @@ impl Session {
                 self.run_command(action);
                 return self.finish();
             }
+            // The card keys of the GPUI window; the page sends a hold and an archive as `Hold` and `Archive`.
+            Action::Hold | Action::Archive => {
+                let scope = self.scope();
+                feature_cards::card_key(&self.features, action, scope.as_ref(), &self.tree, &mut self.out);
+                return self.finish();
+            }
             _ => return self.finish(),
         };
         let scope = self.scope();
         self.features.step(by, scope.as_ref(), &self.tree, &mut self.out);
+        self.finish()
+    }
+
+    /// A card dropped on a board column: an archive is sent, a column that follows the work says why.
+    fn drop_feature(&mut self, slug: &str, on: FeatureColumn) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        if let Some(notice) = feature_cards::dropped(&self.features, slug, on, scope.as_ref(), &self.tree, &mut self.out) {
+            self.say(&notice);
+        }
         self.finish()
     }
 
@@ -5196,6 +5214,63 @@ mod tests {
         assert_eq!(folded, Some(true), "as the palette's command does");
     }
 
+    fn feature_moves(sent: &[ClientMsg]) -> Vec<String> {
+        sent.iter()
+            .filter_map(|m| match m {
+                ClientMsg::Feature { action: argus_protocol::FeatureAction::Done { slug, .. }, .. } => Some(format!("archive {slug}")),
+                ClientMsg::Feature { action: argus_protocol::FeatureAction::Reopen { slug, .. }, .. } => Some(format!("reopen {slug}")),
+                ClientMsg::Feature { action: argus_protocol::FeatureAction::Unhold { slug }, .. } => Some(format!("unhold {slug}")),
+                ClientMsg::Feature { action: argus_protocol::FeatureAction::Hold { slug, .. }, .. } => Some(format!("hold {slug}")),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A stage with the fixture board, the fold open so the held and archived features are listed.
+    fn index_with_the_folded_shown() -> Session {
+        let mut s = session(without_focus());
+        s.show_features(true);
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        s.call(Call::FeatureAction { action: Action::Folded });
+        s
+    }
+
+    #[test]
+    fn the_archive_key_archives_the_peeked_feature_and_reopens_an_archived_one() {
+        let mut s = index_with_the_folded_shown();
+        s.call(Call::Peek { slug: "trim".into() });
+        let sent = s.call(Call::FeatureAction { action: Action::Archive });
+        assert_eq!(feature_moves(&sent), ["archive trim"]);
+        s.call(Call::Peek { slug: "old".into() });
+        let sent = s.call(Call::FeatureAction { action: Action::Archive });
+        assert_eq!(feature_moves(&sent), ["reopen old"]);
+    }
+
+    #[test]
+    fn the_hold_key_lifts_a_hold_and_leaves_asking_why_to_the_window() {
+        let mut s = index_with_the_folded_shown();
+        s.call(Call::Peek { slug: "mouse".into() });
+        let sent = s.call(Call::FeatureAction { action: Action::Hold });
+        assert_eq!(feature_moves(&sent), ["unhold mouse"]);
+        s.call(Call::Peek { slug: "trim".into() });
+        let sent = s.call(Call::FeatureAction { action: Action::Hold });
+        assert!(feature_moves(&sent).is_empty(), "a hold needs a reason, asked in the window: {:?}", names(&sent));
+    }
+
+    #[test]
+    fn a_card_dropped_on_archived_is_archived_and_on_a_column_that_follows_the_work_is_told_why() {
+        let mut s = index_with_the_folded_shown();
+        let sent = s.call(Call::DropFeature { slug: "trim".into(), on: FeatureColumn::Archived });
+        assert_eq!(feature_moves(&sent), ["archive trim"]);
+        let sent = s.call(Call::DropFeature { slug: "trim".into(), on: FeatureColumn::Done });
+        assert!(feature_moves(&sent).is_empty());
+        assert_eq!(notices(&mut s), ["Done follows the work: when its 4 open tasks are done."]);
+        let sent = s.call(Call::DropFeature { slug: "trim".into(), on: FeatureColumn::Active });
+        assert!(sent.is_empty() && notices(&mut s).is_empty(), "its own column asks for nothing");
+        let sent = s.call(Call::DropFeature { slug: "trim".into(), on: FeatureColumn::Held });
+        assert!(sent.is_empty() && notices(&mut s).is_empty(), "a hold is asked of the person, in the window");
+    }
+
     #[test]
     fn an_edit_to_an_open_feature_is_sent_and_a_refused_one_is_said() {
         let mut s = session(without_focus());
@@ -5908,7 +5983,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 155] = [
+    const CALLS: [&str; 156] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -5981,6 +6056,7 @@ mod tests {
         r#"{"call":"set_layout","layout":"board"}"#,
         r##"{"call":"filter_features","filter":"#7"}"##,
         r#"{"call":"feature_action","action":"next"}"#,
+        r#"{"call":"drop_feature","slug":"trim","on":"held"}"#,
         r#"{"call":"set_chime","on":false}"#,
         r#"{"call":"setting","change":{"set":"opacity","percent":80}}"#,
         r#"{"call":"hold","slug":"trim","reason":"waiting"}"#,

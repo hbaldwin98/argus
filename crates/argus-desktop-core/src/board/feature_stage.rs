@@ -456,6 +456,11 @@ impl FeatureStage {
         }
     }
 
+    /// A feature's row as the index lists it now, for what a gesture on a card asks of it.
+    pub fn row(&self, slug: &str, scope: Option<&Scope>, tree: &[ProjectInfo]) -> Option<page::FeatureRow> {
+        self.index(scope, tree, 0).rows.into_iter().find(|row| row.slug == slug)
+    }
+
     /// The index, when anything it shows changed.
     pub fn take(&mut self, scope: Option<&Scope>, tree: &[ProjectInfo], now: u64) -> Option<page::Features> {
         if !std::mem::take(&mut self.changed) {

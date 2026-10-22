@@ -75,11 +75,11 @@ impl CodeStage {
             div()
                 .id("code-nothing")
                 .test_support()
-                .aria_label(SharedString::from(said.nothing.iter().map(|part| match part { Part::Text(t) | Part::Mono(t) => t.as_str() }).collect::<String>()))
+                .aria_label(SharedString::from(said.nothing.iter().map(|part| part.words()).collect::<String>()))
                 .text_color(tokens.fg_muted)
                 .children(said.nothing.iter().map(|part| match part {
-                    Part::Text(text) => div().child(SharedString::from(text.clone())).into_any_element(),
                     Part::Mono(text) => div().font_family(mono.clone()).child(SharedString::from(text.clone())).into_any_element(),
+                    other => div().child(SharedString::from(other.words().to_owned())).into_any_element(),
                 }))
                 .flex()
                 .into_any_element()

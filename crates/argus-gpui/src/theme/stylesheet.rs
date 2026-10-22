@@ -777,3 +777,33 @@ fn the_files_panel_and_the_code_stage_are_the_rules_they_were_written_from() {
   background: color-mix(in srgb, var(--attention) 32%, transparent);");
     assert_eq!(t.share_hit, 0.32);
 }
+
+#[test]
+fn the_feature_index_is_the_rules_it_was_written_from() {
+    let t = ledger::tokens();
+    sheet_has(".filter {\n  width: 220px;");
+    sheet_has(".index-head.on-board .filter {\n  width: 200px;");
+    assert_eq!((t.fx_filter_w, t.fx_filter_board_w), (220.0, 200.0));
+    sheet_has(".board .kcol {\n  overflow-y: auto;\n  width: auto;\n  flex: 1 1 270px;\n  min-width: 180px;");
+    sheet_has("--board-col-min: 232px;");
+    sheet_has(".board .side {\n  flex: 0 1 236px;");
+    assert_eq!((t.fx_col_basis, t.fx_col_min, t.fx_side_basis), (270.0, 232.0, 236.0));
+    sheet_has(".peek {\n  width: clamp(280px, 34%, 420px);");
+    assert_eq!((t.fx_peek_min, t.fx_peek_share, t.fx_peek_max), (280.0, 0.34, 420.0));
+    sheet_has("grid-template-columns: 40px minmax(120px, 1fr) 96px 92px minmax(96px, 150px);");
+    assert_eq!((t.fx_num_w, t.fx_title_min, t.fx_tasks_w, t.fx_questions_w, t.fx_checkout_min, t.fx_checkout_max), (40.0, 120.0, 96.0, 92.0, 96.0, 150.0));
+    sheet_has("@container (max-width: 520px) {\n  .index-list .irow {");
+    assert_eq!(t.fx_list_hides_checkout_below, 520.0);
+    sheet_has(".board-fade {\n  position: absolute;\n  top: 0;\n  right: 0;\n  bottom: 0;\n  width: calc(var(--sp-32) * 3);");
+    assert_eq!(t.fx_fade_w, 96.0, "three of --sp-32");
+    sheet_has(".layer .menu {\n  position: fixed;\n  right: auto;\n  width: 280px;");
+    assert_eq!(t.fx_menu_w, 280.0);
+    sheet_has("--area-min-h: 96px;");
+    sheet_has(".ghostcard {
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--area-min-h);");
+    assert_eq!(t.fx_card_min_h, 96.0);
+}

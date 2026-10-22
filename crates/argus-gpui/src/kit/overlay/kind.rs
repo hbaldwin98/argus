@@ -28,6 +28,8 @@ pub enum Overlay {
     Rename,
     /// Naming the branch of a new worktree.
     Worktree,
+    /// Asking why a feature is held.
+    Hold,
     /// The card over the window while the daemon is gone.
     Stopped,
     /// A drawing of an agent's view opened larger, over the whole window.

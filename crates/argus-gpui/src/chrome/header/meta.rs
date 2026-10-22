@@ -15,9 +15,7 @@ use crate::theme::Tokens;
 /// name, joined.
 pub fn meta(parts: &[Part], hover: Option<&'static str>, tokens: &Tokens) -> impl IntoElement {
     let mono = SharedString::from(tokens.font_mono);
-    let words: String = parts.iter().map(|part| match part {
-        Part::Text(text) | Part::Mono(text) => text.as_str(),
-    }).collect();
+    let words: String = parts.iter().map(Part::words).collect();
     h_flex()
         .id("head-meta")
         .test_support()
@@ -33,5 +31,7 @@ pub fn meta(parts: &[Part], hover: Option<&'static str>, tokens: &Tokens) -> imp
         .children(parts.iter().map(|part| match part {
             Part::Text(text) => div().child(SharedString::from(text.clone())).into_any_element(),
             Part::Mono(text) => div().font_family(mono.clone()).text_color(tokens.ref_).child(SharedString::from(text.clone())).into_any_element(),
+            Part::Attention(text) => div().text_color(tokens.attention).child(SharedString::from(text.clone())).into_any_element(),
+            Part::Ok(text) => div().text_color(tokens.ok).child(SharedString::from(text.clone())).into_any_element(),
         }))
 }
