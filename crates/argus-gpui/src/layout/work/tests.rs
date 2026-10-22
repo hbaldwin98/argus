@@ -217,7 +217,7 @@ fn a_docks_snapshot_draws_each_dock_with_the_right_panel_shown(cx: &mut TestAppC
     assert!(!present_id(cx, &opened, "dock-bottom-head"));
     assert!(!present_id(cx, &opened, "dock-bottom-tabs"));
     assert_eq!(label(cx, &opened, "dock-bottom-panel").as_deref(), Some("Console"));
-    assert_eq!(bounds(cx, &opened, "dock-bottom").size.height, px(200.0));
+    assert_eq!(bounds(cx, &opened, "dock-bottom").size.height - px(1.0), px(200.0), "Rust's height, the top border outside it");
 
     // The left dock shows nothing and takes no room.
     assert!(!present_id(cx, &opened, "dock-left"));
@@ -230,7 +230,7 @@ fn the_stage_gets_what_the_docks_leave(cx: &mut TestAppContext) {
     let opened = docked_wide(cx, docks(), WIDE);
     let stage = bounds(cx, &opened, "work-stage");
     assert_eq!(stage.size.width, px(WIDE - 400.0 - 1.0), "the dock's border is outside its size");
-    assert_eq!(stage.size.height, px(HEIGHT - 200.0));
+    assert_eq!(stage.size.height, px(HEIGHT - 200.0 - 1.0), "the bottom dock's border is outside its height too");
 }
 
 #[gpui_kit::test]

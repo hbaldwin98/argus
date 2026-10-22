@@ -84,7 +84,8 @@ impl ExtensionView {
                     .into_any_element()
             })
             .collect();
-        let shown = shows(&key, view.selected.as_deref(), self.hovered.as_deref());
+        // The bar stays while the keys are inside it, whether or not the pointer is on the row.
+        let shown = shows(&key, view.selected.as_deref(), self.hovered.as_deref()) || self.kept.as_deref() == Some(key.as_str());
         let (fill, selected) = (tokens.fill, tokens.bg_selected);
         let (hover, leaving, clicking) = (key.clone(), key.clone(), key.clone());
         let panel = view.panel.clone();
@@ -134,6 +135,7 @@ impl ExtensionView {
             return None;
         }
         let ground = if on { tokens.bg_selected } else { tokens.fill };
+        let focus = self.bars.borrow_mut().entry(row.to_owned()).or_insert_with(|| cx.focus_handle()).clone();
         let buttons: Vec<AnyElement> = if is_menu(across) {
             vec![row_more(view, &actions, row, &self.caller, &self.heard, tokens, cx).into_any_element()]
         } else {
@@ -141,6 +143,9 @@ impl ExtensionView {
         };
         Some(
             h_flex()
+                .id(SharedString::from(format!("ext-row-bar-{}-{row}", view.panel)))
+                .test_support()
+                .track_focus(&focus)
                 .absolute()
                 .top_0()
                 .right_0()

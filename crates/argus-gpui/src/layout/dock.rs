@@ -215,6 +215,26 @@ impl DockView {
             )
     }
 
+    /// A lone panel's Hide, which puts its dock away: `Hide <title>` in the head's last place
+    /// (EXTVIEW-21). A tab strip has none; its tab's menu holds Hide.
+    fn hide_button(&self, panel: &Panel, title: &str, held: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let hidden = panel.clone();
+        div()
+            .id(SharedString::from(format!("dock-hide-{}", self.name())))
+            .role(Role::Button)
+            .test_support()
+            .aria_label(SharedString::from(format!("Hide {title}")))
+            .flex_shrink_0()
+            // The head's press, which would begin a drag of the panel.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                strip::menu_button(SharedString::from(format!("dock-hide-button-{}", self.name())), Glyph::Close, 14.0, tokens, cx)
+                    .tooltip("Hide")
+                    .disabled(held)
+                    .on_click(cx.listener(move |this, _, _, cx| this.ask(Call::Docks { gesture: DockGesture::Hide { panel: hidden.clone() } }, cx))),
+            )
+    }
+
     /// The shown panel's own tools, which only an extension's docked view has.
     fn tools(&self, shown: &Panel, cx: &App) -> Vec<AnyElement> {
         let heard = self.heard.read(cx);
@@ -262,6 +282,7 @@ impl DockView {
             .child(div().flex_1().truncate().child(title.to_owned()))
             .children(self.tools(shown, cx))
             .child(self.menu_button(shown, docks, held, tokens, cx))
+            .child(self.hide_button(shown, title, held, tokens, cx))
     }
 
     /// The grab zone along the edge the dock is sized by, with the page's
@@ -371,7 +392,8 @@ impl Render for DockView {
             // panel keeps all of it (an auto-fit grid of two 200px tiles needs the 440, not 439).
             Dock::Left => root.w(outside).min_w_0().h_full().border_r_1(),
             Dock::Right => root.w(outside).min_w_0().h_full().border_l_1(),
-            Dock::Bottom => root.h(size).min_h_0().w_full().border_t_1(),
+            // So is the bottom dock's top border, outside the height.
+            Dock::Bottom => root.h(outside).min_h_0().w_full().border_t_1(),
         };
         let strip = (page.tabs.len() > 1).then(|| self.strip(&page, &shown, &docks, &tokens, cx).into_any_element());
         let head = (page.tabs.len() <= 1 && !own_strip(&shown))

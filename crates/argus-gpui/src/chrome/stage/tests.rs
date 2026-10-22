@@ -256,3 +256,17 @@ fn the_strip_and_the_stage_body_are_held_while_stopped_or_reconnecting_and_not_b
     hear(cx, &opened, vec![status(Connection::Stopped, None, None)]);
     assert_eq!(held(cx), ("Strip, as last heard".into(), "Stage, as last heard".into()), "stopped");
 }
+
+#[gpui_kit::test]
+fn the_cap_on_start_an_agent_is_in_the_buttons_ink_not_the_faint_one(cx: &mut TestAppContext) {
+    let tokens = cx.update(|cx| {
+        crate::window::init(cx);
+        *crate::theme::Tokens::global(cx)
+    });
+    let caller = crate::connection::caller::Caller::new(|_| {});
+    let ways = super::empty::Ways { caller: &caller, held: false, compose: Some(vec!["Ctrl".into(), "N".into()]) };
+    let mut caps = super::empty::start_caps(&ways, &tokens).expect("a cap when the composer has a chord");
+    assert_eq!(caps.style().text.color, Some(tokens.fg_on_accent));
+    let bare = super::empty::Ways { compose: None, ..ways };
+    assert!(super::empty::start_caps(&bare, &tokens).is_none());
+}

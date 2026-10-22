@@ -8,7 +8,9 @@
 //! of the terminal client's `client.toml` (DESIGN.md §Configuration says
 //! why): the two clients overlap only in the editor and the theme's name,
 //! and each writes its whole file from the copy it loaded, so sharing one
-//! would have each quietly undo the other's changes.
+//! would have each quietly undo the other's changes. The Tauri and GPUI
+//! windows do share `desktop.json`, so a save writes back only what its
+//! window changed since it last loaded or saved, over the file read afresh.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -356,18 +358,69 @@ fn path() -> PathBuf {
     argus_protocol::config_dir().join("desktop.json")
 }
 
+/// What this window last knew the file to say, as the settings it loaded
+/// or saved serialize: the point a later save measures its own changes from.
+#[derive(Default)]
+struct Holder {
+    known: Option<serde_json::Value>,
+}
+
+/// One per process: the Tauri and the GPUI windows are separate processes,
+/// each with its own.
+static HOLDER: std::sync::Mutex<Holder> = std::sync::Mutex::new(Holder { known: None });
+
 /// The remembered settings, or none at all: a missing or unreadable file
 /// is a window that remembers nothing yet, never one that will not open.
 pub fn load() -> Settings {
-    load_from(&path())
+    let mut holder = HOLDER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    load_with(&path(), &mut holder)
 }
 
 /// Best effort, written beside the file and moved over it, so a window
 /// closed mid-write leaves the old settings rather than half of new ones.
 pub fn save(settings: &Settings) {
-    if let Err(err) = save_to(&path(), settings) {
+    let mut holder = HOLDER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Err(err) = save_with(&path(), &mut holder, settings) {
         tracing::warn!("could not save the window's settings: {err}");
     }
+}
+
+fn load_with(path: &Path, holder: &mut Holder) -> Settings {
+    let settings = load_from(path);
+    holder.known = serde_json::to_value(&settings).ok();
+    settings
+}
+
+/// Reads the file afresh and writes back only the settings this window
+/// changed since it last loaded or saved, so one the other window changed
+/// meanwhile stays as the file has it. A setting is a top-level key of the
+/// file; a file that cannot be read is written whole.
+fn save_with(path: &Path, holder: &mut Holder, settings: &Settings) -> std::io::Result<()> {
+    let ours = serde_json::to_value(settings)?;
+    let merged = match (std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()), &holder.known) {
+        (Some(serde_json::Value::Object(mut file)), Some(known)) => {
+            let (Some(ours), known) = (ours.as_object(), known.as_object()) else { unreachable!("settings are an object") };
+            for (key, value) in ours {
+                // A key the file lacks is written too: the migrated `docks` of an older file
+                // must land before the keys it was read from are removed below.
+                if known.and_then(|known| known.get(key)) != Some(value) || !file.contains_key(key) {
+                    file.insert(key.clone(), value.clone());
+                }
+            }
+            // Written by an older window and never since: `older_docks` has
+            // read them into `docks`.
+            file.remove("console");
+            file.remove("views_width");
+            if let Some(serde_json::Value::Object(extensions)) = file.get_mut("extensions") {
+                extensions.remove("modes");
+            }
+            serde_json::Value::Object(file)
+        }
+        _ => ours.clone(),
+    };
+    write_json(path, &merged)?;
+    holder.known = Some(ours);
+    Ok(())
 }
 
 fn load_from(path: &Path) -> Settings {
@@ -387,12 +440,17 @@ fn load_from(path: &Path) -> Settings {
     settings
 }
 
+#[cfg(test)]
 fn save_to(path: &Path, settings: &Settings) -> std::io::Result<()> {
+    write_json(path, &serde_json::to_value(settings)?)
+}
+
+fn write_json(path: &Path, value: &serde_json::Value) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let partial = path.with_extension("json.partial");
-    std::fs::write(&partial, serde_json::to_vec_pretty(settings)?)?;
+    std::fs::write(&partial, serde_json::to_vec_pretty(value)?)?;
     std::fs::rename(&partial, path)
 }
 
@@ -436,6 +494,39 @@ mod tests {
         };
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path), settings);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_save_keeps_the_settings_the_other_window_changed() {
+        // The Tauri and GPUI windows share desktop.json (the module header).
+        let path = scratch("two-windows");
+        save_to(&path, &Settings::default()).unwrap();
+        let (mut tauri, mut gpui) = (Holder::default(), Holder::default());
+        let mut in_tauri = load_with(&path, &mut tauri);
+        let mut in_gpui = load_with(&path, &mut gpui);
+        in_tauri.preferences.theme = Theme::Nord;
+        save_with(&path, &mut tauri, &in_tauri).unwrap();
+        in_gpui.preferences.zoom = 125;
+        in_gpui.chime = false;
+        save_with(&path, &mut gpui, &in_gpui).unwrap();
+        let file = load_from(&path);
+        assert_eq!(file.preferences.theme, Theme::Nord, "the other window's change survives");
+        assert_eq!((file.preferences.zoom, file.chime), (125, false));
+        // And a change made back to what the file started as is still a change.
+        in_tauri.preferences.theme = Theme::System;
+        save_with(&path, &mut tauri, &in_tauri).unwrap();
+        let file = load_from(&path);
+        assert_eq!((file.preferences.theme, file.preferences.zoom), (Theme::System, 125));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_save_with_no_file_writes_the_whole_of_the_settings() {
+        let path = scratch("no-file");
+        let settings = Settings { last_agent: Some("codex".into()), ..Settings::default() };
+        save_with(&path, &mut Holder::default(), &settings).unwrap();
+        assert_eq!(load_from(&path).last_agent.as_deref(), Some("codex"));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -504,6 +595,24 @@ mod tests {
         let json = serde_json::to_value(&loaded).unwrap();
         assert!(json.get("console").is_none() && json.get("views_width").is_none());
         assert!(json["extensions"].get("modes").is_none());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_older_files_docks_survive_a_save_of_something_else() {
+        // The docks are migrated from `console`, `views_width` and `modes`, which a save removes.
+        let path = scratch("older-then-save");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{ "console": { "docked": true, "height": 412 }, "views_width": 700,
+            "extensions": { "open": true, "modes": { "docker/containers": "stage" } } }"#).unwrap();
+        let mut holder = Holder::default();
+        let mut loaded = load_with(&path, &mut holder);
+        let docks = loaded.docks.clone();
+        loaded.chime = false;
+        save_with(&path, &mut holder, &loaded).unwrap();
+        let again = load_from(&path);
+        assert_eq!(again.docks, docks);
+        assert!(!again.chime);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

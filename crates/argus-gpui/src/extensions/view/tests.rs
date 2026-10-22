@@ -307,3 +307,37 @@ fn a_press_on_a_console_view_asks_for_the_keys_only_when_it_is_not_keyed(cx: &mu
     let said = drain(&opened);
     assert!(said.iter().any(|call| call.starts_with("FocusView")), "it asks for the keys: {said:?}");
 }
+
+fn point_at(cx: &mut TestAppContext, opened: &Opened, at: gpui_kit::Point<gpui_kit::Pixels>) {
+    use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
+    cx.update_window(opened.handle, |_, window, cx| window.pointer_move(at, None, cx)).unwrap();
+    cx.run_until_parked();
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    cx.run_until_parked();
+}
+
+fn centre_of(cx: &mut TestAppContext, opened: &Opened, label: &str) -> gpui_kit::Point<gpui_kit::Pixels> {
+    use gpui_kit::test::TestQueryExt as _;
+    cx.update_window(opened.handle, |_, window, _| window.find_by_label(label).bounds().center()).unwrap()
+}
+
+#[gpui_kit::test]
+fn a_rows_bar_stays_after_the_pointer_leaves_only_while_the_keys_are_in_it(cx: &mut TestAppContext) {
+    // EXTVIEW-33: `table.ts` keeps the bar on `pointerleave` while `document.activeElement` is in it.
+    let opened = paged(cx);
+    let home = centre_of(cx, &opened, "api-worker");
+    for keys_inside in [false, true] {
+        let on = centre_of(cx, &opened, "postgres");
+        point_at(cx, &opened, on);
+        assert!(has_label(cx, &opened, "Restart postgres"), "the pointer on the row shows its bar");
+        if keys_inside {
+            let handle = cx.update(|cx| Bodies::of(cx).made(&panel()).unwrap().read(cx).bars.borrow().get("postgres").cloned().expect("its bar has a place for the keys"));
+            cx.update_window(opened.handle, |_, window, cx| window.focus(&handle, cx)).unwrap();
+        }
+        // Another row, so the pointer has left postgres and the selected row is not it.
+        point_at(cx, &opened, home);
+        assert_eq!(has_label(cx, &opened, "Restart postgres"), keys_inside, "keys inside: {keys_inside}");
+        blur(cx, &opened);
+        point_at(cx, &opened, home);
+    }
+}

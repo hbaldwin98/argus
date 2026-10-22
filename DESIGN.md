@@ -908,7 +908,9 @@ GPUI one both stand on it.
 | `board/tracker/tickets` | which view an agent showed of a linked ticket, and the words and call a press on the ticket's chip carries: the match is by the ticket's URL or by its tracker and key, the newest view winning |
 | `fixtures` | the tree builders the test modules share, and the commits and diffs the daemon answers about it |
 | `screens` | the scenes the screenshot harness draws: a session brought to each screen the window shows, and the events a fresh page hears there, with a stand-in daemon answering what each scene asks |
+| `screens/extension_kinds` | the scenes of an extension's prompt, pick and form asks and of a view that is a console |
 | `screens/live` | a scene served live to a page in a browser: its calls reach a real session, the stand-in daemon answers them, and what the page hears goes back |
+| `screens/saved` | the scenes of a saved view followed into columns, stale, and a column whose view is gone |
 
 `argus-desktop` is the Tauri desktop window. It holds what it was sent and draws it; everything it knows
 of a pane, a checkout or the daemon came from the protocol, and the page only draws and reports. What is

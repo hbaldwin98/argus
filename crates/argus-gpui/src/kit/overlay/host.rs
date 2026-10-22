@@ -15,7 +15,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gpui_kit::component::dialog::Dialog;
+use gpui_kit::component::dialog::{Dialog, DialogEntrance};
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::{prelude::*, App, FocusHandle, Global, Window};
 
@@ -261,7 +261,9 @@ impl Overlays {
             let (cancelled, closed) = (host.clone(), host.clone());
             // The kit root paints nothing so the desktop shows through (`theme/see`); a dialog is the page's `.dialog` surface, solid.
             let surface = crate::theme::Tokens::global(cx).bg_surface;
-            (entry.build)(dialog.bg(surface), window, cx, fresh.replace(false))
+            // The page's `.dialog` has no entrance (style.css has no keyframe for it), so it is there
+            // on its first frame instead of sliding down over the kit's 250ms. Closing is immediate.
+            (entry.build)(dialog.bg(surface).entrance(DialogEntrance::None), window, cx, fresh.replace(false))
                 .keyboard(true)
                 .overlay_closable(dismissable)
                 .close_button(false)

@@ -17,6 +17,10 @@ pub mod console;
 pub mod head;
 pub mod table;
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use argus_desktop_core::extensions::views::ExtTable;
 use argus_desktop_core::layout::docks::Panel;
 use gpui_kit::component::v_flex;
@@ -40,6 +44,10 @@ pub struct ExtensionView {
     pub(crate) sort: Option<(usize, bool)>,
     /// The row the pointer is on.
     pub(crate) hovered: Option<String>,
+    /// Where the keys rest in each row's action bar, by the row's key (EXTVIEW-33).
+    pub(crate) bars: Rc<RefCell<HashMap<String, FocusHandle>>>,
+    /// The row whose bar has the keys, as of this frame: its bar stays after the pointer leaves.
+    pub(crate) kept: Option<String>,
     /// What the view last said, so a view published again puts the sort away.
     seen: Option<ExtTable>,
     /// The page takes the keys once, as it appears: the pane that had them is not drawn under it.
@@ -62,6 +70,8 @@ impl ExtensionView {
             widths: Widths::default(),
             sort: None,
             hovered: None,
+            bars: Rc::default(),
+            kept: None,
             seen: None,
             needs_focus: false,
             console: console::Held::default(),
@@ -108,6 +118,12 @@ impl Render for ExtensionView {
         if std::mem::take(&mut self.needs_focus) && view.console.is_none() {
             window.focus(&self.focus, cx);
         }
+        {
+            // A bar's handle is dropped with its row, and the one holding the keys is kept.
+            let mut bars = self.bars.borrow_mut();
+            bars.retain(|key, _| view.rows.iter().any(|row| &row.key == key));
+            self.kept = bars.iter().find(|(_, handle)| handle.contains_focused(window, cx)).map(|(key, _)| key.clone());
+        }
         let body = match &view.console {
             Some(console) => self.console_body(&view, console, &tokens, cx),
             None => self.body(&view, &tokens, cx),
@@ -128,6 +144,7 @@ impl Render for ExtensionView {
 impl ExtensionView {
     /// The table in its scrolling body, which a click gives the keys to.
     fn body(&self, view: &ExtTable, tokens: &Tokens, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        let line = tokens.line;
         div()
             .id(SharedString::from(format!("ext-body-{}", view.panel)))
             .test_support()
@@ -136,7 +153,14 @@ impl ExtensionView {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .p(rem(tokens.sp_16))
+            // A region-sized focusable is not a control: keyboard focus draws a hairline in it, not
+            // the full ring (`.ext-body:focus-visible`, an inset shadow). The border sits inside the
+            // padding's share, so the table does not move when it shows.
+            .p(rem(tokens.sp_16 - tokens.hairline))
+            .rounded(rem(tokens.r_md))
+            .border(rem(tokens.hairline))
+            .border_color(gpui_kit::transparent_black())
+            .focus_visible(move |style| style.border_color(line))
             // The width of the box inside the padding is what the columns and the row bar give way to.
             .child(div().relative().w_full().min_w_0().child(self.widths.watch(format!("ext-{}", view.panel), cx.entity_id())).child(self.grid(view, tokens, cx)))
             .into_any_element()

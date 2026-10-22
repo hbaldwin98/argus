@@ -20,7 +20,7 @@ use crate::connection::caller::Caller;
 use crate::keys::over::run_over;
 use crate::kit::button::{button, Look};
 use crate::kit::icons::Glyph;
-use crate::kit::keycap::keycaps;
+use crate::kit::keycap::keycaps_on_accent;
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
@@ -122,13 +122,18 @@ fn shell_button(shell: &ShellHere, ways: &Ways, tokens: &Tokens) -> impl IntoEle
         })
 }
 
+/// The cap on `Start an agent`: on the accent fill, so in the button's own ink.
+pub(super) fn start_caps(ways: &Ways, tokens: &Tokens) -> Option<gpui_kit::Div> {
+    ways.compose.clone().map(|chord| keycaps_on_accent(&[chord], tokens))
+}
+
 fn no_pane(page: NoPane, ways: &Ways, tokens: &Tokens) -> Vec<AnyElement> {
     let (caller, held) = (ways.caller.clone(), ways.held);
     let start = button("start-agent", "Start an agent", Look::Primary, false, tokens)
         .gap(rem(tokens.sp_6))
         .child(Glyph::Plus.at(tokens.icon_sm))
         .child("Start an agent")
-        .children(ways.compose.clone().map(|chord| keycaps(&[chord], tokens)))
+        .children(start_caps(ways, tokens))
         .on_click(move |_, _, _| {
             if !held {
                 caller.call(Call::ShowComposer { open: true });
