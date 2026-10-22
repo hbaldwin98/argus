@@ -32,7 +32,7 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog,features-list,features-board,capture,feature-work,feature-record,feature-flows,link,link-map,link-draft,link-typed,link-refused,reconcile,reconcile-ticked,reconcile-edited,reconcile-none,reconcile-asked,reconcile-carrying,reconcile-failed,palette-commands,palette-query,palette-features-found,palette-reading,palette-none,palette-moved,shortcuts-filtered,shortcuts-none,shortcuts-section";
+const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog,features-list,features-board,capture,feature-work,feature-record,feature-flows,link,link-map,link-draft,link-typed,link-refused,reconcile,reconcile-ticked,reconcile-edited,reconcile-none,reconcile-asked,reconcile-carrying,reconcile-failed,palette-commands,palette-query,palette-features-found,palette-reading,palette-none,palette-moved,shortcuts-filtered,shortcuts-none,shortcuts-section,new,sessions,sessions-ended,transcript";
 
 /// The scenes the page finishes with a click on a control, and the control: the window is brought to the
 /// same place by pressing it, so the menu or dialog is open in the picture as it is in the page's.
@@ -170,6 +170,8 @@ fn write_gpui_screens() {
                 let (scene, pressed) = name.split_once('+').map_or((name.as_str(), None), |(scene, id)| (scene, Some(id.to_owned())));
                 let (events, frames) = heard_in(scene);
                 let edits = edits_in(scene, &events);
+                // Each scene is its own window: the overlays an earlier one left up are not this one's.
+                cx.update(argus_gpui::kit::overlay::host::Overlays::install);
                 let result = cx.update(|cx| open(cx, events));
                 let (handle, model) = match result {
                     Ok((handle, heard)) => {

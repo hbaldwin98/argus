@@ -38,6 +38,8 @@ pub enum Overlay {
     Stopped,
     /// A drawing of an agent's view opened larger, over the whole window.
     Figure,
+    /// The recent sessions of a repository, and the transcript read in its place.
+    Sessions,
 }
 
 impl Overlay {
@@ -51,7 +53,7 @@ impl Overlay {
     /// closes (SHELL-SEAM-10, `takesFromPane`). The page's list names more dialogs (sessions and
     /// the readers); each joins when its surface does.
     pub fn takes_the_keys_from_a_pane(self) -> bool {
-        matches!(self, Overlay::AddProject | Overlay::Link | Overlay::Reconcile)
+        matches!(self, Overlay::AddProject | Overlay::Link | Overlay::Reconcile | Overlay::Sessions)
     }
 }
 
@@ -59,11 +61,11 @@ impl Overlay {
 mod tests {
     use super::Overlay;
 
-    /// SHELL-SEAM-10, BOARD-LINK-15: the tracker's dialogs take the keys from a pane, so the host
+    /// SHELL-SEAM-10, BOARD-LINK-15: the tracker's dialogs and the sessions dialog take the keys from a pane, so the host
     /// hands them back when the last closes; the settings and the palette do not.
     #[test]
     fn the_add_project_link_and_reconcile_dialogs_take_the_keys_from_a_pane() {
-        for kind in [Overlay::AddProject, Overlay::Link, Overlay::Reconcile] {
+        for kind in [Overlay::AddProject, Overlay::Link, Overlay::Reconcile, Overlay::Sessions] {
             assert!(kind.takes_the_keys_from_a_pane(), "{kind:?}");
         }
         for kind in [Overlay::Palette, Overlay::Sheet, Overlay::Settings, Overlay::Question] {

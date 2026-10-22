@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use argus_desktop_core::board::capture_note::CapturePage;
+use argus_desktop_core::agents::sessions_dialog::SessionsPage;
 use argus_desktop_core::browser::BrowsersPage;
 use argus_desktop_core::checkouts::table::Checkouts;
 use argus_desktop_core::code::edit::EditEvent;
@@ -149,6 +150,8 @@ pub struct Heard {
     pub review: Option<Rc<ReviewPage>>,
     /// The history the session holds, while it is open.
     pub history: Option<Rc<HistoryPage>>,
+    /// The recent-sessions dialog the session holds, while it is open, with the transcript reader in it.
+    pub sessions: Option<Rc<SessionsPage>>,
     /// The Checkouts stage's table, whole, as the last event said: `None` until the first, which the
     /// stage draws as loading bars. Shared, so the stage keeps its rows across unrelated events.
     pub checkouts: Option<Rc<Checkouts>>,
@@ -243,6 +246,7 @@ impl Heard {
             memory: Memory::shared(),
             review: None,
             history: None,
+            sessions: None,
             checkouts: None,
             features: None,
             code: None,
@@ -397,6 +401,7 @@ impl Heard {
                 }
                 self.history = page.open.then(|| Rc::new(*page));
             }
+            Event::Sessions(page) => self.sessions = page.open.then(|| Rc::new(*page)),
             // A frame for a side with no screen is dropped, as a page drops one (`connection/screens`).
             Event::Frame(frame) => {
                 if let Some(side) = self.screens.apply(frame) {

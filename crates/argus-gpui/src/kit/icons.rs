@@ -93,6 +93,12 @@ pub enum Glyph {
     Help,
     /// A padlock: what a task waits behind.
     Lock,
+    /// The sessions' Filter button, and the four verbs a transcript's tool lines are told by.
+    Filter,
+    ToolRead,
+    ToolSearch,
+    ToolEdit,
+    ToolRun,
 }
 
 impl Glyph {
@@ -160,6 +166,11 @@ impl Glyph {
             Glyph::File => include_bytes!("../../assets/icons/file.svg"),
             Glyph::Help => include_bytes!("../../assets/icons/help.svg"),
             Glyph::Lock => include_bytes!("../../assets/icons/lock.svg"),
+            Glyph::Filter => include_bytes!("../../assets/icons/filter.svg"),
+            Glyph::ToolRead => include_bytes!("../../assets/icons/tool-read.svg"),
+            Glyph::ToolSearch => include_bytes!("../../assets/icons/tool-search.svg"),
+            Glyph::ToolEdit => include_bytes!("../../assets/icons/tool-edit.svg"),
+            Glyph::ToolRun => include_bytes!("../../assets/icons/tool-run.svg"),
         }
     }
 
@@ -269,6 +280,11 @@ mod tests {
             Glyph::Tick,
             Glyph::Expand,
             Glyph::Lock,
+            Glyph::Filter,
+            Glyph::ToolRead,
+            Glyph::ToolSearch,
+            Glyph::ToolEdit,
+            Glyph::ToolRun,
         ] {
             let text = std::str::from_utf8(glyph.bytes()).expect("utf-8");
             assert!(text.starts_with("<svg"), "{glyph:?}");
