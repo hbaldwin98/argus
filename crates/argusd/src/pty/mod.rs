@@ -26,9 +26,11 @@ mod cd;
 #[cfg(windows)]
 mod console_host;
 mod job;
+mod pace;
 mod vt;
 
 use job::*;
+use pace::FRAME_INTERVAL;
 #[cfg(windows)]
 pub(crate) use job::ProcessJob;
 pub use cd::{Shell, ShellState};
@@ -43,7 +45,6 @@ const DEFAULT_COLS: u16 = 80;
 pub const MAX_ROWS: u16 = 1_000;
 pub const MAX_COLS: u16 = 2_000;
 const SCROLLBACK_LINES: usize = 4000;
-const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 const OUTPUT_QUEUE_CHUNKS: usize = 256;
 const MAX_CHUNKS_PER_FRAME: usize = 64;
 /// The most a read from the pty hands the pump at once.
@@ -405,6 +406,7 @@ impl PaneRuntime {
                             deadline.unwrap_or_else(std::time::Instant::now).into(),
                         ), if deadline.is_some() => None,
                     };
+                    let began = tokio::time::Instant::now();
                     #[cfg(test)]
                     pump_wakes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -496,7 +498,7 @@ impl PaneRuntime {
                     // FRAME_INTERVAL; a lone keystroke's echo has already
                     // gone out above without waiting for it.
                     if dirty {
-                        tokio::time::sleep(FRAME_INTERVAL).await;
+                        pace::next_frame(began).await;
                     }
                 }
             });

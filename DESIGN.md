@@ -498,6 +498,7 @@ to the type or its locking.
 | `review/diff` | a review's stable snapshot and its diff, and a commit's |
 | `pty`, `pty/job`, `pty/console_host`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; which process is its Windows console server; and its terminal emulator with the translation of its screen |
 | `pty/cd` | moving a shell to another directory by typing into it: which shell it is, whether it waits at its prompt with nothing of its own running, and the keys that clear its line and `cd` it in its own syntax |
+| `pty/pace` | when a busy pane's next frame may go, and the fine system timer on Windows that keeps it to the interval |
 | `browser` | a browser run for an agent's pane: started, followed while it runs, and ended when its handle is dropped |
 | `browser/process` | a browser pane's process: what a terminal's keys, sizes and scrollback come to for a pane whose content is a browser, which is nothing |
 | `browser/chrome` | which browser runs, and starting it: headless, on a profile of its own that goes with it and that the next daemon clears if this one is killed, handed its pipe |
