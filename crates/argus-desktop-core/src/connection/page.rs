@@ -95,6 +95,12 @@ pub enum Call {
     /// Text a view offers to copy (a code block, a table as TSV): written
     /// to the clipboard by Rust, so the webview is never granted it.
     CopyText { text: String },
+    /// `CopyText` that says how it went, in words the session's side chose: `said` once written,
+    /// `refused` when the clipboard would not take it (a decision copied as ADR markdown). Only the
+    /// GPUI window sends it; the page raises its own notices, so it never crosses to it.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    CopyNoting { text: String, said: String, refused: String },
     SpawnShell { checkout: u64 },
     /// Starts an agent from the daemon's `template` on a checkout.
     SpawnAgent { checkout: u64, template: String },
@@ -1223,6 +1229,15 @@ pub struct FeatureView {
     pub record: Option<RecordLens>,
     /// The Flows lens, while it is the one read.
     pub flows: Option<FlowsLens>,
+    /// What the header's tickets button says, none with no links. The GPUI window's: the page says
+    /// it from `links` itself, so it is no part of what crosses.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub tickets: Option<String>,
+    /// The Reconcile entry of the feature menu, for a feature that has links.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub reconcile_entry: Option<crate::board::lenses::head::ReconcileEntry>,
 }
 
 /// Every decision of a feature in the order it was made, and the one under
@@ -1260,6 +1275,21 @@ pub struct FlowsLens {
     pub flow: Option<FlowDetail>,
     /// The decisions a step can be bound to, by what a reader calls them.
     pub decisions: Vec<Line>,
+    /// The same decisions with the id a binding names, for the GPUI window; the page unpicks the id
+    /// from `decisions`' aside.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub choices: Vec<BindChoice>,
+}
+
+/// A decision a step may be bound to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindChoice {
+    pub id: i64,
+    pub label: String,
+    pub text: String,
+    /// The step under the cursor is bound to it already.
+    pub bound: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1371,6 +1401,11 @@ pub struct WorkRow {
     /// Changed since the feature was last reconciled.
     pub changed: bool,
     pub on: bool,
+    /// Done and total of the tasks beneath a task: none for a leaf and for a decision. The GPUI
+    /// window's, since the page counts them from `rows` itself.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub subtasks: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

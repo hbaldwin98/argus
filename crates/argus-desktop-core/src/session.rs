@@ -830,6 +830,7 @@ impl Session {
             Call::PasteClipboard
             | Call::Copy { .. }
             | Call::CopyText { .. }
+            | Call::CopyNoting { .. }
             | Call::Reconnect
             | Call::SetHost { .. }
             | Call::Minimize

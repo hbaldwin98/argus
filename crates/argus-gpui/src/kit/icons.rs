@@ -88,6 +88,8 @@ pub enum Glyph {
     FileSm,
     File,
     Help,
+    /// A padlock: what a task waits behind.
+    Lock,
 }
 
 impl Glyph {
@@ -152,6 +154,7 @@ impl Glyph {
             Glyph::FileSm => include_bytes!("../../assets/icons/file-sm.svg"),
             Glyph::File => include_bytes!("../../assets/icons/file.svg"),
             Glyph::Help => include_bytes!("../../assets/icons/help.svg"),
+            Glyph::Lock => include_bytes!("../../assets/icons/lock.svg"),
         }
     }
 
@@ -260,6 +263,7 @@ mod tests {
             Glyph::NoteInfo,
             Glyph::Tick,
             Glyph::Expand,
+            Glyph::Lock,
         ] {
             let text = std::str::from_utf8(glyph.bytes()).expect("utf-8");
             assert!(text.starts_with("<svg"), "{glyph:?}");

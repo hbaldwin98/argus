@@ -84,6 +84,7 @@ fn view(opened: &Opened, outline: &Outline, scoped: &DecisionBoard, list: &TaskL
         .filter(|_| tasks.is_some())
         .map(|reconciled| Changes::since(reconciled, &list.tasks, &filed));
     let work = lenses::work::build(outline, work, changes.as_ref());
+    let links: Vec<Link> = feature.links.iter().map(Link::of).collect();
     FeatureView {
         slug: feature.slug.clone(),
         number: feature.number,
@@ -92,7 +93,6 @@ fn view(opened: &Opened, outline: &Outline, scoped: &DecisionBoard, list: &TaskL
         branch: row.branch.clone(),
         agent: loudest_agent(&standing::panes_on(feature, tree)),
         brief: feature.body.clone(),
-        links: feature.links.iter().map(Link::of).collect(),
         views: views.iter().filter(|(number, _)| *number == feature.number).map(|(_, link)| link.clone()).collect(),
         reconciled: feature.reconciled.as_ref().map(|r| {
             format!("reconciled {} ago by {}", argus_protocol::ago(Some(r.at.max(0) as u64), now), r.by)
@@ -110,6 +110,12 @@ fn view(opened: &Opened, outline: &Outline, scoped: &DecisionBoard, list: &TaskL
         decision: work.decision,
         record: (lens == Lens::Record).then(|| lenses::record::build(outline, record)),
         flows: (lens == Lens::Flows).then(|| lenses::flows::build(diagrams, outline, flow)),
+        tickets: lenses::head::tickets_label(&links),
+        reconcile_entry: (!links.is_empty()).then(|| {
+            let when = feature.reconciled.as_ref().map(|r| argus_protocol::ago(Some(r.at.max(0) as u64), now));
+            lenses::head::reconcile_entry(feature.reconcile.as_ref().map(|r| r.stage().as_str()), when.as_deref(), changes.as_ref().map(Changes::count))
+        }),
+        links,
     }
 }
 
@@ -235,6 +241,34 @@ mod tests {
         let changed: Vec<_> = view.rows.iter().filter(|r| r.changed).map(|r| r.label.as_str()).collect();
         assert_eq!(changed.len(), 1, "only the renamed task: {changed:?}");
         assert_eq!(open(None).changes, None, "nothing is counted before the tasks arrive");
+        // The menu's entry is said from the counts, not from the sentence above: when it ran, how much moved.
+        let entry = view.reconcile_entry.expect("a feature with a ticket offers Reconcile");
+        assert_eq!(entry.hint, "Reconciled 2h ago \u{b7} 1 change since");
+        assert_eq!(entry.label, "Reconcile with its tickets\u{2026}");
+        assert_eq!(view.tickets.as_deref(), Some("Linear ENG-88"));
+    }
+
+    #[test]
+    fn a_feature_with_no_ticket_has_no_tickets_button_and_no_reconcile_entry() {
+        let mut board = fixtures::open_board();
+        board.features.iter_mut().find(|f| f.slug == "trim").unwrap().links.clear();
+        let tree = fixtures::feature_tree();
+        let rows = standing::feature_rows(&board, &tree);
+        let open = build(&Opened {
+            feature: board.features.iter().find(|f| f.slug == "trim").unwrap(),
+            row: rows.iter().find(|r| r.slug == "trim").unwrap(),
+            board: &board,
+            tasks: None,
+            diagrams: None,
+            tree: &tree,
+            lens: Lens::Work,
+            work: None,
+            record: None,
+            flow: FlowCursor::default(),
+            views: &[],
+            now: 0,
+        });
+        assert!(open.tickets.is_none() && open.reconcile_entry.is_none());
     }
 
     #[test]

@@ -3,9 +3,11 @@
 pub mod alert;
 pub mod area;
 pub mod button;
+pub mod caption;
 pub mod copy;
 pub mod crop;
 pub mod choice;
+pub mod chips;
 pub mod dialog;
 pub mod diff;
 pub mod drag;

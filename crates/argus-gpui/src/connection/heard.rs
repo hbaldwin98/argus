@@ -18,13 +18,14 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use argus_desktop_core::board::capture_note::CapturePage;
 use argus_desktop_core::browser::BrowsersPage;
 use argus_desktop_core::checkouts::table::Checkouts;
 use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::code::stage::CodePage;
 use argus_desktop_core::code::start::Opened;
 use argus_desktop_core::chrome::add_project::AddProjectPage;
-use argus_desktop_core::connection::page::{Connection, Event, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
+use argus_desktop_core::connection::page::{Connection, Event, Features, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
 use argus_desktop_core::extensions::keys::{ExtCommandPage, ExtGroup};
 use argus_desktop_core::extensions::dialog::ExtDialogPage;
 use argus_desktop_core::extensions::views::{ExtConfirm, ExtTab, ExtTable, ExtTableConsole};
@@ -151,6 +152,11 @@ pub struct Heard {
     /// false is the stage not being there (four loading bars). Shared, so the stage keeps its rows across
     /// unrelated events.
     pub code: Option<Rc<CodePage>>,
+    /// The Feature stage's index, with the feature open in it (`open`), whole as the last event said.
+    pub features: Option<Rc<Features>>,
+    /// The note a new feature is being written as, while it is open: `open` false is the session's
+    /// word that none is.
+    pub capture: Option<Rc<CapturePage>>,
     /// The browsers agents run, as the Browsers stage lists them, whole as the last event said.
     pub browsers: Rc<BrowsersPage>,
     /// Their latest pictures, decoded off the UI thread and shared by every place that draws one.
@@ -231,6 +237,8 @@ impl Heard {
             history: None,
             checkouts: None,
             code: None,
+            features: None,
+            capture: None,
             browsers: Rc::default(),
             pictures: Pictures::default(),
             opened: Opened::default(),
@@ -360,6 +368,8 @@ impl Heard {
                 return false;
             }
             Event::Checkouts(table) => self.checkouts = Some(Rc::new(*table)),
+            Event::Features(page) => self.features = Some(Rc::new(*page)),
+            Event::Capture(page) => self.capture = page.open.then(|| Rc::new(*page)),
             Event::Code(page) => {
                 self.opened.remember(&page);
                 self.code = Some(Rc::new(*page));

@@ -125,6 +125,11 @@ impl Owner {
                     self.act(|s| s.note(format!("could not copy: {why}")));
                 }
             }
+            // The same, and the notice is the asker's own words, said whichever way it went.
+            Call::CopyNoting { text, said, refused } => {
+                let note = if clipboard::System.write(&text).is_ok() { said } else { refused };
+                self.act(|s| s.note(note));
+            }
             // The window's own frame answers these natively.
             Call::Minimize | Call::ToggleMaximize | Call::CloseWindow | Call::DragWindow | Call::SnapLayouts => {
                 tracing::debug!("a window call reached the owner");

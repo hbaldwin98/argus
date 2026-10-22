@@ -83,6 +83,7 @@ impl Shell {
         let console = cx.new(|cx| ConsoleView::new(heard.clone(), caller.clone(), stage, window, cx));
         // The agents' views draw in their dock and as the page over the stage.
         views::agent::install::install(&heard, &caller, cx);
+        crate::board::install::install(&heard, &caller, window, cx);
         // The Workspace's pane is the stage the docks sit around.
         let git = cx.new(|cx| GitStage::new(heard.clone(), caller.clone(), window, cx));
         let checkouts = cx.new(|cx| CheckoutsStage::new(heard.clone(), caller.clone(), window, cx));

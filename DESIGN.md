@@ -892,6 +892,8 @@ GPUI one both stand on it.
 | `board/features` | what the Feature stage's index shows from a board: which features it lists and in what order — the filter, the fold (held and archived on the list, archived on the board), the board's columns, the opened feature kept — its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
 | `board/lenses` | the lenses an opened feature is read through |
 | `board/lenses/flows` | the Flows lens: a feature's flows, the one under the cursor as steps, and the step under the cursor with what binds it and what carries it out |
+| `board/lenses/head` | the words an open feature's header says about its tickets and its reconcile, built from the counts the board holds and not unpicked from a sentence |
+| `board/lenses/picture` | where each part of a flow's sequence diagram sits and how it is scaled and picked: the layout in the diagram's own units, the inline fit, the expanded fit and zoom, the nearest step or lifeline to a drag, and what scrolls into view |
 | `board/lenses/record` | the Record lens: every decision in the order it was made, and a decision read as its record — what replaced it, what was turned down, and the ADR it copies as |
 | `board/lenses/sequence` | a flow's source as the sequence diagram the page draws: its lifelines in order, each step as an arrow between two of them, and the frames a branch draws |
 | `board/lenses/work` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key and a mark on each row changed since the last reconcile, and the task or decision under the cursor in full |
@@ -928,6 +930,50 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | module | answers |
 | --- | --- |
 | `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, and the window; the unattended runs are `probe` and `report` |
+| `board` | the Feature stage's surfaces as the window draws them: a feature opened from the index and the lenses it is read through, and a new feature written as one note |
+| `board/capture` | a new feature written as one note: the field held for as long as the note is open, Create sent with the text as the field has it, the Writing keys answered before it types, and what the daemon's own grammar reads the note as |
+| `board/capture/gutter` | the line numbers beside the note: one for each line, as tall as the rows the line takes once wrapped (asked of the textarea's display map), scrolled with the text, and a line the grammar could not place in danger |
+| `board/capture/head` | the note's head: the repository and the way back as a crumb, the title, and Discard beside Create, which waits while the note is blocked or being made |
+| `board/capture/keys` | the Capture layer of the key walk: the window's own keys while a note is open, every other held, and Escape discarding the note |
+| `board/capture/legend` | the grammar as the foot of the note says it: what a first line, a paragraph and the three marks mean, in two aligned columns |
+| `board/capture/reads` | what the note reads as: the verdict, the title and brief, the tasks and decisions as `CapturePage` reads them, and the line it could not place named |
+| `board/feature_view` | a feature opened from the index: its header, the lens read and the key bar, with the form being written, the legend, the option chosen, the expanded diagram and every list's scroll held across the pushes that redraw it |
+| `board/feature_view/act` | what each key of an open feature comes to as a value, in the Work, Record and Flows lenses and the expanded diagram: the page's `workAction`, `recordAction`, `flowsAction`, `decisionAction` and `diagramAction` without a window |
+| `board/feature_view/columns` | how wide an open feature's outline is: the page's `flex: 1.25` share of the split until the edge is dragged, then the width Rust keeps, then the pointer's while the sash is held |
+| `board/feature_view/diagram` | the two diagrams as the view sets them: what each is told to show, scaled to its box or fitted to the canvas, and the scroll that brings the lit arrow into view when the cursor has moved |
+| `board/feature_view/expanded` | what the expanded diagram holds of its own: zoom, whether it is fitted and whether the steps panel shows, and the rules that turn one into another |
+| `board/feature_view/key_bar` | the key bar under an open feature: the keys of the lens read and Esc back to features |
+| `board/feature_view/keys` | the Outline and Diagram layers of the key walk: an open feature's own place before the window's, and every other key held |
+| `board/feature_view/menus` | the menus an open feature opens at a point: the bind menu under the lit row or arrow or the pointer, and the flow switcher on the expanded toolbar |
+| `board/feature_view/more` | the `...` that holds what is rarer than the buttons beside it, its choices being the same values as keys |
+| `board/feature_view/scroll` | each list's scroll handle and the cursor's identity, which says when the cursor's row is brought into view: only when the cursor moved, not on every push |
+| `board/install` | where the board's surfaces are drawn: the note and an open feature as the Feature stage's page, and the strip's title, trail and tools for an open feature |
+| `board/lenses` | the lenses an opened feature is read through, and the header and forms they share |
+| `board/lenses/decision` | a decision read as its record in either lens: its sections, its consequences as gains and costs, its foot of actions, and the record, answer and supersede forms that replace the body |
+| `board/lenses/decision/options` | an open decision's options as cards to choose between: the choice is the window's until Take sends it |
+| `board/lenses/flows` | the Flows lens: the flows, the selected one's steps and the step under the cursor on the left, the diagram on the right |
+| `board/lenses/flows/bind` | the menu that binds a step to a decision: one choice for each decision with the id a binding writes, the bound ones held off |
+| `board/lenses/flows/picture` | the picture beside the flows: the title, Expand, and the diagram in a box that scrolls sideways at the scale that fits it |
+| `board/lenses/flows/steps` | a flow's steps and the step read whole: a row for each step and branch, what binds and carries the step out, and the step's and the flow's forms |
+| `board/lenses/forms` | the one form an open feature has open: which it is about and the two fields it is typed in, held across every push, saved as one edit and dropped when its row has gone |
+| `board/lenses/forms/edit` | what a form is about, what it starts out saying, which edit it sends and whether what it is about is still on screen |
+| `board/lenses/forms/view` | what a form is made of on screen: a named field, the multi-line field, the primary button with its cap beside Cancel |
+| `board/lenses/head` | an open feature's header: how it stands, how far it is, its tickets and brief, or the brief's form in their place |
+| `board/lenses/head/menu` | the feature menu: the brief, the tickets, the reconcile with what it waits on, and the views that name the feature |
+| `board/lenses/head/tools` | what the strip carries for an open feature: the lenses as a radio with a count each, and the menu with a dot while a proposal waits |
+| `board/lenses/record` | the Record lens: every decision in the order made as the tree it was made in, beside the one under the cursor |
+| `board/lenses/sequence` | a flow's sequence diagram drawn and picked: the click that selects a step and, expanded, the drags that move an arrow or a lifeline |
+| `board/lenses/sequence/expanded` | the diagram over the whole window: toolbar, canvas and the steps beside it |
+| `board/lenses/sequence/paint` | the diagram painted from core's layout: frames, lifelines, arrows with their dots, the lit step in the accent and the drop guide |
+| `board/lenses/sequence/panel` | the steps beside the expanded diagram: the list, the step in full with its participants, and the forms |
+| `board/lenses/sequence/toolbar` | the expanded diagram's toolbar: crumbs, flow switcher, legend, zoom, Fit, the steps panel and the way out |
+| `board/lenses/work` | the Work lens: the outline of tasks and decisions, the row under the cursor in full, and the sash between them |
+| `board/lenses/work/legend` | the outline's legend: the `?` that asks for it and the popover that hangs under the header |
+| `board/lenses/work/marks` | what a row says in marks and words: the glyph and tone of its state, what stands at its end, how its text is set and when a changed dot is worth drawing |
+| `board/lenses/work/outline` | the outline's column: its label and legend, the rows, the form that adds one and the buttons that open the root forms |
+| `board/lenses/work/row` | one row of the outline: mark, label, words, ticket key, changed dot and what stands at its end |
+| `board/lenses/work/task` | the task under the cursor in full: description, criteria as checkboxes, what binds it, its notes and its foot, or its form |
+| `board/snapshots` | the snapshots a test reads: what the session sends in the scenes the Tauri page is photographed in, and a window that has heard one |
 | `browser` | the browsers agents run as this window draws them: their pictures decoded and held once, a picture in a place, the Browsers stage of tiles, a browser's cell in the grid and the words with none open |
 | `browser/chip` | a browser's status drawn: the pill on a tile and the dot on a nav sub-row, coloured by core's class (agent accent, person ok, held attention), no chip when nobody has it |
 | `browser/source` | where a pane's picture bytes come from: core's `Browsers::picture` (base64 undone once, shared), the session's in the running window and a `Browsers` of its own for a model with no session |
@@ -1099,8 +1145,10 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/alert` | the parts of a question before something cannot be taken back: the danger tile, the warning callout and the foot whose Keep it has the keys; the project's removal question and the Checkouts stage's draw from them |
 | `kit/area` | the area an element was laid out in, recorded for whoever turns a pointer's place into a place in it |
 | `kit/button` | what the page's text buttons look like: `.btn` with its primary and small forms, and the `.chipf` choice chip, as pills that tint, lift and press under the pointer |
+| `kit/caption` | the quiet type a page puts over a part of itself: the tracked capital label, what it says at its far end, the small muted line, and a note that can be found by what it says |
 | `kit/copy` | a button that hands its text to Rust to copy and says `Copied` for 1200 ms, a second press starting the moment again |
 | `kit/choice` | a row with a box or a ring to tick, `--row-h` tall with the label in the press: controlled, so it asks for the opposite of what it is given and draws what it is given |
+| `kit/chips` | the small outlined words a row carries: a ticket key, a tag, the dot that says a row changed since the reconcile, and the bordered card of the surface colour |
 | `kit/dialog` | the parts a dialog is cut from: the head with its close button, the foot bar, the field labels and the `Esc` cap |
 | `kit/diff` | a diff in a virtual list so only the rows on screen are built: the view, its events and the slot under one row, the scroll kept across updates and the cursor brought into view; it reports a press and sends no call, and serves review, history, the patch block and the Code stage |
 | `kit/diff/fold` | the lines between hunks the diff did not carry, and the buttons that ask for them |
@@ -1130,6 +1178,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/ink` | what the drawn blocks paint with: a drawing in its own units mapped to the window's pixels, and strokes, dashes, fills, dots, boxes, arrowheads and baseline-placed text painted in them |
 | `kit/keycap` | what one key's cap looks like wherever a key is named, in the sidebar, the hints, the menus and the comment buttons: the page's `.kbd`, and a row of them with alternatives apart by a slash |
 | `kit/menu` | menus: what a menu offers as one model, and how it is drawn and keyed |
+| `kit/menu/at` | a menu a view builds itself and shows at a point, kept 8px inside the window, with the keys, dropped when it says it was dismissed: the bind menu a key opens under the lit step |
 | `kit/menu/item` | what a menu offers as data: headings, rules and choices, a choice saying what it does, why it cannot be chosen now, its hint and whether it is dangerous |
 | `kit/menu/keys` | the keys a menu answers beyond the kit's: `j` and `k` step the highlight as Down and Up do |
 | `kit/menu/popup` | a menu drawn once from the model into the kit's popup menu, anchored by the kit at a point or under a button, a choice run after the menu has gone and never while the daemon is gone |

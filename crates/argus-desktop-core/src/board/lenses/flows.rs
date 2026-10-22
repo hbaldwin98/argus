@@ -12,7 +12,7 @@ use argus_protocol::board::diagrams::flow::{self, FlowRow, Step};
 use argus_protocol::board::outline::Outline;
 use argus_protocol::{DiagramList, SequenceDiagram};
 
-use crate::connection::page::{FlowDetail, FlowItem, FlowsLens, Line, StepDetail, StepRow};
+use crate::connection::page::{BindChoice, FlowDetail, FlowItem, FlowsLens, Line, StepDetail, StepRow};
 use crate::board::lenses::sequence;
 
 /// Where the lens's cursor is: a flow by id, and a step of it by its place
@@ -52,7 +52,8 @@ pub fn build(list: Option<&DiagramList>, outline: &Outline, cursor: FlowCursor) 
         .map(|row| Line { label: row.label(), text: row.decision.chose.clone(), aside: Some(format!("#{}", row.decision.id)) })
         .collect();
     let Some(list) = list else {
-        return FlowsLens { loaded: false, flows: Vec::new(), flow: None, decisions };
+        let choices = bindable(outline, &[]);
+        return FlowsLens { loaded: false, flows: Vec::new(), flow: None, decisions, choices };
     };
     let on = on(Some(list), cursor).map(|d| d.id);
     let flows = list
@@ -106,7 +107,30 @@ pub fn build(list: Option<&DiagramList>, outline: &Outline, cursor: FlowCursor) 
             diagram: sequence::read(&diagram.body, lit),
         }
     });
-    FlowsLens { loaded: true, flows, flow, decisions }
+    let bound: Vec<i64> = list
+        .diagrams
+        .iter()
+        .find(|d| Some(d.id) == on)
+        .and_then(|diagram| {
+            let rows = flow::rows(&diagram.body);
+            let steps = steps(&rows);
+            steps.get(cursor.step.min(steps.len().saturating_sub(1))).map(|step| step.decisions.clone())
+        })
+        .unwrap_or_default();
+    let choices = bindable(outline, &bound);
+    FlowsLens { loaded: true, flows, flow, decisions, choices }
+}
+
+/// The decisions a step may be bound to, each saying whether the step under the cursor is bound to
+/// it already (`bound` holds the decision ids that step names). The ids are the ones a binding
+/// writes, so the window never reads one back out of a label.
+fn bindable(outline: &Outline, bound: &[i64]) -> Vec<BindChoice> {
+    outline
+        .decisions
+        .iter()
+        .filter(|row| row.decision.stands() || row.decision.open())
+        .map(|row| BindChoice { id: row.decision.id, label: row.label(), text: row.decision.chose.clone(), bound: bound.contains(&row.decision.id) })
+        .collect()
 }
 
 /// What a step's row names on its right: each decision as a reader calls
@@ -190,6 +214,19 @@ mod tests {
         let flow = flows.flow.unwrap();
         assert_eq!(flow.id, 11);
         assert_eq!(flow.step.unwrap().number, 5);
+    }
+
+    // The page parsed the id out of the aside (`#4`) and tested the bound flag against the step's lines
+    // (`bindMenu` in `flows.ts`): the GPUI window is handed both.
+    #[test]
+    fn a_bind_choice_carries_its_decisions_id_and_whether_the_step_is_bound_to_it() {
+        let list = fixtures::diagrams("trim");
+        let flows = lens(Some(&list), FlowCursor { diagram: Some(11), step: 1 });
+        let choices: Vec<_> = flows.choices.iter().map(|c| (c.id, c.label.as_str(), c.bound)).collect();
+        assert_eq!(choices, [(1, "D1", true), (2, "D2", false)], "step 2 is bound to D1 (its flow's comment)");
+        let first = lens(Some(&list), FlowCursor { diagram: Some(11), step: 0 });
+        assert!(first.choices.iter().all(|c| !c.bound), "step 1 binds nothing");
+        assert_eq!(first.choices.len(), first.decisions.len(), "the same decisions as the page's list");
     }
 
     #[test]
