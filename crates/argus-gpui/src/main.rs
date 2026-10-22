@@ -67,8 +67,11 @@ fn main() {
         let probing = caller.clone();
         let options = window::options(cx);
         let shell = heard.clone();
-        gpui_kit::open_window(options, cx, move |window, cx| cx.new(|cx| Shell::new(shell, caller, window, cx)))
-            .expect("the window opens");
+        gpui_kit::open_window(options, cx, move |window, cx| {
+            window::quit_instead_of_closing(window, cx);
+            cx.new(|cx| Shell::new(shell, caller, window, cx))
+        })
+        .expect("the window opens");
         cx.activate(true);
         if let Some(pane) = std::env::var("ARGUS_GPUI_PROBE_SHELL").ok().and_then(|pane| pane.parse().ok()) {
             probe(heard.clone(), probing.clone(), pane, cx);

@@ -249,6 +249,22 @@ pub fn quit_when_closed(cx: &mut App, stop: impl FnMut() + 'static) -> Subscript
     quit_when_closed_with(cx, stop, |cx| cx.quit())
 }
 
+/// Answers a close of the only window by quitting the app with the window
+/// still open. Closing it first makes gpui-pre-windows touch the destroyed
+/// handle as the app winds down ("window not found", "Invalid window
+/// handle"); a quit tears the window down in the order a timed quit does,
+/// which logs nothing. The system's close, Alt+F4 and the header's control
+/// all ask here first.
+pub fn quit_instead_of_closing(window: &mut Window, cx: &App) {
+    window.on_window_should_close(cx, |_, cx| {
+        if cx.windows().len() > 1 {
+            return true;
+        }
+        cx.quit();
+        false
+    });
+}
+
 /// [`quit_when_closed`] with the quit given: the test platform's quit does
 /// nothing and runs no quit observer, so a test can only see it asked for.
 fn quit_when_closed_with(cx: &mut App, mut stop: impl FnMut() + 'static, mut quit: impl FnMut(&mut App) + 'static) -> Subscription {
