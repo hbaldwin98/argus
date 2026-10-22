@@ -2,6 +2,7 @@ use argus_desktop_core::connection::page::{Connection, Event};
 use argus_desktop_core::layout::docks::{DocksPage, FloatBounds, FloatPage, Panel, PanelKind, PresentPanel};
 use argus_desktop_core::panes::console::ConsolePlace;
 use gpui_kit::{px, Bounds, Pixels, Point, TestAppContext};
+use gpui_kit::test::{ClickOptions, TestWindowExt as _};
 
 use super::*;
 use crate::layout::work::tests::{
@@ -206,6 +207,22 @@ fn a_dialogs_close_sends_close_for_a_view_that_closes_and_hide_for_one_that_does
         let button = centre(cx, &opened, &format!("float-close-{}", saved(name)));
         down(cx, &opened, button);
         up(cx, &opened, button);
+        let sent: Vec<String> = taken(&opened).into_iter().filter(|sent| sent.contains(call)).collect();
+        assert_eq!(sent, [format!("Docks {{ gesture: {call} {{ panel: Saved(\"{name}\") }} }}")]);
+        opened.calls.borrow_mut().clear();
+    }
+}
+
+#[gpui_kit::test]
+fn a_middle_click_on_a_saved_views_head_sends_the_same_gesture_as_its_close(cx: &mut TestAppContext) {
+    let opened = opened(cx);
+    for (name, call) in [("a", "Close"), ("b", "Hide")] {
+        let id = format!("float-head-{}", saved(name));
+        cx.update_window(opened.handle, |_, window, cx| {
+            window.click_with_options(id.clone(), ClickOptions::new().with_button(MouseButton::Middle), cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
         let sent: Vec<String> = taken(&opened).into_iter().filter(|sent| sent.contains(call)).collect();
         assert_eq!(sent, [format!("Docks {{ gesture: {call} {{ panel: Saved(\"{name}\") }} }}")]);
         opened.calls.borrow_mut().clear();

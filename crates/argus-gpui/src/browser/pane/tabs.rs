@@ -72,16 +72,22 @@ pub fn strip(browser: &PageBrowser, scroll: &ScrollHandle, caller: &Caller, toke
         .test_support()
         .aria_label("Tabs")
         .child(
-            h_flex()
-                .id(SharedString::from(format!("browser-tabs-scroll-{pane}")))
-                .test_support()
+            div()
+                .relative()
                 .flex_1()
                 .min_w_0()
-                .gap(rem(tokens.sp_4))
-                .items_center()
-                .overflow_x_scroll()
-                .track_scroll(scroll)
-                .children(tabs),
+                .child(
+                    h_flex()
+                        .id(SharedString::from(format!("browser-tabs-scroll-{pane}")))
+                        .test_support()
+                        .w_full()
+                        .gap(rem(tokens.sp_4))
+                        .items_center()
+                        .overflow_x_scroll()
+                        .track_scroll(scroll)
+                        .children(tabs),
+                )
+                .child(strip::fade(SharedString::from(format!("browser-tabs-fade-{pane}")), tokens)),
         )
         .child(plus)
         .children(status(browser).map(|status| chip(status, tokens)))

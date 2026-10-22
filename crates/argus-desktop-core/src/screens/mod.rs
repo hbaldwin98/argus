@@ -2199,6 +2199,47 @@ pub fn scenes() -> Vec<Scene> {
                 .call(Call::Resize { side: Side::Beside(0), rows: ROWS, cols: COLS / 2 - 1 });
             w.s
         }),
+        scene("browser-driving", "Browser — the person is driving it: the agent still has it, nothing is held", || {
+            use argus_protocol::{BrowserDriver, BrowserPage, BrowserTab};
+            let mut w = browsing();
+            let tabs = vec![BrowserTab { id: format!("{B_TRIM}-work"), url: "http://localhost:5173/settings".into(), title: "Argus — Settings".into() }];
+            let page = BrowserPage {
+                pane: PaneId(B_TRIM),
+                owner: PaneId(P_TRIM),
+                url: "http://localhost:5173/settings".into(),
+                title: "Argus — Settings".into(),
+                tabs,
+                shown: Some(format!("{B_TRIM}-work")),
+                following: true,
+                held: false,
+                driver: Some(BrowserDriver::Person),
+            };
+            w.receive(ServerMsg::BrowserPage(page));
+            w.call(Call::Resize { side: Side::Workspace, rows: ROWS, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(0), rows: ROWS, cols: COLS / 2 - 1 });
+            w.s
+        }),
+        scene("browser-long-tabs", "Browser — more tabs than the strip has room for", || {
+            use argus_protocol::{BrowserPage, BrowserTab};
+            let mut w = browsing();
+            let titles = ["Docs.rs", "tokio_tungstenite - Rust", "Argus — Settings", "Sign in", "GitHub · Pull requests", "Stack Overflow", "MDN Web Docs", "Hacker News", "crates.io: Rust Package Registry", "Inbox", "Calendar", "Release 0.34"];
+            let tabs: Vec<BrowserTab> = titles.iter().enumerate().map(|(n, title)| BrowserTab { id: format!("{B_TRIM}-{n}"), url: format!("https://example.test/{n}"), title: (*title).into() }).collect();
+            let page = BrowserPage {
+                pane: PaneId(B_TRIM),
+                owner: PaneId(P_TRIM),
+                url: "https://example.test/2".into(),
+                title: titles[2].into(),
+                tabs,
+                shown: Some(format!("{B_TRIM}-2")),
+                following: true,
+                held: false,
+                driver: None,
+            };
+            w.receive(ServerMsg::BrowserPage(page));
+            w.call(Call::Resize { side: Side::Workspace, rows: ROWS, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(0), rows: ROWS, cols: COLS / 2 - 1 });
+            w.s
+        }),
         scene("browsers-none", "Browsers — no agent has one open", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::ShowBrowsers { pane: None });
@@ -2425,4 +2466,8 @@ fn the_browser_scenes_cover_a_tab_less_browser_and_a_held_one() {
     let (page, _) = heard("browser-held");
     let held = page.browsers.iter().find(|b| b.pane == B_FAULTS).unwrap();
     assert_eq!(status(held), Some(Status::Held));
+    let (page, _) = heard("browser-driving");
+    assert_eq!(status(page.browsers.iter().find(|b| b.pane == B_TRIM).unwrap()), Some(Status::Person), "the person driving is said, not held");
+    let (page, _) = heard("browser-long-tabs");
+    assert!(page.browsers.iter().find(|b| b.pane == B_TRIM).unwrap().tabs.len() > 10);
 }

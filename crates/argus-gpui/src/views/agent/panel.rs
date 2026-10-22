@@ -7,7 +7,6 @@
 //! age in the meta line, drawn again on a timer so it does not go stale between events.
 
 use std::rc::Rc;
-use std::time::Duration;
 
 use argus_desktop_core::connection::page::{PageView, ViewsPage};
 use argus_desktop_core::system::clock::Clock;
@@ -25,9 +24,6 @@ use crate::connection::caller::Caller;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 use crate::views::ctx::Draw;
-
-/// How often the age is said again: it is told in minutes, so a half minute is never wrong by one.
-const AGE_EVERY: Duration = Duration::from_secs(30);
 
 /// Where the content is: in the dock, with the tabs over it, or as the page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,12 +58,7 @@ impl AgentView {
             this.hand(cx);
             cx.notify();
         });
-        let ageing = cx.spawn(async move |this, cx| loop {
-            cx.background_executor().timer(AGE_EVERY).await;
-            if this.update(cx, |_, cx| cx.notify()).is_err() {
-                break;
-            }
-        });
+        let ageing = crate::views::age::every(cx);
         let mut view = Self {
             place,
             heard,

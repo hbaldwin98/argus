@@ -1,7 +1,8 @@
 //! The address field (SHELL-BROWSER-8): the browser's url unless the person is typing in it.
 //!
 //! Its keys are its own (`Place::Address`): Enter sends `navigate` with the typed text made an
-//! address by core, Escape puts the browser's url back, and both give the keys to the page. An
+//! address by core, Escape puts the browser's url back, and both only blur the field, as the page does, so the next
+//! key is the window's own (never the page's text). An
 //! update never overwrites an address being typed (`Field::show` writes only to a field that does
 //! not have the keys), and the url is what the field is put back to, so it is kept as the last
 //! one heard.
@@ -14,7 +15,7 @@ use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_protocol::BrowserInput;
 use gpui_kit::component::input::Input;
-use gpui_kit::{prelude::*, App, Context, FocusHandle, Focusable as _, IntoElement, SharedString, Window};
+use gpui_kit::{prelude::*, App, Context, Focusable as _, IntoElement, SharedString, Window};
 
 use crate::connection::caller::Caller;
 use crate::kit::field::Field;
@@ -31,8 +32,7 @@ pub struct Address {
 }
 
 impl Address {
-    /// `screen` is the page's focus handle, which the keys go to when the field lets them go.
-    pub fn new<V: 'static>(pane: u64, caller: Caller, screen: FocusHandle, window: &mut Window, cx: &mut Context<V>) -> Self {
+    pub fn new<V: 'static>(pane: u64, caller: Caller, window: &mut Window, cx: &mut Context<V>) -> Self {
         let field = Field::new("", window, cx);
         let url = Rc::new(RefCell::new(SharedString::default()));
         let (typed, said) = (field.clone(), url.clone());
@@ -46,7 +46,7 @@ impl Address {
                 Action::Leave => typed.put(&said.borrow(), window, cx),
                 _ => return false,
             }
-            window.focus(&screen, cx);
+            window.blur(cx);
             true
         });
         Self { pane, field, url, _keys: keys }

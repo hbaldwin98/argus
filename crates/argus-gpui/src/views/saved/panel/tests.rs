@@ -252,3 +252,20 @@ fn a_panel_closed_and_opened_again_is_a_fresh_element(cx: &mut TestAppContext) {
     hear(cx, &opened, vec![page(vec![saved("a", "Plan", false)], vec![trail("a", &["a"])])]);
     assert_ne!(first, asked(cx));
 }
+
+#[gpui_kit::test]
+fn built_ago_is_said_again_on_the_windows_half_minute_tick(cx: &mut TestAppContext) {
+    // SAVED-4: `built <ago>` is told in minutes and must not go stale between the daemon's events.
+    let opened = opened(cx, with_tabs(&["a"]), vec![saved("a", "Plan", false)], vec![trail("a", &["a"])]);
+    let element = cx.update(|cx| super::super::registry::element(&Panel::Saved("a".into()), &opened.heard, &crate::connection::caller::Caller::new(|_| {}), cx)).unwrap();
+    // Counted at the notify itself: a forced frame would redraw the root whether or not the timer asked.
+    let notified = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let count = notified.clone();
+    let _watching = cx.update(|cx| cx.observe(&element, move |_, _| count.set(count.get() + 1)));
+    cx.executor().advance_clock(crate::views::age::EVERY / 2);
+    cx.run_until_parked();
+    assert_eq!(notified.get(), 0, "not before the half minute");
+    cx.executor().advance_clock(crate::views::age::EVERY);
+    cx.run_until_parked();
+    assert!(notified.get() >= 1, "the timer asks for a new draw");
+}

@@ -8,6 +8,8 @@ use gpui_kit::test::{ClickOptions, TestWindowExt as _};
 use gpui_kit::MouseButton;
 use gpui_kit::{size, AnyWindowHandle, Bounds, TestAppContext, WindowBounds, WindowOptions};
 
+use std::time::Duration;
+
 use super::*;
 
 struct Opened {
@@ -181,7 +183,7 @@ fn the_age_is_drawn_again_on_a_timer_so_it_does_not_go_stale(cx: &mut TestAppCon
     let notified = Rc::new(std::cell::Cell::new(0u32));
     let count = notified.clone();
     let _watching = cx.update(|cx| cx.observe(&opened.view, move |_, _| count.set(count.get() + 1)));
-    cx.executor().advance_clock(AGE_EVERY + Duration::from_secs(1));
+    cx.executor().advance_clock(crate::views::age::EVERY + Duration::from_secs(1));
     cx.run_until_parked();
     assert!(notified.get() >= 1, "the timer asks for a new draw");
 }

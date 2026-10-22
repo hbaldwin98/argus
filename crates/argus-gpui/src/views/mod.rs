@@ -1,6 +1,7 @@
 //! The renderers an agent's view is drawn with, shared by every surface that draws agent content.
 
 pub mod actions;
+pub mod age;
 pub mod agent;
 pub mod blocks;
 pub mod chip;

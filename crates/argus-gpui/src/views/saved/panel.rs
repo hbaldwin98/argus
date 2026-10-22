@@ -4,7 +4,7 @@
 //! Rust holds the saved views and which panel shows which trail; the window holds what the person
 //! did to the panel: how far it is scrolled across, how far each column is scrolled down (by
 //! `<column>|<view id>`), and, in `views/memory`, which Details and delete questions are open. All of
-//! it outlives a redraw, as the page's does. When a column was added since the last draw the panel
+//! it outlives a redraw, as the page's does. `built <ago>` is said again every half minute (`views/age`). When a column was added since the last draw the panel
 //! scrolls to its right end, at once and again once laid out, since a panel just brought out has no
 //! width until it is.
 
@@ -17,7 +17,7 @@ use argus_desktop_core::views::column::{floating, headed};
 use argus_desktop_core::views::saved::{SavedColumn, SavedViewsPage};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{point, prelude::*, px, AnyElement, Context, Entity, Role, ScrollHandle, SharedString, Subscription, Window};
+use gpui_kit::{point, prelude::*, px, AnyElement, Context, Entity, Role, ScrollHandle, SharedString, Subscription, Task, Window};
 
 use super::column::{column, missing};
 use super::head::{strip, Strip};
@@ -45,6 +45,7 @@ pub struct SavedPanel {
     /// The page the bodies were last handed.
     pushed: Option<Rc<SavedViewsPage>>,
     _observing: Subscription,
+    _ageing: Task<()>,
 }
 
 /// Whether the panel scrolls to show a column added since the last draw: not on its first draw.
@@ -64,7 +65,7 @@ impl SavedPanel {
             super::registry::forget_if_closed(&this.panel, page.as_deref(), cx);
             cx.notify();
         });
-        Self { panel, heard, caller, across: ScrollHandle::new(), seen: None, bodies: HashMap::new(), scrolls: HashMap::new(), pushed: None, _observing: observing }
+        Self { panel, heard, caller, across: ScrollHandle::new(), seen: None, bodies: HashMap::new(), scrolls: HashMap::new(), pushed: None, _observing: observing, _ageing: crate::views::age::every(cx) }
     }
 }
 

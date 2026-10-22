@@ -11,6 +11,10 @@ use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
 use gpui_kit::{point, px, MouseButton, ScrollDelta, TestAppContext};
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder as _};
 
+mod hand;
+mod reconnect;
+mod strip;
+
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -20,9 +24,9 @@ use argus_desktop_core::connection::page::Call;
 use crate::connection::caller::Caller;
 use crate::keys::root::tests::{asked, hear, open, open_on, press, type_text, Calls, Opened};
 
-const PANE: u64 = 105;
+pub(super) const PANE: u64 = 105;
 
-fn shown(pane: u64, browser: bool) -> Shown {
+pub(super) fn shown(pane: u64, browser: bool) -> Shown {
     Shown {
         pane,
         repository: "argus".into(),
@@ -36,11 +40,11 @@ fn shown(pane: u64, browser: bool) -> Shown {
     }
 }
 
-fn tab(id: &str, title: &str, url: &str) -> BrowserTab {
+pub(super) fn tab(id: &str, title: &str, url: &str) -> BrowserTab {
     BrowserTab { id: id.into(), url: url.into(), title: title.into() }
 }
 
-fn browser() -> PageBrowser {
+pub(super) fn browser() -> PageBrowser {
     PageBrowser {
         pane: PANE,
         owner: 1,
@@ -55,12 +59,12 @@ fn browser() -> PageBrowser {
     }
 }
 
-fn page(browser: PageBrowser) -> Event {
+pub(super) fn page(browser: PageBrowser) -> Event {
     Event::Browsers(Box::new(BrowsersPage { browsers: vec![browser] }))
 }
 
 /// A Workspace whose first cell is a shell and whose second is the browser, `keyed` having the keys.
-fn workspace(keyed: u8) -> Vec<Event> {
+pub(super) fn workspace(keyed: u8) -> Vec<Event> {
     let row = GridPage {
         beside: vec![Some(shown(PANE, true))],
         grid: vec![vec![0, 1]],
@@ -76,7 +80,7 @@ fn workspace(keyed: u8) -> Vec<Event> {
     ]
 }
 
-fn opened(cx: &mut TestAppContext, keyed: u8, browser: PageBrowser) -> Opened {
+pub(super) fn opened(cx: &mut TestAppContext, keyed: u8, browser: PageBrowser) -> Opened {
     let opened = open(cx);
     let mut events = workspace(keyed);
     events.push(page(browser));
@@ -84,27 +88,27 @@ fn opened(cx: &mut TestAppContext, keyed: u8, browser: PageBrowser) -> Opened {
     opened
 }
 
-fn has(cx: &mut TestAppContext, opened: &Opened, id: &str) -> bool {
+pub(super) fn has(cx: &mut TestAppContext, opened: &Opened, id: &str) -> bool {
     cx.update_window(opened.handle, |_, window, _| window.try_find(id.to_owned()).is_some()).unwrap()
 }
 
-fn click(cx: &mut TestAppContext, opened: &Opened, id: &str) {
+pub(super) fn click(cx: &mut TestAppContext, opened: &Opened, id: &str) {
     cx.update_window(opened.handle, |_, window, cx| window.click(id.to_owned(), cx)).unwrap();
     cx.run_until_parked();
 }
 
-fn label(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Option<String> {
+pub(super) fn label(cx: &mut TestAppContext, opened: &Opened, id: &str) -> Option<String> {
     cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).label().map(str::to_owned)).unwrap()
 }
 
 /// What the cell sent of the browser, in words, with the calls so far cleared.
-fn said(opened: &Opened) -> Vec<String> {
+pub(super) fn said(opened: &Opened) -> Vec<String> {
     let calls = asked(opened).into_iter().filter(|call| call.starts_with("BrowserInput") || call.starts_with("CloseBrowser")).collect();
     opened.calls.borrow_mut().clear();
     calls
 }
 
-fn png() -> String {
+pub(super) fn png() -> String {
     let mut out = Vec::new();
     PngEncoder::new(&mut out).write_image(&[40u8, 90, 200, 255].repeat(8), 4, 2, ExtendedColorType::Rgba8).unwrap();
     STANDARD.encode(out)
@@ -188,7 +192,7 @@ fn with_no_tab_the_screen_says_so_and_offers_a_new_one(cx: &mut TestAppContext) 
     assert!(!has(cx, &opened, "browser-blank-105"), "a tab came: the picture is drawn in its place");
 }
 
-fn address(cx: &mut TestAppContext, opened: &Opened) -> String {
+pub(super) fn address(cx: &mut TestAppContext, opened: &Opened) -> String {
     cx.update_window(opened.handle, |_, window, _| window.find("browser-address-105".to_owned()).value().map(str::to_owned)).unwrap().unwrap_or_default()
 }
 
