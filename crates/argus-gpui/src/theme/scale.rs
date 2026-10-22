@@ -117,6 +117,10 @@ pub struct Scale {
     pub sp_24: f32,
     pub sp_32: f32,
     pub sp_44: f32,
+    /// The width of a hairline border.
+    pub hairline: f32,
+    /// The width of an accent edge or lit line: a keyed header's underline, a gutter's grip.
+    pub rule: f32,
 
     pub r_xs: f32,
     pub r_sm: f32,
@@ -171,6 +175,26 @@ pub struct Scale {
     /// `.pbar`'s width, and `.ghost`'s height.
     pub meter_w: f32,
     pub ghost_h: f32,
+    /// A terminal selection is the text colour at this share (`panes/screen.ts`, `drawSelection`).
+    pub share_term_selection: f32,
+    /// The stage strip drops the pane's size label when the window is narrower than this (`.head-size`).
+    pub head_size_hidden_below: f32,
+    /// The window is narrow at this width and under: the rail folds, the right dock is a drawer, and the strip says the pane's status itself (`@media (max-width: 1200px)`).
+    pub narrow_below: f32,
+    /// `--tile`, and `--dialog-w-sm`: the empty stage's icon tile and the Stopped card's width.
+    pub tile: f32,
+    pub dialog_w_sm: f32,
+    /// `.empty-body` and its `no-projects` and `no-pane` forms: how wide each empty stage's block is, and the Stopped card's icon.
+    pub empty_w: f32,
+    pub empty_w_projects: f32,
+    pub empty_w_pane: f32,
+    pub stopped_icon: f32,
+    /// The Connecting stage's spinner, drawn at 40 by the page's empty-stage icon.
+    pub empty_spinner: f32,
+    /// `--vstat-min`: how narrow a card of the panes to go back to is allowed to be; and `.rcard`'s hover and press, the text colour over the raised one.
+    pub card_min: f32,
+    pub share_card_hover: f32,
+    pub share_card_press: f32,
     /// `.kbd`'s line height and `.fbtn`'s height.
     pub key_leading: f32,
     pub fold_btn_h: f32,
@@ -267,6 +291,8 @@ impl Scale {
             sp_24: 24.0,
             sp_32: 32.0,
             sp_44: 44.0,
+            hairline: 1.0,
+            rule: 2.0,
 
             r_xs: 4.0,
             r_sm: 6.0,
@@ -313,6 +339,19 @@ impl Scale {
             dialog_w: 420.0,
             meter_w: 56.0,
             ghost_h: 12.0,
+            share_term_selection: 0.30,
+            head_size_hidden_below: 1100.0,
+            narrow_below: 1200.0,
+            tile: 56.0,
+            dialog_w_sm: 440.0,
+            empty_w: 520.0,
+            empty_w_projects: 460.0,
+            empty_w_pane: 760.0,
+            stopped_icon: 28.0,
+            empty_spinner: 40.0,
+            card_min: 200.0,
+            share_card_hover: 0.06,
+            share_card_press: 0.10,
             key_leading: 14.0,
             fold_btn_h: 22.0,
             ring_outline: 2.0,

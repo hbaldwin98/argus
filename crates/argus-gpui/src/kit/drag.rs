@@ -1,7 +1,8 @@
 //! The one drag helper: a press that becomes a drag after the decided 5 px
 //! threshold, a click when it never does, and cancelled by Escape with no
 //! drop (`gpui/parity/cross-cutting.md`, Decided 6). Panel docking and the
-//! docks' sashes use it; board cards, sequence arrows and pane headers are
+//! docks' sashes use it, and so do the cell headers and rail rows that carry a pane (the work
+//! area's payload enum); board cards and sequence arrows are
 //! to use it too, each as a [`Dragger`] of its own payload, so the threshold
 //! and the cancel are never written twice.
 //!

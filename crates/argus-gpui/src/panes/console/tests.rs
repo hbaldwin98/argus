@@ -228,8 +228,8 @@ fn a_console_snapshot_draws_its_tabs_and_screens(cx: &mut TestAppContext) {
     hear_parked(cx, &opened, vec![frame(5, Side::First, "first screen"), frame(6, Side::Second, "second screen")]);
     cx.update(|cx| {
         let heard = opened.heard.read(cx);
-        assert_eq!(heard.first.row_text(0), "first screen");
-        assert_eq!(heard.second.row_text(0), "second screen");
+        assert_eq!(heard.screen_of(Side::First).row_text(0), "first screen");
+        assert_eq!(heard.screen_of(Side::Second).row_text(0), "second screen");
     });
     assert!(paints(cx, &opened, "first") > first, "a frame for the first side repaints it");
     assert!(paints(cx, &opened, "second") > second, "and the second");

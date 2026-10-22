@@ -120,7 +120,7 @@ fn console(page: &argus_desktop_core::panes::console::ConsolePage) -> String {
 
 /// The pane's screen on one line: its grid, and the first row with text on it.
 pub fn screen(heard: &Heard) -> String {
-    let screen = &heard.screen;
+    let screen = heard.screen_of(argus_desktop_core::connection::page::Side::Workspace);
     let Some(pane) = screen.pane() else {
         return "none".to_owned();
     };

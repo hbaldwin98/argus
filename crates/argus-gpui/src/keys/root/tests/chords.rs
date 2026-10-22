@@ -50,9 +50,9 @@ fn open_session(cx: &mut TestAppContext) -> (Opened, Arc<Owner>) {
     owner.act(|session| session.receive(tree()));
     owner.call(Call::Select { pane: 2 });
     let calling = owner.clone();
-    let (handle, heard) = open_on(cx, Caller::new(move |call| calling.call(call)), events);
+    let (handle, heard, shell) = open_on(cx, Caller::new(move |call| calling.call(call)), events);
     let (spare, _) = tokio::sync::mpsc::unbounded_channel();
-    (Opened { handle, heard, calls: Rc::default(), events: spare }, owner)
+    (Opened { handle, heard, shell, calls: Rc::default(), events: spare }, owner)
 }
 
 /// SHELL-KEYS-5, 9: the leader, then a key the session binds to the sheet, the palette or the

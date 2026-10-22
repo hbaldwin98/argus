@@ -79,7 +79,7 @@ impl ConsoleView {
                 .tooltip(tip("Take out of the split"))
                 .on_click(cx.listener(move |this, _, _, cx| this.gesture(ConsoleGesture::CloseSide { pane }, cx))),
             )
-            .when(typing, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).bg(tokens.accent)))
+            .when(typing, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(px(tokens.rule)).bg(tokens.accent)))
             .context_menu(move |menu, _, cx| build(menu, &offers, &caller, &heard, tokens, cx))
     }
 

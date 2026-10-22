@@ -11,7 +11,13 @@ use super::RailView;
 use super::row::{chevron, line};
 use super::status::{dot_of, status_colour};
 use crate::kit::icons::Glyph;
+use crate::kit::spots::{publish, Spot, Spots};
 use crate::theme::Tokens;
+
+/// A zero-size marker a test finds by id; it paints nothing.
+fn mark(id: String) -> impl IntoElement {
+    div().id(id).test_support().size_0()
+}
 
 impl RailView {
     pub(super) fn checkout(
@@ -32,6 +38,9 @@ impl RailView {
         };
         let hidden_dot = if checkout.open { None } else { checkout.status.and_then(|word| status_colour(word, tokens)) };
         let git = checkout.git.clone().filter(|_| !checkout.clean);
+        // `.co.drop-target`: a carried pane would move here.
+        let lit = Spots::peek(cx).lit() == Some(id);
+        let ringed = picked || lit;
         let fill = tokens.fill;
         let mono = cx.theme().mono_font_family.clone();
         v_flex()
@@ -47,7 +56,12 @@ impl RailView {
                         .text_color(tokens.fg_faint)
                         .border_1()
                         // `.co.picked`: the ring that says which row holds the keys.
-                        .border_color(if picked { tokens.accent } else { Hsla::transparent_black() })
+                        .border_color(if ringed { tokens.accent } else { Hsla::transparent_black() })
+                        .when(ringed, |row| row.child(mark(format!("checkout-{id}-ring"))))
+                        // The row a carried pane would move to, for a test to read.
+                        .when(lit, |row| row.bg(tokens.bg_selected).child(mark(format!("checkout-{id}-target"))))
+                        // Where the carried pane is let go, for the drag to find it.
+                        .child(publish(Spot::Checkout(id)))
                         .aria_selected(picked)
                         .aria_label(tooltip)
                         .hover(move |style| style.bg(fill).text_color(tokens.fg_muted))

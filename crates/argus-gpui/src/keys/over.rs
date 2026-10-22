@@ -30,6 +30,7 @@ fn title(overlay: Overlay) -> &'static str {
     match overlay {
         Overlay::Palette => "Search everything",
         Overlay::Sheet => "Shortcuts",
+        Overlay::AddProject => "Add a project",
         _ => "Settings",
     }
 }
@@ -37,6 +38,18 @@ fn title(overlay: Overlay) -> &'static str {
 /// Opens what `action` names over the window; whether it names one.
 pub fn run_over(action: Action, window: &mut Window, cx: &mut App) -> bool {
     let Some(overlay) = overlay_of(action) else { return false };
+    stand_in(overlay, window, cx);
+    true
+}
+
+/// The dialog of Add a project, which the empty stage's button and `open_add_project` ask for.
+/// Only the stand-in is here (audit item 31): the call is not sent, since the session would then
+/// hold a dialog open that nothing draws or closes.
+pub fn add_project(window: &mut Window, cx: &mut App) {
+    stand_in(Overlay::AddProject, window, cx);
+}
+
+fn stand_in(overlay: Overlay, window: &mut Window, cx: &mut App) {
     let host = Overlays::get(cx);
     let build = move |dialog: Dialog, _: &mut Window, cx: &mut App, _: bool| dialog.title(title(overlay)).w(px(Tokens::global(cx).dialog_w)).child(NOT_YET);
     if overlay == Overlay::Sheet {
@@ -44,7 +57,6 @@ pub fn run_over(action: Action, window: &mut Window, cx: &mut App) -> bool {
     } else {
         host.open(Spec::new(overlay), build, window, cx);
     }
-    true
 }
 
 #[cfg(test)]

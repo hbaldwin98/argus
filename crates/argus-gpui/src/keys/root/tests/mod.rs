@@ -26,6 +26,7 @@ pub(crate) type Calls = Rc<RefCell<Vec<Call>>>;
 pub(crate) struct Opened {
     pub handle: AnyWindowHandle,
     pub heard: Entity<Heard>,
+    pub shell: Entity<Shell>,
     pub calls: Calls,
     pub events: UnboundedSender<Vec<Event>>,
 }
@@ -36,12 +37,12 @@ pub(crate) fn open(cx: &mut TestAppContext) -> Opened {
     let calls: Calls = Rc::default();
     let sink = calls.clone();
     let (events, listening) = tokio::sync::mpsc::unbounded_channel();
-    let (handle, heard) = open_on(cx, Caller::new(move |call| sink.borrow_mut().push(call)), listening);
-    Opened { handle, heard, calls, events }
+    let (handle, heard, shell) = open_on(cx, Caller::new(move |call| sink.borrow_mut().push(call)), listening);
+    Opened { handle, heard, shell, calls, events }
 }
 
 /// The shell in a window over `caller`, hearing `listening`.
-pub(crate) fn open_on(cx: &mut TestAppContext, caller: Caller, listening: UnboundedReceiver<Vec<Event>>) -> (AnyWindowHandle, Entity<Heard>) {
+pub(crate) fn open_on(cx: &mut TestAppContext, caller: Caller, listening: UnboundedReceiver<Vec<Event>>) -> (AnyWindowHandle, Entity<Heard>, Entity<Shell>) {
     cx.update(crate::window::init);
     let mut built = None;
     let (handle, _) = cx.update(|cx| {
@@ -54,15 +55,17 @@ pub(crate) fn open_on(cx: &mut TestAppContext, caller: Caller, listening: Unboun
             |window, cx| {
                 let heard = cx.new(|_| Heard::new());
                 heard.update(cx, |heard, cx| heard.listen(listening, cx));
-                built = Some(heard.clone());
-                cx.new(|cx| Shell::new(heard, caller, window, cx))
+                let shell = cx.new(|cx| Shell::new(heard.clone(), caller, window, cx));
+                built = Some((heard, shell.clone()));
+                shell
             },
         )
         .expect("open test window")
     });
     cx.update_window(handle, |_, window, _| window.activate_window()).unwrap();
     cx.run_until_parked();
-    (handle, built.expect("the window built its model"))
+    let (heard, shell) = built.expect("the window built its model");
+    (handle, heard, shell)
 }
 
 /// The keys leave the pane the shell gave them to and rest on nothing: the stage's keys.

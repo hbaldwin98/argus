@@ -6,4 +6,7 @@ pub mod grid;
 pub mod layout;
 pub mod palette;
 pub mod screen;
+pub mod selection;
+pub mod size_label;
+pub mod split;
 pub mod terminal;

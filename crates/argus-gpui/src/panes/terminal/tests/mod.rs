@@ -1,5 +1,7 @@
 use std::cell::RefCell;
+use std::time::Duration;
 
+use super::room::SETTLE;
 use super::*;
 use argus_desktop_core::connection::page::{Event, Frame, FrameCursor, Rail, Segment, Shown};
 use gpui_kit::test::{TestInput, TestWindowExt as _};
@@ -7,6 +9,12 @@ use gpui_kit::{
     size, AnyWindowHandle, Bounds, ElementInputHandler, Keystroke, TestAppContext, WindowBounds, WindowOptions,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+
+use crate::keys::layer::Layers;
+
+mod keys;
+mod mouse;
+mod screen;
 
 const WIDTH: f32 = 1000.0;
 const HEIGHT: f32 = 700.0;
@@ -59,10 +67,18 @@ fn frame(pane: u64, side: Side, row0: &str) -> Event {
 }
 
 fn open(cx: &mut TestAppContext) -> Opened {
+    open_side(cx, Side::Workspace)
+}
+
+/// A window whose one view is the screen of `side`.
+fn open_side(cx: &mut TestAppContext, side: Side) -> Opened {
     cx.update(crate::window::init);
     let calls: Calls = Rc::default();
     let sink = calls.clone();
     let caller = Caller::new(move |call| sink.borrow_mut().push(call));
+    // The window's own keys (the zoom keys) ask the session through this, as the shell serves it.
+    let served = caller.clone();
+    cx.update(|cx| Layers::of(cx).serve(served));
     let (events, listening) = unbounded_channel();
     let mut built = None;
     let (handle, _) = cx.update(|cx| {
@@ -75,7 +91,7 @@ fn open(cx: &mut TestAppContext) -> Opened {
             |window, cx| {
                 let heard = cx.new(|_| Heard::new());
                 heard.update(cx, |heard, cx| heard.listen(listening, cx));
-                let terminal = cx.new(|cx| Terminal::new(heard.clone(), caller, Side::Workspace, window, cx));
+                let terminal = cx.new(|cx| Terminal::new(heard.clone(), caller, side, window, cx));
                 built = Some((heard, terminal.clone()));
                 terminal
             },
@@ -139,8 +155,8 @@ fn a_frame_for_the_shown_pane_is_held_and_repaints_the_stage(cx: &mut TestAppCon
     assert!(paints(cx, &opened) > railed, "a frame repaints without anything asking for a frame");
     cx.update(|cx| {
         let heard = opened.heard.read(cx);
-        assert_eq!(heard.screen.pane(), Some(7));
-        assert_eq!(heard.screen.row_text(0), "hello from pane 7");
+        assert_eq!(heard.screen_of(Side::Workspace).pane(), Some(7));
+        assert_eq!(heard.screen_of(Side::Workspace).row_text(0), "hello from pane 7");
     });
 }
 
@@ -162,7 +178,7 @@ fn a_frame_for_another_side_is_not_drawn_here(cx: &mut TestAppContext) {
     let before = paints(cx, &opened);
     hear(cx, &opened, vec![frame(7, Side::First, "the console's")]);
     assert_eq!(paints(cx, &opened), before);
-    cx.update(|cx| assert_eq!(opened.heard.read(cx).screen.pane(), None));
+    cx.update(|cx| assert_eq!(opened.heard.read(cx).screen_of(Side::Workspace).pane(), None));
 }
 
 #[gpui_kit::test]

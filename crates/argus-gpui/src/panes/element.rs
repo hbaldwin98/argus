@@ -23,6 +23,7 @@ use crate::panes::grid::grid_for;
 use crate::panes::layout::{layout, TextBatch};
 use crate::panes::palette::Palette;
 use crate::panes::screen::{Screen, Shape};
+use crate::panes::selection::Selection;
 use crate::panes::terminal::Terminal;
 
 /// The terminal's type as the page sets it: 13px on a 20px line.
@@ -36,6 +37,10 @@ pub struct TerminalElement {
     /// Whether this pane has the keys and the window is the person's: a
     /// block cursor is filled, else hollow.
     pub focused: bool,
+    /// The cells a drag across this screen covers, drawn over the text.
+    pub selection: Option<Selection>,
+    /// How strongly the selection washes the text colour (`share_term_selection`).
+    pub share: f32,
     /// The view that hears the room this element has and takes its text.
     pub terminal: Entity<Terminal>,
     pub focus: FocusHandle,
@@ -44,6 +49,8 @@ pub struct TerminalElement {
     /// The cell this element measured, for the input method's candidate
     /// window to sit by the cursor.
     pub cell: Rc<Cell<(Pixels, Pixels)>>,
+    /// Where the grid starts in the window, for the cell under the pointer.
+    pub origin: Rc<Cell<Point<Pixels>>>,
     /// How many times the screen was painted.
     pub paints: Rc<Cell<u64>>,
 }
@@ -103,6 +110,7 @@ impl Element for TerminalElement {
             f32::from(cell_h),
         );
         self.cell.set((cell_w, cell_h));
+        self.origin.set(bounds.origin);
         // A hidden or zero-sized element has no room to report: measuring it
         // would size the pane to one cell.
         let room = bounds.size.width > px(0.0) && bounds.size.height > px(0.0);
@@ -146,6 +154,7 @@ impl Element for TerminalElement {
             for batch in &laid.batches {
                 self.paint_batch(batch, at(batch.row, batch.col), metrics, window, cx);
             }
+            self.paint_selection(metrics, origin, window);
             self.paint_cursor(metrics, origin, window, cx);
         });
     }
@@ -198,6 +207,21 @@ impl TerminalElement {
             at
         };
         line.paint(at, metrics.cell_h, TextAlign::Left, None, window, cx).ok();
+    }
+
+    /// The selection as the page draws it: the text colour at a share of its strength over the
+    /// cells it covers, in reading order, under the cursor.
+    fn paint_selection(&self, metrics: &Prepainted, origin: Point<Pixels>, window: &mut Window) {
+        let Some(selection) = self.selection else { return };
+        let (rows, cols) = self.screen.size();
+        let (fit_rows, fit_cols) = metrics.fit;
+        let wash = self.palette.fg.hsla().opacity(self.share);
+        for row in 0..rows.min(fit_rows) {
+            let Some((from, to)) = selection.span(row, rows, cols.min(fit_cols)) else { continue };
+            let top_left = point(origin.x + metrics.cell_w * f32::from(from), origin.y + metrics.cell_h * f32::from(row));
+            let band = size(metrics.cell_w * f32::from(to - from), metrics.cell_h);
+            window.paint_quad(fill(Bounds { origin: top_left, size: band }, wash));
+        }
     }
 
     /// The cursor as the page draws it: a block in the text colour with its

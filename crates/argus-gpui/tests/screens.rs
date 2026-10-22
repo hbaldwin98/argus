@@ -25,13 +25,13 @@ use argus_gpui::connection::caller::Caller;
 use argus_gpui::connection::heard::Heard;
 use argus_gpui::window;
 use gpui_kit::test::TestWindowExt as _;
-use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, WindowBounds, WindowOptions};
+use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, Entity, WindowBounds, WindowOptions};
 
 /// The page's shots are 1440x900 CSS pixels at a device scale of 2.
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "workspace-agent,workspace-shell,workspace-split,workspace-console,docks,review,review-comment,history";
+const DEFAULT: &str = "workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,docks,review,review-comment,history";
 
 fn out_dir() -> PathBuf {
     std::env::var_os("ARGUS_GPUI_SHOTS")
@@ -39,13 +39,16 @@ fn out_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/argus-gpui-shots"))
 }
 
-/// Everything a fresh page would hear in `name`'s scene, with the first frames.
-fn heard_in(name: &str) -> Vec<Event> {
+/// Everything a fresh page would hear in `name`'s scene, and the first frames apart: a frame for a cell
+/// that has no screen yet is dropped, so they are heard once the window has drawn the cells the
+/// rail names.
+fn heard_in(name: &str) -> (Vec<Event>, Vec<Event>) {
     let scene = scenes().into_iter().find(|scene| scene.name == name).unwrap_or_else(|| panic!("no scene {name}"));
     let mut session = (scene.build)();
     let mut events = session.everything(NOW);
     events.extend(session.take_frames());
-    events
+    let (frames, rest): (Vec<Event>, Vec<Event>) = events.into_iter().partition(|event| matches!(event, Event::Frame(_)));
+    (rest, frames)
 }
 
 #[test]
@@ -61,10 +64,21 @@ fn write_gpui_screens() {
         window::init(cx);
         cx.spawn(async move |cx| {
             for name in names {
-                let events = heard_in(&name);
+                let (events, frames) = heard_in(&name);
                 let result = cx.update(|cx| open(cx, events));
                 let handle = match result {
-                    Ok(handle) => handle,
+                    Ok((handle, heard)) => {
+                        // The window has made the cells the rail names, so their frames have a screen.
+                        cx.update(|cx| {
+                            heard.update(cx, |heard, cx| {
+                                for frame in frames {
+                                    heard.hear(frame);
+                                }
+                                cx.notify();
+                            })
+                        });
+                        handle
+                    }
                     Err(error) => {
                         sink.borrow_mut().push(format!("{name}: {error}"));
                         continue;
@@ -108,7 +122,7 @@ fn write_gpui_screens() {
 }
 
 /// A window parked off-screen at the page's size, hearing `events`.
-fn open(cx: &mut App, events: Vec<Event>) -> anyhow::Result<AnyWindowHandle> {
+fn open(cx: &mut App, events: Vec<Event>) -> anyhow::Result<(AnyWindowHandle, Entity<Heard>)> {
     let heard = cx.new(|_| Heard::new());
     heard.update(cx, |heard, _| {
         for event in events {
@@ -125,6 +139,7 @@ fn open(cx: &mut App, events: Vec<Event>) -> anyhow::Result<AnyWindowHandle> {
     };
     // A call goes nowhere: the scene is already where it should be.
     let caller = Caller::new(|_| {});
+    let model = heard.clone();
     let handle = gpui_kit::open_window(options, cx, move |window, cx| cx.new(|cx| Shell::new(heard, caller, window, cx)))?;
-    Ok(handle.0)
+    Ok((handle.0, model))
 }

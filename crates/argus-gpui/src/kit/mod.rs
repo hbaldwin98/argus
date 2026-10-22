@@ -19,6 +19,7 @@ pub mod progress;
 pub mod section;
 pub mod segment;
 pub mod split;
+pub mod spots;
 pub mod status_dot;
 pub mod strip;
 pub mod tip;

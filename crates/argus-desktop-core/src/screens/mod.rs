@@ -1959,6 +1959,27 @@ pub fn scenes() -> Vec<Scene> {
                 .call(Call::Resize { side: Side::Beside(0), rows: ROWS, cols: COLS / 2 - 1 });
             w.s
         }),
+        scene("workspace-grid", "Workspace — three panes: two above, one under both", || {
+            let mut w = Window::showing(P_TRIM);
+            w.call(Call::OpenBeside { pane: P_SHELL })
+                .call(Call::OpenBeside { pane: P_SCREENS })
+                .call(Call::Resize { side: Side::Workspace, rows: ROWS / 2 - 3, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(0), rows: ROWS / 2 - 3, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(1), rows: ROWS / 2 - 3, cols: COLS - 2 });
+            w.s
+        }),
+        scene("workspace-grid-four", "Workspace — four panes, the keys on the last", || {
+            let mut w = Window::showing(P_TRIM);
+            w.call(Call::OpenBeside { pane: P_SHELL })
+                .call(Call::OpenBeside { pane: P_SCREENS })
+                .call(Call::OpenBeside { pane: P_EDITOR })
+                .call(Call::Resize { side: Side::Workspace, rows: ROWS / 2 - 3, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(0), rows: ROWS / 2 - 3, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(1), rows: ROWS / 2 - 3, cols: COLS / 2 - 1 })
+                .call(Call::Resize { side: Side::Beside(2), rows: ROWS / 2 - 3, cols: COLS / 2 - 1 })
+                .call(Call::FocusView { pane: P_EDITOR });
+            w.s
+        }),
         scene("workspace-console", "Workspace — the console docked under the pane", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::Console { gesture: ConsoleGesture::Toggle })

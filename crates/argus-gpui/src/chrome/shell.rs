@@ -4,17 +4,25 @@
 //!
 //! No title bar and no status bar (`GPUI.md`, Decided): the foot of the
 //! sidebar holds the counts and the daemon line. Under the stage's header is
-//! the work area (`layout/work`): the live pane with the docks around it, or the
-//! Git stage in its place while it is up (`chrome/stage`). The header names
-//! the pane on screen, or Git.
+//! the work area (`layout/work`): the stage that `chrome/stage/route` picks with the docks around
+//! it. The header says what `StripPage` (core) makes of the pane on screen or the stage up, with
+//! the stage's own words and tools from `chrome/header/slots`.
 
-use argus_desktop_core::connection::page::Side;
+use argus_desktop_core::chrome::strip::{Says, StripPage};
+use argus_desktop_core::connection::page::{Side, Stage};
+use argus_desktop_core::panes::console::ConsolePlace;
+use argus_desktop_core::system::clock::Clock;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, Context, Entity, Subscription, Window};
 
+use crate::chrome::header::launcher::launcher;
+use crate::chrome::header::more;
+use crate::chrome::header::slots::Slots;
+use crate::chrome::header::Header;
 use crate::chrome::notice::NoticeView;
 use crate::chrome::rail::RailView;
-use crate::chrome::stage::StageView;
+use crate::chrome::stage::route::frame;
+use crate::chrome::stage::{stopped, StageView};
 use crate::connection::caller::Caller;
 use crate::connection::heard::{Heard, Ran};
 use crate::keys::extension::Commands;
@@ -23,17 +31,25 @@ use crate::keys::over::run_over;
 use crate::kit::overlay::host::Overlays;
 use crate::layout::work::WorkView;
 use crate::panes::console::ConsoleView;
-use crate::panes::terminal::Terminal;
+use crate::panes::split::SplitView;
+use crate::panes::terminal::{Labelled, Terminal};
 use crate::review::stage::GitStage;
 use crate::theme::Tokens;
-use crate::chrome::header::Header;
 
 pub struct Shell {
     heard: Entity<Heard>,
+    caller: Caller,
     rail: Entity<RailView>,
     work: Entity<WorkView>,
     notice: Entity<NoticeView>,
+    /// The Workspace's screen, whose size the header says.
+    terminal: Entity<Terminal>,
+    /// The grid of panes, for a test to find a cell's screen.
+    #[cfg(test)]
+    split: Entity<SplitView>,
     _observing: Subscription,
+    /// The words of the pane's size changed.
+    _labelled: Subscription,
     /// A key the session heard in a pane that opens the palette, the sheet or the settings.
     _running: Subscription,
 }
@@ -51,18 +67,23 @@ impl Shell {
         let console = cx.new(|cx| ConsoleView::new(heard.clone(), caller.clone(), stage, window, cx));
         // The Workspace's pane is the stage the docks sit around.
         let git = cx.new(|cx| GitStage::new(heard.clone(), caller.clone(), window, cx));
-        let stage = cx.new(|cx| StageView::new(heard.clone(), terminal.into(), git.into(), cx));
-        let work = cx.new(|cx| WorkView::new(heard.clone(), caller, stage.into(), console.into(), cx));
+        let split = cx.new(|cx| SplitView::new(heard.clone(), caller.clone(), terminal.clone(), window, cx));
+        let stage = cx.new(|cx| StageView::new(heard.clone(), caller.clone(), split.clone().into(), git.into(), cx));
+        let work = cx.new(|cx| WorkView::new(heard.clone(), caller.clone(), stage.into(), console.into(), cx));
         let notice = cx.new(|cx| NoticeView::new(heard.clone(), cx));
-        let observing = cx.observe(&heard, |_, heard, cx| {
+        let stopping = caller.clone();
+        let observing = cx.observe_in(&heard, window, move |_, heard, window, cx| {
             let commands = heard.read(cx).extension_commands.clone();
             Commands::of(cx).set(commands);
+            // The Stopped card is up exactly while the daemon is stopped.
+            stopped::follow(&heard.read(cx).link(), &stopping, window, cx);
             cx.notify();
         });
         let running = cx.subscribe_in(&heard, window, |_, _, Ran(action): &Ran, window, cx| {
             run_over(*action, window, cx);
         });
-        Self { heard, rail, work, notice, _observing: observing, _running: running }
+        let labelled = cx.subscribe(&terminal, |_, _, _: &Labelled, cx| cx.notify());
+        Self { heard, caller, rail, work, notice, terminal, #[cfg(test)] split, _observing: observing, _labelled: labelled, _running: running }
     }
 
     #[cfg(test)]
@@ -70,45 +91,64 @@ impl Shell {
         &self.rail
     }
 
-    /// The repository and branch under the title, while a pane is on screen
-    /// (`.head-stack .crumbs`): Git is named by its title alone.
-    pub fn crumb(heard: &Heard) -> Option<(String, String)> {
-        if heard.git_up() {
-            return None;
-        }
-        heard.rail.shown.as_ref().map(|shown| {
-            (shown.repository.clone(), if shown.branch.is_empty() { shown.checkout.clone() } else { shown.branch.clone() })
-        })
+    #[cfg(test)]
+    pub(crate) fn split(&self) -> &Entity<SplitView> {
+        &self.split
     }
 
-    /// What the header says: Git while its stage is up, else the pane on screen.
-    pub fn title(heard: &Heard) -> String {
+    /// What the strip says: Git is named by its title alone; else the stage up, or the pane on
+    /// screen, by `StripPage`, with what the stage's own view says (`says`).
+    pub fn strip(heard: &Heard, says: &Says, clock: &Clock) -> StripPage {
         if heard.git_up() {
-            return "Git".to_owned();
+            return StripPage::titled("Git");
         }
-        heard.rail.shown.as_ref().map_or_else(|| "Argus".to_owned(), |shown| shown.title.clone())
+        StripPage::of(&heard.rail, heard.console.place == ConsolePlace::Fullscreen, says, clock)
+    }
+
+    /// The stage the strip is of: a fullscreen console counts as the Console, whatever is under it.
+    fn strip_stage(heard: &Heard) -> Stage {
+        if heard.console.place == ConsolePlace::Fullscreen { Stage::Console } else { heard.rail.stage }
+    }
+
+    /// How many views agents have shown. The window does not hear the agents' views yet (audit
+    /// item 80), so the launcher has none to count; a stub, named so it is found when they land.
+    fn views_waiting(_heard: &Heard) -> usize {
+        0
     }
 }
 
 impl Render for Shell {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
-        let (title, crumb) = {
+        let slots = Slots::of(cx);
+        let (strip, stage, held, frame, waiting) = {
             let heard = self.heard.read(cx);
-            (Shell::title(heard), Shell::crumb(heard))
+            let stage = Shell::strip_stage(heard);
+            let says = slots.says(stage, cx);
+            (Shell::strip(heard, &says, &Clock::local()), stage, heard.held(), frame(&heard.rail, heard.console.place), Shell::views_waiting(heard))
         };
+        // The grid of the pane on screen: Git and the other stages have none to name.
+        let size = if strip.pane.is_some() { self.terminal.read(cx).size_label(cx).to_owned() } else { String::new() };
+        // A pane has its `...` menu; another stage has the tools its own view offers.
+        let tools = match &strip.pane {
+            Some(pane) => Some(more::button(pane, &self.caller, &self.heard, &tokens, cx).into_any_element()),
+            None if self.heard.read(cx).git_up() => None,
+            None => slots.tools(stage, window, cx),
+        };
+        let launcher = launcher(waiting, false, held, &self.caller, &tokens).map(IntoElement::into_any_element);
         h_flex()
             .size_full()
             .bg(tokens.bg_sunken)
             .text_color(tokens.fg)
-            .child(self.rail.clone())
+            // Filling the window puts the sidebar away; the strip stays, since it holds the window's buttons.
+            .when(frame.rail, |window| window.child(self.rail.clone()))
             .child(
                 v_flex()
                     .relative()
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .child(Header::new().title(title).crumb(crumb))
+                    .child(Header::new().strip(strip).size(size).held(held).launcher(launcher).tools(tools))
                     .child(div().id("stage").flex_1().min_h_0().child(self.work.clone()))
                     // Over the stage, under nothing: a notice is the last thing drawn.
                     .child(self.notice.clone()),
@@ -117,29 +157,4 @@ impl Render for Shell {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use argus_desktop_core::connection::page::{Event, Rail, Shown};
-
-    fn shown(title: &str) -> Shown {
-        Shown {
-            pane: 1,
-            repository: "argus".into(),
-            checkout: "main".into(),
-            branch: "main".into(),
-            agent: true,
-            browser: false,
-            title: title.into(),
-            status: "working",
-            resumed: None,
-        }
-    }
-
-    #[test]
-    fn the_header_names_the_pane_on_screen() {
-        let mut heard = Heard::new();
-        assert_eq!(Shell::title(&heard), "Argus");
-        heard.hear(Event::Rail(Box::new(Rail { shown: Some(shown("Trim context")), ..Rail::default() })));
-        assert_eq!(Shell::title(&heard), "Trim context");
-    }
-}
+mod tests;

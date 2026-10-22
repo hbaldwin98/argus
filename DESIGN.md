@@ -672,8 +672,10 @@ GPUI one both stand on it.
 | `chrome` | the rail and the status bar around the stage |
 | `browser` | the browsers agents' panes run, as this window holds them: where each is, its owner and latest picture, and which the window draws |
 | `chrome/add_project` | what the add-a-project dialog holds — the kind of add, the folder browsed and the daemon's listing of it, the repositories the daemon says it would add, the name and skips typed, and the add waiting on the daemon — what its gestures ask of the daemon, and the page and gestures it trades with the page, last sent while open |
+| `chrome/empty` | what the stage says with no pane on screen: waiting on the daemon (and the one way out of a connection that does not answer), no project, or a project with nothing shown (the checkout a shell is offered on, the panes to go back to) |
 | `chrome/rail` | what the rail lists from the tree, and what a row says |
 | `chrome/status` | what the status bar says — the connection, its last failed try, an alarm about the daemon reached, whether the window chimes — and whether the page has heard it since it changed |
+| `chrome/strip` | what the strip across the top of the stage says, as data: the crumb over the title, the status chip, the resumed note, whether the pane's menu is there, and the words each stage names itself by, with the words a stage's own view adds |
 | `chrome/switcher` | what the project switcher offers beyond the tree's projects — the daemon's workspaces — and the project waiting on a yes to be removed |
 | `layout` | where each surface sits in the window |
 | `layout/docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, whether it is a page, or a dialog floating over the stage with where it sits, how big, and which is in front; which tab each dock shows of the panels that exist, whether it is open and how big, whether that changed since it was saved; what each panel that exists can do — float, take the stage, close for good — and which kind it is, told to the page so it never reads them from a panel's name; the page and gestures of the docks, and what the page last heard |
@@ -681,10 +683,14 @@ GPUI one both stand on it.
 | `layout/stage` | what fills the stage — one of the stages, or a page (an agent's view or an extension's) opened over one — where closing, docking, Escape or its view going takes the person back to, the Code stage's way back included, and whether the Workspace's panes are drawn under it |
 | `panes` | the panes on screen and how each is drawn |
 | `panes/console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, the page it draws and the gestures it takes, and what the page last heard |
+| `panes/pointer` | what a pointer over a pane's screen is, with no window in it: the cell under it held inside the grid, a press that is the child's or the start of a selection, the move not worth a report, the release that copies, a press lost, and a wheel counted in notches |
 | `panes/screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `panes/shown` | the panes the window shows — the Workspace's grid, one per side of the console, and one per extension console view on screen — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
 | `panes/shown/workspace_grid` | the Workspace's grid: which panes it holds — the Workspace's own first, then those split beside it — where each sits and how big, which pane may join it and the refusal for one that may not, and the page the rail carries of it, its sizes in thousandths |
+| `panes/shown/workspace_grid/gutter` | what dragging a gutter does to the two panes it parts: only they change, neither goes below the least a pane may be (its columns or rows and the room round them), a pair with no room for two stays, and the sizes come back as whole thousandths summing to exactly 1000 |
+| `panes/shown/workspace_grid/rects` | where each cell of the grid falls, as fractions of the grid, from the rows' heights and each row's widths in thousandths as the rail carries them |
 | `panes/shown/workspace_grid/split_grid` | where the Workspace's panes sit in relation to each other — rows, column fractions, row heights — and what adding, closing, swapping and moving a pane does to them, as arithmetic |
+| `panes/shown/workspace_grid/zones` | which zone of which cell a carried pane would be dropped on: the nearest edge within a quarter of the cell, else the centre, the area each zone lights, and the cell under a point that is never the pane's own |
 | `keys` | the window's keys and the command palette they open |
 | `keys/keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page, the commands the palette runs, and the order of the layers that hold the keys outside a pane |
 | `keys/page_key` | a key the page reports, as the protocol's key |
@@ -763,7 +769,12 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `main` | startup of the GPUI window: the runtime built before the app, the daemon loop and the frame tick on it, ended when the last window closes, and the window; the unattended runs are `probe` and `report` |
 | `chrome` | the window's frame around the stage: the sidebar and its foot, and the header over the stage |
 | `chrome/foot` | the sidebar's foot: the tallies that need a look, a daemon's alarm, and the connection in one shape in every state |
-| `chrome/header` | the strip across the top of the stage: the breadcrumb over the title, the drag region that moves the window, and its three controls |
+| `chrome/ended` | what a pane whose program has ended offers over the foot of the stage: its note, a button that starts another where it was (the first template for an agent, a shell otherwise) while the pane is in the tree, and one that closes it |
+| `chrome/header` | the strip across the top of the stage: the crumb over the title with the pane's status chip (where the rail is folded) and resumed note, the pane's size or parked place, the drag region that moves the window, the stage's tools and the Views launcher, and its three controls, dimmed while the daemon is gone |
+| `chrome/header/crumb` | the small line over the title: the repository, then the branch or the stage's trail, between faint slashes |
+| `chrome/header/launcher` | the Views launcher at the strip's end: its count of the views agents showed, gone with none, lit while the panel is out, toggling it |
+| `chrome/header/more` | the pane's `...` button at the strip's end and the menu under it: its name, Rename, and Close in the danger colour |
+| `chrome/header/slots` | what a stage's own view hands the strip, once, when it is made: the words it says (title and trail) and the tools it puts at the strip's end, so adding a stage adds no arm to the strip |
 | `chrome/nav` | the sidebar's way between stages: which items there are, which one the stage on screen lights, and the call each press makes |
 | `chrome/notice` | the line along the bottom of the stage: the newest notice with an info mark, its words and a dismiss, ended after six seconds counted from when it arrived, and replaced by the next |
 | `chrome/rail` | the sidebar: what it is made of (the brand row, the nav, the projects, the list under them and the foot with its console chip and chime switch) over the latest `Rail`; the tree dimmed while the daemon is gone, and neither calling nor picking on a press |
@@ -780,11 +791,17 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `chrome/rail/stages` | the nav rows: which stage each lights, the keys named beside them, and the press that goes there |
 | `chrome/rail/status` | how a status looks on the rail's rows: the dot a status earns, and the words a few statuses say (the pill they are said in is `kit/pill`) |
 | `chrome/shell` | which regions the window is made of and how they sit: the sidebar at full height, and beside it the work area under the stage's header |
-| `chrome/stage` | which view fills the stage while the Workspace would: the Git stage while the session has a review or history open, else the Workspace's live pane |
+| `chrome/stage` | what fills the stage under the header by the one choice `route` makes: the Git stage, the Workspace's live pane with the bar of an ended pane over its foot, the empty stage in its place with no pane, or a line saying a stage is not in the window yet; dimmed while the daemon is gone |
+| `chrome/stage/empty` | the card on the stage when no pane is on screen: connecting (a spinner, where, the last failure, one way out), no projects (add one), or no pane (an agent, a shell on the first checkout, the panes to go back to), from core's `chrome/empty` |
+| `chrome/stage/route` | which surface fills the stage (Git, the console, the pane, the empty stage, or a stage not built yet) read from the session's stage, the window's Git and the console's place together, which parts of the frame are put away around it (the sidebar while the pane fills the window; the nav, foot and docks under a fullscreen console), and the 1200 px breakpoint |
+| `chrome/stage/running` | the `Panes in <project>` strip under the empty stage's buttons: a card for each pane of the project, the status, the title, the note and how long since it changed, each selecting its pane |
+| `chrome/stage/stopped` | the card over the window while the daemon was stopped on purpose, on the overlay host where Escape and the scrim do not dismiss it: up exactly while the link is stopped, and its Reconnect asks the session to reconnect |
 | `chrome/window_controls` | the window's three controls: what each looks like, the red of the close, and what it asks of the window |
 | `connection` | how the window trades with the daemon and its own views |
 | `connection/caller` | how a view hands a `Call` on without knowing who answers it |
-| `connection/heard` | what the window has heard from its session: the latest of each kind of event a view draws (the tree, the docks, the console's tabs and sides, the screens of the Workspace and of the console's two sides, the review, the history, the window-local Git entry state and the notice showing), in one model every view observes, whether the sidebar is held, which drags hold a resize (a pane waits for them all), and the `Run` a key in a pane asked of the window, said once to whoever opens it |
+| `connection/cells` | what the Workspace's grid is as the rail last said it: the pane in each cell by its number, whether the grid is on screen, and whether a cell has the keys |
+| `connection/heard` | what the window has heard from its session: the latest of each kind of event a view draws (the tree, the docks, the console's tabs and sides, the screens by side and the selection, the review, the history, the window-local Git entry state and the notice showing), in one model every view observes, whether the sidebar is held, which drags hold a resize (a pane waits for them all), and the `Run` a key in a pane asked of the window, said once to whoever opens it |
+| `connection/screens` | the screens the window has, one per side a pane is drawn on (the Workspace's and the console's two always, a split cell's or a view's while its view lives), the frame each takes, and the one selection across them, which goes with the pane whose rows it was on |
 | `connection/owner` | the state the daemon loop and the views' calls share, and the order their effects leave in; the session behind a mutex, the events out over a channel the UI thread drains, and the frame tick that lasts as long as the window listens to it |
 | `keys` | how a key or committed text reaches the session |
 | `keys/calls` | what a key of the Anywhere or Window place asks of the session: the call the page makes for each stage switch, console key, composer, views key and zoom key |
@@ -844,17 +861,21 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `kit/section` | rows listed under headings: grouped in the order a heading was first met, and the heading with its count |
 | `kit/segment` | a choice of a few drawn as pills in one rounded track: the Git tabs, the side and the layout |
 | `kit/split` | a resizable pair: a column at the width its sash gives it, the width reported once on release, a double-click giving the usual width back, and the drag held while it lasts |
+| `kit/spots` | the places a carried pane can be dropped, published by the views that draw them (the grid's cells and stage, the rail's checkout rows), the checkout lit as a target, and whether a pane is carried |
 | `kit/status_dot` | what a pane's or console's status looks like with no word: a turning ring, a filled dot, a dash, a hollow ring |
 | `kit/strip` | the page's one tab strip, drawn once for the docks, the console and a split side: the bar, the tab chip with its selected and hover states, the close, the menu button |
 | `kit/tip` | a hover tooltip for a control, built one way so no surface builds the kit's |
 | `layout` | where the stage and the docks sit around each other, and how a panel is moved between them |
+| `layout/carry` | a pane carried by its header or from the rail: what is carried, and the handle any view presses it through into the work area's one drag |
+| `layout/carry/landing` | where a carried pane would land if let go at a point (another checkout's row, a cell's zone, the stage with no cell under it, or nowhere) and the call that makes it so |
+| `layout/carry/preview` | what shows a carried pane: its name following the pointer, the zone it would land on and the stage outlined when it would open there |
 | `layout/dock` | one dock drawn from Rust's `DocksPage`: its tab strip while it holds more than one panel, the shown panel under a head of its own while it holds one (the console's own strip is its head, and a press in the top of it carries the panel), its sash with the page's grip, and the press each of them makes; dimmed and not answering while the daemon is gone |
 | `layout/dock_menu` | what a panel's dock menu and a dock tab's context menu offer as the one menu model, the dock a panel is already in saying `here`, and the `Call` each sends |
 | `layout/drop_target` | where a panel dropped at a point would land (a dock, or the stage for a panel that has a page), the area to preview, and the call the drop sends |
 | `layout/holders` | who is holding a resize: each drag holds under its own name and the panes wait until all have let go |
 | `layout/panel` | what a docked panel's body draws while it is not ported: its name and a quiet line that it is not in the GPUI window yet (the console is drawn by `panes/console`) |
 | `layout/sash` | what size a dock has with its sash under the pointer: measured from the dock's own edge, the grab offset kept, held to Rust's bounds |
-| `layout/work` | the work area under the header: the stage between a left, right and bottom dock, and the one drag that carries a panel or sizes a dock, sending its `Call` only when it ends |
+| `layout/work` | the work area under the header: the stage between a left, right and bottom dock, and the one drag that carries a panel or a pane or sizes a dock, sending its `Call` only when it ends |
 | `panes` | the panes on screen and how each is drawn |
 | `panes/console` | the console: a tab per console the daemon holds with its dot, the strip's buttons and menus, and its first and second side each drawn with a terminal of their own under a header while split; every gesture is the page's `Call`, nothing on screen changes before the `Console` event |
 | `panes/console/focus` | which screen of the console has the keys: the session's `typing` says, and GPUI's focus follows it unless a rail pick or a field has them |
@@ -863,12 +884,23 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `panes/console/rename` | the rename dialog: an overlay of the host with one field, `RenamePane` asked of the daemon on Enter (never for a blank or unchanged name), Escape closing it, the keys given back to what had them |
 | `panes/console/sides` | the console's sides: one screen under its header while split, the header's pick and take-out, and what to press when no console is on screen |
 | `panes/console/strip` | what the console's tab strip and menus offer as plain data in the one menu model: which tabs wear a dot, a tab's menu, the more menu (split, stage, fullscreen, the docks), and what each choice does |
-| `panes/element` | the element that paints a pane's screen: one measured cell, shaped text runs and merged background quads, the cursor, and the room it holds said once per size |
+| `panes/element` | the element that paints a pane's screen: one measured cell, shaped text runs and merged background quads, the selection washed over them, the cursor, and the room it holds said once per size |
 | `panes/grid` | how many rows and columns a size in pixels holds: whole cells, never fewer than one |
 | `panes/layout` | how the rows a screen holds become runs of same-styled text and rectangles of background, for the cells that fit |
 | `panes/palette` | which colour a packed wire colour is in the terminal's palette (the theme's sixteen, the cube and the greys), and which text stays readable on a background a program chose |
-| `panes/screen` | what the window holds of the Workspace pane's screen: every row's segments, the cursor and the parked view, and how a full, partial or resized frame is applied to them |
-| `panes/terminal` | a live pane's screen, the Workspace's on the stage or one of the console's two sides: what it draws of the pane its side shows, who has the keys, the field it is in the key walk that sends every key as the page does, and the room it reports once it holds still |
+| `panes/selection` | the cells a drag across a screen covers in reading order, per row, as the page draws them |
+| `panes/size_label` | what the stage header says of the Workspace's grid: a parked view's place at rest, the size for a second after it changes, with time a value the caller reads |
+| `panes/split` | the Workspace's panes side by side: a card for each pane the rail's grid names, placed by its sizes, one screen for each cell beside the first, with a gutter on each seam and a header on each cell when there are two or more |
+| `panes/split/cells` | what fills a cell: a terminal, or the kind reserved for a browser that is not in the window yet |
+| `panes/split/focus` | which cell's screen has GPUI's focus: the one the session says has the keys, and a focus that lands on the Workspace's screen sent on to it |
+| `panes/split/gutters` | the gutters between the cells and the drag that sizes the two panes either side: sent once on release, held until the session echoes it or 600 ms pass, a double-click evening the row or the rows |
+| `panes/split/header` | a cell's header: its title and status, the close that takes it out of the grid, the keys marked, and the press that carries the pane |
+| `panes/screen` | what the window holds of the Workspace pane's screen: every row's segments, the cursor, the parked view and whether the child asked for the mouse, and how a full, partial or resized frame is applied to them |
+| `panes/terminal` | a live pane's screen, the Workspace's on the stage, one of the console's two sides or a split cell: what it draws of the pane its side shows, who has the keys, the field it is in the key walk that sends every key as the page does (the command key's chords on a Mac left to the window), the palette read again when a theme is installed, and which screen is bound to its side |
+| `panes/terminal/label` | the Workspace's screen keeping what the stage header says of its grid as frames arrive, and telling the header when the words change |
+| `panes/terminal/pointer` | the mouse over a screen in GPUI's events: the press that claims the keys and clears selections, the child's reports, a drag that selects and copies on release, the wheel in notches, all followed on the whole window |
+| `panes/terminal/room` | the room a screen reports to the session: once it has held still, only when it changed, and not while a sash is held |
+| `panes/terminal/skeleton` | the bars that stand in for a pane a screen waits on, 250 ms after the wait began and gone with the first frame or the end of the wait |
 | `probe` | the scripted probes an agent runs against a daemon without a person: show a pane, open a checkout's review, open its history, each printing what the stage drew at every step, reading or opening and shutting a layer and changing nothing in the checkout |
 | `report` | what the window heard, in words: the whole of it on one line for the unattended run, and the pieces (the review, the history, the docks, the console, the screen) the probes print |
 | `review` | the Git stage: how it is entered and left, and the Changes and History tabs it holds |

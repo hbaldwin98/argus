@@ -8,6 +8,11 @@
 //! an empty split. Which side has the keys is `shown`'s; this keeps that
 //! side's number right as cells come and go.
 
+pub mod gutter;
+pub mod rects;
+mod split_grid;
+pub mod zones;
+
 use argus_protocol::{ClientMsg, PaneId};
 use serde::Serialize;
 
@@ -15,9 +20,7 @@ use super::Slot;
 use crate::connection::page::{Shown, Side};
 use split_grid::{Layout, MIN_COLS, MIN_ROWS};
 
-mod split_grid;
-
-pub use split_grid::{Dir, Zone};
+pub use split_grid::{Dir, Rect, Zone};
 
 /// What the rail carries of the Workspace's grid: the first pane is `Rail.shown`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]

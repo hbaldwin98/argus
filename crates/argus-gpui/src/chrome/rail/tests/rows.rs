@@ -64,3 +64,28 @@ fn a_click_on_a_pane_row_selects_that_pane_and_picks_the_row(cx: &mut TestAppCon
     assert_eq!(selected(cx, &opened, "pane-1"), Some(true));
     assert_eq!(selected(cx, &opened, "pane-2"), Some(false));
 }
+
+#[gpui_kit::test]
+fn a_row_a_carried_pane_would_move_to_is_drawn_as_the_target(cx: &mut TestAppContext) {
+    use crate::kit::spots::Spots;
+    let opened = open(cx, connected_and_busy());
+    assert!(!present(cx, &opened, "checkout-112-target"));
+    cx.update(|cx| Spots::of(cx).light(Some(112)));
+    cx.update_window(opened.handle, |_, window, cx| {
+        window.refresh();
+        window.render_frame(cx)
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update(|cx| opened.rail.update(cx, |_, cx| cx.notify()));
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    assert!(present(cx, &opened, "checkout-112-target"));
+    assert!(present(cx, &opened, "checkout-112-ring"));
+    // The pane's own checkout is not offered, and a row not lit is not ringed unless picked.
+    assert!(!present(cx, &opened, "checkout-110-target"));
+    assert!(!present(cx, &opened, "checkout-110-ring"));
+    cx.update(|cx| Spots::of(cx).light(None));
+    cx.update(|cx| opened.rail.update(cx, |_, cx| cx.notify()));
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    assert!(!present(cx, &opened, "checkout-112-target"));
+}

@@ -340,3 +340,53 @@ fn the_shared_parts_sizes_are_the_rules_they_were_written_from() {
   height: 12px;");
     assert_eq!(t.ghost_h, 12.0);
 }
+
+#[test]
+fn the_stage_strip_drops_the_size_label_in_a_narrow_window() {
+    let t = ledger::tokens();
+    sheet_has("@media (max-width: 1100px) {
+  .head-size {
+    display: none;");
+    assert_eq!(t.head_size_hidden_below, 1100.0);
+}
+
+#[test]
+fn the_window_is_narrow_at_the_1200_breakpoint_where_the_strip_says_the_status() {
+    let t = ledger::tokens();
+    sheet_has("@media (max-width: 1200px) {
+  .head-status {
+    display: inline-flex;");
+    assert_eq!(t.narrow_below, 1200.0);
+}
+
+#[test]
+fn the_empty_stages_blocks_and_the_stopped_card_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    assert_eq!(t.tile, px_of("tile"));
+    sheet_has("--dialog-w-sm: min(440px, 94vw);");
+    assert_eq!(t.dialog_w_sm, 440.0);
+    sheet_has(".empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-16);
+  max-width: 520px;");
+    sheet_has(".empty-body.no-projects {
+  max-width: 460px;");
+    sheet_has(".empty-body.no-pane {
+  max-width: 760px;");
+    assert_eq!((t.empty_w, t.empty_w_projects, t.empty_w_pane), (520.0, 460.0, 760.0));
+    assert_eq!(t.stopped_icon, 28.0, "index.html draws the stopped icon at 28");
+}
+
+#[test]
+fn a_card_of_a_pane_to_go_back_to_is_the_rules_it_was_written_from() {
+    let t = ledger::tokens();
+    assert_eq!(t.card_min, px_of("vstat-min"));
+    sheet_has(".rcard:hover {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--bg-raised) 88%, var(--fg) 6%);");
+    sheet_has(".rcard:active {
+  background: color-mix(in srgb, var(--bg-raised) 80%, var(--fg) 10%);");
+    assert_eq!((t.share_card_hover, t.share_card_press), (0.06, 0.10));
+}

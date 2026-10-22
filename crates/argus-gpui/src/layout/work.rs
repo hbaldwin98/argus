@@ -1,5 +1,5 @@
 //! The work area under the header: the stage in the middle, a dock on its
-//! left, right and bottom, and the one drag that moves a panel or sizes a dock.
+//! left, right and bottom, and the one drag that moves a panel or a pane or sizes a dock.
 //!
 //! The arrangement is the page's (`index.html`): the left and right docks run the
 //! work area's full height, the bottom dock sits under the stage between them.
@@ -12,24 +12,30 @@
 //!
 //! Panels are dragged by a tab or a single panel's head, to a dock or the
 //! stage (`layout/drop_target`), through the window's one drag helper
-//! (`kit::drag`) so the 5 px threshold and the cancel are not written here.
+//! (`kit::drag`) so the 5 px threshold and the cancel are not written here. A pane is carried by
+//! the same drag, from a cell's header or a rail row, to a cell, the stage or a checkout
+//! (`layout/carry`); the places it can land are published by the views that draw them (`kit/spots`).
 
 use std::cell::Cell;
 use std::rc::Rc;
 
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{Dock, DockGesture, Panel};
-use argus_desktop_core::panes::console::ConsolePlace;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    anchored, deferred, div, point, prelude::*, px, AnyView, Bounds, Context, Entity, FocusHandle, KeyDownEvent,
+    div, prelude::*, px, AnyView, App, Bounds, Context, Entity, FocusHandle, KeyDownEvent,
     MouseButton, Pixels, Point, SharedString, Subscription, Window,
 };
 
 use crate::connection::caller::Caller;
 use crate::kit::area;
+use crate::chrome::stage::route::{frame, surface, Surface};
 use crate::connection::heard::Heard;
+use crate::kit::spots::Spots;
+use crate::layout::carry::landing::{call as carried_call, landing, Grid, Landing};
+use crate::layout::carry::preview;
+use crate::layout::carry::{Carrier, Carried};
 use crate::layout::dock::{self, DockView};
 use crate::layout::drop_target::{self, Target};
 use crate::layout::holders::Holder;
@@ -45,6 +51,9 @@ pub enum Held {
     Panel { panel: Panel, title: String, stage: bool, click: bool },
     /// A dock's sash, grabbed `grab` pixels from the dock's edge.
     Sash { dock: Dock, grab: f32 },
+    /// A pane carried by a cell's header or from the rail, to a cell, the stage or a checkout
+    /// (`layout/carry`). A press that never travels is the row's own click.
+    Pane(Carried),
 }
 
 pub struct WorkView {
@@ -76,6 +85,8 @@ impl WorkView {
         };
         let (left, right, bottom) = (dock(Dock::Left, cx), dock(Dock::Right, cx), dock(Dock::Bottom, cx));
         let observing = cx.observe(&heard, |_, _, cx| cx.notify());
+        // The cell headers and the rail's rows press panes into this drag.
+        Carrier::of(cx).serve(cx.weak_entity());
         Self {
             heard,
             caller,
@@ -123,61 +134,82 @@ impl WorkView {
         drop_target::target_at(at, self.work.get(), self.center.get(), stage)
     }
 
-    fn follow(&mut self, held: &Held) {
+    fn follow(&mut self, held: &Held, cx: &mut Context<Self>) {
         if let (Held::Sash { dock, grab }, Some(at)) = (held, self.drag.at()) {
             self.sizing = Some((*dock, sash::held(*dock, *grab, at, self.work.get(), self.center.get())));
         }
+        if let Held::Pane(carried) = held {
+            self.carry(Some(carried), cx);
+        }
     }
 
-    /// The area a panel dropped here would fill, said in words, and the
-    /// panel's name under the pointer.
-    fn carrying(&self, tokens: &Tokens) -> Option<impl IntoElement> {
-        let Some(Held::Panel { title, stage, .. }) = self.drag.payload() else { return None };
+    /// Where a pane carried to the pointer would land.
+    fn landed(&self, carried: &Carried, at: Point<Pixels>, cx: &App) -> Landing {
+        let heard = self.heard.read(cx);
+        let panes = heard.cell_panes();
+        landing(carried, at, Grid { up: heard.grid_up(), panes: &panes }, &Spots::peek(cx))
+    }
+
+    /// Says what is carried, or that nothing is, to the views that draw by it: the grid keeps its
+    /// layout while a pane is carried, and the rail lights the checkout it would move to.
+    fn carry(&mut self, carried: Option<&Carried>, cx: &mut Context<Self>) {
+        let spots = Spots::of(cx);
+        let lit = match (carried, self.drag.at()) {
+            (Some(carried), Some(at)) => match self.landed(carried, at, cx) {
+                Landing::Checkout(checkout) => Some(checkout),
+                _ => None,
+            },
+            _ => None,
+        };
+        // The rail is not this view's child, so a window redraw is what tells it.
+        if spots.carry(carried.is_some()) | spots.light(lit) {
+            cx.defer(|cx| cx.refresh_windows());
+        }
+    }
+
+    /// The area a panel or a pane dropped here would fill, said in words, and the name of what is
+    /// carried under the pointer.
+    fn carrying(&self, tokens: &Tokens, cx: &App) -> Option<impl IntoElement> {
+        let held = self.drag.payload()?;
         if !self.drag.is_dragging() {
             return None;
         }
         let at = self.drag.at()?;
         let (work, center) = (self.work.get(), self.center.get());
-        let preview = self.target(at, *stage).map(|target| {
-            let land = drop_target::landing(target, work, center);
-            let words = SharedString::from(drop_target::words(target));
-            div()
-                .id("drop-preview")
-                .test_support()
-                .aria_label(words.clone())
-                .absolute()
-                .left(land.origin.x - work.origin.x)
-                .top(land.origin.y - work.origin.y)
-                .w(land.size.width)
-                .h(land.size.height)
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.0))
-                .border_2()
-                .border_color(tokens.accent)
-                .bg(tokens.accent.opacity(tokens.share_landing))
-                .child(div().px_2().py_1().rounded(px(4.0)).bg(tokens.bg_surface).text_sm().text_color(tokens.fg).child(words))
-        });
-        let ghost = deferred(
-            anchored().position(at + point(px(12.0), px(12.0))).snap_to_window().child(
-                div()
-                    .id("drag-ghost")
-                    .test_support()
-                    .aria_label(SharedString::from(title.clone()))
-                    .px_2()
-                    .py_1()
-                    .rounded(px(4.0))
-                    .border_1()
-                    .border_color(tokens.line_strong)
-                    .bg(tokens.bg_surface)
-                    .text_sm()
-                    .text_color(tokens.fg)
-                    .child(SharedString::from(title.clone())),
-            ),
-        );
+        let (title, lit) = match held {
+            Held::Panel { title, stage, .. } => {
+                let lit = self.target(at, *stage).map(|target| {
+                    let land = drop_target::landing(target, work, center);
+                    let words = SharedString::from(drop_target::words(target));
+                    div()
+                        .id("drop-preview")
+                        .test_support()
+                        .aria_label(words.clone())
+                        .absolute()
+                        .left(land.origin.x - work.origin.x)
+                        .top(land.origin.y - work.origin.y)
+                        .w(land.size.width)
+                        .h(land.size.height)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(tokens.r_sm))
+                        .border_2()
+                        .border_color(tokens.accent)
+                        .bg(tokens.accent.opacity(tokens.share_landing))
+                        .child(div().px_2().py_1().rounded(px(tokens.r_sm)).bg(tokens.bg_surface).text_sm().text_color(tokens.fg).child(words))
+                        .into_any_element()
+                });
+                (title.as_str(), lit)
+            }
+            Held::Pane(carried) => {
+                let landed = self.landed(carried, at, cx);
+                (carried.title(), preview::lit(landed, work.origin, &Spots::peek(cx), tokens))
+            }
+            Held::Sash { .. } => return None,
+        };
         // Over the whole area, so the preview's own offsets are from its corner.
-        Some(div().absolute().top_0().left_0().size_full().children(preview).child(ghost))
+        Some(div().absolute().top_0().left_0().size_full().children(lit).child(preview::ghost(title, at, tokens)))
     }
 }
 
@@ -198,7 +230,7 @@ impl Dragger for WorkView {
 
     fn dragged(&mut self, step: Step<Held>, _: &mut Window, cx: &mut Context<Self>) {
         match step {
-            Step::Began(held) | Step::Moved(held) => self.follow(&held),
+            Step::Began(held) | Step::Moved(held) => self.follow(&held, cx),
             Step::Clicked(Held::Panel { panel, click: true, .. }) => {
                 self.ask(Call::Docks { gesture: DockGesture::Show { panel } }, cx)
             }
@@ -215,7 +247,20 @@ impl Dragger for WorkView {
                 let size = sash::held(dock, grab, at, self.work.get(), self.center.get());
                 self.ask(Call::Docks { gesture: DockGesture::Size { dock, size } }, cx);
             }
-            Step::Cancelled(_) => self.sizing = None,
+            Step::Dropped(Held::Pane(carried), at) => {
+                self.carry(None, cx);
+                let landed = self.landed(&carried, at, cx);
+                // Nothing moves here: the grid is what the session says next, and a refusal is a notice.
+                if let Some(call) = carried_call(&carried, landed) {
+                    self.ask(call, cx);
+                }
+            }
+            Step::Cancelled(held) => {
+                self.sizing = None;
+                if matches!(held, Held::Pane(_)) {
+                    self.carry(None, cx);
+                }
+            }
         }
         // The page marks the body `resizing` while a sash is held, so a pane
         // waits for the size the gesture settles on (SHELL-EDGE-1).
@@ -238,12 +283,14 @@ impl Dragger for WorkView {
 impl Render for WorkView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
-        // The Console stage and fullscreen give the console the stage: the
-        // Workspace's pane has none then (`ConsolePage::showing`).
-        // Git takes the stage from the console too, while its stage is up.
-        let on_stage = !self.heard.read(cx).git_up()
-            && matches!(self.heard.read(cx).console.place, ConsolePlace::Tab | ConsolePlace::Fullscreen);
-        let stage = if on_stage { self.console.clone() } else { self.stage.clone() };
+        // The Console stage and fullscreen give the console the stage: the Workspace's pane has
+        // none then (`ConsolePage::showing`). Which one fills it is the router's to say, and a
+        // fullscreen console puts the docks away (`chrome/stage/route`).
+        let (surface, furniture) = {
+            let heard = self.heard.read(cx);
+            (surface(&heard.rail, heard.console.place, heard.git_up()), frame(&heard.rail, heard.console.place).furniture)
+        };
+        let stage = if surface == Surface::Console { self.console.clone() } else { self.stage.clone() };
         h_flex()
             .id("work")
             .key_context("Work")
@@ -258,7 +305,7 @@ impl Render for WorkView {
             .min_h_0()
             .child(area::measure(self.work.clone()))
             .child(drag::watch(cx.weak_entity()))
-            .child(self.left.clone())
+            .when(furniture, |work| work.child(self.left.clone()))
             .child(
                 v_flex()
                     .id("center")
@@ -268,10 +315,10 @@ impl Render for WorkView {
                     .h_full()
                     .child(area::measure(self.center.clone()))
                     .child(div().id("work-stage").test_support().flex_1().min_h(px(dock::FLOOR_HEIGHT)).child(stage))
-                    .child(self.bottom.clone()),
+                    .when(furniture, |center| center.child(self.bottom.clone())),
             )
-            .child(self.right.clone())
-            .children(self.carrying(&tokens))
+            .when(furniture, |work| work.child(self.right.clone()))
+            .children(self.carrying(&tokens, cx))
     }
 }
 

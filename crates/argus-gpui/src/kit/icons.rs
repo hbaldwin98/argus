@@ -44,6 +44,14 @@ pub enum Glyph {
     FoldAll,
     /// A circle with an i: a notice.
     Info,
+    /// The settings' gear.
+    Gear,
+    /// The empty stages' marks, drawn at the tile's icon size: a folder, a terminal, and the turning ring of a wait.
+    Folder,
+    Terminal,
+    Spinner,
+    /// Two stacked units with a light each: the daemon.
+    Server,
 }
 
 impl Glyph {
@@ -78,6 +86,11 @@ impl Glyph {
             Glyph::Refresh => include_bytes!("../../assets/icons/refresh.svg"),
             Glyph::FoldAll => include_bytes!("../../assets/icons/fold-all.svg"),
             Glyph::Info => include_bytes!("../../assets/icons/info.svg"),
+            Glyph::Gear => include_bytes!("../../assets/icons/gear.svg"),
+            Glyph::Folder => include_bytes!("../../assets/icons/folder.svg"),
+            Glyph::Terminal => include_bytes!("../../assets/icons/terminal.svg"),
+            Glyph::Spinner => include_bytes!("../../assets/icons/spinner.svg"),
+            Glyph::Server => include_bytes!("../../assets/icons/server.svg"),
         }
     }
 
@@ -124,6 +137,11 @@ mod tests {
             Glyph::Refresh,
             Glyph::FoldAll,
             Glyph::Info,
+            Glyph::Gear,
+            Glyph::Folder,
+            Glyph::Terminal,
+            Glyph::Spinner,
+            Glyph::Server,
         ] {
             let text = std::str::from_utf8(glyph.bytes()).expect("utf-8");
             assert!(text.starts_with("<svg"), "{glyph:?}");

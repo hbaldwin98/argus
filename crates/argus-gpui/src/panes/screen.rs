@@ -58,6 +58,8 @@ pub struct Screen {
     lines: Vec<Vec<Segment>>,
     cursor: Cursor,
     parked: Option<Parked>,
+    /// The child asked for the mouse reports (SHELL-SCREEN-16).
+    mouse: bool,
 }
 
 impl Screen {
@@ -70,6 +72,7 @@ impl Screen {
             lines: Vec::new(),
             cursor: Cursor { row: 0, col: 0, visible: false, shape: Shape::Block },
             parked: None,
+            mouse: false,
         }
     }
 
@@ -88,6 +91,7 @@ impl Screen {
         }
         self.cursor = frame.cursor.into();
         self.parked = frame.parked;
+        self.mouse = frame.mouse;
     }
 
     /// The pane the rows are of.
@@ -110,6 +114,12 @@ impl Screen {
 
     pub fn parked(&self) -> Option<Parked> {
         self.parked
+    }
+
+    /// Whether a press is the child's: it asked for the mouse, and the view is live. A view parked
+    /// in its history never takes the mouse (SHELL-SCREEN-16).
+    pub fn takes_mouse(&self) -> bool {
+        self.mouse && self.parked.is_none()
     }
 
     /// The glyph at a cell, either column of a wide one, and whether it is a
@@ -251,6 +261,23 @@ mod tests {
         screen.apply(frame(1, 1, 10, false, Vec::new()));
         assert_eq!(screen.cursor().shape, Shape::Bar);
         assert_eq!(screen.parked(), None);
+    }
+
+    #[test]
+    fn a_child_that_asked_for_the_mouse_takes_it_unless_the_view_is_parked_in_its_history() {
+        let mut screen = Screen::new();
+        assert!(!screen.takes_mouse());
+        let mut f = frame(1, 1, 10, true, Vec::new());
+        f.mouse = true;
+        screen.apply(f);
+        assert!(screen.takes_mouse());
+        let mut f = frame(1, 1, 10, false, Vec::new());
+        f.mouse = true;
+        f.parked = Some(Parked { offset: 1, depth: 4 });
+        screen.apply(f);
+        assert!(!screen.takes_mouse(), "a parked view is read, not driven");
+        screen.apply(frame(1, 1, 10, false, Vec::new()));
+        assert!(!screen.takes_mouse(), "the flag comes with every frame");
     }
 
     #[test]

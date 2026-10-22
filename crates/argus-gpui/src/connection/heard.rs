@@ -27,6 +27,7 @@ use gpui_kit::{Context, EventEmitter, Task};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::layout::holders::{Holder, Holders};
+use crate::connection::screens::{Marked, Screens};
 use crate::panes::screen::Screen;
 use crate::review::entry::{Entry, Open};
 
@@ -87,12 +88,10 @@ pub struct Heard {
     /// was pressed with no checkout to open, and the tab pressed last. Set by
     /// the rail and the stage, as a resize is held by the work area.
     pub git: Entry,
-    /// The Workspace pane's rows. Shared with the element drawing them, which
-    /// holds the last one while the next is applied (copy on write).
-    pub screen: Arc<Screen>,
-    /// The console's first side's rows, and its second's while it is split.
-    pub first: Arc<Screen>,
-    pub second: Arc<Screen>,
+    /// The rows of every side a pane is drawn on, and the selection across them. A screen is
+    /// shared with the element drawing it, which holds the last one while the next is applied
+    /// (copy on write).
+    pub screens: Screens,
     /// The line along the bottom of the window, while one is showing. The
     /// view that draws it ends it after [`NOTICE_FOR`]; a new one replaces it.
     pub notice: Option<Notice>,
@@ -124,9 +123,7 @@ impl Heard {
             review: None,
             history: None,
             git: Entry::default(),
-            screen: Arc::new(Screen::new()),
-            first: Arc::new(Screen::new()),
-            second: Arc::new(Screen::new()),
+            screens: Screens::new(),
             notice: None,
             holding: Holders::default(),
             noticed: 0,
@@ -195,19 +192,12 @@ impl Heard {
                 }
                 self.history = page.open.then(|| Rc::new(*page));
             }
-            // The Workspace's side and the console's two are drawn; the
-            // splits' and the views' frames are dropped, as a page drops one
-            // for a side it has no screen for.
-            Event::Frame(frame) if matches!(frame.side, Side::Workspace | Side::First | Side::Second) => {
-                let side = frame.side;
-                let screen = match side {
-                    Side::First => &mut self.first,
-                    Side::Second => &mut self.second,
-                    _ => &mut self.screen,
-                };
-                Arc::make_mut(screen).apply(frame);
-                if !self.painted.contains(&side) {
-                    self.painted.push(side);
+            // A frame for a side with no screen is dropped, as a page drops one (`connection/screens`).
+            Event::Frame(frame) => {
+                if let Some(side) = self.screens.apply(frame) {
+                    if !self.painted.contains(&side) {
+                        self.painted.push(side);
+                    }
                 }
                 return false;
             }
@@ -251,10 +241,15 @@ impl Heard {
 
     /// The screen a side draws.
     pub fn screen_of(&self, side: Side) -> &Arc<Screen> {
-        match side {
-            Side::First => &self.first,
-            Side::Second => &self.second,
-            _ => &self.screen,
+        self.screens.of(side)
+    }
+
+    /// Moves the selection to `marked`, or takes it away, and says to the side it left and the side it
+    /// came to that their picture changed. Not a `notify`: the rail and the foot have nothing new to
+    /// draw while a drag goes on.
+    pub fn mark(&mut self, marked: Option<Marked>, cx: &mut Context<Self>) {
+        for side in self.screens.mark(marked) {
+            cx.emit(Painted(side));
         }
     }
 
@@ -266,6 +261,7 @@ impl Heard {
         match side {
             Side::First => self.console.showing,
             Side::Second => self.console.beside,
+            Side::Beside(n) => self.rail.row.beside.get(usize::from(n)).and_then(Option::as_ref).map(|shown| shown.pane),
             _ => self.rail.shown.as_ref().map(|shown| shown.pane),
         }
     }
@@ -431,7 +427,7 @@ mod tests {
         use argus_desktop_core::connection::page::Side;
         let mut heard = Heard::new();
         assert!(!heard.hear(frame(Side::Workspace)), "the rail and the foot have nothing new to draw");
-        assert_eq!(heard.screen.pane(), Some(1));
+        assert_eq!(heard.screen_of(Side::Workspace).pane(), Some(1));
         assert_eq!(heard.painted, [Side::Workspace]);
     }
 
@@ -442,7 +438,7 @@ mod tests {
         for side in [Side::Beside(0), Side::View(0)] {
             heard.hear(frame(side));
         }
-        assert_eq!(heard.screen.pane(), None);
+        assert_eq!(heard.screen_of(Side::Workspace).pane(), None);
         assert!(heard.painted.is_empty());
     }
 
@@ -453,7 +449,10 @@ mod tests {
         heard.hear(frame(Side::First));
         heard.hear(frame(Side::Second));
         heard.hear(frame(Side::Second));
-        assert_eq!((heard.first.pane(), heard.second.pane(), heard.screen.pane()), (Some(1), Some(1), None));
+        assert_eq!(
+            (heard.screen_of(Side::First).pane(), heard.screen_of(Side::Second).pane(), heard.screen_of(Side::Workspace).pane()),
+            (Some(1), Some(1), None)
+        );
         assert_eq!(heard.painted, [Side::First, Side::Second], "each side once");
     }
 

@@ -3,13 +3,14 @@
 
 use argus_desktop_core::connection::page::{Call, Pane};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, px, Context, Hsla, MouseButton, MouseUpEvent, Role, SharedString};
+use gpui_kit::{div, prelude::*, px, Context, Hsla, MouseButton, MouseDownEvent, MouseUpEvent, Role, SharedString};
 
 use super::picked::Picked;
 use super::RailView;
 use super::row::line;
 use super::status::pane_word;
 use crate::kit::icons::Glyph;
+use crate::layout::carry::{Carried, Carrier};
 use crate::kit::pill::status_pill;
 use crate::kit::status_dot::status_dot;
 use crate::theme::Tokens;
@@ -80,6 +81,16 @@ impl RailView {
                 this.ask(held, Call::Select { pane: id });
                 cx.notify();
             }))
+            // Carried onto the stage it opens there, on another checkout's row it moves there
+            // (SHELL-RAIL-17). A press that never travels is the click above.
+            .on_mouse_down(MouseButton::Left, {
+                let (carrier, title) = (Carrier::of(cx), pane.title.clone());
+                cx.listener(move |_, event: &MouseDownEvent, _, cx| {
+                    if !held {
+                        carrier.press(event.position, Carried::Rail { pane: id, title: title.clone(), checkout: Some(checkout) }, cx);
+                    }
+                })
+            })
             .on_mouse_up(
                 MouseButton::Middle,
                 cx.listener(move |this, _: &MouseUpEvent, _, _| this.ask(held, Call::Close { pane: id })),

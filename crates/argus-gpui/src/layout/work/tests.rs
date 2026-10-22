@@ -7,7 +7,7 @@ use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
 use argus_desktop_core::layout::docks::{DockPage, DockTab, DocksPage, PanelKind, PresentPanel};
 use gpui_kit::test::{ClickOptions, TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{
-    size, AnyWindowHandle, Bounds, MouseButton, Render, TestAppContext, WindowBounds, WindowOptions,
+    point, size, AnyWindowHandle, Bounds, MouseButton, Render, TestAppContext, WindowBounds, WindowOptions,
 };
 
 const WIDTH: f32 = 1000.0;

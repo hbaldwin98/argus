@@ -27,14 +27,16 @@ use argus_desktop_core::connection::page::Stage;
 use argus_desktop_core::keys::keymap::{Layer, Place};
 use argus_desktop_core::panes::console::ConsolePlace;
 use gpui_kit::component::{v_flex, ActiveTheme as _};
-use gpui_kit::{prelude::*, px, Context, Entity, FocusHandle, Subscription, Window};
+use gpui_kit::{prelude::*, px, Context, Entity, FocusHandle, Subscription, TestSupportExt as _, Window};
 
 use crate::chrome::foot::{foot, Console};
+use crate::chrome::stage::route::frame;
 use crate::chrome::nav::Nav;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::keys::caps;
 use crate::keys::layer::Layers;
+use crate::kit::spots::{Spot, Spots};
 use crate::theme::Tokens;
 use keys::RailKeys;
 use picked::Picked;
@@ -79,8 +81,10 @@ impl RailView {
 impl Render for RailView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
+        // A row folded away or gone is no place to drop on: each says where it is again as it paints.
+        Spots::of(cx).forget(|spot| matches!(spot, Spot::Checkout(_)));
         let mono = cx.theme().mono_font_family.clone();
-        let (rail, git_up, held, link, alarm, keys, chime, console) = {
+        let (rail, git_up, held, link, alarm, keys, chime, console, furniture) = {
             let heard = self.heard.read(cx);
             let keys: Vec<Vec<String>> = Nav::ALL
                 .iter()
@@ -99,16 +103,18 @@ impl Render for RailView {
                 keys,
                 heard.status.as_ref().is_none_or(|s| s.chime),
                 Console { shown: heard.console.place != ConsolePlace::Hidden, count: heard.console.tabs.len() },
+                frame(&heard.rail, heard.console.place).furniture,
             )
         };
         let body = v_flex()
             .flex_1()
             .min_h_0()
-            .child(self.nav(&rail, git_up, held, &keys, &mono, &tokens, cx))
+            .when(furniture, |body| body.child(self.nav(&rail, git_up, held, &keys, &mono, &tokens, cx)))
             .when(rail.projects.len() > 1, |body| body.child(self.projects(&rail, held, &tokens, cx)))
             .child(self.listing(&rail, held, &tokens, cx));
         v_flex()
             .id("rail")
+            .test_support()
             .key_context("Rail")
             .track_focus(&self.focus)
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.release(window, cx)))
@@ -122,7 +128,8 @@ impl Render for RailView {
             .text_size(px(tokens.fs_md))
             .child(self.brand(&rail, &tokens))
             .child(body)
-            .child(foot(&link, &rail, alarm.as_deref(), chime, console, &self.caller, held, &tokens))
+            // A fullscreen console puts the nav and the foot away and keeps the projects.
+            .when(furniture, |column| column.child(foot(&link, &rail, alarm.as_deref(), chime, console, &self.caller, held, &tokens)))
     }
 }
 

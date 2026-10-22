@@ -942,12 +942,54 @@ pub fn in_pane(page: &PageKey, after_leader: bool) -> Option<Action> {
         .map(|b| b.action)
 }
 
+/// Whether a key pressed in a pane is the window's and not the pane's program's: on a Mac the
+/// command key's chords (quit, close, copy) are the window's unless the Pane place binds the
+/// chord, as it does the paste (SHELL-INPUT-2). `mac` is whether the platform is a Mac, so either
+/// window asks this one question with its own answer.
+pub fn leaves_to_window(page: &PageKey, mac: bool) -> bool {
+    left_unless(page, mac, |page| in_pane(page, false).is_some())
+}
+
+/// [`leaves_to_window`] with the Pane place's answer given, so the rule is held on a platform whose
+/// Pane place binds no command-key chord.
+fn left_unless(page: &PageKey, mac: bool, pane_binds: impl Fn(&PageKey) -> bool) -> bool {
+    mac && page.meta && !pane_binds(page)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn page(key: &str) -> PageKey {
         PageKey { key: key.into(), ..PageKey::default() }
+    }
+
+    #[test]
+    fn a_mac_leaves_the_command_keys_chords_to_the_window_unless_the_pane_binds_them() {
+        let command = |key: &str| PageKey { meta: true, ..page(key) };
+        assert!(leaves_to_window(&command("c"), true), "copy is the window's");
+        assert!(leaves_to_window(&command("q"), true));
+        assert!(!leaves_to_window(&page("c"), true), "a bare letter is typed");
+        assert!(!leaves_to_window(&PageKey { ctrl: true, ..page("c") }, true), "Ctrl-C is the program's");
+        // Whatever the Pane place binds with the command key stays the pane's, wherever that is bound.
+        for binding in BINDINGS.iter().filter(|b| b.place == Pane) {
+            for chord in binding.chords.iter().filter(|c| c.meta && !c.leader) {
+                let key = PageKey { key: chord.key.into(), meta: true, shift: chord.shift, ..PageKey::default() };
+                assert!(!leaves_to_window(&key, true), "{} is the pane's", binding.label);
+            }
+        }
+    }
+
+    #[test]
+    fn a_command_chord_the_pane_binds_stays_the_panes_on_a_mac() {
+        let paste = PageKey { meta: true, ..page("v") };
+        assert!(!left_unless(&paste, true, |key| key.key == "v"));
+        assert!(left_unless(&paste, true, |key| key.key == "x"));
+    }
+
+    #[test]
+    fn nothing_but_a_mac_leaves_a_key_to_the_window() {
+        assert!(!leaves_to_window(&PageKey { meta: true, ..page("c") }, false), "the Windows key is not a chord");
     }
 
     #[test]

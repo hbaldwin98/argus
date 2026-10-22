@@ -1438,6 +1438,11 @@ impl Session {
                 "argusd is too old to move panes between checkouts: run `argus server restart`",
             );
         }
+        // A browser belongs to the checkout of the agent that opened it; the window never offers
+        // one as a drag source, and a request that does is told why it went nowhere.
+        if self.tree.lineage_of_pane(pane).is_some_and(|(_, info)| info.kind == argus_protocol::PaneKind::Browser) {
+            return self.note("a browser stays in the checkout of the agent that opened it");
+        }
         let already = self.tree.lineage_of_pane(pane).is_some_and(|(l, _)| l.checkout.id == checkout);
         if self.project_of(pane).is_some() && !already {
             self.out.push(ClientMsg::MoveToCheckout { pane, checkout });
@@ -3570,6 +3575,18 @@ mod tests {
             [ClientMsg::MoveToCheckout { pane: PaneId(1), checkout: CheckoutId(99) }]
         ));
         assert!(s.move_to_checkout(PaneId(98), CheckoutId(99)).is_empty());
+    }
+
+    #[test]
+    fn a_browser_is_refused_a_move_to_another_checkout_with_a_notice() {
+        let mut s = session(Hello::this_build());
+        s.receive(with_tree(tree_with_browser(30)));
+        assert!(s.move_to_checkout(PaneId(30), CheckoutId(99)).is_empty());
+        let events = s.events(0);
+        assert!(
+            events.iter().any(|event| matches!(event, Event::Notice { text } if text.contains("browser stays"))),
+            "{events:?}"
+        );
     }
 
     #[test]
