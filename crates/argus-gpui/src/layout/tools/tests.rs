@@ -129,3 +129,41 @@ fn a_stopped_daemon_leaves_the_page_button_asking_nothing(cx: &mut TestAppContex
     up(cx, &opened, at);
     assert!(taken(&opened).is_empty());
 }
+
+/// The extension's view alone in the right dock: a title row, not a tab strip.
+fn alone(cx: &mut TestAppContext) -> Opened {
+    let mut page = shown(true);
+    page.right.tabs.retain(|tab| tab.panel == images());
+    open(
+        cx,
+        vec![
+            status(Connection::Connected),
+            console(ConsolePlace::Docked),
+            Event::Docks(Box::new(page)),
+            Event::Extensions(Box::new(ExtensionsPage { tables: vec![table(false, Some("a"))], ..ExtensionsPage::default() })),
+        ],
+    )
+}
+
+#[gpui_kit::test]
+fn a_view_alone_in_its_dock_has_a_hide_that_hides_it_and_a_tab_strip_has_none(cx: &mut TestAppContext) {
+    // EXTVIEW-21: Hide, "Hide <title>", sends `docks hide`.
+    let opened = alone(cx);
+    assert_eq!(crate::layout::work::tests::label(cx, &opened, "dock-hide-right").as_deref(), Some("Hide Images"));
+    let at = centre(cx, &opened, "dock-hide-button-right");
+    down(cx, &opened, at);
+    up(cx, &opened, at);
+    assert_eq!(taken(&opened), ["Docks { gesture: Hide { panel: Extension(\"docker/images\") } }"]);
+    let tabbed = with_tables(cx, true);
+    assert!(!present_id(cx, &tabbed, "dock-hide-right"), "its tab's menu holds Hide");
+}
+
+#[gpui_kit::test]
+fn a_stopped_daemon_leaves_hide_asking_nothing(cx: &mut TestAppContext) {
+    let opened = alone(cx);
+    hear(cx, &opened, vec![status(Connection::Stopped)]);
+    let at = centre(cx, &opened, "dock-hide-button-right");
+    down(cx, &opened, at);
+    up(cx, &opened, at);
+    assert!(taken(&opened).is_empty());
+}

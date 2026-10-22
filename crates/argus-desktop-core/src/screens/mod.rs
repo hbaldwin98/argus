@@ -6,8 +6,10 @@
 //! of the Argus project at work. `page/test/screens` replays each scene's
 //! events into the page and photographs it.
 
+mod extension_kinds;
 #[cfg(test)]
 mod live;
+mod saved;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -1977,6 +1979,13 @@ fn scene(name: &'static str, title: &'static str, build: fn() -> Session) -> Sce
 }
 
 pub fn scenes() -> Vec<Scene> {
+    let mut all = main_scenes();
+    all.extend(saved::scenes());
+    all.extend(extension_kinds::scenes());
+    all
+}
+
+fn main_scenes() -> Vec<Scene> {
     vec![
         scene("connecting", "Connecting — before any daemon answers", || {
             let mut s = Session::default();

@@ -256,3 +256,24 @@ fn the_pane_waits_for_the_last_dialog_that_took_the_keys(cx: &mut TestAppContext
     close(cx, &opened, Overlay::AddProject);
     assert!(pane_has_the_keys(cx, &opened));
 }
+
+#[gpui_kit::test]
+fn a_dialog_is_at_rest_on_its_first_frames_as_the_pages_has_no_entrance(cx: &mut TestAppContext) {
+    // The kit slides a dialog down over 250ms by the machine's clock; the page's `.dialog` has no
+    // keyframe, so a dialog that is still moving a few frames on is not the page's.
+    use gpui_kit::TestSupportExt as _;
+    let opened = open(cx);
+    let host = opened.host.clone();
+    cx.update_window(opened.handle, |_, window, cx| {
+        host.open(Spec::new(Overlay::Settings), |dialog, _, _, _| dialog.child(div().id("probe").test_support().size(px(10.0))), window, cx)
+    })
+    .unwrap();
+    let top = |cx: &mut TestAppContext| cx.update_window(opened.handle, |_, window, _| window.find("probe".to_owned()).bounds().origin.y).unwrap();
+    cx.run_until_parked();
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    let first = top(cx);
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    settle(cx, &opened);
+    assert_eq!(top(cx), first, "it moved after it was first drawn");
+}
