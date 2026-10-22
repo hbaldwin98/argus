@@ -15,6 +15,7 @@ use argus_desktop_core::system::clock::Clock;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, Context, Entity, Subscription, Window};
 
+use crate::browser::stage::BrowsersStage;
 use crate::checkouts::stage::CheckoutsStage;
 use crate::code::stage::CodeStage;
 use crate::chrome::header::launcher::launcher;
@@ -26,7 +27,7 @@ use crate::chrome::projects::add::AddView;
 use crate::chrome::projects::question;
 use crate::chrome::rail::RailView;
 use crate::chrome::stage::route::frame;
-use crate::chrome::stage::{stopped, StageView};
+use crate::chrome::stage::{stopped, Bodies, StageView};
 use crate::connection::caller::Caller;
 use crate::connection::heard::{Heard, Ran};
 use crate::keys::extension::Commands;
@@ -81,8 +82,9 @@ impl Shell {
         let git = cx.new(|cx| GitStage::new(heard.clone(), caller.clone(), window, cx));
         let checkouts = cx.new(|cx| CheckoutsStage::new(heard.clone(), caller.clone(), window, cx));
         let code = cx.new(|cx| CodeStage::new(heard.clone(), caller.clone(), window, cx));
+        let browsers = cx.new(|cx| BrowsersStage::new(heard.clone(), caller.clone(), cx));
         let split = cx.new(|cx| SplitView::new(heard.clone(), caller.clone(), terminal.clone(), window, cx));
-        let stage = cx.new(|cx| StageView::new(heard.clone(), caller.clone(), split.clone().into(), git.into(), checkouts.into(), code.into(), cx));
+        let stage = cx.new(|cx| StageView::new(heard.clone(), caller.clone(), Bodies { pane: split.clone().into(), git: git.into(), checkouts: checkouts.into(), code: code.into(), browsers: browsers.into() }, cx));
         let work = cx.new(|cx| WorkView::new(heard.clone(), caller.clone(), stage.into(), console.into(), cx));
         let notice = cx.new(|cx| NoticeView::new(heard.clone(), cx));
         let add = cx.new(|cx| AddView::new(heard.clone(), caller.clone(), window, cx));

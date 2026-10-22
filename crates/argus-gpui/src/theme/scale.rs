@@ -432,6 +432,9 @@ pub struct Scale {
     /// `.cf-mark`'s least width, and what the rows held in the ignored fold keep of their colour.
     pub tree_mark_w: f32,
     pub tree_held_opacity: f32,
+    /// `.bgrid`'s least tile width (`minmax(360px, 1fr)`) and the shape of `.btile-screen` (16 / 10), as width over height.
+    pub browser_tile_min: f32,
+    pub browser_tile_ratio: f32,
     /// The Code stage's columns: `.code-tree`'s usual width, narrowed at stage widths 1100 and 640
     /// and in a narrow window (`--code-tree-narrow`), its share of the stage at most (45%, 55%
     /// while searching) and the width it takes while searching, and the most the results take with
@@ -736,6 +739,8 @@ impl Scale {
             tree_indent: 16.0,
             tree_mark_w: 14.0,
             tree_held_opacity: 0.7,
+            browser_tile_min: 360.0,
+            browser_tile_ratio: 1.6,
             code_tree_w: 288.0,
             code_tree_mid: 240.0,
             code_tree_low: 180.0,

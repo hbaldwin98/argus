@@ -26,9 +26,17 @@ use crate::layout::carry::{Carried, Carrier};
 use crate::theme::scale::{rem, Mark};
 use crate::theme::Tokens;
 
-/// The tooltip a pane's row says: its title, then its note or what it is.
-fn tooltip(pane: &Pane) -> String {
-    format!("{} \u{b7} {}", pane.title, pane.note.clone().unwrap_or_else(|| format!("{}, {}", if pane.agent { "agent" } else { "shell" }, pane.status)))
+/// The tooltip a pane's row says: its title, then its note or what it is. A browser is told apart
+/// from a shell here and by its glyph: the page drew it as a shell (SHELL-BROWSER-20).
+fn tooltip(pane: &Pane, browser: bool) -> String {
+    let kind = if pane.agent {
+        "agent"
+    } else if browser {
+        "browser"
+    } else {
+        "shell"
+    };
+    format!("{} \u{b7} {}", pane.title, pane.note.clone().unwrap_or_else(|| format!("{kind}, {}", pane.status)))
 }
 
 impl RailView {
@@ -59,6 +67,7 @@ impl RailView {
 
     fn row(&self, checkout: u64, pane: &Pane, picked: bool, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let (id, held) = (pane.id, ctx.held);
+        let browser = self.slice.browsers.contains(&id);
         let word = pane_word(pane.status);
         let fill = tokens.fill;
         // Off the Workspace the pane on screen is not the selection, the stage's own
@@ -95,8 +104,8 @@ impl RailView {
             .border_1()
             .border_color(ring)
             .aria_selected(pane.on)
-            .aria_label(tooltip(pane))
-            .tooltip(tip(tooltip(pane)))
+            .aria_label(tooltip(pane, browser))
+            .tooltip(tip(tooltip(pane, browser)))
             .when(boxed, |row| row.bg(tokens.bg_selected))
             .when(!boxed, |row| row.hover(move |style| style.bg(fill)))
             .when_some(edge, |row, width| row.child(div().absolute().left_0().top_0().bottom_0().w(rem(width)).bg(tokens.mark_sel_edge)))
@@ -104,6 +113,10 @@ impl RailView {
         self.presses(row, checkout, pane, held, cx)
             // One status encoding per row: the pill when it has a word, else the dot.
             .when(word.is_none(), |row| row.child(status_dot(format!("pane-{id}"), pane.status, tokens)))
+            // A browser is not a program in a terminal: its row wears the globe.
+            .when(browser, |row| {
+                row.child(div().id(format!("pane-{id}-browser")).test_support().flex_shrink_0().text_color(tokens.fg_faint).child(Glyph::Globe.at(tokens.icon_xs)))
+            })
             .child(div().flex_1().min_w_0().truncate().child(pane.title.clone()))
             .when_some(word, |row, word| {
                 // `.pane-end`: gives way to the close button while the row is pointed at.
@@ -165,8 +178,8 @@ impl RailView {
             .text_size(rem(tokens.fs_sm))
             .text_color(if pane.on || pane.agent { tokens.fg } else { tokens.fg_muted })
             .aria_selected(pane.on)
-            .aria_label(tooltip(pane))
-            .tooltip(tip(tooltip(pane)))
+            .aria_label(tooltip(pane, self.slice.browsers.contains(&id)))
+            .tooltip(tip(tooltip(pane, self.slice.browsers.contains(&id))))
             .when(boxed, |tile| tile.bg(tokens.bg_selected))
             .when(!boxed, |tile| tile.hover(move |style| style.bg(fill)))
             .children(shown);

@@ -5,9 +5,10 @@
 //! (`review::entry`), so the stage is the session's to say and is never left standing under
 //! another.
 //!
-//! The built-in items are a fixed list (`Nav::ALL`); the Browsers item joins it after Console with
-//! the Browsers stage (audit items 79 to 90), and the Extensions and Views folds that follow are
-//! `tail`'s. A narrow rail draws each item as a tile of its icon, and the folds not at all.
+//! The built-in items are a fixed list (`Nav::ALL`), the Browsers item last of them; the
+//! Extensions and Views folds that follow are `tail`'s. The Browsers item's count, fold and sub-rows
+//! (SHELL-BROWSER-14) are not drawn yet. A narrow rail draws each item as a tile of its icon, and the
+//! folds not at all.
 
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, Context, SharedString};

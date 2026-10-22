@@ -673,6 +673,16 @@ fn the_checkouts_stage_is_the_rules_it_was_written_from() {
 }
 
 #[test]
+fn the_browsers_tiles_are_the_rules_they_were_written_from() {
+    let t = ledger::tokens();
+    sheet_has("grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));");
+    sheet_has(".btile-screen {
+  display: block;
+  aspect-ratio: 16 / 10;");
+    assert_eq!((t.browser_tile_min, t.browser_tile_ratio), (360.0, 1.6));
+}
+
+#[test]
 fn the_files_panel_and_the_code_stage_are_the_rules_they_were_written_from() {
     let t = ledger::tokens();
     sheet_has(".cfiles {\n  flex: none;\n  width: min(440px, 42%);");

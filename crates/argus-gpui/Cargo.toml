@@ -30,10 +30,12 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 # `Window::render_to_image` returns an `image::RgbaImage`; `png` writes it
 # for the screenshots.
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 # How many cells a character takes, so a tab in a diff line stops at the
 # column it would in a terminal and a wide glyph counts for two.
 unicode-width = "0.2"
+# A browser's picture arrives as base64, which the daemon's screencast and the scenes both use.
+base64 = { workspace = true }
 # The clipboard, for pasting a screenshot into a text control, as the Tauri
 # window does.
 arboard = { version = "3", default-features = false, features = ["image-data"] }

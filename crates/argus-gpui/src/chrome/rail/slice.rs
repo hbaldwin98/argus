@@ -38,6 +38,9 @@ pub(super) struct Slice {
     /// The Views fold: every saved view, and the ones a panel in a dock shows now.
     pub saved: Vec<NavView>,
     pub lit: HashSet<String>,
+    /// The panes that are browsers, which the tree's rows do not say: their rows wear a globe and
+    /// are told apart from a shell.
+    pub browsers: Vec<u64>,
 }
 
 impl Slice {
@@ -78,6 +81,7 @@ impl Slice {
             extensions_listed: heard.extensions_listed,
             saved: heard.saved_views.clone(),
             lit: nav::lit(&heard.saved_panels, &heard.docks),
+            browsers: heard.browsers.browsers.iter().map(|browser| browser.pane).collect(),
             rail,
         }
     }
