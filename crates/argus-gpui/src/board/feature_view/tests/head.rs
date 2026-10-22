@@ -1,10 +1,10 @@
 //! The header of an open feature and the tools on the strip (BOARD-HEAD-1 to -11).
 
-use gpui_kit::test::TestQueryExt as _;
+use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{AppContext as _, TestAppContext};
 
 use super::{on, push, view};
-use crate::checkouts::stage::tests::{click_id, label, present, selected};
+use crate::checkouts::stage::tests::{click_id, expanded, label, present, selected};
 use crate::keys::root::tests::{click_label, drain, has_label, press};
 
 // BOARD-HEAD-1: how it stands, how far it is, the tickets and the brief.
@@ -16,8 +16,8 @@ fn the_header_says_how_it_stands_how_far_it_is_its_tickets_and_its_brief(cx: &mu
     let tally = format!("{} of {} tasks \u{b7} {} decided \u{b7} {} open", feature.tasks_done, feature.tasks_total, feature.decided, feature.open);
     assert!(has_label(cx, &opened, &tally), "the progress bar says what it counts: {tally}");
     assert!(has_label(cx, &opened, feature.tickets.as_deref().expect("it has tickets")), "one button for the linked tickets");
-    let brief = label(cx, &opened, "feature-brief").expect("the brief line");
-    assert!(brief.contains(&feature.brief) && brief.ends_with("Edit the brief (B)"), "the brief and the way into editing it: {brief}");
+    assert_eq!(label(cx, &opened, "feature-brief").as_deref(), Some(feature.brief.as_str()), "the brief, whole, to a reader");
+    assert_eq!(label(cx, &opened, "brief-edit-button").as_deref(), Some("Edit brief"), "and the way into editing it");
 }
 
 #[gpui_kit::test]
@@ -32,7 +32,105 @@ fn a_feature_with_no_tasks_has_no_progress_and_no_brief_says_so(cx: &mut TestApp
     push(cx, &opened, empty);
     assert!(!present(cx, &opened, "feature-progress"), "no bar for no tasks");
     assert!(!present(cx, &opened, "feature-tickets"), "and no tickets button for no tickets");
-    assert_eq!(label(cx, &opened, "feature-brief").as_deref(), Some("Write the brief (B)"));
+    assert!(!present(cx, &opened, "feature-brief") && !present(cx, &opened, "brief-text"), "no brief draws no block under the line");
+    assert_eq!(label(cx, &opened, "brief-write").as_deref(), Some("Write the brief"), "but the line offers to write one");
+    click_id(cx, &opened, "brief-write");
+    assert!(has_label(cx, &opened, "Save the brief"), "which opens the brief's form");
+}
+
+/// Draws the frame a measured box asked for, as a real window's next frame would.
+fn settle(cx: &mut TestAppContext, opened: &crate::keys::root::tests::Opened) {
+    for _ in 0..2 {
+        cx.update_window(opened.handle, |_, window, cx| {
+            window.simulate_next_frame(cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+        cx.run_until_parked();
+    }
+}
+
+fn height(cx: &mut TestAppContext, opened: &crate::keys::root::tests::Opened, id: &'static str) -> f32 {
+    cx.update_window(opened.handle, |_, window, _| window.find(id).bounds().size.height.as_f32()).unwrap()
+}
+
+/// The scene's brief said over and over, so it runs past two lines at any width the window has.
+fn long_brief(cx: &mut TestAppContext, opened: &crate::keys::root::tests::Opened) {
+    let mut long = view(opened, cx);
+    long.brief = [long.brief.as_str(); 12].join(" ");
+    push(cx, opened, long);
+    settle(cx, opened);
+}
+
+// BOARD-HEAD-12: the brief is read in two lines under the status line until the whole is asked for, and
+// the whole stays inside a box that scrolls, so the outline keeps its place.
+#[gpui_kit::test]
+fn a_long_brief_shows_two_lines_until_show_all_and_show_less_puts_it_back(cx: &mut TestAppContext) {
+    let opened = on(cx, "feature-work");
+    long_brief(cx, &opened);
+    let tokens = cx.update(|cx| *crate::theme::Tokens::global(cx));
+    let line = cx.update_window(opened.handle, |_, window, _| crate::theme::scale::pixels(tokens.type_body.size * tokens.type_body.leading, window.rem_size()).as_f32()).unwrap();
+    let clamped = height(cx, &opened, "brief-text");
+    assert_eq!(expanded(cx, &opened, "brief-toggle"), Some(false), "a brief past two lines offers the rest");
+    assert_eq!(label(cx, &opened, "brief-toggle").as_deref(), Some("Show all"));
+    assert!(clamped > line + 0.5 && clamped <= 2.0 * line + 1.0, "two lines while clamped: {clamped} for lines of {line}");
+
+    click_id(cx, &opened, "brief-toggle");
+    let whole = height(cx, &opened, "brief-text");
+    assert_eq!(expanded(cx, &opened, "brief-toggle"), Some(true));
+    assert_eq!(label(cx, &opened, "brief-toggle").as_deref(), Some("Show less"));
+    assert!(whole > clamped, "the whole brief is taller than its two lines: {whole} against {clamped}");
+    let most = cx.update_window(opened.handle, |_, window, _| crate::theme::scale::pixels(tokens.brief_max_h, window.rem_size()).as_f32()).unwrap();
+    assert!(whole <= most + 0.5, "and never taller than the box it scrolls in: {whole} against {most}");
+
+    let again = view(&opened, cx);
+    push(cx, &opened, again);
+    assert_eq!(expanded(cx, &opened, "brief-toggle"), Some(true), "a push of the same feature keeps it whole");
+
+    click_id(cx, &opened, "brief-toggle");
+    assert_eq!(expanded(cx, &opened, "brief-toggle"), Some(false), "Show less puts it back to two lines");
+    assert_eq!(height(cx, &opened, "brief-text"), clamped);
+    assert!(drain(&opened).is_empty(), "reading the brief is the window's own and sends nothing");
+}
+
+#[gpui_kit::test]
+fn a_brief_that_fits_its_two_lines_offers_nothing_more(cx: &mut TestAppContext) {
+    let opened = on(cx, "feature-work");
+    let mut short = view(&opened, cx);
+    short.brief = "Serve the brief on demand.".into();
+    push(cx, &opened, short);
+    settle(cx, &opened);
+    assert!(present(cx, &opened, "brief-text"), "the brief is drawn");
+    assert!(!present(cx, &opened, "brief-toggle"), "with no Show all that would show nothing more");
+}
+
+#[gpui_kit::test]
+fn a_brief_read_whole_goes_back_to_two_lines_when_the_feature_closes(cx: &mut TestAppContext) {
+    let opened = on(cx, "feature-work");
+    long_brief(cx, &opened);
+    click_id(cx, &opened, "brief-toggle");
+    assert_eq!(expanded(cx, &opened, "brief-toggle"), Some(true));
+    let mut page = super::features(&opened, cx);
+    let open = page.open.take();
+    crate::keys::root::tests::hear(cx, &opened, vec![argus_desktop_core::connection::page::Event::Features(Box::new(page.clone()))]);
+    page.open = open;
+    crate::keys::root::tests::hear(cx, &opened, vec![argus_desktop_core::connection::page::Event::Features(Box::new(page))]);
+    settle(cx, &opened);
+    assert_eq!(expanded(cx, &opened, "brief-toggle"), Some(false), "opened again, the brief is two lines");
+}
+
+// BOARD-HEAD-3: B still opens the brief's form, which holds the brief whole.
+#[gpui_kit::test]
+fn b_opens_the_briefs_form_on_the_whole_brief(cx: &mut TestAppContext) {
+    let opened = on(cx, "feature-work");
+    long_brief(cx, &opened);
+    let feature = view(&opened, cx);
+    blur(cx, &opened);
+    press(cx, &opened, "b");
+    let said = cx.update_window(opened.handle, |_, window, _| window.find_by_label("Brief").value().map(str::to_owned)).unwrap();
+    assert_eq!(said.as_deref(), Some(feature.brief.as_str()));
+    assert!(!present(cx, &opened, "brief-text"), "the form is in the brief's place");
 }
 
 // BOARD-HEAD-2: the tickets button opens the link dialog.
@@ -71,12 +169,12 @@ fn blur(cx: &mut TestAppContext, opened: &crate::keys::root::tests::Opened) {
     crate::keys::root::tests::blur(cx, opened);
 }
 
-// BOARD-HEAD-3, -4: the brief is the way into editing it, and its form replaces the line.
+// BOARD-HEAD-3, -4: Edit beside the brief opens its form, which replaces the line.
 #[gpui_kit::test]
 fn the_brief_opens_its_form_in_place_of_the_status_line(cx: &mut TestAppContext) {
     let opened = on(cx, "feature-work");
     let feature = view(&opened, cx);
-    click_id(cx, &opened, "feature-brief");
+    click_id(cx, &opened, "brief-edit-button");
     assert!(has_label(cx, &opened, "Save the brief") && has_label(cx, &opened, "Cancel"));
     assert!(!present(cx, &opened, "feature-progress"), "the line is the form while it is written");
     let said = cx.update_window(opened.handle, |_, window, _| window.find_by_label("Brief").value().map(str::to_owned)).unwrap();

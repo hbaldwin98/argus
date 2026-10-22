@@ -59,7 +59,7 @@ fn opening_another_form_puts_the_first_away(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn a_plain_enter_is_a_newline_in_a_multi_line_field_and_ctrl_enter_saves_it(cx: &mut TestAppContext) {
     let opened = on(cx, "feature-work");
-    click_id(cx, &opened, "feature-brief");
+    click_id(cx, &opened, "brief-edit-button");
     type_text(cx, &opened, "a");
     press(cx, &opened, "enter");
     type_text(cx, &opened, "b");
@@ -116,7 +116,7 @@ fn the_primary_button_saves_as_the_key_does_and_cancel_is_a_button_too(cx: &mut 
     click_id(cx, &opened, "work-add-task");
     click_id(cx, &opened, "form-cancel");
     assert!(!present(cx, &opened, "work-add") && drain(&opened).is_empty());
-    click_id(cx, &opened, "feature-brief");
+    click_id(cx, &opened, "brief-edit-button");
     assert!(has_label(cx, &opened, "Save the brief"));
     click_label(cx, &opened, "Cancel");
     assert!(!has_label(cx, &opened, "Save the brief"));

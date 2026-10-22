@@ -990,6 +990,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `board/lenses/forms/edit` | what a form is about, what it starts out saying, which edit it sends and whether what it is about is still on screen |
 | `board/lenses/forms/view` | what a form is made of on screen: a named field, the multi-line field, the primary button with its cap beside Cancel |
 | `board/lenses/head` | an open feature's header: how it stands, how far it is, its tickets and brief, or the brief's form in their place |
+| `board/lenses/head/brief` | the brief under an open feature's status line: two lines of it, Show all when it runs past them at the width it has, the whole in a box that scrolls past `brief_max_h`, and Edit |
 | `board/lenses/head/menu` | the feature menu: the brief, the tickets, the reconcile with what it waits on, and the views that name the feature |
 | `board/lenses/head/tools` | what the strip carries for an open feature: the lenses as a radio with a count each, and the menu with a dot while a proposal waits |
 | `board/lenses/record` | the Record lens: every decision in the order made as the tree it was made in, beside the one under the cursor |

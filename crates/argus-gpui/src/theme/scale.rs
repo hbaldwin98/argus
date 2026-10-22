@@ -301,6 +301,9 @@ pub struct Scale {
     pub fig_source_share: f32,
     pub fig_source_max_w: f32,
     pub diff_max_h: f32,
+    /// The tallest an open feature's brief grows when it is read whole, before it scrolls: about eight
+    /// lines of body, so a long brief never pushes the outline off the window.
+    pub brief_max_h: f32,
     /// `.vform-grid`'s narrowest column (`14rem`), and the share of the changed colour a block's wash starts at (`@keyframes vchanged`).
     pub form_col_min: f32,
     pub share_changed: f32,
@@ -772,6 +775,7 @@ impl Scale {
             fig_source_share: 0.40,
             fig_source_max_w: 520.0,
             diff_max_h: 480.0,
+            brief_max_h: 152.0,
             form_col_min: 224.0,
             share_changed: 0.28,
             share_term_selection: 0.30,

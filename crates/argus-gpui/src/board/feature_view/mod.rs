@@ -58,6 +58,10 @@ pub struct OpenFeature {
     pub(crate) outline_area: Rc<Cell<Bounds<Pixels>>>,
     /// Whether the legend is asked for.
     pub(crate) legend: bool,
+    /// The feature whose brief is read whole, by its slug, and the box its brief's column was laid out
+    /// in (`head::brief`).
+    pub(crate) brief_read: Option<String>,
+    pub(crate) brief_area: Rc<Cell<Bounds<Pixels>>>,
     /// The option chosen in an open decision, not yet taken: the decision and the option.
     pub(crate) chosen: Option<(i64, usize)>,
     /// The flow's diagram opened over the window, while it is.
@@ -120,6 +124,8 @@ impl OpenFeature {
             outline,
             outline_area: Rc::default(),
             legend: false,
+            brief_read: None,
+            brief_area: Rc::default(),
             chosen: None,
             expanded: None,
             scroll: Scrolls::default(),
@@ -171,6 +177,7 @@ impl OpenFeature {
         let Some(view) = open else {
             self.expanded = None;
             self.legend = false;
+            self.brief_read = None;
             self.lit = None;
             self.menu = None;
             if self.was_open {
@@ -254,6 +261,12 @@ impl OpenFeature {
     pub fn lens(&mut self, lens: Lens, window: &mut Window, cx: &mut Context<Self>) {
         self.form.update(cx, |form, cx| form.cancel(window, cx));
         self.send(Call::SetLens { lens }, cx);
+        cx.notify();
+    }
+
+    /// Reads the brief of feature `slug` whole, or back to its two lines.
+    pub fn read_brief(&mut self, slug: &str, whole: bool, cx: &mut Context<Self>) {
+        self.brief_read = whole.then(|| slug.to_owned());
         cx.notify();
     }
 
@@ -374,7 +387,7 @@ impl Render for OpenFeature {
         root.child(
             v_flex()
                 .size_full()
-                .child(head::status_line(view, &me, &self.form, open, &tokens, cx))
+                .child(head::status_line(self, view, &me, open, window, &tokens, cx))
                 .child(div().flex_1().min_h_0().child(body))
                 .child(key_bar::key_bar(view.lens, &tokens)),
         )

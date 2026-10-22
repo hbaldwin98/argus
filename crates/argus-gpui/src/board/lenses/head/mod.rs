@@ -1,21 +1,20 @@
-//! An open feature's header (BOARD-HEAD-1 to -5): one quiet line under the window's title, that says how
-//! it stands, how far it is, its tickets and its brief, and the tools on the title's own line, the
-//! lenses it is read through and a menu for what is rarer.
+//! An open feature's header (BOARD-HEAD-1 to -5, -12): one quiet line under the window's title, that
+//! says how it stands, how far it is and its tickets, the brief under it (`brief`), and the tools on
+//! the title's own line, the lenses it is read through and a menu for what is rarer.
 //!
-//! The brief takes what room the rest leaves and is the way into editing it, so the header has no Edit
-//! button; while it is written, the line is the brief's form. The words of the tickets and the reconcile
-//! are core's (`FeatureView::tickets`, `reconcile_entry`).
+//! While the brief is written, the header is the brief's form. The words of the tickets and the
+//! reconcile are core's (`FeatureView::tickets`, `reconcile_entry`).
 
+pub mod brief;
 pub mod menu;
 pub mod tools;
 
 use argus_desktop_core::connection::page::{Call, FeatureView};
 use gpui_kit::component::{h_flex, v_flex};
-use gpui_kit::{div, prelude::*, AnyElement, Entity, SharedString, TestSupportExt as _};
+use gpui_kit::{prelude::*, AnyElement, Entity, SharedString, TestSupportExt as _, Window};
 
 use crate::board::feature_view::OpenFeature;
 use crate::board::lenses::forms::edit::Editing;
-use crate::board::lenses::forms::Form;
 use crate::board::lenses::forms::view as form;
 use crate::kit::button::{button, Look};
 use crate::kit::pill::{standing_status, status_pill};
@@ -38,8 +37,9 @@ pub fn tally(view: &FeatureView) -> String {
     parts.join(" \u{b7} ")
 }
 
-/// The line under the title, or the brief's form in its place.
-pub fn status_line(view: &FeatureView, feature: &Entity<OpenFeature>, form_entity: &Entity<Form>, form_open: Option<Editing>, tokens: &Tokens, cx: &gpui_kit::App) -> AnyElement {
+/// The line under the title and the brief under it, or the brief's form in their place.
+pub fn status_line(this: &OpenFeature, view: &FeatureView, feature: &Entity<OpenFeature>, form_open: Option<Editing>, window: &Window, tokens: &Tokens, cx: &gpui_kit::App) -> AnyElement {
+    let form_entity = &this.form;
     // `.fhead`: under a hairline, 8 and 20 inside.
     let frame = |inner: AnyElement| v_flex().id("feature-head").test_support().flex_shrink_0().border_b_1().border_color(tokens.line).px(rem(tokens.sp_20)).py(rem(tokens.sp_8)).child(inner).into_any_element();
     if form_open == Some(Editing::Brief) {
@@ -55,9 +55,7 @@ pub fn status_line(view: &FeatureView, feature: &Entity<OpenFeature>, form_entit
                 .into_any_element(),
         );
     }
-    let (opening, linking) = (feature.clone(), feature.clone());
-    let brief = if view.brief.is_empty() { "No brief yet.".to_owned() } else { view.brief.clone() };
-    let tip_words = if view.brief.is_empty() { "Write the brief (B)".to_owned() } else { format!("{}\n\nEdit the brief (B)", view.brief) };
+    let linking = feature.clone();
     let progress = (view.tasks_total > 0).then(|| {
         let share = percent(view.tasks_done as u32, view.tasks_total as u32).unwrap_or(0);
         h_flex()
@@ -75,30 +73,17 @@ pub fn status_line(view: &FeatureView, feature: &Entity<OpenFeature>, form_entit
             .tooltip(tip("The linked tickets (T)"))
             .on_click(move |_, _, cx| linking.update(cx, |feature, cx| feature.send(Call::OpenLink { map: false }, cx)))
     });
-    let words = h_flex()
-        .id("feature-brief")
-        .test_support()
-        .aria_label(SharedString::from(tip_words.clone()))
-        .flex_1()
+    let (whole, area) = (this.brief_read.as_deref() == Some(view.slug.as_str()), &this.brief_area);
+    let under = (!view.brief.is_empty()).then(|| brief::block(view, feature, area, whole, brief::runs_past(&view.brief, area, window, tokens), tokens));
+    let line = h_flex()
+        .items_center()
+        .gap(rem(tokens.sp_12))
         .min_w_0()
-        .gap(rem(tokens.sp_8))
-        .cursor_pointer()
-        .hover(|line| line.text_color(tokens.fg))
-        .tooltip(tip(tip_words))
-        .child(div().flex_shrink_0().text_color(tokens.fg).child("Brief"))
-        .child(div().min_w_0().truncate().when(view.brief.is_empty(), |text| text.text_color(tokens.fg_faint)).child(SharedString::from(brief)))
-        .on_click(move |_, window, cx| opening.update(cx, |feature, cx| feature.begin(Editing::Brief, window, cx)));
-    frame(
-        h_flex()
-            .items_center()
-            .gap(rem(tokens.sp_12))
-            .min_w_0()
-            .typed(tokens.type_small)
-            .text_color(tokens.fg_muted)
-            .child(status_pill("feature-standing", view.standing, standing_status(view.standing), tokens))
-            .children(progress)
-            .children(tickets)
-            .child(words)
-            .into_any_element(),
-    )
+        .typed(tokens.type_small)
+        .text_color(tokens.fg_muted)
+        .child(status_pill("feature-standing", view.standing, standing_status(view.standing), tokens))
+        .children(progress)
+        .children(tickets)
+        .when(view.brief.is_empty(), |line| line.child(brief::write(feature, tokens)));
+    frame(v_flex().gap(rem(tokens.sp_8)).min_w_0().child(line).children(under).into_any_element())
 }
