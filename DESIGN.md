@@ -1048,6 +1048,7 @@ the sidebar and the Workspace's live pane over `argus-desktop-core`'s session so
 | `browser/pane/address` | the address field: the browser's url unless the person is typing in it, Enter navigating to what core makes of the text, Escape putting the url back, both giving the keys to the page |
 | `browser/pane/bar` | the cell's toolbar: Back, Forward, Reload, the address and Close, each sent and none predicted, and the text button every control of the cell is drawn with |
 | `browser/pane/chip` | who has a browser as a chip: core's word with a dot in the colour of whoever has it |
+| `browser/pane/ime` | the text an input method gives a browser's screen: committed text sent once as text, a preedit held and sent when it ends as the page does on `compositionend`, drawn nowhere |
 | `browser/pane/keys` | the keys of a cell's page: core's key input to the browser, any other key to the session as a key, a Mac's command chords left to the window |
 | `browser/pane/screen` | the cell's screen: the picture letterboxed or the words for no tab with a New tab button, a press clicking in the page's pixels, the wheel scrolling the page, the keyed ring |
 | `browser/pane/tabs` | the cell's tab strip: a tab for each of the browser's, picked, closed by its mark or a middle click, a plus, the status chip, Follow agent and Take control or Hand back, its scroll kept across updates |

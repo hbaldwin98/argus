@@ -12,6 +12,7 @@ use gpui_kit::{point, px, MouseButton, ScrollDelta, TestAppContext};
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder as _};
 
 mod hand;
+mod ime;
 mod reconnect;
 mod strip;
 

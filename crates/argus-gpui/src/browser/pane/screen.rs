@@ -11,7 +11,7 @@ use argus_desktop_core::browser::PageBrowser;
 use argus_desktop_core::connection::page::Call;
 use argus_protocol::BrowserInput;
 use gpui_kit::component::v_flex;
-use gpui_kit::{div, prelude::*, Context, MouseButton, MouseDownEvent, Point, Pixels, ScrollWheelEvent, SharedString, TestSupportExt as _, Window};
+use gpui_kit::{canvas, div, ElementInputHandler, prelude::*, Context, MouseButton, MouseDownEvent, Point, Pixels, ScrollWheelEvent, SharedString, TestSupportExt as _, Window};
 
 use super::bar::text_button;
 use super::tabs::NEW_TAB;
@@ -38,7 +38,8 @@ impl BrowserPane {
             .overflow_hidden()
             .bg(tokens.bg_chrome)
             .on_scroll_wheel(cx.listener(Self::wheeled))
-            .child(self.reporter.measure(self.area.clone(), cx.entity_id()));
+            .child(self.reporter.measure(self.area.clone(), cx.entity_id()))
+            .child(self.takes_text(cx));
         // The page lets any button press (the page tests none).
         for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
             screen = screen.on_mouse_down(button, cx.listener(Self::pressed));
@@ -51,6 +52,18 @@ impl BrowserPane {
         screen.when(ring, |screen| {
             screen.child(div().id(SharedString::from(format!("browser-ring-{pane}"))).test_support().absolute().size_full().border(rem(tokens.ring_outline)).border_color(tokens.ring))
         })
+    }
+
+    /// Hands the platform this view as the text input while the screen has the keys, so an input
+    /// method (and the emoji panel) types into the page; without it only keys would arrive.
+    fn takes_text(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (focus, pane) = (self.focus.clone(), cx.entity());
+        canvas(
+            |_, _, _| {},
+            move |bounds, _, window, cx| window.handle_input(&focus, ElementInputHandler::new(bounds, pane.clone()), cx),
+        )
+        .absolute()
+        .size_full()
     }
 
     /// `.bpane-blank`: what a browser with no tab says in place of its page, and a way to open one.
