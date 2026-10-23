@@ -82,7 +82,8 @@ impl CodeFile {
                     this.caller.call(Call::CopyText { text });
                 }
             }
-            DiffEvent::Fold { .. } | DiffEvent::Range { .. } => {}
+            // A file read whole stages nothing, so it draws no boxes to tick.
+            DiffEvent::Fold { .. } | DiffEvent::Range { .. } | DiffEvent::Tick { .. } | DiffEvent::Hunk { .. } => {}
         });
         // The list's first layout says how tall it is, which the cursor's place on screen waits for.
         let laid_out = cx.observe(&diff, |_, _, cx| cx.notify());

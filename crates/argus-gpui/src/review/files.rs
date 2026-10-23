@@ -1,6 +1,7 @@
 //! The changed-files column of the review: which side is read, the files in
 //! daemon order (or the matches of the jump field, best first) and the field
-//! that jumps among them.
+//! that jumps among them. A review of working changes lists both sides at once
+//! instead (`sections`), with the commit box under them (`commit`).
 //!
 //! Which files there are, which one is lit and what the field matches is the
 //! session's (`ReviewPage`); a press sends its call and changes nothing. The
@@ -20,7 +21,10 @@ use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, Context, Entity, Role, ScrollHandle, SharedString, Subscription, Window};
 
 use crate::kit::counts::counts;
+use crate::kit::drag::{self, Drag};
 use crate::kit::tip::tip;
+use crate::review::commit::CommitBox;
+use crate::review::sections::{Areas, Carried};
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::keys::field::{Fields, Registered};
@@ -34,7 +38,13 @@ pub struct Files {
     heard: Entity<Heard>,
     caller: Caller,
     jump: Entity<InputState>,
-    scroll: ScrollHandle,
+    pub(super) scroll: ScrollHandle,
+    /// A file being carried between the lists, and what the carry takes the keys with.
+    pub(super) drag: Drag<Carried>,
+    pub(super) keys: gpui_kit::FocusHandle,
+    /// Where each list was laid out, for a drop.
+    pub(super) areas: Areas,
+    commit: Entity<CommitBox>,
     /// What the field held when the session was last told, so the empty it is
     /// put back to when it shuts says nothing.
     known: SharedString,
@@ -88,11 +98,16 @@ impl Files {
             let Some(gesture) = keys::jump_gesture(action) else { return false };
             asking.update(cx, |files, cx| files.ask(Call::ReviewJump { gesture }, cx)).is_ok()
         });
+        let commit = cx.new(|cx| CommitBox::new(heard.clone(), caller.clone(), window, cx));
         Self {
             heard,
             caller,
             jump,
             scroll: ScrollHandle::new(),
+            drag: Drag::new(),
+            keys: cx.focus_handle(),
+            areas: Areas::default(),
+            commit,
             known: SharedString::default(),
             open: false,
             lit: None,
@@ -112,6 +127,7 @@ impl Files {
             self.jump.update(cx, |jump, cx| jump.set_value("", window, cx));
         }
         self.open = open;
+        self.commit.update(cx, |commit, cx| commit.follow(page.staging.as_ref(), window, cx));
         let now = lit(page);
         if now != self.lit {
             self.lit = now;
@@ -122,7 +138,7 @@ impl Files {
         cx.notify();
     }
 
-    fn ask(&self, call: Call, cx: &Context<Self>) {
+    pub(super) fn ask(&self, call: Call, cx: &Context<Self>) {
         if !self.heard.read(cx).held() {
             self.caller.call(call);
         }
@@ -157,6 +173,17 @@ impl Files {
                         .text_color(tokens.fg_muted)
                         .child(words),
                 )
+                .into_any_element();
+        }
+        // Both sides are listed at once, so there is no side to pick: the head says what is here.
+        if !page.sections.is_empty() {
+            let files: usize = page.sections.iter().map(|s| s.files.len()).sum();
+            return row
+                .child(div().text_color(tokens.fg).weighted(tokens.weight_semibold).child("Changes"))
+                .child(div().typed(tokens.type_small).text_color(tokens.fg_faint).child(SharedString::from(match files {
+                    1 => "1 file".to_owned(),
+                    n => format!("{n} files"),
+                })))
                 .into_any_element();
         }
         let count = |n: Option<usize>| n.map_or_else(|| "\u{2026}".to_owned(), |n| n.to_string());
@@ -274,6 +301,9 @@ impl Render for Files {
         let Some(page) = self.heard.read(cx).review.clone() else {
             return div().into_any_element();
         };
+        // Both sides' lists while the field is shut; its matches, of the side on screen, while open.
+        let listed = !page.sections.is_empty() && page.jump.is_none();
+        let list = if listed { self.sections(&page, &tokens, cx).into_any_element() } else { self.list(&page, &tokens, cx).into_any_element() };
         // Under the head, `.review-files`: 12px in from every edge, 8px between its parts.
         v_flex()
             .id("review-files")
@@ -287,8 +317,18 @@ impl Render for Files {
                     .p(rem(tokens.sp_12))
                     .gap(rem(tokens.sp_8))
                     .when(page.jump.is_some(), |body| body.child(self.jump(&tokens)))
-                    .child(self.list(&page, &tokens, cx)),
+                    .child(list)
+                    .when(page.staging.is_some(), |body| body.child(self.commit.clone())),
             )
+            // The carry takes the keys here, so Escape drops it before the stage hears it.
+            .child(
+                div()
+                    .id("review-files-keys")
+                    .size_0()
+                    .track_focus(&self.keys)
+                    .on_key_down(cx.listener(|this, event: &gpui_kit::KeyDownEvent, window, cx| drag::escape(this, event, window, cx))),
+            )
+            .child(drag::watch(cx.weak_entity()))
             .into_any_element()
     }
 }

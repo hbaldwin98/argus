@@ -24,7 +24,7 @@ use crate::review::comment_box::{CommentBox, CommentPage};
 use crate::review::file_jump::{FileJump, Jumped};
 use crate::keys::keymap::Action;
 use crate::connection::page::{Event, ReviewJumpGesture};
-use crate::review::dialog::parts;
+use crate::review::rows::parts;
 use crate::connection::sent::Sent;
 
 /// What `B` goes back to: the dialog the stage was opened from, as the

@@ -1710,6 +1710,28 @@ fn reply(msg: &ClientMsg) -> Vec<ServerMsg> {
             };
             vec![ServerMsg::Review(Review { request_id: *request_id, checkout: *checkout, base: *base, files, commit: info })]
         }
+        // Two comments of the review being written: one on the first changed line of the file the
+        // review opens on, drawn under it, and one on another file, listed only in the review.
+        ClientMsg::Draft { request_id, checkout, .. } => {
+            let draft = |id: u64, diff: &FileDiff, body: &str| {
+                let line = diff.hunks.iter().flat_map(|h| &h.lines).find(|l| l.kind == argus_protocol::LineKind::Added)?;
+                let anchor = argus_protocol::ReviewAnchor {
+                    base: ReviewBase::Unstaged,
+                    commit: None,
+                    path: diff.path.clone(),
+                    old_path: None,
+                    old_start: None,
+                    old_end: None,
+                    new_start: line.new_lineno,
+                    new_end: line.new_lineno,
+                    text: vec![format!("+{}", line.text)],
+                };
+                Some(argus_protocol::ReviewDraft { id, anchor, body: body.into() })
+            };
+            let changes = working_changes(ReviewBase::Unstaged);
+            let drafts = [draft(1, &changes[0], "Is the brief still read when the hook has no feature?"), draft(2, &changes[3], "Say why this moved here.")];
+            vec![ServerMsg::Drafts { request_id: *request_id, checkout: *checkout, drafts: drafts.into_iter().flatten().collect() }]
+        }
         ClientMsg::ListCommits { request_id, checkout } => vec![ServerMsg::Commits { request_id: *request_id, checkout: *checkout, commits: history() }],
         ClientMsg::ListCommitFiles { checkout, commit } => {
             let file = |path: &str, added, removed| CommitFile { path: path.into(), old_path: None, kind: ChangeKind::Modified, added, removed };

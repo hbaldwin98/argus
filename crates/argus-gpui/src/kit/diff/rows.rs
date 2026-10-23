@@ -25,7 +25,7 @@ impl DiffView {
     pub(super) fn row(&self, ix: usize, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
         let row = &self.rows[ix];
         let base = match shape::shape(row) {
-            Shape::Hunk | Shape::Note => return self.heading(ix, row, tokens),
+            Shape::Hunk | Shape::Note => return self.heading(ix, row, tokens, cx),
             Shape::Fold => return self.fold(ix, row, tokens, cx),
             Shape::Line => self.line(ix, row, tokens, cx),
             Shape::Pair => self.pair(ix, row, tokens, cx),
@@ -51,7 +51,7 @@ impl DiffView {
     /// diff without a colour that could be taken for an added or removed side. Its ranges are said
     /// in the reference colour, as the fold's buttons that open more lines are, and the code it is
     /// in, which is what is read, in the muted text.
-    fn heading(&self, ix: usize, row: &DiffRow, tokens: &Tokens) -> AnyElement {
+    fn heading(&self, ix: usize, row: &DiffRow, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
         if self.reading && shape::shape(row) == Shape::Note {
             return self.gone(ix, row, tokens);
         }
@@ -72,6 +72,31 @@ impl DiffView {
             .whitespace_nowrap()
             .when(!ranges.is_empty(), |band| band.child(div().flex_shrink_0().text_color(tokens.ref_).child(SharedString::from(ranges.to_owned()))))
             .when(!context.is_empty(), |band| band.child(SharedString::from(context.to_owned())))
+            .when_some(self.ticks.filter(|_| shape::shape(row) == Shape::Hunk), |band, ticks| {
+                let number = row.row;
+                let words = if ticks.staged { "Unstage hunk" } else { "Stage hunk" };
+                band.child(div().flex_1()).child(
+                    div()
+                        .id(("diff-hunk-stage", ix))
+                        .test_support()
+                        .aria_label(SharedString::from(words))
+                        .flex_shrink_0()
+                        .px(rem(tokens.sp_8))
+                        .rounded(rem(tokens.r_sm))
+                        .border_1()
+                        .border_color(tokens.line_strong)
+                        .font_family(SharedString::from(tokens.font_ui))
+                        .text_size(rem(tokens.fs_xs))
+                        .text_color(tokens.fg)
+                        .cursor_pointer()
+                        .hover(|button| button.bg(tokens.fill))
+                        .child(words)
+                        .on_mouse_down(MouseButton::Left, cx.listener(move |_, _: &MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            cx.emit(DiffEvent::Hunk { row: number });
+                        })),
+                )
+            })
             .into_any_element()
     }
 
@@ -109,17 +134,18 @@ impl DiffView {
         let pin = Pin { shift: -self.scroll.offset().x };
         let down = cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, 0, event.position));
         let columns = if self.reading { Columns::Reading } else { Columns::Both(self.shown) };
+        let tick = self.tick(ix, 0, side, tokens, cx);
         h_flex()
             .items_center()
             .when_some(fill, |row, fill| row.bg(fill))
-            .child(half(side, &self.drawn[ix][0], (columns, numbers), tokens, self.ink(ix, 0, &self.drawn[ix][0].text, cx), down, Some(pin)))
+            .child(half(side, &self.drawn[ix][0], (columns, numbers, tick), tokens, self.ink(ix, 0, &self.drawn[ix][0].text, cx), down, Some(pin)))
             .overflow_hidden()
     }
 
     /// A split pair: its two halves, each with its own number, marker and
     /// code, cut at its own half. A missing half is blank and recessed.
     fn pair(&self, ix: usize, row: &DiffRow, tokens: &Tokens, cx: &mut Context<Self>) -> gpui_kit::Div {
-        let side = |side: Option<&DiffSide>, second: bool| {
+        let mut side = |side: Option<&DiffSide>, second: bool| {
             let fill = match side {
                 Some(side) => tone::fill(side.kind, row.picked, row.cursor, tokens),
                 None => Some(tokens.bg_chrome),
@@ -136,7 +162,8 @@ impl DiffView {
                     let wrapped = wrap::wrap(&self.drawn[ix][usize::from(second)], self.per_line);
                     let ink = self.ink(ix, usize::from(second), &wrapped.text, cx);
                     let numbers = side.and_then(|side| tone::gutter_fill(side.kind, row.picked, row.cursor, tokens));
-                    half(side, &wrapped, (Columns::One, numbers), tokens, ink, cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, usize::from(second), event.position)), None)
+                    let tick = self.tick(ix, usize::from(second), side, tokens, cx);
+                    half(side, &wrapped, (Columns::One, numbers, tick), tokens, ink, cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, usize::from(second), event.position)), None)
                 })
         };
         h_flex()
@@ -151,13 +178,13 @@ impl DiffView {
 fn half(
     side: Option<&DiffSide>,
     drawn: &Code,
-    (columns, numbers): (Columns, Option<Hsla>),
+    (columns, numbers, tick): (Columns, Option<Hsla>, Option<AnyElement>),
     tokens: &Tokens,
     ink: Ink,
     down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
     pin: Option<Pin>,
 ) -> impl IntoElement {
-    let gutter = gutter(side, columns, numbers, tokens);
+    let gutter = gutter(side, columns, numbers, tokens).with_tick(tick);
     let code = gpui_kit::div()
         .flex_1()
         .min_w_0()

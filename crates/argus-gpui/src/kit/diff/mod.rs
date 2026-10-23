@@ -10,7 +10,8 @@
 //! One diff view serves review and history, and the patch block and the Code stage after them, so
 //! it knows none of their calls: a surface that does not take clicks asks for a view with none. A
 //! surface may put one thing among the rows, a slot of a height it names, under a row: the
-//! review's comment box. The scroll offset stays across every update and the cursor's row is
+//! review's comment box; and notes under rows it names, the review's drafts. A diff that stages
+//! draws a box on each changed line and a button on each hunk (`tick`). The scroll offset stays across every update and the cursor's row is
 //! brought into view when the rows change, "nearest" (SHARED-5): no movement while it is already
 //! visible.
 //!
@@ -29,6 +30,7 @@ pub mod rows;
 pub mod selection;
 pub mod shape;
 pub mod text;
+pub mod tick;
 pub mod tone;
 pub mod wrap;
 
@@ -50,6 +52,7 @@ use items::Item;
 use paint::Layouts;
 use selection::{Held, Pos};
 use text::Code;
+use tick::Ticks;
 
 /// What a press on the diff means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +67,10 @@ pub enum DiffEvent {
     /// `Copy` chosen from the menu a right-click on selected text opens: the owner sends the
     /// selected text (`selection_text`) to Rust.
     CopySelection,
+    /// A changed line's box, in a diff that stages; `extend` is Shift held.
+    Tick { row: usize, extend: bool },
+    /// A hunk's button, in a diff that stages: every changed line under the header at `row`.
+    Hunk { row: usize },
 }
 
 /// A thing drawn under a row, among the rows.
@@ -81,6 +88,10 @@ pub struct DiffView {
     rows: Rc<Vec<DiffRow>>,
     split: bool,
     slot: Option<Slot>,
+    /// Things under rows, by the number each row carries: the review's drafts.
+    notes: Vec<(usize, Slot)>,
+    /// The boxes and the hunks' buttons, in a diff that stages.
+    ticks: Option<Ticks>,
     items: Rc<Vec<Item>>,
     sizes: Rc<Vec<Size<Pixels>>>,
     /// Where each item starts, in the window's pixels, and the total after the last (`geometry`).
@@ -151,6 +162,8 @@ impl DiffView {
             rows: Rc::default(),
             split: false,
             slot: None,
+            notes: Vec::new(),
+            ticks: None,
             items: Rc::default(),
             sizes: Rc::default(),
             tops: vec![0.0],
@@ -208,10 +221,7 @@ impl DiffView {
         }
         self.split = split;
         self.slot = slot;
-        self.items = Rc::new(items::items(&self.rows, self.slot.is_some()));
-        self.number_rows();
-        self.per_line = self.wrap_at();
-        self.size();
+        self.relist();
         if !same_rows && !self.reading {
             if let Some(at) = items::cursor_item(&self.rows, &self.items) {
                 self.scroll.scroll_to_item(at, ScrollStrategy::Top);
@@ -219,6 +229,7 @@ impl DiffView {
         }
         cx.notify();
     }
+
 
     /// How tall every row together is, in the page's pixels, for a host that gives the view only so
     /// much height (a patch block) and so needs to know when the rows come to less.
@@ -263,6 +274,17 @@ impl DiffView {
                     .w_full()
                     .h(slot.height)
                     .child(slot.view.clone())
+                    .into_any_element(),
+                None => div().into_any_element(),
+            },
+            Some(Item::Note(k)) => match self.notes.get(*k) {
+                Some((_, note)) => div()
+                    .id(("diff-note", *k))
+                    .test_support()
+                    .flex_shrink_0()
+                    .w_full()
+                    .h(note.height)
+                    .child(note.view.clone())
                     .into_any_element(),
                 None => div().into_any_element(),
             },

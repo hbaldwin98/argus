@@ -26,6 +26,11 @@ pub trait Ways {
 
     /// The widest the card goes, when it is held to one.
     fn widest(&self, tokens: &Tokens) -> Option<f32>;
+
+    /// The words go to the review being written rather than straight to the agent.
+    fn drafts(&self, _heard: &Heard) -> bool {
+        false
+    }
 }
 
 /// The review's box (`.comment-card` in a diff): under the number columns, to the right edge.
@@ -44,11 +49,16 @@ impl Ways for Review {
     /// code in; a split diff's halves keep the card at both columns, as the page does.
     fn margin(&self, tokens: &Tokens, heard: &Heard) -> (f32, f32) {
         let left = heard.review.as_ref().filter(|page| !page.split).map_or(GUTTER, |page| shown(&page.rows).width());
-        (left, tokens.sp_12)
+        let boxes = heard.review.as_ref().is_some_and(|page| page.staging.is_some());
+        (left + if boxes { crate::kit::diff::tick::BOX } else { 0.0 }, tokens.sp_12)
     }
 
     fn widest(&self, _: &Tokens) -> Option<f32> {
         None
+    }
+
+    fn drafts(&self, heard: &Heard) -> bool {
+        heard.review.as_ref().is_some_and(|page| page.drafts.is_some())
     }
 }
 

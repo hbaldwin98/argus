@@ -87,6 +87,7 @@ impl DiffView {
                 .map(|item| match item {
                     Item::Row(i) => size(px(0.0), px(self.heights[*i] * self.zoom)),
                     Item::Comment => size(px(0.0), slot_height),
+                    Item::Note(k) => size(px(0.0), self.notes.get(*k).map_or(px(0.0), |(_, note)| note.height)),
                 })
                 .collect(),
         );

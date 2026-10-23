@@ -93,9 +93,13 @@ pub(super) struct Pin {
 /// A line's number or numbers and its marker, drawn once and placed by whoever holds the row, on
 /// the gutter's own wash (`tone::gutter_fill`).
 pub(super) struct Gutter {
+    /// A changed line's box, in a diff that stages (`tick`), before the numbers.
+    tick: Option<gpui_kit::AnyElement>,
     numbers: Vec<Div>,
     marker: Div,
     width: gpui_kit::Rems,
+    /// `width` in the page's pixels, which a box widens.
+    width_px: f32,
     fill: Option<Hsla>,
 }
 
@@ -116,7 +120,8 @@ pub(super) fn gutter(side: Option<&DiffSide>, columns: Columns, fill: Option<Hsl
         Columns::Reading => vec![side.and_then(|side| side.new)],
     };
     let each = if columns == Columns::Reading { tokens.code_no_w } else { NUMBER };
-    let width = rem(figures.len() as f32 * each + MARKER);
+    let width_px = figures.len() as f32 * each + MARKER;
+    let width = rem(width_px);
     let numbers = figures
         .into_iter()
         .map(move |n| {
@@ -135,10 +140,20 @@ pub(super) fn gutter(side: Option<&DiffSide>, columns: Columns, fill: Option<Hsl
         .text_center()
         .text_color(marker_colour)
         .child(SharedString::from(side.map_or("", |side| side.marker)));
-    Gutter { numbers, marker, width, fill }
+    Gutter { tick: None, numbers, marker, width, width_px, fill }
 }
 
 impl Gutter {
+    /// The gutter with `tick` before its numbers, and as much wider.
+    pub(super) fn with_tick(mut self, tick: Option<gpui_kit::AnyElement>) -> Self {
+        if tick.is_some() {
+            self.width_px += super::tick::BOX;
+            self.width = rem(self.width_px);
+        }
+        self.tick = tick;
+        self
+    }
+
     /// The gutter as the row's first child, moving with the code.
     pub(super) fn flowing(self, row: Div) -> Div {
         row.child(
@@ -147,6 +162,7 @@ impl Gutter {
                 .h_full()
                 .items_center()
                 .when_some(self.fill, |gutter, fill| gutter.bg(fill))
+                .children(self.tick)
                 .children(self.numbers)
                 .child(self.marker),
         )
@@ -166,7 +182,7 @@ impl Gutter {
             .left(pin.shift)
             .w(self.width)
             .bg(tokens.bg_sunken)
-            .child(h_flex().size_full().items_center().when_some(self.fill, |gutter, fill| gutter.bg(fill)).children(self.numbers).child(self.marker))
+            .child(h_flex().size_full().items_center().when_some(self.fill, |gutter, fill| gutter.bg(fill)).children(self.tick).children(self.numbers).child(self.marker))
     }
 }
 

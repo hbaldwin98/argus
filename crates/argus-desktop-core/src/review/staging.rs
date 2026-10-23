@@ -14,7 +14,7 @@ use argus_protocol::review::view::{ReviewView, Row};
 use argus_protocol::{ChangeKind, CheckoutId, ClientMsg, IndexChange, ReviewBase};
 use serde::{Deserialize, Serialize};
 
-use crate::review::dialog::files_of;
+use crate::review::rows::files_of;
 use crate::connection::page::ReviewFile;
 
 /// What was done to stage or unstage, as the window sends it.

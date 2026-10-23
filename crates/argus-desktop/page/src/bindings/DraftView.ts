@@ -6,6 +6,10 @@ export type DraftView = { id: number, path: string,
  */
 at: string, body: string, 
 /**
+ * It was written on the staged side, where opening it goes.
+ */
+staged: boolean, 
+/**
  * The row of the diff on screen it hangs under — its last line's —
  * when it was written on this file and side.
  */

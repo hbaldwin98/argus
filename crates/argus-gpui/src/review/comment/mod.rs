@@ -119,7 +119,9 @@ impl CommentBox {
 
     /// The words as typed: the session trims, and refuses an empty one in a notice.
     fn send(&self, cx: &Context<Self>) {
-        self.ask(self.ways.send(Some(self.words(cx).to_string())), cx);
+        let body = self.words(cx).to_string();
+        let call = if self.ways.drafts(self.heard.read(cx)) { Call::DraftComment { body } } else { self.ways.send(Some(body)) };
+        self.ask(call, cx);
     }
 
     fn cancel(&self, cx: &Context<Self>) {
@@ -182,6 +184,8 @@ impl Render for CommentBox {
         // The kit's secondary key is Cmd on macOS and Ctrl elsewhere; the page
         // says Ctrl, as it cannot tell.
         let chord = if cfg!(target_os = "macos") { "Cmd Enter" } else { "Ctrl Enter" };
+        // A review being written takes the words as a draft, sent with the rest.
+        let send = if self.ways.drafts(self.heard.read(cx)) { "Add to review" } else { "Comment" };
         // `.comment-card`: 12px inside, 8px between its rows, on the surface with the ring for an edge.
         let card = v_flex()
             .id("review-comment")
@@ -224,8 +228,8 @@ impl Render for CommentBox {
                             .on_click(cx.listener(|this, _, _, cx| this.cancel(cx))),
                     )
                     .child(
-                        button("comment-send", "Comment", Look::Primary, false, &tokens)
-                            .child("Comment")
+                        button("comment-send", send, Look::Primary, false, &tokens)
+                            .child(send)
                             // `.btn.primary .kbd`: the cap in the on-accent colour, its edge at 45%.
                             .child(
                                 keycap(chord, mono, &tokens)

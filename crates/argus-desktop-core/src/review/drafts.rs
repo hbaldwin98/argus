@@ -49,6 +49,8 @@ pub struct DraftView {
     /// Where in the file, as `a.rs:12` or `a.rs:3-5`.
     pub at: String,
     pub body: String,
+    /// It was written on the staged side, where opening it goes.
+    pub staged: bool,
     /// The row of the diff on screen it hangs under — its last line's —
     /// when it was written on this file and side.
     pub row: Option<usize>,
@@ -155,6 +157,7 @@ impl Drafts {
                     path: draft.anchor.path.clone(),
                     at: at(&draft.anchor),
                     body: draft.body.clone(),
+                    staged: draft.anchor.base == argus_protocol::ReviewBase::Staged,
                     row: here.then(|| row_of(&draft.anchor, rows)).flatten(),
                 }
             })

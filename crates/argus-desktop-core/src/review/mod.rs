@@ -10,6 +10,7 @@ pub mod dialog;
 pub mod drafts;
 pub mod file_jump;
 pub mod history;
+pub mod rows;
 pub mod staging;
 
 use argus_protocol::review::session::Answered;
