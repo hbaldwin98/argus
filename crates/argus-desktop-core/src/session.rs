@@ -2017,6 +2017,15 @@ impl Session {
                 self.show_views_panel();
             }
             Panel::Saved(_) => self.docks.move_to(panel, dock),
+            // Moved there to be watched beside the work: the stage goes back
+            // to the Workspace the browsers were taken from.
+            Panel::Browsers => {
+                self.docks.move_to(panel, dock);
+                self.docks.show(panel);
+                if self.stages.now() == Stage::Browsers {
+                    self.go(Stage::Workspace);
+                }
+            }
             Panel::Extension(_) => {
                 self.extension_views.touch(panel);
                 self.dock_extension(panel, Some(dock));
@@ -2039,13 +2048,17 @@ impl Session {
         }
     }
 
-    /// A panel dropped on the stage: the console as the Console stage, an
-    /// extension's view as its page. The views and a saved view have no
-    /// stage, and stay where they are. No `_` arm, like `Panel::stages`,
-    /// the rule the page is told.
+    /// A panel dropped on the stage: the console as the Console stage, the
+    /// browsers as the Browsers stage, an extension's view as its page. The
+    /// views and a saved view have no stage, and stay where they are. No `_`
+    /// arm, like `Panel::stages`, the rule the page is told.
     fn stage_panel(&mut self, panel: &Panel) {
         match panel {
             Panel::Console => self.open_console_tab(),
+            Panel::Browsers => {
+                self.docks.hide(panel);
+                self.go(Stage::Browsers);
+            }
             Panel::Extension(_) => self.extension_mode(panel, true),
             Panel::Views | Panel::Saved(_) => {}
         }
@@ -2057,7 +2070,7 @@ impl Session {
     fn close_panel(&mut self, panel: &Panel) {
         match panel {
             Panel::Saved(owner) => self.close_saved_column(owner, 0),
-            Panel::Console | Panel::Views | Panel::Extension(_) => {}
+            Panel::Console | Panel::Views | Panel::Browsers | Panel::Extension(_) => {}
         }
     }
 
@@ -2070,12 +2083,15 @@ impl Session {
     }
 
     /// The panels that exist now: the console always, the views while an
-    /// agent has one up, and each extension's view listed where the person
-    /// is.
+    /// agent has one up, the browsers while an agent has one open, and each
+    /// extension's view listed where the person is.
     fn present(&self) -> Vec<Panel> {
         let mut present = vec![Panel::Console];
         if !self.views.is_empty() {
             present.push(Panel::Views);
+        }
+        if self.browsers.any() {
+            present.push(Panel::Browsers);
         }
         present.extend(self.extension_views.present(&self.here()));
         present.extend(self.saved.present());
@@ -3301,7 +3317,9 @@ impl Session {
         }
         if self.status.daemon_can(BROWSERS) {
             let placed = if self.stages.shows_workspace(self.console.fullscreen()) { self.shown.panes() } else { Vec::new() };
-            let drawn = self.browsers.drawn(&placed, self.stages.now() == Stage::Browsers);
+            // The tiles draw every browser, on the stage or in their panel.
+            let tiled = self.stages.now() == Stage::Browsers || self.docks.shows(&Panel::Browsers);
+            let drawn = self.browsers.drawn(&placed, tiled);
             self.browsers.watch(drawn, &mut self.out);
         }
         let reads_board = matches!(self.stages.now(), Stage::Feature | Stage::Checkouts) || self.palette;
@@ -3352,6 +3370,7 @@ impl Session {
         events.extend(self.docks.take(|panel| match panel {
             Panel::Console => "Console".into(),
             Panel::Views => "Views".into(),
+            Panel::Browsers => "Browsers".into(),
             Panel::Extension(_) => views.get(panel, &here).map(|v| v.title.clone()).unwrap_or_default(),
             Panel::Saved(id) => saved.title(id),
         }));
@@ -4615,6 +4634,37 @@ mod tests {
         assert_eq!(watched(&sent), None, "the stage draws it too, asked once");
         let sent = s.call(Call::ShowFeatures { open: true });
         assert_eq!(watched(&sent), Some(Vec::new()), "a stage that draws no browser asks for none");
+    }
+
+    #[test]
+    fn the_browsers_panel_exists_while_a_browser_is_open_and_docked_is_watched_beside_any_stage() {
+        let watched = |sent: &[ClientMsg]| {
+            sent.iter().rev().find_map(|m| match m {
+                ClientMsg::WatchBrowsers { showing } => Some(showing.clone()),
+                _ => None,
+            })
+        };
+        let present = |s: &mut Session| docks_page(s).is_some_and(|d| d.present.iter().any(|p| p.panel == Panel::Browsers));
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(2));
+        s.events(0);
+        assert!(!present(&mut s), "no browser, no panel");
+        s.receive(with_tree(tree_with_browser(30)));
+        s.receive(browser_page(30, 1));
+        assert!(present(&mut s));
+
+        s.call(Call::ShowBrowsers { pane: None });
+        let sent = s.call(Call::Docks { gesture: DockGesture::Move { panel: Panel::Browsers, dock: Dock::Right } });
+        assert_eq!(s.stages.now(), Stage::Workspace, "moved beside the work, out of the Browsers stage");
+        assert_eq!(docks_page(&mut s).and_then(|d| d.right.shown), Some(Panel::Browsers));
+        assert_eq!(watched(&sent), None, "still drawn, so still watched, asked once");
+        let sent = s.call(Call::ShowFeatures { open: true });
+        assert_eq!(watched(&sent), None, "the dock still draws it on another stage");
+
+        docks(&mut s, DockGesture::Stage { panel: Panel::Browsers });
+        assert_eq!(s.stages.now(), Stage::Browsers, "dropped on the stage it is the Browsers stage");
+        assert_eq!(docks_page(&mut s).and_then(|d| d.right.shown), None, "and leaves its dock");
     }
 
     #[test]

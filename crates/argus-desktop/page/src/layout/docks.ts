@@ -116,6 +116,9 @@ function element(panel: Panel): HTMLElement | null {
       return state.console?.place === 'docked' ? $('console') : null;
     case 'views':
       return $('views');
+    // This window draws the browsers only as their stage, and offers no way to dock them.
+    case 'browsers':
+      return null;
     case 'saved':
       return savedElement(panel);
     case 'extension':

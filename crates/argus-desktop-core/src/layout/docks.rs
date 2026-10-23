@@ -65,16 +65,19 @@ pub enum Dock {
 
 const DOCKS: [Dock; 3] = [Dock::Left, Dock::Right, Dock::Bottom];
 
-/// What can be docked: the console, the views agents showed, each
-/// extension's view by its extension and name, and each saved view by its
-/// id. Named in the file and to the page as one string — `console`,
-/// `views`, `extension:docker/images`, `saved:release-plan` — since the
-/// last two are any of an open-ended set.
+/// What can be docked: the console, the views agents showed, every agent's
+/// browser, each extension's view by its extension and name, and each saved
+/// view by its id. Named in the file and to the page as one string —
+/// `console`, `views`, `browsers`, `extension:docker/images`,
+/// `saved:release-plan` — since the last two are any of an open-ended set.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, type = "string"))]
 pub enum Panel {
     Console,
     Views,
+    /// The Browsers stage's tiles, every agent's browser, kept beside an
+    /// agent's pane rather than in place of it.
+    Browsers,
     Extension(String),
     /// A saved view's panel, named by the view it opened with; the columns
     /// that follow it are `views::saved`'.
@@ -103,7 +106,7 @@ impl Panel {
     fn home(&self) -> Option<Dock> {
         match self {
             Panel::Console => Some(Dock::Bottom),
-            Panel::Views => Some(Dock::Right),
+            Panel::Views | Panel::Browsers => Some(Dock::Right),
             Panel::Extension(_) | Panel::Saved(_) => None,
         }
     }
@@ -115,28 +118,31 @@ impl Panel {
     }
 
     /// Whether the panel can float as a dialog: a saved view, read beside
-    /// the one it was reached from without taking a dock from it. The
-    /// console's terminal and the panels with a home stay docked.
+    /// the one it was reached from without taking a dock from it, and the
+    /// browsers, watched over whatever the stage shows. The console's
+    /// terminal and the views stay docked.
     fn floats(&self) -> bool {
-        matches!(self, Panel::Saved(_))
+        matches!(self, Panel::Saved(_) | Panel::Browsers)
     }
 
     fn kind(&self) -> PanelKind {
         match self {
             Panel::Console => PanelKind::Console,
             Panel::Views => PanelKind::Views,
+            Panel::Browsers => PanelKind::Browsers,
             Panel::Extension(_) => PanelKind::Extension,
             Panel::Saved(_) => PanelKind::Saved,
         }
     }
 
     /// Whether a drop on the stage takes the panel there. Every panel with
-    /// a page does; so does the console, whose stage is the Console stage
-    /// rather than a page, so it is never one of `staged`. No `_` arm, so a
-    /// new kind of panel is decided here rather than defaulted.
+    /// a page does; so do the console and the browsers, whose stages are
+    /// the Console and Browsers stages rather than pages, so neither is one
+    /// of `staged`. No `_` arm, so a new kind of panel is decided here
+    /// rather than defaulted.
     fn stages(&self) -> bool {
         match self {
-            Panel::Console | Panel::Extension(_) => true,
+            Panel::Console | Panel::Browsers | Panel::Extension(_) => true,
             Panel::Views | Panel::Saved(_) => false,
         }
     }
@@ -147,7 +153,7 @@ impl Panel {
     fn closes(&self) -> bool {
         match self {
             Panel::Saved(_) => true,
-            Panel::Console | Panel::Views | Panel::Extension(_) => false,
+            Panel::Console | Panel::Views | Panel::Browsers | Panel::Extension(_) => false,
         }
     }
 
@@ -161,6 +167,7 @@ impl fmt::Display for Panel {
         match self {
             Panel::Console => f.write_str("console"),
             Panel::Views => f.write_str("views"),
+            Panel::Browsers => f.write_str("browsers"),
             Panel::Extension(key) => write!(f, "{EXTENSION}{key}"),
             Panel::Saved(id) => write!(f, "{SAVED}{id}"),
         }
@@ -184,6 +191,7 @@ impl Panel {
         match name {
             "console" => Ok(Panel::Console),
             "views" => Ok(Panel::Views),
+            "browsers" => Ok(Panel::Browsers),
             _ => match (name.strip_prefix(EXTENSION), name.strip_prefix(SAVED)) {
                 (Some(key), _) if key.split_once('/').is_some_and(|(e, v)| !e.is_empty() && !v.is_empty()) => {
                     Ok(Panel::Extension(key.to_string()))
@@ -353,6 +361,7 @@ pub struct DockTab {
 pub enum PanelKind {
     Console,
     Views,
+    Browsers,
     Extension,
     Saved,
 }

@@ -8,18 +8,29 @@
 //! as `repeat(auto-fill, minmax(360px, 1fr))` does, so the stage measures itself and asks to be
 //! drawn again when the number of columns changes. The strip's words (`Browsers`, `Every agent`)
 //! are core's.
+//!
+//! The same tiles are the Browsers panel's body, docked or floating beside the work
+//! (`Panel::Browsers`), as a second view with ids of its own. The stage's view carries the dock
+//! menu that puts them there.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use gpui_kit::{canvas, div, prelude::*, Bounds, Context, Entity, Pixels, Role, TestSupportExt as _, Window};
+use argus_desktop_core::layout::docks::Panel;
+use gpui_kit::component::h_flex;
+use gpui_kit::component::menu::DropdownMenu as _;
+use gpui_kit::component::Disableable as _;
+use gpui_kit::{canvas, div, prelude::*, Bounds, Context, Entity, Pixels, Role, SharedString, TestSupportExt as _, Window};
 
 use super::empty;
 use super::picture::PictureView;
 use super::tile::tile;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::kit::icons::Glyph;
+use crate::kit::strip;
+use crate::layout::dock_menu;
 use crate::theme::scale::{css, rem};
 use crate::theme::Tokens;
 
@@ -30,7 +41,28 @@ pub struct BrowsersStage {
     pictures: BTreeMap<u64, Entity<PictureView>>,
     /// The area the stage was laid out in, in the window's pixels.
     area: Rc<Cell<Bounds<Pixels>>>,
+    /// Where these tiles are drawn, which names their ids apart and says whether they carry the
+    /// dock menu.
+    place: Place,
 }
+
+/// The two places the tiles are drawn.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    Stage,
+    Panel,
+}
+
+impl Place {
+    fn id(self, what: &str) -> SharedString {
+        match self {
+            Place::Stage => SharedString::from(what.to_owned()),
+            Place::Panel => SharedString::from(format!("{what}-panel")),
+        }
+    }
+}
+
+pub const DOCK_TIP: &str = "Keep the browsers beside your work: dock or float them";
 
 /// How many columns of tiles `width` css pixels holds: as many as fit at the least tile width with
 /// the grid's padding and gaps, and always one.
@@ -40,9 +72,23 @@ pub fn columns(width: f32, tokens: &Tokens) -> usize {
 }
 
 impl BrowsersStage {
-    pub fn new(heard: Entity<Heard>, caller: Caller, cx: &mut Context<Self>) -> Self {
+    pub fn new(heard: Entity<Heard>, caller: Caller, place: Place, cx: &mut Context<Self>) -> Self {
         cx.observe(&heard, |_, _, cx| cx.notify()).detach();
-        Self { heard, caller, pictures: BTreeMap::new(), area: Rc::default() }
+        Self { heard, caller, pictures: BTreeMap::new(), area: Rc::default(), place }
+    }
+
+    /// The row over the stage's tiles with the menu that docks or floats them.
+    fn dock_row(&self, held: bool, tokens: &Tokens, cx: &gpui_kit::App) -> impl IntoElement {
+        let docks = self.heard.read(cx).docks.clone();
+        let present = docks.present.iter().find(|present| present.panel == Panel::Browsers).cloned();
+        let entries = dock_menu::moves(&Panel::Browsers, false, &docks, present.as_ref());
+        let (caller, heard, tokens) = (self.caller.clone(), self.heard.clone(), *tokens);
+        h_flex().flex_none().justify_end().px(rem(tokens.sp_12)).pt(rem(tokens.sp_8)).child(
+            strip::menu_button("browsers-dock", Glyph::DockRight, 15.0, &tokens, cx)
+                .tooltip(DOCK_TIP)
+                .disabled(held)
+                .dropdown_menu(move |menu, window, cx| dock_menu::build(menu, &entries, &caller, &heard, tokens, window, cx)),
+        )
     }
 }
 
@@ -59,7 +105,8 @@ impl Render for BrowsersStage {
             let heard = self.heard.clone();
             self.pictures.entry(browser.pane).or_insert_with(|| cx.new(|cx| PictureView::new(heard, browser.pane, tokens.r_md - 1.0, cx)));
         }
-        let root = div().id("browsers").test_support().role(Role::Group).relative().size_full().bg(tokens.bg_sunken);
+        let place = self.place;
+        let root = div().id(place.id("browsers")).test_support().role(Role::Group).relative().size_full().flex().flex_col().bg(tokens.bg_sunken);
         if page.browsers.is_empty() {
             return root.child(empty::stage(&tokens)).into_any_element();
         }
@@ -82,11 +129,14 @@ impl Render for BrowsersStage {
         .size_full();
         let tiles = page.browsers.iter().map(|browser| tile(browser, self.pictures[&browser.pane].clone().into(), &self.caller, held, &tokens));
         root.child(measure)
+            .when(place == Place::Stage, |root| root.child(self.dock_row(held, &tokens, cx)))
             .child(
                 div()
-                    .id("browsers-grid")
+                    .id(place.id("browsers-grid"))
                     .test_support()
-                    .size_full()
+                    .flex_1()
+                    .min_h_0()
+                    .w_full()
                     .overflow_y_scroll()
                     .grid()
                     .grid_cols(columns(width, &tokens) as u16)

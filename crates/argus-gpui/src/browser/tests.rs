@@ -243,3 +243,34 @@ fn a_narrow_sub_row_cuts_the_name_before_the_title_and_the_title_at_the_edge(cx:
     assert!(meta.right() <= row.right(), "the title is cut at the row's edge, not past it");
     assert!(f32::from(name.size.width) < 1.0, "and the name went first, to nothing");
 }
+
+fn browsers_docked() -> Event {
+    use argus_desktop_core::layout::docks::{DockPage, DockTab, Panel, PanelKind, PresentPanel};
+    let panel = Panel::Browsers;
+    let mut docks = crate::layout::work::tests::docks();
+    docks.right = DockPage { tabs: vec![DockTab { panel: panel.clone(), title: "Browsers".into() }], shown: Some(panel.clone()), size: 400 };
+    docks.present.push(PresentPanel { panel, kind: PanelKind::Browsers, floats: true, stage: true, closes: false });
+    Event::Docks(Box::new(docks))
+}
+
+#[gpui_kit::test]
+fn the_stage_carries_the_menu_that_docks_its_browsers(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    let mut events = on_stage(Connection::Connected);
+    events.push(two());
+    hear(cx, &opened, events);
+    assert!(has(cx, &opened, "browsers-dock"));
+    assert!(!has(cx, &opened, "browsers-grid-panel"), "no dock shows them yet");
+}
+
+#[gpui_kit::test]
+fn a_dock_showing_the_browsers_panel_draws_every_browser_beside_the_work(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    let status = Event::Status(Status { connection: Connection::Connected, detail: None, alarm: None, chime: true, host: None });
+    hear(cx, &opened, vec![status, two(), browsers_docked()]);
+    assert!(has(cx, &opened, "browsers-grid-panel"));
+    assert!(!has(cx, &opened, "browsers-grid"), "the stage is the workspace's, not the browsers'");
+    assert!(!has(cx, &opened, "browsers-dock"), "the panel's own dock head moves it");
+    click(cx, &opened, "browser-tile-106");
+    assert_eq!(asked(&opened), ["ShowBrowsers { pane: Some(106) }"]);
+}

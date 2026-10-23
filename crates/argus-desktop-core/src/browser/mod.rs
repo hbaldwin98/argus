@@ -186,6 +186,11 @@ impl Browsers {
         self.viewports.closed(pane);
     }
 
+    /// Whether any agent has a browser open.
+    pub fn any(&self) -> bool {
+        !self.open.is_empty()
+    }
+
     pub fn has(&self, pane: PaneId) -> bool {
         self.open.contains_key(&pane)
     }
