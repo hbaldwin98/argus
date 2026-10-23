@@ -19,6 +19,7 @@ use crate::connection::hello::Hello;
 use crate::panes::keys::KeyboardMode;
 use crate::tree::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext};
+use crate::review::drafts::{DraftAction, ReviewDraft};
 use crate::review::staging::IndexChange;
 use crate::board::diagrams::{DiagramAction, DiagramList};
 use crate::agents::sessions::{Resume, Session};
@@ -311,6 +312,15 @@ pub enum ClientMsg {
         request_id: u64,
         checkout: CheckoutId,
         message: String,
+    },
+    /// Changes, or only reads, the checkout's review drafts. Answered with
+    /// [`ServerMsg::Drafts`] under `request_id` — after a `Submit`, with
+    /// [`ServerMsg::ReviewSubmitted`] first — or refused by it. Only to a
+    /// daemon that listed `REVIEW_DRAFTS`.
+    Draft {
+        request_id: u64,
+        checkout: CheckoutId,
+        action: DraftAction,
     },
     /// Persist a review comment, then notify the selected live agent.
     /// Answered with [`ServerMsg::ReviewCommentSaved`] under `request_id`,
@@ -818,6 +828,21 @@ pub enum ServerMsg {
     /// for the tree and the next review to say.
     Written {
         request_id: u64,
+    },
+    /// A checkout's review drafts as they now are, oldest first, to the
+    /// client that asked under `request_id`.
+    Drafts {
+        request_id: u64,
+        checkout: CheckoutId,
+        drafts: Vec<ReviewDraft>,
+    },
+    /// The drafts sent under `request_id` are review comments now, read by
+    /// `argus-hook comments`; `delivered` says whether the agent was told
+    /// at once.
+    ReviewSubmitted {
+        request_id: u64,
+        comments: u32,
+        delivered: bool,
     },
     /// The durable write succeeded. Delivery only describes the immediate
     /// terminal notification; an undelivered comment remains readable.

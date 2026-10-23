@@ -2,7 +2,7 @@
 //! its review and history, its files and their search, and the agent
 //! sessions recorded against it.
 
-use argus_protocol::{ClientMsg, CodeVersion, IndexChange, LineKind, PickedLine, ReviewAnchor, ReviewBase, SearchOptions, TextChange};
+use argus_protocol::{ClientMsg, CodeVersion, DraftAction, IndexChange, LineKind, PickedLine, ReviewAnchor, ReviewBase, SearchOptions, TextChange};
 use proptest::prelude::*;
 
 use super::values::{checkout, checkout_path, commit, maybe_text, pane, repository, request_id, text};
@@ -158,9 +158,9 @@ pub fn resume_session(k: &Known) -> BoxedStrategy<ClientMsg> {
         .boxed()
 }
 
-pub fn review_comment(k: &Known) -> BoxedStrategy<ClientMsg> {
+fn anchor(k: &Known) -> BoxedStrategy<ReviewAnchor> {
     let span = (proptest::option::of(line()), proptest::option::of(line()));
-    let anchor = (base(), proptest::option::of(commit(k)), checkout_path(k), maybe_text(), span.clone(), span, proptest::collection::vec(text(), 0..3))
+    (base(), proptest::option::of(commit(k)), checkout_path(k), maybe_text(), span.clone(), span, proptest::collection::vec(text(), 0..3))
         .prop_map(|(base, commit, path, old_path, (old_start, old_end), (new_start, new_end), text)| ReviewAnchor {
             base,
             commit,
@@ -171,8 +171,12 @@ pub fn review_comment(k: &Known) -> BoxedStrategy<ClientMsg> {
             new_start,
             new_end,
             text,
-        });
-    (checkout(k), pane(k), anchor, text(), request_id())
+        })
+        .boxed()
+}
+
+pub fn review_comment(k: &Known) -> BoxedStrategy<ClientMsg> {
+    (checkout(k), pane(k), anchor(k), text(), request_id())
         .prop_map(|(checkout, recipient, anchor, body, request_id)| ClientMsg::ReviewComment {
             checkout,
             recipient,
@@ -219,6 +223,21 @@ pub fn stage(k: &Known) -> BoxedStrategy<ClientMsg> {
     ];
     (request_id(), checkout(k), change)
         .prop_map(|(request_id, checkout, change)| ClientMsg::Stage { request_id, checkout, change })
+        .boxed()
+}
+
+pub fn draft(k: &Known) -> BoxedStrategy<ClientMsg> {
+    let id = prop_oneof![0..4u64, any::<u64>()];
+    let action = prop_oneof![
+        Just(DraftAction::List),
+        (anchor(k), text()).prop_map(|(anchor, body)| DraftAction::Add { anchor: Box::new(anchor), body }),
+        (id.clone(), text()).prop_map(|(id, body)| DraftAction::Edit { id, body }),
+        id.prop_map(|id| DraftAction::Delete { id }),
+        Just(DraftAction::Discard),
+        (pane(k), text()).prop_map(|(recipient, summary)| DraftAction::Submit { recipient, summary }),
+    ];
+    (request_id(), checkout(k), action)
+        .prop_map(|(request_id, checkout, action)| ClientMsg::Draft { request_id, checkout, action })
         .boxed()
 }
 

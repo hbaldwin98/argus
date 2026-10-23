@@ -45,6 +45,7 @@ mod panes;
 pub(crate) mod processes;
 mod pushes;
 mod relocate;
+mod review_drafts;
 #[cfg(test)]
 pub(crate) mod scripted;
 mod session;

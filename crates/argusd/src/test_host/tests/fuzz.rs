@@ -81,7 +81,7 @@ fn answered(kind: Kind) -> Answered {
         | K::AddProject | K::AddRepository | K::InitRepository | K::ResumeSession | K::Review
         | K::ReviewContext | K::ListCode | K::ReadCode | K::SearchCode | K::ListDir | K::ListCommits
         | K::ListSessions | K::ReadSession | K::ListResumes | K::PreviewProject
-        | K::ListDirectories | K::Stage | K::Commit => Answered::ById,
+        | K::ListDirectories | K::Stage | K::Commit | K::Draft => Answered::ById,
         K::ReviewComment => Answered::BySavedComment,
         K::Feature => Answered::ByBoardOrId,
         K::Subscribe | K::Unsubscribe | K::Input | K::Paste | K::PasteFile | K::Scrollback

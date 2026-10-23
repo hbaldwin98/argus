@@ -19,6 +19,7 @@ mod pastes;
 mod reconcile;
 mod reconcile_tickets;
 mod relocate;
+mod review_drafts;
 mod reload;
 mod restore;
 mod saved_views;

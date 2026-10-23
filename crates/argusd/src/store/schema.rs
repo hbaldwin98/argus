@@ -560,3 +560,16 @@ CREATE INDEX saved_view_feature_target ON saved_view_feature (board, number);
 /// unfiled decisions under a project's plain name (HUN-242). A store that
 /// passed `SCHEMA_V14` before that left both on a key nothing reads.
 pub(super) const SCHEMA_V28: &str = "";
+
+/// Review comments not yet sent: what a person is still writing against a
+/// checkout's changes, keyed by its path as the sent comments are. Sending
+/// moves a draft's row into `review_comment` and drops it here.
+pub(super) const SCHEMA_V29: &str = r#"
+CREATE TABLE review_draft (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    checkout_path TEXT NOT NULL,
+    anchor        TEXT NOT NULL,
+    body          TEXT NOT NULL
+);
+CREATE INDEX review_draft_checkout ON review_draft (checkout_path, id);
+"#;

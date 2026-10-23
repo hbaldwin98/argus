@@ -37,6 +37,7 @@ pub(crate) mod faults;
 mod legacy;
 mod panel;
 mod reconcile;
+mod review_drafts;
 mod reviews;
 mod saved_views;
 mod schema;
@@ -49,7 +50,7 @@ pub use seen_sessions::{SeenSession, Sighting};
 use schema::{
     SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16,
     SCHEMA_V17, SCHEMA_V18, SCHEMA_V19, SCHEMA_V2, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22, SCHEMA_V23,
-    SCHEMA_V24, SCHEMA_V25, SCHEMA_V26, SCHEMA_V27, SCHEMA_V28,
+    SCHEMA_V24, SCHEMA_V25, SCHEMA_V26, SCHEMA_V27, SCHEMA_V28, SCHEMA_V29,
     SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
@@ -146,7 +147,7 @@ pub(crate) fn rerun_with_no_restore(test: &str) -> bool {
 }
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 28;
+const SCHEMA_VERSION: i64 = 29;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -313,6 +314,9 @@ impl Store {
         if from < 28 {
             tx.execute_batch(SCHEMA_V28)?;
             Self::migrate_legacy_project_features(&tx)?;
+        }
+        if from < 29 {
+            tx.execute_batch(SCHEMA_V29)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;

@@ -594,6 +594,12 @@ pub(super) fn dispatch(
                 lines,
             }))
         }),
+        ClientMsg::Draft { request_id, checkout, action } => daemon.review_draft(checkout, action).map(|drafted| {
+            if let Some((comments, delivered)) = drafted.sent {
+                let _ = out_tx.send(ServerMsg::ReviewSubmitted { request_id, comments, delivered });
+            }
+            let _ = out_tx.send(ServerMsg::Drafts { request_id, checkout, drafts: drafted.drafts });
+        }),
         ClientMsg::ReviewComment {
             checkout,
             recipient,

@@ -47,6 +47,7 @@ pub const CAPABILITIES: &[&str] = &[
     BROWSERS,
     BROWSER_POINTER,
     INDEX_WRITES,
+    REVIEW_DRAFTS,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
@@ -162,6 +163,11 @@ pub const FILES: &str = "files";
 /// `ServerMsg::Written`: the index taken whole files or picked lines, and a
 /// commit made of it.
 pub const INDEX_WRITES: &str = "index-writes";
+
+/// `ClientMsg::Draft`, answered by `ServerMsg::Drafts` and
+/// `ServerMsg::ReviewSubmitted`: review comments held as drafts and sent
+/// as one review.
+pub const REVIEW_DRAFTS: &str = "review-drafts";
 
 /// `ServerMsg::Refused`: a refusal of a request that named itself, by its
 /// id, in place of `Created` with nothing and an `Error`, or the request's

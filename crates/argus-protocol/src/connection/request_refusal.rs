@@ -77,7 +77,8 @@ impl Asked {
             M::Feature { request_id, .. }
             | M::ReviewComment { request_id, .. }
             | M::Stage { request_id, .. }
-            | M::Commit { request_id, .. } => (*request_id, false, Older::Error),
+            | M::Commit { request_id, .. }
+            | M::Draft { request_id, .. } => (*request_id, false, Older::Error),
             M::Review { request_id, checkout, .. } => (*request_id, true, Older::Review(*checkout)),
             M::ReviewContext { request_id, checkout, .. } => (*request_id, true, Older::ReviewContext(*checkout)),
             M::ListCode { request_id, checkout, .. }

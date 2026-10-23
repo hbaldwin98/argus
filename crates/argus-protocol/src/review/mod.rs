@@ -5,6 +5,7 @@
 
 pub mod agent_comment;
 pub mod captures;
+pub mod drafts;
 pub mod history_view;
 pub mod session;
 pub mod staging;

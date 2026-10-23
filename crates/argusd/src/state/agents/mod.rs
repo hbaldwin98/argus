@@ -280,34 +280,30 @@ impl Daemon {
         anchor: ReviewAnchor,
         body: String,
     ) -> anyhow::Result<(u64, bool)> {
-        let body = body.trim().to_string();
-        if body.is_empty() {
-            anyhow::bail!("review comment is empty");
-        }
-        if body.len() > MAX_REVIEW_COMMENT_BYTES {
-            anyhow::bail!("review comment exceeds {MAX_REVIEW_COMMENT_BYTES} bytes");
-        }
-
-        let checkout_path = {
-            let inner = self.inner.lock().unwrap();
-            let checkout = find_checkout_ref(&inner.projects, checkout_id)
-                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
-            let pane = checkout
-                .panes
-                .iter()
-                .find(|pane| pane.id == recipient)
-                .ok_or_else(|| anyhow::anyhow!("recipient is not in that checkout"))?;
-            if !pane.is_running_agent() {
-                anyhow::bail!("recipient must be a live agent pane");
-            }
-            checkout.path.clone()
-        };
-
+        let body = checked_comment(&body)?;
+        let checkout_path = self.review_recipient(checkout_id, recipient)?;
         let comment = self
             .store
             .add_review_comment(&checkout_path, anchor, body)?;
         let delivered = self.notify(recipient, &comment.anchor.notification(&comment.body));
         Ok((comment.id, delivered))
+    }
+
+    /// The path of the checkout `recipient` can be sent its review in:
+    /// one it is a live agent of.
+    pub(in crate::state) fn review_recipient(&self, checkout_id: CheckoutId, recipient: PaneId) -> anyhow::Result<PathBuf> {
+        let inner = self.inner.lock().unwrap();
+        let checkout = find_checkout_ref(&inner.projects, checkout_id)
+            .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+        let pane = checkout
+            .panes
+            .iter()
+            .find(|pane| pane.id == recipient)
+            .ok_or_else(|| anyhow::anyhow!("recipient is not in that checkout"))?;
+        if !pane.is_running_agent() {
+            anyhow::bail!("recipient must be a live agent pane");
+        }
+        Ok(checkout.path.clone())
     }
 
     /// Comments visible to the checkout containing this live agent. Pane ids
@@ -514,4 +510,17 @@ impl Daemon {
             }
         });
     }
+}
+
+/// A comment's body as it is kept: trimmed, and neither empty nor past
+/// what an agent's prompt is sent of one.
+pub(in crate::state) fn checked_comment(body: &str) -> anyhow::Result<String> {
+    let body = body.trim();
+    if body.is_empty() {
+        anyhow::bail!("review comment is empty");
+    }
+    if body.len() > MAX_REVIEW_COMMENT_BYTES {
+        anyhow::bail!("review comment exceeds {MAX_REVIEW_COMMENT_BYTES} bytes");
+    }
+    Ok(body.to_string())
 }

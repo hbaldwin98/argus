@@ -109,6 +109,7 @@ pub use agents::memory::{
 };
 pub use connection::message::{ClientMsg, Created, DirEntry, DirListing, ProjectPreview, ServerMsg};
 pub use paths::{config_dir, instance_name};
+pub use review::drafts::{DraftAction, ReviewDraft, MAX_REVIEW_DRAFTS};
 pub use review::staging::{IndexChange, PickedLine};
 pub use review::{
     ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,

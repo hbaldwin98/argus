@@ -3,8 +3,9 @@
 
 mod faults;
 mod releases;
+mod review_drafts;
 
-use argus_protocol::{Actor, DiagramWrite, TaskPlace, TaskState, TaskWrite};
+use argus_protocol::{Actor, DiagramWrite, TaskPlace, TaskState, TaskWrite, MAX_REVIEW_DRAFTS};
 
 use super::*;
 
@@ -45,6 +46,8 @@ fn legacy_connection(path: &Path, version: usize) -> Connection {
         schema::SCHEMA_V25,
         schema::SCHEMA_V26,
         schema::SCHEMA_V27,
+        schema::SCHEMA_V28,
+        schema::SCHEMA_V29,
     ];
     for step in steps.into_iter().take(version) {
         conn.execute_batch(step).unwrap();
