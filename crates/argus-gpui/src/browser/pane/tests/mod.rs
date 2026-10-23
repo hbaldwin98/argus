@@ -13,8 +13,10 @@ use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder as _};
 
 mod hand;
 mod ime;
+mod pointer;
 mod reconnect;
 mod strip;
+mod widgets;
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -57,6 +59,9 @@ pub(super) fn browser() -> PageBrowser {
         following: true,
         held: false,
         driver: None,
+        cursor: argus_protocol::BrowserCursor::Default,
+        dialog: None,
+        select: None,
     }
 }
 
@@ -231,7 +236,7 @@ fn enter_navigates_to_the_typed_address_and_escape_puts_the_url_back(cx: &mut Te
 }
 
 #[gpui_kit::test]
-fn a_press_on_the_picture_clicks_where_it_was_aimed_in_the_pages_pixels(cx: &mut TestAppContext) {
+fn a_press_on_the_picture_presses_where_it_was_aimed_in_the_pages_pixels(cx: &mut TestAppContext) {
     let opened = opened(cx, 0, browser());
     hear(cx, &opened, vec![Event::BrowserShot(BrowserShot { pane: PANE, jpeg: png(), width: 1280, height: 800 })]);
     cx.run_until_parked();
@@ -240,7 +245,7 @@ fn a_press_on_the_picture_clicks_where_it_was_aimed_in_the_pages_pixels(cx: &mut
     cx.update_window(opened.handle, |_, window, cx| window.pointer_down(centre, MouseButton::Left, cx)).unwrap();
     cx.run_until_parked();
     let calls = said(&opened);
-    let Some(at) = calls.iter().find_map(|call| call.strip_prefix("BrowserInput { pane: 105, input: Click { x: ")) else { panic!("{calls:?}") };
+    let Some(at) = calls.iter().find_map(|call| call.strip_prefix("BrowserInput { pane: 105, input: Press { x: ")) else { panic!("{calls:?}") };
     let x: f64 = at.split(',').next().unwrap().parse().unwrap();
     assert!((x - 640.0).abs() < 2.0, "the middle of the box is the middle of the page: {calls:?}");
 }
@@ -351,7 +356,8 @@ fn the_wheel_over_the_picture_scrolls_the_page_the_way_the_page_does_and_not_the
     // GPUI's deltas are positive upward and leftward; the page's deltaX and deltaY are the reverse.
     cx.update_window(opened.handle, |_, window, cx| window.scroll("browser-screen-105".to_owned(), ScrollDelta::Pixels(point(px(-10.0), px(-30.0))), cx)).unwrap();
     cx.run_until_parked();
-    let calls = said(&opened);
+    // Scrolling moves the pointer there first, which hovers the page (`pointer`).
+    let calls: Vec<String> = said(&opened).into_iter().filter(|call| !call.contains("input: Move {")).collect();
     assert_eq!(calls.len(), 1, "{calls:?}");
     assert!(calls[0].starts_with("BrowserInput { pane: 105, input: Wheel {") && calls[0].contains("dx: 10.0") && calls[0].contains("dy: 30.0"), "{calls:?}");
 }

@@ -57,6 +57,8 @@ fn replay() -> ServerMsg {
         following: true,
         held: false,
         driver: None,
+        dialog: None,
+        select: None,
     })
 }
 

@@ -1,4 +1,4 @@
-//! A cell's toolbar (SHELL-BROWSER-7): Back, Forward, Reload, the address, and Close; and the text
+//! A cell's toolbar (SHELL-BROWSER-7): Back, Forward, Reload, the address, Copy (`shot`) and Close; and the text
 //! button every control of the cell is drawn with.
 //!
 //! The three moves are always enabled and show no state; Close closes the browser for every
@@ -34,7 +34,7 @@ pub fn text_button(
 }
 
 /// `.bbar`.
-pub fn bar(pane: u64, address: &Address, caller: &Caller, tokens: &Tokens) -> impl IntoElement {
+pub fn bar(pane: u64, address: &Address, copy: Node, caller: &Caller, tokens: &Tokens) -> impl IntoElement {
     let go = |name: &'static str, glyph: &'static str, input: BrowserInput| {
         let caller = caller.clone();
         text_button(format!("browser-{}-{pane}", name.to_lowercase()), glyph, name, tokens, move |_, _| {
@@ -59,5 +59,6 @@ pub fn bar(pane: u64, address: &Address, caller: &Caller, tokens: &Tokens) -> im
         .child(go("Forward", "→", BrowserInput::Forward))
         .child(go("Reload", "⟳", BrowserInput::Reload))
         .child(address.view(tokens))
+        .child(copy)
         .child(text_button(format!("browser-close-{pane}"), "Close", CLOSE_TIP, tokens, move |_, _| close.call(Call::CloseBrowser { pane })))
 }

@@ -1,7 +1,7 @@
 //! What the person's hand on a browser becomes: the DevTools commands, in
 //! order, that do it to the page shown.
 
-use argus_protocol::{navigable, BrowserInput};
+use argus_protocol::{navigable, BrowserButton, BrowserInput};
 use serde_json::{json, Value};
 
 /// The commands `input` is sent as, each for the shown page's session.
@@ -18,6 +18,27 @@ pub(crate) fn commands(input: &BrowserInput) -> Vec<(&'static str, Value)> {
                 ("Input.dispatchMouseEvent", at("mouseReleased")),
             ]
         }
+        BrowserInput::Move { x, y, held } => {
+            let (button, buttons) = held.map_or(("none", 0), named);
+            vec![("Input.dispatchMouseEvent", json!({ "type": "mouseMoved", "x": x, "y": y, "button": button, "buttons": buttons }))]
+        }
+        BrowserInput::Press { x, y, button, count } => {
+            let (button, buttons) = named(*button);
+            vec![(
+                "Input.dispatchMouseEvent",
+                json!({ "type": "mousePressed", "x": x, "y": y, "button": button, "buttons": buttons, "clickCount": count }),
+            )]
+        }
+        BrowserInput::Release { x, y, button, count } => {
+            let (button, _) = named(*button);
+            vec![(
+                "Input.dispatchMouseEvent",
+                json!({ "type": "mouseReleased", "x": x, "y": y, "button": button, "buttons": 0, "clickCount": count }),
+            )]
+        }
+        // A point off the page, which ends every hover as a pointer leaving
+        // the window does.
+        BrowserInput::Leave => vec![("Input.dispatchMouseEvent", json!({ "type": "mouseMoved", "x": -1, "y": -1 }))],
         BrowserInput::Wheel { x, y, dx, dy } => vec![(
             "Input.dispatchMouseEvent",
             json!({ "type": "mouseWheel", "x": x, "y": y, "deltaX": dx, "deltaY": dy }),
@@ -45,9 +66,20 @@ pub(crate) fn commands(input: &BrowserInput) -> Vec<(&'static str, Value)> {
         | BrowserInput::Hold { .. }
         | BrowserInput::NewTab
         | BrowserInput::CloseTab { .. }
-        | BrowserInput::Viewport { .. } => {
+        | BrowserInput::Viewport { .. }
+        | BrowserInput::Answer { .. }
+        | BrowserInput::Choose { .. } => {
             Vec::new()
         }
+    }
+}
+
+/// A button as DevTools names it, and its bit in the buttons held.
+fn named(button: BrowserButton) -> (&'static str, u32) {
+    match button {
+        BrowserButton::Left => ("left", 1),
+        BrowserButton::Right => ("right", 2),
+        BrowserButton::Middle => ("middle", 4),
     }
 }
 
@@ -72,6 +104,28 @@ mod tests {
         let kinds: Vec<&str> = sent.iter().map(|(_, params)| params["type"].as_str().unwrap()).collect();
         assert_eq!(kinds, ["mouseMoved", "mousePressed", "mouseReleased"]);
         assert!(sent.iter().all(|(_, params)| params["x"] == 10.0 && params["y"] == 20.0));
+    }
+
+    #[test]
+    fn a_drag_holds_its_button_down_until_it_is_let_go() {
+        let left = BrowserButton::Left;
+        let press = commands(&BrowserInput::Press { x: 1.0, y: 2.0, button: left, count: 2 });
+        assert_eq!((press[0].1["type"].as_str(), press[0].1["button"].as_str()), (Some("mousePressed"), Some("left")));
+        assert_eq!((press[0].1["buttons"].as_u64(), press[0].1["clickCount"].as_u64()), (Some(1), Some(2)));
+        let dragged = commands(&BrowserInput::Move { x: 5.0, y: 2.0, held: Some(left) });
+        assert_eq!((dragged[0].1["type"].as_str(), dragged[0].1["buttons"].as_u64()), (Some("mouseMoved"), Some(1)));
+        let released = commands(&BrowserInput::Release { x: 5.0, y: 2.0, button: left, count: 2 });
+        assert_eq!((released[0].1["type"].as_str(), released[0].1["buttons"].as_u64()), (Some("mouseReleased"), Some(0)));
+    }
+
+    #[test]
+    fn a_hover_holds_no_button_and_leaving_moves_off_the_page() {
+        let hover = commands(&BrowserInput::Move { x: 5.0, y: 2.0, held: None });
+        assert_eq!((hover[0].1["button"].as_str(), hover[0].1["buttons"].as_u64()), (Some("none"), Some(0)));
+        let left = commands(&BrowserInput::Leave);
+        assert!(left[0].1["x"].as_f64().unwrap() < 0.0 && left[0].1["y"].as_f64().unwrap() < 0.0);
+        let right = commands(&BrowserInput::Press { x: 0.0, y: 0.0, button: BrowserButton::Right, count: 1 });
+        assert_eq!((right[0].1["button"].as_str(), right[0].1["buttons"].as_u64()), (Some("right"), Some(2)));
     }
 
     #[test]

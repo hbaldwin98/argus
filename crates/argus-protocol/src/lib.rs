@@ -25,7 +25,7 @@ pub mod tree;
 pub mod views;
 
 pub use ago::ago;
-pub use browser::{navigable, BrowserAct, BrowserFrame, BrowserInput, BrowserKey, BrowserPage, BrowserDriver, BrowserRequest, BrowserTab, BROWSER_VAR};
+pub use browser::{navigable, BrowserAct, BrowserButton, BrowserCursor, BrowserDialog, BrowserDialogKind, BrowserOption, BrowserSelect, BrowserFrame, BrowserInput, BrowserKey, BrowserPage, BrowserDriver, BrowserRequest, BrowserTab, BROWSER_VAR};
 pub use agents::launch::{AgentLaunch, AgentLaunched, LaunchPlace, MAX_LAUNCH_BYTES};
 pub use agents::roster::{roster, AgentListing};
 pub use views::agent_view::{
@@ -81,7 +81,7 @@ pub use tree::focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusReposi
 pub use connection::framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use tree::held::{transitions, HeldTree, Lineage, Transition};
 pub use connection::hello::{
-    ADD_PROJECT, AGENT_VIEWS, BROWSERS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
+    ADD_PROJECT, AGENT_VIEWS, BROWSERS, BROWSER_POINTER, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
     RENAME_PANE, MOVE_TO_CHECKOUT, SAVED_VIEWS, CODE, CODE_EDIT, FILES, REQUEST_REFUSALS,
 };

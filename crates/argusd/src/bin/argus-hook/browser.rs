@@ -19,7 +19,7 @@ pub(super) fn browser(rest: &[&str]) {
 
 const USAGE: &str = "browser: `browser` (or `browser open`) for the DevTools URL; `browser close`; \
                      or a built-in command on the tab shown: `go <url>`, `back`, `reload`, `new [url]`, `tabs`, \
-                     `text`, `click <selector>`, `type <selector> <text>`, `eval <script>`, `shot`";
+                     `text`, `click <selector>`, `type <selector> <text>`, `eval <script>`, `shot` (or `shot full` for the whole page)";
 
 /// The line that says what to do with the URL, since that is why it was
 /// asked for.
@@ -42,6 +42,7 @@ fn request(rest: &[&str]) -> Option<BrowserRequest> {
         ["tabs"] => act(BrowserAct::Tabs),
         ["text"] => act(BrowserAct::Text),
         ["shot"] => act(BrowserAct::Shot),
+        ["shot", "full" | "--full"] => act(BrowserAct::FullShot),
         ["click", selector @ ..] if !selector.is_empty() => act(BrowserAct::Click { selector: selector.join(" ") }),
         ["type", selector, text @ ..] if !text.is_empty() => {
             act(BrowserAct::Type { selector: selector.to_string(), text: text.join(" ") })

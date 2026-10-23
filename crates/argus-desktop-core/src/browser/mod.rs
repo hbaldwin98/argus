@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use argus_protocol::{BrowserDriver, BrowserFrame, BrowserInput, BrowserPage, BrowserTab, ClientMsg, PaneId};
+use argus_protocol::{BrowserButton, BrowserCursor, BrowserDialog, BrowserDriver, BrowserFrame, BrowserInput, BrowserPage, BrowserSelect, BrowserTab, ClientMsg, PaneId};
 use serde::Serialize;
 
 use crate::connection::sent::Sent;
@@ -58,6 +58,12 @@ pub struct PageBrowser {
     /// Whether the person holds it, the agent's input refused.
     pub held: bool,
     pub driver: Option<BrowserDriver>,
+    /// What the pointer looks like over its page, as the daemon last said.
+    pub cursor: BrowserCursor,
+    /// A script's dialog the page waits on, which the window asks the person.
+    pub dialog: Option<BrowserDialog>,
+    /// A `<select>` whose list is open, which the window draws.
+    pub select: Option<BrowserSelect>,
 }
 
 /// One picture of a pane's browser, as the daemon sent it.
@@ -77,6 +83,7 @@ pub struct BrowserShot {
 pub struct Browsers {
     open: BTreeMap<PaneId, BrowserPage>,
     shots: BTreeMap<PaneId, BrowserShot>,
+    cursors: BTreeMap<PaneId, BrowserCursor>,
     /// `shots` decoded for a window that draws them natively, on its first
     /// ask for each, and dropped with the shot it was made from.
     decoded: BTreeMap<PaneId, Option<Arc<Picture>>>,
@@ -96,6 +103,7 @@ impl Browsers {
     pub fn connected(&mut self, out: &mut Vec<ClientMsg>) {
         self.open.clear();
         self.shots.clear();
+        self.cursors.clear();
         self.decoded.clear();
         self.viewports.reconnected();
         self.watching = Some(Vec::new());
@@ -159,9 +167,17 @@ impl Browsers {
         self.decoded.entry(pane).or_insert_with(|| picture::decode(shot, served).map(Arc::new)).clone()
     }
 
+    /// What the pointer looks like over `pane`'s page now.
+    pub fn cursor(&mut self, pane: PaneId, cursor: BrowserCursor) {
+        if self.has(pane) {
+            self.cursors.insert(pane, cursor);
+        }
+    }
+
     pub fn closed(&mut self, pane: PaneId) {
         self.open.remove(&pane);
         self.shots.remove(&pane);
+        self.cursors.remove(&pane);
         self.decoded.remove(&pane);
         self.viewports.closed(pane);
     }
@@ -170,7 +186,20 @@ impl Browsers {
         self.open.contains_key(&pane)
     }
 
-    pub fn input(&self, pane: PaneId, input: BrowserInput, out: &mut Vec<ClientMsg>) {
+    /// The person's hand on `pane`'s browser. A daemon that does not take
+    /// the pointer (`pointer` false) is sent a left press as the click it
+    /// knows and nothing of the rest, which it would hang up on: it loses
+    /// hover and drags, not clicks.
+    pub fn input(&self, pane: PaneId, input: BrowserInput, pointer: bool, out: &mut Vec<ClientMsg>) {
+        let input = match input {
+            input if pointer || !input.pointer() => input,
+            BrowserInput::Press { x, y, button: BrowserButton::Left, .. } => BrowserInput::Click { x, y },
+            _ => return,
+        };
+        self.send(pane, input, out);
+    }
+
+    fn send(&self, pane: PaneId, input: BrowserInput, out: &mut Vec<ClientMsg>) {
         if self.has(pane) {
             out.push(ClientMsg::BrowserInput { pane, input });
         }
@@ -203,7 +232,7 @@ impl Browsers {
 
     fn send_viewport(&self, pane: PaneId, viewport: viewport::Viewport, out: &mut Vec<ClientMsg>) {
         let input = BrowserInput::Viewport { width: viewport.width, height: viewport.height, scale: viewport.scale };
-        self.input(pane, input, out);
+        self.send(pane, input, out);
     }
 
     pub fn close(&self, pane: PaneId, out: &mut Vec<ClientMsg>) {
@@ -232,6 +261,9 @@ impl Browsers {
                     following: page.following,
                     held: page.held,
                     driver: page.driver,
+                    cursor: self.cursors.get(&page.pane).copied().unwrap_or_default(),
+                    dialog: page.dialog.clone(),
+                    select: page.select.clone(),
                 })
                 .collect(),
         });
@@ -250,7 +282,7 @@ mod tests {
     use super::*;
 
     fn page(pane: u64, url: &str) -> BrowserPage {
-        BrowserPage { pane: PaneId(pane), owner: PaneId(pane), url: url.into(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None }
+        BrowserPage { pane: PaneId(pane), owner: PaneId(pane), url: url.into(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None, dialog: None, select: None }
     }
 
     #[test]
@@ -289,12 +321,49 @@ mod tests {
     fn the_hand_goes_only_to_a_browser_that_is_there() {
         let mut browsers = Browsers::default();
         let mut out = Vec::new();
-        browsers.input(PaneId(1), BrowserInput::Reload, &mut out);
+        browsers.input(PaneId(1), BrowserInput::Reload, true, &mut out);
         browsers.close(PaneId(1), &mut out);
         assert!(out.is_empty());
         browsers.page(page(1, "about:blank"));
-        browsers.input(PaneId(1), BrowserInput::Reload, &mut out);
+        browsers.input(PaneId(1), BrowserInput::Reload, true, &mut out);
         assert!(matches!(out[..], [ClientMsg::BrowserInput { pane: PaneId(1), .. }]));
+    }
+
+    #[test]
+    fn a_daemon_without_the_pointer_is_sent_a_left_press_as_a_click_and_no_more() {
+        let mut browsers = Browsers::default();
+        browsers.page(page(1, "about:blank"));
+        let left = BrowserButton::Left;
+        let hand = [
+            BrowserInput::Move { x: 1.0, y: 2.0, held: None },
+            BrowserInput::Press { x: 1.0, y: 2.0, button: left, count: 1 },
+            BrowserInput::Release { x: 1.0, y: 2.0, button: left, count: 1 },
+            BrowserInput::Press { x: 1.0, y: 2.0, button: BrowserButton::Right, count: 1 },
+            BrowserInput::Leave,
+        ];
+        let mut older = Vec::new();
+        for input in hand.clone() {
+            browsers.input(PaneId(1), input, false, &mut older);
+        }
+        assert!(matches!(&older[..], [ClientMsg::BrowserInput { input: BrowserInput::Click { x: 1.0, y: 2.0 }, .. }]), "{older:?}");
+        let mut newer = Vec::new();
+        for input in hand {
+            browsers.input(PaneId(1), input, true, &mut newer);
+        }
+        assert_eq!(newer.len(), 5, "a daemon that takes the pointer is sent it whole");
+    }
+
+    #[test]
+    fn a_cursor_is_held_for_a_browser_that_is_there_until_it_goes() {
+        let mut browsers = Browsers::default();
+        browsers.cursor(PaneId(1), BrowserCursor::Pointer);
+        browsers.page(page(1, "about:blank"));
+        assert_eq!(browsers.take(|_| None).unwrap().browsers[0].cursor, BrowserCursor::Default, "said before the browser was");
+        browsers.cursor(PaneId(1), BrowserCursor::Pointer);
+        assert_eq!(browsers.take(|_| None).unwrap().browsers[0].cursor, BrowserCursor::Pointer);
+        browsers.closed(PaneId(1));
+        browsers.page(page(1, "about:blank"));
+        assert_eq!(browsers.take(|_| None).unwrap().browsers[0].cursor, BrowserCursor::Default, "a browser that came back starts at the arrow");
     }
 
     #[test]

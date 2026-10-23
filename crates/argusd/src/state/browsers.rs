@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use argus_protocol::{BrowserAct, BrowserFrame, BrowserInput, BrowserPage, BrowserRequest, PaneId, PaneKind, ServerMsg};
+use argus_protocol::{BrowserAct, BrowserCursor, BrowserFrame, BrowserInput, BrowserPage, BrowserRequest, PaneId, PaneKind, ServerMsg};
 use tokio::sync::{broadcast, mpsc};
 
 use super::*;
@@ -45,16 +45,18 @@ pub(super) struct Browsers {
 /// What changed among the browsers, for the connections watching them.
 #[derive(Debug, Clone)]
 pub enum BrowserNews {
-    Page(BrowserPage),
+    Page(Box<BrowserPage>),
     Frame(Arc<BrowserFrame>),
+    Cursor { pane: PaneId, cursor: BrowserCursor },
     Closed { pane: PaneId },
 }
 
 impl BrowserNews {
     pub(crate) fn message(self) -> ServerMsg {
         match self {
-            BrowserNews::Page(page) => ServerMsg::BrowserPage(page),
+            BrowserNews::Page(page) => ServerMsg::BrowserPage(*page),
             BrowserNews::Frame(frame) => ServerMsg::BrowserFrame(Box::new((*frame).clone())),
+            BrowserNews::Cursor { pane, cursor } => ServerMsg::BrowserCursor { pane, cursor },
             BrowserNews::Closed { pane } => ServerMsg::BrowserClosed { pane },
         }
     }
@@ -151,9 +153,11 @@ impl Daemon {
             following: true,
             held: false,
             driver: None,
+            dialog: None,
+            select: None,
         };
         browsers.open.insert(pane, Open { owner: agent, browser, started, page: page.clone(), frame: None });
-        self.pushes.browser(&browsers, BrowserNews::Page(page));
+        self.pushes.browser(&browsers, BrowserNews::Page(Box::new(page)));
         drop(browsers);
         self.broadcast_tree();
         tokio::spawn(heed(self.clone(), pane, started, heard));
@@ -249,7 +253,7 @@ impl Daemon {
         let browsers = self.browsers.lock().unwrap();
         let mut now = Vec::new();
         for open in browsers.open.values() {
-            now.push(BrowserNews::Page(open.page.clone()));
+            now.push(BrowserNews::Page(Box::new(open.page.clone())));
             now.extend(open.frame.clone().map(BrowserNews::Frame));
         }
         (now, self.pushes.subscribe_browsers())
@@ -269,20 +273,21 @@ impl Daemon {
                 let on = seen.shown.as_deref().and_then(|id| seen.tabs.iter().find(|tab| tab.id == id));
                 let (url, title) = on.map(|tab| (tab.url.clone(), tab.title.clone())).unwrap_or_default();
                 titled = Some(if title.is_empty() { UNTITLED.to_string() } else { title.clone() });
-                let Seen { tabs, shown, following, held, driver } = seen;
+                let Seen { tabs, shown, following, held, driver, dialog, select } = seen;
                 // With no tab shown there is no page: the last picture is of
                 // one that closed, and a client that joins is not sent it.
                 if shown.is_none() {
                     open.frame = None;
                 }
-                open.page = BrowserPage { pane, owner, url, title, tabs, shown, following, held, driver };
-                BrowserNews::Page(open.page.clone())
+                open.page = BrowserPage { pane, owner, url, title, tabs, shown, following, held, driver, dialog, select };
+                BrowserNews::Page(Box::new(open.page.clone()))
             }
             Report::Frame { jpeg, width, height } => {
                 let frame = Arc::new(BrowserFrame { pane, jpeg, width, height });
                 open.frame = Some(frame.clone());
                 BrowserNews::Frame(frame)
             }
+            Report::Cursor(cursor) => BrowserNews::Cursor { pane, cursor },
         };
         self.pushes.browser(&browsers, news);
         // The pane is named for the page it shows, so a tile or a row says

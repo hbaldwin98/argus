@@ -296,12 +296,15 @@ impl Topic for Views {
 /// and asked: where each is, and the pictures of those it draws.
 pub(super) struct Browsers {
     pub(super) showing: std::collections::HashSet<argus_protocol::PaneId>,
+    /// Whether the client listed `BROWSER_POINTER`, and so reads a cursor.
+    pub(super) pointer: bool,
 }
 
 impl Browsers {
     fn wanted(&self, news: &BrowserNews) -> bool {
         match news {
             BrowserNews::Frame(frame) => self.showing.contains(&frame.pane),
+            BrowserNews::Cursor { pane, .. } => self.pointer && self.showing.contains(pane),
             BrowserNews::Page(_) | BrowserNews::Closed { .. } => true,
         }
     }

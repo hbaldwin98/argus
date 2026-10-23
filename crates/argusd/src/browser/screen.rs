@@ -11,7 +11,7 @@
 
 use std::time::Duration;
 
-use argus_protocol::{BrowserAct, BrowserDriver, BrowserInput, BrowserTab};
+use argus_protocol::{BrowserAct, BrowserButton, BrowserDriver, BrowserInput, BrowserTab};
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -19,6 +19,8 @@ use tokio::time::Instant;
 use super::cdp::{Cdp, Event};
 use super::input::{browser_command, commands};
 use super::act::{self, Reply};
+use super::cursor::{self, At};
+use super::widgets::Widgets;
 use super::mux::{AGENT_ACTED, HELD, HOLD};
 use super::{Report, Seen};
 
@@ -150,6 +152,11 @@ pub(super) async fn follow(
     let mut held = false;
     let mut driver: Option<(BrowserDriver, Instant)> = None;
     let mut told: Option<Seen> = None;
+    let pointer = cursor::follow(cdp.clone(), reports.clone());
+    let mut widgets = Widgets::default();
+    // A left press that opened a `<select>`'s list rather than reaching the
+    // page, whose release is not the page's either.
+    let mut pressed_select = false;
     loop {
         let quiet = driver.map(|(_, at)| at + DRIVING);
         tokio::select! {
@@ -160,6 +167,9 @@ pub(super) async fn follow(
                     driver = Some((BrowserDriver::Agent, Instant::now()));
                 }
                 let on_shown = shown.as_ref().is_some_and(|s| event.session.as_deref() == Some(&*s.session));
+                if on_shown {
+                    widgets.heard(&event);
+                }
                 match event.method.as_str() {
                     "Page.screencastFrame" if on_shown => {
                         frame(&cdp, &event, &reports);
@@ -193,6 +203,10 @@ pub(super) async fn follow(
                 }
                 if held && asked.drives() {
                     let _ = reply.send(Err(HELD.to_string()));
+                } else if let Some(dialog) = widgets.dialog.as_ref().filter(|_| asked != BrowserAct::Tabs) {
+                    // The page is stopped until the dialog is answered: a
+                    // command on it would wait out its whole time.
+                    let _ = reply.send(Err(format!("the page is waiting on a dialog (\"{}\"); the person answers it in the Argus window", dialog.message)));
                 } else if asked == BrowserAct::Tabs {
                     let _ = reply.send(Ok(listed(&tabs, shown.as_ref())));
                 } else {
@@ -211,6 +225,11 @@ pub(super) async fn follow(
                 if hand.drives() {
                     driver = Some((BrowserDriver::Person, Instant::now()));
                 }
+                // A press can change what is under the pointer as much as a
+                // move, so both ask what the cursor is there.
+                if let (Some(shown), BrowserInput::Move { x, y, .. } | BrowserInput::Press { x, y, .. } | BrowserInput::Release { x, y, .. }) = (&shown, &hand) {
+                    pointer.send_replace(Some(At { session: shown.session.clone(), x: *x, y: *y }));
+                }
                 match &hand {
                     BrowserInput::ShowTab { id } => tabs.pick(id),
                     BrowserInput::FollowAgent => tabs.follow_agent(),
@@ -228,6 +247,26 @@ pub(super) async fn follow(
                             }
                         }
                     }
+                    BrowserInput::Press { x, y, button: BrowserButton::Left, .. } if shown.is_some() => {
+                        let session = shown.as_ref().map(|s| s.session.clone()).unwrap_or_default();
+                        pressed_select = widgets.press(&cdp, &session, *x, *y).await;
+                        if !pressed_select {
+                            for (method, params) in commands(&hand) {
+                                cdp.tell(method, params, Some(&session));
+                            }
+                        }
+                    }
+                    BrowserInput::Release { button: BrowserButton::Left, .. } if pressed_select => pressed_select = false,
+                    BrowserInput::Choose { index } => {
+                        if let Some(shown) = &shown {
+                            widgets.choose(&cdp, &shown.session, *index);
+                        }
+                    }
+                    BrowserInput::Answer { accept, text } => {
+                        if let Some(shown) = &shown {
+                            widgets.answer(&cdp, &shown.session, *accept, text.as_deref());
+                        }
+                    }
                     _ => {
                         if let Some((method, params)) = browser_command(&hand) {
                             cdp.tell(method, params, None);
@@ -242,6 +281,7 @@ pub(super) async fn follow(
         }
         let want = tabs.to_show().map(|tab| tab.id.clone());
         if want != shown.as_ref().map(|s| s.target.clone()) {
+            widgets.shown_changed();
             shown = show(&cdp, shown.take(), want, viewport).await;
         }
         let now = Seen {
@@ -250,6 +290,8 @@ pub(super) async fn follow(
             following: tabs.picked.is_none(),
             held,
             driver: driver.map(|(who, _)| who),
+            dialog: widgets.dialog.clone(),
+            select: widgets.select().cloned(),
         };
         if told.as_ref() != Some(&now) {
             let _ = reports.send(Report::Page(now.clone()));

@@ -2,18 +2,17 @@
 //! the words for no tab, and the person's hand on it.
 //!
 //! The box has no padding: it is the viewport the page is laid out at (`viewport`), so the
-//! picture fills it one pixel to one. A press on it takes the keys and, when the point is on the
-//! picture, clicks there in the page's own pixels (core's `within` finds them); the wheel scrolls
-//! the page and never the window. A key is in `keys`.
+//! picture fills it one pixel to one. A press on it takes the keys; what the pointer does to the
+//! page, and the cursor drawn over it, is `pointer`'s. A key is in `keys`.
 
-use argus_desktop_core::browser::within::{within, Box2};
 use argus_desktop_core::browser::PageBrowser;
 use argus_desktop_core::connection::page::Call;
 use argus_protocol::BrowserInput;
 use gpui_kit::component::v_flex;
-use gpui_kit::{canvas, div, ElementInputHandler, prelude::*, Context, MouseButton, MouseDownEvent, Point, Pixels, ScrollWheelEvent, SharedString, TestSupportExt as _, Window};
+use gpui_kit::{canvas, div, ElementInputHandler, prelude::*, Context, MouseButton, SharedString, TestSupportExt as _, Window};
 
 use super::bar::text_button;
+use super::pointer::style;
 use super::tabs::NEW_TAB;
 use super::BrowserPane;
 use crate::theme::scale::rem;
@@ -37,17 +36,30 @@ impl BrowserPane {
             .min_h_0()
             .overflow_hidden()
             .bg(tokens.bg_chrome)
+            .cursor(style(browser.cursor))
             .on_scroll_wheel(cx.listener(Self::wheeled))
+            .on_mouse_move(cx.listener(|this, event, _, cx| this.moved(event, cx)))
+            .on_hover(cx.listener(|this, hovered: &bool, _, _| {
+                if !hovered {
+                    this.left();
+                }
+            }))
             .child(self.reporter.measure(self.area.clone(), cx.entity_id()))
             .child(self.takes_text(cx));
         // The page lets any button press (the page tests none).
         for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
-            screen = screen.on_mouse_down(button, cx.listener(Self::pressed));
+            screen = screen
+                .on_mouse_down(button, cx.listener(Self::pressed))
+                .on_mouse_up(button, cx.listener(|this, event, _, cx| this.released(event, cx)))
+                .on_mouse_up_out(button, cx.listener(|this, event, _, cx| this.released(event, cx)));
         }
         if browser.shown.is_some() {
             screen = screen.child(div().absolute().size_full().child(self.picture.clone()));
         } else {
             screen = screen.child(self.blank(tokens));
+        }
+        if let Some(dialog) = &browser.dialog {
+            screen = screen.child(self.dialog(dialog, tokens));
         }
         screen.when(ring, |screen| {
             screen.child(div().id(SharedString::from(format!("browser-ring-{pane}"))).test_support().absolute().size_full().border(rem(tokens.ring_outline)).border_color(tokens.ring))
@@ -83,42 +95,5 @@ impl BrowserPane {
             .child(text_button(format!("browser-blank-new-tab-{pane}"), NEW_TAB, OPEN_TAB, tokens, move |_, _| {
                 caller.call(Call::BrowserInput { pane, input: BrowserInput::NewTab })
             }))
-    }
-
-    /// The point of a pointer's place in the page's own pixels, or none in the bands either side of
-    /// the picture (and while there is no picture to be on).
-    fn point_in_page(&self, at: Point<Pixels>, cx: &gpui_kit::App) -> Option<(f64, f64)> {
-        let (width, height) = {
-            let heard = self.heard.read(cx);
-            let picture = heard.pictures.of(self.pane)?;
-            (picture.width, picture.height)
-        };
-        let area = self.area.get();
-        let room = Box2 {
-            left: f64::from(area.origin.x),
-            top: f64::from(area.origin.y),
-            width: f64::from(area.size.width),
-            height: f64::from(area.size.height),
-        };
-        within(room, (width, height), f64::from(at.x), f64::from(at.y)).map(|at| (at.x, at.y))
-    }
-
-    fn pressed(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus, cx);
-        if let Some((x, y)) = self.point_in_page(event.position, cx) {
-            self.caller.call(Call::BrowserInput { pane: self.pane, input: BrowserInput::Click { x, y } });
-        }
-    }
-
-    /// The wheel over the screen is the page's, whether or not it is over the picture: the window
-    /// does not scroll.
-    fn wheeled(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
-        cx.stop_propagation();
-        let Some((x, y)) = self.point_in_page(event.position, cx) else { return };
-        // GPUI's deltas are positive toward the top and left, the page's `deltaX` and `deltaY`
-        // positive toward the bottom and right.
-        let delta = event.delta.pixel_delta(window.line_height());
-        let (dx, dy) = (-f64::from(delta.x), -f64::from(delta.y));
-        self.caller.call(Call::BrowserInput { pane: self.pane, input: BrowserInput::Wheel { x, y, dx, dy } });
     }
 }

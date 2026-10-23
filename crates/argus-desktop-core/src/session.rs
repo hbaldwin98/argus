@@ -41,7 +41,7 @@ use argus_protocol::connection::request_refusal::OlderDaemon;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, RequestRefusal, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS,
-    PASTE_FILE, RENAME_PANE, MOVE_TO_CHECKOUT, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion, FILES, BROWSERS,
+    PASTE_FILE, RENAME_PANE, MOVE_TO_CHECKOUT, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion, FILES, BROWSERS, BROWSER_POINTER,
 };
 
 use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
@@ -496,6 +496,7 @@ impl Session {
                 }
             }
             ServerMsg::BrowserClosed { pane } => self.browsers.closed(pane),
+            ServerMsg::BrowserCursor { pane, cursor } => self.browsers.cursor(pane, cursor),
             // Taken past the session by `connection::daemon`; one that
             // reaches here is passed on all the same.
             ServerMsg::BrowserFrame(frame) => {
@@ -746,7 +747,7 @@ impl Session {
             Call::ShowCheckouts { open } => self.show_checkouts(open),
             Call::ShowBrowsers { pane } => self.show_browsers(pane.map(PaneId)),
             Call::BrowserInput { pane, input } => {
-                self.browsers.input(PaneId(pane), input, &mut self.out);
+                self.browsers.input(PaneId(pane), input, self.status.daemon_can(BROWSER_POINTER), &mut self.out);
                 self.finish()
             }
             Call::CloseBrowser { pane } => {
@@ -4514,6 +4515,8 @@ mod tests {
             following: true,
             held: false,
             driver: None,
+            dialog: None,
+            select: None,
         })
     }
 

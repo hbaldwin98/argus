@@ -45,6 +45,7 @@ pub const CAPABILITIES: &[&str] = &[
     FILES,
     REQUEST_REFUSALS,
     BROWSERS,
+    BROWSER_POINTER,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
@@ -77,6 +78,16 @@ pub const AGENT_VIEWS: &str = "agent-views";
 /// `ServerMsg::BrowserClosed` from the daemon. A client that cannot draw a
 /// picture leaves it off and is sent none.
 pub const BROWSERS: &str = "browsers";
+
+/// The person's pointer on a browser as a window's is: `BrowserInput`'s
+/// `Move`, `Press`, `Release` and `Leave` from a client, and
+/// `ServerMsg::BrowserCursor` from the daemon, so the page hovers, drags
+/// and shows its cursor; and the widgets headless Chrome draws nowhere,
+/// a `<select>`'s list and a script's dialog, drawn by the window and
+/// answered with `Choose` and `Answer`. A client without it sends a
+/// `Click`. Listed by each side for the half it takes, beside
+/// [`BROWSERS`].
+pub const BROWSER_POINTER: &str = "browser-pointer";
 
 /// `ClientMsg::PressView`: a press of an action an agent put in a view, and
 /// `ServerMsg::ViewPressFailed` to the client that pressed when the agent

@@ -80,7 +80,8 @@ expression: text
     "code-edit",
     "files",
     "request-refusals",
-    "browsers"
+    "browsers",
+    "browser-pointer"
   ],
   "protocol": 1,
   "version": "[version]"
@@ -109,7 +110,8 @@ expression: text
     "code-edit",
     "files",
     "request-refusals",
-    "browsers"
+    "browsers",
+    "browser-pointer"
   ],
   "protocol": 1,
   "version": "[version]"

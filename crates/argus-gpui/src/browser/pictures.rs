@@ -170,6 +170,9 @@ mod tests {
                     following: true,
                     held: false,
                     driver: None,
+                    cursor: argus_protocol::BrowserCursor::Default,
+                    dialog: None,
+                    select: None,
                 })
                 .collect(),
         }

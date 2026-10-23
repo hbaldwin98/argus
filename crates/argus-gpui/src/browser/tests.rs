@@ -23,6 +23,9 @@ fn browser(pane: u64, agent: &str, tab: bool) -> PageBrowser {
         following: true,
         held: false,
         driver: None,
+        cursor: argus_protocol::BrowserCursor::Default,
+        dialog: None,
+        select: None,
     }
 }
 

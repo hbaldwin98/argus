@@ -25,6 +25,9 @@ const LOADING: Duration = Duration::from_secs(15);
 /// The most of a page's text an answer carries, so a long page does not
 /// fill the agent's context; the answer says when it was cut.
 const MOST_TEXT: usize = 40_000;
+/// The tallest whole page a picture is taken of, in CSS pixels: Chrome
+/// draws none past its largest texture.
+const TALLEST: f64 = 16_384.0;
 
 static SHOTS: AtomicU64 = AtomicU64::new(0);
 
@@ -91,18 +94,29 @@ async fn answer(cdp: &Cdp, session: Option<&str>, act: BrowserAct, shots: &Path)
             let value = evaluate(cdp, session, &expression).await?;
             Ok(if value.is_null() { "undefined".into() } else { value.to_string() })
         }
-        BrowserAct::Shot => {
-            let shot = cdp.call("Page.captureScreenshot", json!({ "format": "png" }), Some(session)).await.map_err(|e| e.to_string())?;
-            let png = base64::engine::general_purpose::STANDARD
-                .decode(shot["data"].as_str().unwrap_or_default())
-                .map_err(|e| e.to_string())?;
-            std::fs::create_dir_all(shots).map_err(|e| e.to_string())?;
-            let path = shots.join(format!("shot-{}.png", SHOTS.fetch_add(1, Ordering::Relaxed) + 1));
-            std::fs::write(&path, png).map_err(|e| e.to_string())?;
-            Ok(path.display().to_string())
+        BrowserAct::Shot => shot(cdp, session, json!({ "format": "png" }), shots).await,
+        BrowserAct::FullShot => {
+            let metrics = cdp.call("Page.getLayoutMetrics", json!({}), Some(session)).await.map_err(|e| e.to_string())?;
+            let size = |key: &str| metrics["cssContentSize"][key].as_f64().unwrap_or_default().max(1.0);
+            let (width, height) = (size("width"), size("height"));
+            let clip = json!({ "x": 0, "y": 0, "width": width, "height": height.min(TALLEST), "scale": 1 });
+            let path = shot(cdp, session, json!({ "format": "png", "captureBeyondViewport": true, "clip": clip }), shots).await?;
+            Ok(if height > TALLEST { format!("{path}\n[the page goes on; cut at {TALLEST} pixels tall]") } else { path })
         }
         BrowserAct::New { .. } | BrowserAct::Tabs => unreachable!("answered before a tab is needed"),
     }
+}
+
+/// A picture taken with `params`, saved under `shots`: its path.
+async fn shot(cdp: &Cdp, session: &str, params: Value, shots: &Path) -> Result<String, String> {
+    let shot = cdp.call("Page.captureScreenshot", params, Some(session)).await.map_err(|e| e.to_string())?;
+    let png = base64::engine::general_purpose::STANDARD
+        .decode(shot["data"].as_str().unwrap_or_default())
+        .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(shots).map_err(|e| e.to_string())?;
+    let path = shots.join(format!("shot-{}.png", SHOTS.fetch_add(1, Ordering::Relaxed) + 1));
+    std::fs::write(&path, png).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
 }
 
 /// A script's value, or the exception it threw, in its own words.

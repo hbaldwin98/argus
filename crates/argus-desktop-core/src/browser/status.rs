@@ -62,6 +62,9 @@ mod tests {
             following: true,
             held,
             driver,
+            cursor: argus_protocol::BrowserCursor::Default,
+            dialog: None,
+            select: None,
         }
     }
 

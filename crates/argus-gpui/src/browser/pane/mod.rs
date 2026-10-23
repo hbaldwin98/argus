@@ -9,14 +9,20 @@
 //! A press anywhere in the cell gives it the keys, as a press on a terminal does, with the call
 //! core's `key_pane` names (SHELL-BROWSER-15). The questions are apart: the strip is `tabs`, the
 //! toolbar `bar`, the address `address`, who has the browser `chip`, the screen `screen`, its
-//! keys `keys`, an input method's text `ime` and the room it reports `viewport`.
+//! keys `keys`, its pointer `pointer`, an input method's text `ime`, the room it reports `viewport`,
+//! the toolbar's Copy `shot`, and the widgets headless Chrome draws nowhere: a `<select>`'s list
+//! `select` and a script's dialog `dialog`.
 
 pub mod address;
 pub mod bar;
 pub mod chip;
+pub mod dialog;
 pub mod ime;
 pub mod keys;
+pub mod pointer;
 pub mod screen;
+pub mod select;
+pub mod shot;
 pub mod tabs;
 pub mod viewport;
 
@@ -31,6 +37,7 @@ use super::picture::PictureView;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::keys::field::Registered;
+use crate::kit::field::Field;
 use crate::theme::Tokens;
 use address::Address;
 use viewport::Reporter;
@@ -51,6 +58,13 @@ pub struct BrowserPane {
     reporter: Reporter,
     /// The input method's preedit, sent when it ends (`ime`).
     marked: ime::Marked,
+    /// What the pointer last told the page (`pointer`).
+    pointer: pointer::Pointer,
+    /// The open `<select>`'s list (`select`).
+    list: select::List,
+    /// The dialog last asked, and the field a `prompt` is answered in (`dialog`).
+    asked: Option<argus_protocol::BrowserDialog>,
+    prompt: Field,
     _observing: Subscription,
     _keys: Registered,
 }
@@ -64,13 +78,19 @@ impl BrowserPane {
         let arming = reporter.clone();
         Self {
             address: Address::new(pane, caller.clone(), window, cx),
-            _observing: cx.observe(&heard, move |_, _, cx| {
+            _observing: cx.observe_in(&heard, window, move |this, heard, window, cx| {
                 arming.arm(cx);
+                let browser = heard.read(cx).browsers.browsers.iter().find(|browser| browser.pane == this.pane).cloned();
+                this.follow_select(browser.as_ref(), window, cx);
                 cx.notify();
             }),
             _keys: keys::register(pane, caller.clone(), focus.clone(), window, cx),
             reporter,
             marked: ime::Marked::default(),
+            pointer: pointer::Pointer::default(),
+            list: select::List::default(),
+            asked: None,
+            prompt: Field::new("", window, cx),
             heard,
             caller,
             pane,
@@ -112,6 +132,8 @@ impl Render for BrowserPane {
             return div().id(id).test_support().size_full().into_any_element();
         };
         self.address.show(&browser.url, window, cx);
+        // On a draw, not a change heard: a dialog open before this cell was made is asked too.
+        self.follow_dialog(browser.dialog.as_ref(), window, cx);
         v_flex()
             .id(id)
             .test_support()
@@ -120,8 +142,9 @@ impl Render for BrowserPane {
             .min_h_0()
             .capture_any_mouse_down(cx.listener(|this, _, _, cx| this.claim(cx)))
             .child(tabs::strip(&browser, &self.tabs, &self.caller, &tokens))
-            .child(bar::bar(self.pane, &self.address, &self.caller, &tokens))
+            .child(bar::bar(self.pane, &self.address, shot::button(self.pane, &self.heard, &tokens), &self.caller, &tokens))
             .child(self.screen(&browser, keyed, window, &tokens, cx))
+            .children(self.list.element(window))
             .into_any_element()
     }
 }

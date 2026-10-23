@@ -8,15 +8,17 @@
 mod act;
 mod cdp;
 mod chrome;
+mod cursor;
 mod input;
 pub(crate) mod mux;
 mod pipe;
 pub(crate) mod process;
 mod screen;
+mod widgets;
 
 use std::time::Duration;
 
-use argus_protocol::{BrowserAct, BrowserDriver, BrowserInput, BrowserTab};
+use argus_protocol::{BrowserAct, BrowserCursor, BrowserDialog, BrowserDriver, BrowserInput, BrowserSelect, BrowserTab};
 use serde_json::json;
 use tokio::sync::mpsc;
 
@@ -32,6 +34,8 @@ const STARTUP: Duration = Duration::from_secs(20);
 pub(crate) enum Report {
     Page(Seen),
     Frame { jpeg: String, width: u32, height: u32 },
+    /// The cursor under the person's pointer changed.
+    Cursor(BrowserCursor),
 }
 
 /// A browser as the person is told of it: its tabs, the one shown, and who
@@ -43,6 +47,8 @@ pub(crate) struct Seen {
     pub(crate) following: bool,
     pub(crate) held: bool,
     pub(crate) driver: Option<BrowserDriver>,
+    pub(crate) dialog: Option<BrowserDialog>,
+    pub(crate) select: Option<BrowserSelect>,
 }
 
 /// A running browser. Dropping it kills the browser.
@@ -122,6 +128,7 @@ impl Drop for Browser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use argus_protocol::BrowserButton;
     use std::time::Duration;
 
     /// A base64 JPEG's size in pixels, from its start-of-frame marker.
@@ -204,6 +211,138 @@ mod tests {
             seen_until(&mut heard, |s| s.tabs.len() == 1 && s.tabs[0].url.ends_with("#tool")).await,
             "only the tool's tab is left"
         );
+    }
+
+    /// Needs a Chrome, Chromium or Edge installed, or `ARGUS_BROWSER`:
+    /// `cargo test -p argusd a_real_browser -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn a_real_browser_hovers_drags_and_shows_its_cursor_under_the_persons_pointer() {
+        let (reports, mut heard) = mpsc::unbounded_channel();
+        let browser = Browser::start(reports).await.unwrap();
+        assert!(seen_until(&mut heard, |s| s.shown.is_some()).await, "Chrome starts with a tab shown");
+        let act = |act: BrowserAct| {
+            let answer = browser.act(act);
+            async move { tokio::time::timeout(Duration::from_secs(30), answer).await.expect("no answer").expect("dropped") }
+        };
+        let page = "document.body.innerHTML = '<style>a:hover{color:red}</style><a id=l href=#>link</a>\
+                    <p id=p>Some plain text here</p><input id=i><div style=\"height:4000px\"></div>'";
+        act(BrowserAct::Eval { expression: page.into() }).await.unwrap();
+        let at = |selector: &str| {
+            let expression = format!("(() => {{ const r = document.querySelector('{selector}').getBoundingClientRect(); return [r.left + 5, r.top + r.height / 2]; }})()");
+            let answer = browser.act(BrowserAct::Eval { expression });
+            async move {
+                let answer = answer.await.unwrap().unwrap();
+                let point: Vec<f64> = serde_json::from_str(&answer).unwrap();
+                (point[0], point[1])
+            }
+        };
+        async fn cursor(heard: &mut mpsc::UnboundedReceiver<Report>, want: BrowserCursor) -> bool {
+            let wait = async {
+                while let Some(report) = heard.recv().await {
+                    if matches!(report, Report::Cursor(c) if c == want) {
+                        return true;
+                    }
+                }
+                false
+            };
+            tokio::time::timeout(Duration::from_secs(20), wait).await.unwrap_or(false)
+        }
+
+        let (x, y) = at("#l").await;
+        browser.input(BrowserInput::Move { x, y, held: None });
+        assert!(cursor(&mut heard, BrowserCursor::Pointer).await, "a link shows the pointing hand");
+        // The person's input is told, not awaited, so the page is read until it has taken it.
+        let colour = |want: &'static str| {
+            let browser = &browser;
+            async move {
+                for _ in 0..20 {
+                    let expression = "getComputedStyle(document.getElementById('l')).color".to_string();
+                    if browser.act(BrowserAct::Eval { expression }).await.unwrap() == Ok(format!("\"{want}\"")) {
+                        return true;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                false
+            }
+        };
+        assert!(colour("rgb(255, 0, 0)").await, "the move hovered the link");
+        browser.input(BrowserInput::Leave);
+        assert!(colour("rgb(0, 0, 238)").await, "and leaving ended the hover: the link is its own colour again");
+
+        let (x, y) = at("#i").await;
+        browser.input(BrowserInput::Move { x, y, held: None });
+        assert!(cursor(&mut heard, BrowserCursor::Text).await, "a text field shows the I-beam");
+
+        let (x, y) = at("#p").await;
+        let left = BrowserButton::Left;
+        browser.input(BrowserInput::Press { x: x - 4.0, y, button: left, count: 1 });
+        browser.input(BrowserInput::Move { x: x + 60.0, y, held: Some(left) });
+        browser.input(BrowserInput::Release { x: x + 60.0, y, button: left, count: 1 });
+        let mut selected = String::new();
+        for _ in 0..20 {
+            selected = act(BrowserAct::Eval { expression: "String(getSelection())".into() }).await.unwrap();
+            if selected.starts_with("\"Some") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(selected.starts_with("\"Some"), "a drag selects text: {selected}");
+
+        let full = act(BrowserAct::FullShot).await.unwrap();
+        let png = std::fs::read(&full).unwrap();
+        let tall = u32::from_be_bytes(png[20..24].try_into().unwrap());
+        assert!(png.starts_with(b"\x89PNG") && tall > 4000, "the whole page, past the viewport: {tall} px tall");
+    }
+
+    /// Needs a Chrome, Chromium or Edge installed, or `ARGUS_BROWSER`:
+    /// `cargo test -p argusd a_real_browser -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn a_real_browser_has_its_selects_and_dialogs_answered_by_the_person() {
+        let (reports, mut heard) = mpsc::unbounded_channel();
+        let browser = Browser::start(reports).await.unwrap();
+        assert!(seen_until(&mut heard, |s| s.shown.is_some()).await, "Chrome starts with a tab shown");
+        let eval = |expression: &str| {
+            let answer = browser.act(BrowserAct::Eval { expression: expression.into() });
+            async move { tokio::time::timeout(Duration::from_secs(30), answer).await.expect("no answer").expect("dropped") }
+        };
+        let page = "document.body.innerHTML = '<select id=s style=\"margin:20px\"><option>a</option><optgroup label=G>\
+                    <option>b</option><option disabled>c</option></optgroup><option hidden>d</option></select>'; \
+                    window.changed = 0; document.getElementById('s').addEventListener('change', () => window.changed++); 1";
+        eval(page).await.unwrap();
+        let at: Vec<f64> = serde_json::from_str(&eval("(() => { const r = document.getElementById('s').getBoundingClientRect(); return [r.left + 5, r.top + 5]; })()").await.unwrap()).unwrap();
+
+        let left = BrowserButton::Left;
+        browser.input(BrowserInput::Press { x: at[0], y: at[1], button: left, count: 1 });
+        browser.input(BrowserInput::Release { x: at[0], y: at[1], button: left, count: 1 });
+        let listed = |s: &Seen| {
+            s.select.as_ref().is_some_and(|list| {
+                let read: Vec<(u32, Option<&str>, bool)> = list.options.iter().map(|o| (o.index, o.group.as_deref(), o.disabled)).collect();
+                read == [(0, None, false), (1, Some("G"), false), (2, Some("G"), true)] && list.selected == Some(0)
+            })
+        };
+        assert!(seen_until(&mut heard, listed).await, "a press on a select opens its list for the person: groups kept, the hidden option left out");
+        let open = eval("document.activeElement.id").await;
+        assert_eq!(open, Ok("\"s\"".into()), "and focuses it, as the press would have");
+        browser.input(BrowserInput::Choose { index: Some(1) });
+        assert!(seen_until(&mut heard, |s| s.select.is_none()).await, "a pick puts the list away");
+        assert_eq!(eval("[document.getElementById('s').value, window.changed]").await, Ok("[\"b\",1]".into()), "the option is set and the page told");
+
+        eval("setTimeout(() => { window.answered = confirm('Sure?'); }, 0); 1").await.unwrap();
+        assert!(seen_until(&mut heard, |s| s.dialog.as_ref().is_some_and(|d| d.message == "Sure?")).await, "the page's confirm is asked");
+        let refused = browser.act(BrowserAct::Text);
+        let refused = tokio::time::timeout(Duration::from_secs(5), refused).await.expect("a command waited on the dialog").unwrap();
+        assert!(refused.unwrap_err().contains("waiting on a dialog"), "the agent is told why the page does not answer");
+        browser.input(BrowserInput::Answer { accept: true, text: None });
+        assert!(seen_until(&mut heard, |s| s.dialog.is_none()).await, "an answer closes it");
+        assert_eq!(eval("window.answered").await, Ok("true".into()));
+
+        eval("setTimeout(() => { window.named = prompt('Name?', 'Ada'); }, 0); 1").await.unwrap();
+        assert!(seen_until(&mut heard, |s| s.dialog.as_ref().is_some_and(|d| d.default_prompt == "Ada")).await, "a prompt offers its text");
+        browser.input(BrowserInput::Answer { accept: true, text: Some("Grace".into()) });
+        assert!(seen_until(&mut heard, |s| s.dialog.is_none()).await);
+        assert_eq!(eval("window.named").await, Ok("\"Grace\"".into()));
     }
 
     /// Needs a Chrome, Chromium or Edge installed, or `ARGUS_BROWSER`:

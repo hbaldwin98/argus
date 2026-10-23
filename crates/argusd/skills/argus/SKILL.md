@@ -123,8 +123,12 @@ DevTools client:
 "$ARGUS_HOOK" browser type "#search" rust tokio
 "$ARGUS_HOOK" browser eval "document.title"      # any script; prints its value as JSON
 "$ARGUS_HOOK" browser shot                       # saves a PNG and prints its path; read it to see the page
+"$ARGUS_HOOK" browser shot full                  # the whole page, past what the tab shows
 "$ARGUS_HOOK" browser tabs | back | reload | new [url] | close
 ```
+
+A dialog the page opens (`alert`, `confirm`, `prompt`) is the person's to answer in the
+Argus window; until they do, the page is stopped and the built-in commands say so.
 
 Reuse the tab you are on: go to each new page in it. Open another tab only
 when you need two pages at once, and close the browser when you are done.

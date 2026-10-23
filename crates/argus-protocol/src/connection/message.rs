@@ -940,6 +940,10 @@ pub enum ServerMsg {
     /// A browser pane's browser is gone: closed by its agent or a person,
     /// ended, or its agent's pane removed. `pane` is the browser's own.
     BrowserClosed { pane: PaneId },
+    /// What the pointer looks like over a browser pane's page, as it
+    /// changes under the person's pointer. Only to a client that listed
+    /// [`BROWSER_POINTER`](crate::BROWSER_POINTER).
+    BrowserCursor { pane: PaneId, cursor: crate::browser::BrowserCursor },
     /// A [`ClientMsg::PressView`] that was not relayed to the agent: the
     /// view is no longer held, no longer offers the action, or its agent
     /// is not running to be told. Sent only to the client that pressed, and

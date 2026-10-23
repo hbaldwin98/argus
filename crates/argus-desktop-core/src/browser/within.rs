@@ -1,7 +1,7 @@
 //! A click's point in the box a picture is fitted into, as the page's own
 //! pixels: the picture is shown whole, its shape kept and centred
 //! (`object-fit: contain`), so the bands either side of it are no part of
-//! the page.
+//! the page; and back, a page's point where it is drawn.
 
 /// A rectangle in the window's own units, whatever they are, so long as
 /// the click's point is in the same.
@@ -35,6 +35,21 @@ pub fn within(box_: Box2, page: (u32, u32), x: f64, y: f64) -> Option<At> {
     (at.x >= 0.0 && at.y >= 0.0 && at.x <= width && at.y <= height).then_some(at)
 }
 
+/// The reverse of [`within`]: a point of the page, in its CSS pixels,
+/// where it is drawn in `box_`, so what the window draws over the picture
+/// (an open `<select>`'s list) sits on what it belongs to. A page or box
+/// with no area has nowhere to put it.
+pub fn onto(box_: Box2, page: (u32, u32), at: At) -> Option<(f64, f64)> {
+    let (width, height) = (f64::from(page.0), f64::from(page.1));
+    if width <= 0.0 || height <= 0.0 || box_.width <= 0.0 || box_.height <= 0.0 {
+        return None;
+    }
+    let scale = (box_.width / width).min(box_.height / height);
+    let left = box_.left + (box_.width - width * scale) / 2.0;
+    let top = box_.top + (box_.height - height * scale) / 2.0;
+    Some((left + at.x * scale, top + at.y * scale))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -48,6 +63,15 @@ mod tests {
         assert_eq!(within(BOX, (1280, 800), 210.0, 20.0 + 326.0), None);
         let centre = within(BOX, (1280, 800), 210.0, 220.0).unwrap();
         assert!((centre.x - 640.0).abs() < 1e-9 && (centre.y - 400.0).abs() < 1e-9, "{centre:?}");
+    }
+
+    #[test]
+    fn a_page_point_is_drawn_where_a_click_there_would_land() {
+        let (x, y) = onto(BOX, (1280, 800), At { x: 640.0, y: 400.0 }).unwrap();
+        assert!((x - 210.0).abs() < 1e-9 && (y - 220.0).abs() < 1e-9, "{x} {y}");
+        let back = within(BOX, (1280, 800), x, y).unwrap();
+        assert!((back.x - 640.0).abs() < 1e-9 && (back.y - 400.0).abs() < 1e-9);
+        assert_eq!(onto(BOX, (0, 800), At { x: 1.0, y: 1.0 }), None);
     }
 
     #[test]
