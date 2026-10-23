@@ -1,7 +1,7 @@
 # Argus: Target
 
-What Argus is for and the lines it holds. [`ARCHITECTURE.md`](ARCHITECTURE.md) is how it holds them
-today; [`ROADMAP.md`](ROADMAP.md) is what is left.
+What Argus is for and the lines it holds. [`ARCHITECTURE.md`](ARCHITECTURE.md) maps how it is
+built; [`ROADMAP.md`](ROADMAP.md) is what is left.
 
 ## What Argus is
 

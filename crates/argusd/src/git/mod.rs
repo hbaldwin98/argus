@@ -1,12 +1,12 @@
 //! What Git says of a repository, read without changing it: a checkout's
 //! branch, dirty state and upstream, its worktrees, and the repositories
-//! under a root. See ARCHITECTURE.md, "Git". `watch` says when that
-//! changes (and when one file does, for the `projects.toml` reload),
-//! `edit_watch` when a checkout's working files do, `browse`
-//! what a picker lists — a repository's branches, a checkout's files, and for
-//! the directory browser any directory — and `gitignore` the one file Argus
-//! writes, to keep its own files out of status; the writes to Git are
-//! `state::git_ops`'s.
+//! under a root, all through `git2`; changes go through the `git`
+//! executable (`state/git_ops`). `watch` says when that changes (and when
+//! one file does, for the `projects.toml` reload), `edit_watch` when a
+//! checkout's working files do, `browse` what a picker lists — a
+//! repository's branches, a checkout's files, and for the directory
+//! browser any directory — and `gitignore` the one file Argus writes, to
+//! keep its own files out of status.
 
 pub mod browse;
 pub mod edit_watch;
@@ -897,7 +897,7 @@ mod tests {
 
     #[test]
     fn listing_never_spawns_a_process() {
-        // ARCHITECTURE.md, "Git": read-only Git work uses `git2`.
+        // Read-only Git work uses `git2`, never the `git` executable.
         // On Windows the daemon runs detached with no console, so a console
         // child gets its own window, a flash on screen every poll tick.
         // Every git the daemon starts, like every other command but a pane

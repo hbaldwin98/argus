@@ -125,7 +125,7 @@ leaving all of itself or none, and the daemon to refusing a stopped write
 without hanging up. It found two writes made in more than one transaction:
 forgetting a pane (95f08a5) and an agent opening a feature and pointing its
 checkout at it (86d593c). A write that fails after its commit is a known gap,
-recorded in ARCHITECTURE.md §Storage.
+recorded in `store::tests::faults`.
 
 ## The agentic change flow
 

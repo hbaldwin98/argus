@@ -10,8 +10,17 @@
 //! transaction" and a capture written "in one transaction" (Features and
 //! the decision board), a removed feature dropping its views "in the same
 //! transaction" (saved views), and a transfer written "in one store
-//! transaction". `WRITES` is every write; ARCHITECTURE.md, "Storage",
-//! says what is left out and why.
+//! transaction". `WRITES` is every write but two, each of which finishes
+//! when run again: a migration runs in one transaction with the
+//! `user_version` it reaches, and the one-time import of legacy files
+//! inserts with `OR IGNORE` and retires a file only once it is in.
+//!
+//! A known gap, allowed here: a write whose commit landed can still return
+//! an error when a read it makes afterwards fails, such as the board it
+//! reads back for its answer. Nothing is left half done, but the daemon
+//! refuses a request whose write was saved, and a client that retries
+//! writes it twice. The intended fix is that a write answers from what it
+//! committed and logs the failed read.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

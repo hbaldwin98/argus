@@ -1,7 +1,7 @@
 # Contributing
 
 [`AGENTS.md`](AGENTS.md) holds the conventions code is held to (where modules go, style, testing
-rules) and [`ARCHITECTURE.md`](ARCHITECTURE.md) the rules the code is built to.
+rules) and [`ARCHITECTURE.md`](ARCHITECTURE.md) the map of the processes and crates.
 
 ## Prerequisites
 

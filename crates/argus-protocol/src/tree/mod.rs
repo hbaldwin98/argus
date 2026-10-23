@@ -25,8 +25,7 @@ pub enum PaneKind {
     Browser,
 }
 
-/// See ARCHITECTURE.md, "Agents". Everything but `Exited` comes from the agent
-/// itself, through whatever hook mechanism its harness supports; a harness
+/// Everything but `Exited` comes from the agent itself, through whatever hook mechanism its harness supports; a harness
 /// that reports nothing sits at `Idle` until it `Exited` — coarse, but
 /// that's the accepted fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,7 +160,8 @@ impl PaneInfo {
 /// Another agent reporting through a pane it does not own — a CLI spawned
 /// from inside the pane's own agent, which inherits the hook environment and
 /// so would otherwise rewrite the row belonging to its parent. Listed under
-/// the parent, and never allowed to change it: see ARCHITECTURE.md, "Agents".
+/// the parent, and never allowed to change it: not its title, status,
+/// checkout or conversation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChildAgentInfo {
     /// What the child called itself, or a generic word until it says.
@@ -304,8 +304,8 @@ impl AgentTelemetry {
     }
 }
 
-/// Read-only git status for a checkout, polled from the working directory
-/// (see ARCHITECTURE.md, "Git"). `None` on `CheckoutInfo::git` means the path
+/// Read-only git status for a checkout, polled from the working directory.
+/// `None` on `CheckoutInfo::git` means the path
 /// isn't a git repo at all, not that status is merely unknown yet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitStatus {

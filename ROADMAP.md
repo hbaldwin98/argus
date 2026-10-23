@@ -33,8 +33,8 @@ The main gap against the target (`TARGET.md` §"Agent context and memory").
 - Protocol authentication before anything listens beyond the local machine.
 - Per-template sandboxing.
 - Qualify Windows ConPTY resize and performance.
-- Fix the store's known gap: a committed write must not answer with an error (`ARCHITECTURE.md`
-  §Storage).
+- Fix the store's known gap: a committed write must not answer with an error
+  (`store::tests::faults`).
 
 ## Desktop
 

@@ -10,7 +10,7 @@ One rule decides where code goes: **a module is named after the question it answ
 
 Two boundaries are load-bearing. Cross-process contracts go in `argus-protocol` — the message enums, the tree, the pane API's URL grammar, environment and flags — because the binaries share no types unless they live there, and a contract written twice drifts in silence. And the client never predicts the result of a request: `app` changes when the daemon's tree says it changed, so a refused action leaves the panel showing what is true.
 
-Tests live beside the code they cover, in a `#[cfg(test)] mod tests` block for a small module or a `tests/` directory split the same way as the module itself. Consult `ARCHITECTURE.md` for the rules the code is built to, `docs/` for what users see, and `TARGET.md`/`ROADMAP.md` for intended direction. Record a new rule or the reason for a decision in `ARCHITECTURE.md`, not a narrative of behavior; the code and its tests are the record of what it does.
+Tests live beside the code they cover, in a `#[cfg(test)] mod tests` block for a small module or a `tests/` directory split the same way as the module itself. Consult `ARCHITECTURE.md` for the map of processes and crates, `docs/` for what users see, and `TARGET.md`/`ROADMAP.md` for intended direction. The code, its comments and its tests are the record of how it works and why; `ARCHITECTURE.md` stays a one-page map.
 
 ## Build, Test, and Development Commands
 
@@ -46,7 +46,7 @@ To look at a desktop screen, photograph it: `cargo test -p argus-desktop-core wr
 
 ## Commits, Releases & Review
 
-Recent commits use short, imperative, sentence-case subjects such as `Wake a pane's pump on the byte`. Keep commits narrowly scoped and explain non-obvious design choices in the body. Maintainer work is committed on `main` and pushed; open a branch or pull request only when asked. An outside contributor's pull request summarizes the user-visible behavior, lists its verification commands, and includes a screen dump for a TUI change. Update `docs/` when commands, configuration or controls change, `ARCHITECTURE.md` when a rule changes, and `README.md` only when what Argus is or how to start it changes; keep the README short.
+Recent commits use short, imperative, sentence-case subjects such as `Wake a pane's pump on the byte`. Keep commits narrowly scoped and explain non-obvious design choices in the body. Maintainer work is committed on `main` and pushed; open a branch or pull request only when asked. An outside contributor's pull request summarizes the user-visible behavior, lists its verification commands, and includes a screen dump for a TUI change. Update `docs/` when commands, configuration or controls change, `ARCHITECTURE.md` when a process, a crate or a rule that holds everywhere changes, and `README.md` only when what Argus is or how to start it changes; keep the README short.
 
 A release follows `CONTRIBUTING.md` §"Publishing a release". Its version commit is titled `Bump version to X for release` and carries `Cargo.lock` along with `Cargo.toml`.
 

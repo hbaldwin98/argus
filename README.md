@@ -83,7 +83,7 @@ features, and `?` lists every key for where you are. `q` detaches; everything ke
 - [Configuration](docs/configuration.md): `projects.toml`, `client.toml`, environment variables.
 - [Agents](docs/agents.md): harnesses, `argus-hook`, resuming sessions, custom harnesses.
 - [Extensions](docs/extensions.md): adding views and commands from your own programs.
-- [Architecture](ARCHITECTURE.md): the rules the code is built to, and why.
+- [Architecture](ARCHITECTURE.md): the processes, the crates, and the rules that hold everywhere.
 - [Target](TARGET.md) and [Roadmap](ROADMAP.md): what Argus is for and what is left to build.
 - [Contributing](CONTRIBUTING.md): building, testing and releasing.
 
