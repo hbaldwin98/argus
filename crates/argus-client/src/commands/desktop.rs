@@ -1,5 +1,6 @@
-//! The `argus desktop` and `argus desktop-next` commands: opening a desktop
-//! window beside this terminal client, the Tauri one or the GPUI one.
+//! The `argus desktop` and `argus desktop-old` commands: opening a desktop
+//! window beside this terminal client, the GPUI one or the Tauri one it
+//! replaced, kept for a release or two to fall back on.
 
 use std::path::Path;
 
@@ -7,16 +8,17 @@ use anyhow::Context;
 
 use crate::system::sibling;
 
-/// Starts `argus-desktop` detached, so closing this terminal leaves the
+/// Starts the GPUI window detached, so closing this terminal leaves the
 /// window open, and returns at once. The window reaches the daemon itself.
+/// Its binary keeps the name it was ported under, `argus-desktop-next`, so
+/// the release archive and `argus update` carry the same files as before.
 pub fn run() -> anyhow::Result<()> {
-    open(&sibling::path("argus-desktop"), "argus-desktop")
+    open(&sibling::path("argus-desktop-next"), "argus-gpui")
 }
 
-/// The same for `argus-desktop-next`, the GPUI window run beside the Tauri
-/// one while it is ported.
-pub fn run_next() -> anyhow::Result<()> {
-    open(&sibling::path("argus-desktop-next"), "argus-gpui")
+/// The same for `argus-desktop`, the Tauri window.
+pub fn run_old() -> anyhow::Result<()> {
+    open(&sibling::path("argus-desktop"), "argus-desktop")
 }
 
 /// `package` is what `cargo build -p` names for the binary, which for the

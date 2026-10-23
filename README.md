@@ -11,8 +11,8 @@ The workspace builds five executables and one library:
 - `argus`: the terminal client.
 - `argusd`: the daemon that owns panes, Git state, and session restore.
 - `argus-hook`: a helper that lets agent harnesses report status and pane titles.
-- `argus-desktop`: a desktop window onto the same daemon, opened with `argus desktop`.
-- `argus-gpui`: the GPUI port of that window, built as `argus-desktop-next` and opened with `argus desktop-next`.
+- `argus-gpui`: the desktop window onto the same daemon, built as `argus-desktop-next` and opened with `argus desktop`.
+- `argus-desktop`: the Tauri desktop window it replaced, opened with `argus desktop-old` while it is kept to fall back on.
 - `argus-desktop-core`: the library the desktop builds on, holding what that window holds and says with no window in it.
 
 ## Features
@@ -196,12 +196,12 @@ To open the desktop window beside the terminal client, run:
 argus desktop
 ```
 
-`argus desktop-next` opens `argus-desktop-next` the same way: the GPUI window, run beside the Tauri
-one while the port is finished. They share the daemon and `desktop.json`, so run one at a time
-unless you are comparing them; each writes its own log (`argus-desktop.log` and
-`argus-desktop-next.log`).
+`argus desktop-old` opens the Tauri window it replaced, `argus-desktop`, the same way, and
+`argus desktop-next`, the name the GPUI window had while it was ported, still opens it. The two
+windows share the daemon and `desktop.json`, each saving only what it changed; each writes its
+own log (`argus-desktop-next.log` and `argus-desktop.log`).
 
-It starts `argus-desktop` from beside `argus`, or from `PATH`, detached so closing the terminal
+It starts `argus-desktop-next` from beside `argus`, or from `PATH`, detached so closing the terminal
 leaves the window open, and returns at once. The window reaches the same daemon through
 `argus bridge`, so it shows what the terminal client shows: the rail of projects, repositories,
 checkouts and panes, and one live pane that takes keys, pastes and resizes. It draws its own title
@@ -340,8 +340,8 @@ Install the packages so the executables share Cargo's binary directory:
 ```sh
 cargo install --locked --path crates/argusd
 cargo install --locked --path crates/argus-client
-cargo install --locked --path crates/argus-desktop   # optional: the desktop window
-cargo install --locked --path crates/argus-gpui      # optional: the GPUI desktop window
+cargo install --locked --path crates/argus-gpui      # optional: the desktop window
+cargo install --locked --path crates/argus-desktop   # optional: the Tauri window it replaced
 argus
 ```
 
@@ -639,13 +639,14 @@ ARGUS_INSTANCE=dev target/debug/argus server stop   # ends this checkout's daemo
 For the desktop window, build it too and open it the same way:
 
 ```sh
-cargo build -q -p argus -p argusd -p argus-desktop
+cargo build -q -p argus -p argusd -p argus-gpui
 ARGUS_INSTANCE=dev target/debug/argus desktop
 ```
 
-The GPUI window is `-p argus-gpui` and `argus desktop-next`.
+The Tauri window it replaced is `-p argus-desktop` and `argus desktop-old`.
 
-`scripts/reload.sh` installs only the daemon and the terminal client.
+`scripts/reload.sh` installs the daemon, the terminal client and both desktop windows (on Linux the
+windows only where WebKitGTK's development files are).
 
 Both forms set `ARGUS_INSTANCE=dev`, so the worktree daemon listens on its own
 endpoint under its own slice of the config directory and the installed Argus

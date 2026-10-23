@@ -574,7 +574,7 @@ result of a request; `ui` is a pure function of it.
 | `system/herdr` | what is reported outward to herdr: how many agents are working, and the most urgent |
 | `commands` | the `argus` commands that are not the terminal UI (the daemon lifecycle commands are `connection/launch`'s) |
 | `commands/bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
-| `commands/desktop` | the `argus desktop` and `argus desktop-next` commands: opening a desktop window beside this terminal client |
+| `commands/desktop` | the `argus desktop` and `argus desktop-old` commands: opening the GPUI desktop window, or the Tauri one it replaced, beside this terminal client |
 | `commands/focus` | the `argus focus` command: where the person is working, as JSON, once or on every change |
 | `commands/extension` | the `argus extension` command: the guide to building one, and the running extensions listed or one shown whole, as the daemon here or under `--host` describes them |
 | `commands/update` | the `argus update` command: this installation's executables replaced with the newest release's and the daemon restarted onto them, or with `--check` only whether there is one |
