@@ -24,7 +24,7 @@ impl RailView {
     /// be kept while the stage changes.
     pub(super) fn leave_git(&mut self, cx: &mut Context<Self>) -> Vec<Call> {
         self.heard.update(cx, |heard, cx| {
-            if heard.git_beside() {
+            if heard.changes_beside() {
                 return Vec::new();
             }
             let open = heard.open();

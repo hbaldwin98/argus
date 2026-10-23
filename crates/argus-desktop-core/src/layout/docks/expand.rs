@@ -67,63 +67,63 @@ mod tests {
 
     fn docks() -> Docks {
         let mut docks = Docks::new(DocksLayout::default());
-        docks.set_present(vec![Panel::Console, Panel::Git]);
+        docks.set_present(vec![Panel::Console, Panel::Changes]);
         docks
     }
 
     #[test]
     fn a_panel_put_on_the_stage_from_a_dock_goes_back_to_that_dock_shown() {
         let mut docks = docks();
-        docks.move_to(&Panel::Git, Dock::Left);
-        docks.stage(&Panel::Git);
-        assert_eq!(docks.place_of(&Panel::Git), Some(Place::Stage));
-        docks.collapse(&Panel::Git);
-        assert_eq!(docks.place_of(&Panel::Git), Some(Place::Dock(Dock::Left)));
-        assert!(docks.shows(&Panel::Git));
+        docks.move_to(&Panel::Changes, Dock::Left);
+        docks.stage(&Panel::Changes);
+        assert_eq!(docks.place_of(&Panel::Changes), Some(Place::Stage));
+        docks.collapse(&Panel::Changes);
+        assert_eq!(docks.place_of(&Panel::Changes), Some(Place::Dock(Dock::Left)));
+        assert!(docks.shows(&Panel::Changes));
         assert!(docks.layout().origins.is_empty(), "the way back is used once");
     }
 
     #[test]
     fn a_dialog_put_on_the_stage_floats_again_where_it_was_and_as_big() {
         let mut docks = docks();
-        docks.float(&Panel::Git);
+        docks.float(&Panel::Changes);
         let bounds = FloatBounds { x: 300, y: 40, width: 700, height: 600 };
-        docks.set_bounds(&Panel::Git, bounds);
-        docks.stage(&Panel::Git);
-        docks.collapse(&Panel::Git);
-        assert_eq!(docks.layout().floating, [Floating { panel: Panel::Git, bounds }]);
+        docks.set_bounds(&Panel::Changes, bounds);
+        docks.stage(&Panel::Changes);
+        docks.collapse(&Panel::Changes);
+        assert_eq!(docks.layout().floating, [Floating { panel: Panel::Changes, bounds }]);
     }
 
     #[test]
     fn a_panel_with_nowhere_kept_goes_to_its_home_or_the_right() {
         let mut docks = docks();
-        docks.collapse(&Panel::Git);
-        assert_eq!(docks.place_of(&Panel::Git), Some(Place::Dock(Dock::Right)), "never placed: Git has no home");
-        assert!(docks.shows(&Panel::Git));
+        docks.collapse(&Panel::Changes);
+        assert_eq!(docks.place_of(&Panel::Changes), Some(Place::Dock(Dock::Right)), "never placed: Git has no home");
+        assert!(docks.shows(&Panel::Changes));
     }
 
     #[test]
     fn a_panel_in_a_dock_or_a_dialog_is_not_moved_by_a_collapse() {
         let mut docks = docks();
-        docks.move_to(&Panel::Git, Dock::Bottom);
-        docks.collapse(&Panel::Git);
-        assert_eq!(docks.place_of(&Panel::Git), Some(Place::Dock(Dock::Bottom)));
-        docks.float(&Panel::Git);
-        docks.collapse(&Panel::Git);
-        assert_eq!(docks.place_of(&Panel::Git), Some(Place::Float));
+        docks.move_to(&Panel::Changes, Dock::Bottom);
+        docks.collapse(&Panel::Changes);
+        assert_eq!(docks.place_of(&Panel::Changes), Some(Place::Dock(Dock::Bottom)));
+        docks.float(&Panel::Changes);
+        docks.collapse(&Panel::Changes);
+        assert_eq!(docks.place_of(&Panel::Changes), Some(Place::Float));
     }
 
     #[test]
     fn the_way_back_is_kept_across_runs_and_a_stale_one_is_dropped() {
         let mut docks = docks();
-        docks.move_to(&Panel::Git, Dock::Left);
-        docks.stage(&Panel::Git);
+        docks.move_to(&Panel::Changes, Dock::Left);
+        docks.stage(&Panel::Changes);
         let kept: DocksLayout = serde_json::from_str(&serde_json::to_string(docks.layout()).unwrap()).unwrap();
         assert_eq!(kept.origins, docks.layout().origins);
         let mut again = Docks::new(kept.clone());
-        again.set_present(vec![Panel::Git]);
-        again.collapse(&Panel::Git);
-        assert_eq!(again.place_of(&Panel::Git), Some(Place::Dock(Dock::Left)), "across runs");
+        again.set_present(vec![Panel::Changes]);
+        again.collapse(&Panel::Changes);
+        assert_eq!(again.place_of(&Panel::Changes), Some(Place::Dock(Dock::Left)), "across runs");
         // A file that keeps a way back for a panel not on the stage is made whole.
         let stale = DocksLayout { staged: Vec::new(), ..kept };
         assert!(Docks::new(stale).layout().origins.is_empty());

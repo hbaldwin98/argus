@@ -39,12 +39,13 @@ impl GitStage {
         let (review, history) = (heard.review.clone(), heard.history.clone());
         // Only what is open has a panel to go back as; beside the work already, the dock's head
         // holds the way to the stage.
-        let heard_open = (review.is_some() || history.is_some()) && !heard.git_beside();
+        let heard_open = (review.is_some() || history.is_some()) && !heard.changes_beside();
         let branch = match tab {
             Tab::Changes => review.as_ref().map(|page| (page.branch.clone(), page.name.clone())),
             Tab::History => history.as_ref().map(|page| (page.branch.clone(), page.name.clone())),
         };
-        let files = review.as_ref().map(|page| page.files.len());
+        // The pane's own list head counts the changes, so the tab names them only.
+        let files = None;
         let changes_on = tab == Tab::Changes;
         let mono = cx.theme().mono_font_family.clone();
         let close_label = if changes_on { "Close the review" } else { "Close the history" };
@@ -130,7 +131,7 @@ impl GitStage {
                         .tooltip(tip("Back to the side pane"))
                         .child(Glyph::DockRight.at(14.0))
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.ask(Call::Docks { gesture: DockGesture::Collapse { panel: Panel::Git } }, cx)
+                            this.ask(Call::Docks { gesture: DockGesture::Collapse { panel: Panel::Changes } }, cx)
                         })),
                 )
             })

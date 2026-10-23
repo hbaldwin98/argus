@@ -100,3 +100,19 @@ fn a_panels_header_carries_its_cell_onto_another_as_a_panes_does(cx: &mut TestAp
     let asked_for = Call::MovePane { pane: Occupant::Panel(Panel::Browsers), onto: Occupant::Pane(1), zone: argus_desktop_core::panes::shown::workspace_grid::Zone::Left };
     assert_eq!(asked(&opened), [format!("{asked_for:?}")]);
 }
+
+/// Pane 1 with the changes split off beside it, and a review open for them to show.
+#[gpui_kit::test]
+fn a_cell_holding_the_changes_draws_the_review_beside_the_pane(cx: &mut TestAppContext) {
+    use argus_desktop_core::connection::page::ReviewPage;
+    let row = GridPage { beside: vec![None], panels: vec![Some(Panel::Changes)], grid: vec![vec![0, 1]], heights: vec![1000], widths: vec![vec![500, 500]], ..alone() };
+    let opened = opened(cx, row);
+    let present = PresentPanel { panel: Panel::Changes, kind: PanelKind::Changes, floats: true, stage: true, closes: true, cell: true };
+    let review = ReviewPage { open: true, checkout: 100, name: "main".into(), branch: "main".into(), base: "unstaged", ..ReviewPage::default() };
+    hear(cx, &opened, vec![Event::Review(Box::new(review)), Event::Docks(Box::new(DocksPage { present: vec![present], ..DocksPage::default() }))]);
+    assert!(has(cx, &opened, "review"), "the Changes pane, as its dock draws it");
+    let (cell, pane) = (bounds(cx, &opened, "cell-1"), bounds(cx, &opened, "review"));
+    assert!(cell.contains(&pane.center()), "drawn in the cell, {pane:?} in {cell:?}");
+    assert!(!has(cx, &opened, "git-strip") && !has(cx, &opened, "git-tab-changes"), "no Git stage over the pane");
+    assert!(has(cx, &opened, "cell-0"), "the pane stays beside it");
+}

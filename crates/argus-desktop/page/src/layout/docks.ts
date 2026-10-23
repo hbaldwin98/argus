@@ -116,10 +116,10 @@ function element(panel: Panel): HTMLElement | null {
       return state.console?.place === 'docked' ? $('console') : null;
     case 'views':
       return $('views');
-    // This window draws the browsers only as their stage, and offers no way to dock them; Git
-    // is its review and history dialogs here, never a panel.
+    // This window draws the browsers only as their stage, and offers no way to dock them; the
+    // changes are its review dialog here, never a panel.
     case 'browsers':
-    case 'git':
+    case 'changes':
       return null;
     case 'saved':
       return savedElement(panel);

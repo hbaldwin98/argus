@@ -92,7 +92,7 @@ impl GitStage {
             (heard.git_open(), heard.review.clone(), heard.history.clone())
         };
         if up && !self.was_up {
-            window.focus(&self.focus, cx);
+            self.take_keys(window, cx);
         }
         self.was_up = up;
         let field = review.as_ref().is_some_and(|page| page.comment.is_some() || page.jump.is_some());
@@ -107,16 +107,38 @@ impl GitStage {
         }
         // A history that goes while its filter held the keys leaves them on nothing.
         if self.had_history && !historical && up {
-            window.focus(&self.focus, cx);
+            self.take_keys(window, cx);
         }
         self.had_history = historical;
         // A field that shuts leaves the keys on nothing: the stage has them back,
         // so the review's own keys are heard again (CROSS-11).
         if self.had_field && !field && up {
-            window.focus(&self.focus, cx);
+            self.take_keys(window, cx);
         }
         self.had_field = field;
         cx.notify();
+    }
+
+    /// Gives the keys to whichever is on screen: the pane beside the work, else the stage.
+    fn take_keys(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let heard = self.heard.read(cx);
+        if heard.changes_beside() && heard.review.is_some() && heard.history.is_none() {
+            let focus = self.changes.read(cx).focus.clone();
+            window.focus(&focus, cx);
+        } else {
+            window.focus(&self.focus, cx);
+        }
+    }
+
+    /// The Changes pane, which is also the changes' panel's body beside the work.
+    pub fn changes(&self) -> &Entity<Changes> {
+        &self.changes
+    }
+
+    /// Whether the keys are the stage's or the pane's itself, wherever the pane is drawn; a part of
+    /// either that took them (a field, a drag) hears them first.
+    pub(super) fn has_keys(&self, window: &Window, cx: &gpui_kit::App) -> bool {
+        self.focus.is_focused(window) || self.changes.read(cx).focus.is_focused(window)
     }
 
     pub(super) fn ask(&self, call: Call, cx: &Context<Self>) {

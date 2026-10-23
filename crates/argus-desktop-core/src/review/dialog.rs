@@ -42,6 +42,11 @@ pub struct Abilities {
 }
 
 impl ReviewDialog {
+    /// The branch under review, for the panel's title.
+    pub fn branch(&self) -> &str {
+        &self.branch
+    }
+
     /// A review of `checkout`'s working changes, on the side and in the
     /// layout last chosen.
     pub fn working(checkout: &CheckoutInfo, layout: ReviewLayout, abilities: Abilities, mut id: impl FnMut() -> u64) -> (ReviewDialog, Vec<ClientMsg>) {

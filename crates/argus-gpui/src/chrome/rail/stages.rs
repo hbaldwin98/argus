@@ -40,7 +40,7 @@ impl RailView {
         let picked = self.slice.rail.cursor.pick.map(|pick| pick.checkout);
         let calls = match nav {
             // Git beside the work, open, comes in sight where it sits: its dock opens on it.
-            Nav::Git if self.heard.read(cx).git_beside() => vec![Call::Docks { gesture: DockGesture::Show { panel: Panel::Git } }],
+            Nav::Git if self.heard.read(cx).changes_beside() => vec![Call::Docks { gesture: DockGesture::Show { panel: Panel::Changes } }],
             Nav::Git => self.heard.update(cx, |heard, cx| {
                 let (open, here) = (heard.open(), checkout_here(&heard.rail, picked));
                 let calls = heard.git.enter(open, here);

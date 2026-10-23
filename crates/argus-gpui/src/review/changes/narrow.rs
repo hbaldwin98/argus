@@ -1,6 +1,6 @@
-//! Whether the Changes tab is too narrow for its files beside the diff, as it is in a side dock or
-//! a small dialog, and which of the two it shows then: the files, until one is opened, and then
-//! that file's diff, until its back button.
+//! Whether the Changes pane is too narrow for its files beside the diff, as it is in a side dock or
+//! a small dialog, and which of the two it shows then: the files first, as the prototype does, and
+//! a file's diff once one is opened from them, or another opened by a key, until its back button.
 //!
 //! The width is the tab's own, measured as it was last laid out, not the window's: the same tab
 //! is the whole stage in one place and a 480px dock in another.
@@ -56,17 +56,27 @@ impl Narrow {
         .size_full()
     }
 
-    /// Follows the page: a file opened, by a click, a key or the jump field, puts its diff on
-    /// screen; with no file open the files are.
+    /// The pane's last width in CSS pixels at `rem`, nothing before it was laid out.
+    pub fn width(&self, rem: Pixels) -> f32 {
+        css(self.area.get().size.width, rem)
+    }
+
+    /// Follows the page: another file opened, by a key or the jump field, puts its diff on screen,
+    /// but the one a review opens on does not; with no file open the files are.
     pub fn follow(&mut self, page: &ReviewPage) {
         let staged = page.staging.as_ref().is_some_and(|staging| staging.staged);
         let now = page.file.and_then(|i| page.files.get(i)).map(|file| (staged, file.path.clone()));
         if now.is_none() {
             self.listing = true;
-        } else if now != self.last {
+        } else if self.last.is_some() && now != self.last {
             self.listing = false;
         }
         self.last = now;
+    }
+
+    /// A file pressed in the list: its diff, whether or not it was the one open.
+    pub fn opened(&mut self) {
+        self.listing = false;
     }
 
     /// The diff's back button: the files again, the file still open behind them.
@@ -95,10 +105,10 @@ mod tests {
     #[test]
     fn a_file_opened_shows_its_diff_and_back_shows_the_files_with_it_still_open() {
         let mut narrow = Narrow::new();
-        narrow.follow(&on(None));
-        assert!(narrow.listing());
         narrow.follow(&on(Some("a.rs")));
-        assert!(!narrow.listing(), "opened");
+        assert!(narrow.listing(), "the files first, though the review opened on one");
+        narrow.opened();
+        assert!(!narrow.listing(), "pressed in the list");
         narrow.back();
         narrow.follow(&on(Some("a.rs")));
         assert!(narrow.listing(), "the same file heard again does not leave the list");

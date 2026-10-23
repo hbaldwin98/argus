@@ -540,17 +540,21 @@ impl Dialogs {
         true
     }
 
-    /// The Git panel closed: whatever it showed goes, the review's layout
-    /// kept for the next.
-    pub fn close_all(&mut self) {
+    /// The changes' panel closed: the review goes, its layout kept for the
+    /// next.
+    pub fn close_review(&mut self) {
         self.remember_layout();
         self.review = None;
-        self.history = None;
     }
 
-    /// Whether a review or a history is open: the Git panel is there.
-    pub fn any_open(&self) -> bool {
-        self.review.is_some() || self.history.is_some()
+    /// The branch the open review is of, which the changes' panel is named by.
+    pub fn review_branch(&self) -> Option<&str> {
+        self.review.as_ref().map(ReviewDialog::branch).filter(|branch| !branch.is_empty())
+    }
+
+    /// Whether a review is open: the changes' panel is there.
+    pub fn review_open(&self) -> bool {
+        self.review.is_some()
     }
 
     #[cfg(test)]

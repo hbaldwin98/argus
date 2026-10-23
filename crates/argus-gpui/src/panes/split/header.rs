@@ -44,7 +44,7 @@ pub(super) fn panel_title(docks: &DocksPage, panel: &Panel) -> String {
             Panel::Console => "Console".into(),
             Panel::Views => "Views".into(),
             Panel::Browsers => "Browsers".into(),
-            Panel::Git => "Git".into(),
+            Panel::Changes => "Changes".into(),
             Panel::Extension(_) | Panel::Saved(_) => panel.to_string(),
         },
     }

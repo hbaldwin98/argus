@@ -77,7 +77,7 @@ const DOCKS: [Dock; 3] = [Dock::Left, Dock::Right, Dock::Bottom];
 /// What can be docked: the console, the views agents showed, every agent's
 /// browser, each extension's view by its extension and name, and each saved
 /// view by its id. Named in the file and to the page as one string —
-/// `console`, `views`, `browsers`, `git`, `extension:docker/images`,
+/// `console`, `views`, `browsers`, `changes`, `extension:docker/images`,
 /// `saved:release-plan` — since the last two are any of an open-ended set.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, type = "string"))]
@@ -91,9 +91,10 @@ pub enum Panel {
     /// A saved view's panel, named by the view it opened with; the columns
     /// that follow it are `views::saved`'.
     Saved(String),
-    /// The Git stage's Changes and History, docked or floating beside the
-    /// work rather than in place of the pane.
-    Git,
+    /// The review of a checkout's changes: its lists, its diff and its
+    /// commit, on the stage in place of the pane, docked, floating, or in
+    /// a cell of the grid beside an agent's pane.
+    Changes,
 }
 
 const EXTENSION: &str = "extension:";
@@ -119,24 +120,24 @@ impl Panel {
         match self {
             Panel::Console => Some(Dock::Bottom),
             Panel::Views | Panel::Browsers => Some(Dock::Right),
-            Panel::Extension(_) | Panel::Saved(_) | Panel::Git => None,
+            Panel::Extension(_) | Panel::Saved(_) | Panel::Changes => None,
         }
     }
 
     /// Whether the panel can be a page on the stage. A saved view's columns
-    /// scroll sideways in a dock; the stage has no use for them. Git's page
-    /// is the Git stage, drawn where the pane is.
+    /// scroll sideways in a dock; the stage has no use for them. The
+    /// changes' page is drawn where the pane is.
     fn has_page(&self) -> bool {
-        matches!(self, Panel::Extension(_) | Panel::Git)
+        matches!(self, Panel::Extension(_) | Panel::Changes)
     }
 
     /// Whether the panel can float as a dialog: a saved view, read beside
     /// the one it was reached from without taking a dock from it, and the
-    /// browsers, watched over whatever the stage shows, and Git, a review
-    /// kept over the agent whose work it is. The console's terminal and the
+    /// browsers, watched over whatever the stage shows, and the changes, a
+    /// review kept over the agent whose work it is. The console's terminal and the
     /// views stay docked.
     fn floats(&self) -> bool {
-        matches!(self, Panel::Saved(_) | Panel::Browsers | Panel::Git)
+        matches!(self, Panel::Saved(_) | Panel::Browsers | Panel::Changes)
     }
 
     fn kind(&self) -> PanelKind {
@@ -146,7 +147,7 @@ impl Panel {
             Panel::Browsers => PanelKind::Browsers,
             Panel::Extension(_) => PanelKind::Extension,
             Panel::Saved(_) => PanelKind::Saved,
-            Panel::Git => PanelKind::Git,
+            Panel::Changes => PanelKind::Changes,
         }
     }
 
@@ -157,29 +158,30 @@ impl Panel {
     /// rather than defaulted.
     fn stages(&self) -> bool {
         match self {
-            Panel::Console | Panel::Browsers | Panel::Extension(_) | Panel::Git => true,
+            Panel::Console | Panel::Browsers | Panel::Extension(_) | Panel::Changes => true,
             Panel::Views | Panel::Saved(_) => false,
         }
     }
 
     /// Whether its close takes it out for good: a saved view's panel goes
-    /// with its columns, and Git's ends the review or history it shows,
-    /// keeping its place for the next. The console, the views and an
+    /// with its columns, and the changes' ends the review, keeping its
+    /// place for the next. The console, the views and an
     /// extension's view are there while what they show is.
     fn closes(&self) -> bool {
         match self {
-            Panel::Saved(_) | Panel::Git => true,
+            Panel::Saved(_) | Panel::Changes => true,
             Panel::Console | Panel::Views | Panel::Browsers | Panel::Extension(_) => false,
         }
     }
 
     /// Whether it can split off into a cell of the Workspace's grid, beside
-    /// an agent's pane. The browsers only, for now: each panel joins once
-    /// its body is drawn well at a cell's size.
+    /// an agent's pane: the browsers, and the changes, read beside the agent
+    /// that made them. Each panel joins once its body is drawn well at a
+    /// cell's size.
     pub fn cells(&self) -> bool {
         match self {
-            Panel::Browsers => true,
-            Panel::Console | Panel::Views | Panel::Extension(_) | Panel::Saved(_) | Panel::Git => false,
+            Panel::Browsers | Panel::Changes => true,
+            Panel::Console | Panel::Views | Panel::Extension(_) | Panel::Saved(_) => false,
         }
     }
 
@@ -201,7 +203,7 @@ impl fmt::Display for Panel {
             Panel::Console => f.write_str("console"),
             Panel::Views => f.write_str("views"),
             Panel::Browsers => f.write_str("browsers"),
-            Panel::Git => f.write_str("git"),
+            Panel::Changes => f.write_str("changes"),
             Panel::Extension(key) => write!(f, "{EXTENSION}{key}"),
             Panel::Saved(id) => write!(f, "{SAVED}{id}"),
         }
@@ -226,7 +228,7 @@ impl Panel {
             "console" => Ok(Panel::Console),
             "views" => Ok(Panel::Views),
             "browsers" => Ok(Panel::Browsers),
-            "git" => Ok(Panel::Git),
+            "changes" => Ok(Panel::Changes),
             _ => match (name.strip_prefix(EXTENSION), name.strip_prefix(SAVED)) {
                 (Some(key), _) if key.split_once('/').is_some_and(|(e, v)| !e.is_empty() && !v.is_empty()) => {
                     Ok(Panel::Extension(key.to_string()))
@@ -403,7 +405,7 @@ pub enum PanelKind {
     Browsers,
     Extension,
     Saved,
-    Git,
+    Changes,
 }
 
 /// A panel that exists now, as the page is told of it: which module draws
@@ -632,7 +634,7 @@ impl Docks {
 
     /// Makes the panel a page of its own, out of any dock, remembering the
     /// dock or dialog it left for `collapse`. Only an extension's view and
-    /// Git have a page: the console and the views have a home dock, and a
+    /// the changes have a page: the console and the views have a home dock, and a
     /// saved view's columns want one.
     pub fn stage(&mut self, panel: &Panel) {
         if panel.has_page() && self.place_of(panel) != Some(Place::Stage) {

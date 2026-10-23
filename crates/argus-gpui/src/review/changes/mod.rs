@@ -1,63 +1,60 @@
-//! The Changes tab of the Git stage: the review of a checkout's working
-//! changes, or of one commit, drawn as a full stage. The changed files stand
-//! beside the diff of one, lines are picked and commented on in place, and the
-//! keys that move among them are the review's (`review/keys`, heard by the
-//! stage).
+//! The Changes pane, as the prototype draws it (`claude.ai/artifact/TV5HXHL9pijRnTzoUgCsxq`):
+//! the review of a checkout's working changes, or of one commit, with its list column (`side`)
+//! beside the diff of one file under its head (`head`). The same view is the panel's body
+//! wherever the panel is — on the stage in place of the pane, docked, floating, or in a cell
+//! beside an agent's pane — and it lays itself out by its own width (`narrow`): below 760px the
+//! files and the diff take turns. It draws no header of its own; the dock, the dialog, the cell
+//! or the Git stage names it.
 //!
-//! Everything it draws is the session's `ReviewPage`: the files, the file on
-//! screen, the rows with the cursor and the pick, the comment box, the jump
-//! field's matches, and why there is no diff when there is none. A press sends
-//! the call the Tauri page sends (`review/dialog.ts`) and changes nothing on
-//! screen; the review changes when the next `Review` event says so, so a
-//! refused click leaves the diff as the session holds it.
+//! Everything it draws is the session's `ReviewPage`: the files, the file on screen, the rows
+//! with the cursor and the pick, the comment box, the jump field's matches, and why there is no
+//! diff when there is none. A press sends its call and changes nothing on screen; the review
+//! changes when the next `Review` event says so, so a refused click leaves the diff as the
+//! session holds it. What a body shows is chosen in the page's order (SHARED-3): loading bars,
+//! then the muted reason there is no diff, then the rows. The split between the files and the
+//! diff, the find field and the list's shape are the window's own, never sent anywhere.
 //!
-//! What a body shows is chosen in the page's order (SHARED-3): loading bars,
-//! then the muted reason there is no diff, then the rows. The split between
-//! the files and the diff is the window's own, never sent anywhere.
-//!
-//! A review of working changes stages: each changed line has a box, ticked
-//! when the diff is the index's, and each hunk a button (`kit::diff::tick`).
-//! A tick, a Shift-tick from the last one, or a hunk is a `Stage` call, and
-//! the boxes move when the diff read after the index moved says so. The
-//! review's drafts hang under their lines (`draft_card`), and the Review
-//! button over the diff opens the panel that sends them (`submit`).
+//! A review of working changes stages: each changed line has a box, ticked when the diff is the
+//! index's, and each hunk a button (`kit::diff::tick`). A tick, a Shift-tick from the last one,
+//! or a hunk is a `Stage` call, and the boxes move when the diff read after the index moved says
+//! so. The review's drafts hang under their lines (`draft_card`), and the Review button over the
+//! diff opens the panel that sends them (`submit`).
+
+pub mod commit;
+pub mod head;
+pub mod lists;
+pub mod narrow;
+pub mod side;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use argus_desktop_core::connection::page::{Call, ReviewClick, ReviewPage};
 use argus_desktop_core::review::staging::StageGesture;
-use argus_desktop_core::keys::keymap::Action;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, Context, Entity, Role, SharedString, Subscription, Window};
+use gpui_kit::{div, prelude::*, Context, Entity, SharedString, Subscription, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::kit::counts::counts;
 use crate::kit::diff::gutter::{shown, GUTTER};
 use crate::kit::diff::tick::{tickable, Ticks, BOX};
 use crate::kit::diff::{DiffEvent, DiffView, Slot};
 use crate::review::comment::{self, ways, CommentBox};
 use crate::review::draft_card::{self, DraftCard};
-use crate::review::files::Files;
-use crate::review::narrow::Narrow;
+use crate::review::changes::side::Files;
+use crate::review::changes::narrow::Narrow;
 use crate::review::submit::Submit;
 use crate::kit::ghosts::ghosts;
 use crate::kit::hints;
-use crate::kit::icon_button::icon_button;
-use crate::kit::icons::Glyph;
-use crate::kit::tip::tip;
-use crate::kit::segment;
 use crate::kit::split::{self, Split};
 use crate::style::Typed as _;
 use crate::theme::scale::{rem, zoom};
 use crate::theme::Tokens;
 
-/// The width the list of files opens at (`--list-col-w`), and how far the
-/// person may drag it.
-const FILES: f32 = 300.0;
-const FILES_MIN: f32 = 200.0;
+/// The width the list column opens at (`--side`), and how far the person may drag it.
+const FILES: f32 = 340.0;
+const FILES_MIN: f32 = 240.0;
 const FILES_MAX: f32 = 520.0;
 
 /// The widths of the loading bars of a review's diff, as the page draws them.
@@ -90,7 +87,9 @@ pub struct Changes {
     /// The row of the last box ticked, which a Shift-tick ranges from.
     last_tick: Option<usize>,
     narrow: Narrow,
-    _subscriptions: [Subscription; 2],
+    /// The pane's own focus: beside the work it has the keys while the pointer last pressed in it.
+    pub focus: gpui_kit::FocusHandle,
+    _subscriptions: [Subscription; 3],
 }
 
 impl Changes {
@@ -106,6 +105,10 @@ impl Changes {
         let split = cx.new(|cx| Split::new("review-split", "Resize the files", FILES, FILES_MIN, FILES_MAX, cx));
         let submit = cx.new(|cx| Submit::new(heard.clone(), caller.clone(), window, cx));
         let resized = cx.observe(&split, |_, _, cx| cx.notify());
+        let opened = cx.subscribe(&files, |this, _, _: &side::Opened, cx| {
+            this.narrow.opened();
+            cx.notify();
+        });
         let pressed = cx.subscribe(&diff, |this, _, event: &DiffEvent, cx| {
             let target = match *event {
                 DiffEvent::CopySelection => {
@@ -131,7 +134,7 @@ impl Changes {
             };
             this.ask(Call::ReviewClick { target }, cx);
         });
-        Self { heard, caller, files, diff, comment, split, submit, cards: HashMap::new(), last_tick: None, narrow: Narrow::new(), _subscriptions: [pressed, resized] }
+        Self { heard, caller, files, diff, comment, split, submit, cards: HashMap::new(), last_tick: None, narrow: Narrow::new(), focus: cx.focus_handle(), _subscriptions: [pressed, resized, opened] }
     }
 
     /// A box ticked: its line, or with Shift every changed line from the last box ticked to it.
@@ -223,111 +226,6 @@ impl Changes {
         }
     }
 
-    /// The file on screen, and the layout the diff is read in.
-    fn head(&self, page: &ReviewPage, back: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let file = page.file.and_then(|i| page.files.get(i));
-        let layout = |id: &'static str, label: &'static str, on: bool, split: bool, cx: &mut Context<Self>| {
-            segment::pill(id, Role::RadioButton, on, tokens).child(label).on_click(cx.listener(move |this, _, _, cx| {
-                // The one already on sends nothing.
-                if page_split(&this.heard, cx) != split {
-                    this.ask(Call::ReviewAction { action: Action::Split }, cx);
-                }
-            }))
-        };
-        // `.fhdr`: on the chrome colour over a hairline, 12px about its parts.
-        h_flex()
-            .id("review-diff-head")
-            .flex_shrink_0()
-            .h(rem(tokens.sp_44))
-            .px(rem(tokens.sp_12))
-            .gap(rem(tokens.sp_12))
-            .items_center()
-            .bg(tokens.bg_chrome)
-            .border_b_1()
-            .border_color(tokens.line)
-            // Narrow, the files are a screen of their own, and the diff goes back to them.
-            .when(back, |head| {
-                head.child(
-                    icon_button("review-back", "Back to the files", false, tokens)
-                        .tooltip(tip("Back to the files"))
-                        .child(Glyph::List.at(14.0))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.narrow.back();
-                            cx.notify();
-                        })),
-                )
-            })
-            .when_some(file, |head, file| {
-                head.child(div().flex_shrink_0().weighted(tokens.weight_bold).child(SharedString::from(file.name.clone())))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .typed(tokens.type_small)
-                            .font_family(cx.theme().mono_font_family.clone())
-                            .text_color(tokens.fg_muted)
-                            .child(SharedString::from(file.dir.trim_end_matches('/').to_owned())),
-                    )
-                    .child(counts(file.added, file.removed, tokens).typed(tokens.type_small))
-            })
-            .child(div().flex_1())
-            .when_some(page.drafts.as_ref(), |head, drafts| {
-                let pending = drafts.drafts.len();
-                head.child(
-                    h_flex()
-                        .id("review-open-submit")
-                        .test_support()
-                        .aria_label(SharedString::from(format!("Review, {pending} pending")))
-                        .flex_shrink_0()
-                        .gap(rem(tokens.sp_6))
-                        .items_center()
-                        .h(rem(tokens.control_h_sm))
-                        .px(rem(tokens.sp_8))
-                        .rounded(rem(tokens.r_sm))
-                        .border_1()
-                        .border_color(if pending > 0 { tokens.accent.opacity(0.6) } else { tokens.line_strong })
-                        .typed(tokens.type_small)
-                        .text_color(tokens.fg)
-                        .cursor_pointer()
-                        .hover(|button| button.bg(tokens.fill))
-                        .child("Review")
-                        .child(
-                            div()
-                                .px(rem(tokens.sp_6))
-                                .rounded(rem(tokens.r_pill))
-                                .bg(if pending > 0 { tokens.accent } else { tokens.fill })
-                                .text_color(if pending > 0 { tokens.fg_on_accent } else { tokens.fg_muted })
-                                .text_size(rem(tokens.fs_xs))
-                                .child(SharedString::from(pending.to_string())),
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.submit.update(cx, |submit, cx| submit.toggle(cx)))),
-                )
-            })
-            // `.ktag`: what is picked, as a pill.
-            .when_some(page.pick.clone(), |head, pick| {
-                head.child(
-                    div()
-                        .id("review-pick")
-                        .test_support()
-                        .aria_label(SharedString::from(format!("{pick} picked")))
-                        .flex_shrink_0()
-                        .px(rem(tokens.sp_8))
-                        .rounded(rem(tokens.r_pill))
-                        .border_1()
-                        .border_color(tokens.line_strong)
-                        .typed(tokens.type_small)
-                        .text_color(tokens.fg_muted)
-                        .whitespace_nowrap()
-                        .child(SharedString::from(format!("{pick} picked"))),
-                )
-            })
-            .child(
-                segment::track("review-view", "Layout", Role::RadioGroup, tokens)
-                    .child(layout("review-view-unified", "Unified", !page.split, false, cx))
-                    .child(layout("review-view-split", "Split", page.split, true, cx)),
-            )
-    }
-
     /// Loading bars, or why there is no diff, or the diff.
     fn body(&self, page: &ReviewPage, tokens: &Tokens) -> gpui_kit::AnyElement {
         if page.loading {
@@ -363,12 +261,15 @@ impl Render for Changes {
             return div().into_any_element();
         };
         let narrow = self.narrow.narrow(window.rem_size());
+        // The diff's own width: the pane's, less the list column's beside it.
+        let across = self.narrow.width(window.rem_size()) - if narrow { 0.0 } else { self.split.read(cx).width() };
+        let fold = across > 0.0 && across < head::TOOLS_FOLD;
         let diff = v_flex()
             .id("review-diff-pane")
             .relative()
             .size_full()
             .min_w_0()
-            .child(self.head(&page, narrow, &tokens, cx))
+            .child(self.head(&page, narrow, fold, &tokens, cx))
             .child(div().flex_1().min_h_0().child(self.body(&page, &tokens)))
             .child(self.submit.clone());
         // Narrow, the files and the diff take turns; wide, the files stand beside the diff.
@@ -386,11 +287,19 @@ impl Render for Changes {
         v_flex()
             .id("review")
             .test_support()
+            .track_focus(&self.focus)
+            // A press anywhere in it gives it the keys, unless they are already in it; on the way
+            // down, so a part of it that takes them for itself (a field, the sash) still does.
+            .capture_any_mouse_down(cx.listener(|this, _, window, cx| {
+                if window.focused(cx).is_none_or(|held| !this.focus.contains(&held, window)) {
+                    window.focus(&this.focus, cx);
+                }
+            }))
             .relative()
             .size_full()
             .child(self.narrow.measure())
             .child(body)
-            .child(hints::bar("review-hints", &HINTS, &tokens))
+            .when(!narrow, |pane| pane.child(hints::bar("review-hints", &HINTS, &tokens)))
             .into_any_element()
     }
 }

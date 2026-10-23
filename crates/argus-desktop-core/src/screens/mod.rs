@@ -2322,6 +2322,17 @@ fn main_scenes() -> Vec<Scene> {
             w.s
         }),
         scene("review", "Review — the working changes of a checkout", || reviewing().s),
+        scene("review-docked", "Review — the changes docked beside the agent's pane", || {
+            let mut w = reviewing();
+            w.call(Call::Docks { gesture: DockGesture::Collapse { panel: Panel::Changes } });
+            w.s
+        }),
+        scene("review-cell", "Review — the changes in a cell of the grid beside the agent", || {
+            let mut w = reviewing();
+            let onto = crate::panes::shown::workspace_grid::Occupant::Pane(P_TRIM);
+            w.call(Call::Docks { gesture: DockGesture::Grid { panel: Panel::Changes, onto, zone: crate::panes::shown::workspace_grid::Zone::Right } });
+            w.s
+        }),
         scene("review-comment", "Review — a comment to the agent on picked lines", || {
             let mut w = reviewing();
             w.call(Call::ReviewAction { action: Action::Pick })

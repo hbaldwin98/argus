@@ -1402,7 +1402,7 @@ fn by(at: Point<Pixels>, dx: f32) -> Point<Pixels> {
 /// A tab's window, its column, its sash and the width it opens at: Changes, then History.
 fn split_of(cx: &mut TestAppContext, tab: usize) -> (Opened, &'static str, &'static str, f32) {
     if tab == 0 {
-        (reviewed(cx), "review-column", "review-split", 300.0)
+        (reviewed(cx), "review-column", "review-split", 340.0)
     } else {
         (historied(cx), "history-column", "history-split", 520.0)
     }

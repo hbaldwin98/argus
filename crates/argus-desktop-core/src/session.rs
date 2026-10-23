@@ -139,9 +139,9 @@ pub struct Session {
     shown: ShownPane,
     console: Console,
     docks: Docks,
-    /// Whether a review or a history was open at the last change, so the
-    /// Git panel is shown where it sits as one opens.
-    git_present: bool,
+    /// Whether a review was open at the last change, so the changes' panel
+    /// is shown where it sits as one opens.
+    changes_present: bool,
     awaited: Awaited<Made>,
     /// An older daemon's refusals, read as this one's.
     older: OlderDaemon,
@@ -231,7 +231,7 @@ impl Session {
             shown: ShownPane::default(),
             console: Console::default(),
             docks: Docks::new(settings.docks.unwrap_or_default()),
-            git_present: false,
+            changes_present: false,
             awaited: Awaited::default(),
             older: OlderDaemon::default(),
             agents: Agents::new(settings.last_agent),
@@ -2071,7 +2071,7 @@ impl Session {
                 self.docks.move_to(panel, dock);
                 self.show_views_panel();
             }
-            Panel::Saved(_) | Panel::Git => self.docks.move_to(panel, dock),
+            Panel::Saved(_) | Panel::Changes => self.docks.move_to(panel, dock),
             // Moved there to be watched beside the work: the stage goes back
             // to the Workspace the browsers were taken from.
             Panel::Browsers => {
@@ -2115,7 +2115,7 @@ impl Session {
                 self.go(Stage::Browsers);
             }
             Panel::Extension(_) => self.extension_mode(panel, true),
-            Panel::Git => self.docks.stage(panel),
+            Panel::Changes => self.docks.stage(panel),
             Panel::Views | Panel::Saved(_) => {}
         }
     }
@@ -2135,7 +2135,7 @@ impl Session {
                 Some(From::Dock { dock }) => self.dock_extension(panel, Some(dock)),
                 _ => self.extension_mode(panel, false),
             },
-            Panel::Git => self.docks.collapse(panel),
+            Panel::Changes => self.docks.collapse(panel),
             Panel::Views | Panel::Saved(_) => {}
         }
     }
@@ -2146,7 +2146,7 @@ impl Session {
     fn close_panel(&mut self, panel: &Panel) {
         match panel {
             Panel::Saved(owner) => self.close_saved_column(owner, 0),
-            Panel::Git => self.dialogs.close_all(),
+            Panel::Changes => self.dialogs.close_review(),
             Panel::Console | Panel::Views | Panel::Browsers | Panel::Extension(_) => {}
         }
     }
@@ -2172,8 +2172,8 @@ impl Session {
         }
         present.extend(self.extension_views.present(&self.here()));
         present.extend(self.saved.present());
-        if self.dialogs.any_open() {
-            present.push(Panel::Git);
+        if self.dialogs.review_open() {
+            present.push(Panel::Changes);
         }
         present
     }
@@ -3387,14 +3387,14 @@ impl Session {
                 self.shown.release_panel(&panel, &mut self.out);
             }
         }
-        let git = present.contains(&Panel::Git);
+        let changes = present.contains(&Panel::Changes);
         self.docks.set_present(present);
-        // Git was pressed to see what it opens: a docked panel's dock opens
-        // on it, and a dialog comes in front.
-        if git && !self.git_present {
-            self.docks.show(&Panel::Git);
+        // A review opened is to be seen: a docked panel's dock opens on it,
+        // and a dialog comes in front.
+        if changes && !self.changes_present {
+            self.docks.show(&Panel::Changes);
         }
-        self.git_present = git;
+        self.changes_present = changes;
         self.settle_console();
         self.settle_page();
         debug_assert!(
@@ -3464,11 +3464,15 @@ impl Session {
         // Inline, not a method: `take` borrows the docks mutably while the
         // titles read the extension views.
         let (views, here, saved) = (&self.extension_views, self.here(), &self.saved);
+        let changes = match self.dialogs.review_branch() {
+            Some(branch) => format!("Changes \u{b7} {branch}"),
+            None => "Changes".into(),
+        };
         events.extend(self.docks.take(|panel| match panel {
             Panel::Console => "Console".into(),
             Panel::Views => "Views".into(),
             Panel::Browsers => "Browsers".into(),
-            Panel::Git => "Git".into(),
+            Panel::Changes => changes.clone(),
             Panel::Extension(_) => views.get(panel, &here).map(|v| v.title.clone()).unwrap_or_default(),
             Panel::Saved(id) => saved.title(id),
         }));
@@ -7136,26 +7140,46 @@ mod tests {
     /// review or a history is open, a review opening shows it where it was
     /// put, and the stage and back return it to that dock.
     #[test]
-    fn the_git_panel_is_there_while_a_review_is_open_and_opens_where_it_was_put() {
+    fn the_changes_panel_is_there_while_a_review_is_open_and_opens_where_it_was_put() {
         let mut s = session(without_focus());
-        let git = |s: &mut Session| docks_page(s).is_some_and(|d| d.present.iter().any(|p| p.panel == Panel::Git));
+        let git = |s: &mut Session| docks_page(s).is_some_and(|d| d.present.iter().any(|p| p.panel == Panel::Changes));
         assert!(!git(&mut s), "no review, no panel");
         s.call(Call::OpenReview { checkout: 100 });
         assert!(git(&mut s));
-        docks(&mut s, DockGesture::Move { panel: Panel::Git, dock: Dock::Left });
-        docks(&mut s, DockGesture::Hide { panel: Panel::Git });
+        docks(&mut s, DockGesture::Move { panel: Panel::Changes, dock: Dock::Left });
+        docks(&mut s, DockGesture::Hide { panel: Panel::Changes });
         s.call(Call::ReviewAction { action: Action::CloseLayer });
         assert!(!git(&mut s), "the review closed takes the panel");
         s.call(Call::OpenReview { checkout: 100 });
-        assert_eq!(docks_page(&mut s).and_then(|d| d.left.shown), Some(Panel::Git), "opened, its dock opens on it");
-        docks(&mut s, DockGesture::Stage { panel: Panel::Git });
-        assert_eq!(s.docks.place_of(&Panel::Git), Some(Place::Stage));
-        docks(&mut s, DockGesture::Collapse { panel: Panel::Git });
-        assert_eq!(s.docks.dock_of(&Panel::Git), Some(Dock::Left), "back to the dock it left");
-        assert!(s.docks.shows(&Panel::Git));
-        docks(&mut s, DockGesture::Close { panel: Panel::Git });
+        let page = docks_page(&mut s).expect("the docks changed");
+        assert_eq!(page.left.shown, Some(Panel::Changes), "opened, its dock opens on it");
+        assert_eq!(page.left.tabs[0].title, "Changes \u{b7} main", "named by the branch it reviews");
+        docks(&mut s, DockGesture::Stage { panel: Panel::Changes });
+        assert_eq!(s.docks.place_of(&Panel::Changes), Some(Place::Stage));
+        docks(&mut s, DockGesture::Collapse { panel: Panel::Changes });
+        assert_eq!(s.docks.dock_of(&Panel::Changes), Some(Dock::Left), "back to the dock it left");
+        assert!(s.docks.shows(&Panel::Changes));
+        docks(&mut s, DockGesture::Close { panel: Panel::Changes });
         assert!(!git(&mut s), "its close ends the review");
-        assert_eq!(s.docks.dock_of(&Panel::Git), Some(Dock::Left), "and keeps its place");
+        assert_eq!(s.docks.dock_of(&Panel::Changes), Some(Dock::Left), "and keeps its place");
+    }
+
+    /// The changes split off beside the agent whose work they are, and go
+    /// with the review.
+    #[test]
+    fn the_changes_dropped_on_a_cell_sit_beside_the_pane_until_the_review_closes() {
+        let into_grid = || DockGesture::Grid { panel: Panel::Changes, onto: Occupant::Pane(2), zone: Zone::Right };
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(2));
+        docks(&mut s, into_grid());
+        assert!(!s.shown.grid().holds_panel(&Panel::Changes), "no review, no panel to drop");
+        s.call(Call::OpenReview { checkout: 100 });
+        docks(&mut s, into_grid());
+        assert_eq!(s.rail(0).row.panels, [Some(Panel::Changes)]);
+        assert_eq!(s.shown.pane(), Some(PaneId(2)), "the keys stay with the pane");
+        docks(&mut s, DockGesture::Close { panel: Panel::Changes });
+        assert!(!s.shown.grid().holds_panel(&Panel::Changes), "the review closed empties its cell");
     }
 
     /// The console and the browsers have stages of their own and stay in

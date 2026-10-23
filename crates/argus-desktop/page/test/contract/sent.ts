@@ -7049,11 +7049,11 @@ export const sent = [
       "stage": true
     },
     {
-      "cell": false,
+      "cell": true,
       "closes": true,
       "floats": true,
-      "kind": "git",
-      "panel": "git",
+      "kind": "changes",
+      "panel": "changes",
       "stage": true
     }
   ],

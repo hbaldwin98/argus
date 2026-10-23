@@ -71,7 +71,7 @@ impl DiffView {
             .overflow_hidden()
             .whitespace_nowrap()
             .when(!ranges.is_empty(), |band| band.child(div().flex_shrink_0().text_color(tokens.ref_).child(SharedString::from(ranges.to_owned()))))
-            .when(!context.is_empty(), |band| band.child(SharedString::from(context.to_owned())))
+            .when(!context.is_empty(), |band| band.child(div().min_w_0().flex_shrink(1.0).truncate().child(SharedString::from(context.to_owned()))))
             .when_some(self.ticks.filter(|_| shape::shape(row) == Shape::Hunk), |band, ticks| {
                 let number = row.row;
                 let words = if ticks.staged { "Unstage hunk" } else { "Stage hunk" };

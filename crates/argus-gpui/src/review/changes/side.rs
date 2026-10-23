@@ -1,7 +1,8 @@
-//! The changed-files column of the review: which side is read, the files in
-//! daemon order (or the matches of the jump field, best first) and the field
-//! that jumps among them. A review of working changes lists both sides at once
-//! instead (`sections`), with the commit box under them (`commit`).
+//! The Changes pane's list column, as the prototype draws it: a head saying what is listed (the
+//! changes and how many, with the switch between a flat list and one by folder, and the field
+//! that finds a changed file), the lists (`lists`), and the commit box under them (`commit`). A
+//! review of one commit lists its files flat, and a review from a daemon too old to stage picks
+//! its side. The field that jumps among the files (`f`) stands in for the find field while open.
 //!
 //! Which files there are, which one is lit and what the field matches is the
 //! session's (`ReviewPage`); a press sends its call and changes nothing. The
@@ -22,28 +23,36 @@ use gpui_kit::{div, prelude::*, Context, Entity, Role, ScrollHandle, SharedStrin
 
 use crate::kit::counts::counts;
 use crate::kit::drag::{self, Drag};
+use crate::kit::icons::Glyph;
 use crate::kit::tip::tip;
-use crate::review::commit::CommitBox;
-use crate::review::sections::{Areas, Carried};
+use crate::review::changes::lists::{badge, ghost, status};
+use crate::review::changes::commit::CommitBox;
+use crate::review::changes::lists::{Areas, Carried};
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::keys::field::{Fields, Registered};
 use crate::review::keys;
 use crate::kit::segment;
 use crate::style::Typed as _;
-use crate::theme::scale::{rem, Type};
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 pub struct Files {
     heard: Entity<Heard>,
     caller: Caller,
     jump: Entity<InputState>,
+    /// The find field, which narrows the lists to the files whose path holds its words: the
+    /// window's own, never sent.
+    find: Entity<InputState>,
+    pub(super) query: String,
     pub(super) scroll: ScrollHandle,
     /// A file being carried between the lists, and what the carry takes the keys with.
     pub(super) drag: Drag<Carried>,
     pub(super) keys: gpui_kit::FocusHandle,
     /// Where each list was laid out, for a drop.
     pub(super) areas: Areas,
+    /// The lists are by folder rather than flat: the window's own, never sent.
+    pub(super) tree: bool,
     commit: Entity<CommitBox>,
     /// What the field held when the session was last told, so the empty it is
     /// put back to when it shuts says nothing.
@@ -51,7 +60,7 @@ pub struct Files {
     open: bool,
     /// The file lit when the list last scrolled to it.
     lit: Option<usize>,
-    _subscriptions: [Subscription; 1],
+    _subscriptions: [Subscription; 2],
     /// The field's place in the key walk: the `Jump` place's keys are run before its own.
     _field: Registered,
 }
@@ -81,6 +90,11 @@ pub fn folder(dir: &str) -> &str {
     }
 }
 
+/// A file was pressed in a list, to be read: the pane turns to its diff when it is narrow.
+pub struct Opened;
+
+impl gpui_kit::EventEmitter<Opened> for Files {}
+
 impl Files {
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let jump = cx.new(|cx| InputState::new(window, cx).placeholder("Jump to a file"));
@@ -99,19 +113,29 @@ impl Files {
             asking.update(cx, |files, cx| files.ask(Call::ReviewJump { gesture }, cx)).is_ok()
         });
         let commit = cx.new(|cx| CommitBox::new(heard.clone(), caller.clone(), window, cx));
+        let find = cx.new(|cx| InputState::new(window, cx).placeholder("Find a changed file"));
+        let finding = cx.subscribe(&find, |this, input, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.query = input.read(cx).value().trim().to_lowercase();
+                cx.notify();
+            }
+        });
         Self {
             heard,
             caller,
             jump,
+            find,
+            query: String::new(),
             scroll: ScrollHandle::new(),
             drag: Drag::new(),
             keys: cx.focus_handle(),
             areas: Areas::default(),
+            tree: false,
             commit,
             known: SharedString::default(),
             open: false,
             lit: None,
-            _subscriptions: [typing],
+            _subscriptions: [typing, finding],
             _field: field,
         }
     }
@@ -144,23 +168,18 @@ impl Files {
         }
     }
 
-    /// The side the review reads, or the commit it is of: the column's head, a band as tall as the
-    /// diff's head beside it and on the same chrome over the same hairline, so the two heads read
-    /// as one line across the stage.
+    /// `.side-head`: what the list holds and how, and the field that finds in it.
     fn side(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let row = h_flex()
+        let head = v_flex()
             .id("review-files-head")
             .flex_shrink_0()
-            .h(rem(tokens.sp_44))
-            .px(rem(tokens.sp_12))
-            .items_center()
+            .p(rem(10.0))
             .gap(rem(tokens.sp_8))
-            .bg(tokens.bg_chrome)
             .border_b_1()
             .border_color(tokens.line);
         if page.base == "commit" {
             let words = SharedString::from(page.commit.clone().unwrap_or_default());
-            return row
+            return head
                 .child(
                     div()
                         .id("review-commit")
@@ -175,30 +194,55 @@ impl Files {
                 )
                 .into_any_element();
         }
-        // Both sides are listed at once, so there is no side to pick: the head says what is here.
-        if !page.sections.is_empty() {
-            let files: usize = page.sections.iter().map(|s| s.files.len()).sum();
-            return row
-                .child(div().text_color(tokens.fg).weighted(tokens.weight_semibold).child("Changes"))
-                .child(div().typed(tokens.type_small).text_color(tokens.fg_faint).child(SharedString::from(match files {
-                    1 => "1 file".to_owned(),
-                    n => format!("{n} files"),
-                })))
+        let row = h_flex().gap(rem(tokens.sp_6)).items_center();
+        if page.sections.is_empty() {
+            // A daemon too old to stage reads one side at a time, picked here.
+            let count = |n: Option<usize>| n.map_or_else(|| "\u{2026}".to_owned(), |n| n.to_string());
+            let pill = |id: &'static str, label: &'static str, n: Option<usize>, staged: bool, cx: &mut Context<Self>| {
+                segment::pill(id, Role::RadioButton, (page.base == "staged") == staged, tokens)
+                    .child(label)
+                    .child(segment::count(count(n), tokens))
+                    .on_click(cx.listener(move |this, _, _, cx| this.ask(Call::ReviewClick { target: ReviewClick::Side { staged } }, cx)))
+            };
+            return head
+                .child(row.child(
+                    segment::track("review-side", "Side", Role::RadioGroup, tokens)
+                        .child(pill("review-side-unstaged", "Unstaged", page.unstaged, false, cx))
+                        .child(pill("review-side-staged", "Staged", page.staged, true, cx)),
+                ))
                 .into_any_element();
         }
-        let count = |n: Option<usize>| n.map_or_else(|| "\u{2026}".to_owned(), |n| n.to_string());
-        let pill = |id: &'static str, label: &'static str, n: Option<usize>, staged: bool, cx: &mut Context<Self>| {
-            segment::pill(id, Role::RadioButton, (page.base == "staged") == staged, tokens)
-                .child(label)
-                .child(segment::count(count(n), tokens))
+        let files: usize = {
+            let mut paths: Vec<&str> = page.sections.iter().flat_map(|s| s.files.iter().map(|f| f.file.path.as_str())).collect();
+            paths.sort_unstable();
+            paths.dedup();
+            paths.len()
+        };
+        let mode = |id: &'static str, words: &'static str, glyph: Glyph, tree: bool, on: bool, cx: &mut Context<Self>| {
+            ghost(id, words, tokens)
+                .aria_selected(on)
+                .when(on, |button| button.bg(tokens.fill).text_color(tokens.fg).border_color(tokens.line_strong))
+                .tooltip(tip(words))
+                .child(glyph.at(14.0))
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.ask(Call::ReviewClick { target: ReviewClick::Side { staged } }, cx)
+                    this.tree = tree;
+                    cx.notify();
                 }))
         };
-        row.child(
-            segment::track("review-side", "Side", Role::RadioGroup, tokens)
-                .child(pill("review-side-unstaged", "Unstaged", page.unstaged, false, cx))
-                .child(pill("review-side-staged", "Staged", page.staged, true, cx)),
+        head.child(
+            row.child(
+                segment::track("review-list-what", "What the list shows", Role::TabList, tokens)
+                    .child(segment::pill("review-list-changes", Role::Tab, true, tokens).child("Changes").child(segment::count(files.to_string(), tokens))),
+            )
+            .child(div().flex_1())
+            .child(mode("review-list-flat", "As a list", Glyph::List, false, !self.tree, cx))
+            .child(mode("review-list-tree", "By folder", Glyph::Tree, true, self.tree, cx)),
+        )
+        .child(
+            div()
+                .id("review-find-field")
+                .min_w_0()
+                .child(Input::new(&self.find).id("review-find").small().h(rem(tokens.control_h_sm)).prefix(Glyph::Search.at(14.0)).aria_label("Find a changed file")),
         )
         .into_any_element()
     }
@@ -225,62 +269,43 @@ impl Files {
             .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
+            .pt(rem(tokens.sp_4))
+            .pb(rem(10.0))
             .gap(rem(tokens.sp_2))
             .children(rows.into_iter().map(|(i, file)| {
                 let on = Some(i) == lit;
                 let tooltip = SharedString::from(file.path.clone());
-                // `.rfile`: 4px over 8px of padding, less the edge that the lit row
-                // draws as its mark, so every row is one size.
+                let (letter, colour, said) = status(file.kind, tokens);
+                // `.row`, as the lists draw a file: its status, name, folder and counts.
                 h_flex()
                     .id(("review-file", i))
                     .test_support()
                     .aria_selected(on)
                     .aria_label(tooltip.clone())
                     .flex_shrink_0()
-                    .items_start()
-                    .gap(rem(tokens.sp_6))
-                    .py(rem(tokens.sp_4 - 1.0))
-                    .px(rem(tokens.sp_8 - 1.0))
+                    .h(rem(28.0))
+                    .mx(rem(tokens.sp_6))
+                    .pl(rem(tokens.sp_8))
+                    .pr(rem(tokens.sp_6))
+                    .gap(rem(tokens.sp_8))
+                    .items_center()
                     .rounded(rem(tokens.r_sm))
                     .border_1()
                     .border_color(if on { tokens.line_strong } else { gpui_kit::transparent_black() })
-                    .text_size(rem(tokens.fs_sm))
-                    .line_height(rem(tokens.fs_sm * 1.45))
-                    .text_color(tokens.fg)
+                    .typed(tokens.type_body)
+                    .text_color(if on { tokens.fg } else { tokens.fg_muted })
                     .cursor_pointer()
                     .when(on, |row| row.bg(tokens.bg_selected).hover(move |style| style.bg(selected_hover)))
-                    .when(!on, |row| row.hover(move |style| style.bg(fill)))
+                    .when(!on, |row| row.hover(move |style| style.bg(fill.opacity(0.6)).text_color(tokens.fg)))
                     .tooltip(tip(tooltip.clone()))
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.emit(Opened);
                         this.ask(Call::ReviewClick { target: ReviewClick::File { file: i } }, cx)
                     }))
-                    // The name is what is scanned for, so it leads; its folder is the
-                    // line under it and is what is cut short.
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(rem(tokens.sp_2))
-                            .child(
-                                div()
-                                    .truncate()
-                                    .typed(Type { weight: tokens.weight_semibold, size: tokens.fs_md, leading: 1.45 })
-                                    .child(SharedString::from(file.name.clone())),
-                            )
-                            .child(
-                                div()
-                                    .truncate()
-                                    .text_size(rem(tokens.fs_xs))
-                                    .line_height(rem(tokens.fs_xs * 1.45))
-                                    .text_color(tokens.fg_faint)
-                                    .when(!file.dir.trim_end_matches('/').is_empty(), |dir| {
-                                        dir.font_family(cx.theme().mono_font_family.clone())
-                                    })
-                                    .child(SharedString::from(folder(&file.dir).to_owned())),
-                            ),
-                    )
-                    // On the name's line, at its height, so the counts sit on its baseline.
-                    .child(counts(file.added, file.removed, tokens).line_height(rem(tokens.fs_md * 1.45)))
+                    .child(badge(("review-file-status", i), letter, colour, said, tokens, cx))
+                    .child(div().flex_shrink(1.0).min_w(rem(48.0)).truncate().text_color(tokens.fg).weighted(tokens.weight_medium).child(SharedString::from(file.name.clone())))
+                    .child(div().flex_1().min_w_0().truncate().typed(tokens.type_small).text_color(tokens.fg_faint).child(SharedString::from(folder(&file.dir).to_owned())))
+                    .child(div().flex_shrink_0().text_size(rem(11.0)).child(counts(file.added, file.removed, tokens)))
             }))
             .when_some(page.jump.as_ref().filter(|jump| jump.matches.is_empty()), |list, jump| {
                 list.child(
@@ -305,21 +330,16 @@ impl Render for Files {
         let listed = !page.sections.is_empty() && page.jump.is_none();
         let list = if listed { self.sections(&page, &tokens, cx).into_any_element() } else { self.list(&page, &tokens, cx).into_any_element() };
         // Under the head, `.review-files`: 12px in from every edge, 8px between its parts.
+        // `.side`: on the chrome colour, the head, the lists, and the commit box at the foot.
         v_flex()
             .id("review-files")
             .size_full()
             .min_w_0()
+            .bg(tokens.bg_chrome)
             .child(self.side(&page, &tokens, cx))
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .p(rem(tokens.sp_12))
-                    .gap(rem(tokens.sp_8))
-                    .when(page.jump.is_some(), |body| body.child(self.jump(&tokens)))
-                    .child(list)
-                    .when(page.staging.is_some(), |body| body.child(self.commit.clone())),
-            )
+            .when(page.jump.is_some(), |side| side.child(div().p(rem(10.0)).border_b_1().border_color(tokens.line).child(self.jump(&tokens))))
+            .child(list)
+            .when(page.staging.is_some(), |side| side.child(self.commit.clone()))
             // The carry takes the keys here, so Escape drops it before the stage hears it.
             .child(
                 div()

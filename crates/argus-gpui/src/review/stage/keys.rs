@@ -33,7 +33,7 @@ impl Handler for StageKeys {
         self.stage.upgrade().is_some_and(|stage| {
             let stage = stage.read(cx);
             let heard = stage.heard.read(cx);
-            heard.git_open() && stage.focus.is_focused(window) && heard.git.tab(heard.open()) == self.tab()
+            heard.git_open() && stage.has_keys(window, cx) && heard.git.tab(heard.open()) == self.tab()
         })
     }
 

@@ -1,15 +1,12 @@
-//! The Git stage: how it is entered and left, and the Changes and History tabs it holds.
+//! The review of a checkout: the Changes pane, wherever it is put, and the Git stage that holds
+//! it and the History.
 
 pub mod changes;
 pub mod comment;
-pub mod commit;
 pub mod draft_card;
 pub mod entry;
-pub mod files;
 pub mod filter;
 pub mod history;
 pub mod keys;
-pub mod narrow;
-pub mod sections;
 pub mod stage;
 pub mod submit;
