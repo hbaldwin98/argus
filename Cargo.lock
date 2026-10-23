@@ -285,7 +285,7 @@ dependencies = [
 
 [[package]]
 name = "argus"
-version = "0.39.0"
+version = "0.40.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -316,7 +316,7 @@ dependencies = [
 
 [[package]]
 name = "argus-desktop"
-version = "0.39.0"
+version = "0.40.0"
 dependencies = [
  "arboard",
  "argus-desktop-core",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "argus-desktop-core"
-version = "0.39.0"
+version = "0.40.0"
 dependencies = [
  "anyhow",
  "argus-desktop-core",
@@ -365,7 +365,7 @@ dependencies = [
 
 [[package]]
 name = "argus-gpui"
-version = "0.39.0"
+version = "0.40.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "argus-protocol"
-version = "0.39.0"
+version = "0.40.0"
 dependencies = [
  "compact_str 0.10.0",
  "directories",
@@ -406,7 +406,7 @@ dependencies = [
 
 [[package]]
 name = "argusd"
-version = "0.39.0"
+version = "0.40.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
