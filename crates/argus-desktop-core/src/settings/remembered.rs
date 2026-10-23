@@ -5,8 +5,8 @@
 //! opens, and what the Settings dialog sets.
 //!
 //! Its own file beside the config, `desktop.json`, rather than a section
-//! of the terminal client's `client.toml` (DESIGN.md §Configuration says
-//! why): the two clients overlap only in the editor and the theme's name,
+//! of the terminal client's `client.toml` (ARCHITECTURE.md, "Storage"):
+//! the two clients overlap only in the editor and the theme's name,
 //! and each writes its whole file from the copy it loaded, so sharing one
 //! would have each quietly undo the other's changes. The Tauri and GPUI
 //! windows do share `desktop.json`, so a save writes back only what its
@@ -235,7 +235,7 @@ pub enum EditorMode {
     #[default]
     Floating,
     /// A pane in the checkout. An editor is never a listed pane, so the
-    /// daemon floats it as the first mode does (DESIGN.md §Editors).
+    /// daemon floats it as the first mode does.
     Checkout,
     /// Launched on its own with no pty, for an editor with its own window.
     Separately,

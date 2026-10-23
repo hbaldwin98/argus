@@ -261,7 +261,7 @@ struct Project {
     id: ProjectId,
     name: String,
     /// Which workspace this project is filed under. The tree a client sees
-    /// is scoped to whichever workspace is open (DESIGN.md §11).
+    /// is scoped to whichever workspace is open.
     workspace: WorkspaceId,
     /// The directory whose repositories make up this project, if it has
     /// one. Kept so reconciliation can look again and find what has been

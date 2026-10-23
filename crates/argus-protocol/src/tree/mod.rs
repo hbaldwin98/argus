@@ -25,8 +25,8 @@ pub enum PaneKind {
     Browser,
 }
 
-/// See DESIGN.md §8b. Everything but `Exited` comes from the agent itself,
-/// through whatever hook mechanism its harness supports (§11); a harness
+/// See ARCHITECTURE.md, "Agents". Everything but `Exited` comes from the agent
+/// itself, through whatever hook mechanism its harness supports; a harness
 /// that reports nothing sits at `Idle` until it `Exited` — coarse, but
 /// that's the accepted fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,7 +59,7 @@ impl PaneStatus {
     }
 
     /// An order, not a scale: a row standing for several agents shows the
-    /// largest state beneath it (DESIGN.md §8b). Here rather than in the
+    /// largest state beneath it. Here rather than in the
     /// client because two clients disagreeing on which agent is the more
     /// urgent would be two different products.
     pub fn urgency(self) -> u8 {
@@ -161,7 +161,7 @@ impl PaneInfo {
 /// Another agent reporting through a pane it does not own — a CLI spawned
 /// from inside the pane's own agent, which inherits the hook environment and
 /// so would otherwise rewrite the row belonging to its parent. Listed under
-/// the parent, and never allowed to change it: see DESIGN.md §8b.
+/// the parent, and never allowed to change it: see ARCHITECTURE.md, "Agents".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChildAgentInfo {
     /// What the child called itself, or a generic word until it says.
@@ -305,7 +305,7 @@ impl AgentTelemetry {
 }
 
 /// Read-only git status for a checkout, polled from the working directory
-/// (see DESIGN.md §4 Level 2). `None` on `CheckoutInfo::git` means the path
+/// (see ARCHITECTURE.md, "Git"). `None` on `CheckoutInfo::git` means the path
 /// isn't a git repo at all, not that status is merely unknown yet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitStatus {
@@ -414,7 +414,7 @@ pub struct CheckoutInfo {
     pub git: Option<GitStatus>,
     /// True for a repo's original working directory (as configured), false
     /// for a linked worktree Argus created. The primary checkout can't be
-    /// removed — see DESIGN.md §4 Level 2.
+    /// removed: it is the repository the user already had.
     pub primary: bool,
 }
 
@@ -489,7 +489,7 @@ impl ProjectInfo {
 /// background; they are simply not shown.
 ///
 /// Deliberately not a fourth navigation column: the left-to-right spine is
-/// project → checkout → pane (DESIGN.md §4), and workspaces sit *above*
+/// project → checkout → pane, and workspaces sit *above*
 /// that as a scope switch rather than another step along it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceInfo {

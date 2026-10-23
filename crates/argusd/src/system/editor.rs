@@ -1,4 +1,4 @@
-//! Opening a file in the user's own editor, as a pane (DESIGN.md §6, §9 M4).
+//! Opening a file in the user's own editor, as a pane.
 
 use std::path::Path;
 

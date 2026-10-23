@@ -1,5 +1,5 @@
-//! A checkout's diff flattened into the rows the cursor moves over
-//! (DESIGN.md §9 M4). Comments anchor to lines, so only lines are
+//! A checkout's diff flattened into the rows the cursor moves over.
+//! Comments anchor to lines, so only lines are
 //! selectable — moving down from a file's last line lands on the next
 //! file's first, never on a header you'd have to skip by hand.
 //!

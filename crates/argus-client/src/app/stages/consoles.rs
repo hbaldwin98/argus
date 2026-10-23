@@ -1,8 +1,8 @@
 //! The shells that belong to no checkout: the daemon's list of them, which
 //! one the stage shows, and asking for another.
 //!
-//! Consoles do not travel in the tree (DESIGN.md, "Panes and terminal
-//! state"), so the selection cannot name one by its place there: it holds
+//! Consoles do not travel in the tree (ARCHITECTURE.md, "Panes and
+//! terminals"), so the selection cannot name one by its place there: it holds
 //! the console picked on the rail by id. The list is only ever the daemon's
 //! latest `ServerMsg::Consoles`, so a console asked for is on the rail once
 //! the daemon says it is running, and one closed is gone once it says so.

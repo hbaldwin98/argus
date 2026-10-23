@@ -36,8 +36,7 @@ impl Daemon {
     /// status changes (a commit, a stash, an agent editing a file) without
     /// needing a pane event to trigger it. `git::status` shells out to
     /// libgit2, so each tick runs on a blocking-pool thread rather than the
-    /// async runtime's own workers (see DESIGN.md §8, "never on the input
-    /// thread"). A real file watcher is a sharper version of this same idea
+    /// async runtime's own workers, never on the input path. A real file watcher is a sharper version of this same idea
     /// for later — this poll is the read-only M2 slice.
     ///
     /// A checkout with no pane open has nobody waiting on its dirty count,

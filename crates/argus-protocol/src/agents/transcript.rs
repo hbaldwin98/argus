@@ -23,7 +23,7 @@ pub const MAX_ENTRIES: usize = 500;
 
 /// One thing said or done in a session.
 ///
-/// Its JSON is also a line of the neutral transcript format (DESIGN.md,
+/// Its JSON is also a line of the neutral transcript format (docs/agents.md,
 /// "Transcripts"), so the format cannot drift from what a client is sent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

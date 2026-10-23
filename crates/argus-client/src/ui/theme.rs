@@ -1,5 +1,5 @@
 //! Every color the UI draws, keyed by the *role* it plays rather than
-//! hardcoded at the call site (DESIGN.md §6).
+//! hardcoded at the call site.
 //!
 //! The presets are the four [Catppuccin](https://catppuccin.com) flavors,
 //! in truecolor. Indexed-palette approximations were tried first and are

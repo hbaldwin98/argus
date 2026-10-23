@@ -159,8 +159,8 @@ pub enum ClientMsg {
     CreateWorkspace {
         name: String,
     },
-    /// Ask for this checkout's uncommitted changes, for the review viewer
-    /// (DESIGN.md §9 M4). A request rather than a subscription: a diff is
+    /// Ask for this checkout's uncommitted changes, for the review viewer.
+    /// A request rather than a subscription: a diff is
     /// expensive to compute and only interesting while it's on screen.
     ///
     /// Always answered under `request_id`, by a `ServerMsg::Review` or its

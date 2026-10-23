@@ -155,7 +155,7 @@ impl Daemon {
 
     /// `git worktree add`s a new checkout in `base`'s repository and appends
     /// it to the tree. Placed under `.argus/worktrees/<branch>` beside the
-    /// repository's primary checkout (DESIGN.md §4 Level 2), regardless of
+    /// repository's primary checkout, regardless of
     /// which checkout `base` itself is — so worktrees always nest under the
     /// one directory, not under each other.
     ///
@@ -288,8 +288,7 @@ impl Daemon {
     /// Kills every pane in a linked-worktree checkout, `git worktree
     /// remove`s it, deletes its branch (best-effort — a branch left behind
     /// costs nothing), and refuses outright on the primary checkout, which
-    /// is the repo the user already had, not Argus's to delete (DESIGN.md
-    /// §4 Level 2).
+    /// is the repo the user already had, not Argus's to delete.
     ///
     /// Ordered so a refusal costs nothing: every check that can be made
     /// while the agents are still running is made first, and the panes die

@@ -4,14 +4,14 @@
 //! failure is an error, never a panic.
 //!
 //! The rule is the store's own (`store/mod.rs`): "a write is a transaction
-//! rather than a rewrite of everything". DESIGN.md names the writes where a
+//! rather than a rewrite of everything". These are the writes where a
 //! half would show: the pane table replaced "in one transaction" (Session
 //! restore), a feature's slug "made unique by suffix inside the
 //! transaction" and a capture written "in one transaction" (Features and
 //! the decision board), a removed feature dropping its views "in the same
 //! transaction" (saved views), and a transfer written "in one store
-//! transaction". `WRITES` is every write; DESIGN.md's "Store writes under
-//! faults" says what is left out and why.
+//! transaction". `WRITES` is every write; ARCHITECTURE.md, "Storage",
+//! says what is left out and why.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -402,7 +402,7 @@ fn every_write_is_whole_or_absent_when_failed_at_any_step_or_its_commit() {
 /// that checkout points at it: stopped at any step or at its commit, the
 /// open leaves no feature, or the feature with its checkout on it, never a
 /// feature its own checkout is not on. The owner's decision of 2026-10-18,
-/// recorded in DESIGN.md's "Store writes under faults".
+/// recorded here.
 #[test]
 fn an_agents_feature_is_never_left_without_its_checkout() {
     let open = |s: &Store| {

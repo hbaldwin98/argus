@@ -7,8 +7,8 @@ keyboard input, paste and resize, and can open a shell on a checkout. Parity wit
 (Workspace / Feature / Checkouts), review, the feature board, history, pickers, mouse forwarding,
 selection and scrollback come later and are listed on the roadmap, not built now.
 
-This slice is built (HUN-171); what follows is the plan it was built from. [`DESIGN.md`](DESIGN.md)
-is current behavior, [`TARGET.md`](TARGET.md) the intended product, and [`ROADMAP.md`](ROADMAP.md)
+This slice is built (HUN-171); what follows is the plan it was built from. [`ARCHITECTURE.md`](ARCHITECTURE.md)
+holds the rules the code is built to, [`TARGET.md`](TARGET.md) the intended product, and [`ROADMAP.md`](ROADMAP.md)
 orders the gap. The findings this plan rests on are under "Findings" at the end.
 
 The screens are drawn on the Design canvas https://claude.ai/artifact/5ad3wYLWu28Y6fqP5aoyBV, page
@@ -100,7 +100,7 @@ back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus"
 
 ### Modules (each answers one question — rows go in a fourth DESIGN table)
 
-The slice's modules, named by where they live now; DESIGN.md's fourth table lists every module since.
+The slice's modules, named by where they live now; each module's `//!` header says what it answers.
 
 | module | answers |
 | --- | --- |

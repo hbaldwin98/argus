@@ -1,5 +1,5 @@
 //! Arbitrary sequences of requests, sent over the socket to a fresh host
-//! each, holding the daemon to what DESIGN.md §"Process model" promises a
+//! each, holding the daemon to what ARCHITECTURE.md, "Protocol", promises a
 //! client:
 //!
 //! - It never drops a connection on its own, hangs, or panics. The daemon
@@ -61,7 +61,7 @@ fn count_host_panics() {
     });
 }
 
-/// How a named request is answered, by DESIGN.md §"Process model" and the
+/// How a named request is answered, by ARCHITECTURE.md, "Protocol", and the
 /// variant's own doc in `connection::message`. Exhaustive, so a new kind
 /// is placed here too.
 enum Answered {
@@ -239,7 +239,7 @@ async fn case(known: &Known, msgs: &[ClientMsg]) -> Result<(), String> {
         }
         if matches!(msg, ClientMsg::Stop | ClientMsg::Restart) {
             // Nothing is pushed after an end's acknowledgement (dispatch,
-            // and DESIGN.md: the daemon "tells every connected client to
+            // and ARCHITECTURE.md: `stop` "also tells every client to
             // exit"), so what is still owed is collected before asking.
             pay(&mut client, &owed).await?;
             owed.clear();

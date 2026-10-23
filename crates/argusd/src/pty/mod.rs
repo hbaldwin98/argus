@@ -1,6 +1,6 @@
 //! One PTY-backed pane: spawns a child process attached to a pty, mirrors its
 //! output into a terminal emulator on a coalesced ~60Hz tick, and broadcasts
-//! the changed cell runs. See DESIGN.md §2 and §8.
+//! the changed cell runs. See ARCHITECTURE.md, "Panes and terminals".
 
 use std::ffi::OsStr;
 use std::io::{Read, Write};
