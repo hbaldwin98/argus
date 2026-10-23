@@ -52,6 +52,19 @@ fn binding_a_side_again_keeps_what_it_holds() {
 }
 
 #[test]
+fn a_side_renumbered_to_a_new_view_keeps_its_screen_when_the_old_view_goes_after() {
+    // GPUI releases a dropped view after the effects that made its successor, so the view a
+    // freed side was given binds it before the one that held it unbinds it.
+    let mut screens = Screens::new();
+    screens.bind(Side::View(0));
+    screens.bind(Side::View(0));
+    screens.unbind(Side::View(0));
+    assert_eq!(screens.apply(frame(4, Side::View(0))), Some(Side::View(0)), "the new view still has its screen");
+    screens.unbind(Side::View(0));
+    assert_eq!(screens.apply(frame(4, Side::View(0))), None, "the last view going takes it");
+}
+
+#[test]
 fn an_unbound_side_forgets_its_rows_and_the_three_always_there_stay() {
     let mut screens = Screens::new();
     screens.bind(Side::Beside(0));

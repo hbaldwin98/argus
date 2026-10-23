@@ -4,7 +4,9 @@
 //! The Workspace's and the console's two sides are always here. A split cell or an extension's
 //! console view has a screen only while a view of that side is alive (`bind`, `unbind`), as the
 //! page makes one per screen it builds; a frame for a side with no screen is dropped, and the
-//! session sends the screen whole when the side is bound again.
+//! session sends the screen whole when the side is bound again. A side is counted, not flagged: the
+//! session gives a freed side to the next view, and GPUI releases the old view after the new one
+//! has bound it, so the screen goes only with the last view of it.
 //!
 //! There is at most one selection, since a press anywhere clears every other (SHELL-INPUT-5), and
 //! it goes when its side shows another pane's frame.
@@ -24,7 +26,8 @@ pub struct Marked {
 }
 
 pub struct Screens {
-    held: Vec<(Side, Arc<Screen>)>,
+    /// Each side's screen and how many views hold it; the three always there are never counted down.
+    held: Vec<(Side, usize, Arc<Screen>)>,
     /// What a side with no screen reads as.
     none: Arc<Screen>,
     marked: Option<Marked>,
@@ -32,41 +35,47 @@ pub struct Screens {
 
 impl Screens {
     pub fn new() -> Self {
-        let held = [Side::Workspace, Side::First, Side::Second].map(|side| (side, Arc::new(Screen::new()))).to_vec();
+        let held = [Side::Workspace, Side::First, Side::Second].map(|side| (side, 0, Arc::new(Screen::new()))).to_vec();
         Self { held, none: Arc::new(Screen::new()), marked: None }
     }
 
-    /// Gives `side` a screen if it has none. One that has is left as it is.
+    /// Gives `side` a screen if it has none. One that has is left as it is, with one more view of it.
     pub fn bind(&mut self, side: Side) {
-        if !self.held.iter().any(|(held, _)| *held == side) {
-            self.held.push((side, Arc::new(Screen::new())));
+        match self.held.iter_mut().find(|(held, ..)| *held == side) {
+            Some((_, views, _)) => *views += 1,
+            None => self.held.push((side, 1, Arc::new(Screen::new()))),
         }
     }
 
-    /// Takes `side`'s screen, and the selection on it, away. The three the window always has stay.
-    /// Whether a selection went with it.
+    /// One view of `side` went: with the last, its screen and the selection on it go too. The three
+    /// the window always has stay. Whether a selection went with it.
     pub fn unbind(&mut self, side: Side) -> bool {
         if matches!(side, Side::Workspace | Side::First | Side::Second) {
             return false;
         }
-        self.held.retain(|(held, _)| *held != side);
+        let Some(at) = self.held.iter().position(|(held, ..)| *held == side) else { return false };
+        self.held[at].1 -= 1;
+        if self.held[at].1 > 0 {
+            return false;
+        }
+        self.held.remove(at);
         self.mark_off(side)
     }
 
     /// The screen of `side`; an empty one for a side with none.
     pub fn of(&self, side: Side) -> &Arc<Screen> {
-        self.held.iter().find(|(held, _)| *held == side).map_or(&self.none, |(_, screen)| screen)
+        self.held.iter().find(|(held, ..)| *held == side).map_or(&self.none, |(.., screen)| screen)
     }
 
     /// Applies `frame` to its side's screen; the side, when it has one.
     pub fn apply(&mut self, frame: Frame) -> Option<Side> {
         let side = frame.side;
-        let at = self.held.iter().position(|(held, _)| *held == side)?;
+        let at = self.held.iter().position(|(held, ..)| *held == side)?;
         // A different pane's rows are not the old pane's: what was selected is gone (SHELL-SCREEN-4).
-        if self.held[at].1.pane() != Some(frame.pane) {
+        if self.held[at].2.pane() != Some(frame.pane) {
             self.mark_off(side);
         }
-        Arc::make_mut(&mut self.held[at].1).apply(frame);
+        Arc::make_mut(&mut self.held[at].2).apply(frame);
         Some(side)
     }
 
