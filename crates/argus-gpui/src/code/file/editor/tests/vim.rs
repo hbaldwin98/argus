@@ -41,8 +41,14 @@ fn mode(cx: &mut TestAppContext, opened: &Opened) -> Option<String> {
     label(cx, opened, "vim-mode")
 }
 
+/// The window's Mod chord: Cmd on macOS, Ctrl elsewhere.
 fn ctrl(key: &str) -> String {
     format!("{}-{key}", if cfg!(target_os = "macos") { "cmd" } else { "ctrl" })
+}
+
+/// Vim's own Ctrl chord, which is Control on macOS too, as in Vim and the page's CodeMirror.
+fn vim_ctrl(key: &str) -> String {
+    format!("ctrl-{key}")
 }
 
 fn after(cx: &mut TestAppContext, ms: u64) {
@@ -134,7 +140,7 @@ fn u_undoes_a_command_and_the_undo_is_written(cx: &mut TestAppContext) {
     after(cx, 250);
     let writes = sent(&opened);
     assert_eq!(writes.len(), 1, "one write for the burst, which nets to nothing: {writes:?}");
-    press(cx, &opened, &ctrl("r"));
+    press(cx, &opened, &vim_ctrl("r"));
     assert_eq!(text(cx).as_deref(), Some("def\n"), "Ctrl-r redoes");
 }
 
@@ -195,11 +201,11 @@ fn ctrl_p_is_k_in_normal_and_visual_mode_and_go_to_file_in_insert_mode(cx: &mut 
     press(cx, &opened, "j");
     press(cx, &opened, "j");
     assert_eq!(row(cx), 3);
-    press(cx, &opened, &ctrl("p"));
+    press(cx, &opened, &vim_ctrl("p"));
     assert_eq!(row(cx), 2, "normal: up a line");
     assert_eq!(sent(&opened), Vec::<String>::new());
     press(cx, &opened, "v");
-    press(cx, &opened, &ctrl("p"));
+    press(cx, &opened, &vim_ctrl("p"));
     assert_eq!(row(cx), 1, "visual: up a line");
     assert_eq!(sent(&opened), Vec::<String>::new());
     press(cx, &opened, "escape");
