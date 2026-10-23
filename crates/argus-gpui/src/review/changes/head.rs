@@ -7,7 +7,7 @@
 //! Every press sends the call the review's keys send; nothing on screen changes until the session
 //! says so, but the turn back to the files, which is the window's own.
 
-use argus_desktop_core::connection::page::{Call, ReviewPage};
+use argus_desktop_core::connection::page::{Call, ReviewPage, ReviewReading};
 use argus_desktop_core::keys::keymap::Action;
 use argus_desktop_core::review::staging::StageGesture;
 use gpui_kit::component::menu::DropdownMenu as _;
@@ -85,45 +85,8 @@ impl Changes {
             .bg(tokens.bg_surface)
             .border_b_1()
             .border_color(tokens.line)
-            .when(back, |head| {
-                head.child(
-                    ghost("review-back", "Back to the files", tokens).tooltip(tip("Back to the files")).child(Glyph::Back.at(14.0)).on_click(cx.listener(|this, _, _, cx| {
-                        this.narrow.back();
-                        cx.notify();
-                    })),
-                )
-            })
-            // `.path`: the folders faint, cut short from the end when there is no room, and the
-            // file's own name bright, never cut.
-            .when_some(file, |head, file| {
-                let dir = file.dir.trim_end_matches('/');
-                head.child(
-                    h_flex()
-                        .id("review-path")
-                        .test_support()
-                        .aria_label(SharedString::from(file.path.clone()))
-                        .flex_1()
-                        .min_w(rem(120.0))
-                        .gap(rem(tokens.sp_4))
-                        .items_center()
-                        .overflow_hidden()
-                        .typed(tokens.type_heading)
-                        .tooltip(tip(SharedString::from(file.path.clone())))
-                        .when(!dir.is_empty(), |path| {
-                            path.child(
-                                div()
-                                    .min_w_0()
-                                    .flex_shrink(1.0)
-                                    .truncate()
-                                    .text_color(tokens.fg_faint)
-                                    .weighted(tokens.weight_regular)
-                                    .child(SharedString::from(dir.replace('/', " / "))),
-                            )
-                            .child(div().flex_shrink_0().text_color(tokens.fg_fainter).child("/"))
-                        })
-                        .child(div().flex_shrink_0().text_color(tokens.fg).child(SharedString::from(file.name.clone()))),
-                )
-            })
+            .when(back, |head| head.child(self.back(tokens, cx)))
+            .when_some(file, |head, file| head.child(path(&file.path, tokens)))
             // `.meta`: the status, the counts, and how many hunks.
             .when_some(file, |head, file| {
                 let (letter, colour, said) = status(file.kind, tokens);
@@ -202,6 +165,56 @@ impl Changes {
             )
     }
 
+    /// The way back to the files, while they and the diff take turns.
+    fn back(&self, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+        ghost("review-back", "Back to the files", tokens).tooltip(tip("Back to the files")).child(Glyph::Back.at(14.0)).on_click(cx.listener(|this, _, _, cx| {
+            this.narrow.back();
+            cx.notify();
+        }))
+    }
+
+    /// `.view-head` over a file with no change, read whole: its path, that it is unchanged, and
+    /// the way to read it in Code.
+    pub(super) fn reading_head(&self, reading: &ReviewReading, back: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+        h_flex()
+            .id("review-diff-head")
+            .flex_shrink_0()
+            .min_h(rem(tokens.sp_44))
+            .py(rem(tokens.sp_8))
+            .pl(rem(tokens.sp_12))
+            .pr(rem(10.0))
+            .gap(rem(tokens.sp_8))
+            .items_center()
+            .bg(tokens.bg_surface)
+            .border_b_1()
+            .border_color(tokens.line)
+            .when(back, |head| head.child(self.back(tokens, cx)))
+            .child(path(&reading.path, tokens))
+            .child(
+                div()
+                    .id("review-unchanged")
+                    .test_support()
+                    .aria_label("Unchanged")
+                    .flex_shrink_0()
+                    .px(rem(tokens.sp_8))
+                    .rounded(rem(tokens.r_pill))
+                    .border_1()
+                    .border_color(tokens.line_strong)
+                    .typed(tokens.type_small)
+                    .text_color(tokens.fg_muted)
+                    .child("Unchanged"),
+            )
+            .child(
+                h_flex().flex_shrink_0().ml_auto().child(
+                    ghost("review-open", "Read it in Code", tokens)
+                        .tooltip(tip("Read it in Code"))
+                        .child(Glyph::Code.at(14.0))
+                        .child("Open")
+                        .on_click(cx.listener(|this, _, _, cx| this.ask(Call::ReviewAction { action: Action::OpenCode }, cx))),
+                ),
+            )
+    }
+
     /// `.review-btn`: the review's drafts, counted, which opens the panel that sends them.
     fn review_button(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let pending = page.drafts.as_ref()?.drafts.len();
@@ -240,6 +253,28 @@ impl Changes {
                 .on_click(cx.listener(|this, _, _, cx| this.submit.update(cx, |submit, cx| submit.toggle(cx)))),
         )
     }
+}
+
+/// `.path`: the folders faint, cut short from the end when there is no room, and the file's own
+/// name bright, never cut.
+fn path(path: &str, tokens: &Tokens) -> impl IntoElement {
+    let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
+    h_flex()
+        .id("review-path")
+        .test_support()
+        .aria_label(SharedString::from(path.to_owned()))
+        .flex_1()
+        .min_w(rem(120.0))
+        .gap(rem(tokens.sp_4))
+        .items_center()
+        .overflow_hidden()
+        .typed(tokens.type_heading)
+        .tooltip(tip(SharedString::from(path.to_owned())))
+        .when(!dir.is_empty(), |path| {
+            path.child(div().min_w_0().flex_shrink(1.0).truncate().text_color(tokens.fg_faint).weighted(tokens.weight_regular).child(SharedString::from(dir.replace('/', " / "))))
+                .child(div().flex_shrink_0().text_color(tokens.fg_fainter).child("/"))
+        })
+        .child(div().flex_shrink_0().text_color(tokens.fg).child(SharedString::from(name.to_owned())))
 }
 
 #[cfg(test)]

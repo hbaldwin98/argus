@@ -204,7 +204,9 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
   agent's pane, and **Expand** puts it back on the stage. Dragging the sidebar's **Git** item onto
   a pane opens the review there directly. Beside the work it stays open while you go elsewhere, and
   Git brings it in sight. A file's **Open** reads it in the Code stage at the cursor's line; beside
-  the work the Changes pane stays where it is. Narrower than 760px it shows the files first, and a
+  the work the Changes pane stays where it is. Its **Files** tab lists the whole checkout by folder,
+  each change marked and each folder counting the changes under it; **Changed** shows only those,
+  and the find field matches any path. A changed file opens its diff, and any other is read whole. Narrower than 760px it shows the files first, and a
   file's diff once you open one. Expand works the same way for any panel that can fill the stage,
   such as the browsers and extensions' views.
 - **Recent sessions**: the clock on a repository's rail row lists its agent sessions across every

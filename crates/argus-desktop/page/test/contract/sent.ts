@@ -7115,6 +7115,12 @@ export const sent = [
     "committing": false,
     "staged": false
   },
+  "tree": {
+    "files": [],
+    "listed": false,
+    "loading": false,
+    "reading": null
+  },
   "type": "review",
   "unstaged": null
 },

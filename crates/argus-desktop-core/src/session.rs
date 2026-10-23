@@ -342,6 +342,7 @@ impl Session {
         self.dialogs.set_abilities(crate::review::dialog::Abilities {
             index_writes: self.status.daemon_can(argus_protocol::connection::hello::INDEX_WRITES),
             drafts: self.status.daemon_can(argus_protocol::connection::hello::REVIEW_DRAFTS),
+            files: self.status.daemon_can(CODE),
         });
         self.sessions = Sessions::default();
         self.older = OlderDaemon::default();
@@ -794,6 +795,14 @@ impl Session {
             Call::ReviewJump { gesture } => self.review_jump(gesture),
             Call::OpenChange { staged, path } => {
                 self.dialogs.open_change(staged, &path, &mut self.passing);
+                self.finish()
+            }
+            Call::ReviewFiles => {
+                self.dialogs.list_files(|| self.awaited.name(), &mut self.out);
+                self.finish()
+            }
+            Call::ReviewRead { path } => {
+                self.dialogs.read_file(path, || self.awaited.name(), &mut self.out);
                 self.finish()
             }
             Call::Stage { gesture } => {
@@ -4215,6 +4224,50 @@ mod tests {
         assert!(s.stages.now() == Stage::Checkouts, "over the stage it was opened over");
     }
 
+    /// The Files tab lists the checkout, reads a file with no change whole,
+    /// and gives way to a change opened; Open reads the file read in Code.
+    #[test]
+    fn the_files_tab_lists_the_checkout_and_reads_an_unchanged_file_whole() {
+        use argus_protocol::{CodeFile, CodeLine, CodeTree};
+        let review = |s: &mut Session| {
+            s.events(0).into_iter().find_map(|e| match e {
+                Event::Review(page) => Some(*page),
+                _ => None,
+            })
+        };
+        let mut s = session(Hello::this_build());
+        let sent = s.open_review(CheckoutId(100));
+        let [ClientMsg::Review { request_id: unstaged, .. }, ..] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        s.receive(reviewed(argus_protocol::ReviewBase::Unstaged, *unstaged));
+        assert!(review(&mut s).and_then(|page| page.tree).is_some_and(|tree| !tree.listed), "offered, not yet listed");
+        let sent = s.call(Call::ReviewFiles);
+        let [ClientMsg::ListCode { request_id, version: CodeVersion::WorkingTree, .. }] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        let files = vec!["README.md".to_owned(), "src/brief.rs".to_owned()];
+        s.receive(ServerMsg::CodeTree(CodeTree { request_id: *request_id, checkout: CheckoutId(100), version: CodeVersion::WorkingTree, files: files.clone(), changes: Vec::new() }));
+        assert_eq!(review(&mut s).and_then(|page| page.tree).map(|tree| tree.files), Some(files), "the Code stage passed on what it did not ask for");
+
+        let sent = s.call(Call::ReviewRead { path: "README.md".into() });
+        let [ClientMsg::ReadCode { request_id, path, .. }] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        assert_eq!(path, "README.md");
+        let lines = vec![CodeLine { text: "# Argus".into(), spans: Vec::new(), added: false }];
+        let file = CodeFile { request_id: *request_id, checkout: CheckoutId(100), path: path.clone(), version: CodeVersion::WorkingTree, lines, removed: Vec::new(), symbols: Vec::new(), note: None };
+        s.receive(ServerMsg::Code(Box::new(file)));
+        let reading = review(&mut s).and_then(|page| page.tree).and_then(|tree| tree.reading).expect("a file read whole");
+        assert_eq!((reading.path.as_str(), reading.rows.len(), reading.loading), ("README.md", 1, false));
+
+        let sent = code_asks(s.review_action(Action::OpenCode));
+        assert!(matches!(sent.as_slice(), [ClientMsg::ListCode { .. }, ClientMsg::ReadCode { path, .. }] if path == "README.md"), "Open reads the file on screen");
+        s.code_gesture(CodeGesture::Action { action: Action::GoBack });
+        s.call(Call::ReviewClick { target: ReviewClick::File { file: 0 } });
+        assert_eq!(review(&mut s).and_then(|page| page.tree).and_then(|tree| tree.reading), None, "a change opened puts the file away");
+    }
+
     /// The changes put beside the work are not the stage's to give back:
     /// Open reads the cursor's file in Code and leaves them where they are.
     #[test]
@@ -6225,7 +6278,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 160] = [
+    const CALLS: [&str; 162] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -6382,6 +6435,8 @@ mod tests {
         r#"{"call":"reveal_checkout","checkout":1}"#,
         r#"{"call":"edit","gesture":{"on":"change","checkout":1,"path":"a.rs","base":0,"changes":[{"from":0,"to":1,"insert":"x"}]}}"#,
         r#"{"call":"open_change","staged":true,"path":"a.rs"}"#,
+        r#"{"call":"review_files"}"#,
+        r#"{"call":"review_read","path":"a.rs"}"#,
         r#"{"call":"stage","gesture":{"on":"rows","rows":[3,4]}}"#,
         r#"{"call":"commit","message":"Say why"}"#,
         r#"{"call":"draft_comment","body":"why two?"}"#,

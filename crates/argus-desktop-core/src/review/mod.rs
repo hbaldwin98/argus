@@ -5,6 +5,7 @@
 //! dialog holds and draws is `dialog`'s and `history`'s; the history
 //! gives way to the review of a commit chosen in it.
 
+pub mod checkout_files;
 pub mod comment_box;
 pub mod dialog;
 pub mod drafts;
@@ -132,6 +133,13 @@ impl Dialogs {
                 }
                 say.push(Event::Notice { text: message });
             }
+            // The Files tab's list and file, which the Code stage passed on as not its own.
+            code @ (ServerMsg::CodeTree(_) | ServerMsg::Code(_)) => {
+                return match self.review_mut() {
+                    Some(dialog) => dialog.receive_code(code),
+                    None => Some(code),
+                };
+            }
             other => return Some(other),
         }
         None
@@ -151,6 +159,9 @@ impl Dialogs {
         let Some(review) = self.review_mut() else {
             return false;
         };
+        if review.files_refused(id, reason) {
+            return true;
+        }
         if review.context_failed(id) || review.change_refused(id) {
             say.push(Event::Notice { text: reason.clone() });
             return true;
@@ -366,6 +377,16 @@ impl Dialogs {
             say.push(Event::Notice { text });
         }
         self.remember_layout();
+    }
+
+    /// The Files tab shown: the checkout listed again.
+    pub fn list_files(&mut self, id: impl FnOnce() -> u64, out: &mut Vec<ClientMsg>) {
+        out.extend(self.review.as_mut().and_then(|d| d.list_files(id())));
+    }
+
+    /// A file with no change, read whole in the review.
+    pub fn read_file(&mut self, path: String, id: impl FnOnce() -> u64, out: &mut Vec<ClientMsg>) {
+        out.extend(self.review.as_mut().and_then(|d| d.read_file(path, id())));
     }
 
     /// A box ticked, files moved or a hunk taken, sent to the daemon.

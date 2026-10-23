@@ -25,11 +25,12 @@ pub mod head;
 pub mod lists;
 pub mod narrow;
 pub mod side;
+pub mod tree;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use argus_desktop_core::connection::page::{Call, ReviewClick, ReviewPage};
+use argus_desktop_core::connection::page::{Call, ReviewClick, ReviewPage, ReviewReading};
 use argus_desktop_core::review::staging::StageGesture;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
@@ -79,6 +80,8 @@ pub struct Changes {
     caller: Caller,
     files: Entity<Files>,
     diff: Entity<DiffView>,
+    /// A file with no change, read whole from the Files tab in place of the diff.
+    whole: Entity<DiffView>,
     comment: Entity<CommentBox>,
     split: Entity<Split>,
     submit: Entity<Submit>,
@@ -102,6 +105,8 @@ impl Changes {
         let files = cx.new(|cx| Files::new(heard.clone(), caller.clone(), window, cx));
         let comment = cx.new(|cx| CommentBox::new(heard.clone(), caller.clone(), Rc::new(ways::Review), window, cx));
         let diff = cx.new(|cx| DiffView::new("review-diff", true, true, cx));
+        let tokens = *Tokens::global(cx);
+        let whole = cx.new(|cx| DiffView::new("review-whole", true, false, cx).reading(&tokens));
         let split = cx.new(|cx| Split::new("review-split", "Resize the files", FILES, FILES_MIN, FILES_MAX, cx));
         let submit = cx.new(|cx| Submit::new(heard.clone(), caller.clone(), window, cx));
         let resized = cx.observe(&split, |_, _, cx| cx.notify());
@@ -134,7 +139,7 @@ impl Changes {
             };
             this.ask(Call::ReviewClick { target }, cx);
         });
-        Self { heard, caller, files, diff, comment, split, submit, cards: HashMap::new(), last_tick: None, narrow: Narrow::new(), focus: cx.focus_handle(), _subscriptions: [pressed, resized, opened] }
+        Self { heard, caller, files, diff, whole, comment, split, submit, cards: HashMap::new(), last_tick: None, narrow: Narrow::new(), focus: cx.focus_handle(), _subscriptions: [pressed, resized, opened] }
     }
 
     /// A box ticked: its line, or with Shift every changed line from the last box ticked to it.
@@ -209,6 +214,8 @@ impl Changes {
             diff.show(&page.rows, page.split, slot, cx);
         });
         self.place_notes(page, window, cx);
+        let whole = page.tree.as_ref().and_then(|tree| tree.reading.as_ref()).map(|reading| reading.rows.as_slice()).unwrap_or_default();
+        self.whole.update(cx, |view, cx| view.show(whole, false, None, cx));
         self.submit.update(cx, |submit, cx| submit.follow(page.drafts.as_ref(), window, cx));
     }
 
@@ -226,27 +233,42 @@ impl Changes {
         }
     }
 
+    /// A file read whole: loading bars, or why it has no lines, or its lines.
+    fn reading_body(&self, reading: &ReviewReading, tokens: &Tokens) -> gpui_kit::AnyElement {
+        if reading.loading {
+            return div().size_full().bg(tokens.bg_sunken).child(ghosts("review-loading", &BARS, tokens)).into_any_element();
+        }
+        if let Some(why) = &reading.note {
+            return said(why, tokens);
+        }
+        div().id("review-whole-rows").test_support().size_full().min_h_0().bg(tokens.bg_sunken).child(self.whole.clone()).into_any_element()
+    }
+
     /// Loading bars, or why there is no diff, or the diff.
     fn body(&self, page: &ReviewPage, tokens: &Tokens) -> gpui_kit::AnyElement {
         if page.loading {
             return div().size_full().bg(tokens.bg_sunken).child(ghosts("review-loading", &BARS, tokens)).into_any_element();
         }
         if let Some(why) = &page.empty {
-            // `.review-empty`: 24px about a line in the body type.
-            return div()
-                .id("review-empty")
-                .test_support()
-                .aria_label(SharedString::from(why.clone()))
-                .size_full()
-                .p(rem(tokens.sp_24))
-                .bg(tokens.bg_sunken)
-                .typed(tokens.type_body)
-                .text_color(tokens.fg_muted)
-                .child(SharedString::from(why.clone()))
-                .into_any_element();
+            return said(why, tokens);
         }
         div().id("review-rows").test_support().size_full().min_h_0().child(self.diff.clone()).into_any_element()
     }
+}
+
+/// `.review-empty`: why there is nothing to read, 24px about a line in the body type.
+fn said(why: &str, tokens: &Tokens) -> gpui_kit::AnyElement {
+    div()
+        .id("review-empty")
+        .test_support()
+        .aria_label(SharedString::from(why.to_owned()))
+        .size_full()
+        .p(rem(tokens.sp_24))
+        .bg(tokens.bg_sunken)
+        .typed(tokens.type_body)
+        .text_color(tokens.fg_muted)
+        .child(SharedString::from(why.to_owned()))
+        .into_any_element()
 }
 
 /// Whether the review the session holds is split, for the pill that is already on.
@@ -264,14 +286,12 @@ impl Render for Changes {
         // The diff's own width: the pane's, less the list column's beside it.
         let across = self.narrow.width(window.rem_size()) - if narrow { 0.0 } else { self.split.read(cx).width() };
         let fold = across > 0.0 && across < head::TOOLS_FOLD;
-        let diff = v_flex()
-            .id("review-diff-pane")
-            .relative()
-            .size_full()
-            .min_w_0()
-            .child(self.head(&page, narrow, fold, &tokens, cx))
-            .child(div().flex_1().min_h_0().child(self.body(&page, &tokens)))
-            .child(self.submit.clone());
+        let reading = page.tree.as_ref().and_then(|tree| tree.reading.clone());
+        let (head, body) = match &reading {
+            Some(reading) => (self.reading_head(reading, narrow, &tokens, cx).into_any_element(), self.reading_body(reading, &tokens)),
+            None => (self.head(&page, narrow, fold, &tokens, cx).into_any_element(), self.body(&page, &tokens)),
+        };
+        let diff = v_flex().id("review-diff-pane").relative().size_full().min_w_0().child(head).child(div().flex_1().min_h_0().child(body)).child(self.submit.clone());
         // Narrow, the files and the diff take turns; wide, the files stand beside the diff.
         let body = if !narrow {
             h_flex()

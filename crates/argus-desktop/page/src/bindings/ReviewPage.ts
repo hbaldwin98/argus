@@ -5,6 +5,7 @@ import type { DraftsPage } from "./DraftsPage";
 import type { ReviewFile } from "./ReviewFile";
 import type { ReviewJump } from "./ReviewJump";
 import type { ReviewSection } from "./ReviewSection";
+import type { ReviewTree } from "./ReviewTree";
 import type { StagingPage } from "./StagingPage";
 
 /**
@@ -59,4 +60,9 @@ staging: StagingPage | null,
 /**
  * The review being written, when the daemon keeps drafts.
  */
-drafts: DraftsPage | null, };
+drafts: DraftsPage | null, 
+/**
+ * The Files tab's list and the file read whole, when the daemon reads code and the review is
+ * of working changes.
+ */
+tree: ReviewTree | null, };

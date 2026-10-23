@@ -1,6 +1,7 @@
 //! The Changes pane's list column, as the prototype draws it: a head saying what is listed (the
-//! changes and how many, with the switch between a flat list and one by folder, and the field
-//! that finds a changed file), the lists (`lists`), and the commit box under them (`commit`). A
+//! changes or the checkout's files and how many of each, with the switch between a flat list and
+//! one by folder or the Changed filter, and the field that finds a file), the lists (`lists`) or
+//! the files (`tree`), and the commit box under the lists (`commit`). A
 //! review of one commit lists its files flat, and a review from a daemon too old to stage picks
 //! its side. The field that jumps among the files (`f`) stands in for the find field while open.
 //!
@@ -12,6 +13,8 @@
 //! it shuts (SHARED-4). The field's keys are the `Jump` place's, answered in the key walk
 //! (`keys/field`): Up and Down (or Ctrl N and Ctrl P) step, Enter chooses and Escape shuts the
 //! field and not the stage, run ahead of the input's own handling of them.
+
+use std::collections::HashSet;
 
 use argus_desktop_core::connection::page::{Call, ReviewClick, ReviewJumpGesture, ReviewPage};
 use argus_desktop_core::keys::keymap::Place;
@@ -53,6 +56,11 @@ pub struct Files {
     pub(super) areas: Areas,
     /// The lists are by folder rather than flat: the window's own, never sent.
     pub(super) tree: bool,
+    /// The Files tab is shown rather than the changes, its folders open, and whether it shows only
+    /// what holds a change: the window's own.
+    pub(super) checkout: bool,
+    pub(super) folders: HashSet<String>,
+    pub(super) changed_only: bool,
     commit: Entity<CommitBox>,
     /// What the field held when the session was last told, so the empty it is
     /// put back to when it shuts says nothing.
@@ -131,6 +139,9 @@ impl Files {
             keys: cx.focus_handle(),
             areas: Areas::default(),
             tree: false,
+            checkout: false,
+            folders: HashSet::new(),
+            changed_only: false,
             commit,
             known: SharedString::default(),
             open: false,
@@ -229,22 +240,57 @@ impl Files {
                     cx.notify();
                 }))
         };
+        let checkout = self.checkout;
+        let all = page.tree.as_ref().filter(|tree| tree.listed).map_or_else(|| "\u{2026}".to_owned(), |tree| tree.files.len().to_string());
+        let tab = |id: &'static str, words: &'static str, n: String, files: bool, cx: &mut Context<Self>| {
+            segment::pill(id, Role::Tab, checkout == files, tokens).child(words).child(segment::count(n, tokens)).on_click(cx.listener(move |this, _, window, cx| this.show_tab(files, window, cx)))
+        };
+        let changed = self.changed_only;
+        let find = if checkout { "Find a file in the checkout" } else { "Find a changed file" };
         head.child(
             row.child(
                 segment::track("review-list-what", "What the list shows", Role::TabList, tokens)
-                    .child(segment::pill("review-list-changes", Role::Tab, true, tokens).child("Changes").child(segment::count(files.to_string(), tokens))),
+                    .child(tab("review-list-changes", "Changes", files.to_string(), false, cx))
+                    .when(page.tree.is_some(), |tabs| tabs.child(tab("review-list-files", "Files", all, true, cx))),
             )
             .child(div().flex_1())
-            .child(mode("review-list-flat", "As a list", Glyph::List, false, !self.tree, cx))
-            .child(mode("review-list-tree", "By folder", Glyph::Tree, true, self.tree, cx)),
+            .when(!checkout, |row| {
+                row.child(mode("review-list-flat", "As a list", Glyph::List, false, !self.tree, cx)).child(mode("review-list-tree", "By folder", Glyph::Tree, true, self.tree, cx))
+            })
+            .when(checkout, |row| {
+                row.child(
+                    ghost("review-list-changed", "Changed", tokens)
+                        .aria_selected(changed)
+                        .when(changed, |button| button.bg(tokens.fill).text_color(tokens.fg).border_color(tokens.line_strong))
+                        .tooltip(tip("Only folders and files with changes"))
+                        .child("Changed")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.changed_only = !this.changed_only;
+                            cx.notify();
+                        })),
+                )
+            }),
         )
         .child(
             div()
                 .id("review-find-field")
                 .min_w_0()
-                .child(Input::new(&self.find).id("review-find").small().h(rem(tokens.control_h_sm)).prefix(Glyph::Search.at(14.0)).aria_label("Find a changed file")),
+                .child(Input::new(&self.find).id("review-find").small().h(rem(tokens.control_h_sm)).prefix(Glyph::Search.at(14.0)).aria_label(find)),
         )
         .into_any_element()
+    }
+
+    /// A tab pressed: the Files tab asks for the checkout's files again each time it is shown.
+    fn show_tab(&mut self, files: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if files {
+            self.ask(Call::ReviewFiles, cx);
+        }
+        if self.checkout != files {
+            self.checkout = files;
+            let words = if files { "Find a file in the checkout" } else { "Find a changed file" };
+            self.find.update(cx, |find, cx| find.set_placeholder(words, window, cx));
+        }
+        cx.notify();
     }
 
     /// The field that jumps among the files, over them while it is open. The page's `Changed
@@ -328,7 +374,14 @@ impl Render for Files {
         };
         // Both sides' lists while the field is shut; its matches, of the side on screen, while open.
         let listed = !page.sections.is_empty() && page.jump.is_none();
-        let list = if listed { self.sections(&page, &tokens, cx).into_any_element() } else { self.list(&page, &tokens, cx).into_any_element() };
+        let checkout = self.checkout && page.jump.is_none() && page.tree.is_some();
+        let list = if checkout {
+            self.checkout(&page, &tokens, cx).into_any_element()
+        } else if listed {
+            self.sections(&page, &tokens, cx).into_any_element()
+        } else {
+            self.list(&page, &tokens, cx).into_any_element()
+        };
         // Under the head, `.review-files`: 12px in from every edge, 8px between its parts.
         // `.side`: on the chrome colour, the head, the lists, and the commit box at the foot.
         v_flex()
@@ -339,7 +392,7 @@ impl Render for Files {
             .child(self.side(&page, &tokens, cx))
             .when(page.jump.is_some(), |side| side.child(div().p(rem(10.0)).border_b_1().border_color(tokens.line).child(self.jump(&tokens))))
             .child(list)
-            .when(page.staging.is_some(), |side| side.child(self.commit.clone()))
+            .when(page.staging.is_some() && !checkout, |side| side.child(self.commit.clone()))
             // The carry takes the keys here, so Escape drops it before the stage hears it.
             .child(
                 div()

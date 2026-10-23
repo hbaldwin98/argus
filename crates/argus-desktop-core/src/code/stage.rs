@@ -385,11 +385,13 @@ impl Code {
     pub fn receive(&mut self, msg: ServerMsg) -> Option<ServerMsg> {
         let stage = self.stage.as_mut();
         match msg {
-            ServerMsg::CodeTree(tree) => {
-                if let Some(stage) = stage {
+            // A list or a file another reader asked for (the Changes pane's Files) goes on to it.
+            ServerMsg::CodeTree(tree) => match stage {
+                Some(stage) if stage.tree_asked == Some(tree.request_id) => {
                     stage.receive_tree(tree);
                 }
-            }
+                _ => return Some(ServerMsg::CodeTree(tree)),
+            },
             // The Files panel asks for folders too, so a listing that is not
             // the stage's own root goes on to it.
             ServerMsg::CheckoutDir(dir) => {
@@ -398,11 +400,12 @@ impl Code {
                 }
                 return Some(ServerMsg::CheckoutDir(dir));
             }
-            ServerMsg::Code(file) => {
-                if let Some(stage) = stage {
+            ServerMsg::Code(file) => match stage {
+                Some(stage) if stage.file_asked == Some(file.request_id) => {
                     stage.receive_file(*file);
                 }
-            }
+                _ => return Some(ServerMsg::Code(file)),
+            },
             ServerMsg::CodeMatches(found) => {
                 if let Some(stage) = stage {
                     stage.receive_matches(found);
@@ -2053,11 +2056,13 @@ mod tests {
         assert!(code.receive(ServerMsg::Tree(Vec::new())).is_some());
     }
 
+    /// A list or a file the stage did not ask for is another reader's (the Changes pane's Files
+    /// tab), so it goes on; a search is only ever the stage's.
     #[test]
-    fn code_answers_with_no_stage_open_are_dropped() {
+    fn code_answers_the_stage_did_not_ask_for_go_on_and_a_search_is_dropped() {
         let mut code = Code::default();
-        assert!(code.receive(ServerMsg::CodeTree(tree(1))).is_none());
-        assert!(code.receive(ServerMsg::Code(Box::new(file(2, "src/a.rs")))).is_none());
+        assert!(matches!(code.receive(ServerMsg::CodeTree(tree(1))), Some(ServerMsg::CodeTree(_))));
+        assert!(matches!(code.receive(ServerMsg::Code(Box::new(file(2, "src/a.rs")))), Some(ServerMsg::Code(_))));
         assert!(code.receive(ServerMsg::CodeMatches(found(3, "a", SearchOptions::default()))).is_none());
     }
 

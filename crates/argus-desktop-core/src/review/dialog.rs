@@ -10,6 +10,7 @@ use argus_protocol::review::session::{Answered, ReviewSession};
 use argus_protocol::review::view::{fold_of, ReviewView, Row};
 use argus_protocol::{CheckoutId, CheckoutInfo, ClientMsg, PaneId, Review, CodeVersion, RequestRefusal, ReviewBase, ReviewContext};
 
+use crate::review::checkout_files::CheckoutFiles;
 use crate::review::comment_box::CommentBox;
 use crate::review::drafts::{DraftGesture, Drafts};
 use crate::review::file_jump::{FileJump, Jumped};
@@ -30,15 +31,18 @@ pub struct ReviewDialog {
     jump: Option<FileJump>,
     staging: Staging,
     drafts: Drafts,
+    files: CheckoutFiles,
     abilities: Abilities,
 }
 
 /// What the daemon lets a review do beyond reading: write the index and
-/// commit, and keep the review's comments as drafts until they are sent.
+/// commit, keep the review's comments as drafts until they are sent, and
+/// list and read the checkout's files for the Files tab.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Abilities {
     pub index_writes: bool,
     pub drafts: bool,
+    pub files: bool,
 }
 
 impl ReviewDialog {
@@ -84,8 +88,36 @@ impl ReviewDialog {
             jump: None,
             staging: Staging::default(),
             drafts: Drafts::default(),
+            files: CheckoutFiles::default(),
             abilities: Abilities::default(),
         }
+    }
+
+    /// The Files tab shown: the checkout's working tree listed, when the daemon reads code and the
+    /// review is of working changes.
+    pub fn list_files(&mut self, id: u64) -> Option<ClientMsg> {
+        let working = self.session.base() != ReviewBase::Commit;
+        (self.abilities.files && working).then(|| self.files.list(self.session.checkout(), id)).flatten()
+    }
+
+    /// A file with no change read whole in place of the diff.
+    pub fn read_file(&mut self, path: String, id: u64) -> Option<ClientMsg> {
+        self.abilities.files.then(|| self.files.read(self.session.checkout(), path, id))
+    }
+
+    /// The Files tab's answers, given back when they are not its.
+    pub fn receive_code(&mut self, msg: argus_protocol::ServerMsg) -> Option<argus_protocol::ServerMsg> {
+        use argus_protocol::ServerMsg;
+        match msg {
+            ServerMsg::CodeTree(tree) => self.files.receive_tree(tree).err().map(ServerMsg::CodeTree),
+            ServerMsg::Code(file) => self.files.receive_file(file).err().map(ServerMsg::Code),
+            other => Some(other),
+        }
+    }
+
+    /// Whether a refused list or read was the Files tab's.
+    pub fn files_refused(&mut self, request_id: u64, reason: &str) -> bool {
+        self.files.refused(request_id, reason)
     }
 
     pub fn chosen(&self) -> ReviewLayout {
@@ -191,6 +223,7 @@ impl ReviewDialog {
     }
 
     pub fn jump_file(&mut self, forward: bool) {
+        self.files.put_away();
         if let Some(view) = self.view_mut() {
             view.jump_file(forward);
         }
@@ -208,6 +241,7 @@ impl ReviewDialog {
 
     pub fn open_file(&mut self, file: usize) {
         self.jump = None;
+        self.files.put_away();
         if let Some(view) = self.view_mut() {
             view.jump_to_file(file);
         }
@@ -257,8 +291,11 @@ impl ReviewDialog {
     /// `E`: where the editor opens — at the picked lines' first, else the
     /// cursor's line, else the top of the file on screen.
     pub fn editor_target(&self) -> Option<(CheckoutId, String, Option<u32>)> {
-        let view = self.view()?;
         let checkout = self.session.checkout();
+        if let Some(path) = self.files.reading() {
+            return Some((checkout, path.to_owned(), None));
+        }
+        let view = self.view()?;
         if let Some(anchor) = view.anchor() {
             return Some((checkout, anchor.path.clone(), anchor.preferred_start()));
         }
@@ -270,6 +307,9 @@ impl ReviewDialog {
     /// checkout that line is in — the working tree for unstaged work, the
     /// index for staged, the commit for one commit.
     pub fn code_target(&self) -> Option<(CheckoutId, String, u32, CodeVersion)> {
+        if let Some(path) = self.files.reading() {
+            return Some((self.session.checkout(), path.to_owned(), 1, CodeVersion::WorkingTree));
+        }
         let view = self.view()?;
         let row = *view.rows.get(view.sel)?;
         let file = view.review.files.get(row.file())?;
@@ -476,6 +516,7 @@ impl ReviewDialog {
             sections,
             staging,
             drafts,
+            tree: (self.abilities.files && working).then(|| self.files.page()),
         }
     }
 }

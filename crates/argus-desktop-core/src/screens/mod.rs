@@ -2333,6 +2333,11 @@ fn main_scenes() -> Vec<Scene> {
             w.call(Call::Docks { gesture: DockGesture::Grid { panel: Panel::Changes, onto, zone: crate::panes::shown::workspace_grid::Zone::Right } });
             w.s
         }),
+        scene("review-files", "Review — a file with no change read whole from the checkout's files", || {
+            let mut w = reviewing();
+            w.call(Call::ReviewFiles).call(Call::ReviewRead { path: "README.md".into() });
+            w.s
+        }),
         scene("review-comment", "Review — a comment to the agent on picked lines", || {
             let mut w = reviewing();
             w.call(Call::ReviewAction { action: Action::Pick })

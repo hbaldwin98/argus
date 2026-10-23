@@ -189,6 +189,10 @@ pub enum Call {
     ReviewJump { gesture: ReviewJumpGesture },
     /// A file of one of the Changes pane's lists, on the side it is listed on.
     OpenChange { staged: bool, path: String },
+    /// The Changes pane's Files tab shown: the checkout's files listed again.
+    ReviewFiles,
+    /// A file of the Files tab with no change, read whole in place of the diff.
+    ReviewRead { path: String },
     /// A changed line's box, a file moved between lists, or a hunk taken.
     Stage { gesture: StageGesture },
     /// What is staged, committed with this message.
@@ -1611,6 +1615,36 @@ pub struct ReviewPage {
     pub staging: Option<StagingPage>,
     /// The review being written, when the daemon keeps drafts.
     pub drafts: Option<DraftsPage>,
+    /// The Files tab's list and the file read whole, when the daemon reads code and the review is
+    /// of working changes.
+    pub tree: Option<ReviewTree>,
+}
+
+/// The Changes pane's Files tab: every file of the checkout's working tree, and the file with no
+/// change read whole, while one is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewTree {
+    /// Repo-relative, forward-slashed, sorted.
+    pub files: Vec<String>,
+    /// A list has come in.
+    pub listed: bool,
+    /// No list is in yet, and one is asked for.
+    pub loading: bool,
+    pub reading: Option<ReviewReading>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewReading {
+    pub path: String,
+    /// Its lines, as a file read whole is drawn.
+    pub rows: Vec<DiffRow>,
+    pub loading: bool,
+    /// Why there are no lines: binary, too large, or a refused read.
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

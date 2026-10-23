@@ -16,7 +16,7 @@ fn staging(staged: bool, commits: u64) -> StagingPage {
 
 /// The review of working changes as the Changes pane hears it: `src/lib.rs` partly staged and on
 /// screen from the working side, `README.md` staged, `new.rs` untracked.
-fn changes() -> ReviewPage {
+pub(super) fn changes() -> ReviewPage {
     ReviewPage {
         sections: vec![
             ReviewSection { side: "staged", files: vec![listed("README.md", "modified", false, false), listed("src/lib.rs", "modified", false, true)] },
