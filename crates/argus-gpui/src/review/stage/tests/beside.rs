@@ -74,3 +74,27 @@ fn in_a_narrow_dock_the_files_and_the_diff_take_turns(cx: &mut TestAppContext) {
     assert!(present(cx, &opened, ("review-file", 0usize)), "the files again");
     assert!(asked(&opened).is_empty(), "the turn is the window's own");
 }
+
+#[gpui_kit::test]
+fn in_a_narrow_dock_a_change_pressed_in_its_list_turns_to_its_diff(cx: &mut TestAppContext) {
+    let opened = on_main(cx);
+    hear(cx, &opened, vec![reviewing(super::changes::changes()), docked(480)]);
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    assert!(!present(cx, &opened, "review-back"), "the lists first");
+    click(cx, &opened, ("review-change", 0usize));
+    assert_eq!(asked(&opened), ["OpenChange { staged: true, path: \"README.md\" }"]);
+    assert!(present(cx, &opened, "review-back"), "its diff, with the way back");
+}
+
+#[gpui_kit::test]
+fn in_a_narrow_dock_a_file_pressed_in_the_files_tab_turns_to_it(cx: &mut TestAppContext) {
+    use argus_desktop_core::connection::page::ReviewTree;
+    let opened = on_main(cx);
+    let tree = ReviewTree { files: vec!["Cargo.toml".into(), "README.md".into()], listed: true, loading: false, reading: None };
+    hear(cx, &opened, vec![reviewing(ReviewPage { tree: Some(tree), ..super::changes::changes() }), docked(480)]);
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    click(cx, &opened, "review-list-files");
+    click(cx, &opened, ("review-tree-row", 0usize));
+    assert!(asked(&opened).contains(&"ReviewRead { path: \"Cargo.toml\" }".to_owned()));
+    assert!(present(cx, &opened, "review-back"), "the file, with the way back");
+}

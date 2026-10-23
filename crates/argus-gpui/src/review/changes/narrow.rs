@@ -22,7 +22,7 @@ pub struct Narrow {
     pub area: Rc<Cell<Bounds<Pixels>>>,
     /// The files are on screen rather than the diff.
     listing: bool,
-    /// The file on screen at the last page, by its side and path.
+    /// The last file on screen, by its side and path.
     last: Option<(bool, String)>,
 }
 
@@ -62,16 +62,20 @@ impl Narrow {
     }
 
     /// Follows the page: another file opened, by a key or the jump field, puts its diff on screen,
-    /// but the one a review opens on does not; with no file open the files are.
+    /// but the one a review opens on does not. Once in a file only its back button leaves it, or
+    /// the review having nothing to show: a page with no file open while the diff is read again (as
+    /// it is each time an agent writes to the checkout) is not a reason to go back to the files.
     pub fn follow(&mut self, page: &ReviewPage) {
         let staged = page.staging.as_ref().is_some_and(|staging| staging.staged);
         let now = page.file.and_then(|i| page.files.get(i)).map(|file| (staged, file.path.clone()));
-        if now.is_none() {
+        let reading = page.tree.as_ref().is_some_and(|tree| tree.reading.is_some());
+        let nothing = page.files.is_empty() && page.sections.iter().all(|section| section.files.is_empty()) && !reading;
+        if nothing && !page.loading {
             self.listing = true;
-        } else if self.last.is_some() && now != self.last {
+        } else if self.last.is_some() && now.is_some() && now != self.last {
             self.listing = false;
         }
-        self.last = now;
+        self.last = now.or(self.last.take());
     }
 
     /// A file pressed in the list: its diff, whether or not it was the one open.
@@ -102,6 +106,11 @@ mod tests {
         ReviewPage { files, file, ..ReviewPage::default() }
     }
 
+    /// A review with nothing left to show.
+    fn emptied() -> ReviewPage {
+        ReviewPage::default()
+    }
+
     #[test]
     fn a_file_opened_shows_its_diff_and_back_shows_the_files_with_it_still_open() {
         let mut narrow = Narrow::new();
@@ -114,8 +123,23 @@ mod tests {
         assert!(narrow.listing(), "the same file heard again does not leave the list");
         narrow.follow(&on(Some("b.rs")));
         assert!(!narrow.listing(), "another file opened");
+        narrow.follow(&emptied());
+        assert!(narrow.listing(), "nothing left in the review, nothing to show but the files");
+    }
+
+    /// The diff is read again each time an agent writes to the checkout, and a page with no file
+    /// open while it is does not send the pane back to the files.
+    #[test]
+    fn a_file_gone_into_stays_while_the_diff_is_read_again() {
+        let mut narrow = Narrow::new();
+        narrow.follow(&on(Some("a.rs")));
+        narrow.opened();
         narrow.follow(&on(None));
-        assert!(narrow.listing(), "nothing open, nothing to show but the files");
+        assert!(!narrow.listing(), "read again, the file still to come");
+        narrow.follow(&on(Some("a.rs")));
+        assert!(!narrow.listing(), "and back");
+        narrow.back();
+        assert!(narrow.listing());
     }
 
     #[test]
